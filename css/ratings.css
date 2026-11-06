@@ -391,6 +391,8 @@
 .mediaInfoOfficialRating[rating='10'] {                    /* 🌍 Generic 10 label */
     background-color: #daa520 !important; /* Dark Yellow */
     border-color: #FFC107 !important;
+    color: #000000 !important;
+    text-shadow: none !important;
 }
 
 

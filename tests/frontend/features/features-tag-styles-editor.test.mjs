@@ -446,8 +446,14 @@ test('the preset reads as one line until Change preset, the edited tag is drawn 
   }
 });
 
-test('no default Quality colour reads below 3:1 on a dark poster, the editor\'s Low contrast line', () => {
-  const { labels } = JSON.parse(readFileSync(resolve(repositoryRoot, 'Jellyfin.Plugin.JellyfinEnhanced/Assets/PosterTags/quality-colours.json'), 'utf8'));
+test('no default Quality or Age Rating colour reads below 3:1 on a dark poster, the editor\'s Low contrast line', () => {
+  const asset = (name) => JSON.parse(readFileSync(resolve(repositoryRoot, `Jellyfin.Plugin.JellyfinEnhanced/Assets/PosterTags/${name}`), 'utf8'));
+  const { styles } = asset('age-rating-colours.json');
+  const labels = {
+    ...asset('quality-colours.json').labels,
+    // A rule without a text colour keeps the chip's white. Named colours (the one "red") are dark enough and not parsed here.
+    ...Object.fromEntries(styles.filter((s) => s['background-color'].startsWith('#')).map((s, i) => [`age ${i}`, { background: s['background-color'], color: s.color || '#ffffff' }])),
+  };
   const channel = (v) => (v / 255 <= 0.04045 ? v / 255 / 12.92 : ((v / 255 + 0.055) / 1.055) ** 2.4);
   const luminance = ([r, g, b]) => 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
   const parts = (css) => (css.startsWith('#') ? [1, 3, 5].map((i) => parseInt(css.slice(i, i + 2), 16)).concat(1) : css.match(/[\d.]+/g).map(Number));
