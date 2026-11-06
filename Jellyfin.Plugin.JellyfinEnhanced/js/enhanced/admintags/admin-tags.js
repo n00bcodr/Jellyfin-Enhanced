@@ -161,6 +161,12 @@
     };
     /** The names the page shows for layouts, groups, positions, presets and the like, in English. */
     const WORDS = {
+        // Why a group has no control, by the key the shared settings matrix (core/tag-renderer-base.js) names it with.
+        reason: {
+            tag_scope_people_na: 'People Tags appear on cast cards on detail pages, not on media cards, so they have no position, limit or Where to show.',
+            tag_limit_single: 'Always one tag: this group shows a single badge.',
+            tag_item_editor_scope_note: 'Where each group shows (movies, series, seasons, episodes and the home rows) is chosen for all titles in Media Tags settings.',
+        },
         type: {
             movie: 'Movie',
             series: 'Series',
@@ -1084,7 +1090,7 @@
             const S = JE.core.tagScopes;
             if (!S) return '';
             const offered = JE.core.tagSettingsMatrix?.offers('admin', group, 'scopes') ?? true;
-            if (offered !== true) return `<p class="je-ta-hint" data-je-scope-na="${esc(group)}">${tx(offered)}</p>`;
+            if (offered !== true) return `<p class="je-ta-hint" data-je-scope-na="${esc(group)}">${tx(WORDS.reason[offered] || offered)}</p>`;
             if (group !== 'rating' && !S.SCOPED_GROUPS.includes(group)) return '';
             const labels = { movies: 'Movies', series: 'Series', seasons: 'Seasons',
                 episodes: 'Episodes', continueWatching: 'Continue Watching row', nextUp: 'Next Up row' };
