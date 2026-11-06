@@ -37,7 +37,7 @@
     /** @param {Object} ctx @returns {{summary: Object|null, error: boolean, seq: number, timer: ReturnType<typeof setTimeout>|null}} */
     const summaryOf = (ctx) => {
         let state = summaries.get(ctx);
-        if (!state) summaries.set(ctx, state = { summary: null, error: false, seq: 0, timer: null });
+        if (!state) summaries.set(ctx, state = { summary: null, error: false, seq: 0, timer: null, wasRebuilding: false });
         return state;
     };
 
@@ -60,13 +60,16 @@
             if (seq === state.seq && ctx.isCurrent()) console.warn('🪼 Jellyfin Enhanced: could not read the tag cache summary', err);
         }
         if (seq !== state.seq || !ctx.isCurrent()) return;
+        const finished = state.wasRebuilding && next?.rebuilding === false && !failed;
+        state.wasRebuilding = next?.rebuilding === true;
         state.summary = next;
         state.error = failed;
         // Only the cache card shows the summary: a poll redraws nothing else (the
         // other tabs' editors keep their controls and keyboard focus).
         drawCache(ctx);
-        // Follow a rebuild until it finishes.
+        // Follow a rebuild until it finishes, then say so.
         if (state.summary?.rebuilding) state.timer = setTimeout(() => A.cacheSummary(ctx), 3000);
+        if (finished) ctx.snack(A.fmt('Tag cache rebuilt: {count} {count|item|items} cached.', { count: state.summary.entries }));
     };
 
     /**
