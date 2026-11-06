@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createHarness } from '../../frontend/helpers/harness.mjs';
 import rows from './status-fixtures.mjs';
+import { tr } from './locale-text.mjs';
 const en = JSON.parse(readFileSync(new URL('../../../Jellyfin.Plugin.JellyfinEnhanced/js/locales/en.json', import.meta.url), 'utf8'));
 const seriesId = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const pascalToCamel = o => Object.fromEntries(Object.entries(o).map(([k,v]) => [k[0].toLowerCase()+k.slice(1), v]));
@@ -14,7 +15,8 @@ for (const row of rows) {
     if (!plugin.TMDB_API_KEY) plugin.TmdbEnabled = false;
     // The public flag the server derives from a Leaving soon source (never the source itself).
     plugin.LeavingSoonAvailable = !!(plugin.LeavingSoonCollections || plugin.LeavingSoonMaintainerrUrl);
-    const translate = (key, params = {}) => Object.entries(params).reduce((text, [k,v]) => text.replaceAll(`{${k}}`, String(v)), en[key] || key);
+    // The web resolves strings in the row's locale, as native posters do (English where the locale has none).
+    const translate = (key, params = {}) => tr(row.locale || 'en', key, params);
     const h = createHarness({
         html: '<div class="card" data-id="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"><div class="cardBox"><div class="cardScalable"><div class="cardImageContainer"></div><div class="je-tag-host"></div></div><div class="cardText">Title</div></div></div>',
         globals: { IntersectionObserver: class { constructor(cb) { this.cb=cb; } observe(target) { queueMicrotask(()=>this.cb([{target,isIntersecting:true}])); } unobserve() {} disconnect() {} } },

@@ -1,4 +1,5 @@
 import { readdirSync } from 'node:fs';
+import { tr } from './locale-text.mjs';
 
 // Fixed-clock fixtures consumed by both the real web renderer and native StatusRules.
 const now = Date.UTC(2026, 9, 30, 12);
@@ -87,8 +88,8 @@ add('compact-corners-added', movie({ DateCreated: ago(1) }), 'just_added', 'Adde
 add('compact-corners-premiere', episode({ EpisodeNumber: 1 }), 'season_premiere', 'Premiere', { settings: { TagLayoutSettingsVersion: 1, TagLayout: 'corners', TagLabelDensity: 'compact' } });
 add('compact-bands-premiere', episode({ EpisodeNumber: 1 }), 'season_premiere', 'Premiere', { settings: { TagLayoutSettingsVersion: 1, TagLayout: 'bands', TagLabelDensity: 'compact' } });
 add('bands-profile-off', movie({ PremiereDate: ago(2) }), null, null, { settings: { TagLayoutSettingsVersion: 1, TagLayout: 'bands', TagLayouts: { Bands: { Groups: [{ Group: 'status', Slot: 'off' }] } } } });
-add('german-weekday-locale', show(), 'airs_date', 'Airs Sonntag', { locale: 'de-DE', schedule: schedule(null, ep('2026-11-01')) });
-add('french-weekday-locale', show(), 'airs_date', 'Airs dimanche', { locale: 'fr-FR', schedule: schedule(null, ep('2026-11-01')) });
+add('german-weekday-locale', show(), 'airs_date', tr('de-DE', 'status_tag_airs_date', { date: 'Sonntag' }), { locale: 'de-DE', schedule: schedule(null, ep('2026-11-01')) });
+add('french-weekday-locale', show(), 'airs_date', tr('fr-FR', 'status_tag_airs_date', { date: 'dimanche' }), { locale: 'fr-FR', schedule: schedule(null, ep('2026-11-01')) });
 add('new-york-before-dst-fallback', show(), 'airing_today', 'Airing Today', { now: Date.UTC(2026, 10, 1, 5, 30), zone: 'America/New_York', schedule: schedule(null, ep('2026-11-01')) });
 add('new-york-after-dst-fallback', show(), 'airing_today', 'Airing Today', { now: Date.UTC(2026, 10, 1, 6, 30), zone: 'America/New_York', schedule: schedule(null, ep('2026-11-01')) });
 // Leaving soon (Maintainerr or leaving collections): first match, local calendar days.
@@ -108,7 +109,7 @@ add('leaving-perth-same-local-day', movie(leaving(Date.UTC(2026, 9, 31, 15, 30))
 add('leaving-utc-next-day', movie(leaving(Date.UTC(2026, 9, 31, 15, 30))), 'leaving_tomorrow', 'Leaving tomorrow', { ...leavingOn, now: Date.UTC(2026, 9, 30, 23, 30) });
 add('leaving-new-york-across-dst', movie(leaving(Date.UTC(2026, 10, 2, 5))), 'leaving_days', 'Leaving in 2d', { ...leavingOn, now: Date.UTC(2026, 10, 1, 3, 30), zone: 'America/New_York' });
 add('leaving-compact-bands', movie(leaving(now + 5 * day)), 'leaving_days', '5d left', { plugin: leavingOn.plugin, settings: { ...leavingOn.settings, TagLayoutSettingsVersion: 1, TagLayout: 'bands', TagLabelDensity: 'compact' } });
-add('leaving-german-falls-back-to-english', movie(leaving(now + 5 * day)), 'leaving_days', 'Leaving in 5d', { ...leavingOn, locale: 'de-DE' });
+add('leaving-german', movie(leaving(now + 5 * day)), 'leaving_days', tr('de-DE', 'status_tag_leaving_days', { days: 5 }), { ...leavingOn, locale: 'de-DE' });
 // Every shipped locale, plus Persian calendar boundaries; the six review cases stay literal below.
 const dates = ['2026-01-04', '2026-03-20', '2026-03-21', '2026-10-04'];
 for (const file of readdirSync(new URL('../../../Jellyfin.Plugin.JellyfinEnhanced/js/locales/', import.meta.url)).filter(f => f.endsWith('.json'))) {
@@ -117,19 +118,19 @@ for (const file of readdirSync(new URL('../../../Jellyfin.Plugin.JellyfinEnhance
     for (const date of dates) {
         const instant = Date.parse(date + 'T00:00:00Z');
         const short = new Intl.DateTimeFormat(effective, {month:'short', day:'numeric', timeZone:'UTC'}).format(new Date(instant));
-        add(`short-date-${locale}-${date}`, show(), 'returns_date', `Returns ${short}`, {
+        add(`short-date-${locale}-${date}`, show(), 'returns_date', tr(locale, 'status_tag_returns_date', { date: short }), {
             now: instant - 14 * day, locale, schedule: schedule(ep(new Date(instant - 60 * day).toISOString().slice(0,10)), ep(date))
         });
     }
 }
 for (const [locale, short] of Object.entries({bg:'4.10', cs:'4. 10.', es:'4 oct', fa:'۱۲ مهر', fi:'4.10.', sk:'4. 10.'})) {
-    add(`review-short-date-${locale}`, show(), 'returns_date', `Returns ${short}`, {
+    add(`review-short-date-${locale}`, show(), 'returns_date', tr(locale, 'status_tag_returns_date', { date: short }), {
         now: Date.UTC(2026,8,20), locale, schedule: schedule(ep('2026-08-01'), ep('2026-10-04'))
     });
 }
 for (const locale of ['en-GB','en-AU','en-IN','en-CA','en-NZ','en-IE','en-ZA','es-MX','es-419','fr-CA','pt-BR','pt-PT','zh-TW','zh-HK', 'en-GB-u-ca-gregory', 'de-DE-u-co-phonebk']) {
     const short = new Intl.DateTimeFormat(locale, {month:'short', day:'numeric', timeZone:'UTC'}).format(new Date('2026-10-04T00:00:00Z'));
-    add(`regional-short-date-${locale}`, show(), 'returns_date', `Returns ${short}`, {
+    add(`regional-short-date-${locale}`, show(), 'returns_date', tr(locale, 'status_tag_returns_date', { date: short }), {
         now: Date.UTC(2026,8,20), locale, schedule: schedule(ep('2026-08-01'), ep('2026-10-04'))
     });
 }
