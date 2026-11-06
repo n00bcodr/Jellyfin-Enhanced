@@ -85,7 +85,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             RatingInnerGap = Clamp(2f, 2.2f * cqw, 4f) * Scale;
             RatingIconSize = Clamp(9f, 7f * cqw, 14f) * Scale;
 
-            LogoHeight = Clamp(14f, 11f * cqw, 22f) * Scale;
+            LogoHeight = Clamp(18f, 13f * cqw, 28f) * Scale;
             LogoFontSize = Clamp(9f, 6.4f * cqw, 12f) * Scale;
         }
 
@@ -138,7 +138,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
         /// <summary>Star glyph size and tomato box size.</summary>
         public float RatingIconSize { get; }
 
-        /// <summary>Border-box height of a Logos chip (logotags.js <c>height: clamp(14px, 11cqw, 22px)</c>).</summary>
+        /// <summary>Border-box height of a Logos chip (logotags.js <c>height: clamp(18px, 13cqw, 28px)</c>).</summary>
         public float LogoHeight { get; }
 
         /// <summary>Font size of a Logos name chip.</summary>

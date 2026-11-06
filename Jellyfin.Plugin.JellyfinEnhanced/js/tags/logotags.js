@@ -192,7 +192,7 @@
                     align-items: center;
                     justify-content: center;
                     box-sizing: border-box;
-                    height: calc(22px * var(--je-tag-scale, 1));
+                    height: calc(28px * var(--je-tag-scale, 1));
                     max-width: 100%;
                     padding: calc(3px * var(--je-tag-scale, 1)) calc(6px * var(--je-tag-scale, 1));
                     overflow: hidden;
@@ -235,12 +235,12 @@
                 /* Card-width sizing, like the age rating chip */
                 @supports (container-type: inline-size) {
                     html:not(.layout-mobile) .je-tag-host .${chipClass} {
-                        height: calc(clamp(14px, 11cqw, 22px) * var(--je-tag-scale, 1));
+                        height: calc(clamp(18px, 13cqw, 28px) * var(--je-tag-scale, 1));
                         font-size: calc(clamp(9px, 6.4cqw, 12px) * var(--je-tag-scale, 1));
                     }
                 }
 
-                .layout-mobile .${chipClass} { height: calc(18px * var(--je-tag-scale, 1)); font-size: calc(10px * var(--je-tag-scale, 1)); }
+                .layout-mobile .${chipClass} { height: calc(22px * var(--je-tag-scale, 1)); font-size: calc(10px * var(--je-tag-scale, 1)); }
             `;
         },
         pipeline: {
