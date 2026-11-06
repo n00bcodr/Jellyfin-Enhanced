@@ -27,6 +27,9 @@
     /** Chips with a box of their own (not the genre circle or a flag image). */
     const BOX_CHIP = ':is(.quality-overlay-label, .rating-tag, .age-rating-tag, .status-tag, .awards-tag, .je-logo-chip, .custom-tag, .language-chip)';
 
+    /** Everything Flush paints flat against an edge: boxed chips and the genre circle (a flag image keeps its shape). */
+    const FLUSH_BOX = `:is(${BOX_CHIP}, .genre-tag)`;
+
     /** Transparent links pass sizing and Flush paint through to the chip. */
     const CHIP_LINK = ':is(.awards-link, .language-link)';
 
@@ -34,7 +37,7 @@
     const STACK = `:is(${SLOT}[data-je-slot="poster"], ${SLOT}[data-je-slot="corner"], .je-tag-host[data-je-layout="minimal"] > .je-tag-slot[data-je-slot="top"])`;
 
     /** Group chips and the slot's direct overflow chip share Flush paint. */
-    const FLUSH_CHIP = `:is([data-je-group] > ${BOX_CHIP}, [data-je-group] > ${CHIP_LINK} > ${BOX_CHIP}, .je-tag-more)`;
+    const FLUSH_CHIP = `:is([data-je-group] > ${FLUSH_BOX}, [data-je-group] > ${CHIP_LINK} > ${BOX_CHIP}, .je-tag-more)`;
 
     /**
      * Flush paint rules, repeated in scoped Tag Styles so their !important
@@ -53,6 +56,11 @@
                 --je-flush-clip-bottom: -12px; --je-flush-clip-left: -12px;
                 clip-path: inset(var(--je-flush-clip-top) var(--je-flush-clip-right) var(--je-flush-clip-bottom) var(--je-flush-clip-left));
             }
+            /* A genre's name floats beside its chip, inside this clip: only the touching sides may cut. */
+            ${F} .genre-overlay-container[data-je-group] > .genre-tag {
+                --je-flush-clip-top: -100vw; --je-flush-clip-right: -100vw;
+                --je-flush-clip-bottom: -100vw; --je-flush-clip-left: -100vw;
+            }
             ${F}:is([data-je-slot="tl"], [data-je-slot="bl"], [data-je-slot="ml"]) ${FLUSH_CHIP} {
                 border-left-color: transparent !important; --je-flush-clip-left: 0px;
                 --je-flush-ring-left: 0px; --je-flush-ring-content: ''; --je-tag-ring-outline: transparent;
@@ -63,7 +71,7 @@
                 --je-flush-ring-right: 0px; --je-flush-ring-content: ''; --je-tag-ring-outline: transparent;
                 border-top-right-radius: 0; border-bottom-right-radius: 0;
             }
-            ${F}:is([data-je-slot="tl"], [data-je-slot="tr"]):not(.cardScalable:has(.countIndicator, .playedIndicator) > .je-tag-host[data-je-indicator-gap] > [data-je-slot="tr"], .cardIndicators ~ .je-tag-host[data-je-indicator-gap] > [data-je-slot="tr"]) > [data-je-group]:first-child > ${BOX_CHIP}:first-child,
+            ${F}:is([data-je-slot="tl"], [data-je-slot="tr"]):not(.cardScalable:has(.countIndicator, .playedIndicator) > .je-tag-host[data-je-indicator-gap] > [data-je-slot="tr"], .cardIndicators ~ .je-tag-host[data-je-indicator-gap] > [data-je-slot="tr"]) > [data-je-group]:first-child > ${FLUSH_BOX}:first-child,
             ${F}:is([data-je-slot="tl"], [data-je-slot="tr"]):not(.cardScalable:has(.countIndicator, .playedIndicator) > .je-tag-host[data-je-indicator-gap] > [data-je-slot="tr"], .cardIndicators ~ .je-tag-host[data-je-indicator-gap] > [data-je-slot="tr"]) > [data-je-group]:first-child > ${CHIP_LINK}:first-child > ${BOX_CHIP},
             ${F}[data-je-slot="tc"] ${FLUSH_CHIP}[data-je-flush-top],
             ${F}[data-je-slot="tc"] ${CHIP_LINK}[data-je-flush-top] > ${BOX_CHIP},
@@ -72,7 +80,7 @@
                 --je-flush-ring-top: 0px; --je-flush-ring-content: ''; --je-tag-ring-outline: transparent;
                 border-top-left-radius: 0; border-top-right-radius: 0;
             }
-            ${F}:is([data-je-slot="bl"], [data-je-slot="br"]) > [data-je-group]:first-child > ${BOX_CHIP}:last-child,
+            ${F}:is([data-je-slot="bl"], [data-je-slot="br"]) > [data-je-group]:first-child > ${FLUSH_BOX}:last-child,
             ${F}:is([data-je-slot="bl"], [data-je-slot="br"]) > [data-je-group]:first-child > ${CHIP_LINK}:last-child > ${BOX_CHIP},
             ${F}[data-je-slot="bc"] ${FLUSH_CHIP}[data-je-flush-bottom],
             ${F}[data-je-slot="bc"] ${CHIP_LINK}[data-je-flush-bottom] > ${BOX_CHIP},

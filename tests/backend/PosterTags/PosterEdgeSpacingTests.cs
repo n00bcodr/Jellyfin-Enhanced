@@ -73,7 +73,7 @@ public class PosterEdgeSpacingTests
     }
 
     [Fact]
-    public void StyledChipsKeepOnlyInwardRingsAndGenreCirclesKeepTheirSilhouetteAtEveryAnchor()
+    public void StyledChipsAndGenreChipsKeepOnlyInwardRingsAtEveryAnchor()
     {
         using var renderer = new PosterTagRenderer();
         using var source = new SKBitmap(720, 1080);
@@ -100,6 +100,19 @@ public class PosterEdgeSpacingTests
                 Assert.Equal(!chip.FlushEdges.HasFlag(sides[i]), c.Red > 200 && c.Green < 60);
             }
         }
+    }
+
+    [Theory]
+    [InlineData(PosterTagCorner.TopRight, 6, 4)]
+    [InlineData(PosterTagCorner.BottomLeft, 1, 9)]
+    public void Genre_chips_lie_flat_against_every_edge_they_touch(PosterTagCorner anchor, int first, int last)
+    {
+        using var renderer = new PosterTagRenderer();
+        var tags = new PosterTag[] { new GenreTag("Animation", "animation"), new GenreTag("Comedy", "sentiment_very_satisfied") };
+        var layout = new PosterTagLayout([new(PosterTagGroup.Genre, anchor, tags)], false, false, TagStyleSet.Parse("{}")) { EdgeInset = 0 };
+        var items = Assert.Single(renderer.Plan(720, 1080, layout).Groups).Items.OrderBy(i => i.Y).ToList();
+        Assert.Equal(first, (int)items[0].FlushEdges);
+        Assert.Equal(last, (int)items[1].FlushEdges);
     }
 
     [Theory]

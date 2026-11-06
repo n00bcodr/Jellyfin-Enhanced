@@ -139,13 +139,18 @@ test('Flush tabs retain edge suppression beside scoped per-genre colours and Pos
       L.invalidateSettings(); L.commitGroup(host, 'genre', group);
       await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))); L.flushFit();
       const s = getComputedStyle(host.querySelector('.genre-tag'));
-      return { bg: s.backgroundColor, borders: [s.borderLeftColor, s.borderTopColor, s.borderRightColor, s.borderBottomColor], shadow: s.boxShadow };
+      return { bg: s.backgroundColor, borders: [s.borderLeftColor, s.borderTopColor, s.borderRightColor, s.borderBottomColor], shadow: s.boxShadow, clip: s.clipPath,
+        radii: [s.borderTopLeftRadius, s.borderTopRightRadius, s.borderBottomRightRadius, s.borderBottomLeftRadius] };
     }, slot);
     const edges = { tl: 3, tc: 2, tr: 6, bl: 9, bc: 8, br: 12 }[slot];
     expect(result.bg).toBe('rgb(18, 52, 86)');
-    // Genre circles intentionally retain their silhouette; adjacent boxed tabs lose only touching sides.
+    // Genre chips sit flat against the edge like every tab: touching sides lose their border and rounding.
     expect(result.shadow).not.toBe('none');
-    expect(result.borders).toEqual(Array(4).fill('rgb(255, 0, 0)'));
+    expect(result.borders).toEqual([1, 2, 4, 8].map(side => edges & side ? 'rgba(0, 0, 0, 0)' : 'rgb(255, 0, 0)'));
+    const flat = [edges & 3, edges & 6, edges & 12, edges & 9];
+    expect(result.radii.map(radius => radius === '0px')).toEqual(flat.map(Boolean));
+    // The name floats outside the chip, so an inward side must not cut it the way a tab's 12px shadow clip would.
+    expect(result.clip).not.toContain('-12px');
     await page.evaluate(() => JellyfinEnhanced.core.tagLayout.removeGroup(document.querySelector('.je-tag-host'), 'genre'));
     const tab = await place(page, { slot, indicator: false, progress: 0 });
     expect(tab.borderColors).toEqual([1, 2, 4, 8].map(side => edges & side ? 'rgba(0, 0, 0, 0)' : 'rgb(255, 0, 0)'));

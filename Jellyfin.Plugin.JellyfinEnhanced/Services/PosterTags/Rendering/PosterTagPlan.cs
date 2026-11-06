@@ -683,7 +683,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             foreach (var group in groups)
             foreach (var item in group.Items.Where(i => !i.Hidden))
             {
-                if (item.Kind is PosterTagTileKind.Genre or PosterTagTileKind.Flag) continue;
+                if (item.Kind == PosterTagTileKind.Flag) continue;
                 if (item.X <= 0.01f) item.FlushEdges |= FlushEdges.Left;
                 if (item.Y <= 0.01f) item.FlushEdges |= FlushEdges.Top;
                 if (item.X + item.Width >= cardWidth - 0.01f) item.FlushEdges |= FlushEdges.Right;
