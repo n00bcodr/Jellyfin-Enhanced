@@ -106,6 +106,8 @@ The stock bindings are:
 | **Skip Intro/Outro** | ++o++ | Skips the current intro/outro. |
 | **Step Back One Frame** | ++comma++ | Pauses and seeks backward by an estimated frame duration. |
 | **Step Forward One Frame** | ++period++ | Pauses and seeks forward by an estimated frame duration. |
+| **Decrease Subtitle Offset** | ++left-bracket++ | Shifts subtitles 0.1 s earlier (lowers the offset) and briefly shows Jellyfin's subtitle offset panel. |
+| **Increase Subtitle Offset** | ++right-bracket++ | Shifts subtitles 0.1 s later (raises the offset) and briefly shows Jellyfin's subtitle offset panel. |
 | **Jump to Last Position** | ++z++ | Returns once to the saved position before your last seek. |
 | **Jump to % of video** | ++0++–++9++ | Seeks to 0%, 10%, … 90% of the video. |
 

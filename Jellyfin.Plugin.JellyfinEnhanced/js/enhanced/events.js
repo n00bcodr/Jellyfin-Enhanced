@@ -208,6 +208,16 @@
                 e.stopImmediatePropagation();
                 JE.frameStep('forward');
                 break;
+            case activeShortcuts.DecreaseSubtitleOffset:
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                JE.adjustSubtitleOffset(-0.1);
+                break;
+            case activeShortcuts.IncreaseSubtitleOffset:
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                JE.adjustSubtitleOffset(0.1);
+                break;
             case activeShortcuts.JumpToLastPosition:
                 e.preventDefault();
                 e.stopImmediatePropagation();

@@ -1090,6 +1090,29 @@
         }
     }
 
+    let _subOffsetHideTimer = null;
+
+    /**
+     * Nudges the subtitle offset by driving jellyfin-web's own subtitle sync slider
+     * (its updateOffset() applies the offset), and flashes that panel so the value is
+     * visible. jellyfin-web re-hides the panel when the OSD fades, so it is hidden again
+     * here after a short idle.
+     * @param {number} delta Seconds to add (negative = subtitles earlier).
+     */
+    JE.adjustSubtitleOffset = (delta) => {
+        const slider = document.querySelector('.subtitleSyncSlider');
+        const box = document.querySelector('.subtitleSyncContainer');
+        if (!slider || !box || typeof slider.updateOffset !== 'function') {
+            JE.toast(tWithFallback('toast_subtitle_offset_unavailable', 'Subtitle offset is not available'));
+            return;
+        }
+        const next = Math.round(((parseFloat(slider.value) || 0) + delta) * 10) / 10;
+        slider.updateOffset(next);
+        box.classList.remove('hide');
+        clearTimeout(_subOffsetHideTimer);
+        _subOffsetHideTimer = setTimeout(() => box.classList.add('hide'), 2000);
+    };
+
     /**
      * Cycles through available subtitle tracks (server command; OSD menu fallback).
      */
