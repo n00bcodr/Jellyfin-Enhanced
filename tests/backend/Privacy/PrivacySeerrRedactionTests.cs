@@ -10,6 +10,7 @@ using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Session;
 using Microsoft.AspNetCore.Http;
 using Moq;
+using Series = MediaBrowser.Controller.Entities.TV.Series;
 
 namespace JE.Tests;
 
@@ -95,6 +96,12 @@ public class PrivacySeerrRedactionTests
             State.Movies[movie.Id.ToString("N")] = new();
             Save();
             return movie;
+        }
+        /// <summary>Marks episodes played, as the library answers the redactor's query.</summary>
+        public void SetPlayed(Series series, params (int Season, int Episode)[] played)
+        {
+            var items = played.Select(p => (BaseItem)new Episode { Id = Guid.NewGuid(), ParentIndexNumber = p.Season, IndexNumber = p.Episode }).ToArray();
+            Library.Setup(l => l.GetItemList(It.Is<InternalItemsQuery>(q => q.IsPlayed == true && q.ParentId == series.Id))).Returns(items);
         }
         public string Seerr(string json, string path) => Redactor.RedactSeerr(json, path, UserId.ToString("N"), new DefaultHttpContext());
         public JsonObject SeerrObject(string json, string path) => Assert.IsType<JsonObject>(JsonNode.Parse(Seerr(json, path)));
@@ -231,6 +238,63 @@ public class PrivacySeerrRedactionTests
     }
 
     [Fact]
+    public void ASeasonTheUserHasStartedStaysVisible()
+    {
+        using var f = new Fixture(); var series = f.GuardSeries();
+        f.SetPlayed(series, (2, 1));
+        var season = f.SeerrObject(TvJson, TvPath)["seasons"]![2]!;
+        Assert.Equal("The Secret Season", (string?)season["name"]);
+        Assert.Equal("Secret season plot", (string?)season["overview"]);
+        Assert.Equal("/s2.jpg", (string?)season["posterPath"]);
+    }
+
+    [Fact]
+    public void AFailedProgressLookupLeavesLaterSeasonsStripped()
+    {
+        using var f = new Fixture(); var series = f.GuardSeries();
+        f.Library.Setup(l => l.GetItemList(It.Is<InternalItemsQuery>(q => q.ParentId == series.Id))).Throws(new InvalidOperationException("offline"));
+        Assert.Null(f.SeerrObject(TvJson, TvPath)["seasons"]![2]!["overview"]);
+    }
+
+    [Fact]
+    public void PlayedEpisodesKeepTheirTextInASeasonResponse()
+    {
+        using var f = new Fixture(); var series = f.GuardSeries();
+        f.SetPlayed(series, (2, 1));
+        const string Season = "{\"seasonNumber\":2,\"episodes\":[{\"episodeNumber\":1,\"name\":\"Seen title\",\"overview\":\"Seen plot\"},{\"episodeNumber\":2,\"name\":\"Secret title\",\"overview\":\"Secret plot\"}]}";
+        var episodes = f.SeerrObject(Season, "/api/v1/tv/1433/season/2")["episodes"]!.AsArray();
+        Assert.Equal("Seen title", (string?)episodes[0]!["name"]); Assert.Equal("Seen plot", (string?)episodes[0]!["overview"]);
+        Assert.Equal("Episode 2", (string?)episodes[1]!["name"]); Assert.Null(episodes[1]!["overview"]);
+        // The single-episode TMDB route, which the episode page's date chip uses.
+        Assert.False(f.Redactor.TryRedactTmdb("{\"name\":\"Seen title\"}", "tv/1433/season/2/episode/1", f.UserId.ToString("N"), new DefaultHttpContext(), out _));
+    }
+
+    // The date chip reads these objects, so a date opt-out has to keep them.
+    [Fact]
+    public void ADateOptOutKeepsAirDatesAndStillHidesTheEpisodeText()
+    {
+        using var f = new Fixture(); f.GuardSeries();
+        f.State.Prefs = new SpoilerBlurUserPrefs { HideAirDate = false }; f.Save();
+        var seerr = f.SeerrObject(TvJson, TvPath)["lastEpisodeToAir"]!;
+        Assert.Equal("2026-01-01", (string?)seerr["airDate"]);
+        Assert.Null(seerr["overview"]); Assert.Null(seerr["stillPath"]);
+        Assert.NotEqual("Secret finale", (string?)seerr["name"]);
+        const string Tmdb = "{\"id\":1433,\"last_episode_to_air\":{\"episode_number\":9,\"name\":\"Secret\",\"overview\":\"Secret\",\"air_date\":\"2026-01-01\"}}";
+        var tmdb = f.Tmdb(Tmdb, "tv/1433")["last_episode_to_air"]!;
+        Assert.Equal("2026-01-01", (string?)tmdb["air_date"]);
+        Assert.Equal("Episode 9", (string?)tmdb["name"]); Assert.Null(tmdb["overview"]);
+    }
+
+    [Fact]
+    public void WithDatesAndTextBothAllowedTheEpisodeObjectsAreLeftAlone()
+    {
+        using var f = new Fixture(); f.GuardSeries();
+        f.Config.SpoilerReplaceTitle = false; f.Config.SpoilerStripOverview = false; f.Config.SpoilerStripSeriesOverview = false;
+        f.State.Prefs = new SpoilerBlurUserPrefs { HideAirDate = false }; f.Save();
+        Assert.Equal("Secret finale", (string?)f.SeerrObject(TvJson, TvPath)["lastEpisodeToAir"]!["name"]);
+    }
+
+    [Fact]
     public void SeriesDescriptionsHaveTheirOwnPolicy()
     {
         using var f = new Fixture(); f.GuardSeries();
@@ -252,6 +316,22 @@ public class PrivacySeerrRedactionTests
         BaseItem.LibraryManager = f.Library.Object;
         f.State.Collections[boxSet.Id.ToString("N")] = new(); f.Save();
         Assert.Equal("Spoiler Guard activated", (string?)f.SeerrObject(MovieJson, MoviePath)["overview"]);
+    }
+
+    [Fact]
+    public void AMovieGuardedOnlyThroughACollectionSaysSo()
+    {
+        using var f = new Fixture();
+        var movie = f.AddMovie();
+        var boxSet = new BoxSet { Id = Guid.NewGuid(), LinkedChildren = [new LinkedChild { ItemId = movie.Id }] };
+        f.Library.Setup(l => l.GetItemById(boxSet.Id)).Returns(boxSet);
+        f.Library.Setup(l => l.GetItemList(It.Is<InternalItemsQuery>(q => q.ItemIds.Contains(movie.Id)))).Returns(new BaseItem[] { movie });
+        BaseItem.LibraryManager = f.Library.Object;
+        f.State.Collections[boxSet.Id.ToString("N")] = new(); f.Save();
+        Assert.True((bool?)f.SeerrObject(MovieJson, MoviePath)["jeSpoilerGuardInherited"]);
+        // On the list as well, so it can be switched off from the title.
+        f.State.Movies[movie.Id.ToString("N")] = new(); f.Save();
+        Assert.False(f.SeerrObject(MovieJson, MoviePath).ContainsKey("jeSpoilerGuardInherited"));
     }
 
     [Fact]
@@ -285,6 +365,58 @@ public class PrivacySeerrRedactionTests
     {
         using var f = new Fixture(); f.GuardSeries(tmdb: null, tvdb: "71663");
         Assert.Equal("Spoiler Guard activated", (string?)f.SeerrObject(TvJson, TvPath)["overview"]);
+    }
+
+    // Ratings and season requests only carry the TMDB id, so the match made on the
+    // details response has to hold for them too.
+    [Theory]
+    [InlineData("/api/v1/tv/90001/ratings", "{\"criticsScore\":94}")]
+    [InlineData("/api/v1/tv/90001/season/2", "{\"seasonNumber\":2,\"overview\":\"Secret\",\"episodes\":[]}")]
+    public void FollowUpRequestsKeepAMatchMadeOnAnotherId(string path, string body)
+    {
+        using var f = new Fixture(); f.GuardSeries(tmdb: null, tvdb: "90001");
+        var details = "{\"id\":90001,\"name\":\"Show\",\"overview\":\"Secret plot\",\"externalIds\":{\"tvdbId\":90001}}";
+        Assert.True((bool?)f.SeerrObject(details, "/api/v1/tv/90001")["jeSpoilerGuard"]);
+        Assert.NotEqual(body, f.Seerr(body, path));
+    }
+
+    [Fact]
+    public void TmdbFollowUpsKeepAMatchMadeOnAnotherId()
+    {
+        using var f = new Fixture(); f.GuardSeries(tmdb: null, tvdb: "90002");
+        f.Seerr("{\"id\":90002,\"overview\":\"Secret plot\",\"externalIds\":{\"tvdbId\":90002}}", "/api/v1/tv/90002");
+        Assert.Equal("Spoiler Guard activated", (string?)f.Tmdb("{\"overview\":\"Secret plot\"}", "tv/90002")["overview"]);
+    }
+
+    [Fact]
+    public void ABareTmdbIdIsKeptProtectedUntilItsOtherIdsAreKnown()
+    {
+        using var f = new Fixture(); f.GuardSeries(tmdb: null, tvdb: "90003");
+        const string Ratings = "{\"criticsScore\":94}";
+        // Could be the guarded series: nothing says otherwise yet.
+        Assert.NotEqual(Ratings, f.Seerr(Ratings, "/api/v1/tv/90004/ratings"));
+        // The details settle it, including for a title outside the library, which has no other ids.
+        f.Seerr("{\"id\":90004,\"overview\":\"Plot\",\"externalIds\":{}}", "/api/v1/tv/90004");
+        Assert.Same(Ratings, f.Seerr(Ratings, "/api/v1/tv/90004/ratings"));
+    }
+
+    [Fact]
+    public void ALibraryItemWithThatTmdbIdSettlesItToo()
+    {
+        using var f = new Fixture(); f.GuardSeries(tmdb: null, tvdb: "90005");
+        f.Library.Setup(l => l.GetItemList(It.Is<InternalItemsQuery>(q => q.HasAnyProviderId != null && q.HasAnyProviderId["Tmdb"] == "90006")))
+            .Returns(new BaseItem[] { new Series { Id = Guid.NewGuid() } });
+        const string Ratings = "{\"criticsScore\":94}";
+        Assert.Same(Ratings, f.Seerr(Ratings, "/api/v1/tv/90006/ratings"));
+    }
+
+    [Fact]
+    public void WithEveryGuardKnownByTmdbIdNoExtraLookupRuns()
+    {
+        using var f = new Fixture(); f.GuardSeries();
+        const string Ratings = "{\"criticsScore\":94}";
+        Assert.Same(Ratings, f.Seerr(Ratings, "/api/v1/tv/90007/ratings"));
+        f.Library.Verify(l => l.GetItemList(It.Is<InternalItemsQuery>(q => q.HasAnyProviderId != null)), Times.Never);
     }
 
     [Fact]
@@ -491,6 +623,63 @@ public class PrivacySeerrRedactionTests
         Assert.False(f.Redactor.HidesRatings("tv", "299534", user, new DefaultHttpContext()));
         f.State.Prefs = new SpoilerBlurUserPrefs { HideRatings = false }; f.Save();
         Assert.False(f.Redactor.HidesRatings("movie", "299534", user, new DefaultHttpContext()));
+    }
+
+    [Fact]
+    public void RowsReportWhatToHideForATitle()
+    {
+        using var f = new Fixture(); f.GuardMovie(); f.Config.SpoilerKeepMoviePosters = false;
+        var rows = f.Redactor.LoadRows(f.UserId.ToString("N"), new DefaultHttpContext())!;
+        var policy = rows.ForTitle(false, "299534", null, null)!;
+        Assert.True(policy.HideDates); Assert.True(policy.HidePoster); Assert.True(policy.HideOverview);
+        Assert.Null(rows.ForTitle(false, "1", null, null));
+    }
+
+    [Fact]
+    public void RowsHideAnEpisodeTitleUntilItIsPlayed()
+    {
+        using var f = new Fixture(); var series = f.GuardSeries(tvdb: "71663");
+        series.ProviderIds["Shoko Series"] = "55"; f.State = new UserSpoilerBlur(); f.State.Series[series.Id.ToString("N")] = new(); f.Save();
+        f.SetPlayed(series, (2, 1));
+        var rows = f.Redactor.LoadRows(f.UserId.ToString("N"), new DefaultHttpContext())!;
+        Assert.True(rows.HidesEpisodeTitle(null, "71663", null, 2, 2));
+        Assert.False(rows.HidesEpisodeTitle(null, "71663", null, 2, 1));
+        Assert.True(rows.HidesEpisodeTitle("1433", null, null, 3, 1));
+        Assert.False(rows.HidesEpisodeTitle("7", "7", null, 2, 2));
+        // Shoko numbers an episode without a season, and matches on its own series id.
+        Assert.True(rows.HidesEpisodeTitle(null, null, "55", null, 2));
+        Assert.False(rows.HidesEpisodeTitle(null, null, "55", null, 1));
+        Assert.True(rows.HidesEpisodeOverview(null, "71663", null, 2, 2));
+    }
+
+    [Fact]
+    public void RowsFollowTheTitleOptOut()
+    {
+        using var f = new Fixture(); f.GuardSeries(tvdb: "71663");
+        f.State.Prefs = new SpoilerBlurUserPrefs { ReplaceEpisodeTitles = false }; f.Save();
+        var rows = f.Redactor.LoadRows(f.UserId.ToString("N"), new DefaultHttpContext())!;
+        Assert.False(rows.HidesEpisodeTitle(null, "71663", null, 2, 2));
+        Assert.True(rows.HidesEpisodeOverview(null, "71663", null, 2, 2));
+    }
+
+    [Fact]
+    public void NoRowsAreLoadedWithNothingToApply()
+    {
+        using var f = new Fixture();
+        Assert.Null(f.Redactor.LoadRows(f.UserId.ToString("N"), new DefaultHttpContext()));
+    }
+
+    [Fact]
+    public void AFailedCollectionLookupIsNotAnAnswer()
+    {
+        using var f = new Fixture();
+        var id = Guid.NewGuid();
+        f.Library.Setup(l => l.GetItemById(id)).Throws(new InvalidOperationException("offline"));
+        f.State.Collections[id.ToString("N")] = new(); f.Save();
+        var identities = new RequestIdentityService(Mock.Of<ISessionManager>(), f.Users.Object,
+            new SpoilerIdentityService(f.Users.Object, f.Plugin.Core.Logger), f.Plugin.Core.Logger);
+        var resolver = new SpoilerUserResolver(f.Plugin.Core.Manager, f.Library.Object, f.Plugin.Core.Logger, identities);
+        Assert.False(resolver.TryGetMovieScope(f.State, Guid.NewGuid(), out _));
     }
 
     [Fact]

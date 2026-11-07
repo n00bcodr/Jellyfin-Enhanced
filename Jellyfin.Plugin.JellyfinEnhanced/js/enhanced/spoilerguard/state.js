@@ -191,6 +191,17 @@
             });
     };
 
+    /**
+     * Whether a title is waiting on the pending list, so it hasn't reached the library yet.
+     * @param {string} mediaType - 'tv' or 'movie'.
+     * @param {number|string} tmdbId - The TMDB id.
+     * @returns {boolean} True while the title is pending.
+     */
+    internal.isTmdbPending = function(mediaType, tmdbId) {
+        const key = internal.pendingKey(mediaType, tmdbId);
+        return !!key && enabledPendingTmdb.has(key);
+    };
+
     internal.isTmdbEnabled = function(mediaType, tmdbId, jellyfinMediaId) {
         const key = internal.pendingKey(mediaType, tmdbId);
         if (key && enabledPendingTmdb.has(key)) return true;

@@ -83,6 +83,12 @@
     // Response cache with TTL
     /** @type {Map<string, {data: any, timestamp: number}>} */
     const responseCache = new Map();
+    // A clear moves this clock on, so a response requested before it can't write the old
+    // answer back. Bounded: an entry only matters while a request from before it is running.
+    let cacheClock = 0;
+    /** @type {Map<string, number>} */
+    const clearedAt = new Map();
+    const CLEARED_AT_MAX = 32;
 
     // AbortController management per page/context
     /** @type {Map<string, AbortController>} */
@@ -556,8 +562,15 @@
      * Set cached response
      * @param {string} key
      * @param {*} data
+     * @param {number} [requestedAt] - cacheStamp() from before the request. A clear of
+     *   this key since then drops the write.
      */
-    function setCache(key, data) {
+    function setCache(key, data, requestedAt) {
+        if (requestedAt !== undefined) {
+            for (const [pattern, at] of clearedAt) {
+                if (at > requestedAt && key.includes(pattern)) return;
+            }
+        }
         // Refresh an existing key without evicting an unrelated entry. Deleting
         // first also moves the refreshed response to the newest LRU position.
         responseCache.delete(key);
@@ -585,11 +598,26 @@
      * @param {string} pattern
      */
     function clearCacheMatching(pattern) {
+        clearedAt.delete(pattern);
+        clearedAt.set(pattern, ++cacheClock);
+        if (clearedAt.size > CLEARED_AT_MAX) clearedAt.delete(clearedAt.keys().next().value);
         for (const key of responseCache.keys()) {
             if (key.includes(pattern)) {
                 responseCache.delete(key);
             }
         }
+        // A later request must not join one started before the clear.
+        for (const key of inFlightRequests.keys()) {
+            if (key.includes(pattern)) inFlightRequests.delete(key);
+        }
+    }
+
+    /**
+     * The position to pass to setCache when a response from a request starting now arrives.
+     * @returns {number} The current cache clock.
+     */
+    function cacheStamp() {
+        return cacheClock;
     }
 
     // Cache keys never include a user id, but proxied responses (Seerr, tag
@@ -712,6 +740,7 @@
         setCache,
         clearCache,
         clearCacheMatching,
+        cacheStamp,
 
         // Metrics
         metrics,
@@ -847,6 +876,7 @@
             // cache keys carry no user id, so a late write would hand user
             // A's response to user B.
             const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
+            const requestedAt = cacheClock;
 
             try {
                 const response = await fetchWithRetry(
@@ -859,7 +889,7 @@
                 const data = text ? JSON.parse(text) : {};
 
                 if (isGet && cacheKey && (!JE.session || JE.session.isCurrent(requestEpoch))) {
-                    setCache(cacheKey, data);
+                    setCache(cacheKey, data, requestedAt);
                 }
                 return data;
             } finally {

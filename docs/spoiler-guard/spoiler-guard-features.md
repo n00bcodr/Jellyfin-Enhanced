@@ -160,6 +160,8 @@ With **Blur images** selected, unplayed episodes lose their original artwork and
 | JE Reviews panel | Hides reviews on guarded series, their season/episode pages, and guarded movies, including movies guarded through a collection. |
 | More Info and Seerr cards | Follow the same settings for protected titles, on every page that shows them. See below. |
 | Release date chips | Follow **Hide air date**. |
+| Calendar and Downloads | Episode titles follow **Replace episode titles**, until you play the episode. Calendar dates stay. |
+| Requests page | Dates follow **Hide air date**. |
 | MDBList ratings row | Follows **Hide ratings**. |
 
 ??? note "Item eligibility and extra metadata"
@@ -174,7 +176,7 @@ With **Blur images** selected, unplayed episodes lose their original artwork and
 
     Played state does not exempt reviews.
 
-    More Info and Seerr cards apply your settings to the data Seerr and TMDB send, which Jellyfin's own filters never see. A title counts as protected on the same terms as above, and also while it is pending. The description becomes your placeholder, and these follow their own settings: taglines, keywords, ratings, air dates (the year stays), and the cast. Trailers and character names go with title or description protection. Later seasons lose their names, descriptions, dates, and posters, as they do in your library. On a series, this applies to every later season, even one you have started.
+    More Info and Seerr cards apply your settings to the data Seerr and TMDB send, which Jellyfin's own filters never see. A title counts as protected on the same terms as above, and also while it is pending. The description becomes your placeholder, and these follow their own settings: taglines, keywords, ratings, air dates (the year stays), and the cast. Trailers and character names go with title or description protection. Later seasons lose their names, descriptions, dates, and posters until you start them, as they do in your library, and episodes you have played stay as they are.
 
     Metadata scope varies by item type:
 

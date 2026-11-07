@@ -32,8 +32,6 @@
 async function backfillSeasonMetadata(tmdbId, data) {
     try {
         if (!state.currentModal || !data?.seasons) return;
-        // What Spoiler Guard removed is exactly what would be looked up here.
-        if (data.jeSpoilerGuard) return;
 
         const api = JE.jellyseerrAPI;
         const seasonsMissingData = data.seasons.filter(s => s.episodeCount > 0 && (!s.airDate || !s.posterPath || !s.overview));

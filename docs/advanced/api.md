@@ -905,11 +905,13 @@ The Seerr proxy, the TMDB passthrough's title routes and `mdblist-ratings/{media
 
 | Response | Effect |
 |---|---|
-| Seerr and TMDB title details | Fields follow the caller's settings. Adds `jeSpoilerGuard: true`; `jeYear` when dates are hidden. Seerr keywords move to `jeRuleKeywords`, for request override rules. |
+| Seerr and TMDB title details | Fields follow the caller's settings. Adds `jeSpoilerGuard: true`, `jeSpoilerGuardInherited: true` for a movie protected only through a collection, and `jeYear` when dates are hidden. Seerr keywords move to `jeRuleKeywords`, for request override rules. Started seasons and played episodes stay visible. |
 | Seerr lists | `overview` becomes the placeholder and ratings are removed, per setting. Dates stay. |
 | Seerr ratings, TMDB `movie/{id}/release_dates` | Empty when ratings or dates are hidden. |
 | TMDB title routes | `no-store`, with no ETag, so a stored unprotected copy can't be revalidated. |
 | `mdblist-ratings` | `{Found:false,Confirmed:false}` when ratings are hidden. |
+| `arr/queue`, `arr/history`, `arr/calendar` | Episode titles are removed from subtitles, per caller, on top of the shared caches. |
+| `arr/requests` | Dates are removed when hidden. `isComingSoon` keeps its value. |
 
 ### State and preferences
 
@@ -918,7 +920,7 @@ Read your protection lists and preferences here. Preference POSTs replace the co
 | Method | Path | Access | Request → response |
 |---|---|---|---|
 | GET | `spoiler-blur/series` | Caller | Full `{Series,Movies,Collections,PendingTmdb,Prefs}` state; `no-store`. |
-| GET | `spoiler-blur/movies/{movieId}/in-scope` | Caller | `{inScope}` for the caller's own state: on their Movies list or in an opted-in collection; `no-store`. Invalid id → `400`. |
+| GET | `spoiler-blur/movies/{movieId}/in-scope` | Caller | `{inScope}` for the caller's own state: on their Movies list or in an opted-in collection; `no-store`. Invalid id → `400`; a failed collection lookup → `503`, so a client can keep its protection. |
 | GET | `spoiler-blur/user-prefs` | Caller | `SpoilerBlurUserPrefs` object. |
 | POST | `spoiler-blur/user-prefs` | Caller | Complete preference object, at most 8 KiB → `{success:true,prefs:<submitted preferences>}`. |
 

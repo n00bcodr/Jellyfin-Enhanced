@@ -23,6 +23,7 @@ function moreInfo(t, JE = {}) {
     t: key => key, cdn: { flagPng: code => `/flag/${code}.png`, selfhst: path => `/cdn/${path}` }, ...JE,
   } });
   t.after(() => h.close());
+  h.window.CSS = { escape: value => value };
   h.load('jellyseerr/seerr-status.js');
   for (const part of ['data', 'badges', 'seasons', 'render']) h.load(`jellyseerr/moreinfo/more-info-modal-${part}.js`);
   const internal = h.JE.internals.moreInfoModal;
@@ -55,17 +56,18 @@ test('More Info still renders those fields, and the year from the date, on an un
   assert.equal(modal.querySelector('.year').textContent, '(1999)');
 });
 
-test('More Info never fills a protected title back in from TMDB', async t => {
-  let lookups = 0;
-  const lookup = async () => { lookups++; return { seasons: [{ season_number: 2, overview: 'Secret season plot' }] }; };
-  const { internal } = moreInfo(t, { pluginConfig: { TmdbEnabled: true }, jellyseerrAPI: { fetchTmdbTvDetails: lookup, fetchTvSeasonDetails: lookup } });
-  internal.state.currentModal = { dataset: { tmdbId: '7' }, querySelector: () => null };
-  const seasons = () => [{ seasonNumber: 2, episodeCount: 8 }];
-  await internal.backfillSeasonMetadata(7, { id: 7, jeSpoilerGuard: true, seasons: seasons() });
-  assert.equal(lookups, 0);
-  // Control: the same data without the marker does look it up.
-  await internal.backfillSeasonMetadata(7, { id: 7, seasons: seasons() });
-  assert.ok(lookups > 0);
+test('backfill fills what the server left in and nothing it took out', async t => {
+  // Season 1 stayed visible and is missing upstream, so TMDB supplies it. Season 2 is
+  // protected, so the same passthrough sends nothing for it.
+  const lookup = async () => ({ seasons: [{ season_number: 1, overview: 'First plot' }, { season_number: 2 }] });
+  const { internal, document } = moreInfo(t, { pluginConfig: { TmdbEnabled: true }, jellyseerrAPI: { fetchTmdbTvDetails: lookup, fetchTvSeasonDetails: async () => ({}) } });
+  const modal = document.createElement('div');
+  modal.dataset.tmdbId = '7';
+  modal.innerHTML = [1, 2].map(n => `<div class="season-card" data-season-number="${n}"><div class="season-poster"></div><div class="season-info"></div><div class="season-meta"></div></div>`).join('');
+  internal.state.currentModal = modal;
+  await internal.backfillSeasonMetadata(7, { id: 7, jeSpoilerGuard: true, seasons: [{ seasonNumber: 1, episodeCount: 7 }, { seasonNumber: 2, episodeCount: 8 }] });
+  assert.equal(modal.querySelector('[data-season-number="1"] .season-overview').textContent, 'First plot');
+  assert.equal(modal.querySelector('[data-season-number="2"] .season-overview'), null);
 });
 
 test('More Info always asks the server, whose answer depends on the current guards', async t => {
@@ -120,17 +122,34 @@ test('reading guard state or a failed change leaves those responses alone', asyn
   assert.equal(h.events.length, 0);
 });
 
-function seerrToggle(t, { plugin = async () => ({ promoted: 'pending' }), data = { id: 42 } } = {}) {
+function seerrToggle(t, { plugin = async () => ({ promoted: 'pending', removed: true }), data = { id: 42 } } = {}) {
   const opened = [];
-  const h = spoilerState(t, plugin, { t: key => key, toast: () => {}, jellyseerrMoreInfo: { open: async (...args) => opened.push(args) } });
+  const toasts = [];
+  let epoch = 0;
+  const session = { getEpoch: () => epoch, isCurrent: e => e === epoch, onUserChange: () => {} };
+  const h = spoilerState(t, plugin, { t: key => key, toast: text => toasts.push(text), session, jellyseerrMoreInfo: { open: async (...args) => opened.push(args) } });
   h.load('enhanced/spoilerguard/seerr-toggle.js');
+  h.state.confirmDisableSpoiler = async () => true;
   const button = h.state.buildSeerrToggle(data, 'tv');
-  return { ...h, opened, button, settle: () => new Promise(resolve => h.window.setTimeout(resolve, 0)) };
+  const modal = h.document.createElement('div');
+  modal.className = 'je-more-info-modal';
+  modal.appendChild(button);
+  h.document.body.appendChild(modal);
+  return { ...h, opened, toasts, button, modal, switchUser: () => { epoch++; }, settle: () => new Promise(resolve => h.window.setTimeout(resolve, 0)) };
 }
 
 test('the Seerr toggle trusts the server over ids that do not match this library', async t => {
   const h = seerrToggle(t, { data: { id: 42, jeSpoilerGuard: true, mediaInfo: { jellyfinMediaId: 'other-server' } } });
   assert.equal(h.button.getAttribute('aria-pressed'), 'true');
+});
+
+test('the Seerr toggle only says pending for a title that has not arrived', async t => {
+  const inLibrary = seerrToggle(t, { data: { id: 42, jeSpoilerGuard: true } });
+  assert.match(inLibrary.button.textContent, /spoiler_blur_button_on/);
+  const waiting = seerrToggle(t, { plugin: async path => (path === '/spoiler-blur/series' ? { PendingTmdb: { 'tv:42': {} } } : {}) });
+  await waiting.state.loadState();
+  await waiting.settle();
+  assert.match(waiting.button.textContent, /spoiler_blur_pending_button_on/);
 });
 
 test('changing the guard from More Info reopens it with what the server now sends', async t => {
@@ -139,6 +158,48 @@ test('changing the guard from More Info reopens it with what the server now send
   h.button.click();
   await h.settle();
   assert.deepEqual(h.opened, [[42, 'tv']]);
+});
+
+test('the toast only promises a later arrival for a title that has not arrived', async t => {
+  const waiting = seerrToggle(t);
+  waiting.button.click();
+  await waiting.settle();
+  assert.deepEqual(waiting.toasts, ['spoiler_blur_pending_enabled_toast']);
+  const inLibrary = seerrToggle(t, { plugin: async () => ({ promoted: 'series', jellyfinId: 'AA-BB' }) });
+  inLibrary.button.click();
+  await inLibrary.settle();
+  assert.deepEqual(inLibrary.toasts, ['spoiler_blur_enabled_toast']);
+});
+
+test('a title guarded through a collection shows a status, not a switch that does nothing', async t => {
+  const h = seerrToggle(t, { data: { id: 42, jeSpoilerGuard: true, jeSpoilerGuardInherited: true } });
+  assert.equal(h.button.getAttribute('aria-pressed'), 'true');
+  assert.equal(h.button.disabled, true);
+  assert.equal(h.button.title, 'spoiler_blur_inherited_hint');
+  h.button.click();
+  await h.settle();
+  assert.deepEqual(h.opened, []);
+  assert.deepEqual(h.toasts, []);
+});
+
+test('a disable the server could not carry out is not reported as done', async t => {
+  const h = seerrToggle(t, { data: { id: 42, jeSpoilerGuard: true }, plugin: async (_path, options) => (options?.method ? { success: true, removed: false } : {}) });
+  h.button.click();
+  await h.settle();
+  assert.deepEqual(h.toasts, ['spoiler_blur_pending_error_toast']);
+  assert.deepEqual(h.opened, []);
+});
+
+test('a guard change that lands after the modal is gone does not bring it back', async t => {
+  for (const leave of [h => h.modal.remove(), h => { h.modal._isClosing = true; }, h => h.switchUser()]) {
+    let finish;
+    const h = seerrToggle(t, { plugin: () => new Promise(resolve => { finish = resolve; }) });
+    h.button.click();
+    leave(h);
+    finish({ promoted: 'pending' });
+    await h.settle();
+    assert.deepEqual(h.opened, []);
+  }
 });
 
 test('a failed guard change keeps the open modal', async t => {
@@ -186,6 +247,33 @@ function releaseDates(t, responses, JE = {}) {
   h.load('enhanced/itemdetails/features-release-dates.js');
   return { ...h, api: h.JE.internals.features, container: h.document.getElementById('info'), switchUser: () => { for (const fn of listeners.values()) fn(); } };
 }
+
+test('a release lookup from before a guard change neither draws nor caches its dates', async t => {
+  let release;
+  const h = releaseDates(t, []);
+  h.window.fetch = async () => jsonResponse(await new Promise(resolve => { release = resolve; }));
+  h.container.replaceChildren();
+  h.api.displayReleaseDate('movie', h.container);
+  await new Promise(resolve => setImmediate(resolve));
+  h.window.dispatchEvent(new h.window.CustomEvent('je:spoiler-state-changed'));
+  release(dated());
+  await new Promise(resolve => setImmediate(resolve));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.container.querySelectorAll('.mediaInfoItem-releaseDate').length, 0);
+  // Nothing was cached, so the next visit asks again.
+  let asked = 0;
+  h.window.fetch = async () => { asked++; return jsonResponse({ results: [] }); };
+  await show(h);
+  assert.equal(asked, 1);
+});
+
+test('a guard change takes the chips already on the page with it', async t => {
+  const h = releaseDates(t, [dated()]);
+  await show(h);
+  assert.equal(chips(h), 1);
+  h.window.dispatchEvent(new h.window.CustomEvent('je:spoiler-state-changed'));
+  assert.equal(chips(h), 0);
+});
 
 const dated = () => ({ results: [{ iso_3166_1: 'US', release_dates: [{ type: 3, release_date: '2025-01-05' }] }] });
 const chips = h => h.container.querySelectorAll('.je-release-date-cinema').length;
@@ -256,4 +344,27 @@ test('a failed collection lookup rejects, so Reviews falls to its fail-closed pa
   });
   await h.state.loadState();
   await assert.rejects(h.state.isMovieInScope('CC-DD'));
+});
+
+function responseCache(t) {
+  const h = createHarness({ JE: { core: { navigation: { onNavigate: () => {} } } } });
+  t.after(() => h.close());
+  h.load('core/api-client.js');
+  return h.JE.core.api.manager;
+}
+
+test('a response requested before a clear cannot write the old answer back', t => {
+  const cache = responseCache(t);
+  const requestedAt = cache.cacheStamp();
+  cache.clearCacheMatching('jellyseerr');
+  cache.setCache('jellyseerr:/movie/1', { overview: 'old' }, requestedAt);
+  assert.equal(cache.getCached('jellyseerr:/movie/1'), null);
+  // Another key, or a request from after the clear, stores as usual.
+  cache.setCache('mdblist-ratings:/movie/1', { Found: true }, requestedAt);
+  assert.ok(cache.getCached('mdblist-ratings:/movie/1'));
+  cache.setCache('jellyseerr:/movie/2', { overview: 'new' }, cache.cacheStamp());
+  assert.ok(cache.getCached('jellyseerr:/movie/2'));
+  // So do callers that don't say when they asked.
+  cache.setCache('jellyseerr:/movie/3', { overview: 'plain' });
+  assert.ok(cache.getCached('jellyseerr:/movie/3'));
 });

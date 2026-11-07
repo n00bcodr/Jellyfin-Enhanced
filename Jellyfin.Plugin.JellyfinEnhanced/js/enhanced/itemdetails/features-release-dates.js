@@ -15,8 +15,19 @@
     const releaseLookups = new Map();
 
     // Spoiler Guard shapes these answers per user and per title, so neither a
-    // switch of user nor a guard change may reuse them.
-    window.addEventListener('je:spoiler-state-changed', () => releaseDateCache.clear());
+    // switch of user nor a guard change may reuse them. A lookup started before a
+    // guard change compares this before it caches or draws anything.
+    let guardRevision = 0;
+
+    window.addEventListener('je:spoiler-state-changed', () => {
+        guardRevision++;
+        releaseDateCache.clear();
+        for (const entry of releaseLookups.values()) {
+            if (entry.visit && !entry.claimed) entry.ctl?.abort();
+        }
+        releaseLookups.clear();
+        document.querySelectorAll('.mediaInfoItem-releaseDate').forEach(chip => chip.remove());
+    });
 
     // Prefetches no chip has taken over are aborted with their visit's.
     JE.session?.onUserChange('release-dates', () => {
@@ -217,6 +228,7 @@
             // previous user nor cached as "no dates" for the next one. Any
             // other failure is logged and cached as it always was.
             const epoch = JE.session ? JE.session.getEpoch() : 0;
+            const revision = guardRevision;
             let cutShort = false;
             try {
                 const userId = ApiClient.getCurrentUserId();
@@ -243,8 +255,13 @@
                         return lookupNow();
                     })
                     : await entry.promise;
-                releaseDateCache.set(itemId, { infos, ts: now });
                 if (releaseLookups.get(itemId) === entry) releaseLookups.delete(itemId);
+                const superseded = revision !== guardRevision || (JE.session && !JE.session.isCurrent(epoch));
+                if (superseded) {
+                    placeholder.remove();
+                    return;
+                }
+                releaseDateCache.set(itemId, { infos, ts: now });
                 // The chips' small DOM write lands with the next frame's own
                 // layout pass instead of forcing an extra one.
                 await new Promise((resolve) => requestAnimationFrame(() => resolve()));
@@ -257,7 +274,7 @@
             } catch (error) {
                 if (entry && releaseLookups.get(itemId) === entry) releaseLookups.delete(itemId);
                 placeholder.remove();
-                if (cutShort) return;
+                if (cutShort || revision !== guardRevision) return;
                 console.error(`🪼 Jellyfin Enhanced: Release Date: Error fetching release info for ${itemId}:`, error);
                 releaseDateCache.set(itemId, { infos: [], ts: now });
             }

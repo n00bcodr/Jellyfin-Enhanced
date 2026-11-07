@@ -28,6 +28,9 @@
         button.appendChild(icon);
         button.appendChild(label);
 
+        // Only the collection can switch this guard off, so here it's a status, not a control.
+        const inherited = data?.jeSpoilerGuardInherited === true;
+
         // The server's verdict also covers what ids alone can't: a title guarded through
         // a collection, or one whose Seerr id doesn't match this library.
         function isEnabled() {
@@ -36,10 +39,13 @@
 
         function refresh() {
             const enabled = isEnabled();
-            const text = JE.t(enabled ? 'spoiler_blur_pending_button_on' : 'spoiler_blur_pending_button_off');
+            // "Pending" only fits a title that hasn't arrived yet.
+            const onLabel = internal.isTmdbPending(mediaType, tmdbId) ? 'spoiler_blur_pending_button_on' : 'spoiler_blur_button_on';
+            const text = JE.t(enabled ? onLabel : 'spoiler_blur_pending_button_off');
             button.classList.toggle('je-spoiler-pending-on', enabled);
             button.setAttribute('aria-pressed', enabled ? 'true' : 'false');
-            button.title = text;
+            button.title = inherited ? JE.t('spoiler_blur_inherited_hint') : text;
+            button.disabled = inherited;
             icon.textContent = enabled ? 'blur_on' : 'blur_off';
             label.textContent = text;
         }
@@ -52,16 +58,22 @@
             if (button.disabled) return;
             button.disabled = true;
             const wasEnabled = isEnabled();
+            const modal = button.closest('.je-more-info-modal');
+            const epoch = JE.session ? JE.session.getEpoch() : 0;
             void (async function() {
                 let changed = false;
                 try {
                     if (wasEnabled) {
                         if (!await internal.confirmDisableSpoiler()) return;
-                        await internal.disableForTmdb(mediaType, tmdbId);
+                        const result = await internal.disableForTmdb(mediaType, tmdbId);
+                        if (result?.removed === false) {
+                            JE.toast?.(JE.t('spoiler_blur_pending_error_toast'));
+                            return;
+                        }
                         JE.toast?.(JE.t('spoiler_blur_pending_disabled_toast'));
                     } else {
-                        await internal.enableForTmdb(mediaType, tmdbId, displayName);
-                        JE.toast?.(JE.t('spoiler_blur_pending_enabled_toast'));
+                        const result = await internal.enableForTmdb(mediaType, tmdbId, displayName);
+                        JE.toast?.(JE.t(result?.promoted === 'pending' ? 'spoiler_blur_pending_enabled_toast' : 'spoiler_blur_enabled_toast'));
                     }
                     changed = true;
                 } catch (e) {
@@ -71,8 +83,11 @@
                     refresh();
                     button.disabled = false;
                 }
-                // Reopened so the modal shows what the server now sends for this title.
-                if (changed) await JE.jellyseerrMoreInfo?.open?.(tmdbId, mediaType);
+                // Reopened so the modal shows what the server now sends for this title, unless
+                // it has since been closed, replaced or left behind by a change of user.
+                const stillOpen = modal?.isConnected && !modal._isClosing;
+                const sameUser = !JE.session || JE.session.isCurrent(epoch);
+                if (changed && stillOpen && sameUser) await JE.jellyseerrMoreInfo?.open?.(tmdbId, mediaType);
             })();
         });
         return button;

@@ -359,6 +359,7 @@
             const stillCurrent = () => !JE.session || JE.session.isCurrent(requestEpoch);
 
             const fetchFn = async () => {
+                const requestedAt = JE.requestManager.cacheStamp?.();
                 const response = await JE.requestManager.fetchWithRetry(url, {
                     method: 'GET',
                     headers: {
@@ -375,7 +376,7 @@
                 if (!stillCurrent()) {
                     throw new DOMException('User changed during request', 'AbortError');
                 }
-                JE.requestManager.setCache(cacheKey, data);
+                JE.requestManager.setCache(cacheKey, data, requestedAt);
                 return data;
             };
 

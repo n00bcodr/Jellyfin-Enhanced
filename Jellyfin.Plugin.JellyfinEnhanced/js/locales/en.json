@@ -586,6 +586,7 @@
     "spoiler_blur_pending_enabled_toast": "Spoiler Guard will engage when this title arrives in your library.",
     "spoiler_blur_pending_disabled_toast": "Spoiler Guard disabled for this title.",
     "spoiler_blur_pending_error_toast": "Couldn't update Spoiler Guard for this title. See console.",
+    "spoiler_blur_inherited_hint": "Protected through a collection. Change it on the collection.",
     "spoiler_blur_enabled_toast": "Spoiler Guard: On",
     "spoiler_blur_enabled_movie_toast": "Spoiler Guard: On",
     "spoiler_blur_disabled_toast": "Spoiler Guard off.",

@@ -291,7 +291,7 @@ Admin settings under **Seerr** → **Discovery & UI Extras** ([full reference](s
 
 Protect a title from spoilers before it arrives in your library. This is a **per-user** choice.
 
-**How to use:** Press **Enable Spoiler Guard** in More Info. The button becomes **Spoiler Guard (pending)**, and More Info reloads with the protected details. You can disable it again from there.
+**How to use:** Press **Enable Spoiler Guard** in More Info. The button becomes **Spoiler Guard (pending)**, or **Spoiler Guard: On** if the title is already in your library, and More Info reloads with the protected details. You can disable it again from there. A movie protected through a collection shows **Spoiler Guard: On** without a way to change it here; change it on the collection.
 
 Related admin settings ([Spoiler Guard reference](../spoiler-guard/spoiler-guard-settings.md)):
 
@@ -518,7 +518,7 @@ Choose **Video**, **Audio**, **Subtitles**, or **Other** in **Issue Type**.
 
 ## Requests Page
 
-The shared Requests page combines Seerr requests and optional issues with *arr downloads/history. This page is the guide to its Seerr parts; see [*arr features](../arr/arr-features.md) for download progress, search, import outcomes, and history.
+The shared Requests page combines Seerr requests and optional issues with *arr downloads/history. This page is the guide to its Seerr parts; see [*arr features](../arr/arr-features.md) for download progress, search, import outcomes, and history. Spoiler Guard's **Hide air date** setting also hides dates here for protected titles.
 
 ![Requests page with status filters and request cards](../images/arr/requests-overview.webp)
 

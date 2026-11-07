@@ -454,7 +454,7 @@ All files in this table are under `Services/SpoilerGuard/`:
 | `SpoilerUserResolver.cs` | Loads Spoiler Guard state for the resolved requester. |
 | `SpoilerNextUnwatchedService.cs` | Cached per-user/per-series next-unwatched boundary for advanced category reveals. |
 | `SpoilerTagDataStripper.cs` | Removes sensitive tag data, shared by web tag endpoints and native poster rendering. |
-| `SpoilerSeerrRedactor.cs` | Applies the same per-user policy to Seerr, TMDB and MDBList data, after parental filtering and on top of their shared caches. Must change with `SpoilerFieldStripFilter.cs`. |
+| `SpoilerSeerrRedactor.cs` | Applies the same per-user policy to Seerr, TMDB and MDBList data, after parental filtering and on top of their shared caches, and to the Requests, Downloads and calendar rows JE builds itself. Must change with `SpoilerFieldStripFilter.cs`. |
 | `SpoilerAutoEnableFilter.cs` | Shared content-type/library scope gate for first-play, Seerr-request and library-add automation. |
 | `SpoilerAutoEnableArmer.cs` | Bulk arming for users with library access, including disabled accounts, with one locked `spoilerblur.json` update per user. |
 | `SpoilerLibraryAddAutoEnabler.cs` | Batches new-title library events into bulk arming. |
