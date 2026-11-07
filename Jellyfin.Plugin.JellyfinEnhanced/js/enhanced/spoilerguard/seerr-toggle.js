@@ -44,7 +44,9 @@
             const text = JE.t(enabled ? onLabel : 'spoiler_blur_pending_button_off');
             button.classList.toggle('je-spoiler-pending-on', enabled);
             button.setAttribute('aria-pressed', enabled ? 'true' : 'false');
-            button.title = inherited ? JE.t('spoiler_blur_inherited_hint') : text;
+            // A locale without the hint yet gets the key back, so it keeps the label.
+            const hint = JE.t('spoiler_blur_inherited_hint');
+            button.title = inherited && hint !== 'spoiler_blur_inherited_hint' ? hint : text;
             button.disabled = inherited;
             icon.textContent = enabled ? 'blur_on' : 'blur_off';
             label.textContent = text;

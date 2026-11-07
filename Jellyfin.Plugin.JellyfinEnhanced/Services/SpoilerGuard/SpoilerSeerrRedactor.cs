@@ -62,27 +62,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private static readonly ConcurrentDictionary<string, (UserSpoilerBlur State, GuardIndex Index, DateTime BuiltAt)> _indexes
             = new(StringComparer.OrdinalIgnoreCase);
 
-        // The other ids Seerr reports for a TMDB title. Ratings and season requests carry
-        // only the TMDB id, so a guarded item the library knows by another id needs these
-        // to stay matched after its details. They're facts about the title, not the user.
-        private const int MaxAliases = 8192;
-        private static readonly ConcurrentDictionary<string, string[]> _aliases = new(StringComparer.Ordinal);
+        // The TMDB id of a guarded item the library has none for, learned when Seerr's
+        // details match it by another id. Ratings and season requests that follow carry
+        // only the TMDB id, and nothing that renders sends one before those details: the
+        // chips, MDBList and Elsewhere take theirs from the library item itself, which
+        // then matches directly. A fact about the item, so at most one entry per item.
+        private static readonly ConcurrentDictionary<Guid, string> _learnedTmdb = new();
 
         private readonly SpoilerUserResolver _resolver;
         private readonly ILibraryManager _libraryManager;
         private readonly IUserManager _userManager;
         private readonly IUserDataManager _userDataManager;
+        private readonly SpoilerNextUnwatchedService _nextUnwatched;
 
         public SpoilerSeerrRedactor(
             SpoilerUserResolver resolver,
             ILibraryManager libraryManager,
             IUserManager userManager,
-            IUserDataManager userDataManager)
+            IUserDataManager userDataManager,
+            SpoilerNextUnwatchedService nextUnwatched)
         {
             _resolver = resolver;
             _libraryManager = libraryManager;
             _userManager = userManager;
             _userDataManager = userDataManager;
+            _nextUnwatched = nextUnwatched;
         }
 
         // Field names differ between Seerr (camelCase) and raw TMDB (snake_case).
@@ -111,6 +115,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             bool Taglines,
             bool Ratings,
             bool Dates,
+            bool Cast,
             bool CastAll,
             bool Poster,
             bool Backdrop,
@@ -128,11 +133,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             public Dictionary<string, List<GuardedMovie>> Movies { get; } = new(StringComparer.OrdinalIgnoreCase);
 
-            // A guarded item with no TMDB id can only be matched through _aliases.
-            public bool SeriesWithoutTmdb { get; set; }
-
-            public bool MoviesWithoutTmdb { get; set; }
-
             // A failed lookup leaves the guarded set unknown, which isn't a "no".
             public bool Failed { get; set; }
         }
@@ -143,7 +143,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         // Why a title is protected. Inherited means only through a collection, so
         // the guard can't be switched off from the title itself.
-        private sealed record GuardMatch(IReadOnlyList<Guid> SeriesIds, bool Inherited);
+        private sealed record GuardMatch(IReadOnlyList<Guid> ItemIds, bool Inherited);
 
         /// <summary>What Spoiler Guard hides on a row JE builds for a protected title.</summary>
         /// <param name="HideOverview">Descriptions.</param>
@@ -174,10 +174,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             /// <param name="tmdbId">The TMDB id, when known.</param>
             /// <param name="tvdbId">The TVDB id, when known.</param>
             /// <param name="jellyfinId">The Jellyfin id Seerr reports, when known.</param>
+            /// <param name="jellyfinId4k">The Jellyfin id of the 4K copy, when known.</param>
             /// <returns>What to hide, or null.</returns>
-            public RowPolicy? ForTitle(bool isSeries, string? tmdbId, string? tvdbId, string? jellyfinId)
+            public RowPolicy? ForTitle(bool isSeries, string? tmdbId, string? tvdbId, string? jellyfinId, string? jellyfinId4k = null)
             {
-                if (_owner.MatchTokens(_scope, isSeries, tmdbId, RowTokens(tvdbId, null, jellyfinId)) == null) return null;
+                var tokens = RowTokens(tvdbId, null, jellyfinId);
+                tokens.AddRange(RowTokens(null, null, jellyfinId4k));
+                if (_owner.MatchTokens(_scope, isSeries, tmdbId, tokens) == null) return null;
                 var policy = BuildPolicy(_scope, isSeries);
                 return new RowPolicy(policy.Overview, policy.Dates, policy.Poster, policy.Backdrop);
             }
@@ -188,9 +191,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             /// <param name="shokoSeriesId">The Shoko series id, when known.</param>
             /// <param name="season">The season number, when known.</param>
             /// <param name="episode">The episode number, when known.</param>
+            /// <param name="itemEpisodeId">The episode's library item, when known.</param>
             /// <returns>True when the title must not be shown.</returns>
-            public bool HidesEpisodeTitle(string? tmdbId, string? tvdbId, string? shokoSeriesId, int? season, int? episode)
-                => BuildPolicy(_scope, true).ReplaceTitle && IsUnplayedAndGuarded(tmdbId, tvdbId, shokoSeriesId, season, episode);
+            public bool HidesEpisodeTitle(string? tmdbId, string? tvdbId, string? shokoSeriesId, int? season, int? episode, Guid? itemEpisodeId = null)
+                => BuildPolicy(_scope, true).ReplaceTitle
+                    && IsHidden(tmdbId, tvdbId, shokoSeriesId, season, episode, itemEpisodeId, reveal => reveal.Title);
 
             /// <summary>Whether an episode's description is hidden from this caller.</summary>
             /// <param name="tmdbId">The series' TMDB id, when known.</param>
@@ -198,33 +203,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             /// <param name="shokoSeriesId">The Shoko series id, when known.</param>
             /// <param name="season">The season number, when known.</param>
             /// <param name="episode">The episode number, when known.</param>
+            /// <param name="itemEpisodeId">The episode's library item, when known.</param>
             /// <returns>True when the description must not be shown.</returns>
-            public bool HidesEpisodeOverview(string? tmdbId, string? tvdbId, string? shokoSeriesId, int? season, int? episode)
-                => BuildPolicy(_scope, true).SeasonOverview && IsUnplayedAndGuarded(tmdbId, tvdbId, shokoSeriesId, season, episode);
+            public bool HidesEpisodeOverview(string? tmdbId, string? tvdbId, string? shokoSeriesId, int? season, int? episode, Guid? itemEpisodeId = null)
+                => BuildPolicy(_scope, true).SeasonOverview
+                    && IsHidden(tmdbId, tvdbId, shokoSeriesId, season, episode, itemEpisodeId, reveal => reveal.Overview);
 
-            private bool IsUnplayedAndGuarded(string? tmdbId, string? tvdbId, string? shokoSeriesId, int? season, int? episode)
+            private bool IsHidden(string? tmdbId, string? tvdbId, string? shokoSeriesId, int? season, int? episode, Guid? itemEpisodeId, Func<SpoilerFieldStripFilter.CategoryReveal, bool> revealed)
             {
                 var match = _owner.MatchTokens(_scope, true, tmdbId, RowTokens(tvdbId, shokoSeriesId, null));
                 if (match == null) return false;
-                if (episode == null) return true;
-                foreach (var seriesId in match.SeriesIds)
+
+                // Shoko numbers an episode within its type, so a number alone can't prove
+                // this one was played. Only its own library item can.
+                if (season == null) return itemEpisodeId is not Guid id || !_owner.IsPlayed(_scope.UserId, id);
+
+                foreach (var seriesId in match.ItemIds)
                 {
                     var progress = _progress.GetOrAdd(seriesId, id => _owner.LoadProgress(_scope, new[] { id }));
-                    // Shoko numbers an episode without a season.
-                    if (season == null)
-                    {
-                        foreach (var played in progress.Values)
-                        {
-                            if (played.Contains(episode.Value)) return false;
-                        }
-                    }
-                    else if (progress.TryGetValue(season.Value, out var played) && played.Contains(episode.Value))
-                    {
-                        return false;
-                    }
+                    if (episode != null && progress.TryGetValue(season.Value, out var played) && played.Contains(episode.Value)) return false;
                 }
 
-                return true;
+                return !revealed(_owner.EpisodeReveal(_scope, match.ItemIds, season, episode));
             }
 
             private static List<string> RowTokens(string? tvdbId, string? shokoSeriesId, string? jellyfinId)
@@ -385,7 +385,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 if (!Guid.TryParse(key, out var id)) continue;
                 AddToken(index.Series, JellyfinToken(id), id);
                 var series = Lookup(id, index) as Series;
-                if (!AddProviderToken(index.Series, series, MetadataProvider.Tmdb.ToString(), "tmdb:", id)) index.SeriesWithoutTmdb = true;
+                AddProviderToken(index.Series, series, MetadataProvider.Tmdb.ToString(), "tmdb:", id);
+                if (_learnedTmdb.TryGetValue(id, out var learned)) AddToken(index.Series, "tmdb:" + learned, id);
                 AddProviderToken(index.Series, series, MetadataProvider.Tvdb.ToString(), "tvdb:", id);
                 AddProviderToken(index.Series, series, "Shoko Series", "shoko:", id);
             }
@@ -444,10 +445,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 AddMovieToken(index, "tmdb:" + tmdb, id, direct);
             }
-            else
-            {
-                index.MoviesWithoutTmdb = true;
-            }
+
+            if (_learnedTmdb.TryGetValue(id, out var learned)) AddMovieToken(index, "tmdb:" + learned, id, direct);
         }
 
         private static void AddMovieToken(GuardIndex index, string token, Guid id, bool direct)
@@ -474,25 +473,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (!ids.Contains(id)) ids.Add(id);
         }
 
-        private static bool AddProviderToken(Dictionary<string, List<Guid>> tokens, Series? series, string provider, string prefix, Guid id)
+        private static void AddProviderToken(Dictionary<string, List<Guid>> tokens, Series? series, string provider, string prefix, Guid id)
         {
-            if (series?.ProviderIds == null
-                || !series.ProviderIds.TryGetValue(provider, out var value)
-                || string.IsNullOrEmpty(value))
+            if (series?.ProviderIds != null
+                && series.ProviderIds.TryGetValue(provider, out var value)
+                && !string.IsNullOrEmpty(value))
             {
-                return false;
+                AddToken(tokens, prefix + value, id);
             }
-
-            AddToken(tokens, prefix + value, id);
-            return true;
         }
 
         private static string JellyfinToken(Guid id) => "jf:" + id.ToString("N");
 
-        // mediaInfo and externalIds carry the other ids Seerr knows for a title. The ones
-        // reported here stay available to the requests that follow with a bare TMDB id. A
-        // details response settles a title even with none, as for one outside the library.
-        private GuardMatch? Match(GuardScope scope, bool isSeries, string tmdbId, JsonObject? mediaInfo, string? tvdbId, bool details = false)
+        // mediaInfo and externalIds carry the other ids Seerr knows for a title.
+        private GuardMatch? Match(GuardScope scope, bool isSeries, string tmdbId, JsonObject? mediaInfo, string? tvdbId)
         {
             var tokens = new List<string>();
             if (!string.IsNullOrEmpty(tvdbId)) tokens.Add("tvdb:" + tvdbId);
@@ -506,45 +500,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
             }
 
-            if (details || mediaInfo != null) Remember(AliasKey(isSeries, tmdbId), tokens);
-            return MatchTokens(scope, isSeries, tmdbId, tokens);
+            var match = MatchTokens(scope, isSeries, tmdbId, tokens);
+            if (match != null && tokens.Count > 0) Learn(scope, isSeries, tmdbId, match);
+            return match;
         }
 
-        private static string AliasKey(bool isSeries, string tmdbId) => (isSeries ? "tv:" : "movie:") + tmdbId;
-
-        private static void Remember(string key, List<string> tokens)
+        // Records the TMDB id of an item matched another way, and drops this user's index
+        // so the next request, which may carry nothing else, finds it.
+        private static void Learn(GuardScope scope, bool isSeries, string tmdbId, GuardMatch match)
         {
-            if (_aliases.Count >= MaxAliases) _aliases.Clear();
-            _aliases.AddOrUpdate(
-                key,
-                _ => tokens.ToArray(),
-                (_, known) =>
-                {
-                    var merged = new HashSet<string>(known, StringComparer.OrdinalIgnoreCase);
-                    merged.UnionWith(tokens);
-                    return merged.Count == known.Length ? known : new List<string>(merged).ToArray();
-                });
+            var token = "tmdb:" + tmdbId;
+            if (isSeries ? scope.Index.Series.ContainsKey(token) : scope.Index.Movies.ContainsKey(token)) return;
+            if (match.ItemIds.Count == 0) return;
+            foreach (var id in match.ItemIds) _learnedTmdb[id] = tmdbId;
+            _indexes.TryRemove(scope.UserId.ToString("N"), out _);
         }
 
+        // Only evidence decides. A title nothing ties to a guarded item is open, however
+        // little is known about it.
         private GuardMatch? MatchTokens(GuardScope scope, bool isSeries, string? tmdbId, List<string> tokens)
         {
             if (scope.Index.Failed) return new GuardMatch(Array.Empty<Guid>(), false);
 
-            var pending = false;
-            if (!string.IsNullOrEmpty(tmdbId))
-            {
-                var key = AliasKey(isSeries, tmdbId);
-                pending = scope.State.PendingTmdb.ContainsKey(key);
-                tokens = new List<string>(tokens) { "tmdb:" + tmdbId };
-                if (_aliases.TryGetValue(key, out var aliases)) tokens.AddRange(aliases);
-            }
-
-            GuardMatch? match = isSeries ? MatchSeries(scope, tokens) : MatchMovie(scope, tokens);
+            var all = new List<string>(tokens);
+            if (!string.IsNullOrEmpty(tmdbId)) all.Add("tmdb:" + tmdbId);
+            var match = isSeries ? MatchSeries(scope, all) : MatchMovie(scope, all);
             if (match != null) return match;
-            if (pending) return new GuardMatch(Array.Empty<Guid>(), false);
-            return !string.IsNullOrEmpty(tmdbId) && IsUnresolved(scope, isSeries, tmdbId)
-                ? new GuardMatch(Array.Empty<Guid>(), false)
-                : null;
+
+            var pending = !string.IsNullOrEmpty(tmdbId) && scope.State.PendingTmdb.ContainsKey((isSeries ? "tv:" : "movie:") + tmdbId);
+            return pending ? new GuardMatch(Array.Empty<Guid>(), false) : null;
         }
 
         private static GuardMatch? MatchSeries(GuardScope scope, List<string> tokens)
@@ -565,7 +549,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // A played movie has nothing left to spoil, as in StripItem's Movie arm.
         private GuardMatch? MatchMovie(GuardScope scope, List<string> tokens)
         {
-            var found = false;
+            var ids = new List<Guid>();
             var direct = false;
             foreach (var token in tokens)
             {
@@ -573,39 +557,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 foreach (var movie in movies)
                 {
                     if (IsPlayed(scope.UserId, movie.Id)) continue;
-                    found = true;
+                    if (!ids.Contains(movie.Id)) ids.Add(movie.Id);
                     direct |= movie.Direct;
                 }
             }
 
-            return found ? new GuardMatch(Array.Empty<Guid>(), !direct) : null;
+            return ids.Count > 0 ? new GuardMatch(ids, !direct) : null;
         }
 
-        // A bare TMDB id for a title whose other ids aren't known yet, from a user with a
-        // guarded item the library has no TMDB id for: that item could be this title. A
-        // library item with this TMDB id settles it, because it would have matched above.
-        private bool IsUnresolved(GuardScope scope, bool isSeries, string tmdbId)
+        // The advanced-mode reveal for an episode of a guarded series. Seerr, TMDB and the
+        // *arrs have no Jellyfin id, so an episode is its series and numbers, as it is for
+        // played state. Anything that doesn't line up gets no reveal.
+        private SpoilerFieldStripFilter.CategoryReveal EpisodeReveal(GuardScope scope, IReadOnlyList<Guid> seriesIds, int? season, int? episode)
         {
-            if (!(isSeries ? scope.Index.SeriesWithoutTmdb : scope.Index.MoviesWithoutTmdb)) return false;
-            if (_aliases.ContainsKey(AliasKey(isSeries, tmdbId))) return false;
-            try
+            if (!scope.Config.SpoilerAdvancedMode || scope.State.Prefs?.UseAdvancedCategories == false)
             {
-                var items = _libraryManager.GetItemList(new InternalItemsQuery
-                {
-                    IncludeItemTypes = new[] { isSeries ? BaseItemKind.Series : BaseItemKind.Movie },
-                    HasAnyProviderId = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { { "Tmdb", tmdbId } },
-                    Recursive = true,
-                    Limit = 1,
-                });
-                return items == null || items.Count == 0;
+                return SpoilerFieldStripFilter.CategoryReveal.None;
             }
-            catch (Exception ex)
+
+            foreach (var seriesId in seriesIds)
             {
-                _resolver.WarnRateLimited(
-                    "seerr-redact-unresolved:" + ex.GetType().FullName,
-                    $"Spoiler Guard: TMDB lookup failed for {tmdbId}: {ex.Message}");
-                return true;
+                if (_nextUnwatched.GetBoundary(scope.UserId, seriesId) is not { } boundary) continue;
+                var isNext = boundary.SeasonNumber == season && boundary.EpisodeNumber == episode;
+                var category = SpoilerNextUnwatchedService.Categorize(boundary, isNext ? boundary.EpisodeId : Guid.Empty, season, episode);
+                var reveal = SpoilerFieldStripFilter.RevealFor(category, scope.Config);
+                if (reveal != SpoilerFieldStripFilter.CategoryReveal.None) return reveal;
             }
+
+            return SpoilerFieldStripFilter.CategoryReveal.None;
         }
 
         // The episodes this caller has played, by season. Empty after a failure, which
@@ -684,6 +663,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 Taglines: SpoilerFieldStripFilter.ShouldStrip(cfg.SpoilerStripTaglines, prefs?.HideTaglines),
                 Ratings: SpoilerFieldStripFilter.ShouldStrip(cfg.SpoilerStripRatings, prefs?.HideRatings),
                 Dates: SpoilerFieldStripFilter.ShouldStrip(cfg.SpoilerStripPremiereDate, prefs?.HideAirDate),
+                Cast: cast,
                 CastAll: cast && string.Equals(cfg.SpoilerStripCastMode, "All", StringComparison.OrdinalIgnoreCase),
                 // Series art passes the image filter. Movie art follows these two settings.
                 Poster: !isSeries && !cfg.SpoilerKeepMoviePosters,
@@ -698,9 +678,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 var isSeries = title.Groups[1].Value == "tv";
                 var tvdbId = Scalar((detail["externalIds"] as JsonObject)?["tvdbId"]);
-                var match = Match(scope, isSeries, title.Groups[2].Value, detail["mediaInfo"] as JsonObject, tvdbId, details: true);
+                var match = Match(scope, isSeries, title.Groups[2].Value, detail["mediaInfo"] as JsonObject, tvdbId);
                 if (match == null) return false;
-                RedactDetail(detail, BuildPolicy(scope, isSeries), SeerrKeys, isSeries, LoadProgress(scope, match.SeriesIds), match.Inherited);
+                RedactDetail(detail, BuildPolicy(scope, isSeries), SeerrKeys, isSeries, ProgressFor(scope, isSeries, match), RevealsFor(scope, isSeries, match), match.Inherited);
                 return true;
             }
 
@@ -709,7 +689,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 var match = Match(scope, true, season.Groups[1].Value, null, null);
                 if (match == null) return false;
-                RedactSeasonDetail(seasonRoot, BuildPolicy(scope, true), SeerrKeys, ParseNumber(season.Groups[2].Value), LoadProgress(scope, match.SeriesIds));
+                RedactSeasonDetail(seasonRoot, BuildPolicy(scope, true), SeerrKeys, ParseNumber(season.Groups[2].Value), ProgressFor(scope, true, match), RevealsFor(scope, true, match));
                 return true;
             }
 
@@ -781,7 +761,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                 var tmdbId = Scalar(item["id"]);
                 if (tmdbId == null || Match(scope, isSeries, tmdbId, item["mediaInfo"] as JsonObject, null) == null) continue;
-                RedactTitleFields(item, BuildPolicy(scope, isSeries), SeerrKeys);
+                var policy = BuildPolicy(scope, isSeries);
+                // Top Rated sorts on the client, where a missing score would sink the title.
+                if (policy.Ratings && item[SeerrKeys.VoteAverage] is { } score) item["jeSortRating"] = score.DeepClone();
+                RedactTitleFields(item, policy, SeerrKeys);
                 changed = true;
             }
 
@@ -796,7 +779,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var isSeries = title.Groups[1].Value == "tv";
                 var match = Match(scope, isSeries, title.Groups[2].Value, null, null);
                 if (match == null) return false;
-                RedactDetail(root, BuildPolicy(scope, isSeries), TmdbKeys, isSeries, LoadProgress(scope, match.SeriesIds), match.Inherited);
+                RedactDetail(root, BuildPolicy(scope, isSeries), TmdbKeys, isSeries, ProgressFor(scope, isSeries, match), RevealsFor(scope, isSeries, match), match.Inherited);
                 return true;
             }
 
@@ -805,7 +788,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 var match = Match(scope, true, season.Groups[1].Value, null, null);
                 if (match == null) return false;
-                RedactSeasonDetail(root, BuildPolicy(scope, true), TmdbKeys, ParseNumber(season.Groups[2].Value), LoadProgress(scope, match.SeriesIds));
+                RedactSeasonDetail(root, BuildPolicy(scope, true), TmdbKeys, ParseNumber(season.Groups[2].Value), ProgressFor(scope, true, match), RevealsFor(scope, true, match));
                 return true;
             }
 
@@ -814,14 +797,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 var match = Match(scope, true, episode.Groups[1].Value, null, null);
                 if (match == null) return false;
-                var progress = LoadProgress(scope, match.SeriesIds);
-                if (progress.TryGetValue(ParseNumber(episode.Groups[2].Value), out var played)
-                    && played.Contains(ParseNumber(episode.Groups[3].Value)))
-                {
-                    return false;
-                }
-
-                RedactEpisode(root, BuildPolicy(scope, true), TmdbKeys);
+                var seasonNumber = ParseNumber(episode.Groups[2].Value);
+                var episodeNumber = ParseNumber(episode.Groups[3].Value);
+                if (ProgressFor(scope, true, match).TryGetValue(seasonNumber, out var played) && played.Contains(episodeNumber)) return false;
+                RedactEpisode(root, BuildPolicy(scope, true), TmdbKeys, EpisodeReveal(scope, match.ItemIds, seasonNumber, episodeNumber));
                 return true;
             }
 
@@ -855,7 +834,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (policy.Backdrop) title.Remove(keys.Backdrop);
         }
 
-        private static void RedactDetail(JsonObject detail, Policy policy, Dialect keys, bool isSeries, Dictionary<int, HashSet<int>> progress, bool inherited)
+        private Dictionary<int, HashSet<int>> ProgressFor(GuardScope scope, bool isSeries, GuardMatch match)
+            => isSeries ? LoadProgress(scope, match.ItemIds) : new Dictionary<int, HashSet<int>>();
+
+        private Func<int?, int?, SpoilerFieldStripFilter.CategoryReveal> RevealsFor(GuardScope scope, bool isSeries, GuardMatch match)
+            => (season, episode) => isSeries ? EpisodeReveal(scope, match.ItemIds, season, episode) : SpoilerFieldStripFilter.CategoryReveal.None;
+
+        private static void RedactDetail(
+            JsonObject detail,
+            Policy policy,
+            Dialect keys,
+            bool isSeries,
+            Dictionary<int, HashSet<int>> progress,
+            Func<int?, int?, SpoilerFieldStripFilter.CategoryReveal> reveals,
+            bool inherited)
         {
             RedactTitleFields(detail, policy, keys);
             detail["jeSpoilerGuard"] = true;
@@ -873,8 +865,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // their text.
             foreach (var key in new[] { keys.LastEpisode, keys.NextEpisode })
             {
-                if (policy.Dates) detail.Remove(key);
-                else if (policy.Auxiliary && detail[key] is JsonObject episode) RedactEpisode(episode, policy, keys);
+                if (policy.Dates)
+                {
+                    detail.Remove(key);
+                }
+                else if (policy.Auxiliary && detail[key] is JsonObject episode)
+                {
+                    RedactEpisode(episode, policy, keys, reveals(Number(episode[keys.SeasonNumber]), Number(episode[keys.EpisodeNumber])));
+                }
             }
 
             if (policy.Dates) RedactDates(detail, keys, isSeries);
@@ -959,7 +957,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             season.Remove(keys.Poster);
         }
 
-        private static void RedactSeasonDetail(JsonObject season, Policy policy, Dialect keys, int number, Dictionary<int, HashSet<int>> progress)
+        private static void RedactSeasonDetail(
+            JsonObject season,
+            Policy policy,
+            Dialect keys,
+            int number,
+            Dictionary<int, HashSet<int>> progress,
+            Func<int?, int?, SpoilerFieldStripFilter.CategoryReveal> reveals)
         {
             RedactSeason(season, policy, keys, number, progress);
             if (season["episodes"] is not JsonArray episodes) return;
@@ -967,36 +971,48 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             foreach (var episode in episodes)
             {
                 if (episode is not JsonObject item) continue;
-                if (played != null && int.TryParse(Scalar(item[keys.EpisodeNumber]), out var episodeNumber) && played.Contains(episodeNumber)) continue;
-                RedactEpisode(item, policy, keys);
+                var episodeNumber = Number(item[keys.EpisodeNumber]);
+                if (played != null && episodeNumber is int value && played.Contains(value)) continue;
+                RedactEpisode(item, policy, keys, reveals(number, episodeNumber));
             }
         }
 
-        private static void RedactEpisode(JsonObject episode, Policy policy, Dialect keys)
+        private static void RedactEpisode(JsonObject episode, Policy policy, Dialect keys, SpoilerFieldStripFilter.CategoryReveal reveal)
         {
-            if (policy.ReplaceTitle)
+            if (policy.ReplaceTitle && !reveal.Title)
             {
                 var number = Scalar(episode[keys.EpisodeNumber]);
                 if (number != null) episode["name"] = $"Episode {number}";
                 else episode.Remove("name");
             }
 
-            if (policy.SeasonOverview) episode.Remove("overview");
+            if (policy.SeasonOverview && !reveal.Overview) episode.Remove("overview");
             if (policy.Dates) episode.Remove(keys.AirDate);
-            if (policy.Ratings)
+            if (policy.Ratings && !reveal.Ratings)
             {
                 episode.Remove(keys.VoteAverage);
                 episode.Remove(keys.VoteCount);
             }
 
-            if (policy.Auxiliary)
+            // As in ApplyStripping: the cast setting decides who is listed, and title or
+            // description protection only clears the names of the characters they play.
+            if (policy.Cast)
             {
                 episode.Remove(keys.GuestStars);
-                episode.Remove("crew");
+            }
+            else if (policy.Auxiliary && episode[keys.GuestStars] is JsonArray guests)
+            {
+                foreach (var guest in guests)
+                {
+                    (guest as JsonObject)?.Remove("character");
+                }
             }
 
+            if (policy.CastAll) episode.Remove("crew");
             episode.Remove(keys.Still);
         }
+
+        private static int? Number(JsonNode? node) => int.TryParse(Scalar(node), out var number) ? number : null;
 
         private static int ParseNumber(string digits) => int.Parse(digits, System.Globalization.CultureInfo.InvariantCulture);
 

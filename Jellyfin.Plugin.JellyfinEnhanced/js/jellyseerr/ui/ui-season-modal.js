@@ -44,7 +44,9 @@
 
         const singleSeasonOnly = partialRequestsEnabled && JE.pluginConfig?.JellyseerrSingleSeasonRequestOnly === true;
 
-        const tvDetails = await fetchTvShowDetails(tmdbId);
+        // Uncached, as in More Info: the season requests that follow rely on the server
+        // having seen these details.
+        const tvDetails = await fetchTvShowDetails(tmdbId, { skipCache: true });
         if (!tvDetails?.seasons) {
             JE.toast(JE.t('jellyseerr_toast_no_season_info'), 4000);
             return;

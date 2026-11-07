@@ -122,12 +122,12 @@ test('reading guard state or a failed change leaves those responses alone', asyn
   assert.equal(h.events.length, 0);
 });
 
-function seerrToggle(t, { plugin = async () => ({ promoted: 'pending', removed: true }), data = { id: 42 } } = {}) {
+function seerrToggle(t, { plugin = async () => ({ promoted: 'pending', removed: true }), data = { id: 42 }, translate = key => key } = {}) {
   const opened = [];
   const toasts = [];
   let epoch = 0;
   const session = { getEpoch: () => epoch, isCurrent: e => e === epoch, onUserChange: () => {} };
-  const h = spoilerState(t, plugin, { t: key => key, toast: text => toasts.push(text), session, jellyseerrMoreInfo: { open: async (...args) => opened.push(args) } });
+  const h = spoilerState(t, plugin, { t: translate, toast: text => toasts.push(text), session, jellyseerrMoreInfo: { open: async (...args) => opened.push(args) } });
   h.load('enhanced/spoilerguard/seerr-toggle.js');
   h.state.confirmDisableSpoiler = async () => true;
   const button = h.state.buildSeerrToggle(data, 'tv');
@@ -175,11 +175,18 @@ test('a title guarded through a collection shows a status, not a switch that doe
   const h = seerrToggle(t, { data: { id: 42, jeSpoilerGuard: true, jeSpoilerGuardInherited: true } });
   assert.equal(h.button.getAttribute('aria-pressed'), 'true');
   assert.equal(h.button.disabled, true);
-  assert.equal(h.button.title, 'spoiler_blur_inherited_hint');
+  // This locale doesn't have the hint yet, so it must not show the raw key.
+  assert.equal(h.button.title, 'spoiler_blur_button_on');
   h.button.click();
   await h.settle();
   assert.deepEqual(h.opened, []);
   assert.deepEqual(h.toasts, []);
+});
+
+test('a locale that has the collection hint shows it', async t => {
+  const translate = key => (key === 'spoiler_blur_inherited_hint' ? 'Protected through a collection.' : key);
+  const h = seerrToggle(t, { data: { id: 42, jeSpoilerGuard: true, jeSpoilerGuardInherited: true }, translate });
+  assert.equal(h.button.title, 'Protected through a collection.');
 });
 
 test('a disable the server could not carry out is not reported as done', async t => {
@@ -368,3 +375,70 @@ test('a response requested before a clear cannot write the old answer back', t =
   cache.setCache('jellyseerr:/movie/3', { overview: 'plain' });
   assert.ok(cache.getCached('jellyseerr:/movie/3'));
 });
+
+test('a clear that scrolled out of its history still stops an older response', t => {
+  const cache = responseCache(t);
+  const requestedAt = cache.cacheStamp();
+  cache.clearCacheMatching('jellyseerr');
+  // MDBList clears by key, so a burst of titles can push the clear above out of the record.
+  for (let i = 0; i < 40; i++) cache.clearCacheMatching(`mdblist-ratings:/movie/${i}`);
+  cache.setCache('jellyseerr:/movie/1', { overview: 'old' }, requestedAt);
+  assert.equal(cache.getCached('jellyseerr:/movie/1'), null);
+  cache.setCache('jellyseerr:/movie/2', { overview: 'new' }, cache.cacheStamp());
+  assert.ok(cache.getCached('jellyseerr:/movie/2'));
+});
+
+function itemCache(t, getItem) {
+  const h = createHarness({ JE: {
+    pluginConfig: {}, session: { onUserChange: () => {} },
+    core: { navigation: {}, dom: {}, ui: { escapeHtml: value => value } },
+  }, apiClient: { getItem } });
+  t.after(() => h.close());
+  h.load('enhanced/helpers.js');
+  return h;
+}
+
+test('an item fetched before a guard change cannot refill the cache afterwards', async t => {
+  const pending = [];
+  const h = itemCache(t, () => new Promise(resolve => pending.push(resolve)));
+  const first = h.JE.helpers.getItemCached('one');
+  h.window.dispatchEvent(new h.window.CustomEvent('je:spoiler-state-changed'));
+  pending[0]({ Id: 'one', PremiereDate: '2019-01-01' });
+  await first;
+  const second = h.JE.helpers.getItemCached('one');
+  assert.equal(pending.length, 2);
+  pending[1]({ Id: 'one' });
+  assert.equal((await second).PremiereDate, undefined);
+});
+
+test('Top Rated keeps a protected title where its hidden score puts it', async t => {
+  const h = createHarness({ html: '<main id="detail"></main>' });
+  t.after(() => h.close());
+  h.JE.jellyseerrUI = { createJellyseerrCard(item) {
+    const card = h.document.createElement('div');
+    card.className = 'card';
+    card.dataset.id = String(item.id);
+    return card;
+  } };
+  h.load('jellyseerr/discovery/discovery-filter-utils.js');
+  h.JE.discoveryFilter.waitForPageReady = async () => h.document.querySelector('#detail');
+  h.JE.discoveryFilter.setupInfiniteScroll = () => {};
+  h.JE.discoveryFilter.cleanupScrollObserver = () => {};
+  h.JE.discoveryFilter.getSortMode = () => 'vote_average.desc';
+  h.load('jellyseerr/discovery/discovery-base.js');
+  const controller = h.JE.discoveryBase.createDiscovery({
+    key: 'person', mode: 'client-paged', logLabel: 'Person Discovery',
+    configKey: 'JellyseerrShowPersonDiscovery', pageSize: 3,
+    getIdFromUrl: () => 'person-1',
+    // 2 is protected: its score is gone, and a higher hidden one is what ranks it.
+    resolveItems: async () => ({ title: 'Person', items: [
+      { id: 1, mediaType: 'movie', voteAverage: 6 },
+      { id: 2, mediaType: 'movie', jeSortRating: 9 },
+      { id: 3, mediaType: 'movie', voteAverage: 7 },
+    ] }),
+  });
+  await controller.render();
+  assert.deepEqual([...h.document.querySelectorAll('.card')].map(card => Number(card.dataset.id)), [2, 3, 1]);
+  controller.cleanup();
+});
+

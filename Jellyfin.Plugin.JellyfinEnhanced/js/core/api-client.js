@@ -89,6 +89,8 @@
     /** @type {Map<string, number>} */
     const clearedAt = new Map();
     const CLEARED_AT_MAX = 32;
+    // Anything requested before an evicted clear is refused, whatever its key.
+    let evictedClearAt = 0;
 
     // AbortController management per page/context
     /** @type {Map<string, AbortController>} */
@@ -567,6 +569,7 @@
      */
     function setCache(key, data, requestedAt) {
         if (requestedAt !== undefined) {
+            if (requestedAt < evictedClearAt) return;
             for (const [pattern, at] of clearedAt) {
                 if (at > requestedAt && key.includes(pattern)) return;
             }
@@ -600,7 +603,11 @@
     function clearCacheMatching(pattern) {
         clearedAt.delete(pattern);
         clearedAt.set(pattern, ++cacheClock);
-        if (clearedAt.size > CLEARED_AT_MAX) clearedAt.delete(clearedAt.keys().next().value);
+        if (clearedAt.size > CLEARED_AT_MAX) {
+            const [oldest, at] = clearedAt.entries().next().value;
+            clearedAt.delete(oldest);
+            evictedClearAt = at;
+        }
         for (const key of responseCache.keys()) {
             if (key.includes(pattern)) {
                 responseCache.delete(key);

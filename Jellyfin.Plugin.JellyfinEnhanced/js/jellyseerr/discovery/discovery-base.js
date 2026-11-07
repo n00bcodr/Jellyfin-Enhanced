@@ -322,7 +322,8 @@
 
             const sorted = [...results];
             if (sortBy === 'vote_average.desc') {
-                sorted.sort((a, b) => (b.voteAverage || 0) - (a.voteAverage || 0));
+                // Spoiler Guard keeps a hidden score here, so a protected title doesn't sink.
+                sorted.sort((a, b) => (b.jeSortRating || b.voteAverage || 0) - (a.jeSortRating || a.voteAverage || 0));
             } else if (sortBy === 'release_date.desc') {
                 sorted.sort((a, b) => {
                     const dateA = a.releaseDate || a.firstAirDate || '';

@@ -188,13 +188,17 @@
             }
         }
 
+        // Only the entry this request registered may be filled: a clear since then means
+        // the answer is from before a guard or user change.
         const promise = ApiClient.getItem(userId, itemId)
             .then((item) => {
-                itemCache.set(key, { item, ts: Date.now(), promise: null });
+                if (itemCache.get(key)?.promise === promise) {
+                    itemCache.set(key, { item, ts: Date.now(), promise: null });
+                }
                 return item;
             })
             .catch((err) => {
-                itemCache.delete(key);
+                if (itemCache.get(key)?.promise === promise) itemCache.delete(key);
                 throw err;
             });
 

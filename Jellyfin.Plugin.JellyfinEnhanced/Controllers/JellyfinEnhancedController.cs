@@ -10756,8 +10756,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 var shokoId = calendarEvent.ShokoSeriesId?.ToString(System.Globalization.CultureInfo.InvariantCulture);
                 var season = calendarEvent.SeasonNumber;
                 var episode = calendarEvent.EpisodeNumber;
-                if (guards.HidesEpisodeOverview(tmdbId, tvdbId, shokoId, season, episode)) calendarEvent.Overview = null;
-                if (!guards.HidesEpisodeTitle(tmdbId, tvdbId, shokoId, season, episode)) continue;
+                var itemEpisodeId = calendarEvent.ItemEpisodeId;
+                if (guards.HidesEpisodeOverview(tmdbId, tvdbId, shokoId, season, episode, itemEpisodeId)) calendarEvent.Overview = null;
+                if (!guards.HidesEpisodeTitle(tmdbId, tvdbId, shokoId, season, episode, itemEpisodeId)) continue;
 
                 var suffix = " - " + calendarEvent.EpisodeTitle;
                 if (calendarEvent.Subtitle?.EndsWith(suffix, StringComparison.Ordinal) == true)
@@ -11369,7 +11370,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             type == "tv",
                             tmdbId?.ToString(System.Globalization.CultureInfo.InvariantCulture),
                             tvdbId?.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                            media?["jellyfinMediaId"]?.Value<string>());
+                            media?["jellyfinMediaId"]?.Value<string>(),
+                            media?["jellyfinMediaId4k"]?.Value<string>());
                         if (spoilerPolicy?.HideDates == true)
                         {
                             digitalReleaseDate = null;

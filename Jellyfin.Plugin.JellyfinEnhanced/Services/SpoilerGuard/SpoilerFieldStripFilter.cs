@@ -695,6 +695,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var boundary = _nextUnwatched.GetBoundary(userId, seriesId);
             var category = SpoilerNextUnwatchedService.Categorize(
                 boundary, item.Id, item.ParentIndexNumber, item.IndexNumber);
+            return RevealFor(category, cfg);
+        }
+
+        internal static CategoryReveal RevealFor(SpoilerEpisodeCategory category, PluginConfiguration cfg)
+        {
             return category switch
             {
                 SpoilerEpisodeCategory.NextEpisode => new CategoryReveal(

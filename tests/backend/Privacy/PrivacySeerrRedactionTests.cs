@@ -58,6 +58,7 @@ public class PrivacySeerrRedactionTests
         public Mock<IUserDataManager> Data { get; } = new();
         public UserSpoilerBlur State { get; set; } = new();
         public SpoilerSeerrRedactor Redactor { get; }
+        public SpoilerNextUnwatchedService Next { get; }
         public PluginConfiguration Config => Plugin.Plugin.Configuration;
         public Fixture()
         {
@@ -67,7 +68,8 @@ public class PrivacySeerrRedactionTests
             var identities = new RequestIdentityService(Mock.Of<ISessionManager>(), Users.Object,
                 new SpoilerIdentityService(Users.Object, Plugin.Core.Logger), Plugin.Core.Logger);
             var resolver = new SpoilerUserResolver(Plugin.Core.Manager, Library.Object, Plugin.Core.Logger, identities);
-            Redactor = new SpoilerSeerrRedactor(resolver, Library.Object, Users.Object, Data.Object);
+            Next = new SpoilerNextUnwatchedService(Library.Object, Users.Object, Data.Object, Plugin.Core.Logger);
+            Redactor = new SpoilerSeerrRedactor(resolver, Library.Object, Users.Object, Data.Object, Next);
             Save();
         }
         /// <summary>Saves through the production path, which drops the resolver's cached state.</summary>
@@ -110,7 +112,13 @@ public class PrivacySeerrRedactionTests
             Assert.True(Redactor.TryRedactTmdb(json, path, UserId.ToString("N"), new DefaultHttpContext(), out var body), path);
             return Assert.IsType<JsonObject>(JsonNode.Parse(body));
         }
-        public void Dispose() { SpoilerUserResolver.InvalidateUser(UserId.ToString("N")); Plugin.Dispose(); }
+        /// <summary>Makes an episode the series' next unwatched one, as advanced mode finds it.</summary>
+        public void SetNext(Series series, int season, int episode)
+        {
+            var next = new Episode { Id = Guid.NewGuid(), SeriesId = series.Id, ParentIndexNumber = season, IndexNumber = episode };
+            Library.Setup(l => l.GetItemList(It.Is<InternalItemsQuery>(q => q.IsPlayed == false && q.ParentId == series.Id))).Returns(new BaseItem[] { next });
+        }
+        public void Dispose() { Next.Dispose(); SpoilerUserResolver.InvalidateUser(UserId.ToString("N")); Plugin.Dispose(); }
     }
 
     private const string MoviePath = "/api/v1/movie/299534";
@@ -388,35 +396,49 @@ public class PrivacySeerrRedactionTests
         Assert.Equal("Spoiler Guard activated", (string?)f.Tmdb("{\"overview\":\"Secret plot\"}", "tv/90002")["overview"]);
     }
 
+    // Only evidence decides: not knowing a title's other ids doesn't make it a guarded one.
     [Fact]
-    public void ABareTmdbIdIsKeptProtectedUntilItsOtherIdsAreKnown()
+    public void AnUnrelatedTitleStaysOpenForAUserWithAGuardThatHasNoTmdbId()
     {
         using var f = new Fixture(); f.GuardSeries(tmdb: null, tvdb: "90003");
         const string Ratings = "{\"criticsScore\":94}";
-        // Could be the guarded series: nothing says otherwise yet.
-        Assert.NotEqual(Ratings, f.Seerr(Ratings, "/api/v1/tv/90004/ratings"));
-        // The details settle it, including for a title outside the library, which has no other ids.
-        f.Seerr("{\"id\":90004,\"overview\":\"Plot\",\"externalIds\":{}}", "/api/v1/tv/90004");
         Assert.Same(Ratings, f.Seerr(Ratings, "/api/v1/tv/90004/ratings"));
+        const string List = "{\"results\":[{\"mediaType\":\"tv\",\"id\":90004,\"overview\":\"Open plot\",\"voteAverage\":7.0}]}";
+        Assert.Same(List, f.Seerr(List, "/api/v1/discover/tv?page=1"));
     }
 
     [Fact]
-    public void ALibraryItemWithThatTmdbIdSettlesItToo()
+    public void AGuardedItemThatNoLongerExistsProtectsNothingElse()
     {
-        using var f = new Fixture(); f.GuardSeries(tmdb: null, tvdb: "90005");
-        f.Library.Setup(l => l.GetItemList(It.Is<InternalItemsQuery>(q => q.HasAnyProviderId != null && q.HasAnyProviderId["Tmdb"] == "90006")))
-            .Returns(new BaseItem[] { new Series { Id = Guid.NewGuid() } });
-        const string Ratings = "{\"criticsScore\":94}";
-        Assert.Same(Ratings, f.Seerr(Ratings, "/api/v1/tv/90006/ratings"));
+        using var f = new Fixture();
+        f.State.Series[Guid.NewGuid().ToString("N")] = new(); f.Save();
+        const string List = "{\"results\":[{\"mediaType\":\"tv\",\"id\":90005,\"overview\":\"Open plot\"}]}";
+        Assert.Same(List, f.Seerr(List, "/api/v1/discover/tv?page=1"));
     }
 
     [Fact]
-    public void WithEveryGuardKnownByTmdbIdNoExtraLookupRuns()
+    public void ALearnedIdOutlivesTheIndexItWasFoundIn()
     {
-        using var f = new Fixture(); f.GuardSeries();
+        using var f = new Fixture(); f.GuardSeries(tmdb: null, tvdb: "90006");
+        f.Seerr("{\"id\":90007,\"overview\":\"Secret plot\",\"externalIds\":{\"tvdbId\":90006}}", "/api/v1/tv/90007");
+        // A save replaces the state object, which rebuilds the index.
+        f.Save();
         const string Ratings = "{\"criticsScore\":94}";
-        Assert.Same(Ratings, f.Seerr(Ratings, "/api/v1/tv/90007/ratings"));
-        f.Library.Verify(l => l.GetItemList(It.Is<InternalItemsQuery>(q => q.HasAnyProviderId != null)), Times.Never);
+        Assert.NotEqual(Ratings, f.Seerr(Ratings, "/api/v1/tv/90007/ratings"));
+    }
+
+    [Fact]
+    public void AMovieWithoutATmdbIdKeepsItsMatchThroughTheReportedJellyfinId()
+    {
+        using var f = new Fixture();
+        var movie = new Movie { Id = Guid.NewGuid() };
+        f.Library.Setup(l => l.GetItemById(movie.Id)).Returns(movie);
+        f.Data.Setup(d => d.GetUserData(f.User, movie)).Returns(new UserItemData { Key = "movie", Played = false });
+        f.State.Movies[movie.Id.ToString("N")] = new(); f.Save();
+        var details = $"{{\"id\":90008,\"overview\":\"Secret plot\",\"mediaInfo\":{{\"jellyfinMediaId4k\":\"{movie.Id}\"}}}}";
+        Assert.Equal("Spoiler Guard activated", (string?)f.SeerrObject(details, "/api/v1/movie/90008")["overview"]);
+        const string Ratings = "{\"rt\":{\"criticsScore\":94}}";
+        Assert.NotEqual(Ratings, f.Seerr(Ratings, "/api/v1/movie/90008/ratingscombined"));
     }
 
     [Fact]
@@ -646,10 +668,106 @@ public class PrivacySeerrRedactionTests
         Assert.False(rows.HidesEpisodeTitle(null, "71663", null, 2, 1));
         Assert.True(rows.HidesEpisodeTitle("1433", null, null, 3, 1));
         Assert.False(rows.HidesEpisodeTitle("7", "7", null, 2, 2));
-        // Shoko numbers an episode without a season, and matches on its own series id.
-        Assert.True(rows.HidesEpisodeTitle(null, null, "55", null, 2));
-        Assert.False(rows.HidesEpisodeTitle(null, null, "55", null, 1));
         Assert.True(rows.HidesEpisodeOverview(null, "71663", null, 2, 2));
+    }
+
+    // Shoko numbers an episode within its type: a played regular episode 1 and an unwatched
+    // special 1 share a number, so only the episode's own library item can prove it was played.
+    [Fact]
+    public void AShokoEpisodeIsOnlyExemptWhenItsOwnItemWasPlayed()
+    {
+        using var f = new Fixture(); var series = f.GuardSeries();
+        series.ProviderIds["Shoko Series"] = "55"; f.State = new UserSpoilerBlur(); f.State.Series[series.Id.ToString("N")] = new(); f.Save();
+        f.SetPlayed(series, (1, 1));
+        var played = new Episode { Id = Guid.NewGuid() }; var unwatched = new Episode { Id = Guid.NewGuid() };
+        foreach (var (episode, state) in new[] { (played, true), (unwatched, false) })
+        {
+            f.Library.Setup(l => l.GetItemById(episode.Id)).Returns(episode);
+            f.Data.Setup(d => d.GetUserData(f.User, episode)).Returns(new UserItemData { Key = "e", Played = state });
+        }
+        var rows = f.Redactor.LoadRows(f.UserId.ToString("N"), new DefaultHttpContext())!;
+        Assert.False(rows.HidesEpisodeTitle(null, null, "55", null, 1, played.Id));
+        Assert.True(rows.HidesEpisodeTitle(null, null, "55", null, 1, unwatched.Id));
+        // Same number as the played episode, but nothing identifies it.
+        Assert.True(rows.HidesEpisodeTitle(null, null, "55", null, 1));
+    }
+
+    [Fact]
+    public void AdvancedModeRevealsTheNextEpisodeOnRowsAndNothingElse()
+    {
+        using var f = new Fixture(); var series = f.GuardSeries(tvdb: "71663");
+        f.SetNext(series, 2, 5);
+        var user = f.UserId.ToString("N");
+        f.Config.SpoilerAdvancedMode = true;
+        var rows = f.Redactor.LoadRows(user, new DefaultHttpContext())!;
+        Assert.False(rows.HidesEpisodeTitle(null, "71663", null, 2, 5));
+        Assert.True(rows.HidesEpisodeTitle(null, "71663", null, 2, 6));
+        Assert.True(rows.HidesEpisodeTitle(null, "71663", null, 3, 5));
+        // Off again, or switched off by the user, the next episode goes back to hidden.
+        f.Config.SpoilerAdvancedMode = false;
+        Assert.True(f.Redactor.LoadRows(user, new DefaultHttpContext())!.HidesEpisodeTitle(null, "71663", null, 2, 5));
+        f.Config.SpoilerAdvancedMode = true;
+        f.State.Prefs = new SpoilerBlurUserPrefs { UseAdvancedCategories = false }; f.Save();
+        Assert.True(f.Redactor.LoadRows(user, new DefaultHttpContext())!.HidesEpisodeTitle(null, "71663", null, 2, 5));
+    }
+
+    [Fact]
+    public void AdvancedModeRevealsTheNextEpisodeInASeasonResponse()
+    {
+        using var f = new Fixture(); var series = f.GuardSeries();
+        f.SetNext(series, 2, 2); f.Config.SpoilerAdvancedMode = true;
+        const string Season = "{\"seasonNumber\":2,\"episodes\":[{\"episodeNumber\":2,\"name\":\"Next title\"},{\"episodeNumber\":3,\"name\":\"Secret title\"}]}";
+        var episodes = f.SeerrObject(Season, "/api/v1/tv/1433/season/2")["episodes"]!.AsArray();
+        Assert.Equal("Next title", (string?)episodes[0]!["name"]);
+        Assert.Equal("Episode 3", (string?)episodes[1]!["name"]);
+    }
+
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public void TheCastSettingDecidesWhoIsListedOnAnEpisode(bool adminOff, bool userOff)
+    {
+        using var f = new Fixture(); f.GuardSeries();
+        const string Season = "{\"season_number\":2,\"episodes\":[{\"episode_number\":1,\"crew\":[{\"name\":\"Writer\"}],\"guest_stars\":[{\"name\":\"Actor\",\"character\":\"Secret role\"}]}]}";
+        var strict = f.Tmdb(Season, "tv/1433/season/2")["episodes"]![0]!.AsObject();
+        Assert.False(strict.ContainsKey("guest_stars"));
+        Assert.True(strict.ContainsKey("crew"));
+        if (adminOff) f.Config.SpoilerStripCast = false;
+        if (userOff) { f.State.Prefs = new SpoilerBlurUserPrefs { HideCast = false }; f.Save(); }
+        var open = f.Tmdb(Season, "tv/1433/season/2")["episodes"]![0]!.AsObject();
+        Assert.Equal("Actor", (string?)open["guest_stars"]![0]!["name"]);
+        // Title protection still clears the character they play.
+        Assert.Null(open["guest_stars"]![0]!["character"]);
+    }
+
+    [Fact]
+    public void EntireCastModeAlsoDropsAnEpisodesCrew()
+    {
+        using var f = new Fixture(); f.GuardSeries(); f.Config.SpoilerStripCastMode = "All";
+        const string Season = "{\"season_number\":2,\"episodes\":[{\"episode_number\":1,\"crew\":[{\"name\":\"Writer\"}]}]}";
+        Assert.False(f.Tmdb(Season, "tv/1433/season/2")["episodes"]![0]!.AsObject().ContainsKey("crew"));
+    }
+
+    [Fact]
+    public void ListsKeepAHiddenScoreForSorting()
+    {
+        using var f = new Fixture(); f.GuardMovie();
+        const string List = "{\"results\":[{\"mediaType\":\"movie\",\"id\":299534,\"voteAverage\":9.1}]}";
+        var result = f.SeerrObject(List, "/api/v1/discover/movies?page=1")["results"]![0]!.AsObject();
+        Assert.False(result.ContainsKey("voteAverage"));
+        Assert.Equal(9.1, (double?)result["jeSortRating"]);
+        f.State.Prefs = new SpoilerBlurUserPrefs { HideRatings = false }; f.Save();
+        Assert.False(f.SeerrObject(List, "/api/v1/discover/movies?page=1")["results"]![0]!.AsObject().ContainsKey("jeSortRating"));
+    }
+
+    [Fact]
+    public void ARowMatchesEitherJellyfinCopyOfATitle()
+    {
+        using var f = new Fixture();
+        var copy4k = f.AddMovie("90009");
+        f.State.Movies[copy4k.Id.ToString("N")] = new(); f.Save();
+        var rows = f.Redactor.LoadRows(f.UserId.ToString("N"), new DefaultHttpContext())!;
+        Assert.NotNull(rows.ForTitle(false, "7", null, Guid.NewGuid().ToString(), copy4k.Id.ToString()));
     }
 
     [Fact]

@@ -260,7 +260,7 @@ public class ApiSeerrTests
             var identities = new RequestIdentityService(Mock.Of<MediaBrowser.Controller.Session.ISessionManager>(), users,
                 new SpoilerIdentityService(users, fixture.Plugin.Core.Logger), fixture.Plugin.Core.Logger);
             var resolver = new SpoilerUserResolver(fixture.Plugin.Core.Manager, library.Object, fixture.Plugin.Core.Logger, identities);
-            return [resolver, new IntegrationCalendarTests.CalendarDatabase(), new SpoilerSeerrRedactor(resolver, library.Object, users, Mock.Of<IUserDataManager>()), new TmdbResponseCache(new IntegrationTransport((_, _) => Task.FromResult(IntegrationTransport.Response(TmdbBody))), TimeProvider.System)];
+            return [resolver, new IntegrationCalendarTests.CalendarDatabase(), new SpoilerSeerrRedactor(resolver, library.Object, users, Mock.Of<IUserDataManager>(), new SpoilerNextUnwatchedService(library.Object, users, Mock.Of<IUserDataManager>(), fixture.Plugin.Core.Logger)), new TmdbResponseCache(new IntegrationTransport((_, _) => Task.FromResult(IntegrationTransport.Response(TmdbBody))), TimeProvider.System)];
         });
         f.Plugin.Plugin.Configuration.SpoilerBlurEnabled = true;
         var state = new Jellyfin.Plugin.JellyfinEnhanced.Configuration.UserSpoilerBlur();
