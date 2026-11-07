@@ -553,6 +553,7 @@
     "spoiler_blur_enabled_collection_toast": "Spoilerikaitse: Sees",
     "spoiler_blur_disabled_collection_toast": "Spoilerikaitse väljas.",
     "spoiler_blur_error_toast": "Spoilerikaitse muutmine ebaõnnestus. Vaata konsooli.",
+    "spoiler_blur_inherited_hint": "Kaitstud kogumiku kaudu. Muuda seda kogumikus.",
     "spoiler_disable_confirm_title": "Keelata spoilerikaitse?",
     "spoiler_disable_confirm_body": "Originaalpildid ja episoodi üksikasjad muutuvad kohe uuesti nähtavaks.",
     "spoiler_disable_confirm_snooze": "Ära küsi uuesti 15 minuti jooksul",

@@ -553,6 +553,7 @@
     "spoiler_blur_enabled_collection_toast": "Spoiler-Schutz: A",
     "spoiler_blur_disabled_collection_toast": "Spoiler-Schutz us.",
     "spoiler_blur_error_toast": "Spoiler-Schutz-Änderig fählgschlage. Lueg i dr Konsole.",
+    "spoiler_blur_inherited_hint": "Gschützt dur e Sammlig. Ändere es i dr Sammlig.",
     "spoiler_disable_confirm_title": "Spoiler-Schutz deaktiviere?",
     "spoiler_disable_confirm_body": "Originalbilder und Episode-Detail sind sofort wieder sichtbar.",
     "spoiler_disable_confirm_snooze": "15 Minute lang nümme frage",

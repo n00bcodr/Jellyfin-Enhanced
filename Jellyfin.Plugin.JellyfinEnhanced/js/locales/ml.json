@@ -553,6 +553,7 @@
     "spoiler_blur_enabled_collection_toast": "സ്‌പോയിലർ ഗാർഡ്: ഓൺ",
     "spoiler_blur_disabled_collection_toast": "സ്‌പോയിലർ ഗാർഡ് ഓഫ് ചെയ്തു.",
     "spoiler_blur_error_toast": "സ്‌പോയിലർ ഗാർഡ് മാറ്റം പരാജയപ്പെട്ടു. കൺസോൾ കാണുക.",
+    "spoiler_blur_inherited_hint": "ഒരു ശേഖരത്തിലൂടെ സംരക്ഷിച്ചിരിക്കുന്നു. ശേഖരത്തിൽ മാറ്റം വരുത്തുക.",
     "spoiler_disable_confirm_title": "സ്‌പോയിലർ ഗാർഡ് പ്രവർത്തനരഹിതമാക്കണോ?",
     "spoiler_disable_confirm_body": "യഥാർത്ഥ ചിത്രങ്ങളും എപ്പിസോഡ് വിവരങ്ങളും ഉടൻ വീണ്ടും ദൃശ്യമാകും.",
     "spoiler_disable_confirm_snooze": "15 മിനിറ്റ് നേരത്തേക്ക് വീണ്ടും ചോദിക്കരുത്",

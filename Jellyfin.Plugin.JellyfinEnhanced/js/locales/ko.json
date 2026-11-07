@@ -553,6 +553,7 @@
     "spoiler_blur_enabled_collection_toast": "스포일러 가드: 켜짐",
     "spoiler_blur_disabled_collection_toast": "스포일러 가드가 꺼졌습니다.",
     "spoiler_blur_error_toast": "스포일러 가드 변경에 실패했습니다. 콘솔을 확인하세요.",
+    "spoiler_blur_inherited_hint": "컬렉션을 통해 보호됩니다. 컬렉션에서 변경하세요.",
     "spoiler_disable_confirm_title": "스포일러 가드를 비활성화하시겠습니까?",
     "spoiler_disable_confirm_body": "원본 이미지와 에피소드 정보가 즉시 다시 표시됩니다.",
     "spoiler_disable_confirm_snooze": "15분 동안 다시 묻지 않기",
