@@ -109,6 +109,16 @@ public class AwardTagsTests
     }
 
     [Fact]
+    public void ChartParserFoldsMdblistThousandStepRanksAndRejectsAListWithNoUsableRank()
+    {
+        using var scaled = JsonDocument.Parse("{\"movies\":[{\"ids\":{\"tmdb\":278},\"rank\":134000},{\"ids\":{\"tmdb\":1},\"rank\":1000}],\"shows\":[]}");
+        var ranks = AwardTagsService.ParseList(scaled.RootElement);
+        Assert.Equal(134, ranks["movie:278"]); Assert.Equal(1, ranks["movie:1"]);
+        using var unusable = JsonDocument.Parse("{\"movies\":[{\"ids\":{\"tmdb\":5},\"rank\":999999}],\"shows\":[]}");
+        Assert.Throws<JsonException>(() => AwardTagsService.ParseList(unusable.RootElement));
+    }
+
+    [Fact]
     public async Task NoKeyNeverCallsMdblistAndMasterOffDoesNoNetworkWork()
     {
         using var env = new ApiPluginFixture();

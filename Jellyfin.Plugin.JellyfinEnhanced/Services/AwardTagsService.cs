@@ -44,7 +44,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var disk = JsonSerializer.Deserialize<Disk>(File.ReadAllText(_path));
                 if (disk?.Schema != 1) return;
                 foreach (var pair in disk.Titles) if (pair.Value?.Facts != null) _titles[pair.Key] = pair.Value;
-                foreach (var pair in disk.Lists) if (pair.Value?.Ranks != null) _lists[pair.Key] = pair.Value;
+                foreach (var pair in disk.Lists) if (pair.Value?.Ranks is { Count: > 0 }) _lists[pair.Key] = pair.Value;
             }
             catch (Exception ex) { _logger.Warning($"[AwardTags] Could not read snapshot: {ex.Message}"); }
         }
@@ -192,7 +192,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 valid = true;
                 foreach (var item in items.EnumerateArray().Take(250))
                 {
-                    if (!item.TryGetProperty("rank", out var rankValue) || !rankValue.TryGetInt32(out var rank) || rank is < 1 or > 250) continue;
+                    if (!item.TryGetProperty("rank", out var rankValue) || !rankValue.TryGetInt32(out var rank)) continue;
+                    // MDBList numbers list positions in steps of 1000 (1000, 2000, ...); fold that back to 1, 2, ...
+                    if (rank > 250 && rank % 1000 == 0) rank /= 1000;
+                    if (rank is < 1 or > 250) continue;
                     JsonElement id = default;
                     if (item.TryGetProperty("ids", out var ids) && ids.ValueKind == JsonValueKind.Object) ids.TryGetProperty("tmdb", out id);
                     if (id.ValueKind == JsonValueKind.Undefined) item.TryGetProperty("tmdb_id", out id);
@@ -201,6 +204,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
             }
             if (!valid) throw new JsonException("Missing list buckets");
+            // A list that lists titles but yields no usable rank is a parsing problem, never a confirmed empty chart.
+            if (ranks.Count == 0 && root.EnumerateObject().Any(b => b.Value.ValueKind == JsonValueKind.Array && b.Value.GetArrayLength() > 0))
+                throw new JsonException("List items carry no usable rank");
             return ranks;
         }
 
