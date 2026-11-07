@@ -37,7 +37,7 @@
     }
     // [CDN source, file]: the bundled artwork each chip shows; the inline sprites above remain the fallback.
     const LOGO_FILES = { imdbTop250: ['mdblist-logos', 'imdb.png'], letterboxdTop250: ['mdblist-logos', 'letterboxd.png'],
-        certifiedFresh: ['mdblist-logos', 'rottentomatoes_fresh.png'], oscar: ['award-logos', 'oscar.svg'], emmy: ['award-logos', 'emmy.svg'] };
+        certifiedFresh: ['mdblist-logos', 'rottentomatoes_fresh.png'], oscar: ['award-logos', 'oscar'], emmy: ['award-logos', 'emmy'] };
     /** Build an escaped text chip around trusted, bundled decorative logo artwork. */
     function chip(fact) {
         const el = document.createElement('div');
