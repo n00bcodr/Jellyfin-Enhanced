@@ -399,11 +399,12 @@
     /**
      * Fetches detailed information for a specific TV show from Seerr.
      * @param {number} tmdbId - The TMDB ID of the TV show.
+     * @param {object} [options] - Optional settings for the request (skipCache).
      * @returns {Promise<object|null>}
      */
-    api.fetchTvShowDetails = async function(tmdbId) {
+    api.fetchTvShowDetails = async function(tmdbId, options) {
         try {
-            return await get(`/tv/${tmdbId}`);
+            return await get(`/tv/${tmdbId}`, options);
         } catch (error) {
             console.error(`${logPrefix} Failed to fetch TV show details for TMDB ID ${tmdbId}:`, error);
             return null;
@@ -546,9 +547,12 @@
                 }
 
                 // Check keywords condition
-                if (rule.keywords && mediaData.keywords) {
+                // Spoiler Guard moves a protected title's keywords out of `keywords`, the
+                // list that gets rendered, so a rule still sees the same ones.
+                const mediaKeywords = mediaData.jeRuleKeywords || mediaData.keywords;
+                if (rule.keywords && mediaKeywords) {
                     const ruleKeywords = rule.keywords.split('|').map(k => k.trim().toLowerCase());
-                    const mediaKeywordNames = (mediaData.keywords || []).map(k => k.name?.toLowerCase() || '');
+                    const mediaKeywordNames = mediaKeywords.map(k => k.name?.toLowerCase() || '');
 
                     const hasMatchingKeyword = ruleKeywords.some(ruleKeyword =>
                         mediaKeywordNames.includes(ruleKeyword)
@@ -953,11 +957,12 @@
     /**
      * Fetches detailed information for a specific movie from Seerr.
      * @param {number} tmdbId - The TMDB ID of the movie.
+     * @param {object} [options] - Optional settings for the request (skipCache).
      * @returns {Promise<object|null>}
      */
-    api.fetchMovieDetails = async function(tmdbId) {
+    api.fetchMovieDetails = async function(tmdbId, options) {
         try {
-            return await get(`/movie/${tmdbId}`);
+            return await get(`/movie/${tmdbId}`, options);
         } catch (error) {
             console.error(`${logPrefix} Failed to fetch movie details for TMDB ID ${tmdbId}:`, error);
             return null;

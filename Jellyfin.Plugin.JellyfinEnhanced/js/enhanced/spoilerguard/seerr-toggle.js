@@ -28,8 +28,14 @@
         button.appendChild(icon);
         button.appendChild(label);
 
+        // The server's verdict also covers what ids alone can't: a title guarded through
+        // a collection, or one whose Seerr id doesn't match this library.
+        function isEnabled() {
+            return data?.jeSpoilerGuard === true || internal.isTmdbEnabled(mediaType, tmdbId, jellyfinMediaId);
+        }
+
         function refresh() {
-            const enabled = internal.isTmdbEnabled(mediaType, tmdbId, jellyfinMediaId);
+            const enabled = isEnabled();
             const text = JE.t(enabled ? 'spoiler_blur_pending_button_on' : 'spoiler_blur_pending_button_off');
             button.classList.toggle('je-spoiler-pending-on', enabled);
             button.setAttribute('aria-pressed', enabled ? 'true' : 'false');
@@ -45,8 +51,9 @@
             event.stopPropagation();
             if (button.disabled) return;
             button.disabled = true;
-            const wasEnabled = internal.isTmdbEnabled(mediaType, tmdbId, jellyfinMediaId);
+            const wasEnabled = isEnabled();
             void (async function() {
+                let changed = false;
                 try {
                     if (wasEnabled) {
                         if (!await internal.confirmDisableSpoiler()) return;
@@ -56,6 +63,7 @@
                         await internal.enableForTmdb(mediaType, tmdbId, displayName);
                         JE.toast?.(JE.t('spoiler_blur_pending_enabled_toast'));
                     }
+                    changed = true;
                 } catch (e) {
                     console.warn(`${logPrefix} Seerr toggle failed:`, e);
                     JE.toast?.(JE.t('spoiler_blur_pending_error_toast'));
@@ -63,6 +71,8 @@
                     refresh();
                     button.disabled = false;
                 }
+                // Reopened so the modal shows what the server now sends for this title.
+                if (changed) await JE.jellyseerrMoreInfo?.open?.(tmdbId, mediaType);
             })();
         });
         return button;

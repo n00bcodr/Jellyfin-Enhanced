@@ -25,7 +25,7 @@ public class ApiSeerrTests
         public Func<HttpRequestMessage, HttpResponseMessage> Reply { get; set; } = _ => IntegrationTransport.Response("{\"id\":99}");
         public IntegrationTransport Transport { get; }
         public JellyfinEnhancedController Controller { get; }
-        public SeerrFixture()
+        public SeerrFixture(Func<SeerrFixture, IUserManager, object[]>? extraServices = null)
         {
             JellyfinEnhancedController.ClearAllSeerrCachesOnConfigChange();
             Plugin.Plugin.Configuration.JellyseerrEnabled = true;
@@ -48,7 +48,9 @@ public class ApiSeerrTests
             });
             var users = Mock.Of<IUserManager>();
             var filter = new SeerrParentalFilter(Transport, users, Mock.Of<ILocalizationManager>(), Mock.Of<IServerConfigurationManager>(), Plugin.Core.Logger);
-            Controller = ApiAssetTests.Controller(Plugin.Core, Transport, users, filter);
+            var services = new List<object> { Transport, users, filter };
+            if (extraServices != null) services.AddRange(extraServices(this, users));
+            Controller = ApiAssetTests.Controller(Plugin.Core, services.ToArray());
             SetUser(UserId);
         }
         public void SetUser(Guid user, bool admin = false) => Controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity([
@@ -241,4 +243,102 @@ public class ApiSeerrTests
         Assert.Single(f.Calls, c => c.Method == "POST");
     }
 
+    private const string TmdbBody = "{\"id\":603,\"title\":\"Film\",\"overview\":\"Secret plot\"}";
+
+    private static SeerrFixture GuardedSeerr(out Guid movieId)
+    {
+        var library = new Mock<ILibraryManager>();
+        var movie = new MediaBrowser.Controller.Entities.Movies.Movie { Id = Guid.NewGuid() };
+        movie.ProviderIds["Tmdb"] = "603";
+        library.Setup(l => l.GetItemById(movie.Id)).Returns(movie);
+        movieId = movie.Id;
+        var f = new SeerrFixture((fixture, users) =>
+        {
+            var identities = new RequestIdentityService(Mock.Of<MediaBrowser.Controller.Session.ISessionManager>(), users,
+                new SpoilerIdentityService(users, fixture.Plugin.Core.Logger), fixture.Plugin.Core.Logger);
+            var resolver = new SpoilerUserResolver(fixture.Plugin.Core.Manager, library.Object, fixture.Plugin.Core.Logger, identities);
+            return [resolver, new SpoilerSeerrRedactor(resolver, library.Object, users, Mock.Of<IUserDataManager>()), new TmdbResponseCache(new IntegrationTransport((_, _) => Task.FromResult(IntegrationTransport.Response(TmdbBody))), TimeProvider.System)];
+        });
+        f.Plugin.Plugin.Configuration.SpoilerBlurEnabled = true;
+        var state = new Jellyfin.Plugin.JellyfinEnhanced.Configuration.UserSpoilerBlur();
+        state.Movies[movie.Id.ToString("N")] = new();
+        f.Plugin.Core.Manager.SaveUserConfiguration(f.UserId.ToString("N"), "spoilerblur.json", state);
+        return f;
+    }
+
+    // The response cache is keyed on the Seerr path and shared, so redaction has to run on the way out of it.
+    [Fact]
+    public async Task SpoilerGuardRedactsPerUserOnTopOfTheSharedResponseCache()
+    {
+        using var f = GuardedSeerr(out _);
+        f.Reply = _ => IntegrationTransport.Response("{\"id\":603,\"title\":\"Film\",\"overview\":\"Secret plot\",\"tagline\":\"Secret\"}");
+        var guarded = Body(Assert.IsType<ContentResult>(await f.Controller.GetMovie(603)).Content!);
+        Assert.Equal("Spoiler Guard activated", guarded.GetProperty("overview").GetString());
+        Assert.False(guarded.TryGetProperty("tagline", out _));
+        f.SetUser(f.OtherUserId);
+        var other = Body(Assert.IsType<ContentResult>(await f.Controller.GetMovie(603)).Content!);
+        Assert.Equal("Secret plot", other.GetProperty("overview").GetString());
+        f.SetUser(f.UserId);
+        var again = Body(Assert.IsType<ContentResult>(await f.Controller.GetMovie(603)).Content!);
+        Assert.Equal("Spoiler Guard activated", again.GetProperty("overview").GetString());
+    }
+
+    [Fact]
+    public async Task SpoilerGuardReachesTheListRoutes()
+    {
+        using var f = GuardedSeerr(out _);
+        f.Reply = _ => IntegrationTransport.Response("{\"results\":[{\"mediaType\":\"movie\",\"id\":603,\"overview\":\"Secret plot\"}]}");
+        var result = Assert.IsType<ContentResult>(await f.Controller.JellyseerrSearch("film"));
+        Assert.Equal("Spoiler Guard activated", Body(result.Content!).GetProperty("results")[0].GetProperty("overview").GetString());
+    }
+
+    [Fact]
+    public async Task MdblistAnswersNotFoundForAGuardedTitleWithoutLookingItUp()
+    {
+        using var f = GuardedSeerr(out _);
+        f.Plugin.Plugin.Configuration.MdblistRatingsEnabled = true;
+        var ok = Assert.IsType<OkObjectResult>(await f.Controller.GetMdblistRatings("movie", "603", CancellationToken.None));
+        var body = Body(JsonSerializer.Serialize(ok.Value));
+        Assert.False(body.GetProperty("Found").GetBoolean());
+        // Not confirmed, so no cache keeps it past the guard.
+        Assert.False(body.GetProperty("Confirmed").GetBoolean());
+        Assert.False(f.Controller.Response.Headers.ContainsKey("Cache-Control"));
+    }
+
+    // The ETag describes the raw body, so honouring it would hand back a copy from before the guard.
+    [Fact]
+    public async Task TmdbPassthroughIgnoresARawCopysETagForAGuardedTitle()
+    {
+        using var f = GuardedSeerr(out _);
+        f.Plugin.Plugin.Configuration.TMDB_API_KEY = "tmdb-key";
+        f.SetUser(f.OtherUserId);
+        var raw = Assert.IsType<ContentResult>(await f.Controller.ProxyTmdbRequest("movie/603"));
+        Assert.Contains("Secret plot", raw.Content);
+        var etag = f.Controller.Response.Headers["ETag"].ToString();
+        Assert.False(string.IsNullOrEmpty(etag));
+
+        // Control: the same validator earns another user a 304.
+        f.Controller.Request.Headers["If-None-Match"] = etag;
+        Assert.Equal(304, Assert.IsType<StatusCodeResult>(await f.Controller.ProxyTmdbRequest("movie/603")).StatusCode);
+
+        f.SetUser(f.UserId);
+        f.Controller.Response.Headers.Remove("ETag");
+        var guarded = Assert.IsType<ContentResult>(await f.Controller.ProxyTmdbRequest("movie/603"));
+        Assert.Equal("Spoiler Guard activated", Body(guarded.Content!).GetProperty("overview").GetString());
+        Assert.Equal("no-store", f.Controller.Response.Headers["Cache-Control"].ToString());
+        Assert.False(f.Controller.Response.Headers.ContainsKey("ETag"));
+    }
+
+    [Fact]
+    public void SpoilerMovieScopeAnswersForTheCallersOwnStateAndValidatesTheId()
+    {
+        using var f = GuardedSeerr(out var movieId);
+        var ok = Assert.IsType<OkObjectResult>(f.Controller.GetSpoilerMovieScope(movieId.ToString("N")));
+        Assert.True(Body(JsonSerializer.Serialize(ok.Value)).GetProperty("inScope").GetBoolean());
+        f.SetUser(f.OtherUserId);
+        var other = Assert.IsType<OkObjectResult>(f.Controller.GetSpoilerMovieScope(movieId.ToString("N")));
+        Assert.False(Body(JsonSerializer.Serialize(other.Value)).GetProperty("inScope").GetBoolean());
+        Assert.IsType<BadRequestObjectResult>(f.Controller.GetSpoilerMovieScope("not-a-guid"));
+        Assert.IsType<BadRequestObjectResult>(f.Controller.GetSpoilerMovieScope(Guid.Empty.ToString("N")));
+    }
 }

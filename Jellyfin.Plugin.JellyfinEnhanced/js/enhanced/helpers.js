@@ -158,7 +158,8 @@
     });
 
     /**
-     * Deduplicated item fetch with short TTL cache.
+     * Deduplicated item fetch with short TTL cache, dropped when Spoiler Guard changes
+     * because the server's item fields depend on it.
      * Prevents multiple modules from requesting the same item concurrently on detail page navigation.
      * @param {string} itemId
      * @param {Object} [options]
@@ -167,6 +168,8 @@
      * @param {boolean} [options.forceRefresh]
      * @returns {Promise<object|null>}
      */
+    window.addEventListener('je:spoiler-state-changed', () => itemCache.clear());
+
     async function getItemCached(itemId, options = {}) {
         if (!itemId) return null;
 

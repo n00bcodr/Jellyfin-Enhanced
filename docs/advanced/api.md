@@ -718,7 +718,7 @@ All routes in this table require **Seerr-linked** access, except TV-by-studio's 
 | POST | `jellyseerr/request` | JSON request object → upstream request record. |
 | GET | `jellyseerr/request` | `take=500`, `skip=0`, `filter=all`, forwarded without JE clamping → upstream request page. |
 | GET | `jellyseerr/quota` | Caller's quota; movie/TV sides can gain ISO `nextResetAt`. |
-| GET | `jellyseerr/movie/{tmdbId}` | Movie detail. |
+| GET | `jellyseerr/movie/{tmdbId}` | Movie detail. Spoiler Guard shapes this and the other title responses for the caller; see [below](#spoiler-guard-on-title-responses). |
 | GET | `jellyseerr/tv/{tmdbId}` | TV detail. |
 | GET | `jellyseerr/tv/{tmdbId}/season/{seasonNumber}` | Season detail; numeric route values forwarded. |
 | GET | `jellyseerr/movie-collections` | Query `ids` → collection map, described below. |
@@ -899,6 +899,18 @@ All caller actions require a nonempty user-ID claim. Enable actions additionally
 | **Enable Spoiler Guard** | `false` | `SpoilerBlurEnabled`; gates pending POST and apply-existing preview/start. Other state-management routes remain callable. |
 | **Auto-enable Spoiler Guard on Seerr request** | `false` | `SpoilerAutoEnableOnSeerrRequest`; hooks successful general Seerr request POSTs, alongside the master setting. |
 
+### Spoiler Guard on title responses
+
+The Seerr proxy, the TMDB passthrough's title routes and `mdblist-ratings/{mediaType}/{tmdbId}` apply the caller's Spoiler Guard policy to protected titles, on top of their shared caches.
+
+| Response | Effect |
+|---|---|
+| Seerr and TMDB title details | Fields follow the caller's settings. Adds `jeSpoilerGuard: true`; `jeYear` when dates are hidden. Seerr keywords move to `jeRuleKeywords`, for request override rules. |
+| Seerr lists | `overview` becomes the placeholder and ratings are removed, per setting. Dates stay. |
+| Seerr ratings, TMDB `movie/{id}/release_dates` | Empty when ratings or dates are hidden. |
+| TMDB title routes | `no-store`, with no ETag, so a stored unprotected copy can't be revalidated. |
+| `mdblist-ratings` | `{Found:false,Confirmed:false}` when ratings are hidden. |
+
 ### State and preferences
 
 Read your protection lists and preferences here. Preference POSTs replace the complete preference object.
@@ -906,6 +918,7 @@ Read your protection lists and preferences here. Preference POSTs replace the co
 | Method | Path | Access | Request → response |
 |---|---|---|---|
 | GET | `spoiler-blur/series` | Caller | Full `{Series,Movies,Collections,PendingTmdb,Prefs}` state; `no-store`. |
+| GET | `spoiler-blur/movies/{movieId}/in-scope` | Caller | `{inScope}` for the caller's own state: on their Movies list or in an opted-in collection; `no-store`. Invalid id → `400`. |
 | GET | `spoiler-blur/user-prefs` | Caller | `SpoilerBlurUserPrefs` object. |
 | POST | `spoiler-blur/user-prefs` | Caller | Complete preference object, at most 8 KiB → `{success:true,prefs:<submitted preferences>}`. |
 

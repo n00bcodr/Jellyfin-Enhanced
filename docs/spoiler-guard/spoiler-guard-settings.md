@@ -339,7 +339,7 @@ Spoiler Guard can hide JE's Reviews panel on protected detail pages. This helps 
 
 ??? note "Review scope and API limits"
 
-    Review suppression runs in JE's injected web client. It covers guarded Series/Season/Episode pages, including watched episodes, and directly guarded movies, including played movies. Collection-only movie protection does not suppress the panel. A failed state load can suppress the panel broadly on eligible page types.
+    Review suppression runs in JE's injected web client. It covers guarded Series/Season/Episode pages, including watched episodes, and guarded movies, including played movies and movies guarded through a collection. A failed state load can suppress the panel broadly on eligible page types.
 
     The Reviews API applies author visibility rules but does not suppress responses based on the viewer's Spoiler Guard state.
 

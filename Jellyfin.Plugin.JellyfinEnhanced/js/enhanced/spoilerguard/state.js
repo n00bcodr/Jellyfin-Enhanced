@@ -21,8 +21,24 @@
     let loadOk = false;
     let statePromise = null;
 
+    /**
+     * Drops what was fetched under the old guard state: the server shapes Seerr, TMDB and
+     * MDBList answers per title, so a cached copy would keep showing the previous version.
+     * @returns {void}
+     */
+    function invalidateGuardedResponses() {
+        const manager = JE.core.api.manager;
+        ['jellyseerr', 'tmdb', 'mdblist-ratings'].forEach(pattern => manager?.clearCacheMatching?.(pattern));
+        window.dispatchEvent(new CustomEvent('je:spoiler-state-changed'));
+    }
+
     function request(path, options) {
-        return JE.core.api.plugin(path, options);
+        const response = JE.core.api.plugin(path, options);
+        if (!options?.method || options.method === 'GET') return response;
+        return response.then(function(result) {
+            invalidateGuardedResponses();
+            return result;
+        });
     }
 
     internal.loadState = function() {
@@ -90,6 +106,19 @@
     internal.isEnabledFor = function(id) { return enabledSeries.has(internal.normalizeId(id)); };
     internal.isMovieEnabledFor = function(id) { return enabledMovies.has(internal.normalizeId(id)); };
     internal.isCollectionEnabledFor = function(id) { return enabledCollections.has(internal.normalizeId(id)); };
+
+    /**
+     * Whether Spoiler Guard covers a movie, directly or through an opted-in collection.
+     * This state lists collection ids, not their members, so the server answers for those.
+     * @param {string} id - The movie's Jellyfin id.
+     * @returns {Promise<boolean>} True when the movie is in scope. Rejects if the lookup fails.
+     */
+    internal.isMovieInScope = async function(id) {
+        if (internal.isMovieEnabledFor(id)) return true;
+        if (enabledCollections.size === 0) return false;
+        const result = await request(`/spoiler-blur/movies/${encodeURIComponent(internal.normalizeId(id))}/in-scope`);
+        return result?.inScope === true;
+    };
     internal.hasAnyState = function() {
         return enabledSeries.size > 0 || enabledMovies.size > 0 || enabledCollections.size > 0 || enabledPendingTmdb.size > 0;
     };

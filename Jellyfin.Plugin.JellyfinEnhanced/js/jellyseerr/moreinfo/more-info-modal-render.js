@@ -29,7 +29,8 @@ function buildModalContent(data, mediaType) {
         ? `<span class="rating-badge mediaInfoOfficialRating" rating="${escapeHtml(JE.normalizeOfficialRating?.(contentRating) || contentRating)}">${escapeHtml(contentRating)}</span>`
         : `<span class="rating-badge">${escapeHtml(contentRating)}</span>`;
 
-    const year = releaseDate ? new Date(releaseDate).getFullYear() : 'N/A';
+    // Spoiler Guard can hide the dates while the year stays visible, as on the item itself.
+    const year = data.jeYear || (releaseDate ? new Date(releaseDate).getFullYear() : 'N/A');
     const budget = data.budget ? internal.formatCurrency(data.budget) : null;
     const revenue = data.revenue ? internal.formatCurrency(data.revenue) : null;
 

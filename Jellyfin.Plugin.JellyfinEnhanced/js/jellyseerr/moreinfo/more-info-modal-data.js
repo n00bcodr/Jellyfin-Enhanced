@@ -73,9 +73,11 @@ async function fetchMediaDetails(tmdbId, mediaType) {
     try {
         let data;
         if (JE && JE.jellyseerrAPI) {
+            // Uncached: Spoiler Guard shapes this per title, and a guard can have changed
+            // on another device. The server keeps its own copy of the upstream answer.
             data = mediaType === 'movie'
-                ? await JE.jellyseerrAPI.fetchMovieDetails(tmdbId)
-                : await JE.jellyseerrAPI.fetchTvShowDetails(tmdbId);
+                ? await JE.jellyseerrAPI.fetchMovieDetails(tmdbId, { skipCache: true })
+                : await JE.jellyseerrAPI.fetchTvShowDetails(tmdbId, { skipCache: true });
         } else {
             const endpoint = mediaType === 'movie'
                 ? `/movie/${tmdbId}`

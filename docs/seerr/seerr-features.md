@@ -283,13 +283,15 @@ Admin settings under **Seerr** → **Discovery & UI Extras** ([full reference](s
 
     It does not continuously poll. It shows up to 20 cast entries, 20 keywords, and six trailers. **View on SIMKL** is available when an IMDb ID exists, with no separate switch.
 
+    On a title protected by Spoiler Guard, More Info and result cards follow your [Spoiler Guard settings](../spoiler-guard/spoiler-guard-features.md#what-spoiler-guard-protects), wherever you open them from. External links in More Info, such as **View on Seerr**, lead to the unprotected pages on those sites.
+
     The modal's **Streaming** section is independent of poster icons. With TMDB configured, it shows up to six unique subscription providers using your per-user Elsewhere region, then the server region (US by default). If the selected region is absent from supplied data, it tries US and then the first supplied region. See [provider settings](seerr-settings.md#streaming-providers).
 
 #### Spoiler Guard before library arrival
 
 Protect a title from spoilers before it arrives in your library. This is a **per-user** choice.
 
-**How to use:** Press **Enable Spoiler Guard** in More Info. The button becomes **Spoiler Guard (pending)**; you can disable it again from there.
+**How to use:** Press **Enable Spoiler Guard** in More Info. The button becomes **Spoiler Guard (pending)**, and More Info reloads with the protected details. You can disable it again from there.
 
 Related admin settings ([Spoiler Guard reference](../spoiler-guard/spoiler-guard-settings.md)):
 

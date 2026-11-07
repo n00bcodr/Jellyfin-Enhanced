@@ -54,6 +54,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private readonly Logger _logger;
         private readonly IUserManager _userManager;
         private readonly Services.SeerrParentalFilter _parentalFilter;
+        private readonly Services.SpoilerSeerrRedactor _spoilerSeerrRedactor;
         private readonly IUserDataManager _userDataManager;
         private readonly ILibraryManager _libraryManager;
         private readonly IDtoService _dtoService;
@@ -211,6 +212,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             Services.MdblistService mdblistService,
             Services.DoesTheDogDieService doesTheDogDieService,
             Services.SeerrParentalFilter parentalFilter,
+            Services.SpoilerSeerrRedactor spoilerSeerrRedactor,
             Services.WhatsNewService whatsNewService,
             Services.UsageEventCounterService usageEventCounterService,
             Services.AnalyticsReportingService analyticsReportingService,
@@ -245,6 +247,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             _mdblistService = mdblistService;
             _doesTheDogDieService = doesTheDogDieService;
             _parentalFilter = parentalFilter;
+            _spoilerSeerrRedactor = spoilerSeerrRedactor;
             _whatsNewService = whatsNewService;
             _usageEventCounterService = usageEventCounterService;
             _analyticsReportingService = analyticsReportingService;
@@ -785,7 +788,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     Response.Headers["Retry-After"] = "2";
                     return StatusCode(504, new { error = true, code = "parental_pending", message = "Parental rating lookups for this page are still running; retry shortly." });
                 }
-                return Content(result.Body, "application/json");
+                // After the parental filter, which reads what this removes, and on the way
+                // out of the shared response cache, so one user's guards never reach another.
+                return Content(_spoilerSeerrRedactor.RedactSeerr(result.Body, apiPath, jellyfinUserId, HttpContext), "application/json");
             }
             catch (OperationCanceledException) when (HttpContext.RequestAborted.IsCancellationRequested)
             {
@@ -4207,6 +4212,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                 if (response.IsSuccess)
                 {
+                    // Before the 304 below: the ETag describes the unredacted body, so a
+                    // browser's copy from before the title was guarded must not be reused.
+                    if (_spoilerSeerrRedactor.TryRedactTmdb(response.Content, apiPath, tmdbCallerId, HttpContext, out var redactedBody))
+                    {
+                        Response.Headers["Cache-Control"] = "no-store";
+                        return Content(redactedBody, "application/json");
+                    }
+
                     // Browser cache: private + no-cache, so every reuse comes back
                     // here (parental gating above runs again) and costs only a 304
                     // when the body is unchanged. Varied on the auth headers so a
@@ -4712,6 +4725,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (string.IsNullOrWhiteSpace(tmdbId) || !tmdbId.All(char.IsDigit))
             {
                 return BadRequest("tmdbId must be a positive integer.");
+            }
+
+            // Unconfirmed so neither the browser nor the client cache keeps this answer,
+            // which only holds while the title is guarded.
+            if (_spoilerSeerrRedactor.HidesRatings(mediaType, tmdbId, UserHelper.GetCurrentUserId(User)?.ToString(), HttpContext))
+            {
+                return Ok(new { Found = false, Confirmed = false });
             }
 
             try
@@ -6294,6 +6314,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // The strict reader logs read/parse failures; the endpoint reports them.
                 return null;
             }
+        }
+
+        /// <summary>
+        /// Whether the caller's Spoiler Guard covers a movie, directly or through a
+        /// collection. Client state lists collection ids, not the movies inside them.
+        /// </summary>
+        /// <param name="movieId">The movie's Jellyfin id.</param>
+        /// <returns><c>{inScope}</c>, for the caller's own state only.</returns>
+        [HttpGet("spoiler-blur/movies/{movieId}/in-scope")]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult GetSpoilerMovieScope(string movieId)
+        {
+            var userId = UserHelper.GetCurrentUserId(User);
+            if (userId == null || userId == Guid.Empty) return Forbid();
+            if (!Guid.TryParse(movieId, out var id) || id == Guid.Empty)
+            {
+                return BadRequest(new { success = false, message = "Invalid movie id." });
+            }
+
+            var state = _spoilerResolver.LoadUserState(HttpContext, userId.Value);
+            return Ok(new { inScope = _spoilerResolver.IsMovieInSpoilerScope(state, id) });
         }
 
         [HttpGet("spoiler-blur/series")]

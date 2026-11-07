@@ -26,6 +26,7 @@
         addSpoilerBlurButton: internal.addSpoilerBlurButton,
         isEnabledFor: internal.isEnabledFor,
         isMovieEnabledFor: internal.isMovieEnabledFor,
+        isMovieInScope: internal.isMovieInScope,
         isCollectionEnabledFor: internal.isCollectionEnabledFor,
         enableForSeries: internal.enableForSeries,
         disableForSeries: internal.disableForSeries,

@@ -157,7 +157,10 @@ With **Blur images** selected, unplayed episodes lose their original artwork and
 | Taglines, ratings, air date | Removes taglines, community/critic scores, and premiere dates. |
 | Cast | Hides guest stars or the entire cast, depending on your settings. |
 | Search hints | Protected episode hints use generic titles or the placeholder. |
-| JE Reviews panel | Hides reviews on guarded series, their season/episode pages, and directly guarded movies. |
+| JE Reviews panel | Hides reviews on guarded series, their season/episode pages, and guarded movies, including movies guarded through a collection. |
+| More Info and Seerr cards | Follow the same settings for protected titles, on every page that shows them. See below. |
+| Release date chips | Follow **Hide air date**. |
+| MDBList ratings row | Follows **Hide ratings**. |
 
 ??? note "Item eligibility and extra metadata"
 
@@ -169,7 +172,9 @@ With **Blur images** selected, unplayed episodes lose their original artwork and
 
     Search hints can also have matched-term echoes cleared. Advanced reveals do not relax this path.
 
-    Played state does not exempt reviews. Collection-only movie scope does not suppress the JE Reviews panel.
+    Played state does not exempt reviews.
+
+    More Info and Seerr cards apply your settings to the data Seerr and TMDB send, which Jellyfin's own filters never see. A title counts as protected on the same terms as above, and also while it is pending. The description becomes your placeholder, and these follow their own settings: taglines, keywords, ratings, air dates (the year stays), and the cast. Trailers and character names go with title or description protection. Later seasons lose their names, descriptions, dates, and posters, as they do in your library. On a series, this applies to every later season, even one you have started.
 
     Metadata scope varies by item type:
 

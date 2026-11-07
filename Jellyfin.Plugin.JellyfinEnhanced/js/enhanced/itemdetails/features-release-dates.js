@@ -14,9 +14,13 @@
     // once it has cached the answer, and a visit's unclaimed ones go with it.
     const releaseLookups = new Map();
 
-    // TMDB answers don't depend on the user, so the answers cache stays as it
-    // was; prefetches no chip has taken over are aborted with their visit's.
+    // Spoiler Guard shapes these answers per user and per title, so neither a
+    // switch of user nor a guard change may reuse them.
+    window.addEventListener('je:spoiler-state-changed', () => releaseDateCache.clear());
+
+    // Prefetches no chip has taken over are aborted with their visit's.
     JE.session?.onUserChange('release-dates', () => {
+        releaseDateCache.clear();
         for (const entry of releaseLookups.values()) {
             if (entry.visit && !entry.claimed) entry.ctl?.abort();
         }
