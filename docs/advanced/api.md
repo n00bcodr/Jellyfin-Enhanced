@@ -905,11 +905,11 @@ The Seerr proxy, the TMDB passthrough's title routes and `mdblist-ratings/{media
 
 | Response | Effect |
 |---|---|
-| Seerr and TMDB title details | Fields follow the caller's settings. Adds `jeSpoilerGuard: true`, `jeSpoilerGuardInherited: true` for a movie protected only through a collection, and `jeYear` when dates are hidden. Seerr keywords move to `jeRuleKeywords`, for request override rules. Started seasons and played episodes stay visible, matched by their own ids. |
+| Seerr and TMDB title details | Fields follow the caller's settings. Adds `jeSpoilerGuard: true`, `jeSpoilerGuardInherited: true` for a movie protected only through a collection, `jeSpoilerGuardItems` with the guarded library items, and `jeYear` when dates are hidden, also on seasons and episodes. Seerr keywords move to `jeRuleKeywords`, for request override rules. A started season or played episode stays visible when the library holds its TMDB id. |
 | Seerr lists | `overview` becomes the placeholder and ratings are removed, per setting. Dates stay. A removed score moves to `jeSortRating`, so Top Rated keeps its order. |
 | Seerr ratings, TMDB `movie/{id}/release_dates` | Empty when ratings or dates are hidden. |
 | TMDB title routes | `no-store`, with no ETag, so a stored unprotected copy can't be revalidated. |
-| Follow-ups to protected details | Ratings, season and TMDB requests can send `X-JE-Spoiler-Guarded: 1`, because they carry only a TMDB id. It can only hide more. |
+| Follow-ups to protected details | Ratings, season and TMDB requests can send `X-JE-Spoiler-Guarded` with the `jeSpoilerGuardItems` of their details, or `1`, because they carry only a TMDB id. It can only hide more. Items that aren't the caller's guards are ignored. |
 | `mdblist-ratings` | `{Found:false,Confirmed:false}` when ratings are hidden. |
 | `arr/queue`, `arr/history`, `arr/calendar` | Episode titles are removed from subtitles, per caller, on top of the shared caches. |
 | `arr/requests` | Dates are removed when hidden. `isComingSoon` keeps its value. |

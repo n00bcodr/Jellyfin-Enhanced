@@ -35,8 +35,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     {
         /// <summary>
         /// Sent on the requests that follow a details response marked protected. They carry
-        /// only a TMDB id, which may be all the library lacks. It can only ever hide more,
-        /// so it needs no trust.
+        /// only a TMDB id, which may be all the library lacks. The value lists the items those
+        /// details named, or is "1". It needs no trust: it can only ever hide more, because an
+        /// item that isn't one of the caller's guards is ignored and an exemption still needs
+        /// the episode's or season's own id.
         /// </summary>
         public const string GuardedFollowUpHeader = "X-JE-Spoiler-Guarded";
 
@@ -167,7 +169,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         internal sealed record GuardedMovie(Guid Id, bool Direct);
 
-        internal sealed record GuardScope(PluginConfiguration Config, UserSpoilerBlur State, GuardIndex Index, Guid UserId, bool GuardedFollowUp);
+        internal sealed record GuardScope(PluginConfiguration Config, UserSpoilerBlur State, GuardIndex Index, Guid UserId, bool GuardedFollowUp, List<Guid> FollowUpItems);
 
         // Why a title is protected. Inherited means only through a collection, so
         // the guard can't be switched off from the title itself.
@@ -373,8 +375,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return null;
             }
 
-            var followUp = httpContext.Request.Headers.ContainsKey(GuardedFollowUpHeader);
-            return new GuardScope(config, state, GetIndex(userId, state), userId, followUp);
+            var followUp = httpContext.Request.Headers.TryGetValue(GuardedFollowUpHeader, out var named);
+            return new GuardScope(config, state, GetIndex(userId, state), userId, followUp, ParseItems(named.ToString()));
+        }
+
+        private static List<Guid> ParseItems(string header)
+        {
+            var items = new List<Guid>();
+            foreach (var part in header.Split(','))
+            {
+                if (Guid.TryParse(part.Trim(), out var id)) items.Add(id);
+            }
+
+            return items;
         }
 
         private GuardIndex GetIndex(Guid userId, UserSpoilerBlur state)
@@ -514,8 +527,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private static string JellyfinToken(Guid id) => "jf:" + id.ToString("N");
 
         // mediaInfo and externalIds carry the other ids Seerr knows for a title. A follow-up
-        // carries only the TMDB id, so the verdict on its details comes with it: nothing
-        // here remembers an identity between requests.
+        // carries only the TMDB id, so the verdict on its details comes with it, along with
+        // the items that lead to the caller's progress: nothing here remembers an identity
+        // between requests.
         private GuardMatch? Match(GuardScope scope, bool isSeries, string tmdbId, JsonObject? mediaInfo, string? tvdbId)
         {
             var tokens = new List<string>();
@@ -531,8 +545,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             var match = MatchTokens(scope, isSeries, tmdbId, tokens);
-            if (match != null) return match;
-            return scope.GuardedFollowUp && mediaInfo == null && tvdbId == null ? new GuardMatch(Array.Empty<Guid>(), false) : null;
+            if (!scope.GuardedFollowUp || mediaInfo != null || tvdbId != null) return match;
+
+            var items = scope.FollowUpItems.FindAll(id => scope.Index.Series.ContainsKey(JellyfinToken(id)));
+            foreach (var id in match?.ItemIds ?? Array.Empty<Guid>())
+            {
+                if (!items.Contains(id)) items.Add(id);
+            }
+
+            return new GuardMatch(items, match?.Inherited == true);
         }
 
         // Only evidence decides: a title nothing ties to a guarded item is open, however
@@ -705,7 +726,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var tvdbId = Scalar((detail["externalIds"] as JsonObject)?["tvdbId"]);
                 var match = Match(scope, isSeries, title.Groups[2].Value, detail["mediaInfo"] as JsonObject, tvdbId);
                 if (match == null) return false;
-                RedactDetail(scope, detail, BuildPolicy(scope, isSeries), SeerrKeys, isSeries, ProgressFor(scope, isSeries, match), match.Inherited);
+                RedactDetail(scope, detail, BuildPolicy(scope, isSeries), SeerrKeys, isSeries, ProgressFor(scope, isSeries, match), match);
                 return true;
             }
 
@@ -804,7 +825,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var isSeries = title.Groups[1].Value == "tv";
                 var match = Match(scope, isSeries, title.Groups[2].Value, null, null);
                 if (match == null) return false;
-                RedactDetail(scope, root, BuildPolicy(scope, isSeries), TmdbKeys, isSeries, ProgressFor(scope, isSeries, match), match.Inherited);
+                RedactDetail(scope, root, BuildPolicy(scope, isSeries), TmdbKeys, isSeries, ProgressFor(scope, isSeries, match), match);
                 return true;
             }
 
@@ -877,11 +898,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             Dialect keys,
             bool isSeries,
             SeriesProgress progress,
-            bool inherited)
+            GuardMatch match)
         {
             RedactTitleFields(detail, policy, keys);
             detail["jeSpoilerGuard"] = true;
-            if (inherited) detail["jeSpoilerGuardInherited"] = true;
+            if (match.Inherited) detail["jeSpoilerGuardInherited"] = true;
+            if (match.ItemIds.Count > 0)
+            {
+                // Follow-ups echo these, and the Seerr toggle switches the guard off through them.
+                var items = new JsonArray();
+                foreach (var id in match.ItemIds) items.Add(id.ToString("N"));
+                detail["jeSpoilerGuardItems"] = items;
+            }
 
             if (policy.Taglines) detail.Remove("tagline");
             if (policy.Tags) RedactKeywords(detail);
@@ -929,6 +957,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         // The year stays visible, as ProductionYear does on a stripped item.
+        private static void RemoveDateKeepingYear(JsonObject node, string key)
+        {
+            if (Scalar(node[key]) is { Length: >= 4 } date) node["jeYear"] = date.Substring(0, 4);
+            node.Remove(key);
+        }
+
         private static void RedactDates(JsonObject detail, Dialect keys, bool isSeries)
         {
             var date = Scalar(detail[isSeries ? keys.FirstAirDate : keys.ReleaseDate]);
@@ -979,7 +1013,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (Scalar(season["id"]) is { } id && progress.StartedSeasons.Contains(id)) return;
             if (policy.SeasonOverview) season.Remove("overview");
             if (policy.ReplaceTitle) season["name"] = $"Season {number}";
-            if (policy.Dates) season.Remove(keys.AirDate);
+            if (policy.Dates) RemoveDateKeepingYear(season, keys.AirDate);
             season.Remove(keys.Poster);
         }
 
@@ -1003,7 +1037,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             if (policy.SeasonOverview && !reveal.Overview) episode.Remove("overview");
-            if (policy.Dates) episode.Remove(keys.AirDate);
+            if (policy.Dates) RemoveDateKeepingYear(episode, keys.AirDate);
             if (policy.Ratings && !reveal.Ratings)
             {
                 episode.Remove(keys.VoteAverage);

@@ -68,10 +68,14 @@
                     if (wasEnabled) {
                         if (!await internal.confirmDisableSpoiler()) return;
                         const result = await internal.disableForTmdb(mediaType, tmdbId);
-                        if (result?.removed === false) {
+                        // The server's list reaches what a TMDB id can't: an item without
+                        // one, and a title held twice, where that id leads to one copy.
+                        const items = data?.jeSpoilerGuardItems || [];
+                        if (result?.removed === false && items.length === 0) {
                             JE.toast?.(JE.t('spoiler_blur_pending_error_toast'));
                             return;
                         }
+                        await Promise.all(items.map(id => (mediaType === 'tv' ? internal.disableForSeries(id) : internal.disableForMovie(id))));
                         JE.toast?.(JE.t('spoiler_blur_pending_disabled_toast'));
                     } else {
                         const result = await internal.enableForTmdb(mediaType, tmdbId, displayName);

@@ -106,7 +106,9 @@
      * @returns {object|undefined} Options for the request, if any are needed.
      */
     api.followUpOptions = function(details) {
-        return details?.jeSpoilerGuard ? { skipCache: true, headers: { 'X-JE-Spoiler-Guarded': '1' } } : undefined;
+        if (!details?.jeSpoilerGuard) return undefined;
+        const items = details.jeSpoilerGuardItems;
+        return { skipCache: true, headers: { 'X-JE-Spoiler-Guarded': items?.length ? items.join(',') : '1' } };
     };
 
     /**

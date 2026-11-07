@@ -70,6 +70,27 @@ test('backfill fills what the server left in and nothing it took out', async t =
   assert.equal(modal.querySelector('[data-season-number="2"] .season-overview'), null);
 });
 
+test('a protected season keeps its year on its card, from each source that has it', async t => {
+  const { internal, render, document } = moreInfo(t, { pluginConfig: { TmdbEnabled: true }, jellyseerrAPI: {
+    fetchTmdbTvDetails: async () => ({ seasons: [{ season_number: 3, jeYear: '2022' }] }),
+    // Seerr's TVDB mode sends seasons with no date, so this year is the first episode's.
+    fetchTvSeasonDetails: async (_id, number) => (number === 4 ? { episodes: [{ jeYear: '2023' }] } : {}),
+    resolveJellyseerrBaseUrl: () => '',
+  } });
+  const details = { id: 7, jeSpoilerGuard: true, seasons: [
+    { seasonNumber: 2, episodeCount: 8, jeYear: '2021' }, { seasonNumber: 3, episodeCount: 8 }, { seasonNumber: 4, episodeCount: 8 },
+  ] };
+  const modal = render(details, 'tv');
+  assert.match(modal.querySelector('[data-season-number="2"] .season-meta').textContent, /2021/);
+  modal.dataset.tmdbId = '7';
+  document.body.appendChild(modal);
+  internal.state.currentModal = modal;
+  await internal.backfillSeasonMetadata(7, details);
+  for (const [number, year] of [[2, '2021'], [3, '2022'], [4, '2023']]) {
+    assert.match(modal.querySelector(`[data-season-number="${number}"] .season-meta`).textContent, new RegExp(year));
+  }
+});
+
 test('a backfill for one modal never writes into the one that replaced it', async t => {
   let release;
   const lookup = () => new Promise(resolve => { release = resolve; });
@@ -106,6 +127,9 @@ test('follow-ups to protected details say so, and others send nothing extra', as
   const api = requestRules(t, []);
   assert.equal(api.followUpOptions({ jeSpoilerGuard: true }).headers['X-JE-Spoiler-Guarded'], '1');
   assert.equal(api.followUpOptions({ jeSpoilerGuard: true }).skipCache, true);
+  // Naming the items lets the server reach the caller's progress with no id in common.
+  assert.equal(api.followUpOptions({ jeSpoilerGuard: true, jeSpoilerGuardItems: ['aa', 'bb'] }).headers['X-JE-Spoiler-Guarded'], 'aa,bb');
+  assert.equal(api.followUpOptions({ jeSpoilerGuard: true, jeSpoilerGuardItems: [] }).headers['X-JE-Spoiler-Guarded'], '1');
   assert.equal(api.followUpOptions({ id: 1 }), undefined);
   assert.equal(api.followUpOptions(null), undefined);
 });
@@ -174,7 +198,7 @@ test('reading guard state or a failed change leaves those responses alone', asyn
   assert.equal(h.events.length, 0);
 });
 
-function seerrToggle(t, { plugin = async () => ({ promoted: 'pending', removed: true }), data = { id: 42 }, translate = key => key } = {}) {
+function seerrToggle(t, { plugin = async () => ({ promoted: 'pending', removed: true }), data = { id: 42 }, translate = key => key, mediaType = 'tv' } = {}) {
   const opened = [];
   const toasts = [];
   let epoch = 0;
@@ -182,7 +206,7 @@ function seerrToggle(t, { plugin = async () => ({ promoted: 'pending', removed: 
   const h = spoilerState(t, plugin, { t: translate, toast: text => toasts.push(text), session, jellyseerrMoreInfo: { open: async (...args) => opened.push(args) } });
   h.load('enhanced/spoilerguard/seerr-toggle.js');
   h.state.confirmDisableSpoiler = async () => true;
-  const button = h.state.buildSeerrToggle(data, 'tv');
+  const button = h.state.buildSeerrToggle(data, mediaType);
   const modal = h.document.createElement('div');
   modal.className = 'je-more-info-modal';
   modal.appendChild(button);
@@ -247,6 +271,25 @@ test('a disable the server could not carry out is not reported as done', async t
   await h.settle();
   assert.deepEqual(h.toasts, ['spoiler_blur_pending_error_toast']);
   assert.deepEqual(h.opened, []);
+});
+
+test('a guard the TMDB id cannot reach comes off through the items the server named', async t => {
+  for (const [mediaType, route] of [['tv', 'series'], ['movie', 'movies']]) {
+    const sent = [];
+    const h = seerrToggle(t, {
+      mediaType, data: { id: 42, jeSpoilerGuard: true, jeSpoilerGuardItems: ['aabb', 'ccdd'] },
+      plugin: async (path, options) => {
+        if (!options?.method) return {};
+        sent.push(path);
+        return { success: true, removed: false };
+      },
+    });
+    h.button.click();
+    await h.settle();
+    assert.deepEqual(sent, [`/spoiler-blur/pending/${mediaType}/42`, `/spoiler-blur/${route}/aabb`, `/spoiler-blur/${route}/ccdd`]);
+    assert.deepEqual(h.toasts, ['spoiler_blur_pending_disabled_toast']);
+    assert.deepEqual(h.opened, [[42, mediaType]]);
+  }
 });
 
 test('a guard change that lands after the modal is gone does not bring it back', async t => {

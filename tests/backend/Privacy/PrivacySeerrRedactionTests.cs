@@ -121,11 +121,11 @@ public class PrivacySeerrRedactionTests
             return episode;
         }
         private readonly Dictionary<Guid, (List<BaseItem> All, List<BaseItem> Played)> _episodes = new();
-        public string Seerr(string json, string path, bool followUp = false) => Redactor.RedactSeerr(json, path, UserId.ToString("N"), Context(followUp));
-        public static DefaultHttpContext Context(bool followUp)
+        public string Seerr(string json, string path, bool followUp = false, string? named = null) => Redactor.RedactSeerr(json, path, UserId.ToString("N"), Context(followUp, named));
+        public static DefaultHttpContext Context(bool followUp, string? named = null)
         {
             var http = new DefaultHttpContext();
-            if (followUp) http.Request.Headers[SpoilerSeerrRedactor.GuardedFollowUpHeader] = "1";
+            if (followUp) http.Request.Headers[SpoilerSeerrRedactor.GuardedFollowUpHeader] = named ?? "1";
             return http;
         }
         public JsonObject SeerrObject(string json, string path) => Assert.IsType<JsonObject>(JsonNode.Parse(Seerr(json, path)));
@@ -302,6 +302,44 @@ public class PrivacySeerrRedactionTests
         Assert.Null(f.SeerrObject(TvJson, TvPath)["seasons"]![2]!["overview"]);
     }
 
+    // Season cards and the picker show a year, which ProductionYear keeps on a stripped season.
+    [Fact]
+    public void AStrippedSeasonKeepsItsYearAndLosesItsDate()
+    {
+        using var f = new Fixture(); f.GuardSeries();
+        f.Config.SpoilerStripPremiereDate = true;
+        var later = f.SeerrObject(TvJson, TvPath)["seasons"]![2]!;
+        Assert.Null(later["airDate"]);
+        Assert.Equal("2006", (string?)later["jeYear"]);
+
+        const string Tmdb = "{\"id\":1433,\"seasons\":[{\"season_number\":2,\"air_date\":\"2006-02-06\"}]}";
+        var raw = f.Tmdb(Tmdb, "tv/1433")["seasons"]![0]!;
+        Assert.Null(raw["air_date"]);
+        Assert.Equal("2006", (string?)raw["jeYear"]);
+    }
+
+    [Fact]
+    public void AStrippedEpisodeKeepsItsYearForASeasonWithNoDateOfItsOwn()
+    {
+        using var f = new Fixture(); f.GuardSeries();
+        f.Config.SpoilerStripPremiereDate = true;
+        const string Body = "{\"seasonNumber\":2,\"episodes\":[{\"id\":1,\"seasonNumber\":2,\"episodeNumber\":1,\"airDate\":\"2006-02-06\"},{\"id\":2,\"seasonNumber\":2,\"episodeNumber\":2,\"airDate\":\"\"}]}";
+        var episodes = f.SeerrObject(Body, "/api/v1/tv/1433/season/2")["episodes"]!;
+        Assert.Null(episodes[0]!["airDate"]);
+        Assert.Equal("2006", (string?)episodes[0]!["jeYear"]);
+        Assert.Null(episodes[1]!["jeYear"]);
+    }
+
+    [Fact]
+    public void ADateThatStaysVisibleAddsNoYear()
+    {
+        using var f = new Fixture(); f.GuardSeries();
+        f.Config.SpoilerStripPremiereDate = false;
+        var later = f.SeerrObject(TvJson, TvPath)["seasons"]![2]!;
+        Assert.Equal("2006-02-06", (string?)later["airDate"]);
+        Assert.Null(later["jeYear"]);
+    }
+
     [Fact]
     public void PlayedEpisodesKeepTheirTextInASeasonResponse()
     {
@@ -466,6 +504,67 @@ public class PrivacySeerrRedactionTests
         using var f = new Fixture(); f.GuardSeries(tmdb: null, tvdb: "90002");
         Assert.True(f.Redactor.TryRedactTmdb("{\"overview\":\"Secret plot\"}", "tv/90002", f.UserId.ToString("N"), Fixture.Context(true), out var body));
         Assert.Equal("Spoiler Guard activated", (string?)JsonNode.Parse(body)!["overview"]);
+    }
+
+    // A series the library knows by its TVDB id alone: its follow-ups have no id in common
+    // with it, so the details name the item that leads to what this caller has played.
+    private const string StartedSeasonBody = "{\"id\":3002,\"seasonNumber\":2,\"name\":\"The Secret Season\",\"overview\":\"Season plot\",\"episodes\":[]}";
+
+    private static string FollowUpBody(string named)
+    {
+        using var f = new Fixture();
+        var series = f.GuardSeries(tmdb: null, tvdb: "90005");
+        f.AddEpisode(series, 2, 1, played: true, seasonTmdb: "3002");
+        var details = f.SeerrObject("{\"id\":90005,\"name\":\"Show\",\"externalIds\":{\"tvdbId\":90005}}", "/api/v1/tv/90005");
+        Assert.Equal(series.Id.ToString("N"), (string?)details["jeSpoilerGuardItems"]![0]);
+        return f.Seerr(StartedSeasonBody, "/api/v1/tv/90005/season/2", followUp: true, named: named.Replace("{series}", series.Id.ToString("N"), StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void AFollowUpReachesProgressThroughTheItemItsDetailsNamed()
+        => Assert.Equal("Season plot", (string?)JsonNode.Parse(FollowUpBody("{series}"))!["overview"]);
+
+    [Theory]
+    [InlineData("1")]
+    [InlineData("not-a-guid")]
+    public void AFollowUpNamingNothingStaysStripped(string named)
+        => Assert.Null(JsonNode.Parse(FollowUpBody(named))!["overview"]);
+
+    // This one has progress that would exempt the season, which only makes it count if it's a guard.
+    [Fact]
+    public void AFollowUpNamingAnItemThatIsNotAGuardIsIgnored()
+    {
+        using var f = new Fixture();
+        f.GuardSeries(tmdb: null, tvdb: "90005");
+        var unguarded = new Series { Id = Guid.NewGuid() };
+        f.AddEpisode(unguarded, 2, 1, played: true, seasonTmdb: "3002");
+        var body = f.Seerr(StartedSeasonBody, "/api/v1/tv/90005/season/2", followUp: true, named: unguarded.Id.ToString("N"));
+        Assert.Null(JsonNode.Parse(body)!["overview"]);
+    }
+
+    [Fact]
+    public void AnEpisodeInTheNamedSeriesStillNeedsItsOwnId()
+    {
+        using var f = new Fixture();
+        var series = f.GuardSeries(tmdb: null, tvdb: "90006");
+        f.AddEpisode(series, 2, 1, played: true);
+        const string Body = "{\"seasonNumber\":2,\"episodes\":[{\"id\":555,\"seasonNumber\":2,\"episodeNumber\":1,\"name\":\"Secret\",\"overview\":\"Secret\"}]}";
+        var season = Assert.IsType<JsonObject>(JsonNode.Parse(f.Seerr(Body, "/api/v1/tv/90006/season/2", followUp: true, named: series.Id.ToString("N"))));
+        Assert.Equal("Episode 1", (string?)season["episodes"]![0]!["name"]);
+    }
+
+    [Fact]
+    public void DetailsNameEveryGuardedCopyOfATitleAndNoneWhenHeldForAnotherReason()
+    {
+        using var f = new Fixture();
+        var first = f.GuardMovie(); var second = f.GuardMovie();
+        var named = f.SeerrObject(MovieJson, MoviePath)["jeSpoilerGuardItems"]!.AsArray().Select(id => (string?)id).ToList();
+        Assert.Equal(new[] { first.Id.ToString("N"), second.Id.ToString("N") }.OrderBy(id => id), named.OrderBy(id => id));
+
+        using var pending = new Fixture();
+        pending.State.PendingTmdb["movie:299534"] = new();
+        pending.Save();
+        Assert.Null(pending.SeerrObject(MovieJson, MoviePath)["jeSpoilerGuardItems"]);
     }
 
     [Fact]

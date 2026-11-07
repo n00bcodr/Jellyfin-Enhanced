@@ -250,22 +250,55 @@ for (const [label, status] of [['available', 5], ['blocked', 6]]) test(`tv ${lab
  * Opens the real season-selection modal over a stubbed modal shell. `save` clicks Request.
  * @returns {Promise<object>} The harness plus the modal element, its request button and `save`.
  */
-async function seasonModal(t, { tvDetails, partial = true, specials = true, post } = {}) {
-  const h = setup(t, { post });
+async function seasonModal(t, { tvDetails, partial = true, specials = true, post, config, api = {} } = {}) {
+  const h = setup(t, { post, config });
+  const polls = [];
+  h.window.setInterval = callback => polls.push(callback);
   for (const file of ['seerr-status.js', 'ui/ui-icons.js', 'ui/ui-quota.js', 'ui/ui-season-modal.js']) h.load(`jellyseerr/${file}`);
   h.JE.internals.jellyseerrUi.markCardRequested = () => {};
   Object.assign(h.api, { fetchRequestSettings: async () => ({ partialRequestsEnabled: partial, enableSpecialEpisodes: specials }),
-    fetchTvShowDetails: async () => tvDetails, fetchSonarrLookup: async () => [], fetchUserQuota: async () => null, fetchTvSeasonDetails: async () => ({}) });
+    fetchTvShowDetails: async () => tvDetails, fetchSonarrLookup: async () => [], fetchUserQuota: async () => null, fetchTvSeasonDetails: async () => ({}),
+    followUpOptions: details => (details?.jeSpoilerGuard ? { skipCache: true } : undefined), ...api });
   let modal;
   h.JE.jellyseerrModal = { createAdvancedOptionsHTML: () => '', populateAdvancedOptions() {}, create(o) {
     const el = h.document.createElement('div'); el.innerHTML = `<div class="jellyseerr-modal-body">${o.bodyHtml}</div>`;
     h.document.body.append(el); modal = { el, o }; return { modalElement: el, show() {} }; } };
   await h.JE.jellyseerrUI.showSeasonSelectionModal(42, 'tv', 'Show', null, false);
   const requestBtn = h.document.createElement('button');
-  return { ...h, el: modal.el, requestBtn, save: () => modal.o.onSave(modal.el, requestBtn, () => {}) };
+  return { ...h, el: modal.el, requestBtn, save: () => modal.o.onSave(modal.el, requestBtn, () => {}), poll: () => polls.at(-1)() };
 }
 const seasonCheckbox = (h, number) => h.el.querySelector(`.jellyseerr-season-checkbox[data-season-number="${number}"]`);
 const tvSeasons = [{ seasonNumber: 0, name: 'Specials', episodeCount: 2, airDate: '2020-01-01' }, { seasonNumber: 1, name: '<img src=x onerror=evil()>', episodeCount: 3, airDate: '2020-01-01' }, { seasonNumber: 2, episodeCount: 3, airDate: '2021-01-01' }];
+
+test('season modal refreshes from the server, so a cached answer cannot undo a protected one', async t => {
+  // Cached on this device before the guard went on elsewhere: only the server knows.
+  const secret = { seasons: [{ seasonNumber: 2, name: 'Secret season title', episodeCount: 3 }], externalIds: { tvdbId: 1 } };
+  const guarded = { jeSpoilerGuard: true, seasons: [{ seasonNumber: 2, name: 'Season 2', episodeCount: 3, jeYear: '2021' }], externalIds: { tvdbId: 1 } };
+  const h = await seasonModal(t, { api: { fetchTvShowDetails: async (_id, options) => (options?.skipCache ? guarded : secret) } });
+  await h.poll();
+  assert.doesNotMatch(h.el.textContent, /Secret season title/);
+  assert.equal(h.el.querySelector('.jellyseerr-season-name').textContent, 'Season 2');
+});
+
+test('season modal keeps a protected season\'s year, from each source that has it', async t => {
+  const season = number => ({ seasonNumber: number, episodeCount: 3 });
+  const meta = (h, number) => seasonCheckbox(h, number).closest('.jellyseerr-season-item').querySelector('.jellyseerr-season-meta').textContent;
+  const lookups = [];
+  const h = await seasonModal(t, {
+    config: { TmdbEnabled: true },
+    tvDetails: { jeSpoilerGuard: true, seasons: [{ ...season(2), jeYear: '2021' }, season(3), season(4)], externalIds: { tvdbId: 1 } },
+    api: {
+      // Seerr's TVDB mode sends seasons with no date, so season 3's year is its first episode's.
+      fetchTvSeasonDetails: async (_id, number) => { lookups.push(number); return number === 3 ? { episodes: [{ jeYear: '2022' }] } : {}; },
+      fetchTmdbTvDetails: async () => ({ seasons: [{ season_number: 4, jeYear: '2023' }] }),
+    },
+  });
+  await new Promise(resolve => h.window.setTimeout(resolve, 0));
+  assert.match(meta(h, 2), /^2021/);
+  assert.match(meta(h, 3), /^2022/);
+  assert.match(meta(h, 4), /^2023/);
+  assert.deepEqual(lookups, [3, 4], 'a season that already has its year needs no lookup');
+});
 
 test('season modal sends a stored TVDB id with the selected seasons', async t => {
   const h = await seasonModal(t, { tvDetails: { seasons: tvSeasons, externalIds: {}, mediaInfo: { tvdbId: 555, seasons: [] } } });

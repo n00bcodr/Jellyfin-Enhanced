@@ -48,8 +48,8 @@ async function backfillSeasonMetadata(tmdbId, data) {
         const episodePromises = (api?.fetchTvSeasonDetails)
             ? seasonsMissingData.map(s =>
                 api.fetchTvSeasonDetails(tmdbId, s.seasonNumber, followUp)
-                    .then(detail => ({ seasonNumber: s.seasonNumber, firstEpDate: detail?.episodes?.[0]?.airDate || '' }))
-                    .catch(() => ({ seasonNumber: s.seasonNumber, firstEpDate: '' }))
+                    .then(detail => ({ seasonNumber: s.seasonNumber, firstEpDate: detail?.episodes?.[0]?.airDate || '', firstEpYear: detail?.episodes?.[0]?.jeYear || '' }))
+                    .catch(() => ({ seasonNumber: s.seasonNumber, firstEpDate: '', firstEpYear: '' }))
             )
             : [];
 
@@ -63,10 +63,12 @@ async function backfillSeasonMetadata(tmdbId, data) {
 
         // Build episode air date lookup
         const epDateMap = {};
+        const epYearMap = {};
         episodeResults.forEach(r => {
             if (r.firstEpDate && isValidDate(r.firstEpDate)) {
                 epDateMap[r.seasonNumber] = r.firstEpDate;
             }
+            if (r.firstEpYear) epYearMap[r.seasonNumber] = r.firstEpYear;
         });
 
         // Bail if modal was closed/replaced during async fetch
@@ -121,11 +123,12 @@ async function backfillSeasonMetadata(tmdbId, data) {
                 const epDate = epDateMap[sNum];
                 const tmdbDate = tmdbSeason?.air_date || '';
                 const bestDate = epDate || (isValidDate(tmdbDate) ? tmdbDate : '');
-                if (bestDate) {
-                    season.airDate = bestDate;
+                // Spoiler Guard leaves only the year of a date it hides.
+                const year = bestDate ? new Date(bestDate).getFullYear() : (season.jeYear || epYearMap[sNum] || tmdbSeason?.jeYear);
+                if (bestDate) season.airDate = bestDate;
+                if (year) {
                     const metaEl = card.querySelector('.season-meta');
                     if (metaEl) {
-                        const year = new Date(bestDate).getFullYear();
                         const currentText = metaEl.textContent || '';
                         if (!currentText.includes(String(year))) {
                             metaEl.textContent = `${season.episodeCount} Episodes \u2022 ${year}`;
@@ -383,6 +386,7 @@ function buildSeasonsSection(data) {
                     const displayName = (trimmedName && !isNumericOnly)
                         ? trimmedName
                         : (sNum === 0 ? JE.t('jellyseerr_season_specials') : JE.t('jellyseerr_season_name', { number: sNum }));
+                    const seasonYear = season.jeYear || (season.airDate && isValidDate(season.airDate) ? season.airDate.substring(0, 4) : '');
 
                     return `
                         <div class="season-card" data-season-number="${escapeHtml(String(sNum))}">
@@ -393,7 +397,7 @@ function buildSeasonsSection(data) {
                                 <div class="season-name">${escapeHtml(displayName)}</div>
                                 <div class="season-meta">
                                     ${escapeHtml(season.episodeCount || 0)} Episodes
-                                    ${season.airDate && isValidDate(season.airDate) ? ` \u2022 ${escapeHtml(season.airDate.substring(0, 4))}` : ''}
+                                    ${seasonYear ? ` \u2022 ${escapeHtml(seasonYear)}` : ''}
                                 </div>
                                 <div data-season-links>${buildSeasonAvailabilityLinks(seasonInfo, seasonJellyfinId, seasonJellyfinId4k)}</div>
                                 ${season.overview ? `<div class="season-overview">${escapeHtml(season.overview)}</div>` : ''}
