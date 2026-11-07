@@ -37,6 +37,7 @@
         isTmdbEnabled: internal.isTmdbEnabled,
         enableForTmdb: internal.enableForTmdb,
         disableForTmdb: internal.disableForTmdb,
+        hasAnyState: internal.hasAnyState,
         whenLoaded: internal.whenLoaded,
         isLoadOk: internal.isLoadOk,
         isLoaded: internal.isLoaded,

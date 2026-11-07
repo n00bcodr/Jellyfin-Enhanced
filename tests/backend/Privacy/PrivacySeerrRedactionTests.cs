@@ -339,6 +339,53 @@ public class PrivacySeerrRedactionTests
         Assert.Null(f.SeerrObject(SeasonWithTvdbId, "/api/v1/tv/1433/season/2")["overview"]);
     }
 
+    // Shapes from Seerr's TVDB mode, with ids that collide to show none of them are believed.
+    [Fact]
+    public void ASeasonResponseFromSeerrsTvdbModeCanNotProveItsSeasonStarted()
+    {
+        using var f = new Fixture(); var series = f.GuardSeries();
+        f.AddEpisode(series, 2, 1, played: true, seasonTvdb: "7002", seasonTmdb: "3002");
+        const string Body = "{\"id\":3002,\"seasonNumber\":3,\"name\":\"\",\"overview\":\"\",\"airDate\":\"2006-02-06\",\"externalIds\":{\"tvdbId\":7002},\"episodes\":[]}";
+        var season = f.SeerrObject(Body, "/api/v1/tv/1433/season/3");
+        Assert.Null(season["airDate"]);
+        Assert.Equal("2006", (string?)season["jeYear"]);
+    }
+
+    [Fact]
+    public void ASeasonListFromSeerrsTvdbModeCanNotProveASeasonStarted()
+    {
+        using var f = new Fixture(); var series = f.GuardSeries();
+        f.AddEpisode(series, 2, 1, played: true, seasonTmdb: "71663");
+        const string Body = "{\"id\":1433,\"name\":\"Show\",\"seasons\":[{\"id\":71663,\"seasonNumber\":3,\"name\":\"3\",\"overview\":\"\",\"posterPath\":\"\",\"airDate\":\"\",\"episodeCount\":8}]}";
+        Assert.Equal("Season 3", (string?)f.SeerrObject(Body, TvPath)["seasons"]![0]!["name"]);
+    }
+
+    [Fact]
+    public void AnEpisodeFromSeerrsTvdbModeCanNotMatchALibraryTmdbId()
+    {
+        using var f = new Fixture(); var series = f.GuardSeries();
+        f.AddEpisode(series, 2, 1, played: true, tmdb: "111");
+        const string Body = "{\"id\":9,\"seasonNumber\":2,\"name\":\"\",\"overview\":\"\",\"episodes\":[{\"id\":111,\"seasonNumber\":2,\"episodeNumber\":1,\"name\":\"Secret\",\"overview\":\"Secret\"}]}";
+        var episode = f.SeerrObject(Body, "/api/v1/tv/1433/season/2")["episodes"]![0]!;
+        Assert.Equal("Episode 1", (string?)episode["name"]);
+        Assert.Null(episode["overview"]);
+    }
+
+    // More Info lists these names under Created By, so they go with the rest of the people.
+    [Theory]
+    [InlineData("All", true)]
+    [InlineData("GuestStars", false)]
+    public void EntireCastModeAlsoDropsASeriesCreators(string mode, bool dropped)
+    {
+        using var f = new Fixture(); f.GuardSeries();
+        f.Config.SpoilerStripCast = true;
+        f.Config.SpoilerStripCastMode = mode;
+        var seerr = f.SeerrObject("{\"id\":1433,\"name\":\"Show\",\"createdBy\":[{\"name\":\"Creator\"}]}", TvPath);
+        var tmdb = f.Tmdb("{\"id\":1433,\"name\":\"Show\",\"created_by\":[{\"name\":\"Creator\"}]}", "tv/1433");
+        Assert.Equal(dropped, seerr["createdBy"] == null);
+        Assert.Equal(dropped, tmdb["created_by"] == null);
+    }
+
     [Fact]
     public void AFailedProgressLookupLeavesLaterSeasonsStripped()
     {

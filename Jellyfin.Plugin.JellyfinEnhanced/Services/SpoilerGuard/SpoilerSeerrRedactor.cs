@@ -989,6 +989,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private static void RedactCredits(JsonObject detail, Policy policy)
         {
+            if (policy.CastAll)
+            {
+                detail.Remove("createdBy");
+                detail.Remove("created_by");
+            }
+
             if (detail["credits"] is not JsonObject credits) return;
             if (policy.CastAll)
             {
@@ -1014,21 +1020,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private static void RedactSeason(JsonObject season, Policy policy, Dialect keys, int number, SeriesProgress progress)
         {
             if (number <= 1) return;
-            if (Scalar(season["id"]) is { } id && progress.StartedSeasons.Contains("tmdb:" + id)) return;
-            if (Scalar((season["externalIds"] as JsonObject)?["tvdbId"]) is { } tvdb && progress.StartedSeasons.Contains("tvdb:" + tvdb)) return;
+            if (!HasForeignIds(season))
+            {
+                if (Scalar(season["id"]) is { } id && progress.StartedSeasons.Contains("tmdb:" + id)) return;
+                if (Scalar((season["externalIds"] as JsonObject)?["tvdbId"]) is { } tvdb && progress.StartedSeasons.Contains("tvdb:" + tvdb)) return;
+            }
+
             if (policy.SeasonOverview) season.Remove("overview");
             if (policy.ReplaceTitle) season["name"] = $"Season {number}";
             if (policy.Dates) RemoveDateKeepingYear(season, keys.AirDate);
             season.Remove(keys.Poster);
         }
 
+        // Seerr's TVDB mode fills these fields differently: a season's id is a TVDB id or the
+        // series', externalIds holds the series', and its episodes have TVDB ids, so none of
+        // them can be read as that item's own id. It gives seasons a bare number or no name
+        // at all, which is how to tell. They have only a date to keep, and the year stays.
+        private static bool HasForeignIds(JsonObject season)
+            => Scalar(season["name"]) is { } name && (name.Length == 0 || int.TryParse(name, out _));
+
         private void RedactSeasonDetail(GuardScope scope, JsonObject season, Policy policy, Dialect keys, int number, SeriesProgress progress)
         {
+            // Read first: this season's name is about to change.
+            var episodeProgress = HasForeignIds(season) ? new SeriesProgress() : progress;
             RedactSeason(season, policy, keys, number, progress);
             if (season["episodes"] is not JsonArray episodes) return;
             foreach (var episode in episodes)
             {
-                if (episode is JsonObject item) RedactUnplayedEpisode(scope, item, policy, keys, progress);
+                if (episode is JsonObject item) RedactUnplayedEpisode(scope, item, policy, keys, episodeProgress);
             }
         }
 

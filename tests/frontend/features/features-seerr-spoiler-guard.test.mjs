@@ -474,6 +474,30 @@ const show = async h => {
   await new Promise(resolve => setImmediate(resolve));
 };
 
+test('with guards on, chips follow what was played instead of keeping an answer for an hour', async t => {
+  let now = 1000, asked = 0;
+  const h = releaseDates(t, [], { spoilerBlur: { hasAnyState: () => true } });
+  h.window.Date.now = () => now;
+  h.window.fetch = async () => { asked++; return jsonResponse(dated()); };
+  await show(h);
+  await show(h);
+  assert.equal(asked, 1, 'the page\'s repeat calls share one answer');
+  now += 31 * 1000;
+  await show(h);
+  assert.equal(asked, 2);
+});
+
+test('with no guards, chips keep their answer for the hour they always did', async t => {
+  let now = 1000, asked = 0;
+  const h = releaseDates(t, [], { spoilerBlur: { hasAnyState: () => false } });
+  h.window.Date.now = () => now;
+  h.window.fetch = async () => { asked++; return jsonResponse(dated()); };
+  await show(h);
+  now += 59 * 60 * 1000;
+  await show(h);
+  assert.equal(asked, 1);
+});
+
 test('release chips do not outlive the guard they were fetched under', async t => {
   const h = releaseDates(t, [dated(), { results: [] }]);
   await show(h);

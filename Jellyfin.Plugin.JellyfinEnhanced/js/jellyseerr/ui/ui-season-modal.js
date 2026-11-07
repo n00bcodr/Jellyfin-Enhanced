@@ -231,6 +231,10 @@
             }).catch(err => console.warn(`${logPrefix} Quota chip render failed:`, err));
         }
 
+        // The newest details. A backfill started from older ones renders these instead, because
+        // a refresh may have brought a newer Spoiler Guard verdict.
+        let latestDetails = tvDetails;
+
         // Cached air dates — populated once, applied on every render (including polling refreshes)
         const airDateCache = {};
         // Names of started seasons on a protected title, which only their own responses can prove.
@@ -253,7 +257,8 @@
             details.seasons = details.seasons.map(s => ({
                 ...s,
                 airDate: s.airDate || airDateCache[s.seasonNumber],
-                name: seasonNameCache[s.seasonNumber] || s.name,
+                // Only while protected: without a guard the details carry the real name.
+                name: (details.jeSpoilerGuard && seasonNameCache[s.seasonNumber]) || s.name,
             }));
         }
 
@@ -288,8 +293,8 @@
 
             // When all fetches complete, re-render with backfilled dates
             Promise.all([...seasonFetches, tmdbFetch]).then(() => {
-                applyAirDateBackfill(tvDetails);
-                updateSeasonList(seasonList, tvDetails, partialRequestsEnabled, enableSpecialEpisodes, is4k, jellyfinSeasonMap);
+                applyAirDateBackfill(latestDetails);
+                updateSeasonList(seasonList, latestDetails, partialRequestsEnabled, enableSpecialEpisodes, is4k, jellyfinSeasonMap);
             });
         }
 
@@ -344,6 +349,7 @@
             // Uncached too: an answer from before a guard would undo the protected one above.
             const freshTvDetails = await fetchTvShowDetails(tmdbId, { skipCache: true });
             if (freshTvDetails) {
+                latestDetails = freshTvDetails;
                 applyAirDateBackfill(freshTvDetails);
                 updateSeasonList(seasonList, freshTvDetails, partialRequestsEnabled, enableSpecialEpisodes, is4k, jellyfinSeasonMap);
                 // Update Select All state after refresh

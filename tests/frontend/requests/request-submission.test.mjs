@@ -295,6 +295,33 @@ test('season modal shows the name of a started season the server sends whole, th
   assert.deepEqual(asked, [2], 'season 1 always stays visible, so it needs no lookup');
 });
 
+test('season modal lets go of a name it kept once the title is no longer protected', async t => {
+  let guarded = true;
+  const details = () => (guarded
+    ? { jeSpoilerGuard: true, seasons: [{ seasonNumber: 2, name: 'Season 2', episodeCount: 3, jeYear: '2021' }], externalIds: { tvdbId: 1 } }
+    : { seasons: [{ seasonNumber: 2, name: 'The Real Name', episodeCount: 3, airDate: '2021-01-01' }], externalIds: { tvdbId: 1 } });
+  const h = await seasonModal(t, { api: { fetchTvShowDetails: async () => details(), fetchTvSeasonDetails: async () => ({ name: 'Season 2' }) } });
+  await new Promise(resolve => h.window.setTimeout(resolve, 0));
+  guarded = false;
+  await h.poll();
+  assert.equal(seasonCheckbox(h, 2).closest('.jellyseerr-season-item').querySelector('.jellyseerr-season-name').textContent, 'The Real Name');
+});
+
+test('a slow season lookup from before a guard cannot undo the refresh that brought it', async t => {
+  const open = { seasons: [{ seasonNumber: 2, name: 'The Secret Season', episodeCount: 3 }], externalIds: { tvdbId: 1 } };
+  const guarded = { jeSpoilerGuard: true, seasons: [{ seasonNumber: 2, name: 'Season 2', episodeCount: 3, jeYear: '2021' }], externalIds: { tvdbId: 1 } };
+  let answer = open, finish;
+  const h = await seasonModal(t, { api: {
+    fetchTvShowDetails: async () => answer,
+    fetchTvSeasonDetails: () => new Promise(resolve => { finish = () => resolve({ episodes: [{ airDate: '2021-02-03' }] }); }),
+  } });
+  answer = guarded;
+  await h.poll();
+  finish();
+  await new Promise(resolve => h.window.setTimeout(resolve, 0));
+  assert.equal(seasonCheckbox(h, 2).closest('.jellyseerr-season-item').querySelector('.jellyseerr-season-name').textContent, 'Season 2');
+});
+
 test('season modal looks nothing up for a season with a date on an unprotected title', async t => {
   const asked = [];
   await seasonModal(t, { tvDetails: { seasons: tvSeasons, externalIds: { tvdbId: 1 } }, api: { fetchTvSeasonDetails: async (_id, number) => { asked.push(number); return {}; } } });

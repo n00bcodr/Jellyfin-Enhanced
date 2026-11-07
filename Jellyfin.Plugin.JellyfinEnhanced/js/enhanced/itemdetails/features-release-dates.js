@@ -6,6 +6,10 @@
     const internal = JE.internals.features = JE.internals.features || {};
 
     const RELEASEDATE_CACHE_TTL = 60 * 60 * 1000; // 1 hour
+    // With guards on, an answer also depends on what this user has played, and nothing
+    // announces a change to that. Long enough to dedupe the page's repeat calls.
+    const RELEASEDATE_GUARDED_CACHE_TTL = 30 * 1000;
+    const cacheTtl = () => (JE.spoilerBlur?.hasAnyState?.() ? RELEASEDATE_GUARDED_CACHE_TTL : RELEASEDATE_CACHE_TTL);
     const releaseDateCache = new Map(); // Map<itemId, { infos, ts }>
     // Lookups in flight, so a chip takes one over instead of starting another:
     // Map<itemId, { promise, visit, claimed, ctl }>. A details visit's prefetch
@@ -210,7 +214,7 @@
 
         const now = Date.now();
         const cached = releaseDateCache.get(itemId);
-        if (cached && (now - cached.ts) < RELEASEDATE_CACHE_TTL) {
+        if (cached && (now - cached.ts) < cacheTtl()) {
             if (cached.infos.length > 0) renderReleaseDateChips(container, itemId, cached.infos);
             return;
         }
@@ -367,7 +371,7 @@
      */
     function prefetchReleaseDate(itemId, item, visit) {
         const cached = releaseDateCache.get(itemId);
-        if ((cached && (Date.now() - cached.ts) < RELEASEDATE_CACHE_TTL) || releaseLookups.has(itemId)) return;
+        if ((cached && (Date.now() - cached.ts) < cacheTtl()) || releaseLookups.has(itemId)) return;
         const ctl = new AbortController();
         const userId = ApiClient.getCurrentUserId();
         const lookup = () => resolveReleaseInfo(item, userId);
