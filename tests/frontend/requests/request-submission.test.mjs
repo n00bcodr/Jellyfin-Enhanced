@@ -280,6 +280,27 @@ test('season modal refreshes from the server, so a cached answer cannot undo a p
   assert.equal(h.el.querySelector('.jellyseerr-season-name').textContent, 'Season 2');
 });
 
+test('season modal shows the name of a started season the server sends whole, through every refresh', async t => {
+  const details = () => ({ jeSpoilerGuard: true, seasons: [{ seasonNumber: 1, name: 'Season 1', episodeCount: 3, airDate: '2020-01-01' }, { seasonNumber: 2, name: 'Season 2', episodeCount: 3, jeYear: '2021' }], externalIds: { tvdbId: 1 } });
+  const asked = [];
+  const h = await seasonModal(t, { api: {
+    fetchTvShowDetails: async () => details(),
+    fetchTvSeasonDetails: async (_id, number) => { asked.push(number); return { name: 'The Real Name' }; },
+  } });
+  await new Promise(resolve => h.window.setTimeout(resolve, 0));
+  const name = number => seasonCheckbox(h, number).closest('.jellyseerr-season-item').querySelector('.jellyseerr-season-name').textContent;
+  assert.equal(name(2), 'The Real Name');
+  await h.poll();
+  assert.equal(name(2), 'The Real Name');
+  assert.deepEqual(asked, [2], 'season 1 always stays visible, so it needs no lookup');
+});
+
+test('season modal looks nothing up for a season with a date on an unprotected title', async t => {
+  const asked = [];
+  await seasonModal(t, { tvDetails: { seasons: tvSeasons, externalIds: { tvdbId: 1 } }, api: { fetchTvSeasonDetails: async (_id, number) => { asked.push(number); return {}; } } });
+  assert.deepEqual(asked, []);
+});
+
 test('season modal keeps a protected season\'s year, from each source that has it', async t => {
   const season = number => ({ seasonNumber: number, episodeCount: 3 });
   const meta = (h, number) => seasonCheckbox(h, number).closest('.jellyseerr-season-item').querySelector('.jellyseerr-season-meta').textContent;
@@ -297,7 +318,6 @@ test('season modal keeps a protected season\'s year, from each source that has i
   assert.match(meta(h, 2), /^2021/);
   assert.match(meta(h, 3), /^2022/);
   assert.match(meta(h, 4), /^2023/);
-  assert.deepEqual(lookups, [3, 4], 'a season that already has its year needs no lookup');
 });
 
 test('season modal sends a stored TVDB id with the selected seasons', async t => {

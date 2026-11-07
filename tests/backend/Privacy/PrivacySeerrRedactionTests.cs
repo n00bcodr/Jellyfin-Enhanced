@@ -100,10 +100,11 @@ public class PrivacySeerrRedactionTests
             return movie;
         }
         /// <summary>Adds a library episode, as the redactor's queries find it.</summary>
-        public Episode AddEpisode(Series series, int season, int number, bool played = false, string? tvdb = null, string? tmdb = null, string? seasonTmdb = null)
+        public Episode AddEpisode(Series series, int season, int number, bool played = false, string? tvdb = null, string? tmdb = null, string? seasonTmdb = null, string? seasonTvdb = null)
         {
             var seasonItem = new Season { Id = Guid.NewGuid() };
             if (seasonTmdb != null) seasonItem.ProviderIds["Tmdb"] = seasonTmdb;
+            if (seasonTvdb != null) seasonItem.ProviderIds["Tvdb"] = seasonTvdb;
             Library.Setup(l => l.GetItemById(seasonItem.Id)).Returns(seasonItem);
             var episode = new Episode { Id = Guid.NewGuid(), SeriesId = series.Id, SeasonId = seasonItem.Id, ParentIndexNumber = season, IndexNumber = number };
             if (tvdb != null) episode.ProviderIds["Tvdb"] = tvdb;
@@ -292,6 +293,50 @@ public class PrivacySeerrRedactionTests
         using var f = new Fixture(); var series = f.GuardSeries();
         f.AddEpisode(series, 2, 1, played: true);
         Assert.Null(f.SeerrObject(TvJson, TvPath)["seasons"]![2]!["overview"]);
+    }
+
+    // Seerr's season response carries the season's own TVDB id, which is what a library
+    // without season TMDB ids holds. The list on the details has no such id to go on.
+    private const string SeasonWithTvdbId = "{\"id\":3002,\"seasonNumber\":2,\"name\":\"The Secret Season\",\"overview\":\"Season plot\",\"posterPath\":\"/s2.jpg\",\"externalIds\":{\"tvdbId\":7002},\"episodes\":[]}";
+
+    [Fact]
+    public void AStartedSeasonTheLibraryKnowsByTvdbIdComesBackOnItsOwnResponse()
+    {
+        using var f = new Fixture(); var series = f.GuardSeries();
+        f.AddEpisode(series, 2, 1, played: true, seasonTvdb: "7002");
+        var season = f.SeerrObject(SeasonWithTvdbId, "/api/v1/tv/1433/season/2");
+        Assert.Equal("The Secret Season", (string?)season["name"]);
+        Assert.Equal("Season plot", (string?)season["overview"]);
+        Assert.Equal("/s2.jpg", (string?)season["posterPath"]);
+        Assert.Equal("Season 2", (string?)f.SeerrObject(TvJson, TvPath)["seasons"]![2]!["name"]);
+    }
+
+    [Fact]
+    public void ASeasonWithTheSameNumberButAnotherTvdbIdStaysStripped()
+    {
+        using var f = new Fixture(); var series = f.GuardSeries();
+        f.AddEpisode(series, 2, 1, played: true, seasonTvdb: "7999");
+        var season = f.SeerrObject(SeasonWithTvdbId, "/api/v1/tv/1433/season/2");
+        Assert.Equal("Season 2", (string?)season["name"]);
+        Assert.Null(season["overview"]);
+    }
+
+    // The two id spaces overlap, so a TVDB id can't speak for a TMDB one or the reverse.
+    [Fact]
+    public void AnIdOnlyCountsAgainstItsOwnProvider()
+    {
+        using var f = new Fixture(); var series = f.GuardSeries();
+        f.AddEpisode(series, 2, 1, played: true, seasonTvdb: "3002", seasonTmdb: "7002");
+        var season = f.SeerrObject(SeasonWithTvdbId, "/api/v1/tv/1433/season/2");
+        Assert.Null(season["overview"]);
+    }
+
+    [Fact]
+    public void AnUnstartedSeasonKnownByTvdbIdStaysStripped()
+    {
+        using var f = new Fixture(); var series = f.GuardSeries();
+        f.AddEpisode(series, 2, 1, played: false, seasonTvdb: "7002");
+        Assert.Null(f.SeerrObject(SeasonWithTvdbId, "/api/v1/tv/1433/season/2")["overview"]);
     }
 
     [Fact]

@@ -905,7 +905,7 @@ The Seerr proxy, the TMDB passthrough's title routes and `mdblist-ratings/{media
 
 | Response | Effect |
 |---|---|
-| Seerr and TMDB title details | Fields follow the caller's settings. Adds `jeSpoilerGuard: true`, `jeSpoilerGuardInherited: true` for a movie protected only through a collection, `jeSpoilerGuardItems` with the guarded library items, and `jeYear` when dates are hidden, also on seasons and episodes. Seerr keywords move to `jeRuleKeywords`, for request override rules. A started season or played episode stays visible when the library holds its TMDB id. |
+| Seerr and TMDB title details | Fields follow the caller's settings. Adds `jeSpoilerGuard: true`, `jeSpoilerGuardInherited: true` for a movie protected only through a collection, `jeSpoilerGuardItems` with the guarded library items, and `jeYear` when dates are hidden, also on seasons and episodes. Seerr keywords move to `jeRuleKeywords`, for request override rules. A started season or played episode stays visible when the library holds its TMDB id. A season's own response also accepts its TVDB id. |
 | Seerr lists | `overview` becomes the placeholder and ratings are removed, per setting. Dates stay. A removed score moves to `jeSortRating`, so Top Rated keeps its order. |
 | Seerr ratings, TMDB `movie/{id}/release_dates` | Empty when ratings or dates are hidden. |
 | TMDB title routes | `no-store`, with no ETag, so a stored unprotected copy can't be revalidated. |

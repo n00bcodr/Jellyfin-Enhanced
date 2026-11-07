@@ -91,6 +91,37 @@ test('a protected season keeps its year on its card, from each source that has i
   }
 });
 
+function seasonCards(document, numbers) {
+  const modal = document.createElement('div');
+  modal.dataset.tmdbId = '7';
+  modal.innerHTML = numbers.map(n => `<div class="season-card" data-season-number="${n}"><div class="season-poster"></div><div class="season-info"><div class="season-name">Season ${n}</div></div><div class="season-meta"></div></div>`).join('');
+  return modal;
+}
+
+test('a started season the server sends whole fills its card on a protected title', async t => {
+  // Season 2 was proven by an id the details don't have. Season 3 wasn't, so it stays as sent.
+  const own = { 2: { name: 'The Real Name', overview: 'Allowed plot', posterPath: '/own.jpg' }, 3: { name: 'Season 3' } };
+  const { internal, document } = moreInfo(t, { jellyseerrAPI: { fetchTvSeasonDetails: async (_id, number) => own[number] } });
+  const modal = seasonCards(document, [2, 3]);
+  internal.state.currentModal = modal;
+  await internal.backfillSeasonMetadata(7, { id: 7, jeSpoilerGuard: true, posterPath: '/show.jpg', seasons: [{ seasonNumber: 2, name: 'Season 2', episodeCount: 8 }, { seasonNumber: 3, name: 'Season 3', episodeCount: 8 }] });
+  const card = number => modal.querySelector(`[data-season-number="${number}"]`);
+  assert.equal(card(2).querySelector('.season-name').textContent, 'The Real Name');
+  assert.equal(card(2).querySelector('.season-overview').textContent, 'Allowed plot');
+  assert.match(card(2).querySelector('img').src, /\/own\.jpg$/);
+  assert.equal(card(3).querySelector('.season-overview'), null);
+  assert.match(card(3).querySelector('img').src, /\/show\.jpg$/);
+});
+
+test('an unprotected title keeps filling its cards the way it always has', async t => {
+  const { internal, document } = moreInfo(t, { jellyseerrAPI: { fetchTvSeasonDetails: async () => ({ name: 'Other Name', overview: 'Other plot' }) } });
+  const modal = seasonCards(document, [2]);
+  internal.state.currentModal = modal;
+  await internal.backfillSeasonMetadata(7, { id: 7, seasons: [{ seasonNumber: 2, name: 'Season 2', episodeCount: 8 }] });
+  assert.equal(modal.querySelector('.season-name').textContent, 'Season 2');
+  assert.equal(modal.querySelector('.season-overview'), null);
+});
+
 test('a backfill for one modal never writes into the one that replaced it', async t => {
   let release;
   const lookup = () => new Promise(resolve => { release = resolve; });
@@ -290,6 +321,63 @@ test('a guard the TMDB id cannot reach comes off through the items the server na
     assert.deepEqual(h.toasts, ['spoiler_blur_pending_disabled_toast']);
     assert.deepEqual(h.opened, [[42, mediaType]]);
   }
+});
+
+test('a user change during a disable stops it touching the new user\'s guards', async t => {
+  for (const moment of ['confirmation', 'first request', 'item request']) {
+    const sent = [];
+    let release;
+    const hold = value => new Promise(resolve => { release = () => resolve(value); });
+    const h = seerrToggle(t, {
+      data: { id: 42, jeSpoilerGuard: true, jeSpoilerGuardItems: ['aabb'] },
+      plugin: async (path, options) => {
+        if (!options?.method) return {};
+        sent.push(path);
+        const held = moment === 'first request' || (moment === 'item request' && path.startsWith('/spoiler-blur/series'));
+        return held ? hold({ success: true, removed: true }) : { success: true, removed: true };
+      },
+    });
+    if (moment === 'confirmation') h.state.confirmDisableSpoiler = () => hold(true);
+    h.button.click();
+    await h.settle();
+    h.switchUser();
+    release();
+    await h.settle();
+    const expected = { confirmation: [], 'first request': ['/spoiler-blur/pending/tv/42'], 'item request': ['/spoiler-blur/pending/tv/42', '/spoiler-blur/series/aabb'] };
+    assert.deepEqual(sent, expected[moment], moment);
+    assert.deepEqual(h.opened, [], moment);
+    assert.deepEqual(h.toasts, [], moment);
+  }
+});
+
+test('a disable that partly fails says so, and the modal still shows what went through', async t => {
+  const h = seerrToggle(t, {
+    data: { id: 42, jeSpoilerGuard: true, jeSpoilerGuardItems: ['aabb'] },
+    plugin: async (path, options) => {
+      if (!options?.method) return {};
+      if (path.startsWith('/spoiler-blur/pending')) return { success: true, removed: true };
+      throw new Error('offline');
+    },
+  });
+  h.button.click();
+  await h.settle();
+  assert.deepEqual(h.toasts, ['spoiler_blur_pending_error_toast']);
+  assert.deepEqual(h.opened, [[42, 'tv']]);
+});
+
+test('a disable where nothing went through leaves the modal alone', async t => {
+  const h = seerrToggle(t, {
+    data: { id: 42, jeSpoilerGuard: true, jeSpoilerGuardItems: ['aabb'] },
+    plugin: async (path, options) => {
+      if (!options?.method) return {};
+      if (path.startsWith('/spoiler-blur/pending')) return { success: true, removed: false };
+      throw new Error('offline');
+    },
+  });
+  h.button.click();
+  await h.settle();
+  assert.deepEqual(h.toasts, ['spoiler_blur_pending_error_toast']);
+  assert.deepEqual(h.opened, []);
 });
 
 test('a guard change that lands after the modal is gone does not bring it back', async t => {

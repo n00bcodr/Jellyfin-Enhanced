@@ -148,7 +148,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             public HashSet<Guid> Played { get; } = new();
 
-            // TMDB ids of the seasons with a played episode.
+            // The seasons with a played episode, as "tmdb:{id}" and "tvdb:{id}".
             public HashSet<string> StartedSeasons { get; } = new(StringComparer.Ordinal);
 
             public void Add(Episode episode)
@@ -676,11 +676,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         if (item is not Episode episode) continue;
                         progress.Add(episode);
                         progress.Played.Add(episode.Id);
-                        var seasonId = episode.SeasonId;
-                        if (_libraryManager.GetItemById(seasonId)?.ProviderIds?.TryGetValue(MetadataProvider.Tmdb.ToString(), out var seasonTmdb) == true
-                            && !string.IsNullOrEmpty(seasonTmdb))
+                        var seasonIds = _libraryManager.GetItemById(episode.SeasonId)?.ProviderIds;
+                        foreach (var provider in new[] { MetadataProvider.Tmdb, MetadataProvider.Tvdb })
                         {
-                            progress.StartedSeasons.Add(seasonTmdb);
+                            if (seasonIds != null && seasonIds.TryGetValue(provider.ToString(), out var seasonId) && !string.IsNullOrEmpty(seasonId))
+                            {
+                                progress.StartedSeasons.Add(provider.ToString().ToLowerInvariant() + ":" + seasonId);
+                            }
                         }
                     }
                 }
@@ -1005,12 +1007,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         // Season 0 and season 1 stay as the way in, and so does a season this caller has
-        // started, as in StripItem's Season arm. That's matched on the season's own TMDB
-        // id, because the same number can be a different season elsewhere.
+        // started, as in StripItem's Season arm. That's matched on the season's own ids,
+        // because the same number can be a different season elsewhere. A season's own
+        // response also has its TVDB id, which is all some libraries hold, so it can come
+        // back whole when the list on the title's details can't say.
         private static void RedactSeason(JsonObject season, Policy policy, Dialect keys, int number, SeriesProgress progress)
         {
             if (number <= 1) return;
-            if (Scalar(season["id"]) is { } id && progress.StartedSeasons.Contains(id)) return;
+            if (Scalar(season["id"]) is { } id && progress.StartedSeasons.Contains("tmdb:" + id)) return;
+            if (Scalar((season["externalIds"] as JsonObject)?["tvdbId"]) is { } tvdb && progress.StartedSeasons.Contains("tvdb:" + tvdb)) return;
             if (policy.SeasonOverview) season.Remove("overview");
             if (policy.ReplaceTitle) season["name"] = $"Season {number}";
             if (policy.Dates) RemoveDateKeepingYear(season, keys.AirDate);

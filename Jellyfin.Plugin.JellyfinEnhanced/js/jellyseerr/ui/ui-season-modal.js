@@ -233,6 +233,8 @@
 
         // Cached air dates — populated once, applied on every render (including polling refreshes)
         const airDateCache = {};
+        // Names of started seasons on a protected title, which only their own responses can prove.
+        const seasonNameCache = {};
 
         /**
          * Validates that a string starts with an ISO date format (YYYY-MM-DD).
@@ -247,18 +249,18 @@
          * @param {object} details - The Seerr TV show details object.
          */
         function applyAirDateBackfill(details) {
-            if (!details?.seasons || Object.keys(airDateCache).length === 0) return;
-            details.seasons = details.seasons.map(s => {
-                if (!s.airDate && airDateCache[s.seasonNumber]) {
-                    return { ...s, airDate: airDateCache[s.seasonNumber] };
-                }
-                return s;
-            });
+            if (!details?.seasons) return;
+            details.seasons = details.seasons.map(s => ({
+                ...s,
+                airDate: s.airDate || airDateCache[s.seasonNumber],
+                name: seasonNameCache[s.seasonNumber] || s.name,
+            }));
         }
 
         // Async backfill: fetch air dates from per-season episode data, with TMDB as fallback
         const followUp = JE.jellyseerrAPI.followUpOptions(tvDetails);
-        const seasonsNeedingDates = tvDetails.seasons.filter(s => s.episodeCount > 0 && !s.airDate && !s.jeYear);
+        const seasonsNeedingDates = tvDetails.seasons.filter(s => s.episodeCount > 0
+            && ((!s.airDate && !s.jeYear) || (tvDetails.jeSpoilerGuard && s.seasonNumber > 1)));
         if (seasonsNeedingDates.length > 0) {
             // Primary: fetch first episode air date from each season (Seerr/TheTVDB has these)
             const seasonFetches = seasonsNeedingDates.map(s =>
@@ -267,6 +269,7 @@
                     // Only the year is shown here, which is what Spoiler Guard leaves of a date.
                     const date = firstEp?.airDate && isValidDate(firstEp.airDate) ? firstEp.airDate : firstEp?.jeYear;
                     if (date) airDateCache[s.seasonNumber] = date;
+                    if (tvDetails.jeSpoilerGuard && detail?.name) seasonNameCache[s.seasonNumber] = detail.name;
                 }).catch(() => {})
             );
 

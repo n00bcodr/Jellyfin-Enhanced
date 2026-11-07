@@ -48,7 +48,7 @@ async function backfillSeasonMetadata(tmdbId, data) {
         const episodePromises = (api?.fetchTvSeasonDetails)
             ? seasonsMissingData.map(s =>
                 api.fetchTvSeasonDetails(tmdbId, s.seasonNumber, followUp)
-                    .then(detail => ({ seasonNumber: s.seasonNumber, firstEpDate: detail?.episodes?.[0]?.airDate || '', firstEpYear: detail?.episodes?.[0]?.jeYear || '' }))
+                    .then(detail => ({ seasonNumber: s.seasonNumber, firstEpDate: detail?.episodes?.[0]?.airDate || '', firstEpYear: detail?.episodes?.[0]?.jeYear || '', detail }))
                     .catch(() => ({ seasonNumber: s.seasonNumber, firstEpDate: '', firstEpYear: '' }))
             )
             : [];
@@ -64,11 +64,13 @@ async function backfillSeasonMetadata(tmdbId, data) {
         // Build episode air date lookup
         const epDateMap = {};
         const epYearMap = {};
+        const seasonDetailMap = {};
         episodeResults.forEach(r => {
             if (r.firstEpDate && isValidDate(r.firstEpDate)) {
                 epDateMap[r.seasonNumber] = r.firstEpDate;
             }
             if (r.firstEpYear) epYearMap[r.seasonNumber] = r.firstEpYear;
+            seasonDetailMap[r.seasonNumber] = r.detail;
         });
 
         // Bail if modal was closed/replaced during async fetch
@@ -81,11 +83,20 @@ async function backfillSeasonMetadata(tmdbId, data) {
             if (!card) return;
 
             const tmdbSeason = tmdbMap[sNum];
+            // On a protected title a started season can come back whole here, through an id
+            // the details don't carry. The server has decided, so what it sent can show.
+            const ownSeason = data.jeSpoilerGuard ? seasonDetailMap[sNum] : null;
+
+            if (ownSeason?.name && ownSeason.name !== season.name) {
+                season.name = ownSeason.name;
+                const nameEl = card.querySelector('.season-name');
+                if (nameEl) nameEl.textContent = season.name;
+            }
 
             // Backfill posterPath (validate format to prevent loading from unexpected URLs)
             // Try TMDB season poster first, then fall back to the show poster
             if (!season.posterPath) {
-                const tmdbPoster = tmdbSeason?.poster_path;
+                const tmdbPoster = tmdbSeason?.poster_path || ownSeason?.posterPath;
                 const fallbackPoster = (tmdbPoster && isValidPosterPath(tmdbPoster)) ? tmdbPoster : data.posterPath;
                 if (fallbackPoster && isValidPosterPath(fallbackPoster)) {
                     season.posterPath = fallbackPoster;
@@ -107,8 +118,9 @@ async function backfillSeasonMetadata(tmdbId, data) {
             }
 
             // Backfill overview (textContent is safe from XSS)
-            if (!season.overview && tmdbSeason?.overview) {
-                season.overview = tmdbSeason.overview;
+            const backfilledOverview = tmdbSeason?.overview || ownSeason?.overview;
+            if (!season.overview && backfilledOverview) {
+                season.overview = backfilledOverview;
                 const infoEl = card.querySelector('.season-info');
                 if (infoEl && !infoEl.querySelector('.season-overview')) {
                     const overviewEl = document.createElement('div');

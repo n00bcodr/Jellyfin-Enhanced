@@ -62,21 +62,25 @@
             const wasEnabled = isEnabled();
             const modal = button.closest('.je-more-info-modal');
             const epoch = JE.session ? JE.session.getEpoch() : 0;
+            const sameUser = () => !JE.session || JE.session.isCurrent(epoch);
             void (async function() {
                 let changed = false;
                 try {
                     if (wasEnabled) {
-                        if (!await internal.confirmDisableSpoiler()) return;
+                        // Each step checks first: requests go out as whoever is signed in now.
+                        if (!await internal.confirmDisableSpoiler() || !sameUser()) return;
                         const result = await internal.disableForTmdb(mediaType, tmdbId);
+                        if (!sameUser()) return;
                         // The server's list reaches what a TMDB id can't: an item without
                         // one, and a title held twice, where that id leads to one copy.
                         const items = data?.jeSpoilerGuardItems || [];
-                        if (result?.removed === false && items.length === 0) {
-                            JE.toast?.(JE.t('spoiler_blur_pending_error_toast'));
-                            return;
-                        }
-                        await Promise.all(items.map(id => (mediaType === 'tv' ? internal.disableForSeries(id) : internal.disableForMovie(id))));
-                        JE.toast?.(JE.t('spoiler_blur_pending_disabled_toast'));
+                        const outcomes = await Promise.allSettled(items.map(id => (mediaType === 'tv' ? internal.disableForSeries(id) : internal.disableForMovie(id))));
+                        if (!sameUser()) return;
+                        const removed = result?.removed !== false || outcomes.some(outcome => outcome.status === 'fulfilled');
+                        const failed = !removed || outcomes.some(outcome => outcome.status === 'rejected');
+                        JE.toast?.(JE.t(failed ? 'spoiler_blur_pending_error_toast' : 'spoiler_blur_pending_disabled_toast'));
+                        // Anything that went through still has to reach the modal.
+                        if (!removed) return;
                     } else {
                         const result = await internal.enableForTmdb(mediaType, tmdbId, displayName);
                         JE.toast?.(JE.t(result?.promoted === 'pending' ? 'spoiler_blur_pending_enabled_toast' : 'spoiler_blur_enabled_toast'));
@@ -92,8 +96,7 @@
                 // Reopened so the modal shows what the server now sends for this title, unless
                 // it has since been closed, replaced or left behind by a change of user.
                 const stillOpen = modal?.isConnected && !modal._isClosing;
-                const sameUser = !JE.session || JE.session.isCurrent(epoch);
-                if (changed && stillOpen && sameUser) await JE.jellyseerrMoreInfo?.open?.(tmdbId, mediaType);
+                if (changed && stillOpen && sameUser()) await JE.jellyseerrMoreInfo?.open?.(tmdbId, mediaType);
             })();
         });
         return button;
