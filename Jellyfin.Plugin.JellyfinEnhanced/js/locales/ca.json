@@ -548,6 +548,7 @@
     "spoiler_blur_enabled_collection_toast": "Protecció antiespòilers: activada",
     "spoiler_blur_disabled_collection_toast": "Protecció antiespòilers desactivada.",
     "spoiler_blur_error_toast": "Ha fallat el canvi de la protecció antiespòilers. Consulta la consola.",
+    "spoiler_blur_inherited_hint": "Protegit mitjançant una col·lecció. Canvia-ho a la col·lecció.",
     "spoiler_disable_confirm_title": "Desactivar la protecció antiespòilers?",
     "spoiler_disable_confirm_body": "Les imatges originals i els detalls dels episodis tornaran a ser visibles immediatament.",
     "spoiler_disable_confirm_snooze": "No ho tornis a preguntar durant 15 minuts",

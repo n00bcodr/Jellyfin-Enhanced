@@ -655,6 +655,7 @@
     "jellyseerr_btn_user_not_found": "Користувача не знайдено",
     "calendar_physical_release": "Фізичний реліз",
     "spoiler_blur_button_off": "Захист від спойлерів: вимкнено",
+    "spoiler_blur_inherited_hint": "Захищено через колекцію. Змініть це в колекції.",
     "jellyseerr_modal_toast_select_season": "{{icon:warning}} Будь ласка, виберіть хоча б один сезон",
     "panel_settings_auto_skip_depends": "{{icon:info}} Залежить від наявності плагіна «Intro-Skipper»",
     "elsewhere_settings_save": "Зберегти",

@@ -548,6 +548,7 @@
     "spoiler_blur_enabled_collection_toast": "Ochrana před spoilery: zapnuto",
     "spoiler_blur_disabled_collection_toast": "Ochrana před spoilery je vypnutá.",
     "spoiler_blur_error_toast": "Změna ochrany před spoilery selhala. Podívejte se do konzole.",
+    "spoiler_blur_inherited_hint": "Chráněno prostřednictvím kolekce. Změňte to v kolekci.",
     "spoiler_disable_confirm_title": "Vypnout ochranu před spoilery?",
     "spoiler_disable_confirm_body": "Původní obrázky a podrobnosti epizod budou ihned znovu viditelné.",
     "spoiler_disable_confirm_snooze": "Neptat se znovu 15 minut",

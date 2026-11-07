@@ -548,6 +548,7 @@
     "spoiler_blur_enabled_collection_toast": "Spoilervédelem: bekapcsolva",
     "spoiler_blur_disabled_collection_toast": "A spoilervédelem kikapcsolva.",
     "spoiler_blur_error_toast": "A spoilervédelem módosítása sikertelen. Lásd a konzolt.",
+    "spoiler_blur_inherited_hint": "Gyűjteményen keresztül védett. Módosítsd a gyűjteményen.",
     "spoiler_disable_confirm_title": "Kikapcsolod a spoilervédelmet?",
     "spoiler_disable_confirm_body": "Az eredeti képek és epizódrészletek azonnal újra láthatók lesznek.",
     "spoiler_disable_confirm_snooze": "Ne kérdezze újra 15 percig",

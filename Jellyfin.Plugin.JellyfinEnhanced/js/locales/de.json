@@ -548,6 +548,7 @@
     "spoiler_blur_enabled_collection_toast": "Spoiler Guard: Ein",
     "spoiler_blur_disabled_collection_toast": "Spoiler Guard ist deaktiviert.",
     "spoiler_blur_error_toast": "Änderung von Spoiler Guard fehlgeschlagen. Siehe Konsole.",
+    "spoiler_blur_inherited_hint": "Über eine Sammlung geschützt. Ändere es in der Sammlung.",
     "spoiler_disable_confirm_title": "Spoiler Guard deaktivieren?",
     "spoiler_disable_confirm_body": "Originalbilder und Episodendetails sind sofort wieder sichtbar.",
     "spoiler_disable_confirm_snooze": "15 Minuten lang nicht erneut fragen",

@@ -554,6 +554,7 @@
     "spoiler_blur_pending_enabled_toast": "Bu başlık kitaplığınıza geldiğinde Spoiler Koruması devreye girecek.",
     "spoiler_blur_pending_disabled_toast": "Bu başlık için Spoiler Koruması devre dışı bırakıldı.",
     "spoiler_blur_pending_error_toast": "Bu başlık için Spoiler Koruması güncellenemedi. Konsola bakın.",
+    "spoiler_blur_inherited_hint": "Bir koleksiyon aracılığıyla korunuyor. Bunu koleksiyonda değiştirin.",
     "hidden_content_hide_button": "Gizle",
     "hidden_content_already_hidden": "Gizli",
     "hidden_content_item_hidden": "\"{name}\" gizlendi",

@@ -666,6 +666,7 @@
     "panel_settings_spoiler_guard_skip_confirm": "Älä pyydä vahvistusta juonipaljastussuojaa pois päältä kytkettäessä",
     "panel_settings_spoiler_guard_override_titles": "Jaksojen nimet",
     "spoiler_blur_button_off": "Juonipaljastussuoja: Pois",
+    "spoiler_blur_inherited_hint": "Suojattu kokoelman kautta. Muuta se kokoelmassa.",
     "panel_settings_spoiler_guard_override_series_overview": "Sarjakuvaukset",
     "panel_settings_spoiler_guard_override_series_overview_desc": "Poista valinta nähdäksesi alkuperäisen sarjakuvauksen paikkamerkin sijaan.",
     "panel_shortcuts_disabled": "Pois Käytöstä",

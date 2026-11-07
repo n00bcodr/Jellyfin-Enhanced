@@ -548,6 +548,7 @@
     "spoiler_blur_enabled_collection_toast": "محافظ اسپویلر: روشن",
     "spoiler_blur_disabled_collection_toast": "محافظ اسپویلر خاموش است.",
     "spoiler_blur_error_toast": "تغییر محافظ اسپویلر ناموفق بود. کنسول را بررسی کنید.",
+    "spoiler_blur_inherited_hint": "از طریق یک مجموعه محافظت شده است. آن را در مجموعه تغییر دهید.",
     "spoiler_disable_confirm_title": "محافظ اسپویلر غیرفعال شود؟",
     "spoiler_disable_confirm_body": "تصاویر اصلی و جزئیات قسمت بلافاصله دوباره قابل مشاهده می‌شوند.",
     "spoiler_disable_confirm_snooze": "تا ۱۵ دقیقه دیگر نپرس",

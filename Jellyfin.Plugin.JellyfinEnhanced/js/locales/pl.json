@@ -548,6 +548,7 @@
     "spoiler_blur_enabled_collection_toast": "Ochrona przed spoilerami: włączona",
     "spoiler_blur_disabled_collection_toast": "Ochrona przed spoilerami wyłączona.",
     "spoiler_blur_error_toast": "Zmiana ochrony przed spoilerami nie powiodła się. Zobacz konsolę.",
+    "spoiler_blur_inherited_hint": "Chronione przez kolekcję. Zmień to w kolekcji.",
     "spoiler_disable_confirm_title": "Wyłączyć ochronę przed spoilerami?",
     "spoiler_disable_confirm_body": "Oryginalne obrazy i szczegóły odcinków będą od razu ponownie widoczne.",
     "spoiler_disable_confirm_snooze": "Nie pytaj ponownie przez 15 minut",

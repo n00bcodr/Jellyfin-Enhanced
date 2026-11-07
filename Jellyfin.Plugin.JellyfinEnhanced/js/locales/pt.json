@@ -548,6 +548,7 @@
     "spoiler_blur_enabled_collection_toast": "Proteção anti-spoilers: ativada",
     "spoiler_blur_disabled_collection_toast": "Proteção anti-spoilers desativada.",
     "spoiler_blur_error_toast": "Falha ao alterar a proteção anti-spoilers. Consulte a consola.",
+    "spoiler_blur_inherited_hint": "Protegido através de uma coleção. Altere-o na coleção.",
     "spoiler_disable_confirm_title": "Desativar proteção anti-spoilers?",
     "spoiler_disable_confirm_body": "As imagens originais e os detalhes dos episódios voltarão a ficar visíveis de imediato.",
     "spoiler_disable_confirm_snooze": "Não perguntar novamente durante 15 minutos",

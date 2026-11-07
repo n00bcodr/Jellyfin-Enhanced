@@ -238,6 +238,7 @@
     "spoiler_blur_enabled_collection_toast": "מגן ספוילרים: פעיל",
     "spoiler_blur_disabled_collection_toast": "מגן ספוילרים כבוי.",
     "spoiler_blur_error_toast": "שינוי מגן הספוילרים נכשל. ראו קונסולה.",
+    "spoiler_blur_inherited_hint": "מוגן באמצעות אוסף. שנו זאת באוסף.",
     "spoiler_disable_confirm_title": "לכבות את מגן הספוילרים?",
     "spoiler_disable_confirm_body": "התמונות המקוריות ופרטי הפרקים יהיו גלויים שוב באופן מיידי.",
     "spoiler_disable_confirm_snooze": "אל תשאל שוב במשך 15 דקות",

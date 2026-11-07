@@ -548,6 +548,7 @@
     "spoiler_blur_enabled_collection_toast": "حماية من الحرق: مفعّلة",
     "spoiler_blur_disabled_collection_toast": "حماية من الحرق متوقفة.",
     "spoiler_blur_error_toast": "فشل تغيير حماية من الحرق. راجع وحدة التحكم.",
+    "spoiler_blur_inherited_hint": "محمي عبر مجموعة. غيّره من المجموعة.",
     "spoiler_disable_confirm_title": "تعطيل حماية من الحرق؟",
     "spoiler_disable_confirm_body": "ستظهر الصور الأصلية وتفاصيل الحلقات مرة أخرى فورًا.",
     "spoiler_disable_confirm_snooze": "لا تسأل مرة أخرى لمدة 15 دقيقة",

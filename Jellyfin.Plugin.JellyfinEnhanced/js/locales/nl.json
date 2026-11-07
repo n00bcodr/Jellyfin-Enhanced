@@ -554,6 +554,7 @@
     "spoiler_blur_pending_enabled_toast": "Spoiler Guard wordt actief zodra deze titel in je bibliotheek staat.",
     "spoiler_blur_pending_disabled_toast": "Spoiler Guard uitgeschakeld voor deze titel.",
     "spoiler_blur_pending_error_toast": "Kon Spoiler Guard voor deze titel niet bijwerken. Zie console.",
+    "spoiler_blur_inherited_hint": "Beschermd via een collectie. Wijzig het op de collectie.",
     "hidden_content_hide_button": "Verbergen",
     "hidden_content_already_hidden": "Verborgen",
     "hidden_content_item_hidden": "\"{name}\" verborgen",

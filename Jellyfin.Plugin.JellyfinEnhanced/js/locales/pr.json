@@ -548,6 +548,7 @@
     "spoiler_blur_enabled_collection_toast": "Spoiler Guard: Hoisted",
     "spoiler_blur_disabled_collection_toast": "Spoiler Guard furled.",
     "spoiler_blur_error_toast": "Spoiler Guard change failed. Check th' console.",
+    "spoiler_blur_inherited_hint": "Guarded by a fleet o' loot. Change it on the fleet.",
     "spoiler_disable_confirm_title": "Furl th' Spoiler Guard?",
     "spoiler_disable_confirm_body": "Th' original images 'n episode details will be back in plain sight straight away.",
     "spoiler_disable_confirm_snooze": "Don't ask again fer 15 minutes",

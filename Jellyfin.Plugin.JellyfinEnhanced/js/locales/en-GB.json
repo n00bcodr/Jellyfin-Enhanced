@@ -524,6 +524,7 @@
     "spoiler_blur_enabled_collection_toast": "Spoiler Guard: On",
     "spoiler_blur_disabled_collection_toast": "Spoiler Guard off.",
     "spoiler_blur_error_toast": "Spoiler Guard change failed. See console.",
+    "spoiler_blur_inherited_hint": "Protected through a collection. Change it on the collection.",
     "spoiler_disable_confirm_title": "Disable Spoiler Guard?",
     "spoiler_disable_confirm_body": "Original images and episode details will be visible again straight away.",
     "spoiler_disable_confirm_snooze": "Don't ask again for 15 minutes",

@@ -548,6 +548,7 @@
     "spoiler_blur_enabled_collection_toast": "Spoiler Guard：开",
     "spoiler_blur_disabled_collection_toast": "Spoiler Guard 已关闭。",
     "spoiler_blur_error_toast": "Spoiler Guard 更改失败。请查看控制台。",
+    "spoiler_blur_inherited_hint": "已通过合集保护。请在合集中更改。",
     "spoiler_disable_confirm_title": "停用 Spoiler Guard？",
     "spoiler_disable_confirm_body": "原始图片和分集详情将会立即重新显示。",
     "spoiler_disable_confirm_snooze": "15 分钟内不再询问",

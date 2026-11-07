@@ -548,6 +548,7 @@
     "spoiler_blur_enabled_collection_toast": "Spoiler Guard: på",
     "spoiler_blur_disabled_collection_toast": "Spoiler Guard er av.",
     "spoiler_blur_error_toast": "Endring av Spoiler Guard mislyktes. Se konsollen.",
+    "spoiler_blur_inherited_hint": "Beskyttet via en samling. Endre det på samlingen.",
     "spoiler_disable_confirm_title": "Deaktivere Spoiler Guard?",
     "spoiler_disable_confirm_body": "Originalbilder og episodedetaljer blir synlige igjen med en gang.",
     "spoiler_disable_confirm_snooze": "Ikke spør igjen på 15 minutter",

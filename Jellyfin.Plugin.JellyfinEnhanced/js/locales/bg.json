@@ -548,6 +548,7 @@
     "spoiler_blur_enabled_collection_toast": "Защита от спойлери: включена",
     "spoiler_blur_disabled_collection_toast": "Защитата от спойлери е изключена.",
     "spoiler_blur_error_toast": "Промяната на защитата от спойлери не бе успешна. Вижте конзолата.",
+    "spoiler_blur_inherited_hint": "Защитено чрез колекция. Променете го в колекцията.",
     "spoiler_disable_confirm_title": "Изключване на защитата от спойлери?",
     "spoiler_disable_confirm_body": "Оригиналните изображения и подробностите за епизодите ще бъдат видими отново веднага.",
     "spoiler_disable_confirm_snooze": "Не питай отново за 15 минути",

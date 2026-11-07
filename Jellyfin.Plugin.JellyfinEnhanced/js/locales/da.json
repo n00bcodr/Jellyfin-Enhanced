@@ -554,6 +554,7 @@
     "spoiler_blur_pending_enabled_toast": "Spoiler Guard aktiveres, når denne titel kommer ind i dit bibliotek.",
     "spoiler_blur_pending_disabled_toast": "Spoiler Guard er deaktiveret for denne titel.",
     "spoiler_blur_pending_error_toast": "Kunne ikke opdatere Spoiler Guard for denne titel. Se konsollen.",
+    "spoiler_blur_inherited_hint": "Beskyttet via en samling. Ændr det på samlingen.",
     "hidden_content_hide_button": "Skjul",
     "hidden_content_already_hidden": "Skjult",
     "hidden_content_item_hidden": "\"{name}\" skjult",
