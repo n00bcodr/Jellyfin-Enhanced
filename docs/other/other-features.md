@@ -376,7 +376,7 @@ Show supported item metadata and external links as icons using Druidblack's meta
 
 ## MDBList Ratings
 
-Show ratings from multiple sources on detail pages. You can also fill Jellyfin's own Community/Critic Rating fields, using either feature or both.
+Show ratings from multiple sources on detail pages. You can also fill Jellyfin's own Community/Critic Rating fields, using either feature or both. Spoiler Guard's **Hide ratings** setting hides this row on protected titles.
 
 ### How to use
 

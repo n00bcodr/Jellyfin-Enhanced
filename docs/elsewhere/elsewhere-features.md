@@ -272,7 +272,7 @@ Admin settings in **Elsewhere & Reviews**:
 
 ![Movie release dates and episode air date](../images/enhanced/release-dates.webp)
 
-No available date means no chip. There is no personal enable switch. This feature does not require **Enable Elsewhere**. See [Release Dates settings](elsewhere-settings.md#release-dates).
+No available date means no chip. Spoiler Guard's **Hide air date** setting also removes these chips from protected titles. There is no personal enable switch. This feature does not require **Enable Elsewhere**. See [Release Dates settings](elsewhere-settings.md#release-dates).
 
 ??? info "Which dates are shown"
 

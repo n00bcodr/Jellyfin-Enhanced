@@ -15,7 +15,7 @@
 /**
  * Fetch ratings from Jellyseerr API
  */
-async function fetchRatings(tmdbId, mediaType) {
+async function fetchRatings(tmdbId, mediaType, details) {
     // prefer request-manager (retry, dedup, abort, cache, cf-ray
     // logging) over raw ApiClient.ajax. Falls back to ApiClient.ajax only if
     // request-manager hasn't loaded yet (early page navigations).
@@ -35,7 +35,8 @@ async function fetchRatings(tmdbId, mediaType) {
                     // legacy X-Emby-Token is kept for 10.11 back-compat.
                     'Authorization': 'MediaBrowser Token="' + ApiClient.accessToken() + '"',
                     'X-Emby-Token': ApiClient.accessToken(),
-                    'Accept': 'application/json'
+                    'Accept': 'application/json',
+                    ...JE.jellyseerrAPI?.followUpOptions?.(details)?.headers
                 }
             });
             response = await httpResponse.json();
@@ -43,7 +44,7 @@ async function fetchRatings(tmdbId, mediaType) {
             response = await ApiClient.ajax({
                 type: 'GET',
                 url,
-                headers: { 'X-Jellyfin-User-Id': ApiClient.getCurrentUserId() },
+                headers: { 'X-Jellyfin-User-Id': ApiClient.getCurrentUserId(), ...JE.jellyseerrAPI?.followUpOptions?.(details)?.headers },
                 dataType: 'json'
             });
         }
@@ -73,9 +74,11 @@ async function fetchMediaDetails(tmdbId, mediaType) {
     try {
         let data;
         if (JE && JE.jellyseerrAPI) {
+            // Uncached: Spoiler Guard shapes this per title, and a guard can have changed
+            // on another device. The server keeps its own copy of the upstream answer.
             data = mediaType === 'movie'
-                ? await JE.jellyseerrAPI.fetchMovieDetails(tmdbId)
-                : await JE.jellyseerrAPI.fetchTvShowDetails(tmdbId);
+                ? await JE.jellyseerrAPI.fetchMovieDetails(tmdbId, { skipCache: true })
+                : await JE.jellyseerrAPI.fetchTvShowDetails(tmdbId, { skipCache: true });
         } else {
             const endpoint = mediaType === 'movie'
                 ? `/movie/${tmdbId}`

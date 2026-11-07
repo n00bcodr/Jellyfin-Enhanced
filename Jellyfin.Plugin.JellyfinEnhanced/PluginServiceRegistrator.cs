@@ -143,6 +143,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // Spoiler Field Strip: removes spoiler-y metadata (Overview, ratings,
             // title, cast, etc.) from BaseItemDto responses for guarded unwatched episodes.
             serviceCollection.AddSingleton<SpoilerFieldStripFilter>();
+            // The same policy for the Seerr, TMDB and MDBList data JE shows itself.
+            serviceCollection.AddSingleton<SpoilerSeerrRedactor>();
             // Auto-enable spoiler mode for a series on first play of S1E1.
             // Gated by SpoilerAutoEnableOnFirstPlay; runs on every PlaybackStart.
             serviceCollection.AddScoped<IEventConsumer<PlaybackStartEventArgs>, SpoilerAutoEnableOnFirstPlayConsumer>();

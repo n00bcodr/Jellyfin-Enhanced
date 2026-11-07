@@ -96,7 +96,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // and controller so the "is this movie in spoiler scope via a collection"
         // rule (and the collection-art lookup) can't drift between them.
         public Guid? FindOptedInCollectionForMovie(UserSpoilerBlur userState, Guid movieId)
+            => FindOptedInCollectionForMovie(userState, movieId, out _);
+
+        // As above, for callers that can't treat a failed walk as "not in a collection".
+        private Guid? FindOptedInCollectionForMovie(UserSpoilerBlur userState, Guid movieId, out bool failed)
         {
+            failed = false;
             if (movieId == Guid.Empty || userState.Collections.Count == 0) return null;
 
             // F6 memo. The static cache serves BOTH within-request repeats (the
@@ -131,6 +136,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 WarnRateLimited(
                     "movie-in-collection:" + ex.GetType().FullName,
                     $"Spoiler Guard: movie-in-collection linked-children walk failed for {movieId}: {ex.Message}");
+                failed = true;
                 return null; // don't cache a transient failure
             }
 
@@ -172,6 +178,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (movieId == Guid.Empty) return false;
             return userState.Movies.ContainsKey(movieId.ToString("N"))
                 || FindOptedInCollectionForMovie(userState, movieId).HasValue;
+        }
+
+        /// <summary>
+        /// Like <see cref="IsMovieInSpoilerScope"/>, but reports a failed collection lookup
+        /// so the caller can keep its protection instead of reading it as out of scope.
+        /// </summary>
+        /// <param name="userState">The user's Spoiler Guard state.</param>
+        /// <param name="movieId">The movie.</param>
+        /// <param name="inScope">Whether the movie is in scope, when this returns true.</param>
+        /// <returns>False when the lookup failed and the answer is unknown.</returns>
+        public bool TryGetMovieScope(UserSpoilerBlur userState, Guid movieId, out bool inScope)
+        {
+            inScope = false;
+            if (movieId == Guid.Empty) return true;
+            if (userState.Movies.ContainsKey(movieId.ToString("N")))
+            {
+                inScope = true;
+                return true;
+            }
+
+            inScope = FindOptedInCollectionForMovie(userState, movieId, out var failed).HasValue;
+            return !failed;
         }
 
         // Resolves the requesting user's GUID via the plugin-wide identity

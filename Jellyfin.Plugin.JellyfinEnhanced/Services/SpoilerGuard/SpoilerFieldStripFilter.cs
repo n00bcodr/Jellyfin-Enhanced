@@ -695,6 +695,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var boundary = _nextUnwatched.GetBoundary(userId, seriesId);
             var category = SpoilerNextUnwatchedService.Categorize(
                 boundary, item.Id, item.ParentIndexNumber, item.IndexNumber);
+            return RevealFor(category, cfg);
+        }
+
+        internal static CategoryReveal RevealFor(SpoilerEpisodeCategory category, PluginConfiguration cfg)
+        {
             return category switch
             {
                 SpoilerEpisodeCategory.NextEpisode => new CategoryReveal(
@@ -828,7 +833,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         //   adminOn=true, override=null → strip (default: follow admin)
         //   adminOn=true, override=false → don't strip (user opt-out)
         //   adminOn=true, override=true → strip (explicit user re-affirm)
-        private static bool ShouldStrip(bool adminOn, bool? userOverride)
+        internal static bool ShouldStrip(bool adminOn, bool? userOverride)
             => adminOn && (userOverride ?? true);
 
         // Series descriptions are independently configurable from episode,
@@ -840,13 +845,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             BaseItemDto item,
             UserSpoilerBlur userState,
             PluginConfiguration cfg)
-            => item.Type == Jellyfin.Data.Enums.BaseItemKind.Series
+            => ShouldStripOverview(item.Type == Jellyfin.Data.Enums.BaseItemKind.Series, userState, cfg);
+
+        internal static bool ShouldStripOverview(
+            bool isSeries,
+            UserSpoilerBlur userState,
+            PluginConfiguration cfg)
+            => isSeries
                 ? ShouldStrip(
                     cfg.SpoilerStripSeriesOverview ?? cfg.SpoilerStripOverview,
                     userState.Prefs?.HideSeriesDescriptions)
                 : ShouldStrip(cfg.SpoilerStripOverview, userState.Prefs?.HideEpisodeDescriptions);
 
-        private static string SanitizePlaceholder(string? raw)
+        internal static string SanitizePlaceholder(string? raw)
         {
             if (string.IsNullOrEmpty(raw)) return "Spoiler Guard activated";
             var trimmed = raw.Length > 200 ? raw.Substring(0, 200) : raw;
@@ -1016,8 +1027,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return Convert.ToHexString(bytes).Substring(0, 8).ToLowerInvariant();
         }
 
-        // Field-stripping body. Each block is gated on its own admin
-        // toggle. All strip toggles default ON (strict-by-default posture,
+        // Field-stripping body. SpoilerSeerrRedactor applies the same rules to
+        // Seerr and TMDB data, so a change here belongs there too. Each block
+        // is gated on its own admin toggle. All strip toggles default ON (strict-by-default posture,
         // matching PluginConfiguration.cs / configPage.html / the docs); an
         // admin relaxes individual categories rather than opting into them.
         // Instance (was static) so it can call the server-side fallback
@@ -1255,7 +1267,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // External link arrays whose Url slug or Name commonly
                 // contains the episode title.
                 item.RemoteTrailers = null;
-                item.ExternalUrls = null;
+                // Series and Movie names are never replaced (see the title
+                // block above), so their links reveal nothing the page does
+                // not already show. Web builds the external-links row from
+                // them, and the Arr, Seerr, Letterboxd and Elsewhere links
+                // anchor on that row or read the TMDB id from it.
+                if (item.Type != Jellyfin.Data.Enums.BaseItemKind.Series
+                    && item.Type != Jellyfin.Data.Enums.BaseItemKind.Movie)
+                {
+                    item.ExternalUrls = null;
+                }
 
                 // Top-level + nested MediaStreams + MediaAttachments.
                 // ffprobe Title / Comment / attachment FileName all

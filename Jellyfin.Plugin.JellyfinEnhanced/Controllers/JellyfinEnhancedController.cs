@@ -54,6 +54,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private readonly Logger _logger;
         private readonly IUserManager _userManager;
         private readonly Services.SeerrParentalFilter _parentalFilter;
+        private readonly Services.SpoilerSeerrRedactor _spoilerSeerrRedactor;
         private readonly IUserDataManager _userDataManager;
         private readonly ILibraryManager _libraryManager;
         private readonly IDtoService _dtoService;
@@ -211,6 +212,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             Services.MdblistService mdblistService,
             Services.DoesTheDogDieService doesTheDogDieService,
             Services.SeerrParentalFilter parentalFilter,
+            Services.SpoilerSeerrRedactor spoilerSeerrRedactor,
             Services.WhatsNewService whatsNewService,
             Services.UsageEventCounterService usageEventCounterService,
             Services.AnalyticsReportingService analyticsReportingService,
@@ -245,6 +247,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             _mdblistService = mdblistService;
             _doesTheDogDieService = doesTheDogDieService;
             _parentalFilter = parentalFilter;
+            _spoilerSeerrRedactor = spoilerSeerrRedactor;
             _whatsNewService = whatsNewService;
             _usageEventCounterService = usageEventCounterService;
             _analyticsReportingService = analyticsReportingService;
@@ -785,7 +788,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     Response.Headers["Retry-After"] = "2";
                     return StatusCode(504, new { error = true, code = "parental_pending", message = "Parental rating lookups for this page are still running; retry shortly." });
                 }
-                return Content(result.Body, "application/json");
+                // After the parental filter, which reads what this removes, and on the way
+                // out of the shared response cache, so one user's guards never reach another.
+                return Content(_spoilerSeerrRedactor.RedactSeerr(result.Body, apiPath, jellyfinUserId, HttpContext), "application/json");
             }
             catch (OperationCanceledException) when (HttpContext.RequestAborted.IsCancellationRequested)
             {
@@ -4207,6 +4212,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                 if (response.IsSuccess)
                 {
+                    // Before the 304 below: the ETag describes the unredacted body, so a
+                    // browser's copy from before the title was guarded must not be reused.
+                    if (_spoilerSeerrRedactor.TryRedactTmdb(response.Content, apiPath, tmdbCallerId, HttpContext, out var redactedBody))
+                    {
+                        Response.Headers["Cache-Control"] = "no-store";
+                        return Content(redactedBody, "application/json");
+                    }
+
                     // Browser cache: private + no-cache, so every reuse comes back
                     // here (parental gating above runs again) and costs only a 304
                     // when the body is unchanged. Varied on the auth headers so a
@@ -4712,6 +4725,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (string.IsNullOrWhiteSpace(tmdbId) || !tmdbId.All(char.IsDigit))
             {
                 return BadRequest("tmdbId must be a positive integer.");
+            }
+
+            // Unconfirmed so neither the browser nor the client cache keeps this answer,
+            // which only holds while the title is guarded.
+            if (_spoilerSeerrRedactor.HidesRatings(mediaType, tmdbId, UserHelper.GetCurrentUserId(User)?.ToString(), HttpContext))
+            {
+                return Ok(new { Found = false, Confirmed = false });
             }
 
             try
@@ -6294,6 +6314,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // The strict reader logs read/parse failures; the endpoint reports them.
                 return null;
             }
+        }
+
+        /// <summary>
+        /// Whether the caller's Spoiler Guard covers a movie, directly or through a
+        /// collection. Client state lists collection ids, not the movies inside them.
+        /// </summary>
+        /// <param name="movieId">The movie's Jellyfin id.</param>
+        /// <returns><c>{inScope}</c>, for the caller's own state only.</returns>
+        [HttpGet("spoiler-blur/movies/{movieId}/in-scope")]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult GetSpoilerMovieScope(string movieId)
+        {
+            var userId = UserHelper.GetCurrentUserId(User);
+            if (userId == null || userId == Guid.Empty) return Forbid();
+            if (!Guid.TryParse(movieId, out var id) || id == Guid.Empty)
+            {
+                return BadRequest(new { success = false, message = "Invalid movie id." });
+            }
+
+            var state = _spoilerResolver.LoadUserState(HttpContext, userId.Value);
+            if (!_spoilerResolver.TryGetMovieScope(state, id, out var inScope))
+            {
+                // Unknown isn't "out of scope": the client keeps its protection on a failure.
+                return StatusCode(503, new { success = false, message = "Could not resolve Spoiler Guard scope." });
+            }
+
+            return Ok(new { inScope });
         }
 
         [HttpGet("spoiler-blur/series")]
@@ -10627,8 +10676,97 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
-            var items = FilterQueueItemsByAllowedRequests(rawItems, allowedRequests);
+            var items = RedactDownloadRows(FilterQueueItemsByAllowedRequests(rawItems, allowedRequests));
             return Ok(new { items, errors });
+        }
+
+        /// <summary>
+        /// Applies the caller's Spoiler Guard to Downloads rows. These come from caches
+        /// shared between users, so a changed row is a copy and the cached ones stay whole.
+        /// </summary>
+        /// <param name="rows">The rows for this response.</param>
+        /// <returns>The rows to send.</returns>
+        private List<object> RedactDownloadRows(IEnumerable<object> rows)
+        {
+            var result = new List<object>();
+            var guards = _spoilerSeerrRedactor.LoadRows(UserHelper.GetCurrentUserId(User)?.ToString(), HttpContext);
+            foreach (var row in rows)
+            {
+                result.Add(guards == null ? row : RedactDownloadRow(row, guards));
+            }
+
+            return result;
+        }
+
+        private static object RedactDownloadRow(object row, Services.SpoilerSeerrRedactor.GuardedRows guards)
+        {
+            if (System.Text.Json.JsonSerializer.SerializeToNode(row, row.GetType()) is not System.Text.Json.Nodes.JsonObject copy)
+            {
+                return row;
+            }
+
+            var tmdbId = copy["tmdbId"]?.ToString();
+            var changed = false;
+            if (copy["source"]?.ToString() == nameof(ArrType.Radarr))
+            {
+                if (guards.ForTitle(false, tmdbId, null, null)?.HidePoster == true && copy["posterUrl"] != null)
+                {
+                    copy["posterUrl"] = null;
+                    changed = true;
+                }
+            }
+            else
+            {
+                // A season pack's row names no episode, so it has no " - title" to find.
+                var subtitle = copy["subtitle"]?.ToString();
+                var separator = subtitle?.IndexOf(" - ", StringComparison.Ordinal) ?? -1;
+                if (separator > 0 && guards.HidesEpisodeTitle(tmdbId, copy["tvdbId"]?.ToString(), null, null, copy["episodeTvdbId"]?.ToString()))
+                {
+                    copy["subtitle"] = subtitle!.Substring(0, separator);
+                    changed = true;
+                }
+            }
+
+            return changed ? copy : row;
+        }
+
+        /// <summary>
+        /// Applies the caller's Spoiler Guard to calendar events. Dates stay, because they
+        /// are what a calendar is for, and most of these episodes have yet to air.
+        /// </summary>
+        /// <param name="events">The events built for this response.</param>
+        private void RedactCalendarEvents(List<ArrItem> events)
+        {
+            var guards = _spoilerSeerrRedactor.LoadRows(UserHelper.GetCurrentUserId(User)?.ToString(), HttpContext);
+            if (guards == null) return;
+            foreach (var calendarEvent in events)
+            {
+                var tmdbId = calendarEvent.TmdbId?.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                if (calendarEvent.Type == "Movie")
+                {
+                    var policy = guards.ForTitle(false, tmdbId, null, null);
+                    if (policy == null) continue;
+                    if (policy.HideOverview) calendarEvent.Overview = null;
+                    if (policy.HidePoster) calendarEvent.PosterUrl = null;
+                    if (policy.HideBackdrop) calendarEvent.BackdropUrl = null;
+                    continue;
+                }
+
+                var tvdbId = calendarEvent.TvdbId?.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                var shokoId = calendarEvent.ShokoSeriesId?.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                var itemEpisodeId = calendarEvent.ItemEpisodeId;
+                var episodeTvdbId = calendarEvent.EpisodeTvdbId?.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                if (guards.HidesEpisodeOverview(tmdbId, tvdbId, shokoId, itemEpisodeId, episodeTvdbId)) calendarEvent.Overview = null;
+                if (!guards.HidesEpisodeTitle(tmdbId, tvdbId, shokoId, itemEpisodeId, episodeTvdbId)) continue;
+
+                var suffix = " - " + calendarEvent.EpisodeTitle;
+                if (calendarEvent.Subtitle?.EndsWith(suffix, StringComparison.Ordinal) == true)
+                {
+                    calendarEvent.Subtitle = calendarEvent.Subtitle.Substring(0, calendarEvent.Subtitle.Length - suffix.Length);
+                }
+
+                calendarEvent.EpisodeTitle = null;
+            }
         }
 
         private static string? PosterFromImages(dynamic images)
@@ -10662,6 +10800,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             instanceName = instance.Name,
                             title = (string?)record.series?.title ?? "Unknown",
                             subtitle = $"S{record.episode?.seasonNumber:D2}E{record.episode?.episodeNumber:D2} - {record.episode?.title}",
+                            tvdbId = (int?)record.series?.tvdbId,
+                            episodeTvdbId = (int?)record.episode?.tvdbId,
                             seasonNumber = (int?)record.episode?.seasonNumber,
                             episodeNumber = (int?)record.episode?.episodeNumber,
                             status = ResolveQueueStatus((string?)record.status, (string?)record.trackedDownloadState, (string?)record.trackedDownloadStatus),
@@ -10815,7 +10955,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             var filtered = FilterHistoryItemsByAllowedRequests(rawItems, allowedRequests);
             var totalPages = filtered.Count == 0 ? 0 : (int)Math.Ceiling(filtered.Count / (double)take);
-            var page = filtered.Skip(skip).Take(take).ToList();
+            var page = RedactDownloadRows(filtered.Skip(skip).Take(take));
 
             return Ok(new { items = page, totalPages, visible = true });
         }
@@ -10827,7 +10967,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 $"/api/v3/history?pageSize={HistoryWindowSize}&sortKey=date&sortDirection=descending&includeSeries=true&includeEpisode=true",
                 data =>
                 {
-                    var entries = new List<(string Title, int? Season, int? Episode, string? EpisodeTitle, string EventType, DateTime? Date, string? DownloadId, string? Poster, int? TmdbId)>();
+                    var entries = new List<(string Title, int? Season, int? Episode, int? TvdbId, string? EpisodeTitle, int? EpisodeTvdbId, string EventType, DateTime? Date, string? DownloadId, string? Poster, int? TmdbId)>();
                     if (data?.records == null) return new List<dynamic>();
                     foreach (var record in data.records)
                     {
@@ -10838,7 +10978,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             (string?)record.series?.title ?? "Unknown",
                             (int?)record.episode?.seasonNumber,
                             (int?)record.episode?.episodeNumber,
+                            (int?)record.series?.tvdbId,
                             (string?)record.episode?.title,
+                            (int?)record.episode?.tvdbId,
                             eventType,
                             (DateTime?)record.date,
                             (string?)record.downloadId,
@@ -10868,6 +11010,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                 instanceName = instance.Name,
                                 title = first.Title,
                                 subtitle = $"S{first.Season:D2}E{first.Episode:D2} - {first.EpisodeTitle}",
+                                tvdbId = first.TvdbId,
+                                episodeTvdbId = first.EpisodeTvdbId,
+                                seasonNumber = first.Season,
+                                episodeNumber = first.Episode,
                                 eventType = first.EventType,
                                 date = first.Date,
                                 posterUrl = first.Poster,
@@ -11117,6 +11263,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 {
                     var requestAborted = HttpContext.RequestAborted;
                     // Enrich all requests in parallel for better performance
+                    // Resolved here because the rows below are built in parallel.
+                    var spoilerRows = _spoilerSeerrRedactor.LoadRows(UserHelper.GetCurrentUserId(User)?.ToString(), HttpContext);
                     var enrichmentTasks = results.Select(async req =>
                     {
                         var media = req["media"] as JObject;
@@ -11218,6 +11366,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         var isOrphaned = IsOrphanedRequest(mediaStatus, createdAtStr)
                             && await IsMissingFromArrAsync(type, tmdbId, tvdbId, requestAborted);
 
+                        // Worked out before the dates go, as the Coming Soon filter reads it.
+                        var isComingSoon = IsComingSoonRequest(mediaStatus, type, nextAirDate, digitalReleaseDate, theatricalReleaseDate);
+                        var spoilerPolicy = spoilerRows?.ForTitle(
+                            type == "tv",
+                            tmdbId?.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                            tvdbId?.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                            media?["jellyfinMediaId"]?.Value<string>(),
+                            media?["jellyfinMediaId4k"]?.Value<string>());
+                        if (spoilerPolicy?.HideDates == true)
+                        {
+                            digitalReleaseDate = null;
+                            theatricalReleaseDate = null;
+                            initialAirDate = null;
+                            nextAirDate = null;
+                        }
+
+                        if (spoilerPolicy?.HidePoster == true) posterUrl = null;
+
                         return new
                         {
                             id = req["id"]?.Value<int>(),
@@ -11246,7 +11412,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             theatricalReleaseDate = theatricalReleaseDate,
                             initialAirDate = initialAirDate,
                             nextAirDate = nextAirDate,
-                            isComingSoon = IsComingSoonRequest(mediaStatus, type, nextAirDate, digitalReleaseDate, theatricalReleaseDate),
+                            isComingSoon = isComingSoon,
                             isOrphaned = isOrphaned
                         };
                     }).ToList();
@@ -11788,6 +11954,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }).ToList();
             }
 
+            RedactCalendarEvents(events);
             return Ok(new { events, errors });
         }
 

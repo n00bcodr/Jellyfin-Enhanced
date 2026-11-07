@@ -44,7 +44,8 @@
 
         const singleSeasonOnly = partialRequestsEnabled && JE.pluginConfig?.JellyseerrSingleSeasonRequestOnly === true;
 
-        const tvDetails = await fetchTvShowDetails(tmdbId);
+        // Uncached, as in More Info, so the requests that follow carry a current verdict.
+        const tvDetails = await fetchTvShowDetails(tmdbId, { skipCache: true });
         if (!tvDetails?.seasons) {
             JE.toast(JE.t('jellyseerr_toast_no_season_info'), 4000);
             return;
@@ -230,8 +231,14 @@
             }).catch(err => console.warn(`${logPrefix} Quota chip render failed:`, err));
         }
 
+        // The newest details. A backfill started from older ones renders these instead, because
+        // a refresh may have brought a newer Spoiler Guard verdict.
+        let latestDetails = tvDetails;
+
         // Cached air dates — populated once, applied on every render (including polling refreshes)
         const airDateCache = {};
+        // Names of started seasons on a protected title, which only their own responses can prove.
+        const seasonNameCache = {};
 
         /**
          * Validates that a string starts with an ISO date format (YYYY-MM-DD).
@@ -246,35 +253,38 @@
          * @param {object} details - The Seerr TV show details object.
          */
         function applyAirDateBackfill(details) {
-            if (!details?.seasons || Object.keys(airDateCache).length === 0) return;
-            details.seasons = details.seasons.map(s => {
-                if (!s.airDate && airDateCache[s.seasonNumber]) {
-                    return { ...s, airDate: airDateCache[s.seasonNumber] };
-                }
-                return s;
-            });
+            if (!details?.seasons) return;
+            details.seasons = details.seasons.map(s => ({
+                ...s,
+                airDate: s.airDate || airDateCache[s.seasonNumber],
+                // Only while protected: without a guard the details carry the real name.
+                name: (details.jeSpoilerGuard && seasonNameCache[s.seasonNumber]) || s.name,
+            }));
         }
 
         // Async backfill: fetch air dates from per-season episode data, with TMDB as fallback
-        const seasonsNeedingDates = tvDetails.seasons.filter(s => s.episodeCount > 0 && !s.airDate);
+        const followUp = JE.jellyseerrAPI.followUpOptions(tvDetails);
+        const seasonsNeedingDates = tvDetails.seasons.filter(s => s.episodeCount > 0
+            && ((!s.airDate && !s.jeYear) || (tvDetails.jeSpoilerGuard && s.seasonNumber > 1)));
         if (seasonsNeedingDates.length > 0) {
             // Primary: fetch first episode air date from each season (Seerr/TheTVDB has these)
             const seasonFetches = seasonsNeedingDates.map(s =>
-                fetchTvSeasonDetails(tmdbId, s.seasonNumber).then(detail => {
+                fetchTvSeasonDetails(tmdbId, s.seasonNumber, followUp).then(detail => {
                     const firstEp = detail?.episodes?.[0];
-                    if (firstEp?.airDate && isValidDate(firstEp.airDate)) {
-                        airDateCache[s.seasonNumber] = firstEp.airDate;
-                    }
+                    // Only the year is shown here, which is what Spoiler Guard leaves of a date.
+                    const date = firstEp?.airDate && isValidDate(firstEp.airDate) ? firstEp.airDate : firstEp?.jeYear;
+                    if (date) airDateCache[s.seasonNumber] = date;
+                    if (tvDetails.jeSpoilerGuard && detail?.name) seasonNameCache[s.seasonNumber] = detail.name;
                 }).catch(() => {})
             );
 
             // Fallback: also try TMDB for any gaps (runs in parallel)
             const tmdbFetch = JE.pluginConfig?.TmdbEnabled
-                ? fetchTmdbTvDetails(tmdbId).then(tmdbData => {
+                ? fetchTmdbTvDetails(tmdbId, followUp).then(tmdbData => {
                     if (!tmdbData?.seasons) return;
                     tmdbData.seasons.forEach(s => {
-                        const date = s.air_date || '';
-                        if (isValidDate(date) && !airDateCache[s.season_number]) {
+                        const date = isValidDate(s.air_date || '') ? s.air_date : s.jeYear;
+                        if (date && !airDateCache[s.season_number]) {
                             airDateCache[s.season_number] = date;
                         }
                     });
@@ -283,8 +293,8 @@
 
             // When all fetches complete, re-render with backfilled dates
             Promise.all([...seasonFetches, tmdbFetch]).then(() => {
-                applyAirDateBackfill(tvDetails);
-                updateSeasonList(seasonList, tvDetails, partialRequestsEnabled, enableSpecialEpisodes, is4k, jellyfinSeasonMap);
+                applyAirDateBackfill(latestDetails);
+                updateSeasonList(seasonList, latestDetails, partialRequestsEnabled, enableSpecialEpisodes, is4k, jellyfinSeasonMap);
             });
         }
 
@@ -336,8 +346,10 @@
 
         // Start polling for updates when the modal is shown
         refreshModalInterval = setInterval(async () => {
-            const freshTvDetails = await fetchTvShowDetails(tmdbId);
+            // Uncached too: an answer from before a guard would undo the protected one above.
+            const freshTvDetails = await fetchTvShowDetails(tmdbId, { skipCache: true });
             if (freshTvDetails) {
+                latestDetails = freshTvDetails;
                 applyAirDateBackfill(freshTvDetails);
                 updateSeasonList(seasonList, freshTvDetails, partialRequestsEnabled, enableSpecialEpisodes, is4k, jellyfinSeasonMap);
                 // Update Select All state after refresh
@@ -529,7 +541,7 @@
                 <input type="checkbox" class="jellyseerr-season-checkbox" data-season-number="${escapeHtml(seasonNumber)}" ${checkboxDisabled ? 'disabled' : ''} style="${!partialRequestsEnabled ? 'cursor: not-allowed;' : ''}">
                 <div class="jellyseerr-season-info">
                     <div class="jellyseerr-season-name">${escapeHtml(displayName)}</div>
-                    <div class="jellyseerr-season-meta">${escapeHtml(season.airDate ? season.airDate.substring(0, 4) : '')}<span class="jellyseerr-meta-eps"> &middot; ${escapeHtml(season.episodeCount || 0)} ep</span></div>
+                    <div class="jellyseerr-season-meta">${escapeHtml((season.airDate || season.jeYear || '').substring(0, 4))}<span class="jellyseerr-meta-eps"> &middot; ${escapeHtml(season.episodeCount || 0)} ep</span></div>
                 </div>
                 <div class="jellyseerr-season-episodes">${escapeHtml(season.episodeCount || 0)} ep</div>
                 <div class="jellyseerr-season-status jellyseerr-season-status-${escapeHtml(statusClass)}">${escapeHtml(statusText)}</div>

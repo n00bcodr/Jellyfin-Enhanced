@@ -50,7 +50,8 @@
                     if (userPrefs.HideReviews === false) return false;
                 }
                 if (mediaType === 'Movie') {
-                    return !!(JE.spoilerBlur.isMovieEnabledFor && JE.spoilerBlur.isMovieEnabledFor(item?.Id || ''));
+                    // A failed lookup rejects into the catch below, which suppresses.
+                    return await JE.spoilerBlur.isMovieInScope(item?.Id || '');
                 }
                 // Series → own id; Season / Episode → parent series id (item.SeriesId),
                 // so the whole series' guarded state governs its child pages.

@@ -28,7 +28,7 @@ for(const Type of ['Movie','Series','Season','Episode']) {
   const guardedKey=Type==='Season'||Type==='Episode'?'series':'item';
   const item={Id:'item',Type,SeriesId:'series',ProviderIds:{Tmdb:'7'},ParentIndexNumber:1,IndexNumber:2};
   const guard=key=>({whenLoaded:async()=>{},isLoadOk:()=>true,
-    isEnabledFor:id=>Type!=='Movie'&&id===key,isMovieEnabledFor:id=>Type==='Movie'&&id===key});
+    isEnabledFor:id=>Type!=='Movie'&&id===key,isMovieInScope:async id=>Type==='Movie'&&id===key});
   test(`reviews suppress guarded ${Type} pages before fetching content`,async t=>{
     const h=await setup(t,{item,config:{SpoilerBlurEnabled:true},spoilerBlur:guard(guardedKey)});
     assert.equal(h.calls.length,0);assert.equal(h.document.querySelector('.tmdb-reviews-section'),null);
@@ -43,7 +43,7 @@ test('reviews fail closed when spoiler state fails to load',async t=>{
   assert.equal(h.calls.length,0);assert.equal(h.document.querySelector('.tmdb-reviews-section'),null);
 });
 test('reviews honor user opt-out of hiding reviews and render an empty writeable section once',async t=>{
-  const h=await setup(t,{config:{SpoilerBlurEnabled:true},spoilerBlur:{getUserPrefs:()=>({HideReviews:false}),isMovieEnabledFor:()=>true}});
+  const h=await setup(t,{config:{SpoilerBlurEnabled:true},spoilerBlur:{getUserPrefs:()=>({HideReviews:false}),isMovieInScope:async()=>true}});
   assert.equal(h.calls.length,2);assert.ok(h.document.querySelector('.tmdb-reviews-section'));await h.navigate();assert.equal(h.calls.length,2);
 });
 test('episode reviews use series/season/episode key without fetching top-level TMDB reviews',async t=>{
@@ -279,4 +279,8 @@ test('translated review links a label by its original wording when the label tra
 test('translated review leaves a link as plain text when neither wording is in the translation',async t=>{
   const result=await translateLinked(t,'A <a href="https://x.test/a">real dude</a>.',text=>text==='real dude'?'type':'A mec.');
   assert.equal(result,'A mec.');
+});
+test('a failed scope lookup suppresses reviews on a movie, as other failed guard checks do',async t=>{
+  const h=await setup(t,{config:{SpoilerBlurEnabled:true},spoilerBlur:{isMovieInScope:async()=>{throw new Error('offline');}}});
+  assert.equal(h.document.querySelector('.tmdb-reviews-section'),null);
 });

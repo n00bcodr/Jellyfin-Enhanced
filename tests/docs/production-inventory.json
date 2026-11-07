@@ -603,6 +603,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/SpoilerGuard/SpoilerSeerrRedactor.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/SpoilerGuard/SpoilerTagDataStripper.cs",
       "category": "Services"
     },
@@ -2540,6 +2544,17 @@
       "verb": "GET",
       "path": "/JellyfinEnhanced/spoiler-blur/apply-existing/status",
       "method": "GetSpoilerApplyExistingStatus",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)",
+        "Authorize",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/spoiler-blur/movies/{movieId}/in-scope",
+      "method": "GetSpoilerMovieScope",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
       "following_attributes": [
         "ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)",
@@ -7874,8 +7889,8 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 364,
-    "routes": 183,
+    "files": 365,
+    "routes": 184,
     "configuration_properties": 533,
     "storage_references": 70,
     "scheduled_tasks": 13,

@@ -6,6 +6,7 @@ using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Session;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
+using MediaBrowser.Model.Providers;
 using MediaBrowser.Model.Querying;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -152,6 +153,79 @@ public class PrivacyFieldFilterTests
         Assert.Equal("Movie name", movie.Name); Assert.Equal("Director's Cut", movie.MediaSources[0].Name);
         Assert.Equal("Past", movie.Chapters[0].Name); Assert.Equal("/past.jpg", movie.Chapters[0].ImagePath);
         Assert.Equal("Chapter 2", movie.Chapters[1].Name); Assert.Null(movie.Chapters[1].ImagePath);
+    }
+
+    // Fields a DTO carries before the auxiliary title-bearing block runs. Links and trailers
+    // are separate so a test can show one surviving while the other is scrubbed.
+    private static ExternalUrl[] Links() => [new ExternalUrl { Name = "TheMovieDb", Url = "https://www.themoviedb.org/tv/1399" }, new ExternalUrl { Name = "IMDb", Url = "https://www.imdb.com/title/tt0944947" }];
+
+    private static BaseItemDto WithAuxiliaryFields(BaseItemDto dto)
+    {
+        dto.Path = "/Secret";
+        dto.ExternalUrls = Links();
+        dto.RemoteTrailers = [new MediaUrl { Name = "Secret trailer", Url = "https://example.test/secret" }];
+        dto.People = [new BaseItemPerson { Name = "Actor", Role = "Secret role", Type = PersonKind.Actor }];
+        return dto;
+    }
+
+    // Web renders .itemExternalLinks from ExternalUrls, and Arr, Seerr, Letterboxd and Elsewhere
+    // anchor on that row or read the TMDB link from it (#1017). Series and movie titles are never
+    // replaced, so only their links are kept: everything else in the block stays scrubbed.
+    [Theory]
+    [InlineData("Series", true, "UserLibrary", "GetItemLegacy", true, true)]
+    [InlineData("Series", true, "UserLibrary", "GetItem", true, false)]
+    [InlineData("Series", true, "Items", "GetItems", false, true)]
+    [InlineData("Movie", false, "UserLibrary", "GetItemLegacy", true, true)]
+    [InlineData("Movie", false, "UserLibrary", "GetItem", true, false)]
+    [InlineData("Movie", false, "Items", "GetItems", false, true)]
+    public async Task GuardedSeriesAndMovieKeepExternalLinksButNotTheOtherAuxiliaryFields(string kind, bool isSeries, string controller, string action, bool replaceTitle, bool stripOverview)
+    {
+        using var f = new Fixture();
+        f.Plugin.Plugin.Configuration.SpoilerReplaceTitle = replaceTitle;
+        f.Plugin.Plugin.Configuration.SpoilerStripSeriesOverview = stripOverview;
+        f.Plugin.Plugin.Configuration.SpoilerStripOverview = stripOverview;
+        var id = isSeries ? f.Series : Guid.NewGuid();
+        if (!isSeries) { var state = new UserSpoilerBlur(); state.Movies[id.ToString("N")] = new(); f.Save(state); }
+        var dto = WithAuxiliaryFields(new BaseItemDto { Id = id, Type = Enum.Parse<BaseItemKind>(kind), Name = "Title", Overview = "Plot", UserData = new UserItemDataDto { Key = "test" } });
+        await f.Invoke(dto, controller, action);
+        Assert.Equal(Links().Select(l => l.Url), dto.ExternalUrls.Select(l => l.Url));
+        Assert.Null(dto.RemoteTrailers); Assert.Null(dto.Path);
+        Assert.Null(Assert.Single(dto.People).Role);
+        Assert.Equal("Title", dto.Name);
+    }
+
+    // The reproduction's denied side: a replaced title must not come back through a link.
+    [Theory]
+    [InlineData("Episode", false)]
+    [InlineData("Season", false)]
+    [InlineData("Trailer", true)]
+    [InlineData("Video", true)]
+    public async Task EpisodeSeasonAndExtraExternalLinksStayStripped(string kind, bool isExtra)
+    {
+        using var f = new Fixture();
+        var dto = WithAuxiliaryFields(f.Episode());
+        dto.Type = Enum.Parse<BaseItemKind>(kind);
+        if (dto.Type == BaseItemKind.Season)
+        {
+            // S1 always passes, so use a later season with nothing watched.
+            dto.IndexNumber = 2; dto.RecursiveItemCount = 8;
+            dto.UserData!.UnplayedItemCount = 8;
+        }
+        await f.Invoke(dto, "UserLibrary", isExtra ? "GetLocalTrailers" : "GetItem");
+        Assert.Null(dto.ExternalUrls); Assert.Null(dto.RemoteTrailers); Assert.Null(dto.Path);
+        Assert.Null(Assert.Single(dto.People).Role);
+    }
+
+    // Preservation: no strip applies, so nothing here may depend on the new kind check.
+    [Fact]
+    public async Task UnguardedAndWatchedItemsKeepTheirExternalLinks()
+    {
+        using var f = new Fixture();
+        var unguarded = WithAuxiliaryFields(new BaseItemDto { Id = Guid.NewGuid(), Type = BaseItemKind.Series, Name = "Title", Overview = "Plot" });
+        var watched = WithAuxiliaryFields(f.Episode(played: true));
+        await f.Invoke(new QueryResult<BaseItemDto> { Items = [unguarded, watched] });
+        Assert.NotNull(unguarded.ExternalUrls); Assert.NotNull(unguarded.RemoteTrailers);
+        Assert.NotNull(watched.ExternalUrls); Assert.NotNull(watched.RemoteTrailers);
     }
 
     [Theory]

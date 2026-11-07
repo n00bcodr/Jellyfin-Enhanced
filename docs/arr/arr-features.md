@@ -225,7 +225,7 @@ Use custom CSS to rename a visible tag label, hide a link, or change its color. 
 
 ## Calendar Page
 
-See upcoming episodes and cinema, digital, and physical movie releases in one Calendar. Enabled Sonarr and Radarr instances and a configured Shoko server supply events independently.
+See upcoming episodes and cinema, digital, and physical movie releases in one Calendar. Enabled Sonarr and Radarr instances and a configured Shoko server supply events independently. Spoiler Guard hides episode titles here for protected series until you play the episode; see [What Spoiler Guard protects](../spoiler-guard/spoiler-guard-features.md#what-spoiler-guard-protects).
 
 ![Month calendar with release events and status legend](../images/arr/calendar-month.webp)
 *This example uses **Month** with Monday first; the default view is **Agenda**.*
@@ -354,7 +354,7 @@ Shoko adds pink **Anime** events from its server collection. Use it to include a
 
 ## Downloads Page
 
-Downloads are part of the shared **Requests** page, alongside Seerr **Requests**, optional **Issues**, and **History**. Sonarr and Radarr provide queue/history data; see [Seerr features](../seerr/seerr-features.md) for request lists, request actions, issues, and request statuses such as **Coming Soon** and **Orphaned**.
+Downloads are part of the shared **Requests** page, alongside Seerr **Requests**, optional **Issues**, and **History**. Sonarr and Radarr provide queue/history data; see [Seerr features](../seerr/seerr-features.md) for request lists, request actions, issues, and request statuses such as **Coming Soon** and **Orphaned**. Spoiler Guard hides episode titles here for protected series until you play the episode; see [What Spoiler Guard protects](../spoiler-guard/spoiler-guard-features.md#what-spoiler-guard-protects).
 
 ### Setup
 

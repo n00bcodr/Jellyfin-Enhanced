@@ -13,7 +13,10 @@ public class ApiAssetTests
     {
         // Asset actions use only the logger and HTTP context; unrelated host services are deliberately absent.
         var constructor = typeof(JellyfinEnhancedController).GetConstructors().Single();
-        var arguments = constructor.GetParameters().Select(p => p.ParameterType == typeof(Jellyfin.Plugin.JellyfinEnhanced.Logger) ? (object)fixture.Logger : services.FirstOrDefault(p.ParameterType.IsInstanceOfType)).ToArray();
+        var arguments = constructor.GetParameters().Select(p => p.ParameterType == typeof(Jellyfin.Plugin.JellyfinEnhanced.Services.SpoilerSeerrRedactor) && !services.OfType<Jellyfin.Plugin.JellyfinEnhanced.Services.SpoilerSeerrRedactor>().Any()
+            // Inert until a test turns Spoiler Guard on, and then it supplies its own.
+            ? new Jellyfin.Plugin.JellyfinEnhanced.Services.SpoilerSeerrRedactor(null!, null!, null!, null!, null!)
+            : p.ParameterType == typeof(Jellyfin.Plugin.JellyfinEnhanced.Logger) ? (object)fixture.Logger : services.FirstOrDefault(p.ParameterType.IsInstanceOfType)).ToArray();
         var controller = (JellyfinEnhancedController)constructor.Invoke(arguments);
         controller.ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() };
         return controller;

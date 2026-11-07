@@ -718,7 +718,7 @@ All routes in this table require **Seerr-linked** access, except TV-by-studio's 
 | POST | `jellyseerr/request` | JSON request object → upstream request record. |
 | GET | `jellyseerr/request` | `take=500`, `skip=0`, `filter=all`, forwarded without JE clamping → upstream request page. |
 | GET | `jellyseerr/quota` | Caller's quota; movie/TV sides can gain ISO `nextResetAt`. |
-| GET | `jellyseerr/movie/{tmdbId}` | Movie detail. |
+| GET | `jellyseerr/movie/{tmdbId}` | Movie detail. Spoiler Guard shapes this and the other title responses for the caller; see [below](#spoiler-guard-on-title-responses). |
 | GET | `jellyseerr/tv/{tmdbId}` | TV detail. |
 | GET | `jellyseerr/tv/{tmdbId}/season/{seasonNumber}` | Season detail; numeric route values forwarded. |
 | GET | `jellyseerr/movie-collections` | Query `ids` → collection map, described below. |
@@ -899,6 +899,21 @@ All caller actions require a nonempty user-ID claim. Enable actions additionally
 | **Enable Spoiler Guard** | `false` | `SpoilerBlurEnabled`; gates pending POST and apply-existing preview/start. Other state-management routes remain callable. |
 | **Auto-enable Spoiler Guard on Seerr request** | `false` | `SpoilerAutoEnableOnSeerrRequest`; hooks successful general Seerr request POSTs, alongside the master setting. |
 
+### Spoiler Guard on title responses
+
+The Seerr proxy, the TMDB passthrough's title routes and `mdblist-ratings/{mediaType}/{tmdbId}` apply the caller's Spoiler Guard policy to protected titles, on top of their shared caches.
+
+| Response | Effect |
+|---|---|
+| Seerr and TMDB title details | Fields follow the caller's settings. Adds `jeSpoilerGuard: true`, `jeSpoilerGuardInherited: true` for a movie protected only through a collection, `jeSpoilerGuardItems` with the guarded library items, and `jeYear` when dates are hidden, also on seasons and episodes. Seerr keywords move to `jeRuleKeywords`, for request override rules. A started season or played episode stays visible when the library holds its TMDB id. A season's own response also accepts its TVDB id. |
+| Seerr lists | `overview` becomes the placeholder and ratings are removed, per setting. Dates stay. A removed score moves to `jeSortRating`, so Top Rated keeps its order. |
+| Seerr ratings, TMDB `movie/{id}/release_dates` | Empty when ratings or dates are hidden. |
+| TMDB title routes | `no-store`, with no ETag, so a stored unprotected copy can't be revalidated. |
+| Follow-ups to protected details | Ratings, season and TMDB requests can send `X-JE-Spoiler-Guarded` with the `jeSpoilerGuardItems` of their details, or `1`, because they carry only a TMDB id. It can only hide more. Items that aren't the caller's guards are ignored. |
+| `mdblist-ratings` | `{Found:false,Confirmed:false}` when ratings are hidden. |
+| `arr/queue`, `arr/history`, `arr/calendar` | Episode titles are removed from subtitles, per caller, on top of the shared caches. |
+| `arr/requests` | Dates are removed when hidden. `isComingSoon` keeps its value. |
+
 ### State and preferences
 
 Read your protection lists and preferences here. Preference POSTs replace the complete preference object.
@@ -906,6 +921,7 @@ Read your protection lists and preferences here. Preference POSTs replace the co
 | Method | Path | Access | Request → response |
 |---|---|---|---|
 | GET | `spoiler-blur/series` | Caller | Full `{Series,Movies,Collections,PendingTmdb,Prefs}` state; `no-store`. |
+| GET | `spoiler-blur/movies/{movieId}/in-scope` | Caller | `{inScope}` for the caller's own state: on their Movies list or in an opted-in collection; `no-store`. Invalid id → `400`; a failed collection lookup → `503`, so a client can keep its protection. |
 | GET | `spoiler-blur/user-prefs` | Caller | `SpoilerBlurUserPrefs` object. |
 | POST | `spoiler-blur/user-prefs` | Caller | Complete preference object, at most 8 KiB → `{success:true,prefs:<submitted preferences>}`. |
 

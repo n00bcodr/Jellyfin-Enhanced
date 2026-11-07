@@ -6,6 +6,10 @@
     const internal = JE.internals.features = JE.internals.features || {};
 
     const RELEASEDATE_CACHE_TTL = 60 * 60 * 1000; // 1 hour
+    // With guards on, an answer also depends on what this user has played, and nothing
+    // announces a change to that. Long enough to dedupe the page's repeat calls.
+    const RELEASEDATE_GUARDED_CACHE_TTL = 30 * 1000;
+    const cacheTtl = () => (JE.spoilerBlur?.hasAnyState?.() ? RELEASEDATE_GUARDED_CACHE_TTL : RELEASEDATE_CACHE_TTL);
     const releaseDateCache = new Map(); // Map<itemId, { infos, ts }>
     // Lookups in flight, so a chip takes one over instead of starting another:
     // Map<itemId, { promise, visit, claimed, ctl }>. A details visit's prefetch
@@ -14,9 +18,24 @@
     // once it has cached the answer, and a visit's unclaimed ones go with it.
     const releaseLookups = new Map();
 
-    // TMDB answers don't depend on the user, so the answers cache stays as it
-    // was; prefetches no chip has taken over are aborted with their visit's.
+    // Spoiler Guard shapes these answers per user and per title, so neither a
+    // switch of user nor a guard change may reuse them. A lookup started before a
+    // guard change compares this before it caches or draws anything.
+    let guardRevision = 0;
+
+    window.addEventListener('je:spoiler-state-changed', () => {
+        guardRevision++;
+        releaseDateCache.clear();
+        for (const entry of releaseLookups.values()) {
+            if (entry.visit && !entry.claimed) entry.ctl?.abort();
+        }
+        releaseLookups.clear();
+        document.querySelectorAll('.mediaInfoItem-releaseDate').forEach(chip => chip.remove());
+    });
+
+    // Prefetches no chip has taken over are aborted with their visit's.
     JE.session?.onUserChange('release-dates', () => {
+        releaseDateCache.clear();
         for (const entry of releaseLookups.values()) {
             if (entry.visit && !entry.claimed) entry.ctl?.abort();
         }
@@ -195,7 +214,7 @@
 
         const now = Date.now();
         const cached = releaseDateCache.get(itemId);
-        if (cached && (now - cached.ts) < RELEASEDATE_CACHE_TTL) {
+        if (cached && (now - cached.ts) < cacheTtl()) {
             if (cached.infos.length > 0) renderReleaseDateChips(container, itemId, cached.infos);
             return;
         }
@@ -213,6 +232,7 @@
             // previous user nor cached as "no dates" for the next one. Any
             // other failure is logged and cached as it always was.
             const epoch = JE.session ? JE.session.getEpoch() : 0;
+            const revision = guardRevision;
             let cutShort = false;
             try {
                 const userId = ApiClient.getCurrentUserId();
@@ -239,8 +259,13 @@
                         return lookupNow();
                     })
                     : await entry.promise;
-                releaseDateCache.set(itemId, { infos, ts: now });
                 if (releaseLookups.get(itemId) === entry) releaseLookups.delete(itemId);
+                const superseded = revision !== guardRevision || (JE.session && !JE.session.isCurrent(epoch));
+                if (superseded) {
+                    placeholder.remove();
+                    return;
+                }
+                releaseDateCache.set(itemId, { infos, ts: now });
                 // The chips' small DOM write lands with the next frame's own
                 // layout pass instead of forcing an extra one.
                 await new Promise((resolve) => requestAnimationFrame(() => resolve()));
@@ -253,7 +278,7 @@
             } catch (error) {
                 if (entry && releaseLookups.get(itemId) === entry) releaseLookups.delete(itemId);
                 placeholder.remove();
-                if (cutShort) return;
+                if (cutShort || revision !== guardRevision) return;
                 console.error(`🪼 Jellyfin Enhanced: Release Date: Error fetching release info for ${itemId}:`, error);
                 releaseDateCache.set(itemId, { infos: [], ts: now });
             }
@@ -346,7 +371,7 @@
      */
     function prefetchReleaseDate(itemId, item, visit) {
         const cached = releaseDateCache.get(itemId);
-        if ((cached && (Date.now() - cached.ts) < RELEASEDATE_CACHE_TTL) || releaseLookups.has(itemId)) return;
+        if ((cached && (Date.now() - cached.ts) < cacheTtl()) || releaseLookups.has(itemId)) return;
         const ctl = new AbortController();
         const userId = ApiClient.getCurrentUserId();
         const lookup = () => resolveReleaseInfo(item, userId);
