@@ -227,7 +227,7 @@ Each group has a row on the **Groups** tab, highest priority first. Groups highe
 
 Open a row to change it:
 
-- **Position:** the places the selected layout offers, plus **Hidden**. Corners offers a 3×3 grid: top left, top centre, top right; left centre, centre, right centre; bottom left, bottom centre, bottom right. Changing the layout re-labels every row. **Dots** is offered to quality only.
+- **Position:** the places the selected layout offers, plus **Hidden**. Corners shows poster-shaped tiles in a 3×3 grid, with a marker on the selected place, and **Hidden** is an icon button beside them; the other layouts list their places as pills. Each row's controls sit in a second column beside its label. Changing the layout re-labels every row. **Dots** is offered to quality only.
 - **Show up to:** how many tags the group shows, from 1 to 10. Quality and rating also offer **All**. Age rating and status always show one.
 - **Include:** the quality categories with their stack order, or the rating group's **Community score** and **Critic score**. Other groups have nothing to choose here.
 - **Where to show:** every group has the same six switches: **Movies**, **Series**, **Seasons**, **Episodes**, **Continue Watching row** and **Next Up row**. Turn one off to keep that group off those cards, for example genres off episodes or the age rating off the Next Up row. Each switch you have not changed follows the administrator's choice, and **Follow server** puts the whole group back on the administrator's choices. The item types also apply to [Native Poster Tags](#native-poster-tags-experimental). The two home rows are a web setting, because an app's image request does not say which row a poster is in. The live preview applies the switches to its sample movie, series and episode. People Tags appear on cast cards, not on media cards, so they have no switches. The item editor does not have them either, since they are set for all titles here. Collections and other videos always show the group. Rating works the same way: a Rating switch you turned off before this release stays off, and the others follow the administrator.
@@ -423,7 +423,7 @@ A document carries your layout and its profiles, group order, limits and positio
     - A document from a newer version of Jellyfin Enhanced is refused as a whole; update the plugin first.
     - Settings saved before layouts existed export as they are (their layout version travels with them), so importing them elsewhere gives the same look. The built-in presets switch to the current layout system.
 
-**Administrators** export and import the server-wide settings in the **Server** section of the Media Tags admin tab: every setting on that tab (defaults, groups, Tag Styles, custom rules, award lists, logo choices, status windows, cache options and offered presets), never an API key or the custom rule key. An import shows the changes, asks for a confirmation and saves them like any edit on that page: a setting another administrator changed meanwhile waits for **Keep mine** or **Take theirs**, and the snackbar offers **Undo** for 10 seconds. **Presets for users** lists the presets offered in every user's Presets list: **Offer my settings** uses your own Media Tags settings (saved first: if that save fails it offers nothing and says so, with **Retry**), **Offer from a file** a preset or settings file; each can be shared or removed.
+**Administrators** export and import the server-wide settings in the **Server** section of the Media Tags admin tab. Pasting a personal export from your own panel works too, so an administrator can make their own look the default for everyone: every setting on that tab (defaults, groups, Tag Styles, custom rules, award lists, logo choices, status windows, cache options and offered presets), never an API key or the custom rule key. An import shows the changes, asks for a confirmation and saves them like any edit on that page: a setting another administrator changed meanwhile waits for **Keep mine** or **Take theirs**, and the snackbar offers **Undo** for 10 seconds. **Presets for users** lists the presets offered in every user's Presets list: **Offer my settings** uses your own Media Tags settings (saved first: if that save fails it offers nothing and says so, with **Retry**), **Offer from a file** a preset or settings file; each can be shared or removed.
 
 ![The Server tab: Import & export, and Presets for users with Offer my settings and Offer from a file](../images/tags/media-tags-admin-portable.webp)
 
@@ -739,7 +739,7 @@ Admin settings below are under **Display**; the row's default is in **UI Prefere
 
 ## Rating Tags
 
-Rating Tags show an ordered selection of Community, Critic, IMDb, TMDb, Rotten Tomatoes critic and audience, Metacritic, Letterboxd and Trakt scores. Each named source has a bundled logo. Choose which item types and home rows show them.
+Rating Tags show an ordered selection of Community, Critic, IMDb, TMDb, Rotten Tomatoes critic and audience, Metacritic, Letterboxd and Trakt scores. Each named source has a bundled logo. Choose which item types and home rows show them. The scores come from the server tag cache, which the **Fetch Ratings from MDBList** task refreshes after each run, so a source appears once that task has covered a title.
 
 ![Numeric community, critic and average user rating chips](../images/tags/rating-tags.webp)
 
@@ -976,7 +976,7 @@ Awards adds **IMDb Top 250**, **Rotten Tomatoes Certified Fresh**, **Oscar winne
 
 1. An administrator enables **Media Tags settings → Groups → Awards**, then selects the ribbons. Each edit saves automatically.
 2. For chart membership and Certified Fresh, configure the existing server **MDBList API Key**. Without a key these three ribbons are off; Oscar/Emmy use Wikidata without a key.
-3. Run **Refresh Awards Tags** in **Dashboard → Scheduled Tasks → Jellyfin Enhanced**. Its default daily trigger is 04:00. The task also works with Server-Side Tag Cache off.
+3. Run **Refresh Awards Tags** in **Dashboard → Scheduled Tasks → Jellyfin Enhanced**. Its default daily trigger is 04:00, and the first refresh starts on its own when you turn Awards on. The task also works with Server-Side Tag Cache off. Under **Groups → Awards**, **What it needs** shows whether the MDBList key is set and when the task last ran.
 4. Each existing user enables **Awards** in **Media Tags → Groups**. New users take the admin default. Set its position, priority and **Show up to** limit like other groups (two by default, or All).
 
 | Administrator setting | Default | Behavior |
@@ -1136,7 +1136,7 @@ The server cache prepares tags for supported items in included libraries, so eac
 
 1. Leave **Server-side tag cache** on (Media Tags admin tab → **Server**). Choose library exclusions if needed.
 2. After changing exclusions, or after a plugin update that changes tag computation, click **Rebuild cache** there (or on the **Overview** tab).
-3. Confirm the full rebuild. The Overview shows **Rebuilding** until it is done.
+3. Confirm the full rebuild. The Overview shows **Rebuilding** until it is done, keeps showing it if you reload the page meanwhile, and says so when the rebuild finishes.
 4. Check server logs for progress and completion. The existing cache keeps serving while the new one builds in the background.
 
 ![Server tag cache duration and library exclusions](../images/admin/tag-cache.webp)
@@ -1322,9 +1322,9 @@ Use Tag Styles to recolour poster tags without writing CSS. You pick a preset, t
 
 1. Open the **Colours** section of the Media Tags admin tab and turn on **Use these tag colours**.
 2. Under **Apply to**, choose **Web**, **Native posters** or **Both**.
-3. Pick a **Preset**. It applies straight away and keeps any group or tag colours you set.
+3. Pick a **Preset**. It applies straight away and keeps any group or tag colours you set. The presets are always shown. Under the group tabs, **Preset for this group** gives one group its own preset (for example the Poster preset on Status only); **Same as the design** follows the main one.
 4. Choose a group tab (**Quality**, **Age**, **Rating**, **Genre**, **Status**, **Language**, **Awards**, **Logos**, **Custom**), then **Whole group** or one tag.
-5. Set **Background**, **Border** and **Text** with a swatch or any colour, and an opacity of 40–100%. Watch the contrast badge and the preview.
+5. Set **Background**, **Border** and **Text** with a swatch or any colour, and an **Opacity** of 40–100% on its own row. Watch the contrast badge and the preview; every status badge can be coloured, not only the first few.
 6. Each edit saves on its own. Refresh web clients to see the change; native posters redraw the next time they load.
 
 ![Picking a preset, colouring the Quality group and checking contrast in the Tag Styles editor](../images/admin/tag-styles.gif)
