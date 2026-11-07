@@ -32,19 +32,22 @@
 async function backfillSeasonMetadata(tmdbId, data) {
     try {
         if (!state.currentModal || !data?.seasons) return;
+        // Bound to this modal: a reopen of the same title can show different data.
+        const modal = state.currentModal;
 
         const api = JE.jellyseerrAPI;
+        const followUp = api?.followUpOptions?.(data);
         const seasonsMissingData = data.seasons.filter(s => s.episodeCount > 0 && (!s.airDate || !s.posterPath || !s.overview));
         if (seasonsMissingData.length === 0) return;
 
         // Fetch TMDB data + per-season episode data in parallel
         const tmdbPromise = (JE.pluginConfig?.TmdbEnabled && api?.fetchTmdbTvDetails)
-            ? api.fetchTmdbTvDetails(tmdbId).catch(() => null)
+            ? api.fetchTmdbTvDetails(tmdbId, followUp).catch(() => null)
             : Promise.resolve(null);
 
         const episodePromises = (api?.fetchTvSeasonDetails)
             ? seasonsMissingData.map(s =>
-                api.fetchTvSeasonDetails(tmdbId, s.seasonNumber)
+                api.fetchTvSeasonDetails(tmdbId, s.seasonNumber, followUp)
                     .then(detail => ({ seasonNumber: s.seasonNumber, firstEpDate: detail?.episodes?.[0]?.airDate || '' }))
                     .catch(() => ({ seasonNumber: s.seasonNumber, firstEpDate: '' }))
             )
@@ -67,12 +70,12 @@ async function backfillSeasonMetadata(tmdbId, data) {
         });
 
         // Bail if modal was closed/replaced during async fetch
-        if (!state.currentModal || String(state.currentModal.dataset?.tmdbId) !== String(tmdbId)) return;
+        if (state.currentModal !== modal || modal._isClosing || String(modal.dataset?.tmdbId) !== String(tmdbId)) return;
 
         // Update each season card in the DOM
         data.seasons.forEach(season => {
             const sNum = season.seasonNumber;
-            const card = state.currentModal.querySelector(`.season-card[data-season-number="${CSS.escape(String(sNum))}"]`);
+            const card = modal.querySelector(`.season-card[data-season-number="${CSS.escape(String(sNum))}"]`);
             if (!card) return;
 
             const tmdbSeason = tmdbMap[sNum];

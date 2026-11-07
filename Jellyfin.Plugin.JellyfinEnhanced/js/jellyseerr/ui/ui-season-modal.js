@@ -44,8 +44,7 @@
 
         const singleSeasonOnly = partialRequestsEnabled && JE.pluginConfig?.JellyseerrSingleSeasonRequestOnly === true;
 
-        // Uncached, as in More Info: the season requests that follow rely on the server
-        // having seen these details.
+        // Uncached, as in More Info, so the requests that follow carry a current verdict.
         const tvDetails = await fetchTvShowDetails(tmdbId, { skipCache: true });
         if (!tvDetails?.seasons) {
             JE.toast(JE.t('jellyseerr_toast_no_season_info'), 4000);
@@ -258,11 +257,12 @@
         }
 
         // Async backfill: fetch air dates from per-season episode data, with TMDB as fallback
+        const followUp = JE.jellyseerrAPI.followUpOptions(tvDetails);
         const seasonsNeedingDates = tvDetails.seasons.filter(s => s.episodeCount > 0 && !s.airDate);
         if (seasonsNeedingDates.length > 0) {
             // Primary: fetch first episode air date from each season (Seerr/TheTVDB has these)
             const seasonFetches = seasonsNeedingDates.map(s =>
-                fetchTvSeasonDetails(tmdbId, s.seasonNumber).then(detail => {
+                fetchTvSeasonDetails(tmdbId, s.seasonNumber, followUp).then(detail => {
                     const firstEp = detail?.episodes?.[0];
                     if (firstEp?.airDate && isValidDate(firstEp.airDate)) {
                         airDateCache[s.seasonNumber] = firstEp.airDate;
@@ -272,7 +272,7 @@
 
             // Fallback: also try TMDB for any gaps (runs in parallel)
             const tmdbFetch = JE.pluginConfig?.TmdbEnabled
-                ? fetchTmdbTvDetails(tmdbId).then(tmdbData => {
+                ? fetchTmdbTvDetails(tmdbId, followUp).then(tmdbData => {
                     if (!tmdbData?.seasons) return;
                     tmdbData.seasons.forEach(s => {
                         const date = s.air_date || '';

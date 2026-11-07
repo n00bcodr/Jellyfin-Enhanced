@@ -10720,7 +10720,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // A season pack's row names no episode, so it has no " - title" to find.
                 var subtitle = copy["subtitle"]?.ToString();
                 var separator = subtitle?.IndexOf(" - ", StringComparison.Ordinal) ?? -1;
-                if (separator > 0 && guards.HidesEpisodeTitle(tmdbId, copy["tvdbId"]?.ToString(), null, (int?)copy["seasonNumber"], (int?)copy["episodeNumber"]))
+                if (separator > 0 && guards.HidesEpisodeTitle(tmdbId, copy["tvdbId"]?.ToString(), null, null, copy["episodeTvdbId"]?.ToString()))
                 {
                     copy["subtitle"] = subtitle!.Substring(0, separator);
                     changed = true;
@@ -10754,11 +10754,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                 var tvdbId = calendarEvent.TvdbId?.ToString(System.Globalization.CultureInfo.InvariantCulture);
                 var shokoId = calendarEvent.ShokoSeriesId?.ToString(System.Globalization.CultureInfo.InvariantCulture);
-                var season = calendarEvent.SeasonNumber;
-                var episode = calendarEvent.EpisodeNumber;
                 var itemEpisodeId = calendarEvent.ItemEpisodeId;
-                if (guards.HidesEpisodeOverview(tmdbId, tvdbId, shokoId, season, episode, itemEpisodeId)) calendarEvent.Overview = null;
-                if (!guards.HidesEpisodeTitle(tmdbId, tvdbId, shokoId, season, episode, itemEpisodeId)) continue;
+                var episodeTvdbId = calendarEvent.EpisodeTvdbId?.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                if (guards.HidesEpisodeOverview(tmdbId, tvdbId, shokoId, itemEpisodeId, episodeTvdbId)) calendarEvent.Overview = null;
+                if (!guards.HidesEpisodeTitle(tmdbId, tvdbId, shokoId, itemEpisodeId, episodeTvdbId)) continue;
 
                 var suffix = " - " + calendarEvent.EpisodeTitle;
                 if (calendarEvent.Subtitle?.EndsWith(suffix, StringComparison.Ordinal) == true)
@@ -10802,6 +10801,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             title = (string?)record.series?.title ?? "Unknown",
                             subtitle = $"S{record.episode?.seasonNumber:D2}E{record.episode?.episodeNumber:D2} - {record.episode?.title}",
                             tvdbId = (int?)record.series?.tvdbId,
+                            episodeTvdbId = (int?)record.episode?.tvdbId,
                             seasonNumber = (int?)record.episode?.seasonNumber,
                             episodeNumber = (int?)record.episode?.episodeNumber,
                             status = ResolveQueueStatus((string?)record.status, (string?)record.trackedDownloadState, (string?)record.trackedDownloadStatus),
@@ -10967,7 +10967,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 $"/api/v3/history?pageSize={HistoryWindowSize}&sortKey=date&sortDirection=descending&includeSeries=true&includeEpisode=true",
                 data =>
                 {
-                    var entries = new List<(string Title, int? Season, int? Episode, int? TvdbId, string? EpisodeTitle, string EventType, DateTime? Date, string? DownloadId, string? Poster, int? TmdbId)>();
+                    var entries = new List<(string Title, int? Season, int? Episode, int? TvdbId, string? EpisodeTitle, int? EpisodeTvdbId, string EventType, DateTime? Date, string? DownloadId, string? Poster, int? TmdbId)>();
                     if (data?.records == null) return new List<dynamic>();
                     foreach (var record in data.records)
                     {
@@ -10980,6 +10980,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             (int?)record.episode?.episodeNumber,
                             (int?)record.series?.tvdbId,
                             (string?)record.episode?.title,
+                            (int?)record.episode?.tvdbId,
                             eventType,
                             (DateTime?)record.date,
                             (string?)record.downloadId,
@@ -11010,6 +11011,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                 title = first.Title,
                                 subtitle = $"S{first.Season:D2}E{first.Episode:D2} - {first.EpisodeTitle}",
                                 tvdbId = first.TvdbId,
+                                episodeTvdbId = first.EpisodeTvdbId,
                                 seasonNumber = first.Season,
                                 episodeNumber = first.Episode,
                                 eventType = first.EventType,

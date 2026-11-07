@@ -100,6 +100,16 @@
     }
 
     /**
+     * Options for the requests that follow a title's details. They carry only a TMDB id, so
+     * a protected verdict on the details comes with them: it can only ever hide more.
+     * @param {object} [details] - The title's details response.
+     * @returns {object|undefined} Options for the request, if any are needed.
+     */
+    api.followUpOptions = function(details) {
+        return details?.jeSpoilerGuard ? { skipCache: true, headers: { 'X-JE-Spoiler-Guarded': '1' } } : undefined;
+    };
+
+    /**
      * Performs a POST request to the Seerr proxy endpoint.
      * @param {string} path - The API path (e.g., '/request').
      * @param {object} body - The JSON body to send with the request.
@@ -430,9 +440,9 @@
      * @param {number} seasonNumber - The season number.
      * @returns {Promise<object|null>}
      */
-    api.fetchTvSeasonDetails = async function(tmdbId, seasonNumber) {
+    api.fetchTvSeasonDetails = async function(tmdbId, seasonNumber, options) {
         try {
-            return await get(`/tv/${tmdbId}/season/${seasonNumber}`);
+            return await get(`/tv/${tmdbId}/season/${seasonNumber}`, options);
         } catch (error) {
             console.debug(`${logPrefix} Failed to fetch season ${seasonNumber} for TMDB ID ${tmdbId}:`, error);
             return null;
@@ -445,9 +455,9 @@
      * @param {number} tmdbId - The TMDB ID of the TV show.
      * @returns {Promise<object|null>}
      */
-    api.fetchTmdbTvDetails = async function(tmdbId) {
+    api.fetchTmdbTvDetails = async function(tmdbId, options) {
         try {
-            return await tmdbGet(`/tv/${tmdbId}`);
+            return await tmdbGet(`/tv/${tmdbId}`, options);
         } catch (error) {
             console.debug(`${logPrefix} Failed to fetch TMDB TV details for ID ${tmdbId}:`, error);
             return null;

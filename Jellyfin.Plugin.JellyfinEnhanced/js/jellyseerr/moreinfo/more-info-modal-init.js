@@ -44,7 +44,7 @@ moreInfoModal.open = async function(tmdbId, mediaType) {
         }
 
         // Fetch ratings in the background and populate when ready
-        internal.fetchRatings(tmdbId, mediaType)
+        internal.fetchRatings(tmdbId, mediaType, data)
             .then((ratings) => {
                 // Modal might have been closed or replaced; ensure we're updating the correct one
                 if (state.currentModal !== openedModal || openedModal._isClosing) return;

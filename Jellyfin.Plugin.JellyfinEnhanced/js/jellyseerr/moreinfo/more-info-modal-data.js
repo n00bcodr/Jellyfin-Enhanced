@@ -15,7 +15,7 @@
 /**
  * Fetch ratings from Jellyseerr API
  */
-async function fetchRatings(tmdbId, mediaType) {
+async function fetchRatings(tmdbId, mediaType, details) {
     // prefer request-manager (retry, dedup, abort, cache, cf-ray
     // logging) over raw ApiClient.ajax. Falls back to ApiClient.ajax only if
     // request-manager hasn't loaded yet (early page navigations).
@@ -35,7 +35,8 @@ async function fetchRatings(tmdbId, mediaType) {
                     // legacy X-Emby-Token is kept for 10.11 back-compat.
                     'Authorization': 'MediaBrowser Token="' + ApiClient.accessToken() + '"',
                     'X-Emby-Token': ApiClient.accessToken(),
-                    'Accept': 'application/json'
+                    'Accept': 'application/json',
+                    ...JE.jellyseerrAPI?.followUpOptions?.(details)?.headers
                 }
             });
             response = await httpResponse.json();
@@ -43,7 +44,7 @@ async function fetchRatings(tmdbId, mediaType) {
             response = await ApiClient.ajax({
                 type: 'GET',
                 url,
-                headers: { 'X-Jellyfin-User-Id': ApiClient.getCurrentUserId() },
+                headers: { 'X-Jellyfin-User-Id': ApiClient.getCurrentUserId(), ...JE.jellyseerrAPI?.followUpOptions?.(details)?.headers },
                 dataType: 'json'
             });
         }

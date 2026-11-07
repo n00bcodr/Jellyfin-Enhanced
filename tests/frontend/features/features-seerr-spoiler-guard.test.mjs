@@ -70,6 +70,58 @@ test('backfill fills what the server left in and nothing it took out', async t =
   assert.equal(modal.querySelector('[data-season-number="2"] .season-overview'), null);
 });
 
+test('a backfill for one modal never writes into the one that replaced it', async t => {
+  let release;
+  const lookup = () => new Promise(resolve => { release = resolve; });
+  const { internal, document } = moreInfo(t, { pluginConfig: { TmdbEnabled: true }, jellyseerrAPI: { fetchTmdbTvDetails: lookup } });
+  const card = () => {
+    const modal = document.createElement('div');
+    modal.dataset.tmdbId = '7';
+    modal.innerHTML = '<div class="season-card" data-season-number="2"><div class="season-poster"></div><div class="season-info"></div><div class="season-meta"></div></div>';
+    return modal;
+  };
+  internal.state.currentModal = card();
+  const running = internal.backfillSeasonMetadata(7, { id: 7, seasons: [{ seasonNumber: 2, episodeCount: 8 }] });
+  // Same title, reopened with the guard on, while the old lookup is still out.
+  const reopened = card();
+  internal.state.currentModal = reopened;
+  release({ seasons: [{ season_number: 2, overview: 'Secret season plot' }] });
+  await running;
+  assert.equal(reopened.querySelector('.season-overview'), null);
+});
+
+test('backfill after protected details carries the verdict on both lookups', async t => {
+  const sent = [];
+  const record = async (...args) => { sent.push(args.at(-1)); return {}; };
+  const { internal } = moreInfo(t, { pluginConfig: { TmdbEnabled: true }, jellyseerrAPI: {
+    followUpOptions: details => (details?.jeSpoilerGuard ? { marker: true } : undefined),
+    fetchTmdbTvDetails: record, fetchTvSeasonDetails: record,
+  } });
+  internal.state.currentModal = { dataset: { tmdbId: '7' }, querySelector: () => null };
+  await internal.backfillSeasonMetadata(7, { id: 7, jeSpoilerGuard: true, seasons: [{ seasonNumber: 2, episodeCount: 8 }] });
+  assert.deepEqual(sent, [{ marker: true }, { marker: true }]);
+});
+
+test('follow-ups to protected details say so, and others send nothing extra', async t => {
+  const api = requestRules(t, []);
+  assert.equal(api.followUpOptions({ jeSpoilerGuard: true }).headers['X-JE-Spoiler-Guarded'], '1');
+  assert.equal(api.followUpOptions({ jeSpoilerGuard: true }).skipCache, true);
+  assert.equal(api.followUpOptions({ id: 1 }), undefined);
+  assert.equal(api.followUpOptions(null), undefined);
+});
+
+test('the ratings request after protected details carries the verdict', async t => {
+  const sent = [];
+  const { internal } = moreInfo(t, {
+    requestManager: { fetchWithRetry: async (_url, options) => { sent.push(options.headers); return { json: async () => ({}) }; } },
+    jellyseerrAPI: { followUpOptions: details => (details?.jeSpoilerGuard ? { headers: { 'X-JE-Spoiler-Guarded': '1' } } : undefined) },
+  });
+  await internal.fetchRatings(1, 'movie', { jeSpoilerGuard: true });
+  await internal.fetchRatings(2, 'movie', { id: 2 });
+  assert.equal(sent[0]['X-JE-Spoiler-Guarded'], '1');
+  assert.equal(sent[1]['X-JE-Spoiler-Guarded'], undefined);
+});
+
 test('More Info always asks the server, whose answer depends on the current guards', async t => {
   const calls = [];
   const { internal } = moreInfo(t, { jellyseerrAPI: {
