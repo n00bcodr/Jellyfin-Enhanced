@@ -53,7 +53,7 @@ public class AwardTagsTests
         var entry = new TagCacheEntry { Type = "Movie", Awards = new() { ImdbRank = 12, CertifiedFresh = true, OscarWinner = true, EmmyWinner = true, LetterboxdRank = 24 } };
         PosterTagSettings Settings(string? locale) => PosterTagSettings.FromUserSettings(new() { AwardsTagsEnabled = true, TagLayoutSettingsVersion = 1, TagGroupCaps = new() { Awards = 0 }, NativePosterDateLocale = locale }, new PluginConfiguration { AwardsTagsEnabled = true });
         string[] Captions(PosterTagSettings settings) => Assert.Single(PosterTagResolver.Resolve(entry, settings, new("Movie", false, null, null, null), false)!.Groups).Tags.Cast<AwardTag>().Select(t => t.Text).ToArray();
-        Assert.Equal(new[] { "Top 250", "Certified Fresh", "Oscar winner", "Emmy winner", "Top 250" }, Captions(Settings(null)));
+        Assert.Equal(new[] { "Top 250", "Certified Fresh", "Oscar Winner", "Emmy Winner", "Top 250" }, Captions(Settings(null)));
         var german = Settings("de-DE");
         var keys = new[] { "awards_tags_label_imdbTop250", "awards_tags_label_certifiedFresh", "awards_tags_oscar", "awards_tags_emmy", "awards_tags_label_imdbTop250" };
         Assert.Equal(keys.Select(key => StatusRules.Text(key, german.StatusCulture)), Captions(german));

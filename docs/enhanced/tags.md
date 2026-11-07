@@ -967,7 +967,7 @@ The answer comes from Jellyfin's own negotiation, `POST /Items/{id}/PlaybackInfo
 
 ## Awards Tags
 
-Awards adds **IMDb Top 250**, **Rotten Tomatoes Certified Fresh**, **Oscar winner**, **Emmy winner** and **Letterboxd Top 250** chips to movie and series posters. Each has a source logo. Hover for its list rank or most recent known ceremony year. Clicking a chip opens the poster’s item; modifier and middle clicks open it in a new tab. Chips add no keyboard tab stops. In Summary, the hidden summary pill lets pointer events reach the revealed chips even when its three facts come from other groups. A nomination never produces a winner chip, and a high tomato score never implies Certified Fresh.
+Awards adds **IMDb Top 250**, **Rotten Tomatoes Certified Fresh**, **Oscar Winner**, **Emmy Winner** and **Letterboxd Top 250** chips to movie and series posters. Each has a source logo. Hover for its list rank or most recent known ceremony year. Clicking a chip opens the poster’s item; modifier and middle clicks open it in a new tab. Chips add no keyboard tab stops. In Summary, the hidden summary pill lets pointer events reach the revealed chips even when its three facts come from other groups. A nomination never produces a winner chip, and a high tomato score never implies Certified Fresh.
 
 ![Awards chips on real library posters using deterministic fixture facts](../images/tags/awards-desktop.webp)
 *Fixture facts demonstrate all ribbons without an MDBList key; this is rendering evidence, not verified award history for these titles.*
@@ -982,12 +982,12 @@ Awards adds **IMDb Top 250**, **Rotten Tomatoes Certified Fresh**, **Oscar winne
 | Administrator setting | Default | Behavior |
 |---|---|---|
 | **Enable Awards Tags** | Off | Gates enrichment and the group's admin starting default; existing users retain their switch |
-| **IMDb Top 250 / Certified Fresh / Oscar winner / Emmy winner / Letterboxd Top 250** | On while enabled | Selects which facts to fetch and which ribbons may appear |
-| **IMDb Top 250 MDBList id or owner/slug** | `sacwooky/imdb-top-250` | Configurable community list; numeric list IDs are accepted too |
+| **IMDb Top 250 / Certified Fresh / Oscar Winner / Emmy Winner / Letterboxd Top 250** | On while enabled | Selects which facts to fetch and which ribbons may appear |
+| **IMDb Top 250 MDBList id or owner/slug** | `aramil89/imdb-top-250` | An MDBList list (not an IMDb link), numeric list IDs are accepted too |
 | **Letterboxd Top 250 MDBList id or owner/slug** | `abdulwahabaa/letterboxd-top-250` | Configurable community list; only ranks 1–250 qualify |
 | **Refresh interval (hours)** | 24 | Fact/list freshness, clamped to 1–168 hours; adjust the scheduled task trigger too for a shorter cadence |
 
-The default [IMDb](https://mdblist.com/lists/sacwooky/imdb-top-250) and [Letterboxd](https://mdblist.com/lists/abdulwahabaa/letterboxd-top-250) lists are maintained by MDBList users. Their availability, order and accuracy can change; a displayed rank is the configured list's rank. Replace the id/slug with a preferred maintained list as needed. An invalid or unavailable list fails independently; it does not become an empty successful chart.
+The default [IMDb](https://mdblist.com/lists/aramil89/imdb-top-250) and [Letterboxd](https://mdblist.com/lists/abdulwahabaa/letterboxd-top-250) lists are maintained by MDBList users. Their availability, order and accuracy can change; a displayed rank is the configured list's rank. Replace the id/slug with a preferred maintained list as needed. An invalid or unavailable list fails independently; it does not become an empty successful chart.
 
 Refreshes happen on the server, never per card. Chart requests and batched certification requests respect MDBList's existing account reserve. Wikidata queries share the detail-page awards cache (180-day positive, 30-day confirmed-negative, one-hour failure retry), with one actual query at a time, at least one second apart and provider Retry-After backoff. Refresh cancellation stops pending requests. Provider failures retain the last good facts for the same configuration and retry after an hour. Changing the key, lists or ribbon switches retires incompatible facts until refreshed. Facts and lists survive server restarts in `award-tags.json`; no key is written there.
 
@@ -1120,7 +1120,7 @@ Media Tags follow the language Jellyfin Enhanced's text uses (your Jellyfin disp
 
 | What | Web | Native posters |
 |---|---|---|
-| Chip words (status badges, `Dual`/`Multi`, `Mixed`, editions such as `Extended`, award captions such as `Oscar winner`) | Your language | The language saved with your web settings (the one their dates use) |
+| Chip words (status badges, `Dual`/`Multi`, `Mixed`, editions such as `Extended`, award captions such as `Oscar Winner`) | Your language | The language saved with your web settings (the one their dates use) |
 | Scores (`8,1` in German, Persian digits in Persian) | Your language's decimal separator and digits | Same, from the saved language; text is laid out with the Unicode bidirectional algorithm, as the browser draws it: numbers read left to right in Arabic and Persian, Hebrew or Arabic words mixed with numbers or Latin names keep their reading order, and bracket pairs resolve together |
 | Dates (`Airs Nov 6`) and time zones | Your language and the browser's time zone | The saved language and time zone |
 | Language names in tooltips (`Audio: japonais`) | Your language | No tooltips |
@@ -1372,7 +1372,7 @@ The editor shows every tag of the selected group in its current colours, so you 
 | **Rating** | **Community**, **Critic**, **User review** | Rating chips have no border of their own: a border colour draws a thin inner ring |
 | **Genre** | Every genre with an icon of its own and **Other** (see [Genre colours](#genre-colours)) | **Text** colours the icon; a genre with colours of its own also colours its name beside it on hover |
 | **Status** | **Just Added**, **New Movie**, **New Series**, **New Episode**, **Trending**, schedule, milestone and series-state badges | Applies to web and native posters. A Trending text colour also recolours the rank |
-| **Awards** | **IMDb Top 250**, **Certified Fresh**, **Oscar winner**, **Emmy winner**, **Letterboxd Top 250** | Bundled logos keep their source colours; the chip background, text and border can change |
+| **Awards** | **IMDb Top 250**, **Certified Fresh**, **Oscar Winner**, **Emmy Winner**, **Letterboxd Top 250** | Bundled logos keep their source colours; the chip background, text and border can change |
 | **Language** | **Flag image**, **Language codes**, **Subtitles**, **Dual / Multi**, **Dual**, **Multi**, and individual ISO language codes | Chips share the quality-chip box and take background, border and text colours. Flag images keep only their border ring; partial flags keep their dashed outline |
 | **Logos** | **Provider logo**, **Network / studio logo**, **Name chip** | Colours the pill behind the logo; **Text** colours the name chip |
 

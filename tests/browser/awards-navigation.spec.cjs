@@ -92,7 +92,7 @@ for (const layout of ['corners', 'caption', 'summary']) {
     page.on('pageerror', e => errors.push(String(e)));
     await prepare(page, layout);
     const links = page.locator('#awards-navigation-proof a.awards-link');
-    for (const [index, title] of ['IMDb Top 250 · Rank #12', 'Oscar winner · 2024'].entries()) {
+    for (const [index, title] of ['IMDb Top 250 · Rank #12', 'Oscar Winner · 2024'].entries()) {
       const link = links.nth(index);
       await expect(link).toHaveAttribute('title', title);
       await expect(link).toHaveAttribute('tabindex', '-1');
@@ -179,7 +179,7 @@ for (const reveal of ['hover', 'focus', 'forced']) {
       })).toBe(true);
     }
     await expect(pill).toHaveCSS('pointer-events', 'none');
-    for (const [index, title] of ['IMDb Top 250 · Rank #12', 'Oscar winner · 2024'].entries()) {
+    for (const [index, title] of ['IMDb Top 250 · Rank #12', 'Oscar Winner · 2024'].entries()) {
       await expect(links.nth(index)).toHaveAttribute('title', title);
       await links.nth(index).hover();
     }

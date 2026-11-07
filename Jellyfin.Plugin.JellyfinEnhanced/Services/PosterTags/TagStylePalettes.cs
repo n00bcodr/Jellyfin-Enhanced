@@ -57,7 +57,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// <summary>The rating chip labels.</summary>
         public static readonly IReadOnlyList<(string Key, string Name)> RatingLabels = new[] { ("community", "Community"), ("critic", "Critic"), ("userReview", "User review"), ("imdb", "IMDb"), ("tmdb", "TMDb"), ("rtCritic", "RT critic"), ("rtAudience", "RT audience"), ("metacritic", "Metacritic"), ("letterboxd", "Letterboxd"), ("trakt", "Trakt") };
 
-        public static readonly IReadOnlyList<(string Key, string Name)> AwardLabels = new[] { ("imdbTop250", "IMDb Top 250"), ("certifiedFresh", "Certified Fresh"), ("oscar", "Oscar winner"), ("emmy", "Emmy winner"), ("letterboxdTop250", "Letterboxd Top 250") };
+        public static readonly IReadOnlyList<(string Key, string Name)> AwardLabels = new[] { ("imdbTop250", "IMDb Top 250"), ("certifiedFresh", "Certified Fresh"), ("oscar", "Oscar Winner"), ("emmy", "Emmy Winner"), ("letterboxdTop250", "Letterboxd Top 250") };
 
         /// <summary>The Status Tags labels (the <c>data-je-status</c> values the web draws).</summary>
         public static readonly IReadOnlyList<(string Key, string Name)> StatusLabels = Resolution.StatusRules.StyleLabels;
