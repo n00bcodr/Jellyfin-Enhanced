@@ -49,7 +49,7 @@ Protect a movie to hide applicable metadata while it is unplayed. The movie titl
 ![Protected movie with its poster retained and metadata hidden](movie-default.webp)
 *The poster stays visible with **Keep movie posters visible** enabled, while quality and rating overlays follow their separate policies.*
 
-Your admin can turn off **Keep movie posters visible** to protect movie posters and thumbnails too. Hiding descriptions also removes external links and trailers from eligible protected items.
+Your admin can turn off **Keep movie posters visible** to protect movie posters and thumbnails too. Hiding descriptions also removes trailers from eligible protected items. Movies and series keep their external links, so the Seerr and \*arr links beside them keep working; protected seasons and episodes lose theirs.
 
 ??? note "Image exceptions"
 

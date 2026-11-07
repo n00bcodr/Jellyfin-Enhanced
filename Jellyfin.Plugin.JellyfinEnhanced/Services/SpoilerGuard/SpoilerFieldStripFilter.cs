@@ -1255,7 +1255,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // External link arrays whose Url slug or Name commonly
                 // contains the episode title.
                 item.RemoteTrailers = null;
-                item.ExternalUrls = null;
+                // Series and Movie names are never replaced (see the title
+                // block above), so their links reveal nothing the page does
+                // not already show. Web builds the external-links row from
+                // them, and the Arr, Seerr, Letterboxd and Elsewhere links
+                // anchor on that row or read the TMDB id from it.
+                if (item.Type != Jellyfin.Data.Enums.BaseItemKind.Series
+                    && item.Type != Jellyfin.Data.Enums.BaseItemKind.Movie)
+                {
+                    item.ExternalUrls = null;
+                }
 
                 // Top-level + nested MediaStreams + MediaAttachments.
                 // ffprobe Title / Comment / attachment FileName all

@@ -351,7 +351,7 @@ Title and description protection can also remove text from links, paths, and oth
 
     Effective title replacement or applicable description hiding can clear filesystem paths, episode-title/sort fields, custom rating, remote trailers, external links, stream titles/comments, attachment filenames/comments, surviving character roles, and protected chapter image paths.
 
-    Cast and chapter-name opt-outs do not independently restore those fields. Indexed subtitle delivery URLs remain available; raw external subtitle URLs can be cleared. Movie media-source version names are retained.
+    Cast and chapter-name opt-outs do not independently restore those fields. Indexed subtitle delivery URLs remain available; raw external subtitle URLs can be cleared. Movie media-source version names are retained. External links are cleared only from seasons, episodes, and extras: series and movies keep theirs because their titles are never replaced, and Seerr, \*arr, Letterboxd, and Elsewhere rely on them.
 
 ## Advanced per-category reveals
 
