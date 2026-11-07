@@ -1,6 +1,7 @@
 /**
  * @file Settings-tab wiring: feature toggles, quality-tag categories, subtitle
- * styling/position controls, tag position selectors and subtitle presets.
+ * styling/position controls and subtitle presets (the poster tag group
+ * editor is ui-panel-tag-editor.js).
  * Split from ui.js (code motion; bodies verbatim).
  */
 (function(JE) {
@@ -41,6 +42,51 @@
     };
 
     /**
+     * Remove one tag group from every card after its toggle is switched off:
+     * through the layout controller (which also drops its pill facts, dots
+     * and hover copies), plus any wrapper it does not manage.
+     * @param {string} group - Layout group id (e.g. 'ageRating').
+     * @param {string} containerClass - The group's wrapper class.
+     */
+    const removeTagGroup = (group, containerClass) => {
+        JE.core?.tagLayout?.removeGroupEverywhere(group);
+        document.querySelectorAll(`.${containerClass}`).forEach(el => el.remove());
+        restackTagCorners();
+    };
+    // An imported Media Tags document turns groups off the same way (ui-panel-tag-portable.js).
+    internal.removeTagGroup = removeTagGroup;
+
+    /**
+     * @param {Iterable<object>} entries - Server tag-cache entries.
+     * @returns {boolean} Whether any entry carries logos.
+     */
+    const anyEntryHasLogos = (entries) => {
+        for (const entry of entries) {
+            if (Array.isArray(entry?.Logos) && entry.Logos.length > 0) return true;
+        }
+        return false;
+    };
+
+    /**
+     * The Logos group was switched on. When nobody showed it before, the
+     * server only now looks the logos up and republishes every entry in the
+     * background, so the cards on the page were drawn from entries without
+     * them: once a delta brings entries with logos, redraw the group once.
+     * Entries that already carry logos (someone else shows the group) need
+     * no wait.
+     */
+    const redrawLogosWhenServerHasThem = () => {
+        const pipeline = JE.tagPipeline;
+        if (!pipeline?.waitForServerCache || anyEntryHasLogos(pipeline.serverEntries?.() || [])) return;
+        pipeline.waitForServerCache(anyEntryHasLogos).then((ready) => {
+            if (ready && JE.currentSettings?.logoTagsEnabled) JE.reinitializeLogoTags?.();
+        }).catch(() => {});
+    };
+
+    /** Panel toggles of the poster tag groups the layout controller places. */
+    const TAG_GROUP_TOGGLES = ['qualityTagsToggle', 'genreTagsToggle', 'languageTagsToggle', 'ratingTagsToggle', 'ageRatingTagsToggle', 'statusTagsToggle', 'awardsTagsToggle', 'logoTagsToggle', 'customTagsToggle'];
+
+    /**
      * Wires the feature toggles, quality-tag category controls and subtitle
      * styling/position controls of the Settings tab.
      * @param {object} ctx Shared panel context assembled in ui-panel.js.
@@ -48,9 +94,25 @@
     internal.wireSettingsListeners = function(ctx) {
         const { createToast, resetAutoCloseTimer } = ctx;
 
+        // Detail-page languages belong to UI Settings, including search results.
+        const unregisterAudioSearch = ctx.registerSearch?.({
+            pane: 'ui',
+            /** Find the moved detail-page preference by its visible label. */
+            search(query) {
+                const control = ctx.help?.querySelector('[data-pane="ui"] #showAudioLanguagesToggle');
+                const label = JE.t('panel_settings_ui_audio_languages');
+                return control && label.toLowerCase().includes(query) ? [{ label, path: JE.t('panel_settings_ui'),
+                    run() { control.scrollIntoView?.({ block: 'center' }); control.focus({ preventScroll: true }); } }] : [];
+            },
+        });
+        if (unregisterAudioSearch) ctx.onClose?.(unregisterAudioSearch);
+
         const addSettingToggleListener = (id, settingKey, featureKey, requiresRefresh = false) => {
             document.getElementById(id).addEventListener('change', (e) => {
                 JE.currentSettings[settingKey] = e.target.checked;
+                // The layout settings depend on which tag types are on (caption
+                // space is reserved only while a group can fill it).
+                JE.core?.tagLayout?.invalidateSettings();
                 JE.saveUserSettings('settings.json', JE.currentSettings);
                 let toastMessage = createToast(featureKey, e.target.checked);
 
@@ -63,8 +125,7 @@
                         }
                     } else {
                         // Remove all tags if disabling
-                        document.querySelectorAll('.quality-overlay-container').forEach(el => el.remove());
-                        restackTagCorners();
+                        removeTagGroup('quality', 'quality-overlay-container');
                     }
                     requiresRefresh = false; // No longer needs refresh
                 } else if (id === 'genreTagsToggle') {
@@ -73,8 +134,7 @@
                             JE.initializeGenreTags();
                         }
                     } else {
-                        document.querySelectorAll('.genre-overlay-container').forEach(el => el.remove());
-                        restackTagCorners();
+                        removeTagGroup('genre', 'genre-overlay-container');
                     }
                     requiresRefresh = false;
                 } else if (id === 'languageTagsToggle') {
@@ -83,8 +143,7 @@
                             JE.initializeLanguageTags();
                         }
                     } else {
-                        document.querySelectorAll('.language-overlay-container').forEach(el => el.remove());
-                        restackTagCorners();
+                        removeTagGroup('language', 'language-overlay-container');
                     }
                     requiresRefresh = false;
                 } else if (id === 'ratingTagsToggle') {
@@ -93,8 +152,7 @@
                             JE.initializeRatingTags();
                         }
                     } else {
-                        document.querySelectorAll('.rating-overlay-container').forEach(el => el.remove());
-                        restackTagCorners();
+                        removeTagGroup('rating', 'rating-overlay-container');
                     }
                     requiresRefresh = false;
                 } else if (id === 'ageRatingTagsToggle') {
@@ -103,8 +161,40 @@
                             JE.initializeAgeRatingTags();
                         }
                     } else {
-                        document.querySelectorAll('.age-rating-overlay-container').forEach(el => el.remove());
-                        restackTagCorners();
+                        removeTagGroup('ageRating', 'age-rating-overlay-container');
+                    }
+                    requiresRefresh = false;
+                } else if (id === 'logoTagsToggle') {
+                    if (e.target.checked) {
+                        if (typeof JE.initializeLogoTags === 'function') {
+                            JE.initializeLogoTags();
+                        }
+                        redrawLogosWhenServerHasThem();
+                    } else {
+                        JE.tagPipeline?.stopWaitingForServerCache?.();
+                        removeTagGroup('logos', 'logo-overlay-container');
+                    }
+                    requiresRefresh = false;
+                } else if (id === 'statusTagsToggle') {
+                    if (e.target.checked) {
+                        if (typeof JE.initializeStatusTags === 'function') {
+                            JE.initializeStatusTags();
+                        }
+                    } else {
+                        removeTagGroup('status', 'status-overlay-container');
+                    }
+                    requiresRefresh = false;
+                } else if (id === 'awardsTagsToggle') {
+                    if (e.target.checked) JE.initializeAwardsTags?.();
+                    else removeTagGroup('awards', 'awards-overlay-container');
+                    requiresRefresh = false;
+                } else if (id === 'customTagsToggle') {
+                    if (e.target.checked) {
+                        if (typeof JE.initializeCustomTags === 'function') {
+                            JE.initializeCustomTags();
+                        }
+                    } else {
+                        removeTagGroup('custom', 'custom-overlay-container');
                     }
                     requiresRefresh = false;
                 } else if (id === 'peopleTagsToggle') {
@@ -119,6 +209,10 @@
                     }
                     requiresRefresh = false;
                 }
+                // Re-present every card for the new set of groups: caption space
+                // is reserved on every card when a group that can fill it comes
+                // on, and given back once none is left.
+                if (TAG_GROUP_TOGGLES.includes(id)) JE.reinitializeTagLayout?.();
 
                 if (requiresRefresh) {
                     toastMessage += ".<br> Refresh page to apply.";
@@ -209,6 +303,8 @@
                 if (!row) return;
                 const settingKey = row.dataset.catKey;
                 if (!settingKey) return;
+                // Any change is the user's own, even back to the administrator's value.
+                JE.setSettingInherited?.(JE.currentSettings, settingKey, false);
                 JE.currentSettings[settingKey] = target.checked;
                 JE.saveUserSettings('settings.json', JE.currentSettings);
                 if (typeof JE.reinitializeQualityTags === 'function' && JE.currentSettings.qualityTagsEnabled) {
@@ -235,11 +331,14 @@
 
                 // Normalize order values to 1..N from visual position so any
                 // pre-existing duplicates (e.g. admin set two rows to the same
-                // value via XML) self-heal on the next user reorder.
+                // value via XML) self-heal on the next user reorder. The whole
+                // order is the user's now (none of it follows the admin's).
                 const allRows = qualitySubGroup.querySelectorAll('.je-quality-cat-row');
                 allRows.forEach((r, idx) => {
                     const orderKey = r.dataset.orderKey;
-                    if (orderKey) JE.currentSettings[orderKey] = idx + 1;
+                    if (!orderKey) return;
+                    JE.setSettingInherited?.(JE.currentSettings, orderKey, false);
+                    JE.currentSettings[orderKey] = idx + 1;
                 });
                 JE.saveUserSettings('settings.json', JE.currentSettings);
 
@@ -251,10 +350,87 @@
             });
         }
 
+        // Nullable display preferences retain live admin inheritance until explicitly chosen.
+        document.querySelectorAll('[data-quality-display-key]').forEach(select => {
+            select.addEventListener('change', () => {
+                const key = select.dataset.qualityDisplayKey;
+                const value = select.value;
+                if (value === '') {
+                    if (!JE.setSettingInherited?.(JE.currentSettings, key, true)) JE.currentSettings[key] = null;
+                } else {
+                    JE.setSettingInherited?.(JE.currentSettings, key, false);
+                    JE.currentSettings[key] = key === 'qualityHideSdr' ? value === 'true' : value;
+                }
+                JE.saveUserSettings('settings.json', JE.currentSettings);
+                JE.reinitializeQualityTags?.();
+                JE.reinitializeTagLayout?.();
+                resetAutoCloseTimer();
+            });
+        });
+
+        // Low-quality sources are a gate within Source, separate from category ordering.
+        const lowSourceToggle = document.getElementById('showLowQualitySourceTagToggle');
+        if (lowSourceToggle) lowSourceToggle.addEventListener('change', () => {
+            JE.setSettingInherited?.(JE.currentSettings, 'showLowQualitySourceTag', false);
+            JE.currentSettings.showLowQualitySourceTag = lowSourceToggle.checked;
+            JE.saveUserSettings('settings.json', JE.currentSettings);
+            if (JE.currentSettings.qualityTagsEnabled) JE.reinitializeQualityTags?.();
+            resetAutoCloseTimer();
+        });
+
         // Preferred audio language for the sound tag (#433). The fixed choices
         // (server default / my Jellyfin audio language / none) are in the
         // template; the language list comes from Jellyfin's cultures endpoint,
         // like the display-language dropdown.
+        // Series and seasons share a quality policy; the summary supports switching without refetching.
+        // The empty option follows the administrator (saved as null); a named policy is the user's.
+        const aggregationSelect = document.getElementById('seriesQualityAggregationSelect');
+        if (aggregationSelect) {
+            aggregationSelect.value = JE.isSettingInherited?.(JE.currentSettings, 'seriesQualityAggregation')
+                ? '' : (JE.currentSettings.seriesQualityAggregation || 'representative');
+            aggregationSelect.addEventListener('change', () => {
+                const policy = aggregationSelect.value;
+                if (!policy) {
+                    if (!JE.setSettingInherited?.(JE.currentSettings, 'seriesQualityAggregation', true)) JE.currentSettings.seriesQualityAggregation = null;
+                } else {
+                    JE.setSettingInherited?.(JE.currentSettings, 'seriesQualityAggregation', false);
+                    JE.currentSettings.seriesQualityAggregation = policy;
+                }
+                JE.saveUserSettings('settings.json', JE.currentSettings);
+                JE.reinitializeQualityTags?.();
+                resetAutoCloseTimer();
+            });
+        }
+
+        // "Follow server settings": all nullable Quality switches, orders, display
+        // preferences and the series policy follow the administrator again (saved as null).
+        const qualityFollowServer = document.getElementById('qualityTagsFollowServer');
+        if (qualityFollowServer) qualityFollowServer.addEventListener('click', () => {
+            for (const key of JE.inheritedSettingKeys || []) {
+                if (!JE.setSettingInherited?.(JE.currentSettings, key, true)) JE.currentSettings[key] = null;
+            }
+            JE.saveUserSettings('settings.json', JE.currentSettings);
+            qualitySubGroup?.querySelectorAll('.je-quality-cat-row').forEach(row => {
+                const input = row.querySelector('input[type="checkbox"]');
+                const value = JE.currentSettings[row.dataset.catKey];
+                if (input && typeof value === 'boolean') input.checked = value;
+            });
+            document.querySelectorAll('[data-quality-display-key]').forEach(select => { select.value = ''; });
+            if (lowSourceToggle && typeof JE.currentSettings.showLowQualitySourceTag === 'boolean') lowSourceToggle.checked = JE.currentSettings.showLowQualitySourceTag;
+            if (aggregationSelect) aggregationSelect.value = '';
+            if (qualitySubGroup) {
+                const orderOf = (r) => Number(JE.currentSettings[r.dataset.orderKey]) || Number(r.dataset.defaultOrder) || 0;
+                const rows = Array.from(qualitySubGroup.querySelectorAll('.je-quality-cat-row'));
+                rows.sort((a, b) => (orderOf(a) - orderOf(b)) || (Number(a.dataset.defaultOrder) - Number(b.dataset.defaultOrder)))
+                    .forEach(r => qualitySubGroup.appendChild(r));
+                refreshQualityCatArrowStates(qualitySubGroup);
+            }
+            if (JE.currentSettings.qualityTagsEnabled) JE.reinitializeQualityTags?.();
+            JE.reinitializeTagLayout?.();
+            JE.toast(JE.t('toast_quality_tags_follow_server'));
+            resetAutoCloseTimer();
+        });
+
         const audioLangSelect = document.getElementById('qualityTagsAudioLanguageSelect');
         if (audioLangSelect) {
             // The fixed choices exist already; a language is selected once the list loads.
@@ -348,8 +524,45 @@
         addSettingToggleListener('languageTagsToggle', 'languageTagsEnabled', 'feature_language_tags', true);
         addSettingToggleListener('ratingTagsToggle', 'ratingTagsEnabled', 'feature_rating_tags', true);
         addSettingToggleListener('ageRatingTagsToggle', 'ageRatingTagsEnabled', 'feature_age_rating_tags', true);
+        addSettingToggleListener('statusTagsToggle', 'statusTagsEnabled', 'feature_status_tags', true);
+        if (document.getElementById('awardsTagsToggle')) addSettingToggleListener('awardsTagsToggle', 'awardsTagsEnabled', 'feature_awards_tags', true);
+        addSettingToggleListener('logoTagsToggle', 'logoTagsEnabled', 'feature_logo_tags', true);
+        addSettingToggleListener('customTagsToggle', 'customTagsEnabled', 'feature_custom_tags', true);
         addSettingToggleListener('peopleTagsToggle', 'peopleTagsEnabled', 'feature_people_tags', true);
         addSettingToggleListener('tagsHideOnHoverToggle', 'tagsHideOnHover', 'feature_tags_hide_on_hover', false);
+        // --- Tag layout, label density and edge spacing ---
+        // Either choice promotes a document saved before layouts existed to the
+        // normalized version (its corners, positions, arrival order, full labels
+        // and limits carry over, so only the chosen value changes), then every
+        // card is re-presented from the facts it already holds.
+        const saveTagLayoutSetting = (key, value) => {
+            JE.core?.tagLayout?.promoteLegacySettings(JE.currentSettings);
+            JE.currentSettings[key] = value;
+            JE.currentSettings.tagLayoutSettingsVersion = 1;
+            JE.saveUserSettings('settings.json', JE.currentSettings);
+            if (typeof JE.reinitializeTagLayout === 'function') JE.reinitializeTagLayout();
+            JE.toast(JE.t('toast_tag_layout_updated'));
+            resetAutoCloseTimer();
+        };
+        // The Media Tags hub's layout tiles and density pills (radio groups).
+        document.getElementById('jeTagLayoutChoice')?.addEventListener('change', (e) => saveTagLayoutSetting('tagLayout', e.target.value));
+        document.getElementById('jeTagDensityChoice')?.addEventListener('change', (e) => saveTagLayoutSetting('tagLabelDensity', e.target.value));
+        document.getElementById('jeTagScaleChoice')?.addEventListener('change', (e) => saveTagLayoutSetting('tagScale', e.target.value));
+        document.getElementById('jeTagGapChoice')?.addEventListener('change', (e) => saveTagLayoutSetting('tagGap', e.target.value));
+        document.getElementById('jeTagEdgeChoice')?.addEventListener('change', (e) => saveTagLayoutSetting('tagEdgeSpacing', e.target.value));
+
+        // --- Tag Styles: user presets ---
+        // The empty choice stores null (follow the admin's preset); the web
+        // stylesheet is re-fetched right away, native posters pick the change
+        // up through the per-user settings digest.
+        document.getElementById('jeTagPresetChoice')?.addEventListener('change', (e) => {
+            JE.currentSettings.tagStylePreset = e.target.value || null;
+            JE.saveUserSettings('settings.json', JE.currentSettings);
+            if (typeof JE.initializeTagStyles === 'function') JE.initializeTagStyles();
+            JE.toast(JE.t('toast_tag_style_preset_updated'));
+            resetAutoCloseTimer();
+        });
+
         // Live-toggle the body class so hover fade CSS applies immediately (no refresh needed)
         const hideOnHoverCheckbox = document.getElementById('tagsHideOnHoverToggle');
         if (hideOnHoverCheckbox) {
@@ -389,6 +602,42 @@
                 JE.saveUserSettings('settings.json', JE.currentSettings);
                 if (typeof JE.reinitializeRatingTags === 'function' && JE.currentSettings.ratingTagsEnabled) {
                     JE.reinitializeRatingTags();
+                }
+                resetAutoCloseTimer();
+            });
+        }
+        // Status tag badges (Trending / New / Just Added): same nested
+        // sub-toggle pattern as the rating scope above.
+        const statusMasterToggle = document.getElementById('statusTagsToggle');
+        const statusSubWrap = document.getElementById('statusTagsSubWrap');
+        const statusSubGroup = document.getElementById('statusTagsSubToggles');
+        const statusSubExpander = document.getElementById('statusTagsSubToggleExpander');
+        if (statusMasterToggle && statusSubWrap) {
+            statusMasterToggle.addEventListener('change', () => {
+                statusSubWrap.style.display = statusMasterToggle.checked ? 'block' : 'none';
+                if (!statusMasterToggle.checked && statusSubGroup && statusSubExpander) {
+                    statusSubGroup.style.display = 'none';
+                    statusSubExpander.setAttribute('aria-expanded', 'false');
+                }
+            });
+        }
+        if (statusSubExpander && statusSubGroup) {
+            statusSubExpander.addEventListener('click', () => {
+                const expanded = statusSubExpander.getAttribute('aria-expanded') === 'true';
+                statusSubExpander.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+                statusSubGroup.style.display = expanded ? 'none' : 'block';
+            });
+        }
+        if (statusSubGroup) {
+            statusSubGroup.addEventListener('change', (e) => {
+                const target = e.target;
+                if (!(target instanceof HTMLInputElement) || target.type !== 'checkbox') return;
+                const settingKey = target.closest('.je-quality-cat-row')?.dataset.catKey;
+                if (!settingKey) return;
+                JE.currentSettings[settingKey] = target.checked;
+                JE.saveUserSettings('settings.json', JE.currentSettings);
+                if (typeof JE.reinitializeStatusTags === 'function' && JE.currentSettings.statusTagsEnabled) {
+                    JE.reinitializeStatusTags();
                 }
                 resetAutoCloseTimer();
             });
@@ -611,7 +860,7 @@
      * @param {object} ctx Shared panel context assembled in ui-panel.js.
      */
     internal.wireMiscSettingsControls = function(ctx) {
-        const { help, primaryAccentColor, resetAutoCloseTimer } = ctx;
+        const { primaryAccentColor, resetAutoCloseTimer } = ctx;
 
         document.getElementById('randomIncludeMovies').addEventListener('change', (e) => { if (!e.target.checked && !document.getElementById('randomIncludeShows').checked) { e.target.checked = true; JE.toast(JE.t('toast_at_least_one_item_type')); return; } JE.currentSettings.randomIncludeMovies = e.target.checked; JE.saveUserSettings('settings.json', JE.currentSettings); JE.toast(JE.t('toast_random_selection_status', { item_type: 'Movies', status: e.target.checked ? JE.t('selection_included') : JE.t('selection_excluded') })); resetAutoCloseTimer(); });
         document.getElementById('randomIncludeShows').addEventListener('change', (e) => { if (!e.target.checked && !document.getElementById('randomIncludeMovies').checked) { e.target.checked = true; JE.toast(JE.t('toast_at_least_one_item_type')); return; } JE.currentSettings.randomIncludeShows = e.target.checked; JE.saveUserSettings('settings.json', JE.currentSettings); JE.toast(JE.t('toast_random_selection_status', { item_type: 'Shows', status: e.target.checked ? JE.t('selection_included') : JE.t('selection_excluded') })); resetAutoCloseTimer(); });
@@ -654,65 +903,10 @@
             });
         }
 
-        document.getElementById('releaseNotesBtn').addEventListener('click', async () => { await showReleaseNotesNotification(); resetAutoCloseTimer(); });
-
-        // --- Position Selectors ---
-        const positionSelectors = help.querySelectorAll('.position-selector');
-        positionSelectors.forEach(selector => {
-            const settingKey = selector.dataset.setting;
-            const cells = selector.querySelectorAll('[data-pos]');
-
-            // Highlight current position
-            const updateHighlight = () => {
-                const currentPos = JE.currentSettings[settingKey] || 'top-left';
-                cells.forEach(cell => {
-                    if (cell.dataset.pos === currentPos) {
-                        cell.style.background = primaryAccentColor;
-                    } else {
-                        cell.style.background = 'rgba(255,255,255,0.1)';
-                    }
-                });
-            };
-            updateHighlight();
-
-            // Click handler
-            selector.addEventListener('click', (e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                const cell = e.target.closest('[data-pos]');
-                if (!cell) return;
-
-                const newPos = cell.dataset.pos;
-                JE.currentSettings[settingKey] = newPos;
-                JE.saveUserSettings('settings.json', JE.currentSettings);
-                updateHighlight();
-
-                // Reinitialize tags dynamically based on which position changed
-                if (settingKey === 'qualityTagsPosition' && JE.currentSettings.qualityTagsEnabled) {
-                    if (typeof JE.reinitializeQualityTags === 'function') {
-                        JE.reinitializeQualityTags();
-                    }
-                } else if (settingKey === 'genreTagsPosition' && JE.currentSettings.genreTagsEnabled) {
-                    if (typeof JE.reinitializeGenreTags === 'function') {
-                        JE.reinitializeGenreTags();
-                    }
-                } else if (settingKey === 'languageTagsPosition' && JE.currentSettings.languageTagsEnabled) {
-                    if (typeof JE.reinitializeLanguageTags === 'function') {
-                        JE.reinitializeLanguageTags();
-                    }
-                } else if (settingKey === 'ratingTagsPosition' && JE.currentSettings.ratingTagsEnabled) {
-                    if (typeof JE.reinitializeRatingTags === 'function') {
-                        JE.reinitializeRatingTags();
-                    }
-                } else if (settingKey === 'ageRatingTagsPosition' && JE.currentSettings.ageRatingTagsEnabled) {
-                    if (typeof JE.reinitializeAgeRatingTags === 'function') {
-                        JE.reinitializeAgeRatingTags();
-                    }
-                }
-
-                JE.toast(`Position updated!`);
-                resetAutoCloseTimer();
-            });
+        document.getElementById('releaseNotesBtn').addEventListener('click', async () => {
+            // Release this dialog's focus boundary before opening the secondary modal.
+            ctx.closePanel();
+            await showReleaseNotesNotification();
         });
 
         const setupPresetHandlers = (containerId, presets, type) => {

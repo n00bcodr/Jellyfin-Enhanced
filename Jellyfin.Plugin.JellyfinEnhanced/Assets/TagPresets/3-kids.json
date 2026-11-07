@@ -1,0 +1,30 @@
+{
+  "v": 1,
+  "kind": "je-media-tags-preset",
+  "id": "kids",
+  "name": "Kids' profile",
+  "description": "Big, friendly tags: age rating, genre and what's new, without scores or technical details.",
+  "settings": {
+    "QualityTagsEnabled": false,
+    "GenreTagsEnabled": true,
+    "LanguageTagsEnabled": false,
+    "RatingTagsEnabled": false,
+    "AgeRatingTagsEnabled": true,
+    "StatusTagsEnabled": true,
+    "AwardsTagsEnabled": false,
+    "LogoTagsEnabled": false,
+    "PeopleTagsEnabled": false,
+    "StatusTagsJustAdded": true,
+    "StatusTagsNewRelease": true,
+    "StatusTagsTrending": false,
+    "StatusTagsSchedule": true,
+    "StatusTagsMilestones": false,
+    "StatusTagsSeriesStatus": false,
+    "TagLayout": "bands",
+    "TagLayoutSettingsVersion": 1,
+    "TagGroupOrder": ["ageRating", "status", "genre", "quality", "rating", "language", "awards", "logos", "custom"],
+    "TagLabelDensity": "full",
+    "TagScale": "larger",
+    "TagGap": "roomy"
+  }
+}

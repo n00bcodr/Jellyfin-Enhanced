@@ -57,7 +57,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         // instance is a valid memo key for its content hash.
         private static readonly ConditionalWeakTable<TagCacheEntry, string> ContentHashes = new();
 
-        private sealed record MemoEntry(TagCacheEntry? Entry, DateTime BuiltAt);
+        // CustomTags: the Custom rule match fingerprint the entry's matches were made under.
+        private sealed record MemoEntry(TagCacheEntry? Entry, DateTime BuiltAt, string CustomTags);
 
         private readonly TagCacheService _tagCache;
         private readonly ILibraryManager _libraryManager;
@@ -67,7 +68,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         private readonly Logger _logger;
 
         private readonly ConcurrentDictionary<Guid, MemoEntry> _memo = new();
-        private readonly ConcurrentDictionary<Guid, Lazy<Task<TagCacheEntry?>>> _building = new();
+        private readonly ConcurrentDictionary<Guid, Lazy<Task<(TagCacheEntry? Entry, string CustomTags)>>> _building = new();
         private readonly SemaphoreSlim _buildSlots = new(Math.Max(1, Environment.ProcessorCount / 2));
 
         // Bumped by every item event; a build that started before an event
@@ -96,6 +97,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             _libraryManager.ItemAdded += OnItemChanged;
             _libraryManager.ItemUpdated += OnItemChanged;
             _libraryManager.ItemRemoved += OnItemChanged;
+            _tagCache.LogosWarmed += OnOwnerFactsChanged;
+            _tagCache.SourceRatingsWarmed += OnOwnerFactsChanged;
+            _tagCache.ScenesRefreshed += OnOwnerFactsChanged;
+            _tagCache.CollectNativeScenesChanges += CollectScenesChanges;
         }
 
         /// <summary>
@@ -103,16 +108,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// (unstripped) and the viewer's review chip data; <see cref="PosterTagVariantToken.WeakDataHash"/>
         /// when the cache has no entry (cache off or not yet built). Cheap: no I/O.
         /// </summary>
-        public string GetPinnedDataHash(Guid ownerId, JUser viewer)
-            => GetPinnedSnapshot(ownerId, viewer)?.PinnedHash ?? PosterTagVariantToken.WeakDataHash;
+        public string GetPinnedDataHash(Guid ownerId, JUser viewer, bool includeStatus = false)
+            => GetPinnedSnapshot(ownerId, viewer, includeStatus)?.PinnedHash ?? PosterTagVariantToken.WeakDataHash;
 
         /// <summary>
         /// The live tag data (and the hash a token pins for it) for an image owner as <paramref name="viewer"/>
-        /// sees it, or null when the tag cache has no entry (cache off or not yet built). Cheap: no I/O.
+        /// sees it, or null when the tag cache has no entry (cache off or not yet built). Container quality and Custom collection matches use the memoized access set.
         /// </summary>
-        public PosterTagDataSnapshot? GetPinnedSnapshot(Guid ownerId, JUser viewer)
+        public PosterTagDataSnapshot? GetPinnedSnapshot(Guid ownerId, JUser viewer, bool includeStatus = false)
         {
             if (!_tagCache.TryGetEntry(ownerId, out var entry)) return null;
+            entry = _tagCache.FilterQualityForUser(entry, viewer);
+            if (includeStatus) entry = _tagCache.FilterStatusForUser(entry, viewer);
+            entry = _tagCache.FilterCustomTagsForUser(entry, ownerId, viewer);
+            entry = _tagCache.FilterLeavingForUser(entry, viewer);
             var reviews = _reviews.Get(entry, viewer);
             var hash = DataKey(entry, reviews).Substring(0, 6);
             // Never collide with the "not pinned" value.
@@ -128,8 +137,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// <paramref name="snapshot"/> the entry and review data are taken from it (only the Spoiler Guard
         /// strip is applied), so the drawing matches the data a token was validated against.
         /// </summary>
-        public async Task<PosterTagRenderData?> GetRenderDataAsync(HttpContext httpContext, BaseItem item, JUser user, PosterTagDataSnapshot? snapshot, CancellationToken cancellationToken)
+        public async Task<PosterTagRenderData?> GetRenderDataAsync(HttpContext httpContext, BaseItem item, JUser user, PosterTagDataSnapshot? snapshot, CancellationToken cancellationToken, bool includeStatus = false)
         {
+            _tagCache.QueueScenesRefresh(new[] { item });
             TagCacheEntry entry;
             if (snapshot != null)
             {
@@ -142,6 +152,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 entry = built;
             }
 
+            entry = TagCacheService.ApplySourceRatingAvailability(entry);
+            entry = _tagCache.FilterQualityForUser(entry, user, item);
+            if (includeStatus) entry = _tagCache.FilterStatusForUser(entry, user);
+            entry = _tagCache.FilterCustomTagsForUser(entry, item.Id, user);
+            entry = _tagCache.FilterLeavingForUser(entry, user);
             var stripped = false;
             var policy = CreateSpoilerPolicy(httpContext, user);
             if (policy != null)
@@ -160,6 +175,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             _libraryManager.ItemAdded -= OnItemChanged;
             _libraryManager.ItemUpdated -= OnItemChanged;
             _libraryManager.ItemRemoved -= OnItemChanged;
+            _tagCache.LogosWarmed -= OnOwnerFactsChanged;
+            _tagCache.SourceRatingsWarmed -= OnOwnerFactsChanged;
+            _tagCache.ScenesRefreshed -= OnOwnerFactsChanged;
+            _tagCache.CollectNativeScenesChanges -= CollectScenesChanges;
         }
 
         /// <summary>SHA-256 (hex) of an entry's content, ignoring its build timestamp. Memoized per instance.</summary>
@@ -171,11 +190,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 return Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(copy))).ToLowerInvariant();
             });
 
+        /// <summary>
+        /// Which of the entry's logo images the proxy has cached ("" without logos): a poster drawn
+        /// with a name chip gets a new key once its logo image arrives.
+        /// </summary>
+        private static string LogoImageKey(TagCacheEntry entry)
+        {
+            if (entry.Logos is not { Length: > 0 } logos) return string.Empty;
+            var key = new StringBuilder("|l:");
+            foreach (var logo in logos)
+            {
+                key.Append(logo?.Logo is { } path && Rendering.PosterTagAssets.HasLogo(path) ? '1' : '0');
+            }
+
+            return key.ToString();
+        }
+
         private static string DataKey(TagCacheEntry entry, PosterTagReviewSummary reviews)
         {
             var input = ContentHash(entry) + "|r:"
                 + (reviews.Count?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "-") + ":"
-                + (reviews.Average?.ToString("R", System.Globalization.CultureInfo.InvariantCulture) ?? "-");
+                + (reviews.Average?.ToString("R", System.Globalization.CultureInfo.InvariantCulture) ?? "-")
+                + LogoImageKey(entry);
             return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(input))).ToLowerInvariant();
         }
 
@@ -193,56 +229,95 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         private async Task<TagCacheEntry?> GetOrBuildAsync(BaseItem item, CancellationToken cancellationToken)
         {
             var now = DateTime.UtcNow;
-            if (_memo.TryGetValue(item.Id, out var memo) && now - memo.BuiltAt < MemoTtl) return memo.Entry;
+            if (_memo.TryGetValue(item.Id, out var memo) && now - memo.BuiltAt < MemoTtl)
+                return CurrentCustomTags(item, memo.Entry, memo.CustomTags);
 
-            var mine = new Lazy<Task<TagCacheEntry?>>(() => BuildAsync(item), LazyThreadSafetyMode.ExecutionAndPublication);
+            var mine = new Lazy<Task<(TagCacheEntry? Entry, string CustomTags)>>(() => BuildAsync(item), LazyThreadSafetyMode.ExecutionAndPublication);
             var leader = _building.GetOrAdd(item.Id, mine);
             var task = leader.Value;
             if (ReferenceEquals(leader, mine))
             {
                 _ = task.ContinueWith(
-                    _ => _building.TryRemove(new KeyValuePair<Guid, Lazy<Task<TagCacheEntry?>>>(item.Id, mine)),
+                    _ => _building.TryRemove(new KeyValuePair<Guid, Lazy<Task<(TagCacheEntry? Entry, string CustomTags)>>>(item.Id, mine)),
                     CancellationToken.None,
                     TaskContinuationOptions.ExecuteSynchronously,
                     TaskScheduler.Default);
             }
 
-            return await task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            var built = await task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            // A build that started before a Custom rule edit matched under the old rules.
+            return CurrentCustomTags(item, built.Entry, built.CustomTags);
+        }
+
+        // Custom rule edits raise no item event, and with the server tag cache off nothing
+        // re-matches entries: an entry matched under other rules is matched again (tags
+        // only, no media reads) and the memo keeps the re-matched entry. Label and icon
+        // edits leave the fingerprint, and the entry, as they are.
+        private TagCacheEntry? CurrentCustomTags(BaseItem item, TagCacheEntry? entry, string matchedUnder)
+        {
+            var fingerprint = _tagCache.CustomTagMatchFingerprint;
+            if (entry == null || matchedUnder == fingerprint) return entry;
+            var current = _tagCache.RematchCustomTags(item, entry);
+            lock (_memoLock)
+            {
+                if (_memo.TryGetValue(item.Id, out var memo) && ReferenceEquals(memo.Entry, entry))
+                    _memo[item.Id] = memo with { Entry = current, CustomTags = fingerprint };
+            }
+
+            return current;
         }
 
         // Runs detached from any one request (a waiter leaving must not cancel
         // the build the others are waiting for).
-        private async Task<TagCacheEntry?> BuildAsync(BaseItem item)
+        private async Task<(TagCacheEntry? Entry, string CustomTags)> BuildAsync(BaseItem item)
         {
             if (!await _buildSlots.WaitAsync(BuildWait).ConfigureAwait(false))
             {
                 _logger.Debug($"Native poster tags: tag data build for {item.Id} timed out waiting for a slot.");
-                return null;
+                return (null, string.Empty);
             }
 
             try
             {
                 var generation = Interlocked.Read(ref _memoGeneration);
+                // Read before the build: a rule edit during it leaves this stale, so the read re-matches.
+                var customTags = _tagCache.CustomTagMatchFingerprint;
                 var entry = await Task.Run(() => _tagCache.BuildEntryOnDemand(item)).ConfigureAwait(false);
                 lock (_memoLock)
                 {
-                    if (generation == _memoGeneration)
+                    // A refresh may finish before this build has a live snapshot to compare.
+                    // Unknown (null) facts must also be rechecked before publication.
+                    if (generation == _memoGeneration && ScenesAreCurrent(item.Id, entry))
                     {
                         if (_memo.Count >= MaxMemoEntries) TrimMemo();
-                        _memo[item.Id] = new MemoEntry(entry, DateTime.UtcNow);
+                        _memo[item.Id] = new MemoEntry(entry, DateTime.UtcNow, customTags);
                     }
                 }
 
-                return entry;
+                return (entry, customTags);
             }
             catch (Exception ex)
             {
                 _logger.Warning($"Native poster tags: tag data build failed for {item.Id}: {ex.Message}");
-                return null;
+                return (null, string.Empty);
             }
             finally
             {
                 _buildSlots.Release();
+            }
+        }
+
+        // The memo entry itself is the baseline. Trimming, item events and rebuilds
+        // therefore retire it without retaining a second, whole-history title map.
+        private bool ScenesAreCurrent(Guid id, TagCacheEntry? entry)
+            => entry?.Type != "Movie" || entry.Scenes == _tagCache.ReadScenes(id, entry.TmdbId);
+
+        private void CollectScenesChanges(ISet<Guid> changedOwners)
+        {
+            lock (_memoLock)
+            {
+                foreach (var pair in _memo)
+                    if (!ScenesAreCurrent(pair.Key, pair.Value.Entry)) changedOwners.Add(pair.Key);
             }
         }
 
@@ -255,8 +330,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             }
         }
 
+        // A background logo or MDBList score warm, or a changed Scenes projection: drop only these
+        // owners and their seasons/episodes so the next request projects the new facts.
+        private void OnOwnerFactsChanged(IReadOnlyCollection<Guid> owners)
+        {
+            if (_memo.IsEmpty && _building.IsEmpty) return;
+            var seriesIds = owners.Select(id => id.ToString("N")).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            lock (_memoLock)
+            {
+                _memoGeneration++;
+                foreach (var pair in _memo)
+                {
+                    if (owners.Contains(pair.Key) || (pair.Value.Entry?.SeriesId is { } seriesId && seriesIds.Contains(seriesId)))
+                        _memo.TryRemove(pair.Key, out _);
+                }
+            }
+        }
+
         // An episode change can change its season's and series' entries (quality
-        // source, language union), mirroring TagCacheMonitor.
+        // source, language union), mirroring TagCacheMonitor; a series change reaches
+        // the children that inherit its scores and age rating.
         private void OnItemChanged(object? sender, ItemChangeEventArgs e)
         {
             if (e?.Item == null || (_memo.IsEmpty && _building.IsEmpty)) return;
@@ -272,6 +365,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                         break;
                     case Season season:
                         if (season.SeriesId != Guid.Empty) _memo.TryRemove(season.SeriesId, out _);
+                        break;
+                    case Series series:
+                        // Seasons and episodes copy a series' scores and age rating (TagCacheService.InheritFromSeries).
+                        var seriesKey = series.Id.ToString("N");
+                        foreach (var pair in _memo)
+                        {
+                            if (pair.Value.Entry?.SeriesId == seriesKey) _memo.TryRemove(pair.Key, out _);
+                        }
+
                         break;
                 }
             }

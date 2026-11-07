@@ -24,7 +24,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             Settings = settings;
             Marker = marker;
             SpoilerState = spoilerState;
+            Instant = DateTimeOffset.UtcNow;
         }
+
+        internal DateTimeOffset Instant { get; }
 
         internal JUser User { get; }
 
@@ -36,6 +39,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
 
         // Image owners looked up during this response (ParentPrimaryImageItemId).
         internal Dictionary<Guid, (string? Type, string? SeriesIdN)> Owners { get; } = new();
+
+        // Tag look rule facts read during this response, per image owner.
+        internal Dictionary<Guid, PosterTagLookFacts?> LookFacts { get; } = new();
     }
 
     // Metadata-time half of native poster tags, called from
@@ -106,7 +112,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             var cfg = JellyfinEnhanced.Instance?.Configuration;
             if (cfg?.NativePosterTagsEnabled != true || !_clientPolicy.IsNativeClient(httpContext.User)) return null;
             var settings = _settings.Get(userId);
-            if (!settings.NativeEnabled || !settings.AnyGroupEnabled) return null;
+            // An item look of its own or a rule can show a group the default hides.
+            if (!settings.NativeEnabled || !settings.MayShowTags) return null;
             var user = _users.Get(userId);
             if (user == null) return null;
             var spoilerState = cfg.SpoilerBlurEnabled ? _spoilerResolver.LoadUserState(httpContext, userId) : null;
@@ -161,6 +168,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             // Idempotent: a filter re-entry must not re-mint.
             if (ImageTagDecoration.GetVariant(tag) != null) return tag;
 
+            // The owner's own look (a lock, a server-wide item look, a matching rule) when it has one.
+            var settings = session.Settings.ForItem(ownerId, ownerSeriesIdN, () => GetLookFacts(ownerId, session));
+            if (!settings.AnyGroupEnabled) return tag;
+
             var flags = topRight ? PosterTagVariantFlags.TopRightOffset : PosterTagVariantFlags.None;
             // Same "guarded kind" rule the tag strip uses (SpoilerTagDataStripper).
             if (session.SpoilerState != null && _stripper.IsGuarded(session.SpoilerState, ownerId, ownerType, ownerSeriesIdN))
@@ -171,10 +182,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             var token = _tokens.Mint(
                 session.User.Id,
                 ownerId,
-                session.Settings.Digest,
+                settings.DigestAt(session.Instant),
                 PosterTagComposer.PixelVersion,
                 flags,
-                _data.GetPinnedDataHash(ownerId, session.User));
+                _data.GetPinnedDataHash(ownerId, session.User, settings.Shows(PosterTagGroup.Status)));
             var stamped = ImageTagDecoration.WithVariant(tag, token, session.Marker);
             if (dto != null && !ReferenceEquals(stamped, tag)) ReKeyPrimaryBlurhash(dto, tag, stamped);
             return stamped;
@@ -204,6 +215,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
 
             session.Owners[ownerId] = owner;
             return owner;
+        }
+
+        // Rule facts for an image owner, from the data PosterTagImageFilter reads them from so the
+        // minted token verifies: the tag cache entry, else the library item. Memoized per response.
+        private PosterTagLookFacts? GetLookFacts(Guid ownerId, NativePosterTagStampSession session)
+        {
+            if (session.LookFacts.TryGetValue(ownerId, out var known)) return known;
+            PosterTagLookFacts? facts = null;
+            if (_data.TryGetCachedEntry(ownerId, out var entry)) facts = PosterTagLookFacts.FromEntry(entry);
+            else if (_libraryManager.GetItemById(ownerId) is BaseItem item) facts = PosterTagLookFacts.FromItem(_libraryManager, item);
+            session.LookFacts[ownerId] = facts;
+            return facts;
         }
 
         private static bool TryParseOwnerId(object? value, out Guid id)

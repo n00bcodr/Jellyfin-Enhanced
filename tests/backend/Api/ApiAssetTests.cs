@@ -34,7 +34,7 @@ public class ApiAssetTests
         {
             var result = Assert.IsType<FileStreamResult>(controller.GetScript(path));
             using var reader = new StreamReader(result.FileStream);
-            Assert.Equal("application/javascript", result.ContentType);
+            Assert.Equal("application/javascript; charset=utf-8", result.ContentType);
             Assert.False(string.IsNullOrWhiteSpace(await reader.ReadToEndAsync()), path);
         }
         Assert.Equal("public, max-age=31536000, immutable", controller.Response.Headers.CacheControl);
@@ -69,7 +69,7 @@ public class ApiAssetTests
             }
             var file = Assert.IsType<FileStreamResult>(result);
             using var reader = new StreamReader(file.FileStream);
-            Assert.Equal(mime, file.ContentType);
+            Assert.Equal(mime + "; charset=utf-8", file.ContentType);
             Assert.NotEmpty(await reader.ReadToEndAsync());
         }
     }

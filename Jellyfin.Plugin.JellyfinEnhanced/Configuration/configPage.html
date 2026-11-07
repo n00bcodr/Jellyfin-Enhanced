@@ -87,6 +87,7 @@
                 <div class="je-tab-bar">
                 <button class="jellyfin-tab-button active" data-tab="overview"><h3><i class="material-icons je-tab-icon" aria-hidden="true">dashboard</i>Overview</h3></button>
                 <button class="jellyfin-tab-button" data-tab="display"><h3><i class="material-icons je-tab-icon" aria-hidden="true">palette</i>Display</h3></button>
+                <button class="jellyfin-tab-button" data-tab="media-tags"><h3><i class="material-icons je-tab-icon" aria-hidden="true">sell</i>Media Tags</h3></button>
                 <button class="jellyfin-tab-button" data-tab="playback"><h3><i class="material-icons je-tab-icon" aria-hidden="true">play_circle</i>Playback</h3></button>
                 <button class="jellyfin-tab-button" data-tab="pages"><h3><i class="material-icons je-tab-icon" aria-hidden="true">view_list</i>Pages</h3></button>
                 <button class="jellyfin-tab-button" data-tab="seerr"><h3><img data-je-cdn="selfhst/svg/seerr.svg" alt="" class="je-tab-icon-img">Seerr</h3></button>
@@ -285,7 +286,6 @@
 
                     <div data-je-section="analytics"></div>
                     <div data-je-section="maintenance"></div>
-                    <div data-je-section="tag-cache"></div>
 
                     <div data-je-section="developer"></div>
 
@@ -334,6 +334,12 @@
                     </button>
                 </div>
             </form>
+
+            <!-- Media Tags: drawn by js/enhanced/admintags/ the first time the tab opens, and saved one field at a time.
+                 Outside the form, so its Save, unsaved-changes badge and search never read these controls. -->
+            <div id="media-tags" class="jellyfin-tab-content je-mt-tab">
+                <div class="je-tag-admin"><p class="je-ta-wait" role="status">Loading Media Tags settings…</p></div>
+            </div>
         </div>
     </div>
 <script type="text/javascript">
@@ -403,7 +409,6 @@
             window.addEventListener('load', _jeDetectTheme);
             setTimeout(_jeDetectTheme, 600);
             const resetAllUserSettingsBtn = document.querySelector('#resetAllUserSettingsBtn');
-            const clearTagsCacheBtn = document.querySelector('#clearTagsCacheBtn');
 
             const shortcutGrid = document.getElementById('shortcut-grid');
             const shortcutErrorComment = document.getElementById('shortcut-error-comment');
@@ -545,6 +550,9 @@
                 const saved = _jeTabScroll[tabId];
                 requestAnimationFrame(() => _jeSetScrollTop(saved || 0));
                 _jePrevTabId = tabId;
+                // The Media Tags tab draws itself the first time it opens, and reloads its settings when it opens again.
+                if (page) page.classList.toggle('je-mt-active', tabId === JE_MT_TAB);
+                if (tabId === JE_MT_TAB) jeMountMediaTags();
                 // Lazy-load the Docs iframe the first time the user opens
                 // the Docs tab. Using `about:blank` as the initial src
                 // prevents the GitHub Pages fetch for admins who never
@@ -711,6 +719,230 @@
                 jeJumpToTab(link.dataset.jumpTab, link.dataset.jumpTarget);
             });
 
+            // === Media Tags tab (#media-tags) ===
+            // js/enhanced/admintags/ draws it the first time it opens (JE.adminTags.mountTab) and saves each change
+            // itself, one field at a time. It sits after the form: this page's Save, unsaved-changes badge and search
+            // never read its controls, and the page's own whole-configuration writes run inside JE.adminTags.holdSaves
+            // (jeHoldMediaTags) so they never put an older Media Tags value back.
+            // Declared with var: activateTab may run before this block (no temporal dead zone).
+            var JE_MT_TAB = 'media-tags';
+            /** The tab's sections (JE.adminTags.TABS): id and its name. */
+            var JE_MT_SECTIONS = [
+                ['overview', 'Overview'], ['layout', 'Layout defaults'],
+                ['groups', 'Groups'], ['rules', 'Rules'], ['colours', 'Colours'],
+                ['badges', 'Status badges'], ['server', 'Server']
+            ];
+            var _jeMtLoaded = null;
+            var _jeMtMounting = null;
+
+            /** @returns {boolean} Whether the JE client bundle the tab runs on (JE.t, the layout controller, the hub's preview) is loaded. */
+            function jeMediaTagsReady() {
+                var je = window.JellyfinEnhanced;
+                return !!(je && typeof je.t === 'function' && je.core && je.core.tagLayout && je.internals && je.internals.enhancedUi);
+            }
+
+            /**
+             * Load what the tab needs, once: wait for the JE client bundle (up to 10 s), then the tab's stylesheet
+             * and admin-tags.js (which loads its section modules).
+             * @returns {Promise<void>}
+             */
+            function jeLoadMediaTags() {
+                if (_jeMtLoaded) return _jeMtLoaded;
+                var query = window.jeCssVersion ? { v: window.jeCssVersion } : undefined;
+                var started = Date.now();
+                _jeMtLoaded = new Promise(function (resolve, reject) {
+                    (function wait() {
+                        if (jeMediaTagsReady()) return resolve();
+                        if (Date.now() - started > 10000) return reject(new Error('the Jellyfin Enhanced client has not loaded'));
+                        setTimeout(wait, 150);
+                    })();
+                }).then(function () {
+                    var css = document.getElementById('jeTagAdminCss');
+                    var styled = css ? Promise.resolve() : new Promise(function (resolve) {
+                        css = document.createElement('link');
+                        css.id = 'jeTagAdminCss';
+                        css.rel = 'stylesheet';
+                        css.href = ApiClient.getUrl('/JellyfinEnhanced/js/enhanced/admintags/admin-tags.css', query);
+                        // A stylesheet that fails (or never reports) still lets the tab draw (unstyled beats empty).
+                        css.onload = css.onerror = function () { resolve(); };
+                        setTimeout(resolve, 3000);
+                        document.head.appendChild(css);
+                    });
+                    var je = window.JellyfinEnhanced;
+                    var scripted = je.adminTags && je.adminTags.mountTab ? Promise.resolve() : new Promise(function (resolve, reject) {
+                        var sc = document.createElement('script');
+                        sc.src = ApiClient.getUrl('/JellyfinEnhanced/js/enhanced/admintags/admin-tags.js', query);
+                        sc.onload = function () { resolve(); };
+                        sc.onerror = function () { reject(new Error('could not load admin-tags.js')); };
+                        document.head.appendChild(sc);
+                    });
+                    return Promise.all([styled, scripted]);
+                });
+                // Tried again the next time the tab opens.
+                _jeMtLoaded.catch(function () { _jeMtLoaded = null; });
+                return _jeMtLoaded;
+            }
+
+            function jeMtEsc(text) {
+                return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+            }
+
+            /** The tab could not be drawn: say so in it, with Retry. */
+            function jeMediaTagsUnavailable() {
+                var root = page && page.querySelector('#' + JE_MT_TAB + ' > .je-tag-admin');
+                if (!root) return;
+                root.innerHTML = '<div class="je-ta-wait" role="alert">'
+                    + jeMtEsc('Jellyfin Enhanced has not finished loading in this browser, so the Media Tags settings cannot be shown. '
+                    + 'Retry, and if this stays, check that the plugin is active and see the browser console.')
+                    + ' <button type="button" class="jea-btn" data-je-mt-retry>' + jeMtEsc('Retry') + '</button></div>';
+                root.querySelector('[data-je-mt-retry]').addEventListener('click', function () { jeMountMediaTags(); }, { once: true });
+            }
+
+            /**
+             * Draw the tab (first time) or reload its settings (again). Calls made while one runs share it.
+             * @returns {Promise<Object|null>} The tab's context (JE.adminTags), or null when it could not be drawn.
+             */
+            function jeMountMediaTags() {
+                if (_jeMtMounting) return _jeMtMounting;
+                var tab = page && page.querySelector('#' + JE_MT_TAB);
+                if (!tab) return Promise.resolve(null);
+                var wait = tab.querySelector('.je-tag-admin > .je-ta-wait:not([role=alert])');
+                if (wait) wait.textContent = wait.textContent;
+                _jeMtMounting = jeLoadMediaTags().then(function () {
+                    return window.JellyfinEnhanced.adminTags.mountTab(tab, window.jeCssVersion || '');
+                }).catch(function (err) {
+                    console.error('🪼 Jellyfin Enhanced: the Media Tags tab failed to load', err);
+                    jeMediaTagsUnavailable();
+                    return null;
+                }).then(function (ctx) {
+                    _jeMtMounting = null;
+                    return ctx;
+                });
+                return _jeMtMounting;
+            }
+
+            /**
+             * Open the Media Tags tab, optionally at one of its sections and a group (or anchor) there.
+             * @param {?string} [section] - One of JE_MT_SECTIONS.
+             * @param {?string} [group]
+             * @param {boolean} [focus] - Move keyboard focus to the section (a link the administrator followed).
+             * @returns {Promise<Object|null>}
+             */
+            function jeOpenMediaTags(section, group, focus) {
+                var btn = page && page.querySelector('.jellyfin-tab-button[data-tab="' + JE_MT_TAB + '"]');
+                // A click, as jeJumpToTab does: the tab, its saved choice, the sidebar label and the phone menu follow.
+                if (btn && !btn.classList.contains('active')) btn.click();
+                return jeMountMediaTags().then(function (ctx) {
+                    var known = JE_MT_SECTIONS.some(function (x) { return x[0] === section; });
+                    if (ctx && known) ctx.openTab(section, { group: group || null, focus: !!focus });
+                    return ctx;
+                });
+            }
+
+            // Sidebar: the tab's sections under its entry (as every other tab lists its cards); the one shown is marked.
+            (function jeBuildMediaTagsTree() {
+                var btn = page && page.querySelector('.jea-nav .jellyfin-tab-button[data-tab="' + JE_MT_TAB + '"]');
+                if (!btn || (btn.nextElementSibling && btn.nextElementSibling.classList.contains('jea-nav-tree'))) return;
+                var tree = document.createElement('div');
+                tree.className = 'jea-nav-tree';
+                tree.setAttribute('data-je-mt-tree', '');
+                JE_MT_SECTIONS.forEach(function (sec) {
+                    var a = document.createElement('a');
+                    a.className = 'jea-nav-leaf';
+                    a.href = '#/configurationpage?name=Jellyfin%20Enhanced&jeSection=' + JE_MT_TAB + '&tab=' + sec[0];
+                    a.dataset.jeMtSection = sec[0];
+                    a.textContent = sec[1];
+                    tree.appendChild(a);
+                });
+                btn.after(tree);
+                document.addEventListener('je-media-tags-section', function (e) {
+                    var id = e.detail && e.detail.section;
+                    tree.querySelectorAll('.jea-nav-leaf').forEach(function (a) {
+                        var on = a.dataset.jeMtSection === id;
+                        a.classList.toggle('on', on);
+                        if (on) a.setAttribute('aria-current', 'true'); else a.removeAttribute('aria-current');
+                    });
+                });
+            })();
+
+            // A Media Tags change that is not saved (refused, failed, changed by another administrator) marks the tab's
+            // sidebar entry, so it is seen from any tab. A save updates the Display card's summary.
+            document.addEventListener('je-media-tags-store', function (e) {
+                var d = e.detail || {};
+                var btn = page && page.querySelector('.jellyfin-tab-button[data-tab="' + JE_MT_TAB + '"]');
+                if (btn) {
+                    var bad = d.state === 'error' || d.state === 'conflict';
+                    if (bad) btn.setAttribute('data-je-mt-state', d.state); else btn.removeAttribute('data-je-mt-state');
+                    var note = btn.querySelector('.je-mt-state-text');
+                    if (bad && !note) {
+                        note = document.createElement('span');
+                        note.className = 'je-mt-state-text je-sr-only';
+                        btn.querySelector('h3').appendChild(note);
+                    }
+                    if (note) note.textContent = bad ? (d.state === 'conflict' ? ' (changed by someone else, not saved)' : ' (not saved)') : '';
+                }
+                if (d.type === 'saved' && d.values && _jeMediaTagsConfig) renderMediaTagsCard(Object.assign({}, _jeMediaTagsConfig, d.values));
+            });
+
+            /**
+             * Run one of this page's whole-configuration writes (Save, Apply to all users, the cache quick action)
+             * so a Media Tags field saved meanwhile is not put back: JE.adminTags.holdSaves when the tab was opened.
+             * @param {function(): Promise<*>} fn
+             * @returns {Promise<*>}
+             */
+            function jeHoldMediaTags(fn) {
+                var mt = window.JellyfinEnhanced && window.JellyfinEnhanced.adminTags;
+                return mt && typeof mt.holdSaves === 'function' ? mt.holdSaves(fn) : fn();
+            }
+
+            /**
+             * Open what a link to this page asks for, in place: `jeSection=media-tags` (with `tab`/`group`, one of the
+             * Media Tags tab's own tabs), `jeSection=<id>` (a setting card), the old Media Tags page's `tab`/`group`,
+             * or `tab=<tab>` alone (one of this page's tabs).
+             * @param {URLSearchParams} params
+             * @param {boolean} [focus]
+             * @returns {boolean} Whether the link asked for something here.
+             */
+            function jeOpenLinkTarget(params, focus) {
+                var name = params.get('name');
+                if (name === 'JellyfinEnhancedMediaTags') { jeOpenMediaTags(params.get('tab'), params.get('group'), focus); return true; }
+                var id = params.get('jeSection');
+                if (id === JE_MT_TAB) { jeOpenMediaTags(params.get('tab'), params.get('group'), focus); return true; }
+                if (id && Object.prototype.hasOwnProperty.call(JE_MEDIA_TAGS_SECTIONS, id)) {
+                    jeOpenMediaTags(JE_MEDIA_TAGS_SECTIONS[id][0], JE_MEDIA_TAGS_SECTIONS[id][1], focus);
+                    return true;
+                }
+                if (id && JE_SECTION_LINKS.includes(id)) {
+                    var target = page.querySelector('#' + id);
+                    var holder = target && target.closest('.jellyfin-tab-content');
+                    if (holder) jeJumpToTab(holder.id, '#' + id);
+                    return true;
+                }
+                var tabId = id ? null : params.get('tab');
+                var tabBtn = tabId ? Array.from(page.querySelectorAll('.jellyfin-tab-button')).find(function (b) { return b.dataset.tab === tabId; }) : null;
+                if (tabBtn) { tabBtn.click(); return true; }
+                return false;
+            }
+
+            // Links to this page itself (the Display card, the Media Tags tab's own links, What's New, the Enhanced panel's
+            // pointers to the Media Tags tab) open in place: navigating would rebuild the whole page (leaving an older view
+            // behind) and drop unsaved changes on its other tabs. Only while this view is the one shown.
+            document.addEventListener('click', function (e) {
+                if (!page || !page.isConnected || page.classList.contains('hide')) return;
+                var inPage = e.target.closest && e.target.closest('[data-role="page"]');
+                if (inPage && inPage !== page) return;
+                if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+                var a = e.target.closest && e.target.closest('a[href*="configurationpage?"]');
+                if (!a || a.target === '_blank') return;
+                var href = a.getAttribute('href') || '';
+                var params;
+                try { params = new URLSearchParams(href.slice(href.indexOf('?') + 1)); } catch (err) { return; }
+                var name = params.get('name');
+                if (name !== 'Jellyfin Enhanced' && name !== 'JellyfinEnhancedMediaTags') return;
+                e.preventDefault();
+                if (!jeOpenLinkTarget(params, true)) jeOpenMediaTags(null, null, true);
+            });
+
             // Map legacy tab IDs (pre-redesign) to the closest new tab, so users with
             // a saved sessionStorage value from the old layout don't land on a missing tab.
             const LEGACY_TAB_MAP = {
@@ -738,6 +970,27 @@
             } catch (e) {
                 // sessionStorage unavailable (private mode / quota / security) — skip restore.
             }
+
+            // Deep links (#/configurationpage?name=…&jeSection=<id>; jeSection=media-tags&tab=…&group=… for the Media
+            // Tags tab; &tab=<tab> alone for any tab): open the tab that holds the section and scroll to it. Only these jeSection ids are accepted. The Media Tags ids older
+            // links (settings panel, bookmarks) used open the matching section of the Media Tags tab. Each address is
+            // followed once: showing the page again keeps the tab the administrator moved to since.
+            const JE_SECTION_LINKS = ['mdblistRatingsEnabled', 'TMDB_API_KEY'];
+            const JE_MEDIA_TAGS_SECTIONS = { tagLayoutAdminDetails: ['layout'], tagScale: ['layout'], tagGap: ['layout'], tagEdgeSpacing: ['layout'], awardsTagsAdminDetails: ['groups', 'awards'], logoTagsAdminDetails: ['groups', 'logos'], customTagsAdminDetails: ['groups', 'custom'], statusTagsAdminDetails: ['badges'], tagStylesEnabled: ['colours'], tagCacheServerMode: ['server'], nativePosterTagsEnabled: ['server'] };
+            let _jeOpenedAddress = null;
+            function jeOpenRequestedSection() {
+                let params;
+                try { params = new URLSearchParams(window.location.hash.split('?')[1] || ''); } catch (e) { return; }
+                if (window.location.hash === _jeOpenedAddress) {
+                    // The same address shown again: the Media Tags tab, if it is the one open, reloads its settings.
+                    if (page && page.classList.contains('je-mt-active')) jeMountMediaTags();
+                    return;
+                }
+                _jeOpenedAddress = window.location.hash;
+                jeOpenLinkTarget(params, false);
+            }
+            jeOpenRequestedSection();
+            page.addEventListener('pageshow', jeOpenRequestedSection);
 
             // === Setting-description visibility toggle ===
             // Some admins want the full explanatory text under every setting;
@@ -993,7 +1246,8 @@
                 form.classList.remove('je-search-mode');
                 form.querySelectorAll('.je-tab-name-match').forEach(tc => tc.classList.remove('je-tab-name-match'));
                 clearHighlights();
-                form.querySelectorAll('.je-search-tab-label').forEach(el => el.remove());
+                // tabContents, not the form: the Media Tags tab sits after the form and gets a label and inline display too.
+                tabContents.forEach(tc => tc.querySelectorAll(':scope > .je-search-tab-label').forEach(el => el.remove()));
                 if (tabButtonsContainer) tabButtonsContainer.style.display = '';
                 // Clear inline display from every tab content. performSearch sets
                 // `style.display = 'block'|'none'` per tab; without this reset the
@@ -1001,7 +1255,7 @@
                 // collapsing matched tabs to single-column or hiding tabs that had no
                 // match the next time the user clicks them. The .active class alone
                 // owns visibility outside of search mode.
-                form.querySelectorAll('.jellyfin-tab-content').forEach(tc => { tc.style.display = ''; });
+                tabContents.forEach(tc => { tc.style.display = ''; });
                 form.querySelectorAll('.je-search-hidden').forEach(el => el.classList.remove('je-search-hidden'));
                 form.querySelectorAll('details').forEach(d => {
                     if (savedDetailsStates.has(d)) d.open = savedDetailsStates.get(d);
@@ -2537,33 +2791,38 @@
         // of its single config write.
         var _jeCustomTabOwnedCache = Object.create(null);
 
-        // Tracks whether the most recent `renderQualityCatOrderAdmin` call ran
-        // to completion. If false at save time, we skip writing positional
-        // *Order values back to config so a render failure can't clobber the
-        // user's saved order with default DOM positions.
-        var _qualityCatRenderOK = false;
+        // The last loaded configuration, for the Media Tags card and the
+        // Overview (Media Tags settings are edited on the Media Tags tab).
+        var _jeMediaTagsConfig = null;
 
-        // Reorders the admin quality-category rows to match the saved *Order values from the plugin config
-        function renderQualityCatOrderAdmin(config) {
-            _qualityCatRenderOK = false;
-            try {
-                var container = document.getElementById('qualityCategoriesAdmin');
-                if (!container) return;
-                var rows = Array.from(container.querySelectorAll('.je-quality-cat-admin-row'));
-                rows.sort(function (a, b) {
-                    var aOrder = parseInt(config[a.dataset.orderKey], 10);
-                    var bOrder = parseInt(config[b.dataset.orderKey], 10);
-                    if (!Number.isFinite(aOrder)) aOrder = parseInt(a.dataset.defaultOrder, 10);
-                    if (!Number.isFinite(bOrder)) bOrder = parseInt(b.dataset.defaultOrder, 10);
-                    if (aOrder !== bOrder) return aOrder - bOrder;
-                    return parseInt(a.dataset.defaultOrder, 10) - parseInt(b.dataset.defaultOrder, 10);
-                });
-                rows.forEach(function (row) { container.appendChild(row); });
-                refreshQualityCatAdminArrows(container);
-                _qualityCatRenderOK = true;
-            } catch (err) {
-                console.error('Jellyfin Enhanced: renderQualityCatOrderAdmin failed; will skip *Order save', err);
-            }
+        /**
+         * Fill the Display tab's Media Tags card: tag types on for new users,
+         * the default look and the server tag cache state.
+         * @param {Object} config - The plugin configuration.
+         */
+        function renderMediaTagsCard(config) {
+            _jeMediaTagsConfig = config;
+            var facts = document.getElementById('jeMediaTagsCardFacts');
+            if (!facts) return;
+            var names = { QualityTagsEnabled: 'Quality', GenreTagsEnabled: 'Genre', LanguageTagsEnabled: 'Language', RatingTagsEnabled: 'Rating', AgeRatingTagsEnabled: 'Age rating', StatusTagsEnabled: 'Status', AwardsTagsEnabled: 'Awards', LogoTagsEnabled: 'Logos', CustomTagsEnabled: 'Custom', PeopleTagsEnabled: 'People' };
+            var on = Object.keys(names).filter(function (k) { return config[k] === true; }).map(function (k) { return names[k]; });
+            var layout = String(config.TagLayout || 'corners').toLowerCase();
+            var rows = [
+                ['On for new users', on.length ? on.join(', ') : 'None'],
+                ['Default look', layout.charAt(0).toUpperCase() + layout.slice(1) + ', ' + (String(config.TagLabelDensity || '').toLowerCase() === 'compact' ? 'compact' : 'full') + ' labels'],
+                ['Server tag cache', config.TagCacheServerMode !== false ? 'On' : 'Off'],
+                ['Native poster tags', config.NativePosterTagsEnabled === true ? 'On' : 'Off']
+            ];
+            facts.textContent = '';
+            rows.forEach(function (row) {
+                var dt = document.createElement('dt');
+                dt.textContent = row[0];
+                var dd = document.createElement('dd');
+                dd.textContent = row[1];
+                facts.appendChild(dt);
+                facts.appendChild(dd);
+            });
+            updateClearTagCachesQuickBtnVisibility();
         }
 
         // Updates the disabled/opacity styling on the up/down buttons so the
@@ -2587,29 +2846,6 @@
                 }
             });
         }
-
-        // Wire up/down arrow clicks for the admin quality-category list.
-        // Uses event delegation on the container so this only registers once.
-        (function () {
-            document.addEventListener('click', function (e) {
-                var btn = e.target.closest && e.target.closest('#qualityCategoriesAdmin .je-cat-up, #qualityCategoriesAdmin .je-cat-down');
-                if (!btn || btn.disabled) return;
-                e.preventDefault();
-                var row = btn.closest('.je-quality-cat-admin-row');
-                if (!row) return;
-                var parent = row.parentNode;
-                if (!parent) return;
-                var isUp = btn.classList.contains('je-cat-up');
-                var sibling = isUp ? row.previousElementSibling : row.nextElementSibling;
-                if (!sibling || !sibling.classList.contains('je-quality-cat-admin-row')) return;
-                if (isUp) {
-                    parent.insertBefore(row, sibling);
-                } else {
-                    parent.insertBefore(sibling, row);
-                }
-                refreshQualityCatAdminArrows(parent);
-            });
-        })();
 
         // MDBList rating sources: key (matches the API's source string), display
         // label, and logo filename (served via the "mdblist-logos" CDN source,
@@ -2780,77 +3016,10 @@
                 });
         }
 
-        /**
-         * Selects `value` in the sound-tag audio language dropdown. A code the
-         * culture list does not offer (a hand-edited pt-BR, or the list has not
-         * loaded / failed to load) is parked as a bare option so it stays
-         * selected and a save cannot silently reset it to "no preference".
-         * @param {HTMLSelectElement|null} select
-         * @param {string} value
-         */
-        function applyQualityAudioLanguage(select, value) {
-            if (!select) return;
-            const saved = value || '';
-            if (saved && !Array.from(select.options).some(o => o.value === saved)) {
-                const option = document.createElement('option');
-                option.value = saved;
-                option.textContent = saved;
-                option.dataset.jePlaceholder = '1';
-                select.appendChild(option);
-            }
-            select.value = saved;
-        }
-
         // SpoilerAutoEnableLibraryIds as loaded, and whether the checkbox
         // list has been rendered from it yet. Until it has (VirtualFolders
         // still loading, or failed) a save round-trips the stored value
         // untouched instead of silently resetting it to "every library".
-        var _tagCacheExcludedRaw = '';
-        var _tagCacheExcludedRendered = false;
-
-        function renderTagCacheExcludedLibraries(raw) {
-            var host = document.getElementById('tagCacheExcludedLibraryList');
-            if (!host) return;
-            _tagCacheExcludedRaw = String(raw || '');
-            var selected = _tagCacheExcludedRaw.split(',').map(function (s) { return s.trim().toLowerCase(); });
-            ApiClient.getJSON(ApiClient.getUrl('Library/VirtualFolders')).then(function (folders) {
-                host.innerHTML = '';
-                (folders || []).filter(function (f) { return f.ItemId; }).forEach(function (f) {
-                    var wrap = document.createElement('div');
-                    wrap.className = 'checkboxContainer';
-                    var label = document.createElement('label');
-                    var input = document.createElement('input');
-                    input.type = 'checkbox';
-                    input.className = 'tagCacheExcludedLibrary jea-switch';
-                    label.className = 'jea-toggle';
-                    input.setAttribute('data-library-id', f.ItemId);
-                    input.checked = selected.indexOf(String(f.ItemId).replace(/-/g, '').toLowerCase()) !== -1;
-                    var span = document.createElement('span');
-                    span.textContent = f.Name;
-                    label.appendChild(input);
-                    label.appendChild(span);
-                    wrap.appendChild(label);
-                    host.appendChild(wrap);
-                });
-                _tagCacheExcludedRendered = true;
-            }).catch(function () {
-                host.innerHTML = '<div class="fieldDescription">Could not load the library list. Saving keeps the current selection.</div>';
-            });
-        }
-
-        document.getElementById('tagCacheExcludeLibraries').addEventListener('change', function () {
-            document.getElementById('tagCacheExcludedLibrariesBox').style.display = this.checked ? '' : 'none';
-        });
-
-        function collectTagCacheExcludedLibraries() {
-            if (!_tagCacheExcludedRendered) return _tagCacheExcludedRaw;
-            var ids = [];
-            document.querySelectorAll('#tagCacheExcludedLibraryList input.tagCacheExcludedLibrary').forEach(function (el) {
-                if (el.checked) ids.push(String(el.getAttribute('data-library-id')).replace(/-/g, '').toLowerCase());
-            });
-            return ids.join(',');
-        }
-
         var _spoilerAutoEnableLibrariesRaw = '';
         var _spoilerAutoEnableLibrariesRendered = false;
 
@@ -3090,330 +3259,6 @@
             });
         })();
 
-        // Tag Styles editor: colour overrides for the quality / age rating / rating / genre tags.
-        // State is { quality: {label: {background,color}}, age: {groupId: {...}}, rating: {community|critic: {...}}, genre: {...} }
-        // holding only what differs from the shipped defaults; serialize() returns '' when nothing is overridden.
-        const tagStyles = (() => {
-            const SECTIONS = [
-                { key: 'quality', title: 'Quality', fields: [['background', 'Background'], ['border', 'Border'], ['color', 'Text']] },
-                { key: 'age', title: 'Age ratings', fields: [['background', 'Background'], ['border', 'Border'], ['color', 'Text']] },
-                { key: 'rating', title: 'Rating chips', fields: [['background', 'Background'], ['color', 'Text and star']] },
-                { key: 'genre', title: 'Genre', fields: [['background', 'Background'], ['border', 'Border'], ['color', 'Icon']] }
-            ];
-            const CHIPS = [
-                { key: 'community', label: 'Community rating', defaults: { background: 'rgba(0, 0, 0, 0.85)', color: '#ffc107' }, text: '7.8', icon: 'star' },
-                { key: 'critic', label: 'Critic rating', defaults: { background: 'rgba(0, 0, 0, 0.8)', color: '#ffffff' }, text: '85%', icon: null }
-            ];
-            const GENRE = [{ key: 'all', label: 'Genre circle', defaults: { background: 'rgba(10, 10, 10, 0.8)', border: 'rgba(255, 255, 255, 0.2)', color: '#E0E0E0' } }];
-
-            let state = { quality: {}, age: {}, rating: {}, genre: {} };
-            let items = { quality: [], age: [], rating: CHIPS, genre: GENRE };
-            let current = 'quality';
-            let selected = null;
-            let lastPreset = 'default';
-            let lastScope = 'all';
-            let presetSelect = null;
-            let scopeSelect = null;
-            const canvas = document.createElement('canvas').getContext('2d');
-
-            // Any CSS colour to {r,g,b,a} through the canvas parser.
-            function parse(css) {
-                canvas.fillStyle = '#000000';
-                canvas.fillStyle = css;
-                const v = canvas.fillStyle;
-                if (v.charAt(0) === '#') {
-                    return { r: parseInt(v.slice(1, 3), 16), g: parseInt(v.slice(3, 5), 16), b: parseInt(v.slice(5, 7), 16), a: 1 };
-                }
-                const p = v.slice(v.indexOf('(') + 1, v.indexOf(')')).split(',').map(parseFloat);
-                return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 };
-            }
-            const toHex = (c) => '#' + [c.r, c.g, c.b].map((n) => Math.round(n).toString(16).padStart(2, '0')).join('');
-            const toCss = (c) => 'rgba(' + Math.round(c.r) + ', ' + Math.round(c.g) + ', ' + Math.round(c.b) + ', ' + (Math.round(c.a * 1000) / 1000) + ')';
-            const same = (a, b) => toCss(parse(a)) === toCss(parse(b));
-
-            const section = () => SECTIONS.find((s) => s.key === current);
-            const entry = (sec, key) => (sec === 'genre' ? state.genre : state[sec][key]) || null;
-            const value = (sec, item, field) => {
-                const o = entry(sec, item.key);
-                return (o && o[field]) || item.defaults[field];
-            };
-            const isChanged = (sec, item) => !!entry(sec, item.key);
-
-            function setField(sec, item, field, css) {
-                lastPreset = 'custom';
-                const o = Object.assign({}, entry(sec, item.key) || {});
-                if (same(css, item.defaults[field])) delete o[field]; else o[field] = css;
-                const empty = Object.keys(o).length === 0;
-                if (sec === 'genre') state.genre = empty ? {} : o;
-                else if (empty) delete state[sec][item.key]; else state[sec][item.key] = o;
-            }
-
-            function el(tag, cls, text) {
-                const n = document.createElement(tag);
-                if (cls) n.className = cls;
-                if (text !== undefined) n.textContent = text;
-                return n;
-            }
-
-            function chip(sec, item) {
-                const v = (f) => value(sec, item, f);
-                let n;
-                if (sec === 'quality') {
-                    n = el('span', 'je-ts-q', item.label);
-                    n.style.background = v('background');
-                    n.style.color = v('color');
-                    n.style.borderColor = v('border');
-                } else if (sec === 'age') {
-                    n = el('span', 'je-ts-age', item.sample);
-                    n.style.background = v('background');
-                    n.style.borderColor = v('border');
-                    n.style.color = v('color');
-                } else if (sec === 'rating') {
-                    n = el('span', 'je-ts-rate');
-                    n.style.background = v('background');
-                    n.style.color = v('color');
-                    if (item.icon) { const i = el('i', 'material-icons', item.icon); n.appendChild(i); } else { n.appendChild(el('i', 'je-ts-tomato')); }
-                    n.appendChild(document.createTextNode(item.text));
-                } else {
-                    n = el('span', 'je-ts-genre');
-                    n.style.background = v('background');
-                    n.style.borderColor = v('border');
-                    n.style.color = v('color');
-                    n.appendChild(el('i', 'material-icons', 'theaters'));
-                }
-                return n;
-            }
-
-            function renderTabs() {
-                const tabs = document.querySelector('#tagStyleTabs');
-                tabs.textContent = '';
-                SECTIONS.forEach((s) => {
-                    const b = el('button', 'je-ts-tab' + (s.key === current ? ' active' : ''), s.title);
-                    b.type = 'button';
-                    b.addEventListener('click', () => { current = s.key; selected = null; render(); });
-                    tabs.appendChild(b);
-                });
-            }
-
-            function renderGrid() {
-                const grid = document.querySelector('#tagStyleGrid');
-                grid.textContent = '';
-                items[current].forEach((item) => {
-                    const cell = el('button', 'je-ts-cell' + (isChanged(current, item) ? ' changed' : '') + (selected === item.key ? ' selected' : ''));
-                    cell.type = 'button';
-                    cell.title = item.hint || item.label;
-                    cell.appendChild(chip(current, item));
-                    cell.addEventListener('click', () => { selected = item.key; render(); });
-                    grid.appendChild(cell);
-                });
-            }
-
-            function renderPanel() {
-                const panel = document.querySelector('#tagStylePanel');
-                panel.textContent = '';
-                const item = items[current].find((i) => i.key === selected);
-                if (!item) { panel.style.display = 'none'; return; }
-                panel.style.display = '';
-                panel.appendChild(el('div', 'je-ts-panel-title', item.hint || item.label));
-                section().fields.forEach(([field, label]) => {
-                    const c = parse(value(current, item, field));
-                    const row = el('div', 'je-ts-field');
-                    row.appendChild(el('label', null, label));
-                    const color = document.createElement('input');
-                    color.type = 'color';
-                    color.value = toHex(c);
-                    const alpha = document.createElement('input');
-                    alpha.type = 'range';
-                    alpha.min = '0';
-                    alpha.max = '100';
-                    alpha.value = String(Math.round(c.a * 100));
-                    const pct = el('span', 'je-ts-alpha', alpha.value + '%');
-                    const apply = () => {
-                        const base = parse(color.value);
-                        base.a = parseInt(alpha.value, 10) / 100;
-                        pct.textContent = alpha.value + '%';
-                        setField(current, item, field, toCss(base));
-                        renderGrid();
-                    };
-                    color.addEventListener('input', apply);
-                    alpha.addEventListener('input', apply);
-                    row.appendChild(color);
-                    row.appendChild(alpha);
-                    row.appendChild(pct);
-                    panel.appendChild(row);
-                });
-                const reset = el('button', 'jea-btn', 'Reset This Tag');
-                reset.type = 'button';
-                reset.addEventListener('click', () => {
-                    if (current === 'genre') state.genre = {}; else delete state[current][item.key];
-                    lastPreset = 'custom';
-                    render();
-                });
-                panel.appendChild(reset);
-            }
-
-            // Presets derive every tag's colours from its own defaults, so hues stay recognisable.
-            const rgba = (c, a) => toCss({ r: c.r, g: c.g, b: c.b, a: a });
-            const isDark = (c) => (0.299 * c.r + 0.587 * c.g + 0.114 * c.b) < 40;
-            const PRESETS = [
-                { id: 'glass', title: 'Glass', make: (field, d) => {
-                    const bg = parse(d.background);
-                    if (field === 'background') return rgba(bg, isDark(bg) ? 0.3 : 0.4);
-                    if (field === 'border') return 'rgba(255, 255, 255, 0.4)';
-                    return null;
-                } },
-                { id: 'outline', title: 'Outline', make: (field, d) => {
-                    const bg = parse(d.background);
-                    if (isDark(bg)) return field === 'background' ? rgba(bg, 0.35) : (field === 'border' ? 'rgba(255, 255, 255, 0.5)' : null);
-                    if (field === 'background') return rgba(bg, 0.12);
-                    if (field === 'border') return rgba(bg, 0.9);
-                    return rgba(bg, 1);
-                } },
-                { id: 'mono', title: 'Dark', make: (field) => ({ background: 'rgba(20, 20, 20, 0.85)', border: 'rgba(255, 255, 255, 0.2)', color: 'rgba(255, 255, 255, 1)' }[field]) },
-                { id: 'light', title: 'Light', make: (field) => ({ background: 'rgba(255, 255, 255, 0.88)', border: 'rgba(0, 0, 0, 0.15)', color: 'rgba(17, 17, 17, 1)' }[field]) },
-                { id: 'default', title: 'Default colours', make: () => null }
-            ];
-
-            function applyPreset(preset, scope) {
-                SECTIONS.filter((s) => scope === 'all' || s.key === current).forEach((s) => {
-                    items[s.key].forEach((item) => {
-                        s.fields.forEach(([field]) => {
-                            const css = preset.id === 'default' ? item.defaults[field] : preset.make(field, item.defaults);
-                            setField(s.key, item, field, css || item.defaults[field]);
-                        });
-                    });
-                });
-                lastPreset = preset.id;
-                render();
-            }
-
-            function applyColours(picked, scope) {
-                lastPreset = 'custom';
-                SECTIONS.filter((s) => scope === 'all' || s.key === current).forEach((s) => {
-                    items[s.key].forEach((item) => {
-                        s.fields.forEach(([field]) => { if (picked[field]) setField(s.key, item, field, picked[field]); });
-                    });
-                });
-                render();
-            }
-
-            function renderPresets() {
-                const bar = document.querySelector('#tagStylePresets');
-                if (bar.childElementCount) return;
-                const row = (label) => { const r = el('div', 'je-ts-presets-row'); r.appendChild(el('span', 'je-ts-presets-label', label)); bar.appendChild(r); return r; };
-
-                const scope = el('select', 'je-ts-select');
-                [['all', 'All tags'], ['tab', 'This tab only']].forEach(([v, text]) => { const o = el('option', null, text); o.value = v; scope.appendChild(o); });
-                row('Apply to').appendChild(scope);
-                scopeSelect = scope;
-
-                const presetRow = row('Preset');
-                const preset = el('select', 'je-ts-select');
-                PRESETS.forEach((p) => { const o = el('option', null, p.title); o.value = p.id; preset.appendChild(o); });
-                const applyPresetBtn = el('button', 'jea-btn', 'Apply Preset');
-                applyPresetBtn.type = 'button';
-                applyPresetBtn.addEventListener('click', () => applyPreset(PRESETS.find((p) => p.id === preset.value), scope.value));
-                presetSelect = preset;
-                presetRow.appendChild(preset);
-                presetRow.appendChild(applyPresetBtn);
-
-                const colourRow = row('Colours');
-                const picks = {};
-                [['background', 'Background', '#000000', 60], ['border', 'Border', '#ffffff', 50], ['color', 'Text', '#ffffff', 100]].forEach(([field, label, hex, alpha]) => {
-                    const box = el('div', 'je-ts-pick');
-                    const head = el('label', 'je-ts-pick-head');
-                    const use = document.createElement('input');
-                    use.type = 'checkbox';
-                    head.appendChild(use);
-                    head.appendChild(el('span', null, label));
-                    const controls = el('div', 'je-ts-pick-controls');
-                    const color = document.createElement('input');
-                    color.type = 'color';
-                    color.value = hex;
-                    const range = document.createElement('input');
-                    range.type = 'range';
-                    range.min = '0';
-                    range.max = '100';
-                    range.value = String(alpha);
-                    color.disabled = range.disabled = true;
-                    use.addEventListener('change', () => { color.disabled = range.disabled = !use.checked; });
-                    const read = () => { const c = parse(color.value); c.a = parseInt(range.value, 10) / 100; return toCss(c); };
-                    controls.appendChild(color);
-                    controls.appendChild(range);
-                    box.appendChild(head);
-                    box.appendChild(controls);
-                    picks[field] = { use, read };
-                    colourRow.appendChild(box);
-                });
-                const applyColoursBtn = el('button', 'jea-btn', 'Apply Colours');
-                applyColoursBtn.type = 'button';
-                applyColoursBtn.addEventListener('click', () => {
-                    const picked = {};
-                    Object.keys(picks).forEach((f) => { if (picks[f].use.checked) picked[f] = picks[f].read(); });
-                    if (Object.keys(picked).length) applyColours(picked, scope.value);
-                });
-                colourRow.appendChild(applyColoursBtn);
-            }
-
-            function render() {
-                renderPresets();
-                if (scopeSelect) scopeSelect.value = lastScope;
-                if (presetSelect && [...presetSelect.options].some((o) => o.value === lastPreset)) presetSelect.value = lastPreset;
-                renderTabs();
-                renderGrid();
-                renderPanel();
-            }
-
-            function load(json, preset, scope) {
-                lastPreset = preset || 'default';
-                lastScope = scope === 'tab' ? 'tab' : 'all';
-                state = { quality: {}, age: {}, rating: {}, genre: {} };
-                try {
-                    const p = json ? JSON.parse(json) : {};
-                    ['quality', 'age', 'rating'].forEach((k) => { if (p[k] && typeof p[k] === 'object') state[k] = p[k]; });
-                    if (p.genre && typeof p.genre === 'object') state.genre = p.genre;
-                } catch (e) { /* unreadable value: start clean */ }
-                if (!items.quality.length) {
-                    ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellyfinEnhanced/tag-styles/catalog'), dataType: 'json' }).then((cat) => {
-                        items.quality = cat.quality.map((q) => ({ key: q.label, label: q.label, defaults: { background: q.background, border: 'rgba(255, 255, 255, 0.15)', color: q.color } }));
-                        items.age = cat.age.map((g) => ({
-                            key: g.id,
-                            label: g.ratings.slice(0, 3).join(', '),
-                            sample: g.ratings[0] || 'NR',
-                            hint: 'Applies to: ' + g.ratings.join(', '),
-                            defaults: { background: g.background, border: g.border, color: g.color }
-                        }));
-                        render();
-                    }).catch(() => {
-                        document.querySelector('#tagStyleGrid').textContent = 'Could not load the tag list.';
-                    });
-                }
-                render();
-            }
-
-            const settings = () => ({ preset: lastPreset, scope: scopeSelect ? scopeSelect.value : lastScope });
-
-            function serialize() {
-                const out = {};
-                ['quality', 'age', 'rating'].forEach((k) => { if (Object.keys(state[k]).length) out[k] = state[k]; });
-                if (Object.keys(state.genre).length) out.genre = state.genre;
-                return Object.keys(out).length ? JSON.stringify(out) : '';
-            }
-
-            document.querySelector('#tagStylesEnabled').addEventListener('change', (e) => {
-                document.querySelector('#tagStylesBody').style.display = e.target.checked ? '' : 'none';
-            });
-
-            document.querySelector('#tagStyleResetAll').addEventListener('click', () => {
-                state = { quality: {}, age: {}, rating: {}, genre: {} };
-                selected = null;
-                lastPreset = 'default';
-                render();
-            });
-
-            return { load, serialize, settings };
-        })();
-
         function loadConfig() {
             Dashboard.showLoadingMsg();
             checkInstalledPlugins();
@@ -3479,76 +3324,8 @@
                 jellyseerrTmdbKeyField.addEventListener('input', function() {
                     tmdbKeyField.value = this.value;
                 });
-                document.querySelector('#qualityTagsEnabled').checked = config.QualityTagsEnabled;
-                document.querySelector('#nativePosterTagsEnabled').checked = config.NativePosterTagsEnabled === true;
-                document.querySelector('#nativePosterTagsWebClientNames').value = config.NativePosterTagsWebClientNames || '';
-                document.querySelector('#tagStylesEnabled').checked = config.TagStylesEnabled === true;
-                document.querySelector('#tagStylesBody').style.display = config.TagStylesEnabled === true ? '' : 'none';
-                document.querySelector('#tagStyleTarget').value = config.TagStyleTarget || 'both';
-                tagStyles.load(config.TagStyleOverrides, config.TagStylePreset, config.TagStyleApplyScope);
-                document.querySelector('#showResolutionTag').checked = config.ShowResolutionTag !== false;
-                document.querySelector('#showSourceTag').checked = config.ShowSourceTag !== false;
-                document.querySelector('#showDynamicRangeTag').checked = config.ShowDynamicRangeTag !== false;
-                document.querySelector('#showSpecialFormatTag').checked = config.ShowSpecialFormatTag !== false;
-                document.querySelector('#showVideoCodecTag').checked = config.ShowVideoCodecTag !== false;
-                document.querySelector('#showAudioInfoTag').checked = config.ShowAudioInfoTag !== false;
-                // Restore stack order: rows are visually reordered to match
-                // current saved order values (ties broken by default order).
-                if (typeof renderQualityCatOrderAdmin === 'function') renderQualityCatOrderAdmin(config);
-                document.querySelector('#genreTagsEnabled').checked = config.GenreTagsEnabled;
-                document.querySelector('#peopleTagsEnabled').checked = config.PeopleTagsEnabled;
-                const qPos = (config.QualityTagsPosition || 'top-left');
-                const gPos = (config.GenreTagsPosition || 'top-right');
-                const lPos = (config.LanguageTagsPosition || 'bottom-left');
-                const rPos = (config.RatingTagsPosition || 'bottom-right');
-                const arPos = (config.AgeRatingTagsPosition || 'bottom-right');
-                const langEnabled = !!config.LanguageTagsEnabled;
-                const ratingEnabled = !!config.RatingTagsEnabled;
-                const ageRatingEnabled = !!config.AgeRatingTagsEnabled;
-                const peopleEnabled = !!config.PeopleTagsEnabled;
-                const showRatingInPlayer = config.ShowRatingInPlayer !== false;
-                const qSel = document.querySelector('#qualityTagsPosition');
-                const gSel = document.querySelector('#genreTagsPosition');
-                const lSel = document.querySelector('#languageTagsPosition');
-                const rSel = document.querySelector('#ratingTagsPosition');
-                const arSel = document.querySelector('#ageRatingTagsPosition');
-                const lChk = document.querySelector('#languageTagsEnabled');
-                const rChk = document.querySelector('#ratingTagsEnabled');
-                const arChk = document.querySelector('#ageRatingTagsEnabled');
-                const rPlayerChk = document.querySelector('#showRatingInPlayer');
-                if (qSel) qSel.value = qPos;
-                if (gSel) gSel.value = gPos;
-                if (lSel) lSel.value = lPos;
-                if (rSel) rSel.value = rPos;
-                if (arSel) arSel.value = arPos;
-                if (lChk) lChk.checked = langEnabled;
-                document.querySelector('#languageTagsPriority').value = config.LanguageTagsPriority || '';
-                document.querySelector('#languageTagsPriorityStrict').checked = config.LanguageTagsPriorityStrict === true;
-                document.querySelector('#languageTagsMergeRegions').checked = config.LanguageTagsMergeRegions === true;
-                const qualityAudioLangSelect = document.querySelector('#qualityTagsPreferredAudioLanguage');
-                // The culture list loads asynchronously; keep the value so it can be re-applied once the options exist.
-                qualityAudioLangSelect.dataset.savedValue = config.QualityTagsPreferredAudioLanguage || '';
-                applyQualityAudioLanguage(qualityAudioLangSelect, qualityAudioLangSelect.dataset.savedValue);
-                document.querySelector('#qualityTagsAudioLanguageFromUser').checked = config.QualityTagsAudioLanguageFromUser === true;
-                if (rChk) rChk.checked = ratingEnabled;
-                if (arChk) arChk.checked = ageRatingEnabled;
-                const pChk = document.querySelector('#peopleTagsEnabled');
-                if (pChk) pChk.checked = peopleEnabled;
-                if (rPlayerChk) rPlayerChk.checked = showRatingInPlayer;
-                document.querySelector('#disableTagsOnSearchPage').checked = config.DisableTagsOnSearchPage === true;
-                document.querySelector('#tagsHideOnHover').checked = config.TagsHideOnHover === true;
-                document.querySelector('#ratingTagsOnMovies').checked = config.RatingTagsOnMovies !== false;
-                document.querySelector('#ratingTagsOnSeries').checked = config.RatingTagsOnSeries !== false;
-                document.querySelector('#ratingTagsOnSeasons').checked = config.RatingTagsOnSeasons !== false;
-                document.querySelector('#ratingTagsOnEpisodes').checked = config.RatingTagsOnEpisodes !== false;
-                document.querySelector('#ratingTagsOnContinueWatching').checked = config.RatingTagsOnContinueWatching !== false;
-                document.querySelector('#ratingTagsOnNextUp').checked = config.RatingTagsOnNextUp !== false;
-                document.querySelector('#tagCacheServerMode').checked = config.TagCacheServerMode !== false;
-                document.querySelector('#tagCacheExcludeLibraries').checked = config.TagCacheExcludeLibraries === true;
-                document.getElementById('tagCacheExcludedLibrariesBox').style.display = config.TagCacheExcludeLibraries === true ? '' : 'none';
-                renderTagCacheExcludedLibraries(config.TagCacheExcludedLibraryIds || '');
-                document.querySelector('#enableTagsLocalStorageFallback').checked = config.EnableTagsLocalStorageFallback === true;
-                document.querySelector('#tagsCacheTtlDays').value = config.TagsCacheTtlDays || 30;
+                // Media Tags settings live on the Media Tags tab; the card shows a summary.
+                renderMediaTagsCard(config);
                 document.querySelector('#mdblistRatingsEnabled').checked = !!config.MdblistRatingsEnabled;
                 document.querySelector('#mdblistApiKey').value = config.MdblistApiKey || '';
                 document.querySelector('#mdblistRatingsShowOnItemDetails').checked = config.MdblistRatingsShowOnItemDetails !== false;
@@ -3882,62 +3659,8 @@
             }
             config.TMDB_API_KEY = document.querySelector('#TMDB_API_KEY').value;
             config.DEFAULT_REGION = document.querySelector('#DEFAULT_REGION').value;
-            config.QualityTagsEnabled = document.querySelector('#qualityTagsEnabled').checked;
-            config.NativePosterTagsEnabled = document.querySelector('#nativePosterTagsEnabled').checked;
-            config.NativePosterTagsWebClientNames = document.querySelector('#nativePosterTagsWebClientNames').value.trim();
-            config.TagStylesEnabled = document.querySelector('#tagStylesEnabled').checked;
-            config.TagStyleTarget = document.querySelector('#tagStyleTarget').value;
-            config.TagStyleOverrides = tagStyles.serialize();
-            config.TagStylePreset = tagStyles.settings().preset;
-            config.TagStyleApplyScope = tagStyles.settings().scope;
-            config.ShowResolutionTag = document.querySelector('#showResolutionTag').checked;
-            config.ShowSourceTag = document.querySelector('#showSourceTag').checked;
-            config.ShowDynamicRangeTag = document.querySelector('#showDynamicRangeTag').checked;
-            config.ShowSpecialFormatTag = document.querySelector('#showSpecialFormatTag').checked;
-            config.ShowVideoCodecTag = document.querySelector('#showVideoCodecTag').checked;
-            config.ShowAudioInfoTag = document.querySelector('#showAudioInfoTag').checked;
-            // Persist current visual stack order. Each admin row reads its current
-            // DOM position (1-based) into the corresponding *Order config key.
-            // Skipped if the load-time render failed — otherwise we'd clobber the
-            // user's saved order with default DOM positions.
-            if (_qualityCatRenderOK) {
-                const adminCatRows = document.querySelectorAll('#qualityCategoriesAdmin .je-quality-cat-admin-row');
-                adminCatRows.forEach((row, idx) => {
-                    const orderKey = row.dataset.orderKey;
-                    if (orderKey) config[orderKey] = idx + 1;
-                });
-            }
-            config.GenreTagsEnabled = document.querySelector('#genreTagsEnabled').checked;
-            config.LanguageTagsEnabled = document.querySelector('#languageTagsEnabled').checked;
-            config.RatingTagsEnabled = document.querySelector('#ratingTagsEnabled').checked;
-            config.AgeRatingTagsEnabled = document.querySelector('#ageRatingTagsEnabled').checked;
-            config.PeopleTagsEnabled = document.querySelector('#peopleTagsEnabled').checked;
-            config.DisableTagsOnSearchPage = document.querySelector('#disableTagsOnSearchPage').checked;
-            config.TagsHideOnHover = document.querySelector('#tagsHideOnHover').checked;
-            config.RatingTagsOnMovies = document.querySelector('#ratingTagsOnMovies').checked;
-            config.RatingTagsOnSeries = document.querySelector('#ratingTagsOnSeries').checked;
-            config.RatingTagsOnSeasons = document.querySelector('#ratingTagsOnSeasons').checked;
-            config.RatingTagsOnEpisodes = document.querySelector('#ratingTagsOnEpisodes').checked;
-            config.RatingTagsOnContinueWatching = document.querySelector('#ratingTagsOnContinueWatching').checked;
-            config.RatingTagsOnNextUp = document.querySelector('#ratingTagsOnNextUp').checked;
-            config.TagCacheServerMode = document.querySelector('#tagCacheServerMode').checked;
-            config.TagCacheExcludeLibraries = document.querySelector('#tagCacheExcludeLibraries').checked;
-            config.TagCacheExcludedLibraryIds = collectTagCacheExcludedLibraries();
-            config.EnableTagsLocalStorageFallback = config.TagCacheServerMode
-                ? document.querySelector('#enableTagsLocalStorageFallback').checked
-                : true;
-            config.QualityTagsPosition = document.querySelector('#qualityTagsPosition').value;
-            config.GenreTagsPosition = document.querySelector('#genreTagsPosition').value;
-            config.LanguageTagsPosition = document.querySelector('#languageTagsPosition').value;
-            config.LanguageTagsPriority = document.querySelector('#languageTagsPriority').value.trim();
-            config.LanguageTagsPriorityStrict = document.querySelector('#languageTagsPriorityStrict').checked;
-            config.LanguageTagsMergeRegions = document.querySelector('#languageTagsMergeRegions').checked;
-            config.QualityTagsPreferredAudioLanguage = document.querySelector('#qualityTagsPreferredAudioLanguage').value || '';
-            config.QualityTagsAudioLanguageFromUser = document.querySelector('#qualityTagsAudioLanguageFromUser').checked;
-            config.RatingTagsPosition = document.querySelector('#ratingTagsPosition').value;
-            config.AgeRatingTagsPosition = document.querySelector('#ageRatingTagsPosition').value;
-            config.ShowRatingInPlayer = document.querySelector('#showRatingInPlayer').checked;
-            config.TagsCacheTtlDays = parseInt(document.querySelector('#tagsCacheTtlDays').value, 10) || 30;
+            // Media Tags settings are saved by the Media Tags tab, one field at a time: the
+            // fresh configuration read above keeps them as they are.
             config.MdblistRatingsEnabled = document.querySelector('#mdblistRatingsEnabled').checked;
             config.MdblistApiKey = document.querySelector('#mdblistApiKey').value.trim();
             config.MdblistRatingsShowOnItemDetails = document.querySelector('#mdblistRatingsShowOnItemDetails').checked;
@@ -4240,7 +3963,18 @@
         // between-save form changes. Treat saves as serial.
         var _jeSaveInFlight = false;
 
-        async function saveConfig(e) {
+        /**
+         * Save the form (submit, the save dock, Seerr's user import). Inside jeHoldMediaTags: Media Tags
+         * changes not saved yet go first, and the ones made meanwhile wait until this write is done.
+         * @param {Event} e
+         * @returns {Promise<boolean>}
+         */
+        function saveConfig(e) {
+            e.preventDefault();
+            return jeHoldMediaTags(() => saveConfigNow(e));
+        }
+
+        async function saveConfigNow(e) {
             e.preventDefault();
             if (_jeSaveInFlight) return false;
             _jeSaveInFlight = true;
@@ -4337,7 +4071,7 @@
         }
 
         // Apply only the changed per-user settings to every user (backend copies just those properties).
-        document.addEventListener('jea-apply-selected', async (e) => {
+        document.addEventListener('jea-apply-selected', (e) => jeHoldMediaTags(async () => {
             const props = (e.detail && e.detail.props) || [];
             const labels = (e.detail && e.detail.labels) || [];
             if (!props.length) return;
@@ -4366,10 +4100,14 @@
                 console.error('[JE] apply-user-settings failed:', err);
                 Dashboard.alert({ title: 'Error', message: 'Could not apply the settings to all users. Check the server logs for details.' });
             }
-        });
+        }));
 
-        // Saves current config and applies it to all users
-        async function resetAllUserSettings() {
+        // Saves current config and applies it to all users (inside jeHoldMediaTags, as Save).
+        function resetAllUserSettings() {
+            return jeHoldMediaTags(resetAllUserSettingsNow);
+        }
+
+        async function resetAllUserSettingsNow() {
             if (await JEAdmin.confirm("Are you sure?\n\nThis saves the current configuration, then copies these Display/Playback/etc. values into every user's Enhanced Panel settings, replacing anything they've customized for themselves. This cannot be undone per-user; each user would have to re-apply their own preferences afterward.")) {
                 Dashboard.showLoadingMsg();
                 try {
@@ -4867,33 +4605,6 @@
             }
         })();
 
-        // Preferred audio language for sound tags: every Jellyfin culture, by name. Kept apart from
-        // the UI language list so a slow GitHub probe or a failed locales request cannot hold it up.
-        (async () => {
-            const qualityAudioLangSelect = document.getElementById('qualityTagsPreferredAudioLanguage');
-            if (!qualityAudioLangSelect) return;
-            try {
-                const cultures = await culturesPromise;
-                // loadConfig may have run first and parked the saved code as a bare option; the named list replaces it.
-                qualityAudioLangSelect.querySelectorAll('option[data-je-placeholder]').forEach(o => o.remove());
-                const seen = new Set();
-                cultures
-                    .map(c => ({ code: c.TwoLetterISOLanguageName || c.ThreeLetterISOLanguageName, name: c.DisplayName || c.Name }))
-                    .filter(o => o.code && o.name && !seen.has(o.code) && seen.add(o.code))
-                    .sort((a, b) => a.name.localeCompare(b.name))
-                    .forEach(({ code, name }) => {
-                        const option = document.createElement('option');
-                        option.value = code;
-                        option.textContent = name;
-                        qualityAudioLangSelect.appendChild(option);
-                    });
-                applyQualityAudioLanguage(qualityAudioLangSelect, qualityAudioLangSelect.dataset.savedValue);
-            } catch (err) {
-                // loadConfig parks the saved code as a bare option, so a save still keeps it.
-                console.warn('Jellyfin Enhanced: Failed to load audio language options:', err);
-            }
-        })();
-
         page.addEventListener('pageshow', loadConfig);
         form.addEventListener('submit', saveConfig);
         resetAllUserSettingsBtn.addEventListener('click', resetAllUserSettings);
@@ -5348,7 +5059,6 @@
         }
 
         var PARENT_DEPS = [
-            { parent: 'nativePosterTagsEnabled', label: 'Enable Native Poster Tags (Experimental)', children: ['nativePosterTagsWebClientNames'] },
             { parent: 'elsewhereEnabled', label: 'Enable Elsewhere', children: ['DEFAULT_PROVIDERS', 'IGNORE_PROVIDERS', 'ElsewhereSeasonProviders', 'ElsewhereCustomBrandingText', 'ElsewhereCustomBrandingImageUrl', 'showReviews'] },
             { parent: 'doesTheDogDieEnabled', label: 'Show Content Warnings', children: ['doesTheDogDieApiKey'] },
             { parent: 'mdblistRatingsEnabled', label: 'Enable MDBList Ratings', children: ['mdblistApiKey', 'mdblistRatingsShowOnItemDetails', 'mdblistRatingsFetchEnabled', 'mdblistFetchReserve', 'mdblistRatingsAutoSyncEnabled', 'mdblistCommunityRatingSource', 'mdblistCommunityRatingFallbackSource', 'mdblistCriticRatingSource', 'mdblistCriticRatingFallbackSource', 'mdblistRatingsOverwriteExisting', 'mdblistRatingsShowPercentSymbol'] },
@@ -5357,11 +5067,6 @@
             { parent: 'showUserReviews', label: 'Enable User Reviews', children: ['hideReviewsFromHiddenUsers', 'hideReviewsFromDisabledUsers', 'mirrorReviewRatingsToJellyfin', 'showUserRatingDash', 'showUserRatingOnPosters'] },
             { parent: 'randomButtonEnabled', label: 'Enable Random Button', children: ['randomUnwatchedOnly', 'randomIncludeMovies', 'randomIncludeShows', 'randomScopeCurrentContainer'] },
             { parent: 'showWatchProgress', label: 'Show watch progress', children: ['watchProgressDefaultMode', 'watchProgressTimeFormat'] },
-            { parent: 'qualityTagsEnabled', label: 'Enable Quality Tags', children: ['qualityTagsPosition', 'showResolutionTag', 'showSourceTag', 'showDynamicRangeTag', 'showSpecialFormatTag', 'showVideoCodecTag', 'showAudioInfoTag', 'qualityTagsPreferredAudioLanguage', 'qualityTagsAudioLanguageFromUser'], noHint: true },
-            { parent: 'genreTagsEnabled', label: 'Enable Genre Tags', children: ['genreTagsPosition'], noHint: true },
-            { parent: 'languageTagsEnabled', label: 'Enable Language Tags', children: ['languageTagsPosition', 'languageTagsPriority', 'languageTagsPriorityStrict', 'languageTagsMergeRegions'], noHint: true },
-            { parent: 'ratingTagsEnabled', label: 'Enable Rating Tags', children: ['ratingTagsPosition', 'ratingTagsOnMovies', 'ratingTagsOnSeries', 'ratingTagsOnSeasons', 'ratingTagsOnEpisodes', 'ratingTagsOnContinueWatching', 'ratingTagsOnNextUp'], noHint: true },
-            { parent: 'ageRatingTagsEnabled', label: 'Enable Age Rating Tags', children: ['ageRatingTagsPosition'], noHint: true },
             { parent: 'useIcons', label: 'Use Icons', children: ['iconStyle'] },
             { parent: 'letterboxdEnabled', label: 'Enable Letterboxd', children: ['showLetterboxdLinkAsText'] },
             { parent: 'enableCustomSplashScreen', label: 'Enable Custom Splash Screen', children: ['splashScreenImageUrl'] },
@@ -5691,6 +5396,45 @@
             return spaced.charAt(0).toUpperCase() + spaced.slice(1);
         }
 
+        // jeMediaTagsWhatsNewEntries: begin
+        /**
+         * New settings that live on the Media Tags tab (drawn only once it opens, so
+         * the banner cannot point at their controls): one banner entry per section of
+         * that tab, per group on Groups, opening it there.
+         * @param {string[]} ids - The new setting ids to route.
+         * @param {Object} locations - GET whats-new `mediaTags`: id -> {page, tab, group} (`tab`: one of the Media Tags tab's own tabs).
+         * @returns {Array<{tab: string, tabLabel: string, title: string, href: string, mediaTags: {section: string, group: ?string}, ids: string[]}>}
+         */
+        function jeMediaTagsWhatsNewEntries(ids, locations) {
+            // The page is plain English: no translation keys.
+            var groupName = function(group) {
+                return ({people:'People',quality:'Quality',rating:'Rating',ageRating:'Age Rating',language:'Language',genre:'Genre',status:'Status',awards:'Awards',logos:'Logos',custom:'Custom'})[group] || jeHumanizeSettingId(group);
+            };
+            var entries = {};
+            var order = [];
+            ids.forEach(function(id) {
+                var at = locations[id];
+                if (!at || !at.tab) return;
+                var group = at.tab === 'groups' && at.group ? at.group : null;
+                var key = at.tab + ':' + (group || '');
+                if (!entries[key]) {
+                    var tabName = ({overview:'Overview',layout:'Layout defaults',groups:'Groups',rules:'Rules',colours:'Colours',badges:'Status badges',server:'Server'})[at.tab] || jeHumanizeSettingId(at.tab);
+                    entries[key] = {
+                        tab: 'media-tags',
+                        tabLabel: 'Media Tags',
+                        title: group ? tabName + ' \u203a ' + groupName(group) : tabName,
+                        href: '#/configurationpage?name=Jellyfin%20Enhanced&jeSection=media-tags&tab=' + encodeURIComponent(at.tab) + (group ? '&group=' + encodeURIComponent(group) : ''),
+                        mediaTags: { section: at.tab, group: group },
+                        ids: []
+                    };
+                    order.push(key);
+                }
+                entries[key].ids.push(id);
+            });
+            return order.map(function(key) { return entries[key]; });
+        }
+        // jeMediaTagsWhatsNewEntries: end
+
         // Warns when this build targets a different Jellyfin line or the file was replaced (GET host-compat).
         function checkHostCompat() {
             ApiClient.ajax({
@@ -5744,13 +5488,23 @@
                 var perSetting = Object.keys(newSettings).map(function(id) {
                     var el = document.getElementById(id);
                     var tabContent = el ? el.closest('.jellyfin-tab-content') : null;
+                    // The Media Tags tab's controls (when it is already open) get its own entries below.
+                    if (tabContent && tabContent.id === 'media-tags') return null;
                     return tabContent ? { id: id, tab: tabContent.id, selector: '#' + id, title: jeHumanizeSettingId(id), version: newSettings[id] } : null;
                 }).filter(Boolean);
 
-                var distinctVersions = new Set(perSetting.map(function(f) { return f.version; }));
-                var singleVersion = distinctVersions.size === 1 ? perSetting[0].version : null;
+                // Settings on the Media Tags tab get entries opening it there.
+                var mediaTags = (data && data.mediaTags) || {};
+                var onMain = new Set(perSetting.map(function(f) { return f.id; }));
+                var moved = Object.keys(newSettings).filter(function(id) { return !onMain.has(id) && mediaTags[id]; });
+                var je = window.JellyfinEnhanced;
+                var movedEntries = jeMediaTagsWhatsNewEntries(moved, mediaTags);
 
-                renderWhatsNewBanner(perSetting.length ? groupWhatsNewByFieldset(perSetting) : [], pluginVersion, singleVersion);
+                var versions = perSetting.map(function(f) { return f.version; }).concat(moved.map(function(id) { return newSettings[id]; }));
+                var distinctVersions = new Set(versions);
+                var singleVersion = distinctVersions.size === 1 ? versions[0] : null;
+
+                renderWhatsNewBanner((perSetting.length ? groupWhatsNewByFieldset(perSetting) : []).concat(movedEntries), pluginVersion, singleVersion);
                 renderWhatsNewBadges(perSetting);
             }).catch(function(err) {
                 console.warn('[JE] whats-new check failed:', err);
@@ -5889,7 +5643,9 @@
                     chip.className = 'je-whats-new-chip';
                     chip.textContent = f.tabLabel + ' > ' + f.title;
                     chip.addEventListener('click', function() {
-                        jeJumpToTab(f.tab, f.selector, f.flashSelectors);
+                        // Settings on the Media Tags tab: open it at their section, in place.
+                        if (f.mediaTags) jeOpenMediaTags(f.mediaTags.section, f.mediaTags.group, true);
+                        else jeJumpToTab(f.tab, f.selector, f.flashSelectors);
                     });
                     list.appendChild(chip);
                 });
@@ -6101,7 +5857,7 @@
 
             // Display
             feat('Remove from Continue Watching', bool('removeContinueWatchingEnabled'), 'display', 'Enabled');
-            var tagCount = ['qualityTagsEnabled','genreTagsEnabled','languageTagsEnabled','ratingTagsEnabled','ageRatingTagsEnabled','peopleTagsEnabled'].filter(bool).length;
+            var tagCount = ['QualityTagsEnabled','GenreTagsEnabled','LanguageTagsEnabled','RatingTagsEnabled','AgeRatingTagsEnabled','StatusTagsEnabled','AwardsTagsEnabled','LogoTagsEnabled','CustomTagsEnabled','PeopleTagsEnabled'].filter(function (k) { return _jeMediaTagsConfig && _jeMediaTagsConfig[k] === true; }).length;
             feat('Media Tags', tagCount > 0, 'display', tagCount + ' tag type(s) enabled');
             feat('Random Button', bool('randomButtonEnabled'), 'display', 'Enabled');
 
@@ -6364,7 +6120,7 @@
             CUSTOM_TABS_V12_HINTS.forEach(updateCustomTabsV12Hint);
             updateSearchExcludeLibraryWarning();
             PARENT_DEPS.forEach(updateParentDep);
-            updateClientTagCacheControlsVisibility();
+            updateClearTagCachesQuickBtnVisibility();
             // `updateStatusDashboard` and the legacy `renderChecklist` both
             // now delegate to `renderServiceStatusDashboard`. Calling both
             // here would rebuild the service grid TWICE per dependency tick
@@ -6701,36 +6457,6 @@
         // to the unified renderer instead of maintaining dead duplicates.
         function updateStatusDashboard() { renderServiceStatusDashboard(); }
 
-        /**
-         * Shows clear-client-cache controls only when server-side tag cache is disabled.
-         */
-        function updateClientTagCacheControlsVisibility() {
-            var serverModeCheckbox = document.getElementById('tagCacheServerMode');
-            var controls = document.getElementById('clientTagCacheControls');
-            var serverControls = document.getElementById('serverTagCacheControls');
-            var localStorageFallbackContainer = document.getElementById('tagsLocalStorageFallbackContainer');
-            var localStorageFallbackCheckbox = document.getElementById('enableTagsLocalStorageFallback');
-            if (!serverModeCheckbox || !controls) return;
-
-            if (serverControls) {
-                serverControls.style.display = serverModeCheckbox.checked ? '' : 'none';
-            }
-
-            if (localStorageFallbackContainer) {
-                var hide = serverModeCheckbox.checked ? 'none' : '';
-                localStorageFallbackContainer.style.display = hide;
-                var localStorageFallbackDesc = document.querySelector('[data-desc-for="enableTagsLocalStorageFallback"]');
-                if (localStorageFallbackDesc) localStorageFallbackDesc.style.display = hide;
-            }
-
-            if (!serverModeCheckbox.checked && localStorageFallbackCheckbox) {
-                localStorageFallbackCheckbox.checked = true;
-            }
-
-            controls.style.display = serverModeCheckbox.checked ? 'none' : '';
-            updateClearTagCachesQuickBtnVisibility();
-        }
-
         // Reactive dependency updates (debounced for text inputs, immediate for checkboxes)
         var depDebounce;
         /** Debounced wrapper that delays updateAllDependencies by 150ms. */
@@ -6742,7 +6468,6 @@
             document.querySelector(sel).addEventListener('input', debouncedUpdateDeps);
         });
         document.querySelector('#jellyseerrEnabled').addEventListener('change', updateAllDependencies);
-        document.querySelector('#tagCacheServerMode').addEventListener('change', updateAllDependencies);
         document.querySelector('#metadataIconsEnabled').addEventListener('change', updateAllDependencies);
         ['#jellyseerrUrls', '#JellyseerrApiKey'].forEach(function(sel) {
             document.querySelector(sel).addEventListener('input', debouncedUpdateDeps);
@@ -7189,7 +6914,12 @@
             });
         }
 
-        clearTagsCacheBtn.addEventListener('click', async () => {
+        /** Ask every client to drop its tag caches on its next load (Overview quick action), inside jeHoldMediaTags as Save. */
+        function jeClearClientTagCaches() {
+            return jeHoldMediaTags(jeClearClientTagCachesNow);
+        }
+
+        async function jeClearClientTagCachesNow() {
             if (await JEAdmin.confirm("Clear all client caches?\n\nThis will force all clients to clear their quality and genre tag caches on next page load.")) {
                 Dashboard.showLoadingMsg();
                 try {
@@ -7210,34 +6940,6 @@
                     });
                 }
             }
-        });
-        var rebuildTagCacheBtn = document.querySelector('#rebuildTagCacheBtn');
-        if (rebuildTagCacheBtn) {
-            rebuildTagCacheBtn.addEventListener('click', async () => {
-                if (!await JEAdmin.confirm("Rebuild the server tag cache?\n\nThis re-scans the whole library in the background and may take a few minutes. Tags keep serving from the existing cache until the rebuild finishes.")) {
-                    return;
-                }
-                rebuildTagCacheBtn.disabled = true;
-                try {
-                    const url = ApiClient.getUrl('/JellyfinEnhanced/tag-cache/rebuild');
-                    const res = await ApiClient.ajax({ type: 'POST', url: url, dataType: 'json' });
-                    Dashboard.alert({
-                        title: 'Rebuild Started',
-                        message: (res && res.message) || 'Rebuilding the tag cache in the background. Check the server logs for progress and completion.'
-                    });
-                } catch (e) {
-                    console.error('Failed to start tag cache rebuild:', e);
-                    var message = 'Failed to start the rebuild. Check server logs for details.';
-                    if (e && e.status === 409) {
-                        message = 'A tag cache rebuild is already in progress.';
-                    } else if (e && e.status === 400) {
-                        message = 'Enable Server-Side Tag Cache first.';
-                    }
-                    Dashboard.alert({ title: 'Error', message: message });
-                } finally {
-                    rebuildTagCacheBtn.disabled = false;
-                }
-            });
         }
 
         testJellyseerrBtn.addEventListener('click', testJellyseerrConnection);
@@ -7465,15 +7167,12 @@
         }
 
         /**
-         * Quick Action: proxy the "Clear client tag caches" button from the
-         * Display tab. Keeps the canonical clear-flow in one place while
-         * giving the action a home on Overview.
+         * Quick Action: clear every client's tag caches (the same signal as
+         * the Media Tags tab's Server section sends).
          */
         var clearTagCachesQuickBtn = document.getElementById('clearTagCachesQuickBtn');
-        if (clearTagCachesQuickBtn && clearTagsCacheBtn) {
-            clearTagCachesQuickBtn.addEventListener('click', function() {
-                clearTagsCacheBtn.click();
-            });
+        if (clearTagCachesQuickBtn) {
+            clearTagCachesQuickBtn.addEventListener('click', jeClearClientTagCaches);
         }
 
         /**
@@ -7482,9 +7181,8 @@
          * is disabled.
          */
         function updateClearTagCachesQuickBtnVisibility() {
-            var serverModeCheckbox = document.getElementById('tagCacheServerMode');
-            if (!clearTagCachesQuickBtn || !serverModeCheckbox) return;
-            clearTagCachesQuickBtn.style.display = serverModeCheckbox.checked ? 'none' : '';
+            if (!clearTagCachesQuickBtn || !_jeMediaTagsConfig) return;
+            clearTagCachesQuickBtn.style.display = _jeMediaTagsConfig.TagCacheServerMode !== false ? 'none' : '';
         }
 
         /**

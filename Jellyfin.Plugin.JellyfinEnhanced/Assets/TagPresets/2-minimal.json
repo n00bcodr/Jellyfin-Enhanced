@@ -1,0 +1,31 @@
+{
+  "v": 1,
+  "kind": "je-media-tags-preset",
+  "id": "minimal",
+  "name": "Minimal",
+  "description": "Just resolution and one score in small, compact chips; everything else stays off.",
+  "settings": {
+    "QualityTagsEnabled": true,
+    "GenreTagsEnabled": false,
+    "LanguageTagsEnabled": false,
+    "RatingTagsEnabled": true,
+    "AgeRatingTagsEnabled": false,
+    "StatusTagsEnabled": false,
+    "AwardsTagsEnabled": false,
+    "LogoTagsEnabled": false,
+    "PeopleTagsEnabled": false,
+    "ShowResolutionTag": true,
+    "ShowSourceTag": false,
+    "ShowEditionTag": false,
+    "ShowDynamicRangeTag": false,
+    "ShowSpecialFormatTag": false,
+    "ShowVideoCodecTag": false,
+    "ShowAudioInfoTag": false,
+    "RatingTagsSources": ["community"],
+    "TagLayout": "minimal",
+    "TagLayoutSettingsVersion": 1,
+    "TagLabelDensity": "compact",
+    "TagScale": "smaller",
+    "TagGap": "tight"
+  }
+}

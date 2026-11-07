@@ -807,7 +807,9 @@
 
             const text = document.createElement('span');
             text.className = 'je-people-age-text';
-            text.textContent = `${age}y`;
+            // "42y" in the user's language: the short age unit comes from the locale files.
+            const short = typeof JE.t === 'function' ? JE.t('tag_people_age_short', { age }) : 'tag_people_age_short';
+            text.textContent = short === 'tag_people_age_short' ? `${age}y` : short;
             ageChip.appendChild(text);
 
             return ageChip;

@@ -9,7 +9,7 @@ Use Jellyfin Enhanced's shortcuts, browsing tools, and player controls to make J
 **Open your personal settings:**
 
 1. Press ++question++ outside a text field to open the Enhanced panel. You can also choose **Enhanced Panel** under the **Jellyfin Enhanced** drawer heading, **Jellyfin Enhanced** in Jellyfin 12's avatar menu, or **Jellyfin Enhanced - User Settings** in user preferences. During playback in mobile or TV web layouts, use the tune button titled **Jellyfin Enhanced** when the player controls are available. Desktop layouts hide this button.
-2. Use **Search settings…** or select the section named in the feature below. On phones, use the back arrow to return to the section list.
+2. Use **Search settings…** or select the section named in the feature below. On phones, use the back arrow to return to the section list. On desktop, use **Default** / **Large** / **Fill** in the header or drag the bottom-right corner to resize the panel; see [Enhanced Panel](enhanced-settings.md#enhanced-panel).
 3. Close with ×, ++escape++, or ++question++.
 
 **Open admin settings:** Go to **Dashboard → Plugins → Jellyfin Enhanced**. Tables below show stock defaults for a new installation.
@@ -773,13 +773,13 @@ See total file size and available audio languages in a title's detail informatio
 
 **How to use:**
 
-1. Open **UI Settings** and enable the chip you want.
+1. Enable **Show File Sizes** in **UI Settings** or **Show Audio Languages** in **Media Tags** (**Layout** tab).
 2. Open a detail page. Selecting another media version changes its size and audio-language data.
 
 | Setting | Default | What it does |
 |---|---|---|
 | **Show file sizes** — admin **Display**; **Show File Sizes** — personal **UI Settings** | Off | Shows total file size. |
-| **Show available audio languages on item detail page** — admin **Display**; **Show Audio Languages** — personal **UI Settings** | On | Shows detail-page audio-language chips. |
+| **Show available audio languages on item detail page** — admin **Display**; **Show Audio Languages** — personal **Media Tags** | On | Shows detail-page audio-language chips. |
 
 ??? note "Supported items and audio-language links"
 

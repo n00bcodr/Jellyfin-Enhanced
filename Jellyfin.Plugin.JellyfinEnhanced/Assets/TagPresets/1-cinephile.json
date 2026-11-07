@@ -1,0 +1,33 @@
+{
+  "v": 1,
+  "kind": "je-media-tags-preset",
+  "id": "cinephile",
+  "name": "Cinephile",
+  "description": "Quality, critics' scores and awards up front, with ratings coloured by score.",
+  "settings": {
+    "QualityTagsEnabled": true,
+    "GenreTagsEnabled": false,
+    "LanguageTagsEnabled": true,
+    "RatingTagsEnabled": true,
+    "AgeRatingTagsEnabled": true,
+    "StatusTagsEnabled": true,
+    "AwardsTagsEnabled": true,
+    "LogoTagsEnabled": false,
+    "ShowResolutionTag": true,
+    "ShowSourceTag": true,
+    "ShowEditionTag": true,
+    "ShowDynamicRangeTag": true,
+    "ShowSpecialFormatTag": true,
+    "ShowVideoCodecTag": false,
+    "ShowAudioInfoTag": true,
+    "RatingTagsSources": ["imdb", "rtCritic", "metacritic"],
+    "RatingTagsColorByScore": true,
+    "LanguageTagsStyle": "codes",
+    "TagLayout": "corners",
+    "TagLayoutSettingsVersion": 1,
+    "TagGroupOrder": ["awards", "quality", "rating", "status", "ageRating", "language", "genre", "logos", "custom"],
+    "TagLabelDensity": "full",
+    "TagScale": "default",
+    "TagGap": "default"
+  }
+}

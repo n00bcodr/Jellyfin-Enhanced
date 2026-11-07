@@ -23,7 +23,7 @@ export function discoverTests(directory = frontendRoot) {
  * applies --test-timeout to each test file as a whole, newer Node to each test,
  * so the limit leaves room for the heaviest file on a slow runner.
  */
-export const testArguments = ['--test-timeout=120000'];
+export const testArguments = ['--test-timeout=300000', '--test-concurrency=4'];
 
 /** Dates and locale-formatted text must not depend on the machine running the tests. */
 export function testEnvironment(extra = {}) {

@@ -284,12 +284,14 @@
   "tv"
  ],
  "inputs": {
-  "Jellyfin.Plugin.JellyfinEnhanced/js/core/media-language.js": "c5b774773a42ef0da0c6dd3b55aee5aa3acb37434d6c0d1188ba0448745962b6",
+  "Jellyfin.Plugin.JellyfinEnhanced/js/core/media-language.js": "2ab0347859b3c81faa94a94098490a9163ec2a98026a9d5a693cb51f73523968",
   "Jellyfin.Plugin.JellyfinEnhanced/js/fonts/materialsymbolsoutlined.woff2": "5741bbaa09c4b7d9654753144a38133072ca51cf0c931d13ab93bd391c3fc8be",
   "Jellyfin.Plugin.JellyfinEnhanced/js/fonts/materialsymbolsrounded.woff2": "05cc9b9f8de1f641e9f8e54106c8fa665a834c7fbfab573b4f5a81704e78170a",
-  "Jellyfin.Plugin.JellyfinEnhanced/js/tags/genretags.js": "9624d29a2e4ef5eb02582385566f18d8f5fdbdba134d5b2ea54af08e970bf2a3",
-  "Jellyfin.Plugin.JellyfinEnhanced/js/tags/qualitytags.js": "6a9259059009079b44496068815dbea60a32d741d2217742e9c2e7f45ac28aaa",
-  "css/ratings.css": "56b280ac8d014d035a64ac1e7180138bc7de00e60235dbf9b3e254711ce2d0a5"
+  "Jellyfin.Plugin.JellyfinEnhanced/js/tags/awardstags.js": "5ea90904e27ae720458f6031ce72bec79bfd853afedcd6a3b34f8ef9c4904e30",
+  "Jellyfin.Plugin.JellyfinEnhanced/js/tags/genretags.js": "0d2e7c5f84d91ee8d7ef30a1bbaff5f3c1dbd386b54917ac3d1058f1881c7bd1",
+  "Jellyfin.Plugin.JellyfinEnhanced/js/tags/qualitytags.js": "6a99dba6fe1c2581ebd9ffa3aeed2102c196d0fafa1dc749416ed6eaa88c036e",
+  "Jellyfin.Plugin.JellyfinEnhanced/js/tags/rating-sources.js": "ff7874f3c8bb2941c799390ae05a6b1439bdaaa22df0ce5bc90696f0016e727d",
+  "css/ratings.css": "cf8a14faa201aa641db299098ecfed375ff0d5239034e3c9ec0ef70dc1a84b9c"
  },
  "options": {
   "flagSize": [
@@ -308,12 +310,16 @@
  },
  "outputs": {
   "THIRD_PARTY_NOTICES.md": {
-   "bytes": 19280,
-   "sha256": "cd1ee2442b7350ab708e7a1cfb3cdd821f5347c138a65616e1e7f4a308151d9c"
+   "bytes": 19890,
+   "sha256": "f1f5c5e1d3bd5ab3d6720561e98c2544e50f0e6900e53a517d8f54bd61dac5ec"
   },
   "age-rating-colours.json": {
-   "bytes": 4563,
-   "sha256": "1be4462df3f53a849d24e5425bcacfe6828cd8dcb1a8a61538ff696865aedf12"
+   "bytes": 9216,
+   "sha256": "bec17a8d11b261675efb9e5ae8a1a1e82cf18b06b35186daa03667957273dea7"
+  },
+  "award-icons.json": {
+   "bytes": 992,
+   "sha256": "75f2d93d82f864f03ecb30f916eebd96d0debd59ef4e9e9c1f3e42125a4c2d5b"
   },
   "flags/ad.webp": {
    "bytes": 3660,
@@ -1336,8 +1342,12 @@
    "sha256": "a249cbadf75c4df7a63d0dc1b42d70be21bbf98f3a749b6db2a80016ebda9640"
   },
   "quality-colours.json": {
-   "bytes": 2800,
-   "sha256": "c1d0aa18e80e5eb2f652853741712a2a75553b642cd4a869853e5d1607421e83"
+   "bytes": 6539,
+   "sha256": "1cfd0f626e6d9054b0406b7cc22a4d3ae4925714cc11df28d50604e654745d91"
+  },
+  "rating-source-icons.json": {
+   "bytes": 1450,
+   "sha256": "b6727981a3d05f949b7ffbf899f2dde344a5c62a989a3f6023e3fd50c81bd109"
   },
   "vector-icons.json": {
    "bytes": 1587,
@@ -1378,12 +1388,12 @@
  },
  "tools": {
   "brotli": "1.2.0",
-  "fonttools": "4.63.0",
+  "fonttools": "4.64.0",
   "libwebp": "1.6.0",
-  "node": "v26.2.0",
-  "pillow": "12.2.0",
+  "node": "v26.8.1",
+  "pillow": "12.3.0",
   "playwright": "1.58.2",
-  "python": "3.14.5"
+  "python": "3.14.7"
  },
  "zxxSvgSha256": "b39ab2eb619909034de25222af135aff03c637a0d4de22756e88de2b13514e85"
 }

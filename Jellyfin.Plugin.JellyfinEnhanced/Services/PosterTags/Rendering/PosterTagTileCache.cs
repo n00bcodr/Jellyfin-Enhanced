@@ -74,7 +74,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 return default;
             }
 
-            long size = ((long)image.Width * image.Height * 4) + EntryOverheadBytes + (2L * (key.Text.Length + key.Style.Length));
+            long size = ((long)image.Width * image.Height * 4) + EntryOverheadBytes + (2L * (key.Text.Length + key.Style.Length + key.Category.Length));
             var node = new Node(key, image, size) { Leases = 1 };
             lock (_gate)
             {
@@ -214,14 +214,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
         int DeviceHeight,
         int PhaseX,
         int PhaseY,
-        SKRectI Crop);
+        SKRectI Crop,
+        string Category,
+        float TagScale = 1f,
+        float TagGap = 1f);
 
     internal enum PosterTagTileKind
     {
         Quality,
         Genre,
         Rating,
+        Award,
         AgeRating,
         Flag,
+        LanguageChip,
+        Status,
+        Overflow,
+        Logo,
+        Custom,
     }
 }

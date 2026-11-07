@@ -1,12 +1,13 @@
 using System;
 using System.Globalization;
 using SkiaSharp;
+using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
 {
     /// <summary>
     /// The web tags' CSS, evaluated for one logical card width. Every length is in CSS px of a card
-    /// <see cref="CardWidth"/> px wide (the container-query rules in tag-pipeline.js and ageratingtags.js);
+    /// <see cref="CardWidth"/> px wide (the container-query rules in tag-pipeline.js, ageratingtags.js and logotags.js);
     /// the renderer scales them to the image afterwards.
     /// </summary>
     internal readonly struct PosterTagCss
@@ -17,7 +18,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
         /// <summary>Logical card width of a landscape (thumb) card, in CSS px.</summary>
         public const float LandscapeCardWidth = 290f;
 
-        /// <summary>Distance of every tag container from the two edges of its corner.</summary>
+        /// <summary>Default distance of every tag container from the two edges of its corner (<c>PosterTagLayout.EdgeInset</c> sets it per layout).</summary>
         public const float CornerInset = 6f;
 
         /// <summary>Gap the corner stacking leaves between containers sharing a corner (CORNER_STACK_GAP).</summary>
@@ -32,42 +33,79 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
         /// <summary>Fixed size of the user-review <c>person_heart</c> icon (<c>font-size: 14px !important</c>).</summary>
         public const float UserReviewIconSize = 14f;
 
+        /// <summary>customtags.js: the container's gap between Custom chips (px).</summary>
+        public const float CustomGap = 3f;
+
+        /// <summary>customtags.js: the icon's font size (em of the chip font).</summary>
+        public const float CustomIconScale = 1.2f;
+
+        /// <summary>customtags.js: the gap between icon and label (em of the chip font).</summary>
+        public const float CustomIconGapEm = 0.3f;
+
+        /// <summary>customtags.js: the chip's line height.</summary>
+        public const float CustomLineHeight = 1.15f;
+
         /// <summary>Synthesised small caps: lowercase letters drawn as capitals at this fraction of the font size (rounded).</summary>
         public const float SmallCapsScale = 0.7f;
 
-        public PosterTagCss(float cardWidth)
+        // .je-tag-more scales with the host's tag scale, independently of responsive chip clamps.
+        public float OverflowFontSize => 11f * Scale;
+        public float OverflowPaddingV => 2f * Scale;
+        public float OverflowPaddingH => 5f * Scale;
+        public const float OverflowRadius = 3f;
+        public float OverflowLineHeight => Lu(OverflowFontSize * 1.15f);
+
+        public PosterTagCss(float cardWidth, string tagScale = "default", string tagGap = "default")
         {
             CardWidth = cardWidth;
+            Scale = TagLayoutRules.ScaleFactor(tagScale);
+            Gap = TagLayoutRules.GapFactor(tagGap);
+            StackGap = CornerStackGap * Scale * Gap;
+            IndicatorOffset = TopRightIndicatorOffset * Scale;
             float cqw = cardWidth / 100f;
 
-            QualityFontSize = Clamp(9f, 6.6f * cqw, 13.6f);
-            QualityPaddingV = Clamp(0f, 0.6f * cqw, 2f);
-            QualityPaddingH = Clamp(4f, 4.2f * cqw, 10f);
-            QualityRadius = Clamp(2f, 2.4f * cqw, 5f);
-            QualityGap = Clamp(1f, 1.8f * cqw, 4f);
+            QualityFontSize = Clamp(9f, 6.6f * cqw, 13.6f) * Scale;
+            QualityPaddingV = Clamp(0f, 0.6f * cqw, 2f) * Scale;
+            QualityPaddingH = Clamp(4f, 4.2f * cqw, 10f) * Scale;
+            LanguageCodePaddingH = Clamp(2f, 1.5f * cqw, 4f) * Scale;
+            QualityRadius = Clamp(2f, 2.4f * cqw, 5f) * Scale;
+            QualityGap = Clamp(1f, 1.8f * cqw, 4f) * Scale * Gap;
 
-            GenreSize = Clamp(18f, 15f * cqw, 30f);
-            GenreGlyphSize = Clamp(11f, 9.5f * cqw, 20f);
-            GenreGap = Clamp(2f, 1.8f * cqw, 4f);
+            GenreSize = Clamp(18f, 15f * cqw, 30f) * Scale;
+            GenreGlyphSize = Clamp(11f, 9.5f * cqw, 20f) * Scale;
+            GenreGap = Clamp(2f, 1.8f * cqw, 4f) * Scale * Gap;
 
-            FlagWidth = Clamp(16f, 15f * cqw, 32f);
-            LanguageGap = Clamp(1f, 1.8f * cqw, 3f);
+            FlagWidth = Clamp(16f, 15f * cqw, 32f) * Scale;
+            LanguageGap = Clamp(1f, 1.8f * cqw, 3f) * Scale * Gap;
 
-            RatingGap = Clamp(2f, 1.8f * cqw, 3f);
-            ChipFontSize = Clamp(9f, 6.8f * cqw, 13f);
-            ChipPaddingV = Clamp(2f, 2f * cqw, 4f);
-            ChipPaddingH = Clamp(4f, 4.5f * cqw, 8f);
-            RatingInnerGap = Clamp(2f, 2.2f * cqw, 4f);
-            RatingIconSize = Clamp(9f, 7f * cqw, 14f);
+            RatingGap = Clamp(2f, 1.8f * cqw, 3f) * Scale * Gap;
+            ChipFontSize = Clamp(9f, 6.8f * cqw, 13f) * Scale;
+            ChipPaddingV = Clamp(2f, 2f * cqw, 4f) * Scale;
+            ChipPaddingH = Clamp(4f, 4.5f * cqw, 8f) * Scale;
+            RatingInnerGap = Clamp(2f, 2.2f * cqw, 4f) * Scale;
+            RatingIconSize = Clamp(9f, 7f * cqw, 14f) * Scale;
+
+            LogoHeight = Clamp(18f, 13f * cqw, 28f) * Scale;
+            LogoFontSize = Clamp(9f, 6.4f * cqw, 12f) * Scale;
         }
 
         public float CardWidth { get; }
+        public float Scale { get; }
+        public float Gap { get; }
+        public float StackGap { get; }
+        public float IndicatorOffset { get; }
 
         public float QualityFontSize { get; }
 
         public float QualityPaddingV { get; }
 
         public float QualityPaddingH { get; }
+
+        /// <summary>Tight padding for a two/three-letter audio language code.</summary>
+        public float LanguageCodePaddingH { get; }
+
+        /// <summary>Code-only chips keep the quality font with less horizontal padding.</summary>
+        public float LanguagePaddingH(LanguageTag tag) => tag.Code is not null && tag.CountBadge is null && !tag.Subtitle ? LanguageCodePaddingH : QualityPaddingH;
 
         public float QualityRadius { get; }
 
@@ -99,6 +137,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
 
         /// <summary>Star glyph size and tomato box size.</summary>
         public float RatingIconSize { get; }
+
+        /// <summary>Border-box height of a Logos chip (logotags.js <c>height: clamp(18px, 13cqw, 28px)</c>).</summary>
+        public float LogoHeight { get; }
+
+        /// <summary>Font size of a Logos name chip.</summary>
+        public float LogoFontSize { get; }
+
+        /// <summary>Gap between Logos chips (<c>gap: 4px</c>).</summary>
+        public const float LogoGap = 4f;
+
+        /// <summary>Widest logo image (<c>max-width: 72px</c>).</summary>
+        public const float LogoMaxImageWidth = 72f;
+
+        /// <summary>Vertical / horizontal padding of a Logos chip; provider logos use 2px all round.</summary>
+        public const float LogoPaddingV = 3f;
+
+        public const float LogoPaddingH = 6f;
+
+        public const float LogoProviderPadding = 2f;
 
         private static float Clamp(float min, float value, float max) => Math.Max(min, Math.Min(max, value));
 

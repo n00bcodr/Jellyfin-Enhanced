@@ -43,7 +43,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private static readonly TimeSpan RetryTtl = TimeSpan.FromHours(1);
         private static readonly TimeSpan SaveDebounce = TimeSpan.FromSeconds(10);
         private static readonly TimeSpan SaveMaxWait = TimeSpan.FromMinutes(2);
-        private const int CurrentSchemaVersion = 1;
+        private const int CurrentSchemaVersion = 2;
 
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly IApplicationPaths _applicationPaths;
@@ -69,6 +69,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public const int SafetyMargin = 5;
         private readonly object _accountStatusLock = new();
         private MdblistAccountStatus? _accountStatus;
+        // Requests counted locally so far, and the /user queries started and
+        // last published, all under _accountStatusLock. A /user answer is
+        // reconciled against the requests spent since it was started, so a
+        // slow response can't hand back quota that has already been used.
+        private long _quotaSpent;
+        private long _accountStatusQueries;
+        private long _accountStatusPublishedQuery;
 
         public MdblistService(IHttpClientFactory httpClientFactory, IApplicationPaths applicationPaths, Logger logger)
         {
@@ -108,6 +115,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
 
                 var fetched = await FetchFromMdblistAsync(mediaType, tmdbId, cancellationToken).ConfigureAwait(false);
+                // A caller that gave up must not publish anything: the cache is
+                // shared with the tag-rating warmers and every other viewer.
+                cancellationToken.ThrowIfCancellationRequested();
+                fetched = KeepLastGood(cached, fetched);
                 _cache[key] = fetched;
                 ScheduleDebouncedSave();
                 return fetched;
@@ -124,9 +135,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private static bool IsExpired(MdblistCacheEntry entry)
         {
+            if (entry.RetryAfterUnixMs is { } retryAfter) return DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() >= retryAfter;
             var age = DateTimeOffset.UtcNow - DateTimeOffset.FromUnixTimeMilliseconds(entry.FetchedAtUnixMs);
             if (entry.Found) return age > PositiveTtl;
             return age > (entry.Confirmed ? NegativeTtl : RetryTtl);
+        }
+
+        /// <summary>
+        /// The entry to store after a lookup: the fresh answer, except that a failed lookup (not a
+        /// confirmed answer) for a title that has ratings keeps those ratings and their age, and
+        /// only schedules the next attempt (RetryTtl), so a provider outage never erases scores.
+        /// </summary>
+        internal static MdblistCacheEntry KeepLastGood(MdblistCacheEntry? previous, MdblistCacheEntry fresh)
+        {
+            if (fresh.Confirmed || previous is not { Found: true }) return fresh;
+            return new MdblistCacheEntry
+            {
+                Found = true,
+                Confirmed = previous.Confirmed,
+                Ratings = previous.Ratings,
+                Ids = previous.Ids,
+                FetchedAtUnixMs = previous.FetchedAtUnixMs,
+                RetryAfterUnixMs = fresh.FetchedAtUnixMs + (long)RetryTtl.TotalMilliseconds,
+            };
         }
 
         /// <summary>Cache-only read, no network call: whatever's currently on disk/in
@@ -136,6 +167,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// already populated; it never calls MDBList itself.</summary>
         public MdblistCacheEntry? GetCachedEntry(string mediaType, string tmdbId) =>
             _cache.TryGetValue(CacheKey(mediaType, tmdbId), out var entry) ? entry : null;
+
+        /// <summary>
+        /// When this title's cached answer stops being current (Unix ms): its retry time after a failed
+        /// refresh, else its fetch time plus the found, confirmed-missing or failure lifetime, the moment
+        /// <see cref="NeedsFetch"/> turns true. Null when nothing is cached for it.
+        /// </summary>
+        public long? RefreshAtUnixMs(string mediaType, string tmdbId)
+        {
+            if (!_cache.TryGetValue(CacheKey(mediaType, tmdbId), out var entry)) return null;
+            if (entry.RetryAfterUnixMs is { } retryAfter) return retryAfter;
+            var ttl = entry.Found ? PositiveTtl : entry.Confirmed ? NegativeTtl : RetryTtl;
+            return entry.FetchedAtUnixMs + (long)ttl.TotalMilliseconds;
+        }
 
         /// <summary>True when this title has no cached entry yet, or its cached entry
         /// is stale enough to be worth a real MDBList lookup (see IsExpired). Used by
@@ -199,7 +243,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// instead of the saved config's; always fetched fresh and never
         /// cached/stored, so it can't pollute the real quota tracking with a
         /// key that isn't actually the one in use.</param>
-        public async Task<MdblistAccountStatus?> GetAccountStatusAsync(CancellationToken cancellationToken, bool forceRefresh = false, string? apiKeyOverride = null)
+        public Task<MdblistAccountStatus?> GetAccountStatusAsync(CancellationToken cancellationToken, bool forceRefresh = false, string? apiKeyOverride = null) =>
+            GetAccountStatusCoreAsync(cancellationToken, forceRefresh, apiKeyOverride, quotaGateHeld: false);
+
+        /// <summary>GetAccountStatusAsync for callers that may already hold
+        /// _backgroundQuotaGate (quotaGateHeld), which the publication of a
+        /// fresh status otherwise takes so it can't land between a background
+        /// batch's reserve check and its decrement.</summary>
+        private async Task<MdblistAccountStatus?> GetAccountStatusCoreAsync(CancellationToken cancellationToken, bool forceRefresh, string? apiKeyOverride, bool quotaGateHeld)
         {
             var testingOverride = !string.IsNullOrWhiteSpace(apiKeyOverride);
 
@@ -217,6 +268,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             var apiKey = testingOverride ? apiKeyOverride : JellyfinEnhanced.Instance?.Configuration?.MdblistApiKey;
             if (string.IsNullOrWhiteSpace(apiKey)) return null;
+
+            long query, spentAtStart;
+            lock (_accountStatusLock)
+            {
+                query = ++_accountStatusQueries;
+                spentAtStart = _quotaSpent;
+            }
 
             try
             {
@@ -245,16 +303,49 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     FetchedAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                 };
 
-                if (!testingOverride)
+                if (testingOverride) return status;
+
+                if (!quotaGateHeld) await _backgroundQuotaGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+                try
                 {
-                    lock (_accountStatusLock) { _accountStatus = status; }
+                    lock (_accountStatusLock)
+                    {
+                        // A query older than the one already published is
+                        // superseded; otherwise take off whatever was spent
+                        // locally after it was sent, which its answer may not
+                        // include yet.
+                        if (query < _accountStatusPublishedQuery && _accountStatus != null) return _accountStatus;
+                        status.RateLimitRemaining = (int)Math.Max(0, status.RateLimitRemaining - (_quotaSpent - spentAtStart));
+                        _accountStatus = status;
+                        _accountStatusPublishedQuery = query;
+                        return status;
+                    }
                 }
-                return status;
+                finally
+                {
+                    if (!quotaGateHeld) _backgroundQuotaGate.Release();
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {
-                _logger.Warning($"[MDBList] Failed to fetch account status: {ex.Message}");
+                _logger.Warning($"[MDBList] Failed to fetch account status: {ex.GetType().Name}");
                 return null;
+            }
+        }
+
+        private void RecordQuotaSpent()
+        {
+            lock (_accountStatusLock)
+            {
+                _quotaSpent++;
+                if (_accountStatus != null)
+                {
+                    _accountStatus.RateLimitRemaining = Math.Max(0, _accountStatus.RateLimitRemaining - 1);
+                }
             }
         }
 
@@ -293,13 +384,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // status immediately: a burst of back-to-back calls within the
                 // same AccountStatusTtl window should still throttle correctly
                 // rather than all reading the same stale "remaining" value.
-                lock (_accountStatusLock)
-                {
-                    if (_accountStatus != null)
-                    {
-                        _accountStatus.RateLimitRemaining = Math.Max(0, _accountStatus.RateLimitRemaining - 1);
-                    }
-                }
+                RecordQuotaSpent();
 
                 if (!response.IsSuccessStatusCode)
                 {
@@ -312,6 +397,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                 return ParseResponse(doc, now);
             }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
             catch (Exception ex)
             {
                 // Network hiccup, timeout, malformed response: never let a
@@ -319,7 +408,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // short-lived miss (RetryTtl, not NegativeTtl) so the same
                 // title isn't retried on every view but isn't trusted as a
                 // confirmed "no data" either.
-                _logger.Warning($"[MDBList] Failed to fetch ratings for {mediaType}:{tmdbId}: {ex.Message}");
+                _logger.Warning($"[MDBList] Failed to fetch ratings for {mediaType}:{tmdbId}: {ex.GetType().Name}");
                 return new MdblistCacheEntry { Found = false, Confirmed = false, FetchedAtUnixMs = now };
             }
         }
@@ -328,8 +417,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// Batch media lookup: one MDBList request resolves however many ids
         /// are passed in, by TMDB id, in the same shape ParseResponse parses
         /// for the single-item endpoint (every rating source, votes,
-        /// per-source urls, and cross-provider ids). Used by
-        /// MdblistRatingsFetchRunner to warm mdblist-ratings.json for both the
+        /// per-source urls, and cross-provider ids). Reached only through
+        /// GetMediaBatchWithinReserveAsync, which MdblistRatingsFetchRunner and
+        /// the tag-rating warmers use to warm mdblist-ratings.json for both the
         /// item-details display and MdblistRatingsSyncTask's Jellyfin-field
         /// sync to read from.
         ///
@@ -338,14 +428,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// MDBList data, not an error). Returns null on failure (bad key,
         /// network error, quota exhausted).
         /// </summary>
-        public async Task<Dictionary<string, MdblistCacheEntry>?> GetMediaBatchAsync(string mediaType, IReadOnlyList<string> tmdbIds, CancellationToken cancellationToken)
+        private async Task<Dictionary<string, MdblistCacheEntry>?> GetMediaBatchAsync(string mediaType, IReadOnlyList<string> tmdbIds, CancellationToken cancellationToken)
         {
             if (tmdbIds == null || tmdbIds.Count == 0) return new Dictionary<string, MdblistCacheEntry>();
 
             var apiKey = JellyfinEnhanced.Instance?.Configuration?.MdblistApiKey;
             if (string.IsNullOrWhiteSpace(apiKey)) return null;
 
-            var status = await GetAccountStatusAsync(cancellationToken).ConfigureAwait(false);
+            var status = await GetAccountStatusCoreAsync(cancellationToken, false, null, quotaGateHeld: true).ConfigureAwait(false);
             if (status != null && status.RateLimitRemaining <= SafetyMargin)
             {
                 _logger.Warning($"[MDBList] Only {status.RateLimitRemaining} requests remaining today, skipping media batch lookup for {mediaType} ({tmdbIds.Count} ids)");
@@ -371,19 +461,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                 // The request was made either way; see the matching comment in
                 // FetchFromMdblistAsync for why this decrements immediately.
-                lock (_accountStatusLock)
-                {
-                    if (_accountStatus != null)
-                    {
-                        _accountStatus.RateLimitRemaining = Math.Max(0, _accountStatus.RateLimitRemaining - 1);
-                    }
-                }
+                RecordQuotaSpent();
 
                 var responseBody = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    _logger.Warning($"[MDBList] Media batch query failed ({(int)response.StatusCode}) for {mediaType} ({tmdbIds.Count} ids). Body: {Truncate(responseBody, 500)}");
+                    _logger.Warning($"[MDBList] Media batch query failed ({(int)response.StatusCode}) for {mediaType} ({tmdbIds.Count} ids).");
                     return null;
                 }
 
@@ -407,20 +491,139 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
                 else
                 {
-                    _logger.Warning($"[MDBList] Media batch response for {mediaType} wasn't a JSON array as expected. Body: {Truncate(responseBody, 500)}");
+                    _logger.Warning($"[MDBList] Media batch response for {mediaType} wasn't a JSON array as expected.");
                 }
 
                 return result;
             }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
             catch (Exception ex)
             {
-                _logger.Warning($"[MDBList] Failed to fetch media batch for {mediaType} ({tmdbIds.Count} ids): {ex.Message}");
+                _logger.Warning($"[MDBList] Failed to fetch media batch for {mediaType} ({tmdbIds.Count} ids): {ex.GetType().Name}");
                 return null;
             }
         }
 
-        private static string Truncate(string s, int maxLength) =>
-            string.IsNullOrEmpty(s) || s.Length <= maxLength ? s : s.Substring(0, maxLength) + "...";
+        private readonly SemaphoreSlim _tagRatingsGate = new(1, 1);
+
+        // One background batch at a time across the bulk runner and the
+        // incremental warmers, held from the reserve check through the request
+        // and its local quota decrement, so two callers can never both pass
+        // the same "remaining > reserve" check. Every fresh /user status is
+        // published under it too (GetAccountStatusCoreAsync).
+        private readonly SemaphoreSlim _backgroundQuotaGate = new(1, 1);
+
+        /// <summary>
+        /// The only way background callers (MdblistRatingsFetchRunner and
+        /// WarmTagRatingsAsync) reach MDBList's batch endpoint: checks the
+        /// remaining quota against the caller's reserve (never below
+        /// SafetyMargin) and sends the batch under one shared gate. Unknown
+        /// account status sends nothing.
+        /// </summary>
+        public async Task<MdblistReservedBatch> GetMediaBatchWithinReserveAsync(string mediaType, IReadOnlyList<string> tmdbIds, int reserve, CancellationToken cancellationToken)
+        {
+            await _backgroundQuotaGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                if (await GetAccountStatusCoreAsync(cancellationToken, false, null, quotaGateHeld: true).ConfigureAwait(false) == null)
+                {
+                    return new MdblistReservedBatch(MdblistReservedBatchStatus.QuotaUnknown, null, null);
+                }
+
+                // Read under the status lock: the cached status is decremented in place after each request.
+                var remaining = RemainingQuota();
+                if (remaining == null) return new MdblistReservedBatch(MdblistReservedBatchStatus.QuotaUnknown, null, null);
+                if (remaining.Value <= Math.Max(SafetyMargin, reserve))
+                {
+                    return new MdblistReservedBatch(MdblistReservedBatchStatus.ReserveReached, remaining, null);
+                }
+
+                var results = await GetMediaBatchAsync(mediaType, tmdbIds, cancellationToken).ConfigureAwait(false);
+                return new MdblistReservedBatch(results == null ? MdblistReservedBatchStatus.Failed : MdblistReservedBatchStatus.Sent, RemainingQuota(), results);
+            }
+            finally { _backgroundQuotaGate.Release(); }
+        }
+
+        /// <summary>
+        /// Fetch a bounded Awards chart under the same reserve/status/spend gate as
+        /// background rating batches. Unknown quota sends nothing; callers retain
+        /// their last good snapshot and retry rather than confirming a missing chart.
+        /// </summary>
+        internal async Task<Dictionary<string, int>?> GetAwardListWithinReserveAsync(string id, int reserve, CancellationToken cancellationToken)
+        {
+            var apiKey = JellyfinEnhanced.Instance?.Configuration.MdblistApiKey;
+            if (string.IsNullOrWhiteSpace(apiKey) || !AwardTagsService.IsListId(id)) return null;
+            await _backgroundQuotaGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                if (await GetAccountStatusCoreAsync(cancellationToken, false, null, quotaGateHeld: true).ConfigureAwait(false) == null)
+                    return null;
+                var remaining = RemainingQuota();
+                if (remaining == null || remaining.Value <= Math.Max(SafetyMargin, reserve)) return null;
+
+                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                timeout.CancelAfter(TimeSpan.FromSeconds(20));
+                var uri = $"{ApiBase}/lists/{id}/items?apikey={Uri.EscapeDataString(apiKey)}&limit=250&sort=rank&order=asc";
+                using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+                using var response = await _httpClientFactory.CreateClient().SendAsync(request, timeout.Token).ConfigureAwait(false);
+                RecordQuotaSpent();
+                response.EnsureSuccessStatusCode();
+                await using var stream = await response.Content.ReadAsStreamAsync(timeout.Token).ConfigureAwait(false);
+                using var json = await JsonDocument.ParseAsync(stream, cancellationToken: timeout.Token).ConfigureAwait(false);
+                return AwardTagsService.ParseList(json.RootElement);
+            }
+            finally { _backgroundQuotaGate.Release(); }
+        }
+
+        /// <summary>Bounded, serialized request-time enrichment, sharing the existing seven-day cache and the background quota reserve.</summary>
+        public async Task WarmTagRatingsAsync(IEnumerable<(string MediaType, string Id)> titles, CancellationToken cancellationToken, int reserve = SafetyMargin, TimeSpan? maxAge = null)
+        {
+            if (string.IsNullOrWhiteSpace(JellyfinEnhanced.Instance?.Configuration.MdblistApiKey)) return;
+            bool Due((string MediaType, string Id) t) => NeedsFetch(t.MediaType, t.Id)
+                || (maxAge != null && GetCachedEntry(t.MediaType, t.Id) is { Found: true } entry
+                    && DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - entry.FetchedAtUnixMs >= maxAge.Value.TotalMilliseconds
+                    // Kept ratings after a failed refresh wait for their retry time.
+                    && (entry.RetryAfterUnixMs is not { } retryAfter || DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() >= retryAfter));
+            // Titles already fresh never queue behind another caller's fetch.
+            var due = titles.Distinct().Where(Due).ToArray();
+            if (due.Length == 0) return;
+            await _tagRatingsGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                // Checked again inside the gate: the caller ahead may have fetched them.
+                foreach (var group in due.Where(Due).GroupBy(t => t.MediaType))
+                {
+                    foreach (var chunk in group.Chunk(150))
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        var ids = chunk.Select(t => t.Id).ToArray();
+                        var batch = await GetMediaBatchWithinReserveAsync(group.Key, ids, reserve, cancellationToken).ConfigureAwait(false);
+                        cancellationToken.ThrowIfCancellationRequested();
+                        // Unknown quota stops background work, as the bulk runner does; titles stay NeedsFetch.
+                        if (batch.Status is MdblistReservedBatchStatus.ReserveReached or MdblistReservedBatchStatus.QuotaUnknown) return;
+                        if (batch.Status == MdblistReservedBatchStatus.Failed)
+                        {
+                            // Match single-title failures: short retry TTL, never a confirmed negative.
+                            // A title with good ratings keeps them until a refresh succeeds.
+                            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                            foreach (var id in ids)
+                            {
+                                var key = CacheKey(group.Key, id);
+                                _cache[key] = KeepLastGood(GetCachedEntry(group.Key, id), new MdblistCacheEntry { Found = false, Confirmed = false, FetchedAtUnixMs = now });
+                            }
+                            ScheduleDebouncedSave();
+                            return;
+                        }
+                        MergeMediaBatchIntoCache(group.Key, ids, batch.Results!);
+                        await Task.Delay(TimeSpan.FromMilliseconds(250), cancellationToken).ConfigureAwait(false);
+                    }
+                }
+            }
+            finally { _tagRatingsGate.Release(); }
+        }
 
         /// <summary>
         /// Writes a round of GetMediaBatchAsync results into the same cache the
@@ -496,6 +699,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         // non-string value here is simply skipped.
                         Url = r.TryGetProperty("url", out var urlEl) && urlEl.ValueKind == JsonValueKind.String ? urlEl.GetString() : null,
                         Fresh = GetNullableInt(r, "fresh"),
+                        Certified = r.TryGetProperty("certified", out var certified)
+                            ? certified.ValueKind == JsonValueKind.True || (certified.ValueKind == JsonValueKind.Number && certified.TryGetInt32(out var flag) && flag == 1)
+                            : null,
                     });
                 }
             }
@@ -589,7 +795,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
             catch (Exception ex)
             {
-                _logger.Warning($"[MDBList] Failed to load cache from disk: {ex.Message}");
+                _logger.Warning($"[MDBList] Failed to load cache from disk: {ex.GetType().Name}");
             }
         }
 
@@ -623,7 +829,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 catch (Exception ex)
                 {
                     _dirty = true; // retry on the next debounce cycle / Dispose
-                    _logger.Error($"[MDBList] Failed to save cache to disk: {ex.Message}");
+                    _logger.Error($"[MDBList] Failed to save cache to disk: {ex.GetType().Name}");
                 }
             }
         }

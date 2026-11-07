@@ -189,34 +189,28 @@
             saveOnUnload: false,
         },
         buildCss() {
-            const pos = JE.core.tagRenderer.resolvePosition('ageRatingTagsPosition', 'AgeRatingTagsPosition', 'bottom-right');
+            // Placement comes from the layout stylesheet (tags/tag-layout-styles.js).
             return `
                 .${containerClass} {
-                    position: absolute;
-                    top: ${pos.topVal};
-                    right: ${pos.rightVal};
-                    bottom: ${pos.bottomVal};
-                    left: ${pos.leftVal};
                     display: flex;
                     flex-direction: column;
-                    align-items: ${pos.isLeft ? 'flex-start' : 'flex-end'};
+                    align-items: flex-end;
                     z-index: 10;
                     pointer-events: none;
                     max-width: calc(100% - 12px);
                 }
 
-                ${pos.needsTopRightOffset ? `.cardImageContainer .cardIndicators ~ .${containerClass} { margin-top: clamp(20px, 3vw, 30px); }` : ''}
                 .${tagClass} {
                     display: inline-flex;
                     align-items: center;
-                    padding: 4px 8px;
+                    padding: calc(4px * var(--je-tag-scale, 1)) calc(8px * var(--je-tag-scale, 1));
                     /* Neutral fallback, same as the Colored Ratings default, until a
                        [rating=...] rule matches (or if the colour sheet fails to load). */
                     background-color: #607D8B;
                     color: #ffffff;
                     border: 1px solid rgba(255, 255, 255, 0.25);
                     border-radius: 4px;
-                    font-size: 13px;
+                    font-size: calc(13px * var(--je-tag-scale, 1));
                     font-weight: 700;
                     line-height: 1;
                     letter-spacing: 0.02em;
@@ -230,24 +224,23 @@
                 /* Card-width sizing, matching the rating tag rules in tag-pipeline.js */
                 @supports (container-type: inline-size) {
                     html:not(.layout-mobile) .je-tag-host .${tagClass} {
-                        font-size: clamp(9px, 6.8cqw, 13px);
-                        padding: clamp(2px, 2cqw, 4px) clamp(4px, 4.5cqw, 8px);
+                        font-size: calc(clamp(9px, 6.8cqw, 13px) * var(--je-tag-scale, 1));
+                        padding: calc(clamp(2px, 2cqw, 4px) * var(--je-tag-scale, 1)) calc(clamp(4px, 4.5cqw, 8px) * var(--je-tag-scale, 1));
                     }
                 }
 
                 .layout-mobile .${tagClass} {
-                    padding: 2px 6px;
-                    font-size: 11px;
+                    padding: calc(2px * var(--je-tag-scale, 1)) calc(6px * var(--je-tag-scale, 1));
+                    font-size: calc(11px * var(--je-tag-scale, 1));
                     border-radius: 3px;
                 }
 
                 @media (max-width: 768px) {
-                    .${tagClass} { padding: 3px 6px; font-size: 12px; }
+                    .${tagClass} { padding: calc(3px * var(--je-tag-scale, 1)) calc(6px * var(--je-tag-scale, 1)); font-size: calc(12px * var(--je-tag-scale, 1)); }
                 }
 
                 @media (max-width: 480px) {
-                    .${containerClass} { top: ${pos.isTop ? '4px' : 'auto'}; bottom: ${pos.isTop ? 'auto' : '4px'}; left: ${pos.isLeft ? '4px' : 'auto'}; right: ${pos.isLeft ? 'auto' : '4px'}; }
-                    .${tagClass} { padding: 2px 4px; font-size: clamp(10px, 2vw, 11px); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4); }
+                    .${tagClass} { padding: calc(2px * var(--je-tag-scale, 1)) calc(4px * var(--je-tag-scale, 1)); font-size: calc(clamp(10px, 2vw, 11px) * var(--je-tag-scale, 1)); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4); }
                 }
             `;
         },
@@ -309,5 +302,8 @@
         JE.core.tagRenderer.reinitialize('agerating', spec);
         ensureColourCss();
     };
+
+    // Previews may enable this group while the signed-in user has it off.
+    JE.core.tagRenderer.registerStyles(spec);
 
 })(window.JellyfinEnhanced);

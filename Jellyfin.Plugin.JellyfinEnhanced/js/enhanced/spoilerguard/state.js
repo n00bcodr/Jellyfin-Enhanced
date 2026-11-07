@@ -228,11 +228,11 @@
                     const jellyfinId = internal.normalizeId(response.jellyfinId);
                     enabledSeries.add(jellyfinId);
                     if (key) { enabledPendingTmdb.delete(key); tmdbToJellyfin.set(key, jellyfinId); }
-                } else if (response?.promoted === 'movie' && response.jellyfinId) {
+                    } else if (response?.promoted === 'movie' && response.jellyfinId) {
                     const jellyfinId = internal.normalizeId(response.jellyfinId);
                     enabledMovies.add(jellyfinId);
                     if (key) { enabledPendingTmdb.delete(key); tmdbToJellyfin.set(key, jellyfinId); }
-                }
+                    }
                 return response;
             });
     };
@@ -249,9 +249,9 @@
                 if (key) { enabledPendingTmdb.delete(key); tmdbToJellyfin.delete(key); }
                 if (response?.removedFrom === 'series' && response.jellyfinId) {
                     enabledSeries.delete(internal.normalizeId(response.jellyfinId));
-                } else if (response?.removedFrom === 'movie' && response.jellyfinId) {
+                    } else if (response?.removedFrom === 'movie' && response.jellyfinId) {
                     enabledMovies.delete(internal.normalizeId(response.jellyfinId));
-                }
+                    }
                 return response;
             });
     };

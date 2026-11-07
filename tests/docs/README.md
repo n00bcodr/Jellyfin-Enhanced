@@ -51,7 +51,8 @@ Use distinct `--artifacts-path` directories for concurrent .NET builds, especial
 
 ## Test layers and evidence
 
-- Backend xUnit tests load the actual plugin and use isolated files, controlled HTTP responses, and host interfaces. ASP.NET TestServer checks routing, authorization, and middleware; these are not a substitute for real-host tests.
+- Backend xUnit tests load the actual plugin and use isolated files, controlled HTTP responses, and host interfaces. Item-look HTTP regressions also launch Node (22.14+) with the production page/store/transport in jsdom against the real controller and validator; run `npm ci` before backend tests too (no Playwright browser install is needed for this bridge). ASP.NET TestServer checks routing, authorization, and middleware; these are not a substitute for real-host tests.
+- Frontend files run four at a time with a 300-second timeout per file on Node 22. The Media Tags admin page specs are split by concern, sharing `tests/frontend/helpers/admin-tags-page.mjs`; immutable script sources are cached per process while every test keeps its own DOM and mocked server.
 - Frontend tests evaluate actual production scripts in jsdom. They cover state, requests, rendering, user changes, lifecycle cleanup, and failure handling. Expected errors are declared explicitly; unexpected requests/errors fail tests.
 - Playwright runs Chromium desktop/mobile and Firefox against a minimal mock-host page loading production modules. Its component fixtures do not represent a complete Jellyfin browser session or actual native-client validation. See [browser details](../../tests/browser/README.md).
 - Host tests run the actual built plugin in official Jellyfin containers. The main runner enables real Chromium login, injected bootstrap, settings-panel save, and reload checks; `python3 tests/host/run.py --target all` runs the API-only subset. Their reports list each verified scenario; host smoke coverage is deliberately distinguished from full application E2E coverage.
@@ -70,7 +71,7 @@ Run visual tests in the pinned Playwright Linux environment. Review the failed s
 
 ## CI and troubleshooting
 
-`regression.yml` runs backend checks for both targets, JavaScript coverage, and browser checks on pull requests. Scheduled/manual runs additionally execute real-host compatibility and the broader checks. Existing security, translation, and static-analysis workflows remain in place. Failed test commands fail their jobs; artifacts are uploaded even on failure.
+`regression.yml` runs backend checks for both targets, JavaScript coverage, and browser checks on pull requests, plus the offline poster parity harness when a pull request touches tag code. Scheduled/manual runs additionally execute real-host compatibility and the broader checks. Existing security, translation, and static-analysis workflows remain in place. Failed test commands fail their jobs; artifacts are uploaded even on failure.
 
 Missing runtimes, dependencies, browser executables, or Docker access are failures, not skips. Check `dotnet --list-runtimes`, run `npm ci`, install the pinned Playwright browsers, or check `docker info` as appropriate. A host-startup failure should be investigated using the saved build/server logs. The host runner removes resources it created; it must never prune unrelated containers or networks.
 

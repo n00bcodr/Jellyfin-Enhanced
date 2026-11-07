@@ -5,6 +5,7 @@
 //   dotnet run -- resolve <dataDir> [profile]
 //   dotnet run -- names   <dataDir>   LanguageNames.Of vs Intl.DisplayNames (data/names-expected.json)
 //   dotnet run -- casing  <dataDir>   JsText.ToLower/ToUpper vs String.prototype (data/casing-expected.json)
+//   dotnet run -- colours <dataDir>   PosterColour vs js/tags/tag-poster-colours.js (data/colours-expected.json)
 using System.Globalization;
 using System.Reflection;
 using System.Text.Json;
@@ -15,10 +16,23 @@ using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.Model;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags;
 using Newtonsoft.Json.Linq;
+using Jellyfin.Plugin.JellyfinEnhanced.Services;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution;
 
 var mode = args.Length > 0 ? args[0] : "resolve";
 var dataDir = args.Length > 1 ? args[1] : Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "data");
 var onlyProfile = args.Length > 2 ? args[2] : null;
+
+if (mode == "compact")
+{
+    var cases = JsonSerializer.Deserialize<string[][]>(File.ReadAllText(Path.Combine(dataDir, "compact-expected.json")))!;
+    var method = typeof(PosterTagResolver).Assembly.GetType("Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution.QualityTagRules")!
+        .GetMethod("CompactLabel", BindingFlags.Static | BindingFlags.NonPublic)!;
+    foreach (var pair in cases)
+        if ((string)method.Invoke(null, new object[] { pair[0] })! != pair[1]) throw new Exception("Compact quality mismatch: " + pair[0]);
+    Console.WriteLine($"Compact vocabulary: {cases.Length} web/native fixtures match.");
+    return 0;
+}
 
 // Named float literals let synthetic entries carry non-finite ratings ("Infinity", "NaN"); the web's
 // Number() / parseFloat() read those strings as the same numbers.
@@ -45,6 +59,8 @@ PluginConfiguration LoadConfig(JsonObject? overrides)
             var t when t == typeof(bool) => value.GetValue<bool>(),
             var t when t == typeof(int) => value.GetValue<int>(),
             var t when t == typeof(string) => value.GetValue<string>(),
+            // Structured layout defaults (TagGroupOrder, TagGroupCaps, TagLayouts).
+            var t when t.IsClass => value.Deserialize(t, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }),
             _ => throw new InvalidOperationException($"Unsupported config type for {key}"),
         };
         property.SetValue(config, converted);
@@ -61,10 +77,14 @@ switch (mode)
     case "resolve":
         ResolveAll();
         break;
+    case "status":
+        return CheckStatus();
     case "names":
         return CheckNames();
     case "casing":
         return CheckCasing();
+    case "colours":
+        return CheckColours();
     default:
         Console.Error.WriteLine($"Unknown mode {mode}");
         return 2;
@@ -102,6 +122,7 @@ void Prepare()
         {
             // GET settings.json with no file: write the controller's defaults, read them back.
             var defaults = ControllerDefaults(config);
+            TagLayoutRules.ApplyDefaults(defaults, config);
             var saved = Newtonsoft.Json.JsonConvert.SerializeObject(JToken.FromObject(defaults), Newtonsoft.Json.Formatting.Indented);
             userConfig = Newtonsoft.Json.JsonConvert.DeserializeObject<JellyfinEnhancedUserSettings>(saved, lenient) ?? new JellyfinEnhancedUserSettings();
         }
@@ -163,6 +184,9 @@ static JellyfinEnhancedUserSettings ControllerDefaults(PluginConfiguration defau
     QualityTagsEnabled = defaultConfig.QualityTagsEnabled,
     ShowResolutionTag = defaultConfig.ShowResolutionTag,
     ShowSourceTag = defaultConfig.ShowSourceTag,
+    ShowEditionTag = defaultConfig.ShowEditionTag,
+    ShowLowQualitySourceTag = defaultConfig.ShowLowQualitySourceTag,
+    EditionTagOrder = defaultConfig.EditionTagOrder,
     ShowDynamicRangeTag = defaultConfig.ShowDynamicRangeTag,
     ShowSpecialFormatTag = defaultConfig.ShowSpecialFormatTag,
     ShowVideoCodecTag = defaultConfig.ShowVideoCodecTag,
@@ -177,6 +201,9 @@ static JellyfinEnhancedUserSettings ControllerDefaults(PluginConfiguration defau
     LanguageTagsEnabled = defaultConfig.LanguageTagsEnabled,
     RatingTagsEnabled = defaultConfig.RatingTagsEnabled,
     AgeRatingTagsEnabled = defaultConfig.AgeRatingTagsEnabled,
+    AwardsTagsEnabled = defaultConfig.AwardsTagsEnabled,
+    AwardsTagsPosition = defaultConfig.AwardsTagsPosition,
+    CustomTagsEnabled = defaultConfig.CustomTagsEnabled,
     PeopleTagsEnabled = defaultConfig.PeopleTagsEnabled,
     QualityTagsPosition = defaultConfig.QualityTagsPosition,
     GenreTagsPosition = defaultConfig.GenreTagsPosition,
@@ -188,7 +215,15 @@ static JellyfinEnhancedUserSettings ControllerDefaults(PluginConfiguration defau
     RatingTagsOnEpisodes = defaultConfig.RatingTagsOnEpisodes,
     RatingTagsOnContinueWatching = defaultConfig.RatingTagsOnContinueWatching,
     RatingTagsOnNextUp = defaultConfig.RatingTagsOnNextUp,
+    RatingTagsShowCommunity = defaultConfig.RatingTagsShowCommunity,
+    RatingTagsShowCritic = defaultConfig.RatingTagsShowCritic,
+    RatingTagsSources = RatingSourceSettings.Defaults(defaultConfig),
+    RatingTagsMinScore = defaultConfig.RatingTagsMinScore,
+    RatingTagsColorByScore = defaultConfig.RatingTagsColorByScore,
     AgeRatingTagsPosition = defaultConfig.AgeRatingTagsPosition,
+    LogoTagsEnabled = defaultConfig.LogoTagsEnabled,
+    LogoTagsPosition = defaultConfig.LogoTagsPosition,
+    CustomTagsPosition = defaultConfig.CustomTagsPosition,
     ShowRatingInPlayer = defaultConfig.ShowRatingInPlayer,
     RemoveContinueWatchingEnabled = defaultConfig.RemoveContinueWatchingEnabled,
     ReviewsExpandedByDefault = defaultConfig.ReviewsExpandedByDefault,
@@ -212,6 +247,7 @@ void ResolveAll()
         if (onlyProfile is not null && name != onlyProfile) continue;
         var user = profile["user"]!.GetValue<string>();
         var synthetic = profile["synthetic"]!.GetValue<bool>();
+        var itemLooksProfile = profile["itemLooks"]?.GetValue<bool>() == true;
         var config = LoadConfig(profile["pluginOverrides"] as JsonObject);
         var raw = profile["settingsRaw"] is JsonObject rawObject ? (JsonObject)rawObject.DeepClone() : null;
         var audioPreference = profile["jellyfinAudioPreference"]?.GetValue<string>();
@@ -248,7 +284,7 @@ void ResolveAll()
             }
 
             var played = ud is not null && (ud.Played || ud.PlayedPercentage >= 100);
-            contexts.Add((id, entry, new PosterTagItemContext(entry.Type ?? string.Empty, played, ud?.UnplayedItemCount, average, count)));
+            contexts.Add((id, entry, new PosterTagItemContext(entry.Type ?? string.Empty, played, ud?.UnplayedItemCount, average, count, profile["now"] is JsonValue clock ? new PosterStatusContext(DateTimeOffset.FromUnixTimeMilliseconds(clock.GetValue<long>())) : null)));
         }
 
         // Warm-up passes (JIT tiering, regex, memo), then the timed pass that also records results.
@@ -260,7 +296,9 @@ void ResolveAll()
         var allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
         var watch = System.Diagnostics.Stopwatch.StartNew();
         var layouts = new PosterTagLayout?[contexts.Count];
-        for (var i = 0; i < contexts.Count; i++) layouts[i] = PosterTagResolver.Resolve(contexts[i].Entry, settings, contexts[i].Context, landscape: false);
+        // Each item with its own look (a lock, an administrator item look, a matching rule; PosterTagSettings.ForItem).
+        var itemSettings = contexts.Select(c => settings.ForItem(c.Id, c.Entry.Type is "Season" or "Episode" ? c.Entry.SeriesId : null, () => PosterTagLookFacts.FromEntry(c.Entry))).ToArray();
+        for (var i = 0; i < contexts.Count; i++) layouts[i] = PosterTagResolver.Resolve(contexts[i].Entry, itemSettings[i], contexts[i].Context, landscape: false);
         watch.Stop();
         var allocated = GC.GetAllocatedBytesForCurrentThread() - allocatedBefore;
 
@@ -273,13 +311,18 @@ void ResolveAll()
             {
                 foreach (var group in layout.Groups)
                 {
-                    groups.Add(new
+                    var placed = new Dictionary<string, object>
                     {
-                        g = group.Group.ToString(),
-                        c = group.Corner.ToString(),
-                        o = layout.TopRightOffset && group.Corner == PosterTagCorner.TopRight,
-                        t = group.Tags.Select(Describe).ToList(),
-                    });
+                        ["g"] = group.Group.ToString(),
+                        ["c"] = group.Corner.ToString(),
+                        ["o"] = !layout.Bands && layout.TopRightOffset && group.Corner == PosterTagCorner.TopRight,
+                        ["t"] = group.Tags.Select(Describe).ToList(),
+                    };
+                    // Only a non-default edge spacing adds the inset (web-expected.mjs reads it from the layout CSS).
+                    if (!layout.Bands && itemSettings[i].EdgeSpacing != "default") placed["e"] = layout.EdgeInset;
+                    // A look's own size and gap.
+                    if (itemLooksProfile && (itemSettings[i].TagScale != settings.TagScale || itemSettings[i].TagGap != settings.TagGap)) placed["s"] = itemSettings[i].TagScale + "/" + itemSettings[i].TagGap;
+                    groups.Add(placed);
                 }
             }
 
@@ -293,23 +336,50 @@ void ResolveAll()
         if (settings.GenreTagsEnabled) groupOrder.Add("genre");
         if (settings.RatingTagsEnabled) groupOrder.Add("rating");
         if (settings.AgeRatingTagsEnabled) groupOrder.Add("agerating");
+        if (settings.StatusTagsEnabled) groupOrder.Add("status");
+        if (settings.CustomTagsEnabled) groupOrder.Add("custom");
         if (settings.LanguageTagsEnabled) groupOrder.Add("language");
+        if (settings.AwardsTagsEnabled) groupOrder.Add("awards");
+        if (settings.LogoTagsEnabled) groupOrder.Add("logos");
         if (settings.QualityTagsEnabled && settings.UsesJellyfinAudioPreference) groupOrder.Add("quality");
 
         var summary = new Dictionary<string, object?>
         {
+            ["tagScale"] = settings.TagScale,
+            ["tagGap"] = settings.TagGap,
             ["qualityTagsEnabled"] = settings.QualityTagsEnabled,
             ["genreTagsEnabled"] = settings.GenreTagsEnabled,
             ["languageTagsEnabled"] = settings.LanguageTagsEnabled,
             ["ratingTagsEnabled"] = settings.RatingTagsEnabled,
             ["ageRatingTagsEnabled"] = settings.AgeRatingTagsEnabled,
+            ["awardsTagsEnabled"] = settings.AwardsTagsEnabled,
             ["qualityTagsPosition"] = settings.QualityTagsPosition,
             ["genreTagsPosition"] = settings.GenreTagsPosition,
             ["languageTagsPosition"] = settings.LanguageTagsPosition,
+            ["languageTagsShowAudio"] = settings.LanguageShowAudio,
+            ["languageTagsShowSubtitles"] = settings.LanguageShowSubtitles,
+            ["languageTagsStyle"] = settings.LanguageStyle,
+            ["languageTagsCountBadge"] = settings.LanguageCountBadge,
+            ["languagePriorityTerms"] = string.Join(",", settings.LanguagePriorityTerms),
+            ["languagePriorityStrict"] = settings.LanguagePriorityStrict,
+            ["languagePriorityIsPersonal"] = settings.LanguagePriorityIsPersonal,
             ["ratingTagsPosition"] = settings.RatingTagsPosition,
             ["ageRatingTagsPosition"] = settings.AgeRatingTagsPosition,
+            ["logoTagsEnabled"] = settings.LogoTagsEnabled,
+            ["logoTagsPosition"] = settings.LogoTagsPosition,
+            ["customTagsEnabled"] = settings.CustomTagsEnabled,
+            ["customTagsPosition"] = settings.CustomTagsPosition,
             ["showResolutionTag"] = settings.ShowResolutionTag,
             ["showSourceTag"] = settings.ShowSourceTag,
+            ["showEditionTag"] = settings.ShowEditionTag,
+            ["showLowQualitySourceTag"] = settings.ShowLowQualitySourceTag,
+            ["editionTagOrder"] = settings.EditionTagOrder,
+            ["showFrameRateTag"] = settings.ShowFrameRateTag,
+            ["frameRateTagOrder"] = settings.FrameRateTagOrder,
+            ["showAspectRatioTag"] = settings.ShowAspectRatioTag,
+            ["aspectRatioTagOrder"] = settings.AspectRatioTagOrder,
+            ["showRuntimeTag"] = settings.ShowRuntimeTag,
+            ["runtimeTagOrder"] = settings.RuntimeTagOrder,
             ["showDynamicRangeTag"] = settings.ShowDynamicRangeTag,
             ["showSpecialFormatTag"] = settings.ShowSpecialFormatTag,
             ["showVideoCodecTag"] = settings.ShowVideoCodecTag,
@@ -325,9 +395,19 @@ void ResolveAll()
             ["ratingTagsOnSeasons"] = settings.RatingTagsOnSeasons,
             ["ratingTagsOnEpisodes"] = settings.RatingTagsOnEpisodes,
             ["qualityTagsPreferredAudioLanguage"] = settings.QualityTagsPreferredAudioLanguage,
+            ["seriesQualityAggregation"] = settings.SeriesQualityAggregation,
             ["useNativePosterTags"] = settings.UseNativePosterTags,
             ["nativeEnabled"] = settings.NativeEnabled,
             ["groupOrder"] = string.Join(",", groupOrder),
+            ["ratingTagsShowCommunity"] = settings.RatingTagsShowCommunity,
+            ["ratingTagsShowCritic"] = settings.RatingTagsShowCritic,
+            ["ratingTagsSources"] = settings.RatingTagsSources == null ? null : string.Join(",", settings.RatingTagsSources),
+            ["ratingTagsMinScore"] = settings.RatingTagsMinScore,
+            ["ratingTagsColorByScore"] = settings.RatingTagsColorByScore,
+            ["layoutOrder"] = settings.GroupOrder is null ? null : string.Join(",", settings.GroupOrder.Select(LayoutId)),
+            ["layoutOff"] = string.Join(",", Enum.GetValues<PosterTagGroup>().Where(settings.OffGroups.Contains).Select(LayoutId)),
+            ["layoutCaps"] = string.Join(",", new[] { PosterTagGroup.Quality, PosterTagGroup.Genre, PosterTagGroup.Language, PosterTagGroup.Rating, PosterTagGroup.AgeRating, PosterTagGroup.Awards, PosterTagGroup.Logos, PosterTagGroup.Custom }.Select(g => $"{LayoutId(g)}={settings.CapOf(g)}")),
+            ["edgeSpacing"] = settings.EdgeSpacing,
         };
 
         var document = new { settings = summary, items, digest = settings.Digest, preferredAudioLanguage = settings.PreferredAudioLanguage };
@@ -338,14 +418,40 @@ void ResolveAll()
     File.WriteAllLines(Path.Combine(outDir, "cs-timings.txt"), timings);
 }
 
+// Layout group id (core/tag-layout.js) of a native group.
+static string LayoutId(PosterTagGroup group) => group switch
+{
+    PosterTagGroup.Quality => "quality",
+    PosterTagGroup.Genre => "genre",
+    PosterTagGroup.Rating => "rating",
+    PosterTagGroup.AgeRating => "ageRating",
+    PosterTagGroup.Awards => "awards",
+    PosterTagGroup.Status => "status",
+    PosterTagGroup.Logos => "logos",
+    PosterTagGroup.Custom => "custom",
+    _ => "language",
+};
+
+// Name chip text (Resolution.LogoRules.ShortName, internal).
+static string ShortName(string name) => (string)typeof(PosterTagSettings).Assembly
+    .GetType("Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution.LogoRules", throwOnError: true)!
+    .GetMethod("ShortName", BindingFlags.Public | BindingFlags.Static)!.Invoke(null, new object[] { name })!;
+
 static string Describe(PosterTag tag) => tag switch
 {
-    QualityTag q => $"{q.Label}|{q.Category}",
-    GenreTag g => $"{g.Genre}|{g.Icon}",
-    LanguageTag l => $"{l.FlagCode}|{l.Language}|{(l.Partial ? "true" : "false")}",
+    QualityTag q => $"{q.DisplayText ?? q.Label}|{q.Category}",
+    GenreTag g => $"{g.Genre}|{g.Icon}|{TagStyleCatalog.GenreKey(g.Genre)}",
+    LanguageTag l when l.CountBadge is not null => $"badge|{l.CountBadge}",
+    LanguageTag l when l.Code is not null => $"code|{l.Code}|{l.Language}|{(l.Partial ? "true" : "false")}|{(l.Subtitle ? "true" : "false")}{(l.Sdh ? "|sdh" : string.Empty)}",
+    LanguageTag l => $"{l.FlagCode}|{l.Language}|{(l.Partial ? "true" : "false")}{(l.Subtitle ? "|true" : string.Empty)}{(l.Sdh ? "|sdh" : string.Empty)}",
     RatingTag r when r.Source == PosterRatingSource.Critic => $"Critic|{r.Text}|{(r.Fresh ? "fresh" : "rotten")}",
+    RatingTag r when r.IsSource => $"{r.SourceId}|{r.Text}",
     RatingTag r => $"{r.Source}|{r.Text}",
+    StatusTag s => $"{s.StyleKey}|{s.Text}",
+    AwardTag a => $"{a.Id}|{a.Text}",
     AgeRatingTag a => $"{a.Text}|{a.ColorKey}",
+    LogoTag l => $"{l.Kind}|{l.Name}|{l.Logo ?? string.Empty}|{(l.Logo is null ? ShortName(l.Name) : string.Empty)}",
+    CustomTag c => $"{c.Label}|{c.Icon}",
     _ => tag.ToString() ?? string.Empty,
 };
 
@@ -367,6 +473,50 @@ int CheckNames()
     Console.WriteLine($"names: {expected.Count} codes, {mismatches.Count} mismatches");
     foreach (var line in mismatches.Take(40)) Console.WriteLine("  " + line);
     return mismatches.Count == 0 ? 0 : 1;
+}
+
+// ── colours ─────────────────────────────────────────────────────────────────
+// The Poster preset: the web's colours for each synthetic poster against PosterColour.Sample on the same
+// pixels. Sample-size posters must match exactly; full-size ones within their tolerance (the two downscales).
+int CheckColours()
+{
+    var fixtures = JsonNode.Parse(File.ReadAllText(Path.Combine(dataDir, "colours-expected.json")))!.AsArray();
+    var mismatches = new List<string>();
+    static int[]? Ints(JsonNode? node) => node?.AsArray().Select(v => v!.GetValue<int>()).ToArray();
+    static int[] Rgb(string? css) => css!.Replace("rgba(", string.Empty, StringComparison.Ordinal).TrimEnd(')').Split(',').Take(3).Select(v => int.Parse(v.Trim(), CultureInfo.InvariantCulture)).ToArray();
+    foreach (var fixture in fixtures)
+    {
+        var name = fixture!["name"]!.GetValue<string>();
+        int width = fixture["width"]!.GetValue<int>(), height = fixture["height"]!.GetValue<int>(), tolerance = fixture["tolerance"]!.GetValue<int>();
+        var rgba = Convert.FromBase64String(fixture["rgba"]!.GetValue<string>());
+        using var bitmap = new SkiaSharp.SKBitmap(new SkiaSharp.SKImageInfo(width, height, SkiaSharp.SKColorType.Rgba8888, SkiaSharp.SKAlphaType.Unpremul));
+        System.Runtime.InteropServices.Marshal.Copy(rgba, 0, bitmap.GetPixels(), rgba.Length);
+        var colours = PosterColour.Sample(bitmap);
+        if (tolerance == 0)
+        {
+            var dominant = PosterColour.Dominant(rgba, width, height);
+            var expected = Ints(fixture["dominant"]);
+            var actual = dominant is { } d ? new[] { d.R, d.G, d.B } : null;
+            if (!(expected is null ? actual is null : actual is not null && expected.SequenceEqual(actual)))
+                mismatches.Add($"{name} dominant: JS={Fmt(expected)} C#={Fmt(actual)}");
+        }
+
+        foreach (var (field, css) in new[] { ("background", colours.Background), ("border", colours.Border), ("text", colours.Text) })
+        {
+            var expected = Ints(fixture[field])!;
+            var actual = Rgb(css);
+            var allowed = field == "text" ? 0 : tolerance;
+            if (expected.Zip(actual).Any(p => Math.Abs(p.First - p.Second) > allowed))
+                mismatches.Add($"{name} {field}: JS={Fmt(expected)} C#={Fmt(actual)} (tolerance {allowed})");
+        }
+    }
+
+    File.WriteAllLines(Path.Combine(dataDir, "out", "colours-diff.txt"), mismatches);
+    Console.WriteLine($"colours: {fixtures.Count} posters, {mismatches.Count} mismatches");
+    foreach (var line in mismatches.Take(40)) Console.WriteLine("  " + line);
+    return mismatches.Count == 0 ? 0 : 1;
+
+    static string Fmt(int[]? v) => v is null ? "none" : string.Join(",", v);
 }
 
 // ── casing ──────────────────────────────────────────────────────────────────
@@ -400,6 +550,47 @@ int CheckCasing()
     return mismatches.Count == 0 ? 0 : 1;
 
     static string Hex(string s) => string.Join(' ', s.EnumerateRunes().Select(r => r.Value.ToString("X4", CultureInfo.InvariantCulture)));
+}
+
+// Fixed-clock status fixtures use the same raw entries and remote facts as the real web renderer.
+int CheckStatus()
+{
+    var rows = ReadNode("status-fixtures.json").AsArray();
+    var failures = new List<string>();
+    var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+    foreach (var node in rows)
+    {
+        var row = node!.AsObject();
+        var config = new PluginConfiguration { StatusTagsEnabled = true, TMDB_API_KEY = "fixture" };
+        if (row["plugin"] is JsonObject overrides)
+            foreach (var (key, value) in overrides)
+            {
+                var prop = typeof(PluginConfiguration).GetProperty(key)!;
+                prop.SetValue(config, value!.Deserialize(prop.PropertyType));
+            }
+        var user = row["settings"]?.Deserialize<JellyfinEnhancedUserSettings>(options) ?? new();
+        if (row["settings"]?["StatusTagsEnabled"] == null) user.StatusTagsEnabled = true;
+        user.NativePosterDateLocale = row["locale"]?.GetValue<string>() ?? "en-US";
+        user.NativePosterTimeZone = row["zone"]?.GetValue<string>() ?? "UTC";
+        var settings = PosterTagSettings.FromUserSettings(user, config);
+        var entry = row["entry"]!.Deserialize<TagCacheEntry>(options)!;
+        SeriesSchedule? schedule = null;
+        if (row["schedule"] is JsonObject facts)
+            schedule = new(facts["status"]?.GetValue<string>(), facts["lastAired"]?.Deserialize<SeriesEpisodeRef>(options), facts["nextAired"]?.Deserialize<SeriesEpisodeRef>(options),
+                LastRegularAired: facts["lastRegularAired"]?.Deserialize<SeriesEpisodeRef>(options),
+                SeasonEpisodes: (facts["seasonEpisodes"] as JsonObject)?.ToDictionary(pair => int.Parse(pair.Key, System.Globalization.CultureInfo.InvariantCulture), pair => pair.Value!.GetValue<int>()));
+        var context = new PosterStatusContext(DateTimeOffset.FromUnixTimeMilliseconds(row["now"]!.GetValue<long>()), schedule,
+            row["rank"]?.GetValue<int>(), row["parent"]?.Deserialize<TagCacheEntry>(options), row["rankSource"]?.GetValue<string>() == "seerr-week");
+        var badge = StatusRules.Resolve(entry, settings, context);
+        var expected = row["expected"];
+        if (badge?.Key != expected?["key"]?.GetValue<string>() || badge?.Text != expected?["text"]?.GetValue<string>())
+            failures.Add($"{row["name"]}: expected {expected}, native {badge}");
+        var layout = PosterTagResolver.Resolve(entry, settings, new(entry.Type ?? "", false, null, null, null, context), false);
+        if (badge != layout?.Groups.SelectMany(g => g.Tags).OfType<StatusTag>().SingleOrDefault()) failures.Add($"{row["name"]}: resolver lost status");
+    }
+    foreach (var failure in failures) Console.WriteLine(failure);
+    Console.WriteLine($"Status native/web parity: {rows.Count} fixtures, {failures.Count} differences");
+    return failures.Count == 0 ? 0 : 1;
 }
 
 internal sealed record UserDataFixture(bool Played, int? UnplayedItemCount, double? PlayedPercentage);

@@ -30,8 +30,104 @@
     const _lastSavedJson = {};
     // Per-file chain of in-flight saves. Every control posts the whole object,
     // so two quick changes must reach the server in call order or the earlier
-    // (smaller) snapshot can land last and drop the newer change.
+    // (smaller) snapshot can land last and drop the newer change. Settings document
+    // snapshots and failure rollbacks also run inside this chain, so a queued
+    // write sees the previous outcome before it reads the shared document.
     const _saveChain = {};
+
+    /**
+     * Nullable personal settings the server resolves as user ?? administrator
+     * (Services/PosterTags/PosterTagSettings.cs) that loadSettings shows
+     * resolved. Every other nullable personal field is kept null in
+     * currentSettings by loadSettings itself.
+     */
+    const INHERITED_KEYS = [
+        'showEditionTag', 'editionTagOrder', 'showLowQualitySourceTag',
+        'resolutionTagOrder', 'sourceTagOrder', 'dynamicRangeTagOrder', 'specialFormatTagOrder',
+        'videoCodecTagOrder', 'audioInfoTagOrder', 'seriesQualityAggregation',
+        'showRuntimeTag', 'showAspectRatioTag', 'showFrameRateTag', 'showVersionsTag',
+        'runtimeTagOrder', 'aspectRatioTagOrder', 'frameRateTagOrder', 'versionsTagOrder',
+        'qualityAudioDisplayMode', 'qualityVideoCodecDisplayMode', 'qualityHdrDisplayMode', 'qualityMinimumResolution', 'qualityHideSdr'
+    ];
+    // Per loaded settings object: the value each INHERITED_KEYS field shows when
+    // it is not set, and which fields follow the administrator. Following is a
+    // state, not a value comparison: a field unset at load follows until the user
+    // changes it in any way (even to the administrator's own value), and only an
+    // explicit "server default" action (setSettingInherited(..., true)) makes it
+    // follow again. A following field is saved as null, so a save never pins
+    // today's administrator default.
+    const _inheritance = new WeakMap();
+    /** The fields that follow the administrator while unset (read-only). */
+    JE.inheritedSettingKeys = Object.freeze(INHERITED_KEYS.slice());
+
+    /**
+     * Whether a field of a loaded settings object follows the administrator
+     * (saved as null) rather than holding the user's own choice. A value
+     * written without setSettingInherited (any other value than the default)
+     * counts as the user's.
+     * @param {object} settings A document from loadSettings (JE.currentSettings).
+     * @param {string} key camelCase settings key.
+     * @returns {boolean}
+     */
+    JE.isSettingInherited = (settings, key) => {
+        const state = _inheritance.get(settings);
+        return !!state && state.inherited.has(key) && settings[key] === state.defaults[key];
+    };
+
+    /**
+     * Make a field follow the administrator again (shown resolved, saved as
+     * null) or mark it as the user's own choice (saved as it is, even when it
+     * equals the default). Every control that changes one of these fields
+     * marks it as the user's before saving; only a "server default" or reset
+     * action passes true.
+     * @param {object} settings A document from loadSettings (JE.currentSettings).
+     * @param {string} key camelCase settings key.
+     * @param {boolean} inherit
+     * @returns {boolean} Whether the field is one loadSettings resolves (false: the caller stores null itself).
+     */
+    JE.setSettingInherited = (settings, key, inherit) => {
+        const state = _inheritance.get(settings);
+        if (!state || !INHERITED_KEYS.includes(key)) return false;
+        if (inherit) {
+            state.inherited.add(key);
+            settings[key] = state.defaults[key];
+        } else {
+            state.inherited.delete(key);
+        }
+        return true;
+    };
+
+    /**
+     * The administrator's value a field shows while it follows the
+     * administrator (what "server default" means for it).
+     * @param {object} settings A document from loadSettings (JE.currentSettings).
+     * @param {string} key camelCase settings key.
+     * @returns {*} undefined for a field loadSettings does not resolve.
+     */
+    JE.inheritedSettingDefault = (settings, key) => _inheritance.get(settings)?.defaults[key];
+
+    /**
+     * The document as saved: fields that follow the administrator go back to
+     * null. One that a caller changed without marking it (it no longer shows
+     * the default) has become the user's and stays so.
+     * @param {object} settings
+     * @param {object} source The object being serialized (settings or a copy of it).
+     * @returns {object}
+     */
+    const withInheritance = (settings, source) => {
+        const state = _inheritance.get(settings);
+        if (!state) return source;
+        let out = source;
+        for (const key of [...state.inherited]) {
+            if (settings[key] !== state.defaults[key]) {
+                state.inherited.delete(key);
+                continue;
+            }
+            if (out === source) out = { ...source };
+            out[key] = null;
+        }
+        return out;
+    };
 
     /**
      * Saves user settings to the server.
@@ -39,43 +135,67 @@
      * (prevents redundant writes). The first save per session for a given file is
      * always allowed through since the cache starts empty.
      * Failures are logged and swallowed unless the caller opts in to them.
+     * settings.json is read when its queued save starts, after the previous save
+     * and its onError callback finish. Other files retain call-time snapshots.
      * @param {string} fileName Per-user settings file, e.g. 'settings.json'.
      * @param {object} settings The whole document to save.
-     * @param {{throwOnError?: boolean}} [options] throwOnError: reject (without logging) when
-     *   nothing was saved, so a caller can roll back its own optimistic change.
+     * @param {{throwOnError?: boolean, beforeSave?: () => void, onError?: (error: Error) => void | Promise<void>, isCurrent?: () => boolean}} [options]
+     *   throwOnError: reject without logging. beforeSave: apply an edit at its queue
+     *   turn, before serialization. onError: restore an optimistic edit
+     *   before the next queued save reads the document. isCurrent: discard work
+     *   whose originating session changed before its queue turn or response.
      * @returns {Promise<void>}
      */
     JE.saveUserSettings = async (fileName, settings, options = {}) => {
+        const isCurrentSettings = settings === JE.currentSettings;
         const throwOnError = options?.throwOnError === true;
-        if (typeof ApiClient === 'undefined' || !ApiClient.getCurrentUserId) {
-            if (throwOnError) throw new Error('ApiClient not available');
-            console.error("🪼 Jellyfin Enhanced: ApiClient not available");
-            return;
-        }
+        /** Finish failure handling before releasing this document's save queue. */
+        const handleError = async e => {
+            if (options.isCurrent && !options.isCurrent()) return;
+            await options.onError?.(e);
+            if (throwOnError) throw e;
+            console.error(`🪼 Jellyfin Enhanced: Failed to save ${fileName}:`, e);
+        };
         try {
+            if (typeof ApiClient === 'undefined' || !ApiClient.getCurrentUserId) {
+                throw new Error('ApiClient not available');
+            }
             const userId = ApiClient.getCurrentUserId();
             if (!userId) {
-                if (throwOnError) throw new Error('User ID not available');
-                console.error("🪼 Jellyfin Enhanced: User ID not available");
-                return;
+                throw new Error('User ID not available');
             }
 
-            // Convert data back to PascalCase for server C# deserialization
-            let dataToSave = settings;
-            // currentSettings carries the resolved native-poster value (on). Leave it
-            // unset on disk until the user explicitly switches it in the panel.
-            if (fileName === 'settings.json' && settings === JE.currentSettings
-                && JE.userConfig?.settings?.useNativePosterTags == null) {
-                dataToSave = { ...settings, useNativePosterTags: null };
-            }
-            if ((fileName === 'bookmark.json' || fileName === 'settings.json') && typeof window.JellyfinEnhanced?.toPascalCase === 'function') {
-                dataToSave = window.JellyfinEnhanced.toPascalCase(dataToSave);
-            }
-
-            const serialized = JSON.stringify(dataToSave);
+            /** Build a document only after earlier saves and rollbacks have finished. */
+            const serialize = () => {
+                // Capture browser date context at this save's turn, after queued changes/rollbacks.
+                let source = settings;
+                if (fileName === 'settings.json' && isCurrentSettings && settings.statusTagsEnabled
+                    && typeof JE.getStatusDateContext === 'function') {
+                    const context = JE.getStatusDateContext();
+                    source = { ...settings, nativePosterDateLocale: context.locale, nativePosterTimeZone: context.timeZone };
+                }
+                // Convert data back to PascalCase for server C# deserialization
+                let dataToSave = source;
+                // currentSettings carries the resolved native-poster value (on). Leave it
+                // unset on disk until the user explicitly switches it in the panel.
+                if (fileName === 'settings.json' && isCurrentSettings
+                    && JE.userConfig?.settings?.useNativePosterTags == null) {
+                    dataToSave = { ...source, useNativePosterTags: null };
+                }
+                if (fileName === 'settings.json') dataToSave = withInheritance(settings, dataToSave);
+                if ((fileName === 'bookmark.json' || fileName === 'settings.json') && typeof window.JellyfinEnhanced?.toPascalCase === 'function') {
+                    dataToSave = window.JellyfinEnhanced.toPascalCase(dataToSave);
+                }
+                return JSON.stringify(dataToSave);
+            };
+            const snapshot = fileName === 'settings.json' ? null : serialize();
             const cacheKey = `${userId}:${fileName}`;
 
             const post = async () => {
+                if (options.isCurrent && !options.isCurrent()) return;
+                options.beforeSave?.();
+                if (options.isCurrent && !options.isCurrent()) return;
+                const serialized = fileName === 'settings.json' ? serialize() : snapshot;
                 // Skip the POST if nothing has changed since the last save this session.
                 if (_lastSavedJson[cacheKey] === serialized) {
                     return; // no-op — identical to last save
@@ -88,15 +208,15 @@
                     contentType: 'application/json'
                 });
 
+                if (options.isCurrent && !options.isCurrent()) return;
                 // Update the cache on success so subsequent identical saves are skipped
                 _lastSavedJson[cacheKey] = serialized;
             };
-            const save = (_saveChain[cacheKey] || Promise.resolve()).then(post);
+            const save = (_saveChain[cacheKey] || Promise.resolve()).then(post).catch(handleError);
             _saveChain[cacheKey] = save.catch(() => {});
-            await save;
+            return save;
         } catch (e) {
-            if (throwOnError) throw e;
-            console.error(`🪼 Jellyfin Enhanced: Failed to save ${fileName}:`, e);
+            return handleError(e);
         }
     };
 
@@ -124,12 +244,29 @@
             pauseScreenEnabled: true,
             pauseScreenDelaySeconds: 5,
             useNativePosterTags: true,
-            qualityTagsEnabled: false, genreTagsEnabled: false, languageTagsEnabled: false, ratingTagsEnabled: false, ageRatingTagsEnabled: false, peopleTagsEnabled: false, tagsHideOnHover: false,
+            qualityTagsEnabled: false, genreTagsEnabled: false, languageTagsEnabled: false, ratingTagsEnabled: false, ageRatingTagsEnabled: false, statusTagsEnabled: false, logoTagsEnabled: false, awardsTagsEnabled: false, awardsTagsPosition: 'top-left', peopleTagsEnabled: false, tagsHideOnHover: false,
             showResolutionTag: true, showSourceTag: true, showDynamicRangeTag: true, showSpecialFormatTag: true, showVideoCodecTag: true, showAudioInfoTag: true,
+            // Source and edition preferences.
+            showEditionTag: true, editionTagOrder: 7,
+            showRuntimeTag: false, runtimeTagOrder: 8, showAspectRatioTag: false, aspectRatioTagOrder: 9, showFrameRateTag: false, frameRateTagOrder: 10, showVersionsTag: false, versionsTagOrder: 11, showLowQualitySourceTag: false,
             resolutionTagOrder: 1, sourceTagOrder: 2, dynamicRangeTagOrder: 3, specialFormatTagOrder: 4, videoCodecTagOrder: 5, audioInfoTagOrder: 6,
-            qualityTagsPosition: 'top-left', genreTagsPosition: 'top-right', languageTagsPosition: 'bottom-left', ratingTagsPosition: 'bottom-right', ageRatingTagsPosition: 'bottom-right',
-            ratingTagsOnMovies: true, ratingTagsOnSeries: true, ratingTagsOnSeasons: true, ratingTagsOnEpisodes: true, ratingTagsOnContinueWatching: true, ratingTagsOnNextUp: true,
+            qualityTagsPosition: 'top-left', genreTagsPosition: 'top-right', languageTagsPosition: 'bottom-left', ratingTagsPosition: 'bottom-right', ageRatingTagsPosition: 'bottom-right', logoTagsPosition: 'bottom-left', statusTagsPosition: 'top-right',
+            ratingTagsOnMovies: true, ratingTagsOnSeries: true, ratingTagsOnSeasons: true, ratingTagsOnEpisodes: true, ratingTagsOnContinueWatching: true, ratingTagsOnNextUp: true, ratingTagsShowCommunity: true, ratingTagsShowCritic: true,
+            statusTagsJustAdded: true, statusTagsNewRelease: true, statusTagsTrending: true,
+            statusTagsSchedule: true, statusTagsMilestones: true, statusTagsSeriesStatus: false, statusTagsScenes: false,
+            statusTagsLeaving: false, statusTagsDirectPlay: false,
+            // Custom tag group (the administrator's tag/collection rules, tags/customtags.js).
+            customTagsEnabled: false, customTagsPosition: 'top-left',
+            // Language Tags display (normalized in tags/languagetags.js).
+            languageTagsShowAudio: true, languageTagsShowSubtitles: false, languageTagsStyle: 'flags', languageTagsCountBadge: 'off',
+            // Poster tag layout scalars (0 = a document from before layouts; see core/tag-layout.js).
+            tagLayout: 'corners', tagLabelDensity: 'full', tagLayoutSettingsVersion: 0,
+            tagScale: 'default', tagGap: 'default',
+            qualityAudioDisplayMode: 'highest', qualityVideoCodecDisplayMode: 'highest', qualityHdrDisplayMode: 'highest',
+            qualityMinimumResolution: 'off', qualityHideSdr: false,
             qualityTagsPreferredAudioLanguage: '',
+            // Series/season quality aggregation policy.
+            seriesQualityAggregation: 'representative',
             showRatingInPlayer: true,
             reviewsExpandedByDefault: false,
             displayLanguage: '',
@@ -200,6 +337,48 @@
             }
         }
 
+        // Personal language policy: retain null inheritance and intentional empty arrays.
+        // Do not resolve admin values here, or an unrelated save would pin today's policy.
+        mergedSettings.languageTagsPriority = JE.core?.mediaLanguage?.priorityList(userSettings.languageTagsPriority) ?? null;
+        mergedSettings.languageTagsPriorityStrict = typeof userSettings.languageTagsPriorityStrict === 'boolean'
+            ? userSettings.languageTagsPriorityStrict : null;
+
+        // Source scores: retain legacy includes for old documents and preserve an intentional empty list.
+        mergedSettings.ratingTagsSources = JE.ratingSources?.normalizeSources(userSettings.ratingTagsSources) ?? null;
+        mergedSettings.ratingTagsMinScore = JE.ratingSources?.settings(userSettings, JE.pluginConfig).minimum ?? 0;
+        mergedSettings.ratingTagsColorByScore = JE.ratingSources?.settings(userSettings, JE.pluginConfig).color ?? false;
+
+        // Structured layout settings: the loop above treats object values as
+        // corrupt, so these are carried over explicitly. A missing or malformed
+        // value is null, meaning "inherit" — core/tag-layout.js resolves it
+        // (user → admin default → built-in) without writing the derived
+        // value back, so a legacy document stays legacy until the user saves
+        // a layout setting.
+        for (const key of ['tagLayouts', 'tagGroupCaps', 'tagGroupScopes']) {
+            const value = userSettings[key];
+            mergedSettings[key] = value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+        }
+
+        // Corners edge spacing: null follows the admin's default (normalized
+        // documents; core/tag-layout.js reads it), so no plugin default is pinned.
+        mergedSettings.tagEdgeSpacing = typeof userSettings.tagEdgeSpacing === 'string' && userSettings.tagEdgeSpacing ? userSettings.tagEdgeSpacing : null;
+
+        // Tag Styles preset: null follows the admin's preset, so it never falls
+        // back to the plugin default (that would pin the admin's current choice).
+        mergedSettings.tagStylePreset = typeof userSettings.tagStylePreset === 'string' && userSettings.tagStylePreset ? userSettings.tagStylePreset : null;
+        mergedSettings.tagGroupOrder = Array.isArray(userSettings.tagGroupOrder) ? userSettings.tagGroupOrder : null;
+        // Tag look rules (null = inherit the admin's default rules) and per-item
+        // locks; core/tag-look.js normalises both when it reads them.
+        mergedSettings.tagLookRules = Array.isArray(userSettings.tagLookRules) ? userSettings.tagLookRules : null;
+        mergedSettings.tagLayoutLocks = userSettings.tagLayoutLocks && typeof userSettings.tagLayoutLocks === 'object'
+            && !Array.isArray(userSettings.tagLayoutLocks) ? userSettings.tagLayoutLocks : null;
+        // Per-shape tag looks (null = inherit the admin's, normalized documents
+        // only); core/tag-layout.js normalises the value when it reads it.
+        mergedSettings.tagScale = userSettings.tagScale ?? null;
+        mergedSettings.tagGap = userSettings.tagGap ?? null;
+        mergedSettings.tagShapeOverrides = userSettings.tagShapeOverrides && typeof userSettings.tagShapeOverrides === 'object'
+            && !Array.isArray(userSettings.tagShapeOverrides) ? userSettings.tagShapeOverrides : null;
+
         mergedSettings.displayLanguage = Object.prototype.hasOwnProperty.call(userSettings, 'displayLanguage')
             && userSettings.displayLanguage !== null && userSettings.displayLanguage !== undefined
             ? userSettings.displayLanguage
@@ -212,6 +391,21 @@
             mergedSettings.removeContinueWatchingEnabled = true;
         }
 
+        // Language presentation enums are normalized on both load and server save.
+        mergedSettings.languageTagsStyle = String(mergedSettings.languageTagsStyle).trim().toLowerCase() === 'codes' ? 'codes' : 'flags';
+        const languageBadge = String(mergedSettings.languageTagsCountBadge).trim().toLowerCase();
+        mergedSettings.languageTagsCountBadge = ['only', 'both'].includes(languageBadge) ? languageBadge : 'off';
+
+        // Fields that follow the administrator while unset: shown resolved,
+        // saved as null until the user changes them (see saveUserSettings).
+        const defaults = {};
+        const inherited = new Set();
+        for (const key of INHERITED_KEYS) {
+            const fallback = getPluginDefault(key);
+            defaults[key] = fallback !== undefined ? fallback : hardcodedDefaults[key];
+            if (userSettings[key] === null || userSettings[key] === undefined) inherited.add(key);
+        }
+        _inheritance.set(mergedSettings, { defaults, inherited });
         return mergedSettings;
     };
 

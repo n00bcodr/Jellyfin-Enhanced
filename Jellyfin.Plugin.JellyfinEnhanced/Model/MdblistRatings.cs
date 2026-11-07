@@ -25,6 +25,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
         /// including "popcorn" (audience). 1 = Fresh, 0 = Rotten, null when
         /// MDBList doesn't report it for this title.</summary>
         public int? Fresh { get; set; }
+        /// <summary>Provider-reported certification; never inferred from the score or fresh flag.</summary>
+        public bool? Certified { get; set; }
     }
 
     /// <summary>
@@ -47,6 +49,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
         /// MdblistService.RetryTtl vs NegativeTtl.</summary>
         public bool Confirmed { get; set; }
         public long FetchedAtUnixMs { get; set; }
+        /// <summary>When a refresh of a found title failed: the last good ratings are kept (and
+        /// <see cref="FetchedAtUnixMs"/> still says how old they are) and the title is tried again
+        /// from this time on (MdblistService.RetryTtl after the failure). Null otherwise.</summary>
+        public long? RetryAfterUnixMs { get; set; }
         /// <summary>Cross-provider IDs (imdb, tmdb, trakt, mal, anilist, ...)
         /// from the top-level "ids" object, used by the display module to
         /// build direct links to each rating's source site. Populated by both
@@ -82,4 +88,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
         public long RateLimitResetUnixSeconds { get; set; }
         public long FetchedAtUnixMs { get; set; }
     }
+
+    /// <summary>What happened to a background batch offered to
+    /// MdblistService.GetMediaBatchWithinReserveAsync.</summary>
+    public enum MdblistReservedBatchStatus
+    {
+        /// <summary>The request was made and MDBList answered; Results holds the matches.</summary>
+        Sent,
+        /// <summary>The request was attempted but failed; nothing usable came back.</summary>
+        Failed,
+        /// <summary>Not sent: the remaining quota is at or below the caller's reserve.</summary>
+        ReserveReached,
+        /// <summary>Not sent: account status (and so the remaining quota) is unavailable.</summary>
+        QuotaUnknown,
+    }
+
+    /// <summary>Outcome of one background batch, plus the remaining quota as
+    /// known after it (null when account status is unavailable).</summary>
+    public sealed record MdblistReservedBatch(
+        MdblistReservedBatchStatus Status,
+        int? Remaining,
+        Dictionary<string, MdblistCacheEntry>? Results);
 }

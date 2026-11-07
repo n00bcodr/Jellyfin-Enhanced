@@ -25,22 +25,39 @@
 // exactly as it did before this module existed: one full download per page
 // load, held in memory only.
 //
-// Public surface: JE.tagCacheStore { available, getMeta, getMany,
-// beginFullWrite, putManyIfOwner, commitFullWrite, applyDelta, clearScope,
-// clearOtherScopes }.
+// It also keeps the Poster Tag Styles preset's artwork colours
+// (tags/tag-poster-colours.js) and the direct-play answers
+// (tags/tag-direct-play.js): one small record per artwork or item and device
+// profile, in the same scopes, capped, and cleared with the other scopes' data.
+//
+// Public surface: JE.tagCacheStore { ENTRY_SCHEMA, available, getMeta, getMany,
+// beginFullWrite, putManyIfOwner, commitFullWrite, applyDelta, reconcileAccess, clearScope,
+// clearOtherScopes, getPosterColours, putPosterColours, getDirectPlay,
+// putDirectPlay }.
 (function(JE) {
     'use strict';
 
     const logPrefix = '🪼 Jellyfin Enhanced [TagCacheStore]:';
     const DB_NAME = 'JellyfinEnhanced';
-    const DB_VERSION = 1;
+    // 2 added the poster colour store, 3 the direct-play store (older databases upgrade in place).
+    const DB_VERSION = 3;
     // One record per scope: { scope, version, timestamp, filterRevision, count,
     // clearStamp, servedAt, savedAt } once complete, or { scope, pending,
     // servedAt } while a full rewrite owns it (never restored).
     const META_STORE = 'tagCacheMeta';
     // One record per entry, keyed `${scope}|${itemId}` so a scope is one key range.
     const ITEM_STORE = 'tagCacheItems';
+    // Poster preset colours: { d: [r, g, b] | null, t: savedAt }, keyed
+    // `${scope}|${algorithm}|${artwork key}`.
+    const COLOUR_STORE = 'posterColours';
+    // Direct-play answers: { r: result, t: savedAt }, keyed
+    // `${scope}|${profile hash}|${itemId}`.
+    const DIRECT_PLAY_STORE = 'directPlay';
     const KEY_SEP = '|';
+    // The server's tag-cache entry schema (TagCacheService
+    // CurrentCacheSchemaVersion) the stored entries were written with; a copy
+    // from another schema is never restored.
+    const ENTRY_SCHEMA = 10;
 
     /** @type {Promise<IDBDatabase>|null} */
     let dbPromise = null;
@@ -91,6 +108,8 @@
                 const db = request.result;
                 if (!db.objectStoreNames.contains(META_STORE)) db.createObjectStore(META_STORE, { keyPath: 'scope' });
                 if (!db.objectStoreNames.contains(ITEM_STORE)) db.createObjectStore(ITEM_STORE);
+                if (!db.objectStoreNames.contains(COLOUR_STORE)) db.createObjectStore(COLOUR_STORE);
+                if (!db.objectStoreNames.contains(DIRECT_PLAY_STORE)) db.createObjectStore(DIRECT_PLAY_STORE);
             };
             request.onsuccess = () => {
                 const db = request.result;
@@ -269,7 +288,7 @@
         let owned = false;
         request.onsuccess = () => {
             owned = !!request.result && request.result.pending === token;
-            if (owned) store.put({ ...meta, scope });
+            if (owned) store.put({ ...meta, scope, entrySchema: ENTRY_SCHEMA });
         };
         await committed(tx);
         return owned;
@@ -285,9 +304,10 @@
      * @param {Array<[string, object]>} entries - [itemId, entry] pairs
      * @param {number} timestamp - The delta response's timestamp (the new cursor).
      * @param {number} servedAt - When the server captured the delta (ms, server clock).
+     * @param {string[]} [removed] - Item ids the delta removes.
      * @returns {Promise<boolean>} whether the delta was applied
      */
-    async function applyDelta(scope, base, entries, timestamp, servedAt) {
+    async function applyDelta(scope, base, entries, timestamp, servedAt, removed = []) {
         const db = await openDb();
         const tx = db.transaction([META_STORE, ITEM_STORE], 'readwrite');
         const metaStore = tx.objectStore(META_STORE);
@@ -305,10 +325,57 @@
             const items = tx.objectStore(ITEM_STORE);
             const prefix = scope + KEY_SEP;
             for (const [id, entry] of entries) items.put(entry, prefix + id);
+            for (const id of removed) items.delete(prefix + id);
             metaStore.put({ ...meta, timestamp, servedAt: Math.max(meta.servedAt || 0, servedAt || 0), savedAt: Date.now() });
         };
         await committed(tx);
         return applied;
+    }
+
+    /**
+     * Apply a delta whose only filter change is access (see tag-pipeline.js
+     * reconcileAccess), in one transaction and only on exactly the copy it was
+     * fetched against: drop every stored entry the user can no longer see,
+     * apply the delta, and record the new filter revision. Nothing is written
+     * when the copy moved on, or when the user can now see an item the copy
+     * lacks (only a full download brings that).
+     * @param {string} scope
+     * @param {{timestamp: number, version: number, filterRevision: string}} base - What the delta was requested against.
+     * @param {{timestamp: number, servedAt: number, filterRevision: string, filterBase: string}} next - The delta response's cursor and filter.
+     * @param {Array<[string, object]>} entries - [itemId, entry] pairs
+     * @param {string[]} removed - Item ids the delta removes.
+     * @param {Set<string>} visible - Every item id the user can see now.
+     * @returns {Promise<{applied: boolean, dropped: string[]}>}
+     */
+    async function reconcileAccess(scope, base, next, entries, removed, visible) {
+        const db = await openDb();
+        const tx = db.transaction([META_STORE, ITEM_STORE], 'readwrite');
+        const metaStore = tx.objectStore(META_STORE);
+        const items = tx.objectStore(ITEM_STORE);
+        const prefix = scope + KEY_SEP;
+        const meta = await settle(metaStore.get(scope));
+        const result = { applied: false, dropped: [] };
+        if (meta && !meta.pending && meta.timestamp === base.timestamp && meta.version === base.version
+            && meta.filterRevision === base.filterRevision) {
+            const held = new Set((await settle(items.getAllKeys(scopeRange(scope)))).map(key => String(key).slice(prefix.length)));
+            for (const [id] of entries) held.add(id);
+            let complete = true;
+            for (const id of visible) {
+                if (!held.has(id)) { complete = false; break; }
+            }
+            if (complete) {
+                result.applied = true;
+                for (const id of held) {
+                    if (!visible.has(id)) { items.delete(prefix + id); result.dropped.push(id); }
+                }
+                for (const [id, entry] of entries) items.put(entry, prefix + id);
+                for (const id of removed) items.delete(prefix + id);
+                metaStore.put({ ...meta, timestamp: next.timestamp, servedAt: Math.max(meta.servedAt || 0, next.servedAt || 0),
+                    filterRevision: next.filterRevision, filterBase: next.filterBase, count: held.size - result.dropped.length, savedAt: Date.now() });
+            }
+        }
+        await committed(tx);
+        return result;
     }
 
     /**
@@ -333,20 +400,123 @@
      */
     async function clearOtherScopes(scope) {
         const db = await openDb();
-        const tx = db.transaction([META_STORE, ITEM_STORE], 'readwrite');
+        const tx = db.transaction([META_STORE, ITEM_STORE, COLOUR_STORE, DIRECT_PLAY_STORE], 'readwrite');
         const meta = tx.objectStore(META_STORE);
         const keys = await settle(meta.getAllKeys());
         for (const key of keys) {
             if (key !== scope) meta.delete(key);
         }
-        const items = tx.objectStore(ITEM_STORE);
         // Everything before and after this scope's own key range.
-        items.delete(IDBKeyRange.upperBound(scope + KEY_SEP, true));
-        items.delete(IDBKeyRange.lowerBound(scope + KEY_SEP + '￿', true));
+        for (const store of [tx.objectStore(ITEM_STORE), tx.objectStore(COLOUR_STORE), tx.objectStore(DIRECT_PLAY_STORE)]) {
+            store.delete(IDBKeyRange.upperBound(scope + KEY_SEP, true));
+            store.delete(IDBKeyRange.lowerBound(scope + KEY_SEP + '￿', true));
+        }
+        await committed(tx);
+    }
+
+    /**
+     * The Poster preset colours stored for a scope and algorithm version.
+     * @param {string} scope
+     * @param {number} algorithm - tags/tag-poster-colours.js ALGORITHM.
+     * @returns {Promise<Map<string, number[]|null>>} Artwork key → dominant colour.
+     */
+    async function getPosterColours(scope, algorithm) {
+        const prefix = `${scope}${KEY_SEP}${algorithm}${KEY_SEP}`;
+        const db = await openDb();
+        const tx = db.transaction(COLOUR_STORE, 'readonly');
+        const range = IDBKeyRange.bound(prefix, prefix + '￿');
+        const store = tx.objectStore(COLOUR_STORE);
+        const keysRequest = store.getAllKeys(range);
+        const valuesRequest = store.getAll(range);
+        await committed(tx);
+        const out = new Map();
+        keysRequest.result.forEach((key, i) => {
+            const value = valuesRequest.result[i];
+            if (value && (value.d === null || (Array.isArray(value.d) && value.d.length === 3))) out.set(String(key).slice(prefix.length), value.d);
+        });
+        return out;
+    }
+
+    /**
+     * Store Poster preset colours, then drop the oldest of the scope beyond
+     * the cap (one transaction).
+     * @param {string} scope
+     * @param {number} algorithm
+     * @param {Map<string, number[]|null>} colours - Artwork key → dominant colour.
+     * @param {number} cap - Most records kept for the scope.
+     * @returns {Promise<void>}
+     */
+    async function putPosterColours(scope, algorithm, colours, cap) {
+        const prefix = `${scope}${KEY_SEP}${algorithm}${KEY_SEP}`;
+        const db = await openDb();
+        const tx = db.transaction(COLOUR_STORE, 'readwrite');
+        const store = tx.objectStore(COLOUR_STORE);
+        const now = Date.now();
+        for (const [key, d] of colours) store.put({ d, t: now }, prefix + key);
+        const range = scopeRange(scope);
+        const keys = await settle(store.getAllKeys(range));
+        if (keys.length > cap) {
+            const values = await settle(store.getAll(range));
+            keys.map((key, i) => ({ key, t: values[i]?.t || 0 }))
+                .sort((a, b) => a.t - b.t)
+                .slice(0, keys.length - cap)
+                .forEach(({ key }) => store.delete(key));
+        }
+        await committed(tx);
+    }
+
+    /**
+     * The direct-play answers stored for a scope and device profile.
+     * @param {string} scope
+     * @param {string} hash - tags/tag-direct-play.js profile hash.
+     * @returns {Promise<Map<string, {r: Object, t: number}>>} Item id → answer.
+     */
+    async function getDirectPlay(scope, hash) {
+        const prefix = `${scope}${KEY_SEP}${hash}${KEY_SEP}`;
+        const db = await openDb();
+        const tx = db.transaction(DIRECT_PLAY_STORE, 'readonly');
+        const range = IDBKeyRange.bound(prefix, prefix + '￿');
+        const store = tx.objectStore(DIRECT_PLAY_STORE);
+        const keysRequest = store.getAllKeys(range);
+        const valuesRequest = store.getAll(range);
+        await committed(tx);
+        const out = new Map();
+        keysRequest.result.forEach((key, i) => {
+            const value = valuesRequest.result[i];
+            if (value && value.r && typeof value.r === 'object' && typeof value.t === 'number') out.set(String(key).slice(prefix.length), value);
+        });
+        return out;
+    }
+
+    /**
+     * Store direct-play answers, then drop the oldest of the scope beyond the
+     * cap (one transaction).
+     * @param {string} scope
+     * @param {string} hash
+     * @param {Map<string, {r: Object, t: number}>} answers - Item id → answer.
+     * @param {number} cap - Most records kept for the scope.
+     * @returns {Promise<void>}
+     */
+    async function putDirectPlay(scope, hash, answers, cap) {
+        const prefix = `${scope}${KEY_SEP}${hash}${KEY_SEP}`;
+        const db = await openDb();
+        const tx = db.transaction(DIRECT_PLAY_STORE, 'readwrite');
+        const store = tx.objectStore(DIRECT_PLAY_STORE);
+        for (const [id, value] of answers) store.put({ r: value.r, t: value.t }, prefix + id);
+        const range = scopeRange(scope);
+        const keys = await settle(store.getAllKeys(range));
+        if (keys.length > cap) {
+            const values = await settle(store.getAll(range));
+            keys.map((key, i) => ({ key, t: values[i]?.t || 0 }))
+                .sort((a, b) => a.t - b.t)
+                .slice(0, keys.length - cap)
+                .forEach(({ key }) => store.delete(key));
+        }
         await committed(tx);
     }
 
     JE.tagCacheStore = {
+        ENTRY_SCHEMA,
         available,
         getMeta,
         getMany,
@@ -354,8 +524,13 @@
         putManyIfOwner,
         commitFullWrite,
         applyDelta,
+        reconcileAccess,
         clearScope,
         clearOtherScopes,
+        getPosterColours,
+        putPosterColours,
+        getDirectPlay,
+        putDirectPlay,
     };
 
 })(window.JellyfinEnhanced);

@@ -25,6 +25,10 @@ public class PrivacyCacheTests
         var drained = pending.Drain().ToDictionary(x => x.Id, x => x.Removed);
         Assert.True(drained[first]); Assert.False(drained[second]); Assert.True(pending.IsEmpty); Assert.Empty(pending.Drain());
         pending.Record(first, false); Assert.Equal((first, false), Assert.Single(pending.Drain()));
+        // A requeued update never overrides a change recorded after the drain.
+        pending.Record(first, true); pending.Requeue(first); pending.Requeue(second);
+        drained = pending.Drain().ToDictionary(x => x.Id, x => x.Removed);
+        Assert.True(drained[first]); Assert.False(drained[second]);
     }
 
     [Fact]
@@ -79,15 +83,102 @@ public class PrivacyCacheTests
     }
 
     [Fact]
-    public void RestartPreservesSnapshotAndQueuedRemovalChangesVersionAndSurvivesShutdown()
+    public void SubtitleEntriesFollowAccessFilteringAndItsRevisionForFullLoadsAndDeltas()
+    {
+        using var f = new JE.Tests.ApiPluginFixture(); f.Plugin.Configuration.TagCacheServerMode = true;
+        var user = new User("viewer", "default", "default") { Id = Guid.NewGuid() };
+        var first = Guid.NewGuid(); var second = Guid.NewGuid(); var allowed = new[] { first };
+        var library = new Mock<ILibraryManager>();
+        library.Setup(x => x.GetItemIds(It.IsAny<InternalItemsQuery>())).Returns(() => allowed);
+        var a = Entry(100); a.SubtitleLanguages = ["en"];
+        var b = Entry(200); b.SubtitleLanguages = ["ja"];
+        Seed(f, new() { [first.ToString("N")] = a, [second.ToString("N")] = b });
+        using var cache = Create(f, library); cache.LoadFromDisk();
+        var initial = cache.GetCacheForUser(user, out _, out _, out var revision);
+        Assert.Equal(new[] { "en" }, Assert.Single(initial).Value.SubtitleLanguages);
+        Assert.Empty(cache.GetCacheForUser(user, out _, out _, out var deltaRevision, since: 100));
+        Assert.Equal(revision, deltaRevision);
+        allowed = [first, second]; cache.InvalidateUserAccess();
+        var expanded = cache.GetCacheForUser(user, out _, out _, out var changed);
+        Assert.NotEqual(revision, changed);
+        Assert.Equal(new[] { "ja" }, expanded[second.ToString("N")].SubtitleLanguages);
+    }
+
+    [Fact]
+    public void LatestEpisodeDateIsDroppedForUsersWhoCannotSeeTheEpisodeItCameFrom()
+    {
+        using var f = new JE.Tests.ApiPluginFixture(); f.Plugin.Configuration.TagCacheServerMode = true;
+        var alice = new User("alice", "default", "default") { Id = Guid.NewGuid() }; var bob = new User("bob", "default", "default") { Id = Guid.NewGuid() };
+        var series = Guid.NewGuid(); var newest = Guid.NewGuid(); var (seriesKey, newestKey) = (series.ToString("N"), newest.ToString("N"));
+        var library = new Mock<ILibraryManager>();
+        // Bob can see the series but not its newest episode (e.g. a parental rating or blocked tag).
+        library.Setup(x => x.GetItemIds(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery query) => query.User == alice ? new[] { series, newest } : new[] { series });
+        Seed(f, new()
+        {
+            [seriesKey] = new() { Type = "Series", DateCreated = 100, LatestEpisodeAdded = 500, LatestEpisodeId = newestKey, LastUpdated = 100 },
+            [newestKey] = new() { Type = "Episode", SeriesId = seriesKey, DateCreated = 500, LastUpdated = 100 },
+        });
+        using var cache = Create(f, library); cache.LoadFromDisk();
+
+        Assert.Equal(500, cache.GetCacheForUser(alice, out _, out _, out var aliceRevision)[seriesKey].LatestEpisodeAdded); Assert.Equal("all", aliceRevision);
+        var bobItems = cache.GetCacheForUser(bob, out _, out _, out var bobRevision);
+        Assert.False(bobItems.ContainsKey(newestKey)); Assert.Null(bobItems[seriesKey].LatestEpisodeAdded); Assert.Null(bobItems[seriesKey].LatestEpisodeId);
+        Assert.Equal(100, bobItems[seriesKey].DateCreated); Assert.NotEqual("all", bobRevision);
+        Assert.Null(cache.GetCacheForUser(bob, out _, out _, since: 50)[seriesKey].LatestEpisodeAdded); // a delta filters the same way
+        Assert.True(cache.TryGetEntry(series, out var shared)); Assert.Equal(500, shared.LatestEpisodeAdded); Assert.Equal(newestKey, shared.LatestEpisodeId);
+
+        var copy = shared.Clone(); Assert.Equal(newestKey, copy.LatestEpisodeId); Assert.True(TagCacheEntry.ContentEquals(shared, copy));
+        copy.LatestEpisodeId = seriesKey; Assert.False(TagCacheEntry.ContentEquals(shared, copy));
+    }
+
+    [Fact]
+    public void RestartPreservesSnapshotAndQueuedRemovalReachesDeltasAcrossShutdown()
     {
         using var f = new JE.Tests.ApiPluginFixture(); f.Plugin.Configuration.TagCacheServerMode = true;
         var first = Guid.NewGuid(); var second = Guid.NewGuid(); var library = new Mock<ILibraryManager>();
+        var viewer = new User("viewer", "default", "default") { Id = Guid.NewGuid() };
+        library.Setup(x => x.GetItemIds(It.IsAny<InternalItemsQuery>())).Returns(new[] { first, second });
         Seed(f, new() { [first.ToString("N")] = Entry(100), [second.ToString("N")] = Entry(200) });
         using (var cache = Create(f, library)) { cache.LoadFromDisk(); Assert.Equal(2, cache.Count); cache.EnqueueRemoval(first); }
         using var restarted = Create(f, library); restarted.LoadFromDisk();
-        Assert.Equal(1, restarted.Count); Assert.True(restarted.Version > 7); Assert.False(restarted.TryGetEntry(first, out _)); Assert.True(restarted.TryGetEntry(second, out var entry)); Assert.Equal(200, entry.LastUpdated);
+        // The removal is a delta, not a new generation, and its tombstone survives the restart.
+        Assert.Equal(1, restarted.Count); Assert.Equal(7, restarted.Version); Assert.False(restarted.TryGetEntry(first, out _)); Assert.True(restarted.TryGetEntry(second, out var entry)); Assert.Equal(200, entry.LastUpdated);
+        Assert.Empty(restarted.GetCacheForUser(viewer, out _, out var cursor, out _, out var removed, 200, null));
+        Assert.Equal(new[] { first.ToString("N") }, removed);
+        restarted.GetCacheForUser(viewer, out _, out _, out _, out removed, cursor, null);
+        Assert.Empty(removed);
         Assert.False(File.Exists(SnapshotPath(f) + ".tmp"));
+    }
+
+    [Fact]
+    public void RemovalsReachDeltasWithoutAVersionChangeUntilTheLogOverflows()
+    {
+        using var f = new JE.Tests.ApiPluginFixture(); f.Plugin.Configuration.TagCacheServerMode = true;
+        var ids = Enumerable.Range(0, TagCacheService.MaxTombstones + 2).Select(_ => Guid.NewGuid()).ToArray();
+        var library = new Mock<ILibraryManager>(); library.Setup(x => x.GetItemIds(It.IsAny<InternalItemsQuery>())).Returns(ids);
+        var viewer = new User("viewer", "default", "default") { Id = Guid.NewGuid() };
+        Seed(f, ids.ToDictionary(id => id.ToString("N"), _ => Entry(100)));
+        using var cache = Create(f, library); cache.LoadFromDisk();
+        Assert.Equal(ids.Length, cache.GetCacheForUser(viewer, out var version, out var cursor, out _, out var removed, null, null).Count);
+        Assert.Empty(removed);
+
+        // As the flush does: apply the batch, then advance the cursor.
+        Assert.True(cache.ApplyBatch([(ids[0], true), (ids[1], true)], _ => false, cache.RemoveEntry));
+        cache.TouchLastModified();
+        var delta = cache.GetCacheForUser(viewer, out var after, out var next, out _, out removed, cursor, null);
+        Assert.Equal(version, after);
+        Assert.Empty(delta);
+        Assert.Equal(new[] { ids[0].ToString("N"), ids[1].ToString("N") }.Order(), removed.Order());
+        Assert.True(next >= cursor);
+        // At the returned cursor the same removals are not sent again; a removal that
+        // never happened (an id not in the cache) is no removal at all.
+        cache.GetCacheForUser(viewer, out _, out _, out _, out removed, next, null);
+        Assert.Empty(removed);
+        Assert.False(cache.RemoveEntry(Guid.NewGuid()));
+
+        // Past the bounded log, one version change makes clients reload instead.
+        foreach (var id in ids.Skip(2)) cache.RemoveEntry(id);
+        Assert.Equal(version + 1, cache.Version);
     }
 
     [Fact]

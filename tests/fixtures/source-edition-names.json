@@ -1,0 +1,1483 @@
+[
+  {
+    "path": "Movie.2020.REMUX.mkv",
+    "source": "REMUX",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.BluRay.REMUX.mkv",
+    "source": "REMUX",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.BDRemux.mkv",
+    "source": "REMUX",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.BD-REMUX.mkv",
+    "source": "REMUX",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.BluRay.mkv",
+    "source": "BluRay",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.Blu-Ray.mkv",
+    "source": "BluRay",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.BDRip.mkv",
+    "source": "BluRay",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.BRRip.mkv",
+    "source": "BluRay",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.BD-Rip.mkv",
+    "source": "BluRay",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB-DL.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEBDL.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEBRip.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB_Rip.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.1080p.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.web x265.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.HEVC.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.HDTV.mkv",
+    "source": "HDTV",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.DVD.mkv",
+    "source": "DVD",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.DVDRip.mkv",
+    "source": "DVD",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.DVD-Rip.mkv",
+    "source": "DVD",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.CAM.mkv",
+    "source": "CAM",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.HDCAM.mkv",
+    "source": "CAM",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.TELESYNC.mkv",
+    "source": "TS",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.TS.mkv",
+    "source": "TS",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.HDTS.mkv",
+    "source": "TS",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.TC.mkv",
+    "source": "TC",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.TELECINE.mkv",
+    "source": "TC",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.SCR.mkv",
+    "source": "SCR",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.DVDSCR.mkv",
+    "source": "SCR",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.SCREENER.mkv",
+    "source": "SCR",
+    "edition": null
+  },
+  {
+    "path": "Web of Lies (2016).mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Blue Ruin (2013).mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Web (2013).mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Webb.1080p.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "MyBluRayMovie.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "DVDish.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Remuxed.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "The.Cambridge.Story.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.ts",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.m2ts",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "/HDTV/Unmarked/Movie.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.NON-IMAX.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.Director's Cut.BluRay.mkv",
+    "source": "BluRay",
+    "edition": "Director's Cut"
+  },
+  {
+    "path": "Movie.2020.Directors.Cut.BluRay.mkv",
+    "source": "BluRay",
+    "edition": "Director's Cut"
+  },
+  {
+    "path": "Movie.2020.Director\u2019s Cut.BluRay.mkv",
+    "source": "BluRay",
+    "edition": "Director's Cut"
+  },
+  {
+    "path": "Movie.2020.Extended.BluRay.mkv",
+    "source": "BluRay",
+    "edition": "Extended"
+  },
+  {
+    "path": "Movie.2020.Unrated.BluRay.mkv",
+    "source": "BluRay",
+    "edition": "Unrated"
+  },
+  {
+    "path": "Movie.2020.Theatrical.BluRay.mkv",
+    "source": "BluRay",
+    "edition": "Theatrical"
+  },
+  {
+    "path": "Movie.2020.IMAX.BluRay.mkv",
+    "source": "BluRay",
+    "edition": "IMAX"
+  },
+  {
+    "path": "Movie.2020.Remaster.BluRay.mkv",
+    "source": "BluRay",
+    "edition": "Remastered"
+  },
+  {
+    "path": "Movie.2020.Remastered.BluRay.mkv",
+    "source": "BluRay",
+    "edition": "Remastered"
+  },
+  {
+    "path": "Movie.2020.Criterion.Collection.BluRay.mkv",
+    "source": "BluRay",
+    "edition": "Criterion"
+  },
+  {
+    "path": "Movie.2020.Uncut.BluRay.mkv",
+    "source": "BluRay",
+    "edition": "Uncut"
+  },
+  {
+    "path": "Movie.2020.Final.Cut.BluRay.mkv",
+    "source": "BluRay",
+    "edition": "Final Cut"
+  },
+  {
+    "path": "Movie.2020.Special.Edition.BluRay.mkv",
+    "source": "BluRay",
+    "edition": "Special Edition"
+  },
+  {
+    "path": "Movie.2020.2160p.WEB.DV.HDR10.DDP5.1.Atmos.HEVC-GRP.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.1080p.WEB.DDP5.1.H.264-GRP.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.1080p.WEB.AAC.x264-GRP.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie (2020) WEB.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Charlotte's Web (2006) 1080p BluRay.mkv",
+    "source": "BluRay",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.1080p.BR-DISK.mkv",
+    "source": "BluRay",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.BD50.mkv",
+    "source": "BluRay",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.HD-DVD.1080p.mkv",
+    "source": "HD DVD",
+    "edition": null
+  },
+  {
+    "path": "Show.S01E01.720p.PDTV.x264.mkv",
+    "source": "HDTV",
+    "edition": null
+  },
+  {
+    "path": "Show.S01E01.Raw-HD.mkv",
+    "source": "HDTV",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.HDTVRip.mkv",
+    "source": "HDTV",
+    "edition": null
+  },
+  {
+    "path": "Movie.2015.Rogue.Cut.1080p.BluRay.mkv",
+    "source": "BluRay",
+    "edition": "Rogue Cut"
+  },
+  {
+    "path": "Mad.Max.Fury.Road.2015.Black.and.Chrome.Edition.1080p.BluRay.mkv",
+    "source": "BluRay",
+    "edition": "Black and Chrome"
+  },
+  {
+    "path": "Movie.2020.Masters.of.Cinema.1080p.BluRay.mkv",
+    "source": "BluRay",
+    "edition": "Masters of Cinema"
+  },
+  {
+    "path": "Apocalypse.Now.1979.Redux.1080p.BluRay.mkv",
+    "source": "BluRay",
+    "edition": "Redux"
+  },
+  {
+    "path": "Movie.2020.Ultimate.Cut.BluRay.mkv",
+    "source": "BluRay",
+    "edition": "Ultimate"
+  },
+  {
+    "path": "Movie (2020) Ultimate Edition 1080p WEB-DL.mkv",
+    "source": "WEB",
+    "edition": "Ultimate"
+  },
+  {
+    "path": "Movie.2020.Collectors.Edition.BluRay.mkv",
+    "source": "BluRay",
+    "edition": "Collector's Edition"
+  },
+  {
+    "path": "Movie (2020) Collector's Edition 2160p REMUX.mkv",
+    "source": "REMUX",
+    "edition": "Collector's Edition"
+  },
+  {
+    "path": "Movie (2020) 25th Anniversary Edition 1080p BluRay.mkv",
+    "source": "BluRay",
+    "edition": "Anniversary"
+  },
+  {
+    "path": "Movie.2020.40th.Anniversary.Remux.mkv",
+    "source": "REMUX",
+    "edition": "Anniversary"
+  },
+  {
+    "path": "Movie.2020.Anniversary.Edition.WEB-DL.mkv",
+    "source": "WEB",
+    "edition": "Anniversary"
+  },
+  {
+    "path": "Movie.2020.Uncensored.WEB-DL.mkv",
+    "source": "WEB",
+    "edition": "Uncensored"
+  },
+  {
+    "path": "Movie.2020.Open.Matte.1080p.WEB-DL.mkv",
+    "source": "WEB",
+    "edition": "Open Matte"
+  },
+  {
+    "path": "Movie (2020) {edition-Ultimate Cut}.mkv",
+    "source": null,
+    "edition": "Ultimate"
+  },
+  {
+    "path": "The Ultimate Gift (2006) 1080p BluRay.mkv",
+    "source": "BluRay",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.Ultimate.1080p.BluRay.mkv",
+    "source": "BluRay",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.Anniversary.1080p.BluRay.mkv",
+    "source": "BluRay",
+    "edition": null
+  },
+  {
+    "path": "/movies/Movie (2020) {edition-Director's Cut}/Movie.WEB-DL.mkv",
+    "source": "WEB",
+    "edition": "Director's Cut"
+  },
+  {
+    "path": "/movies/Movie.2160p.REMUX/Movie.mkv",
+    "source": "REMUX",
+    "edition": null
+  },
+  {
+    "path": "/movies/Movie.BluRay/Movie.WEBRip.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "/movies/Movie {edition-Extended}/Movie {edition-Unrated}.mkv",
+    "source": null,
+    "edition": "Unrated"
+  },
+  {
+    "path": "C:\\Movies\\Movie.BluRay.{edition-Criterion}\\Movie.mkv",
+    "source": "BluRay",
+    "edition": "Criterion"
+  },
+  {
+    "path": "Movie.{edition-Fan Edit}.mkv",
+    "source": null,
+    "edition": "Fan Edit"
+  },
+  {
+    "path": "Movie.bluray.disc",
+    "source": "BluRay",
+    "edition": null
+  },
+  {
+    "path": "Movie.DVD.disc",
+    "source": "DVD",
+    "edition": null
+  },
+  {
+    "path": "Movie.disc",
+    "source": "Physical",
+    "edition": null
+  },
+  {
+    "path": "Movie.HD-DVD.disc",
+    "source": "HD DVD",
+    "edition": null
+  },
+  {
+    "path": "Movie.VHS.disc",
+    "source": "VHS",
+    "edition": null
+  },
+  {
+    "path": "Movie.HDTV.disc",
+    "source": "HDTV",
+    "edition": null
+  },
+  {
+    "path": "/movies/Film {edition-Director's Cut}/Film.Remastered.WEB-DL.mkv",
+    "source": "WEB",
+    "edition": "Director's Cut"
+  },
+  {
+    "path": "Movie.DVD.SCR.mkv",
+    "source": "SCR",
+    "edition": null
+  },
+  {
+    "path": "Movie.{edition-constructor}.mkv",
+    "source": null,
+    "edition": "constructor"
+  },
+  {
+    "path": "Movie.2020.WEB.8k.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.8kish.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Webb.8k.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.4320p.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.4320pish.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Webb.4320p.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.4k.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.4kish.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Webb.4k.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.2160p.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.2160pish.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Webb.2160p.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.1440p.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.1440pish.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Webb.1440p.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.1080pish.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.1080i.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.1080iish.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Webb.1080i.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.720p.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.720pish.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Webb.720p.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.576p.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.576pish.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Webb.576p.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.480p.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.480pish.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Webb.480p.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.360p.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.360pish.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Webb.360p.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.404p.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.404pish.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Webb.404p.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.384p.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.384pish.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Webb.384p.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.520p.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.520pish.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Webb.520p.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.HEVCish.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Webb.HEVC.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.H265.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.H265ish.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Webb.H265.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.H264.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.H264ish.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Webb.H264.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.AVC.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.AVCish.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Webb.AVC.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.AV1.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.AV1ish.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Webb.AV1.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.VP9.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.VP9ish.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Webb.VP9.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.x264.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.x264ish.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Webb.x264.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.x265.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.x265ish.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Webb.x265.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.VP8.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.VP8ish.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Webb.VP8.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.XVID.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.XVIDish.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Webb.XVID.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.DIVX.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.DIVXish.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Webb.DIVX.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.WMV.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.WMVish.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Webb.WMV.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.VC1.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.VC1ish.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Webb.VC1.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.MPEG2.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.MPEG2ish.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Webb.MPEG2.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.MPEG4.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.MPEG4ish.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Webb.MPEG4.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.MJPEG.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.MJPEGish.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Webb.MJPEG.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.THEORA.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.THEORAish.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Webb.THEORA.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEBSITE.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEBSITE.1080p.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEBBY.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEBBY.x264.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Web of Lies (2016) 1080p.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Charlotte's Web (2006) 1080p.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movies/Uncut Gems (2019)/Uncut Gems (2019) Bluray-1080p.mkv",
+    "source": "BluRay",
+    "edition": null
+  },
+  {
+    "path": "Movies/The Final Cut (2004)/The Final Cut (2004).mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movies/Extended Family (2015)/Extended Family (2015) WEBDL-1080p.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movies/Unrated (2009)/Unrated (2009).mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movies/Remastered Who Shot the Sheriff (2018)/Remastered Who Shot the Sheriff (2018) WEBRip-1080p.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movies/Cam (2018)/Cam (2018) WEBDL-1080p.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "TV/Show/Season 01/Show - S01E05 - The Director's Cut [WEBDL-1080p].mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "TV/Show/Season 02/Show.S02E01.Final.Cut.1080p.WEB-DL.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "TV/Show (2010)/Season 01/Show (2010) - S01E02 - Uncut [Bluray-1080p].mkv",
+    "source": "BluRay",
+    "edition": null
+  },
+  {
+    "path": "Movies/Movie (2020)/Movie (2020) Extended Cut Bluray-1080p.mkv",
+    "source": "BluRay",
+    "edition": "Extended"
+  },
+  {
+    "path": "Movies/2001 A Space Odyssey (1968)/2001 A Space Odyssey (1968) Remastered Bluray-2160p.mkv",
+    "source": "BluRay",
+    "edition": "Remastered"
+  },
+  {
+    "path": "TV/Show/Season 01/Show.S01E03.Extended.1080p.BluRay.mkv",
+    "source": "BluRay",
+    "edition": null
+  },
+  {
+    "path": "Movies/Uncut Gems/Uncut Gems.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movies/Remux (2024)/Remux (2024).mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movies/Film (2020)/Film (2020) Extended 2024 BluRay.mkv",
+    "source": "BluRay",
+    "edition": "Extended"
+  },
+  {
+    "path": "media/The.Final.Cut.2004.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "media/CAM.2018.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "media/Movie.Extended.1080p.BluRay.mkv",
+    "source": "BluRay",
+    "edition": "Extended"
+  },
+  {
+    "path": "media/1917.2019.2160p.UHD.BluRay.REMUX.mkv",
+    "source": "REMUX",
+    "edition": null
+  },
+  {
+    "path": "media/Uncut Gems 1080p WEB-DL.mkv",
+    "source": "WEB",
+    "edition": null,
+    "itemName": "Uncut Gems"
+  },
+  {
+    "path": "media/The Final Cut 1080p BluRay.mkv",
+    "source": "BluRay",
+    "edition": null,
+    "itemName": "The Final Cut"
+  },
+  {
+    "path": "media/Cam 1080p.mkv",
+    "source": null,
+    "edition": null,
+    "itemName": "Cam"
+  },
+  {
+    "path": "media/Film.Extended.mkv",
+    "source": null,
+    "edition": "Extended",
+    "itemName": "Film"
+  },
+  {
+    "path": "media/Film.Directors.Cut.mkv",
+    "source": null,
+    "edition": "Director's Cut",
+    "itemName": "Film"
+  },
+  {
+    "path": "media/Film.Uncut.WEB-DL.mkv",
+    "source": "WEB",
+    "edition": "Uncut",
+    "itemName": "Film"
+  },
+  {
+    "path": "Show/Season 01/Show.S01E01.The.Web.720p.HDTV.mkv",
+    "source": "HDTV",
+    "edition": null,
+    "itemName": "The Web"
+  },
+  {
+    "path": "Show/Season 01/Show.S01E01.The.Web.720p.HDTV.mkv",
+    "source": "HDTV",
+    "edition": null,
+    "itemName": "Episode 1"
+  },
+  {
+    "path": "Show/Season 01/Show.S01E01.Web.of.Lies.720p.DVDRip.mkv",
+    "source": "DVD",
+    "edition": null
+  },
+  {
+    "path": "TV/The Daily Show/Season 2024/The Daily Show - 2024-03-15 - Extended Interview with Guest [HDTV-720p].mkv",
+    "source": "HDTV",
+    "edition": null,
+    "itemName": "Extended Interview with Guest"
+  },
+  {
+    "path": "TV/The Daily Show/Season 2024/The Daily Show - 2024-03-15 - Extended Interview with Guest [HDTV-720p].mkv",
+    "source": "HDTV",
+    "edition": null,
+    "itemName": "Episode 2024-03-15"
+  },
+  {
+    "path": "TV/Late Show/Season 2024/Late Show - 2024-03-15 - Uncensored Bits [WEBDL-1080p].mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "TV/Show/Season 1/Show - 1x05 - The Director's Cut [HDTV-720p].mkv",
+    "source": "HDTV",
+    "edition": null,
+    "itemName": "The Director's Cut"
+  },
+  {
+    "path": "TV/Show/Season 1/Show - 1x05 - The Director's Cut [HDTV-720p].mkv",
+    "source": "HDTV",
+    "edition": null
+  },
+  {
+    "path": "TV/Show/Season 1/Show - 105 - Extended Family [WEBDL-1080p].mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Anime/Anime/Season 1/Anime - 05 - Remastered Memories [Bluray-1080p].mkv",
+    "source": "BluRay",
+    "edition": null
+  },
+  {
+    "path": "Anime/Anime/Season 1/[Group] Anime - 01 [BD 1080p HEVC FLAC].mkv",
+    "source": "BluRay",
+    "edition": null
+  },
+  {
+    "path": "Movies/Movie (2019)/Movie.2019.1080p.WEB.H264-TS.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movies/Movie (2019)/Movie.2019.1080p.BluRay.x264-CAM.mkv",
+    "source": "BluRay",
+    "edition": null
+  },
+  {
+    "path": "Movies/Movie (2019)/Movie.2019.TELESYNC.x264-GRP.mkv",
+    "source": "TS",
+    "edition": null
+  },
+  {
+    "path": "Movies/Movie (2007)/Movie.2007.1080p.HD-DVD.mkv",
+    "source": "HD DVD",
+    "edition": null
+  },
+  {
+    "path": "Movies/Movie (2019)/Movie.2019.DVD9.mkv",
+    "source": "DVD",
+    "edition": null
+  },
+  {
+    "path": "Movies/Movie (2019)/Movie.2019.DVD5.x264.mkv",
+    "source": "DVD",
+    "edition": null
+  },
+  {
+    "path": "TV/Show/Season 1/Show.S01E01.SDTV.x264.mkv",
+    "source": "SDTV",
+    "edition": null
+  },
+  {
+    "path": "TV/Show/Season 1/Show.S01E01.TVRip.XviD.mkv",
+    "source": "SDTV",
+    "edition": null
+  },
+  {
+    "path": "Movies/Movie (1985)/Movie.1985.VHSRip.mkv",
+    "source": "VHS",
+    "edition": null
+  },
+  {
+    "path": "Movies/Movie (2019)/Movie.2019.1080p.BluRay.Hybrid.x264-GRP.mkv",
+    "source": "BluRay",
+    "edition": "Hybrid"
+  },
+  {
+    "path": "Movies/Movie (1992)/Movie.1992.Producers.Cut.1080p.BluRay.mkv",
+    "source": "BluRay",
+    "edition": "Producer's Cut"
+  },
+  {
+    "path": "Movies/Movie (2019)/Movie.2019.Alternate.Cut.1080p.WEB-DL.mkv",
+    "source": "WEB",
+    "edition": "Alternate Cut"
+  },
+  {
+    "path": "Movies/Movie (1992)/Movie.1992.Assembly.Cut.1080p.BluRay.mkv",
+    "source": "BluRay",
+    "edition": "Assembly Cut"
+  },
+  {
+    "path": "Movies/Movie (2006)/Movie.2006.International.Cut.1080p.BluRay.mkv",
+    "source": "BluRay",
+    "edition": "International Cut"
+  },
+  {
+    "path": "Movies/Movie (1960)/Movie.1960.Restored.1080p.BluRay.mkv",
+    "source": "BluRay",
+    "edition": "Restored"
+  },
+  {
+    "path": "Movies/Hybrid (2021)/Hybrid (2021) Bluray-1080p.mkv",
+    "source": "BluRay",
+    "edition": null,
+    "itemName": "Hybrid"
+  },
+  {
+    "path": "Movies/Restored (2010)/Restored.2010.1080p.WEB-DL.mkv",
+    "source": "WEB",
+    "edition": null,
+    "itemName": "Restored"
+  },
+  {
+    "path": "Movies/Film (2020)/Film.2020.1080p.H264-CAM.mkv",
+    "source": null,
+    "edition": null,
+    "itemName": "Film"
+  },
+  {
+    "path": "Movies/Film (2024)/Film.2024.1080p.H264-TS.mkv",
+    "source": null,
+    "edition": null,
+    "itemName": "Film"
+  },
+  {
+    "path": "Movies/Film (2024)/Film.2024.WEB.H264-TS.strm",
+    "source": "WEB",
+    "edition": null,
+    "itemName": "Film"
+  },
+  {
+    "path": "Movies/Film (2024)/Film.2024.WEB.H264-Extended.mkv",
+    "source": "WEB",
+    "edition": null,
+    "itemName": "Film"
+  },
+  {
+    "path": "Movies/Film (2024)/Film.2024.HD-DVD.mkv",
+    "source": "HD DVD",
+    "edition": null,
+    "itemName": "Film"
+  },
+  {
+    "path": "Movies/Film (2024)/Film.2024.DVD-R.mkv",
+    "source": "DVD",
+    "edition": null,
+    "itemName": "Film"
+  },
+  {
+    "path": "TV/Show/Season 01/Show.1x05.Web.of.Lies.Extended.Interview.1080p.HDTV.mkv",
+    "source": "HDTV",
+    "edition": null,
+    "itemName": "Web of Lies: Extended Interview"
+  },
+  {
+    "path": "TV/Show/Season 01/Show.2024-03-15.Web.of.Lies.Extended.Interview.1080p.HDTV.mkv",
+    "source": "HDTV",
+    "edition": null,
+    "itemName": "Web of Lies: Extended Interview"
+  },
+  {
+    "path": "TV/Show/Season 01/Show - 105 - Web of Lies Extended Interview [1080p HDTV].mkv",
+    "source": "HDTV",
+    "edition": null,
+    "itemName": "Web of Lies: Extended Interview"
+  },
+  {
+    "path": "TV/Show/Season 01/Show.S01E05.Web.of.Lies.Extended.Interview.1080p.HDTV.mkv",
+    "source": "HDTV",
+    "edition": null,
+    "itemName": "Web of Lies: Extended Interview"
+  },
+  {
+    "path": "TV/Show/Season 01/Show.1x05.The.Web.Extended.Interview.1080p.HDTV.mkv",
+    "source": "HDTV",
+    "edition": null,
+    "itemName": "The Web Extended Interview"
+  },
+  {
+    "path": "Movies/Title (1982)/Title - 1982 - Final Cut.mkv",
+    "source": null,
+    "edition": "Final Cut"
+  },
+  {
+    "path": "TV/Show/Season 01/Show.S01E01.Pilot.Extended.1080p.WEB-DL.mkv",
+    "source": "WEB",
+    "edition": "Extended",
+    "itemName": "Pilot"
+  },
+  {
+    "path": "TV/Show/Season 01/Show.1x01.Pilot.Extended.1080p.WEB-DL.mkv",
+    "source": "WEB",
+    "edition": "Extended",
+    "itemName": "Pilot"
+  },
+  {
+    "path": "TV/Show/Season 2024/Show.2024-03-15.Pilot.Extended.1080p.WEB-DL.mkv",
+    "source": "WEB",
+    "edition": "Extended",
+    "itemName": "Pilot"
+  },
+  {
+    "path": "TV/Show/Season 01/Show.S01E01.Pilot.1080p.WEB-DL.mkv",
+    "source": "WEB",
+    "edition": null,
+    "itemName": "Pilot"
+  },
+  {
+    "path": "https://cdn.example.invalid/Film.2020.WEB.H264-CAM.mkv?sig=example",
+    "source": "WEB",
+    "edition": null,
+    "itemName": "Film"
+  },
+  {
+    "path": "https://cdn.example.invalid/stream/123?sig=example",
+    "source": null,
+    "edition": null,
+    "itemName": "Film"
+  },
+  {
+    "path": "Movies/Film (2020)/Film.2020.HDRip.x264.mkv",
+    "source": "WEB",
+    "edition": null,
+    "itemName": "Film"
+  },
+  {
+    "path": "Movies/Film (2020)/Film.2020.R5.LiNE.XviD.mkv",
+    "source": "SCR",
+    "edition": null,
+    "itemName": "Film"
+  },
+  {
+    "path": "Movies/Film (2020)/Film.2020.WORKPRINT.XviD.mkv",
+    "source": "SCR",
+    "edition": null,
+    "itemName": "Film"
+  },
+  {
+    "path": "Sports/Event (2024)/Event.2024.PPV.720p.x264.mkv",
+    "source": "HDTV",
+    "edition": null,
+    "itemName": "Event"
+  },
+  {
+    "path": "Movies/Film (2020)/Film (2020) {edition-Extended Director's Cut}.mkv",
+    "source": null,
+    "edition": "Extended Director's Cut",
+    "itemName": "Film"
+  },
+  {
+    "path": "Movies/Film (2020)/Film (2020) {edition-Directors Cut} Bluray-1080p.mkv",
+    "source": "BluRay",
+    "edition": "Director's Cut",
+    "itemName": "Film"
+  },
+  {
+    "path": "Movies/Film (2020)/Film.2020.HDTC.x264.mkv",
+    "source": "TC",
+    "edition": null,
+    "itemName": "Film"
+  },
+  {
+    "path": "Show/Season 01/Show.S01E01.The.Web.mkv",
+    "source": null,
+    "edition": null,
+    "itemName": "The Web"
+  },
+  {
+    "path": "Show/Season 01/Show.S01E01.Web.of.Lies.1080p.mkv",
+    "source": null,
+    "edition": null,
+    "itemName": "Web of Lies"
+  },
+  {
+    "path": "Show/Season 01/Show.S01E01.The.Web.1080p.BluRay.mkv",
+    "source": "BluRay",
+    "edition": null,
+    "itemName": "The Web"
+  },
+  {
+    "path": "Show/Season 02/Show - S02E03 - Extended Cut - 1080p WEB-DL.mkv",
+    "source": "WEB",
+    "edition": null,
+    "itemName": "Extended Cut"
+  },
+  {
+    "path": "media/Uncut.Gems.1080p.WEB-DL.mkv",
+    "source": "WEB",
+    "edition": null,
+    "itemName": "Der schwarze Diamant",
+    "originalTitle": "Uncut Gems"
+  },
+  {
+    "path": "media/Cam 1080p.mkv",
+    "source": null,
+    "edition": null,
+    "itemName": "Kamera",
+    "originalTitle": "Cam"
+  },
+  {
+    "path": "media/Movie.Extended.1080p.BluRay.mkv",
+    "source": "BluRay",
+    "edition": "Extended",
+    "itemName": "Film",
+    "originalTitle": "Movie"
+  },
+  {
+    "path": "media/Movie.Extended.1080p.BluRay.mkv",
+    "source": "BluRay",
+    "edition": "Extended",
+    "itemName": "Movie"
+  },
+  {
+    "path": "Movies/Uncut Gems (2019)/Uncut Gems (2019) Remastered Bluray-2160p.mkv",
+    "source": "BluRay",
+    "edition": "Remastered",
+    "itemName": "Uncut Gems"
+  },
+  {
+    "path": "media/Remux 2160p HEVC.mkv",
+    "source": null,
+    "edition": null,
+    "itemName": "Remux"
+  },
+  {
+    "path": "Movies/Movie (1968)/Movie.1968.Roadshow.Edition.1080p.BluRay.x264-GRP.mkv",
+    "source": "BluRay",
+    "edition": "Roadshow"
+  },
+  {
+    "path": "Movies/Movie (1977)/Movie (1977) Despecialized Edition v2.7 720p.mkv",
+    "source": null,
+    "edition": "Despecialized"
+  },
+  {
+    "path": "Movies/Movie (1999)/Movie.1999.Fan.Edit.1080p.WEB-DL.mkv",
+    "source": "WEB",
+    "edition": "Fan Edit"
+  },
+  {
+    "path": "Movies/Roadshow (2019)/Roadshow.2019.1080p.WEB-DL.mkv",
+    "source": "WEB",
+    "edition": null,
+    "itemName": "Roadshow"
+  }
+]

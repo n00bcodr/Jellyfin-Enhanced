@@ -10,7 +10,14 @@ test('translations normalize per-user language and cache the bundled Unicode res
   h.window.localStorage.setItem('a-language','JA-jp');
   assert.deepEqual(plain(await h.JE.loadTranslations()),{greeting:'こんにちは {name}'});
   assert.match(calls[0],/JA|ja-JP/);assert.match(calls[0],/\/locales\/ja-JP.json$/);
-  await h.JE.loadTranslations();assert.equal(calls.length,1);
+  assert.match(calls[1],/\/locales\/en.json$/,'English is loaded once as the per-key fallback');
+  await h.JE.loadTranslations();assert.equal(calls.length,2,'both come from the cache the second time');
+});
+test('a locale missing a key falls back to the English string for that key only',async t=>{
+  const h=setup(t,async url=>url.endsWith('/en-GB.json')?jsonResponse({colour:'Colour',shared:'GB wins'}):url.endsWith('/en.json')?jsonResponse({colour:'Color',shared:'en loses',status_tag_just_added:'Just Added'}):jsonResponse({},404));
+  h.window.localStorage.setItem('a-language','en-GB');
+  const tr=plain(await h.JE.loadTranslations());
+  assert.equal(tr.colour,'Colour');assert.equal(tr.shared,'GB wins');assert.equal(tr.status_tag_just_added,'Just Added');
 });
 test('translations use Jellyfin document language when no local preference exists',async t=>{
   const calls=[];const h=setup(t,async url=>{calls.push(url);return jsonResponse({yes:'Oui'});});

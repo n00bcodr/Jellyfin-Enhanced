@@ -18,6 +18,7 @@ def main():
         if not shutil.which(tool):
             parser.error(f'Missing {tool}; see tests/docs/README.md')
     commands = [
+        [sys.executable, "-m", "unittest", "discover", "-s", "tests/inventory", "-p", "test_poster_assets.py"],
         ['dotnet', 'run', '--project', 'tests/poster/pipeline', '-c', 'Release'],
         ['node', 'tests/poster/parity/run.mjs', '--offline'],
     ]

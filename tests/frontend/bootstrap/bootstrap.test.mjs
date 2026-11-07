@@ -236,3 +236,36 @@ for (const late of ['private-config', 'settings']) test(`per-endpoint fallback d
   assert.equal(h.plugin.pluginConfig.SonarrUrl, undefined);
   assert.deepEqual(plain(h.plugin.userConfig.bookmark.bookmarks), { 'user-c': { name: 'user-c' } });
 });
+
+// Item looks are projected per caller (only items that user can see); a same-tab switch must not keep the last user's list.
+const LOOK_A = [{ ItemId: 'a'.repeat(32), Layout: 'bands' }], LOOK_B = [{ ItemId: 'b'.repeat(32), Layout: 'minimal' }];
+test('a same-tab user switch serves the incoming user\'s item looks from the bootstrap', async t => {
+  const h = setup(t, { data: id => payload({ UserId: id, PublicConfig: { TagLookItemOverrides: id === 'user-a' ? LOOK_A : LOOK_B } }) });
+  await until(() => h.plugin.initialized);
+  assert.deepEqual(plain(h.plugin.pluginConfig.TagLookItemOverrides), LOOK_A);
+  const loaded = new Promise(resolve => h.document.addEventListener('je:user-data-loaded', resolve, { once: true }));
+  h.switchUser('user-b');
+  assert.equal(h.plugin.pluginConfig.TagLookItemOverrides, null, 'nothing reads the outgoing list during the switch');
+  await loaded;
+  assert.deepEqual(plain(h.plugin.pluginConfig.TagLookItemOverrides), LOOK_B);
+  assert.equal(h.calls.filter(p => p.endsWith('/bootstrap')).length, 2);
+});
+
+test('a same-tab user switch on the per-endpoint fallback refetches the public config for the item looks', async t => {
+  let id = 'user-a';
+  const h = setup(t, { ajax: async path => {
+    if (path.endsWith('/bootstrap')) return payload({ UserId: 'user-a', PublicConfig: { TagLookItemOverrides: LOOK_A } });
+    if (path.endsWith('/public-config')) return { TagLookItemOverrides: id === 'user-b' ? LOOK_B : LOOK_A, QualityTagsEnabled: true };
+    if (path.endsWith('/private-config') || path.startsWith('/JellyfinEnhanced/user-settings/user-b/')) return {};
+    throw new Error(`Unexpected endpoint ${path}`);
+  } });
+  await until(() => h.plugin.initialized);
+  assert.deepEqual(plain(h.plugin.pluginConfig.TagLookItemOverrides), LOOK_A);
+  assert.ok(!h.calls.includes('/JellyfinEnhanced/public-config'), 'the boot used the bootstrap');
+  const loaded = new Promise(resolve => h.document.addEventListener('je:user-data-loaded', resolve, { once: true }));
+  id = 'user-b'; h.switchUser('user-b');
+  await loaded;
+  assert.deepEqual(plain(h.plugin.pluginConfig.TagLookItemOverrides), LOOK_B);
+  assert.equal(h.plugin.pluginConfig.QualityTagsEnabled, undefined, 'only the per-user fields are taken from it');
+  assert.ok(h.calls.includes('/JellyfinEnhanced/public-config'));
+});

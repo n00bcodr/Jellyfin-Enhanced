@@ -86,6 +86,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
             await MdblistRatingsFetchRunner.RunAsync(
                 _libraryManager, _mdblistService, _logger, reserve, progress, cancellationToken)
                 .ConfigureAwait(false);
+
+            // The tag cache copies the scores it finds in the MDBList cache when it is built or refreshed, so what this run
+            // just saved would wait for the next rebuild. Publish it now, with no further MDBList calls.
+            try { TagCacheService.Instance?.RefreshRatingSourceAvailability(); }
+            catch (Exception ex) { _logger.Warning($"MDBList Ratings Fetch: could not publish the new scores to the tag cache: {ex.Message}"); }
         }
     }
 }

@@ -167,11 +167,11 @@ These are CSS custom properties, separate from plugin settings. Assign them to `
 
 ## Tags
 
-Poster tags use separate containers for quality, genre, language, rating, and age-rating badges. People tags decorate cast portraits on detail pages. Enable the relevant personal setting in **UI Settings** before trying a recipe.
+Poster tags use separate containers for quality, genre, language, rating, and age-rating badges. People tags decorate cast portraits on detail pages. Enable the relevant personal setting in **Media Tags** before trying a recipe.
 
 ### Prerequisites and placement
 
-The administrator's **Display** → **Media Tags** settings provide defaults. All six tag features start off at factory defaults.
+The administrator's **Media Tags** settings (the configuration page's Media Tags tab) provide defaults. All six tag features start off at factory defaults.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
@@ -180,16 +180,18 @@ The administrator's **Display** → **Media Tags** settings provide defaults. Al
 | **Enable Language Tags** (admin) / **Show Language Tags** (viewer) | Off | `LanguageTagsEnabled`: audio-language flags. |
 | **Enable Rating Tags** (admin) / **Show Rating Tags** (viewer) | Off | `RatingTagsEnabled`: community and critic scores. |
 | **Enable Age Rating Tags** (admin) / **Show Age Rating Tags** (viewer) | Off | `AgeRatingTagsEnabled`: official age/content certification. |
+| **Enable Status Tags** (admin) / **Show Status Tags** (viewer) | Off | `StatusTagsEnabled`: Just Added, New Movie/Series/Episode and trending rank badges. |
+| **Enable Logo Tags** (admin) / **Logos** (viewer) | Off | `LogoTagsEnabled`: streaming service, network or studio logos. |
 | **Enable People Tags** (admin) / **Show People Tags** (viewer) | Off | `PeopleTagsEnabled`: cast ages, birthplace, and deceased status. |
-| **Hide Tags on Hover** (admin and viewer) | Off | `TagsHideOnHover`: adds `body.je-tags-hide-on-hover`; an important hover rule hides the poster tag host. |
+| **Hide tags on hover** (admin and viewer) | Off | `TagsHideOnHover`: adds `body.je-tags-hide-on-hover`; an important hover rule hides the poster tag host. |
 
-New user settings for the six tag features are seeded from the plugin configuration. Existing non-null user values take precedence over admin defaults. Changing a default does not replace a saved personal choice. See [Settings Overview](../getting-started/settings-overview.md) for default management.
+New user settings for the eight tag features are seeded from the plugin configuration. Existing non-null user values take precedence over admin defaults. Changing a default does not replace a saved personal choice. See [Settings Overview](../getting-started/settings-overview.md) for default management.
 
 Server and saved user properties use PascalCase. Resolved client settings use camelCase, such as `qualityTagsEnabled`.
 
-Users can change **Hide Tags on Hover** later in their personal **UI Settings**.
+Users can change **Hide tags on hover** later in their personal **Media Tags** section (**Layout** tab).
 
-If tag data is stale or missing, also check the server's cache configuration under **Display** → **Media Tags**:
+If tag data is stale or missing, also check the server's cache configuration under **Media Tags** → **Server**:
 
 | Setting (admin) | Default | What it does |
 | --- | --- | --- |
@@ -198,9 +200,41 @@ If tag data is stale or missing, also check the server's cache configuration und
 
 Exclusion changes affect the next cache rebuild. Click **Save Settings**, then open **Admin** → **Tag Cache** and click **Rebuild Server Tag Cache**. Confirm the full rebuild. See [Tags & Badges](../enhanced/tags.md) for cache operation; CSS only styles the resulting elements.
 
-Use the position grids in **UI Settings** to move tag containers between corners.
+Use the **Position** pills on the **Groups** tab and the layout tiles on the **Layout** tab of **Media Tags** to move tag containers.
 
-The normal poster structure places `.je-tag-host` inside `.cardScalable`, before `.cardOverlayContainer`. Fallback targets are used when that structure is unavailable.
+The normal poster structure places `.je-tag-host` inside `.cardScalable`, before `.cardOverlayContainer`. Fallback targets are used when that structure is unavailable: a list row's image gets its own `.je-tag-host`.
+
+```html
+<div class="cardBox">
+  <div class="cardScalable">
+    <div class="cardImageContainer"></div>
+    <div class="je-tag-host" data-je-layout="caption">
+      <div class="je-tag-slot" data-je-slot="poster">
+        <div class="status-overlay-container" data-je-group="status">…</div>
+      </div>
+    </div>
+    <div class="cardOverlayContainer"></div>
+  </div>
+  <div class="je-tag-slot je-tag-caption" data-je-slot="caption">
+    <div class="quality-overlay-container" data-je-group="quality">…</div>
+  </div>
+  <div class="cardText">…</div>
+</div>
+```
+
+`data-je-layout` on the host names the layout (`corners`, `bands`, `caption`, `summary`, `minimal`). Each place is a `.je-tag-slot` with `data-je-slot`:
+
+| Layout | Slots |
+| --- | --- |
+| Corners | `tl`, `tc`, `tr`, `ml`, `c`, `mr`, `bl`, `bc`, `br` (3×3 order) |
+| Bands | `top`, `bottom` |
+| Caption | `poster`, plus the outlet `.je-tag-caption` (`caption`) between `.cardScalable` and the title block, outside the image |
+| Summary | `pill` (holds `.je-tag-pill` with `.je-tag-pill-fact` spans), `hover` |
+| Minimal | `top`, `dots` (holds `.je-tag-dots` with `.je-tag-dot` spans whose `data-je-dot` is `resolution`, `range`, `audio` or `codec`), `corner`, `hover` |
+
+Group containers keep their classes and chip markup in every layout and carry `data-je-group`. In flowing slots (the bottom band, the caption and the hover scrim) containers use `display: contents`, so their chips wrap together in one row. The `hover` slot fades in on `.card:hover` and `.card:focus-within`.
+
+What does not fit is hidden whole, never cut: once a card is laid out, chips that would wrap past the two rows of the caption strip, the bottom band or the hover scrim get `data-je-overflow` (lowest priority first) and the slot ends with a `.je-tag-more` chip reading `+N` (it takes no pointer or focus). The names of the hidden chips go in one `.je-tag-more-tip` element inside `.je-tag-host`: the card's image link points at it with `aria-describedby`, and it shows as a small tooltip at the top of the image while the card is hovered or focused. A hover scrim on a card too short for even one row of chips gets `data-je-overflow` itself. A summary pill too wide for its card hides its lowest-priority `.je-tag-pill-fact` (and the separator before it) the same way. `[data-je-overflow]` is `display: none !important`.
 
 | Tag container | Position property | Factory corner |
 | --- | --- | --- |
@@ -209,8 +243,20 @@ The normal poster structure places `.je-tag-host` inside `.cardScalable`, before
 | `.language-overlay-container` | `LanguageTagsPosition` | `bottom-left` |
 | `.rating-overlay-container` | `RatingTagsPosition` | `bottom-right` |
 | `.age-rating-overlay-container` | `AgeRatingTagsPosition` | `bottom-right` |
+| `.status-overlay-container` | `StatusTagsPosition` | `top-right` |
+| `.custom-overlay-container` | `CustomTagsPosition` | `top-left` |
 
-Containers carry `data-je-corner` with one of those four corner values. JE stacks containers sharing a corner with inline transforms and a 4px gap, and offsets top-right tags around card indicators. Custom transforms can disrupt that stacking.
+Native poster pixels now include Status and the saved Bands layout. They have no DOM/CSS hooks: use **Tag Styles → Status** to colour the whole group or an individual badge (including schedule/milestone/series-state labels). Web hooks remain `.status-tag`, `data-je-status`, `.je-tag-slot[data-je-slot="top"|"bottom"]` and `.je-tag-more`; no new web selectors are required. Native strips use fixed image-width sizing and `+N` without a hover tooltip.
+
+In the Corners layout, containers carry `data-je-corner` with one of the nine stored position values (`top-left`, `top-center`, `top-right`, `center-left`, `center`, `center-right`, `bottom-left`, `bottom-center`, `bottom-right`). Containers sharing a corner stack in their slot with a 4px gap (top corners downward, bottom corners upward) instead of inline transforms. When a group is set to top right and the card shows Jellyfin's played or unplayed-count indicator, the host gets `data-je-indicator-gap` and the `tr` slot moves below it. Settings saved before layouts existed keep the original rule instead (their host carries `data-je-legacy`): only the container of a group set to exactly `top-right` carries `data-je-indicator-gap` and moves below the indicator, with the containers stacked after it; and on screens up to 480px wide the rating, age rating and status containers sit 4px from the card edges instead of 6px. The centre hooks are `tc` (top centre), `bc` (bottom centre), `ml` (left centre), `mr` (right centre) and `c` (centre). The rows use horizontal flex wrapping with centred chips; side anchors use columns aligned to their edge. Their group wrappers use `display: contents`, retaining the chip classes. Batched measurements set `--je-anchor-reserve` on these slots to keep them clear of occupied corner stacks; `--je-anchor-top` and `--je-anchor-bottom` clear native web overlays. Their excess chips use the same `data-je-overflow` and `.je-tag-more` hooks as flowing layouts. The original four corner geometry rules stay unchanged. Position slots rather than containers when you move tags: a container's own `top`, `left` or `transform` no longer places it.
+
+**Edge spacing** other than Default marks a Corners host with `data-je-edge="tight"` or `data-je-edge="flush"` and sets `--je-edge` (`3px` or `0px`) on it; every anchor's offset, the corner containers' size limits, the centre budgets' defaults and the indicator gap use it. Default has no marker and keeps the original rules. A flush host clips its chips with `overflow: hidden` and `border-radius: var(--je-card-radius)`, where `--je-card-radius` is the artwork's corner radius, measured once per card; box chips touching an edge get square corners there. For example, `.je-tag-host[data-je-edge="flush"] .quality-overlay-label { border-radius: 0; }` makes every flush quality chip square.
+
+A card whose look comes from a lock (see [Rules and locked items](../enhanced/tags.md#rules-and-locked-items)) has `data-je-locked="1"` on its `.je-tag-host`; nothing styles it by default. For example, `.je-tag-host[data-je-locked="1"] { outline: 1px dashed #fff8; }` marks locked cards. A server-wide item look does not set it.
+
+The per-item editor ([One item's look](../enhanced/tags.md#one-items-look)) is a dialog `.je-tie` inside `.je-tie-backdrop`; its sample card is `.je-tie-card`, and its row in Jellyfin's ⋮ menu is `.actionSheetMenuItem[data-id="je-media-tags"]`. Its Undo message is `.je-tie-toast`.
+
+The Media Tags import, export and preset dialogs (in the settings panel and on the configuration page's Media Tags tab) are `.je-pt-backdrop > .je-pt-dialog[role="dialog"]`, with `.je-pt-change` / `.je-pt-skip` rows (`.je-pt-from`, `.je-pt-to`, `.je-pt-reason`) and `.je-pt-btn` buttons (`[data-primary]` for the main action). The panel's preset rows are `.je-mth-tp-item` inside `[data-tp-source="builtIn" | "offered" | "mine"]`.
 
 Poster tags generally ignore pointer input. Container-query sizing adapts badges to card width, with separate mobile rules. Fixed sizes can crowd small posters.
 
@@ -220,15 +266,19 @@ Processing markers such as `data-je-quality-tagged`, `data-je-genre-tagged`, `da
 
 Use the built-in [Tag Styles editor](../enhanced/tags.md#tag-styles-and-css) for supported colors; that guide covers presets, tabs, scope, opacity, and bulk controls. See [Native Poster Tags](../enhanced/tags.md#native-poster-tags-experimental) for native-client setup and refresh requirements. CSS remains useful for web shape, sizing, visibility, and other surfaces.
 
-Web overrides use important selectors. Their specificity is `(0,4,0)` for quality, `(0,3,0)` for age and rating chips, and `(0,2,0)` for genre. These beat simple color recipes; more specific important Custom CSS can override them.
+Web overrides use important selectors. Their specificity is `(0,4,0)` for quality, `(0,3,0)` for age and rating chips, and `(0,2,0)` for the whole genre group (`(0,3,0)` for one genre, through `data-je-genre`). These beat simple color recipes; more specific important Custom CSS can override them.
 
 Critic styles also match user-review chips because those share `.rating-tag-critic`.
+
+Under the **Poster** preset, each card's `.cardBox` (a list row's image element) carries `data-je-poster-colour="1"`, `data-je-poster-key` (item, image type, index and image tag) and three custom properties taken from its artwork: `--je-tag-bg`, `--je-tag-border` and `--je-tag-fg`. The Poster rules paint the chips (and the summary pill) with them at the same specificity as the override rules above and before them, so group and tag colours still win. Use the variables in your own CSS to match other elements to the artwork, for example `[data-je-poster-colour] .je-tag-more { background: var(--je-tag-bg); color: var(--je-tag-fg); }`. A card whose artwork could not be read has no marker and keeps the Default colours.
 
 ??? info "Checking Tag Styles through the API"
 
     For troubleshooting, authenticated `GET /JellyfinEnhanced/tag-styles` returns effective web overrides only when enabled and targeting `web` or `both`. Otherwise it returns empty styles. Unavailable configuration returns HTTP 503.
 
     `GET /JellyfinEnhanced/tag-styles/catalog` additionally requires an administrator. See the [API reference](api.md).
+
+    The page-wide Tag Styles rules skip tags inside an element with the `data-je-tag-styles-scope` attribute. The configuration page's Media Tags tab marks its preview (`#jeTaPreviewBody`) this way and styles it with the server's Tag Styles in the `je-tag-admin-preview-styles` stylesheet, fetched again after a Tag Styles save, whenever the page is shown again, and after **Take theirs**.
 
 CSS selectors cannot individually restyle pixels drawn into a poster image. Use Tag Styles targeting poster images for supported color changes; native output requires Native Poster Tags.
 
@@ -340,13 +390,13 @@ Use these hooks to style genre icons and their hover labels. Up to three genres 
 
 - Icons use `.genre-tag > .je-msym-outlined`.
 - Text uses `.genre-text` inside `.genre-overlay-container`.
-- Target a particular genre through its original title, such as `.genre-tag[title="Drama"]`. JE does not emit `data-genre`.
+- `data-je-genre` holds the genre's [Tag Styles label](../enhanced/tags.md#genre-colours): the canonical English genre its icon stands for (`horror`, `science fiction`, `game-show`…), the same for every spelling and translation (*Sci-Fi* and *Ciencia ficción* are both `science fiction`), or `other`. Tag Styles colour one genre through it: `.genre-tag[data-je-genre="horror"]`.
+- Target the exact name the item has through its title, such as `.genre-tag[title="Drama"]`.
 
 By default, text appears on hover and floats inward from the selected corner. To keep labels visible inside wider chips:
 
-1. Turn off **Hide Tags on Hover**.
-2. Reload so existing chips include text spans.
-3. Apply the following CSS:
+1. Turn off **Hide tags on hover** (with it on, the names are hidden on the poster).
+2. Apply the following CSS:
 
 ```css
 .genre-tag {
@@ -363,11 +413,15 @@ By default, text appears on hover and floats inward from the selected corner. To
 }
 ```
 
-Changing `display` alone does not reveal text hidden by opacity. CSS cannot restore a span omitted when hover hiding was enabled. Long labels can cover more of the poster.
+Changing `display` alone does not reveal text hidden by opacity. Every genre chip carries its `.genre-text` span; in the Summary and Minimal hover reveal it is shown inline. Long labels can cover more of the poster.
+
+When a card is revealed (hovered, focused, or a preview's **Hover** view), each floating name is fitted to the room beside its icon and marked `data-je-genre-fit`: `side` (beside its icon, with an inline `max-width`), `list` (one line under or over a row of icons, with inline `left`, `top` and `max-width`) or `hidden` (no room; `display: none`). Names your CSS makes `position: static`, as above, are never marked or moved. The same pass places a card's `.je-tag-more-tip` (the names behind its `+N` chips) with an inline `top` and marks it `data-je-tip-fit`: `placed`, or `hidden` (no free band; `display: none`).
 
 ### Language Tags CSS
 
-Use `.language-overlay-container` and `.language-flag` to style language flags.
+Use `.language-overlay-container` and `.language-flag` to style language flags. Personal **Language** → **Priority** changes the eligible chips and their order before caps; hiding a chip with CSS does not promote another language. Tooltips and accessible labels identify Audio/Subtitles, full language names and partial coverage; count badges include the count and audio-language names. Existing chip selectors are unchanged.
+
+The personal hub editor is scoped to `#jellyfin-enhanced-panel .je-language-priority`. Its ordered list uses `[data-language-priority-list]` and `[data-language-priority-code]`; these are settings controls, separate from poster chips.
 
 - `data-lang` is a lowercase flag-country code: `jp` targets the Japanese flag, while Japanese's language code is `ja`.
 - `data-lang-name` contains represented language names.
@@ -465,6 +519,26 @@ Built-in chip and icon text colors are important pink declarations. Override bot
 
 See [User Reviews](../elsewhere/elsewhere-features.md#user-reviews) for writing and managing reviews.
 
+### Logo Tags CSS
+
+The Logos group renders `.logo-overlay-container` with one `.je-logo-chip` per logo. Each chip carries `data-je-logo-kind` (`provider`, `network` or `studio`) and `data-je-logo-style`: `provider` (a provider logo on its dark pill), `company` (a network or studio logo on its light pill) or `text` (the name chip, also used when an image fails to load). Image chips hold an `img.je-logo-img` served by the plugin's logo route; the chip's `title` and the image's `alt` are the full name.
+
+**Square provider logos without a pill, larger network logos:**
+
+```css
+.je-logo-chip[data-je-logo-style="provider"] {
+    background: none !important;
+    border: 0 !important;
+    padding: 0 !important;
+}
+
+.je-logo-chip[data-je-logo-style="company"] .je-logo-img {
+    max-width: 96px !important;
+}
+```
+
+Tag Styles colour the three pill kinds with stronger important rules on the **Logos** tab. Native Poster Tags draw the default pills (or the Tag Styles colours) and ignore custom CSS.
+
 ### Age Rating Tags CSS
 
 Use `.age-rating-overlay-container` and `.age-rating-tag[rating="…"]` to style poster certifications.
@@ -499,6 +573,59 @@ To override a shipped detail/player color:
     background-color: #000 !important;
 }
 ```
+
+### Status Tags CSS
+
+Use `.status-overlay-container` and `.status-tag` to style the Just Added, New and trending badges. Each badge also carries one kind class: `.status-tag--trending`, `.status-tag--new` (New Movie, New Series, New Episode) or `.status-tag--added` (Just Added). The `#N` inside a trending badge is `.status-tag-rank`.
+
+**Give each kind its own colour:**
+
+```css
+.status-tag--trending {
+    background-color: rgba(120, 40, 0, 0.8) !important;
+}
+
+.status-tag--new {
+    background-color: rgba(0, 90, 160, 0.8) !important;
+}
+
+.status-tag .status-tag-rank {
+    color: #fff !important;
+}
+```
+
+The default look is a dark translucent pill with a blurred backdrop, the same for every kind except the warmer rank colour. Status Tags are not part of Tag Styles.
+
+The opt-in [Leaving soon](../enhanced/tags.md#leaving-soon-maintainerr) badges are `.status-tag--leaving` with `data-je-status="leaving"`; the [direct-play warning](../enhanced/tags.md#direct-play-warning) is `.status-tag--playback` with `data-je-status="direct_play"` and `data-je-dp`, which takes pointer events so its `title` tooltip shows:
+
+```css
+.status-tag--leaving {
+    background-color: rgba(150, 30, 30, 0.85) !important;
+}
+
+.status-tag[data-je-dp] {
+    border-color: #ffb300 !important;
+}
+```
+
+### Custom Tags CSS
+
+Each [Custom tag](../enhanced/tags.md#custom-tags) chip is a `.custom-tag` inside `.custom-overlay-container`, with the label in `.custom-tag-text` and, when the rule has an icon, a `.custom-tag-icon` before it (the chip then also has `.custom-tag--icon`). `data-je-custom` holds the label (Tag Styles colour chips through it) and `data-je-custom-rule` the rule id (`tag:` or `collection:` and an opaque hash, for example `collection:9f2c1e0b7a6d5c4e`; style by label, since the id changes if the rule is re-targeted). The default look is a dark blue-grey chip with a faint border.
+
+**Colour one label and hide the icons:**
+
+```css
+.custom-tag[data-je-custom="Criterion"] {
+    background-color: #111 !important;
+    color: #ffd166 !important;
+}
+
+.custom-tag .custom-tag-icon {
+    display: none;
+}
+```
+
+Tag Styles (**Custom** tab) sets the same colours without CSS, for native posters too.
 
 ### People Tags CSS
 
@@ -884,16 +1011,18 @@ Conditional controls appear only when their feature is available.
 | Subtitle position and status | `#subtitlePositionGrid`, `#subtitlePositionPreview`, `#subtitlePositionReset`, `#disableCustomSubtitleStyles`, `#je-subtitle-format-warning`, `#je-subtitle-position-note` |
 | Random selection | `#randomButtonToggle`, `#randomUnwatchedOnly`, `#randomIncludeMovies`, `#randomIncludeShows`, `#randomScopeCurrentContainer`, `#randomSourceSelect` |
 | Detail display | `#showWatchProgressToggle`, `#watchProgressModeSelect`, `#watchProgressTimeFormatSelect`, `#showFileSizesToggle`, `#showAudioLanguagesToggle` |
-| Tags and removal | Conditional `#nativePosterTagsToggle`; `#qualityTagsToggle`, `#genreTagsToggle`, `#languageTagsToggle`, `#ratingTagsToggle`, `#ageRatingTagsToggle`, `#peopleTagsToggle`, `#tagsHideOnHoverToggle`, `#removeContinueWatchingToggle` |
-| Category layout | `.je-quality-cat-wrap`, `.je-quality-cat-expander`, `.je-cat-chevron`, `.je-quality-cat-list`, `.je-quality-cat-row`, `.je-quality-cat-label-wrap`, `.je-quality-cat-label`, `.je-cat-btn`, `.je-cat-up`, `.je-cat-down`, `.je-quality-audio-lang` |
-| Quality category controls | `#qualityTagsSubWrap`, `#qualityTagsSubToggleExpander`, `#qualityTagsSubToggles`, `#qualityTagsAudioLanguageSelect`, `#showResolutionTagToggle`, `#showSourceTagToggle`, `#showDynamicRangeTagToggle`, `#showSpecialFormatTagToggle`, `#showVideoCodecTagToggle`, `#showAudioInfoTagToggle` |
-| Rating scopes | `#ratingTagsSubWrap`, `#ratingTagsSubToggleExpander`, `#ratingTagsSubToggles`, `#ratingTagsOnMoviesToggle`, `#ratingTagsOnSeriesToggle`, `#ratingTagsOnSeasonsToggle`, `#ratingTagsOnEpisodesToggle`, `#ratingTagsOnContinueWatchingToggle`, `#ratingTagsOnNextUpToggle` |
-| Corner grids | `.position-selector[data-setting="qualityTagsPosition"]` (also `genreTagsPosition`, `languageTagsPosition`, `ratingTagsPosition`, `ageRatingTagsPosition`); child `div[data-pos="top-left"]` (also the other three corners) |
+| Tags and removal | Conditional `#nativePosterTagsToggle`; `#qualityTagsToggle`, `#genreTagsToggle`, `#languageTagsToggle`, `#ratingTagsToggle`, `#ageRatingTagsToggle`, `#statusTagsToggle`, `#logoTagsToggle`, `#peopleTagsToggle`, `#tagsHideOnHoverToggle`, `#removeContinueWatchingToggle` |
+| Tag group editor | `#jeTagGroupEditor` (`.je-tge`), `.je-tge-head`, `#tagLayoutSelect`, `#tagLabelDensitySelect`, `#jeTgeReset`; rows `.je-tge-rows` > `.je-tge-row[data-group]` (`--je-tge-swatch`), `.je-tge-row-head`, `.je-tge-move[data-dir]`, `.je-tge-swatch`, `.je-tge-expand` (`aria-expanded`), `.je-tge-name`, `.je-tge-summary`, `.je-tge-enable`; open editor `.je-tge-body` (`#jeTgeBody-<group>`), `.je-tge-pill[data-slot]` (`aria-pressed`), `.je-tge-stepper`, `.je-tge-step[data-step]`, `.je-tge-cap`, `.je-tge-toggle-pill`, `[data-include-key]` |
+| Tag preview | `#jeTgePreview`, `.je-tge-card` (gets `.je-tag-reveal` for **Hover**), `.je-tge-card-art`, `.je-tge-card-title`, `.je-tge-view [data-view]` |
+| Category layout | `.je-tge-cats`, `.je-tge-cat`, `.je-quality-cat-list`, `.je-quality-cat-row`, `.je-quality-cat-label-wrap`, `.je-quality-cat-label`, `.je-cat-btn`, `.je-cat-up`, `.je-cat-down`, `.je-quality-audio-lang` |
+| Quality category controls | `#qualityTagsSubToggles`, `#qualityTagsAudioLanguageSelect`, `#showResolutionTagToggle`, `#showSourceTagToggle`, `#showDynamicRangeTagToggle`, `#showSpecialFormatTagToggle`, `#showVideoCodecTagToggle`, `#showAudioInfoTagToggle` |
+| Rating scopes | `#ratingTagsSubToggles`, `#ratingTagsOnMoviesToggle`, `#ratingTagsOnSeriesToggle`, `#ratingTagsOnSeasonsToggle`, `#ratingTagsOnEpisodesToggle`, `#ratingTagsOnContinueWatchingToggle`, `#ratingTagsOnNextUpToggle` |
+| Status badge choices | `#statusTagsSubToggles`, `#statusTagsTrendingToggle`, `#statusTagsNewReleaseToggle`, `#statusTagsJustAddedToggle` |
 | Language and About | `#displayLanguageSelect`, `#clearTranslationCacheButton`, `#releaseNotesBtn`, conditional `.footer-logo` |
 
 Category rows use `data-cat-key`, and quality rows also have `data-order-key` and `data-default-order`.
 
-Expanders use `aria-expanded`; arrow buttons have disabled states. Preserve those states when styling.
+Row expanders use `aria-expanded`, position pills `aria-pressed`, and the move, order and stepper buttons have disabled states. Preserve those states when styling.
 
 The conditional Hidden Content pane exposes:
 
@@ -1060,3 +1189,46 @@ The table shows factory plugin/client defaults. New user settings are seeded fro
 The animation override stops both random-button hover and loading animation. Keep loading and disabled actions identifiable.
 
 In the Seerr form, the radio input must remain immediately before its option span. Checked/focus styles use that sibling relationship and consume `--primary-accent-color` with a fallback.
+
+### Tag size and gap hooks
+
+The layout controller sets two unitless custom properties on each `.je-tag-host` and its external `.je-tag-caption` outlet:
+
+| Hook | Values from settings | Used for |
+|---|---|---|
+| `--je-tag-scale` | `0.85`, `1`, `1.15`, `1.3` | Multiplies responsive font-size clamps, chip padding, icons, flags, summary pills, overflow chips and indicator clearance |
+| `--je-tag-gap` | `0.75`, `1`, `1.5` | Multiplies the existing gaps between chips and groups; spacing also follows tag scale |
+
+Both fall back to `1` in the stylesheet. Version-0 posters retain their original sizing expressions for exact legacy pixels; a layout-setting edit promotes the document and enables the multipliers. The same values reach live preview samples, including shape overrides. Caption height reserves a size/gap-adjusted two-row budget. These hooks do not change edge inset. For a web-only custom override, include both the host and caption because the caption is a sibling, not a descendant:
+
+```css
+.je-tag-host, .je-tag-caption {
+    --je-tag-scale: 1.15 !important;
+    --je-tag-gap: 0.75 !important;
+}
+```
+
+Saved size and gap choices also affect native posters; custom web CSS does not affect composited images. Prefer the built-in controls when the same appearance is needed in both.
+
+### Awards chips
+
+The Awards wrapper is `.awards-overlay-container`, placed by the shared tag layout controller. Each `.awards-tag[data-je-award]` contains `.awards-tag-logo` (decorative bundled SVG) and a text span. Stable ids are `imdbTop250`, `certifiedFresh`, `oscar`, `emmy`, `letterboxdTop250`. The chip's title and accessible label include rank/year when known. On linked posters the layout wraps chips in `.awards-link` anchors (`tabindex="-1"`) so hover titles and poster navigation remain reachable. Layout slots, caption outlets, caps and hover suppression apply as for other groups. Tag Styles supplies Awards group and per-label background/text/inner-border colours. SVG source colours remain their identifying colours; CSS cannot change native image pixels.
+
+
+### Quality stream display
+
+All-mode chips reuse `.quality-overlay-label`, `.audio-codec`, `.video-format` and `.video-codec` inside `.quality-overlay-container`. Each distinct sound codec/channel combination is a separate chip; `data-quality` retains its base codec for existing colour selectors. SDR uses `.video-codec[data-quality="SDR"]` and is also an editable Tag Styles label. There is no new wrapper or per-card layout measurement. Minimum-resolution and Hide SDR filtering remove chips before layout and overflow fitting, so CSS does not need to hide them.
+
+### Technical quality, SDH and Scenes hooks
+
+Technical chips retain `.quality-overlay-label.other-quality` with `data-je-quality-category="runtime"`, `"aspectRatio"` or `"frameRate"`; `data-quality` uses the same stable category id. `data-je-compact` contains the shortened display text. They inherit Quality Tag Styles. SDH subtitle chips keep `.language-chip`, `.language-cc` and `data-je-language="subtitles"`, and add `data-je-sdh="true"`; the marker and accessible tooltip survive Summary presentation. Status scene chips use `.status-tag--scenes` and `data-je-status="post_credits"` / `"mid_credits"`, available as Status labels in Tag Styles. These hooks exist only when the corresponding chips are shown.
+
+Flush box chips and genre chips (`.genre-tag`) retain their border-box size, with transparent touching-side borders, square corners against the edge and `clip-path` clipping only those sides of the shadow. The inward shadow and border keep their group styles, and a genre's floating `.genre-text` name is not clipped. Language flag images keep their shape. Centre rows use `--je-anchor-reserve` to fit between indicators; `data-je-flush-detached` marks a top-centre row that must move below them because its first chip cannot fit. Bottom-centre Flush uses the progress bar's top edge directly. These rules apply only to Corners hosts with `data-je-edge="flush"`.
+
+Flush also styles direct `.je-tag-more` overflow chips. Configured Rating/Awards inner rings keep `outline-offset: -1px`; touching chips paint the ring through an inert `::after` border with only inward sides. Centre chips retain their ordinary outline. Scoped Media Tags previews use the same Flush rules.
+
+Middle-side Corners slots (`data-je-slot="ml"` / `"mr"`) receive `--je-anchor-width` from the batched fit pass. A first centre chip constrained to its slot carries `data-je-fit-width` and `--je-chip-fit-width`; its text uses an ellipsis. For link-wrapped Awards and Language chips, the wrapper carries the width budget through to the actual chip; truncate the label inside that chip to preserve its rounded inward edge, border and ring. Flush paint reaches the chip through its transparent link. These are measured geometry hooks: overriding them can overlap the opposite side. Genre hover names remain inside the same width budget.
+
+Language text chips (`.language-chip`, including `.language-code` and `.language-count-badge`) share `tagRenderer.chipBaseCss` with quality chips. `data-je-language-label` is the lowercase displayed code or `dual`/`multi`; Tag Styles paints it over the kind and language-group colours. `.language-flag` images keep their ring, and `.language-flag-partial` only adds the dashed treatment on images (text chips dim).
+
+The item editor sample (`.je-tie-card`) is focusable and labelled. Its `.je-tie-view [data-view]` buttons pin **Hover** or return to **Resting**; pointer and focus interaction share the hub preview helper and toggle `.je-tag-reveal` on that sample.

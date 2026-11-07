@@ -19,6 +19,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
         public string[]? Genres { get; set; }
         public float? CommunityRating { get; set; }
         public float? CriticRating { get; set; }
+
+        // Multi-source ratings (schema v15). Immutable, shared across users.
+        /// <summary>MDBList source values in their native units; absent without a configured key.</summary>
+        public TagSourceRatings? Ratings { get; set; }
+        /// <summary>Cached title-level awards/chart facts, refreshed independently of library metadata.</summary>
+        public TagAwards? Awards { get; set; }
+
+        // Logos tag group (schema v17). Seasons and episodes carry their series'.
+        /// <summary>Provider, network or studio logos, at most the administrator's maximum; null when none or nobody shows the group.</summary>
+        public TagLogo[]? Logos { get; set; }
+
         /// <summary>
         /// Parental / age rating as stored by Jellyfin (e.g. "PG-13", "TV-MA",
         /// "DE-12"). Seasons and Episodes fall back to their Series' rating at
@@ -33,13 +44,133 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
         /// every episode ("full-series" language). Null for every other item type.
         /// </summary>
         public string[]? PartialAudioLanguages { get; set; }
+
+        // ── Subtitle languages (schema v14) ─────────────────────────────────
+        /// <summary>
+        /// Subtitle languages (embedded and external tracks), lower-cased, one
+        /// per language however many forced / SDH tracks carry it. Series/Season:
+        /// the union across their episodes, like <see cref="AudioLanguages"/>
+        /// (no partial list). BoxSet: the union of its members. Spoiler Guard's
+        /// tag strip drops it together with <see cref="AudioLanguages"/>.
+        /// </summary>
+        public string[]? SubtitleLanguages { get; set; }
+        /// <summary>Languages with an SDH/hearing-impaired subtitle track; same union and filtering as subtitles.</summary>
+        public string[]? SdhSubtitleLanguages { get; set; }
+        /// <summary>Daily TMDB movie keyword facts; null means unresolved.</summary>
+        public TagScenes? Scenes { get; set; }
+
         public TagStreamData? StreamData { get; set; }
+
+        // Source and edition naming facts (schema v15).
+        /// <summary>Canonical release source, derived server-side from the selected version's file/folder name.</summary>
+        public string? Source { get; set; }
+        /// <summary>Edition label from the selected version's file/folder name; contains no path.</summary>
+        public string? Edition { get; set; }
+
+        /// <summary>
+        /// When the item was added to the library (Jellyfin's DateCreated), in Unix
+        /// milliseconds UTC. Drives the Status Tags "Just Added" badge. Null when
+        /// Jellyfin has no date for it.
+        /// </summary>
+        public long? DateCreated { get; set; }
+        /// <summary>
+        /// Movie/Series/Episode only: premiere (air) date in Unix milliseconds UTC,
+        /// for the Status Tags "New Movie" / "New Series" / "Coming Soon" badges
+        /// and an episode's own "New Episode" / premiere / finale badges. Null for
+        /// every other type.
+        /// </summary>
+        public long? PremiereDate { get; set; }
+        /// <summary>
+        /// Series/Season only: the newest <see cref="DateCreated"/> among its
+        /// non-virtual episodes, in Unix milliseconds UTC, for the Status Tags
+        /// "New Episode" badge. Null for every other type or a container without
+        /// episodes.
+        /// </summary>
+        public long? LatestEpisodeAdded { get; set; }
+        /// <summary>
+        /// Series/Season only: the episode (N format, lowercase) that supplied
+        /// <see cref="LatestEpisodeAdded"/>. Server-side: the per-user filter drops
+        /// the date when the user can't see that episode, and the tag-cache
+        /// response leaves it out.
+        /// </summary>
+        public string? LatestEpisodeId { get; set; }
+
+        // ── Status Tags schedule and milestone facts (combined schema v13) ──────────
+        // Built from the same episode walk as LatestEpisodeAdded; every field
+        // here that comes from episodes is dropped together, per user, when
+        // one of the episodes in StatusEpisodeIds is hidden from them (see
+        // TagCacheService.WithoutHiddenLatestEpisode).
+
+        /// <summary>
+        /// Series only: Jellyfin's series status ("Continuing", "Ended",
+        /// "Unreleased"), for the Status Tags Returning / Ended badge.
+        /// </summary>
+        public string? Status { get; set; }
+        /// <summary>Episode only: its numbers and whether it is the last non-virtual episode in its season.</summary>
+        public TagEpisodeIndex? EpisodeIndex { get; set; }
+        /// <summary>
+        /// Series/Season only: the newest premiere (air) date among the non-virtual
+        /// regular episodes, in Unix milliseconds UTC (specials count only in a
+        /// Specials season).
+        /// </summary>
+        public long? LatestEpisodeAired { get; set; }
+        /// <summary>Server-only next premiere boundary; a due container is recomputed even without metadata changes.</summary>
+        public long? NextEpisodePremiere { get; set; }
+        /// <summary>Series/Season only: season and episode number of the episode behind <see cref="LatestEpisodeAired"/>.</summary>
+        public TagEpisodeIndex? LatestEpisodeIndex { get; set; }
+        /// <summary>
+        /// Series: the newest regular season in the library and the air date of
+        /// its first aired episode ("New Season"). Season: the season itself and
+        /// its first aired episode ("Season Premiere").
+        /// </summary>
+        public TagSeasonPremiere? SeasonPremiere { get; set; }
+        /// <summary>
+        /// Season only: when its first and newest episodes were added, and how
+        /// many non-virtual episodes it has ("Complete Season").
+        /// </summary>
+        public TagAddedSpan? SeasonAddedSpan { get; set; }
+        /// <summary>
+        /// Series/Season only: the episodes (N format, lowercase) the fields
+        /// above came from. Server-side like <see cref="LatestEpisodeId"/>: the
+        /// per-user filter drops those fields when the user can't see one of
+        /// them, and the tag-cache response leaves it out.
+        /// </summary>
+        public string[]? StatusEpisodeIds { get; set; }
+
+        // Series/season quality aggregation (schema v15). Contributors stay server-side.
+        public TagQualitySummary? QualitySummary { get; set; }
+        public string[]? QualityEpisodeIds { get; set; }
+
         public long LastUpdated { get; set; }
         // Series ID in N format (lowercase). Set for Episodes and Seasons, null
         // otherwise. Lets the Spoiler Guard filter strip cache entries for
         // unwatched episodes whose parent series is in the user's spoiler list
         // without a per-episode library lookup on every request.
         public string? SeriesId { get; set; }
+        /// <summary>
+        /// The library (top-level collection folder) the item is in, N format
+        /// (lowercase); Seasons/Episodes take their Series'. Tag look rules on a
+        /// library match against it. Null (and left out of responses) when the
+        /// item is in no library.
+        /// </summary>
+        public string? LibraryId { get; set; }
+
+        /// <summary>
+        /// Custom tag group: the ids of the administrator's rules the item matches
+        /// (<c>tag:&lt;hash&gt;</c> or <c>collection:&lt;hash&gt;</c>, see
+        /// <see cref="Configuration.CustomTagRuleSet.RuleId"/>), in the rule order of when it
+        /// was matched; renderers treat it as a set and draw the current rule order. Tags are the
+        /// item's own plus, for a Season/Episode, its Series'; collections are the
+        /// collections holding the item (or its Series). Null when no rule matches.
+        /// </summary>
+        public string[]? CustomTags { get; set; }
+
+        /// <summary>
+        /// Leaving soon (Status group, schema v20): from the Maintainerr API or the
+        /// administrator's leaving collections. A Season/Episode takes its own, else its
+        /// Season's or Series' (whichever leaves first). Null when not leaving or no source is set.
+        /// </summary>
+        public TagLeaving? Leaving { get; set; }
 
         // Shallow copy required by per-user mutators (spoiler tag-strip): the
         // TagCacheService stores ONE shared instance per item across ALL users,
@@ -75,11 +206,36 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
                 && SequencesEqual(a.Genres, b.Genres)
                 && NullableFloatEquals(a.CommunityRating, b.CommunityRating)
                 && NullableFloatEquals(a.CriticRating, b.CriticRating)
+                && a.Ratings == b.Ratings
+                && a.Awards == b.Awards
+                && TagLogo.SequencesEqual(a.Logos, b.Logos)
                 && a.OfficialRating == b.OfficialRating
                 && SequencesEqual(a.AudioLanguages, b.AudioLanguages)
                 && SequencesEqual(a.PartialAudioLanguages, b.PartialAudioLanguages)
+                && SequencesEqual(a.SubtitleLanguages, b.SubtitleLanguages)
+                && SequencesEqual(a.SdhSubtitleLanguages, b.SdhSubtitleLanguages)
+                && a.Scenes == b.Scenes
                 && TagStreamData.ContentEquals(a.StreamData, b.StreamData)
-                && a.SeriesId == b.SeriesId;
+                && a.Source == b.Source
+                && a.Edition == b.Edition
+                && a.DateCreated == b.DateCreated
+                && a.PremiereDate == b.PremiereDate
+                && a.LatestEpisodeAdded == b.LatestEpisodeAdded
+                && a.LatestEpisodeId == b.LatestEpisodeId
+                && a.EpisodeIndex == b.EpisodeIndex
+                && a.Status == b.Status
+                && a.NextEpisodePremiere == b.NextEpisodePremiere
+                && a.LatestEpisodeAired == b.LatestEpisodeAired
+                && a.LatestEpisodeIndex == b.LatestEpisodeIndex
+                && a.SeasonPremiere == b.SeasonPremiere
+                && a.SeasonAddedSpan == b.SeasonAddedSpan
+                && SequencesEqual(a.StatusEpisodeIds, b.StatusEpisodeIds)
+                && TagQualitySummary.ContentEquals(a.QualitySummary, b.QualitySummary)
+                && SequencesEqual(a.QualityEpisodeIds, b.QualityEpisodeIds)
+                && a.SeriesId == b.SeriesId
+                && a.LibraryId == b.LibraryId
+                && SequencesEqual(a.CustomTags, b.CustomTags)
+                && a.Leaving == b.Leaving;
         }
 
         /// <summary>
@@ -129,25 +285,94 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
             Genres = Genres,
             CommunityRating = CommunityRating,
             CriticRating = CriticRating,
+            Ratings = Ratings,
+            Awards = Awards,
+            Logos = Logos,
             OfficialRating = OfficialRating,
             AudioLanguages = AudioLanguages,
             PartialAudioLanguages = PartialAudioLanguages,
+            SubtitleLanguages = SubtitleLanguages,
+            SdhSubtitleLanguages = SdhSubtitleLanguages,
+            Scenes = Scenes,
             StreamData = StreamData,
+            Source = Source,
+            Edition = Edition,
+            DateCreated = DateCreated,
+            PremiereDate = PremiereDate,
+            LatestEpisodeAdded = LatestEpisodeAdded,
+            LatestEpisodeId = LatestEpisodeId,
+            EpisodeIndex = EpisodeIndex,
+            Status = Status,
+            NextEpisodePremiere = NextEpisodePremiere,
+            LatestEpisodeAired = LatestEpisodeAired,
+            LatestEpisodeIndex = LatestEpisodeIndex,
+            SeasonPremiere = SeasonPremiere,
+            SeasonAddedSpan = SeasonAddedSpan,
+            StatusEpisodeIds = StatusEpisodeIds,
+            QualitySummary = QualitySummary,
+            QualityEpisodeIds = QualityEpisodeIds,
             LastUpdated = LastUpdated,
             SeriesId = SeriesId,
+            LibraryId = LibraryId,
+            CustomTags = CustomTags,
+            Leaving = Leaving,
         };
     }
 
     /// <summary>
-    /// Raw media stream data for client-side quality tag computation.
-    /// Quality detection logic (700+ lines) stays in JS to avoid C# duplication.
+    /// A season and episode number (Status Tags). Immutable and value-compared,
+    /// so entries can share one instance.
     /// </summary>
+    public sealed record TagEpisodeIndex
+    {
+        public int Season { get; init; }
+        public int Episode { get; init; }
+        /// <summary>The last episode a combined file covers (Jellyfin's IndexNumberEnd, S01E09-E10 → 10); null for one episode.</summary>
+        public int? EpisodeEnd { get; init; }
+        /// <summary>True for the last known episode of its season; null when not resolved.</summary>
+        public bool? IsLast { get; init; }
+
+        /// <summary>Whether this file holds episode <paramref name="number"/> (its first, its last or one between).</summary>
+        public bool Covers(int number) => number >= Episode && number <= (EpisodeEnd ?? Episode);
+
+        /// <summary>The range of a combined file, or null for one episode.</summary>
+        internal static int? EndOf(int number, int? indexNumberEnd) => indexNumberEnd > number ? indexNumberEnd : null;
+    }
+
+    /// <summary>A season number and the air date (Unix ms UTC) of its first aired episode (Status Tags).</summary>
+    public sealed record TagSeasonPremiere
+    {
+        public int Season { get; init; }
+        public long Aired { get; init; }
+    }
+
+    /// <summary>When a season's first and newest episodes were added (Unix ms UTC), and its episode count (Status Tags).</summary>
+    public sealed record TagAddedSpan
+    {
+        public long First { get; init; }
+        public long Last { get; init; }
+        public int Count { get; init; }
+
+        /// <summary>
+        /// The highest N with every episode number 1..N in the library (a multi-episode file covers its range;
+        /// duplicates count once), or null when coverage was not read (very large seasons).
+        /// </summary>
+        public int? CoveredThrough { get; init; }
+    }
+
+    /// <summary>One distinct per-track quality value; audio retains its language for personal filtering.</summary>
+    public sealed record TagStreamQuality(string Category, string Label, string? Language = null, string? SourceId = null);
+
+    /// <summary>Raw stream facts and precomputed per-track quality sets shared by web and native resolution.</summary>
     public class TagStreamData
     {
+        /// <summary>Distinct stream category values, derived once while building the cache. Null on old/fixture entries.</summary>
+        public List<TagStreamQuality>? DistinctQualities { get; set; }
         public List<TagMediaStream>? Streams { get; set; }
         public List<TagMediaSource>? Sources { get; set; }
         public string? ItemName { get; set; }
         public string? ItemPath { get; set; }
+        public long? RunTimeTicks { get; set; }
 
         /// <summary>
         /// Value-compare for the no-op-rebuild check (see TagCacheEntry.ContentEquals).
@@ -160,6 +385,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
 
             return a.ItemName == b.ItemName
                 && a.ItemPath == b.ItemPath
+                && ListsEqual(a.DistinctQualities, b.DistinctQualities, (x, y) => x == y)
+                && a.RunTimeTicks == b.RunTimeTicks
                 && ListsEqual(a.Streams, b.Streams, TagMediaStream.ContentEquals)
                 && ListsEqual(a.Sources, b.Sources, TagMediaSource.ContentEquals);
         }
@@ -200,10 +427,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
         public string? Profile { get; set; }
         public int? Height { get; set; }
         public int? Width { get; set; }
+        public string? AspectRatio { get; set; }
+        public float? RealFrameRate { get; set; }
+        public float? AverageFrameRate { get; set; }
+        public bool? IsInterlaced { get; set; }
+        public bool? IsHearingImpaired { get; set; }
+        public string? Title { get; set; }
         public int? Channels { get; set; }
         public string? ChannelLayout { get; set; }
         public string? VideoRangeType { get; set; }
+
+        /// <summary>Jellyfin's coarse VideoRange (HDR/SDR), stored only for a video stream whose VideoRangeType is unknown.</summary>
+        public string? VideoRange { get; set; }
         public string? DisplayTitle { get; set; }
+
+        /// <summary>
+        /// The track's role, derived from its titles before Spoiler Guard strips them ("secondary": a
+        /// commentary or audio-description audio track), so main-audio selection is the same with and
+        /// without the titles. Null in the cache, which keeps the titles it is read from
+        /// (Helpers/TrackRoles.cs, js/core/media-language.js isSecondaryAudio).
+        /// </summary>
+        public string? Role { get; set; }
 
         /// <summary>
         /// Value-compare for the no-op-rebuild check (see TagCacheEntry.ContentEquals).
@@ -218,22 +462,52 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
             && a.Profile == b.Profile
             && a.Height == b.Height
             && a.Width == b.Width
+            && a.AspectRatio == b.AspectRatio
+            && a.RealFrameRate == b.RealFrameRate
+            && a.AverageFrameRate == b.AverageFrameRate
+            && a.IsInterlaced == b.IsInterlaced
+            && a.IsHearingImpaired == b.IsHearingImpaired
+            && a.Title == b.Title
             && a.Channels == b.Channels
             && a.ChannelLayout == b.ChannelLayout
             && a.VideoRangeType == b.VideoRangeType
-            && a.DisplayTitle == b.DisplayTitle;
+            && a.VideoRange == b.VideoRange
+            && a.DisplayTitle == b.DisplayTitle
+            && a.Role == b.Role;
     }
+
+    /// <summary>Immutable public movie keyword facts, refreshed daily.</summary>
+    public sealed record TagScenes(bool PostCredits, bool MidCredits);
 
     public class TagMediaSource
     {
+        public string? Id { get; set; }
+        public string? Source { get; set; }
+        public string? Edition { get; set; }
+        public long? RunTimeTicks { get; set; }
         public string? Path { get; set; }
         public string? Name { get; set; }
+
+        /// <summary>True when Jellyfin reports a 3D format for this version (its Video3DFormat), else null.</summary>
+        public bool? Is3D { get; set; }
+
+        /// <summary>
+        /// A short hash of Jellyfin's metadata for this version and its streams: every input a device profile
+        /// condition, codec or container check can read (container, protocol, timestamp type, size, bitrates,
+        /// codecs and tags, profiles and levels, bit depths, sizes, anamorphic, reference frames, packet length,
+        /// AVC, rotation, scan type, frame rates, channels, sample rates, ranges and Dolby Vision facts, colour
+        /// facts, languages, default/forced/external/hearing-impaired flags, default audio track). Re-probing a
+        /// replaced or re-encoded file changes it; display-only fields (titles) do not. Clients key
+        /// device-specific answers (direct play) by it.
+        /// </summary>
+        public string? Revision { get; set; }
 
         /// <summary>
         /// Value-compare for the no-op-rebuild check (see TagCacheEntry.ContentEquals).
         /// Compares EVERY property — an omitted field hides real changes from clients.
         /// </summary>
         public static bool ContentEquals(TagMediaSource a, TagMediaSource b) =>
-            a.Path == b.Path && a.Name == b.Name;
+            a.Id == b.Id && a.Source == b.Source && a.Edition == b.Edition
+            && a.RunTimeTicks == b.RunTimeTicks && a.Path == b.Path && a.Name == b.Name && a.Is3D == b.Is3D && a.Revision == b.Revision;
     }
 }

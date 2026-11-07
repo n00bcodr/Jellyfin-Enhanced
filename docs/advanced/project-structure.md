@@ -14,7 +14,7 @@ This section follows the client from loader injection through initialization and
 
 `Services/ScriptInjectionStartupFilter.cs` injects the loader into web responses. `GET /JellyfinEnhanced/script` serves `js/plugin.js`; it is separate from the component bundle. `JellyfinEnhanced.csproj` embeds `js/**`, and `GetScript` in `Controllers/JellyfinEnhancedController.cs` serves individual resources at `/JellyfinEnhanced/js/{path}`.
 
-The ordered module list lives in `js/component-scripts.json`: 161 component modules, with paths relative to `js/`. Entries starting with `//` are ordering notes.
+The ordered module list lives in `js/component-scripts.json`: 181 component modules, with paths relative to `js/`. Entries starting with `//` are ordering notes.
 
 **Modules execute in manifest order.** Place a module after every producer whose exports it reads at load time. A consumer loaded too early can capture `undefined`.
 
@@ -26,11 +26,11 @@ The initialization stages and user-switch behavior are:
 | Translations | `js/enhanced/translations.js` starts loading at the beginning of `initialize()`, in parallel with bootstrap. It loads/caches locale JSON and resolves `JE.t` before components run. |
 | Bootstrap | Authenticated `GET /JellyfinEnhanced/bootstrap` returns version, token user ID, public configuration, administrator-only private configuration, Custom Tabs / Plugin Pages presence flags, five user documents and the component list. Non-admin `PrivateConfig` is null. The loader falls back to individual endpoints if bootstrap fails. |
 | Components | After configuration is applied, production loads `GET /JellyfinEnhanced/bundle.js`; development mode and bundle failure use individual scripts. |
-| User switches | `js/core/session.js` detects identity changes and resets registered feature state. The loader reloads the incoming user's documents and emits `je:user-data-loaded`. Async work uses identity epochs to discard stale results. |
+| User switches | `js/core/session.js` detects identity changes and resets registered feature state. The loader reloads the incoming user's documents and the public config fields the server projects per user (`TagLookItemOverrides`, filtered to the items that user can see) and emits `je:user-data-loaded`. Async work uses identity epochs to discard stale results. |
 
 The bootstrap's `UserSettings` members are `Settings`, `Shortcuts`, `Bookmark`, `Elsewhere` and `HiddenContent`. A document-loading failure yields null for that document. Bootstrap always loads the token user's data, with no target-user parameter, and is served with `no-store`.
 
-Bootstrap's `Prefetched` block can carry `SpoilerBlurSeries`, `SeerrUserStatus`, `SeerrStatus` and `ActiveStreamSessions`. These reuse standalone response bodies under the same feature, access and cache gates. Seerr answers are included only when no upstream lookup is needed; sessions follow the active-streams access gate.
+Bootstrap's `Prefetched` block can carry `SpoilerBlurSeries`, `SeerrUserStatus`, `SeerrStatus`, `ActiveStreamSessions` and `TagStripRevision`. The first four reuse standalone response bodies under the same feature, access and cache gates. `TagStripRevision` is the Spoiler Guard tag strip revision that `tag-data` answers carry; the tag pipeline reads it before its first request. Seerr answers are included only when no upstream lookup is needed; sessions follow the active-streams access gate.
 
 Components consume a value once, shortly after bootstrap, through `JE.takePrefetched(name)`. Otherwise, they call their endpoint normally. Bootstrap does not fetch every feature's data.
 
@@ -70,8 +70,12 @@ Jellyfin.Plugin.JellyfinEnhanced/
 ├── Configuration/
 │   ├── PluginConfiguration.cs
 │   ├── UserConfiguration.cs
+│   ├── TagShapeSettings.cs         # Per-shape layout/density/slot/cap validation and defaults
+│   ├── TagLookSettings.cs
+│   ├── CustomTagRuleSet.cs        # Custom tag rules: model, validation and the matcher
 │   ├── UserConfigurationManager.cs
 │   ├── configPage.html
+│   ├── mediaTagsPage.html          # Old Media Tags page address: forwards to the Media Tags tab
 │   ├── jeAdmin.js                      # Settings engine: sidebar, rendering, load/save, dialogs
 │   ├── jeAdmin.css
 │   ├── admin/
@@ -98,7 +102,8 @@ Jellyfin.Plugin.JellyfinEnhanced/
 │   │   └── Resolution/
 │   └── SpoilerGuard/
 ├── Assets/
-│   └── PosterTags/                   # Generated, embedded rendering assets
+│   ├── PosterTags/                   # Generated, embedded rendering assets
+│   └── TagPresets/                   # Built-in Media Tags presets (embedded JSON)
 └── js/
     ├── plugin.js
     ├── component-scripts.json
@@ -112,6 +117,8 @@ Jellyfin.Plugin.JellyfinEnhanced/
     │   ├── homeremoval/
     │   ├── itemdetails/
     │   ├── player/
+    │   ├── admintags/              # Media Tags tab of the configuration page (admin, not in the bundle)
+    │   │   └── sections/
     │   ├── settingspanel/
     │   └── spoilerguard/
     ├── jellyseerr/
@@ -149,9 +156,15 @@ This table maps server settings, per-user documents and the configuration UI to 
 | Source | Responsibility |
 |---|---|
 | `Configuration/PluginConfiguration.cs` | Server settings and administrator defaults. |
-| `Configuration/configPage.html` | Admin page shell, tab buttons, page script (connection tests, Overview dashboards, load/save for fields the schema marks `manual`). |
-| `Configuration/jeAdmin.js`, `jeAdmin.css`, `admin/sections.js`, `admin/sections.css`, `admin/per-user.js` | The settings UI: the engine renders every card from `sections.js`, builds the sidebar and phone drawer, and owns load/save, dialogs and the apply-to-all-users banner. Tabs: **Overview**, **Display**, **Elsewhere & Reviews**, **Playback**, **Pages**, **Extras**, **Keyboard**, **Services**, **Seerr**, **\*arr**, **Admin**, **Credits**, **Docs**. `per-user.js` is generated by `scripts/generate_per_user_props.py`. |
+| `Configuration/configPage.html` | Admin page shell, tab buttons, page script (connection tests, Overview dashboards, load/save for fields the schema marks `manual`). Media Tags settings are not in its form: they are the **Media Tags** tab, whose content sits after the form and is drawn by `js/enhanced/admintags/` the first time it opens (`jeMountMediaTags`). The page's whole-configuration writes run inside `JE.adminTags.holdSaves`, and links to the page itself open in place. The Display tab's **Media Tags** card summarises it and has no fields. |
+| `Configuration/jeAdmin.js`, `jeAdmin.css`, `admin/sections.js`, `admin/sections.css`, `admin/per-user.js` | The settings UI: the engine renders every card from `sections.js`, builds the sidebar and phone drawer, and owns load/save, dialogs and the apply-to-all-users banner. Tabs: **Overview**, **Display**, **Media Tags**, **Elsewhere & Reviews**, **Playback**, **Pages**, **Extras**, **Keyboard**, **Services**, **Seerr**, **\*arr**, **Admin**, **Credits**, **Docs**. `per-user.js` is generated by `scripts/generate_per_user_props.py`. |
+| `Configuration/mediaTagsPage.html` | The old Media Tags page address (`#/configurationpage?name=JellyfinEnhancedMediaTags`, a second `PluginPageInfo` outside the menu): only forwards to the configuration page's Media Tags tab (`jeSection=media-tags`) with the same `tab` and `group`. See [Admin Media Tags tab](admin-media-tags.md). |
 | `Configuration/UserConfiguration.cs` | Per-user document models, including settings, shortcuts, bookmarks, Elsewhere, Hidden Content and Spoiler Guard. |
+| `Configuration/LanguageTagPrioritySettings.cs` | Personal ISO 639-1/639-2 priority validation (12 entries, canonical deduplication); nullable inheritance remains in the user document. |
+| `Configuration/LogoTagSettings.cs` | Logos group modes (movies: provider/studio/off; series: network/provider/off), region and maximum, normalized on save. |
+| `Configuration/LanguageTagDisplaySettings.cs` | Language display enums, save normalization and admin defaults for new-user seeding and reset-all. |
+| `Configuration/TagLookSettings.cs` | Tag look rules and per-item locks: models and validation (`TagLookValidation`) for `settings.json` and the administrator's default rules. |
+| `Configuration/CustomTagRuleSet.cs` | Custom tag rules (`CustomTagRule`): save-time normalisation (`CustomTagRuleSet`), rule ids, the icon list, and the matcher (`CustomTagMatcher`) the tag cache, `tag-data` and native posters share. |
 | `Configuration/UserConfigurationManager.cs` | Server file storage, locking, writes, shared stores and migration of historical user-ID directory variants. |
 | `Configuration/whats-new-seed.json` | Fallback baseline for detecting new admin controls; this is a historical baseline, not current defaults or a feature count. |
 | `js/enhanced/config.js` | Resolves effective values from server-stored user settings, admin defaults and client fallbacks; serializes per-user saves to the server in order. It does not store user settings in localStorage. |
@@ -224,8 +237,10 @@ These indexes group client modules and relevant supporting server files by web f
 | `lifecycle.js` | Registers feature observers, timers and listeners for coordinated cleanup. |
 | `navigation.js` | Deduplicated SPA navigation notifications through `onNavigate` and `onViewPage`. |
 | `session.js` | Hooks `ApiClient.setAuthenticationInfo`, follows navigation notifications and reconciles every five seconds. Runs `JE.session.onUserChange` reset handlers and emits `je:user-changed`; supplies identity epochs for async work. |
-| `media-language.js` | Shared audio-language/region-to-flag resolution through `JE.core.mediaLanguage.resolveFlag`. |
-| `tag-renderer-base.js` | Overlay creation, positioning, deduplication, caching and reinitialization for genre, language, quality, rating and age-rating tags. People and user-review renderers are independent. |
+| `media-language.js` | Shared language/region-to-flag resolution (`resolveFlag`) and canonical ISO language bases (`canonicalBase`) through `JE.core.mediaLanguage`. |
+| `tag-renderer-base.js` | Overlay creation, deduplication, caching and reinitialization for the genre, language, quality, rating, age-rating and status tags; hands each group to `tag-layout.js`. People and user-review renderers are independent. |
+| `tag-layout.js` | Poster tag layouts (`JE.core.tagLayout`): resolves the user's layout, slots, group order, caps and label density (with the migration for settings saved before layouts), keeps one controller per card and presents each group's chips in slots, the caption outlet, the summary pill, quality dots and the hover scrim. `JE.reinitializeTagLayout()` re-presents every card; Status Tags supply translated compact labels through `data-je-compact`. `resolveLayout()` picks each card's look: lock, then first matching rule, then the default. |
+| `tag-look.js` | Tag look rules and locks (`JE.core.tagLook`): normalization, condition matching, card facts from cache entries, saving rules, locking and unlocking. |
 | `ui-kit.js` | HTML escaping, toasts, deduplicated CSS injection and scroll-friendly direct/delegated tap listeners. |
 
 ### Enhanced UI: `js/enhanced/`
@@ -245,7 +260,8 @@ These indexes group client modules and relevant supporting server files by web f
 | `homeremoval/` | `features-remove-home.js` and `features-remove-multiselect.js`: Continue Watching / Next Up removal and multi-select. |
 | `itemdetails/` | `features-details-media-info.js`, `features-release-dates.js`, `features-details-page.js`: media information, file sizes, audio languages, release dates and detail-page orchestration. |
 | `player/` | `playback.js` supplies speed, seeking and track cycling; `auto-skip.js` consumes its player state for media-segment skipping; `subtitles.js` handles styles/presets; `pausescreen.js` supplies the pause overlay; `osd-rating.js` shows Jellyfin community/critic scores; `playback-rating-badge.js` supplies the playback-start age-rating/genre card. |
-| `settingspanel/` | Eight modules: `ui-entry-points.js`, `ui-release-notes.js`, `ui-panel-template.js`, `ui-panel-shortcut-editor.js`, `ui-panel-settings.js`, `ui-panel-hidden-content.js`, `ui-panel-language.js`, `ui-panel.js`. The shell orchestrates section wiring after its producers. |
+| `admintags/` | The configuration page's Media Tags tab, loaded by `Configuration/configPage.html` when the tab first opens (not listed in `component-scripts.json`): `admin-tags.js` (section registry, declarative fields, auto-save, `holdSaves` for the page's whole-configuration writes, sections, addresses, preview hand-over), `admin-tags.css`, `tag-styles-editor.js` (the Tag Styles editor) and `sections/*.js`, one module per section or Groups panel. See [Admin Media Tags tab](admin-media-tags.md). |
+| `settingspanel/` | Thirteen modules: `ui-entry-points.js`, `ui-release-notes.js`, `ui-panel-template.js`, `ui-panel-shortcut-editor.js`, `ui-panel-settings.js`, `ui-panel-tag-editor.js` (the Media Tags group editor), `ui-panel-hidden-content.js`, `ui-panel-language.js`, `ui-panel-tag-looks.js` (tag look rules and locked items), `ui-panel-tag-preview.js` (the Media Tags live preview: sample cards drawn by the layout controller; also used by the Media Tags admin tab with a seeded new-user document), `ui-panel-tag-portable.js` (Media Tags presets, import and export: the Layout tab's Presets and Import & export cards, and the dialogs and file/clipboard helpers the Media Tags admin tab reuses), `ui-panel-media-tags.js` (the Media Tags section: tabs, Layout/Status badges/Colours/Server tabs, the phone preview strip and its search entries), `ui-panel.js` (the panel host: dialog, section nav, settings search). The shell orchestrates section wiring after its producers. |
 | `spoilerguard/` | Twelve modules: `ids.js`, `state.js`, `image-refresh.js`, `snooze.js`, `dialog.js`, `identity.js`, `styles.js`, `settings-tab.js`, `seerr-toggle.js`, `detail-button.js`, `watched-refresh.js`, `index.js`. The final module publishes `JE.spoilerBlur`; server filters perform image/metadata protection. |
 
 ### Catch Up
@@ -316,27 +332,43 @@ Administrator settings under **\*arr** → **Shoko**:
 
 | File | Responsibility |
 |---|---|
-| `genretags.js`, `languagetags.js`, `qualitytags.js` | Genre badges, language flags and quality tags such as resolution, dynamic range and audio format. |
-| `ratingtags.js` | Jellyfin `CommunityRating` and `CriticRating`, with star/tomato presentation. Metadata providers or MDBList synchronization determine the upstream scores. |
+| `genretags.js`, `languagetags.js`, `qualitytags.js` | Genre badges, language flags/codes, CC subtitle chips and Dual/Multi badges (shared with the hub preview), and quality tags such as resolution, dynamic range and audio format, plus server-derived source and edition categories. |
+| `ratingtags.js`, `rating-sources.js` | Ordered Community/Critic and MDBList source chips, bundled SVG logos, native formats, minimum score and score colours. The source helper also drives the hub preview. |
 | `ageratingtags.js` | Color-coded parental/age ratings, sharing the Colored Ratings color table. |
+| `genre-icons.json` | The genre → icon table (every language's names) and the Tag Styles genre labels (one canonical English genre per icon, plus Other). Native code (`Resolution/GenreIcons.cs`) embeds it; `scripts/generate_genre_labels.py` writes the table inside `genretags.js` from it (`--check` verifies it). |
+| `status-vocabulary.json`, `status-vocabulary.js` | Shared status badge keys, style ids, compact translation keys and date thresholds; the JSON is embedded by native code and `scripts/generate_status_vocabulary.py` generates/checks its IIFE web table. |
+| `logotags.js` | Logo Tags: the streaming provider, network or studio logo chips (server-proxied images, name chips with initials as the fallback); also builds the hub preview's samples. |
+| `customtags.js` | Custom Tags: one chip per administrator rule the item matched (label, optional genre-set icon, with source tooltips for administrators only), from the cache entry's or `tag-data`'s `CustomTags`; Tag Styles hooks `data-je-custom`. |
+| `statustags.js` | Status Tags: first-match badge per card for added/release dates, season milestones, schedules, trending and optional series status. Batches visible series through `status-tags/series`, guards stale card/user answers and supplies compact labels and `data-je-status` styling hooks. |
 | `peopletags.js` | Cast age, birthplace flags and deceased indicators. |
-| `userreviewtags.js` | Average of rated reviews visible to the current viewer, composed into the rating overlay. Uses tag-cache averages or batched `/JellyfinEnhanced/reviews/ratings` requests. |
-| `tag-cache-store.js` | IndexedDB snapshot scoped by server and user; memory-only fallback when unavailable. |
+| `userreviewtags.js` | Average of rated reviews visible to the current viewer, composed into the rating group through the layout controller. Uses tag-cache averages or batched `/JellyfinEnhanced/reviews/ratings` requests. |
+| `tag-cache-store.js` | IndexedDB snapshot scoped by server and user; memory-only fallback when unavailable. A snapshot from another entry schema is not restored. |
+| `tag-item-editor.js` | The per-item Media Tags editor: a dialog with the item's poster and real tags in the draft look (through `setPreviewLook`), layout, density, each group's place and limit, size, gap and edge spacing, **Lock this look for me** (the item's lock) and, for administrators, **For everyone** (the server-wide item look); also the admin page's editor for those looks. |
+| `tag-item-menu.js` | The **Media Tags** row in Jellyfin's item ⋮ menu (detail page and cards): captures the item on the ⋮ press and appends a native-markup row to the open action sheet. |
 | `tag-pipeline.js` | Restores/downloads the bulk server cache, applies `?since=` deltas and scans cards in idle slices. |
-| `tag-styles.js` | Retrieves validated color overrides and injects web CSS; paired with server `Services/PosterTags/TagStyles.cs`. |
+| `tag-layout-styles.js` | The one stylesheet for every tag layout, keyed off `.je-tag-host[data-je-layout]` and `.je-tag-slot[data-je-slot]`. |
+| `tag-styles.js` | Retrieves the resolved Tag Styles (with the user's own preset when allowed) and injects web CSS for every chip group; paired with server `Services/PosterTags/TagStyles.cs`. |
+| `tag-poster-colours.js` | The Poster preset on the web: samples each card's artwork in idle slices (dominant colour, normalised for contrast; the same algorithm as `Services/PosterTags/PosterColour.cs`), sets `--je-tag-bg/-border/-fg` on the card and keeps the colours in memory and in the tag cache store. |
+| `tag-direct-play.js` | The Status group's direct-play warning: jellyfin-web 12.1's browser device profile (ported; `tests/fixtures/direct-play-web-12.1-chromium.json` is the real client's, captured in Chromium) and the user's saved bitrate, `PlaybackInfo` lookups for on-screen cards in idle slices (two in flight, each aborted after 15 seconds), answers per item and profile hash for a day in memory and the tag cache store. |
+
+`Configuration/LogoTagSettings.cs` (`LogoTagRules`) normalizes the administrator's Logos modes, region and maximum. `Model/TagLogo.cs` is the immutable `{kind,name,logo}` cache-entry value. `Services/TagLogoService.cs` keeps the daily TMDB provider and company/network lookups (`tag-logos.json`), rate-limits them, and serves the allow-listed logo images from its size-bounded disk cache (least recently read evicted first, orphans swept at start) through `/JellyfinEnhanced/logo/{size}/{file}`. `Services/TagCacheLogos.cs` projects the lookups and Jellyfin's studio names into cache entries and batch DTOs, warms them before builds and reconciles, and republishes them after settings changes.
+
+`Configuration/RatingSourceSettings.cs` validates ordered source preferences. `Model/TagSourceRatings.cs` maps MDBList scores to immutable native-unit values. `Services/TagCacheSourceRatings.cs` enriches tag cache entries and batch DTOs through the existing MDBList cache, TTL and quota policy. `Assets/PosterTags/rating-source-icons.json` contains the same logo paths for native compositing.
+
+`Services/PosterTags/Resolution/StatusRules.cs` resolves the same first-match status decision server-side and reads embedded locale resources. `PosterTagStatusProvider.cs` obtains shared daily TMDB ranks and series schedules plus caller-filtered parent aggregates. `PosterTagPlan.cs` plans static top/bottom Bands and their overflow; `PosterTagRenderer.cs` paints strips, status chips and the dedicated overflow tile. `tests/fixtures/native-overflow/` holds browser measurements and isolated chip pixels for Corners/Bands, exercised by backend tests and `tests/browser/native-overflow.spec.cjs`. Status-enabled settings digests use a five-minute URL bucket. `tests/poster/parity/status-fixtures.mjs` exercises each status family and timezone boundaries against the real web renderer and native resolver; the integrated profiles also cover Bands, density, order and profile inheritance.
 
 See [Tag Styles and CSS](../enhanced/tags.md#tag-styles-and-css) and [Native Poster Tags](../enhanced/tags.md#native-poster-tags-experimental) for controls and defaults. Tag Styles change colors, not size, shape or position. Administrator controls under **Display** map to these properties:
 
 | Setting | Property |
 |---|---|
 | **Enable Tag Styles** | `TagStylesEnabled` |
-| **Apply Tag Styles To** | `TagStyleTarget` |
+| **Apply to** | `TagStyleTarget` |
 | **Preset** | `TagStylePreset` |
-| **Apply to** | `TagStyleApplyScope` |
+| **Let users pick their own preset** | `TagStylesAllowUserPreset` |
 | **Enable Native Poster Tags (Experimental)** | `NativePosterTagsEnabled` |
 | **Additional Excluded Clients** | `NativePosterTagsWebClientNames` |
 
-The editor stores `TagStyleOverrides=""` until overrides are saved. Native rendering uses the same validated styles.
+The editor stores `TagStyleOverrides=""` until a group or tag colour is saved, then a version 2 document of presets, groups and labels (`TagStyleApplyScope` is retired). Native rendering uses the same validated styles and preset palettes.
 
 ### Other web components
 
@@ -424,9 +456,17 @@ The client interacts with server classes through endpoints, cookies and image re
 | `WatchlistMonitor.cs`, `SeerrScanTriggerService.cs` | Watchlist event handling and debounced library-add → Seerr recently-added scan bridge. |
 | `SeerrParentalFilter.cs` | Shared parental filtering for integration responses. |
 | `TmdbResponseCache.cs`, `TmdbCompanyTvDiscover.cs` | TMDB response caching/coalescing and studio-produced TV discovery shaped for Seerr consumers. |
+| `StatusTagsTrendingService.cs` | Server-wide trending ranks for Status Tags: TMDB daily trending, else Seerr weekly trending, cached for 30 minutes. |
 | `MovieCollectionsBatch.cs`, `WatchProvidersBatch.cs` | Parsing/shaping batched collection and regional streaming-provider lookups. Movie collections use Seerr first, then TMDB when needed. |
 | `ItemStatsService.cs` | Aggregate item/subtree size and watch-progress data for detail chips. |
-| `TagCacheService.cs`, `TagCacheMonitor.cs` | Builds/persists tag data and incrementally maintains it from library events. |
+| `TagCacheService.cs`, `TagCacheMonitor.cs` | Builds/persists tag data at the current cache schema (`CurrentCacheSchemaVersion`), maintains it from library events and filters episode-derived facts using contributor IDs and `filterRevision`. |
+| `TagLogoService.cs`, `TagCacheLogos.cs` | Logos group data: daily TMDB lookups and the logo image proxy cache; projection into tag cache entries. |
+| `StatusTagsSeriesService.cs` | Authenticated caller-filtered series schedule endpoint support: six-hour TMDB cache, four concurrent lookups, 35 starts per ten seconds, season episode-type enrichment. No per-user storage. |
+| `StatusTagsEpisodeFacts.cs` | Shared episode aggregation for cache and user-filtered batch fallback: aired episode indexes, episode-one season premiere and season added span. |
+| `StatusTagsEpisodeLookup.cs` | The batch fallback's episode facts per Series/Season: one capped query for small containers, a fixed handful of sorted one-episode queries for large ones (bounded however many episodes tie), fed to `StatusTagsEpisodeFacts`. |
+| `LeavingSoonService.cs`, `TagCacheLeaving.cs` | Leaving soon facts: Maintainerr's `/api/collections` (delete date per item) or the administrator's leaving collections, refreshed on an interval with retry backoff into `leaving-soon.json` (no URL or key); projection into tag cache entries (`Leaving`), `/tag-data` and native posters. |
+| `TagCacheCustomTags.cs` | Custom tags in the tag cache: the rules each entry matches (`CustomTags`) from item and series tags and a pass over the collections a rule names; patches members after collection changes, series children after series changes, and re-matches the cache when the rules change. |
+| `ItemLibraryResolver.cs` | The library an item is in (seasons and episodes: their series'), stored as `LibraryId` in tag-cache entries and `tag-data` items for tag look rules. |
 | `TagCachePendingChanges.cs`, `TagCacheResponseBody.cs` | Coalesces pending item changes; assembles bulk response bytes and hashes the viewer's final body for its ETag. |
 | `HiddenContentResponseFilter.cs` | Filters supported Jellyfin item lists and Home Screen Sections responses using the viewer's hidden-content scopes. |
 | `ReviewAuthorCache.cs` | Cached author lookups for review visibility, invalidated by user changes/deletion/lockout. |
@@ -480,15 +520,21 @@ Per-user setting in the Enhanced panel:
 | `NativeClientPolicy.cs` | Excludes known clients running web overlays plus admin-configured client names. |
 | `NativePosterTagStamper.cs` | Metadata-time Primary tag stamping, called by `SpoilerIdentityTagFilter`. |
 | `PosterTagSettings.cs`, `PosterTagSettingsProvider.cs` | Effective personal settings/admin defaults, rendering digest, per-user cache and invalidation on settings/config changes. |
+| `scripts/tag-translation-coverage.mjs` | Per-locale Media Tags translation coverage and placeholder integrity (run directly for a table; `features-tag-translation-coverage.test.mjs` keeps placeholders intact). |
+| `Resolution/ScoreNumbers.cs` | Score numbers in the user's locale (decimal separator, digits) for native posters, from `js/tags/score-numbers.json`, which `scripts/generate_score_numbers.mjs` generates from the same ICU data the web's `Intl.NumberFormat` uses (`JE.core.mediaLanguage.formatNumberText`); `scripts/generate_status_vocabulary.py --check` checks it. |
+| `PosterTagLookFacts.cs` | The facts a tag look rule reads about an image owner (type, library, genres, official rating) from its tag cache entry or the library item, and the rule matcher native posters share with `core/tag-look.js`. |
 | `PosterTagUserCache.cs`, `PosterTagReviewRatings.cs` | User lookups and viewer-aware review averages. |
 | `PosterTagDataProvider.cs` | Cache/on-demand tag data, access checks and Spoiler Guard stripping. |
 | `PosterTagModel.cs`, `PosterTagResolver.cs` | Semantic corner/group/tag layout and web-parity resolution rules. |
+| `PosterTagStatusProvider.cs` | Daily native TMDB ranks, cached schedules and viewer-filtered parent status aggregates. |
 | `PosterTagComposer.cs` | Data → layout → pixels, shared by image filtering and previews; content-addressed cache keys and composition version. |
 | `PosterTagImageFilter.cs` | Primary response composition. Registered before the blur filter, so its response processing runs after blur and draws on the protected result. Rendering failure passes through the underlying image response. |
 | `PosterTagVariantToken.cs` | Signed `-jet` variants bound to user, item, settings, pixel version, flags and data hash. |
 | `CompositeImageCache.cs` | Byte-bounded memory LRU and disk cache under Jellyfin's cache path, in-flight coalescing and bounded render concurrency. |
-| `TagStyles.cs` | Validated shared color overrides for web CSS and native drawing. |
-| `Resolution/` | `AgeRatingRules.cs`, `GenreIcons.cs`, `JsText.cs`, `LanguageFlagRules.cs`, `LanguageNames.cs`, `QualityTagRules.cs`, `RatingRules.cs`, `ResolutionData.g.cs`. |
+| `TagStyles.cs` | The versioned Tag Styles document (preset, group and label overrides): strict save validation, version 1 reading, per-chip resolution and the web model; plus the shipped colour catalog. |
+| `TagStylePalettes.cs` | Group, label and preset ids, the preset palettes and built-in colours shared by web CSS, the config page and native drawing, and the WCAG contrast check. |
+| `PosterColour.cs` | The Poster preset's colours: an artwork's dominant colour (downscaled histogram) normalised for legible text, its worst-case contrast, and the example colours; the renderer samples each poster with it. |
+| `Resolution/` | `AgeRatingRules.cs`, `GenreIcons.cs`, `JsText.cs`, `LanguageFlagRules.cs`, `LanguageNames.cs`, `LogoRules.cs` (logo validation and name-chip text), `QualityTagRules.cs` (including source/edition categories, order and low-quality gate), `RatingRules.cs`, `StatusRules.cs`, `ResolutionData.g.cs`. |
 | `Rendering/` | `PosterTagAssets.cs`, `PosterTagCss.cs`, `PosterTagImageScaler.cs`, `PosterTagPlan.cs`, `PosterTagRenderer.cs`, `PosterTagText.cs`, `PosterTagTileCache.cs`: embedded assets, layout, scaling, text shaping, drawing and reusable tile caching. |
 
 `ResolutionData.g.cs` is generated by repository-root `tests/poster/parity/gen-resolution-data.mjs`; do not edit it by hand. Renderer/composition version changes retire existing variant tokens, preventing old URLs from serving newly changed pixels under long-lived client caches.
@@ -501,11 +547,13 @@ Missing or wrong-length keys are recreated; old URLs can serve original artwork 
 
 | Location | Files and responsibilities |
 |---|---|
-| `Helpers/` | `ArrUrlGuard.cs` checks integration URLs; `BuildAttestation.cs` handles release attestation; `ProviderHelper.cs` and `UserHelper.cs` resolve provider/user identifiers; `ReviewVisibility.cs` applies author visibility; `TagEpisodeSelector.cs` chooses representative episodes with usable streams. |
+| `Helpers/` | `ArrUrlGuard.cs` checks integration URLs; `BuildAttestation.cs` handles release attestation; `PluginConfigurationPatch.cs` writes a few configuration fields on top of the live configuration and reports conflicting edits (the Media Tags tab's saves); `MediaTagsPageFields.cs` is the list of fields those saves may write, read from the page's section modules; `MediaTagsPortable.cs` reads and writes the versioned Media Tags documents (user and server export, import preview with the save paths' validators, presets: built-in, per-user and offered); `ProviderHelper.cs` and `UserHelper.cs` resolve provider/user identifiers; `ReviewVisibility.cs` applies author visibility; `TagEpisodeSelector.cs` chooses representative episodes with usable streams. |
 | `Helpers/` language handling | `MatroskaLanguageReader.cs`, `MediaStreamLanguageResolver.cs` recover stream language data; `MatroskaLanguageCache.cs` keeps each file's parsed languages (persisted, keyed by path, size and modification time) so unchanged files are not reopened; `AudioLanguageTagHelper.cs` maps base/regional codes to tag names and computes changes. |
 | `Helpers/Jellyseerr/` | `SeerrHttpHelper.cs`, `JellyseerrPermissionHelper.cs`, `JellyseerrUserImportHelper.cs`: HTTP, permission and import helpers. `ParentalRatingDecision.cs`, `ParentalTagDecision.cs`, `SeerrCertificationExtractor.cs`, `SeerrTagSignatureExtractor.cs`: shared parental decisions/extraction. |
 | `Extensions/` | `ItemRepositoryExtensions.cs`, `JellyfinDbContextExtensions.cs`, `UserManagerExtensions.cs`: repository/database provider lookups and compatible user enumeration across server API changes. |
-| `Model/TagCacheEntry.cs` | Precomputed item tag data, including parent-series IDs for Spoiler Guard filtering without per-entry library lookups. |
+| `Services/MediaNamingTags.cs` | Server-side source/edition detection from file and immediate parent-folder names, physical-stub priority and resolution-ranked multi-version selection. Shared by the tag cache and `/tag-data`; only labels reach clients. |
+| `Model/TagCacheEntry.cs` | Tag data at the current cache schema (`CurrentCacheSchemaVersion` in `Services/TagCacheService.cs`), including source/edition labels, named-source ratings, Custom rule matches, Logos (`Model/TagLogo.cs`), series/season quality summaries, Status Tags facts and server-only contributor IDs for access filtering, plus precomputed item tag data, including parent-series IDs for Spoiler Guard filtering without per-entry library lookups. |
+| `Model/TagQualitySummary.cs`, `Services/SeriesQualityAggregation.cs` | Policy-independent container quality facts, bounded distinct values, audio-language variants and policy resolution; built from existing episode streams and recomputed through the cache access filter for restricted users. |
 | `Model/AnalyticsData.cs`, `WhatsNewData.cs` | Report/counter records and inclusion/exclusion annotations; configuration-schema and pending-change records. |
 | `Model/AwardsData.cs`, `MdblistRatings.cs` | Awards cache records and MDBList cache/account models. |
 | `Model/Arr/` | `ArrInstance.cs`, `ArrItem.cs`, `ArrType.cs`: integration instance/item/type models. |
@@ -626,6 +674,7 @@ Use this index to find validation and asset-generation scripts and their mainten
 | `scripts/material-symbols/subset.py` | Builds the two Material Symbols subsets from bundled full fonts. Add every new runtime icon name to `ICONS`, install fonttools/Brotli, regenerate and include both subset outputs. Literal scanning cannot cover dynamically constructed names. |
 | `scripts/build_poster_assets.py` | Downloads pinned upstream inputs, verifies checksums and generates `Assets/PosterTags/`. Outputs are committed and do not regenerate during `dotnet build`. |
 | `scripts/poster-assets/package.json`, `package-lock.json`, `rasterize_flags.mjs` | Pinned Node/Playwright tooling for Chromium flag rasterization used by the poster asset generator. |
+| `scripts/capture-web-device-profile.mjs` | Captures jellyfin-web's own browser device profile and the `canPlayType` answers it read in headless Chromium into `tests/fixtures/direct-play-web-12.1-chromium.json`. Needs an authorised Jellyfin test server with the plugin installed (`--server`, `--user`, `JE_CAPTURE_PASSWORD`); `--cases-from` reuses the fixture's cases. Not run by CI. |
 
 `js/fonts/` contains `materialsymbolsrounded.woff2`, `materialsymbolsoutlined.woff2`, `materialsymbolsrounded-subset.woff2` and `materialsymbolsoutlined-subset.woff2`. Full fonts use the public Material Symbols family names for themes/custom CSS; subsets use private `JE Material Symbols …` families and `.je-msym-*` classes for JE's own icons. Keep those families separate so a subset does not shadow a theme's full font.
 
@@ -637,6 +686,8 @@ Full regeneration requires Python 3.10+ with the generator's pinned fonttools/Br
 python3 scripts/build_poster_assets.py --check
 python3 scripts/build_poster_assets.py --check --full
 ```
+
+`python3 scripts/build_poster_assets.py --quality-only` regenerates the quality colour table and its manifest records without changing unrelated assets.
 
 The fast check uses only the Python standard library to verify repository inputs and output checksums. The full check regenerates into a temporary directory and compares bytes, requiring the complete toolchain.
 
@@ -708,3 +759,49 @@ The inventory at `tests/docs/production-inventory.json` records lexical producti
 | `more-info-needed.yml`, `stale.yml` | Issue maintenance. |
 
 `.github/ISSUE_TEMPLATE/bug.md` and `.github/ISSUE_TEMPLATE/feature_request.md` provide report templates; `.github/SECURITY_GUIDELINES.md`, `.github/codeql/codeql-config.yml`, `.github/dependabot.yml` and `.github/funding.yml` hold repository policy/configuration. Follow [CONTRIBUTING.md](https://github.com/n00bcodr/Jellyfin-Enhanced/blob/main/CONTRIBUTING.md) for which checks apply to a contribution and [SECURITY.md](https://github.com/n00bcodr/Jellyfin-Enhanced/blob/main/SECURITY.md) for reporting vulnerabilities.
+
+### Tag size and gap ownership
+
+`Configuration/TagLayoutSettings.cs` validates `TagScale` and `TagGap` for user settings and admin defaults; `TagShapeSettings.cs` reuses those validators for optional per-shape values. `js/core/tag-layout.js` resolves inheritance and writes `--je-tag-scale` / `--je-tag-gap` to hosts and caption outlets. The existing tag styles retain their responsive clamps and multiply their metrics by those properties. `preserveLegacySizing` derives the original declarations for version-0 hosts inside the same responsive rules, preserving exact legacy rasterization. The Media Tags hub controls save through `ui-panel-settings.js`; the preview uses the same card resolver.
+
+Native settings and cache digests are resolved in `Services/PosterTags/PosterTagSettings.cs`. `Rendering/PosterTagCss.cs` scales logical metrics, `PosterTagPlan.cs` places the resulting chips, and `PosterTagTileCache.cs` keys tiles by size and gap as well as image scale. `tests/backend/Core/CoreTagScaleSettingsTests.cs` covers validation, round trips, inherited defaults, native metrics and cache pixels; the existing frontend layout/hub suites and poster parity profiles cover web behavior and effective native settings. No new production module or tag-cache entry field is added.
+
+### Awards poster tags
+
+- `Model/TagAwards.cs`: immutable exact-work chart/certification/winner facts in `TagCacheEntry.Awards`.
+- `Services/AwardTagsService.cs`: persistent `award-tags.json`, configurable MDBList list membership, provider certification, cached Wikidata winner projection, TTLs, quota reserve and cancellation.
+- `Services/TagCacheAwards.cs`: cache-only batch/native projection and normal tag-cache publication after scheduled refresh or config changes.
+- `ScheduledTasks/RefreshAwardTagsTask.cs`: **Refresh Awards Tags**, daily 04:00 and on demand, hidden while Awards is off.
+- `ScheduledTasks/RefreshLeavingSoonTagsTask.cs`: **Refresh Leaving Soon Tags**, hourly, acting once the configured interval has passed, hidden without a Leaving soon source. `Model/TagLeaving.cs` is its cache-entry value.
+- `js/tags/awardstags.js`: IIFE renderer and shared preview chips/logos, registered in the component manifest.
+- `Assets/PosterTags/award-icons.json`: generated logo paths loaded by `PosterTagAssets`; `scripts/build_poster_assets.py --awards-only` regenerates just those paths and manifest records. Source marks are nominative; project artwork is GPL-3.0 and trademarks remain with their owners.
+
+The layout, settings hub, Tag Styles and native resolver/plan/renderer use the same `awards` group id and five stable label ids. Native pixel/resolver versions retire old variants. Regression coverage is in `tests/backend/PosterTags/AwardTagsTests.cs`, `tests/frontend/features/features-awards-tags.test.mjs` and the Awards offline parity profiles.
+`Services/NativeStatusRefreshService.cs` owns scheduled and stale-read-triggered background refreshes for native status snapshots (series schedules in batches through `StatusTagsSeriesService`'s four-slot, rate-limited lookups); image composition reads these snapshots without upstream requests.
+
+`scripts/generate_status_dates.mjs` generates `js/tags/status-short-dates.json` from browser Intl data for native Status month/day labels, with deduplicated formats and locale-to-format mappings for every shipped language and named territory. It also generates `tests/fixtures/native-status-dates.json` for four-date regional regressions; `generate_status_vocabulary.py --check` checks both tables.
+
+`Configuration/NativePosterDateContext.cs` validates and bounds saved native locale/timezone context on assignment and document load.
+
+
+### Quality stream display modes
+
+`Configuration/QualityDisplaySettings.cs` validates Highest/All modes and the inclusive minimum-resolution buckets. Nullable personal overrides in `UserConfiguration.cs` inherit live admin defaults; the controller seeds, validates and resets them. The existing admin `sections/quality.js` declares all five controls, with validators in `Helpers/MediaTagsPageFields.cs` and independent fixture/binding entries. Personal controls remain in the Quality group editor.
+
+`TagStreamData.DistinctQualities` carries distinct track category/label/language triples computed by `QualityTagRules.DetectDistinct` when `TagCacheService.BuildStreamData` creates stream facts. `TagQualityCategory` carries full union, intersection and latest sets independently of its bounded legacy samples. `SeriesQualityAggregation` builds these from the existing episode walk and applies each policy per category, retaining parallel legacy/current audio facts and per-language/region summaries. `audio-aggregation.json` supplies shared expected facts for web/native regressions and parity. `qualitytags.js` reads the persisted sets or derives identical batch sets; `PosterTagResolver` uses the same native rules. The current tag cache schema (`CurrentCacheSchemaVersion` in `Services/TagCacheService.cs`) also gates both browser snapshot readers. Regression coverage is in `QualityDisplayTests.cs`, `features-quality-display.test.mjs`, shared `audio-alias-labels.json` / `audio-legacy-documents.json` fixtures, the group editor tests and offline native parity profiles.
+
+### Technical poster chips and Scenes
+
+`Services/PosterTags/Resolution/TechnicalQualityRules.cs` mirrors `qualitytags.js` runtime formatting, the aspect-ratio tolerance table and frame-rate snapping. `Helpers/SubtitleAccessibility.cs` detects whole-word SDH/CC title markers and the hearing-impaired flag; stream summaries and `SdhSubtitleLanguages` carry that fact through the existing tag cache, batch and native Language group. `Helpers/TrackRoles.cs` (mirrored by `isSecondaryAudio` in `js/tags/languagetags.js`) keeps commentary and audio-description tracks out of `AudioLanguages`; forced subtitle tracks never add a `SubtitleLanguages` entry. `Services/StatusTagsScenesService.cs` resolves daily TMDB movie keywords via `TmdbResponseCache`; `Services/TagCacheScenes.cs` warms and publishes those facts outside native image composition. The shared Status vocabulary includes both scene badges and is regenerated by `scripts/generate_status_vocabulary.py`. Formatting fixtures live in `tests/fixtures/technical-quality.json`; frontend, backend and offline parity consume them. The current tag cache schema (`CurrentCacheSchemaVersion` in `Services/TagCacheService.cs`) invalidates older entries.
+
+Per-genre Tag Styles labels come from `js/tags/genre-icons.json` (see above). `tests/fixtures/genre-styles.json` holds one Tag Styles document and, per genre, the label, glyph and colours web chips and native posters draw; `tests/backend/PosterTags/GenreStyleTests.cs`, `tests/frontend/features/features-genre-styles.test.mjs` and `tests/browser/genre-styles.spec.cjs` read it, and the offline poster parity compares each genre chip's label too.
+
+The technical aspect-ratio tolerance table in `TechnicalQualityRules.cs` also generates the web table inside `js/tags/qualitytags.js` through `scripts/generate_technical_ratios.py` (`--check` verifies it). The shared `tests/fixtures/technical-quality.json` exercises full and compact native/web output and tolerance boundaries.
+
+Compact quality labels use `js/tags/quality-compact.json`, projected into the web layout table and `Services/PosterTags/Resolution/QualityCompactLabels.g.cs` by `scripts/generate_quality_compact.py`. Run its `--check` mode after editing the source.
+
+`tests/fixtures/audio-stream-labels.json` checks real audio stream facts through the web renderer and native resolver in Full and Compact; the parity profiles include the same streams. `tests/fixtures/quality-detection-truth.json` is an independent truth table of Jellyfin stream shapes (Dolby Vision range types and base layers, HLG, misleading titles, codec/channel provenance across tracks, lossless audio, VC-1/VVC/ProRes) with the expected Highest, All and version-0 labels; `features-quality-detection-truth.test.mjs` and `QualityDetectionTruthTests.cs` assert it on both sides, so a shared mistake cannot pass as parity.
+
+`tests/fixtures/side-status-fit.json` shares smaller-scale Status side-anchor budgets between the browser and native planner regressions (both sides, with and without an opposite group, across Default/Tight/Flush).
+
+`tests/fixtures/first-chip-text-fit.json` shares fitted text-logo font size and letter spacing between the production-markup browser regressions, native planner tests and offline side-logo parity profiles. `PosterTagTextLayout` retains its builder’s shaping parameters so ellipsizing every tile kind uses its original typography. Pixel identity 8.2 invalidates previously fitted text logos; renderer version stays 8.

@@ -22,6 +22,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
         private static readonly Assembly ResourceAssembly = typeof(PosterTagAssets).Assembly;
 
         private readonly ConcurrentDictionary<string, Lazy<SKImage?>> _flags = new(StringComparer.Ordinal);
+        private readonly ConcurrentDictionary<string, Lazy<SKImage?>> _sourceLogos = new(StringComparer.Ordinal);
+
+        /// <summary>The bundled MDBList logo file of each rating source (the web's mdblist-logos source).</summary>
+        private static readonly Dictionary<string, string> SourceLogoFiles = new(StringComparer.Ordinal)
+        {
+            ["imdb"] = "imdb.png", ["tmdb"] = "tmdb.png", ["trakt"] = "trakt.png", ["letterboxd"] = "letterboxd.png",
+            ["metacritic"] = "metacritic.png", ["rtAudience"] = "rottentomatoes_audience.png",
+        };
+        private readonly ConcurrentDictionary<string, SKImage> _logos = new(StringComparer.Ordinal);
+
+        /// <summary>Decoded logos kept at most; past it further logos draw as name chips.</summary>
+        internal const int MaxCachedLogos = 512;
+
+        /// <summary>
+        /// Where logo image bytes come from: the logo proxy's disk cache (never the network). Tests
+        /// point it at synthetic images; null bytes draw the name chip instead.
+        /// </summary>
+        internal static Func<string, byte[]?> LogoSource { get; set; } = DefaultLogoSource;
+
+        /// <summary>Whether a logo image is available, without reading it (native poster cache keys).</summary>
+        internal static bool HasLogo(string logoPath) => LogoSource == DefaultLogoSource
+            ? TagLogoService.Instance?.IsCached(TagLogoService.DefaultSize, logoPath.TrimStart('/')) == true
+            : LogoSource(logoPath) is { Length: > 0 };
+
+        /// <summary>The proxy's cached w92 image of a TMDB logo path.</summary>
+        internal static byte[]? DefaultLogoSource(string logoPath) =>
+            TagLogoService.Instance?.TryReadCached(TagLogoService.DefaultSize, logoPath.TrimStart('/'))?.Bytes;
         private readonly HashSet<string> _flagCodes;
         private readonly Dictionary<string, PosterTagIcon> _icons;
         private readonly Dictionary<string, PosterTagVectorIcon> _vectorIcons;
@@ -71,6 +98,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 typeface = LoadBrotliTypeface("fonts.NotoSans-Bold.ttf.br");
                 LoadIcons(icons);
                 LoadVectorIcons(vectors);
+                LoadVectorIcons(vectors, "rating-source-icons.json");
+                LoadVectorIcons(vectors, "award-icons.json");
                 var (qualityColours, bases) = LoadQualityColours();
                 var ageStyles = LoadAgeRatingStyles();
 
@@ -106,6 +135,40 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
         /// <summary>Looks up an icon by its icons.json key (genre icon name, or "Family:name" for the others).</summary>
         public PosterTagIcon? GetIcon(string key) => _icons.TryGetValue(key, out var icon) ? icon : null;
 
+        /// <summary>
+        /// The MDBList logo a rating source chip shows (the same bundled PNGs as the web's chips and rating row), or null when
+        /// the source has none. Rotten Tomatoes' critic score takes the fresh or rotten splat. Owned by this instance.
+        /// </summary>
+        /// <param name="sourceId">The chip's source id (imdb, rtCritic, ...).</param>
+        /// <param name="fresh">Whether a critic score is fresh.</param>
+        /// <returns>The decoded logo.</returns>
+        public SKImage? GetSourceLogo(string sourceId, bool fresh)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            var file = sourceId == "rtCritic" ? (fresh ? "rottentomatoes_fresh.png" : "rottentomatoes_rotten.png")
+                : SourceLogoFiles.GetValueOrDefault(sourceId);
+            return file is null ? null : BundledLogo("mdblist-logos." + file);
+        }
+
+        /// <summary>The bundled logo file of each Awards chip: the web's MDBList logos, and the Oscar and Emmy artwork.</summary>
+        private static readonly Dictionary<string, string> AwardLogoFiles = new(StringComparer.Ordinal)
+        {
+            ["imdbTop250"] = "mdblist-logos.imdb.png", ["letterboxdTop250"] = "mdblist-logos.letterboxd.png",
+            ["certifiedFresh"] = "mdblist-logos.rottentomatoes_fresh.png", ["oscar"] = "award-logos.oscar.png", ["emmy"] = "award-logos.emmy.png",
+        };
+
+        /// <summary>The logo an Awards chip shows (the same artwork as the web's chips), or null. Owned by this instance.</summary>
+        /// <param name="awardId">The chip's award id (imdbTop250, oscar, ...).</param>
+        /// <returns>The decoded logo.</returns>
+        public SKImage? GetAwardLogo(string awardId)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return AwardLogoFiles.TryGetValue(awardId, out var file) ? BundledLogo(file) : null;
+        }
+
+        private SKImage? BundledLogo(string resource) =>
+            _sourceLogos.GetOrAdd(resource, r => new Lazy<SKImage?>(() => DecodeBundledLogo(r), System.Threading.LazyThreadSafetyMode.ExecutionAndPublication)).Value;
+
         public PosterTagVectorIcon? GetVectorIcon(string key) => _vectorIcons.TryGetValue(key, out var icon) ? icon : null;
 
         /// <summary>True when a flag raster exists for <paramref name="code"/> (flag-icons code or "zxx").</summary>
@@ -126,6 +189,49 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             return _flags.GetOrAdd(code, c => new Lazy<SKImage?>(() => DecodeFlag(c), System.Threading.LazyThreadSafetyMode.ExecutionAndPublication)).Value;
         }
 
+        /// <summary>
+        /// The decoded logo image of a TMDB logo path, or null when it is not cached (yet) or does not
+        /// decode. A missing image is asked for again next time, so a logo cached later is drawn. The
+        /// image is owned by this instance; callers must not dispose it.
+        /// </summary>
+        public SKImage? GetLogo(string logoPath)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            // A decoded logo whose file the disk cache evicted draws as the name chip, as the
+            // poster's data key (HasLogo) says, until the file is cached again.
+            if (_logos.TryGetValue(logoPath, out var cached)) return HasLogo(logoPath) ? cached : null;
+            if (_logos.Count >= MaxCachedLogos) return null;
+            byte[]? bytes;
+            try
+            {
+                bytes = LogoSource(logoPath);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                return null;
+            }
+
+            if (bytes is null || bytes.Length == 0) return null;
+            var image = SKImage.FromEncodedData(bytes);
+            if (image is null || image.Width <= 0 || image.Height <= 0)
+            {
+                image?.Dispose();
+                return null;
+            }
+
+            var retained = false;
+            try
+            {
+                retained = _logos.TryAdd(logoPath, image);
+                return retained ? image : _logos.TryGetValue(logoPath, out var winner) ? winner : null;
+            }
+            finally
+            {
+                // The cache owns successful additions; all other paths release the decode.
+                if (!retained) image.Dispose();
+            }
+        }
+
         public void Dispose()
         {
             if (_disposed)
@@ -134,6 +240,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             }
 
             _disposed = true;
+            foreach (var logo in _logos.Values)
+            {
+                logo.Dispose();
+            }
+
+            _logos.Clear();
+
             foreach (var lazy in _flags.Values)
             {
                 if (lazy.IsValueCreated)
@@ -143,6 +256,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             }
 
             _flags.Clear();
+            foreach (var lazy in _sourceLogos.Values)
+            {
+                if (lazy.IsValueCreated)
+                {
+                    lazy.Value?.Dispose();
+                }
+            }
+
+            _sourceLogos.Clear();
             foreach (var icon in _icons.Values)
             {
                 icon.Dispose();
@@ -154,6 +276,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             }
 
             TextTypeface.Dispose();
+        }
+
+        private static SKImage? DecodeBundledLogo(string resource)
+        {
+            using var stream = ResourceAssembly.GetManifestResourceStream("Jellyfin.Plugin.JellyfinEnhanced.Assets.Cdn." + resource);
+            if (stream is null) return null;
+            using var data = SKData.Create(stream);
+            using var codec = SKCodec.Create(data);
+            if (codec is null) return null;
+            var info = new SKImageInfo(codec.Info.Width, codec.Info.Height, SKColorType.Rgba8888, SKAlphaType.Premul);
+            using var bitmap = SKBitmap.Decode(codec, info);
+            return bitmap is null ? null : SKImage.FromPixelCopy(bitmap.Info, bitmap.GetPixels(), bitmap.RowBytes);
         }
 
         private static SKImage? DecodeFlag(string code)
@@ -224,9 +358,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             }
         }
 
-        private static void LoadVectorIcons(Dictionary<string, PosterTagVectorIcon> vectors)
+        private static void LoadVectorIcons(Dictionary<string, PosterTagVectorIcon> vectors, string filename = "vector-icons.json")
         {
-            using var doc = ReadJson("vector-icons.json");
+            using var doc = ReadJson(filename);
             foreach (var entry in doc.RootElement.EnumerateObject())
             {
                 var vb = entry.Value.GetProperty("viewBox");

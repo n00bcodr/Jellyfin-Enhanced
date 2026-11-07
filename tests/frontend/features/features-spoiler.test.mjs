@@ -113,3 +113,11 @@ test('spoiler identity cookie follows login, switch and logout',t=>{
   h.switchUser('second'); assert.match(h.window.document.cookie,/je-spoiler-uid=second/);
   h.switchUser(null); assert.equal(h.window.document.cookie,'');
 });
+test('Spoiler Guard exposes policy inputs for UI but no independent browser cache stamp', async t => {
+  const h = setup(t, async () => ({ Series: { aabb: {} }, Prefs: {} }));
+  await h.state.whenLoaded();
+  assert.equal(h.state.isEnabledFor('aabb'), true);
+  assert.equal(h.state.tagStripRevision, undefined);
+  await h.state.setUserPrefs({ HideTags: false });
+  assert.equal(h.state.getUserPrefs().HideTags, false);
+});

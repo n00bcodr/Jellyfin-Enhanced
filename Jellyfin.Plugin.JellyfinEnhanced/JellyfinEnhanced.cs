@@ -68,6 +68,38 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             CleanupOldScript();
             CheckPluginPages(applicationPaths, serverConfigurationManager, 1);
             BackfillMissingDefaultShortcuts();
+            BackfillCustomTagRuleKey();
+        }
+
+        /// <summary>
+        /// The Custom tag rule id key to store: the current one, else a posted one, else a new
+        /// one once there are rules (see <see cref="PluginConfiguration.CustomTagRuleKey"/>).
+        /// </summary>
+        private static string EnsureCustomTagRuleKey(PluginConfiguration incoming, PluginConfiguration? current)
+        {
+            if (!string.IsNullOrEmpty(current?.CustomTagRuleKey)) return current.CustomTagRuleKey;
+            if (!string.IsNullOrEmpty(incoming.CustomTagRuleKey)) return incoming.CustomTagRuleKey;
+            return incoming.CustomTagRules.Count > 0 ? CustomTagRuleSet.NewKey() : string.Empty;
+        }
+
+        // Rules saved before the key existed get one, so their ids stop naming the source.
+        private void BackfillCustomTagRuleKey()
+        {
+            try
+            {
+                var config = Configuration;
+                if (config == null || config.CustomTagRules.Count == 0 || !string.IsNullOrEmpty(config.CustomTagRuleKey)) return;
+                UpdateConfiguration(stored =>
+                {
+                    if (!string.IsNullOrWhiteSpace(stored.CustomTagRuleKey)) return null;
+                    stored.CustomTagRuleKey = CustomTagRuleSet.NewKey();
+                    return stored;
+                }, fullSave: false);
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"Jellyfin Enhanced: could not store the Custom tag rule key: {ex.Message}");
+            }
         }
 
         // Dedupes Shortcuts (XmlSerializer appends to constructor-initialized lists, doubling on each restart)
@@ -77,39 +109,47 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             List<Shortcut>? originalShortcuts = null;
             try
             {
-                var config = Configuration;
-                if (config == null) return;
-                config.Shortcuts ??= new List<Shortcut>();
-                originalShortcuts = config.Shortcuts;
-
-                var seen = new HashSet<string>(StringComparer.Ordinal);
-                var dedupedReversed = new List<Shortcut>(originalShortcuts.Count);
-                var emptyKeyNames = new HashSet<string>(StringComparer.Ordinal);
-                for (int i = originalShortcuts.Count - 1; i >= 0; i--)
-                {
-                    var s = originalShortcuts[i];
-                    var name = s?.Name ?? string.Empty;
-                    if (string.IsNullOrEmpty(name)) continue;
-                    if (string.IsNullOrEmpty(s?.Key))
+                int duplicatesDropped = 0;
+                List<string> malformed = new();
+                List<Shortcut> missing = new();
+                // Read, rewritten and saved inside the configuration write lock, like every configuration write.
+                var saved = UpdateConfiguration(
+                    config =>
                     {
-                        emptyKeyNames.Add(name);
-                        continue;
-                    }
-                    if (seen.Add(name)) dedupedReversed.Add(s!);
-                }
-                var deduped = new List<Shortcut>(dedupedReversed.Count);
-                for (int i = dedupedReversed.Count - 1; i >= 0; i--) deduped.Add(dedupedReversed[i]);
-                var malformed = emptyKeyNames.Where(n => !seen.Contains(n)).ToList();
-                int duplicatesDropped = originalShortcuts.Count - deduped.Count - malformed.Count;
+                        config.Shortcuts ??= new List<Shortcut>();
+                        originalShortcuts = config.Shortcuts;
 
-                var defaults = new PluginConfiguration().Shortcuts ?? new List<Shortcut>();
-                var missing = defaults.Where(d => !seen.Contains(d.Name ?? string.Empty)).ToList();
-                deduped.AddRange(missing);
+                        var seen = new HashSet<string>(StringComparer.Ordinal);
+                        var dedupedReversed = new List<Shortcut>(originalShortcuts.Count);
+                        var emptyKeyNames = new HashSet<string>(StringComparer.Ordinal);
+                        for (int i = originalShortcuts.Count - 1; i >= 0; i--)
+                        {
+                            var s = originalShortcuts[i];
+                            var name = s?.Name ?? string.Empty;
+                            if (string.IsNullOrEmpty(name)) continue;
+                            if (string.IsNullOrEmpty(s?.Key))
+                            {
+                                emptyKeyNames.Add(name);
+                                continue;
+                            }
+                            if (seen.Add(name)) dedupedReversed.Add(s!);
+                        }
+                        var deduped = new List<Shortcut>(dedupedReversed.Count);
+                        for (int i = dedupedReversed.Count - 1; i >= 0; i--) deduped.Add(dedupedReversed[i]);
+                        malformed = emptyKeyNames.Where(n => !seen.Contains(n)).ToList();
+                        duplicatesDropped = originalShortcuts.Count - deduped.Count - malformed.Count;
 
-                if (duplicatesDropped == 0 && missing.Count == 0 && malformed.Count == 0) return;
+                        var defaults = new PluginConfiguration().Shortcuts ?? new List<Shortcut>();
+                        missing = defaults.Where(d => !seen.Contains(d.Name ?? string.Empty)).ToList();
+                        deduped.AddRange(missing);
 
-                config.Shortcuts = deduped;
-                SaveConfiguration();
+                        if (duplicatesDropped == 0 && missing.Count == 0 && malformed.Count == 0) return null;
+
+                        config.Shortcuts = deduped;
+                        return config;
+                    },
+                    fullSave: false);
+                if (!saved) return;
                 _logger.Info(
                     $"Normalized shortcut list: dropped {duplicatesDropped} duplicate(s), " +
                     $"{malformed.Count} malformed entry/entries" +
@@ -139,8 +179,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             if (original == null) return;
             try
             {
-                var config = Configuration;
-                if (config != null) config.Shortcuts = original;
+                lock (AnalyticsCredentialLock)
+                {
+                    var config = Configuration;
+                    if (config != null) config.Shortcuts = original;
+                }
             }
             catch (Exception ex)
             {
@@ -232,11 +275,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
         // rather than serving a stale snapshot until the daily 3 AM refresh.
         public override void UpdateConfiguration(BasePluginConfiguration configuration)
         {
-            // Capture the outgoing value BEFORE base.UpdateConfiguration replaces
-            // Configuration, so an actual OFF<->ON transition is distinguishable
-            // from an unrelated config save (this method fires on every save).
-            var tagCacheWasEnabled = Configuration?.TagCacheServerMode == true;
-            var analyticsWasEnabled = Configuration?.AnalyticsEnabled == true;
+            ArgumentNullException.ThrowIfNull(configuration);
+            UpdateConfiguration(_ => configuration);
+        }
+
+        /// <summary>
+        /// Saves the configuration <paramref name="build"/> makes from the stored one. <paramref name="build"/> runs
+        /// inside the configuration write lock, the critical section every configuration write in the plugin goes
+        /// through (a full save from the configuration page, the Media Tags tab's field patch, and the server's own
+        /// bookkeeping writes: the maintenance toggle clear, the translation refresh signal, analytics state, the
+        /// shortcut backfill), so a writer that builds on the stored configuration can never put back fields another
+        /// write changed while it was building.
+        /// </summary>
+        /// <param name="build">Makes the configuration to save from the stored one (a new object, or the stored one
+        /// changed in place); null saves nothing.</param>
+        /// <param name="saved">Reads the configuration as stored (normalised), still inside the critical section.</param>
+        /// <param name="fullSave">False for a server bookkeeping write that changes a field of the stored configuration
+        /// in place: it is saved in the same critical section, without a full save's normalisation of posted values
+        /// and without its after-effects (page checks, cache flushes, transitions), as before it took the lock.</param>
+        /// <returns>Whether a configuration was saved.</returns>
+        internal bool UpdateConfiguration(Func<PluginConfiguration, BasePluginConfiguration?> build, Action<PluginConfiguration>? saved = null, bool fullSave = true)
+        {
+            bool tagCacheWasEnabled;
+            bool sourceRatingsWereConfigured;
+            bool analyticsWasEnabled;
+            string awardsBefore;
+            string leavingBefore;
 
             // The Analytics* identity/bookkeeping fields are server-minted and
             // never editable on the config page, but a save replaces the whole
@@ -255,6 +319,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // backend row exists.
             lock (AnalyticsCredentialLock)
             {
+                // Capture the outgoing value BEFORE build (which may change the stored
+                // object in place) and base.UpdateConfiguration replace Configuration,
+                // so an actual OFF<->ON transition is distinguishable from an
+                // unrelated config save (this method fires on every save).
+                var stored = Configuration;
+                tagCacheWasEnabled = stored.TagCacheServerMode;
+                sourceRatingsWereConfigured = Services.TagCacheService.SourceRatingsConfigured;
+                analyticsWasEnabled = stored.AnalyticsEnabled;
+                awardsBefore = Services.AwardTagsService.ConfigurationIdentity(stored);
+                leavingBefore = Services.LeavingSoonService.ConfigurationIdentity(stored);
+
+                var configuration = build(stored);
+                if (configuration == null) return false;
+
+                if (!fullSave)
+                {
+                    base.UpdateConfiguration(configuration);
+                    if (Configuration is PluginConfiguration written) saved?.Invoke(written);
+                    return true;
+                }
+
                 if (configuration is PluginConfiguration incoming && Configuration is PluginConfiguration current)
                 {
                     var incomingIncomplete = string.IsNullOrEmpty(incoming.AnalyticsInstallId) || string.IsNullOrEmpty(incoming.AnalyticsInstallSecret);
@@ -274,9 +359,40 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                     }
                 }
 
+                // Status Tags day windows: the config page clamps them too, but a
+                // save can come from anywhere (API, restored backup).
+                if (configuration is PluginConfiguration statusTagsConfig)
+                {
+                    statusTagsConfig.StatusTagsJustAddedDays = Math.Clamp(statusTagsConfig.StatusTagsJustAddedDays, 1, 365);
+                    statusTagsConfig.StatusTagsNewReleaseDays = Math.Clamp(statusTagsConfig.StatusTagsNewReleaseDays, 1, 365);
+                }
+
+                // Logos tag group: unknown modes, regions and maximums fall back to the defaults.
+                if (configuration is PluginConfiguration logosConfig) LogoTagRules.Normalize(logosConfig);
+                // Custom tag rules: unknown match types dropped, values and labels trimmed,
+                // repeated rules collapsed, at most 20 (a save can come from anywhere).
+                // The rule id key is the server's: the stored one wins over a posted one.
+                if (configuration is PluginConfiguration customTagsConfig)
+                {
+                    customTagsConfig.CustomTagRules = CustomTagRuleSet.Normalize(customTagsConfig.CustomTagRules);
+                    customTagsConfig.CustomTagRuleKey = EnsureCustomTagRuleKey(customTagsConfig, Configuration);
+                }
+
+                // Tag Styles: only a valid document is stored (normalised to version 2); anything
+                // else keeps the current one, since a save can come from anywhere (API, restored backup).
+                if (configuration is PluginConfiguration stylesConfig
+                    && !Services.PosterTags.TagStyleSet.ApplyToSave(stylesConfig, Configuration, out var styleError))
+                {
+                    _logger.Warning($"Jellyfin Enhanced: Tag Styles not saved ({styleError}); keeping the current styles.");
+                }
+
                 base.UpdateConfiguration(configuration);
+                if (Configuration is PluginConfiguration normalised) saved?.Invoke(normalised);
             }
             CheckPluginPages(_applicationPaths, _serverConfigurationManager, 1);
+
+            // The trending source (TMDB key, Seerr) or the switches may have changed.
+            Services.StatusTagsTrendingService.Invalidate();
 
             try
             {
@@ -294,6 +410,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             {
                 Services.TagCacheService.Instance?.QueueServerModeTransition();
             }
+
+            // The Logos switch, modes, region or maximum may have changed what cache entries carry.
+            Services.TagCacheService.Instance?.OnLogoSettingsChanged();
+            Services.TagCacheService.Instance?.OnScenesSettingsChanged();
+            // Custom tag rules that match differently re-match the cache in the background.
+            Services.TagCacheService.Instance?.QueueCustomTagRefreshIfStale();
+
+            // Removing an MDBList key must also retire previously cached source scores.
+            // This waits on TagCacheService's rebuild lock, so a key change saved during
+            // a full rebuild blocks the save until it finishes (T1R-6: queue it if slow).
+            if (sourceRatingsWereConfigured != Services.TagCacheService.SourceRatingsConfigured)
+                Services.TagCacheService.Instance?.RefreshRatingSourceAvailability();
+
+            if (awardsBefore != Services.AwardTagsService.ConfigurationIdentity(Configuration))
+            {
+                Services.TagCacheService.Instance?.RefreshAwardAvailability();
+                // Turned on (or its providers changed) with nothing fetched yet: fetch now, not at the nightly run.
+                Services.TagCacheService.Instance?.QueueAwardsFirstRefresh();
+            }
+
+            // A new Leaving soon source (URL, key or names) is read in the background.
+            if (leavingBefore != Services.LeavingSoonService.ConfigurationIdentity(Configuration))
+                Services.TagCacheService.Instance?.QueueLeavingRefresh();
 
             // ON->OFF: flag this install as opted out on the backend so it
             // drops out of every public view without deleting its history.
@@ -335,12 +474,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 QueueAnalyticsTransition("send initial analytics report", () =>
                     _analyticsReportingService.ForceSendAsync(CancellationToken.None));
             }
+
+            return true;
         }
 
         /// <summary>
-        /// Guards every read-modify-write of the Analytics install credentials
-        /// (AnalyticsInstallId/Secret) across UpdateConfiguration's object swap
-        /// and AnalyticsReportingService's post-HTTP writes + SaveConfiguration.
+        /// The configuration write lock. Every configuration write builds and
+        /// saves under it through the UpdateConfiguration overload taking a
+        /// builder: full saves and Media Tags field patches (which swap in a new
+        /// object) and the in-place bookkeeping writes (maintenance toggle clear,
+        /// translation refresh signal, AnalyticsReportingService's post-HTTP
+        /// credential/report state, the startup shortcut backfill), so no write
+        /// can land on an object another write is replacing. Named for its first
+        /// job: guarding the Analytics install credentials across the swap.
         /// </summary>
         internal static readonly object AnalyticsCredentialLock = new object();
 
@@ -728,6 +874,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                     // MenuIcon was previously ignored - jellyfin-web hardcoded <Folder /> regardless of
                     // this value. Jellyfin 12 reads it https://github.com/jellyfin/jellyfin-web/commit/ca55f7998bb774b3c05af3ae410b1b24f72805a5
                     MenuIcon = "tune"
+                },
+                // The old address of the Media Tags settings, now the Media Tags tab of the page above:
+                // a redirect only (bookmarks, older links), not in the dashboard menu.
+                new PluginPageInfo
+                {
+                    Name = "JellyfinEnhancedMediaTags",
+                    DisplayName = "Jellyfin Enhanced: Media Tags",
+                    EnableInMainMenu = false,
+                    EmbeddedResourcePath = "Jellyfin.Plugin.JellyfinEnhanced.Configuration.mediaTagsPage.html",
                 }
             };
         }
