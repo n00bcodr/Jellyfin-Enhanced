@@ -739,7 +739,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool AwardsTagsEmmy { get; set; } = true;
         public bool AwardsTagsLetterboxd { get; set; } = true;
         /// <summary>MDBList numeric id or owner/list slug; never a URL or credential.</summary>
-        public string AwardsTagsImdbList { get; set; } = "sacwooky/imdb-top-250";
+        public string AwardsTagsImdbList { get; set; } = "aramil89/imdb-top-250";
         public string AwardsTagsLetterboxdList { get; set; } = "abdulwahabaa/letterboxd-top-250";
         /// <summary>Refresh TTL in hours, clamped to 1..168 at use.</summary>
         public int AwardsTagsRefreshHours { get; set; } = 24;

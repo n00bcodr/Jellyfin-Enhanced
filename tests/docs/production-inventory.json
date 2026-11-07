@@ -4718,7 +4718,7 @@
       "class": "PluginConfiguration",
       "name": "AwardsTagsImdbList",
       "type": "string",
-      "initializer": "\"sacwooky/imdb-top-250\"",
+      "initializer": "\"aramil89/imdb-top-250\"",
       "constructor_assignment": null,
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
     },
