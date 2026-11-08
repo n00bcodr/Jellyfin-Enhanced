@@ -74,3 +74,8 @@ test('selects are left to the browser outside the TV layout', t => {
   assert.equal(key({ key: 'Enter' }, select).defaultPrevented, false);
   assert.equal(created.modalElement.querySelector('.jellyseerr-tv-picker'), null);
 });
+
+test('remote navigation stays inside the dialog', t => {
+  const { created } = setup(t, true);
+  assert.ok(created.modalElement.classList.contains('focuscontainer'));
+});

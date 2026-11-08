@@ -49,7 +49,8 @@
      */
     modal.create = function({ title, subtitle, bodyHtml, backdropPath, backdropUrl, onSave, onClose, buttonText }) {
         const modalElement = document.createElement('div');
-        modalElement.className = 'jellyseerr-season-modal';
+        // focuscontainer: Jellyfin's remote navigation stays inside it.
+        modalElement.className = 'jellyseerr-season-modal focuscontainer';
         modalElement.setAttribute('role', 'dialog');
         modalElement.setAttribute('aria-modal', 'true');
         modalElement.setAttribute('tabindex', '-1');
