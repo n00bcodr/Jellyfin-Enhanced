@@ -12,6 +12,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -37,16 +39,6 @@ jobs:
         run: |
           V=$(grep -oP '(?<=<AssemblyVersion>)[^<]+' Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.csproj)
           echo "version=$V" >> $GITHUB_OUTPUT
-
-      - name: Create tag if missing
-        run: |
-          TAG="v${{ steps.ver.outputs.version }}"
-          if ! git rev-parse "$TAG" >/dev/null 2>&1; then
-            git config user.name "github-actions"
-            git config user.email "github-actions@github.com"
-            git tag "$TAG"
-            git push origin "$TAG"
-          fi
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

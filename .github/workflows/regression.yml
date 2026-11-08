@@ -38,7 +38,7 @@ jobs:
 
   # Commits a regenerated inventory when a push to main left it stale.
   inventory-sync:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'n00bcodr/Jellyfin-Enhanced'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'Subject412/SpoilerGuard'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
