@@ -1,0 +1,96 @@
+/* Styles for the widgets inside the settings sections. Shared look lives in jeAdmin.css. */
+
+/* ===== display ===== */
+/* Display and Overview tabs: helpers for schema-rendered widgets. */
+#SpoilerGuardForm .je-desc-list { margin: 4px 0 0 18px; padding: 0; }
+#SpoilerGuardForm .jea-subbox { margin: 8px 0; padding: 10px 14px; border: 1px solid rgba(255,255,255,0.1); border-left: 3px solid var(--primary-accent-color, #00a4dc); border-radius: 8px; background: rgba(255,255,255,0.04); }
+#SpoilerGuardForm .jea-subbox-title { font-weight: 600; margin-bottom: 4px; }
+#SpoilerGuardForm .je-api-row { display: flex; align-items: center; gap: 8px; }
+#SpoilerGuardForm .je-api-row .je-api-input { flex: 1; min-width: 0; }
+#SpoilerGuardForm .je-quality-cat-admin-row { display: flex; align-items: center; gap: 6px; }
+#SpoilerGuardForm .je-quality-cat-admin-row .checkboxContainer { flex: 1; margin: 0; }
+#SpoilerGuardForm .je-quality-cat-admin-row .jea-btn { padding: 2px 8px; min-width: 0; }
+#SpoilerGuardForm .je-details-section { margin: 6px 0; }
+#SpoilerGuardForm #overview .je-quick-actions-grid { gap: 8px; }
+
+/* ===== elsewhere ===== */
+/* Elsewhere tab styles. */
+#SpoilerGuardForm #elsewhere .je-api-row { gap: 8px; }
+#SpoilerGuardForm #elsewhere .jea-row select.jea-input { width: 100%; }
+#SpoilerGuardForm #elsewhere .je-api-row .je-api-input { flex: 1 1 auto; min-width: 0; }
+
+/* ===== playback ===== */
+/* Playback tab: tighten the intro banner and the timing preview buttons to match the schema cards. */
+#SpoilerGuardForm #playback .je-tab-intro { margin-bottom: 4px; }
+#SpoilerGuardForm #playback .je-timing-test-row { margin: 0 0 12px; }
+#SpoilerGuardForm #playback .jea-section .jea-input[type="number"] { max-width: 220px; }
+
+/* ===== pages ===== */
+/* Pages tab: Custom Tabs setup guide inside the "Where it appears" group. */
+#SpoilerGuardForm .jea-howto { margin-top: 6px; }
+#SpoilerGuardForm .jea-howto > summary { cursor: pointer; font-size: 0.9em; opacity: 0.85; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+#SpoilerGuardForm .jea-howto > summary:hover { opacity: 1; }
+#SpoilerGuardForm .jea-howto ol { margin: 6px 0 8px; padding-left: 20px; }
+#SpoilerGuardForm .jea-howto p { margin: 6px 0; }
+#SpoilerGuardForm .jea-howto .je-copy-code-wrapper { display: flex; align-items: center; gap: 8px; margin: 8px 0; flex-wrap: wrap; }
+#SpoilerGuardForm .jea-howto .je-code-pre { margin: 0; overflow-x: auto; }
+
+/* ===== extras ===== */
+/* Extras and Keyboard tabs. */
+#SpoilerGuardForm #extras .je-timing-test-row { margin: 4px 0 8px; }
+#SpoilerGuardForm #extras .jea-section textarea.jea-input { resize: vertical; width: 100%; box-sizing: border-box; }
+#SpoilerGuardForm #extras .je-screenshot-details { margin-top: 6px; }
+#SpoilerGuardForm #extras .je-branding-grid { margin-top: 10px; }
+
+/* Shortcut editor (markup is built by the page script). */
+#SpoilerGuardForm #shortcut-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; margin-top: 10px; }
+#SpoilerGuardForm #shortcut-grid > div { border: 1px solid var(--je-border); border-radius: 10px; padding: 10px 14px; }
+#SpoilerGuardForm #shortcut-grid h4 { margin: 0 0 6px 0; }
+#SpoilerGuardForm .je-sc-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 4px 0; }
+#SpoilerGuardForm .je-sc-row.je-sc-disabled { opacity: 0.5; }
+#SpoilerGuardForm .je-sc-left { display: flex; align-items: center; gap: 6px; }
+#SpoilerGuardForm .je-sc-key { min-width: 28px; text-align: center; padding: 2px 8px; border-radius: 4px; background: rgba(255,255,255,0.12); border: 1px solid transparent; cursor: pointer; font-family: monospace; outline: none; }
+#SpoilerGuardForm .je-sc-key[data-readonly] { cursor: default; }
+#SpoilerGuardForm .je-sc-key:focus { border-color: var(--primary-accent-color, #00a4dc); }
+#SpoilerGuardForm .je-sc-key.je-sc-error { background: rgb(255 0 0 / 60%); }
+#SpoilerGuardForm .je-sc-btn { background: transparent; border: none; color: inherit; opacity: 0.6; cursor: pointer; padding: 2px; display: flex; align-items: center; }
+#SpoilerGuardForm .je-sc-btn:hover { opacity: 1; }
+#SpoilerGuardForm .je-sc-btn .material-icons { font-size: 18px; }
+#SpoilerGuardForm .je-sc-mod { color: var(--primary-accent-color, #00a4dc); font-size: 20px; line-height: 1; margin-right: 6px; }
+
+/* ===== seerr ===== */
+/* Seerr tab. Cards, rows and switches come from jeAdmin.css; this only styles the hand-wired widgets inside them. */
+#SpoilerGuardForm #seerr .jea-action-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 0 0; }
+#SpoilerGuardForm #seerr .jea-custom-box { margin-top: 10px; padding: 12px 14px; border: 1px solid var(--je-border); border-radius: 10px; background: var(--je-surface-3, rgba(0,0,0,.2)); }
+#SpoilerGuardForm #seerr .jea-section .je-details-section { margin-top: 12px; }
+#SpoilerGuardForm #seerr .jea-section .jea-note { margin-top: 10px; }
+#SpoilerGuardForm #seerr .jea-section select { max-width: 100%; }
+#SpoilerGuardForm #seerr .jea-section input[type="number"].jea-input { max-width: 12em; }
+#SpoilerGuardForm #seerr .jea-section .je-installed-badge { margin-left: .4em; }
+/* Connection Setup (legacy markup): keep the URL/key rows tidy inside the card. */
+#SpoilerGuardForm #seerr fieldset[data-dep-setup] .je-api-row { display: flex; align-items: center; gap: 10px; }
+#SpoilerGuardForm #seerr fieldset[data-dep-setup] .je-api-input { flex: 1 1 auto; min-width: 0; }
+#SpoilerGuardForm #seerr .jea-inline { display: flex; align-items: center; gap: 10px; }
+#SpoilerGuardForm #seerr .jea-inline .jea-input { flex: 1 1 auto; min-width: 0; }
+
+/* ===== arr ===== */
+/* *arr tab styles. */
+#SpoilerGuardForm #arr .je-arr-action-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 4px; }
+#SpoilerGuardForm #arr .je-arr-action-row .jea-btn { margin: 0; }
+#SpoilerGuardForm #arr .jea-group .jea-input[rows] { min-height: 4.5em; }
+#SpoilerGuardForm #arr .arr-instance-card .jea-input { width: 100%; box-sizing: border-box; }
+#SpoilerGuardForm #arr .arr-instance-card textarea.jea-input { resize: vertical; }
+
+/* ===== admin ===== */
+/* Admin tab */
+#SpoilerGuardPage #admin .jea-pre { white-space: pre-wrap; word-break: break-all; max-height: 320px; overflow-y: auto; background: rgba(0,0,0,.3); border: 1px solid var(--je-border, rgba(255,255,255,.12)); padding: 10px; border-radius: 10px; font-size: 12px; margin: 8px 0; }
+#SpoilerGuardPage #admin .jea-radio-list { display: flex; flex-wrap: wrap; gap: 8px 24px; padding: 4px 0; }
+#SpoilerGuardPage #admin .jea-radio { display: flex; align-items: center; gap: .55em; cursor: pointer; }
+#SpoilerGuardPage #admin .jea-userlist { margin-top: 10px; padding: 10px; max-width: 480px; max-height: 260px; overflow-y: auto; background: rgba(255,255,255,.04); border: 1px solid var(--je-border, rgba(255,255,255,.12)); border-radius: 10px; }
+#SpoilerGuardPage #admin .jea-userlist .jea-actions { margin-bottom: 8px; }
+#SpoilerGuardPage #admin .jea-timepair { display: flex; flex-wrap: wrap; gap: 8px 24px; }
+#SpoilerGuardPage #admin .jea-timepair .jea-row { border-top: 0; flex: 0 0 auto; }
+#SpoilerGuardPage #admin .jea-warn-text { color: #ff8a80; opacity: 1; }
+#SpoilerGuardPage #admin #analyticsSubOptionsContainer { display: none; }
+#SpoilerGuardPage #admin .jea-input[type="number"], #SpoilerGuardPage #admin .jea-input[type="time"] { max-width: 200px; }
+#SpoilerGuardPage #admin textarea.jea-input { width: 100%; max-width: 640px; resize: vertical; }

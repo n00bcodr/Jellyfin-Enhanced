@@ -59,6 +59,6 @@ updates:
           - "patch"
 
   - package-ecosystem: nuget
-    directory: /Jellyfin.Plugin.JellyfinEnhanced
+    directory: /Jellyfin.Plugin.SpoilerGuard
     schedule:
       interval: daily

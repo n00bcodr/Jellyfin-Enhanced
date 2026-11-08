@@ -6,8 +6,16 @@
     "description": "Lightweight server-side spoiler prevention for Jellyfin 12.2+ with Moonfin Trickplay timeline scrubbing support.",
     "owner": "Subject412",
     "category": "General",
-    "imageUrl": "https://raw.githubusercontent.com/n00bcodr/Jellyfin-Enhanced/master/docs/images/icon.png",
+    "imageUrl": "https://raw.githubusercontent.com/Subject412/SpoilerGuard/master/docs/images/icon.png",
     "versions": [
+      {
+        "version": "1.0.0.0",
+        "changelog": "1.0 release.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/Subject412/SpoilerGuard/releases/download/v1.0.0.0/SpoilerGuard.zip",
+        "checksum": "c80e0d91225b59b4264413d8a5aab458",
+        "timestamp": "2026-11-08T16:00:00Z"
+      },
       {
         "version": "0.0.2.0",
         "changelog": "Initial release of Spoiler Guard Lite.",
