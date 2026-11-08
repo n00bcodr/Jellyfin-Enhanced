@@ -248,8 +248,7 @@
         titleElement.textContent = title || 'Recommended';
         section.appendChild(titleElement);
 
-        const scrollerContainer = document.createElement('div');
-        scrollerContainer.setAttribute('is', 'emby-scroller');
+        const scrollerContainer = document.createElement('div', 'emby-scroller');
         scrollerContainer.className = 'padded-top-focusscale padded-bottom-focusscale no-padding emby-scroller';
         scrollerContainer.dataset.horizontal = "true";
         scrollerContainer.dataset.centerfocus = "card";
@@ -262,8 +261,7 @@
         scrollerContainer.style.overscrollBehaviorY = 'auto';
         scrollerContainer.style.webkitOverflowScrolling = 'touch';
 
-        const itemsContainer = document.createElement('div');
-        itemsContainer.setAttribute('is', 'emby-itemscontainer');
+        const itemsContainer = document.createElement('div', 'emby-itemscontainer');
         itemsContainer.className = 'focuscontainer-x itemsContainer scrollSlider animatedScrollX';
         itemsContainer.style.whiteSpace = 'nowrap';
 

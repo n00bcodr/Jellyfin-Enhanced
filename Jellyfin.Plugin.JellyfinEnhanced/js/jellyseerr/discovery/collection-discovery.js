@@ -99,8 +99,7 @@
         titleElement.style.marginBottom = '0.5em';
         section.appendChild(titleElement);
 
-        const itemsContainer = document.createElement('div');
-        itemsContainer.setAttribute('is', 'emby-itemscontainer');
+        const itemsContainer = document.createElement('div', 'emby-itemscontainer');
         itemsContainer.className = 'itemsContainer padded-right vertical-wrap';
         section.appendChild(itemsContainer);
 
