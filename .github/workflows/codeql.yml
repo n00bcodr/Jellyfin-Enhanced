@@ -63,7 +63,7 @@ jobs:
 
     - if: matrix.build-mode == 'manual'
       name: Build
-      run: dotnet build Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.csproj --configuration Release
+      run: dotnet build Jellyfin.Plugin.SpoilerGuard/SpoilerGuard.csproj --configuration Release
 
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370

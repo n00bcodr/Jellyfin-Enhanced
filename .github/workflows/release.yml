@@ -1,8 +1,4 @@
-name: 'Build and Release Spoiler Guard Lite'
-
-concurrency:
-  group: release
-  cancel-in-progress: false
+name: Build and Release Spoiler Guard Lite
 
 on:
   push:
@@ -28,12 +24,12 @@ jobs:
           dotnet-version: '10.0.x'
 
       - name: Build (Jellyfin 12)
-        run: dotnet build Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.csproj -c Release -p:JellyfinTarget=jf12
+        run: dotnet build Jellyfin.Plugin.SpoilerGuard/SpoilerGuard.csproj -c Release -p:JellyfinTarget=jf12
 
       - name: Stage plugin DLLs
         run: |
           rm -rf staging && mkdir staging
-          cp Jellyfin.Plugin.JellyfinEnhanced/bin/Release/net10.0/*.dll staging/
+          cp Jellyfin.Plugin.SpoilerGuard/bin/Release/net10.0/*.dll staging/
           rm -f staging/Jellyfin.Controller.dll staging/Jellyfin.Model.dll staging/MediaBrowser.*.dll staging/Microsoft.*.dll staging/System.*.dll
 
       - name: Create release zip
@@ -41,17 +37,29 @@ jobs:
           cd staging && zip -r ../SpoilerGuardLite.zip . && cd ..
           echo "MD5=$(md5sum SpoilerGuardLite.zip | awk '{print $1}')" >> $GITHUB_ENV
 
-      - name: Compute next version
+      - name: Update manifest checksum
+        run: |
+          CHECKSUM=$(md5sum SpoilerGuardLite.zip | awk '{print $1}')
+          python3 - "$CHECKSUM" <<'PY'
+import json, sys
+p='manifest.json'
+d=json.load(open(p))
+d[0]['versions'][0]['checksum']=sys.argv[1]
+json.dump(d, open(p,'w'), indent=2)
+open(p,'a').write('\n')
+PY
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add manifest.json
+          git commit -m "chore(manifest): auto-update release checksum to $CHECKSUM [skip ci]" || echo "No changes"
+          git pull --rebase origin main
+          git push origin main
+
+      - name: Read version from csproj
         id: ver
         run: |
-          CUR=$(grep -oP '(?<=<AssemblyVersion>)[^<]+' Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.csproj)
-          IFS='.' read -r a b c d <<< "$CUR"
-          d=$((d+1))
-          NEW="$a.$b.$c.$d"
-          echo "version=$NEW" >> $GITHUB_OUTPUT
-          sed -i "s|<AssemblyVersion>[^<]*</AssemblyVersion>|<AssemblyVersion>$NEW</AssemblyVersion>|" Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.csproj
-          sed -i "s|<FileVersion>[^<]*</FileVersion>|<FileVersion>$NEW</FileVersion>|" Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.csproj
-          echo "Bumped $CUR -> $NEW"
+          V=$(grep -oP '(?<=<AssemblyVersion>)[^<]+' Jellyfin.Plugin.SpoilerGuard/SpoilerGuard.csproj)
+          echo "version=$V" >> $GITHUB_OUTPUT
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -62,29 +70,3 @@ jobs:
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Update manifest checksum
-        run: |
-          CHECKSUM=$(md5sum SpoilerGuardLite.zip | awk '{print $1}')
-          VERSION=${{ steps.ver.outputs.version }}
-          python3 - "$CHECKSUM" "$VERSION" <<'PY'
-          import json, sys
-          p='manifest.json'
-          d=json.load(open(p))
-          if not d[0].get('versions'):
-              d[0]['versions']=[{}]
-          v=d[0]['versions'][0]
-          v['checksum']=sys.argv[1]
-          v['version']=sys.argv[2]
-          v['sourceUrl']="https://github.com/Subject412/SpoilerGuard/releases/download/v" + sys.argv[2] + "/SpoilerGuardLite.zip"
-          import datetime
-          v['timestamp']=datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
-          json.dump(d, open(p,'w'), indent=2)
-          open(p,'a').write('\n')
-          PY
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add manifest.json Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.csproj
-          git commit -m "chore(manifest): auto-update to v$VERSION [skip ci]" || echo "No changes"
-          for i in 1 2 3; do git pull --rebase origin main && break; sleep 5; done
-          git push origin main

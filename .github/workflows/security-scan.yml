@@ -67,8 +67,8 @@ jobs:
           set -euo pipefail
           for target in jf12 jf10; do
             echo "::group::$target"
-            JellyfinTarget=$target dotnet restore Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.csproj
-            JellyfinTarget=$target dotnet list Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.csproj package \
+            JellyfinTarget=$target dotnet restore Jellyfin.Plugin.SpoilerGuard/SpoilerGuard.csproj
+            JellyfinTarget=$target dotnet list Jellyfin.Plugin.SpoilerGuard/SpoilerGuard.csproj package \
               --vulnerable --include-transitive --no-restore --format json > "vulnerable-$target.json"
             cat "vulnerable-$target.json"
             echo "::endgroup::"

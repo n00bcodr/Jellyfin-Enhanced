@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Jellyfin Enhanced: Media Tags</title>
+</head>
+<body>
+<div class="page type-interior pluginConfigurationPage" data-role="page" id="SpoilerGuardMediaTagsPage">
+    <div data-role="content">
+        <div class="content-primary">
+            <p role="status">Opening Media Tags…</p>
+        </div>
+    </div>
+    <script>
+        // The Media Tags settings are a tab of the main Jellyfin Enhanced page now. This page only
+        // keeps the older links working (the settings panel, bookmarks, the docs): it forwards them,
+        // keeping the tab and group they asked for.
+        (function () {
+            var hash = window.location.hash || '';
+            if (hash.indexOf('name=SpoilerGuardMediaTags') === -1) return;
+            var query = hash.split('?')[1] || '';
+            var params = new URLSearchParams(query);
+            var target = '#/configurationpage?name=' + encodeURIComponent('Jellyfin Enhanced') + '&jeSection=media-tags';
+            ['tab', 'group'].forEach(function (key) {
+                if (params.get(key)) target += '&' + key + '=' + encodeURIComponent(params.get(key));
+            });
+            window.location.replace(target);
+        })();
+    </script>
+</div>
+</body>
+</html>
