@@ -1,0 +1,59 @@
+name: Build and Release Spoiler Guard Lite
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Build (Jellyfin 12)
+        run: dotnet build Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.csproj -c Release -p:JellyfinTarget=jf12
+
+      - name: Stage plugin DLLs
+        run: |
+          rm -rf staging && mkdir staging
+          cp Jellyfin.Plugin.JellyfinEnhanced/bin/Release/net10.0/*.dll staging/
+          rm -f staging/Jellyfin.Controller.dll staging/Jellyfin.Model.dll staging/MediaBrowser.*.dll staging/Microsoft.*.dll staging/System.*.dll
+
+      - name: Create release zip
+        run: |
+          cd staging && zip -r ../SpoilerGuardLite.zip . && cd ..
+          echo "MD5=$(md5sum SpoilerGuardLite.zip | awk '{print $1}')" >> $GITHUB_ENV
+
+      - name: Read version from csproj
+        id: ver
+        run: |
+          V=$(grep -oP '(?<=<AssemblyVersion>)[^<]+' Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.csproj)
+          echo "version=$V" >> $GITHUB_OUTPUT
+
+      - name: Create tag if missing
+        run: |
+          TAG="v${{ steps.ver.outputs.version }}"
+          if ! git rev-parse "$TAG" >/dev/null 2>&1; then
+            git config user.name "github-actions"
+            git config user.email "github-actions@github.com"
+            git tag "$TAG"
+            git push origin "$TAG"
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.ver.outputs.version }}
+          name: Spoiler Guard Lite v${{ steps.ver.outputs.version }}
+          files: SpoilerGuardLite.zip
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
