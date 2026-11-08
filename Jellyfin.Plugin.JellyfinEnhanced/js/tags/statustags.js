@@ -857,7 +857,7 @@
                     && data.season === facts.last.season && holds(facts.last.episode)) {
                     if (lastAiredEndsSeason(facts, data.isLast)) return makeBadge('milestone', 'season_finale');
                 }
-                if (showNew && (airedWithin(data.premiere, justAddedMs) || addedRecently)) return makeBadge('new', 'new_episode');
+                if (showNew && airedWithin(data.premiere, justAddedMs)) return makeBadge('new', 'new_episode');
                 break;
             }
             case 'BoxSet':
