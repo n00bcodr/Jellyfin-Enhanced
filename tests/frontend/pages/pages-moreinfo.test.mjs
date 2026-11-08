@@ -83,3 +83,4 @@ test('more-info same-ID replacement rejects stale refresh by modal identity',asy
   await h.P.open(1,'movie');h.state.currentModal.querySelector('.modal-refresh').click();await h.P.open(1,'movie');pending.resolve({id:1});await nextTurn();
   assert.deepEqual(h.actions,[1,1]);
 });
+test('more-info closes on a TV remote Back, keeps it from Jellyfin, and leaves it to a stacked dialog',async t=>{const h=setup(t);h.load('core/ui-kit.js');await h.P.open(1,'movie');let back=0;h.window.history.back=()=>back++;const press=()=>{const e=new h.window.KeyboardEvent('keydown',{bubbles:true,cancelable:true,keyCode:10009});h.document.body.dispatchEvent(e);return e;};h.document.body.classList.add('jellyseerr-modal-is-open');assert.equal(press().defaultPrevented,false);assert.equal(back,0);h.document.body.classList.remove('jellyseerr-modal-is-open');assert.equal(press().defaultPrevented,true);assert.equal(back,1);});

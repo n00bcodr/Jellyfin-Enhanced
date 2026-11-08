@@ -173,11 +173,13 @@ function showModal(data, mediaType) {
         historyEntryActive = true;
     }
 
-    // Add Escape key handler
+    // Back closes the modal; preventDefault keeps Jellyfin from exiting the app on Home.
     const handleEscape = (e) => {
-        if (e.key === 'Escape') {
-            dismissModal();
-        }
+        // A dialog stacked above the modal (the request modal) closes first.
+        if (!JE.core.ui.isTvBackKey(e) || document.body.classList.contains('jellyseerr-modal-is-open')) return;
+        e.preventDefault();
+        JE.core.ui.swallowTvBack();
+        dismissModal();
     };
     document.addEventListener('keydown', handleEscape);
     // Capture phase so Jellyfin's focus manager never sees the D-pad while the

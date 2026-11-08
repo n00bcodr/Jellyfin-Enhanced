@@ -115,10 +115,11 @@
 
         // Handle keyboard navigation
         const handleKeydown = (e) => {
-            // Close on Escape
-            if (e.key === 'Escape') {
+            // Close on Back (Escape or a TV remote's Back)
+            if (JE.core.ui.isTvBackKey(e)) {
                 e.preventDefault();
                 e.stopPropagation();
+                JE.core.ui.swallowTvBack();
                 history.back();
                 return;
             }
@@ -208,8 +209,6 @@
         return { modalElement, show, close };
     };
 
-    const TV_BACK_KEYS = ['Escape', 'BrowserBack', 'GoBack'];
-
     /**
      * Jellyfin's own select list on a TV closes through history.back(), which
      * also closes this dialog. On the TV layout a select opens an in-dialog
@@ -231,9 +230,10 @@
         };
 
         const onPickerKey = (e) => {
-            if (!TV_BACK_KEYS.includes(e.key) && e.keyCode !== 10009 && e.keyCode !== 461) return;
+            if (!JE.core.ui.isTvBackKey(e)) return;
             e.preventDefault();
             e.stopImmediatePropagation();
+            JE.core.ui.swallowTvBack();
             closePicker();
         };
 

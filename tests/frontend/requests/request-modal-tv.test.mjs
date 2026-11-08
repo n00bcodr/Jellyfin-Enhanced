@@ -54,6 +54,21 @@ test('Back closes only the list and not the dialog', t => {
   assert.equal(popped, 0);
 });
 
+test("a TV remote's Back closes the dialog and its held repeats stay with it", t => {
+  const { h, created, key } = setup(t, true);
+  let popped = 0;
+  h.window.history.back = () => popped++;
+  created.show();
+  assert.equal(key({ key: 'Unidentified', keyCode: 10009 }).defaultPrevented, true);
+  assert.equal(popped, 1);
+  assert.equal(key({ key: 'Unidentified', keyCode: 10009, repeat: true }).defaultPrevented, true);
+  assert.equal(popped, 1);
+  const now = h.window.performance.now();
+  h.window.performance.now = () => now + 1000;
+  key({ key: 'Unidentified', keyCode: 10009 });
+  assert.equal(popped, 2);
+});
+
 test('selects are left to the browser outside the TV layout', t => {
   const { created, select, key } = setup(t, false);
   assert.equal(key({ key: 'Enter' }, select).defaultPrevented, false);
