@@ -3,6 +3,9 @@ name: Build and Release Spoiler Guard Lite
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'manifest.json'
+      - 'README.md'
   workflow_dispatch:
 
 jobs:
@@ -33,6 +36,23 @@ jobs:
         run: |
           cd staging && zip -r ../SpoilerGuardLite.zip . && cd ..
           echo "MD5=$(md5sum SpoilerGuardLite.zip | awk '{print $1}')" >> $GITHUB_ENV
+
+      - name: Update manifest checksum
+        run: |
+          CHECKSUM=$(md5sum SpoilerGuardLite.zip | awk '{print $1}')
+          python3 - "$CHECKSUM" <<'PY'
+import json, sys
+p='manifest.json'
+d=json.load(open(p))
+d[0]['versions'][0]['checksum']=sys.argv[1]
+json.dump(d, open(p,'w'), indent=2)
+open(p,'a').write('\n')
+PY
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add manifest.json
+          git commit -m "chore(manifest): auto-update release checksum to $CHECKSUM [skip ci]" || echo "No changes"
+          git push origin main
 
       - name: Read version from csproj
         id: ver
