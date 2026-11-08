@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- Admin config page now exposes Spoiler Guard blur intensity slider and all remaining Spoiler Guard settings.
+
 ## [1.0.0.0] - 2026-11-08
 
 ### Changed
