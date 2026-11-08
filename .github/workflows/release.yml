@@ -3,9 +3,6 @@ name: Build and Release Spoiler Guard Lite
 on:
   push:
     branches: [main]
-    paths-ignore:
-      - 'manifest.json'
-      - 'README.md'
   workflow_dispatch:
 
 jobs:
