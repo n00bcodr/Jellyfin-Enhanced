@@ -679,7 +679,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 new PluginPageInfo
                 {
                     Name = this.Name,
-                    DisplayName = "Jellyfin Enhanced",
+                    DisplayName = "Spoiler Guard Lite",
                     EnableInMainMenu = true,
                     EmbeddedResourcePath = "Jellyfin.Plugin.JellyfinEnhanced.Configuration.configPage.html",
                     // MenuIcon was previously ignored - jellyfin-web hardcoded <Folder /> regardless of

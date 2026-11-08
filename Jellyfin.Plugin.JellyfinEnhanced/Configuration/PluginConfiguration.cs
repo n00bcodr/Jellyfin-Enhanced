@@ -1318,6 +1318,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // (sigma=Intensity, tile-mode Clamp) on the wire, so every client gets
         // the blurred bytes natively.
         public bool SpoilerBlurEnabled { get; set; } = false;
+        public bool ExemptTrickplay { get; set; } = true;
+        // Granular Spoiler Guard controls (restored).
+        public bool NextUnwatchedOnly { get; set; } = false;
+        public bool BlurThumbnails { get; set; } = true;
+        public int BlurRadius { get; set; } = 25;
+        public int BlurAmount { get; set; } = 25;
+        public bool StripTitles { get; set; } = true;
+        public string CustomTitlePlaceholder { get; set; } = "Episode {0}";
+        public bool StripOverviews { get; set; } = true;
+        public bool AutoEnableForNewUsers { get; set; } = true;
         // Gaussian sigma passed to Skia. 1 = barely blurred, 100 = heavily
         // blurred. Default 40 hides scene content while keeping silhouettes and
         // dominant colours visible.
@@ -1411,7 +1421,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // (served no-store). Users can also opt out per-user via
         // SpoilerBlurUserPrefs.HideTrickplay; the admin switch caps it.
         public bool SpoilerBlurTrickplay { get; set; } = true;
-        public bool ExemptTrickplay { get; set; } = true;
         // Advanced per-category reveals. When on, the user's NEXT unwatched
         // regular episode and the rest of its season get their own strip masks
         // below instead of the uniform full strip; every other unwatched
