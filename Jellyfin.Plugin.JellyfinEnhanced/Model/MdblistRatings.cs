@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Model
@@ -101,12 +102,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
         ReserveReached,
         /// <summary>Not sent: account status (and so the remaining quota) is unavailable.</summary>
         QuotaUnknown,
+        /// <summary>Not sent, or refused with a 429 that carried Retry-After: MDBList asked for a
+        /// pause, and RetryAfter holds how long is left of it.</summary>
+        RateLimited,
     }
 
     /// <summary>Outcome of one background batch, plus the remaining quota as
-    /// known after it (null when account status is unavailable).</summary>
+    /// known after it (null when account status is unavailable) and, for
+    /// RateLimited, how long MDBList asked callers to wait.</summary>
     public sealed record MdblistReservedBatch(
         MdblistReservedBatchStatus Status,
         int? Remaining,
-        Dictionary<string, MdblistCacheEntry>? Results);
+        Dictionary<string, MdblistCacheEntry>? Results,
+        TimeSpan? RetryAfter = null);
 }

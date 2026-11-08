@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
@@ -77,12 +78,64 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private long _accountStatusQueries;
         private long _accountStatusPublishedQuery;
 
+        // MDBList enforces per-account 5-minute windows on top of the daily
+        // quota. A 429 that says how long to wait (Retry-After) pauses every
+        // request this service would make until then (UTC ticks); a 429
+        // without it keeps the old per-request failure handling.
+        private static readonly TimeSpan MaxRateLimitPause = TimeSpan.FromHours(24);
+        private readonly TimeProvider _clock;
+        private long _rateLimitedUntilTicks;
+
         public MdblistService(IHttpClientFactory httpClientFactory, IApplicationPaths applicationPaths, Logger logger)
+            : this(httpClientFactory, applicationPaths, logger, TimeProvider.System)
+        {
+        }
+
+        internal MdblistService(IHttpClientFactory httpClientFactory, IApplicationPaths applicationPaths, Logger logger, TimeProvider clock)
         {
             _httpClientFactory = httpClientFactory;
             _applicationPaths = applicationPaths;
             _logger = logger;
+            _clock = clock;
             LoadFromDisk();
+        }
+
+        /// <summary>How much is left of the pause the latest 429's Retry-After asked for, or null when not paused.</summary>
+        internal TimeSpan? RateLimitWait()
+        {
+            var wait = new DateTime(Interlocked.Read(ref _rateLimitedUntilTicks), DateTimeKind.Utc) - _clock.GetUtcNow().UtcDateTime;
+            return wait > TimeSpan.Zero ? wait : null;
+        }
+
+        /// <summary>
+        /// On a 429 carrying Retry-After (seconds or an HTTP date), pauses MDBList requests until
+        /// then, capped at MaxRateLimitPause, logging one warning when a pause starts. Returns
+        /// whether a pause was taken from this response.
+        /// </summary>
+        private bool NoteRateLimit(HttpResponseMessage response)
+        {
+            if (response.StatusCode != HttpStatusCode.TooManyRequests) return false;
+            var now = _clock.GetUtcNow().UtcDateTime;
+            var header = response.Headers.RetryAfter;
+            TimeSpan? wait = header?.Delta ?? (header?.Date is { } date ? date.UtcDateTime - now : null);
+            if (wait is not { } value || value <= TimeSpan.Zero) return false;
+            if (value > MaxRateLimitPause) value = MaxRateLimitPause;
+
+            var until = (now + value).Ticks;
+            long previous;
+            do
+            {
+                previous = Interlocked.Read(ref _rateLimitedUntilTicks);
+                if (previous >= until) return true;
+            }
+            while (Interlocked.CompareExchange(ref _rateLimitedUntilTicks, until, previous) != previous);
+
+            if (previous <= now.Ticks)
+            {
+                _logger.Warning($"[MDBList] Rate limited (429); pausing MDBList requests for {Math.Ceiling(value.TotalSeconds)}s as Retry-After asked.");
+            }
+
+            return true;
         }
 
         private string CacheFilePath =>
@@ -144,7 +197,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <summary>
         /// The entry to store after a lookup: the fresh answer, except that a failed lookup (not a
         /// confirmed answer) for a title that has ratings keeps those ratings and their age, and
-        /// only schedules the next attempt (RetryTtl), so a provider outage never erases scores.
+        /// only schedules the next attempt (the failure's own retry time, else RetryTtl), so a
+        /// provider outage never erases scores.
         /// </summary>
         internal static MdblistCacheEntry KeepLastGood(MdblistCacheEntry? previous, MdblistCacheEntry fresh)
         {
@@ -156,7 +210,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 Ratings = previous.Ratings,
                 Ids = previous.Ids,
                 FetchedAtUnixMs = previous.FetchedAtUnixMs,
-                RetryAfterUnixMs = fresh.FetchedAtUnixMs + (long)RetryTtl.TotalMilliseconds,
+                RetryAfterUnixMs = fresh.RetryAfterUnixMs ?? fresh.FetchedAtUnixMs + (long)RetryTtl.TotalMilliseconds,
             };
         }
 
@@ -349,6 +403,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
         }
 
+        private static MdblistCacheEntry RateLimitedMiss(long nowUnixMs, TimeSpan wait) => new()
+        {
+            Found = false,
+            Confirmed = false,
+            FetchedAtUnixMs = nowUnixMs,
+            RetryAfterUnixMs = nowUnixMs + (long)Math.Ceiling(wait.TotalMilliseconds),
+        };
+
         private async Task<MdblistCacheEntry> FetchFromMdblistAsync(string mediaType, string tmdbId, CancellationToken cancellationToken)
         {
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
@@ -371,6 +433,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return new MdblistCacheEntry { Found = false, Confirmed = false, FetchedAtUnixMs = now };
             }
 
+            if (RateLimitWait() is { } paused)
+            {
+                // Paused by a 429's Retry-After: the same unconfirmed miss a 429 gives, without
+                // asking again, retried when the pause ends rather than after RetryTtl.
+                return RateLimitedMiss(now, paused);
+            }
+
             try
             {
                 var mdblistType = mediaType == "tv" ? "show" : "movie";
@@ -389,6 +458,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 if (!response.IsSuccessStatusCode)
                 {
                     _logger.Warning($"[MDBList] Query failed ({(int)response.StatusCode}) for {mediaType}:{tmdbId}");
+                    if (NoteRateLimit(response) && RateLimitWait() is { } wait) return RateLimitedMiss(now, wait);
                     return new MdblistCacheEntry { Found = false, Confirmed = false, FetchedAtUnixMs = now };
                 }
 
@@ -467,6 +537,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                 if (!response.IsSuccessStatusCode)
                 {
+                    NoteRateLimit(response);
                     _logger.Warning($"[MDBList] Media batch query failed ({(int)response.StatusCode}) for {mediaType} ({tmdbIds.Count} ids).");
                     return null;
                 }
@@ -528,6 +599,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             await _backgroundQuotaGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
+                if (RateLimitWait() is { } paused)
+                {
+                    return new MdblistReservedBatch(MdblistReservedBatchStatus.RateLimited, RemainingQuota(), null, paused);
+                }
+
                 if (await GetAccountStatusCoreAsync(cancellationToken, false, null, quotaGateHeld: true).ConfigureAwait(false) == null)
                 {
                     return new MdblistReservedBatch(MdblistReservedBatchStatus.QuotaUnknown, null, null);
@@ -542,6 +618,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
 
                 var results = await GetMediaBatchAsync(mediaType, tmdbIds, cancellationToken).ConfigureAwait(false);
+                if (results == null && RateLimitWait() is { } wait)
+                {
+                    return new MdblistReservedBatch(MdblistReservedBatchStatus.RateLimited, RemainingQuota(), null, wait);
+                }
+
                 return new MdblistReservedBatch(results == null ? MdblistReservedBatchStatus.Failed : MdblistReservedBatchStatus.Sent, RemainingQuota(), results);
             }
             finally { _backgroundQuotaGate.Release(); }
@@ -559,6 +640,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             await _backgroundQuotaGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
+                if (RateLimitWait() != null) return null;
                 if (await GetAccountStatusCoreAsync(cancellationToken, false, null, quotaGateHeld: true).ConfigureAwait(false) == null)
                     return null;
                 var remaining = RemainingQuota();
@@ -570,6 +652,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 using var request = new HttpRequestMessage(HttpMethod.Get, uri);
                 using var response = await _httpClientFactory.CreateClient().SendAsync(request, timeout.Token).ConfigureAwait(false);
                 RecordQuotaSpent();
+                NoteRateLimit(response);
                 response.EnsureSuccessStatusCode();
                 await using var stream = await response.Content.ReadAsStreamAsync(timeout.Token).ConfigureAwait(false);
                 using var json = await JsonDocument.ParseAsync(stream, cancellationToken: timeout.Token).ConfigureAwait(false);
@@ -603,7 +686,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         var batch = await GetMediaBatchWithinReserveAsync(group.Key, ids, reserve, cancellationToken).ConfigureAwait(false);
                         cancellationToken.ThrowIfCancellationRequested();
                         // Unknown quota stops background work, as the bulk runner does; titles stay NeedsFetch.
-                        if (batch.Status is MdblistReservedBatchStatus.ReserveReached or MdblistReservedBatchStatus.QuotaUnknown) return;
+                        // So does a Retry-After pause: nothing more is sent until it passes.
+                        if (batch.Status is MdblistReservedBatchStatus.ReserveReached or MdblistReservedBatchStatus.QuotaUnknown or MdblistReservedBatchStatus.RateLimited) return;
                         if (batch.Status == MdblistReservedBatchStatus.Failed)
                         {
                             // Match single-title failures: short retry TTL, never a confirmed negative.

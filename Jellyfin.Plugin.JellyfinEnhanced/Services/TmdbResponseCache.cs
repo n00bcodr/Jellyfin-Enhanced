@@ -43,7 +43,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     /// Upstream calls go over HTTP/2 (one connection multiplexes a cast's worth
     /// of person lookups instead of a TLS handshake per parallel request) and
     /// at most <see cref="MaxUpstreamConcurrency"/> run at once, whoever asks,
-    /// which keeps a burst well inside TMDB's ~50 requests/s.
+    /// which keeps a burst inside TMDB's ~40 requests/s
+    /// (https://developer.themoviedb.org/docs/rate-limiting).
     ///
     /// Details-page bundles: a movie or series page asks for the title itself,
     /// its release dates, watch providers and reviews within a few milliseconds
@@ -75,9 +76,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // Upstream bodies larger than this fail the request (exception path).
         private const long MaxResponseBytes = 8L * 1024 * 1024;
         private static readonly TimeSpan UpstreamTimeout = TimeSpan.FromSeconds(30);
-        // TMDB's soft limit is about 50 requests/s; a lookup takes ~0.3 s once
-        // the connection is warm, so 20 in flight is comfortably below it.
-        private const int MaxUpstreamConcurrency = 20;
+        // TMDB's soft limit is about 40 requests/s. A lookup takes ~0.3 s once
+        // the connection is warm, so N in flight sustain about N / 0.3 requests/s:
+        // 10 is ~33/s, below the limit (the previous 20 was ~67/s, above it).
+        internal const int MaxUpstreamConcurrency = 10;
 
         // Disk persistence: written shortly after the first change and at most
         // every SaveMaxWait while changes keep coming (same pattern as the

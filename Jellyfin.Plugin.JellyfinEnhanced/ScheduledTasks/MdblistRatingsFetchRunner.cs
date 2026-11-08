@@ -39,12 +39,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
         // doesn't burst many chunk calls against MDBList's rate limits.
         private static readonly TimeSpan RequestPacing = TimeSpan.FromMilliseconds(250);
 
+        // A 429 with Retry-After pauses the run for that long and then retries
+        // the same chunk. MDBList's per-account windows are 5 minutes, so a
+        // longer wait (the daily quota) ends the run instead, as does a chunk
+        // refused this many times in a row; the next run picks the rest up.
+        private static readonly TimeSpan MaxInRunPause = TimeSpan.FromMinutes(10);
+        private const int MaxPausesPerChunk = 3;
+
         public static async Task RunAsync(
             ILibraryManager libraryManager,
             MdblistService mdblistService,
             Logger logger,
             int reserve,
             IProgress<double>? progress,
+            CancellationToken cancellationToken)
+            => await RunAsync(libraryManager, mdblistService, logger, reserve, progress, Task.Delay, cancellationToken).ConfigureAwait(false);
+
+        internal static async Task RunAsync(
+            ILibraryManager libraryManager,
+            MdblistService mdblistService,
+            Logger logger,
+            int reserve,
+            IProgress<double>? progress,
+            Func<TimeSpan, CancellationToken, Task> pause,
             CancellationToken cancellationToken)
         {
             var status = await mdblistService.GetAccountStatusAsync(cancellationToken).ConfigureAwait(false);
@@ -110,6 +127,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                 var mediaType = mediaTypeGroup.Key;
                 var groupIds = mediaTypeGroup.Select(c => c.TmdbId).Distinct().ToList();
                 var chunkNumber = 0;
+                var pausesThisChunk = 0;
 
                 for (var i = 0; i < groupIds.Count; i += ChunkSize)
                 {
@@ -134,6 +152,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                         stopped = true;
                         break;
                     }
+                    if (batch.Status == MdblistReservedBatchStatus.RateLimited)
+                    {
+                        // The service already logged the one warning for this pause and sends nothing until it ends.
+                        var wait = batch.RetryAfter ?? TimeSpan.Zero;
+                        if (wait > MaxInRunPause || ++pausesThisChunk > MaxPausesPerChunk)
+                        {
+                            logger.Info($"MDBList Ratings Fetch: MDBList asked to wait {Math.Ceiling(wait.TotalSeconds)}s after fetching {fetchedCount}/{totalCandidates} candidates; stopping. Remaining items will be picked up on the next run.");
+                            stopped = true;
+                            break;
+                        }
+
+                        logger.Info($"MDBList Ratings Fetch: pausing {Math.Ceiling(wait.TotalSeconds)}s for MDBList's rate limit, then retrying media batch {mediaType} [{chunkNumber}].");
+                        await pause(wait, cancellationToken).ConfigureAwait(false);
+                        // Same chunk again once the pause has passed.
+                        i -= ChunkSize;
+                        chunkNumber--;
+                        continue;
+                    }
+
+                    pausesThisChunk = 0;
 
                     await Task.Delay(RequestPacing, cancellationToken).ConfigureAwait(false);
 
