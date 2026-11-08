@@ -82,6 +82,7 @@ JEAdmin.setPerUser([
     'ShowVersionsTag',
     'ShowVideoCodecTag',
     'ShowWatchProgress',
+    'SimplifyDubLanguageFlags',
     'SourceTagOrder',
     'SpecialFormatTagOrder',
     'StatusTagsDirectPlay',

@@ -108,7 +108,7 @@
         if (unregisterAudioSearch) ctx.onClose?.(unregisterAudioSearch);
 
         const addSettingToggleListener = (id, settingKey, featureKey, requiresRefresh = false) => {
-            document.getElementById(id).addEventListener('change', (e) => {
+            document.getElementById(id)?.addEventListener('change', (e) => {
                 JE.currentSettings[settingKey] = e.target.checked;
                 // The layout settings depend on which tag types are on (caption
                 // space is reserved only while a group can fill it).
@@ -254,6 +254,7 @@
                 }
         addSettingToggleListener('showFileSizesToggle', 'showFileSizes', 'feature_file_size_display');
         addSettingToggleListener('showAudioLanguagesToggle', 'showAudioLanguages', 'feature_audio_language_display');
+        addSettingToggleListener('simplifyDubLanguageFlagsToggle', 'simplifyDubLanguageFlags', 'feature_simplify_dub_language_flags', true);
         addSettingToggleListener('removeContinueWatchingToggle', 'removeContinueWatchingEnabled', 'feature_remove_continue_watching');
         document.getElementById('nativePosterTagsToggle')?.addEventListener('change', (event) => {
             if (JE.pluginConfig?.NativePosterTagsEnabled !== true) return;

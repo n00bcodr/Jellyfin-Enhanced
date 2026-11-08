@@ -45,3 +45,12 @@ test('a track whose titles Spoiler Guard stripped keeps the role the server read
  assert.equal(m.isSecondaryAudio({ Role: null, Title: null, DisplayTitle: null }), false);
  assert.equal(m.isSecondaryAudio({ Title: 'Main', DisplayTitle: 'Japanese - TrueHD 7.1' }), false);
 });
+test('simplifyDubLanguageFlags collapses regional and script variants onto the base flag',t=>{
+ const h=createHarness({JE:{currentSettings:{simplifyDubLanguageFlags:true},cdn:{flagSvg:code=>`/flags/${code}.svg`},t:key=>key}});t.after(()=>h.close());h.load('core/media-language.js');
+ const m=h.JE.core.mediaLanguage;
+ for(const [input,expected] of [['en','gb'],['en-US','gb'],['en-UK','gb'],['pt','pt'],['pt-BR','pt'],['pt-PT','pt'],['pob','pt'],['es-419','es'],['zh-Hant','cn'],['zh-Hans','cn'],['ja-Hans','jp'],['pt-XA','pt'],['ca-ES','es-ct'],['zxx-US','zxx'],['und-US',null],[{name:'Japanese'},'jp']]) assert.equal(m.resolveFlag(input),expected,JSON.stringify(input));
+});
+test('simplifyDubLanguageFlags off keeps the region-specific resolution',t=>{
+ const h=createHarness({JE:{currentSettings:{simplifyDubLanguageFlags:false},cdn:{flagSvg:code=>`/flags/${code}.svg`},t:key=>key}});t.after(()=>h.close());h.load('core/media-language.js');
+ assert.equal(h.JE.core.mediaLanguage.resolveFlag('pt-BR'),'br');assert.equal(h.JE.core.mediaLanguage.resolveFlag('zh-Hant'),'tw');
+});

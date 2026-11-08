@@ -136,7 +136,7 @@
         'StatusTagsLeaving', 'StatusTagsDirectPlay',
         'AwardsTagsEnabled', 'AwardsTagsPosition', 'LogoTagsEnabled', 'LogoTagsPosition', 'CustomTagsEnabled', 'CustomTagsPosition',
         'ShowRatingInPlayer', 'TagLayout', 'TagLabelDensity', 'TagScale', 'TagGap', 'TagEdgeSpacing', 'TagLayouts', 'TagGroupOrder', 'TagGroupCaps',
-        'LanguageTagsShowAudio', 'LanguageTagsShowSubtitles', 'LanguageTagsStyle', 'LanguageTagsCountBadge',
+        'LanguageTagsShowAudio', 'LanguageTagsShowSubtitles', 'LanguageTagsStyle', 'LanguageTagsCountBadge', 'SimplifyDubLanguageFlags',
     ];
 
     /** @type {Array<Object>} registered sections, sorted by tab order then `order` */
