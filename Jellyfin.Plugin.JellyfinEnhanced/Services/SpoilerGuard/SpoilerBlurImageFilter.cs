@@ -438,6 +438,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return;
             }
 
+            // BlurThumbnails opt-out: when the admin turns off thumbnail
+            // coverage, the Primary/Thumb image types (posters and episode
+            // thumbnails) pass through unblurred for every item in spoiler
+            // scope. Other protected types (Screenshot, Chapter, Backdrop
+            // when SpoilerBlurArtwork is on) still follow the protection
+            // logic. no-store so toggling protection back on takes effect.
+            if (pluginConfig.BlurThumbnails != true
+                && (string.Equals(imageType, "Primary", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(imageType, "Thumb", StringComparison.OrdinalIgnoreCase)))
+            {
+                RegisterNoStoreOnStarting(context.HttpContext);
+                await next().ConfigureAwait(false);
+                return;
+            }
+
             // Collections are a SHORTCUT for "blur all movies in this
             // collection" — the collection's own art and Overview pass
             // through clear (it's the entry point the user just clicked,
