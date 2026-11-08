@@ -10,7 +10,7 @@ updates:
       timezone: "UTC"
     open-pull-requests-limit: 10
     reviewers:
-      - "n00bcodr"
+      - "Subject412"
     labels:
       - "dependencies"
       - "nuget"
@@ -43,7 +43,7 @@ updates:
       timezone: "UTC"
     open-pull-requests-limit: 5
     reviewers:
-      - "n00bcodr"
+      - "Subject412"
     labels:
       - "dependencies"
       - "github-actions"
