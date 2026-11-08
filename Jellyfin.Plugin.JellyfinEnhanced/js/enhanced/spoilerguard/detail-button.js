@@ -122,8 +122,7 @@
         const state = enabled ? 'on' : 'off';
         let button = visiblePage.querySelector('.je-spoiler-blur-btn');
         if (!button) {
-            button = document.createElement('button');
-            button.setAttribute('is', 'emby-button');
+            button = document.createElement('button', 'emby-button');
             button.className = 'button-flat detailButton emby-button je-spoiler-blur-btn';
             button.type = 'button';
             placeButton(button, container);

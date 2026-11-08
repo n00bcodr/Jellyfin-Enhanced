@@ -560,8 +560,7 @@
             return null;
         }
 
-        const button = document.createElement('button');
-        button.setAttribute('is', 'emby-button');
+        const button = document.createElement('button', 'emby-button');
         button.className = 'button-flat detailButton emby-button jellyseerr-report-issue-icon';
         button.type = 'button';
         button.setAttribute('aria-label', JE.t('jellyseerr_report_issue_button'));
@@ -590,8 +589,7 @@
     issueReporter.createUnavailableButton = function (container, itemName, mediaType, reason = 'unavailable') {
         if (!container) return null;
 
-        const button = document.createElement('button');
-        button.setAttribute('is', 'emby-button');
+        const button = document.createElement('button', 'emby-button');
         button.className = 'button-flat detailButton emby-button jellyseerr-report-unavailable-icon';
         button.type = 'button';
 
