@@ -30,37 +30,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
         private readonly IApplicationPaths _applicationPaths;
         private readonly IServerConfigurationManager _serverConfigurationManager;
         private readonly Logger _logger;
-        private readonly Services.AnalyticsReportingService _analyticsReportingService;
-        private const string PluginName = "Jellyfin Enhanced";
+        private const string PluginName = "Spoiler Guard Lite";
 
         public JellyfinEnhanced(
             IApplicationPaths applicationPaths,
             IServerConfigurationManager serverConfigurationManager,
             IXmlSerializer xmlSerializer,
-            Logger logger,
-            Services.AnalyticsReportingService analyticsReportingService,
-            Services.HostCompatibilityService hostCompatibility) : base(applicationPaths, xmlSerializer)
+            Logger logger) : base(applicationPaths, xmlSerializer)
         {
             Instance = this;
             _applicationPaths = applicationPaths;
             _serverConfigurationManager = serverConfigurationManager;
             _logger = logger;
-            _analyticsReportingService = analyticsReportingService;
             _logger.Info($"{PluginName} v{Version} initialized. Plugin logs will be written to: {_logger.CurrentLogFilePath}");
-
-            var isStale = hostCompatibility.IsStale;
-            if (hostCompatibility.IsMismatch)
-            {
-                // Logged here, the earliest point at which a plugin service can be
-                // resolved (the service itself needs only the app host), so the line
-                // lands before any scheduled task runs. StartupService repeats it so
-                // the verdict also shows up in the startup-task log on every boot.
-                _logger.Error($"BUILD/HOST MISMATCH: {hostCompatibility.GetCompatibilityMessage(isStale, includeInstallAdvice: true)}");
-            }
-            else if (isStale)
-            {
-                _logger.Warning($"STALE PLUGIN BUILD: {hostCompatibility.GetCompatibilityMessage(isStale)}");
-            }
 
             // Set the User-Agent used by every Seerr/TMDB outbound HTTP call.
             // Cloudflare's Browser Integrity Check / Bot Fight Mode flags
@@ -192,7 +174,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
         }
 
         public override string Name => PluginName;
-        public override Guid Id => Guid.Parse("f69e946a-4b3c-4e9a-8f0a-8d7c1b2c4d9b");
+        public override string Description => "Lightweight Spoiler Guard plugin for Jellyfin with Moonfin Trickplay support.";
+        public override Guid Id => Guid.Parse("57ebfd1e-faf4-471b-8873-ae1ab461787d");
         public static JellyfinEnhanced? Instance { get; private set; }
 
         private string IndexHtmlPath => Path.Combine(_applicationPaths.WebPath, "index.html");
@@ -296,185 +279,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
         /// <returns>Whether a configuration was saved.</returns>
         internal bool UpdateConfiguration(Func<PluginConfiguration, BasePluginConfiguration?> build, Action<PluginConfiguration>? saved = null, bool fullSave = true)
         {
-            bool tagCacheWasEnabled;
-            bool sourceRatingsWereConfigured;
-            bool analyticsWasEnabled;
-            string awardsBefore;
-            string leavingBefore;
-
-            // The Analytics* identity/bookkeeping fields are server-minted and
-            // never editable on the config page, but a save replaces the whole
-            // Configuration object with whatever the client posted. A snapshot
-            // fetched before a background registration/report finished would
-            // post them back empty, silently discarding this install's minted
-            // credentials — the backend row could then never be opted out, and
-            // the next send would register a duplicate install. Treat
-            // "incomplete incoming (either half missing — e.g. a restored
-            // backup with the secret redacted), complete current" as
-            // "preserve current". Runs under AnalyticsCredentialLock so the
-            // object swap can't interleave with AnalyticsReportingService
-            // writing freshly minted credentials to the live object — without
-            // it, registration could write to an already-replaced object and
-            // SaveConfiguration would persist empty credentials while the
-            // backend row exists.
-            lock (AnalyticsCredentialLock)
+            var result = build(Configuration);
+            if (result is PluginConfiguration pc)
             {
-                // Capture the outgoing value BEFORE build (which may change the stored
-                // object in place) and base.UpdateConfiguration replace Configuration,
-                // so an actual OFF<->ON transition is distinguishable from an
-                // unrelated config save (this method fires on every save).
-                var stored = Configuration;
-                tagCacheWasEnabled = stored.TagCacheServerMode;
-                sourceRatingsWereConfigured = Services.TagCacheService.SourceRatingsConfigured;
-                analyticsWasEnabled = stored.AnalyticsEnabled;
-                awardsBefore = Services.AwardTagsService.ConfigurationIdentity(stored);
-                leavingBefore = Services.LeavingSoonService.ConfigurationIdentity(stored);
-
-                var configuration = build(stored);
-                if (configuration == null) return false;
-
-                if (!fullSave)
-                {
-                    base.UpdateConfiguration(configuration);
-                    if (Configuration is PluginConfiguration written) saved?.Invoke(written);
-                    return true;
-                }
-
-                if (configuration is PluginConfiguration incoming && Configuration is PluginConfiguration current)
-                {
-                    var incomingIncomplete = string.IsNullOrEmpty(incoming.AnalyticsInstallId) || string.IsNullOrEmpty(incoming.AnalyticsInstallSecret);
-                    var currentComplete = !string.IsNullOrEmpty(current.AnalyticsInstallId) && !string.IsNullOrEmpty(current.AnalyticsInstallSecret);
-                    if (incomingIncomplete && currentComplete)
-                    {
-                        incoming.AnalyticsInstallId = current.AnalyticsInstallId;
-                        incoming.AnalyticsInstallSecret = current.AnalyticsInstallSecret;
-                    }
-                    if (incoming.AnalyticsLastReportedAt == 0 && current.AnalyticsLastReportedAt != 0)
-                    {
-                        incoming.AnalyticsLastReportedAt = current.AnalyticsLastReportedAt;
-                        incoming.AnalyticsLastPayloadJson = current.AnalyticsLastPayloadJson;
-                        incoming.AnalyticsLastReportedPluginVersion = current.AnalyticsLastReportedPluginVersion;
-                        incoming.AnalyticsLastReportedJellyfinTarget = current.AnalyticsLastReportedJellyfinTarget;
-                        incoming.AnalyticsLastReportedJellyfinVersion = current.AnalyticsLastReportedJellyfinVersion;
-                    }
-                }
-
-                // Status Tags day windows: the config page clamps them too, but a
-                // save can come from anywhere (API, restored backup).
-                if (configuration is PluginConfiguration statusTagsConfig)
-                {
-                    statusTagsConfig.StatusTagsJustAddedDays = Math.Clamp(statusTagsConfig.StatusTagsJustAddedDays, 1, 365);
-                    statusTagsConfig.StatusTagsNewReleaseDays = Math.Clamp(statusTagsConfig.StatusTagsNewReleaseDays, 1, 365);
-                }
-
-                // Logos tag group: unknown modes, regions and maximums fall back to the defaults.
-                if (configuration is PluginConfiguration logosConfig) LogoTagRules.Normalize(logosConfig);
-                // Custom tag rules: unknown match types dropped, values and labels trimmed,
-                // repeated rules collapsed, at most 20 (a save can come from anywhere).
-                // The rule id key is the server's: the stored one wins over a posted one.
-                if (configuration is PluginConfiguration customTagsConfig)
-                {
-                    customTagsConfig.CustomTagRules = CustomTagRuleSet.Normalize(customTagsConfig.CustomTagRules);
-                    customTagsConfig.CustomTagRuleKey = EnsureCustomTagRuleKey(customTagsConfig, Configuration);
-                }
-
-                // Tag Styles: only a valid document is stored (normalised to version 2); anything
-                // else keeps the current one, since a save can come from anywhere (API, restored backup).
-                if (configuration is PluginConfiguration stylesConfig
-                    && !Services.PosterTags.TagStyleSet.ApplyToSave(stylesConfig, Configuration, out var styleError))
-                {
-                    _logger.Warning($"Jellyfin Enhanced: Tag Styles not saved ({styleError}); keeping the current styles.");
-                }
-
-                base.UpdateConfiguration(configuration);
-                if (Configuration is PluginConfiguration normalised) saved?.Invoke(normalised);
+                Configuration = pc;
+                if (fullSave) SaveConfiguration();
+                saved?.Invoke(pc);
             }
-            CheckPluginPages(_applicationPaths, _serverConfigurationManager, 1);
-
-            // The trending source (TMDB key, Seerr) or the switches may have changed.
-            Services.StatusTagsTrendingService.Invalidate();
-
-            try
-            {
-                Controllers.JellyfinEnhancedController.ClearAllSeerrCachesOnConfigChange();
-                _logger.Info("Jellyfin Enhanced: configuration updated — Seerr caches cleared.");
-            }
-            catch (Exception ex)
-            {
-                _logger.Warning($"Jellyfin Enhanced: failed to clear Seerr caches on config update: {ex.Message}");
-            }
-
-            // The transitions themselves run on a serialized background queue in
-            // TagCacheService (the save request must not block behind cache work).
-            if (tagCacheWasEnabled != (Configuration?.TagCacheServerMode == true))
-            {
-                Services.TagCacheService.Instance?.QueueServerModeTransition();
-            }
-
-            // The Logos switch, modes, region or maximum may have changed what cache entries carry.
-            Services.TagCacheService.Instance?.OnLogoSettingsChanged();
-            Services.TagCacheService.Instance?.OnScenesSettingsChanged();
-            // Custom tag rules that match differently re-match the cache in the background.
-            Services.TagCacheService.Instance?.QueueCustomTagRefreshIfStale();
-
-            // Removing an MDBList key must also retire previously cached source scores.
-            // This waits on TagCacheService's rebuild lock, so a key change saved during
-            // a full rebuild blocks the save until it finishes (T1R-6: queue it if slow).
-            if (sourceRatingsWereConfigured != Services.TagCacheService.SourceRatingsConfigured)
-                Services.TagCacheService.Instance?.RefreshRatingSourceAvailability();
-
-            if (awardsBefore != Services.AwardTagsService.ConfigurationIdentity(Configuration))
-            {
-                Services.TagCacheService.Instance?.RefreshAwardAvailability();
-                // Turned on (or its providers changed) with nothing fetched yet: fetch now, not at the nightly run.
-                Services.TagCacheService.Instance?.QueueAwardsFirstRefresh();
-            }
-
-            // A new Leaving soon source (URL, key or names) is read in the background.
-            if (leavingBefore != Services.LeavingSoonService.ConfigurationIdentity(Configuration))
-                Services.TagCacheService.Instance?.QueueLeavingRefresh();
-
-            // ON->OFF: flag this install as opted out on the backend so it
-            // drops out of every public view without deleting its history.
-            // Queued (not bare Task.Run): a network call must never block a
-            // config save, but a quick OFF-then-ON toggle must also never let
-            // set_opted_out land AFTER the re-enable's report_stats — that
-            // would leave the install flagged opted out on the backend until
-            // the next due report, up to a full 7-30 day interval. The queue
-            // runs transitions strictly in save order, and each action
-            // re-checks the CURRENT enabled state when it actually runs, so a
-            // stale transition degrades to a no-op instead of undoing a newer one.
-            if (analyticsWasEnabled && Configuration?.AnalyticsEnabled != true)
-            {
-                QueueAnalyticsTransition("flag analytics opt-out", async () =>
-                {
-                    var config = Configuration;
-                    if (config == null || config.AnalyticsEnabled) return; // re-enabled meanwhile; opt-out is moot
-                    await _analyticsReportingService.SendOptOutAsync(config, CancellationToken.None).ConfigureAwait(false);
-                });
-            }
-
-            // OFF->ON: always force an immediate report rather than deferring to
-            // ReportIfDueAsync's interval/version check. On a first-ever opt-in
-            // that check would say "due" anyway, but on a disable-then-re-enable
-            // AnalyticsLastReportedAt/AnalyticsLastReportedPluginVersion still
-            // hold values from before the disable, so the check can say "not
-            // due" and skip sending, which would also leave opted_out=true on
-            // the backend forever, since only a real report_stats call clears it.
-            if (!analyticsWasEnabled && Configuration?.AnalyticsEnabled == true)
-            {
-                // Consent boundary: clear pre-consent counters SYNCHRONOUSLY,
-                // before the enabled=true state is acted on by anything else.
-                // Done here rather than inside the queued ForceSend so the
-                // daily scheduled send can't slip in between enable and the
-                // queued transition and ship a previous consent window's
-                // counters with a months-old period start.
-                _analyticsReportingService.ResetCountersForConsentBoundary();
-
-                QueueAnalyticsTransition("send initial analytics report", () =>
-                    _analyticsReportingService.ForceSendAsync(CancellationToken.None));
-            }
-
             return true;
         }
 

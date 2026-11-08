@@ -311,6 +311,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 return next();
             }
+            var exempt = pluginConfig?.ExemptTrickplay == true;
+            if (exempt && (IsTrickplayRoute(context) ||
+                (context.HttpContext.Request.Path.Value ?? string.Empty).Contains("/Trickplay/", StringComparison.OrdinalIgnoreCase)))
+            {
+                return next();
+            }
+            if (pluginConfig == null) return next();
             return RunImageFilterAsync(context, next, pluginConfig);
         }
 
