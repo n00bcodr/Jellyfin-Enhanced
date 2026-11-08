@@ -646,7 +646,7 @@
         var holder = document.querySelector('.backdropContainer');
         if (!bg || !holder) return;
         var mine = holder.querySelector('.je-backdrop');
-        var onOurPage = !!document.querySelector('#indexPage .tabContent.is-active :is(.jellyfinenhanced, .sections.bookmarks)');
+        var onOurPage = !!document.querySelector('#indexPage .tabContent.is-active .jellyfinenhanced, #indexPage .tabContent.is-active .sections.bookmarks');
         if (!onOurPage || !isOnHomePage()) {
             if (mine) {
                 mine.remove();
