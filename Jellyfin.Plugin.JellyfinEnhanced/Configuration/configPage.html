@@ -13,6 +13,41 @@
 
                 <form id="spoilerGuardConfigForm">
                     <div class="verticalSection">
+                        <h2 class="sectionTitle">General</h2>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label>
+                                <input type="checkbox" id="chkSpoilerBlurEnabled" is="emby-checkbox" />
+                                <span>Enable Spoiler Guard</span>
+                            </label>
+                            <div class="fieldDescription">
+                                Turns the whole feature on. While it's off, nothing is ever hidden. Turn it on to let protection apply to shows, movies, and collections users opt into.
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="verticalSection">
+                        <h2 class="sectionTitle">Image Protection</h2>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label>
+                                <input type="checkbox" id="chkBlurThumbnails" is="emby-checkbox" />
+                                <span>Blur Unwatched Thumbnails</span>
+                            </label>
+                            <div class="fieldDescription">Applies server-side blur/replacement to poster and episode thumbnail images for unwatched items.</div>
+                        </div>
+
+                        <div class="selectContainer checkboxContainer-withDescription">
+                            <label for="selSpoilerBlurMode">Image replacement mode</label>
+                            <select id="selSpoilerBlurMode" is="emby-select">
+                                <option value="hide">Show stock cards (hide images entirely)</option>
+                                <option value="blur">Blur images</option>
+                            </select>
+                            <div class="fieldDescription">
+                                How protected cards look. Stock cards swap each unwatched image for a safe placeholder; blur applies a Gaussian blur to the original. Default: stock cards.
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="verticalSection">
                         <h2 class="sectionTitle">Native Client & Scrubbing</h2>
                         <div class="checkboxContainer checkboxContainer-withDescription">
                             <label>
@@ -27,14 +62,6 @@
 
                     <div class="verticalSection">
                         <h2 class="sectionTitle">Spoiler Protection Rules</h2>
-
-                        <div class="checkboxContainer checkboxContainer-withDescription" id="containerHideThumbnails">
-                            <label>
-                                <input type="checkbox" id="chkBlurThumbnails" is="emby-checkbox" />
-                                <span>Blur Unwatched Episode Thumbnails</span>
-                            </label>
-                            <div class="fieldDescription">Applies server-side blur to episode still images for unwatched items.</div>
-                        </div>
 
                         <div class="checkboxContainer checkboxContainer-withDescription" id="containerHideTitles">
                             <label>
@@ -79,10 +106,17 @@
                 function loadConfiguration(page) {
                     Dashboard.showLoadingMsg();
                     ApiClient.getPluginConfiguration(pluginId).then(function (config) {
-                        page.querySelector('#chkExemptTrickplay').checked = config.ExemptTrickplay ?? true;
-
+                        if (page.querySelector('#chkSpoilerBlurEnabled')) {
+                            page.querySelector('#chkSpoilerBlurEnabled').checked = config.SpoilerBlurEnabled ?? false;
+                        }
                         if (page.querySelector('#chkBlurThumbnails')) {
-                            page.querySelector('#chkBlurThumbnails').checked = config.SpoilerBlurEnabled ?? false;
+                            page.querySelector('#chkBlurThumbnails').checked = config.BlurThumbnails ?? true;
+                        }
+                        if (page.querySelector('#selSpoilerBlurMode')) {
+                            page.querySelector('#selSpoilerBlurMode').value = config.SpoilerBlurMode ?? 'hide';
+                        }
+                        if (page.querySelector('#chkExemptTrickplay')) {
+                            page.querySelector('#chkExemptTrickplay').checked = config.ExemptTrickplay ?? true;
                         }
                         if (page.querySelector('#chkStripTitles')) {
                             page.querySelector('#chkStripTitles').checked = config.SpoilerReplaceTitle ?? true;
@@ -101,10 +135,17 @@
                 function saveConfiguration(page, form) {
                     Dashboard.showLoadingMsg();
                     ApiClient.getPluginConfiguration(pluginId).then(function (config) {
-                        config.ExemptTrickplay = page.querySelector('#chkExemptTrickplay').checked;
-
+                        if (page.querySelector('#chkSpoilerBlurEnabled')) {
+                            config.SpoilerBlurEnabled = page.querySelector('#chkSpoilerBlurEnabled').checked;
+                        }
                         if (page.querySelector('#chkBlurThumbnails')) {
-                            config.SpoilerBlurEnabled = page.querySelector('#chkBlurThumbnails').checked;
+                            config.BlurThumbnails = page.querySelector('#chkBlurThumbnails').checked;
+                        }
+                        if (page.querySelector('#selSpoilerBlurMode')) {
+                            config.SpoilerBlurMode = page.querySelector('#selSpoilerBlurMode').value;
+                        }
+                        if (page.querySelector('#chkExemptTrickplay')) {
+                            config.ExemptTrickplay = page.querySelector('#chkExemptTrickplay').checked;
                         }
                         if (page.querySelector('#chkStripTitles')) {
                             config.SpoilerReplaceTitle = page.querySelector('#chkStripTitles').checked;
