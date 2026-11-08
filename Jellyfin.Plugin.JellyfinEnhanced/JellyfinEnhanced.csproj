@@ -14,8 +14,15 @@
 
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
-        <AssemblyVersion>12.15.0.0</AssemblyVersion>
-        <FileVersion>12.15.0.0</FileVersion>
+        <AssemblyTitle>Spoiler Guard Lite</AssemblyTitle>
+        <Product>Spoiler Guard Lite</Product>
+        <Description>Lightweight Spoiler Guard plugin for Jellyfin 12.2+ with Moonfin Trickplay timeline scrubbing bypass.</Description>
+        <RepositoryUrl>https://github.com/Subject412/SpoilerGuard</RepositoryUrl>
+        <PackageProjectUrl>https://github.com/Subject412/SpoilerGuard</PackageProjectUrl>
+        <Authors>Subject412</Authors>
+        <Copyright>Copyright (c) Subject412</Copyright>
+        <AssemblyVersion>12.2.0.0</AssemblyVersion>
+        <FileVersion>12.2.0.0</FileVersion>
         <RootNamespace>Jellyfin.Plugin.JellyfinEnhanced</RootNamespace>
         <AssemblyName>Jellyfin.Plugin.JellyfinEnhanced</AssemblyName>
     </PropertyGroup>
