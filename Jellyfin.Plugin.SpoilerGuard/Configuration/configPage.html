@@ -45,6 +45,16 @@
                                 How protected cards look. Stock cards swap each unwatched image for a safe placeholder; blur applies a Gaussian blur to the original. Default: stock cards.
                             </div>
                         </div>
+
+                        <div class="sliderContainer checkboxContainer-withDescription">
+                            <label for="rngSpoilerBlurIntensity">Blur intensity</label>
+                            <input type="range" id="rngSpoilerBlurIntensity" min="1" max="100" step="1" is="emby-slider" onchange="this.nextElementSibling && (document.getElementById('lblSpoilerBlurIntensityValue').textContent = this.value);" />
+                            <span id="lblSpoilerBlurIntensityValue"></span>
+                            <div class="fieldDescription">
+                                Gaussian blur strength applied when Image replacement mode is set to blur. 1 = barely blurred, 100 = heavily blurred. Default: 40.
+                            </div>
+                        </div>
+
                     </div>
 
                     <div class="verticalSection">
@@ -115,6 +125,13 @@
                         if (page.querySelector('#selSpoilerBlurMode')) {
                             page.querySelector('#selSpoilerBlurMode').value = config.SpoilerBlurMode ?? 'hide';
                         }
+                        if (page.querySelector('#rngSpoilerBlurIntensity')) {
+                            var intensity = config.SpoilerBlurIntensity ?? 40;
+                            page.querySelector('#rngSpoilerBlurIntensity').value = intensity;
+                            if (page.querySelector('#lblSpoilerBlurIntensityValue')) {
+                                page.querySelector('#lblSpoilerBlurIntensityValue').textContent = intensity;
+                            }
+                        }
                         if (page.querySelector('#chkExemptTrickplay')) {
                             page.querySelector('#chkExemptTrickplay').checked = config.ExemptTrickplay ?? true;
                         }
@@ -143,6 +160,9 @@
                         }
                         if (page.querySelector('#selSpoilerBlurMode')) {
                             config.SpoilerBlurMode = page.querySelector('#selSpoilerBlurMode').value;
+                        }
+                        if (page.querySelector('#rngSpoilerBlurIntensity')) {
+                            config.SpoilerBlurIntensity = parseInt(page.querySelector('#rngSpoilerBlurIntensity').value, 10);
                         }
                         if (page.querySelector('#chkExemptTrickplay')) {
                             config.ExemptTrickplay = page.querySelector('#chkExemptTrickplay').checked;
