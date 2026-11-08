@@ -11,7 +11,7 @@
     const flagClass = 'language-flag';
     // Series/Season flag for a language that only some episodes carry (#557).
     const partialFlagClass = 'language-flag-partial';
-    const langDisplayNames = new Intl.DisplayNames(['en'], { type: 'language' });
+    const langDisplayNames = Intl.DisplayNames ? new Intl.DisplayNames(['en'], { type: 'language' }) : null;
     /** @type {Map<string, string>} language code → display name; an Intl lookup per flag per card adds up */
     const displayNameByCode = new Map();
 
@@ -25,7 +25,7 @@
         let name = displayNameByCode.get(code);
         if (name === undefined) {
             try {
-                name = langDisplayNames.of(code) || code.toUpperCase();
+                name = langDisplayNames?.of(code) || code.toUpperCase();
             } catch (e) {
                 name = code.toUpperCase();
             }
