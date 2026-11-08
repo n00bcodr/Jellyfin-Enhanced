@@ -12,7 +12,7 @@
         "version": "0.0.2.0",
         "changelog": "Initial release of Spoiler Guard Lite.",
         "targetAbi": "12.0.0.0",
-        "sourceUrl": "https://raw.githubusercontent.com/Subject412/SpoilerGuard/main/SpoilerGuardLite.zip",
+        "sourceUrl": "https://github.com/Subject412/SpoilerGuard/releases/download/v0.0.2.0/SpoilerGuardLite.zip",
         "checksum": "8f3e4b6c4cc583b4c85a69a934ff6164",
         "timestamp": "2026-11-08T16:00:00Z"
       }
