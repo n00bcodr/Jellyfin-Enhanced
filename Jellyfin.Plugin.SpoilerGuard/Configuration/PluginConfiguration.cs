@@ -477,18 +477,15 @@ namespace Jellyfin.Plugin.SpoilerGuard.Configuration
             SpoilerReplaceTitle = true;
             SpoilerStripCast = true;
             SpoilerStripCastMode = "GuestStars";
-            SpoilerStripReviews = true;
             SpoilerBlurMode = "hide";
             SpoilerBlurArtwork = false;
             SpoilerAutoEnableOnFirstPlay = false;
-            SpoilerAutoEnableOnSeerrRequest = false;
             SpoilerAutoEnableOnLibraryAdd = false;
             // Auto-enable scope defaults to "everything" so existing installs
             // keep today's first-play / Seerr-request behaviour unchanged.
             SpoilerAutoEnableSeries = true;
             SpoilerAutoEnableMovies = true;
             SpoilerAutoEnableLibraryIds = "";
-            SpoilerBlurStrictRefresh = false;
             SpoilerKeepMoviePosters = true;
             SpoilerBlurTrickplay = true;
             SpoilerOverviewPlaceholder = "Spoiler Guard activated";
@@ -1320,14 +1317,7 @@ namespace Jellyfin.Plugin.SpoilerGuard.Configuration
         public bool SpoilerBlurEnabled { get; set; } = false;
         public bool ExemptTrickplay { get; set; } = true;
         // Granular Spoiler Guard controls (restored).
-        public bool NextUnwatchedOnly { get; set; } = false;
         public bool BlurThumbnails { get; set; } = true;
-        public int BlurRadius { get; set; } = 25;
-        public int BlurAmount { get; set; } = 25;
-        public bool StripTitles { get; set; } = true;
-        public string CustomTitlePlaceholder { get; set; } = "Episode {0}";
-        public bool StripOverviews { get; set; } = true;
-        public bool AutoEnableForNewUsers { get; set; } = true;
         // Gaussian sigma passed to Skia. 1 = barely blurred, 100 = heavily
         // blurred. Default 40 hides scene content while keeping silhouettes and
         // dominant colours visible.
@@ -1366,7 +1356,6 @@ namespace Jellyfin.Plugin.SpoilerGuard.Configuration
         // Hide the JE Reviews panel on guarded Series pages — TMDB and
         // user-written reviews routinely leak plot spoilers. Default ON since
         // the spoiler risk dwarfs the UX cost.
-        public bool SpoilerStripReviews { get; set; } = true;
         // "hide" (default) substitutes a parent-level placeholder picked by aspect
         // (Series Backdrop for episodes, Series Primary for seasons, Collection
         // Primary for collection-opted movies, flat dark card otherwise), fully
@@ -1387,7 +1376,6 @@ namespace Jellyfin.Plugin.SpoilerGuard.Configuration
         // SpoilerSeerrPendingPromoter moves it into Series/Movies. This toggle
         // controls only the auto-on-request path — manual opt-in from the Seerr
         // more-info modal stays available (gated only by SpoilerBlurEnabled).
-        public bool SpoilerAutoEnableOnSeerrRequest { get; set; } = false;
         // When true, every new Series/Movie that lands in the library (any
         // source: scan, Seerr, manual copy) is added to the Spoiler Guard list
         // of every user who can see its library — before anyone presses play.
@@ -1408,7 +1396,6 @@ namespace Jellyfin.Plugin.SpoilerGuard.Configuration
         // only the in-place image-URL refresh runs — image bytes flip at once but
         // page text stays stale until the next navigation. Off by default for a
         // smoother refresh (no full-page flash).
-        public bool SpoilerBlurStrictRefresh { get; set; } = false;
         // True (default): a listed movie's Primary/Thumb pass unblurred even with
         // the master switch on; its Chapter thumbs, Screenshots, and (if
         // SpoilerBlurArtwork) Backdrop/Art still follow protection. Movie posters
