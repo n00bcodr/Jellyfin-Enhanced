@@ -444,7 +444,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // scope. Other protected types (Screenshot, Chapter, Backdrop
             // when SpoilerBlurArtwork is on) still follow the protection
             // logic. no-store so toggling protection back on takes effect.
-            if (pluginConfig.BlurThumbnails != true
+            if (pluginConfig.BlurThumbnails == false
                 && (string.Equals(imageType, "Primary", StringComparison.OrdinalIgnoreCase)
                     || string.Equals(imageType, "Thumb", StringComparison.OrdinalIgnoreCase)))
             {
