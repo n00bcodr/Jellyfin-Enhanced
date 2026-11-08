@@ -199,7 +199,7 @@ AniList cards have a lighter blue border and show the author, review date, the r
 
 ??? info "How AniList reviews load"
 
-    Jellyfin Enhanced retrieves reviews through your Jellyfin server from AniList's public API, so your browser does not call AniList directly. The server keeps results in memory for 12 hours (2 hours when an anime has no reviews) to stay well inside AniList's rate limit.
+    Jellyfin Enhanced retrieves reviews through your Jellyfin server from AniList's public API, so your browser does not call AniList directly. The server keeps results in memory for 12 hours (2 hours when an anime has no reviews) to stay well inside AniList's rate limit, and when AniList says it is rate limited the server stops asking until AniList's requested wait (at most ten minutes) has passed.
 
     The panel shows up to ten reviews, ordered by how many AniList users found them helpful. Spoiler sections of a review are replaced with "[spoiler hidden]", and embedded images and videos are removed. Seasons and episodes support local reviews only. **Reviews ({count})** includes the AniList cards.
 
