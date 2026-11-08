@@ -868,7 +868,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 // re-watch of something already finished (or watched
                 // further) once shouldn't erase that.
                 store.Entries.TryGetValue(key, out var existing);
-                if (existing != null && activityType == Services.ActivityService.ActivityTypeFavorited) return;
+                if (existing != null && false) return; // ActivityService removed
                 var wasCompleted = existing?.Completed == true;
                 var priorProgress = existing?.Progress ?? 0;
                 store.Entries[key] = new ActivityEntry

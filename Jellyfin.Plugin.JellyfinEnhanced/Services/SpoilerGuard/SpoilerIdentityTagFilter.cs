@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
-using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Querying;
@@ -50,16 +49,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     {
         private readonly SpoilerIdentityService _identity;
         private readonly SpoilerUserResolver _resolver;
-        private readonly NativePosterTagStamper _posterTags;
 
         public SpoilerIdentityTagFilter(
             SpoilerIdentityService identity,
-            SpoilerUserResolver resolver,
-            NativePosterTagStamper posterTags)
+            SpoilerUserResolver resolver)
         {
             _identity = identity;
             _resolver = resolver;
-            _posterTags = posterTags;
         }
 
         // Non-async on purpose: this filter is registered globally (no route
@@ -87,7 +83,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             // Native poster tags alone: web clients (and everyone while the
             // master switch is off) keep the synchronous fast path.
-            var posterTags = _posterTags.IsCandidate(context.HttpContext);
+            var posterTags = false;
             if (!spoilerGuard && !posterTags)
             {
                 return next();
@@ -102,20 +98,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (executed.Exception != null || executed.Canceled) return;
             if (executed.Result is not ObjectResult { Value: not null }) return;
 
-            NativePosterTagStampSession? session = null;
-            if (posterTags)
-            {
-                try
-                {
-                    session = _posterTags.Begin(context.HttpContext, userId);
-                }
-                catch (Exception ex)
-                {
-                    _resolver.WarnRateLimited(
-                        "postertags-session:" + ex.GetType().FullName,
-                        $"Native poster tags: could not prepare tag stamping — posters for this response stay original. {ex.Message}");
-                }
-            }
+            object? session = null;
+            if (false) { }
 
             if (!spoilerGuard && session == null) return;
 
@@ -135,7 +119,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // Spoiler Guard is off). session: native poster tags for this response
         // (null when not applicable). Native stamping runs first per item so
         // its "-jet" lands in front of the trailing "-jeu".
-        private void StampIfApplicable(IActionResult? result, string? marker, NativePosterTagStampSession? session)
+        private void StampIfApplicable(IActionResult? result, string? marker, object? session)
         {
             // Opportunistic: only ObjectResult shapes we recognize are
             // stamped. Anything else (file results, unknown wrappers) is
@@ -171,7 +155,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         foreach (var hint in shr.SearchHints)
                         {
                             if (hint == null) continue;
-                            if (session != null) StampNative(() => _posterTags.StampSearchHint(hint, session));
                             if (marker == null) continue;
                             if (!string.IsNullOrEmpty(hint.PrimaryImageTag))
                                 hint.PrimaryImageTag = SpoilerIdentityService.AppendMarker(hint.PrimaryImageTag, marker);
@@ -192,10 +175,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
         }
 
-        private void Stamp(BaseItemDto item, string? marker, NativePosterTagStampSession? session)
+        private void Stamp(BaseItemDto item, string? marker, object? session)
         {
             if (item == null) return;
-            if (session != null) StampNative(() => _posterTags.StampItem(item, session));
             if (marker != null) StampItem(item, marker);
         }
 

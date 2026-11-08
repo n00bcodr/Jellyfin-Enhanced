@@ -24,7 +24,7 @@
          bring the rest (incl. EF Core) transitively. -->
     <PropertyGroup Condition="'$(JellyfinTarget)' == 'jf12'">
         <TargetFramework>net10.0</TargetFramework>
-        <JellyfinVersion>12.0.0</JellyfinVersion>
+        <JellyfinVersion>12.2.0</JellyfinVersion>
         <!-- Explicit target symbol so code never has to infer the Jellyfin line from the TFM. -->
         <DefineConstants>$(DefineConstants);JF12</DefineConstants>
     </PropertyGroup>
