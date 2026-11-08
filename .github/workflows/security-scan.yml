@@ -1,0 +1,120 @@
+name: Security Scan
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+  schedule:
+    # Run every day at 2:00 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  # Scan for secrets accidentally committed
+  secret-scan:
+    name: Secret Scanning
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+
+      - name: TruffleHog OSS
+        uses: trufflesecurity/trufflehog@31ce31ee1abbcc7dc8eee5764c17121c3044c8b2
+        with:
+          path: ./
+          base: ${{ github.event.before }}
+          head: ${{ github.sha }}
+          extra_args: --debug --only-verified
+        continue-on-error: true
+
+  # Scan .NET dependencies for known vulnerabilities
+  dotnet-security:
+    name: .NET Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: |
+            9.0.x
+            10.0.x
+
+      # Both build targets: jf12 (net10.0, the default) and jf10 (net9.0). JellyfinTarget is read
+      # from the environment as an MSBuild property. A restore or listing failure fails the step.
+      - name: List vulnerable packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          for target in jf12 jf10; do
+            echo "::group::$target"
+            JellyfinTarget=$target dotnet restore Jellyfin.Plugin.SpoilerGuard/SpoilerGuard.csproj
+            JellyfinTarget=$target dotnet list Jellyfin.Plugin.SpoilerGuard/SpoilerGuard.csproj package \
+              --vulnerable --include-transitive --no-restore --format json > "vulnerable-$target.json"
+            cat "vulnerable-$target.json"
+            echo "::endgroup::"
+          done
+
+      - name: Check for vulnerabilities
+        shell: bash
+        run: |
+          python3 - vulnerable-jf12.json vulnerable-jf10.json <<'EOF'
+          import json, sys
+          failed = False
+          for path in sys.argv[1:]:
+              report = json.load(open(path))
+              projects = report.get('projects') or []
+              if not projects:
+                  print(f'::error::{path}: no project was scanned')
+                  failed = True
+              for problem in report.get('problems') or []:
+                  print(f"::error::{path}: {problem.get('text', problem)}")
+                  failed = True
+              for project in projects:
+                  for framework in project.get('frameworks') or []:
+                      for package in (framework.get('topLevelPackages') or []) + (framework.get('transitivePackages') or []):
+                          print(f"::error::{path}: {framework.get('framework')} {package.get('id')} {package.get('resolvedVersion')} has known vulnerabilities")
+                          failed = True
+          if failed:
+              sys.exit(1)
+          print('No vulnerable packages found for jf12 or jf10.')
+          EOF
+
+  # SARIF upload for GitHub Security tab
+  upload-sarif:
+    name: Upload SARIF Results
+    runs-on: ubuntu-latest
+    needs: [secret-scan, dotnet-security]
+    if: always()
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Create summary
+        run: |
+          echo "## Security Scan Summary" >> $GITHUB_STEP_SUMMARY
+          echo "All security scans completed. Check individual job results for details." >> $GITHUB_STEP_SUMMARY
