@@ -3196,7 +3196,8 @@
          * "Spoiler Guard: apply to existing titles" scheduled task.
          */
         (function wireSpoilerApplyExisting() {
-            var btn = document.getElementById('spoilerApplyExistingBtn');
+            // Controller route removed; use Dashboard → Scheduled Tasks instead.
+            return;
             var statusEl = document.getElementById('spoilerApplyExistingStatus');
             if (!btn || !statusEl) return;
             btn.addEventListener('click', function () {
