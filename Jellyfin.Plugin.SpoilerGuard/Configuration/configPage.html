@@ -88,6 +88,177 @@
                             </label>
                             <div class="fieldDescription">Strips synopses and episode descriptions until the episode is marked as played.</div>
                         </div>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label>
+                                <input type="checkbox" id="chkSpoilerAdvancedMode" is="emby-checkbox" />
+                                <span>Advanced Mode</span>
+                            </label>
+                            <div class="fieldDescription">Per-category reveals for next episode / current season.</div>
+                        </div>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label>
+                                <input type="checkbox" id="chkSpoilerAutoEnableOnFirstPlay" is="emby-checkbox" />
+                                <span>Auto-enable on first play</span>
+                            </label>
+                            <div class="fieldDescription">Auto-add series on first play of S1E1.</div>
+                        </div>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label>
+                                <input type="checkbox" id="chkSpoilerAutoEnableOnLibraryAdd" is="emby-checkbox" />
+                                <span>Auto-enable on library add</span>
+                            </label>
+                            <div class="fieldDescription">Auto-add new items to spoiler list.</div>
+                        </div>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label>
+                                <input type="checkbox" id="chkSpoilerAutoEnableSeries" is="emby-checkbox" />
+                                <span>Auto-enable series</span>
+                            </label>
+                            <div class="fieldDescription">Scope: series.</div>
+                        </div>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label>
+                                <input type="checkbox" id="chkSpoilerAutoEnableMovies" is="emby-checkbox" />
+                                <span>Auto-enable movies</span>
+                            </label>
+                            <div class="fieldDescription">Scope: movies.</div>
+                        </div>
+                        <div class="inputContainer checkboxContainer-withDescription">
+                            <label for="txtSpoilerAutoEnableLibraryIds">Auto-enable library ids</label>
+                            <input type="text" id="txtSpoilerAutoEnableLibraryIds" is="emby-input" />
+                            <div class="fieldDescription">Comma-separated library ids; empty = all.</div>
+                        </div>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label>
+                                <input type="checkbox" id="chkSpoilerBlurArtwork" is="emby-checkbox" />
+                                <span>Blur artwork</span>
+                            </label>
+                            <div class="fieldDescription">Blur backdrops/art too.</div>
+                        </div>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label>
+                                <input type="checkbox" id="chkSpoilerBlurTrickplay" is="emby-checkbox" />
+                                <span>Blur trickplay</span>
+                            </label>
+                            <div class="fieldDescription">Protect trickplay tiles.</div>
+                        </div>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label>
+                                <input type="checkbox" id="chkSpoilerCurrentSeasonStripTitle" is="emby-checkbox" />
+                                <span>Current season strip title</span>
+                            </label>
+                            <div class="fieldDescription"></div>
+                        </div>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label>
+                                <input type="checkbox" id="chkSpoilerCurrentSeasonStripOverview" is="emby-checkbox" />
+                                <span>Current season strip overview</span>
+                            </label>
+                            <div class="fieldDescription"></div>
+                        </div>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label>
+                                <input type="checkbox" id="chkSpoilerCurrentSeasonStripRatings" is="emby-checkbox" />
+                                <span>Current season strip ratings</span>
+                            </label>
+                            <div class="fieldDescription"></div>
+                        </div>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label>
+                                <input type="checkbox" id="chkSpoilerKeepMoviePosters" is="emby-checkbox" />
+                                <span>Keep movie posters</span>
+                            </label>
+                            <div class="fieldDescription">Keep movie posters unblurred.</div>
+                        </div>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label>
+                                <input type="checkbox" id="chkSpoilerNextEpisodeStripTitle" is="emby-checkbox" />
+                                <span>Next episode strip title</span>
+                            </label>
+                            <div class="fieldDescription"></div>
+                        </div>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label>
+                                <input type="checkbox" id="chkSpoilerNextEpisodeStripOverview" is="emby-checkbox" />
+                                <span>Next episode strip overview</span>
+                            </label>
+                            <div class="fieldDescription"></div>
+                        </div>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label>
+                                <input type="checkbox" id="chkSpoilerNextEpisodeStripRatings" is="emby-checkbox" />
+                                <span>Next episode strip ratings</span>
+                            </label>
+                            <div class="fieldDescription"></div>
+                        </div>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label>
+                                <input type="checkbox" id="chkSpoilerNextEpisodeStripImage" is="emby-checkbox" />
+                                <span>Next episode strip image</span>
+                            </label>
+                            <div class="fieldDescription"></div>
+                        </div>
+                        <div class="inputContainer checkboxContainer-withDescription">
+                            <label for="txtSpoilerOverviewPlaceholder">Overview placeholder</label>
+                            <input type="text" id="txtSpoilerOverviewPlaceholder" is="emby-input" />
+                            <div class="fieldDescription">Placeholder text for stripped overview.</div>
+                        </div>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label>
+                                <input type="checkbox" id="chkSpoilerStripCast" is="emby-checkbox" />
+                                <span>Strip cast</span>
+                            </label>
+                            <div class="fieldDescription"></div>
+                        </div>
+                        <div class="selectContainer checkboxContainer-withDescription">
+                            <label for="selSpoilerStripCastMode">Strip cast mode</label>
+                            <select id="selSpoilerStripCastMode" is="emby-select">
+                                <option value="GuestStars">Guest stars only</option>
+                                <option value="All">All cast</option>
+                            </select>
+                        </div>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label>
+                                <input type="checkbox" id="chkSpoilerStripChapters" is="emby-checkbox" />
+                                <span>Strip chapters</span>
+                            </label>
+                            <div class="fieldDescription"></div>
+                        </div>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label>
+                                <input type="checkbox" id="chkSpoilerStripPremiereDate" is="emby-checkbox" />
+                                <span>Strip premiere date</span>
+                            </label>
+                            <div class="fieldDescription"></div>
+                        </div>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label>
+                                <input type="checkbox" id="chkSpoilerStripRatings" is="emby-checkbox" />
+                                <span>Strip ratings</span>
+                            </label>
+                            <div class="fieldDescription"></div>
+                        </div>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label>
+                                <input type="checkbox" id="chkSpoilerStripSeriesOverview" is="emby-checkbox" />
+                                <span>Strip series overview</span>
+                            </label>
+                            <div class="fieldDescription"></div>
+                        </div>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label>
+                                <input type="checkbox" id="chkSpoilerStripTaglines" is="emby-checkbox" />
+                                <span>Strip taglines</span>
+                            </label>
+                            <div class="fieldDescription"></div>
+                        </div>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label>
+                                <input type="checkbox" id="chkSpoilerStripTags" is="emby-checkbox" />
+                                <span>Strip tags</span>
+                            </label>
+                            <div class="fieldDescription"></div>
+                        </div>
                     </div>
 
                     <div class="verticalSection">
@@ -142,6 +313,31 @@
                             page.querySelector('#chkStripOverviews').checked = config.SpoilerStripOverview ?? true;
                         }
 
+                        if (page.querySelector('#chkSpoilerAdvancedMode')) page.querySelector('#chkSpoilerAdvancedMode').checked = config.SpoilerAdvancedMode ?? false;
+                        if (page.querySelector('#chkSpoilerAutoEnableOnFirstPlay')) page.querySelector('#chkSpoilerAutoEnableOnFirstPlay').checked = config.SpoilerAutoEnableOnFirstPlay ?? false;
+                        if (page.querySelector('#chkSpoilerAutoEnableOnLibraryAdd')) page.querySelector('#chkSpoilerAutoEnableOnLibraryAdd').checked = config.SpoilerAutoEnableOnLibraryAdd ?? false;
+                        if (page.querySelector('#chkSpoilerAutoEnableSeries')) page.querySelector('#chkSpoilerAutoEnableSeries').checked = config.SpoilerAutoEnableSeries ?? true;
+                        if (page.querySelector('#chkSpoilerAutoEnableMovies')) page.querySelector('#chkSpoilerAutoEnableMovies').checked = config.SpoilerAutoEnableMovies ?? true;
+                        if (page.querySelector('#txtSpoilerAutoEnableLibraryIds')) page.querySelector('#txtSpoilerAutoEnableLibraryIds').value = config.SpoilerAutoEnableLibraryIds ?? '';
+                        if (page.querySelector('#chkSpoilerBlurArtwork')) page.querySelector('#chkSpoilerBlurArtwork').checked = config.SpoilerBlurArtwork ?? false;
+                        if (page.querySelector('#chkSpoilerBlurTrickplay')) page.querySelector('#chkSpoilerBlurTrickplay').checked = config.SpoilerBlurTrickplay ?? true;
+                        if (page.querySelector('#chkSpoilerCurrentSeasonStripTitle')) page.querySelector('#chkSpoilerCurrentSeasonStripTitle').checked = config.SpoilerCurrentSeasonStripTitle ?? true;
+                        if (page.querySelector('#chkSpoilerCurrentSeasonStripOverview')) page.querySelector('#chkSpoilerCurrentSeasonStripOverview').checked = config.SpoilerCurrentSeasonStripOverview ?? true;
+                        if (page.querySelector('#chkSpoilerCurrentSeasonStripRatings')) page.querySelector('#chkSpoilerCurrentSeasonStripRatings').checked = config.SpoilerCurrentSeasonStripRatings ?? true;
+                        if (page.querySelector('#chkSpoilerKeepMoviePosters')) page.querySelector('#chkSpoilerKeepMoviePosters').checked = config.SpoilerKeepMoviePosters ?? true;
+                        if (page.querySelector('#chkSpoilerNextEpisodeStripTitle')) page.querySelector('#chkSpoilerNextEpisodeStripTitle').checked = config.SpoilerNextEpisodeStripTitle ?? false;
+                        if (page.querySelector('#chkSpoilerNextEpisodeStripOverview')) page.querySelector('#chkSpoilerNextEpisodeStripOverview').checked = config.SpoilerNextEpisodeStripOverview ?? true;
+                        if (page.querySelector('#chkSpoilerNextEpisodeStripRatings')) page.querySelector('#chkSpoilerNextEpisodeStripRatings').checked = config.SpoilerNextEpisodeStripRatings ?? true;
+                        if (page.querySelector('#chkSpoilerNextEpisodeStripImage')) page.querySelector('#chkSpoilerNextEpisodeStripImage').checked = config.SpoilerNextEpisodeStripImage ?? true;
+                        if (page.querySelector('#txtSpoilerOverviewPlaceholder')) page.querySelector('#txtSpoilerOverviewPlaceholder').value = config.SpoilerOverviewPlaceholder ?? 'Spoiler Guard activated';
+                        if (page.querySelector('#chkSpoilerStripCast')) page.querySelector('#chkSpoilerStripCast').checked = config.SpoilerStripCast ?? true;
+                        if (page.querySelector('#selSpoilerStripCastMode')) page.querySelector('#selSpoilerStripCastMode').value = config.SpoilerStripCastMode ?? 'GuestStars';
+                        if (page.querySelector('#chkSpoilerStripChapters')) page.querySelector('#chkSpoilerStripChapters').checked = config.SpoilerStripChapters ?? true;
+                        if (page.querySelector('#chkSpoilerStripPremiereDate')) page.querySelector('#chkSpoilerStripPremiereDate').checked = config.SpoilerStripPremiereDate ?? true;
+                        if (page.querySelector('#chkSpoilerStripRatings')) page.querySelector('#chkSpoilerStripRatings').checked = config.SpoilerStripRatings ?? true;
+                        if (page.querySelector('#chkSpoilerStripSeriesOverview')) page.querySelector('#chkSpoilerStripSeriesOverview').checked = config.SpoilerStripSeriesOverview ?? true;
+                        if (page.querySelector('#chkSpoilerStripTaglines')) page.querySelector('#chkSpoilerStripTaglines').checked = config.SpoilerStripTaglines ?? true;
+                        if (page.querySelector('#chkSpoilerStripTags')) page.querySelector('#chkSpoilerStripTags').checked = config.SpoilerStripTags ?? true;
                         Dashboard.hideLoadingMsg();
                     }).catch(function (err) {
                         Dashboard.hideLoadingMsg();
@@ -174,6 +370,31 @@
                             config.SpoilerStripOverview = page.querySelector('#chkStripOverviews').checked;
                         }
 
+                        if (page.querySelector('#chkSpoilerAdvancedMode')) config.SpoilerAdvancedMode = page.querySelector('#chkSpoilerAdvancedMode').checked;
+                        if (page.querySelector('#chkSpoilerAutoEnableOnFirstPlay')) config.SpoilerAutoEnableOnFirstPlay = page.querySelector('#chkSpoilerAutoEnableOnFirstPlay').checked;
+                        if (page.querySelector('#chkSpoilerAutoEnableOnLibraryAdd')) config.SpoilerAutoEnableOnLibraryAdd = page.querySelector('#chkSpoilerAutoEnableOnLibraryAdd').checked;
+                        if (page.querySelector('#chkSpoilerAutoEnableSeries')) config.SpoilerAutoEnableSeries = page.querySelector('#chkSpoilerAutoEnableSeries').checked;
+                        if (page.querySelector('#chkSpoilerAutoEnableMovies')) config.SpoilerAutoEnableMovies = page.querySelector('#chkSpoilerAutoEnableMovies').checked;
+                        if (page.querySelector('#txtSpoilerAutoEnableLibraryIds')) config.SpoilerAutoEnableLibraryIds = page.querySelector('#txtSpoilerAutoEnableLibraryIds').value;
+                        if (page.querySelector('#chkSpoilerBlurArtwork')) config.SpoilerBlurArtwork = page.querySelector('#chkSpoilerBlurArtwork').checked;
+                        if (page.querySelector('#chkSpoilerBlurTrickplay')) config.SpoilerBlurTrickplay = page.querySelector('#chkSpoilerBlurTrickplay').checked;
+                        if (page.querySelector('#chkSpoilerCurrentSeasonStripTitle')) config.SpoilerCurrentSeasonStripTitle = page.querySelector('#chkSpoilerCurrentSeasonStripTitle').checked;
+                        if (page.querySelector('#chkSpoilerCurrentSeasonStripOverview')) config.SpoilerCurrentSeasonStripOverview = page.querySelector('#chkSpoilerCurrentSeasonStripOverview').checked;
+                        if (page.querySelector('#chkSpoilerCurrentSeasonStripRatings')) config.SpoilerCurrentSeasonStripRatings = page.querySelector('#chkSpoilerCurrentSeasonStripRatings').checked;
+                        if (page.querySelector('#chkSpoilerKeepMoviePosters')) config.SpoilerKeepMoviePosters = page.querySelector('#chkSpoilerKeepMoviePosters').checked;
+                        if (page.querySelector('#chkSpoilerNextEpisodeStripTitle')) config.SpoilerNextEpisodeStripTitle = page.querySelector('#chkSpoilerNextEpisodeStripTitle').checked;
+                        if (page.querySelector('#chkSpoilerNextEpisodeStripOverview')) config.SpoilerNextEpisodeStripOverview = page.querySelector('#chkSpoilerNextEpisodeStripOverview').checked;
+                        if (page.querySelector('#chkSpoilerNextEpisodeStripRatings')) config.SpoilerNextEpisodeStripRatings = page.querySelector('#chkSpoilerNextEpisodeStripRatings').checked;
+                        if (page.querySelector('#chkSpoilerNextEpisodeStripImage')) config.SpoilerNextEpisodeStripImage = page.querySelector('#chkSpoilerNextEpisodeStripImage').checked;
+                        if (page.querySelector('#txtSpoilerOverviewPlaceholder')) config.SpoilerOverviewPlaceholder = page.querySelector('#txtSpoilerOverviewPlaceholder').value;
+                        if (page.querySelector('#chkSpoilerStripCast')) config.SpoilerStripCast = page.querySelector('#chkSpoilerStripCast').checked;
+                        if (page.querySelector('#selSpoilerStripCastMode')) config.SpoilerStripCastMode = page.querySelector('#selSpoilerStripCastMode').value;
+                        if (page.querySelector('#chkSpoilerStripChapters')) config.SpoilerStripChapters = page.querySelector('#chkSpoilerStripChapters').checked;
+                        if (page.querySelector('#chkSpoilerStripPremiereDate')) config.SpoilerStripPremiereDate = page.querySelector('#chkSpoilerStripPremiereDate').checked;
+                        if (page.querySelector('#chkSpoilerStripRatings')) config.SpoilerStripRatings = page.querySelector('#chkSpoilerStripRatings').checked;
+                        if (page.querySelector('#chkSpoilerStripSeriesOverview')) config.SpoilerStripSeriesOverview = page.querySelector('#chkSpoilerStripSeriesOverview').checked;
+                        if (page.querySelector('#chkSpoilerStripTaglines')) config.SpoilerStripTaglines = page.querySelector('#chkSpoilerStripTaglines').checked;
+                        if (page.querySelector('#chkSpoilerStripTags')) config.SpoilerStripTags = page.querySelector('#chkSpoilerStripTags').checked;
                         ApiClient.updatePluginConfiguration(pluginId, config).then(function (result) {
                             Dashboard.processPluginConfigurationUpdateResult(result);
                         }).catch(function (err) {
