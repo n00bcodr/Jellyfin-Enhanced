@@ -37,11 +37,17 @@ jobs:
           cd staging && zip -r ../SpoilerGuardLite.zip . && cd ..
           echo "MD5=$(md5sum SpoilerGuardLite.zip | awk '{print $1}')" >> $GITHUB_ENV
 
-      - name: Read version from csproj
+      - name: Compute next version
         id: ver
         run: |
-          V=$(grep -oP '(?<=<AssemblyVersion>)[^<]+' Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.csproj)
-          echo "version=$V" >> $GITHUB_OUTPUT
+          CUR=$(grep -oP '(?<=<AssemblyVersion>)[^<]+' Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.csproj)
+          IFS='.' read -r a b c d <<< "$CUR"
+          d=$((d+1))
+          NEW="$a.$b.$c.$d"
+          echo "version=$NEW" >> $GITHUB_OUTPUT
+          sed -i "s|<AssemblyVersion>[^<]*</AssemblyVersion>|<AssemblyVersion>$NEW</AssemblyVersion>|" Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.csproj
+          sed -i "s|<FileVersion>[^<]*</FileVersion>|<FileVersion>$NEW</FileVersion>|" Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.csproj
+          echo "Bumped $CUR -> $NEW"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -69,7 +75,7 @@ jobs:
           PY
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add manifest.json
+          git add manifest.json Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.csproj
           git commit -m "chore(manifest): auto-update to v$VERSION [skip ci]" || echo "No changes"
           for i in 1 2 3; do git pull --rebase origin main && break; sleep 5; done
           git push origin main
