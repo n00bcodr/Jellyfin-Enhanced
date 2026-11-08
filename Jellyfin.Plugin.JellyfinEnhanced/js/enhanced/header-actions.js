@@ -497,6 +497,7 @@
                 .je-launcher-action.emby-button:hover { background: rgba(128,128,128,.25); }
                 .je-launcher-action:disabled { opacity: .45; cursor: default; }
                 .je-launcher-panel button:focus-visible { outline: 2px solid currentColor; outline-offset: -2px; }
+                .layout-tv .je-launcher-panel button:focus { outline: 2px solid currentColor; outline-offset: -2px; }
                 .je-launcher-action[hidden], .je-launcher-pager[hidden] { display: none !important; }
                 .je-launcher-icon { display: inline-flex; align-items: center; justify-content: center; min-height: 24px; flex-shrink: 0; }
                 .je-launcher-icon .material-icons, .je-launcher-icon svg { font-size: 24px; width: 24px; height: 24px; }
