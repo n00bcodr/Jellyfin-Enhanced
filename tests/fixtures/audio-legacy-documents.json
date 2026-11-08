@@ -1,8 +1,0 @@
-[
-  {"name":"missing-version-density", "settings":{"QualityTagsEnabled":true,"TagLayout":"bands"}, "legacy":true,"density":"full","label":"5.1"},
-  {"name":"v0-missing-density", "settings":{"QualityTagsEnabled":true,"TagLayoutSettingsVersion":0,"TagLayout":"bands"}, "legacy":true,"density":"full","label":"5.1"},
-  {"name":"v0-full", "settings":{"QualityTagsEnabled":true,"TagLayoutSettingsVersion":0,"TagLayout":"bands","TagLabelDensity":"full"}, "legacy":true,"density":"full","label":"5.1"},
-  {"name":"v0-compact", "settings":{"QualityTagsEnabled":true,"TagLayoutSettingsVersion":0,"TagLayout":"bands","TagLabelDensity":"compact"}, "legacy":true,"density":"full","label":"5.1"},
-  {"name":"v1-full", "settings":{"QualityTagsEnabled":true,"TagLayoutSettingsVersion":1,"TagLayout":"bands","TagLabelDensity":"full"}, "legacy":false,"density":"full","label":"Dolby Digital 5.1"},
-  {"name":"v1-compact", "settings":{"QualityTagsEnabled":true,"TagLayoutSettingsVersion":1,"TagLayout":"bands","TagLabelDensity":"compact"}, "legacy":false,"density":"compact","label":"DD 5.1"}
-]
