@@ -1,4 +1,8 @@
-name: Build and Release Spoiler Guard Lite
+name: 'Build and Release Spoiler Guard Lite'
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 on:
   push:
@@ -67,9 +71,14 @@ jobs:
           import json, sys
           p='manifest.json'
           d=json.load(open(p))
-          d[0]['versions'][0]['checksum']=sys.argv[1]
-          d[0]['versions'][0]['version']=sys.argv[2]
-          d[0]['versions'][0]['sourceUrl']="https://github.com/Subject412/SpoilerGuard/releases/download/v" + sys.argv[2] + "/SpoilerGuardLite.zip"
+          if not d[0].get('versions'):
+              d[0]['versions']=[{}]
+          v=d[0]['versions'][0]
+          v['checksum']=sys.argv[1]
+          v['version']=sys.argv[2]
+          v['sourceUrl']="https://github.com/Subject412/SpoilerGuard/releases/download/v" + sys.argv[2] + "/SpoilerGuardLite.zip"
+          import datetime
+          v['timestamp']=datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
           json.dump(d, open(p,'w'), indent=2)
           open(p,'a').write('\n')
           PY
