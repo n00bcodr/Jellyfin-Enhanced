@@ -200,11 +200,10 @@
     }
 
     function createLauncher() {
-        launcher = document.createElement('button');
+        launcher = document.createElement('button', 'paper-icon-button-light');
         launcher.type = 'button';
         launcher.id = 'je-header-launcher';
-        launcher.className = 'headerButton headerButtonRight paper-icon-button-light je-header-launcher';
-        launcher.setAttribute('is', 'paper-icon-button-light');
+        launcher.classList.add('headerButton', 'headerButtonRight', 'paper-icon-button-light', 'je-header-launcher');
         launcher.setAttribute('aria-haspopup', 'dialog');
         launcher.setAttribute('aria-controls', 'je-header-launcher-panel');
         launcher.setAttribute('aria-expanded', 'false');

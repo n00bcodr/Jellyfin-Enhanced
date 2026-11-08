@@ -237,9 +237,8 @@
     };
 
     const createThemeSelect = (userId, currentThemeValue) => {
-        const select = document.createElement('select');
-        select.setAttribute('is', 'emby-select');
-        select.className = 'emby-select-withcolor emby-select';
+        const select = document.createElement('select', 'emby-select');
+        select.classList.add('emby-select-withcolor', 'emby-select');
         select.id = 'theme-selector-select';
         select.setAttribute('aria-label', 'Select theme');
         select.removeAttribute('label');
@@ -297,8 +296,7 @@
     };
 
     const createRandomButton = (userId) => {
-        const button = document.createElement('button');
-        button.setAttribute('is', 'emby-button');
+        const button = document.createElement('button', 'emby-button');
         button.className = 'emby-button';
         button.id = 'random-theme-button';
         button.setAttribute('aria-label', 'Toggle random daily theme');
