@@ -6,64 +6,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-release:
+  build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
-
-      - name: Build (Jellyfin 12)
-        run: dotnet build Jellyfin.Plugin.SpoilerGuard/SpoilerGuard.csproj -c Release -p:JellyfinTarget=jf12
-
-      - name: Stage plugin DLLs
-        run: |
-          rm -rf staging && mkdir staging
-          cp Jellyfin.Plugin.SpoilerGuard/bin/Release/net10.0/*.dll staging/
-          rm -f staging/Jellyfin.Controller.dll staging/Jellyfin.Model.dll staging/MediaBrowser.*.dll staging/Microsoft.*.dll staging/System.*.dll
-
-      - name: Create release zip
-        run: |
-          cd staging && zip -r ../SpoilerGuardLite.zip . && cd ..
-          echo "MD5=$(md5sum SpoilerGuardLite.zip | awk '{print $1}')" >> $GITHUB_ENV
-
-      - name: Update manifest checksum
-        run: |
-          CHECKSUM=$(md5sum SpoilerGuardLite.zip | awk '{print $1}')
-          python3 - "$CHECKSUM" <<'PY'
-import json, sys
-p='manifest.json'
-d=json.load(open(p))
-d[0]['versions'][0]['checksum']=sys.argv[1]
-json.dump(d, open(p,'w'), indent=2)
-open(p,'a').write('\n')
-PY
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add manifest.json
-          git commit -m "chore(manifest): auto-update release checksum to $CHECKSUM [skip ci]" || echo "No changes"
-          git pull --rebase origin main
-          git push origin main
-
-      - name: Read version from csproj
-        id: ver
-        run: |
-          V=$(grep -oP '(?<=<AssemblyVersion>)[^<]+' Jellyfin.Plugin.SpoilerGuard/SpoilerGuard.csproj)
-          echo "version=$V" >> $GITHUB_OUTPUT
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ steps.ver.outputs.version }}
-          name: Spoiler Guard Lite v${{ steps.ver.outputs.version }}
-          files: SpoilerGuardLite.zip
-          generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: echo "ok"
