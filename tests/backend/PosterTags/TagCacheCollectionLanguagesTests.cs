@@ -472,6 +472,42 @@ public class TagCacheCollectionLanguagesTests
     }
 
     [Fact]
+    public void ANativePosterBuildOfACollectionLeavesItsMemberRecordAlone()
+    {
+        var (library, _, hidden, box, excluded) = WithExcludedMember();
+        WithCache(library, cache =>
+        {
+            Exclude(cache, excluded, hidden);
+            // The excluded member's file changes; a native poster of its collection is
+            // drawn (an on-demand build) before the member's own event is applied.
+            hidden.Sources = Tracks("por");
+            Assert.Equal(new[] { "eng", "por" }, cache.BuildEntryOnDemand(box)!.AudioLanguages!.Order(StringComparer.Ordinal).ToArray());
+            Assert.Equal(new[] { "eng", "spa" }, Audio(cache, box));
+            cache.EnqueueUpdate(hidden.Id);
+            FlushTwice(cache);
+            Assert.Equal(new[] { "eng", "por" }, Audio(cache, box));
+        });
+    }
+
+    [Fact]
+    public void AManualRebuildForgetsACollectionDeletedMeanwhile()
+    {
+        var library = new Library();
+        var movie = new Movie { Id = Guid.NewGuid(), Name = "Movie", Sources = Tracks("eng") };
+        var box = new BoxSet { Id = Guid.NewGuid(), Name = "Box", LinkedChildren = [new LinkedChild { ItemId = movie.Id }] };
+        library.Items.AddRange(new BaseItem[] { movie, box });
+        WithCache(library, cache =>
+        {
+            var index = (System.Collections.IDictionary)typeof(TagCacheService).GetField("_collectionMembers", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(cache)!;
+            Assert.True(index.Contains(box.Id.ToString("N")));
+            // Deleted while nothing listened; an admin rebuilds before any sweep.
+            library.Items.Remove(box);
+            cache.BuildFullCache(null, CancellationToken.None);
+            Assert.False(index.Contains(box.Id.ToString("N")));
+        });
+    }
+
+    [Fact]
     public void AManualRebuildReadsTheSeriesItBuilds()
     {
         var library = new Library();
