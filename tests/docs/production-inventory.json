@@ -223,6 +223,10 @@
       "category": "Helpers"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/Jellyseerr/SeerrWatchlistReader.cs",
+      "category": "Helpers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/MatroskaLanguageCache.cs",
       "category": "Helpers"
     },
@@ -2461,6 +2465,15 @@
       "verb": "GET",
       "path": "/JellyfinEnhanced/jellyseerr/watchlist",
       "method": "GetJellyseerrWatchlist",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/jellyseerr/watchlist",
+      "method": "AddJellyseerrWatchlist",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
       "following_attributes": [
         "Authorize"
@@ -10226,8 +10239,8 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 470,
-    "routes": 198,
+    "files": 471,
+    "routes": 199,
     "configuration_properties": 744,
     "storage_references": 87,
     "scheduled_tasks": 16,
