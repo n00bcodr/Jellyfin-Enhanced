@@ -1,0 +1,257 @@
+using System.Reflection;
+using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
+using Jellyfin.Plugin.JellyfinEnhanced.Model;
+using Jellyfin.Plugin.JellyfinEnhanced.Services;
+using MediaBrowser.Controller.Entities;
+using MediaBrowser.Controller.Entities.Movies;
+using MediaBrowser.Controller.Entities.TV;
+using MediaBrowser.Controller.Library;
+using MediaBrowser.Model.Dto;
+using MediaBrowser.Model.Entities;
+using MediaBrowser.Model.Globalization;
+using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
+
+namespace JE.Tests;
+
+/// <summary>
+/// A collection's language tags are the union of its linked members' (issue #1022):
+/// when a member's file gains or loses an audio or subtitle track, or the member is
+/// deleted, the collection's cache entry follows, both through the incremental flush
+/// (Jellyfin raises no event for the BoxSet itself) and through the reconciliation,
+/// which also repairs a collection left stale while nothing was listening.
+/// </summary>
+[Collection("Plugin singleton")]
+public class TagCacheCollectionLanguagesTests
+{
+    // Jellyfin derives an item's kind from its class name, so the doubles keep it.
+    private sealed class Movie : MediaBrowser.Controller.Entities.Movies.Movie
+    {
+        public List<MediaSourceInfo> Sources { get; set; } = [];
+        public override List<MediaSourceInfo> GetMediaSources(bool enablePathSubstitution) => Sources;
+    }
+
+    private sealed class Episode : MediaBrowser.Controller.Entities.TV.Episode
+    {
+        public List<MediaSourceInfo> Sources { get; set; } = [];
+        public override List<MediaSourceInfo> GetMediaSources(bool enablePathSubstitution) => Sources;
+    }
+
+    private static List<MediaSourceInfo> Tracks(params string[] audio) =>
+        [new() { MediaStreams = [new() { Type = MediaStreamType.Video, Height = 1080 }, .. audio.Select(language => new MediaStream { Type = MediaStreamType.Audio, Language = language })] }];
+
+    private sealed class Library
+    {
+        public readonly List<BaseItem> Items = new();
+        public readonly Mock<ILibraryManager> Mock = new();
+        /// <summary>When false, a reconciliation sees no item saved since its marker.</summary>
+        public bool ReportSavedItems = true;
+
+        public Library()
+        {
+            IEnumerable<BaseItem> Select(InternalItemsQuery q)
+            {
+                if (q.MinDateLastSaved != null && !ReportSavedItems) return Array.Empty<BaseItem>();
+                IEnumerable<BaseItem> selected = Items;
+                if (q.ItemIds?.Length > 0) selected = selected.Where(i => q.ItemIds.Contains(i.Id));
+                else if (q.IncludeItemTypes?.Length > 0) selected = selected.Where(i => q.IncludeItemTypes.Contains(i.GetBaseItemKind()));
+                if (q.ParentId != Guid.Empty) selected = selected.Where(i => i.ParentId == q.ParentId || (i is MediaBrowser.Controller.Entities.TV.Episode e && e.SeriesId == q.ParentId));
+                return selected.Skip(q.StartIndex ?? 0).Take(q.Limit ?? int.MaxValue).ToArray();
+            }
+
+            Mock.Setup(l => l.GetItemIds(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) => Select(q).Select(i => i.Id).ToArray());
+            Mock.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) => Select(q).ToArray());
+            Mock.Setup(l => l.GetItemById(It.IsAny<Guid>())).Returns((Guid id) => Items.SingleOrDefault(i => i.Id == id));
+            Mock.Setup(l => l.GetItemById<BaseItem>(It.IsAny<Guid>())).Returns((Guid id) => Items.SingleOrDefault(i => i.Id == id));
+        }
+    }
+
+    private static void Flush(TagCacheService cache) =>
+        typeof(TagCacheService).GetMethod("FlushPending", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(cache, null);
+
+    /// <summary>Two flushes: the member's own change, then the collection it queued.</summary>
+    private static void FlushTwice(TagCacheService cache)
+    {
+        Flush(cache);
+        Flush(cache);
+    }
+
+    private static string[] Audio(TagCacheService cache, BaseItem item) =>
+        cache.TryGetEntry(item.Id, out var entry) ? (entry.AudioLanguages ?? Array.Empty<string>()).Order(StringComparer.Ordinal).ToArray() : throw new InvalidOperationException("no entry for " + item.Name);
+
+    private static long Stamp(TagCacheService cache, BaseItem item) =>
+        cache.TryGetEntry(item.Id, out var entry) ? entry.LastUpdated : throw new InvalidOperationException("no entry for " + item.Name);
+
+    /// <summary>Runs <paramref name="body"/> with a fresh cache over <paramref name="library"/>.</summary>
+    private static void WithCache(Library library, Action<TagCacheService> body)
+    {
+        using var f = new ApiPluginFixture();
+        f.Plugin.Configuration.TagCacheServerMode = true;
+        var previous = BaseItem.LibraryManager;
+        var previousLogger = BaseItem.Logger;
+        BaseItem.LibraryManager = library.Mock.Object;
+        // Jellyfin logs a link it cannot resolve (a deleted member) through this.
+        BaseItem.Logger = NullLogger<BaseItem>.Instance;
+        try
+        {
+            using var cache = new TagCacheService(library.Mock.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger, new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger));
+            cache.BuildFullCache(null, CancellationToken.None);
+            body(cache);
+        }
+        finally
+        {
+            BaseItem.LibraryManager = previous;
+            BaseItem.Logger = previousLogger;
+        }
+    }
+
+    [Fact]
+    public void AMemberLosingATrackUpdatesItsCollectionsOnly()
+    {
+        var library = new Library();
+        var dubbed = new Movie { Id = Guid.NewGuid(), Name = "Dubbed", Sources = Tracks("eng", "fre") };
+        var other = new Movie { Id = Guid.NewGuid(), Name = "Other", Sources = Tracks("jpn") };
+        var box = new BoxSet { Id = Guid.NewGuid(), Name = "Box", LinkedChildren = [new LinkedChild { ItemId = dubbed.Id }, new LinkedChild { ItemId = other.Id }] };
+        var unrelated = new BoxSet { Id = Guid.NewGuid(), Name = "Unrelated", LinkedChildren = [new LinkedChild { ItemId = other.Id }] };
+        library.Items.AddRange(new BaseItem[] { dubbed, other, box, unrelated });
+
+        WithCache(library, cache =>
+        {
+            Assert.Equal(new[] { "eng", "fre", "jpn" }, Audio(cache, box));
+            var unrelatedStamp = Stamp(cache, unrelated);
+
+            // The file is remuxed without its French track; Jellyfin reports the movie only.
+            dubbed.Sources = Tracks("eng");
+            cache.EnqueueUpdate(dubbed.Id);
+            FlushTwice(cache);
+
+            Assert.Equal(new[] { "eng" }, Audio(cache, dubbed));
+            Assert.Equal(new[] { "eng", "jpn" }, Audio(cache, box));
+            Assert.Equal(new[] { "jpn" }, Audio(cache, unrelated));
+            Assert.Equal(unrelatedStamp, Stamp(cache, unrelated));
+
+            // A track added back reaches the collection the same way.
+            dubbed.Sources = Tracks("eng", "ger");
+            cache.EnqueueUpdate(dubbed.Id);
+            FlushTwice(cache);
+            Assert.Equal(new[] { "eng", "ger", "jpn" }, Audio(cache, box));
+        });
+    }
+
+    [Fact]
+    public void AnEpisodeTrackChangeReachesACollectionOfItsSeries()
+    {
+        var library = new Library();
+        var series = new Series { Id = Guid.NewGuid(), Name = "Show" };
+        var season = new Season { Id = Guid.NewGuid(), Name = "Season 1", ParentId = series.Id, SeriesId = series.Id, IndexNumber = 1 };
+        var episode = new Episode { Id = Guid.NewGuid(), Name = "Pilot", ParentId = season.Id, SeasonId = season.Id, SeriesId = series.Id, IndexNumber = 1, ParentIndexNumber = 1, Sources = Tracks("eng", "spa") };
+        var box = new BoxSet { Id = Guid.NewGuid(), Name = "Box", LinkedChildren = [new LinkedChild { ItemId = series.Id }] };
+        library.Items.AddRange(new BaseItem[] { series, season, episode, box });
+
+        WithCache(library, cache =>
+        {
+            Assert.Equal(new[] { "eng", "spa" }, Audio(cache, box));
+
+            // The monitor queues an episode with its season and series.
+            episode.Sources = Tracks("eng");
+            cache.EnqueueUpdate(episode.Id);
+            cache.EnqueueUpdate(season.Id);
+            cache.EnqueueUpdate(series.Id);
+            FlushTwice(cache);
+
+            Assert.Equal(new[] { "eng" }, Audio(cache, series));
+            Assert.Equal(new[] { "eng" }, Audio(cache, box));
+        });
+    }
+
+    [Fact]
+    public void ADeletedMemberLeavesItsCollection()
+    {
+        var library = new Library();
+        var gone = new Movie { Id = Guid.NewGuid(), Name = "Gone", Sources = Tracks("ita") };
+        var kept = new Movie { Id = Guid.NewGuid(), Name = "Kept", Sources = Tracks("eng") };
+        var box = new BoxSet { Id = Guid.NewGuid(), Name = "Box", LinkedChildren = [new LinkedChild { ItemId = gone.Id }, new LinkedChild { ItemId = kept.Id }] };
+        library.Items.AddRange(new BaseItem[] { gone, kept, box });
+
+        WithCache(library, cache =>
+        {
+            Assert.Equal(new[] { "eng", "ita" }, Audio(cache, box));
+
+            // The collection still names the deleted id; Jellyfin reports only the removal.
+            library.Items.Remove(gone);
+            cache.EnqueueRemoval(gone.Id);
+            FlushTwice(cache);
+
+            Assert.False(cache.TryGetEntry(gone.Id, out _));
+            Assert.Equal(new[] { "eng" }, Audio(cache, box));
+        });
+    }
+
+    [Fact]
+    public void ADeletedMemberWhoseLinkWasAlreadyClearedLeavesItsCollection()
+    {
+        var library = new Library();
+        var gone = new Movie { Id = Guid.NewGuid(), Name = "Gone", Sources = Tracks("ita") };
+        var kept = new Movie { Id = Guid.NewGuid(), Name = "Kept", Sources = Tracks("eng") };
+        var box = new BoxSet { Id = Guid.NewGuid(), Name = "Box", LinkedChildren = [new LinkedChild { ItemId = gone.Id }, new LinkedChild { ItemId = kept.Id }] };
+        library.Items.AddRange(new BaseItem[] { gone, kept, box });
+
+        WithCache(library, cache =>
+        {
+            library.Items.Remove(gone);
+            // Something resolved the collection's links first: Jellyfin cleared the dead one.
+            Assert.Equal(new[] { kept.Id }, box.GetLinkedChildren().Select(child => child.Id));
+            Assert.Equal(Guid.Empty, box.LinkedChildren[0].ItemId);
+
+            cache.EnqueueRemoval(gone.Id);
+            FlushTwice(cache);
+            Assert.Equal(new[] { "eng" }, Audio(cache, box));
+        });
+    }
+
+    [Fact]
+    public void AChangeThatKeepsTheLanguagesQueuesNoCollection()
+    {
+        var library = new Library();
+        var movie = new Movie { Id = Guid.NewGuid(), Name = "Movie", Sources = Tracks("eng") };
+        var box = new BoxSet { Id = Guid.NewGuid(), Name = "Box", LinkedChildren = [new LinkedChild { ItemId = movie.Id }] };
+        library.Items.AddRange(new BaseItem[] { movie, box });
+
+        WithCache(library, cache =>
+        {
+            // A rating edit changes the movie's entry but not its languages.
+            movie.CommunityRating = 7.5f;
+            cache.EnqueueUpdate(movie.Id);
+            Flush(cache);
+            Assert.Equal(7.5f, cache.TryGetEntry(movie.Id, out var entry) ? entry.CommunityRating : null);
+
+            // Nothing was queued for the collection: a lookup of it would fail the next flush.
+            library.Mock.Setup(l => l.GetItemById<BaseItem>(box.Id)).Throws(new InvalidOperationException("collection looked up"));
+            Flush(cache);
+            Assert.Equal(new[] { "eng" }, Audio(cache, box));
+        });
+    }
+
+    [Fact]
+    public void ReconciliationRepairsACollectionLeftStale()
+    {
+        var library = new Library();
+        var movie = new Movie { Id = Guid.NewGuid(), Name = "Movie", Sources = Tracks("eng", "fre") };
+        var box = new BoxSet { Id = Guid.NewGuid(), Name = "Box", LinkedChildren = [new LinkedChild { ItemId = movie.Id }] };
+        library.Items.AddRange(new BaseItem[] { movie, box });
+
+        WithCache(library, cache =>
+        {
+            // The file lost its French track and no event reached the cache (a collection
+            // cached before collections followed their members, or a change while nothing
+            // listened): the collection entry still shows the old union.
+            movie.Sources = Tracks("eng");
+            Assert.Equal(new[] { "eng", "fre" }, Audio(cache, box));
+
+            // Nothing was saved since the marker, yet the reconciliation repairs the collection.
+            library.ReportSavedItems = false;
+            cache.ReconcileCache(null, CancellationToken.None);
+            Assert.Equal(new[] { "eng" }, Audio(cache, box));
+        });
+    }
+}

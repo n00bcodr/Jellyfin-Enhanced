@@ -214,6 +214,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private long _version;
         private long _lastModified;
         private long _lastReconciledUtcTicks;
+
+        // Keys of Movie and Series entries whose language facts changed (false), or which
+        // were removed (true), since the collections linking to them were last queued (see
+        // QueueCollectionsOfChangedMembers). A BoxSet's languages are its members'
+        // (GetCollectionLanguages), and Jellyfin raises no event for the BoxSet when
+        // only a member's file changes.
+        private readonly ConcurrentDictionary<string, bool> _collectionMemberChanges = new(StringComparer.Ordinal);
         private Timer? _debounceSaveTimer;
         private volatile bool _dirty;
         private long _firstDirtyTicks; // 0 = nothing dirty since the last disk save
@@ -994,6 +1001,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 progress?.Report(idsToRebuild.Count == 0 ? 50 : (double)rebuilt / idsToRebuild.Count * 80);
             }
 
+            // A collection's languages are its members' (GetCollectionLanguages), and its own
+            // save time does not move when only a member's file changes. Rebuild every cached
+            // collection after its members, so one left stale (a member changed while nothing
+            // was listening, or before collections followed their members) is repaired here.
+            // Members changed above are covered by this pass, so their records are dropped.
+            _collectionMemberChanges.Clear();
+            foreach (var collectionId in CachedCollectionIds())
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (ShouldAbortCacheWork)
+                {
+                    _logger.Info("[TagCache] Reconciliation aborted (setting disabled or server shutting down).");
+                    return;
+                }
+
+                changed |= RebuildEntry(collectionId, episodeScans);
+            }
+
             // Collection membership changes the monitor did not see (Custom tags).
             changed |= ReconcileCustomTags(cancellationToken);
 
@@ -1128,6 +1153,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             progress?.Report(100);
             LogLanguageCacheUse(languageCacheAtStart);
             SaveToDisk();
+            // Members the sweep removed (or the series it repaired) after the collection pass.
+            QueueCollectionsOfChangedMembers();
 
             _logger.Info($"[TagCache] Reconciliation complete: {changedIds.Count} changed items, {idsToRebuild.Count} entries checked");
         }
@@ -1319,6 +1346,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         var customTagsBefore = CaptureCustomTagsBefore(batch);
                         var changed = ApplyBatch(batch, RebuildWithBatchMemo(batch), RemoveEntry);
                         changed |= ApplyCustomTagFollowUps(batch, customTagsBefore);
+                        QueueCollectionsOfChangedMembers();
                         // Any library change may alter who can see an item (added,
                         // removed, moved, re-rated, re-tagged) even when its tag entry
                         // is unchanged: access sets computed before it are stale.
@@ -1487,9 +1515,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             // AddOrUpdate tells a new key from a replaced value, even when a removal races the store.
             var added = false;
-            _cache.AddOrUpdate(key, _ => { added = true; return entry; }, (_, _) => entry);
+            TagCacheEntry? previous = null;
+            _cache.AddOrUpdate(key, _ => { added = true; previous = null; return entry; }, (_, old) => { previous = old; return entry; });
             if (added) Interlocked.Increment(ref _keySetEpoch);
             Interlocked.Increment(ref _mutationEpoch);
+            if (IsCollectionMemberType(entry.Type) && (previous == null || !SameLanguageFacts(previous, entry))) _collectionMemberChanges.TryAdd(key, false);
         }
 
         /// <summary>
@@ -1503,7 +1533,97 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             Interlocked.Increment(ref _keySetEpoch);
             RecordTombstone(key);
             Interlocked.Increment(ref _mutationEpoch);
+            if (IsCollectionMemberType(removed?.Type)) _collectionMemberChanges[key] = true;
             return true;
+        }
+
+        /// <summary>Whether entries of this type feed a BoxSet's language union (see <see cref="GetCollectionLanguages"/>).</summary>
+        /// <param name="type">A cache entry's Type.</param>
+        private static bool IsCollectionMemberType(string? type) =>
+            type == nameof(BaseItemKind.Movie) || type == nameof(BaseItemKind.Series);
+
+        /// <summary>Whether two entries carry the same facts a collection's language union reads.</summary>
+        private static bool SameLanguageFacts(TagCacheEntry a, TagCacheEntry b) =>
+            SameStrings(a.AudioLanguages, b.AudioLanguages)
+            && SameStrings(a.SubtitleLanguages, b.SubtitleLanguages)
+            && SameStrings(a.SdhSubtitleLanguages, b.SdhSubtitleLanguages);
+
+        /// <summary>Ordinal sequence equality, a missing array counting as empty.</summary>
+        private static bool SameStrings(string[]? a, string[]? b) =>
+            ReferenceEquals(a, b) || (a ?? Array.Empty<string>()).SequenceEqual(b ?? Array.Empty<string>(), StringComparer.Ordinal);
+
+        /// <summary>Ids of the BoxSets in the cache (collections in excluded libraries have no entry).</summary>
+        private List<Guid> CachedCollectionIds()
+        {
+            var ids = new List<Guid>();
+            foreach (var (key, entry) in _cache)
+            {
+                if (entry.Type == nameof(BaseItemKind.BoxSet) && Guid.TryParse(key, out var id)) ids.Add(id);
+            }
+
+            return ids;
+        }
+
+        /// <summary>
+        /// Queue the cached collections that link to a Movie or Series recorded in
+        /// <see cref="_collectionMemberChanges"/>, so a collection's language union follows
+        /// a member's file change or removal. Called after a batch has been applied, so the
+        /// queued collections rebuild from their members' new entries in the next flush.
+        /// Reads collections from memory only; a collection that can't be checked is queued.
+        /// </summary>
+        private void QueueCollectionsOfChangedMembers()
+        {
+            if (_collectionMemberChanges.IsEmpty) return;
+            var members = new HashSet<Guid>();
+            var anyRemoved = false;
+            foreach (var key in _collectionMemberChanges.Keys)
+            {
+                // Removed one by one: a member recorded meanwhile stays for the next call.
+                if (!_collectionMemberChanges.TryRemove(key, out var removed) || !Guid.TryParse(key, out var id)) continue;
+                members.Add(id);
+                anyRemoved |= removed;
+            }
+
+            if (members.Count == 0) return;
+            foreach (var collectionId in CachedCollectionIds())
+            {
+                try
+                {
+                    if (_libraryManager.GetItemById<BaseItem>(collectionId) is Folder folder && LinksAny(folder, members, anyRemoved)) EnqueueUpdate(collectionId);
+                }
+                catch (Exception ex)
+                {
+                    _logger.Warning($"[TagCache] Failed to check collection {collectionId} for changed members: {ex.Message}");
+                    EnqueueUpdate(collectionId);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Whether a collection may link to any of <paramref name="members"/>. A link naming a
+        /// member's id matches, including one whose item has been deleted. A link without an id
+        /// is either by path, resolved here, or one Jellyfin could not resolve (it clears the id
+        /// of a link whose item is gone), which may be a removed member when
+        /// <paramref name="anyRemoved"/> is set.
+        /// </summary>
+        private static bool LinksAny(Folder folder, HashSet<Guid> members, bool anyRemoved)
+        {
+            var unresolved = false;
+            foreach (var link in folder.LinkedChildren ?? Array.Empty<LinkedChild>())
+            {
+                if (link == null) continue;
+                if (link.ItemId is { } id && id != Guid.Empty)
+                {
+                    if (members.Contains(id)) return true;
+                }
+                else
+                {
+                    unresolved = true;
+                }
+            }
+
+            if (!unresolved) return false;
+            return anyRemoved || folder.GetLinkedChildren().Any(child => child != null && members.Contains(child.Id));
         }
 
         /// <summary>

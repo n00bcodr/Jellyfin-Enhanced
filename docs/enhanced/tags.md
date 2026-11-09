@@ -83,7 +83,7 @@ You'll see poster badges in library grids, home rows, Jellyfin search results, a
 |---|---|---|
 | [Quality Tags](#quality-tags) | Resolution, source, HDR, special format, video codec, sound, edition | Supported library cards; series/season quality follows your aggregation policy |
 | [Genre Tags](#genre-tags) | Genre icons (three by default), with names on hover | Supported library cards with genre metadata |
-| [Language Tags](#language-tags) | Distinct flags (three by default) or a no-dialogue symbol | Supported library cards; cached series/season flags cover their episodes, collection flags cover linked movies |
+| [Language Tags](#language-tags) | Distinct flags (three by default) or a no-dialogue symbol | Supported library cards; cached series/season flags cover their episodes, collection flags cover linked movies and series |
 | [Rating Tags](#rating-tags) | Community star score and critic percentage | Supported library cards |
 | [User-review chips](#user-review-chips) | Average visible review rating, or an optional dash | Movie, series, season, and episode cards with a usable review identity |
 | [Age Rating Tags](#age-rating-tags) | Official parental/content classification | Supported library cards with classification metadata |
@@ -695,7 +695,7 @@ With **Server-Side Tag Cache** enabled, series and season cards show audio langu
 
     In batch fallback mode, series/season poster flags reflect a representative episode and do not show partial coverage.
 
-    Cached collection flags combine languages from linked movie members. A collection containing an English movie and a Japanese movie can therefore show both flags; it does not mean every member has both languages.
+    Cached collection flags combine languages from linked movie and series members. A collection containing an English movie and a Japanese movie can therefore show both flags; it does not mean every member has both languages. The flags follow the members: when a member file gains or loses an audio or subtitle track, or a member is deleted, the collection changes with it, and the nightly tag cache task re-checks every collection.
 
     Regional flags require explicit regional metadata. For example, `pt-BR` shows Brazil, `pt`/`pt-PT` show Portugal, `es-419`/`es-MX` show Mexico, and `zh-Hant` shows Taiwan. A base language such as `pt`, `es`, or `zh` keeps its default flag; JE does not guess a region.
 
