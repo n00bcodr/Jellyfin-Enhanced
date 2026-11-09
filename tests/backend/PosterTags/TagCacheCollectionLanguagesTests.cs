@@ -219,16 +219,23 @@ public class TagCacheCollectionLanguagesTests
 
         WithCache(library, cache =>
         {
-            // A rating edit changes the movie's entry but not its languages.
+            var boxLookups = 0;
+            library.Mock.Setup(l => l.GetItemById<BaseItem>(box.Id)).Returns(() => { boxLookups++; return box; });
+
+            // A rating edit changes the movie's entry but not its languages: the
+            // collection is neither checked nor rebuilt.
             movie.CommunityRating = 7.5f;
             cache.EnqueueUpdate(movie.Id);
-            Flush(cache);
+            FlushTwice(cache);
             Assert.Equal(7.5f, cache.TryGetEntry(movie.Id, out var entry) ? entry.CommunityRating : null);
+            Assert.Equal(0, boxLookups);
 
-            // Nothing was queued for the collection: a lookup of it would fail the next flush.
-            library.Mock.Setup(l => l.GetItemById<BaseItem>(box.Id)).Throws(new InvalidOperationException("collection looked up"));
-            Flush(cache);
-            Assert.Equal(new[] { "eng" }, Audio(cache, box));
+            // The same hook sees a language change reach the collection.
+            movie.Sources = Tracks("eng", "kor");
+            cache.EnqueueUpdate(movie.Id);
+            FlushTwice(cache);
+            Assert.True(boxLookups > 0);
+            Assert.Equal(new[] { "eng", "kor" }, Audio(cache, box));
         });
     }
 

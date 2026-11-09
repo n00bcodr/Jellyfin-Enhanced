@@ -1005,8 +1005,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // save time does not move when only a member's file changes. Rebuild every cached
             // collection after its members, so one left stale (a member changed while nothing
             // was listening, or before collections followed their members) is repaired here.
-            // Members changed above are covered by this pass, so their records are dropped.
-            _collectionMemberChanges.Clear();
+            // Members recorded so far are covered once this pass completes; until then
+            // their records stay, so an aborted pass leaves them for the next flush.
+            var coveredMembers = _collectionMemberChanges.Keys.ToArray();
             foreach (var collectionId in CachedCollectionIds())
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -1018,6 +1019,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                 changed |= RebuildEntry(collectionId, episodeScans);
             }
+
+            foreach (var key in coveredMembers) _collectionMemberChanges.TryRemove(key, out _);
 
             // Collection membership changes the monitor did not see (Custom tags).
             changed |= ReconcileCustomTags(cancellationToken);
@@ -3153,7 +3156,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 else if (kind == BaseItemKind.BoxSet)
                 {
                     // A BoxSet has no media streams of its own; derive its language
-                    // tags from the union of its manually-linked movie members instead.
+                    // tags from the union of its manually-linked movie and series members.
                     (entry.AudioLanguages, entry.SubtitleLanguages, entry.SdhSubtitleLanguages) = GetCollectionLanguages(item);
                 }
                 else
@@ -4140,9 +4143,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// Union of audio languages, and of subtitle languages, across a BoxSet's
         /// linked movie and series members.
         /// LinkedChildren is a manual join (not a parent pointer), so this is
-        /// resolved live rather than tracked incrementally per member; membership
-        /// edits already re-enqueue the BoxSet itself (see TagCacheMonitor), and a
-        /// member's own file changes are picked up by the next reconciliation.
+        /// resolved live rather than tracked per member. Membership edits re-enqueue
+        /// the BoxSet itself (see TagCacheMonitor); a member whose languages change or
+        /// which is removed queues the collections linking to it (see
+        /// QueueCollectionsOfChangedMembers), and every reconciliation rebuilds them all.
         /// </summary>
         private (string[] Audio, string[] Subtitles, string[] SdhSubtitles) GetCollectionLanguages(BaseItem collection)
         {

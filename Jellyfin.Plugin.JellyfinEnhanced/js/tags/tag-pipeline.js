@@ -1154,7 +1154,9 @@
             deltaIds.delete(id);
             storeMisses.add(id);
         }
+        const redrawn = [];
         for (const [id, entry] of newEntries) {
+            if (entryChanged(serverCache.get(id), entry)) redrawn.push(id);
             forgetItemFacts(id);
             serverCache.set(id, entry);
             storeMisses.delete(id);
@@ -1175,7 +1177,7 @@
                     try { renderer.onServerCacheRefresh(changedIds); } catch {}
                 }
             }
-            refreshVisibleCards(changedIds, removed.concat(dropped));
+            refreshVisibleCards(redrawn.concat(removed, dropped), dropped);
         }
         console.log(`${logPrefix} Access changed: +${newEntries.length} items, -${removed.length + dropped.length} no longer visible`);
         return true;
@@ -1269,7 +1271,9 @@
             // Items removed after the cursor (the server leaves out any stored again since).
             const removed = Array.isArray(resp.removed) ? resp.removed.filter(id => typeof id === 'string' && !(id in resp.items)) : [];
             if (newEntries.length > 0 || removed.length > 0) {
+                const redrawn = [];
                 for (const [id, entry] of newEntries) {
+                    if (entryChanged(serverCache.get(id), entry)) redrawn.push(id);
                     forgetItemFacts(id);
                     serverCache.set(id, entry);
                     storeMisses.delete(id);
@@ -1291,7 +1295,7 @@
                         try { renderer.onServerCacheRefresh(changedIds); } catch {}
                     }
                 }
-                refreshVisibleCards(changedIds, removed);
+                refreshVisibleCards(redrawn.concat(removed));
                 console.log(`${logPrefix} Server cache updated: +${newEntries.length} items, -${removed.length} removed`);
             }
             settled = true;
@@ -1892,22 +1896,39 @@
     }
 
     /**
+     * Whether a delta entry differs from the one memory holds. For a user under
+     * Spoiler Guard every guarded entry rides along with each delta, mostly
+     * unchanged; their cards must not be torn down and redrawn every time.
+     * An entry memory does not hold (a restored copy not yet read) counts as changed.
+     * @param {object|undefined} held - The entry in memory before the delta.
+     * @param {object} entry - The entry the delta brought.
+     * @returns {boolean}
+     */
+    function entryChanged(held, entry) {
+        if (!held) return true;
+        try { return JSON.stringify(held) !== JSON.stringify(entry); } catch { return true; }
+    }
+
+    /**
      * Metadata updates invalidate both cached facts and the cards already drawn
      * from them. Releasing only affected cards keeps unrelated overlays intact;
      * advancing their reuse stamp also rejects an older batch still in flight.
+     * A card whose item left the cache is released like an updated one: the
+     * batch lookup, which enforces access, draws whatever the server still has
+     * for it (an item in a library excluded from the tag cache keeps its tags).
      * @param {string[]|null} [updatedIds] - null means the server cache was replaced.
-     * @param {string[]} [removedIds] - Clear removed/hidden items without re-fetching them.
+     * @param {string[]} [hiddenIds] - Items the user can no longer see: cleared, never looked up.
      */
-    function refreshVisibleCards(updatedIds = null, removedIds = []) {
+    function refreshVisibleCards(updatedIds = null, hiddenIds = []) {
         const changed = updatedIds ? new Set(updatedIds) : null;
-        const removed = new Set(removedIds);
+        const hidden = new Set(hiddenIds);
         let released = false;
         for (const el of document.querySelectorAll(CARD_IMAGE_SELECTOR)) {
             const itemId = getItemId(el);
             if (!itemId || (changed && !changed.has(itemId))) continue;
             cardReuse.set(el, (cardReuse.get(el) || 0) + 1);
             JE.core.tagLayout?.clearCard(el.closest('.cardScalable') || el);
-            if (removed.has(itemId)) processedCards.add(el);
+            if (hidden.has(itemId)) processedCards.add(el);
             else {
                 processedCards.delete(el);
                 released = true;

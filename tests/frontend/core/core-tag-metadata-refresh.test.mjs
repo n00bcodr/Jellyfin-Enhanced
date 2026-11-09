@@ -11,17 +11,22 @@ const card = id => `<div class="card" data-id="${id}" data-type="Movie"><div cla
 async function setup(t, mode = 'delta') {
   const idle = [], calls = [], timers = new Map();
   const deltaResponse = deferred(), batchResponse = deferred(), storedResponse = deferred();
-  let navigate, changed = false, now = 0, timerId = 0;
+  let navigate, changed = false, now = 0, timerId = 0, retired = false, lookupItems = [];
   const h = createHarness({ html: card(movie) + card(movie) + card(other),
     globals: { requestIdleCallback: fn => idle.push(fn),
       setTimeout: (fn, ms) => { timers.set(++timerId, { fn, ms }); return timerId; },
       clearTimeout: id => timers.delete(id) },
     apiClient: { ajax: async options => {
       calls.push(options.url);
-      if (mode === 'late-batch' && options.url.includes('/tag-data/')) return batchResponse.promise;
+      // The batch fallback: a lookup started before the removal waits on batchResponse
+      // (late-batch); any other answers with what the server has now (lookupItems).
+      if (options.url.includes('/tag-data/')) return mode === 'late-batch' && !retired ? batchResponse.promise : { Items: lookupItems };
       assert.ok(options.url.includes('/tag-cache'), options.url);
       const delta = options.url.includes('since=');
       if (mode === 'late-batch' && delta) return deltaResponse.promise;
+      // Spoiler Guard re-sends every guarded entry with each delta, changed or not.
+      if (mode === 'rider' && delta) return { items: { [other]: { Type: 'Movie', AudioLanguages: ['ja'] } }, removed: [], count: 2,
+        version: 1, timestamp: 200 + now, filterRevision: 'all', filterBase: 'base' };
       const removed = (mode === 'removed' || mode === 'late-store') && changed;
       const hidden = mode === 'access' && changed;
       const items = delta
@@ -58,6 +63,8 @@ async function setup(t, mode = 'delta') {
   await flush();
   const flags = el => [...el.querySelectorAll('.language-flag')].map(flag => flag.dataset.lang);
   return Object.assign(h, { calls, flags, flush, deltaResponse, batchResponse, storedResponse,
+    retire() { retired = true; },
+    setLookup(items) { lookupItems = items; },
     async fetchBatch() {
       for (const [id, timer] of [...timers]) if (timer.ms === 150) { timers.delete(id); timer.fn(); }
       await flush();
@@ -82,13 +89,34 @@ for (const mode of ['delta', 'replacement']) test(`a metadata ${mode} removes ob
   if (mode === 'delta') assert.equal(cards[2].querySelector('.language-flag'), unaffected, 'unrelated cards retain their presentation');
 });
 
-test('a removed item loses its existing language flags without a fallback request', async t => {
+test('a removed item loses its flags when its fallback lookup finds nothing', async t => {
   const h = await setup(t, 'removed');
   const cards = [...h.document.querySelectorAll('.card')];
   await h.refresh();
   assert.equal(h.JE.tagPipeline.peekServerEntry(movie), null);
   assert.deepEqual(cards.map(h.flags), [[], [], ['jp']]);
-  assert.equal(h.calls.length, 2, 'one initial snapshot and one delta; no removed-item lookup');
+  await h.fetchBatch();
+  assert.equal(h.calls.filter(url => url.includes('/tag-data/')).length, 1, 'one fallback lookup for the removed item');
+  assert.deepEqual(cards.map(h.flags), [[], [], ['jp']]);
+});
+
+test('an item removed from the cache keeps the tags its fallback lookup finds', async t => {
+  // An item moved into a library excluded from the tag cache leaves the cache
+  // but stays visible: the batch lookup still answers for it.
+  const h = await setup(t, 'removed');
+  h.setLookup([{ Id: movie, Type: 'Movie', MediaStreams: [{ Type: 'Audio', Language: 'en' }] }]);
+  const cards = [...h.document.querySelectorAll('.card')];
+  await h.refresh();
+  await h.fetchBatch();
+  assert.equal(h.JE.tagPipeline.peekServerEntry(movie), null);
+  assert.deepEqual(cards.map(h.flags), [['gb'], ['gb'], ['jp']]);
+});
+
+test('a delta that re-sends an unchanged entry leaves its card alone', async t => {
+  const h = await setup(t, 'rider');
+  const kept = h.document.querySelectorAll('.card')[2].querySelector('.language-flag');
+  await h.refresh();
+  assert.equal(h.document.querySelectorAll('.card')[2].querySelector('.language-flag'), kept);
 });
 
 test('an empty metadata delta preserves the existing cards', async t => {
@@ -126,11 +154,12 @@ for (const inFlight of [false, true]) test(`a removal delta retires stale batch 
     await h.fetchBatch();
     assert.equal(h.calls.filter(url => url.includes('/tag-data/')).length, 1);
   }
+  h.retire();
   h.deltaResponse.resolve({ items: {}, removed: [movie], version: 1, timestamp: 200, filterRevision: 'all' });
   await h.flush();
   if (!inFlight) {
     await h.fetchBatch();
-    assert.equal(h.calls.filter(url => url.includes('/tag-data/')).length, 0, 'a queued lookup for the removed item is dropped');
+    assert.equal(h.calls.filter(url => url.includes('/tag-data/')).length, 1, 'the queued lookup is dropped; only the fresh one runs');
   }
   h.batchResponse.resolve({ Items: [{ Id: movie, Type: 'Movie', MediaStreams: [
     { Type: 'Audio', Language: 'en' }, { Type: 'Audio', Language: 'fr' }
@@ -149,5 +178,7 @@ test('a pending stored-cache read cannot release a card retired by a removal del
   await h.flush();
   await h.fetchBatch();
   assert.deepEqual([...h.document.querySelectorAll('.card')].map(h.flags), [[], [], ['jp']]);
-  assert.equal(h.calls.length, 2, 'only confirmation and navigation deltas; the removed cards stay retired');
+  // The stale stored copy draws nothing; the removed cards get one fresh lookup instead.
+  assert.deepEqual(h.calls.filter(url => !url.includes('/tag-data/')).length, 2, 'confirmation and navigation deltas');
+  assert.equal(h.calls.filter(url => url.includes('/tag-data/')).length, 1, 'one fallback lookup, which finds nothing');
 });
