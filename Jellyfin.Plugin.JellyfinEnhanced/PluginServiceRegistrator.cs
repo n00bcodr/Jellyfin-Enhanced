@@ -117,6 +117,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddTransient<RefreshAwardTagsTask>();
             serviceCollection.AddTransient<JellyseerrWatchlistSyncTask>();
             serviceCollection.AddTransient<JellyfinToSeerrWatchlistSyncTask>();
+            serviceCollection.AddTransient<WatchlistRemovalSyncTask>();
             serviceCollection.AddTransient<JellyseerrUserImportTask>();
             serviceCollection.AddTransient<ClearTranslationCacheTask>();
 

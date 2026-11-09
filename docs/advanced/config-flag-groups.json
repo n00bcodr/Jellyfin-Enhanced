@@ -396,7 +396,8 @@
     "UseIcons": "Icons & Theme",
     "WatchProgressDefaultMode": "UI Preferences",
     "WatchProgressTimeFormat": "UI Preferences",
-    "WatchlistMemoryRetentionDays": "Watchlist"
+    "WatchlistMemoryRetentionDays": "Watchlist",
+    "WatchlistRemovalSync": "Watchlist"
   },
   "labels": {
     "ActiveStreamsAllUsers": "Show widget to non-admins",
@@ -411,7 +412,7 @@
     "ActivityFeedUseCustomTabs": "Use Custom Tabs",
     "ActivityFeedUseNativeTab": "Add Activity as a native Home tab",
     "ActivityFeedUsePluginPages": "Use Plugin Pages",
-    "AddRequestedMediaToWatchlist": "Add requested media to Watchlist",
+    "AddRequestedMediaToWatchlist": "Requested media goes on the requester's watchlist",
     "AgeRatingTagsEnabled": "Age rating tags for new users",
     "AgeRatingTagsPosition": "Age rating position",
     "AnalyticsEnabled": "Share Anonymous Usage Statistics",
@@ -639,7 +640,7 @@
     "PauseScreenEnabled": "Enable Custom Pause Screen",
     "PeopleTagsEnabled": "People tags for new users",
     "PluginIconsEnabled": "Custom Plugin Menu Icons",
-    "PreventWatchlistReAddition": "Prevent re-adding removed items",
+    "PreventWatchlistReAddition": "Don't re-add items a user removed from Jellyfin",
     "QualityAudioDisplayMode": "Sound display mode",
     "QualityHdrDisplayMode": "HDR display mode",
     "QualityHideSdr": "Hide SDR",
@@ -762,8 +763,8 @@
     "StatusTagsSchedule": "Schedule",
     "StatusTagsSeriesStatus": "Series status",
     "StatusTagsTrending": "Trending",
-    "SyncJellyfinWatchlistToSeerr": "Sync Jellyfin Watchlist \u2192 Seerr",
-    "SyncJellyseerrWatchlist": "Sync Seerr Watchlist \u2192 Jellyfin",
+    "SyncJellyfinWatchlistToSeerr": "Jellyfin \u2192 Seerr: add Jellyfin watchlist items to Seerr",
+    "SyncJellyseerrWatchlist": "Seerr \u2192 Jellyfin: add Seerr watchlist items to Jellyfin",
     "TMDB_API_KEY": "TMDB API Key",
     "TagCacheExcludeLibraries": "Exclude libraries from the tag cache",
     "TagCacheServerMode": "Server-side tag cache",
@@ -786,7 +787,8 @@
     "UseIcons": "Use Icons in UI",
     "WatchProgressDefaultMode": "Watch Progress Default",
     "WatchProgressTimeFormat": "Watch Progress Time Format",
-    "WatchlistMemoryRetentionDays": "Memory retention (days)"
+    "WatchlistMemoryRetentionDays": "Remember removed items for (days)",
+    "WatchlistRemovalSync": "When an item is removed from a watchlist"
   },
   "tabs": {
     "ActiveStreamsAllUsers": "Extras",
@@ -1185,7 +1187,8 @@
     "UseIcons": "Display",
     "WatchProgressDefaultMode": "Display",
     "WatchProgressTimeFormat": "Display",
-    "WatchlistMemoryRetentionDays": "Seerr"
+    "WatchlistMemoryRetentionDays": "Seerr",
+    "WatchlistRemovalSync": "Seerr"
   },
   "tabIcons": {
     "*arr": {
@@ -1671,6 +1674,7 @@
     "VideoCodecTagOrder": 5,
     "WatchProgressDefaultMode": "percentage",
     "WatchProgressTimeFormat": "hours",
-    "WatchlistMemoryRetentionDays": 365
+    "WatchlistMemoryRetentionDays": 365,
+    "WatchlistRemovalSync": "jellyfin"
   }
 }

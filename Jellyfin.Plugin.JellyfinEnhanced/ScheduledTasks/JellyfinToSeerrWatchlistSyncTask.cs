@@ -182,6 +182,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                         seerrWatchlist.Select(i => $"{i.MediaType}:{i.TmdbId}"),
                         StringComparer.OrdinalIgnoreCase);
 
+                    // When Seerr removals are followed, an item that was on both lists and is now
+                    // missing from Seerr was removed there on purpose: don't push it back.
+                    HashSet<string>? removedInSeerr = null;
+                    if (Services.WatchlistSyncPlanner.IsActive(config)
+                        && Services.WatchlistSyncPlanner.HonoursSeerrRemovals(Services.WatchlistSyncPlanner.ParseMode(config.WatchlistRemovalSync)))
+                    {
+                        removedInSeerr = new HashSet<string>(
+                            _userConfigurationManager.GetWatchlistSyncState(jellyfinUser.Id).Synced
+                                .Where(k => !seerrWatchlistKeys.Contains(k)),
+                            StringComparer.OrdinalIgnoreCase);
+                    }
+
                     var itemsAdded = 0;
                     var itemsAlreadyPresent = 0;
                     var itemsSkipped = 0;
@@ -202,6 +214,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                         if (seerrWatchlistKeys.Contains(key))
                         {
                             itemsAlreadyPresent++;
+                            continue;
+                        }
+
+                        if (removedInSeerr != null && removedInSeerr.Contains(key))
+                        {
+                            itemsSkipped++;
                             continue;
                         }
 
