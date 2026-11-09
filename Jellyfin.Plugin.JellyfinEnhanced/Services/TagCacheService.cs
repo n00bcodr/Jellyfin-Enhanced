@@ -231,9 +231,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // 1 when _collectionMembers changed since the last save: a flush whose collections
         // rebuilt to the same languages still has to save what they are built from.
         private int _collectionMembersDirty;
-        // Language fingerprints of collection members without an entry of their own (in an
-        // excluded library): their re-saves are frequent, and only a real change counts.
-        private readonly ConcurrentDictionary<string, string> _entrylessMemberLanguages = new(StringComparer.Ordinal);
+        // Per collection, the language fingerprints of the members without an entry of their own
+        // (in an excluded library) it was built from: their re-saves are frequent, and only a
+        // change from what a collection was built with counts. Kept per collection, so a member
+        // shared by several collections is compared with what each of them read.
+        private readonly ConcurrentDictionary<string, IReadOnlyDictionary<Guid, string>> _collectionEntrylessLanguages = new(StringComparer.Ordinal);
+        // The reverse of _collectionMembers: member id → keys of the collections built from it.
+        // Written only through SetCollectionMembers/ForgetCollection, under _collectionIndexLock.
+        private readonly ConcurrentDictionary<Guid, ConcurrentDictionary<string, byte>> _memberCollections = new();
+        private readonly object _collectionIndexLock = new();
         // Collections not built since a snapshot without CollectionMembers was loaded. Until
         // they are, the snapshot is saved without the index, so a restart repeats the repair.
         private readonly ConcurrentDictionary<string, byte> _collectionsAwaitingBuild = new(StringComparer.Ordinal);
@@ -1596,7 +1602,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (IsCollectionMemberType(removed?.Type)) _collectionMemberChanges[key] = true;
             else if (removed?.Type == nameof(BaseItemKind.BoxSet))
             {
-                _collectionMembers.TryRemove(key, out _);
+                ForgetCollection(key);
                 _collectionsAwaitingBuild.TryRemove(key, out _);
             }
             return true;
@@ -1660,13 +1666,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             if (members.Count == 0) return null;
             var found = new List<Guid>();
+            foreach (var member in members)
+            {
+                if (!_memberCollections.TryGetValue(member, out var collections)) continue;
+                foreach (var collectionKey in collections.Keys)
+                {
+                    if (_cache.TryGetValue(collectionKey, out var entry) && entry.Type == nameof(BaseItemKind.BoxSet)
+                        && Guid.TryParse(collectionKey, out var collectionId) && !found.Contains(collectionId))
+                    {
+                        found.Add(collectionId);
+                    }
+                }
+            }
+
             foreach (var collectionId in CachedCollectionIds())
             {
-                if (_collectionMembers.TryGetValue(collectionId.ToString("N"), out var builtFrom))
-                {
-                    if (Array.Exists(builtFrom, members.Contains)) found.Add(collectionId);
-                    continue;
-                }
+                if (_collectionMembers.ContainsKey(collectionId.ToString("N"))) continue;
 
                 // Not built since its members were recorded: check its links.
                 try
@@ -1949,14 +1964,57 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         /// <summary>Whether a cached collection's languages were built from <paramref name="id"/>.</summary>
-        private bool IsCollectionMember(Guid id)
-        {
-            foreach (var members in _collectionMembers.Values)
-            {
-                if (Array.IndexOf(members, id) >= 0) return true;
-            }
+        private bool IsCollectionMember(Guid id) =>
+            _memberCollections.TryGetValue(id, out var collections) && !collections.IsEmpty;
 
-            return false;
+        /// <summary>
+        /// Set what a collection was built from, keeping <see cref="_memberCollections"/> in step.
+        /// Returns whether the members differ from those recorded before.
+        /// </summary>
+        private bool SetCollectionMembers(string collectionKey, Guid[] members)
+        {
+            lock (_collectionIndexLock)
+            {
+                var before = _collectionMembers.TryGetValue(collectionKey, out var previous) ? previous : null;
+                if (before != null && before.SequenceEqual(members)) return false;
+                foreach (var member in before ?? Array.Empty<Guid>())
+                {
+                    if (Array.IndexOf(members, member) < 0 && _memberCollections.TryGetValue(member, out var set))
+                    {
+                        set.TryRemove(collectionKey, out _);
+                        if (set.IsEmpty) _memberCollections.TryRemove(member, out _);
+                    }
+                }
+
+                foreach (var member in members)
+                {
+                    _memberCollections.GetOrAdd(member, _ => new ConcurrentDictionary<string, byte>(StringComparer.Ordinal))[collectionKey] = 0;
+                }
+
+                _collectionMembers[collectionKey] = members;
+                return true;
+            }
+        }
+
+        /// <summary>Drop a collection from the member index (it was removed from the cache).</summary>
+        private void ForgetCollection(string collectionKey)
+        {
+            lock (_collectionIndexLock)
+            {
+                if (_collectionMembers.TryRemove(collectionKey, out var members))
+                {
+                    foreach (var member in members)
+                    {
+                        if (_memberCollections.TryGetValue(member, out var set))
+                        {
+                            set.TryRemove(collectionKey, out _);
+                            if (set.IsEmpty) _memberCollections.TryRemove(member, out _);
+                        }
+                    }
+                }
+
+                _collectionEntrylessLanguages.TryRemove(collectionKey, out _);
+            }
         }
 
         /// <summary>
@@ -2845,15 +2903,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                                 && e.PremiereDate > (container.LatestEpisodeAired ?? 0))
                             .Select(e => e.PremiereDate).Min();
                     }
-                    _collectionMembers.Clear();
+                    lock (_collectionIndexLock)
+                    {
+                        _collectionMembers.Clear();
+                        _memberCollections.Clear();
+                        _collectionEntrylessLanguages.Clear();
+                    }
+
                     _collectionsAwaitingBuild.Clear();
                     if (data.CollectionMembers != null)
                     {
                         foreach (var (key, ids) in data.CollectionMembers)
                         {
-                            _collectionMembers[key] = (ids ?? Array.Empty<string>())
+                            SetCollectionMembers(key, (ids ?? Array.Empty<string>())
                                 .Select(id => Guid.TryParse(id, out var member) ? member : Guid.Empty)
-                                .Where(member => member != Guid.Empty).ToArray();
+                                .Where(member => member != Guid.Empty).ToArray());
                         }
                     }
                     else
@@ -4318,6 +4382,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var subtitles = new HashSet<string>();
                 var sdh = new HashSet<string>();
                 var members = new List<Guid>();
+                var entryless = new Dictionary<Guid, string>();
                 foreach (var member in folder.GetLinkedChildren())
                 {
                     if (member.GetBaseItemKind() is not (BaseItemKind.Movie or BaseItemKind.Series)) continue;
@@ -4326,14 +4391,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     languages.UnionWith(memberAudio);
                     subtitles.UnionWith(memberSubtitles);
                     sdh.UnionWith(memberSdh);
-                    if (!hasEntry) _entrylessMemberLanguages[member.Id.ToString("N").ToLowerInvariant()] = LanguageFingerprint(memberAudio, memberSubtitles, memberSdh);
+                    if (!hasEntry) entryless[member.Id] = LanguageFingerprint(memberAudio, memberSubtitles, memberSdh);
                 }
 
-                var builtFrom = members.ToArray();
                 var collectionKey = collection.Id.ToString("N").ToLowerInvariant();
-                if (!_collectionMembers.TryGetValue(collectionKey, out var before) || !before.SequenceEqual(builtFrom))
+                _collectionEntrylessLanguages[collectionKey] = entryless;
+                if (SetCollectionMembers(collectionKey, members.ToArray()))
                 {
-                    _collectionMembers[collectionKey] = builtFrom;
                     Interlocked.Exchange(ref _collectionMembersDirty, 1);
                 }
 
@@ -4402,18 +4466,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         /// <summary>
         /// Record a collection member that has no entry of its own when its languages differ
-        /// from those its collections were last built from (or were never seen). Only for an
-        /// item some cached collection was built from; reads its streams.
+        /// from those any of its collections was last built with (or that collection did not
+        /// read it as entry-less). Only for an item some cached collection was built from;
+        /// reads its streams.
         /// </summary>
         private void RecordEntrylessMember(BaseItem item)
         {
-            if (!IsCollectionMember(item.Id)) return;
-            var key = item.Id.ToString("N").ToLowerInvariant();
+            if (!_memberCollections.TryGetValue(item.Id, out var collections) || collections.IsEmpty) return;
             var (audio, subtitles, sdh, _) = MemberLanguages(item);
             var fingerprint = LanguageFingerprint(audio, subtitles, sdh);
-            if (_entrylessMemberLanguages.TryGetValue(key, out var before) && before == fingerprint) return;
-            _entrylessMemberLanguages[key] = fingerprint;
-            _collectionMemberChanges.TryAdd(key, false);
+            foreach (var collectionKey in collections.Keys)
+            {
+                if (!_collectionEntrylessLanguages.TryGetValue(collectionKey, out var builtWith)
+                    || !builtWith.TryGetValue(item.Id, out var before) || before != fingerprint)
+                {
+                    _collectionMemberChanges.TryAdd(item.Id.ToString("N").ToLowerInvariant(), false);
+                    return;
+                }
+            }
         }
 
         private BaseItem? GetParentSeries(BaseItem item)

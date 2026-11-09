@@ -420,6 +420,101 @@ public class TagCacheCollectionLanguagesTests
         }
     }
 
+    /// <summary>The excluded-member fixture with a second collection sharing that member.</summary>
+    private static (Library Library, Movie Hidden, BoxSet Box, BoxSet Other, Folder Excluded) WithSharedExcludedMember()
+    {
+        var (library, _, hidden, box, excluded) = WithExcludedMember();
+        var otherMovie = new Movie { Id = Guid.NewGuid(), Name = "Other", Sources = Tracks("jpn") };
+        var other = new BoxSet { Id = Guid.NewGuid(), Name = "Box 2", LinkedChildren = [new LinkedChild { ItemId = otherMovie.Id }, new LinkedChild { ItemId = hidden.Id }] };
+        library.Items.AddRange(new BaseItem[] { otherMovie, other });
+        return (library, hidden, box, other, excluded);
+    }
+
+    [Fact]
+    public void AnExcludedMemberSharedByTwoCollectionsReachesBothWhenOneRebuildsFirst()
+    {
+        var (library, hidden, box, other, excluded) = WithSharedExcludedMember();
+        WithCache(library, cache =>
+        {
+            Exclude(cache, excluded, hidden);
+            Assert.Equal(new[] { "eng", "spa" }, Audio(cache, box));
+            Assert.Equal(new[] { "jpn", "spa" }, Audio(cache, other));
+
+            // The member's file changes, and one of its collections is rebuilt (renamed,
+            // edited, another member changed) before the member's own event is applied.
+            hidden.Sources = Tracks("por");
+            cache.EnqueueUpdate(box.Id);
+            Flush(cache);
+            Assert.Equal(new[] { "eng", "por" }, Audio(cache, box));
+            cache.EnqueueUpdate(hidden.Id);
+            FlushTwice(cache);
+            Assert.Equal(new[] { "jpn", "por" }, Audio(cache, other));
+        });
+    }
+
+    [Fact]
+    public void AnExcludedMemberSharedByTwoCollectionsReachesBothInOneBatch()
+    {
+        // The batch order follows a hash, so repeat with fresh ids.
+        for (var attempt = 0; attempt < 16; attempt++)
+        {
+            var (library, hidden, box, other, excluded) = WithSharedExcludedMember();
+            WithCache(library, cache =>
+            {
+                Exclude(cache, excluded, hidden);
+                hidden.Sources = Tracks("por");
+                cache.EnqueueUpdate(box.Id);
+                cache.EnqueueUpdate(hidden.Id);
+                FlushTwice(cache);
+                Assert.Equal(new[] { "jpn", "por" }, Audio(cache, other));
+            });
+        }
+    }
+
+    [Fact]
+    public void AManualRebuildReadsTheSeriesItBuilds()
+    {
+        var library = new Library();
+        var series = new Series { Id = Guid.NewGuid(), Name = "Show" };
+        var season = new Season { Id = Guid.NewGuid(), Name = "Season 1", ParentId = series.Id, SeriesId = series.Id, IndexNumber = 1 };
+        var episode = new Episode { Id = Guid.NewGuid(), Name = "Pilot", ParentId = season.Id, SeasonId = season.Id, SeriesId = series.Id, IndexNumber = 1, ParentIndexNumber = 1, Sources = Tracks("eng", "spa") };
+        var box = new BoxSet { Id = Guid.NewGuid(), Name = "Box", LinkedChildren = [new LinkedChild { ItemId = series.Id }] };
+        library.Items.AddRange(new BaseItem[] { series, season, episode, box });
+        WithCache(library, cache =>
+        {
+            // The episode changed and no event arrived; an admin rebuilds the cache.
+            episode.Sources = Tracks("eng");
+            cache.BuildFullCache(null, CancellationToken.None);
+            Assert.Equal(new[] { "eng" }, Audio(cache, box));
+        });
+    }
+
+    [Fact]
+    public void TurningTheCacheOffKeepsAQueuedCollectionRebuild()
+    {
+        var library = new Library();
+        var movie = new Movie { Id = Guid.NewGuid(), Name = "Movie", Sources = Tracks("eng", "fre") };
+        var box = new BoxSet { Id = Guid.NewGuid(), Name = "Box", LinkedChildren = [new LinkedChild { ItemId = movie.Id }] };
+        library.Items.AddRange(new BaseItem[] { movie, box });
+        WithCache(library, cache =>
+        {
+            // The movie's change is applied and its collection queued, then the cache is
+            // turned off before the next flush and on again later.
+            movie.Sources = Tracks("eng");
+            cache.EnqueueUpdate(movie.Id);
+            Flush(cache);
+            Assert.Equal(new[] { "eng", "fre" }, Audio(cache, box));
+            var config = Jellyfin.Plugin.JellyfinEnhanced.JellyfinEnhanced.Instance!.Configuration;
+            config.TagCacheServerMode = false;
+            cache.OnServerModeDisabled();
+            config.TagCacheServerMode = true;
+            library.ReportSavedItems = false;
+            cache.OnServerModeEnabled();
+            Flush(cache);
+            Assert.Equal(new[] { "eng" }, Audio(cache, box));
+        });
+    }
+
     [Fact]
     public void AMemberLinkedByPathReachesItsCollection()
     {
