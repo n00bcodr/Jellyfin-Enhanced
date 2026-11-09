@@ -87,6 +87,37 @@ public class ApiSeerrTests
     }
 
     [Fact]
+    public async Task AddingToTheSeerrWatchlistSendsOnlyTheTwoFieldsAsTheCallingUser()
+    {
+        using var f = new SeerrFixture();
+        f.Plugin.Plugin.Configuration.AddRequestedMediaToWatchlist = true;
+        f.Controller.Request.Headers["X-Api-User"] = "1"; // a client-supplied identity must be ignored
+        var result = await f.Controller.AddJellyseerrWatchlist(Body("{\"tmdbId\":603,\"mediaType\":\"movie\",\"title\":\"ignored\",\"extra\":true}"));
+        Assert.IsType<ContentResult>(result);
+        var call = Assert.Single(f.Calls, c => c.Method == "POST");
+        Assert.Equal("/api/v1/watchlist", call.Path);
+        Assert.Equal("27", call.User);
+        Assert.Equal("{\"tmdbId\":603,\"mediaType\":\"movie\"}", call.Body);
+    }
+
+    [Fact]
+    public async Task AddingToTheSeerrWatchlistFailsBeforeCallingSeerrWhenOffOrInvalid()
+    {
+        using var f = new SeerrFixture();
+        f.Plugin.Plugin.Configuration.AddRequestedMediaToWatchlist = false;
+        var off = Assert.IsType<BadRequestObjectResult>(await f.Controller.AddJellyseerrWatchlist(Body("{\"tmdbId\":603,\"mediaType\":\"movie\"}")));
+        Assert.Contains("watchlist_disabled", JsonSerializer.Serialize(off.Value));
+
+        f.Plugin.Plugin.Configuration.AddRequestedMediaToWatchlist = true;
+        foreach (var body in new[] { "{}", "[]", "{\"tmdbId\":0,\"mediaType\":\"movie\"}", "{\"tmdbId\":\"603\",\"mediaType\":\"movie\"}", "{\"tmdbId\":603,\"mediaType\":\"person\"}", "{\"tmdbId\":603}" })
+        {
+            var bad = Assert.IsType<BadRequestObjectResult>(await f.Controller.AddJellyseerrWatchlist(Body(body)));
+            Assert.Contains("invalid_watchlist_item", JsonSerializer.Serialize(bad.Value));
+        }
+        Assert.Empty(f.Calls);
+    }
+
+    [Fact]
     public async Task MissingRequestPermissionFailsBeforePostingAndMissingIdentityFailsBeforeLookup()
     {
         using var f = new SeerrFixture { Permissions = JellyseerrPermission.NONE };

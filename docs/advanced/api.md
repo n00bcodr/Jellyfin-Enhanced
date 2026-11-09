@@ -4,7 +4,7 @@ Use Jellyfin Enhanced (JE)'s API to manage bookmarks, reviews, and personal sett
 
 To use these APIs from a custom Jellyfin client, you need an HTTP client and a Jellyfin credential. You do not need the injected JE scripts.
 
-This reference covers the 198 method/path entries in plugin version **12.14.0.0**. Use the endpoint tables to check access requirements, inputs, responses, and limits.
+This reference covers the 199 method/path entries in plugin version **12.14.0.0**. Use the endpoint tables to check access requirements, inputs, responses, and limits.
 
 Paths in endpoint tables are relative to `/JellyfinEnhanced/`. Braces mark path parameters; replace them before making a request. The catch-all routes serve only the resources described below.
 
@@ -836,6 +836,7 @@ All routes in this table require **Seerr-linked** access, except TV-by-studio's 
 | GET | `jellyseerr/overrideRule` | Request/discovery permission → upstream override-rule list. |
 | POST | `jellyseerr/request/tv/{tmdbId}/seasons` | Positive TMDB route ID, request body → upstream request record. |
 | GET | `jellyseerr/watchlist` | `page=1`, minimum 1 → caller's upstream watchlist page; uncached. |
+| POST | `jellyseerr/watchlist` | `{tmdbId, mediaType}` with a positive `tmdbId` and `mediaType` of `movie` or `tv` (`400` otherwise, or when Seerr or **Requested media goes on the requester's watchlist** is off); only those two fields are forwarded, as the caller → upstream watchlist record (`409` when already on it). |
 | GET | `jellyseerr/issue` | Optional positive Seerr `mediaId`; `take=20` clamped `1..200`, `skip=0` minimum 0, `filter=all`, `sort=added` → upstream issue page. |
 | GET | `jellyseerr/issue/{id}` | Positive Seerr issue ID (`400` otherwise) → upstream issue detail. |
 | POST | `jellyseerr/issue` | Upstream issue JSON → upstream issue record. |
@@ -1971,7 +1972,7 @@ These are resource URLs, separate from Jellyfin web hash navigation or placement
 
 ## Full Endpoint Index
 
-The endpoint tables above enumerate all 198 controller method/path entries, including the three catch-all templates. Each group documents effective access, inputs, response shape, and limits; shared proxy rows intentionally retain the configured upstream service's JSON contract.
+The endpoint tables above enumerate all 199 controller method/path entries, including the three catch-all templates. Each group documents effective access, inputs, response shape, and limits; shared proxy rows intentionally retain the configured upstream service's JSON contract.
 
 For implementation details, [JellyfinEnhancedController.cs](https://github.com/n00bcodr/Jellyfin-Enhanced/blob/main/Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs) implements all indexed routes except `catchup/*`, which is in [CatchUpController.cs](https://github.com/n00bcodr/Jellyfin-Enhanced/blob/main/Jellyfin.Plugin.JellyfinEnhanced/Controllers/CatchUpController.cs). These upstream source links may advance beyond this versioned reference.
 

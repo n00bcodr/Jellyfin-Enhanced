@@ -669,7 +669,20 @@ Bring Jellyfin movie and series watchlist entries into Seerr.
 
 ??? info "How it works"
 
-    It uses the first configured URL, linked accounts, and TMDB-identified movie/series watchlist items. It skips entries already on Seerr's watchlist and excludes blocked users. Removals are not mirrored.
+    It uses the first configured URL, linked accounts, and TMDB-identified movie/series watchlist items. It skips entries already on Seerr's watchlist and excludes blocked users. It never removes anything; see Watchlist Removal Sync below.
+
+
+#### Watchlist Removal Sync
+
+Copy removals between the two watchlists. Adding and removing are separate choices.
+
+**How to use:** Pick an option under **Removing items**: **Jellyfin decides** (default) removes an item from Seerr when it leaves the Jellyfin watchlist; **Seerr decides** does the opposite; **Both stay in sync** copies a removal in either direction; **Never** copies none. **Sync Watchlist Removals between Jellyfin and Seerr** runs daily at 04:00 by default, after the two add syncs.
+
+Watching an item counts as a removal, because KefinTweaks drops watched items from the Jellyfin watchlist. Turn on at least one adding option too; with none on, the removal sync does nothing.
+
+??? info "How it works"
+
+    After each pass the plugin remembers, per user, the items that were on both watchlists. An item from that list that is now missing from one side was removed there; an item on only one side that was never on both is a pending addition and is never deleted. The first run only records what is on both lists. If Seerr or a user's list cannot be read, that user is skipped. Items missing from the Jellyfin library are not treated as removals. The add syncs skip an item that was removed on the side whose removals are followed, so they do not put it back.
 
 #### Retention and access limits
 

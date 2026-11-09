@@ -857,11 +857,12 @@
     };
 
     /**
-     * Adds requested media to the pending watchlist.
-     * The item will be automatically added to the watchlist when it appears in the library.
-     * @param {number} tmdbId - The TMDB ID of the media.
+     * Puts a just-requested title on the user's Seerr watchlist, when "Requested media goes on the
+     * requester's watchlist" is on. The Jellyfin watchlist is filled later by WatchlistMonitor, when
+     * the title reaches the library.
+     * @param {number|string} tmdbId - The TMDB ID of the media.
      * @param {string} mediaType - 'movie' or 'tv'.
-     * @returns {Promise<boolean>} - True if successfully queued, false otherwise.
+     * @returns {Promise<boolean>} - True if it is on the Seerr watchlist (including already there), false otherwise.
      */
     api.addToWatchlist = async function(tmdbId, mediaType) {
         try {
@@ -877,11 +878,19 @@
                 return false;
             }
 
-            // WatchlistMonitor service automatically handles adding requested items to watchlist
-            console.debug(`${logPrefix} Request tracked - WatchlistMonitor will automatically add TMDB ${tmdbId} (${mediaType}) to watchlist when it appears in library`);
+            const id = parseInt(tmdbId, 10);
+            if (!(id > 0) || (mediaType !== 'movie' && mediaType !== 'tv')) return false;
+
+            try {
+                await post('/watchlist', { tmdbId: id, mediaType });
+            } catch (error) {
+                // 409: Seerr already has it on the user's watchlist.
+                if (error && error.status === 409) return true;
+                throw error;
+            }
             return true;
         } catch (error) {
-            console.error(`${logPrefix} Error queuing item for watchlist:`, error);
+            console.error(`${logPrefix} Error adding the request to the Seerr watchlist:`, error);
             return false;
         }
     };

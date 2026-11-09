@@ -223,6 +223,10 @@
       "category": "Helpers"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/Jellyseerr/SeerrWatchlistReader.cs",
+      "category": "Helpers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/MatroskaLanguageCache.cs",
       "category": "Helpers"
     },
@@ -436,6 +440,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/SpoilerApplyExistingTitlesTask.cs",
+      "category": "ScheduledTasks"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/WatchlistRemovalSyncTask.cs",
       "category": "ScheduledTasks"
     },
     {
@@ -884,6 +892,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/WatchlistMonitor.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/WatchlistSyncPlanner.cs",
       "category": "Services"
     },
     {
@@ -2453,6 +2465,15 @@
       "verb": "GET",
       "path": "/JellyfinEnhanced/jellyseerr/watchlist",
       "method": "GetJellyseerrWatchlist",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/jellyseerr/watchlist",
+      "method": "AddJellyseerrWatchlist",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
       "following_attributes": [
         "Authorize"
@@ -6180,6 +6201,14 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "WatchlistRemovalSync",
+      "type": "string",
+      "initializer": null,
+      "constructor_assignment": "\"jellyfin\"",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "WatchlistMemoryRetentionDays",
       "type": "int",
       "initializer": null,
@@ -9299,6 +9328,22 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
+      "class": "WatchlistSyncState",
+      "name": "Synced",
+      "type": "List<string>",
+      "initializer": "new List<string>()",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "WatchlistSyncState",
+      "name": "UpdatedAt",
+      "type": "System.DateTime?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
       "class": "HiddenContentItem",
       "name": "ItemId",
       "type": "string",
@@ -9670,6 +9715,10 @@
     },
     {
       "literal": "reviews.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfigurationManager.cs"
+    },
+    {
+      "literal": "watchlist-sync-state.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfigurationManager.cs"
     },
     {
@@ -10077,6 +10126,11 @@
       "key": "JellyfinEnhancedSpoilerApplyExistingTitles"
     },
     {
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/WatchlistRemovalSyncTask.cs",
+      "class": "WatchlistRemovalSyncTask",
+      "key": "JellyfinEnhancedWatchlistRemovalSync"
+    },
+    {
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/StartupService.cs",
       "class": "StartupService",
       "key": "JellyfinEnhancedStartup"
@@ -10185,11 +10239,11 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 468,
-    "routes": 198,
-    "configuration_properties": 741,
-    "storage_references": 86,
-    "scheduled_tasks": 15,
+    "files": 471,
+    "routes": 199,
+    "configuration_properties": 744,
+    "storage_references": 87,
+    "scheduled_tasks": 16,
     "locales": 33
   }
 }
