@@ -118,7 +118,7 @@
     }
     let activeBatch = [];               // entries whose request is currently in flight
     let requestQueue = [];               // { el, renderTarget, itemId, itemType, cardId, awaiting, reuse }
-    const cardReuse = new WeakMap();     // card image → times its card was reused for another item (see releaseReusedCards)
+    const cardReuse = new WeakMap();     // card image → invalidations from reuse or updated metadata
     // The server's effective data-affecting strip policy for /tag-data answers
     // ("none": nothing; SpoilerTagDataStripper.TagStripRevision): the page-load
     // bootstrap's value, then that of the latest batch answer (batches run one
@@ -993,7 +993,7 @@
      * the logos it looks up and republishes once the first user turns the
      * Logos group on. Bounded by SERVER_CACHE_WAIT_DELAYS; a later call or
      * stopWaitingForServerCache() ends an earlier wait, and so does a user
-     * switch. Nothing is redrawn here: the caller decides.
+     * switch. Accepted deltas refresh the affected cards already on the page.
      * @param {(entries: Iterable<object>) => boolean} ready - Checked after each delta.
      * @param {{delays?: number[]}} [options] - Milliseconds before each delta (tests).
      * @returns {Promise<boolean>} True once `ready` holds; false when the server
@@ -1154,7 +1154,9 @@
             deltaIds.delete(id);
             storeMisses.add(id);
         }
+        const redrawn = [];
         for (const [id, entry] of newEntries) {
+            if (entryChanged(serverCache.get(id), entry)) redrawn.push(id);
             forgetItemFacts(id);
             serverCache.set(id, entry);
             storeMisses.delete(id);
@@ -1175,6 +1177,7 @@
                     try { renderer.onServerCacheRefresh(changedIds); } catch {}
                 }
             }
+            refreshVisibleCards(redrawn.concat(removed, dropped), dropped);
         }
         console.log(`${logPrefix} Access changed: +${newEntries.length} items, -${removed.length + dropped.length} no longer visible`);
         return true;
@@ -1243,6 +1246,7 @@
                             try { renderer.onServerCacheRefresh(null, { replaced: true }); } catch {}
                         }
                     }
+                    refreshVisibleCards();
                 } else if (revision !== serverFilterRevision) {
                     // Cards already show entries stripped the old way: the full
                     // invalidation also removes their overlays. Not awaited — it
@@ -1252,15 +1256,13 @@
                 } else {
                     console.log(`${logPrefix} ${why}, reloading full cache`);
                     await downloadFullCache({ fresh: true });
-                    // Clear all derived caches on full rebuild. The cards on the
-                    // page keep what they show (nothing is re-rendered here), so
-                    // a renderer that must not go stale is told the cache under
-                    // them was replaced and can redraw itself.
+                    // Clear derived caches and redraw cards from the replacement.
                     for (const [, renderer] of renderers) {
                         if (renderer.onServerCacheRefresh) {
                             try { renderer.onServerCacheRefresh(null, { replaced: true }); } catch {}
                         }
                     }
+                    refreshVisibleCards();
                 }
                 return;
             }
@@ -1269,7 +1271,9 @@
             // Items removed after the cursor (the server leaves out any stored again since).
             const removed = Array.isArray(resp.removed) ? resp.removed.filter(id => typeof id === 'string' && !(id in resp.items)) : [];
             if (newEntries.length > 0 || removed.length > 0) {
+                const redrawn = [];
                 for (const [id, entry] of newEntries) {
+                    if (entryChanged(serverCache.get(id), entry)) redrawn.push(id);
                     forgetItemFacts(id);
                     serverCache.set(id, entry);
                     storeMisses.delete(id);
@@ -1291,6 +1295,7 @@
                         try { renderer.onServerCacheRefresh(changedIds); } catch {}
                     }
                 }
+                refreshVisibleCards(redrawn.concat(removed));
                 console.log(`${logPrefix} Server cache updated: +${newEntries.length} items, -${removed.length} removed`);
             }
             settled = true;
@@ -1774,7 +1779,8 @@
                     // Superseded while waiting: release the cards and scan again.
                     // The newer scan took its snapshot while these were still
                     // marked processed, so it won't pick them up by itself.
-                    for (const card of chunk) processedCards.delete(card.el);
+                    // Cards since invalidated by reuse or metadata have a new owner.
+                    for (const card of chunk) if (stillShows(card)) processedCards.delete(card.el);
                     scheduleScan();
                     return;
                 }
@@ -1812,8 +1818,8 @@
     }
 
     /**
-     * Whether a scanned or queued card still shows the item it was scanned
-     * for (it has not been reused for another item since).
+     * Whether a scanned or queued card still belongs to the item and metadata
+     * it was scanned for (neither reuse nor a cache refresh invalidated it).
      * @param {{el: HTMLElement, reuse: number}} card
      * @returns {boolean}
      */
@@ -1890,6 +1896,48 @@
     }
 
     /**
+     * Whether a delta entry differs from the one memory holds. For a user under
+     * Spoiler Guard every guarded entry rides along with each delta, mostly
+     * unchanged; their cards must not be torn down and redrawn every time.
+     * An entry memory does not hold (a restored copy not yet read) counts as changed.
+     * @param {object|undefined} held - The entry in memory before the delta.
+     * @param {object} entry - The entry the delta brought.
+     * @returns {boolean}
+     */
+    function entryChanged(held, entry) {
+        if (!held) return true;
+        try { return JSON.stringify(held) !== JSON.stringify(entry); } catch { return true; }
+    }
+
+    /**
+     * Metadata updates invalidate both cached facts and the cards already drawn
+     * from them. Releasing only affected cards keeps unrelated overlays intact;
+     * advancing their reuse stamp also rejects an older batch still in flight.
+     * A card whose item left the cache is released like an updated one: the
+     * batch lookup, which enforces access, draws whatever the server still has
+     * for it (an item in a library excluded from the tag cache keeps its tags).
+     * @param {string[]|null} [updatedIds] - null means the server cache was replaced.
+     * @param {string[]} [hiddenIds] - Items the user can no longer see: cleared, never looked up.
+     */
+    function refreshVisibleCards(updatedIds = null, hiddenIds = []) {
+        const changed = updatedIds ? new Set(updatedIds) : null;
+        const hidden = new Set(hiddenIds);
+        let released = false;
+        for (const el of document.querySelectorAll(CARD_IMAGE_SELECTOR)) {
+            const itemId = getItemId(el);
+            if (!itemId || (changed && !changed.has(itemId))) continue;
+            cardReuse.set(el, (cardReuse.get(el) || 0) + 1);
+            JE.core.tagLayout?.clearCard(el.closest('.cardScalable') || el);
+            if (hidden.has(itemId)) processedCards.add(el);
+            else {
+                processedCards.delete(el);
+                released = true;
+            }
+        }
+        if (released) scheduleScan();
+    }
+
+    /**
      * Extract the Jellyfin item ID from a card element.
      * @param {HTMLElement} el - Card image container element.
      * @returns {string|null} The item ID or null if not found.
@@ -1952,11 +2000,11 @@
             while (requestQueue.length > 0) {
                 if (myGeneration !== batchGeneration) break; // navigation happened
                 const batch = requestQueue.splice(0, SERVER_BATCH_LIMIT)
-                    // Drop cards removed from the DOM since they were queued (e.g. a
+                    // Drop cards invalidated or removed from the DOM since they were queued (e.g. a
                     // page like search re-renders its whole result set on every
                     // keystroke, on the same generation). Skipping them here avoids
                     // fetching and rendering tag data nobody will ever see.
-                    .filter((entry) => entry.el.isConnected);
+                    .filter((entry) => entry.el.isConnected && stillShows(entry));
                 if (batch.length === 0) continue;
                 activeBatch = batch;
                 // The transport can finish in the background, but a retired
