@@ -645,6 +645,54 @@ public class TagCacheCollectionLanguagesTests
     }
 
     [Fact]
+    public void ACollectionDeletedDuringTheUpgradeRepairDoesNotHoldBackTheIndex()
+    {
+        using var f = new ApiPluginFixture();
+        f.Plugin.Configuration.TagCacheServerMode = true;
+        var library = new Library();
+        var movie = new Movie { Id = Guid.NewGuid(), Name = "Movie", Sources = Tracks("eng") };
+        var kept = new BoxSet { Id = Guid.NewGuid(), Name = "Kept", LinkedChildren = [new LinkedChild { ItemId = movie.Id }] };
+        var gone = new BoxSet { Id = Guid.NewGuid(), Name = "Gone", LinkedChildren = [new LinkedChild { ItemId = movie.Id }] };
+        library.Items.AddRange(new BaseItem[] { movie, kept, gone });
+        var previous = BaseItem.LibraryManager;
+        var previousLogger = BaseItem.Logger;
+        BaseItem.LibraryManager = library.Mock.Object;
+        BaseItem.Logger = NullLogger<BaseItem>.Instance;
+        try
+        {
+            TagCacheService Create() => new(library.Mock.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger, new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger));
+            string file;
+            using (var before = Create())
+            {
+                before.BuildFullCache(null, CancellationToken.None);
+                before.SaveToDisk();
+                file = (string)typeof(TagCacheService).GetProperty("CacheFilePath", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(before)!;
+            }
+
+            var json = JsonNode.Parse(File.ReadAllText(file))!.AsObject();
+            Assert.True(json.Remove("CollectionMembers"));
+            File.WriteAllText(file, json.ToJsonString());
+
+            using var cache = Create();
+            cache.LoadFromDisk();
+            // One collection is deleted, and an admin rebuilds before the one-time repair runs.
+            library.Items.Remove(gone);
+            cache.BuildFullCache(null, CancellationToken.None);
+            cache.RemoveEntry(gone.Id);
+            FlushTwice(cache);
+            cache.SaveToDisk();
+            var saved = JsonNode.Parse(File.ReadAllText(file))!.AsObject();
+            Assert.True(saved.ContainsKey("CollectionMembers"));
+            Assert.NotNull(saved["CollectionMembers"]![kept.Id.ToString("N")]);
+        }
+        finally
+        {
+            BaseItem.LibraryManager = previous;
+            BaseItem.Logger = previousLogger;
+        }
+    }
+
+    [Fact]
     public void ASnapshotFromBeforeCollectionsFollowedTheirMembersRebuildsThemOnLoad()
     {
         using var f = new ApiPluginFixture();

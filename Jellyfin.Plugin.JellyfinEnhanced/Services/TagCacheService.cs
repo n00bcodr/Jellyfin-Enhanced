@@ -897,10 +897,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             Interlocked.Exchange(ref _lastReconciledUtcTicks, reconciliationStartedUtc.Ticks);
-            // Collections this build no longer has (deleted while nothing listened).
+            // Collections this build no longer has (deleted while nothing listened), in the
+            // member index and in the one-time repair still waiting for them. Collections the
+            // build kept stay waiting until one of their builds records them.
             foreach (var collectionKey in _collectionMembers.Keys)
             {
                 if (!newCache.TryGetValue(collectionKey, out var kept) || kept.Type != nameof(BaseItemKind.BoxSet)) ForgetCollection(collectionKey);
+            }
+
+            foreach (var collectionKey in _collectionsAwaitingBuild.Keys)
+            {
+                if ((!newCache.TryGetValue(collectionKey, out var kept) || kept.Type != nameof(BaseItemKind.BoxSet))
+                    && _collectionsAwaitingBuild.TryRemove(collectionKey, out _) && _collectionsAwaitingBuild.IsEmpty)
+                {
+                    Interlocked.Exchange(ref _collectionMembersDirty, 1);
+                }
             }
 
             // Invalidate user access cache since items may have changed
