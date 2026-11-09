@@ -349,6 +349,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             SyncJellyseerrWatchlist = false;
             SyncJellyfinWatchlistToSeerr = false;
             PreventWatchlistReAddition = true;
+            WatchlistRemovalSync = "jellyfin";
             WatchlistMemoryRetentionDays = 365;
 
             // Bookmarks Settings
@@ -1124,6 +1125,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool SyncJellyseerrWatchlist { get; set; }
         public bool SyncJellyfinWatchlistToSeerr { get; set; }
         public bool PreventWatchlistReAddition { get; set; }
+        // Which side's removals are mirrored to the other: "off", "jellyfin", "seerr" or "both".
+        public string WatchlistRemovalSync { get; set; }
         public int WatchlistMemoryRetentionDays { get; set; }
 
         // User Import Settings

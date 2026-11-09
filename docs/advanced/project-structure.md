@@ -587,6 +587,7 @@ Feature gates still apply when a task runs. A task is hidden from the dashboard 
 | `JellyseerrWatchlistSyncTask.cs` | **Sync Watchlist from Seerr to Jellyfin** | Daily at 03:00 |
 | `MdblistRatingsFetchTask.cs` | **Fetch Ratings from MDBList** | None |
 | `MdblistRatingsSyncTask.cs` | **Sync Ratings from MDBList to Jellyfin** | None |
+| `WatchlistRemovalSyncTask.cs` | **Sync Watchlist Removals between Jellyfin and Seerr** | Daily at 04:00 |
 | `RefreshCdnAssetsTask.cs` | **Refresh CDN Assets** | Application startup and every 24 hours |
 | `SpoilerApplyExistingTitlesTask.cs` | **Spoiler Guard: apply to existing titles** | None |
 | `Services/StartupService.cs` | **Jellyfin Enhanced Startup** | Application startup |

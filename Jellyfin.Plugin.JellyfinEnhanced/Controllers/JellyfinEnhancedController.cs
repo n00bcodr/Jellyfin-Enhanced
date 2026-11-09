@@ -3226,6 +3226,36 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return ProxyJellyseerrRequest($"/api/v1/discover/watchlist?page={page}", HttpMethod.Get);
         }
 
+        // Puts one title on the calling user's Seerr watchlist. The browser calls it right after a
+        // request when "Requested media goes on the requester's watchlist" is on. The Jellyfin
+        // watchlist is filled later by WatchlistMonitor, when the title reaches the library.
+        [HttpPost("jellyseerr/watchlist")]
+        [Authorize]
+        public Task<IActionResult> AddJellyseerrWatchlist([FromBody] JsonElement requestBody)
+        {
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null || !config.JellyseerrEnabled || !config.AddRequestedMediaToWatchlist)
+            {
+                return Task.FromResult<IActionResult>(BadRequest(new { error = true, code = "watchlist_disabled", message = "Adding requested media to the watchlist is turned off." }));
+            }
+
+            var tmdbId = 0;
+            string? mediaType = null;
+            if (requestBody.ValueKind == JsonValueKind.Object)
+            {
+                if (requestBody.TryGetProperty("tmdbId", out var idElement) && idElement.ValueKind == JsonValueKind.Number) idElement.TryGetInt32(out tmdbId);
+                if (requestBody.TryGetProperty("mediaType", out var typeElement) && typeElement.ValueKind == JsonValueKind.String) mediaType = typeElement.GetString();
+            }
+
+            if (tmdbId <= 0 || (mediaType != "movie" && mediaType != "tv"))
+            {
+                return Task.FromResult<IActionResult>(BadRequest(new { error = true, code = "invalid_watchlist_item", message = "tmdbId and a mediaType of 'movie' or 'tv' are required." }));
+            }
+
+            // Only the two validated fields are forwarded; Seerr answers 500 to an unknown mediaType.
+            return ProxyJellyseerrRequest("/api/v1/watchlist", HttpMethod.Post, JsonSerializer.Serialize(new { tmdbId, mediaType }));
+        }
+
         [HttpPost("jellyseerr/sync-watchlist")]
         [Authorize]
         public async Task<IActionResult> SyncJellyseerrWatchlist()
