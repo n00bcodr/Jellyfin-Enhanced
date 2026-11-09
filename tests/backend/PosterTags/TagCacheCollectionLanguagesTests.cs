@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Text.Json.Nodes;
 using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
 using Jellyfin.Plugin.JellyfinEnhanced.Model;
 using Jellyfin.Plugin.JellyfinEnhanced.Services;
@@ -9,6 +10,7 @@ using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Globalization;
+using MediaBrowser.Model.IO;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 
@@ -17,9 +19,10 @@ namespace JE.Tests;
 /// <summary>
 /// A collection's language tags are the union of its linked members' (issue #1022):
 /// when a member's file gains or loses an audio or subtitle track, or the member is
-/// deleted, the collection's cache entry follows, both through the incremental flush
-/// (Jellyfin raises no event for the BoxSet itself) and through the reconciliation,
-/// which also repairs a collection left stale while nothing was listening.
+/// deleted, the collection's cache entry follows: through the incremental flush
+/// (Jellyfin raises no event for the BoxSet itself), through the reconciliation for
+/// a change made while nothing was listening, and once after loading a snapshot
+/// written before collections followed their members.
 /// </summary>
 [Collection("Plugin singleton")]
 public class TagCacheCollectionLanguagesTests
@@ -240,7 +243,89 @@ public class TagCacheCollectionLanguagesTests
     }
 
     [Fact]
-    public void ReconciliationRepairsACollectionLeftStale()
+    public void AMemberJellyfinDeletedAndUnlinkedLeavesItsCollection()
+    {
+        var library = new Library();
+        var gone = new Movie { Id = Guid.NewGuid(), Name = "Gone", Sources = Tracks("ita") };
+        var kept = new Movie { Id = Guid.NewGuid(), Name = "Kept", Sources = Tracks("eng") };
+        var box = new BoxSet { Id = Guid.NewGuid(), Name = "Box", LinkedChildren = [new LinkedChild { ItemId = gone.Id }, new LinkedChild { ItemId = kept.Id }] };
+        library.Items.AddRange(new BaseItem[] { gone, kept, box });
+
+        WithCache(library, cache =>
+        {
+            // Jellyfin 12 deletes the item's link rows with it: the collection, reloaded,
+            // no longer names the deleted member at all.
+            library.Items.Remove(gone);
+            box.LinkedChildren = [new LinkedChild { ItemId = kept.Id }];
+            cache.EnqueueRemoval(gone.Id);
+            FlushTwice(cache);
+            Assert.Equal(new[] { "eng" }, Audio(cache, box));
+        });
+    }
+
+    [Fact]
+    public void AMemberInAnExcludedLibraryStillReachesItsCollection()
+    {
+        var library = new Library();
+        var excludedLibrary = new Folder { Id = Guid.NewGuid(), Name = "Excluded" };
+        var shown = new Movie { Id = Guid.NewGuid(), Name = "Shown", Sources = Tracks("eng") };
+        var hidden = new Movie { Id = Guid.NewGuid(), Name = "Excluded member", Sources = Tracks("spa") };
+        var box = new BoxSet { Id = Guid.NewGuid(), Name = "Box", LinkedChildren = [new LinkedChild { ItemId = shown.Id }, new LinkedChild { ItemId = hidden.Id }] };
+        library.Items.AddRange(new BaseItem[] { shown, hidden, box });
+        library.Mock.Setup(l => l.GetCollectionFolders(It.IsAny<BaseItem>())).Returns((BaseItem item) =>
+            item.Id == hidden.Id ? new List<Folder> { excludedLibrary } : new List<Folder>());
+
+        WithCache(library, cache =>
+        {
+            Jellyfin.Plugin.JellyfinEnhanced.JellyfinEnhanced.Instance!.Configuration.TagCacheExcludeLibraries = true;
+            Jellyfin.Plugin.JellyfinEnhanced.JellyfinEnhanced.Instance.Configuration.TagCacheExcludedLibraryIds = excludedLibrary.Id.ToString();
+            // The excluded member has no entry of its own.
+            cache.EnqueueUpdate(hidden.Id);
+            FlushTwice(cache);
+            Assert.False(cache.TryGetEntry(hidden.Id, out _));
+            Assert.Equal(new[] { "eng", "spa" }, Audio(cache, box));
+
+            // Its collection still takes its languages, so a track change reaches it.
+            hidden.Sources = Tracks("spa", "por");
+            cache.EnqueueUpdate(hidden.Id);
+            FlushTwice(cache);
+            Assert.Equal(new[] { "eng", "por", "spa" }, Audio(cache, box));
+        });
+    }
+
+    [Fact]
+    public void AMemberLinkedByPathReachesItsCollection()
+    {
+        var library = new Library();
+        const string path = "/movies/Pathed (2020)/Pathed (2020).mkv";
+        var pathed = new Movie { Id = Guid.NewGuid(), Name = "Pathed", Path = path, Sources = Tracks("eng", "fre") };
+        // Jellyfin 10.11 stores a manual collection link by path only.
+        var box = new BoxSet { Id = Guid.NewGuid(), Name = "Box", LinkedChildren = [new LinkedChild { Path = path }] };
+        library.Items.AddRange(new BaseItem[] { pathed, box });
+        library.Mock.Setup(l => l.FindByPath(path, It.IsAny<bool?>())).Returns(pathed);
+        var previousFileSystem = BaseItem.FileSystem;
+        var fileSystem = new Mock<IFileSystem>();
+        fileSystem.Setup(f => f.MakeAbsolutePath(It.IsAny<string>(), It.IsAny<string>())).Returns((string _, string file) => file);
+        BaseItem.FileSystem = fileSystem.Object;
+        try
+        {
+            WithCache(library, cache =>
+            {
+                Assert.Equal(new[] { "eng", "fre" }, Audio(cache, box));
+                pathed.Sources = Tracks("eng");
+                cache.EnqueueUpdate(pathed.Id);
+                FlushTwice(cache);
+                Assert.Equal(new[] { "eng" }, Audio(cache, box));
+            });
+        }
+        finally
+        {
+            BaseItem.FileSystem = previousFileSystem;
+        }
+    }
+
+    [Fact]
+    public void AReconciliationCatchesAMemberChangedWhileNothingListened()
     {
         var library = new Library();
         var movie = new Movie { Id = Guid.NewGuid(), Name = "Movie", Sources = Tracks("eng", "fre") };
@@ -249,16 +334,106 @@ public class TagCacheCollectionLanguagesTests
 
         WithCache(library, cache =>
         {
-            // The file lost its French track and no event reached the cache (a collection
-            // cached before collections followed their members, or a change while nothing
-            // listened): the collection entry still shows the old union.
+            // Jellyfin re-probed and saved the movie while no event reached the cache.
             movie.Sources = Tracks("eng");
-            Assert.Equal(new[] { "eng", "fre" }, Audio(cache, box));
-
-            // Nothing was saved since the marker, yet the reconciliation repairs the collection.
-            library.ReportSavedItems = false;
             cache.ReconcileCache(null, CancellationToken.None);
+            Assert.Equal(new[] { "eng" }, Audio(cache, movie));
+            Flush(cache);
             Assert.Equal(new[] { "eng" }, Audio(cache, box));
         });
+    }
+
+    [Fact]
+    public void AnUnchangedCollectionRebuiltAfterLoadingAnOldSnapshotStillSavesItsMembers()
+    {
+        using var f = new ApiPluginFixture();
+        f.Plugin.Configuration.TagCacheServerMode = true;
+        var library = new Library();
+        var movie = new Movie { Id = Guid.NewGuid(), Name = "Movie", Sources = Tracks("eng") };
+        var box = new BoxSet { Id = Guid.NewGuid(), Name = "Box", LinkedChildren = [new LinkedChild { ItemId = movie.Id }] };
+        library.Items.AddRange(new BaseItem[] { movie, box });
+        var previous = BaseItem.LibraryManager;
+        var previousLogger = BaseItem.Logger;
+        BaseItem.LibraryManager = library.Mock.Object;
+        BaseItem.Logger = NullLogger<BaseItem>.Instance;
+        try
+        {
+            TagCacheService Create() => new(library.Mock.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger, new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger));
+            string file;
+            using (var before = Create())
+            {
+                before.BuildFullCache(null, CancellationToken.None);
+                before.SaveToDisk();
+                file = (string)typeof(TagCacheService).GetProperty("CacheFilePath", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(before)!;
+            }
+
+            var json = JsonNode.Parse(File.ReadAllText(file))!.AsObject();
+            Assert.True(json.Remove("CollectionMembers"));
+            File.WriteAllText(file, json.ToJsonString());
+
+            using var cache = Create();
+            cache.LoadFromDisk();
+            var dirty = typeof(TagCacheService).GetField("_dirty", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            Assert.False((bool)dirty.GetValue(cache)!);
+            Flush(cache);
+            Assert.Equal(new[] { "eng" }, Audio(cache, box));
+            Assert.True((bool)dirty.GetValue(cache)!, "the member index is saved although no entry changed");
+        }
+        finally
+        {
+            BaseItem.LibraryManager = previous;
+            BaseItem.Logger = previousLogger;
+        }
+    }
+
+    [Fact]
+    public void ASnapshotFromBeforeCollectionsFollowedTheirMembersRebuildsThemOnLoad()
+    {
+        using var f = new ApiPluginFixture();
+        f.Plugin.Configuration.TagCacheServerMode = true;
+        var library = new Library();
+        var movie = new Movie { Id = Guid.NewGuid(), Name = "Movie", Sources = Tracks("eng", "fre") };
+        var box = new BoxSet { Id = Guid.NewGuid(), Name = "Box", LinkedChildren = [new LinkedChild { ItemId = movie.Id }] };
+        library.Items.AddRange(new BaseItem[] { movie, box });
+        var previous = BaseItem.LibraryManager;
+        var previousLogger = BaseItem.Logger;
+        BaseItem.LibraryManager = library.Mock.Object;
+        BaseItem.Logger = NullLogger<BaseItem>.Instance;
+        try
+        {
+            TagCacheService Create() => new(library.Mock.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger, new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger));
+            string file;
+            using (var before = Create())
+            {
+                before.BuildFullCache(null, CancellationToken.None);
+                before.SaveToDisk();
+                file = (string)typeof(TagCacheService).GetProperty("CacheFilePath", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(before)!;
+            }
+
+            // A snapshot an earlier version wrote: no member index. Meanwhile the movie
+            // lost its French track and its own entry followed, but the collection did not.
+            var json = JsonNode.Parse(File.ReadAllText(file))!.AsObject();
+            Assert.True(json.Remove("CollectionMembers"));
+            var movieKey = movie.Id.ToString("N");
+            json["Items"]![movieKey]!["AudioLanguages"] = new JsonArray("eng");
+            File.WriteAllText(file, json.ToJsonString());
+            movie.Sources = Tracks("eng");
+
+            using var cache = Create();
+            cache.LoadFromDisk();
+            Assert.Equal(new[] { "eng", "fre" }, Audio(cache, box));
+            Flush(cache);
+            Assert.Equal(new[] { "eng" }, Audio(cache, box));
+
+            // The next snapshot carries the index, so a restart does not rebuild them again.
+            cache.SaveToDisk();
+            var saved = JsonNode.Parse(File.ReadAllText(file))!.AsObject();
+            Assert.Equal(movieKey, saved["CollectionMembers"]![box.Id.ToString("N")]![0]!.GetValue<string>());
+        }
+        finally
+        {
+            BaseItem.LibraryManager = previous;
+            BaseItem.Logger = previousLogger;
+        }
     }
 }

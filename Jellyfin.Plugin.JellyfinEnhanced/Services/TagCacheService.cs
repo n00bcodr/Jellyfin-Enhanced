@@ -221,6 +221,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // (GetCollectionLanguages), and Jellyfin raises no event for the BoxSet when
         // only a member's file changes.
         private readonly ConcurrentDictionary<string, bool> _collectionMemberChanges = new(StringComparer.Ordinal);
+
+        // The Movie and Series members each collection's languages were last built from
+        // (GetCollectionLanguages), by collection key, saved with the snapshot. Matching a
+        // member change against it needs no collection lookup, and still finds a member
+        // Jellyfin has already unlinked: Jellyfin 12 deletes a removed item's link rows, so
+        // a collection reloaded afterwards no longer names it.
+        private readonly ConcurrentDictionary<string, Guid[]> _collectionMembers = new(StringComparer.Ordinal);
+        // 1 when _collectionMembers changed since the last save: a flush whose collections
+        // rebuilt to the same languages still has to save what they are built from.
+        private int _collectionMembersDirty;
         private Timer? _debounceSaveTimer;
         private volatile bool _dirty;
         private long _firstDirtyTicks; // 0 = nothing dirty since the last disk save
@@ -1001,27 +1011,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 progress?.Report(idsToRebuild.Count == 0 ? 50 : (double)rebuilt / idsToRebuild.Count * 80);
             }
 
-            // A collection's languages are its members' (GetCollectionLanguages), and its own
-            // save time does not move when only a member's file changes. Rebuild every cached
-            // collection after its members, so one left stale (a member changed while nothing
-            // was listening, or before collections followed their members) is repaired here.
-            // Members recorded so far are covered once this pass completes; until then
-            // their records stay, so an aborted pass leaves them for the next flush.
-            var coveredMembers = _collectionMemberChanges.Keys.ToArray();
-            foreach (var collectionId in CachedCollectionIds())
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                if (ShouldAbortCacheWork)
-                {
-                    _logger.Info("[TagCache] Reconciliation aborted (setting disabled or server shutting down).");
-                    return;
-                }
-
-                changed |= RebuildEntry(collectionId, episodeScans);
-            }
-
-            foreach (var key in coveredMembers) _collectionMemberChanges.TryRemove(key, out _);
-
             // Collection membership changes the monitor did not see (Custom tags).
             changed |= ReconcileCustomTags(cancellationToken);
 
@@ -1156,7 +1145,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             progress?.Report(100);
             LogLanguageCacheUse(languageCacheAtStart);
             SaveToDisk();
-            // Members the sweep removed (or the series it repaired) after the collection pass.
+            // A collection's own save time does not move when only a member changes: queue
+            // the collections of the members rebuilt, swept or repaired above.
             QueueCollectionsOfChangedMembers();
 
             _logger.Info($"[TagCache] Reconciliation complete: {changedIds.Count} changed items, {idsToRebuild.Count} entries checked");
@@ -1359,6 +1349,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                             TouchLastModified();
                             ScheduleDebouncedSave();
                         }
+                        else if (Interlocked.Exchange(ref _collectionMembersDirty, 0) == 1)
+                        {
+                            // Only what the collections are built from changed: no delta, but save it.
+                            ScheduleDebouncedSave();
+                        }
                     }
                 }
                 finally
@@ -1472,7 +1467,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (!TaggableTypes.Contains(kind)) return false;
             // Through RemoveEntry: it advances the mutation epoch (shared response bytes)
             // and the version, the only way clients holding the entry learn it is gone.
-            if (IsInExcludedLibrary(item)) return RemoveEntry(id);
+            if (IsInExcludedLibrary(item))
+            {
+                // No entry of its own, but its collections still take its languages
+                // (GetCollectionLanguages reads every member).
+                if (kind is BaseItemKind.Movie or BaseItemKind.Series) _collectionMemberChanges.TryAdd(id.ToString("N").ToLowerInvariant(), false);
+                return RemoveEntry(id);
+            }
 
             // A season is queued alongside every episode add/update/removal. Repair
             // every cached sibling, including ones not otherwise in this batch.
@@ -1537,6 +1538,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             RecordTombstone(key);
             Interlocked.Increment(ref _mutationEpoch);
             if (IsCollectionMemberType(removed?.Type)) _collectionMemberChanges[key] = true;
+            else if (removed?.Type == nameof(BaseItemKind.BoxSet)) _collectionMembers.TryRemove(key, out _);
             return true;
         }
 
@@ -1568,15 +1570,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         /// <summary>
-        /// Queue the cached collections that link to a Movie or Series recorded in
+        /// Queue the cached collections built from a Movie or Series recorded in
         /// <see cref="_collectionMemberChanges"/>, so a collection's language union follows
         /// a member's file change or removal. Called after a batch has been applied, so the
         /// queued collections rebuild from their members' new entries in the next flush.
-        /// Reads collections from memory only; a collection that can't be checked is queued.
         /// </summary>
         private void QueueCollectionsOfChangedMembers()
         {
-            if (_collectionMemberChanges.IsEmpty) return;
+            foreach (var collectionId in TakeCollectionsOfChangedMembers() ?? new List<Guid>()) EnqueueUpdate(collectionId);
+        }
+
+        /// <summary>
+        /// Drain <see cref="_collectionMemberChanges"/> and return the cached collections built
+        /// from one of those members (see <see cref="_collectionMembers"/>), or null when none
+        /// was recorded. A collection that can't be checked counts as one of them.
+        /// </summary>
+        private List<Guid>? TakeCollectionsOfChangedMembers()
+        {
+            if (_collectionMemberChanges.IsEmpty) return null;
             var members = new HashSet<Guid>();
             var anyRemoved = false;
             foreach (var key in _collectionMemberChanges.Keys)
@@ -1587,19 +1598,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 anyRemoved |= removed;
             }
 
-            if (members.Count == 0) return;
+            if (members.Count == 0) return null;
+            var found = new List<Guid>();
             foreach (var collectionId in CachedCollectionIds())
             {
+                if (_collectionMembers.TryGetValue(collectionId.ToString("N"), out var builtFrom))
+                {
+                    if (Array.Exists(builtFrom, members.Contains)) found.Add(collectionId);
+                    continue;
+                }
+
+                // Not built since its members were recorded: check its links.
                 try
                 {
-                    if (_libraryManager.GetItemById<BaseItem>(collectionId) is Folder folder && LinksAny(folder, members, anyRemoved)) EnqueueUpdate(collectionId);
+                    if (_libraryManager.GetItemById<BaseItem>(collectionId) is Folder folder && LinksAny(folder, members, anyRemoved)) found.Add(collectionId);
                 }
                 catch (Exception ex)
                 {
                     _logger.Warning($"[TagCache] Failed to check collection {collectionId} for changed members: {ex.Message}");
-                    EnqueueUpdate(collectionId);
+                    found.Add(collectionId);
                 }
             }
+
+            return found;
         }
 
         /// <summary>
@@ -2735,6 +2756,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                                 && e.PremiereDate > (container.LatestEpisodeAired ?? 0))
                             .Select(e => e.PremiereDate).Min();
                     }
+                    _collectionMembers.Clear();
+                    if (data.CollectionMembers != null)
+                    {
+                        foreach (var (key, ids) in data.CollectionMembers)
+                        {
+                            _collectionMembers[key] = (ids ?? Array.Empty<string>())
+                                .Select(id => Guid.TryParse(id, out var member) ? member : Guid.Empty)
+                                .Where(member => member != Guid.Empty).ToArray();
+                        }
+                    }
+                    else
+                    {
+                        // Written before collections followed their members: rebuild each once,
+                        // which repairs any left stale and records what it is built from.
+                        foreach (var collectionId in CachedCollectionIds()) EnqueueUpdate(collectionId);
+                    }
+
                     PublishAwards();
                     RefreshDueStatusContainers();
                     // A snapshot written under other Custom tag rules is re-matched in the background.
@@ -2767,6 +2805,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var memo = new EpisodeScanMemo { Pending = due.ToHashSet() };
             var changed = false;
             foreach (var id in due) changed |= RebuildEntry(id, memo);
+            QueueCollectionsOfChangedMembers();
             if (!changed) return;
             // Changed entries reach clients as a delta (their LastUpdated); only removals and rebuild swaps change the version.
             Interlocked.Exchange(ref _lastModified, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
@@ -2805,6 +2844,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     var dir = Path.GetDirectoryName(CacheFilePath);
                     if (dir != null) Directory.CreateDirectory(dir);
 
+                    // This save writes the collection member index as it stands now.
+                    Interlocked.Exchange(ref _collectionMembersDirty, 0);
                     var data = new TagCacheDiskFormat
                     {
                         SchemaVersion = CurrentCacheSchemaVersion,
@@ -2813,7 +2854,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         LastReconciledUtcTicks = Interlocked.Read(ref _lastReconciledUtcTicks),
                         CustomTagsFingerprint = _customTagsFingerprint,
                         Items = new Dictionary<string, TagCacheEntry>(_cache),
-                        Tombstones = new Dictionary<string, long>(_tombstones, StringComparer.Ordinal)
+                        Tombstones = new Dictionary<string, long>(_tombstones, StringComparer.Ordinal),
+                        CollectionMembers = _collectionMembers
+                            .Where(pair => _cache.TryGetValue(pair.Key, out var entry) && entry.Type == nameof(BaseItemKind.BoxSet))
+                            .ToDictionary(pair => pair.Key, pair => pair.Value.Select(id => id.ToString("N")).ToArray(), StringComparer.Ordinal)
                     };
 
                     // Serialize straight to the temp file: building the whole
@@ -3009,7 +3053,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     var batch = _pending.Drain();
                     using (BeginInPlaceWrites())
                     {
-                        if (ApplyBatch(batch, RebuildWithBatchMemo(batch), RemoveEntry))
+                        var applied = ApplyBatch(batch, RebuildWithBatchMemo(batch), RemoveEntry);
+                        // Collections of the members just applied: rebuilt here, since a
+                        // flush queued for them would never run.
+                        var collections = TakeCollectionsOfChangedMembers();
+                        if (collections != null)
+                        {
+                            applied |= ApplyBatch(collections.Select(id => (id, false)).ToList(), RebuildWithBatchMemo(Array.Empty<(Guid, bool)>()), RemoveEntry);
+                        }
+
+                        if (applied)
                         {
                             TouchLastModified();
                             _dirty = true;
@@ -4145,8 +4198,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// LinkedChildren is a manual join (not a parent pointer), so this is
         /// resolved live rather than tracked per member. Membership edits re-enqueue
         /// the BoxSet itself (see TagCacheMonitor); a member whose languages change or
-        /// which is removed queues the collections linking to it (see
-        /// QueueCollectionsOfChangedMembers), and every reconciliation rebuilds them all.
+        /// which is removed queues the collections built from it (see
+        /// QueueCollectionsOfChangedMembers and <see cref="_collectionMembers"/>, which
+        /// this records).
         /// </summary>
         private (string[] Audio, string[] Subtitles, string[] SdhSubtitles) GetCollectionLanguages(BaseItem collection)
         {
@@ -4157,9 +4211,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var languages = new HashSet<string>();
                 var subtitles = new HashSet<string>();
                 var sdh = new HashSet<string>();
+                var members = new List<Guid>();
                 foreach (var member in folder.GetLinkedChildren())
                 {
                     var memberKind = member.GetBaseItemKind();
+                    if (memberKind is BaseItemKind.Movie or BaseItemKind.Series) members.Add(member.Id);
                     if (memberKind == BaseItemKind.Movie)
                     {
                         var (memberStreams, _, memberLanguages, _, memberSubtitles) = ExtractMediaData(member);
@@ -4197,6 +4253,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     }
                 }
 
+                var builtFrom = members.ToArray();
+                var collectionKey = collection.Id.ToString("N").ToLowerInvariant();
+                if (!_collectionMembers.TryGetValue(collectionKey, out var before) || !before.SequenceEqual(builtFrom))
+                {
+                    _collectionMembers[collectionKey] = builtFrom;
+                    Interlocked.Exchange(ref _collectionMembersDirty, 1);
+                }
                 return (languages.ToArray(), subtitles.ToArray(), sdh.ToArray());
             }
             catch (Exception ex)
@@ -4242,6 +4305,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             public Dictionary<string, TagCacheEntry> Items { get; set; } = new();
             // Removed keys and their removal stamps (see _tombstones); absent in older snapshots.
             public Dictionary<string, long>? Tombstones { get; set; }
+            // Each collection's members (see _collectionMembers); absent in older snapshots,
+            // whose collections are rebuilt once after loading.
+            public Dictionary<string, string[]>? CollectionMembers { get; set; }
         }
     }
 }
