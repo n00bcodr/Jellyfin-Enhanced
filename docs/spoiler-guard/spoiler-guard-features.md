@@ -360,7 +360,7 @@ Native apps and external players can benefit from server protection when they us
 
 ??? info "Supported responses and client limits"
 
-    The server filters supported image and item-metadata responses. It covers common item lists/details, episode and season lists, Next Up, upcoming/resume/latest items, search hints, suggestions/similar items, playlists, movie recommendations, image information, playback information, item images, and trickplay images on recognized routes and response shapes.
+    The server filters supported image and item-metadata responses. It covers common item lists/details, episode and season lists, Next Up, upcoming/resume/latest items, search hints, suggestions/similar items, playlists, movie recommendations, Home Screen Sections rows, image information, playback information, item images, and trickplay images on recognized routes and response shapes.
 
     JE's toggle buttons, preferences, confirmation, automatic page-image refresh, and Reviews-panel suppression require the injected web interface. That interface suppresses its Reviews panel according to your preferences. Other clients using JE's Reviews API need their own suppression behavior: the API does not filter reviews according to the viewer's Spoiler Guard state.
 

@@ -103,6 +103,17 @@ public class PrivacyFieldFilterTests
     }
 
     [Fact]
+    public async Task HomeScreenSectionsRowsStripGuardedUnwatchedEpisodes()
+    {
+        using var f = new Fixture();
+        var hidden = f.Episode(); var watched = f.Episode(true);
+        var query = new QueryResult<BaseItemDto> { Items = [hidden, watched], TotalRecordCount = 2 };
+        Assert.Same(query, await f.Invoke(query, "HomeScreen", "GetSectionContent"));
+        Assert.Equal("Season 2, Episode 3", hidden.Name); Assert.NotEqual("Secret plot", hidden.Overview); Assert.Null(hidden.Path);
+        Assert.Equal("Secret ending", watched.Name); Assert.Equal("Secret plot", watched.Overview);
+    }
+
+    [Fact]
     public async Task SubtitleDeliveryRemainsUsableWhileTitleBearingPathsAreScrubbed()
     {
         using var f = new Fixture();
