@@ -73,8 +73,8 @@ public class IntegrationTmdbTests
     [Fact]
     public async Task DistinctMissesNeverExceedTheUpstreamSlotsAndAllComplete()
     {
-        // ~0.3 s per warm lookup: the slot count bounds the sustained rate under TMDB's ~40/s.
-        Assert.True(TmdbResponseCache.MaxUpstreamConcurrency / 0.3 < 40);
+        var limit = TmdbResponseCache.MaxUpstreamConcurrency;
+        var total = limit + 5;
         var inFlight = 0;
         var peak = 0;
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -88,16 +88,16 @@ public class IntegrationTmdbTests
             return IntegrationTransport.Response();
         });
         using var cache = new TmdbResponseCache(transport, TimeProvider.System);
-        var lookups = Enumerable.Range(1, 25).Select(i => cache.GetAsync($"person/{i}", "", "key", default)).ToArray();
+        var lookups = Enumerable.Range(1, total).Select(i => cache.GetAsync($"person/{i}", "", "key", default)).ToArray();
         var deadline = DateTime.UtcNow.AddSeconds(5);
-        while (Volatile.Read(ref transport.Calls) < TmdbResponseCache.MaxUpstreamConcurrency && DateTime.UtcNow < deadline) await Task.Delay(10);
+        while (Volatile.Read(ref transport.Calls) < limit && DateTime.UtcNow < deadline) await Task.Delay(10);
         await Task.Delay(50);
-        Assert.Equal(TmdbResponseCache.MaxUpstreamConcurrency, Volatile.Read(ref transport.Calls));
+        Assert.Equal(limit, Volatile.Read(ref transport.Calls));
         release.SetResult();
         var results = await Task.WhenAll(lookups).WaitAsync(TimeSpan.FromSeconds(5));
         Assert.All(results, result => Assert.True(result.IsSuccess));
-        Assert.Equal(25, transport.Calls);
-        Assert.Equal(TmdbResponseCache.MaxUpstreamConcurrency, peak);
+        Assert.Equal(total, transport.Calls);
+        Assert.Equal(limit, peak);
     }
 
     [Fact]

@@ -39,7 +39,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private readonly ConcurrentDictionary<int, DateTime> _limitedUntil = new();
         // One upstream request per id at a time; later callers await the same task.
         private readonly ConcurrentDictionary<int, Lazy<Task<AnilistReviewsResult>>> _inFlight = new();
-        // Service-wide pause from the latest 429 (UTC ticks), so other ids skip AniList too.
+        // Service-wide pause from 429s (UTC ticks, the latest end wins), so other ids skip AniList too.
         private long _pausedUntilTicks;
         private int _remainingExhaustedLogged;
 
@@ -151,7 +151,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 _limitedUntil[anilistId] = until;
                 if (response.StatusCode == HttpStatusCode.TooManyRequests)
                 {
-                    Interlocked.Exchange(ref _pausedUntilTicks, until.Ticks);
+                    ExtendPause(until);
                 }
 
                 _logger.Warning($"[AniList] {(int)response.StatusCode} for anime {anilistId}; not asking AniList again for {Math.Ceiling(wait.TotalSeconds)}s.");
@@ -175,6 +175,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             _cache[anilistId] = (UtcNow + (result.Reviews.Count > 0 ? FoundTtl : MissTtl), result);
             return result;
+        }
+
+        /// <summary>Moves the service-wide pause to <paramref name="until"/> unless a later end is already set.</summary>
+        private void ExtendPause(DateTime until)
+        {
+            long previous;
+            do
+            {
+                previous = Interlocked.Read(ref _pausedUntilTicks);
+                if (previous >= until.Ticks)
+                {
+                    return;
+                }
+            }
+            while (Interlocked.CompareExchange(ref _pausedUntilTicks, until.Ticks, previous) != previous);
         }
 
         /// <summary>Retry-After as a delta or an HTTP date, else the default, capped at MaxRetryAfter.</summary>

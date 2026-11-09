@@ -177,6 +177,84 @@ public class IntegrationAnilistReviewsTests
     }
 
     [Fact]
+    public async Task AShorterRetryAfterNeverCutsALongerPauseShort()
+    {
+        using var env = new IntegrationEnvironment();
+        var clock = new Clock();
+        var gates = new Dictionary<int, TaskCompletionSource>
+        {
+            [1] = new(TaskCreationOptions.RunContinuationsAsynchronously),
+            [2] = new(TaskCreationOptions.RunContinuationsAsynchronously),
+        };
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var waiting = 0;
+        using var transport = new IntegrationTransport(async (request, token) =>
+        {
+            var body = await request.Content!.ReadAsStringAsync(token);
+            var id = body.Contains("\"v\":1", StringComparison.Ordinal) ? 1 : body.Contains("\"v\":2", StringComparison.Ordinal) ? 2 : 0;
+            if (id == 0) return IntegrationTransport.Response(Media());
+            if (Interlocked.Increment(ref waiting) == 2) entered.TrySetResult();
+            await gates[id].Task.WaitAsync(token);
+            return Refused(429, h => h.RetryAfter = new RetryConditionHeaderValue(TimeSpan.FromSeconds(id == 1 ? 300 : 60)));
+        });
+        var service = new AnilistReviewsService(transport, env.Logger, clock);
+
+        // Both ids are already in flight when the first 429 (300 s) lands; the second 429 (60 s) comes after.
+        var longer = service.GetReviewsAsync(1, default);
+        var shorter = service.GetReviewsAsync(2, default);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        gates[1].SetResult();
+        await Assert.ThrowsAsync<HttpRequestException>(() => longer);
+        gates[2].SetResult();
+        await Assert.ThrowsAsync<HttpRequestException>(() => shorter);
+        Assert.Equal(2, transport.Calls);
+
+        clock.Now = clock.Now.AddSeconds(61);
+        var paused = await Assert.ThrowsAsync<HttpRequestException>(() => service.GetReviewsAsync(3, default));
+        Assert.Equal(HttpStatusCode.TooManyRequests, paused.StatusCode);
+        Assert.Equal(2, transport.Calls);
+
+        clock.Now = clock.Now.AddSeconds(240);
+        Assert.Single((await service.GetReviewsAsync(3, default)).Reviews);
+        Assert.Equal(3, transport.Calls);
+    }
+
+    [Fact]
+    public async Task SharedRequestFailureReachesEveryWaiterAndTheNextCallRetries()
+    {
+        using var env = new IntegrationEnvironment();
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var failing = true;
+        using var transport = new IntegrationTransport(async (_, token) =>
+        {
+            if (!Volatile.Read(ref failing)) return IntegrationTransport.Response(Media());
+            entered.TrySetResult();
+            await release.Task.WaitAsync(token);
+            return IntegrationTransport.Response("{}", 500);
+        });
+        var service = new AnilistReviewsService(transport, env.Logger);
+
+        var first = service.GetReviewsAsync(12, default);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var second = service.GetReviewsAsync(12, default);
+        var third = service.GetReviewsAsync(12, default);
+        release.SetResult();
+        foreach (var waiter in new[] { first, second, third })
+        {
+            var error = await Assert.ThrowsAsync<HttpRequestException>(() => waiter.WaitAsync(TimeSpan.FromSeconds(5)));
+            Assert.Equal(HttpStatusCode.InternalServerError, error.StatusCode);
+        }
+
+        Assert.Equal(1, transport.Calls);
+
+        // A 500 is neither cached nor a rate limit: the next call goes upstream again.
+        Volatile.Write(ref failing, false);
+        Assert.Single((await service.GetReviewsAsync(12, default)).Reviews);
+        Assert.Equal(2, transport.Calls);
+    }
+
+    [Fact]
     public async Task ExhaustedRemainingHeaderKeepsTheResultAndLogsOnce()
     {
         using var env = new IntegrationEnvironment();
