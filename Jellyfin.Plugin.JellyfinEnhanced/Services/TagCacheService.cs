@@ -838,6 +838,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // request stamped with a pre-first-publish timestamp of 0 would
             // permanently disable that client's delta refresh.
             var newMaxLastUpdated = MaxLastUpdated(newCache);
+            var previousCache = _cache;
             lock (_saveLock)
             {
                 lock (_publishLock)
@@ -856,6 +857,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             Interlocked.Exchange(ref _lastReconciledUtcTicks, reconciliationStartedUtc.Ticks);
+            // Collections were built before the series they include, from the series entries
+            // published before this build: queue those whose series' languages changed.
+            foreach (var (key, entry) in newCache)
+            {
+                if (entry.Type == nameof(BaseItemKind.Series)
+                    && previousCache.TryGetValue(key, out var before) && !SameLanguageFacts(before, entry))
+                {
+                    _collectionMemberChanges.TryAdd(key, false);
+                }
+            }
+
+            QueueCollectionsOfChangedMembers();
             // Invalidate user access cache since items may have changed
             InvalidateUserAccess();
             progress?.Report(100);
@@ -1146,7 +1159,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             LogLanguageCacheUse(languageCacheAtStart);
             SaveToDisk();
             // A collection's own save time does not move when only a member changes: queue
-            // the collections of the members rebuilt, swept or repaired above.
+            // the collections of the members rebuilt, swept or repaired above. Members with no
+            // entry of their own (in an excluded library) are not among the items read above,
+            // so their collections are rebuilt each time: that covers one deleted or changed
+            // while nothing was listening.
+            foreach (var members in _collectionMembers.Values)
+            {
+                foreach (var member in members)
+                {
+                    var memberKey = member.ToString("N").ToLowerInvariant();
+                    if (!_cache.ContainsKey(memberKey)) _collectionMemberChanges.TryAdd(memberKey, false);
+                }
+            }
+
             QueueCollectionsOfChangedMembers();
 
             _logger.Info($"[TagCache] Reconciliation complete: {changedIds.Count} changed items, {idsToRebuild.Count} entries checked");
@@ -1301,7 +1326,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     if (!ServerModeEnabled)
                     {
                         Interlocked.Exchange(ref _firstPendingTicks, 0);
-                        _pending.Drain();
+                        KeepCollectionRebuilds(_pending.Drain());
                         return;
                     }
 
@@ -1882,7 +1907,36 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             var key = id.ToString("N").ToLowerInvariant();
             // The removal reaches clients as a delta (TryRemoveEntry stamps it); the version stays.
-            return TryRemoveEntry(key, out _);
+            if (TryRemoveEntry(key, out _)) return true;
+            // No entry of its own (a member in an excluded library), but a collection is built from it.
+            if (IsCollectionMember(id)) _collectionMemberChanges[key] = true;
+            return false;
+        }
+
+        /// <summary>Whether a cached collection's languages were built from <paramref name="id"/>.</summary>
+        private bool IsCollectionMember(Guid id)
+        {
+            foreach (var members in _collectionMembers.Values)
+            {
+                if (Array.IndexOf(members, id) >= 0) return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Queued work discarded while the cache is off: a queued collection rebuild has no
+        /// save time of its own for the re-enable reconcile to find, so its members are
+        /// recorded again (<see cref="_collectionMemberChanges"/> outlives the release, and
+        /// the reconcile queues their collections).
+        /// </summary>
+        private void KeepCollectionRebuilds(IReadOnlyList<(Guid Id, bool Removed)> discarded)
+        {
+            foreach (var (id, removed) in discarded)
+            {
+                if (removed || !_collectionMembers.TryGetValue(id.ToString("N").ToLowerInvariant(), out var members)) continue;
+                foreach (var member in members) _collectionMemberChanges.TryAdd(member.ToString("N").ToLowerInvariant(), false);
+            }
         }
 
         /// <summary>
@@ -2578,7 +2632,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             _rebuildLock.Wait();
             try
             {
-                _pending.Drain();
+                KeepCollectionRebuilds(_pending.Drain());
                 Interlocked.Exchange(ref _firstPendingTicks, 0);
 
                 // _saveLock makes save-then-release atomic against the debounce
@@ -3065,6 +3119,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         if (applied)
                         {
                             TouchLastModified();
+                            _dirty = true;
+                        }
+                        else if (Interlocked.Exchange(ref _collectionMembersDirty, 0) == 1)
+                        {
                             _dirty = true;
                         }
                     }

@@ -293,6 +293,70 @@ public class TagCacheCollectionLanguagesTests
         });
     }
 
+    /// <summary>A collection of an included movie and one in an excluded library, the latter without an entry.</summary>
+    private static (Library Library, Movie Shown, Movie Hidden, BoxSet Box, Folder Excluded) WithExcludedMember()
+    {
+        var library = new Library();
+        var excluded = new Folder { Id = Guid.NewGuid(), Name = "Excluded" };
+        var shown = new Movie { Id = Guid.NewGuid(), Name = "Shown", Sources = Tracks("eng") };
+        var hidden = new Movie { Id = Guid.NewGuid(), Name = "Excluded member", Sources = Tracks("spa") };
+        var box = new BoxSet { Id = Guid.NewGuid(), Name = "Box", LinkedChildren = [new LinkedChild { ItemId = shown.Id }, new LinkedChild { ItemId = hidden.Id }] };
+        library.Items.AddRange(new BaseItem[] { shown, hidden, box });
+        library.Mock.Setup(l => l.GetCollectionFolders(It.IsAny<BaseItem>())).Returns((BaseItem item) =>
+            item.Id == hidden.Id ? new List<Folder> { excluded } : new List<Folder>());
+        // The reconciliation reads only the libraries left after the exclusion.
+        library.Mock.Setup(l => l.GetVirtualFolders()).Returns(new List<VirtualFolderInfo>
+        {
+            new() { ItemId = excluded.Id.ToString("N"), Name = "Excluded" },
+            new() { ItemId = Guid.NewGuid().ToString("N"), Name = "Movies" },
+        });
+        return (library, shown, hidden, box, excluded);
+    }
+
+    /// <summary>Excludes <paramref name="excluded"/> and drops the entry its member had from the full build.</summary>
+    private static void Exclude(TagCacheService cache, Folder excluded, BaseItem member)
+    {
+        Jellyfin.Plugin.JellyfinEnhanced.JellyfinEnhanced.Instance!.Configuration.TagCacheExcludeLibraries = true;
+        Jellyfin.Plugin.JellyfinEnhanced.JellyfinEnhanced.Instance.Configuration.TagCacheExcludedLibraryIds = excluded.Id.ToString();
+        cache.EnqueueUpdate(member.Id);
+        FlushTwice(cache);
+        Assert.False(cache.TryGetEntry(member.Id, out _));
+    }
+
+    [Fact]
+    public void ADeletedMemberInAnExcludedLibraryLeavesItsCollection()
+    {
+        var (library, _, hidden, box, excluded) = WithExcludedMember();
+        WithCache(library, cache =>
+        {
+            Exclude(cache, excluded, hidden);
+            Assert.Equal(new[] { "eng", "spa" }, Audio(cache, box));
+
+            // Deleted and unlinked by Jellyfin 12; the member never had an entry to remove.
+            library.Items.Remove(hidden);
+            box.LinkedChildren = [box.LinkedChildren[0]];
+            cache.EnqueueRemoval(hidden.Id);
+            FlushTwice(cache);
+            Assert.Equal(new[] { "eng" }, Audio(cache, box));
+        });
+    }
+
+    [Fact]
+    public void AReconciliationCatchesAnExcludedMemberChangedWhileNothingListened()
+    {
+        var (library, _, hidden, box, excluded) = WithExcludedMember();
+        WithCache(library, cache =>
+        {
+            Exclude(cache, excluded, hidden);
+            // The reconciliation only reads items of included libraries, and nothing was saved.
+            hidden.Sources = Tracks("spa", "por");
+            library.ReportSavedItems = false;
+            cache.ReconcileCache(null, CancellationToken.None);
+            Flush(cache);
+            Assert.Equal(new[] { "eng", "por", "spa" }, Audio(cache, box));
+        });
+    }
+
     [Fact]
     public void AMemberLinkedByPathReachesItsCollection()
     {
