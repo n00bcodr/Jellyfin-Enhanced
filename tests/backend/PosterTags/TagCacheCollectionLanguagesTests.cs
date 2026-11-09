@@ -358,6 +358,69 @@ public class TagCacheCollectionLanguagesTests
     }
 
     [Fact]
+    public void AnExcludedMemberResavedWithTheSameLanguagesQueuesNoCollection()
+    {
+        var (library, _, hidden, box, excluded) = WithExcludedMember();
+        WithCache(library, cache =>
+        {
+            Exclude(cache, excluded, hidden);
+            var boxLookups = 0;
+            library.Mock.Setup(l => l.GetItemById<BaseItem>(box.Id)).Returns(() => { boxLookups++; return box; });
+
+            // A library scan or chapter task re-saves the item without changing its tracks.
+            hidden.CommunityRating = 6f;
+            cache.EnqueueUpdate(hidden.Id);
+            FlushTwice(cache);
+            Assert.Equal(0, boxLookups);
+
+            hidden.Sources = Tracks("spa", "jpn");
+            cache.EnqueueUpdate(hidden.Id);
+            FlushTwice(cache);
+            Assert.True(boxLookups > 0);
+            Assert.Equal(new[] { "eng", "jpn", "spa" }, Audio(cache, box));
+        });
+    }
+
+    [Fact]
+    public void AMemberChangedJustBeforeShutdownReachesItsCollectionAfterRestart()
+    {
+        using var f = new ApiPluginFixture();
+        f.Plugin.Configuration.TagCacheServerMode = true;
+        var library = new Library();
+        var movie = new Movie { Id = Guid.NewGuid(), Name = "Movie", Sources = Tracks("eng", "fre") };
+        var box = new BoxSet { Id = Guid.NewGuid(), Name = "Box", LinkedChildren = [new LinkedChild { ItemId = movie.Id }] };
+        library.Items.AddRange(new BaseItem[] { movie, box });
+        var previous = BaseItem.LibraryManager;
+        var previousLogger = BaseItem.Logger;
+        BaseItem.LibraryManager = library.Mock.Object;
+        BaseItem.Logger = NullLogger<BaseItem>.Instance;
+        try
+        {
+            TagCacheService Create() => new(library.Mock.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger, new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger));
+            using (var before = Create())
+            {
+                before.BuildFullCache(null, CancellationToken.None);
+                // The change is still queued when the server stops: shutdown applies the
+                // movie but leaves its collection to the next start.
+                movie.Sources = Tracks("eng");
+                before.EnqueueUpdate(movie.Id);
+            }
+
+            using var cache = Create();
+            cache.LoadFromDisk();
+            Assert.Equal(new[] { "eng" }, Audio(cache, movie));
+            Assert.Equal(new[] { "eng", "fre" }, Audio(cache, box));
+            Flush(cache);
+            Assert.Equal(new[] { "eng" }, Audio(cache, box));
+        }
+        finally
+        {
+            BaseItem.LibraryManager = previous;
+            BaseItem.Logger = previousLogger;
+        }
+    }
+
+    [Fact]
     public void AMemberLinkedByPathReachesItsCollection()
     {
         var library = new Library();
@@ -486,6 +549,9 @@ public class TagCacheCollectionLanguagesTests
             using var cache = Create();
             cache.LoadFromDisk();
             Assert.Equal(new[] { "eng", "fre" }, Audio(cache, box));
+            // Saved before the repair ran (a crash now must not skip it): still no index.
+            cache.SaveToDisk();
+            Assert.False(JsonNode.Parse(File.ReadAllText(file))!.AsObject().ContainsKey("CollectionMembers"));
             Flush(cache);
             Assert.Equal(new[] { "eng" }, Audio(cache, box));
 
