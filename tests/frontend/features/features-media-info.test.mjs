@@ -35,6 +35,10 @@ test('audio language selected native source fallback excludes other versions',as
  const h=setup(t);h.JE.cdn={flagSvg:code=>`/flags/${code}.svg`};h.load('core/media-language.js');h.window.ApiClient.ajax=async()=>{throw new Error('not available');};h.window.ApiClient.getItem=async()=>({Type:'Movie',MediaSources:[{Id:'a',MediaStreams:[{Type:'Audio',Language:'en'}]},{Id:'b',MediaStreams:[{Type:'Audio',Language:'fr'}]}]});
  h.api.displayAudioLanguages('item',h.container,'b');await h.settle();assert.deepEqual(Array.from(h.container.querySelectorAll('.audio-language-item'),e=>e.dataset.lang),['fr']);
 });
+test('audio language for a selected version reads the top-level streams when its source entry carries none',async t=>{
+ const h=setup(t);h.JE.cdn={flagSvg:code=>`/flags/${code}.svg`};h.load('core/media-language.js');h.window.ApiClient.ajax=async()=>({Items:[{Type:'Movie',MediaStreams:[{Type:'Video',Language:'und'},{Type:'Audio',Language:'eng'}],MediaSources:[{Id:'a'}]}]});
+ h.api.displayAudioLanguages('item',h.container,'a');await h.settle();assert.deepEqual(Array.from(h.container.querySelectorAll('.audio-language-item'),e=>e.dataset.lang),['eng']);
+});
 test('old-user audio languages cannot repopulate cache after user switch',async t=>{
  const h=setup(t);h.JE.cdn={flagSvg:code=>`/flags/${code}.svg`};h.load('core/media-language.js');const pending=deferred();let calls=0;h.window.ApiClient.ajax=()=>{calls++;return calls===1?pending.promise:Promise.resolve({Items:[{Type:'Movie',MediaStreams:[{Type:'Audio',Language:'fr'}]}]});};
  h.api.displayAudioLanguages('item',h.container);h.switchUser();pending.resolve({Items:[{Type:'Movie',MediaStreams:[{Type:'Audio',Language:'en'}]}]});await h.settle();h.container.replaceChildren();h.api.displayAudioLanguages('item',h.container);await h.settle();assert.equal(calls,2);assert.deepEqual(Array.from(h.container.querySelectorAll('.audio-language-item'),e=>e.dataset.lang),['fr']);
