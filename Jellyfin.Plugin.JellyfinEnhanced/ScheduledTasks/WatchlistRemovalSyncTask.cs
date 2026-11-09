@@ -126,13 +126,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                 Recursive = true
             });
 
-            var byKey = new Dictionary<string, BaseItem>(StringComparer.OrdinalIgnoreCase);
+            // A movie with several versions is several library items sharing one TMDB id, and a
+            // like can sit on any of them, so every item per key is kept.
+            var byKey = new Dictionary<string, List<BaseItem>>(StringComparer.OrdinalIgnoreCase);
             foreach (var item in libraryItems)
             {
                 if (item.ProviderIds == null || !item.ProviderIds.TryGetValue("Tmdb", out var tmdbStr)
                     || !int.TryParse(tmdbStr, out var tmdbId) || tmdbId <= 0) continue;
                 var mediaType = item.GetBaseItemKind() == BaseItemKind.Movie ? "movie" : "tv";
-                byKey[WatchlistSyncPlanner.Key(mediaType, tmdbId)] = item;
+                var key = WatchlistSyncPlanner.Key(mediaType, tmdbId);
+                if (!byKey.TryGetValue(key, out var versions)) byKey[key] = versions = new List<BaseItem>();
+                versions.Add(item);
             }
             var inLibrary = new HashSet<string>(byKey.Keys, StringComparer.OrdinalIgnoreCase);
 
@@ -150,7 +154,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                         continue;
                     }
 
-                    var seerrList = await GetSeerrWatchlist(httpClient, seerrUrl, seerrUserId, config.JellyseerrApiKey);
+                    var seerrList = await Helpers.Jellyseerr.SeerrWatchlistReader.ReadKeysAsync(httpClient, seerrUrl, seerrUserId, config.JellyseerrApiKey, m => _logger.Warning($"{Tag} {m}"), cancellationToken);
                     if (seerrList == null)
                     {
                         // An unreadable list must never look like "everything was removed".
@@ -159,9 +163,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                     }
 
                     var jellyfinList = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                    foreach (var (key, item) in byKey)
+                    foreach (var (key, versions) in byKey)
                     {
-                        if (_userDataManager.GetUserData(user, item)?.Likes == true) jellyfinList.Add(key);
+                        if (versions.Any(v => _userDataManager.GetUserData(user, v)?.Likes == true)) jellyfinList.Add(key);
                     }
 
                     var state = _userConfigurationManager.GetWatchlistSyncState(user.Id);
@@ -172,7 +176,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                     {
                         cancellationToken.ThrowIfCancellationRequested();
                         var (mediaType, tmdbId) = SplitKey(key);
-                        if (await RemoveFromSeerr(httpClient, seerrUrl, seerrUserId, config.JellyseerrApiKey, tmdbId, user.Username))
+                        if (await RemoveFromSeerr(httpClient, seerrUrl, seerrUserId, config.JellyseerrApiKey, mediaType, tmdbId, user.Username))
                         {
                             removedFromSeerr++;
                             _logger.Info($"{Tag} Removed from Seerr watchlist: {key} for {user.Username}");
@@ -182,12 +186,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
 
                     foreach (var key in plan.RemoveFromJellyfin)
                     {
-                        var data = byKey.TryGetValue(key, out var item) ? _userDataManager.GetUserData(user, item) : null;
-                        if (item == null || data == null) { next.Add(key); continue; }
-                        data.Likes = null;
-                        _userDataManager.SaveUserData(user, item, data, UserDataSaveReason.UpdateUserRating, default);
+                        if (!byKey.TryGetValue(key, out var versions)) { next.Add(key); continue; }
+                        foreach (var version in versions)
+                        {
+                            var data = _userDataManager.GetUserData(user, version);
+                            if (data?.Likes != true) continue;
+                            data.Likes = null;
+                            _userDataManager.SaveUserData(user, version, data, UserDataSaveReason.UpdateUserRating, default);
+                        }
+
                         removedFromJellyfin++;
-                        _logger.Info($"{Tag} Removed from Jellyfin watchlist: {item.Name} for {user.Username}");
+                        _logger.Info($"{Tag} Removed from Jellyfin watchlist: {versions[0].Name} for {user.Username}");
                     }
 
                     _userConfigurationManager.SaveWatchlistSyncState(user.Id, new WatchlistSyncState
@@ -263,53 +272,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
             return result;
         }
 
-        // Null when the list could not be read completely.
-        private async Task<HashSet<string>?> GetSeerrWatchlist(HttpClient httpClient, string seerrUrl, string seerrUserId, string apiKey)
-        {
-            var items = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            const int pageSize = 100;
-            var page = 1;
-            try
-            {
-                while (true)
-                {
-                    var uri = $"{seerrUrl.TrimEnd('/')}/api/v1/user/{seerrUserId}/watchlist?take={pageSize}&page={page}";
-                    using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(HttpMethod.Get, uri, apiKey, seerrUserId);
-                    using var response = await httpClient.SendAsync(request);
-                    var (content, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, uri);
-                    if (error != null) return null;
-
-                    var json = JsonSerializer.Deserialize<JsonElement>(content!);
-                    if (!json.TryGetProperty("results", out var results)) return null;
-
-                    var count = 0;
-                    foreach (var item in results.EnumerateArray())
-                    {
-                        count++;
-                        var tmdbId = item.TryGetProperty("tmdbId", out var t) && t.ValueKind == JsonValueKind.Number ? t.GetInt32() : 0;
-                        var mediaType = item.TryGetProperty("mediaType", out var m) ? m.GetString() ?? string.Empty : string.Empty;
-                        if (tmdbId > 0 && mediaType.Length > 0) items.Add(WatchlistSyncPlanner.Key(mediaType, tmdbId));
-                    }
-
-                    if (count < pageSize) break;
-                    if (++page > 1000) return null;
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.Error($"{Tag} Error fetching Seerr watchlist: {ex.Message}");
-                return null;
-            }
-
-            return items;
-        }
-
         // A successful DELETE has an empty body, so the status code is checked directly.
-        private async Task<bool> RemoveFromSeerr(HttpClient httpClient, string seerrUrl, string seerrUserId, string apiKey, int tmdbId, string username)
+        private async Task<bool> RemoveFromSeerr(HttpClient httpClient, string seerrUrl, string seerrUserId, string apiKey, string mediaType, int tmdbId, string username)
         {
             try
             {
-                var uri = $"{seerrUrl.TrimEnd('/')}/api/v1/watchlist/{tmdbId}";
+                // Seerr 3.x requires mediaType on this call and answers 400 without it.
+                var uri = $"{seerrUrl.TrimEnd('/')}/api/v1/watchlist/{tmdbId}?mediaType={Uri.EscapeDataString(mediaType)}";
                 using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(HttpMethod.Delete, uri, apiKey, seerrUserId);
                 using var response = await httpClient.SendAsync(request);
                 if (response.IsSuccessStatusCode || (int)response.StatusCode == 404) return true;

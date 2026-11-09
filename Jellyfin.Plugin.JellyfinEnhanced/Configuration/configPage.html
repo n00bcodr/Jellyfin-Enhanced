@@ -3582,23 +3582,31 @@
                 renderSpoilerAutoEnableLibraries(config.SpoilerAutoEnableLibraryIds || '');
 
 
-                // Set up event handler for watchlist prevention checkbox
-                function toggleWatchlistRetentionVisibility() {
-                    const preventionEnabled = document.querySelector('#preventWatchlistReAddition').checked;
-                    const retentionContainer = document.querySelector('#watchlistMemoryRetentionDays').closest('.inputContainer');
-                    if (retentionContainer) {
-                        retentionContainer.style.display = preventionEnabled ? '' : 'none';
+                // "Don't re-add removed items" (and its retention days) only matter when removals are set to
+                // "Seerr decides" or "Never". With "Jellyfin decides" or "Both", a removal in Jellyfin also removes the
+                // item from Seerr, so there is nothing left to re-add and both rows are hidden.
+                function updateWatchlistMemoryVisibility() {
+                    var modeEl = document.querySelector('#watchlistRemovalSync');
+                    var toggle = document.querySelector('#preventWatchlistReAddition');
+                    var days = document.querySelector('#watchlistMemoryRetentionDays');
+                    if (!modeEl || !toggle || !days) return;
+                    var applies = modeEl.value === 'seerr' || modeEl.value === 'off';
+                    var toggleRow = toggle.closest('.checkboxContainer, .inputContainer, .selectContainer') || toggle.closest('label');
+                    var daysRow = days.closest('.inputContainer');
+                    if (toggleRow) jeaSetDepHidden(toggleRow, 'preventWatchlistReAddition', !applies);
+                    var showDays = applies && toggle.checked;
+                    if (daysRow) {
+                        daysRow.style.display = showDays ? '' : 'none';
+                        jeaSetDepHidden(daysRow, 'watchlistMemoryRetentionDays', !showDays);
                     }
                 }
 
-                // Set initial visibility
-                toggleWatchlistRetentionVisibility();
-
-                // Add event listener
-                document.querySelector('#preventWatchlistReAddition').addEventListener('change', toggleWatchlistRetentionVisibility);
-
                 // Update TMDB-dependent settings after config is loaded
                 updateAllDependencies();
+                // After the generic dependency pass, so these two rows follow the removal mode as well.
+                updateWatchlistMemoryVisibility();
+                document.querySelector('#preventWatchlistReAddition').addEventListener('change', updateWatchlistMemoryVisibility);
+                document.querySelector('#watchlistRemovalSync').addEventListener('change', updateWatchlistMemoryVisibility);
 
                 // Refresh the Requests Page requirements banner off freshly-
                 // rendered instance cards and loaded Seerr fields.

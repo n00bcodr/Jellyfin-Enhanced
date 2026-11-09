@@ -91,9 +91,9 @@ public class WatchlistSyncPlannerTests
 [Collection("Plugin singleton")]
 public class WatchlistRemovalSyncTaskTests
 {
-    private sealed record Run(int Deletes, string? DeletedPath, string? ApiUser, WatchlistSyncState State, UserItemData Data);
+    private sealed record Run(int Deletes, string? DeletedPath, string? ApiUser, WatchlistSyncState State, UserItemData Data, UserItemData[] AllData);
 
-    private static async Task<Run> Execute(string[] previousSynced, bool jellyfinLiked, string[] seerrList, string mode = "jellyfin", bool seerrFails = false)
+    private static async Task<Run> Execute(string[] previousSynced, bool jellyfinLiked, string[] seerrList, string mode = "jellyfin", bool seerrFails = false, int versions = 1)
     {
         using var f = new ApiPluginFixture();
         var user = new User("alice", "default", "default") { Id = Guid.NewGuid() };
@@ -106,9 +106,11 @@ public class WatchlistRemovalSyncTaskTests
         if (previousSynced.Length > 0)
             f.Core.Manager.SaveWatchlistSyncState(user.Id, new WatchlistSyncState { Synced = previousSynced.ToList() });
 
-        var movie = new Movie { Id = Guid.NewGuid(), Name = "Matrix", ProviderIds = new() { ["Tmdb"] = "603" } };
+        // A movie with several versions is several library items sharing one TMDB id.
+        var movies = Enumerable.Range(0, versions)
+            .Select(_ => (BaseItem)new Movie { Id = Guid.NewGuid(), Name = "Matrix", ProviderIds = new() { ["Tmdb"] = "603" } }).ToArray();
         var library = new Mock<ILibraryManager>();
-        library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns(new BaseItem[] { movie });
+        library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns(movies);
         var users = new Mock<IUserManager>();
         var parameter = System.Linq.Expressions.Expression.Parameter(typeof(IUserManager), "u");
         var method = typeof(IUserManager).GetMethod("GetUsers", Type.EmptyTypes);
@@ -116,9 +118,15 @@ public class WatchlistRemovalSyncTaskTests
             ? System.Linq.Expressions.Expression.Call(parameter, method)
             : System.Linq.Expressions.Expression.Property(parameter, "Users");
         users.Setup(System.Linq.Expressions.Expression.Lambda<Func<IUserManager, IEnumerable<User>>>(body, parameter)).Returns(new[] { user });
-        var data = new UserItemData { Key = "test", Likes = jellyfinLiked ? true : null };
+        // The like sits on the last version only, as when it was saved against a non-primary item.
+        var allData = movies.Select((_, i) => new UserItemData { Key = "test" + i, Likes = jellyfinLiked && i == versions - 1 ? true : null }).ToArray();
+        var data = allData[^1];
         var dataManager = new Mock<IUserDataManager>();
-        dataManager.Setup(d => d.GetUserData(user, It.IsAny<BaseItem>())).Returns(data);
+        for (var i = 0; i < movies.Length; i++)
+        {
+            var d = allData[i];
+            dataManager.Setup(m => m.GetUserData(user, movies[i])).Returns(d);
+        }
 
         var deletes = 0;
         string? deletedPath = null, apiUser = null;
@@ -130,6 +138,8 @@ public class WatchlistRemovalSyncTaskTests
             {
                 deletes++;
                 deletedPath = request.RequestUri.AbsolutePath;
+                // Seerr 3.x rejects this call (400) without mediaType.
+                if (request.RequestUri.Query != "?mediaType=movie") return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.BadRequest));
                 apiUser = request.Headers.GetValues("X-Api-User").Single();
                 return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.NoContent));
             }
@@ -139,7 +149,7 @@ public class WatchlistRemovalSyncTaskTests
         });
 
         await new WatchlistRemovalSyncTask(library.Object, users.Object, dataManager.Object, transport, f.Core.Manager, f.Core.Logger).ExecuteAsync(null!, default);
-        return new Run(deletes, deletedPath, apiUser, f.Core.Manager.GetWatchlistSyncState(user.Id), data);
+        return new Run(deletes, deletedPath, apiUser, f.Core.Manager.GetWatchlistSyncState(user.Id), data, allData);
     }
 
     [Fact]
@@ -177,6 +187,19 @@ public class WatchlistRemovalSyncTaskTests
     }
 
     [Fact]
+    public async Task ALikeOnAnyVersionOfAMovieCountsAndRemovalClearsEveryVersion()
+    {
+        // Jellyfin keeps one library item per version, so the like can sit on a non-primary one.
+        var kept = await Execute(["movie:603"], jellyfinLiked: true, seerrList: ["movie:603"], versions: 3);
+        Assert.Equal(0, kept.Deletes);
+        Assert.Equal(["movie:603"], kept.State.Synced);
+
+        var removed = await Execute(["movie:603"], jellyfinLiked: true, seerrList: [], mode: "seerr", versions: 3);
+        Assert.All(removed.AllData, d => Assert.Null(d.Likes));
+        Assert.Empty(removed.State.Synced);
+    }
+
+    [Fact]
     public async Task UnreadableSeerrWatchlistRemovesNothingAndKeepsTheState()
     {
         var run = await Execute(["movie:603"], jellyfinLiked: false, seerrList: [], seerrFails: true);
@@ -189,5 +212,36 @@ public class WatchlistRemovalSyncTaskTests
     {
         var run = await Execute(["movie:603"], jellyfinLiked: false, seerrList: ["movie:603"], mode: "off");
         Assert.Equal(0, run.Deletes);
+    }
+}
+
+public class SeerrWatchlistReaderTests
+{
+    [Fact]
+    public async Task SendsOnlyPageAndFollowsTotalPages()
+    {
+        var queries = new List<string>();
+        using var transport = new IntegrationTransport((request, ct) =>
+        {
+            queries.Add(request.RequestUri!.Query);
+            var page = int.Parse(System.Web.HttpUtility.ParseQueryString(request.RequestUri.Query)["page"]!);
+            var results = page == 1
+                ? new[] { new { mediaType = "movie", tmdbId = 1 } }
+                : new[] { new { mediaType = "tv", tmdbId = 2 } };
+            return Task.FromResult(IntegrationTransport.Response(JsonSerializer.Serialize(new { page, totalPages = 2, totalResults = 2, results })));
+        });
+        var keys = await Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr.SeerrWatchlistReader.ReadKeysAsync(
+            transport.CreateClient(""), "http://seerr.test", "5", "key");
+        Assert.Equal(["?page=1", "?page=2"], queries);
+        Assert.Equal(new[] { "movie:1", "tv:2" }, keys!.OrderBy(k => k));
+    }
+
+    [Fact]
+    public async Task ReturnsNullWhenAPageFailsSoAnUnreadableListIsNeverTreatedAsEmpty()
+    {
+        using var transport = new IntegrationTransport((request, ct) =>
+            Task.FromResult(IntegrationTransport.Response("{\"message\":\"Unknown query parameter 'take'\"}", 400)));
+        Assert.Null(await Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr.SeerrWatchlistReader.ReadKeysAsync(
+            transport.CreateClient(""), "http://seerr.test", "5", "key"));
     }
 }

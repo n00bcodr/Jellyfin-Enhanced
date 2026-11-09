@@ -894,7 +894,7 @@ JEAdmin.define({
             { type: 'group', title: 'Adding items', open: true, items: [
                 { type: 'note', html: 'Choose which direction new items travel. Turn on both to have a new item added on either side appear on the other.' },
                 { id: 'addRequestedMediaToWatchlist', prop: 'AddRequestedMediaToWatchlist', type: 'toggle', label: 'Requested media goes on the requester\'s watchlist',
-                  desc: 'When something a user requested is added to your library, it goes on that user\'s Jellyfin watchlist. Requests made through Seerr Search in Jellyfin Enhanced also go on their Seerr watchlist. This is independent of the two options below.' },
+                  desc: 'When something a user requested arrives in your library, it goes on that user\'s Jellyfin watchlist. Nothing is added when the request is made, and it reaches their Seerr watchlist only through the Jellyfin → Seerr sync below, if that is on. This is independent of the two adding options below. Changing it needs a Jellyfin restart.' },
                 { id: 'syncJellyseerrWatchlist', prop: 'SyncJellyseerrWatchlist', type: 'toggle', label: 'Seerr → Jellyfin: add Seerr watchlist items to Jellyfin',
                   desc: 'Items a user adds to their Seerr watchlist are added to their Jellyfin watchlist (only if the item is in your library).<br/>Runs in Scheduled Tasks &gt; "Sync Watchlist from Seerr to Jellyfin".' },
                 { id: 'syncJellyfinWatchlistToSeerr', prop: 'SyncJellyfinWatchlistToSeerr', type: 'toggle', label: 'Jellyfin → Seerr: add Jellyfin watchlist items to Seerr',
@@ -914,7 +914,7 @@ JEAdmin.define({
                       ['both', 'Both stay in sync: a removal on either side is copied to the other'],
                       ['off', 'Never remove anything automatically']
                   ],
-                  desc: '<strong>Jellyfin decides</strong> (recommended): removing or watching an item in Jellyfin removes it from Seerr. Removing it only in Seerr changes nothing in Jellyfin.<br/><strong>Seerr decides</strong>: the opposite. Removing it only in Jellyfin changes nothing in Seerr.<br/><strong>Both stay in sync</strong>: whichever side an item is removed from, the other follows.<br/><strong>Never</strong>: no removals are copied.<br/>Runs daily in Scheduled Tasks &gt; "Sync Watchlist Removals between Jellyfin and Seerr", after the two add syncs. The first run only records what is on both lists and removes nothing. Does nothing unless at least one of the adding options above is on.' }
+                  desc: '<strong>Jellyfin decides</strong> (recommended): removing or watching an item in Jellyfin removes it from Seerr. Removing it only in Seerr changes nothing in Jellyfin.<br/><strong>Seerr decides</strong>: the opposite. Removing it only in Jellyfin changes nothing in Seerr.<br/><strong>Both stay in sync</strong>: whichever side an item is removed from, the other follows.<br/><strong>Never</strong>: no removals are copied.<br/>Runs daily in Scheduled Tasks &gt; "Sync Watchlist Removals between Jellyfin and Seerr", after the two add syncs. The first run only records what is on both lists and removes nothing. Does nothing unless at least one of the adding options above is on.<br/>With <strong>Jellyfin decides</strong> or <strong>Both</strong>, an item removed in Jellyfin is also removed from Seerr, so it can\'t come back and the "Don\'t re-add" options above are hidden. They appear for <strong>Seerr decides</strong> and <strong>Never</strong>.' }
             ] }
         ]
     },
