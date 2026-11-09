@@ -311,7 +311,7 @@ See [Watchlist Sync](seerr-features.md#watchlist-sync) for schedules, limits, an
 
 ??? note "Details"
 
-    The [KefinTweaks plugin](https://github.com/ranaldsgift/KefinTweaks) provides the Jellyfin watchlist interface. Sync switches are checked when their scheduled tasks run. Neither direction mirrors deletions.
+    The [KefinTweaks plugin](https://github.com/ranaldsgift/KefinTweaks) provides the Jellyfin watchlist interface. Sync switches are checked when their scheduled tasks run. The two add syncs never remove anything; removals are handled by **Sync Watchlist Removals** (see [Watchlist Removal Sync](seerr-features.md#watchlist-removal-sync)).
 
 ### Sync Seerr Watchlist to Jellyfin
 
@@ -324,6 +324,9 @@ Bring Seerr watchlist entries into Jellyfin with a scheduled task. It runs daily
 Bring Jellyfin watchlist entries into Seerr with a scheduled task. It runs daily at 03:30 by default.
 
 **How to use:** Enable **Sync Jellyfin Watchlist → Seerr**, then adjust or run **Sync Watchlist from Jellyfin to Seerr** under **Dashboard** → **Scheduled Tasks**.
+
+### Watchlist Removals
+Choose whose removals are copied to the other watchlist: **Jellyfin decides** (default), **Seerr decides**, **Both stay in sync**, or **Never**. Runs as **Sync Watchlist Removals between Jellyfin and Seerr**, daily at 04:00 by default. See [Watchlist Removal Sync](seerr-features.md#watchlist-removal-sync).
 
 ### Only Allow Requesting One Season at a Time
 - Removes **Select All** from the season modal and lets users tick only one season per request
