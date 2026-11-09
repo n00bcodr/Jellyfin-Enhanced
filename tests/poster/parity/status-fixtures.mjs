@@ -23,7 +23,8 @@ add('added-video', { Type: 'Video', DateCreated: ago(1) }, 'just_added', 'Just A
 add('added-collection', { Type: 'BoxSet', DateCreated: ago(1) }, 'just_added', 'Just Added');
 add('new-movie', movie({ PremiereDate: ago(2), DateCreated: ago(1) }), 'new_movie', 'New Movie');
 add('new-series', show({ PremiereDate: ago(2) }), 'new_series', 'New Series');
-add('new-episode', episode({ PremiereDate: old, DateCreated: ago(1) }), 'new_episode', 'New Episode');
+add('new-episode', episode({ PremiereDate: ago(2), DateCreated: old }), 'new_episode', 'New Episode');
+add('episode-added-but-aired-long-ago', episode({ PremiereDate: old, DateCreated: ago(1) }), 'just_added', 'Just Added');
 add('container-new-episode', show({ LatestEpisodeAdded: ago(1) }), 'new_episode', 'New Episode');
 add('coming-soon', movie({ PremiereDate: now + day }), 'coming_soon', 'Coming Soon');
 add('popular', movie({ PremiereDate: now + day }), 'trending_today', '#3 Today', { rank: 3 });
