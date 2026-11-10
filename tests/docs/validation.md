@@ -6,13 +6,11 @@ What the regression suite runs and what the latest complete local run produced. 
 
 ```sh
 dotnet build Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.csproj -c Release -p:JellyfinTarget=jf12
-dotnet build Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.csproj -c Release -p:JellyfinTarget=jf10
 python3 tests/run.py fast
 python3 tests/run.py browser
 python3 tests/runner/poster.py
 python3 tests/run.py mutation --target jf12
 python3 tests/run.py history
-python3 tests/run.py host --target jf10
 python3 tests/run.py host --target jf12
 ```
 
@@ -20,7 +18,9 @@ python3 tests/run.py host --target jf12
 
 The culture and time-zone row reruns `python3 tests/run.py backend` once with `LANG=fa_IR.UTF-8 LC_ALL=fa_IR.UTF-8` and once with `TZ=America/Los_Angeles` set. The Node 22.14.0 results come from `python3 tests/run.py frontend` with that Node first on `PATH`.
 
-## Latest results
+## Historical upstream results
+
+These dual-target results predate the Jellyfin 12-only rewrite. They are historical evidence, not current support or rewrite validation.
 
 Every stage below ran once at commit `b8179d9e` on 2026-10-08, except the real-host row, which was rerun at `8e64c47c` after the host suite switched to the newest release of each line. All passed with no failed or skipped tests.
 

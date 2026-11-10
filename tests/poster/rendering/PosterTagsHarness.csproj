@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk" InitialTargets="ValidateJellyfinTarget">
   <!--
     Parity / contact-sheet / benchmark harness for the native poster tag renderer (issue #590).
     Not part of the plugin: JellyfinEnhanced.csproj does not reference it. tests/runner/poster.py runs it
@@ -6,7 +6,7 @@
     Runs the plugin's real renderer (ProjectReference, jf12 build) against the SkiaSharp + HarfBuzz versions a
     Jellyfin host ships (both lines are byte-identical to these NuGet natives):
       -p:Skia=3.119.4  Jellyfin 12.1:  SkiaSharp 3.119.4, HarfBuzzSharp 8.3.1.5
-      -p:Skia=3.116.1  Jellyfin 10.11: SkiaSharp 3.116.1, HarfBuzzSharp 8.3.0.1 managed / 8.3.1.1 native
+      -p:Skia=3.116.1  Baseline dependency: SkiaSharp 3.116.1, HarfBuzzSharp 8.3.0.1 managed / 8.3.1.1 native
   -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -41,4 +41,12 @@
   <ItemGroup>
     <AssemblyMetadata Include="Skia" Value="$(Skia)" />
   </ItemGroup>
+
+  <Target Name="ValidateJellyfinTarget">
+    <Error Condition="'$(JellyfinTarget)' != '' and '$(JellyfinTarget)' != 'jf12'"
+           Text="This rewrite supports Jellyfin 12.x only. Use JellyfinTarget=jf12; '$(JellyfinTarget)' is unsupported." />
+    <Error Condition="'$(TargetFramework)' != 'net10.0' or '$(TargetFrameworks)' != ''"
+           Text="This rewrite supports only TargetFramework=net10.0 (Jellyfin 12.x)." />
+  </Target>
+
 </Project>

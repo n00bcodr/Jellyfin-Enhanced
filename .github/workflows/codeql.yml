@@ -62,6 +62,17 @@ jobs:
         dotnet-version: '10.0.x'
 
     - if: matrix.build-mode == 'manual'
+      name: Setup Node for generated client verification
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version: '22.14.0'
+        cache: npm
+
+    - if: matrix.build-mode == 'manual'
+      name: Install client build dependencies
+      run: npm ci
+
+    - if: matrix.build-mode == 'manual'
       name: Build
       run: dotnet build Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.csproj --configuration Release
 

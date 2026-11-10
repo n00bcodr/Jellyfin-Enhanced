@@ -1,0 +1,58 @@
+{
+  "//": [
+    "canopy K1b: modules that several component scripts used to inline, shipped once (scripts/client/shared-modules.mjs).",
+    "modules: module -> its provider, the first js/component-scripts.json script that uses it. The provider publishes the",
+    "module's namespace on JE.core.sharedModules before its own code runs; every later script that imports the module",
+    "gets a stub reading that copy instead of inlining it. The build fails if a consumer loads before the provider.",
+    "Only stateless modules belong here: the build checks the module's whole runtime import closure for top-level state",
+    "(let/var, classes, collections, calls, top-level statements). A binding it cannot clear syntactically needs a",
+    "reviewed entry saying why it holds no state. Left duplicated on purpose (stateful): see",
+    "artifacts/restructure-plan/step-logs/canopy-k1b.md (hidden-content/host.ts, seerr host-core/host-details/",
+    "host-discovery and everything importing them, e.g. seerr/core/runtime.ts)."
+  ],
+  "modules": {
+    "client/src/contracts/schema.ts": "js/enhanced/config.js",
+    "client/src/contracts/validate.ts": "js/enhanced/config.js",
+    "client/src/features/spoiler-guard/host.ts": "js/enhanced/spoilerguard/ids.js",
+    "client/src/features/seerr/core/status.ts": "js/jellyseerr/seerr-status.js",
+    "client/src/features/seerr/core/decode.ts": "js/jellyseerr/seerr-status.js",
+    "client/src/features/seerr/core/ui/icon-markup.ts": "js/jellyseerr/jellyseerr.js",
+    "client/src/features/details-providers/wire.ts": "js/enhanced/features-random-button.js",
+    "client/src/features/bookmarks/lifetime.ts": "js/enhanced/bookmarks/bookmarks.js",
+    "client/src/features/bookmarks/host.ts": "js/enhanced/bookmarks/bookmarks.js",
+    "client/src/features/downloads/runtime.ts": "js/arr/requests/requests-page-styles.js",
+    "client/src/features/media-tags/layout/layout-rules.ts": "js/core/tag-layout.js",
+    "client/src/features/player/wire.ts": "js/enhanced/player/playback.js",
+    "client/src/features/spoiler-guard/ownership.ts": "js/enhanced/spoilerguard/state.js",
+    "client/src/features/details-providers/page.ts": "js/enhanced/features-random-button.js",
+    "client/src/features/hidden-content/model.ts": "js/enhanced/homeremoval/features-remove-home.js",
+    "client/src/features/player/lifetime.ts": "js/enhanced/player/playback.js",
+    "client/src/features/details-providers/host.ts": "js/enhanced/features-random-button.js",
+    "client/src/features/seerr/core/display.ts": "js/jellyseerr/ui/ui-popover.js",
+    "client/src/features/media-tags/pipeline/dto.ts": "js/core/tag-renderer-base.js",
+    "client/src/features/player/host.ts": "js/enhanced/player/playback.js",
+    "client/src/features/media-tags/host.ts": "js/core/tag-renderer-base.js",
+    "client/src/features/downloads/host.ts": "js/arr/requests/requests-page-styles.js",
+    "client/src/features/details-providers/links.ts": "js/enhanced/itemdetails/features-details-media-info.js",
+    "client/src/features/calendar/host.ts": "js/arr/calendar/calendar-page-styles.js"
+  },
+  "reviewed": {
+    "client/src/features/seerr/core/decode.ts": {
+      "bindings": [
+        "SeerrDecodeError",
+        "*Checks"
+      ],
+      "reason": "SeerrDecodeError has no static members and is only ever thrown (`throw new`); nothing in client/src tests `instanceof SeerrDecodeError`, so one shared class is indistinguishable from per-script copies. The *Checks tables are module-private, built once at load from the pure combinators optional/nullable/listOf/either (each returns a closure over its arguments only) and only read by matches() through Object.entries."
+    },
+    "client/src/features/media-tags/layout/layout-rules.ts": {
+      "bindings": [
+        "GROUPS",
+        "LAYOUT_SLOTS",
+        "EDGE_SPACINGS",
+        "POSITION_TO_SLOT",
+        "SLOT_TO_POSITION"
+      ],
+      "reason": "Constant tables. GROUPS is a Set no client source references after its declaration (JE.core.tagLayout.GROUPS is a DEFAULT_ORDER.slice() copy). The other four are object literals given a null prototype once at load by withoutPrototype() and then only read (hasOwn, indexing, includes, Object.values, spread copies); no client source assigns to, deletes from or mutates them."
+    }
+  }
+}

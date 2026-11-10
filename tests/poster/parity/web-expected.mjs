@@ -20,6 +20,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
+import sharedRuntime from '../../frontend/helpers/feature-context.cjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const jsRoot = join(here, '..', '..', '..', 'Jellyfin.Plugin.JellyfinEnhanced', 'js');
@@ -73,7 +74,7 @@ function localeStrings(settings) {
 const qualitySource = sources['tags/qualitytags.js'];
 const qualityArrays = {};
 for (const name of ['resolutionOrder', 'sourceOrder', 'dynamicRangeOrder', 'specialFormatOrder', 'codecOrder', 'audioOrder']) {
-    const m = qualitySource.match(new RegExp(`const ${name} = (\\[[^\\]]*\\]);`));
+    const m = qualitySource.match(new RegExp(`(?:const|var) ${name} = (\\[[^\\]]*\\]);`));
     qualityArrays[name] = JSON.parse(m[1].replace(/'/g, '"'));
 }
 const CATEGORY_OF_ARRAY = { resolutionOrder: 'resolution', sourceOrder: 'source', dynamicRangeOrder: 'dynamicRange', specialFormatOrder: 'specialFormat', codecOrder: 'videoCodec', audioOrder: 'audioInfo' };
@@ -252,8 +253,16 @@ function createSandbox(profile, pluginConfig, webSettings, reviews) {
     };
     context.window = context;
     context.globalThis = context;
+    // Compiled modules narrow with instanceof; this stub DOM has one element class.
+    context.HTMLElement = Element;
     vm.createContext(context);
-    for (const script of SCRIPTS) vm.runInContext(sources[script], context, { filename: script });
+    // What the bundle's other scripts publish before these (featureContext from core/ui-kit.js, canopy K1; the shared
+    // modules of client/shared-modules.json, canopy K1b), compiled from the same source.
+    const run = (code) => vm.runInContext(code, context);
+    for (const script of SCRIPTS) {
+        sharedRuntime.provideSharedRuntime(run, sources[script], script);
+        vm.runInContext(sources[script], context, { filename: script });
+    }
     return { context, JE, css };
 }
 

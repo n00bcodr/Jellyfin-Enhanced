@@ -1,12 +1,30 @@
-/** @file Cached Awards/chart chips shared by posters and the settings preview. */
-(function(JE) {
-    'use strict';
-    const NAMES = {"imdbTop250": "awards_tags_imdbTop250", "certifiedFresh": "awards_tags_certifiedFresh", "oscar": "awards_tags_oscar", "emmy": "awards_tags_emmy", "letterboxdTop250": "awards_tags_letterboxdTop250"};
-    const CAPTION_KEYS = {"imdbTop250": "awards_tags_label_imdbTop250", "certifiedFresh": "awards_tags_label_certifiedFresh", "oscar": "awards_tags_oscar", "emmy": "awards_tags_emmy", "letterboxdTop250": "awards_tags_label_imdbTop250"};
-    const LOGOS = {"imdbTop250":"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 16\"><path fill=\"#f5c518\" d=\"M1 2H23V14H1Z\"/><path fill=\"#151515\" d=\"M3 4H5V12H3ZM7 4H10L11 8L12 4H15V12H13V7L12 12H10L9 7V12H7ZM17 4H20L22 6V10L20 12H17ZM19 6V10H20V6Z\"/></svg>","certifiedFresh":"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><path fill=\"#ef4135\" d=\"M4 7C1 17 9 23 15 20C23 18 23 7 16 6C12 3 7 3 4 7Z\"/><path fill=\"#48a848\" d=\"M12 8L6 2L11 4L14 0L15 5L21 3L17 8Z\"/></svg>","oscar":"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><path fill=\"#d7ae52\" d=\"M10 1H14L15 5L13 8L15 17H18V20H20V23H4V20H6V17H9L11 8L9 5Z\"/></svg>","emmy":"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><path fill=\"#d7ae52\" d=\"M2 3L9 7L12 2L15 7L22 3L19 12L14 14L15 20H19V23H5V20H9L10 14L5 12ZM9 9L12 12L15 9L12 6Z\"/></svg>","letterboxdTop250":"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><path fill=\"#ff8000\" d=\"M0 12A5 5 0 1 0 10 12A5 5 0 1 0 0 12\"/><path fill=\"#00e054\" d=\"M7 12A5 5 0 1 0 17 12A5 5 0 1 0 7 12\"/><path fill=\"#40bcf4\" d=\"M14 12A5 5 0 1 0 24 12A5 5 0 1 0 14 12\"/></svg>"};
-    const LABELS = { imdbTop250: 'Top 250', certifiedFresh: 'Certified Fresh', oscar: 'Oscar Winner', emmy: 'Emmy Winner', letterboxdTop250: 'Top 250' };
-    const IDS = Object.keys(LABELS);
-    const CSS = `
+(() => {
+"use strict";
+(() => {
+  // client/src/host/context.ts
+  function sharedModule(id) {
+    const namespace = window.JellyfinEnhanced?.core?.sharedModules?.[id];
+    if (!namespace) throw new Error(`${id} is not in JE.core.sharedModules: load its provider first (client/shared-modules.json)`);
+    return namespace;
+  }
+  function sharedExport(namespace, name) {
+    return namespace[name];
+  }
+
+  // client/generated-shared/stub/client/src/features/media-tags/host.ts
+  var shared = /* @__PURE__ */ sharedModule("features/media-tags/host");
+  var export4 = /* @__PURE__ */ sharedExport(shared, "tagRuntimeHost");
+
+  // client/generated-shared/stub/client/src/features/media-tags/pipeline/dto.ts
+  var shared2 = /* @__PURE__ */ sharedModule("features/media-tags/pipeline/dto");
+  var export42 = /* @__PURE__ */ sharedExport(shared2, "isRecord");
+
+  // client/src/features/media-tags/types/awards/awards-data.ts
+  var NAMES = { "imdbTop250": "awards_tags_imdbTop250", "certifiedFresh": "awards_tags_certifiedFresh", "oscar": "awards_tags_oscar", "emmy": "awards_tags_emmy", "letterboxdTop250": "awards_tags_letterboxdTop250" };
+  var CAPTION_KEYS = { "imdbTop250": "awards_tags_label_imdbTop250", "certifiedFresh": "awards_tags_label_certifiedFresh", "oscar": "awards_tags_oscar", "emmy": "awards_tags_emmy", "letterboxdTop250": "awards_tags_label_imdbTop250" };
+  var LOGOS = { "imdbTop250": '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 16"><path fill="#f5c518" d="M1 2H23V14H1Z"/><path fill="#151515" d="M3 4H5V12H3ZM7 4H10L11 8L12 4H15V12H13V7L12 12H10L9 7V12H7ZM17 4H20L22 6V10L20 12H17ZM19 6V10H20V6Z"/></svg>', "certifiedFresh": '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#ef4135" d="M4 7C1 17 9 23 15 20C23 18 23 7 16 6C12 3 7 3 4 7Z"/><path fill="#48a848" d="M12 8L6 2L11 4L14 0L15 5L21 3L17 8Z"/></svg>', "oscar": '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#d7ae52" d="M10 1H14L15 5L13 8L15 17H18V20H20V23H4V20H6V17H9L11 8L9 5Z"/></svg>', "emmy": '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#d7ae52" d="M2 3L9 7L12 2L15 7L22 3L19 12L14 14L15 20H19V23H5V20H9L10 14L5 12ZM9 9L12 12L15 9L12 6Z"/></svg>', "letterboxdTop250": '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#ff8000" d="M0 12A5 5 0 1 0 10 12A5 5 0 1 0 0 12"/><path fill="#00e054" d="M7 12A5 5 0 1 0 17 12A5 5 0 1 0 7 12"/><path fill="#40bcf4" d="M14 12A5 5 0 1 0 24 12A5 5 0 1 0 14 12"/></svg>' };
+  var LABELS = { imdbTop250: "Top 250", certifiedFresh: "Certified Fresh", oscar: "Oscar Winner", emmy: "Emmy Winner", letterboxdTop250: "Top 250" };
+  var CSS = `
         .awards-overlay-container { display:flex; flex-direction:column; gap:calc(4px * var(--je-tag-scale, 1) * var(--je-tag-gap, 1)); pointer-events:none; max-width:100%; }
         /* Only chip anchors intercept hover; empty poster space still reaches Jellyfin. */
         .je-tag-host:has(.awards-overlay-container) { z-index:2; }
@@ -19,87 +37,109 @@
         .layout-mobile .awards-tag { font-size:calc(11px * var(--je-tag-scale, 1)); padding:calc(2px * var(--je-tag-scale, 1)) calc(6px * var(--je-tag-scale, 1)); }
         @media(max-width:480px) { .awards-tag { font-size:calc(11px * var(--je-tag-scale, 1)); padding:calc(2px * var(--je-tag-scale, 1)) calc(4px * var(--je-tag-scale, 1)); } }
     `;
-    /** Read cache or batch facts, accepting either DTO key casing. */
-    function read(facts, key) { return facts?.[key] ?? facts?.[key[0].toUpperCase() + key.slice(1)]; }
-    /** Resolve only provider-confirmed facts; settings switches may remove individual ribbons. */
+  var LOGO_FILES = {
+    imdbTop250: ["mdblist-logos", "imdb.png"],
+    letterboxdTop250: ["mdblist-logos", "letterboxd.png"],
+    certifiedFresh: ["mdblist-logos", "rottentomatoes_fresh.png"],
+    oscar: ["award-logos", "oscar"],
+    emmy: ["award-logos", "emmy"]
+  };
+
+  // client/src/features/media-tags/types/awards/awardstags.ts
+  var IDS = ["imdbTop250", "certifiedFresh", "oscar", "emmy", "letterboxdTop250"];
+  function createAwardsTags(JE) {
+    function read(facts, key) {
+      return facts[key] ?? facts[key.charAt(0).toUpperCase() + key.slice(1)];
+    }
     function resolve(facts) {
-        if (!facts || JE.pluginConfig?.AwardsTagsEnabled === false) return [];
-        const out = [];
-        const admin = JE.pluginConfig || {};
-        const push = (id, flag, rank, year) => { if (flag && (rank === undefined || (Number.isInteger(rank) && rank > 0 && rank <= 250))) out.push({ id, rank, year }); };
-        const imdb = read(facts, 'imdbRank'), letterboxd = read(facts, 'letterboxdRank');
-        push('imdbTop250', admin.AwardsTagsImdb !== false && imdb != null, imdb);
-        push('certifiedFresh', admin.AwardsTagsCertifiedFresh !== false && read(facts, 'certifiedFresh') === true);
-        push('oscar', admin.AwardsTagsOscar !== false && read(facts, 'oscarWinner') === true, undefined, read(facts, 'oscarYear'));
-        push('emmy', admin.AwardsTagsEmmy !== false && read(facts, 'emmyWinner') === true, undefined, read(facts, 'emmyYear'));
-        push('letterboxdTop250', admin.AwardsTagsLetterboxd !== false && letterboxd != null, letterboxd);
-        return out;
+      if (!export42(facts) || JE.pluginConfig?.AwardsTagsEnabled === false) return [];
+      const out = [];
+      const admin = JE.pluginConfig || {};
+      const push = (id, flag, rank, year) => {
+        if (!flag) return;
+        if (rank === void 0 || rank === null) out.push({ id, rank: void 0, year });
+        else if (typeof rank === "number" && Number.isInteger(rank) && rank > 0 && rank <= 250) out.push({ id, rank, year });
+      };
+      const imdb = read(facts, "imdbRank"), letterboxd = read(facts, "letterboxdRank");
+      push("imdbTop250", admin.AwardsTagsImdb !== false && imdb != null, imdb);
+      push("certifiedFresh", admin.AwardsTagsCertifiedFresh !== false && read(facts, "certifiedFresh") === true);
+      push("oscar", admin.AwardsTagsOscar !== false && read(facts, "oscarWinner") === true, void 0, read(facts, "oscarYear"));
+      push("emmy", admin.AwardsTagsEmmy !== false && read(facts, "emmyWinner") === true, void 0, read(facts, "emmyYear"));
+      push("letterboxdTop250", admin.AwardsTagsLetterboxd !== false && letterboxd != null, letterboxd);
+      return out;
     }
-    // [CDN source, file]: the bundled artwork each chip shows; the inline sprites above remain the fallback.
-    const LOGO_FILES = { imdbTop250: ['mdblist-logos', 'imdb.png'], letterboxdTop250: ['mdblist-logos', 'letterboxd.png'],
-        certifiedFresh: ['mdblist-logos', 'rottentomatoes_fresh.png'], oscar: ['award-logos', 'oscar'], emmy: ['award-logos', 'emmy'] };
-    /** Build an escaped text chip around trusted, bundled decorative logo artwork. */
     function chip(fact) {
-        const el = document.createElement('div');
-        el.className = 'awards-tag';
-        el.dataset.jeAward = fact.id;
-        const name = JE.t(NAMES[fact.id]);
-        el.title = name + (fact.rank ? ' · ' + JE.t('awards_tags_rank', { rank: fact.rank }) : '') + (Number.isInteger(fact.year) ? ' · ' + fact.year : '');
-        el.setAttribute('aria-label', el.title);
-        const logo = document.createElement('span');
-        logo.className = 'awards-tag-logo';
-        logo.setAttribute('aria-hidden', 'true');
-        const file = LOGO_FILES[fact.id];
-        if (file && typeof JE.cdn?.url === 'function') {
-            // The same artwork as the item-details rating row and the Awards banner, from the plugin's bundled assets.
-            const img = document.createElement('img');
-            img.src = JE.cdn.url(file[0], file[1]);
-            img.alt = '';
-            img.decoding = 'async';
-            logo.appendChild(img);
-        } else {
-            logo.innerHTML = LOGOS[fact.id] || '';
-        }
-        const text = document.createElement('span');
-        text.textContent = JE.t(CAPTION_KEYS[fact.id]);
-        el.append(logo, text);
-        return el;
+      const el = document.createElement("div");
+      el.className = "awards-tag";
+      el.dataset.jeAward = fact.id;
+      const name = JE.t(NAMES[fact.id]);
+      el.title = name + (fact.rank ? " · " + JE.t("awards_tags_rank", { rank: fact.rank }) : "") + (Number.isInteger(fact.year) ? " · " + fact.year : "");
+      el.setAttribute("aria-label", el.title);
+      const logo = document.createElement("span");
+      logo.className = "awards-tag-logo";
+      logo.setAttribute("aria-hidden", "true");
+      const file = LOGO_FILES[fact.id];
+      if (file && typeof JE.cdn?.url === "function") {
+        const img = document.createElement("img");
+        img.src = JE.cdn.url(file[0], file[1]);
+        img.alt = "";
+        img.decoding = "async";
+        logo.appendChild(img);
+      } else {
+        logo.innerHTML = LOGOS[fact.id] || "";
+      }
+      const text = document.createElement("span");
+      text.textContent = JE.t(CAPTION_KEYS[fact.id]);
+      el.append(logo, text);
+      return el;
     }
-    /** Render already filtered facts through the shared placement and caps controller. */
     function render(ctx, el, facts) {
-        if (ctx.shouldIgnore(el) || el.closest('.je-hidden')) return;
-        ctx.removeExistingOverlay(el);
-        const wrapper = document.createElement('div');
-        wrapper.className = 'awards-overlay-container';
-        for (const fact of resolve(facts)) wrapper.appendChild(chip(fact));
-        ctx.commitOverlay(el, wrapper);
+      if (ctx.shouldIgnore(el) || el.closest(".je-hidden")) return;
+      ctx.removeExistingOverlay(el);
+      const wrapper = document.createElement("div");
+      wrapper.className = "awards-overlay-container";
+      for (const fact of resolve(facts)) wrapper.appendChild(chip(fact));
+      ctx.commitOverlay(el, wrapper);
     }
     const spec = {
-        logPrefix: '[AwardsTags]', settingKey: 'awardsTagsEnabled', containerClass: 'awards-overlay-container', taggedAttr: 'jeAwardsTagged',
-        styleId: 'je-awards-tags-css', buildCss: () => CSS,
-        position: { userKey: 'awardsTagsPosition', pluginKey: 'AwardsTagsPosition', fallback: 'top-left' },
-        cache: { key: 'JellyfinEnhanced-awardsTagsCache', legacyPrefix: 'awardsTagsCache', hotBucket: 'awards', saveOnUnload: false },
-        pipeline: {
-            needsFirstEpisode: false, needsParentSeries: false,
-            render(ctx, el, item) {
-                ctx.setPersistent(item.Id, { facts: item.Awards || null });
-                render(ctx, el, item.Awards);
-            },
-            renderFromCache(ctx, el, itemId) {
-                const cached = ctx.hot?.get(itemId) ?? ctx.getPersistent(itemId);
-                if (!cached) return false;
-                render(ctx, el, cached.facts);
-                return true;
-            },
-            renderFromServerCache(ctx, el, entry) { render(ctx, el, entry.Awards); },
+      logPrefix: "[AwardsTags]",
+      settingKey: "awardsTagsEnabled",
+      containerClass: "awards-overlay-container",
+      taggedAttr: "jeAwardsTagged",
+      styleId: "je-awards-tags-css",
+      buildCss: () => CSS,
+      position: { userKey: "awardsTagsPosition", pluginKey: "AwardsTagsPosition", fallback: "top-left" },
+      cache: { key: "JellyfinEnhanced-awardsTagsCache", legacyPrefix: "awardsTagsCache", hotBucket: "awards", saveOnUnload: false },
+      pipeline: {
+        needsFirstEpisode: false,
+        needsParentSeries: false,
+        render(ctx, el, item) {
+          ctx.setPersistent(String(item.Id), { facts: item.Awards || null });
+          render(ctx, el, item.Awards);
         },
+        renderFromCache(ctx, el, itemId) {
+          const cached = ctx.hot?.get(itemId) ?? ctx.getPersistent(itemId);
+          if (!export42(cached)) return false;
+          render(ctx, el, cached.facts);
+          return true;
+        },
+        renderFromServerCache(ctx, el, entry) {
+          render(ctx, el, entry.Awards);
+        }
+      }
     };
-    /** Register Awards when enabled; no upstream or per-card network lookups. */
-    JE.initializeAwardsTags = function() { JE.core.tagRenderer.register('awards', spec).injectCss(); };
-    /** Re-register and clear old chips after a personal switch changes. */
-    JE.reinitializeAwardsTags = function() { JE.core.tagRenderer.reinitialize('awards', spec); };
+    JE.initializeAwardsTags = function() {
+      JE.core.tagRenderer.register("awards", spec).injectCss();
+    };
+    JE.reinitializeAwardsTags = function() {
+      JE.core.tagRenderer.reinitialize("awards", spec);
+    };
     JE.awardsTags = { IDS, LABELS, resolve, chip, CSS };
-    // Previews may enable this group while the signed-in user has it off.
     JE.core.tagRenderer.registerStyles(spec);
+  }
 
-})(window.JellyfinEnhanced);
+  // client/src/features/media-tags/types/awards/awardstags-entry.ts
+  createAwardsTags(export4());
+})();
+})();
+//# sourceMappingURL=awardstags.js.map

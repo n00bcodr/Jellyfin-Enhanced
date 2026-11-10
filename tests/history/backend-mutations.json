@@ -2,7 +2,7 @@
   {
     "name": "issue-823-cdn-timeout",
     "layer": "backend",
-    "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/CdnAssetService.cs",
+    "file": "Jellyfin.Plugin.JellyfinEnhanced/Features/Platform/Services/CdnAssetService.cs",
     "before": "catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)",
     "after": "catch (OperationCanceledException)",
     "test": "FullKnownAssetRefreshContinuesAfterHttpTimeoutAndReportsCompletion",
@@ -16,7 +16,7 @@
   {
     "name": "issue-861-podman-alias",
     "layer": "backend",
-    "file": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/ArrUrlGuard.cs",
+    "file": "Jellyfin.Plugin.JellyfinEnhanced/Shared/Arr/ArrUrlGuard.cs",
     "before": "var allowLinkLocal = _containerHostAliases.Contains(host);",
     "after": "var allowLinkLocal = false;",
     "test": "ContainerAliasesPermitPodmanLinkLocalWithoutPermittingCloudMetadata",
@@ -30,7 +30,7 @@
   {
     "name": "issue-905-jellium-exclusion",
     "layer": "backend",
-    "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/NativeClientPolicy.cs",
+    "file": "Jellyfin.Plugin.JellyfinEnhanced/Features/MediaTags/PosterTags/NativeClientPolicy.cs",
     "before": "            \"Jellium Desktop\",\n",
     "after": "",
     "test": "ReportedDesktopShellMustNotReceiveNativeTags",
@@ -44,7 +44,7 @@
   {
     "name": "issue-900-advanced-payload",
     "layer": "backend",
-    "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+    "file": "Jellyfin.Plugin.JellyfinEnhanced/Features/Seerr/JeSeerrController.cs",
     "before": "content = StripAdvancedRequestOptions(content);",
     "after": "content = content; // reproduce missing filtering",
     "test": "RequestsUsePrincipalIdentityPreserveSeasonSelectionAndGateAdvancedOptions",

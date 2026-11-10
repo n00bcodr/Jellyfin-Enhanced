@@ -1,315 +1,53 @@
-// /js/jellyseerr/ui/ui-styles.js
-// CSS for Seerr search cards, buttons, popovers and the season modal.
-(function(JE) {
-    'use strict';
+(() => {
+"use strict";
+(() => {
+  // client/src/host/context.ts
+  function featureContext(feature, core, slots) {
+    const shared = core.core?.featureContext;
+    if (typeof shared !== "function") {
+      throw new Error(`${feature}: JE.core.featureContext is missing; core/ui-kit.js must load before feature scripts`);
+    }
+    return shared(feature, core, slots);
+  }
 
-    const ui = JE.jellyseerrUI = JE.jellyseerrUI || {};
+  // client/src/features/seerr/host-core.ts
+  var coreContexts = /* @__PURE__ */ new WeakMap();
+  function seerrCoreContext(JE2) {
+    let ctx = coreContexts.get(JE2);
+    if (!ctx) {
+      ctx = featureContext("seerr", JE2, {
+        internalSlots: ["jellyseerrUi"],
+        internalsObject: () => JE2.internals || (JE2.internals = {})
+      });
+      coreContexts.set(JE2, ctx);
+    }
+    return ctx;
+  }
+  function seerrCoreHost() {
+    const host = window;
+    const JE2 = host.JellyfinEnhanced;
+    if (!JE2) throw new Error("Jellyfin Enhanced must be initialized before the Seerr core group");
+    return { JE: JE2, window: host, document, apiClient: () => host.ApiClient, liveBridge: () => host.JellyfinEnhanced };
+  }
 
-    // ================================
-    // STYLING SYSTEM
-    // ================================
+  // client/src/features/seerr/core/runtime.ts
+  function groupInternals(JE2) {
+    const own = seerrCoreContext(JE2).own;
+    return own.jellyseerrUi || (own.jellyseerrUi = { state: { jellyseerrHoverPopover: null, jellyseerrHoverLock: false, active4KPopup: null } });
+  }
+  function firstInstall(JE2, name) {
+    const internals = groupInternals(JE2);
+    const installed = internals.installed || (internals.installed = /* @__PURE__ */ new Set());
+    if (installed.has(name)) return false;
+    installed.add(name);
+    return true;
+  }
 
-    /**
-     * Adds main CSS styles for Seerr integration.
-     */
-    ui.addMainStyles = function() {
-        const styleId = 'jellyseerr-styles';
-        if (document.getElementById(styleId)) return;
-        const style = document.createElement('style');
-        style.id = styleId;
-        style.textContent = `
-            /* LAYOUT & ICONS */
-            .jellyseerr-section { margin-bottom: 1em; }
-            .jellyseerr-section .itemsContainer { }
-            /* Hides the native (React-owned) no-results message while the plugin
-               shows its own replacement — the native element must never be
-               mutated directly or React's reconciler crashes (NotFoundError). */
-            .jellyseerr-native-message-hidden { display: none !important; }
-            #jellyseerr-search-icon { position: absolute; right: 10px; top: 68%; transform: translateY(-50%); user-select: none; z-index: 10; transition: filter .2s, opacity .2s, transform .2s; }
-            .inputContainer { position: relative !important; }
-            .jellyseerr-icon { width: 30px; height: 50px; filter: drop-shadow(2px 2px 6px #000); }
-            #jellyseerr-search-icon.is-active { filter: drop-shadow(2px 2px 6px #000); opacity: 1; }
-            #jellyseerr-search-icon.is-disabled { filter: grayscale(1); opacity: .8; }
-            #jellyseerr-search-icon.is-no-user { filter: hue-rotate(125deg) brightness(100%); }
-            #jellyseerr-search-icon.is-filter-active { filter: drop-shadow(2px 2px 6px #3b82f6) brightness(1.2); transform: translateY(-50%) scale(1.1); }
-            #jellyseerr-search-icon:hover { transform: translateY(-50%) scale(1.05); transition: transform 0.2s ease; }
-            /* CARDS & BADGES */
-            .jellyseerr-card { position: relative; }
-            .jellyseerr-card .cardScalable { contain: paint; }
-            .jellyseerr-icon-on-card { width: 1.2em !important; height: 1.2em !important; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.6)); flex-shrink: 0; }
-            /* Scales with the card; round() snaps to whole pixels */
-            .jellyseerr-status-badge { position: absolute; top: clamp(6px, 4cqw, 10px); right: clamp(6px, 4cqw, 10px); z-index: 100; box-sizing: border-box; width: clamp(1.5rem, 11cqw, 1.8rem); height: clamp(1.5rem, 11cqw, 1.8rem); width: round(clamp(1.5rem, 11cqw, 1.8rem), 2px); height: round(clamp(1.5rem, 11cqw, 1.8rem), 2px); border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 1px solid rgba(255,255,255,0.3); box-shadow: 0 0 1px rgba(255,255,255,0.4) inset, 0 4px 12px rgba(0,0,0,0.6); }
-            .jellyseerr-status-badge svg { width: 100%; height: 100%; filter: drop-shadow(0 0 2px rgba(0,0,0,0.5)); }
-            .jellyseerr-status-badge.status-available { background-color: rgba(34, 197, 94, 0.7); border-color: rgba(34, 197, 94, 0.3); }
-            .jellyseerr-status-badge.status-processing { background-color: rgba(99, 102, 241, 0.7); border-color: rgba(99, 102, 241, 0.3); }
-            .jellyseerr-status-badge.status-requested { background-color: rgba(136, 61, 206, 0.7); border-color: rgba(147, 51, 234, 0.3); }
-            .jellyseerr-status-badge.status-pending { background-color: rgba(251, 146, 60, 0.7); border-color: rgba(251, 146, 60, 0.3); }
-            .jellyseerr-status-badge.status-partially-available { background-color: rgba(34, 197, 94, 0.7); border-color: rgba(34, 197, 94, 0.3); }
-            .jellyseerr-status-badge.status-blocklisted { background-color: rgba(120, 53, 15, 0.7); border-color: rgba(120, 53, 15, 0.3); }
-            .jellyseerr-status-badge.status-deleted { background-color: rgba(220, 38, 38, 0.78); border-color: rgba(248, 113, 113, 0.6); }
-            @keyframes jellyseerr-spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-            .jellyseerr-status-badge.status-processing svg { animation: jellyseerr-spin 1s linear infinite; }
-            /* Type badge: sizes with the card (container query units) so it stays proportionate from phone to desktop */
-            .jellyseerr-card .cardScalable { container-type: inline-size; }
-            .jellyseerr-media-badge { position: absolute; top: clamp(6px, 4cqw, 10px); left: clamp(6px, 4cqw, 10px); z-index: 100; color: #fff; padding: 0.26em 0.7em; border-radius: 999px; border: 1px solid rgba(255,255,255,0.28); font-size: clamp(0.7rem, 6.4cqw, 1rem); font-weight: 700; line-height: 1.2; text-transform: uppercase; letter-spacing: 0.08em; white-space: nowrap; max-width: calc(100cqw - 2 * clamp(6px, 4cqw, 10px) - 40px); text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45); box-shadow: 0 2px 6px rgba(0,0,0,0.45); }
-            .jellyseerr-media-badge-movie { background-color: #3b6fe0; }
-            .jellyseerr-media-badge-series { background-color: #d92cb8; }
-            .jellyseerr-media-badge-collection { background-color: #0f9f6e; }
-            .jellyseerr-collection-badge { position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%); z-index: 1000; color: #fff; padding: 6px 16px; border-radius: 999px; border: 1px solid rgba(0,0,0,0.2); font-size: 0.8em; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px; text-transform: none; letter-spacing: .25px; text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.8); background-color: rgba(16, 185, 129, .85); box-shadow: 0 0 0 1px rgba(16,185,129,.35), 0 8px 24px rgba(16,185,129,.25); cursor: pointer; transition: all 0.2s ease; max-width: 85%; pointer-events: auto; }
-            /* Sits lower while the card shows no provider icons. The class mirrors .has-icons on the
-               card's icon strip (ui-badges.js); a :has() rule here made every icon or badge change
-               anywhere re-match every .cardImageContainer on the page. Same specificity as before.
-               Only where :has() is supported: elsewhere (older TV browsers) the :has() rule was
-               dropped and the badge stayed at bottom: 40px, so it still does. */
-            @supports selector(:has(a)) {
-                .cardImageContainer.jellyseerr-poster-image:not(.jellyseerr-has-provider-icons) .jellyseerr-collection-badge { bottom: 10px; }
-            }
-            .jellyseerr-collection-badge:hover { transform: translateX(-50%) translateY(-2px); box-shadow: 0 0 0 1px rgba(16,185,129,.5), 0 12px 32px rgba(16,185,129,.35); }
-            .jellyseerr-collection-badge .material-icons { font-size: 1.1em; flex-shrink: 0; }
-            .jellyseerr-collection-badge span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-            .jellyseerr-overview { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,0) 30%, rgba(0,0,0,.78) 75%, rgba(0,0,0,.92) 100%); color: #e5e7eb; padding: 12px 12px 14px; line-height: 1.5; opacity: 1; pointer-events: auto; transform: translateY(0); transition: opacity .18s ease, transform .18s ease; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 10px; backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px); }
-            .jellyseerr-overview .content { width: 100%; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; white-space: normal; }
-            /* SHOW OVERVIEW: When card has 'is-touch' class (mobile/click) */
-            .jellyseerr-card.is-touch .jellyseerr-overview { opacity: 1; pointer-events: auto; }
-            .jellyseerr-card .cardScalable:focus-within .jellyseerr-overview { opacity: 1; pointer-events: auto; }
+  // client/src/features/seerr/core/ui/main.css
+  var main_default = "\n            /* LAYOUT & ICONS */\n            .jellyseerr-section { margin-bottom: 1em; }\n            .jellyseerr-section .itemsContainer { }\n            /* Hides the native (React-owned) no-results message while the plugin\n               shows its own replacement — the native element must never be\n               mutated directly or React's reconciler crashes (NotFoundError). */\n            .jellyseerr-native-message-hidden { display: none !important; }\n            #jellyseerr-search-icon { position: absolute; right: 10px; top: 68%; transform: translateY(-50%); user-select: none; z-index: 10; transition: filter .2s, opacity .2s, transform .2s; }\n            .inputContainer { position: relative !important; }\n            .jellyseerr-icon { width: 30px; height: 50px; filter: drop-shadow(2px 2px 6px #000); }\n            #jellyseerr-search-icon.is-active { filter: drop-shadow(2px 2px 6px #000); opacity: 1; }\n            #jellyseerr-search-icon.is-disabled { filter: grayscale(1); opacity: .8; }\n            #jellyseerr-search-icon.is-no-user { filter: hue-rotate(125deg) brightness(100%); }\n            #jellyseerr-search-icon.is-filter-active { filter: drop-shadow(2px 2px 6px #3b82f6) brightness(1.2); transform: translateY(-50%) scale(1.1); }\n            #jellyseerr-search-icon:hover { transform: translateY(-50%) scale(1.05); transition: transform 0.2s ease; }\n            /* CARDS & BADGES */\n            .jellyseerr-card { position: relative; }\n            .jellyseerr-card .cardScalable { contain: paint; }\n            .jellyseerr-icon-on-card { width: 1.2em !important; height: 1.2em !important; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.6)); flex-shrink: 0; }\n            /* Scales with the card; round() snaps to whole pixels */\n            .jellyseerr-status-badge { position: absolute; top: clamp(6px, 4cqw, 10px); right: clamp(6px, 4cqw, 10px); z-index: 100; box-sizing: border-box; width: clamp(1.5rem, 11cqw, 1.8rem); height: clamp(1.5rem, 11cqw, 1.8rem); width: round(clamp(1.5rem, 11cqw, 1.8rem), 2px); height: round(clamp(1.5rem, 11cqw, 1.8rem), 2px); border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 1px solid rgba(255,255,255,0.3); box-shadow: 0 0 1px rgba(255,255,255,0.4) inset, 0 4px 12px rgba(0,0,0,0.6); }\n            .jellyseerr-status-badge svg { width: 100%; height: 100%; filter: drop-shadow(0 0 2px rgba(0,0,0,0.5)); }\n            .jellyseerr-status-badge.status-available { background-color: rgba(34, 197, 94, 0.7); border-color: rgba(34, 197, 94, 0.3); }\n            .jellyseerr-status-badge.status-processing { background-color: rgba(99, 102, 241, 0.7); border-color: rgba(99, 102, 241, 0.3); }\n            .jellyseerr-status-badge.status-requested { background-color: rgba(136, 61, 206, 0.7); border-color: rgba(147, 51, 234, 0.3); }\n            .jellyseerr-status-badge.status-pending { background-color: rgba(251, 146, 60, 0.7); border-color: rgba(251, 146, 60, 0.3); }\n            .jellyseerr-status-badge.status-partially-available { background-color: rgba(34, 197, 94, 0.7); border-color: rgba(34, 197, 94, 0.3); }\n            .jellyseerr-status-badge.status-blocklisted { background-color: rgba(120, 53, 15, 0.7); border-color: rgba(120, 53, 15, 0.3); }\n            .jellyseerr-status-badge.status-deleted { background-color: rgba(220, 38, 38, 0.78); border-color: rgba(248, 113, 113, 0.6); }\n            @keyframes jellyseerr-spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }\n            .jellyseerr-status-badge.status-processing svg { animation: jellyseerr-spin 1s linear infinite; }\n            /* Type badge: sizes with the card (container query units) so it stays proportionate from phone to desktop */\n            .jellyseerr-card .cardScalable { container-type: inline-size; }\n            .jellyseerr-media-badge { position: absolute; top: clamp(6px, 4cqw, 10px); left: clamp(6px, 4cqw, 10px); z-index: 100; color: #fff; padding: 0.26em 0.7em; border-radius: 999px; border: 1px solid rgba(255,255,255,0.28); font-size: clamp(0.7rem, 6.4cqw, 1rem); font-weight: 700; line-height: 1.2; text-transform: uppercase; letter-spacing: 0.08em; white-space: nowrap; max-width: calc(100cqw - 2 * clamp(6px, 4cqw, 10px) - 40px); text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45); box-shadow: 0 2px 6px rgba(0,0,0,0.45); }\n            .jellyseerr-media-badge-movie { background-color: #3b6fe0; }\n            .jellyseerr-media-badge-series { background-color: #d92cb8; }\n            .jellyseerr-media-badge-collection { background-color: #0f9f6e; }\n            .jellyseerr-collection-badge { position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%); z-index: 1000; color: #fff; padding: 6px 16px; border-radius: 999px; border: 1px solid rgba(0,0,0,0.2); font-size: 0.8em; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px; text-transform: none; letter-spacing: .25px; text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.8); background-color: rgba(16, 185, 129, .85); box-shadow: 0 0 0 1px rgba(16,185,129,.35), 0 8px 24px rgba(16,185,129,.25); cursor: pointer; transition: all 0.2s ease; max-width: 85%; pointer-events: auto; }\n            /* Sits lower while the card shows no provider icons. The class mirrors .has-icons on the\n               card's icon strip (ui-badges.js); a :has() rule here made every icon or badge change\n               anywhere re-match every .cardImageContainer on the page. Same specificity as before.\n               Only where :has() is supported: elsewhere (older TV browsers) the :has() rule was\n               dropped and the badge stayed at bottom: 40px, so it still does. */\n            @supports selector(:has(a)) {\n                .cardImageContainer.jellyseerr-poster-image:not(.jellyseerr-has-provider-icons) .jellyseerr-collection-badge { bottom: 10px; }\n            }\n            .jellyseerr-collection-badge:hover { transform: translateX(-50%) translateY(-2px); box-shadow: 0 0 0 1px rgba(16,185,129,.5), 0 12px 32px rgba(16,185,129,.35); }\n            .jellyseerr-collection-badge .material-icons { font-size: 1.1em; flex-shrink: 0; }\n            .jellyseerr-collection-badge span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }\n            .jellyseerr-overview { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,0) 30%, rgba(0,0,0,.78) 75%, rgba(0,0,0,.92) 100%); color: #e5e7eb; padding: 12px 12px 14px; line-height: 1.5; opacity: 1; pointer-events: auto; transform: translateY(0); transition: opacity .18s ease, transform .18s ease; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 10px; backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px); }\n            .jellyseerr-overview .content { width: 100%; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; white-space: normal; }\n            /* SHOW OVERVIEW: When card has 'is-touch' class (mobile/click) */\n            .jellyseerr-card.is-touch .jellyseerr-overview { opacity: 1; pointer-events: auto; }\n            .jellyseerr-card .cardScalable:focus-within .jellyseerr-overview { opacity: 1; pointer-events: auto; }\n\n            /* SHOW OVERVIEW: Desktop Hover (Media Query Handles Desktop vs Touch separation properly) */\n            @media (hover: hover) {\n                .jellyseerr-card .cardScalable:hover .jellyseerr-overview { opacity: 1; pointer-events: auto; }\n            }\n\n            .jellyseerr-overview .title { font-weight: 600; display: block; margin-bottom: .35em; }\n            .jellyseerr-elsewhere-icons { display: none; position: absolute; bottom: 0; left:0; right:0; z-index: 3; justify-content: center; gap: 0.6em; pointer-events: none; background: rgba(0,0,0,0.8); border-top-left-radius: 1.5em; border-top-right-radius: 1.5em; padding: 0.5em 0 0.2em 0; }\n            .jellyseerr-elsewhere-icons.has-icons {display: flex; animation: jellyseerr-icons-fade-in .25s ease-out;}\n            /* Keyframes rather than a transition: the strip goes from display:none to flex, which a transition cannot animate. */\n            @keyframes jellyseerr-icons-fade-in { from { opacity: 0; } to { opacity: 1; } }\n            @media (prefers-reduced-motion: reduce) {\n                .jellyseerr-elsewhere-icons.has-icons { animation: none; }\n                .jellyseerr-collection-badge { transition: none; }\n            }\n            .jellyseerr-elsewhere-icons img { width: 1.8em; height: auto; border-radius: 0.7em; background-color: rgba(255,255,255,0.5); padding: 2px;}\n            .jellyseerr-meta { display: flex; justify-content: center; align-items: center; gap: 1em; padding: 0 .75em; min-height: 24px; }\n            .jellyseerr-rating { display: flex; align-items: center; gap: .3em; color: #bdbdbd; }\n            .cardText-first > a.jellyseerr-more-info-link { padding: 0 !important; margin: 0 !important; color: inherit; text-decoration: none; }\n            /* REQUEST BUTTONS */\n            .jellyseerr-request-button { display: flex; justify-content: center; align-items: center; gap: 0.5em; white-space: normal; text-align: center; padding: 0.6em 1.2em; line-height: 1.2; font-size: 0.9em; transition: background .2s, border-color .2s, color .2s, transform .2s; border-radius: 8px; border: none; font-weight: 600; cursor: pointer; position: relative; z-index: 10; }\n            .jellyseerr-card .jellyseerr-button-collection { white-space: nowrap; padding: 0.6em 0.9em; font-size: 0.85em; gap: 0.4em; }\n            @media (max-width: 600px) { .jellyseerr-card .jellyseerr-button-collection svg { display: none; } }\n            .jellyseerr-request-button svg { width: 1.2em; height: 1.2em; flex-shrink: 0; vertical-align: middle; }\n            .layout-mobile .jellyseerr-request-button svg { width: 1em; height: 1em; }\n            .layout-mobile .jellyseerr-request-button span:not(.material-icons) { font-size: 0.8em !important; }\n            .jellyseerr-request-button.jellyseerr-button-offline, .jellyseerr-request-button.jellyseerr-button-no-user { opacity: .6; cursor: not-allowed; }\n            .jellyseerr-request-button.jellyseerr-button-request { background-color: #5a3fb8 !important; color: #fff !important; }\n            .jellyseerr-request-button.jellyseerr-button-request:hover:not(:disabled) { background-color: #6b4bb5 !important; transform: translateY(-2px); box-shadow: 0 4px 12px rgba(90, 63, 184, 0.4); }\n            .jellyseerr-request-button.jellyseerr-button-pending { background-color: #b45309 !important; color: #fff !important; }\n            .jellyseerr-request-button.jellyseerr-button-pending:hover:not(:disabled) { background-color: #d97706 !important; transform: translateY(-2px); }\n            .jellyseerr-request-button.jellyseerr-button-processing { background-color: #581c87 !important; color: #fff !important; }\n            .jellyseerr-request-button.jellyseerr-button-blocklisted { background-color: #78350f !important; color: #fff !important; }\n            .jellyseerr-request-button.jellyseerr-button-deleted { background-color: #dc2626 !important; color: #fff !important; }\n            .jellyseerr-request-button.jellyseerr-button-partially-available { background-color: #4ca46c !important; color: #fff !important; }\n            .jellyseerr-request-button.jellyseerr-button-partially-available:hover:not(:disabled) { background-color: #5bb876 !important; transform: translateY(-2px); }\n            .jellyseerr-request-button.jellyseerr-button-available { background-color: #16a34a !important; color: #fff !important; }\n            .jellyseerr-request-button.jellyseerr-button-available-updating { background-color: #0d6d30ff !important; color: #fff !important; }\n            .jellyseerr-request-button.jellyseerr-button-error { background: #dc3545 !important; color: #fff !important; }\n            .jellyseerr-request-button.jellyseerr-button-tv:not(.jellyseerr-button-available):not(.jellyseerr-button-offline):not(.jellyseerr-button-no-user):not(.jellyseerr-button-error)::after { content: '▼'; margin-left: 6px; font-size: 0.7em; opacity: 0.8; }\n            .jellyseerr-season-summary { font-size: 0.85em; opacity: 0.9; display: block; margin-top: 2px; }\n            /* SPLIT BUTTON FOR 4K */\n            /* Allow button group and popup to overflow card footer */\n            .jellyseerr-card .cardFooter {\n                overflow: visible !important;\n            }\n            .jellyseerr-card .cardBox { overflow: visible !important; }\n            .jellyseerr-section .vertical-wrap { overflow: visible !important; }\n\n            /* Library item styling */\n            .jellyseerr-card-in-library .cardText-first a {\n                color: #00d084;\n                font-weight: 500;\n            }\n            /* SPLIT BUTTON FOR 4K */\n            .jellyseerr-button-group {\n                display: inline-flex;\n                width: auto;\n                position: relative;\n                gap: 0;\n                align-items: stretch;\n                border-radius: 8px;\n                overflow: hidden;\n            }\n            .jellyseerr-button-group .jellyseerr-split-main {\n                border-top-right-radius: 0px !important;\n                border-bottom-right-radius: 0px !important;\n                margin: 0 !important;\n                flex: 1;\n            }\n            button.jellyseerr-split-arrow {\n                border-top-left-radius: 0px !important;\n                border-bottom-left-radius: 0px !important;\n                cursor: pointer;\n                color: #fff !important;\n                display: inline-flex;\n                align-items: center;\n                justify-content: center;\n                transition: background .2s, opacity .2s;\n                flex-shrink: 0;\n                position: relative;\n                z-index: 1;\n                margin: 0 !important;\n                padding: 0.6em 0.4em !important;\n                border-left: 2px solid rgba(0, 0, 0, 0.4);\n                border-bottom-width: 0px;\n                border-top-width: 0px;\n                border-right-width: 0px;\n            }\n            /* Match arrow button color to main button */\n            .jellyseerr-button-group .jellyseerr-button-request ~ .jellyseerr-split-arrow {\n                background-color: #5a3fb8 !important;\n            }\n            .jellyseerr-button-group .jellyseerr-button-pending ~ .jellyseerr-split-arrow {\n                background-color: #b45309 !important;\n            }\n            .jellyseerr-button-group .jellyseerr-button-available ~ .jellyseerr-split-arrow {\n                background-color: #16a34a !important;\n            }\n            .jellyseerr-button-group .jellyseerr-button-available-updating ~ .jellyseerr-split-arrow {\n                background-color: #16a34a !important;\n            }\n            .jellyseerr-button-group .jellyseerr-button-processing ~ .jellyseerr-split-arrow {\n                background-color: #581c87 !important;\n            }\n            .jellyseerr-button-group .jellyseerr-button-blocklisted ~ .jellyseerr-split-arrow {\n                background-color: #78350f !important;\n            }\n            .jellyseerr-button-group .jellyseerr-button-deleted ~ .jellyseerr-split-arrow {\n                background-color: #dc2626 !important;\n            }\n            .jellyseerr-button-group .jellyseerr-button-partially-available ~ .jellyseerr-split-arrow {\n                background-color: #4ca46c !important;\n            }\n            /* Override for 4K specific states */\n            .jellyseerr-split-arrow.jellyseerr-4k-available {\n                background-color: #16a34a !important;\n            }\n            .jellyseerr-split-arrow.jellyseerr-4k-pending {\n                background-color: #b45309 !important;\n            }\n            .jellyseerr-split-arrow svg {\n                width: 1em;\n                height: 1em;\n            }\n            .jellyseerr-split-arrow:hover:not(:disabled) { filter: brightness(1.2); }\n            .jellyseerr-split-arrow:active:not(:disabled) { filter: brightness(0.9); }\n            .jellyseerr-split-arrow:disabled,\n            .jellyseerr-split-arrow.jellyseerr-split-arrow-disabled {\n                opacity: 0.5;\n                cursor: default;\n            }\n\n            /* 4K POPUP MENU */\n            .jellyseerr-4k-popup {\n                position: absolute;\n                top: 100%;\n                left: 0;\n                right: 0;\n                background: rgba(0, 0, 0, 0.5);\n                border: 1px solid rgba(148, 163, 184, 0.2);\n                border-radius: 8px;\n                box-shadow: 0 10px 30px rgba(0,0,0,0.45);\n                z-index: 10000;\n                opacity: 0;\n                pointer-events: none;\n                transition: opacity 0.2s ease;\n                margin-top: 4px;\n                overflow: visible;\n            }\n            .jellyseerr-4k-popup.show {\n                opacity: 1;\n                pointer-events: all;\n                width: fit-content;\n            }\n            .jellyseerr-4k-popup-item {\n                width: 100%;\n                border: none;\n                background: transparent;\n                color: #f8fafc;\n                text-align: left;\n                cursor: pointer;\n                transition: background 0.2s;\n                font-size: 0.95rem;\n                display: flex;\n                align-items: center;\n                justify-content: center;\n                border-radius: 8px;\n                white-space: nowrap;\n                padding: 0.5em 0.75em;\n                min-height: 2.5em;\n            }\n            .jellyseerr-4k-popup-item:not(:disabled):hover {\n                background: rgba(59, 130, 246, 0.5);\n            }\n            .jellyseerr-4k-popup-item:not(:disabled):active {\n                background: rgba(59, 130, 246, 0.3);\n            }\n            .jellyseerr-4k-popup-item:disabled {\n                opacity: 0.8;\n                cursor: default;\n                color: #07e659;\n            }\n            .jellyseerr-4k-popup-item.jellyseerr-4k-available {\n                color: #16a34a;\n            }\n            /* Status-based popup colors matching button styles */\n            .jellyseerr-4k-popup.show { background: #5a3fb8 !important; }\n            .jellyseerr-4k-popup.show .jellyseerr-4k-popup-item { color: #fff !important; }\n            .jellyseerr-4k-popup-item.chip-requested { background-color: #5a3fb8 !important; color: #fff !important; }\n            .jellyseerr-4k-popup-item.chip-pending { background-color: #b45309 !important; color: #fff !important; }\n            .jellyseerr-4k-popup-item.chip-processing { background-color: #581c87 !important; color: #fff !important; }\n            .jellyseerr-4k-popup-item.chip-available { background-color: #16a34a !important; color: #fff !important; }\n            .jellyseerr-4k-popup-item svg {\n                flex-shrink: 0;\n                width: 18px;\n                height: 18px;\n            }\n            /* Narrow cards (~150px): fill the card width and shrink the split button\n               and 4K popup so they fit instead of overflowing. */\n            @media (max-width: 600px) {\n                .jellyseerr-card .jellyseerr-button-group { width: 100%; }\n                .jellyseerr-card .jellyseerr-request-button { padding: 0.6em 0.5em; font-size: 0.8em; gap: 0.35em; }\n                .jellyseerr-card button.jellyseerr-split-arrow { padding: 0.6em 0.4em !important; }\n                .jellyseerr-4k-popup-item { font-size: 0.8rem; white-space: normal; min-height: 2.25em; padding: 0.4em 0.5em; }\n            }\n            /* SPINNERS & LOADERS */\n            .jellyseerr-spinner, .jellyseerr-loading-spinner, .jellyseerr-button-spinner { display: inline-block; border-radius: 50%; animation: jellyseerr-spin 1s linear infinite; }\n            .jellyseerr-loading-spinner { width: 20px; height: 20px; border: 3px solid rgba(255,255,255,.3); border-top-color: #fff; margin-left: 10px; vertical-align: middle; }\n            .jellyseerr-button-spinner { width: 1em; height: 1em; border: 2px solid currentColor; border-right-color: transparent; margin-left: .5em; flex-shrink: 0; }\n            /* HOVER POPOVER STYLES */\n            .jellyseerr-hover-popover { position: fixed; min-width: 260px; max-width: 340px; padding: 10px 12px; background: #1f2937; color: #e5e7eb; border-radius: 10px; z-index: 9999; box-shadow: 0 10px 30px rgba(0,0,0,.45), 0 0 0 1px rgba(255,255,252, .06); opacity: 0; pointer-events: none; transition: opacity .12s ease, transform .12s ease; }\n            .jellyseerr-hover-popover.show { opacity: 1; }\n            .jellyseerr-popover-item { margin-bottom: 10px; }\n            .jellyseerr-popover-item:last-child { margin-bottom: 0; }\n            .jellyseerr-popover-item:not(:last-child) { padding-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,.08); }\n            .jellyseerr-hover-popover .title { font-weight: 600; font-size: .9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 8px; }\n            .jellyseerr-hover-popover .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; }\n            .jellyseerr-hover-popover .status { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: .75rem; font-weight: 600; background: #4f46e5; color: #fff; }\n            .jellyseerr-hover-popover .jellyseerr-hover-progress { height: 7px; width: 100%; background: rgba(255,255,255,.12); border-radius: 999px; overflow: hidden; }\n            .jellyseerr-hover-popover .jellyseerr-hover-progress .bar { height: 100%; background: linear-gradient(90deg, #3b82f6, #8b5cf6); transition: width .2s ease; }\n            .jellyseerr-hover-popover .eta { margin-left: auto; font-size: .75rem; color: #cbd5e1; opacity: .9; white-space: nowrap; }\n            /* UTILITY CLASSES */\n            @keyframes jellyseerr-spin { to { transform: rotate(360deg) } }\n            .section-hidden { display: none !important; }\n        ";
 
-            /* SHOW OVERVIEW: Desktop Hover (Media Query Handles Desktop vs Touch separation properly) */
-            @media (hover: hover) {
-                .jellyseerr-card .cardScalable:hover .jellyseerr-overview { opacity: 1; pointer-events: auto; }
-            }
-
-            .jellyseerr-overview .title { font-weight: 600; display: block; margin-bottom: .35em; }
-            .jellyseerr-elsewhere-icons { display: none; position: absolute; bottom: 0; left:0; right:0; z-index: 3; justify-content: center; gap: 0.6em; pointer-events: none; background: rgba(0,0,0,0.8); border-top-left-radius: 1.5em; border-top-right-radius: 1.5em; padding: 0.5em 0 0.2em 0; }
-            .jellyseerr-elsewhere-icons.has-icons {display: flex; animation: jellyseerr-icons-fade-in .25s ease-out;}
-            /* Keyframes rather than a transition: the strip goes from display:none to flex, which a transition cannot animate. */
-            @keyframes jellyseerr-icons-fade-in { from { opacity: 0; } to { opacity: 1; } }
-            @media (prefers-reduced-motion: reduce) {
-                .jellyseerr-elsewhere-icons.has-icons { animation: none; }
-                .jellyseerr-collection-badge { transition: none; }
-            }
-            .jellyseerr-elsewhere-icons img { width: 1.8em; height: auto; border-radius: 0.7em; background-color: rgba(255,255,255,0.5); padding: 2px;}
-            .jellyseerr-meta { display: flex; justify-content: center; align-items: center; gap: 1em; padding: 0 .75em; min-height: 24px; }
-            .jellyseerr-rating { display: flex; align-items: center; gap: .3em; color: #bdbdbd; }
-            .cardText-first > a.jellyseerr-more-info-link { padding: 0 !important; margin: 0 !important; color: inherit; text-decoration: none; }
-            /* REQUEST BUTTONS */
-            .jellyseerr-request-button { display: flex; justify-content: center; align-items: center; gap: 0.5em; white-space: normal; text-align: center; padding: 0.6em 1.2em; line-height: 1.2; font-size: 0.9em; transition: background .2s, border-color .2s, color .2s, transform .2s; border-radius: 8px; border: none; font-weight: 600; cursor: pointer; position: relative; z-index: 10; }
-            .jellyseerr-card .jellyseerr-button-collection { white-space: nowrap; padding: 0.6em 0.9em; font-size: 0.85em; gap: 0.4em; }
-            @media (max-width: 600px) { .jellyseerr-card .jellyseerr-button-collection svg { display: none; } }
-            .jellyseerr-request-button svg { width: 1.2em; height: 1.2em; flex-shrink: 0; vertical-align: middle; }
-            .layout-mobile .jellyseerr-request-button svg { width: 1em; height: 1em; }
-            .layout-mobile .jellyseerr-request-button span:not(.material-icons) { font-size: 0.8em !important; }
-            .jellyseerr-request-button.jellyseerr-button-offline, .jellyseerr-request-button.jellyseerr-button-no-user { opacity: .6; cursor: not-allowed; }
-            .jellyseerr-request-button.jellyseerr-button-request { background-color: #5a3fb8 !important; color: #fff !important; }
-            .jellyseerr-request-button.jellyseerr-button-request:hover:not(:disabled) { background-color: #6b4bb5 !important; transform: translateY(-2px); box-shadow: 0 4px 12px rgba(90, 63, 184, 0.4); }
-            .jellyseerr-request-button.jellyseerr-button-pending { background-color: #b45309 !important; color: #fff !important; }
-            .jellyseerr-request-button.jellyseerr-button-pending:hover:not(:disabled) { background-color: #d97706 !important; transform: translateY(-2px); }
-            .jellyseerr-request-button.jellyseerr-button-processing { background-color: #581c87 !important; color: #fff !important; }
-            .jellyseerr-request-button.jellyseerr-button-blocklisted { background-color: #78350f !important; color: #fff !important; }
-            .jellyseerr-request-button.jellyseerr-button-deleted { background-color: #dc2626 !important; color: #fff !important; }
-            .jellyseerr-request-button.jellyseerr-button-partially-available { background-color: #4ca46c !important; color: #fff !important; }
-            .jellyseerr-request-button.jellyseerr-button-partially-available:hover:not(:disabled) { background-color: #5bb876 !important; transform: translateY(-2px); }
-            .jellyseerr-request-button.jellyseerr-button-available { background-color: #16a34a !important; color: #fff !important; }
-            .jellyseerr-request-button.jellyseerr-button-available-updating { background-color: #0d6d30ff !important; color: #fff !important; }
-            .jellyseerr-request-button.jellyseerr-button-error { background: #dc3545 !important; color: #fff !important; }
-            .jellyseerr-request-button.jellyseerr-button-tv:not(.jellyseerr-button-available):not(.jellyseerr-button-offline):not(.jellyseerr-button-no-user):not(.jellyseerr-button-error)::after { content: '▼'; margin-left: 6px; font-size: 0.7em; opacity: 0.8; }
-            .jellyseerr-season-summary { font-size: 0.85em; opacity: 0.9; display: block; margin-top: 2px; }
-            /* SPLIT BUTTON FOR 4K */
-            /* Allow button group and popup to overflow card footer */
-            .jellyseerr-card .cardFooter {
-                overflow: visible !important;
-            }
-            .jellyseerr-card .cardBox { overflow: visible !important; }
-            .jellyseerr-section .vertical-wrap { overflow: visible !important; }
-
-            /* Library item styling */
-            .jellyseerr-card-in-library .cardText-first a {
-                color: #00d084;
-                font-weight: 500;
-            }
-            /* SPLIT BUTTON FOR 4K */
-            .jellyseerr-button-group {
-                display: inline-flex;
-                width: auto;
-                position: relative;
-                gap: 0;
-                align-items: stretch;
-                border-radius: 8px;
-                overflow: hidden;
-            }
-            .jellyseerr-button-group .jellyseerr-split-main {
-                border-top-right-radius: 0px !important;
-                border-bottom-right-radius: 0px !important;
-                margin: 0 !important;
-                flex: 1;
-            }
-            button.jellyseerr-split-arrow {
-                border-top-left-radius: 0px !important;
-                border-bottom-left-radius: 0px !important;
-                cursor: pointer;
-                color: #fff !important;
-                display: inline-flex;
-                align-items: center;
-                justify-content: center;
-                transition: background .2s, opacity .2s;
-                flex-shrink: 0;
-                position: relative;
-                z-index: 1;
-                margin: 0 !important;
-                padding: 0.6em 0.4em !important;
-                border-left: 2px solid rgba(0, 0, 0, 0.4);
-                border-bottom-width: 0px;
-                border-top-width: 0px;
-                border-right-width: 0px;
-            }
-            /* Match arrow button color to main button */
-            .jellyseerr-button-group .jellyseerr-button-request ~ .jellyseerr-split-arrow {
-                background-color: #5a3fb8 !important;
-            }
-            .jellyseerr-button-group .jellyseerr-button-pending ~ .jellyseerr-split-arrow {
-                background-color: #b45309 !important;
-            }
-            .jellyseerr-button-group .jellyseerr-button-available ~ .jellyseerr-split-arrow {
-                background-color: #16a34a !important;
-            }
-            .jellyseerr-button-group .jellyseerr-button-available-updating ~ .jellyseerr-split-arrow {
-                background-color: #16a34a !important;
-            }
-            .jellyseerr-button-group .jellyseerr-button-processing ~ .jellyseerr-split-arrow {
-                background-color: #581c87 !important;
-            }
-            .jellyseerr-button-group .jellyseerr-button-blocklisted ~ .jellyseerr-split-arrow {
-                background-color: #78350f !important;
-            }
-            .jellyseerr-button-group .jellyseerr-button-deleted ~ .jellyseerr-split-arrow {
-                background-color: #dc2626 !important;
-            }
-            .jellyseerr-button-group .jellyseerr-button-partially-available ~ .jellyseerr-split-arrow {
-                background-color: #4ca46c !important;
-            }
-            /* Override for 4K specific states */
-            .jellyseerr-split-arrow.jellyseerr-4k-available {
-                background-color: #16a34a !important;
-            }
-            .jellyseerr-split-arrow.jellyseerr-4k-pending {
-                background-color: #b45309 !important;
-            }
-            .jellyseerr-split-arrow svg {
-                width: 1em;
-                height: 1em;
-            }
-            .jellyseerr-split-arrow:hover:not(:disabled) { filter: brightness(1.2); }
-            .jellyseerr-split-arrow:active:not(:disabled) { filter: brightness(0.9); }
-            .jellyseerr-split-arrow:disabled,
-            .jellyseerr-split-arrow.jellyseerr-split-arrow-disabled {
-                opacity: 0.5;
-                cursor: default;
-            }
-
-            /* 4K POPUP MENU */
-            .jellyseerr-4k-popup {
-                position: absolute;
-                top: 100%;
-                left: 0;
-                right: 0;
-                background: rgba(0, 0, 0, 0.5);
-                border: 1px solid rgba(148, 163, 184, 0.2);
-                border-radius: 8px;
-                box-shadow: 0 10px 30px rgba(0,0,0,0.45);
-                z-index: 10000;
-                opacity: 0;
-                pointer-events: none;
-                transition: opacity 0.2s ease;
-                margin-top: 4px;
-                overflow: visible;
-            }
-            .jellyseerr-4k-popup.show {
-                opacity: 1;
-                pointer-events: all;
-                width: fit-content;
-            }
-            .jellyseerr-4k-popup-item {
-                width: 100%;
-                border: none;
-                background: transparent;
-                color: #f8fafc;
-                text-align: left;
-                cursor: pointer;
-                transition: background 0.2s;
-                font-size: 0.95rem;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                border-radius: 8px;
-                white-space: nowrap;
-                padding: 0.5em 0.75em;
-                min-height: 2.5em;
-            }
-            .jellyseerr-4k-popup-item:not(:disabled):hover {
-                background: rgba(59, 130, 246, 0.5);
-            }
-            .jellyseerr-4k-popup-item:not(:disabled):active {
-                background: rgba(59, 130, 246, 0.3);
-            }
-            .jellyseerr-4k-popup-item:disabled {
-                opacity: 0.8;
-                cursor: default;
-                color: #07e659;
-            }
-            .jellyseerr-4k-popup-item.jellyseerr-4k-available {
-                color: #16a34a;
-            }
-            /* Status-based popup colors matching button styles */
-            .jellyseerr-4k-popup.show { background: #5a3fb8 !important; }
-            .jellyseerr-4k-popup.show .jellyseerr-4k-popup-item { color: #fff !important; }
-            .jellyseerr-4k-popup-item.chip-requested { background-color: #5a3fb8 !important; color: #fff !important; }
-            .jellyseerr-4k-popup-item.chip-pending { background-color: #b45309 !important; color: #fff !important; }
-            .jellyseerr-4k-popup-item.chip-processing { background-color: #581c87 !important; color: #fff !important; }
-            .jellyseerr-4k-popup-item.chip-available { background-color: #16a34a !important; color: #fff !important; }
-            .jellyseerr-4k-popup-item svg {
-                flex-shrink: 0;
-                width: 18px;
-                height: 18px;
-            }
-            /* Narrow cards (~150px): fill the card width and shrink the split button
-               and 4K popup so they fit instead of overflowing. */
-            @media (max-width: 600px) {
-                .jellyseerr-card .jellyseerr-button-group { width: 100%; }
-                .jellyseerr-card .jellyseerr-request-button { padding: 0.6em 0.5em; font-size: 0.8em; gap: 0.35em; }
-                .jellyseerr-card button.jellyseerr-split-arrow { padding: 0.6em 0.4em !important; }
-                .jellyseerr-4k-popup-item { font-size: 0.8rem; white-space: normal; min-height: 2.25em; padding: 0.4em 0.5em; }
-            }
-            /* SPINNERS & LOADERS */
-            .jellyseerr-spinner, .jellyseerr-loading-spinner, .jellyseerr-button-spinner { display: inline-block; border-radius: 50%; animation: jellyseerr-spin 1s linear infinite; }
-            .jellyseerr-loading-spinner { width: 20px; height: 20px; border: 3px solid rgba(255,255,255,.3); border-top-color: #fff; margin-left: 10px; vertical-align: middle; }
-            .jellyseerr-button-spinner { width: 1em; height: 1em; border: 2px solid currentColor; border-right-color: transparent; margin-left: .5em; flex-shrink: 0; }
-            /* HOVER POPOVER STYLES */
-            .jellyseerr-hover-popover { position: fixed; min-width: 260px; max-width: 340px; padding: 10px 12px; background: #1f2937; color: #e5e7eb; border-radius: 10px; z-index: 9999; box-shadow: 0 10px 30px rgba(0,0,0,.45), 0 0 0 1px rgba(255,255,252, .06); opacity: 0; pointer-events: none; transition: opacity .12s ease, transform .12s ease; }
-            .jellyseerr-hover-popover.show { opacity: 1; }
-            .jellyseerr-popover-item { margin-bottom: 10px; }
-            .jellyseerr-popover-item:last-child { margin-bottom: 0; }
-            .jellyseerr-popover-item:not(:last-child) { padding-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,.08); }
-            .jellyseerr-hover-popover .title { font-weight: 600; font-size: .9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 8px; }
-            .jellyseerr-hover-popover .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; }
-            .jellyseerr-hover-popover .status { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: .75rem; font-weight: 600; background: #4f46e5; color: #fff; }
-            .jellyseerr-hover-popover .jellyseerr-hover-progress { height: 7px; width: 100%; background: rgba(255,255,255,.12); border-radius: 999px; overflow: hidden; }
-            .jellyseerr-hover-popover .jellyseerr-hover-progress .bar { height: 100%; background: linear-gradient(90deg, #3b82f6, #8b5cf6); transition: width .2s ease; }
-            .jellyseerr-hover-popover .eta { margin-left: auto; font-size: .75rem; color: #cbd5e1; opacity: .9; white-space: nowrap; }
-            /* UTILITY CLASSES */
-            @keyframes jellyseerr-spin { to { transform: rotate(360deg) } }
-            .section-hidden { display: none !important; }
-        `;
-        document.head.appendChild(style);
-    };
-
-    /**
-     * Adds enhanced CSS styles for season selection modal.
-     */
-    ui.addSeasonModalStyles = function() {
-        const seasonStyleId = 'jellyseerr-season-styles';
-        if (document.getElementById(seasonStyleId)) return;
-        const style = document.createElement('style');
-        style.id = seasonStyleId;
-        style.textContent = `
+  // client/src/features/seerr/core/ui/season-modal.css
+  var season_modal_default = `
             /* MODAL STYLES */
             .jellyseerr-season-modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 10, 20, 0.85); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); z-index: 10000; display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity 0.3s ease; }
             .jellyseerr-season-modal.show { opacity: 1; pointer-events: all; }
@@ -436,12 +174,29 @@
             .jellyseerr-quota-chip-restricted { background: rgba(127, 29, 29, 0.25); border-color: rgba(248, 113, 113, 0.55); color: #fca5a5; }
             .jellyseerr-quota-chip-sub { font-size: 0.8rem; opacity: 0.85; font-weight: 400; }
         `;
-        document.head.appendChild(style);
-    };
-    // Inject styles immediately on module load so all self-initializing Jellyseerr
-    // sub-modules (item-details, discovery pages, issue reporter, etc.) get CSS
-    // regardless of whether the search module is enabled.
+
+  // client/src/features/seerr/core/ui/styles-css.ts
+  var MAIN_STYLE_ID = "jellyseerr-styles";
+  var SEASON_MODAL_STYLE_ID = "jellyseerr-season-styles";
+  var MAIN_CSS = main_default;
+  var SEASON_MODAL_CSS = season_modal_default;
+
+  // client/src/features/seerr/core/ui/styles-entry.ts
+  var { JE, document: document2 } = seerrCoreHost();
+  function addStyle(id, css) {
+    if (document2.getElementById(id)) return;
+    const style = document2.createElement("style");
+    style.id = id;
+    style.textContent = css;
+    document2.head.appendChild(style);
+  }
+  if (firstInstall(JE, "ui-styles")) {
+    const ui = JE.jellyseerrUI || (JE.jellyseerrUI = {});
+    ui.addMainStyles = () => addStyle(MAIN_STYLE_ID, MAIN_CSS);
+    ui.addSeasonModalStyles = () => addStyle(SEASON_MODAL_STYLE_ID, SEASON_MODAL_CSS);
     ui.addMainStyles();
     ui.addSeasonModalStyles();
-
-})(window.JellyfinEnhanced);
+  }
+})();
+})();
+//# sourceMappingURL=ui-styles.js.map

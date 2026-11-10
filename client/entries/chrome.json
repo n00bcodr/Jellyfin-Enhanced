@@ -1,0 +1,11 @@
+{
+  "js/enhanced/events.js": "client/src/features/chrome/events-entry.ts",
+  "js/enhanced/header-actions.js": "client/src/features/chrome/header-actions-entry.ts",
+  "js/enhanced/native-tabs.js": "client/src/features/chrome/native-tabs-entry.ts",
+  "js/extras/active-streams.js": "client/src/features/chrome/active-streams-entry.ts",
+  "js/extras/login-image.js": "client/src/features/chrome/login-image-entry.ts",
+  "js/extras/plugin-icons.js": "client/src/features/chrome/plugin-icons-entry.ts",
+  "js/extras/plugin-revisions.js": "client/src/features/chrome/plugin-revisions-entry.ts",
+  "js/extras/theme-selector.js": "client/src/features/chrome/theme-selector-entry.ts",
+  "js/others/splashscreen.js": "client/src/features/chrome/splashscreen-entry.ts"
+}

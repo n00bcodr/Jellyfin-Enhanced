@@ -18,8 +18,9 @@ using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags;
-using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering;
+using Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.PosterTags;
+using Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags.PosterTags;
+using Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.PosterTags.Rendering;
 using SkiaSharp;
 
 namespace PosterTagsHarness;

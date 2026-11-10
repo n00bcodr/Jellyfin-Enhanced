@@ -1,0 +1,4 @@
+{
+  "js/core/dom-observer.js": "client/src/core/dom/entry.ts",
+  "js/core/ui-kit.js": "client/src/core/ui/entry.ts"
+}

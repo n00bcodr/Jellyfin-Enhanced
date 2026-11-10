@@ -109,7 +109,9 @@ test('toast displays escaped content and expires under controlled time', async (
 });
 
 async function languagePanel(page, { saved = 'zh-hk', user = 'user-a', fail = false } = {}) {
-  await page.route('https://api.github.com/**', route => route.fulfill({ json: [] }));
+  // BUG-015: the language list comes only from the plugin; any GitHub request is recorded and refused.
+  page.githubRequests = [];
+  await page.route('https://api.github.com/**', route => { page.githubRequests.push(route.request().url()); return route.abort(); });
   await page.route('**/JellyfinEnhanced/locales', route => route.fulfill({ json: ['en-US','zh-HK','de','pr'] }));
   await page.route('**/Localization/Cultures', route => route.fulfill({ json: [{ TwoLetterISOLanguageName: 'de', DisplayName: 'Deutsch' }] }));
   await page.evaluate(({saved,user,fail}) => {
@@ -126,6 +128,7 @@ test('language selector normalizes persisted region and saves only current user'
   await languagePanel(page);
   await expect(page.getByLabel('Display language')).toHaveValue('zh-HK');
   await expect(page.getByRole('option', {name:'Chinese (Hong Kong)'})).toHaveCount(1);
+  expect(page.githubRequests).toEqual([]);
   await pauseClock(page); // the panel's page reload must not fire mid-test
   await page.evaluate(()=>localStorage.setItem('user-b-language','pr'));
   await page.getByLabel('Display language').selectOption('de');

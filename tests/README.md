@@ -1,22 +1,31 @@
 # JE regression tests
 
+This rewrite tests Jellyfin 12.x only. `--target all` selects the sole supported target, `jf12`; `--target jf10` fails before running tools.
+
 All test code, fixtures, harnesses, runners, browser configuration and testing documentation live here. Production code stays in `Jellyfin.Plugin.JellyfinEnhanced/`. Root `package.json` and `package-lock.json` provide the normal npm entry points; `.github/workflows/regression.yml` calls this directory's runner. Generated evidence stays in the ignored root `artifacts/` directory.
 
 ```text
 tests/
 ├── run.py                 # Entry point for every suite
-├── backend/               # One xUnit project for both Jellyfin targets
+├── backend/               # One xUnit project for Jellyfin 12
+│   ├── Architecture/      # Structure guardrails and route/auth/registration snapshots
+│   ├── Features/<F>/      # One folder per backend feature (docs/feature-map.json)
+│   ├── Shared/
 │   ├── Api/
 │   ├── Core/
 │   ├── Integrations/
+│   ├── Persistence/
 │   ├── PosterTags/
-│   ├── Privacy/
 │   ├── ScheduledTasks/
 │   └── Support/           # Shared plugin, storage and HTTP fixtures
 ├── frontend/              # Actual JavaScript modules in isolated jsdom realms
+│   ├── admin/             # Admin configuration page
+│   ├── architecture/      # Structure guardrails (boundaries, sizes, generated markers, feature map)
 │   ├── bootstrap/
+│   ├── chrome/
+│   ├── contracts/
 │   ├── core/
-│   ├── features/
+│   ├── features/<f>/      # One folder per client feature with its own tests (docs/feature-map.json)
 │   ├── pages/
 │   ├── requests/
 │   ├── regressions/       # Historical cases spanning several features
@@ -37,7 +46,7 @@ tests/
 From the repository root, after [setup](docs/README.md#setup):
 
 ```sh
-python3 tests/run.py fast      # Tooling, both backend targets, frontend coverage
+python3 tests/run.py fast      # Tooling, the Jellyfin 12 backend, frontend coverage
 python3 tests/run.py all       # Also browsers, posters, real hosts and fault replays
 npm run test:frontend          # Frontend only
 npm run test:browser           # Browser only

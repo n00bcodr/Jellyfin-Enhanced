@@ -1,125 +1,115 @@
-/**
- * @file Hidden Content section wiring inside the settings panel (toggles,
- * surface filters, experimental options, manage button).
- * Split from ui.js (code motion; bodies verbatim).
- */
-(function(JE) {
-    'use strict';
+(() => {
+"use strict";
+(() => {
+  // client/src/features/shared/panel-host.ts
+  function panelHost() {
+    const host = window;
+    if (!host.JellyfinEnhanced) throw new TypeError("Jellyfin Enhanced must load before the settings panel");
+    return host.JellyfinEnhanced;
+  }
 
+  // client/src/features/hidden-content/settings/host.ts
+  function registry(JE) {
     JE.internals = JE.internals || {};
-    const internal = JE.internals.enhancedUi = JE.internals.enhancedUi || {};
+    return JE.internals.enhancedUi = JE.internals.enhancedUi || {};
+  }
 
-    /**
-     * Wires the Hidden Content settings-panel listeners.
-     * @param {object} ctx Shared panel context assembled in ui-panel.js.
-     */
+  // client/src/features/shared/dom.ts
+  function inputById(id) {
+    const element = document.getElementById(id);
+    return element instanceof HTMLInputElement ? element : null;
+  }
+
+  // client/src/features/hidden-content/settings/ui-panel-hidden-content.ts
+  var HIDDEN_BUTTON_TOGGLES = [
+    ["hiddenShowButtonJellyseerr", "showButtonJellyseerr"],
+    ["hiddenShowButtonLibrary", "showButtonLibrary"],
+    ["hiddenShowButtonDetails", "showButtonDetails"],
+    ["hiddenShowButtonCast", "showButtonCast"]
+  ];
+  var HIDDEN_SURFACE_TOGGLES = [
+    ["hiddenFilterLibrary", "filterLibrary"],
+    ["hiddenFilterDiscovery", "filterDiscovery"],
+    ["hiddenFilterSearch", "filterSearch"],
+    ["hiddenFilterCalendar", "filterCalendar"],
+    ["hiddenFilterUpcoming", "filterUpcoming"],
+    ["hiddenFilterRecommendations", "filterRecommendations"],
+    ["hiddenFilterRequests", "filterRequests"],
+    ["hiddenFilterNextUp", "filterNextUp"],
+    ["hiddenFilterContinueWatching", "filterContinueWatching"]
+  ];
+  function installUiPanelHiddenContent(JE) {
+    const internal = registry(JE);
     internal.wireHiddenContentListeners = function(ctx) {
-        const { resetAutoCloseTimer } = ctx;
-
-        // ============================================================
-        // Hidden Content — settings panel event listeners
-        // Binds change handlers for all hidden-content toggles:
-        // master enable, button visibility, surface filters,
-        // confirmation dialog, experimental collections, and
-        // the "Manage Hidden Content" button.
-        // ============================================================
-        if (JE.hiddenContent) {
-            const hiddenButtonToggles = [
-                ['hiddenShowButtonJellyseerr', 'showButtonJellyseerr'],
-                ['hiddenShowButtonLibrary', 'showButtonLibrary'],
-                ['hiddenShowButtonDetails', 'showButtonDetails'],
-                ['hiddenShowButtonCast', 'showButtonCast']
-            ];
-            for (const [id, key] of hiddenButtonToggles) {
-                const el = document.getElementById(id);
-                if (el) {
-                    el.addEventListener('change', (e) => {
-                        JE.hiddenContent.updateSettings({ [key]: e.target.checked });
-                        if (key === 'showButtonLibrary' || key === 'showButtonCast') {
-                            if (e.target.checked) {
-                                JE.hiddenContent.addLibraryHideButtons();
-                            } else {
-                                JE.hiddenContent.removeLibraryHideButtons();
-                                JE.hiddenContent.addLibraryHideButtons();
-                            }
-                        }
-                        resetAutoCloseTimer();
-                    });
-                }
+      const { resetAutoCloseTimer } = ctx;
+      const hidden = JE.hiddenContent;
+      if (!hidden) return;
+      const onToggle = (id, handler) => {
+        const el = inputById(id);
+        if (el) el.addEventListener("change", () => handler(el.checked));
+      };
+      for (const [id, key] of HIDDEN_BUTTON_TOGGLES) {
+        onToggle(id, (checked) => {
+          hidden.updateSettings({ [key]: checked });
+          if (key === "showButtonLibrary" || key === "showButtonCast") {
+            if (checked) {
+              hidden.addLibraryHideButtons();
+            } else {
+              hidden.removeLibraryHideButtons();
+              hidden.addLibraryHideButtons();
             }
-            const hiddenSurfaceToggles = [
-                ['hiddenFilterLibrary', 'filterLibrary'],
-                ['hiddenFilterDiscovery', 'filterDiscovery'],
-                ['hiddenFilterSearch', 'filterSearch'],
-                ['hiddenFilterCalendar', 'filterCalendar'],
-                ['hiddenFilterUpcoming', 'filterUpcoming'],
-                ['hiddenFilterRecommendations', 'filterRecommendations'],
-                ['hiddenFilterRequests', 'filterRequests'],
-                ['hiddenFilterNextUp', 'filterNextUp'],
-                ['hiddenFilterContinueWatching', 'filterContinueWatching']
-            ];
-            const masterToggle = document.getElementById('hiddenContentEnabledToggle');
-            if (masterToggle) {
-                masterToggle.addEventListener('change', (e) => {
-                    JE.hiddenContent.updateSettings({ enabled: e.target.checked });
-                    resetAutoCloseTimer();
-                });
-            }
-            const buttonsToggle = document.getElementById('hiddenShowHideButtons');
-            if (buttonsToggle) {
-                buttonsToggle.addEventListener('change', (e) => {
-                    JE.hiddenContent.updateSettings({ showHideButtons: e.target.checked });
-                    if (e.target.checked) {
-                        if (JE.hiddenContent.getSettings().showButtonLibrary) {
-                            JE.hiddenContent.addLibraryHideButtons();
-                        }
-                    } else {
-                        JE.hiddenContent.removeLibraryHideButtons();
-                    }
-                    resetAutoCloseTimer();
-                });
-            }
-            for (const [id, key] of hiddenSurfaceToggles) {
-                const el = document.getElementById(id);
-                if (el) {
-                    el.addEventListener('change', (e) => {
-                        JE.hiddenContent.updateSettings({ [key]: e.target.checked });
-                        resetAutoCloseTimer();
-                    });
-                }
-            }
-            const confirmToggle = document.getElementById('hiddenShowConfirmation');
-            if (confirmToggle) {
-                confirmToggle.addEventListener('change', (e) => {
-                    JE.hiddenContent.updateSettings({ showHideConfirmation: e.target.checked });
-                    localStorage.removeItem('je_hide_confirm_suppressed_until');
-                    resetAutoCloseTimer();
-                });
-            }
-            const experimentalCollections = document.getElementById('hiddenExperimentalCollections');
-            if (experimentalCollections) {
-                experimentalCollections.addEventListener('change', (e) => {
-                    JE.hiddenContent.updateSettings({ experimentalHideCollections: e.target.checked });
-                    if (!e.target.checked) {
-                        JE.hiddenContent.removeLibraryHideButtons();
-                        JE.hiddenContent.addLibraryHideButtons();
-                    }
-                    resetAutoCloseTimer();
-                });
-            }
-            const manageBtn = document.getElementById('manageHiddenContentBtn');
-            if (manageBtn) {
-                manageBtn.addEventListener('click', () => {
-                    // Both the page and fallback modal take over from this dialog.
-                    ctx.closePanel();
-                    if (JE.pluginConfig?.HiddenContentEnabled && JE.hiddenContentPage) {
-                        JE.hiddenContentPage.showPage();
-                    } else {
-                        JE.hiddenContent.showManagementPanel();
-                    }
-                });
-            }
+          }
+          resetAutoCloseTimer();
+        });
+      }
+      onToggle("hiddenContentEnabledToggle", (checked) => {
+        hidden.updateSettings({ enabled: checked });
+        resetAutoCloseTimer();
+      });
+      onToggle("hiddenShowHideButtons", (checked) => {
+        hidden.updateSettings({ showHideButtons: checked });
+        if (checked) {
+          if (hidden.getSettings().showButtonLibrary) {
+            hidden.addLibraryHideButtons();
+          }
+        } else {
+          hidden.removeLibraryHideButtons();
         }
+        resetAutoCloseTimer();
+      });
+      for (const [id, key] of HIDDEN_SURFACE_TOGGLES) {
+        onToggle(id, (checked) => {
+          hidden.updateSettings({ [key]: checked });
+          resetAutoCloseTimer();
+        });
+      }
+      onToggle("hiddenShowConfirmation", (checked) => {
+        hidden.updateSettings({ showHideConfirmation: checked });
+        localStorage.removeItem("je_hide_confirm_suppressed_until");
+        resetAutoCloseTimer();
+      });
+      onToggle("hiddenExperimentalCollections", (checked) => {
+        hidden.updateSettings({ experimentalHideCollections: checked });
+        if (!checked) {
+          hidden.removeLibraryHideButtons();
+          hidden.addLibraryHideButtons();
+        }
+        resetAutoCloseTimer();
+      });
+      const manageBtn = document.getElementById("manageHiddenContentBtn");
+      if (manageBtn) {
+        manageBtn.addEventListener("click", () => {
+          ctx.closePanel();
+          if (JE.pluginConfig?.HiddenContentEnabled && JE.hiddenContentPage) {
+            JE.hiddenContentPage.showPage();
+          } else {
+            hidden.showManagementPanel();
+          }
+        });
+      }
     };
-
-})(window.JellyfinEnhanced);
+  }
+  installUiPanelHiddenContent(panelHost());
+})();
+})();
+//# sourceMappingURL=ui-panel-hidden-content.js.map

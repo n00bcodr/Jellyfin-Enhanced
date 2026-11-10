@@ -1,0 +1,8 @@
+{
+  "js/core/media-language.js": "client/src/features/media-tags/types/language/media-language-entry.ts",
+  "js/core/tag-layout.js": "client/src/features/media-tags/layout/tag-layout-entry.ts",
+  "js/core/tag-look.js": "client/src/features/media-tags/layout/tag-look-entry.ts",
+  "js/tags/rating-sources.js": "client/src/features/media-tags/types/ratings/rating-sources-entry.ts",
+  "js/tags/status-vocabulary.js": "client/src/features/media-tags/types/status/status-vocabulary-entry.ts",
+  "js/tags/tag-poster-colours.js": "client/src/features/media-tags/layout/poster-colours-entry.ts"
+}

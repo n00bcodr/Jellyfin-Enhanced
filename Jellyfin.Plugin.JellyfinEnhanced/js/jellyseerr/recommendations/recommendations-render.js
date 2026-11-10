@@ -1,480 +1,403 @@
-// /js/jellyseerr/recommendations/recommendations-render.js
-// Recommendations Page — media rows, studio/network tile rows and the
-// content renderer shared by the standalone page and the custom tab
-// (split from recommendations.js).
-(function () {
-  "use strict";
+(() => {
+"use strict";
+(() => {
+  // client/src/host/context.ts
+  function featureContext(feature, core, slots) {
+    const shared = core.core?.featureContext;
+    if (typeof shared !== "function") {
+      throw new Error(`${feature}: JE.core.featureContext is missing; core/ui-kit.js must load before feature scripts`);
+    }
+    return shared(feature, core, slots);
+  }
 
-  const JE = window.JellyfinEnhanced;
-  JE.internals = JE.internals || {};
-  const P = (JE.internals.recommendationsPage = JE.internals.recommendationsPage || {});
+  // client/src/features/seerr/host-discovery.ts
+  function discoveryHost() {
+    const host = window;
+    const JE = host.JellyfinEnhanced ?? (host.JellyfinEnhanced = {});
+    return { JE, api: () => host.ApiClient };
+  }
+  var discoveryContexts = /* @__PURE__ */ new WeakMap();
+  function discoveryContext(JE) {
+    let ctx = discoveryContexts.get(JE);
+    if (!ctx) {
+      ctx = featureContext("seerr", JE, {
+        internalSlots: ["recommendationsPage"],
+        internalsObject: () => JE.internals ?? (JE.internals = {})
+      });
+      discoveryContexts.set(JE, ctx);
+    }
+    return ctx;
+  }
+  function filterOf(JE) {
+    if (!JE.discoveryFilter) throw new Error("Discovery filter utilities are not loaded");
+    return JE.discoveryFilter;
+  }
+  function translate(JE, key, params) {
+    return JE.t?.(key, params) ?? key;
+  }
+  function bindToSession(JE, controller) {
+    const lease = JE.session?.createLease?.();
+    if (!lease) return;
+    if (lease.signal.aborted) {
+      controller.abort();
+      return;
+    }
+    lease.signal.addEventListener("abort", () => controller.abort(), { once: true, signal: controller.signal });
+  }
 
-  const logPrefix = '🪼 Jellyfin Enhanced: Recommendations:';
-  const state = P.state;
-  const fetchAllRows = P.fetchAllRows;
-  const fetchGenreSlider = P.fetchGenreSlider;
-  const escapeHtml = JE.escapeHtml;
+  // client/src/features/seerr/discovery/domain.ts
+  function isRecord(value) {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
+  }
+  function isAbortError(error) {
+    return isRecord(error) && error.name === "AbortError";
+  }
 
-  // recommendations-category.js loads after this module — resolve at call time.
-  const showCategoryPage = (categoryKey) => P.showCategoryPage(categoryKey);
+  // client/src/features/seerr/recommendations/stage.ts
+  var LOG_PREFIX = "🪼 Jellyfin Enhanced: Recommendations:";
+  var PAGE_ID = "je-recommendations-page";
+  var CATEGORY_PAGE_ID = "je-recommendations-category-page";
+  var OTHER_PAGE = `.mainAnimatedPage:not(.hide):not(#${PAGE_ID}):not(#${CATEGORY_PAGE_ID})`;
+  function recommendationsHost() {
+    const { JE } = discoveryHost();
+    const own = discoveryContext(JE).own;
+    return { JE, P: own.recommendationsPage ?? (own.recommendationsPage = {}) };
+  }
+  function part(P, key) {
+    const value = P[key];
+    if (value === void 0 || value === null) throw new Error(`Recommendations module "${key}" is not loaded`);
+    return value;
+  }
 
-  /**
-   * Keeps a position:sticky bar flush under Jellyfin's header. The header's
-   * height differs per layout and theme, so it is measured
-   * (JE.helpers.getHeaderBottom) and re-read on scroll/resize, since a theme or
-   * layout switch can change it. Also sets --je-bleed-l/-r (the parent's side
-   * padding, for a full-width backdrop) and toggles .je-stuck while the bar is
-   * pinned. Stops itself once the bar leaves the document.
-   * @param {HTMLElement} bar
-   * @returns {() => void} Stops the tracking.
-   */
-  function trackStickyBar(bar) {
+  // client/src/features/seerr/recommendations/recommendations-render.ts
+  var GENRE_COLORS = /* @__PURE__ */ new Map([
+    ["Action", "#b91c1ccc"],
+    ["Action & Adventure", "#b91c1ccc"],
+    ["Adventure", "#7c3aedcc"],
+    ["Animation", "#0891b2cc"],
+    ["Comedy", "#d97706cc"],
+    ["Crime", "#1d4ed8cc"],
+    ["Documentary", "#059669cc"],
+    ["Drama", "#db2777cc"],
+    ["Family", "#65a30dcc"],
+    ["Fantasy", "#9333eacc"],
+    ["History", "#78716ccc"],
+    ["Horror", "#27272acc"],
+    ["Kids", "#f59e0bcc"],
+    ["Music", "#e11d48cc"],
+    ["Mystery", "#4c1d95cc"],
+    ["News", "#334155cc"],
+    ["Reality", "#c026d3cc"],
+    ["Romance", "#ec4899cc"],
+    ["Sci-Fi & Fantasy", "#2563ebcc"],
+    ["Science Fiction", "#2563ebcc"],
+    ["Soap", "#db2777cc"],
+    ["Talk", "#0d9488cc"],
+    ["Thriller", "#7f1d1dcc"],
+    ["TV Movie", "#6b7280cc"],
+    ["War", "#57534ecc"],
+    ["War & Politics", "#57534ecc"],
+    ["Western", "#b45309cc"]
+  ]);
+  var GENRE_COLOR_FALLBACK = "#4338ca";
+  function element(tag, className, parent) {
+    const node = document.createElement(tag);
+    node.className = className;
+    parent?.appendChild(node);
+    return node;
+  }
+  function trackStickyBar(JE, bar) {
     let observedHeader = null;
     let resizeObserver = null;
     let frame = 0;
-
+    const schedule = () => {
+      if (!frame) frame = requestAnimationFrame(measure);
+    };
+    function stop() {
+      document.removeEventListener("scroll", schedule, { capture: true });
+      window.removeEventListener("resize", schedule);
+      resizeObserver?.disconnect();
+      if (frame) cancelAnimationFrame(frame);
+      frame = 0;
+    }
     function measure() {
       frame = 0;
-      if (!bar.isConnected) {
+      if (!bar.isConnected || !bar.parentElement) {
         stop();
         return;
       }
-      const header = JE.helpers.getHeaderElement();
-      if (header !== observedHeader && window.ResizeObserver) {
-        if (resizeObserver) resizeObserver.disconnect();
+      const header = JE.helpers?.getHeaderElement?.() ?? null;
+      if (header !== observedHeader && typeof ResizeObserver !== "undefined") {
+        resizeObserver?.disconnect();
         observedHeader = header;
         if (header) {
           resizeObserver = new ResizeObserver(schedule);
           resizeObserver.observe(header);
         }
       }
-      const headerBottom = JE.helpers.getHeaderBottom();
-      bar.style.setProperty('--je-sticky-top', headerBottom ? `${headerBottom}px` : '');
+      const headerBottom = JE.helpers?.getHeaderBottom?.() ?? 0;
+      bar.style.setProperty("--je-sticky-top", headerBottom ? `${headerBottom}px` : "");
       const padding = getComputedStyle(bar.parentElement);
-      bar.style.setProperty('--je-bleed-l', padding.paddingLeft);
-      bar.style.setProperty('--je-bleed-r', padding.paddingRight);
+      bar.style.setProperty("--je-bleed-l", padding.paddingLeft);
+      bar.style.setProperty("--je-bleed-r", padding.paddingRight);
       const stickyTop = parseFloat(getComputedStyle(bar).top) || 0;
-      bar.classList.toggle('je-stuck', bar.getBoundingClientRect().top <= stickyTop + 1);
+      bar.classList.toggle("je-stuck", bar.getBoundingClientRect().top <= stickyTop + 1);
     }
-    function schedule() {
-      if (!frame) frame = requestAnimationFrame(measure);
-    }
-    function stop() {
-      document.removeEventListener('scroll', schedule, { capture: true });
-      window.removeEventListener('resize', schedule);
-      if (resizeObserver) resizeObserver.disconnect();
-      if (frame) cancelAnimationFrame(frame);
-    }
-
-    // Capture: the scrolling element differs between Jellyfin layouts.
-    document.addEventListener('scroll', schedule, { capture: true, passive: true });
-    window.addEventListener('resize', schedule);
+    document.addEventListener("scroll", schedule, { capture: true, passive: true });
+    window.addEventListener("resize", schedule);
     measure();
     return stop;
   }
-  P.trackStickyBar = trackStickyBar;
-
-  // Tracking for the page title currently on screen (re-rendered on refresh).
-  let stopTitleTracking = null;
-
-  /**
-   * Adds hover scroll arrows and edge fades to one horizontal row. Arrows are
-   * only displayed on hover-capable devices (CSS); touch keeps native swiping.
-   * @param {HTMLElement} section - The row's position:relative section.
-   * @param {HTMLElement} scroller - The overflow:auto row element.
-   */
-  function enableRowScroll(section, scroller) {
-    // Purely a mouse convenience: the row itself stays natively scrollable
-    // (keyboard, touch, trackpad), so the buttons are hidden from AT and Tab.
-    const makeButton = (dir) => {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = `je-scroll-btn ${dir}`;
-      btn.tabIndex = -1;
-      btn.setAttribute('aria-hidden', 'true');
-      const icon = document.createElement('span');
-      icon.className = 'je-msym-rounded';
-      icon.setAttribute('aria-hidden', 'true');
-      icon.textContent = `chevron_${dir}`;
-      btn.appendChild(icon);
-      btn.addEventListener('click', () => {
-        scroller.scrollBy({ left: (dir === 'left' ? -1 : 1) * scroller.clientWidth * 0.8, behavior: 'smooth' });
+  function enableRowScroll(section, scroller, owner) {
+    const makeButton = (direction) => {
+      const button = element("button", `je-scroll-btn ${direction}`, section);
+      button.type = "button";
+      button.tabIndex = -1;
+      button.setAttribute("aria-hidden", "true");
+      const icon = element("span", "je-msym-rounded", button);
+      icon.setAttribute("aria-hidden", "true");
+      icon.textContent = `chevron_${direction}`;
+      button.addEventListener("click", () => {
+        scroller.scrollBy({ left: (direction === "left" ? -1 : 1) * scroller.clientWidth * 0.8, behavior: "smooth" });
       });
-      section.appendChild(btn);
-      return btn;
+      return button;
     };
-    const left = makeButton('left');
-    const right = makeButton('right');
-
+    const left = makeButton("left");
+    const right = makeButton("right");
     const update = () => {
       const canLeft = scroller.scrollLeft > 4;
       const canRight = scroller.scrollLeft < scroller.scrollWidth - scroller.clientWidth - 4;
-      scroller.classList.toggle('je-fade-l', canLeft);
-      scroller.classList.toggle('je-fade-r', canRight);
-      left.classList.toggle('show', canLeft);
-      right.classList.toggle('show', canRight);
-      // Centre the arrows on the card images rather than the whole row, which
-      // also includes the title and rating lines below them.
+      scroller.classList.toggle("je-fade-l", canLeft);
+      scroller.classList.toggle("je-fade-r", canRight);
+      left.classList.toggle("show", canLeft);
+      right.classList.toggle("show", canRight);
       const items = scroller.firstElementChild;
-      const image = scroller.querySelector('.cardScalable');
-      if (items && image) {
-        const mid = scroller.offsetTop + items.offsetTop + image.offsetTop + image.offsetHeight / 2;
-        left.style.top = right.style.top = `${Math.round(mid - 22)}px`;
+      const image = scroller.querySelector(".cardScalable");
+      if (items instanceof HTMLElement && image instanceof HTMLElement) {
+        const middle = scroller.offsetTop + items.offsetTop + image.offsetTop + image.offsetHeight / 2;
+        left.style.top = right.style.top = `${Math.round(middle - 22)}px`;
       }
     };
-    scroller.addEventListener('scroll', update, { passive: true });
-    if (window.ResizeObserver) {
-      // Cards arrive after the row is built, so watch the content size too.
+    scroller.addEventListener("scroll", update, { passive: true });
+    if (typeof ResizeObserver !== "undefined") {
       const observer = new ResizeObserver(update);
       observer.observe(scroller);
       if (scroller.firstElementChild) observer.observe(scroller.firstElementChild);
+      owner?.disposers.push(() => observer.disconnect());
     }
-    requestAnimationFrame(update);
+    const frame = requestAnimationFrame(update);
+    owner?.disposers.push(() => cancelAnimationFrame(frame));
   }
-
-  /**
-   * Builds a horizontal media row section, mirroring the layout used for the
-   * Jellyseerr search-results row (see jellyseerr/ui/ui-results.js
-   * createJellyseerrSection).
-   * @param {string} title - Section heading text.
-   * @param {Array} results - Array of Seerr search-result-shaped items.
-   * @param {string} [viewAllKey] - Category key for a "View All" link, if any.
-   * @returns {HTMLElement}
-   */
-  function createMediaRow(title, results, viewAllKey) {
-    const section = document.createElement('div');
-    section.className = 'verticalSection emby-scroller-container je-recommendations-section';
-
-    if (viewAllKey) {
-      const headingLink = document.createElement('a');
-      headingLink.setAttribute('is', 'emby-linkbutton');
-      // href is intentionally "#", not a real path: emby-linkbutton performs
-      // its own internal SPA navigation using the href directly, independent
-      // of preventDefault() in our click handler below - a real path here
-      // (e.g. "#/recommendations?category=...") gets navigated to for real
-      // and 404s against jellyfin-web's React router. Same "#" placeholder
-      // pattern the Seerr UI already uses for its own JS-only-handled card links.
-      headingLink.href = '#';
-      headingLink.className = 'more button-flat button-flat-mini sectionTitleTextButton emby-button je-pad-left je-pad-right';
-
-      const heading = document.createElement('h2');
-      heading.className = 'sectionTitle sectionTitle-cards';
-      heading.textContent = title;
-      headingLink.appendChild(heading);
-
-      const chevron = document.createElement('span');
-      chevron.className = 'material-icons chevron_right';
-      chevron.setAttribute('aria-hidden', 'true');
-      headingLink.appendChild(chevron);
-
-      headingLink.addEventListener('click', (e) => {
-        e.preventDefault();
-        showCategoryPage(viewAllKey);
-      });
-
-      section.appendChild(headingLink);
-    } else {
-      const heading = document.createElement('h2');
-      heading.className = 'sectionTitle sectionTitle-cards focuscontainer-x je-pad-left je-pad-right';
-      heading.textContent = title;
-      section.appendChild(heading);
-    }
-
-    const scrollerContainer = document.createElement('div');
-    scrollerContainer.setAttribute('is', 'emby-scroller');
-    scrollerContainer.className = 'padded-top-focusscale padded-bottom-focusscale emby-scroller';
-    scrollerContainer.dataset.horizontal = "true";
-    scrollerContainer.dataset.centerfocus = "card";
-
-    const itemsContainer = document.createElement('div');
-    itemsContainer.setAttribute('is', 'emby-itemscontainer');
-    itemsContainer.className = 'focuscontainer-x itemsContainer scrollSlider je-pad-left je-pad-right';
-
-    itemsContainer.appendChild(JE.discoveryFilter.createCardsFragment(results, { cardClass: 'overflowPortraitCard' }));
-
-    scrollerContainer.appendChild(itemsContainer);
-    section.appendChild(scrollerContainer);
-    enableRowScroll(section, scrollerContainer);
-    return section;
-  }
-
-  /**
-   * Builds a horizontal row of studio/network tiles that link into the
-   * category page for that studio or network. Renders the entry's TMDB logo
-   * (matching Seerr's own Studios/Networks rows), falling back to a plain
-   * text tile if the image fails to load.
-   * @param {string} title
-   * @param {Array<{name: string, id: number, logo?: string}>} items
-   * @param {'studio'|'network'} kind
-   * @returns {HTMLElement}
-   */
-  function createTileRow(title, items, kind) {
-    const section = document.createElement('div');
-    section.className = 'verticalSection emby-scroller-container je-recommendations-section';
-
-    const heading = document.createElement('h2');
-    heading.className = 'sectionTitle sectionTitle-cards focuscontainer-x je-pad-left je-pad-right';
-    heading.textContent = title;
-    section.appendChild(heading);
-
-    const scrollerContainer = document.createElement('div');
-    scrollerContainer.setAttribute('is', 'emby-scroller');
-    scrollerContainer.className = 'padded-top-focusscale padded-bottom-focusscale emby-scroller';
-    scrollerContainer.dataset.horizontal = "true";
-    scrollerContainer.dataset.centerfocus = "card";
-
-    const itemsContainer = document.createElement('div');
-    itemsContainer.setAttribute('is', 'emby-itemscontainer');
-    itemsContainer.className = 'focuscontainer-x itemsContainer scrollSlider je-pad-left je-pad-right';
-
-    items.forEach(item => {
-      const tile = document.createElement('div');
-      tile.className = 'card overflowBackdropCard card-hoverable card-withuserdata je-recommendations-tile';
-      tile.innerHTML = `
-        <div class="cardBox cardBox-bottompadded">
-          <div class="cardScalable">
-            <div class="cardPadder cardPadder-overflowBackdrop"></div>
-            <div class="cardImageContainer cardContent je-tile-image">
-              <span class="je-tile-fallback-text">${escapeHtml(item.name)}</span>
-            </div>
-            <div class="cardOverlayContainer" data-action="link"></div>
-          </div>
-        </div>`;
-
-      // Mirrors createJellyseerrCard's click wiring exactly: the overlay is
-      // disabled (pointer-events:none, no data-action) so Jellyfin's own
-      // emby-itemscontainer click delegation leaves it alone, and the actual
-      // click handler lives on the image layer underneath instead.
-      const overlayContainer = tile.querySelector('.cardOverlayContainer');
-      overlayContainer.removeAttribute('data-action');
-      overlayContainer.style.pointerEvents = 'none';
-
-      const imageContainer = tile.querySelector('.je-tile-image');
-      imageContainer.style.backgroundColor = '#fff';
-      imageContainer.style.cursor = 'pointer';
-      imageContainer.addEventListener('click', () => {
-        showCategoryPage(`${kind}-${item.id}`);
-      });
-
-      if (item.logo) {
-        const fallbackText = imageContainer.querySelector('.je-tile-fallback-text');
-        const img = document.createElement('img');
-        img.src = `https://image.tmdb.org/t/p/w300${item.logo}`;
-        img.alt = item.name;
-        img.className = 'je-tile-logo';
-        img.loading = 'lazy';
-        img.style.cssText = 'width: auto; height: auto; max-width: 90%; max-height: 90%; object-fit: contain;';
-        img.onerror = () => { imageContainer.replaceChildren(fallbackText); };
-        imageContainer.replaceChildren(img);
+  function createRowShell() {
+    const section = element("div", "verticalSection emby-scroller-container je-recommendations-section");
+    const scroller = element("div", "padded-top-focusscale padded-bottom-focusscale emby-scroller");
+    scroller.setAttribute("is", "emby-scroller");
+    scroller.dataset.horizontal = "true";
+    scroller.dataset.centerfocus = "card";
+    const items = element("div", "focuscontainer-x itemsContainer scrollSlider je-pad-left je-pad-right", scroller);
+    items.setAttribute("is", "emby-itemscontainer");
+    return {
+      section,
+      items,
+      finish(owner) {
+        section.appendChild(scroller);
+        enableRowScroll(section, scroller, owner);
+        return section;
       }
-
-      itemsContainer.appendChild(tile);
-    });
-
-    scrollerContainer.appendChild(itemsContainer);
-    section.appendChild(scrollerContainer);
-    enableRowScroll(section, scrollerContainer);
-    return section;
+    };
   }
-
-  // Tile color by genre name, shared across movie/TV since names overlap.
-  const GENRE_COLORS = {
-    'Action': '#b91c1ccc',
-    'Action & Adventure': '#b91c1ccc',
-    'Adventure': '#7c3aedcc',
-    'Animation': '#0891b2cc',
-    'Comedy': '#d97706cc',
-    'Crime': '#1d4ed8cc',
-    'Documentary': '#059669cc',
-    'Drama': '#db2777cc',
-    'Family': '#65a30dcc',
-    'Fantasy': '#9333eacc',
-    'History': '#78716ccc',
-    'Horror': '#27272acc',
-    'Kids': '#f59e0bcc',
-    'Music': '#e11d48cc',
-    'Mystery': '#4c1d95cc',
-    'News': '#334155cc',
-    'Reality': '#c026d3cc',
-    'Romance': '#ec4899cc',
-    'Sci-Fi & Fantasy': '#2563ebcc',
-    'Science Fiction': '#2563ebcc',
-    'Soap': '#db2777cc',
-    'Talk': '#0d9488cc',
-    'Thriller': '#7f1d1dcc',
-    'TV Movie': '#6b7280cc',
-    'War': '#57534ecc',
-    'War & Politics': '#57534ecc',
-    'Western': '#b45309cc',
-  };
-  const GENRE_COLOR_FALLBACK = '#4338ca';
-
-  /**
-   * Builds a horizontal row of genre tiles - a color-tinted TMDB backdrop
-   * with the genre name overlaid - linking into the category page for that
-   * genre.
-   * @param {string} title
-   * @param {Array<{id: number, name: string, backdrops: string[]}>} genres
-   * @param {'movie'|'tv'} mediaType
-   * @returns {HTMLElement}
-   */
-  function createGenreTileRow(title, genres, mediaType) {
-    const section = document.createElement('div');
-    section.className = 'verticalSection emby-scroller-container je-recommendations-section';
-
-    const heading = document.createElement('h2');
-    heading.className = 'sectionTitle sectionTitle-cards focuscontainer-x je-pad-left je-pad-right';
+  function plainHeading(section, title) {
+    const heading = element("h2", "sectionTitle sectionTitle-cards focuscontainer-x je-pad-left je-pad-right", section);
     heading.textContent = title;
-    section.appendChild(heading);
-
-    const scrollerContainer = document.createElement('div');
-    scrollerContainer.setAttribute('is', 'emby-scroller');
-    scrollerContainer.className = 'padded-top-focusscale padded-bottom-focusscale emby-scroller';
-    scrollerContainer.dataset.horizontal = "true";
-    scrollerContainer.dataset.centerfocus = "card";
-
-    const itemsContainer = document.createElement('div');
-    itemsContainer.setAttribute('is', 'emby-itemscontainer');
-    itemsContainer.className = 'focuscontainer-x itemsContainer scrollSlider je-pad-left je-pad-right';
-
-    // Avoid picking the same backdrop for two tiles in this row.
-    const usedBackdrops = new Set();
-
-    genres.forEach(genre => {
-      const backdropList = genre.backdrops || [];
-      const backdrop = backdropList.find(b => !usedBackdrops.has(b)) || backdropList[0];
-      if (backdrop) usedBackdrops.add(backdrop);
-
-      const color = GENRE_COLORS[genre.name] || GENRE_COLOR_FALLBACK;
-
-      const tile = document.createElement('div');
-      tile.className = 'card overflowBackdropCard card-hoverable card-withuserdata je-recommendations-tile';
-      tile.innerHTML = `
-        <div class="cardBox cardBox-bottompadded">
-          <div class="cardScalable">
-            <div class="cardPadder cardPadder-overflowBackdrop"></div>
-            <div class="cardImageContainer cardContent je-genre-tile-image" style="background-color: ${color};">
-              ${backdrop ? `<img class="je-genre-tile-backdrop" src="https://image.tmdb.org/t/p/w500${backdrop}" alt="" loading="lazy" onerror="this.remove()">` : ''}
-              <span class="je-genre-tile-title">${escapeHtml(genre.name)}</span>
-            </div>
-            <div class="cardOverlayContainer" data-action="link"></div>
-          </div>
-        </div>`;
-
-      // Mirrors createTileRow's click wiring: overlay disabled so Jellyfin's
-      // own emby-itemscontainer click delegation leaves it alone, the actual
-      // click handler lives on the image layer underneath instead.
-      const overlayContainer = tile.querySelector('.cardOverlayContainer');
-      overlayContainer.removeAttribute('data-action');
-      overlayContainer.style.pointerEvents = 'none';
-
-      const imageContainer = tile.querySelector('.je-genre-tile-image');
-      imageContainer.style.cursor = 'pointer';
-      imageContainer.addEventListener('click', () => {
-        showCategoryPage(`genre-${mediaType}-${genre.id}`);
-      });
-
-      itemsContainer.appendChild(tile);
-    });
-
-    scrollerContainer.appendChild(itemsContainer);
-    section.appendChild(scrollerContainer);
-    enableRowScroll(section, scrollerContainer);
-    return section;
   }
-
-  /**
-   * Renders the recommendations content (title + rows) into container.
-   * @param {HTMLElement} container
-   */
-  async function renderInto(container) {
-    if (state.currentAbortController) {
-      state.currentAbortController.abort();
+  function createTile(items, imageClass) {
+    const tile = element("div", "card overflowBackdropCard card-hoverable card-withuserdata je-recommendations-tile", items);
+    const box = element("div", "cardBox cardBox-bottompadded", tile);
+    const scalable = element("div", "cardScalable", box);
+    element("div", "cardPadder cardPadder-overflowBackdrop", scalable);
+    const image = element("div", `cardImageContainer cardContent ${imageClass}`, scalable);
+    image.style.cursor = "pointer";
+    element("div", "cardOverlayContainer", scalable).style.pointerEvents = "none";
+    return image;
+  }
+  function createRows(JE, P) {
+    const showCategory = (categoryKey) => {
+      part(P, "showCategoryPage")(categoryKey).catch((error) => console.error(`${LOG_PREFIX} Failed to open category`, error));
+    };
+    function createMediaRow(title, results, viewAllKey, owner) {
+      const shell = createRowShell();
+      if (viewAllKey) {
+        const link = element("a", "more button-flat button-flat-mini sectionTitleTextButton emby-button je-pad-left je-pad-right", shell.section);
+        link.setAttribute("is", "emby-linkbutton");
+        link.href = "#";
+        element("h2", "sectionTitle sectionTitle-cards", link).textContent = title;
+        const chevron = element("span", "material-icons chevron_right", link);
+        chevron.setAttribute("aria-hidden", "true");
+        link.addEventListener("click", (event) => {
+          event.preventDefault();
+          showCategory(viewAllKey);
+        });
+      } else {
+        plainHeading(shell.section, title);
+      }
+      shell.items.appendChild(filterOf(JE).createCardsFragment(results, { cardClass: "overflowPortraitCard" }));
+      return shell.finish(owner);
     }
-    const abortController = new AbortController();
-    state.currentAbortController = abortController;
-
-    // Cards leaving the document must be unobserved first (lazy posters).
-    JE.jellyseerrUI?.releasePosters?.(container);
-    container.textContent = '';
-
-    const heading = document.createElement('h1');
-    heading.className = 'je-recommendations-title je-pad-left je-pad-right';
-    const logo = document.createElement('img');
-    logo.className = 'je-reco-logo';
-    logo.alt = '';
-    logo.src = JE.cdn.selfhst('svg/seerr.svg');
-    const titleText = document.createElement('span');
-    titleText.textContent = JE.t('recommendations_title');
-    heading.append(logo, titleText);
-    container.appendChild(heading);
-    if (stopTitleTracking) stopTitleTracking();
-    stopTitleTracking = trackStickyBar(heading);
-
-    const loading = JE.core.ui.createSkeletonRows([
-      ...P.ROWS.map(row => JE.t(row.titleKey)),
-      JE.t('recommendations_movie_genres'),
-      JE.t('recommendations_tv_genres'),
-      JE.t('recommendations_studios'),
-      JE.t('recommendations_networks'),
-    ]);
-    loading.className = 'je-pad-left je-pad-right';
-    loading.setAttribute('aria-label', JE.t('recommendations_loading'));
-    container.appendChild(loading);
-
-    let rows;
-    try {
-      const [rowsResult, movieGenres, tvGenres] = await Promise.all([
-        fetchAllRows(abortController.signal),
-        fetchGenreSlider('movie'),
-        fetchGenreSlider('tv'),
+    function createTileRow(title, items, kind, owner) {
+      const shell = createRowShell();
+      plainHeading(shell.section, title);
+      for (const item of items) {
+        const image = createTile(shell.items, "je-tile-image");
+        image.style.backgroundColor = "#fff";
+        image.addEventListener("click", () => showCategory(`${kind}-${item.id}`));
+        const fallback = element("span", "je-tile-fallback-text", image);
+        fallback.textContent = item.name;
+        if (item.logo) {
+          const logo = element("img", "je-tile-logo");
+          logo.src = `https://image.tmdb.org/t/p/w300${item.logo}`;
+          logo.alt = item.name;
+          logo.loading = "lazy";
+          logo.style.cssText = "width: auto; height: auto; max-width: 90%; max-height: 90%; object-fit: contain;";
+          logo.onerror = () => {
+            image.replaceChildren(fallback);
+          };
+          image.replaceChildren(logo);
+        }
+      }
+      return shell.finish(owner);
+    }
+    function createGenreTileRow(title, genres, mediaType, owner) {
+      const shell = createRowShell();
+      plainHeading(shell.section, title);
+      const usedBackdrops = /* @__PURE__ */ new Set();
+      for (const genre of genres) {
+        const backdrop = genre.backdrops.find((path) => !usedBackdrops.has(path)) ?? genre.backdrops[0];
+        if (backdrop) usedBackdrops.add(backdrop);
+        const image = createTile(shell.items, "je-genre-tile-image");
+        image.style.backgroundColor = GENRE_COLORS.get(genre.name) ?? GENRE_COLOR_FALLBACK;
+        image.addEventListener("click", () => showCategory(`genre-${mediaType}-${genre.id}`));
+        if (backdrop) {
+          const img = element("img", "je-genre-tile-backdrop", image);
+          img.src = `https://image.tmdb.org/t/p/w500${backdrop}`;
+          img.alt = "";
+          img.loading = "lazy";
+          img.onerror = () => img.remove();
+        }
+        element("span", "je-genre-tile-title", image).textContent = genre.name;
+      }
+      return shell.finish(owner);
+    }
+    return { createMediaRow, createTileRow, createGenreTileRow };
+  }
+  (function() {
+    "use strict";
+    const { JE, P } = recommendationsHost();
+    const rows = createRows(JE, P);
+    const text = (key) => translate(JE, key);
+    const trackBar = (bar) => trackStickyBar(JE, bar);
+    function beginRender(container) {
+      const state = part(P, "state");
+      part(P, "disposeRender")(container);
+      part(P, "sweepRenders")();
+      const controller = new AbortController();
+      bindToSession(JE, controller);
+      const owner = { container, controller, disposers: [] };
+      state.renders.set(container, owner);
+      if (container.closest(`#${PAGE_ID}`)) {
+        state.currentAbortController?.abort();
+        state.currentAbortController = controller;
+      }
+      return owner;
+    }
+    function appendHeading(owner) {
+      const heading = element("h1", "je-recommendations-title je-pad-left je-pad-right", owner.container);
+      const logo = element("img", "je-reco-logo", heading);
+      logo.alt = "";
+      logo.src = JE.cdn?.selfhst("svg/seerr.svg") ?? "";
+      element("span", "", heading).textContent = text("recommendations_title");
+      owner.disposers.push(trackBar(heading));
+    }
+    function appendRetry(owner) {
+      const row = element("div", "je-retry-row je-pad-left je-pad-right", owner.container);
+      const button = element("button", "raised emby-button", row);
+      button.type = "button";
+      button.textContent = "⟳ Tap to retry";
+      button.addEventListener("click", () => {
+        void renderInto(owner.container);
+      }, { once: true, signal: owner.controller.signal });
+    }
+    function appendEmpty(owner, rowResults) {
+      const empty = element("div", "je-recommendations-empty je-pad-left je-pad-right", owner.container);
+      empty.textContent = text("recommendations_empty");
+      if (rowResults.some((entry) => entry.failed)) appendRetry(owner);
+    }
+    function appendRows(owner, rowResults) {
+      const { container } = owner;
+      for (const { row, results } of rowResults) {
+        if (results.length > 0) container.appendChild(rows.createMediaRow(text(row.titleKey), results, row.key, owner));
+      }
+      const movieGenres = part(P, "MOVIE_GENRES");
+      const tvGenres = part(P, "TV_GENRES");
+      if (movieGenres.length) container.appendChild(rows.createGenreTileRow(text("recommendations_movie_genres"), movieGenres, "movie", owner));
+      if (tvGenres.length) container.appendChild(rows.createGenreTileRow(text("recommendations_tv_genres"), tvGenres, "tv", owner));
+      container.appendChild(rows.createTileRow(text("recommendations_studios"), part(P, "STUDIOS"), "studio", owner));
+      container.appendChild(rows.createTileRow(text("recommendations_networks"), part(P, "NETWORKS"), "network", owner));
+    }
+    async function renderInto(container) {
+      const state = part(P, "state");
+      const owner = beginRender(container);
+      const { signal } = owner.controller;
+      const wasConnected = container.isConnected;
+      const superseded = () => signal.aborted || state.renders.get(container) !== owner;
+      JE.jellyseerrUI?.releasePosters?.(container);
+      container.replaceChildren();
+      appendHeading(owner);
+      const loading = JE.core?.ui?.createSkeletonRows([
+        ...part(P, "ROWS").map((row) => text(row.titleKey)),
+        text("recommendations_movie_genres"),
+        text("recommendations_tv_genres"),
+        text("recommendations_studios"),
+        text("recommendations_networks")
       ]);
-      rows = rowsResult;
-      P.MOVIE_GENRES = movieGenres || [];
-      P.TV_GENRES = tvGenres || [];
-    } catch (error) {
-      if (error?.name === 'AbortError') return;
-      console.error(`${logPrefix} Failed to load rows`, error);
-      rows = [];
+      if (loading) {
+        loading.className = "je-pad-left je-pad-right";
+        loading.setAttribute("aria-label", text("recommendations_loading"));
+        container.appendChild(loading);
+      }
+      let rowResults = [];
+      let movieGenres = [];
+      let tvGenres = [];
+      try {
+        [rowResults, movieGenres, tvGenres] = await Promise.all([
+          part(P, "fetchAllRows")(signal),
+          part(P, "fetchGenreSlider")("movie"),
+          part(P, "fetchGenreSlider")("tv")
+        ]);
+      } catch (error) {
+        if (isAbortError(error)) return;
+        console.error(`${LOG_PREFIX} Failed to load rows`, error);
+      }
+      if (superseded()) return;
+      if (wasConnected && !container.isConnected) {
+        part(P, "disposeRender")(container);
+        return;
+      }
+      P.MOVIE_GENRES = movieGenres;
+      P.TV_GENRES = tvGenres;
+      loading?.remove();
+      if (rowResults.some((entry) => entry.results.length > 0)) appendRows(owner, rowResults);
+      else appendEmpty(owner, rowResults);
     }
-
-    if (abortController.signal.aborted) return;
-
-    loading.remove();
-
-    const nonEmptyRows = rows.filter(entry => entry.results.length > 0);
-    if (nonEmptyRows.length === 0) {
-      const empty = document.createElement('div');
-      empty.className = 'je-recommendations-empty je-pad-left je-pad-right';
-      empty.textContent = JE.t('recommendations_empty');
-      container.appendChild(empty);
-      return;
-    }
-
-    nonEmptyRows.forEach(({ row, results }) => {
-      container.appendChild(createMediaRow(JE.t(row.titleKey), results, row.key));
-    });
-
-    if (P.MOVIE_GENRES.length) {
-      container.appendChild(createGenreTileRow(JE.t('recommendations_movie_genres'), P.MOVIE_GENRES, 'movie'));
-    }
-    if (P.TV_GENRES.length) {
-      container.appendChild(createGenreTileRow(JE.t('recommendations_tv_genres'), P.TV_GENRES, 'tv'));
-    }
-
-    container.appendChild(createTileRow(JE.t('recommendations_studios'), P.STUDIOS, 'studio'));
-    container.appendChild(createTileRow(JE.t('recommendations_networks'), P.NETWORKS, 'network'));
-  }
-
-  // --- Custom tab entry point ---
-
-  function renderForCustomTab(el) {
-    renderInto(el);
-  }
-
-  P.createMediaRow = createMediaRow;
-  P.createTileRow = createTileRow;
-  P.createGenreTileRow = createGenreTileRow;
-  P.renderInto = renderInto;
-  P.renderForCustomTab = renderForCustomTab;
+    P.trackStickyBar = trackBar;
+    P.createMediaRow = rows.createMediaRow;
+    P.createTileRow = rows.createTileRow;
+    P.createGenreTileRow = rows.createGenreTileRow;
+    P.renderInto = renderInto;
+    P.renderForCustomTab = (element2) => {
+      if (!element2) return;
+      renderInto(element2).catch((error) => console.error(`${LOG_PREFIX} Failed to render`, error));
+    };
+  })();
 })();
+})();
+//# sourceMappingURL=recommendations-render.js.map

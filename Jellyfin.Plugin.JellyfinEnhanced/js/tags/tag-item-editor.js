@@ -1,57 +1,58 @@
-// @ts-check
-// /js/tags/tag-item-editor.js
-//
-// The per-item Media Tags editor: a dialog (opened from the item's ⋮ menu by
-// tags/tag-item-menu.js, from Edit on the hub's locked items and, in its
-// server mode, from the Media Tags admin tab) that shows the item's poster
-// with its real tags in a draft look and edits that look: layout, label
-// density, each group's place (on/off, the layout's positions, nine anchors
-// on Corners) and "Show up to", tag size, gap and edge spacing.
-//
-// Nothing is kept unless the look is locked: "Keep this look for this item"
-// on saves it as the item's lock (core/tag-look.js tagLayoutLocks), off
-// removes the lock and the item follows rules and the default again.
-// Administrators also get "For everyone", which stores the same document as
-// the item's server-wide look (TagLookItemOverrides). For a series, season or
-// episode the look can be kept for the item only or for the series and its
-// seasons and episodes (one lock on the series, which they inherit).
-//
-// The sample card is drawn with the tag renderers from the item's tag data
-// (or copied from one of its cards on the page) and given the draft look
-// through core/tag-layout.js setPreviewLook, so it uses the real layout code.
-//
-// Public surface: JE.tagItemEditor { open, close, isOpen }.
-(function (JE) {
-    'use strict';
+(() => {
+"use strict";
+(() => {
+  // client/src/host/context.ts
+  function sharedModule(id) {
+    const namespace = window.JellyfinEnhanced?.core?.sharedModules?.[id];
+    if (!namespace) throw new Error(`${id} is not in JE.core.sharedModules: load its provider first (client/shared-modules.json)`);
+    return namespace;
+  }
+  function sharedExport(namespace, name) {
+    return namespace[name];
+  }
 
-    const logPrefix = '🪼 Jellyfin Enhanced [TagLook]:';
-    const TYPES = new Set(['Movie', 'Series', 'Season', 'Episode', 'BoxSet', 'Video']);
-    const LAYOUTS = ['corners', 'bands', 'caption', 'summary', 'minimal'];
-    const SCALES = ['smaller', 'default', 'larger', 'largest'];
-    const GAPS = ['tight', 'default', 'roomy'];
-    const EDGES = ['default', 'tight', 'flush'];
+  // client/generated-shared/stub/client/src/features/media-tags/host.ts
+  var shared = /* @__PURE__ */ sharedModule("features/media-tags/host");
+  var export0 = /* @__PURE__ */ sharedExport(shared, "apiClient");
+  var export3 = /* @__PURE__ */ sharedExport(shared, "settingsUi");
+  var export4 = /* @__PURE__ */ sharedExport(shared, "tagRuntimeHost");
+
+  // client/generated-shared/stub/client/src/features/media-tags/pipeline/dto.ts
+  var shared2 = /* @__PURE__ */ sharedModule("features/media-tags/pipeline/dto");
+  var export42 = /* @__PURE__ */ sharedExport(shared2, "isRecord");
+  var export9 = /* @__PURE__ */ sharedExport(shared2, "own");
+  var export10 = /* @__PURE__ */ sharedExport(shared2, "record");
+
+  // client/generated-shared/stub/client/src/features/media-tags/layout/layout-rules.ts
+  var shared3 = /* @__PURE__ */ sharedModule("features/media-tags/layout/layout-rules");
+  var export23 = /* @__PURE__ */ sharedExport(shared3, "normalizeLayout");
+
+  // client/src/features/media-tags/editor/tag-item-editor.ts
+  function must(value) {
+    if (!value) throw new Error("Item editor markup is incomplete");
+    return value;
+  }
+  function createItemEditor(JE) {
+    const logPrefix = "🪼 Jellyfin Enhanced [TagLook]:";
+    const TYPES = /* @__PURE__ */ new Set(["Movie", "Series", "Season", "Episode", "BoxSet", "Video"]);
+    const LAYOUTS = ["corners", "bands", "caption", "summary", "minimal"];
+    const SCALES = ["smaller", "default", "larger", "largest"];
+    const GAPS = ["tight", "default", "roomy"];
+    const EDGES = ["default", "tight", "flush"];
     const MAX_CAP = 10;
-    const UNDO_MS = 8000;
-
-    /**
-     * Per group: its enable setting, name string, and cap rule (the hub's:
-     * `capAll` groups may show every tag, `capFixed` groups always show one).
-     */
+    const UNDO_MS = 8e3;
     const GROUPS = {
-        status: { setting: 'statusTagsEnabled', nameKey: 'panel_settings_ui_tag_group_status', capFixed: true },
-        quality: { setting: 'qualityTagsEnabled', nameKey: 'panel_settings_ui_tag_group_quality', capAll: true },
-        rating: { setting: 'ratingTagsEnabled', nameKey: 'panel_settings_ui_tag_group_rating', capAll: true },
-        ageRating: { setting: 'ageRatingTagsEnabled', nameKey: 'panel_settings_ui_tag_group_age_rating', capFixed: true },
-        language: { setting: 'languageTagsEnabled', nameKey: 'panel_settings_ui_tag_group_language' },
-        genre: { setting: 'genreTagsEnabled', nameKey: 'common_genre' },
-        awards: { setting: 'awardsTagsEnabled', nameKey: 'awards_label', capAll: true },
-        logos: { setting: 'logoTagsEnabled', nameKey: 'common_logos', capAll: true },
-        custom: { setting: 'customTagsEnabled', nameKey: 'common_custom' },
+      status: { setting: "statusTagsEnabled", nameKey: "panel_settings_ui_tag_group_status", capFixed: true },
+      quality: { setting: "qualityTagsEnabled", nameKey: "panel_settings_ui_tag_group_quality", capAll: true },
+      rating: { setting: "ratingTagsEnabled", nameKey: "panel_settings_ui_tag_group_rating", capAll: true },
+      ageRating: { setting: "ageRatingTagsEnabled", nameKey: "panel_settings_ui_tag_group_age_rating", capFixed: true },
+      language: { setting: "languageTagsEnabled", nameKey: "panel_settings_ui_tag_group_language" },
+      genre: { setting: "genreTagsEnabled", nameKey: "common_genre" },
+      awards: { setting: "awardsTagsEnabled", nameKey: "awards_label", capAll: true },
+      logos: { setting: "logoTagsEnabled", nameKey: "common_logos", capAll: true },
+      custom: { setting: "customTagsEnabled", nameKey: "common_custom" }
     };
-
-    /** Corners anchors in reading order (the 3 × 3 grid). */
-    const ANCHORS = ['tl', 'tc', 'tr', 'ml', 'c', 'mr', 'bl', 'bc', 'br'];
-
+    const ANCHORS = ["tl", "tc", "tr", "ml", "c", "mr", "bl", "bc", "br"];
     const CSS = `
         .je-tie-backdrop { position: fixed; inset: 0; z-index: 100000; display: flex; align-items: flex-start; justify-content: center; padding: 24px 12px; box-sizing: border-box; background: rgba(0,0,0,0.6); overflow-y: auto; }
         .je-tie { width: min(880px, 100%); box-sizing: border-box; margin: auto 0; border-radius: 10px; border: 1px solid rgba(255,255,255,0.18); background: #1d2026; color: #fff; box-shadow: 0 10px 40px rgba(0,0,0,0.5); font-size: 14px; text-align: left; }
@@ -217,832 +218,679 @@
             .je-tie-foot button, .je-tie-gopen, .je-tie select, .je-tie-view .je-tie-pill { min-height: 44px; }
         }
     `;
-
-    /** @type {null|{close: (saved?: boolean) => void, backdrop: HTMLElement}} the open editor */
     let current = null;
     let sequence = 0;
-    /** Identity of the latest open attempt; another open, close(), navigation or a session reset moves it on. */
     let openGeneration = 0;
-    /** @type {number} generation of the open still waiting for its item data (0: none) */
     let pendingOpen = 0;
-
-    /** Cancel the open still waiting for its item data, if any. */
     function cancelPending() {
-        openGeneration++;
-        settlePending(pendingOpen);
+      openGeneration++;
+      settlePending(pendingOpen);
     }
-
-    /**
-     * An open attempt settled (mounted, failed or cancelled): stop watching
-     * navigation for it.
-     * @param {number} generation
-     */
     function settlePending(generation) {
-        if (!pendingOpen || pendingOpen !== generation) return;
-        pendingOpen = 0;
-        window.removeEventListener('hashchange', cancelPending);
+      if (!pendingOpen || pendingOpen !== generation) return;
+      pendingOpen = 0;
+      window.removeEventListener("hashchange", cancelPending);
     }
-
-    const esc = (value) => JE.escapeHtml(String(value ?? ''));
+    const esc = (value) => JE.escapeHtml(String(value ?? ""));
     const tx = (key, params) => esc(JE.t(key, params));
-    /** @returns {any} */
     const layoutApi = () => JE.core?.tagLayout || null;
-    /** @returns {any} */
     const lookApi = () => JE.core?.tagLook || null;
-
-    /**
-     * Label of a slot in a layout ("Bottom row"), or "Hidden" for off.
-     * @param {string} layout
-     * @param {string} slot
-     * @returns {string}
-     */
+    const vocabularyKey = (section, id) => layoutApi()?.VOCABULARY_KEYS[section][id] ?? "";
     function slotLabel(layout, slot) {
-        return slot === 'off' ? JE.t('panel_settings_ui_tag_slot_off') : JE.t(JE.core.tagLayout.VOCABULARY_KEYS.slot[`${layout}_${slot}`]);
+      return slot === "off" ? JE.t("panel_settings_ui_tag_slot_off") : JE.t(vocabularyKey("slot", `${layout}_${slot}`));
     }
-
-    /**
-     * The positions a group can take in a layout (no "off": the switch hides it).
-     * @param {string} layout
-     * @param {string} group
-     * @returns {string[]}
-     */
     function positionsFor(layout, group) {
-        return (layoutApi().LAYOUT_SLOTS[layout] || []).filter((slot) => slot !== 'off' && (slot !== 'dots' || group === 'quality'));
+      return (export9(layoutApi()?.LAYOUT_SLOTS ?? {}, layout) || []).filter((slot) => slot !== "off" && (slot !== "dots" || group === "quality"));
     }
-
-    /**
-     * The next "Show up to" value for a stepper press, or null when the
-     * group cannot go further (the hub's policy: 1..10, then All for groups
-     * that may show every tag).
-     * @param {number} cap - 0 = all.
-     * @param {number} dir
-     * @param {{capAll?: boolean, capFixed?: boolean}} meta
-     * @returns {number|null}
-     */
     function stepCap(cap, dir, meta) {
-        if (meta.capFixed) return null;
-        if (dir < 0) {
-            if (cap === 0) return MAX_CAP;
-            return cap > 1 ? cap - 1 : null;
-        }
-        if (cap === 0) return null;
-        if (cap < MAX_CAP) return cap + 1;
-        return meta.capAll ? 0 : null;
+      if (meta.capFixed) return null;
+      if (dir < 0) {
+        if (cap === 0) return MAX_CAP;
+        return cap > 1 ? cap - 1 : null;
+      }
+      if (cap === 0) return null;
+      if (cap < MAX_CAP) return cap + 1;
+      return meta.capAll ? 0 : null;
     }
-
-    /** @returns {boolean} The signed-in user sees some poster tag group. */
     function anyTagsOn() {
-        const s = JE.currentSettings || {};
-        return Object.values(GROUPS).some((g) => s[g.setting] === true);
+      const s = JE.currentSettings;
+      return Object.values(GROUPS).some((g) => s?.[g.setting] === true);
     }
-
-    /**
-     * Whether a group can draw for this user (its switch, and Awards also the
-     * administrator's).
-     * @param {string} group
-     * @returns {boolean}
-     */
     function groupOn(group) {
-        if (group === 'awards' && JE.pluginConfig?.AwardsTagsEnabled === false) return false;
-        return JE.currentSettings?.[GROUPS[group].setting] === true;
+      if (group === "awards" && JE.pluginConfig?.AwardsTagsEnabled === false) return false;
+      const meta = export9(GROUPS, group);
+      return !!meta && JE.currentSettings?.[meta.setting] === true;
     }
-
-    /**
-     * @typedef {Object} Draft - The look being edited.
-     * @property {string} layout
-     * @property {string} density
-     * @property {Object<string, Object<string, string>>} slots - layout → group → slot (each layout remembered while switching).
-     * @property {Object<string, number>} caps - Only the groups given their own "Show up to".
-     * @property {string|null} tagScale
-     * @property {string|null} tagGap
-     * @property {string|null} edge
-     */
-
-    /**
-     * The draft as a lock document for the chosen layout.
-     * @param {Draft} draft
-     * @param {'item'|null} scope
-     * @returns {Object}
-     */
     function lookOf(draft, scope) {
-        return {
-            layout: draft.layout,
-            density: draft.density,
-            slots: { ...draft.slots[draft.layout] },
-            caps: Object.keys(draft.caps).length ? { ...draft.caps } : null,
-            tagScale: draft.tagScale,
-            tagGap: draft.tagGap,
-            edge: draft.edge,
-            scope,
-        };
+      return {
+        layout: draft.layout,
+        density: draft.density,
+        slots: { ...draft.slots[draft.layout] },
+        caps: Object.keys(draft.caps).length ? { ...draft.caps } : null,
+        tagScale: draft.tagScale,
+        tagGap: draft.tagGap,
+        edge: draft.edge,
+        scope
+      };
     }
-
-    /**
-     * Where the look a card of the item has now comes from, in words.
-     * @param {{source: string, index: number}} source
-     * @param {boolean} inherited - The lock or item look is its series'.
-     * @returns {string}
-     */
     function sourceText(source, inherited) {
-        switch (source.source) {
-            case 'lock': return JE.t(inherited ? 'tag_item_editor_source_lock_series' : 'tag_item_editor_source_lock');
-            case 'override': return JE.t(inherited ? 'tag_item_editor_source_override_series' : 'tag_item_editor_source_override');
-            case 'rule': return JE.t('panel_media_tags_preview_source_rule', { n: source.index + 1 });
-            case 'shape': return JE.t('tag_item_editor_source_shape');
-            default: return JE.t('tag_item_editor_source_default');
-        }
+      switch (source.source) {
+        case "lock":
+          return JE.t(inherited ? "tag_item_editor_source_lock_series" : "tag_item_editor_source_lock");
+        case "override":
+          return JE.t(inherited ? "tag_item_editor_source_override_series" : "tag_item_editor_source_override");
+        case "rule":
+          return JE.t("panel_media_tags_preview_source_rule", { n: source.index + 1 });
+        case "shape":
+          return JE.t("tag_item_editor_source_shape");
+        default:
+          return JE.t("tag_item_editor_source_default");
+      }
     }
-
-    /**
-     * A short-lived message with an Undo button (8 s).
-     * @param {string} message
-     * @param {() => void} undo
-     * @param {HTMLElement} [host] - Where it goes (the settings panel keeps the page behind inert).
-     */
     function showUndo(message, undo, host) {
-        const isCurrent = lookApi().captureSession();
-        document.querySelectorAll('.je-tie-toast').forEach((el) => el.remove());
-        const toast = document.createElement('div');
-        toast.className = 'je-tie-toast';
-        toast.setAttribute('role', 'status');
-        const text = document.createElement('span');
-        text.textContent = message;
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.textContent = JE.t('hidden_content_undo');
-        const timer = setTimeout(() => toast.remove(), UNDO_MS);
-        button.addEventListener('click', () => {
-            clearTimeout(timer);
-            toast.remove();
-            if (isCurrent()) undo();
-        });
-        toast.append(text, button);
-        (host && host.isConnected ? host : document.body).appendChild(toast);
+      const isCurrent = lookApi()?.captureSession() ?? (() => false);
+      document.querySelectorAll(".je-tie-toast").forEach((el) => el.remove());
+      const toast = document.createElement("div");
+      toast.className = "je-tie-toast";
+      toast.setAttribute("role", "status");
+      const text = document.createElement("span");
+      text.textContent = message;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = JE.t("hidden_content_undo");
+      const timer = setTimeout(() => toast.remove(), UNDO_MS);
+      button.addEventListener("click", () => {
+        clearTimeout(timer);
+        toast.remove();
+        if (isCurrent()) undo();
+      });
+      toast.append(text, button);
+      (host && host.isConnected ? host : document.body).appendChild(toast);
     }
-
-    /**
-     * Draw the item's tags onto the sample card: copied from one of the
-     * item's cards on the page when there is one (what the user sees), else
-     * drawn by each enabled renderer from the server tag-cache entry, else
-     * from the browser's per-tag cache.
-     * @param {HTMLElement} target - The sample's render target.
-     * @param {string} id
-     * @param {Object|null} entry - The server tag-cache entry, or null.
-     * @param {Object|null} [item] - The item's /tag-data answer, drawn when there is no entry or card
-     *   (the admin page shows no cards of the item).
-     * @returns {boolean} Whether any group was drawn.
-     */
     function drawTags(target, id, entry, item = null) {
-        const L = layoutApi();
-        const pipeline = JE.tagPipeline;
-        L.ensureHost(target);
-        if (entry) L.setCardContext(target, entry, id);
-        // A card of the item on the page carries exactly the tags the user sees.
-        for (const host of document.querySelectorAll('.je-tag-host')) {
-            if (target.contains(host) || L.cardIdentity(/** @type {HTMLElement} */ (host)) !== id) continue;
-            let copied = 0;
-            for (const group of L.GROUPS) {
-                const master = L.getGroup(host, group);
-                if (master) { L.commitGroup(target, group, master.cloneNode(true)); copied++; }
-            }
-            if (copied) return true;
+      const L = layoutApi();
+      if (!L) return false;
+      const pipeline = JE.tagPipeline;
+      L.ensureHost(target);
+      if (entry) L.setCardContext(target, entry, id);
+      for (const host of document.querySelectorAll(".je-tag-host")) {
+        if (target.contains(host) || L.cardIdentity(host) !== id) continue;
+        let copied = 0;
+        for (const group of L.GROUPS) {
+          const master = L.getGroup(host, group);
+          const copy = master?.cloneNode(true);
+          if (copy instanceof HTMLElement) {
+            L.commitGroup(target, group, copy);
+            copied++;
+          }
         }
-        if (!pipeline?.getRenderer) return false;
-        const names = ['status', 'quality', 'genre', 'rating', 'agerating', 'custom', 'userreview', 'language', 'awards', 'logos'];
-        for (const name of names) {
-            const renderer = pipeline.getRenderer(name);
-            if (!renderer || !renderer.isEnabled?.()) continue;
-            try {
-                if (entry && renderer.renderFromServerCache) renderer.renderFromServerCache(target, entry, id);
-                else if (item && renderer.render) renderer.render(target, item, { renderTarget: target, stripRevision: pipeline.tagStripRevision?.() ?? null });
-                else if (renderer.renderFromCache) renderer.renderFromCache(target, id);
-            } catch (err) {
-                console.warn(`${logPrefix} the item editor's sample could not draw ${name}:`, err);
-            }
+        if (copied) return true;
+      }
+      if (!pipeline?.getRenderer) return false;
+      const names = ["status", "quality", "genre", "rating", "agerating", "custom", "userreview", "language", "awards", "logos"];
+      for (const name of names) {
+        const renderer = pipeline.getRenderer(name);
+        if (!renderer || !renderer.isEnabled?.()) continue;
+        try {
+          if (entry && renderer.renderFromServerCache) renderer.renderFromServerCache(target, entry, id);
+          else if (item && renderer.render) renderer.render(target, item, { renderTarget: target, stripRevision: pipeline.tagStripRevision?.() ?? null });
+          else if (renderer.renderFromCache) renderer.renderFromCache(target, id);
+        } catch (err) {
+          console.warn(`${logPrefix} the item editor's sample could not draw ${name}:`, err);
         }
-        return L.GROUPS.some((group) => L.hasGroup(target, group));
+      }
+      return [...L.GROUPS].some((group) => L.hasGroup(target, group));
     }
-
-    /**
-     * The item, read once for the editor: its name, type, series and image.
-     * @param {string} id
-     * @returns {Promise<Object|null>}
-     */
     async function fetchItem(id) {
-        try {
-            return await ApiClient.getItem(ApiClient.getCurrentUserId(), id);
-        } catch (err) {
-            console.warn(`${logPrefix} could not read item ${id}:`, err);
-            return null;
-        }
+      try {
+        const item = await export0().getItem(export0().getCurrentUserId(), id);
+        return export42(item) ? item : null;
+      } catch (err) {
+        console.warn(`${logPrefix} could not read item ${id}:`, err);
+        return null;
+      }
     }
-
-    /** @returns {Promise<boolean>} The signed-in user is an administrator. */
     async function isAdministrator() {
-        try {
-            const user = await ApiClient.getCurrentUser();
-            return user?.Policy?.IsAdministrator === true;
-        } catch {
-            return false;
-        }
+      try {
+        const user = await export0().getCurrentUser();
+        return export10(export10(user).Policy).IsAdministrator === true;
+      } catch {
+        return false;
+      }
     }
-
-    /**
-     * @typedef {Object} OpenOptions
-     * @property {HTMLElement|null} [opener] - Focus returns here on close.
-     * @property {() => HTMLElement|null} [returnFocus] - Replacement row or list heading after a scope move.
-     * @property {HTMLElement} [host] - Where the dialog goes (default the page; the
-     *   settings panel, which keeps everything outside it inert, passes itself).
-     * @property {Object} [item] - The item, when the caller has it already.
-     * @property {'user'|'server'} [mode] - 'server': edit the item's server-wide
-     *   look only (the admin page), saved through onSave.
-     * @property {Object|null} [look] - Server mode: the look to start from.
-     * @property {(look: Object, target: string) => void} [onSave] - Server mode: keep the look.
-     */
-
-    /**
-     * Open the editor for an item. A second open replaces the first.
-     * @param {string} itemId
-     * @param {OpenOptions} [options]
-     * @returns {Promise<boolean>} False when the item cannot be edited.
-     */
     async function open(itemId, options = {}) {
-        const L = layoutApi();
-        const look = lookApi();
-        const id = look?.normalizeId(String(itemId || ''));
-        if (!L || !look || !id) return false;
-        const serverMode = options.mode === 'server';
-        const opener = options.opener || /** @type {HTMLElement|null} */ (document.activeElement);
-        const isCurrent = look.captureSession();
-        // This attempt replaces any still waiting; it ends with another open,
-        // close(), a navigation or a session reset before it mounts.
-        cancelPending();
-        const generation = openGeneration;
-        pendingOpen = generation;
-        window.addEventListener('hashchange', cancelPending);
-        const live = () => isCurrent() && generation === openGeneration;
-        const abandon = () => { settlePending(generation); return false; };
-
-        let item, admin;
+      const L = layoutApi();
+      const look = lookApi();
+      const id = look?.normalizeId(String(itemId || ""));
+      if (!L || !look || !id) return false;
+      const serverMode = options.mode === "server";
+      const active = document.activeElement;
+      const opener = options.opener || (active instanceof HTMLElement ? active : null);
+      const isCurrent = look.captureSession();
+      cancelPending();
+      const generation = openGeneration;
+      pendingOpen = generation;
+      window.addEventListener("hashchange", cancelPending);
+      const live = () => isCurrent() && generation === openGeneration;
+      const abandon = () => {
+        settlePending(generation);
+        return false;
+      };
+      let item;
+      let admin;
+      try {
+        [item, admin] = await Promise.all([options.item ? Promise.resolve(options.item) : fetchItem(id), serverMode ? Promise.resolve(true) : isAdministrator()]);
+      } catch (err) {
+        abandon();
+        throw err;
+      }
+      if (!live()) return abandon();
+      if (!item || typeof item.Type !== "string" || !TYPES.has(item.Type)) {
+        JE.toast?.(JE.t("tag_item_editor_unsupported"));
+        return abandon();
+      }
+      closeMounted();
+      JE.core.ui?.injectCss?.("je-tag-item-editor", CSS);
+      const type = String(item.Type);
+      const name = String(item.Name || "");
+      const seriesId = type === "Season" || type === "Episode" ? look.normalizeId(String(item.SeriesId || "")) : null;
+      const hasSeries = type === "Series" || !!seriesId;
+      const seriesTarget = type === "Series" ? id : seriesId;
+      const read = look.read();
+      const own = read.locks.get(id) || null;
+      const seriesLock = seriesId ? read.locks.get(seriesId) || null : null;
+      const ownOverride = read.overrides.get(id) || null;
+      const seriesOverride = seriesId ? read.overrides.get(seriesId) || null : null;
+      const serverEntry = JE.tagPipeline?.peekServerEntry?.(id) || null;
+      let facts = serverEntry;
+      if (!facts) {
         try {
-            [item, admin] = await Promise.all([options.item ? Promise.resolve(options.item) : fetchItem(id), serverMode ? Promise.resolve(true) : isAdministrator()]);
-        } catch (err) {
-            abandon();
-            throw err;
+          facts = await JE.tagPipeline?.itemLookFacts?.(id) ?? null;
+        } catch {
+          facts = null;
         }
         if (!live()) return abandon();
-        if (!item || !TYPES.has(item.Type)) {
-            JE.toast?.(JE.t('tag_item_editor_unsupported'));
-            return abandon();
-        }
         closeMounted();
-        JE.core.ui?.injectCss?.('je-tag-item-editor', CSS);
-
-        const type = String(item.Type);
-        const name = String(item.Name || '');
-        const seriesId = (type === 'Season' || type === 'Episode') ? look.normalizeId(String(item.SeriesId || '')) : null;
-        const hasSeries = type === 'Series' || !!seriesId;
-        const seriesTarget = type === 'Series' ? id : seriesId;
-        const read = look.read();
-        const own = read.locks.get(id) || null;
-        const seriesLock = seriesId ? read.locks.get(seriesId) || null : null;
-        const ownOverride = read.overrides.get(id) || null;
-        const seriesOverride = seriesId ? read.overrides.get(seriesId) || null : null;
-
-        // Where the item's look comes from now, and the look it has.
-        const serverEntry = JE.tagPipeline?.peekServerEntry?.(id) || null;
-        let facts = serverEntry;
-        // The server-wide editor opens from the admin page, where no card of the item
-        // was drawn: its /tag-data answer is what the preview draws.
-        if (!facts) {
-            try { facts = await JE.tagPipeline?.itemLookFacts?.(id); } catch { facts = null; }
-            if (!live()) return abandon();
-            // An editor another open mounted meanwhile is replaced.
-            closeMounted();
-        }
-        settlePending(generation);
-        const itemCard = opener?.closest?.('.card') || document.querySelector(`.card[data-id="${id}"]`);
-        const shape = itemCard ? L.shapeOf(itemCard) : (type === 'Episode' ? 'landscape' : 'portrait');
-        const context = { ...(facts || {}), Id: id, Type: type, SeriesId: seriesId || facts?.SeriesId, itemId: id, cardType: type, shape };
-        const before = L.lookSource(context);
-        const base = L.normalizeSettings();
-        const conf = L.resolveLayout(context);
-
-        // Start from the look the item keeps (its own, else its series'), else
-        // the look its cards have now.
-        const usable = (lock) => lock && (lock !== seriesLock || lock.scope !== 'item');
-        const startLock = serverMode ? (options.look ? look.normalizeLock(options.look) : null)
-            : (own || (usable(seriesLock) ? seriesLock : null) || ownOverride || (seriesOverride && seriesOverride.scope !== 'item' ? seriesOverride : null));
-        // Freeze the fully resolved appearance, including the active shape's
-        // fields on a rule/lock/override. An inheritance marker is safe only
-        // where the unshaped base resolves to the same value.
-        let effective = conf;
-        if (serverMode && startLock) {
-            const sample = document.createElement('div');
-            sample.dataset.jeShape = shape;
-            L.setPreviewLook(sample, startLock);
-            effective = L.resolveLayout(sample);
-            L.setPreviewLook(sample, null);
-        }
-        const startLayout = effective.layout;
-        /** @type {Draft} */
-        const draft = {
-            layout: startLayout,
-            density: effective.density,
-            slots: {},
-            caps: {
-                ...Object.fromEntries(Object.entries(effective.caps).filter(([group, cap]) => cap !== base.caps[group])),
-                // Presentation caps do not rewrite a saved single-chip cap when another field is edited.
-                ...Object.fromEntries(Object.entries({ ...(startLock?.caps || {}), ...(startLock?.shapes?.[shape]?.caps || {}) })
-                    .filter(([group]) => L.singleChipGroup(group))),
-            },
-            tagScale: effective.tagScale === base.tagScale ? null : effective.tagScale,
-            tagGap: effective.tagGap === base.tagGap ? null : effective.tagGap,
-            edge: effective.edge === base.edge ? null : effective.edge,
-        };
-        for (const layout of LAYOUTS) draft.slots[layout] = { ...base.profiles[layout] };
-        /** @type {string|null} the group row whose position and limit are open (one at a time) */
-        let openGroup = null;
-        /** Whether the list of groups the user's settings hide is open. */
-        let hiddenOpen = false;
-        /** @type {Object<string, string>} "layout:group" → the position a group had before it was switched off */
-        const lastSlot = {};
-        draft.slots[startLayout] = { ...effective.slots };
-
-        /** @type {'item'|'series'} */
-        let scope = !hasSeries ? 'item'
-            : own ? (type === 'Series' && own.scope !== 'item' ? 'series' : 'item')
-            : (usable(seriesLock) ? 'series' : (type === 'Series' ? 'series' : 'item'));
-        if (serverMode && type === 'Series' && startLock) scope = startLock.scope === 'item' ? 'item' : 'series';
-        const keptAt = (target) => (target ? read.locks.get(target) || null : null);
-        const overrideAt = (target) => (target ? read.overrides.get(target) || null : null);
-        const targetOf = () => (scope === 'series' && seriesTarget ? seriesTarget : id);
-        const scopeField = () => (type === 'Series' && scope === 'item' ? 'item' : null);
-        let keep = !!keptAt(targetOf());
-        let everyone = !!overrideAt(targetOf());
-
-        // ── Markup ──
-        const uid = `jeTie${++sequence}`;
-        const backdrop = document.createElement('div');
-        backdrop.className = 'je-tie-backdrop';
-        // Opened from the admin page on a light dashboard: the dialog follows it (admin-tags.css).
-        if (opener?.closest?.('.je-ta-light')) backdrop.classList.add('je-tie-light');
-        const typeName = JE.t(JE.core.tagLayout.VOCABULARY_KEYS.type[type.toLowerCase()]);
-        const titleKey = serverMode ? 'tag_item_editor_title_server' : 'tag_item_editor_title';
-        backdrop.innerHTML = `<div class="je-tie" role="dialog" aria-modal="true" aria-labelledby="${uid}Title" tabindex="-1">
-            <div class="je-tie-head"><h3 class="je-tie-title" id="${uid}Title"><span data-tie-title></span>${serverMode ? `<span class="je-tie-chip">${tx('common_admin')}</span>` : ''}</h3>
-                <button type="button" class="je-tie-jump" data-tie-jump hidden aria-label="${tx('tag_item_editor_show_preview')}"><span class="je-tie-jump-thumb" aria-hidden="true"></span>${tx('common_preview')}</button>
-                <button type="button" class="je-tie-close" data-tie-close aria-label="${tx('awards_close')}"><span class="material-icons" aria-hidden="true">close</span></button></div>
+      }
+      settlePending(generation);
+      const itemCard = opener?.closest?.(".card") || document.querySelector(`.card[data-id="${id}"]`);
+      const shape = itemCard ? L.shapeOf(itemCard) : type === "Episode" ? "landscape" : "portrait";
+      const context = { ...facts || {}, Id: id, Type: type, SeriesId: seriesId || facts?.SeriesId, itemId: id, cardType: type, shape };
+      const before = L.lookSource(context);
+      const base = L.normalizeSettings();
+      const conf = L.resolveLayout(context);
+      const usable = (lock) => lock && (lock !== seriesLock || lock.scope !== "item");
+      const baseCap = (group) => export9(base.caps, group) ?? 0;
+      const startLock = serverMode ? options.look ? look.normalizeLock(options.look) : null : own || (usable(seriesLock) ? seriesLock : null) || ownOverride || (seriesOverride && seriesOverride.scope !== "item" ? seriesOverride : null);
+      let effective = conf;
+      if (serverMode && startLock) {
+        const sample = document.createElement("div");
+        sample.dataset.jeShape = shape;
+        L.setPreviewLook(sample, startLock);
+        effective = L.resolveLayout(sample);
+        L.setPreviewLook(sample, null);
+      }
+      const startLayout = effective.layout;
+      const singleChip = (name2) => {
+        const group = L.normalizeGroup(name2);
+        return !!group && L.singleChipGroup(group);
+      };
+      const draft = {
+        layout: startLayout,
+        density: effective.density,
+        slots: {},
+        caps: {
+          ...Object.fromEntries(Object.entries(effective.caps).filter(([group, cap]) => cap !== baseCap(group))),
+          // Presentation caps do not rewrite a saved single-chip cap when another field is edited.
+          ...Object.fromEntries(Object.entries({ ...startLock?.caps || {}, ...(shape === "landscape" || shape === "list" ? startLock?.shapes?.[shape]?.caps : null) || {} }).filter(([group]) => singleChip(group)))
+        },
+        tagScale: effective.tagScale === base.tagScale ? null : effective.tagScale,
+        tagGap: effective.tagGap === base.tagGap ? null : effective.tagGap,
+        edge: effective.edge === base.edge ? null : effective.edge
+      };
+      for (const layout of LAYOUTS) draft.slots[layout] = { ...base.profiles[layout] };
+      let openGroup = null;
+      let hiddenOpen = false;
+      const lastSlot = {};
+      draft.slots[startLayout] = { ...effective.slots };
+      let scope = !hasSeries ? "item" : own ? type === "Series" && own.scope !== "item" ? "series" : "item" : usable(seriesLock) ? "series" : type === "Series" ? "series" : "item";
+      if (serverMode && type === "Series" && startLock) scope = startLock.scope === "item" ? "item" : "series";
+      const keptAt = (target2) => target2 ? read.locks.get(target2) || null : null;
+      const overrideAt = (target2) => target2 ? read.overrides.get(target2) || null : null;
+      const targetOf = () => scope === "series" && seriesTarget ? seriesTarget : id;
+      const scopeField = () => type === "Series" && scope === "item" ? "item" : null;
+      let keep = !!keptAt(targetOf());
+      let everyone = !!overrideAt(targetOf());
+      const uid = `jeTie${++sequence}`;
+      const backdrop = document.createElement("div");
+      backdrop.className = "je-tie-backdrop";
+      if (opener?.closest?.(".je-ta-light")) backdrop.classList.add("je-tie-light");
+      const typeName = JE.t(vocabularyKey("type", type.toLowerCase()));
+      const titleKey = serverMode ? "tag_item_editor_title_server" : "tag_item_editor_title";
+      backdrop.innerHTML = `<div class="je-tie" role="dialog" aria-modal="true" aria-labelledby="${uid}Title" tabindex="-1">
+            <div class="je-tie-head"><h3 class="je-tie-title" id="${uid}Title"><span data-tie-title></span>${serverMode ? `<span class="je-tie-chip">${tx("common_admin")}</span>` : ""}</h3>
+                <button type="button" class="je-tie-jump" data-tie-jump hidden aria-label="${tx("tag_item_editor_show_preview")}"><span class="je-tie-jump-thumb" aria-hidden="true"></span>${tx("common_preview")}</button>
+                <button type="button" class="je-tie-close" data-tie-close aria-label="${tx("awards_close")}"><span class="material-icons" aria-hidden="true">close</span></button></div>
             <div class="je-tie-body">
                 <div class="je-tie-side">
-                    <div class="je-tie-card" data-je-shape="${esc(shape)}" data-id="${esc(id)}" data-type="${esc(type)}" tabindex="0" aria-label="${tx('panel_media_tags_preview')}: ${esc(name || typeName)}"><div class="cardBox"><div class="je-tie-scalable cardScalable"></div><div class="cardText je-tie-card-title">${esc(name)}</div></div></div>
-                    <div><div class="je-tie-view je-tie-pills" role="group" aria-label="${tx('panel_media_tags_preview_view')}">
-                        <button type="button" class="je-tie-pill" data-view="rest" aria-pressed="true">${tx('panel_settings_ui_tag_editor_preview_resting')}</button>
-                        <button type="button" class="je-tie-pill" data-view="hover" aria-pressed="false">${tx('panel_settings_ui_tag_editor_preview_hover')}</button></div>
-                        <p class="je-tie-note" data-tie-hover-note hidden>${tx('panel_media_tags_preview_hover_hidden')}</p>
+                    <div class="je-tie-card" data-je-shape="${esc(shape)}" data-id="${esc(id)}" data-type="${esc(type)}" tabindex="0" aria-label="${tx("panel_media_tags_preview")}: ${esc(name || typeName)}"><div class="cardBox"><div class="je-tie-scalable cardScalable"></div><div class="cardText je-tie-card-title">${esc(name)}</div></div></div>
+                    <div><div class="je-tie-view je-tie-pills" role="group" aria-label="${tx("panel_media_tags_preview_view")}">
+                        <button type="button" class="je-tie-pill" data-view="rest" aria-pressed="true">${tx("panel_settings_ui_tag_editor_preview_resting")}</button>
+                        <button type="button" class="je-tie-pill" data-view="hover" aria-pressed="false">${tx("panel_settings_ui_tag_editor_preview_hover")}</button></div>
+                        <p class="je-tie-note" data-tie-hover-note hidden>${tx("panel_media_tags_preview_hover_hidden")}</p>
                         <p class="je-tie-source" data-tie-source></p><p class="je-tie-note" data-tie-note hidden></p></div>
                 </div>
                 <div class="je-tie-main">
-                    ${serverMode ? `<p class="je-tie-box je-tie-keep je-tie-hint" data-everyone>${tx('tag_item_editor_server_hint')}</p>` : `<div class="je-tie-keeps"><div class="je-tie-box je-tie-keep">
-                        <label class="je-tie-switch"><input type="checkbox" data-tie-keep aria-describedby="${uid}KeepHint">${tx('tag_item_editor_keep')}</label>
-                        <p class="je-tie-hint" id="${uid}KeepHint">${tx('tag_item_editor_keep_hint')}</p></div>
+                    ${serverMode ? `<p class="je-tie-box je-tie-keep je-tie-hint" data-everyone>${tx("tag_item_editor_server_hint")}</p>` : `<div class="je-tie-keeps"><div class="je-tie-box je-tie-keep">
+                        <label class="je-tie-switch"><input type="checkbox" data-tie-keep aria-describedby="${uid}KeepHint">${tx("tag_item_editor_keep")}</label>
+                        <p class="je-tie-hint" id="${uid}KeepHint">${tx("tag_item_editor_keep_hint")}</p></div>
                     ${admin ? `<div class="je-tie-box je-tie-keep" data-everyone>
-                        <label class="je-tie-switch"><input type="checkbox" data-tie-everyone aria-describedby="${uid}EveryoneHint">${tx('tag_item_editor_everyone')}<span class="je-tie-chip">${tx('common_admin')}</span></label>
-                        <p class="je-tie-hint" id="${uid}EveryoneHint">${tx('tag_item_editor_everyone_hint')}</p></div>` : ''}</div>`}
-                    ${hasSeries ? `<fieldset class="je-tie-box"><legend>${tx('tag_item_editor_scope')}</legend><div class="je-tie-scope" role="radiogroup">
-                        <label class="je-tie-pill"><input type="radio" name="${uid}Scope" value="item">${tx(type === 'Series' ? 'tag_item_editor_scope_series_only' : 'tag_item_editor_scope_item', { type: typeName })}</label>
-                        <label class="je-tie-pill"><input type="radio" name="${uid}Scope" value="series">${tx('tag_item_editor_scope_series')}</label></div></fieldset>` : ''}
-                    <fieldset class="je-tie-box" aria-describedby="${uid}LayoutDesc"><legend>${tx('common_layout')}</legend><div class="je-tie-tiles">
-                        ${LAYOUTS.map((l) => `<label class="je-tie-tile"><input type="radio" name="${uid}Layout" value="${l}"><span class="je-tie-art" data-layout="${l}" aria-hidden="true"><i></i><i></i><i></i><i></i></span>${tx(JE.core.tagLayout.VOCABULARY_KEYS.layout[l])}</label>`).join('')}</div><p class="je-tie-hint je-tie-under" id="${uid}LayoutDesc" aria-live="polite"></p></fieldset>
-                    <fieldset class="je-tie-box" aria-describedby="${uid}DensityDesc"><legend>${tx('panel_settings_ui_tag_density')}</legend><div class="je-tie-pills">
-                        ${['full', 'compact'].map((d) => `<label class="je-tie-pill"><input type="radio" name="${uid}Density" value="${d}">${tx(`panel_settings_ui_tag_density_${d}`)}</label>`).join('')}</div><p class="je-tie-hint je-tie-under" id="${uid}DensityDesc">${tx('panel_settings_ui_tag_density_desc')}</p></fieldset>
-                    <section class="je-tie-box" aria-labelledby="${uid}Groups" aria-describedby="${uid}GroupsHint"><h4 class="je-tie-h" id="${uid}Groups">${tx('tag_item_editor_groups_title')}</h4><p class="je-tie-hint je-tie-groups-hint" id="${uid}GroupsHint">${tx(serverMode ? 'tag_item_editor_groups_hint_server' : 'tag_item_editor_groups_hint')}</p><div data-tie-groups></div></section>
-                    <fieldset class="je-tie-box"><legend>${tx('tag_item_editor_spacing')}</legend><div class="je-tie-row3">
-                        <label>${tx('tag_scale_label')}<select data-tie-select="tagScale"></select></label>
-                        <label>${tx('tag_gap_label')}<select data-tie-select="tagGap"></select></label>
-                        <label>${tx('panel_settings_ui_tag_edge')}<select data-tie-select="edge"></select></label></div></fieldset>
+                        <label class="je-tie-switch"><input type="checkbox" data-tie-everyone aria-describedby="${uid}EveryoneHint">${tx("tag_item_editor_everyone")}<span class="je-tie-chip">${tx("common_admin")}</span></label>
+                        <p class="je-tie-hint" id="${uid}EveryoneHint">${tx("tag_item_editor_everyone_hint")}</p></div>` : ""}</div>`}
+                    ${hasSeries ? `<fieldset class="je-tie-box"><legend>${tx("tag_item_editor_scope")}</legend><div class="je-tie-scope" role="radiogroup">
+                        <label class="je-tie-pill"><input type="radio" name="${uid}Scope" value="item">${tx(type === "Series" ? "tag_item_editor_scope_series_only" : "tag_item_editor_scope_item", { type: typeName })}</label>
+                        <label class="je-tie-pill"><input type="radio" name="${uid}Scope" value="series">${tx("tag_item_editor_scope_series")}</label></div></fieldset>` : ""}
+                    <fieldset class="je-tie-box" aria-describedby="${uid}LayoutDesc"><legend>${tx("common_layout")}</legend><div class="je-tie-tiles">
+                        ${LAYOUTS.map((l) => `<label class="je-tie-tile"><input type="radio" name="${uid}Layout" value="${l}"><span class="je-tie-art" data-layout="${l}" aria-hidden="true"><i></i><i></i><i></i><i></i></span>${tx(vocabularyKey("layout", l))}</label>`).join("")}</div><p class="je-tie-hint je-tie-under" id="${uid}LayoutDesc" aria-live="polite"></p></fieldset>
+                    <fieldset class="je-tie-box" aria-describedby="${uid}DensityDesc"><legend>${tx("panel_settings_ui_tag_density")}</legend><div class="je-tie-pills">
+                        ${["full", "compact"].map((d) => `<label class="je-tie-pill"><input type="radio" name="${uid}Density" value="${d}">${tx(`panel_settings_ui_tag_density_${d}`)}</label>`).join("")}</div><p class="je-tie-hint je-tie-under" id="${uid}DensityDesc">${tx("panel_settings_ui_tag_density_desc")}</p></fieldset>
+                    <section class="je-tie-box" aria-labelledby="${uid}Groups" aria-describedby="${uid}GroupsHint"><h4 class="je-tie-h" id="${uid}Groups">${tx("tag_item_editor_groups_title")}</h4><p class="je-tie-hint je-tie-groups-hint" id="${uid}GroupsHint">${tx(serverMode ? "tag_item_editor_groups_hint_server" : "tag_item_editor_groups_hint")}</p><div data-tie-groups></div></section>
+                    <fieldset class="je-tie-box"><legend>${tx("tag_item_editor_spacing")}</legend><div class="je-tie-row3">
+                        <label>${tx("tag_scale_label")}<select data-tie-select="tagScale"></select></label>
+                        <label>${tx("tag_gap_label")}<select data-tie-select="tagGap"></select></label>
+                        <label>${tx("panel_settings_ui_tag_edge")}<select data-tie-select="edge"></select></label></div></fieldset>
                 </div>
             </div>
             <div class="je-tie-foot"><p class="je-tie-status" data-tie-status role="status" aria-live="polite"></p>
-                <button type="button" data-tie-close>${tx('jellyseerr_modal_cancel')}</button>
-                <button type="button" class="je-tie-save" data-tie-save>${tx('elsewhere_settings_save')}</button></div>
+                <button type="button" data-tie-close>${tx("jellyseerr_modal_cancel")}</button>
+                <button type="button" class="je-tie-save" data-tie-save>${tx("elsewhere_settings_save")}</button></div>
         </div>`;
-        // Item names and translated substitutions are text, including hostile markup.
-        backdrop.querySelector('[data-tie-title]').textContent = JE.t(titleKey, { name: name || typeName });
-        const host = options.host && options.host.isConnected ? options.host : document.body;
-        host.appendChild(backdrop);
-        const dialog = /** @type {HTMLElement} */ (backdrop.firstElementChild);
-        const target = /** @type {HTMLElement} */ (dialog.querySelector('.je-tie-scalable'));
-        const groupsList = /** @type {HTMLElement} */ (dialog.querySelector('[data-tie-groups]'));
-        const sourceEl = /** @type {HTMLElement} */ (dialog.querySelector('[data-tie-source]'));
-        const noteEl = /** @type {HTMLElement} */ (dialog.querySelector('[data-tie-note]'));
-        const statusEl = /** @type {HTMLElement} */ (dialog.querySelector('[data-tie-status]'));
-        const saveButton = /** @type {HTMLButtonElement} */ (dialog.querySelector('[data-tie-save]'));
-        const keepBox = /** @type {HTMLInputElement|null} */ (dialog.querySelector('[data-tie-keep]'));
-        const everyoneBox = /** @type {HTMLInputElement|null} */ (dialog.querySelector('[data-tie-everyone]'));
-
-        const previewSide = dialog.querySelector('.je-tie-side');
-        const interaction = JE.internals.enhancedUi.bindTagPreviewInteraction([dialog.querySelector('.je-tie-card')], dialog.querySelector('.je-tie-view'), {
-            change: active => {
-                const hidden = !!JE.currentSettings?.tagsHideOnHover;
-                previewSide.dataset.jeHideOnHover = String(hidden);
-                dialog.querySelector('[data-tie-hover-note]').hidden = !(active && hidden);
-            },
-        });
-
-        // The poster (the episode's still) under the tags.
-        const image = item.ImageTags?.Primary ? ApiClient.getScaledImageUrl(id, { type: 'Primary', maxHeight: 480, tag: item.ImageTags.Primary }) : '';
-        if (image) target.style.backgroundImage = `url("${image}")`;
-        // Phone: once the preview scrolls away, the sticky title row offers a way back to it.
-        const jump = /** @type {HTMLButtonElement} */ (dialog.querySelector('[data-tie-jump]'));
-        if (image) /** @type {HTMLElement} */ (jump.firstElementChild).style.backgroundImage = `url("${image}")`;
-        jump.addEventListener('click', () => {
-            dialog.querySelector('.je-tie-side')?.scrollIntoView?.({ block: 'start' });
-            /** @type {HTMLElement|null} */ (dialog.querySelector('.je-tie-card'))?.focus({ preventScroll: true });
-        });
-        const sideWatch = typeof IntersectionObserver === 'function'
-            ? new IntersectionObserver(([entry]) => { jump.hidden = !!entry?.isIntersecting; }, { root: backdrop, threshold: 0 })
-            : null;
-        const side = dialog.querySelector('.je-tie-side');
-        if (sideWatch && side) sideWatch.observe(side);
-        const drawn = drawTags(target, id, serverEntry, serverEntry ? null : facts);
-        noteEl.hidden = drawn;
-        noteEl.textContent = drawn ? '' : JE.t('tag_item_editor_no_tags');
-        // Nothing to show at rest or on hover: the switch would only look useful.
-        if (!drawn) dialog.querySelectorAll('.je-tie-view button').forEach((b) => { /** @type {HTMLButtonElement} */ (b).disabled = true; });
-
-        /** @type {ReturnType<typeof setTimeout>|null} */
-        let presentTimer = null;
-        let dirty = false;
-        /** Show the draft on the sample and say what will happen on Save. */
-        const present = () => {
-            L.setPreviewLook(target, { ...lookOf(draft, scopeField()), locked: keep });
-            // A lock or item look the item does not hold itself is its series'.
-            const inherited = (before.source === 'lock' && !own) || (before.source === 'override' && !ownOverride);
-            // Without the item's data a rule or series look could not be matched: say so rather than guess.
-            const unknown = !facts && (read.rules.length > 0 || !!seriesId);
-            if (serverMode) sourceEl.replaceChildren(document.createTextNode(`${JE.t('tag_item_editor_editing')} `), Object.assign(document.createElement('strong'), { textContent: JE.t('tag_item_editor_editing_server') }));
-            else sourceEl.replaceChildren(document.createTextNode(`${JE.t('tag_item_editor_now')} `), Object.assign(document.createElement('strong'), { textContent: unknown ? JE.t('tag_item_editor_source_unknown') : sourceText(before, !!inherited) }));
-            if (dirty) sourceEl.append(document.createElement('br'), document.createTextNode(JE.t('tag_item_editor_draft')));
-            showStatus();
-        };
-        /** @type {string} a failed save's message, shown until the next change */
-        let saveError = '';
-        /** The footer line: a failed save, else what Save will do with an edit nothing keeps yet. */
-        const showStatus = () => {
-            statusEl.textContent = saveError || (saveLabelKey() === 'tag_item_editor_lock_save' ? JE.t('tag_item_editor_lock_save_hint') : '');
-            saveButton.textContent = JE.t(saveLabelKey());
-        };
-        /** @returns {string} Save's label: where the look goes, a removal, or that nothing is kept. */
-        const saveLabelKey = () => {
-            if (serverMode) return 'tag_item_editor_save_server';
-            if (keep && everyone) return 'tag_item_editor_save_both';
-            if (keep) return 'tag_item_editor_save_mine';
-            if (everyone) return 'tag_item_editor_save_everyone';
-            const target = targetOf();
-            const removes = !!keptAt(target) || (target !== id && !!own) || (!!everyoneBox && !!overrideAt(target));
-            if (removes) return 'elsewhere_settings_save';
-            // An edit with nowhere to go yet: Save locks it for this user (the button says so).
-            return dirty ? 'tag_item_editor_lock_save' : 'tag_item_editor_done';
-        };
-        /** Coalesce bursts of changes (a stepper held down) into one re-present. */
-        const schedule = () => {
-            if (presentTimer) return;
-            presentTimer = setTimeout(() => { presentTimer = null; if (backdrop.isConnected) present(); }, 0);
-        };
-
-        /**
-         * Rebuild the group rows for the draft's layout (focus kept by key). A
-         * keyed control drawn disabled (a stepper at the end of its range) hands
-         * focus to its row's other step button or switch, so it never leaves the editor.
-         */
-        const renderGroups = () => {
-            const focused = /** @type {HTMLElement|null} */ (document.activeElement);
-            const focusKey = focused?.dataset?.tieKey || null;
-            const focusGroup = focusKey ? /** @type {HTMLElement|null} */ (focused.closest('[data-group]'))?.dataset.group || null : null;
-            const slots = draft.slots[draft.layout];
-            // The groups that draw for this user first, the ones switched off in their settings after.
-            const ordered = base.order || L.DEFAULT_ORDER;
-            const order = [...ordered.filter((g) => groupOn(g)), ...ordered.filter((g) => !groupOn(g))];
-            // Personal editor: groups the user's settings hide go in their own closed list.
-            const tucked = (group) => !serverMode && !groupOn(group);
-            const rowHtml = (group) => {
-                const meta = GROUPS[group];
-                if (!meta) return '';
-                const slot = slots[group] || 'off';
-                const on = slot !== 'off';
-                const gname = JE.t(meta.nameKey);
-                const positions = positionsFor(draft.layout, group);
-                const current = on ? slot : (lastSlot[`${draft.layout}:${group}`] || positions[0]);
-                // An off group's controls are shown dimmed and are not operable (the keyboard skips them too).
-                const off = on ? '' : 'disabled';
-                const where = draft.layout === 'corners'
-                    ? `<div class="je-tie-anchors" role="radiogroup" aria-label="${tx('tag_item_editor_position', { group: gname })}">${ANCHORS.map((a) => `<label class="je-tie-anchor"><input type="radio" name="${uid}-${group}" value="${a}" data-tie-key="${group}-${a}" ${a === current ? 'checked' : ''} ${off}>${esc(slotLabel('corners', a))}</label>`).join('')}</div>`
-                    : `<div class="je-tie-pills" role="radiogroup" aria-label="${tx('tag_item_editor_position', { group: gname })}">${positions.map((p) => `<label class="je-tie-pill"><input type="radio" name="${uid}-${group}" value="${p}" data-tie-key="${group}-${p}" ${p === current ? 'checked' : ''} ${off}>${esc(slotLabel(draft.layout, p))}</label>`).join('')}</div>`;
-                const fixed = L.singleChipGroup(group);
-                const cap = fixed ? 1 : (draft.caps[group] ?? base.caps[group]);
-                const capText = cap === 0 ? JE.t('panel_settings_ui_tag_editor_cap_all') : String(cap);
-                const stepper = fixed ? `<p class="je-tie-hint" data-je-limit-na="${group}">${tx('tag_limit_single')}</p>` : `<div class="je-tie-cap" role="group" aria-label="${tx('tag_item_editor_cap_named', { group: gname })}">
-                    <span>${tx('panel_settings_ui_tag_editor_show_up_to')}</span>
-                    <button type="button" data-tie-step="-1" data-tie-key="${group}-down" aria-label="${tx('tag_item_editor_cap_fewer', { group: gname })}" ${!on || stepCap(cap, -1, meta) === null ? 'disabled' : ''}>−</button>
-                    <output aria-live="polite">${esc(capText)}</output>
-                    <button type="button" data-tie-step="1" data-tie-key="${group}-up" aria-label="${tx('tag_item_editor_cap_more', { group: gname })}" ${!on || stepCap(cap, 1, meta) === null ? 'disabled' : ''}>+</button></div>`;
-                // Collapsed, a row says where the group goes and how many it shows; one row opens at a time.
-                const open = openGroup === group;
-                const summary = on ? (fixed ? slotLabel(draft.layout, slot)
-                    : JE.t(cap === 0 ? 'tag_item_editor_group_summary_all' : 'tag_item_editor_group_summary', { where: slotLabel(draft.layout, slot), cap: capText }))
-                    : JE.t('panel_settings_ui_tag_slot_off');
-                // The server-wide look's rows describe the draft; the admin's own switches are not the point there.
-                const offNote = tucked(group);
-                return `<li class="je-tie-group" data-group="${group}" data-on="${on ? 1 : 0}" data-open="${open ? 1 : 0}">
-                    <div class="je-tie-gname"><label class="je-tie-switch"><input type="checkbox" data-tie-on data-tie-key="${group}-on" ${on ? 'checked' : ''} aria-label="${tx('tag_item_editor_include_group', { group: gname })}"${offNote ? ` aria-describedby="${uid}HiddenHint"` : ''}>${esc(gname)}</label></div>
-                    <span class="je-tie-gsum">${esc(summary)}</span>
-                    <button type="button" class="je-tie-gopen" data-tie-open data-tie-key="${group}-open" aria-expanded="${open}" aria-controls="${uid}-${group}-detail" aria-label="${tx('tag_item_editor_group_edit', { group: gname })}" ${on ? '' : 'disabled'}>${tx('tag_shapes_edit')}<span class="material-icons" aria-hidden="true">expand_more</span></button>
-                    <div class="je-tie-detail" id="${uid}-${group}-detail" ${open && on ? '' : 'hidden'}><div class="je-tie-where">${where}</div>${stepper}</div></li>`;
-            };
-            const shown = order.filter((g) => GROUPS[g] && !tucked(g));
-            const hidden = order.filter((g) => GROUPS[g] && tucked(g));
-            // "Where to show" is a group-wide choice (item types, home rows): the editor says where it is set.
-            const scopeNote = JE.core.tagSettingsMatrix?.offers('itemEditor', 'quality', 'scopes');
-            groupsList.innerHTML = `<ul class="je-tie-groups">${shown.map(rowHtml).join('')}</ul>`
-                + (typeof scopeNote === 'string' ? `<p class="je-tie-hint" data-je-scope-na="itemEditor">${tx(scopeNote)}</p>` : '')
-                + (hidden.length ? `<details class="je-tie-hidden" data-tie-hidden ${hiddenOpen ? 'open' : ''}><summary class="je-tie-hidden-toggle"><span class="material-icons" aria-hidden="true">expand_more</span>${tx('tag_item_editor_hidden_groups', { n: hidden.length })}</summary>`
-                    + `<p class="je-tie-hint" id="${uid}HiddenHint">${tx('tag_item_editor_hidden_groups_hint')}</p><ul class="je-tie-groups">${hidden.map(rowHtml).join('')}</ul></details>` : '');
-            if (!focusKey) return;
-            const usable = (el) => !!el && !/** @type {HTMLButtonElement} */ (el).disabled && !el.closest('[hidden]');
-            let next = /** @type {HTMLElement|null} */ (groupsList.querySelector(`[data-tie-key="${focusKey}"]`));
-            if (!usable(next)) {
-                const row = focusGroup ? groupsList.querySelector(`[data-group="${focusGroup}"]`) : null;
-                // The row's other step button, else its Edit button, else its switch.
-                next = /** @type {HTMLElement|null} */ (['[data-tie-step]', '[data-tie-open]', '[data-tie-on]'].map((sel) => Array.from(row?.querySelectorAll(sel) || []).find(usable)).find(Boolean) || null);
-            }
-            (usable(next) ? next : dialog).focus({ preventScroll: true });
-        };
-
-        /** The chosen layout in words, under the layout tiles. */
-        const describeLayout = () => {
-            const desc = dialog.querySelector(`#${uid}LayoutDesc`);
-            if (desc) desc.textContent = JE.t(`panel_settings_ui_tag_layout_${draft.layout}`);
-        };
-        /** Put every control in step with the draft. */
-        const sync = () => {
-            describeLayout();
-            dialog.querySelectorAll(`input[name="${uid}Layout"]`).forEach((r) => { /** @type {HTMLInputElement} */ (r).checked = /** @type {HTMLInputElement} */ (r).value === draft.layout; });
-            dialog.querySelectorAll(`input[name="${uid}Density"]`).forEach((r) => { /** @type {HTMLInputElement} */ (r).checked = /** @type {HTMLInputElement} */ (r).value === draft.density; });
-            dialog.querySelectorAll(`input[name="${uid}Scope"]`).forEach((r) => { /** @type {HTMLInputElement} */ (r).checked = /** @type {HTMLInputElement} */ (r).value === scope; });
-            if (keepBox) keepBox.checked = keep;
-            if (everyoneBox) everyoneBox.checked = everyone;
-            renderGroups();
-        };
-
-        // Size, gap and edge: "Same as default (…)" keeps the user's.
-        const selectOptions = {
-            tagScale: { values: SCALES, label: (v) => JE.core.tagLayout.sizeLabel('scale', v), base: base.tagScale },
-            tagGap: { values: GAPS, label: (v) => JE.t(JE.core.tagLayout.VOCABULARY_KEYS.gap[v]), base: base.tagGap },
-            edge: { values: EDGES, label: (v) => JE.t(JE.core.tagLayout.VOCABULARY_KEYS.edge[v]), base: base.edge },
-        };
-        for (const [key, spec] of Object.entries(selectOptions)) {
-            const select = /** @type {HTMLSelectElement} */ (dialog.querySelector(`[data-tie-select="${key}"]`));
-            // Inherited: the viewer's own value; for the server-wide look each user keeps theirs.
-            select.innerHTML = `<option value="">${serverMode ? tx('tag_item_editor_same_as_user') : tx('tag_item_editor_same_as_default', { value: spec.label(spec.base) })}</option>`
-                + spec.values.map((v) => `<option value="${v}">${esc(spec.label(v))}</option>`).join('');
-            select.value = draft[key] || '';
-            select.addEventListener('change', () => {
-                draft[key] = select.value || null;
-                dirty = true;
-                schedule();
-            });
+      must(backdrop.querySelector("[data-tie-title]")).textContent = JE.t(titleKey, { name: name || typeName });
+      const host = options.host && options.host.isConnected ? options.host : document.body;
+      host.appendChild(backdrop);
+      const dialog = must(backdrop.querySelector(".je-tie"));
+      const target = must(dialog.querySelector(".je-tie-scalable"));
+      const groupsList = must(dialog.querySelector("[data-tie-groups]"));
+      const sourceEl = must(dialog.querySelector("[data-tie-source]"));
+      const noteEl = must(dialog.querySelector("[data-tie-note]"));
+      const statusEl = must(dialog.querySelector("[data-tie-status]"));
+      const saveButton = must(dialog.querySelector("[data-tie-save]"));
+      const keepBox = dialog.querySelector("[data-tie-keep]");
+      const everyoneBox = dialog.querySelector("[data-tie-everyone]");
+      const previewSide = must(dialog.querySelector(".je-tie-side"));
+      const hoverNote = must(dialog.querySelector("[data-tie-hover-note]"));
+      const interaction = export3(JE)?.bindTagPreviewInteraction([dialog.querySelector(".je-tie-card")], dialog.querySelector(".je-tie-view"), {
+        change: (active2) => {
+          const hidden = !!JE.currentSettings?.tagsHideOnHover;
+          previewSide.dataset.jeHideOnHover = String(hidden);
+          hoverNote.hidden = !(active2 && hidden);
         }
-
-        dialog.addEventListener('change', (e) => {
-            const input = /** @type {HTMLInputElement} */ (e.target);
-            if (input.name === `${uid}Layout`) {
-                draft.layout = input.value;
-                describeLayout();
-                renderGroups();
-            } else if (input.name === `${uid}Density`) {
-                draft.density = input.value;
-            } else if (input.name === `${uid}Scope`) {
-                scope = input.value === 'series' ? 'series' : 'item';
-                keep = keep || !!keptAt(targetOf());
-                if (everyoneBox) everyone = everyone || !!overrideAt(targetOf());
-                sync();
-            } else if (input.matches('[data-tie-keep]')) {
-                keep = input.checked;
-            } else if (input.matches('[data-tie-everyone]')) {
-                everyone = input.checked;
-            } else if (input.matches('[data-tie-on]')) {
-                const group = /** @type {HTMLElement} */ (input.closest('[data-group]')).dataset.group || '';
-                const slots = draft.slots[draft.layout];
-                const key = `${draft.layout}:${group}`;
-                if (input.checked) slots[group] = lastSlot[key] || positionsFor(draft.layout, group)[0];
-                else { if (slots[group] && slots[group] !== 'off') lastSlot[key] = slots[group]; slots[group] = 'off'; }
-                renderGroups();
-            } else if (input.type === 'radio' && input.closest('[data-group]')) {
-                const group = /** @type {HTMLElement} */ (input.closest('[data-group]')).dataset.group || '';
-                draft.slots[draft.layout][group] = input.value;
-            } else {
-                return;
-            }
-            dirty = dirty || !input.matches('[data-tie-keep], [data-tie-everyone]');
-            saveError = '';
-            schedule();
-        });
-        groupsList.addEventListener('toggle', (e) => {
-            if (/** @type {HTMLElement} */ (e.target).matches?.('[data-tie-hidden]')) hiddenOpen = /** @type {HTMLDetailsElement} */ (e.target).open;
-        }, true);
-        groupsList.addEventListener('click', (e) => {
-            const opener = /** @type {HTMLButtonElement|null} */ (/** @type {HTMLElement} */ (e.target).closest('[data-tie-open]'));
-            if (opener && !opener.disabled) {
-                const group = /** @type {HTMLElement} */ (opener.closest('[data-group]')).dataset.group || '';
-                openGroup = openGroup === group ? null : group;
-                renderGroups();
-                return;
-            }
-            const button = /** @type {HTMLButtonElement|null} */ (/** @type {HTMLElement} */ (e.target).closest('[data-tie-step]'));
-            if (!button || button.disabled) return;
-            const group = /** @type {HTMLElement} */ (button.closest('[data-group]')).dataset.group || '';
-            const meta = GROUPS[group];
-            if (L.singleChipGroup(group)) return;
-            const cap = draft.caps[group] ?? base.caps[group];
-            const next = stepCap(cap, Number(button.dataset.tieStep), meta);
-            if (next === null) return;
-            draft.caps[group] = next;
-            dirty = true;
-            renderGroups();
-            schedule();
-        });
-
-        // ── Closing, focus, saving ──
-        // Tab order: disclosure rows included; nothing inside a closed disclosure, hidden, disabled or taken out of it.
-        const focusables = () => Array.from(dialog.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled]), summary, [tabindex="0"]'))
-            .filter((el) => !el.closest('[hidden]') && !(el.tagName !== 'SUMMARY' && el.closest('details:not([open])')) && /** @type {HTMLElement} */ (el).tabIndex >= 0 && !(/** @type {HTMLInputElement} */ (el).type === 'radio' && !/** @type {HTMLInputElement} */ (el).checked && dialog.querySelector(`input[name="${/** @type {HTMLInputElement} */ (el).name}"]:checked`)));
-        const onFocusIn = (e) => {
-            // Jellyfin's closing action sheet hands focus back to its button: keep it here.
-            if (backdrop.isConnected && !backdrop.contains(/** @type {Node} */ (e.target))) dialog.focus({ preventScroll: true });
+      });
+      const primaryTag = export10(item.ImageTags).Primary;
+      const image = primaryTag ? export0().getScaledImageUrl(id, { type: "Primary", maxHeight: 480, tag: String(primaryTag) }) : "";
+      if (image) target.style.backgroundImage = `url("${image}")`;
+      const jump = must(dialog.querySelector("[data-tie-jump]"));
+      if (image) must(jump.querySelector(".je-tie-jump-thumb")).style.backgroundImage = `url("${image}")`;
+      jump.addEventListener("click", () => {
+        dialog.querySelector(".je-tie-side")?.scrollIntoView?.({ block: "start" });
+        dialog.querySelector(".je-tie-card")?.focus({ preventScroll: true });
+      });
+      const sideWatch = typeof IntersectionObserver === "function" ? new IntersectionObserver(([entry]) => {
+        jump.hidden = !!entry?.isIntersecting;
+      }, { root: backdrop, threshold: 0 }) : null;
+      const side = dialog.querySelector(".je-tie-side");
+      if (sideWatch && side) sideWatch.observe(side);
+      const drawn = drawTags(target, id, serverEntry, serverEntry ? null : facts);
+      noteEl.hidden = drawn;
+      noteEl.textContent = drawn ? "" : JE.t("tag_item_editor_no_tags");
+      if (!drawn) dialog.querySelectorAll(".je-tie-view button").forEach((b) => {
+        b.disabled = true;
+      });
+      let presentTimer = null;
+      let dirty = false;
+      const present = () => {
+        L.setPreviewLook(target, { ...lookOf(draft, scopeField()), locked: keep });
+        const inherited = before.source === "lock" && !own || before.source === "override" && !ownOverride;
+        const unknown = !facts && (read.rules.length > 0 || !!seriesId);
+        if (serverMode) sourceEl.replaceChildren(document.createTextNode(`${JE.t("tag_item_editor_editing")} `), Object.assign(document.createElement("strong"), { textContent: JE.t("tag_item_editor_editing_server") }));
+        else sourceEl.replaceChildren(document.createTextNode(`${JE.t("tag_item_editor_now")} `), Object.assign(document.createElement("strong"), { textContent: unknown ? JE.t("tag_item_editor_source_unknown") : sourceText(before, !!inherited) }));
+        if (dirty) sourceEl.append(document.createElement("br"), document.createTextNode(JE.t("tag_item_editor_draft")));
+        showStatus();
+      };
+      let saveError = "";
+      const showStatus = () => {
+        statusEl.textContent = saveError || (saveLabelKey() === "tag_item_editor_lock_save" ? JE.t("tag_item_editor_lock_save_hint") : "");
+        saveButton.textContent = JE.t(saveLabelKey());
+      };
+      const saveLabelKey = () => {
+        if (serverMode) return "tag_item_editor_save_server";
+        if (keep && everyone) return "tag_item_editor_save_both";
+        if (keep) return "tag_item_editor_save_mine";
+        if (everyone) return "tag_item_editor_save_everyone";
+        const target2 = targetOf();
+        const removes = !!keptAt(target2) || target2 !== id && !!own || !!everyoneBox && !!overrideAt(target2);
+        if (removes) return "elsewhere_settings_save";
+        return dirty ? "tag_item_editor_lock_save" : "tag_item_editor_done";
+      };
+      const schedule = () => {
+        if (presentTimer) return;
+        presentTimer = setTimeout(() => {
+          presentTimer = null;
+          if (backdrop.isConnected) present();
+        }, 0);
+      };
+      const layoutSlots = () => {
+        var _a, _b;
+        return (_a = draft.slots)[_b = draft.layout] ?? (_a[_b] = {});
+      };
+      const renderGroups = () => {
+        const focused = document.activeElement;
+        const focusKey = focused instanceof HTMLElement ? focused.dataset.tieKey || null : null;
+        const focusGroup = focusKey ? focused?.closest("[data-group]")?.dataset.group || null : null;
+        const slots = layoutSlots();
+        const ordered = base.order || L.DEFAULT_ORDER;
+        const order = [...ordered.filter((g) => groupOn(g)), ...ordered.filter((g) => !groupOn(g))];
+        const tucked = (group) => !serverMode && !groupOn(group);
+        const rowHtml = (group) => {
+          const meta = export9(GROUPS, group);
+          if (!meta) return "";
+          const slot = slots[group] || "off";
+          const on = slot !== "off";
+          const gname = JE.t(meta.nameKey);
+          const positions = positionsFor(draft.layout, group);
+          const current2 = on ? slot : lastSlot[`${draft.layout}:${group}`] || positions[0] || "";
+          const off = on ? "" : "disabled";
+          const where = draft.layout === "corners" ? `<div class="je-tie-anchors" role="radiogroup" aria-label="${tx("tag_item_editor_position", { group: gname })}">${ANCHORS.map((a) => `<label class="je-tie-anchor"><input type="radio" name="${uid}-${group}" value="${a}" data-tie-key="${group}-${a}" ${a === current2 ? "checked" : ""} ${off}>${esc(slotLabel("corners", a))}</label>`).join("")}</div>` : `<div class="je-tie-pills" role="radiogroup" aria-label="${tx("tag_item_editor_position", { group: gname })}">${positions.map((p) => `<label class="je-tie-pill"><input type="radio" name="${uid}-${group}" value="${p}" data-tie-key="${group}-${p}" ${p === current2 ? "checked" : ""} ${off}>${esc(slotLabel(draft.layout, p))}</label>`).join("")}</div>`;
+          const fixed = singleChip(group);
+          const cap = fixed ? 1 : draft.caps[group] ?? baseCap(group);
+          const capText = cap === 0 ? JE.t("panel_settings_ui_tag_editor_cap_all") : String(cap);
+          const stepper = fixed ? `<p class="je-tie-hint" data-je-limit-na="${group}">${tx("tag_limit_single")}</p>` : `<div class="je-tie-cap" role="group" aria-label="${tx("tag_item_editor_cap_named", { group: gname })}">
+                    <span>${tx("panel_settings_ui_tag_editor_show_up_to")}</span>
+                    <button type="button" data-tie-step="-1" data-tie-key="${group}-down" aria-label="${tx("tag_item_editor_cap_fewer", { group: gname })}" ${!on || stepCap(cap, -1, meta) === null ? "disabled" : ""}>−</button>
+                    <output aria-live="polite">${esc(capText)}</output>
+                    <button type="button" data-tie-step="1" data-tie-key="${group}-up" aria-label="${tx("tag_item_editor_cap_more", { group: gname })}" ${!on || stepCap(cap, 1, meta) === null ? "disabled" : ""}>+</button></div>`;
+          const open2 = openGroup === group;
+          const summary = on ? fixed ? slotLabel(draft.layout, slot) : JE.t(cap === 0 ? "tag_item_editor_group_summary_all" : "tag_item_editor_group_summary", { where: slotLabel(draft.layout, slot), cap: capText }) : JE.t("panel_settings_ui_tag_slot_off");
+          const offNote = tucked(group);
+          return `<li class="je-tie-group" data-group="${group}" data-on="${on ? 1 : 0}" data-open="${open2 ? 1 : 0}">
+                    <div class="je-tie-gname"><label class="je-tie-switch"><input type="checkbox" data-tie-on data-tie-key="${group}-on" ${on ? "checked" : ""} aria-label="${tx("tag_item_editor_include_group", { group: gname })}"${offNote ? ` aria-describedby="${uid}HiddenHint"` : ""}>${esc(gname)}</label></div>
+                    <span class="je-tie-gsum">${esc(summary)}</span>
+                    <button type="button" class="je-tie-gopen" data-tie-open data-tie-key="${group}-open" aria-expanded="${open2}" aria-controls="${uid}-${group}-detail" aria-label="${tx("tag_item_editor_group_edit", { group: gname })}" ${on ? "" : "disabled"}>${tx("tag_shapes_edit")}<span class="material-icons" aria-hidden="true">expand_more</span></button>
+                    <div class="je-tie-detail" id="${uid}-${group}-detail" ${open2 && on ? "" : "hidden"}><div class="je-tie-where">${where}</div>${stepper}</div></li>`;
         };
-        const onNavigate = () => finish();
-        let closed = false;
-        /** Tear the editor down (no save) and give focus back. */
-        const finish = () => {
-            if (closed) return;
-            closed = true;
-            if (presentTimer) clearTimeout(presentTimer);
-            document.removeEventListener('focusin', onFocusIn, true);
-            window.removeEventListener('hashchange', onNavigate);
-            interaction.dispose();
-            sideWatch?.disconnect();
-            L.setPreviewLook(target, null);
-            L.clearCard(target);
-            backdrop.remove();
-            if (current?.backdrop === backdrop) current = null;
-            // A list redrawn meanwhile (the hub's locked items) has a new button with the opener's focus key.
-            const key = opener?.dataset?.jeFocusKey;
-            const back = options.returnFocus?.() || (opener?.isConnected ? opener
-                : (key ? /** @type {HTMLElement|undefined} */ (Array.from(document.querySelectorAll('[data-je-focus-key]')).find((el) => /** @type {HTMLElement} */ (el).dataset.jeFocusKey === key)) : null));
-            back?.focus({ preventScroll: true });
+        const shown = order.filter((g) => export9(GROUPS, g) && !tucked(g));
+        const hidden = order.filter((g) => export9(GROUPS, g) && tucked(g));
+        const scopeNote = JE.core.tagSettingsMatrix?.offers("itemEditor", "quality", "scopes");
+        groupsList.innerHTML = `<ul class="je-tie-groups">${shown.map(rowHtml).join("")}</ul>` + (typeof scopeNote === "string" ? `<p class="je-tie-hint" data-je-scope-na="itemEditor">${tx(scopeNote)}</p>` : "") + (hidden.length ? `<details class="je-tie-hidden" data-tie-hidden ${hiddenOpen ? "open" : ""}><summary class="je-tie-hidden-toggle"><span class="material-icons" aria-hidden="true">expand_more</span>${tx("tag_item_editor_hidden_groups", { n: hidden.length })}</summary><p class="je-tie-hint" id="${uid}HiddenHint">${tx("tag_item_editor_hidden_groups_hint")}</p><ul class="je-tie-groups">${hidden.map(rowHtml).join("")}</ul></details>` : "");
+        if (!focusKey) return;
+        const canFocus = (el) => !!el && !el.matches(":disabled") && !el.closest("[hidden]");
+        let next = groupsList.querySelector(`[data-tie-key="${focusKey}"]`);
+        if (!canFocus(next)) {
+          const row = focusGroup ? groupsList.querySelector(`[data-group="${focusGroup}"]`) : null;
+          next = ["[data-tie-step]", "[data-tie-open]", "[data-tie-on]"].map((sel) => Array.from(row?.querySelectorAll(sel) || []).find(canFocus)).find(Boolean) || null;
+        }
+        (canFocus(next) ? next : dialog).focus({ preventScroll: true });
+      };
+      const describeLayout = () => {
+        const desc = dialog.querySelector(`#${uid}LayoutDesc`);
+        if (desc) desc.textContent = JE.t(`panel_settings_ui_tag_layout_${draft.layout}`);
+      };
+      const sync = () => {
+        describeLayout();
+        dialog.querySelectorAll(`input[name="${uid}Layout"]`).forEach((r) => {
+          r.checked = r.value === draft.layout;
+        });
+        dialog.querySelectorAll(`input[name="${uid}Density"]`).forEach((r) => {
+          r.checked = r.value === draft.density;
+        });
+        dialog.querySelectorAll(`input[name="${uid}Scope"]`).forEach((r) => {
+          r.checked = r.value === scope;
+        });
+        if (keepBox) keepBox.checked = keep;
+        if (everyoneBox) everyoneBox.checked = everyone;
+        renderGroups();
+      };
+      const selectOptions = {
+        tagScale: { values: SCALES, label: (v) => L.sizeLabel("scale", v), base: base.tagScale },
+        tagGap: { values: GAPS, label: (v) => JE.t(vocabularyKey("gap", v)), base: base.tagGap },
+        edge: { values: EDGES, label: (v) => JE.t(vocabularyKey("edge", v)), base: base.edge }
+      };
+      for (const key of ["tagScale", "tagGap", "edge"]) {
+        const spec = selectOptions[key];
+        const select = must(dialog.querySelector(`[data-tie-select="${key}"]`));
+        select.innerHTML = `<option value="">${serverMode ? tx("tag_item_editor_same_as_user") : tx("tag_item_editor_same_as_default", { value: spec.label(spec.base) })}</option>` + spec.values.map((v) => `<option value="${v}">${esc(spec.label(v))}</option>`).join("");
+        select.value = draft[key] || "";
+        select.addEventListener("change", () => {
+          draft[key] = select.value || null;
+          dirty = true;
+          schedule();
+        });
+      }
+      dialog.addEventListener("change", (e) => {
+        const input = e.target;
+        if (!(input instanceof HTMLInputElement)) return;
+        if (input.name === `${uid}Layout`) {
+          draft.layout = export23(input.value);
+          describeLayout();
+          renderGroups();
+        } else if (input.name === `${uid}Density`) {
+          draft.density = input.value;
+        } else if (input.name === `${uid}Scope`) {
+          scope = input.value === "series" ? "series" : "item";
+          keep = keep || !!keptAt(targetOf());
+          if (everyoneBox) everyone = everyone || !!overrideAt(targetOf());
+          sync();
+        } else if (input.matches("[data-tie-keep]")) {
+          keep = input.checked;
+        } else if (input.matches("[data-tie-everyone]")) {
+          everyone = input.checked;
+        } else if (input.matches("[data-tie-on]")) {
+          const group = input.closest("[data-group]")?.dataset.group || "";
+          const slots = layoutSlots();
+          const key = `${draft.layout}:${group}`;
+          const held = slots[group];
+          if (input.checked) slots[group] = lastSlot[key] || positionsFor(draft.layout, group)[0] || "off";
+          else {
+            if (held && held !== "off") lastSlot[key] = held;
+            slots[group] = "off";
+          }
+          renderGroups();
+        } else if (input.type === "radio" && input.closest("[data-group]")) {
+          const group = input.closest("[data-group]")?.dataset.group || "";
+          layoutSlots()[group] = input.value;
+        } else {
+          return;
+        }
+        dirty = dirty || !input.matches("[data-tie-keep], [data-tie-everyone]");
+        saveError = "";
+        schedule();
+      });
+      groupsList.addEventListener("toggle", (e) => {
+        if (e.target instanceof HTMLDetailsElement && e.target.matches("[data-tie-hidden]")) hiddenOpen = e.target.open;
+      }, true);
+      groupsList.addEventListener("click", (e) => {
+        if (!(e.target instanceof Element)) return;
+        const opener2 = e.target.closest("[data-tie-open]");
+        if (opener2 && !opener2.disabled) {
+          const group2 = opener2.closest("[data-group]")?.dataset.group || "";
+          openGroup = openGroup === group2 ? null : group2;
+          renderGroups();
+          return;
+        }
+        const button = e.target.closest("[data-tie-step]");
+        if (!button || button.disabled) return;
+        const group = button.closest("[data-group]")?.dataset.group || "";
+        const meta = export9(GROUPS, group);
+        if (!meta || singleChip(group)) return;
+        const cap = draft.caps[group] ?? baseCap(group);
+        const next = stepCap(cap, Number(button.dataset.tieStep), meta);
+        if (next === null) return;
+        draft.caps[group] = next;
+        dirty = true;
+        renderGroups();
+        schedule();
+      });
+      const focusables = () => Array.from(dialog.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled]), summary, [tabindex="0"]')).filter((el) => !el.closest("[hidden]") && !(el.tagName !== "SUMMARY" && el.closest("details:not([open])")) && el.tabIndex >= 0 && !(el instanceof HTMLInputElement && el.type === "radio" && !el.checked && dialog.querySelector(`input[name="${el.name}"]:checked`)));
+      const onFocusIn = (e) => {
+        if (backdrop.isConnected && !(e.target instanceof Node && backdrop.contains(e.target))) dialog.focus({ preventScroll: true });
+      };
+      const onNavigate = () => finish();
+      let closed = false;
+      const finish = () => {
+        if (closed) return;
+        closed = true;
+        if (presentTimer) clearTimeout(presentTimer);
+        document.removeEventListener("focusin", onFocusIn, true);
+        window.removeEventListener("hashchange", onNavigate);
+        interaction?.dispose();
+        sideWatch?.disconnect();
+        L.setPreviewLook(target, null);
+        L.clearCard(target);
+        backdrop.remove();
+        if (current?.backdrop === backdrop) current = null;
+        const key = opener?.dataset?.jeFocusKey;
+        const back = options.returnFocus?.() || (opener?.isConnected ? opener : key ? Array.from(document.querySelectorAll("[data-je-focus-key]")).find((el) => el.dataset.jeFocusKey === key) : null);
+        back?.focus({ preventScroll: true });
+      };
+      current = { close: finish, backdrop };
+      dialog.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          e.stopPropagation();
+          finish();
+          return;
+        }
+        if (e.key !== "Tab") return;
+        const list = focusables();
+        if (!list.length) return;
+        e.stopPropagation();
+        const focused = document.activeElement;
+        const at = focused instanceof HTMLElement ? list.indexOf(focused) : -1;
+        if (e.shiftKey && at <= 0) {
+          e.preventDefault();
+          list[list.length - 1]?.focus();
+        } else if (!e.shiftKey && at === list.length - 1) {
+          e.preventDefault();
+          list[0]?.focus();
+        }
+      });
+      backdrop.addEventListener("click", (e) => {
+        if (e.target instanceof Element && e.target.closest("[data-tie-close]")) finish();
+      });
+      document.addEventListener("focusin", onFocusIn, true);
+      window.addEventListener("hashchange", onNavigate);
+      const saved = { key: "", scopes: /* @__PURE__ */ new Set() };
+      saveButton.addEventListener("click", async () => {
+        if (saveButton.disabled || !isCurrent()) return;
+        const targetId = targetOf();
+        const chosen = lookOf(draft, scopeField());
+        if (serverMode) {
+          options.onSave?.(chosen, targetId);
+          finish();
+          return;
+        }
+        if (saveLabelKey() === "tag_item_editor_lock_save") {
+          keep = true;
+          if (keepBox) keepBox.checked = true;
+        }
+        const changeKey = JSON.stringify([targetId, chosen, keep, everyoneBox ? everyone : null]);
+        if (saved.key !== changeKey) {
+          saved.key = changeKey;
+          saved.scopes.clear();
+        }
+        saveButton.disabled = true;
+        statusEl.textContent = JE.t("hidden_content_admin_loading");
+        const label = name || typeName;
+        const results = [];
+        const note = (scope2, ok) => {
+          results.push({ scope: scope2, ok });
+          if (ok) saved.scopes.add(scope2);
         };
-        current = { close: finish, backdrop };
-        dialog.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') {
-                e.preventDefault();
-                e.stopPropagation();
-                finish();
-                return;
+        try {
+          const removedIds = [targetId, ...own ? [id] : []];
+          const lockDocument = export10(JE.currentSettings?.tagLayoutLocks);
+          const locksBefore = Object.fromEntries(removedIds.filter((key) => lockDocument[key]).map((key) => [key, JSON.parse(JSON.stringify(lockDocument[key]))]));
+          const hadLock = !!keptAt(targetId) || targetId !== id && !!own;
+          if (saved.scopes.has("personal")) {
+          } else if (keep) {
+            const remove = targetId !== id && own ? [id] : [];
+            const ok = await look.editLocks({ [targetId]: chosen }, remove);
+            if (!isCurrent()) return;
+            note("personal", ok);
+            if (ok) JE.toast?.(esc(JE.t("tag_item_editor_kept", { name: label })));
+          } else if (hadLock) {
+            const ok = await look.editLocks({}, [targetId, ...own ? [id] : []]);
+            if (!isCurrent()) return;
+            note("personal", ok);
+            if (ok) showUndo(JE.t("tag_item_editor_unlocked", { name: label }), () => look.restoreLocks(locksBefore), options.host);
+          }
+          if (everyoneBox && !saved.scopes.has("everyone")) {
+            const had = overrideAt(targetId);
+            if (everyone) {
+              const ok = await look.saveItemOverride(targetId, chosen, { remove: targetId !== id && ownOverride ? [id] : [] });
+              if (!isCurrent()) return;
+              note("everyone", ok);
+              if (ok) JE.toast?.(esc(JE.t("tag_item_editor_everyone_saved", { name: label })));
+            } else if (had) {
+              const previous = { ...had };
+              const ok = await look.saveItemOverride(targetId, null);
+              if (!isCurrent()) return;
+              note("everyone", ok);
+              if (ok) showUndo(JE.t("tag_item_editor_everyone_removed", { name: label }), () => {
+                look.saveItemOverride(targetId, previous, { restoreOnly: true });
+              }, options.host);
             }
-            if (e.key !== 'Tab') return;
-            const list = focusables();
-            if (!list.length) return;
-            e.stopPropagation();
-            const at = list.indexOf(/** @type {HTMLElement} */ (document.activeElement));
-            if (e.shiftKey && at <= 0) { e.preventDefault(); list[list.length - 1].focus(); }
-            else if (!e.shiftKey && at === list.length - 1) { e.preventDefault(); list[0].focus(); }
-        });
-        backdrop.addEventListener('click', (e) => {
-            if (/** @type {HTMLElement} */ (e.target).closest('[data-tie-close]')) finish();
-        });
-        document.addEventListener('focusin', onFocusIn, true);
-        window.addEventListener('hashchange', onNavigate);
-
-        /**
-         * The scopes a save already wrote for one exact change (the item it targets and the look), so Try again after
-         * a save that half-succeeded writes only what is missing; any other change starts again.
-         * @type {{key: string, scopes: Set<string>}}
-         */
-        const saved = { key: '', scopes: new Set() };
-        saveButton.addEventListener('click', async () => {
-            if (saveButton.disabled || !isCurrent()) return;
-            const targetId = targetOf();
-            const chosen = lookOf(draft, scopeField());
-            if (serverMode) {
-                options.onSave?.(chosen, targetId);
-                finish();
-                return;
-            }
-            // "Lock & save for me": the edit is kept as this user's lock.
-            if (saveLabelKey() === 'tag_item_editor_lock_save') {
-                keep = true;
-                if (keepBox) keepBox.checked = true;
-            }
-            const changeKey = JSON.stringify([targetId, chosen, keep, everyoneBox ? everyone : null]);
-            if (saved.key !== changeKey) { saved.key = changeKey; saved.scopes.clear(); }
-            saveButton.disabled = true;
-            statusEl.textContent = JE.t('hidden_content_admin_loading');
-            const label = name || typeName;
-            /** @type {Array<{scope: string, ok: boolean}>} */
-            const results = [];
-            /** @param {string} scope @param {boolean} ok */
-            const record = (scope, ok) => { results.push({ scope, ok }); if (ok) saved.scopes.add(scope); };
-            try {
-                // Personal lock: one save for the whole change (the series lock
-                // replaces a season's or episode's own lock).
-                const removedIds = [targetId, ...(own ? [id] : [])];
-                const locksBefore = Object.fromEntries(removedIds.filter((key) => JE.currentSettings?.tagLayoutLocks?.[key]).map((key) => [key, JSON.parse(JSON.stringify(JE.currentSettings.tagLayoutLocks[key]))]));
-                const hadLock = !!keptAt(targetId) || (targetId !== id && !!own);
-                if (saved.scopes.has('personal')) {
-                    // Written by the earlier try of this same change.
-                } else if (keep) {
-                    const remove = targetId !== id && own ? [id] : [];
-                    const ok = await look.editLocks({ [targetId]: chosen }, remove);
-                    if (!isCurrent()) return;
-                    record('personal', ok);
-                    if (ok) JE.toast?.(esc(JE.t('tag_item_editor_kept', { name: label })));
-                } else if (hadLock) {
-                    const ok = await look.editLocks({}, [targetId, ...(own ? [id] : [])]);
-                    if (!isCurrent()) return;
-                    record('personal', ok);
-                    if (ok) showUndo(JE.t('tag_item_editor_unlocked', { name: label }), () => look.restoreLocks(locksBefore), options.host);
-                }
-                if (everyoneBox && !saved.scopes.has('everyone')) {
-                    const had = overrideAt(targetId);
-                    if (everyone) {
-                        const ok = await look.saveItemOverride(targetId, chosen, { remove: targetId !== id && ownOverride ? [id] : [] });
-                        if (!isCurrent()) return;
-                        record('everyone', ok);
-                        if (ok) JE.toast?.(esc(JE.t('tag_item_editor_everyone_saved', { name: label })));
-                    } else if (had) {
-                        const previous = { ...had };
-                        const ok = await look.saveItemOverride(targetId, null);
-                        if (!isCurrent()) return;
-                        record('everyone', ok);
-                        if (ok) showUndo(JE.t('tag_item_editor_everyone_removed', { name: label }), () => { look.saveItemOverride(targetId, previous, { restoreOnly: true }); }, options.host);
-                    }
-                }
-            } catch (err) {
-                if (!isCurrent()) return;
-                console.warn(`${logPrefix} saving the item look failed:`, err);
-                results.push({ scope: '', ok: false });
-            }
-            if (results.some((r) => !r.ok)) {
-                saveButton.disabled = false;
-                // Half saved: say which part is written (it stays, also if the editor is closed) and which is not;
-                // Try again writes only the missing part while the change stays the same.
-                const failed = results.find((r) => !r.ok)?.scope;
-                saveError = failed === 'everyone' && saved.scopes.has('personal') ? JE.t('tag_item_editor_error_everyone_only')
-                    : failed === 'personal' && saved.scopes.has('everyone') ? JE.t('tag_item_editor_error_personal_only')
-                        : JE.t('tag_item_editor_error');
-                showStatus();
-                return;
-            }
-            if (!results.length && dirty) JE.toast?.(esc(JE.t('tag_item_editor_nothing_kept')));
-            finish();
-        });
-
-        sync();
-        present();
-        dialog.focus({ preventScroll: true });
-        const first = /** @type {HTMLElement|null} */ (dialog.querySelector('input:checked') || dialog.querySelector('input'));
-        first?.focus({ preventScroll: true });
-        return true;
+          }
+        } catch (err) {
+          if (!isCurrent()) return;
+          console.warn(`${logPrefix} saving the item look failed:`, err);
+          results.push({ scope: "", ok: false });
+        }
+        if (results.some((r) => !r.ok)) {
+          saveButton.disabled = false;
+          const failed = results.find((r) => !r.ok)?.scope;
+          saveError = failed === "everyone" && saved.scopes.has("personal") ? JE.t("tag_item_editor_error_everyone_only") : failed === "personal" && saved.scopes.has("everyone") ? JE.t("tag_item_editor_error_personal_only") : JE.t("tag_item_editor_error");
+          showStatus();
+          return;
+        }
+        if (!results.length && dirty) JE.toast?.(esc(JE.t("tag_item_editor_nothing_kept")));
+        finish();
+      });
+      sync();
+      present();
+      dialog.focus({ preventScroll: true });
+      const first = dialog.querySelector("input:checked") || dialog.querySelector("input");
+      first?.focus({ preventScroll: true });
+      return true;
     }
-
-    /** Close the mounted editor without saving. */
     function closeMounted() {
-        current?.close();
+      current?.close();
     }
-
-    /** Close the open editor without saving; an open still waiting for its item data never shows. */
     function close() {
-        cancelPending();
-        closeMounted();
+      cancelPending();
+      closeMounted();
     }
-
-    // A user switch closes the editor: its drafts belong to the outgoing user.
-    JE.session?.onUserChange?.('tag-item-editor', () => {
-        close();
-        document.querySelectorAll('.je-tie-toast').forEach((el) => el.remove());
+    JE.session?.onUserChange?.("tag-item-editor", () => {
+      close();
+      document.querySelectorAll(".je-tie-toast").forEach((el) => el.remove());
     });
-
-    JE.tagItemEditor = {
-        open,
-        close,
-        /** @returns {boolean} */
-        isOpen: () => !!current,
-        /** @returns {boolean} Whether an open is still waiting for its item data. */
-        isOpening: () => !!pendingOpen,
-        anyTagsOn,
-        TYPES,
-        // Exposed for tests.
-        stepCap,
+    const api = {
+      open,
+      close,
+      isOpen: () => !!current,
+      /** @returns Whether an open is still waiting for its item data. */
+      isOpening: () => !!pendingOpen,
+      anyTagsOn,
+      TYPES,
+      // Exposed for tests.
+      stepCap
     };
-})(window.JellyfinEnhanced);
+    JE.tagItemEditor = api;
+    return api;
+  }
+
+  // client/src/features/media-tags/editor/tag-item-editor-entry.ts
+  createItemEditor(export4());
+})();
+})();
+//# sourceMappingURL=tag-item-editor.js.map

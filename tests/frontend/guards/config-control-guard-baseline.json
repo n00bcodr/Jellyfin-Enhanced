@@ -1,0 +1,18 @@
+{
+  "_comment": "C1: PluginConfiguration properties with no control on the admin configuration page. Ratchet recorded by tests/frontend/guards/record.mjs: {file: {\"<rule> <scope>[ <detail>]\": count}}. Counts may only fall: run record.mjs after a fix to lower them. Never add a key or raise a count; fix the code instead. Triage: artifacts/restructure-plan/step-logs/canopy-k2-triage.md.",
+  "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs": {
+    "C1-no-control AnalyticsForbiddenSinceLastSuccess": 1,
+    "C1-no-control AnalyticsInstallId": 1,
+    "C1-no-control AnalyticsInstallSecret": 1,
+    "C1-no-control AnalyticsLastPayloadJson": 1,
+    "C1-no-control AnalyticsLastReportedAt": 1,
+    "C1-no-control AnalyticsLastReportedJellyfinTarget": 1,
+    "C1-no-control AnalyticsLastReportedJellyfinVersion": 1,
+    "C1-no-control AnalyticsLastReportedPluginVersion": 1,
+    "C1-no-control ClearTranslationCacheTimestamp": 1,
+    "C1-no-control CustomTagRuleKey": 1,
+    "C1-no-control DisableBrandingMiddleware": 1,
+    "C1-no-control DisableScriptInjectionMiddleware": 1,
+    "C1-no-control TagStyleApplyScope": 1
+  }
+}

@@ -1,53 +1,43 @@
-// /js/tags/tag-layout-styles.js
-// The one stylesheet for every poster tag layout (core/tag-layout.js). It
-// keys only off stable hooks — .je-tag-host[data-je-layout], .je-tag-slot
-// [data-je-slot] and the caption outlet — so nothing here depends on the
-// user's settings and it is injected once, when the first card gets a host.
-// Group wrappers keep their own classes and chip styles (each tag module's
-// stylesheet); this sheet only places them.
-(function (JE) {
-    'use strict';
+(() => {
+"use strict";
+(() => {
+  // client/src/host/context.ts
+  function sharedModule(id) {
+    const namespace = window.JellyfinEnhanced?.core?.sharedModules?.[id];
+    if (!namespace) throw new Error(`${id} is not in JE.core.sharedModules: load its provider first (client/shared-modules.json)`);
+    return namespace;
+  }
+  function sharedExport(namespace, name) {
+    return namespace[name];
+  }
 
-    // Reveals keep the existing library interaction and add the preview hook.
-    const ACTIVE_CARD = ':is(:is(.card, .listItem):is(:hover, :focus-within), .je-tag-reveal)';
-    const HIDE_ACTIVE = 'body.je-tags-hide-on-hover .card:hover';
+  // client/generated-shared/stub/client/src/features/media-tags/host.ts
+  var shared = /* @__PURE__ */ sharedModule("features/media-tags/host");
+  var export4 = /* @__PURE__ */ sharedExport(shared, "tagRuntimeHost");
+
+  // client/src/features/media-tags/layout/tag-layout-styles.ts
+  function createLayoutStyles(JE) {
+    const ACTIVE_CARD = ":is(:is(.card, .listItem):is(:hover, :focus-within), .je-tag-reveal)";
+    const HIDE_ACTIVE = "body.je-tags-hide-on-hover .card:hover";
     const PREVIEW_HIDE = ':is(.je-mtp, .je-tie-side)[data-je-hide-on-hover="true"] .je-tag-reveal';
-    const SLOT = '.je-tag-host > .je-tag-slot';
+    const SLOT = ".je-tag-host > .je-tag-slot";
     const host = (layout) => `.je-tag-host[data-je-layout="${layout}"] > .je-tag-slot`;
-    const INDICATORS = '.cardScalable:has(.countIndicator, .playedIndicator) > .je-tag-host';
-    const LEGACY_INDICATOR_OFFSET = 'clamp(20px, 3vw, 30px)';
-    const INDICATOR_OFFSET = 'calc(clamp(20px, 3vw, 30px) * var(--je-tag-scale, 1))';
+    const INDICATORS = ".cardScalable:has(.countIndicator, .playedIndicator) > .je-tag-host";
+    const LEGACY_INDICATOR_OFFSET = "clamp(20px, 3vw, 30px)";
+    const INDICATOR_OFFSET = "calc(clamp(20px, 3vw, 30px) * var(--je-tag-scale, 1))";
     const CORNER = `${SLOT}:is([data-je-slot="tl"], [data-je-slot="tr"], [data-je-slot="bl"], [data-je-slot="br"])`;
-    /** Groups whose containers had 4px phone edge offsets before layouts existed. */
     const LEGACY_MOBILE_GROUPS = ':is([data-je-group="rating"], [data-je-group="ageRating"], [data-je-group="status"])';
     const LEGACY_EDGE = (slot) => `.je-tag-host[data-je-legacy] > .je-tag-slot[data-je-slot="${slot}"] > ${LEGACY_MOBILE_GROUPS}`;
-    /** Corners slots of a card with a non-default edge spacing (data-je-edge, set by core/tag-layout.js). */
     const EDGE = '.je-tag-host[data-je-layout="corners"][data-je-edge] > .je-tag-slot';
     const FLUSH = '.je-tag-host[data-je-layout="corners"][data-je-edge="flush"] > .je-tag-slot';
-    /** Chips with a box of their own (not the genre circle or a flag image). */
-    const BOX_CHIP = ':is(.quality-overlay-label, .rating-tag, .age-rating-tag, .status-tag, .awards-tag, .je-logo-chip, .custom-tag, .language-chip)';
-
-    /** Everything Flush paints flat against an edge: boxed chips and the genre circle (a flag image keeps its shape). */
+    const BOX_CHIP = ":is(.quality-overlay-label, .rating-tag, .age-rating-tag, .status-tag, .awards-tag, .je-logo-chip, .custom-tag, .language-chip)";
     const FLUSH_BOX = `:is(${BOX_CHIP}, .genre-tag)`;
-
-    /** Transparent links pass sizing and Flush paint through to the chip. */
-    const CHIP_LINK = ':is(.awards-link, .language-link)';
-
-    /** Minimal's and Caption's column stacks: their oversized chips are fitted (core/tag-layout.js STACK_SLOTS). */
+    const CHIP_LINK = ":is(.awards-link, .language-link)";
     const STACK = `:is(${SLOT}[data-je-slot="poster"], ${SLOT}[data-je-slot="corner"], .je-tag-host[data-je-layout="minimal"] > .je-tag-slot[data-je-slot="top"])`;
-
-    /** Group chips and the slot's direct overflow chip share Flush paint. */
     const FLUSH_CHIP = `:is([data-je-group] > ${FLUSH_BOX}, [data-je-group] > ${CHIP_LINK} > ${BOX_CHIP}, .je-tag-more)`;
-
-    /**
-     * Flush paint rules, repeated in scoped Tag Styles so their !important
-     * colours cannot restore a touching border in the admin preview.
-     * @param {string} [scope] Validated Tag Styles scope prefix.
-     * @returns {string} CSS text.
-     */
-    function buildFlushStyles(scope = '') {
-        const F = scope ? `${scope} ${FLUSH}` : FLUSH;
-        return `
+    function buildFlushStyles(scope = "") {
+      const F = scope ? `${scope} ${FLUSH}` : FLUSH;
+      return `
             /* Flush removes the visible edge seam while preserving the chip's
                border-box metrics. Clip only the touching sides of its shadow;
                the inward sides keep the group's original border and shadow. */
@@ -102,13 +92,8 @@
             }
         `;
     }
-
-    /**
-     * Build the shared layout stylesheet.
-     * @returns {string} CSS text.
-     */
     function buildStyles() {
-        const css = `
+      const css = `
             /* Positions are physical, as on native posters: "Top left" is top left on a right-to-left page too.
                The host lays out left to right; each chip's text keeps its own direction (first strong letter). */
             .je-tag-host { direction: ltr; }
@@ -156,7 +141,7 @@
             /* Centre anchors only: leave the original four corner rules untouched.
                Measured reserves keep rows between corner stacks and columns
                between the top and bottom stacks, even on episode thumbnails. */
-            ${host('corners')}:is([data-je-slot="tc"], [data-je-slot="bc"], [data-je-slot="c"]) {
+            ${host("corners")}:is([data-je-slot="tc"], [data-je-slot="bc"], [data-je-slot="c"]) {
                 left: 50%; transform: translateX(-50%);
                 width: max(0px, calc(100% - 2 * var(--je-anchor-reserve, 6px)));
                 max-height: calc(100% / 3);
@@ -165,11 +150,11 @@
                 justify-content: center; align-items: center; align-content: center;
                 gap: calc(4px * var(--je-tag-scale, 1) * var(--je-tag-gap, 1));
             }
-            ${host('corners')}[data-je-slot="tc"] { top: var(--je-anchor-top, 6px); }
-            ${host('corners')}[data-je-slot="bc"] { bottom: var(--je-anchor-bottom, 6px); }
-            ${host('corners')}[data-je-slot="c"] { top: 50%; transform: translate(-50%, -50%); max-width: calc(100% - 12px); }
-            ${host('corners')}:is([data-je-slot="tc"], [data-je-slot="bc"], [data-je-slot="c"]) > [data-je-group] { display: contents; }
-            ${host('corners')}:is([data-je-slot="ml"], [data-je-slot="mr"]) {
+            ${host("corners")}[data-je-slot="tc"] { top: var(--je-anchor-top, 6px); }
+            ${host("corners")}[data-je-slot="bc"] { bottom: var(--je-anchor-bottom, 6px); }
+            ${host("corners")}[data-je-slot="c"] { top: 50%; transform: translate(-50%, -50%); max-width: calc(100% - 12px); }
+            ${host("corners")}:is([data-je-slot="tc"], [data-je-slot="bc"], [data-je-slot="c"]) > [data-je-group] { display: contents; }
+            ${host("corners")}:is([data-je-slot="ml"], [data-je-slot="mr"]) {
                 top: 50%; transform: translateY(-50%);
                 max-height: max(0px, calc(100% - 2 * var(--je-anchor-reserve, 6px)));
                 max-width: var(--je-anchor-width, calc(100% - 12px));
@@ -177,41 +162,41 @@
                    able to extend from the icon toward the card's centre. */
                 flex-direction: column; overflow: visible;
             }
-            ${host('corners')}[data-je-slot="ml"] { left: 6px; align-items: flex-start; }
-            ${host('corners')}[data-je-slot="mr"] { right: 6px; align-items: flex-end; }
-            ${host('corners')}[data-je-slot="ml"] > [data-je-group] { align-items: flex-start; }
-            ${host('corners')}[data-je-slot="mr"] > [data-je-group] { align-items: flex-end; }
-            ${host('corners')}:is([data-je-slot="ml"], [data-je-slot="mr"]) > [data-je-group] { display: contents; }
+            ${host("corners")}[data-je-slot="ml"] { left: 6px; align-items: flex-start; }
+            ${host("corners")}[data-je-slot="mr"] { right: 6px; align-items: flex-end; }
+            ${host("corners")}[data-je-slot="ml"] > [data-je-group] { align-items: flex-start; }
+            ${host("corners")}[data-je-slot="mr"] > [data-je-group] { align-items: flex-end; }
+            ${host("corners")}:is([data-je-slot="ml"], [data-je-slot="mr"]) > [data-je-group] { display: contents; }
             /* Measure intrinsic chip widths before constraining the first label. */
-            ${host('corners')}:is([data-je-slot="tc"], [data-je-slot="bc"], [data-je-slot="ml"], [data-je-slot="mr"], [data-je-slot="c"]) > [data-je-group] > * { max-width: none; box-sizing: border-box; flex-shrink: 0; }
+            ${host("corners")}:is([data-je-slot="tc"], [data-je-slot="bc"], [data-je-slot="ml"], [data-je-slot="mr"], [data-je-slot="c"]) > [data-je-group] > * { max-width: none; box-sizing: border-box; flex-shrink: 0; }
 
-            ${host('corners')}:is([data-je-slot="ml"], [data-je-slot="mr"]) .genre-text {
+            ${host("corners")}:is([data-je-slot="ml"], [data-je-slot="mr"]) .genre-text {
                 box-sizing: border-box;
                 max-width: max(0px, calc(var(--je-anchor-width, 0px) - 100% - 6px));
                 overflow: hidden; text-overflow: ellipsis;
             }
-            ${host('corners')} > [data-je-group] > [data-je-fit-width] {
+            ${host("corners")} > [data-je-group] > [data-je-fit-width] {
                 max-width: var(--je-chip-fit-width); min-width: 0;
                 overflow: visible;
             }
             /* Truncate only the shrinking label, retaining flex height and
                icon alignment as measured before the constraint was applied. */
-            ${host('corners')} [data-je-fit-width] :is(.je-tag-fit-text, .custom-tag-text, .rating-text),
-            ${host('corners')} [data-je-fit-width].awards-tag > span:last-child {
+            ${host("corners")} [data-je-fit-width] :is(.je-tag-fit-text, .custom-tag-text, .rating-text),
+            ${host("corners")} [data-je-fit-width].awards-tag > span:last-child {
                 display: block; min-width: 0;
                 overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
             }
 
             /* A link is transparent to chip sizing and paint: clip the label,
                not the rounded chip or its inward border/ring/shadow. */
-            ${host('corners')} > [data-je-group] > ${CHIP_LINK}[data-je-fit-width] {
+            ${host("corners")} > [data-je-group] > ${CHIP_LINK}[data-je-fit-width] {
                 display: inline-flex; overflow: visible;
             }
-            ${host('corners')} ${CHIP_LINK}[data-je-fit-width] > ${BOX_CHIP} {
+            ${host("corners")} ${CHIP_LINK}[data-je-fit-width] > ${BOX_CHIP} {
                 max-width: var(--je-chip-fit-width); min-width: 0; box-sizing: border-box;
             }
-            ${host('corners')} ${CHIP_LINK}[data-je-fit-width] > .awards-tag > span:last-child,
-            ${host('corners')} ${CHIP_LINK}[data-je-fit-width] > .language-chip > .je-tag-fit-text {
+            ${host("corners")} ${CHIP_LINK}[data-je-fit-width] > .awards-tag > span:last-child,
+            ${host("corners")} ${CHIP_LINK}[data-je-fit-width] > .language-chip > .je-tag-fit-text {
                 min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
             }
             /* A stack chip wider than the card keeps its whole box at the slot's
@@ -253,12 +238,12 @@
             /* ... and on phones the rating, age rating and status containers sit
                4px from the card edges instead of 6px. */
             @media (max-width: 480px) {
-                ${LEGACY_EDGE('tl')} { margin-left: -2px; }
-                ${LEGACY_EDGE('bl')} { margin-left: -2px; }
-                ${LEGACY_EDGE('tr')} { margin-right: -2px; }
-                ${LEGACY_EDGE('br')} { margin-right: -2px; }
-                ${LEGACY_EDGE('tl')}:first-child, ${LEGACY_EDGE('tr')}:first-child { margin-top: -2px; }
-                ${LEGACY_EDGE('bl')}:first-child, ${LEGACY_EDGE('br')}:first-child { margin-bottom: -2px; }
+                ${LEGACY_EDGE("tl")} { margin-left: -2px; }
+                ${LEGACY_EDGE("bl")} { margin-left: -2px; }
+                ${LEGACY_EDGE("tr")} { margin-right: -2px; }
+                ${LEGACY_EDGE("br")} { margin-right: -2px; }
+                ${LEGACY_EDGE("tl")}:first-child, ${LEGACY_EDGE("tr")}:first-child { margin-top: -2px; }
+                ${LEGACY_EDGE("bl")}:first-child, ${LEGACY_EDGE("br")}:first-child { margin-bottom: -2px; }
                 ${INDICATORS}[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > ${LEGACY_MOBILE_GROUPS}[data-je-indicator-gap],
                 .cardIndicators ~ .je-tag-host[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > ${LEGACY_MOBILE_GROUPS}[data-je-indicator-gap] {
                     margin-top: max(0px, ${LEGACY_INDICATOR_OFFSET} - 2px - var(--je-indicator-before, 0px));
@@ -317,7 +302,7 @@
 
             /* bands: first top group left, the rest right; whole groups wrap
                when long milestone labels and age ratings cannot share a row. */
-            ${host('bands')}[data-je-slot="top"] {
+            ${host("bands")}[data-je-slot="top"] {
                 top: 0; left: 0; right: 0;
                 padding: 6px 6px 16px;
                 flex-direction: row;
@@ -325,7 +310,7 @@
                 align-items: flex-start;
                 background: linear-gradient(to bottom, rgba(0, 0, 0, 0.62), rgba(0, 0, 0, 0));
             }
-            ${host('bands')}[data-je-slot="top"] > [data-je-group] {
+            ${host("bands")}[data-je-slot="top"] > [data-je-group] {
                 flex-direction: row;
                 flex-wrap: wrap;
                 justify-content: flex-end;
@@ -335,15 +320,15 @@
                 min-width: 0;
                 max-width: 100%;
             }
-            ${host('bands')}[data-je-slot="top"] > [data-je-group] > * {
+            ${host("bands")}[data-je-slot="top"] > [data-je-group] > * {
                 box-sizing: border-box;
                 min-width: 0;
                 max-width: 100%;
             }
-            ${host('bands')}[data-je-slot="top"] > [data-je-group] + [data-je-group] {
+            ${host("bands")}[data-je-slot="top"] > [data-je-group] + [data-je-group] {
                 margin-left: auto;
             }
-            ${host('bands')}[data-je-slot="top"] > [data-je-group]:first-child {
+            ${host("bands")}[data-je-slot="top"] > [data-je-group]:first-child {
                 justify-content: flex-start;
                 margin-right: auto;
             }
@@ -352,7 +337,7 @@
             }
             /* At most two rows; the fitting pass hides the rest behind "+N", and
                cards under 160px wide get compact labels. */
-            ${host('bands')}[data-je-slot="bottom"] {
+            ${host("bands")}[data-je-slot="bottom"] {
                 bottom: 0; left: 0; right: 0;
                 padding: 16px 6px 6px;
                 flex-direction: row;
@@ -363,7 +348,7 @@
             }
 
             /* Flattened slots: chips of every group flow in one row. */
-            ${host('bands')}[data-je-slot="bottom"] > [data-je-group],
+            ${host("bands")}[data-je-slot="bottom"] > [data-je-group],
             ${SLOT}[data-je-slot="hover"] > [data-je-group],
             .je-tag-caption > [data-je-group] {
                 display: contents;
@@ -372,8 +357,8 @@
                on Hover is on (it fades the poster slots instead); the caption
                strip, which stays readable, shows them on hover either way; the
                summary / minimal reveal shows them inline (below). */
-            ${host('bands')}[data-je-slot="top"] > [data-je-group]:not(:first-child) .genre-tag .genre-text,
-            ${host('bands')}[data-je-slot="bottom"] .genre-tag .genre-text {
+            ${host("bands")}[data-je-slot="top"] > [data-je-group]:not(:first-child) .genre-tag .genre-text,
+            ${host("bands")}[data-je-slot="bottom"] .genre-tag .genre-text {
                 right: calc(100% + 4px);
                 left: auto;
             }
@@ -589,7 +574,7 @@
             }
 
             /* minimal: status top, quality dots, rating corner */
-            ${host('minimal')}[data-je-slot="top"] {
+            ${host("minimal")}[data-je-slot="top"] {
                 top: 6px; left: 6px;
                 max-width: calc(100% - 12px);
                 flex-direction: column;
@@ -641,12 +626,16 @@
                 ${SLOT}, .je-tag-host > .je-tag-more-tip { transition: none; }
             }
         `;
-        return JE.core.tagLayout?.preserveLegacySizing?.(css) || css;
+      return JE.core.tagLayout?.preserveLegacySizing?.(css) || css;
     }
-
     if (JE.core?.tagLayout) {
-        JE.core.tagLayout.buildStyles = buildStyles;
-        JE.core.tagLayout.buildFlushStyles = buildFlushStyles;
+      JE.core.tagLayout.buildStyles = buildStyles;
+      JE.core.tagLayout.buildFlushStyles = buildFlushStyles;
     }
+  }
 
-})(window.JellyfinEnhanced);
+  // client/src/features/media-tags/layout/tag-layout-styles-entry.ts
+  createLayoutStyles(export4());
+})();
+})();
+//# sourceMappingURL=tag-layout-styles.js.map

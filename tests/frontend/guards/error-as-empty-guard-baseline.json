@@ -1,0 +1,36 @@
+{
+  "_comment": "R9: failure branches that return, cache or render an empty answer without an error channel. Ratchet recorded by tests/frontend/guards/record.mjs: {file: {\"<rule> <scope>[ <detail>]\": count}}. Counts may only fall: run record.mjs after a fix to lower them. Never add a key or raise a count; fix the code instead. Triage: artifacts/restructure-plan/step-logs/canopy-k2-triage.md.",
+  "client/src/admin/config/page/arr.ts": {
+    "R9-fail-empty createArr.wireSeerrArrImport": 1
+  },
+  "client/src/bootstrap/loader/boot.ts": {
+    "R9-fail-empty loadPluginData": 1
+  },
+  "client/src/features/calendar/calendar-page-data.ts": {
+    "R9-fail-empty fetchUserData": 1
+  },
+  "client/src/features/media-tags/settings/ui-panel-tag-looks.ts": {
+    "R9-fail-empty installUiPanelTagLooks.loadGenres": 1
+  },
+  "client/src/features/media-tags/types/direct-play/tag-direct-play.ts": {
+    "R9-fail-empty createDirectPlay.userBitrate": 1
+  },
+  "client/src/features/player/auto-skip-engine.ts": {
+    "R9-fail-empty createAutoSkipEngine.loadSegments": 1
+  },
+  "client/src/features/player/pausescreen.ts": {
+    "R9-fail-cached initializePauseScreen.JellyfinPauseScreen.probeImage": 1
+  },
+  "client/src/features/player/segment-controls.ts": {
+    "R9-fail-empty installSegmentControls.fetchMediaSegments": 1
+  },
+  "client/src/features/seerr/core/api.ts": {
+    "R9-fail-empty installApi.fetchGenreSlider": 1
+  },
+  "client/src/features/seerr/details/moreinfo/seasons-entry.ts": {
+    "R9-fail-empty fetchJellyfinSeasonMap": 1
+  },
+  "client/src/features/seerr/recommendations/recommendations-data.ts": {
+    "R9-fail-empty fetchGenreSlider": 1
+  }
+}

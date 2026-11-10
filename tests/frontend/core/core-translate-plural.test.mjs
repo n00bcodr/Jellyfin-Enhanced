@@ -1,17 +1,25 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 import { createHarness } from '../helpers/harness.mjs';
 
-// JE.t as plugin.js defines it: the window object's own function, before any bootstrap runs.
+// JE.t as the loader defines it (plugin.js `t: createTranslator(liveNamespace)`): createTranslator compiled from
+// client/src/bootstrap/loader/translate.ts, reading window.JellyfinEnhanced on every call.
+const root = fileURLToPath(new URL('../../../', import.meta.url));
+const translatorSource = createRequire(import.meta.url)('esbuild').buildSync({
+  absWorkingDir: root, bundle: true, write: false, format: 'iife', globalName: '__jeTranslate', target: 'es2020', logLevel: 'silent',
+  entryPoints: ['client/src/bootstrap/loader/translate.ts'],
+}).outputFiles[0].text;
+
 function translator(t, { translations, lang = 'en', fromEnglish = null }) {
   const h = createHarness({ html: '' });
   t.after(() => h.close());
-  const source = readFileSync(new URL('../../../Jellyfin.Plugin.JellyfinEnhanced/js/plugin.js', import.meta.url), 'utf8');
-  const literal = source.slice(source.indexOf('        t: (key, params = {}) => {'), source.indexOf('        loadSettings: () =>'));
   const JE = { translations, translationsLang: lang, translationsFromEnglish: fromEnglish ? new Set(fromEnglish) : null, IconName: {} };
   h.window.JellyfinEnhanced = JE;
-  return h.window.eval(`({${literal}})`).t;
+  const { createTranslator } = h.window.eval(`${translatorSource};__jeTranslate`);
+  return createTranslator(() => h.window.JellyfinEnhanced);
 }
 
 const en = JSON.parse(readFileSync(new URL('../../../Jellyfin.Plugin.JellyfinEnhanced/js/locales/en.json', import.meta.url), 'utf8'));

@@ -1,0 +1,15 @@
+{
+  "js/enhanced/features-random-button.js": "client/src/features/details-providers/random-button.ts",
+  "js/enhanced/itemdetails/features-details-media-info.js": "client/src/features/details-providers/media-info.ts",
+  "js/enhanced/itemdetails/features-release-dates.js": "client/src/features/details-providers/release-dates.ts",
+  "js/enhanced/itemdetails/features-details-page.js": "client/src/features/details-providers/details-page.ts",
+  "js/elsewhere/elsewhere.js": "client/src/features/details-providers/elsewhere.ts",
+  "js/elsewhere/reviews.js": "client/src/features/details-providers/reviews.ts",
+  "js/awards/awards.js": "client/src/features/details-providers/awards.ts",
+  "js/others/mdblist-ratings.js": "client/src/features/details-providers/mdblist-ratings.ts",
+  "js/others/doesthedogdie.js": "client/src/features/details-providers/doesthedogdie.ts",
+  "js/arr/arr-links.js": "client/src/features/details-providers/arr-links.ts",
+  "js/arr/arr-tag-links.js": "client/src/features/details-providers/arr-tag-links.ts",
+  "js/extras/colored-ratings.js": "client/src/features/details-providers/colored-ratings.ts",
+  "js/others/letterboxd-links.js": "client/src/features/details-providers/letterboxd-links.ts"
+}

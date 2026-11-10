@@ -1,13 +1,10 @@
-<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk" InitialTargets="ValidateJellyfinTarget">
   <PropertyGroup>
     <JellyfinTarget Condition="'$(JellyfinTarget)' == ''">jf12</JellyfinTarget>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <NuGetLockFilePath>$(MSBuildProjectDirectory)/packages.$(JellyfinTarget).lock.json</NuGetLockFilePath>
-    <TargetFramework Condition="'$(JellyfinTarget)' == 'jf12'">net10.0</TargetFramework>
-    <TargetFramework Condition="'$(JellyfinTarget)' == 'jf10'">net9.0</TargetFramework>
-    <!-- The plugin's target constants, for the few facts that differ between the Jellyfin 10.11 and 12 packages. -->
-    <DefineConstants Condition="'$(JellyfinTarget)' == 'jf12'">$(DefineConstants);JF12</DefineConstants>
-    <DefineConstants Condition="'$(JellyfinTarget)' == 'jf10'">$(DefineConstants);JF10</DefineConstants>
+    <TargetFramework>net10.0</TargetFramework>
+    <DefineConstants>$(DefineConstants);JF12</DefineConstants>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
@@ -41,15 +38,21 @@
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.0.2" PrivateAssets="all" />
     <PackageReference Include="Moq" Version="4.20.72" />
-    <PackageReference Include="Microsoft.AspNetCore.TestHost" Version="10.0.0" Condition="'$(JellyfinTarget)' == 'jf12'" />
-    <PackageReference Include="Microsoft.AspNetCore.TestHost" Version="9.0.0" Condition="'$(JellyfinTarget)' == 'jf10'" />
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" Version="10.0.0" />
     <PackageReference Include="SkiaSharp" Version="3.116.1" />
     <PackageReference Include="SkiaSharp.HarfBuzz" Version="3.116.1" />
     <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="3.116.1" />
     <PackageReference Include="HarfBuzzSharp.NativeAssets.Linux" Version="8.3.1.1" />
     <PackageReference Include="coverlet.collector" Version="6.0.4" PrivateAssets="all" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.11" Condition="'$(JellyfinTarget)' == 'jf12'" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="9.0.10" Condition="'$(JellyfinTarget)' == 'jf10'" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.11" />
     <Using Include="Xunit" />
   </ItemGroup>
+
+  <Target Name="ValidateJellyfinTarget">
+    <Error Condition="'$(JellyfinTarget)' != '' and '$(JellyfinTarget)' != 'jf12'"
+           Text="This rewrite supports Jellyfin 12.x only. Use JellyfinTarget=jf12; '$(JellyfinTarget)' is unsupported." />
+    <Error Condition="'$(TargetFramework)' != 'net10.0' or '$(TargetFrameworks)' != ''"
+           Text="This rewrite supports only TargetFramework=net10.0 (Jellyfin 12.x)." />
+  </Target>
+
 </Project>

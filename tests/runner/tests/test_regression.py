@@ -79,7 +79,7 @@ class RegressionToolingTests(unittest.TestCase):
         self.assertEqual('failed', json.loads(summary.read_text())[0]['status'])
 
     def test_mutation_manifest_cannot_target_original_checkout(self):
-        original = ROOT / 'Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/NativeClientPolicy.cs'
+        original = ROOT / 'Jellyfin.Plugin.JellyfinEnhanced/Features/MediaTags/PosterTags/NativeClientPolicy.cs'
         before = original.read_bytes()
         for path in (str(original), '../outside.cs'):
             with self.subTest(path=path):
@@ -140,11 +140,45 @@ class RegressionToolingTests(unittest.TestCase):
             '    [HttpGet("status")]',
             '    public IActionResult GetStatus() => Ok();',
             '}']))
+        # A feature controller outside Controllers/ that derives from a shared base (no Controller/ControllerBase
+        # in its base list), a partial of it with no base list and no class-level [Route], and the shared base
+        # itself, whose name does not end in Controller and which declares no routes.
+        (production / 'Features/X').mkdir(parents=True)
+        (production / 'Infrastructure/Http').mkdir(parents=True)
+        (production / 'Infrastructure/Http/JeControllerBase.cs').write_text('\n'.join([
+            'public abstract class JeControllerBase : ControllerBase',
+            '{',
+            '    protected bool IsAdminUser() => true;',
+            '}']))
+        (production / 'Features/X/JeXController.cs').write_text('\n'.join([
+            '[ApiController]',
+            '[Route("JellyfinEnhanced")]',
+            'public partial class JeXController : JeControllerBase',
+            '{',
+            '    [HttpGet("x/items/{id}")]',
+            '    [Authorize]',
+            '    public IActionResult GetXItem(string id) => Ok();',
+            '}']))
+        (production / 'Features/X/JeXController.Admin.cs').write_text('\n'.join([
+            'public partial class JeXController',
+            '{',
+            '    [HttpDelete("admin/x/{id}")]',
+            '    public IActionResult DeleteX(string id) => Ok();',
+            '}']))
+        # Not a controller: an [HttpGet] in a comment, as in SpoilerBlurImageFilter.cs, stays out.
+        (production / 'Features/X/XImageFilter.cs').write_text('\n'.join([
+            '// Runs for the native [HttpGet] image endpoints.',
+            'public sealed class XImageFilter { }']))
         generator.ROOT = self.output
         generator.PRODUCTION = production
         routes = json.loads(generator.inventory())['routes']
-        self.assertEqual([('PostEvent', '/JellyfinEnhanced/feature/event'), ('GetStatus', '/JellyfinEnhanced/status')],
-            [(route['method'], route['path']) for route in routes])
+        plugin = 'Jellyfin.Plugin.JellyfinEnhanced/'
+        self.assertEqual([('PostEvent', '/JellyfinEnhanced/feature/event', plugin + 'Controllers/Feature.cs'),
+                          ('GetStatus', '/JellyfinEnhanced/status', plugin + 'Controllers/Feature.cs'),
+                          ('DeleteX', '/JellyfinEnhanced/admin/x/{id}', plugin + 'Features/X/JeXController.Admin.cs'),
+                          ('GetXItem', '/JellyfinEnhanced/x/items/{id}', plugin + 'Features/X/JeXController.cs')],
+            [(route['method'], route['path'], route['file']) for route in routes])
+        self.assertEqual(['Authorize'], next(route for route in routes if route['method'] == 'GetXItem')['following_attributes'])
 
     def test_inventory_drift_inherited_from_base_only_warns(self):
         import importlib.util

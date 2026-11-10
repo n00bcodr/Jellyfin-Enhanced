@@ -1,0 +1,35 @@
+{
+  "description": "Budget for the served component bundle, GET /JellyfinEnhanced/bundle.js (Features/Platform/Services/ClientScriptBundle.cs), as an identity (uncompressed) body. rawBytes: its length. gzipBytes: its length after gzip at level 9 (zlib level 9; `gzip -9 -n`, .NET CompressionLevel.SmallestSize). Checked by tests/backend/Api/BundleBudgetTests.cs (gate T) and `scripts/restructure-gates.sh size`. It is a ratchet: lowering a limit needs no reason; a history entry that raises either limit must give one. `limits` is always the last history entry's.",
+  "limits": {
+    "rawBytes": 2494625,
+    "gzipBytes": 671156
+  },
+  "history": [
+    {
+      "date": "2026-11-09",
+      "change": "canopy K1 (branch canopy/k1-bundle-size)",
+      "measured": {
+        "rawBytes": 2640436,
+        "gzipBytes": 677851
+      },
+      "limits": {
+        "rawBytes": 2772458,
+        "gzipBytes": 711744
+      },
+      "reason": "First budget: the K1 bundle (minified twins, one shared featureContext) plus 5% headroom. Before K1 the bundle was 4,432,976 raw / 858,366 gzip-9 bytes."
+    },
+    {
+      "date": "2026-11-09",
+      "change": "canopy K1b (branch canopy/k1b-dedupe)",
+      "measured": {
+        "rawBytes": 2375833,
+        "gzipBytes": 639196
+      },
+      "limits": {
+        "rawBytes": 2494625,
+        "gzipBytes": 671156
+      },
+      "reason": "Lowered: 24 stateless modules that several component scripts inlined now ship once from their first user (client/shared-modules.json), plus 5% headroom. K1 measured 2,640,436 raw / 677,849 gzip-9 bytes."
+    }
+  ]
+}

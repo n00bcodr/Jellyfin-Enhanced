@@ -1,542 +1,68 @@
-/**
- * @file Hidden Content Page — page CSS and its injector.
- * Split from hidden-content-page.js (code motion; CSS verbatim).
- */
-(function () {
-  "use strict";
-
-  const JE = window.JellyfinEnhanced;
-  JE.internals = JE.internals || {};
-  const internal = JE.internals.hiddenContentPage = JE.internals.hiddenContentPage || {};
-
-  // ============================================================
-  // CSS Styles
-  // ============================================================
-
-  const CSS_STYLES = `
-    .je-hidden-content-page {
-      padding: 2em;
-      max-width: 95vw;
-      margin: 0 auto;
-      position: relative;
-      z-index: 1;
-    }
-
-    .je-hidden-content-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 2em;
-      padding-top: 2em;
-      flex-wrap: wrap;
-      gap: 1em;
-    }
-
-    .je-hidden-content-title {
-      font-size: 2em;
-      font-weight: 600;
-      margin: 0;
-    }
-
-    .je-hidden-content-count {
-      font-size: 0.5em;
-      font-weight: 400;
-      opacity: 0.6;
-      margin-left: 0.5em;
-    }
-
-    .je-hidden-content-toolbar {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      width: 100%;
-      margin-bottom: 1.5em;
-    }
-
-    .je-hidden-content-page-search {
-      flex: 1;
-      background: rgba(255,255,255,0.08);
-      border: 1px solid rgba(255,255,255,0.12);
-      border-radius: 6px;
-      color: #fff;
-      padding: 10px 14px;
-      font-size: 14px;
-      outline: none;
-      max-width: 400px;
-    }
-
-    .je-hidden-content-page-search::placeholder {
-      color: rgba(255,255,255,0.4);
-    }
-
-    .je-hidden-content-page-search:focus {
-      border-color: rgba(255,255,255,0.3);
-    }
-
-    .je-hidden-content-page-unhide-all {
-      background: rgba(220,50,50,0.3);
-      border: 1px solid rgba(220,50,50,0.5);
-      color: #fff;
-      padding: 10px 20px;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 13px;
-      font-weight: 500;
-      white-space: nowrap;
-      transition: background 0.2s ease;
-    }
-
-    .je-hidden-content-page-unhide-all:hover {
-      background: rgba(220,50,50,0.5);
-    }
-
-    .je-hidden-content-page-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-      gap: 16px;
-    }
-
-    .je-hidden-content-page-empty {
-      text-align: center;
-      padding: 60px 24px;
-      color: rgba(255,255,255,0.4);
-      font-size: 15px;
-    }
-
-    /* Group section headers */
-    .je-hidden-group-section {
-      margin-bottom: 2em;
-    }
-    .je-hidden-group-section-title {
-      font-size: 1.2em;
-      font-weight: 600;
-      color: rgba(255,255,255,0.8);
-      margin-bottom: 1em;
-      padding-bottom: 0.5em;
-      border-bottom: 1px solid rgba(255,255,255,0.1);
-    }
-
-    /* Grouped card for a show — vertical poster layout matching movie cards */
-    .je-hidden-group-card {
-      background: rgba(255,255,255,0.05);
-      border-radius: 8px;
-      overflow: hidden;
-      border: 1px solid rgba(255,255,255,0.08);
-      transition: border-color 0.2s ease;
-    }
-    .je-hidden-group-card:hover {
-      border-color: rgba(255,255,255,0.2);
-    }
-    .je-hidden-group-poster-link {
-      display: block;
-      width: 100%;
-      aspect-ratio: 2 / 3;
-      overflow: hidden;
-      background: rgba(255,255,255,0.05);
-    }
-    .je-hidden-group-poster {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      display: block;
-    }
-    .je-hidden-group-info {
-      padding: 8px 10px 4px;
-    }
-    .je-hidden-group-name {
-      font-size: 14px;
-      font-weight: 600;
-      color: #fff;
-      margin-bottom: 2px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    a.je-hidden-group-name:hover {
-      text-decoration: underline;
-    }
-    .je-hidden-group-meta {
-      font-size: 11px;
-      color: rgba(255,255,255,0.4);
-      margin-bottom: 4px;
-    }
-
-    /* Expand/collapse toggle */
-    .je-hidden-group-expand {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      width: calc(100% - 20px);
-      margin: 0 10px 6px;
-      background: rgba(255,255,255,0.06);
-      border: 1px solid rgba(255,255,255,0.1);
-      color: rgba(255,255,255,0.6);
-      padding: 5px 10px;
-      border-radius: 4px;
-      cursor: pointer;
-      font-size: 11px;
-      font-weight: 500;
-      transition: background 0.15s ease;
-    }
-    .je-hidden-group-expand:hover {
-      background: rgba(255,255,255,0.1);
-      color: rgba(255,255,255,0.85);
-    }
-    .je-hidden-group-expand .material-icons {
-      font-size: 16px;
-      transition: transform 0.2s ease;
-    }
-    .je-hidden-group-expand.expanded .material-icons {
-      transform: rotate(180deg);
-    }
-
-    /* Expandable items panel */
-    .je-hidden-group-items {
-      padding: 0 10px 6px;
-      display: none;
-    }
-    .je-hidden-group-items.expanded {
-      display: block;
-    }
-    .je-hidden-group-item {
-      display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
-      padding: 5px 0;
-      border-bottom: 1px solid rgba(255,255,255,0.04);
-      gap: 6px;
-    }
-    .je-hidden-group-item:last-child {
-      border-bottom: none;
-    }
-    .je-hidden-group-item-info {
-      flex: 1;
-      min-width: 0;
-    }
-    .je-hidden-group-item-label {
-      font-size: 12px;
-      color: rgba(255,255,255,0.7);
-      display: block;
-      word-break: break-word;
-    }
-    a.je-hidden-group-item-label:hover {
-      color: #fff;
-      text-decoration: underline;
-    }
-    .je-hidden-group-item-unhide {
-      background: rgba(255,255,255,0.08);
-      border: 1px solid rgba(255,255,255,0.12);
-      color: rgba(255,255,255,0.7);
-      padding: 2px 8px;
-      border-radius: 4px;
-      cursor: pointer;
-      font-size: 10px;
-      font-weight: 500;
-      transition: background 0.2s ease;
-      flex-shrink: 0;
-      margin-top: 1px;
-    }
-    .je-hidden-group-item-unhide:hover {
-      background: rgba(100,200,100,0.3);
-      border-color: rgba(100,200,100,0.5);
-      color: #fff;
-    }
-    .je-hidden-group-unhide-all {
-      width: calc(100% - 20px);
-      margin: 4px 10px 10px;
-      background: rgba(220,50,50,0.2);
-      border: 1px solid rgba(220,50,50,0.3);
-      color: rgba(255,255,255,0.7);
-      padding: 5px;
-      border-radius: 4px;
-      cursor: pointer;
-      font-size: 11px;
-      font-weight: 500;
-      transition: background 0.2s ease;
-      display: none;
-    }
-    .je-hidden-group-unhide-all.expanded {
-      display: block;
-    }
-    .je-hidden-group-unhide-all:hover {
-      background: rgba(220,50,50,0.4);
-      color: #fff;
-    }
-
-    /* Scoped hide badge */
-    .je-hidden-scoped-badge {
-      display: inline-block;
-      font-size: 9px;
-      font-weight: 600;
-      padding: 1px 5px;
-      border-radius: 3px;
-      background: rgba(100, 149, 237, 0.25);
-      color: rgba(180, 210, 255, 0.85);
-      border: 1px solid rgba(100, 149, 237, 0.35);
-      white-space: nowrap;
-      line-height: 1.3;
-      margin-top: 2px;
-    }
-
-    /* Simple unhide button for series-only cards (matches movie card style) */
-    .je-hidden-group-unhide {
-      display: block;
-      width: calc(100% - 20px);
-      margin: 6px 10px 10px;
-      background: rgba(255,255,255,0.08);
-      border: 1px solid rgba(255,255,255,0.12);
-      color: rgba(255,255,255,0.7);
-      padding: 6px;
-      border-radius: 4px;
-      cursor: pointer;
-      font-size: 12px;
-      font-weight: 500;
-      transition: background 0.2s ease;
-      text-align: center;
-    }
-    .je-hidden-group-unhide:hover {
-      background: rgba(100,200,100,0.3);
-      border-color: rgba(100,200,100,0.5);
-      color: #fff;
-    }
-
-    /* Expand/collapse all toggle in section header */
-    .je-hidden-section-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 1em;
-      padding-bottom: 0.5em;
-      border-bottom: 1px solid rgba(255,255,255,0.1);
-    }
-    .je-hidden-section-header-title {
-      font-size: 1.2em;
-      font-weight: 600;
-      color: rgba(255,255,255,0.8);
-    }
-    .je-hidden-expand-all-btn {
-      background: rgba(255,255,255,0.06);
-      border: 1px solid rgba(255,255,255,0.12);
-      color: rgba(255,255,255,0.6);
-      padding: 4px 12px;
-      border-radius: 4px;
-      cursor: pointer;
-      font-size: 11px;
-      font-weight: 500;
-      transition: background 0.15s ease;
-    }
-    .je-hidden-expand-all-btn:hover {
-      background: rgba(255,255,255,0.12);
-      color: rgba(255,255,255,0.85);
-    }
-
-    /* Scoped filter toggle */
-    .je-hidden-scoped-filter {
-      background: rgba(255,255,255,0.06);
-      border: 1px solid rgba(255,255,255,0.12);
-      color: rgba(255,255,255,0.6);
-      padding: 10px 16px;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 13px;
-      font-weight: 500;
-      white-space: nowrap;
-      transition: background 0.15s ease, border-color 0.15s ease;
-    }
-    .je-hidden-scoped-filter:hover {
-      background: rgba(255,255,255,0.1);
-      color: rgba(255,255,255,0.85);
-    }
-    .je-hidden-scoped-filter.active {
-      background: rgba(100, 149, 237, 0.25);
-      border-color: rgba(100, 149, 237, 0.5);
-      color: rgba(180, 210, 255, 0.95);
-    }
-
-    /* Admin cross-user controls. Accent + text colours come from the active theme via the
-       --je-hc-accent / --je-hc-text custom properties set in applyAdminThemeVars(); the literal values
-       below are fallbacks used when no theme variable is available (option backgrounds are themed inline).
-       The control itself stays a neutral translucent surface (matching the sibling search / scoped-toggle
-       controls) so it reads on any dark theme. color-mix() needs a modern engine (Chrome 111+/Firefox
-       113+/Safari 16.4+); older browsers ignore the rule and fall back to the var() default colour. */
-    .je-hidden-admin-user-filter {
-      background: rgba(255,255,255,0.06);
-      border: 1px solid rgba(255,255,255,0.12);
-      color: var(--je-hc-text, rgba(255,255,255,0.85));
-      padding: 10px 12px;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 13px;
-      font-weight: 500;
-      max-width: 240px;
-      outline: none;
-      transition: background 0.15s ease, border-color 0.15s ease;
-    }
-    .je-hidden-admin-user-filter:hover {
-      background: rgba(255,255,255,0.1);
-    }
-    .je-hidden-admin-user-filter:focus {
-      border-color: color-mix(in srgb, var(--je-hc-accent, rgb(150,170,255)) 60%, transparent);
-    }
-    .je-hidden-admin-edit-toggle {
-      background: rgba(255,255,255,0.06);
-      border: 1px solid rgba(255,255,255,0.12);
-      color: var(--je-hc-text, rgba(255,255,255,0.7));
-      padding: 10px 16px;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 13px;
-      font-weight: 500;
-      white-space: nowrap;
-      transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
-    }
-    .je-hidden-admin-edit-toggle:hover {
-      background: rgba(255,255,255,0.1);
-    }
-    .je-hidden-admin-edit-toggle.active {
-      background: color-mix(in srgb, var(--je-hc-accent, rgb(100,200,120)) 22%, transparent);
-      border-color: color-mix(in srgb, var(--je-hc-accent, rgb(100,200,120)) 50%, transparent);
-      color: var(--je-hc-accent, rgb(185,240,200));
-    }
-    .je-hidden-admin-add-btn {
-      background: color-mix(in srgb, var(--je-hc-accent, rgb(100,200,120)) 22%, transparent);
-      border: 1px solid color-mix(in srgb, var(--je-hc-accent, rgb(100,200,120)) 50%, transparent);
-      color: var(--je-hc-accent, rgb(185,240,200));
-      padding: 10px 16px;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 13px;
-      font-weight: 600;
-      white-space: nowrap;
-      transition: background 0.15s ease, border-color 0.15s ease;
-    }
-    .je-hidden-admin-add-btn:hover {
-      background: color-mix(in srgb, var(--je-hc-accent, rgb(100,200,120)) 34%, transparent);
-    }
-    /* Compact status chip that sits inside the header (right of the title). Inline so it never adds
-       a banner row that shifts the page; height stays within the title's line so the header doesn't
-       grow when it appears/disappears. */
-    .je-hidden-admin-viewing-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      margin-left: auto;
-      flex: 0 0 auto;
-      padding: 5px 12px;
-      border-radius: 999px;
-      font-size: 13px;
-      line-height: 1.2;
-      white-space: nowrap;
-      max-width: 100%;
-      background: color-mix(in srgb, var(--je-hc-accent, rgb(100,149,237)) 12%, transparent);
-      border: 1px solid color-mix(in srgb, var(--je-hc-accent, rgb(100,149,237)) 35%, transparent);
-    }
-    .je-hidden-admin-viewing-badge.je-hidden-admin-editing {
-      background: color-mix(in srgb, var(--je-hc-accent, rgb(100,200,120)) 18%, transparent);
-      border-color: color-mix(in srgb, var(--je-hc-accent, rgb(100,200,120)) 50%, transparent);
-    }
-    .je-hidden-admin-viewing-icon {
-      font-size: 16px;
-      color: var(--je-hc-accent, rgb(180,210,255));
-    }
-    .je-hidden-admin-editing .je-hidden-admin-viewing-icon {
-      color: var(--je-hc-accent, rgb(185,240,200));
-    }
-    .je-hidden-admin-viewing-user {
-      font-weight: 600;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      color: var(--je-hc-accent, rgb(180,210,255));
-    }
-    .je-hidden-admin-editing .je-hidden-admin-viewing-user {
-      color: var(--je-hc-accent, rgb(185,240,200));
-    }
-
-    /* Add-items modal: the panel fills the viewport and the results grid scrolls inside
-       it (the search box stays put); overscroll-behavior stops the scroll reaching the page behind. */
-    .je-hidden-admin-add-overlay {
-      padding: 24px 16px;
-      overscroll-behavior: contain;
-    }
-    .je-hidden-admin-add-overlay .je-hidden-management-panel {
-      display: flex;
-      flex-direction: column;
-      max-height: calc(100vh - 48px);
-      max-height: calc(100dvh - 48px);
-      overflow: hidden;
-    }
-    .je-hidden-admin-add-overlay .je-hidden-management-grid {
-      overflow-y: auto;
-      overscroll-behavior: contain;
-      -webkit-overflow-scrolling: touch;
-      flex: 1 1 auto;
-      min-height: 0;
-      /* The grid has a definite (flex-constrained) height. Without this, its auto rows are sized
-         down to each card's min-content to fit that height, and the cards' overflow:hidden then
-         clips the poster+info to a ~34px sliver (only visible with many results). Pinning rows to
-         max-content keeps every card full height; the grid overflows and scrolls instead. */
-      grid-auto-rows: max-content;
-      align-content: start;
-    }
-
-    @media (max-width: 768px) {
-      .je-hidden-content-page {
-        padding: 0.5em;
-      }
-
-      .je-hidden-content-header {
-        padding-top: 1em;
-      }
-
-      .je-hidden-content-title {
-        font-size: 1.3em;
-      }
-
-      .je-hidden-content-toolbar {
-        flex-direction: column;
-        align-items: stretch;
-      }
-
-      .je-hidden-content-page-search {
-        max-width: none;
-      }
-
-      .je-hidden-content-page-grid {
-        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-        gap: 10px;
-      }
-
-      /* Add-items modal: near-fullscreen with small result cards on phones. */
-      .je-hidden-admin-add-overlay {
-        padding: 8px;
-      }
-      .je-hidden-admin-add-overlay .je-hidden-management-panel {
-        max-height: calc(100vh - 16px);
-        max-height: calc(100dvh - 16px);
-      }
-      .je-hidden-admin-add-overlay .je-hidden-management-grid {
-        grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
-        gap: 10px;
-        padding: 12px;
-      }
-      .je-hidden-admin-add-overlay .je-hidden-item-name { font-size: 12px; }
-      .je-hidden-admin-add-overlay .je-hidden-item-meta { font-size: 10px; }
-      .je-hidden-admin-add-overlay .je-hidden-item-unhide { font-size: 11px; padding: 5px; }
-    }
-  `;
-
-  /**
-   * Injects the page CSS styles into the document head.
-   * No-ops if already injected.
-   */
-  function injectStyles() {
-    if (document.getElementById("je-hidden-content-page-styles")) return;
-    const style = document.createElement("style");
-    style.id = "je-hidden-content-page-styles";
-    style.textContent = CSS_STYLES;
-    document.head.appendChild(style);
+(() => {
+"use strict";
+(() => {
+  // client/src/features/hidden-content/host.ts
+  var browser = window;
+  if (!browser.JellyfinEnhanced || !browser.ApiClient) throw new Error("Hidden Content host unavailable");
+  var host = { JellyfinEnhanced: browser.JellyfinEnhanced, Dashboard: browser.Dashboard, Emby: browser.Emby };
+  function registry(JE, name) {
+    const internals = JE.internals ?? (JE.internals = {});
+    if (name === "features") return internals.features ?? (internals.features = {});
+    if (name === "hiddenContentPage") return internals.hiddenContentPage ?? (internals.hiddenContentPage = {});
+    const surface = internals.hiddenContent ?? (internals.hiddenContent = {});
+    return new Proxy(surface, { get(target, key) {
+      if (typeof key !== "string") return Reflect.get(target, key);
+      const value = Reflect.get(target, key);
+      if (value === void 0) throw new Error(`Missing hidden-content loader dependency: ${key}`);
+      return value;
+    } });
+  }
+  function runtime(JE) {
+    const internals = JE.internals ?? (JE.internals = {});
+    if (internals.hiddenContentRuntime) return internals.hiddenContentRuntime;
+    const state = { modules: /* @__PURE__ */ new Set(), view: 0, policy: 0, queues: /* @__PURE__ */ new Map(), cleanups: /* @__PURE__ */ new Set(), identityCleanups: /* @__PURE__ */ new Set() };
+    internals.hiddenContentRuntime = state;
+    const invalidate = () => {
+      state.view++;
+      for (const cleanup of [...state.cleanups]) cleanup();
+    };
+    window.addEventListener("hashchange", invalidate);
+    window.addEventListener("popstate", invalidate);
+    document.addEventListener("viewhide", invalidate);
+    const invalidateIdentity = () => {
+      invalidate();
+      for (const cleanup of [...state.identityCleanups]) cleanup();
+    };
+    window.addEventListener("pagehide", invalidateIdentity);
+    JE.session?.onUserChange("hidden-content-runtime", invalidateIdentity);
+    return state;
+  }
+  function installOnce(JE, name) {
+    const modules = runtime(JE).modules;
+    if (modules.has(name)) return false;
+    modules.add(name);
+    return true;
   }
 
-  Object.assign(internal, { injectStyles });
+  // client/src/features/hidden-content/hidden-content-page.css
+  var hidden_content_page_default = "\n    .je-hidden-content-page {\n      padding: 2em;\n      max-width: 95vw;\n      margin: 0 auto;\n      position: relative;\n      z-index: 1;\n    }\n\n    .je-hidden-content-header {\n      display: flex;\n      justify-content: space-between;\n      align-items: center;\n      margin-bottom: 2em;\n      padding-top: 2em;\n      flex-wrap: wrap;\n      gap: 1em;\n    }\n\n    .je-hidden-content-title {\n      font-size: 2em;\n      font-weight: 600;\n      margin: 0;\n    }\n\n    .je-hidden-content-count {\n      font-size: 0.5em;\n      font-weight: 400;\n      opacity: 0.6;\n      margin-left: 0.5em;\n    }\n\n    .je-hidden-content-toolbar {\n      display: flex;\n      align-items: center;\n      gap: 12px;\n      width: 100%;\n      margin-bottom: 1.5em;\n    }\n\n    .je-hidden-content-page-search {\n      flex: 1;\n      background: rgba(255,255,255,0.08);\n      border: 1px solid rgba(255,255,255,0.12);\n      border-radius: 6px;\n      color: #fff;\n      padding: 10px 14px;\n      font-size: 14px;\n      outline: none;\n      max-width: 400px;\n    }\n\n    .je-hidden-content-page-search::placeholder {\n      color: rgba(255,255,255,0.4);\n    }\n\n    .je-hidden-content-page-search:focus {\n      border-color: rgba(255,255,255,0.3);\n    }\n\n    .je-hidden-content-page-unhide-all {\n      background: rgba(220,50,50,0.3);\n      border: 1px solid rgba(220,50,50,0.5);\n      color: #fff;\n      padding: 10px 20px;\n      border-radius: 6px;\n      cursor: pointer;\n      font-size: 13px;\n      font-weight: 500;\n      white-space: nowrap;\n      transition: background 0.2s ease;\n    }\n\n    .je-hidden-content-page-unhide-all:hover {\n      background: rgba(220,50,50,0.5);\n    }\n\n    .je-hidden-content-page-grid {\n      display: grid;\n      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));\n      gap: 16px;\n    }\n\n    .je-hidden-content-page-empty {\n      text-align: center;\n      padding: 60px 24px;\n      color: rgba(255,255,255,0.4);\n      font-size: 15px;\n    }\n\n    /* Group section headers */\n    .je-hidden-group-section {\n      margin-bottom: 2em;\n    }\n    .je-hidden-group-section-title {\n      font-size: 1.2em;\n      font-weight: 600;\n      color: rgba(255,255,255,0.8);\n      margin-bottom: 1em;\n      padding-bottom: 0.5em;\n      border-bottom: 1px solid rgba(255,255,255,0.1);\n    }\n\n    /* Grouped card for a show — vertical poster layout matching movie cards */\n    .je-hidden-group-card {\n      background: rgba(255,255,255,0.05);\n      border-radius: 8px;\n      overflow: hidden;\n      border: 1px solid rgba(255,255,255,0.08);\n      transition: border-color 0.2s ease;\n    }\n    .je-hidden-group-card:hover {\n      border-color: rgba(255,255,255,0.2);\n    }\n    .je-hidden-group-poster-link {\n      display: block;\n      width: 100%;\n      aspect-ratio: 2 / 3;\n      overflow: hidden;\n      background: rgba(255,255,255,0.05);\n    }\n    .je-hidden-group-poster {\n      width: 100%;\n      height: 100%;\n      object-fit: cover;\n      display: block;\n    }\n    .je-hidden-group-info {\n      padding: 8px 10px 4px;\n    }\n    .je-hidden-group-name {\n      font-size: 14px;\n      font-weight: 600;\n      color: #fff;\n      margin-bottom: 2px;\n      white-space: nowrap;\n      overflow: hidden;\n      text-overflow: ellipsis;\n    }\n    a.je-hidden-group-name:hover {\n      text-decoration: underline;\n    }\n    .je-hidden-group-meta {\n      font-size: 11px;\n      color: rgba(255,255,255,0.4);\n      margin-bottom: 4px;\n    }\n\n    /* Expand/collapse toggle */\n    .je-hidden-group-expand {\n      display: flex;\n      align-items: center;\n      justify-content: space-between;\n      width: calc(100% - 20px);\n      margin: 0 10px 6px;\n      background: rgba(255,255,255,0.06);\n      border: 1px solid rgba(255,255,255,0.1);\n      color: rgba(255,255,255,0.6);\n      padding: 5px 10px;\n      border-radius: 4px;\n      cursor: pointer;\n      font-size: 11px;\n      font-weight: 500;\n      transition: background 0.15s ease;\n    }\n    .je-hidden-group-expand:hover {\n      background: rgba(255,255,255,0.1);\n      color: rgba(255,255,255,0.85);\n    }\n    .je-hidden-group-expand .material-icons {\n      font-size: 16px;\n      transition: transform 0.2s ease;\n    }\n    .je-hidden-group-expand.expanded .material-icons {\n      transform: rotate(180deg);\n    }\n\n    /* Expandable items panel */\n    .je-hidden-group-items {\n      padding: 0 10px 6px;\n      display: none;\n    }\n    .je-hidden-group-items.expanded {\n      display: block;\n    }\n    .je-hidden-group-item {\n      display: flex;\n      align-items: flex-start;\n      justify-content: space-between;\n      padding: 5px 0;\n      border-bottom: 1px solid rgba(255,255,255,0.04);\n      gap: 6px;\n    }\n    .je-hidden-group-item:last-child {\n      border-bottom: none;\n    }\n    .je-hidden-group-item-info {\n      flex: 1;\n      min-width: 0;\n    }\n    .je-hidden-group-item-label {\n      font-size: 12px;\n      color: rgba(255,255,255,0.7);\n      display: block;\n      word-break: break-word;\n    }\n    a.je-hidden-group-item-label:hover {\n      color: #fff;\n      text-decoration: underline;\n    }\n    .je-hidden-group-item-unhide {\n      background: rgba(255,255,255,0.08);\n      border: 1px solid rgba(255,255,255,0.12);\n      color: rgba(255,255,255,0.7);\n      padding: 2px 8px;\n      border-radius: 4px;\n      cursor: pointer;\n      font-size: 10px;\n      font-weight: 500;\n      transition: background 0.2s ease;\n      flex-shrink: 0;\n      margin-top: 1px;\n    }\n    .je-hidden-group-item-unhide:hover {\n      background: rgba(100,200,100,0.3);\n      border-color: rgba(100,200,100,0.5);\n      color: #fff;\n    }\n    .je-hidden-group-unhide-all {\n      width: calc(100% - 20px);\n      margin: 4px 10px 10px;\n      background: rgba(220,50,50,0.2);\n      border: 1px solid rgba(220,50,50,0.3);\n      color: rgba(255,255,255,0.7);\n      padding: 5px;\n      border-radius: 4px;\n      cursor: pointer;\n      font-size: 11px;\n      font-weight: 500;\n      transition: background 0.2s ease;\n      display: none;\n    }\n    .je-hidden-group-unhide-all.expanded {\n      display: block;\n    }\n    .je-hidden-group-unhide-all:hover {\n      background: rgba(220,50,50,0.4);\n      color: #fff;\n    }\n\n    /* Scoped hide badge */\n    .je-hidden-scoped-badge {\n      display: inline-block;\n      font-size: 9px;\n      font-weight: 600;\n      padding: 1px 5px;\n      border-radius: 3px;\n      background: rgba(100, 149, 237, 0.25);\n      color: rgba(180, 210, 255, 0.85);\n      border: 1px solid rgba(100, 149, 237, 0.35);\n      white-space: nowrap;\n      line-height: 1.3;\n      margin-top: 2px;\n    }\n\n    /* Simple unhide button for series-only cards (matches movie card style) */\n    .je-hidden-group-unhide {\n      display: block;\n      width: calc(100% - 20px);\n      margin: 6px 10px 10px;\n      background: rgba(255,255,255,0.08);\n      border: 1px solid rgba(255,255,255,0.12);\n      color: rgba(255,255,255,0.7);\n      padding: 6px;\n      border-radius: 4px;\n      cursor: pointer;\n      font-size: 12px;\n      font-weight: 500;\n      transition: background 0.2s ease;\n      text-align: center;\n    }\n    .je-hidden-group-unhide:hover {\n      background: rgba(100,200,100,0.3);\n      border-color: rgba(100,200,100,0.5);\n      color: #fff;\n    }\n\n    /* Expand/collapse all toggle in section header */\n    .je-hidden-section-header {\n      display: flex;\n      align-items: center;\n      justify-content: space-between;\n      margin-bottom: 1em;\n      padding-bottom: 0.5em;\n      border-bottom: 1px solid rgba(255,255,255,0.1);\n    }\n    .je-hidden-section-header-title {\n      font-size: 1.2em;\n      font-weight: 600;\n      color: rgba(255,255,255,0.8);\n    }\n    .je-hidden-expand-all-btn {\n      background: rgba(255,255,255,0.06);\n      border: 1px solid rgba(255,255,255,0.12);\n      color: rgba(255,255,255,0.6);\n      padding: 4px 12px;\n      border-radius: 4px;\n      cursor: pointer;\n      font-size: 11px;\n      font-weight: 500;\n      transition: background 0.15s ease;\n    }\n    .je-hidden-expand-all-btn:hover {\n      background: rgba(255,255,255,0.12);\n      color: rgba(255,255,255,0.85);\n    }\n\n    /* Scoped filter toggle */\n    .je-hidden-scoped-filter {\n      background: rgba(255,255,255,0.06);\n      border: 1px solid rgba(255,255,255,0.12);\n      color: rgba(255,255,255,0.6);\n      padding: 10px 16px;\n      border-radius: 6px;\n      cursor: pointer;\n      font-size: 13px;\n      font-weight: 500;\n      white-space: nowrap;\n      transition: background 0.15s ease, border-color 0.15s ease;\n    }\n    .je-hidden-scoped-filter:hover {\n      background: rgba(255,255,255,0.1);\n      color: rgba(255,255,255,0.85);\n    }\n    .je-hidden-scoped-filter.active {\n      background: rgba(100, 149, 237, 0.25);\n      border-color: rgba(100, 149, 237, 0.5);\n      color: rgba(180, 210, 255, 0.95);\n    }\n\n    /* Admin cross-user controls. Accent + text colours come from the active theme via the\n       --je-hc-accent / --je-hc-text custom properties set in applyAdminThemeVars(); the literal values\n       below are fallbacks used when no theme variable is available (option backgrounds are themed inline).\n       The control itself stays a neutral translucent surface (matching the sibling search / scoped-toggle\n       controls) so it reads on any dark theme. color-mix() needs a modern engine (Chrome 111+/Firefox\n       113+/Safari 16.4+); older browsers ignore the rule and fall back to the var() default colour. */\n    .je-hidden-admin-user-filter {\n      background: rgba(255,255,255,0.06);\n      border: 1px solid rgba(255,255,255,0.12);\n      color: var(--je-hc-text, rgba(255,255,255,0.85));\n      padding: 10px 12px;\n      border-radius: 6px;\n      cursor: pointer;\n      font-size: 13px;\n      font-weight: 500;\n      max-width: 240px;\n      outline: none;\n      transition: background 0.15s ease, border-color 0.15s ease;\n    }\n    .je-hidden-admin-user-filter:hover {\n      background: rgba(255,255,255,0.1);\n    }\n    .je-hidden-admin-user-filter:focus {\n      border-color: color-mix(in srgb, var(--je-hc-accent, rgb(150,170,255)) 60%, transparent);\n    }\n    .je-hidden-admin-edit-toggle {\n      background: rgba(255,255,255,0.06);\n      border: 1px solid rgba(255,255,255,0.12);\n      color: var(--je-hc-text, rgba(255,255,255,0.7));\n      padding: 10px 16px;\n      border-radius: 6px;\n      cursor: pointer;\n      font-size: 13px;\n      font-weight: 500;\n      white-space: nowrap;\n      transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;\n    }\n    .je-hidden-admin-edit-toggle:hover {\n      background: rgba(255,255,255,0.1);\n    }\n    .je-hidden-admin-edit-toggle.active {\n      background: color-mix(in srgb, var(--je-hc-accent, rgb(100,200,120)) 22%, transparent);\n      border-color: color-mix(in srgb, var(--je-hc-accent, rgb(100,200,120)) 50%, transparent);\n      color: var(--je-hc-accent, rgb(185,240,200));\n    }\n    .je-hidden-admin-add-btn {\n      background: color-mix(in srgb, var(--je-hc-accent, rgb(100,200,120)) 22%, transparent);\n      border: 1px solid color-mix(in srgb, var(--je-hc-accent, rgb(100,200,120)) 50%, transparent);\n      color: var(--je-hc-accent, rgb(185,240,200));\n      padding: 10px 16px;\n      border-radius: 6px;\n      cursor: pointer;\n      font-size: 13px;\n      font-weight: 600;\n      white-space: nowrap;\n      transition: background 0.15s ease, border-color 0.15s ease;\n    }\n    .je-hidden-admin-add-btn:hover {\n      background: color-mix(in srgb, var(--je-hc-accent, rgb(100,200,120)) 34%, transparent);\n    }\n    /* Compact status chip that sits inside the header (right of the title). Inline so it never adds\n       a banner row that shifts the page; height stays within the title's line so the header doesn't\n       grow when it appears/disappears. */\n    .je-hidden-admin-viewing-badge {\n      display: inline-flex;\n      align-items: center;\n      gap: 6px;\n      margin-left: auto;\n      flex: 0 0 auto;\n      padding: 5px 12px;\n      border-radius: 999px;\n      font-size: 13px;\n      line-height: 1.2;\n      white-space: nowrap;\n      max-width: 100%;\n      background: color-mix(in srgb, var(--je-hc-accent, rgb(100,149,237)) 12%, transparent);\n      border: 1px solid color-mix(in srgb, var(--je-hc-accent, rgb(100,149,237)) 35%, transparent);\n    }\n    .je-hidden-admin-viewing-badge.je-hidden-admin-editing {\n      background: color-mix(in srgb, var(--je-hc-accent, rgb(100,200,120)) 18%, transparent);\n      border-color: color-mix(in srgb, var(--je-hc-accent, rgb(100,200,120)) 50%, transparent);\n    }\n    .je-hidden-admin-viewing-icon {\n      font-size: 16px;\n      color: var(--je-hc-accent, rgb(180,210,255));\n    }\n    .je-hidden-admin-editing .je-hidden-admin-viewing-icon {\n      color: var(--je-hc-accent, rgb(185,240,200));\n    }\n    .je-hidden-admin-viewing-user {\n      font-weight: 600;\n      overflow: hidden;\n      text-overflow: ellipsis;\n      color: var(--je-hc-accent, rgb(180,210,255));\n    }\n    .je-hidden-admin-editing .je-hidden-admin-viewing-user {\n      color: var(--je-hc-accent, rgb(185,240,200));\n    }\n\n    /* Add-items modal: the panel fills the viewport and the results grid scrolls inside\n       it (the search box stays put); overscroll-behavior stops the scroll reaching the page behind. */\n    .je-hidden-admin-add-overlay {\n      padding: 24px 16px;\n      overscroll-behavior: contain;\n    }\n    .je-hidden-admin-add-overlay .je-hidden-management-panel {\n      display: flex;\n      flex-direction: column;\n      max-height: calc(100vh - 48px);\n      max-height: calc(100dvh - 48px);\n      overflow: hidden;\n    }\n    .je-hidden-admin-add-overlay .je-hidden-management-grid {\n      overflow-y: auto;\n      overscroll-behavior: contain;\n      -webkit-overflow-scrolling: touch;\n      flex: 1 1 auto;\n      min-height: 0;\n      /* The grid has a definite (flex-constrained) height. Without this, its auto rows are sized\n         down to each card's min-content to fit that height, and the cards' overflow:hidden then\n         clips the poster+info to a ~34px sliver (only visible with many results). Pinning rows to\n         max-content keeps every card full height; the grid overflows and scrolls instead. */\n      grid-auto-rows: max-content;\n      align-content: start;\n    }\n\n    @media (max-width: 768px) {\n      .je-hidden-content-page {\n        padding: 0.5em;\n      }\n\n      .je-hidden-content-header {\n        padding-top: 1em;\n      }\n\n      .je-hidden-content-title {\n        font-size: 1.3em;\n      }\n\n      .je-hidden-content-toolbar {\n        flex-direction: column;\n        align-items: stretch;\n      }\n\n      .je-hidden-content-page-search {\n        max-width: none;\n      }\n\n      .je-hidden-content-page-grid {\n        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));\n        gap: 10px;\n      }\n\n      /* Add-items modal: near-fullscreen with small result cards on phones. */\n      .je-hidden-admin-add-overlay {\n        padding: 8px;\n      }\n      .je-hidden-admin-add-overlay .je-hidden-management-panel {\n        max-height: calc(100vh - 16px);\n        max-height: calc(100dvh - 16px);\n      }\n      .je-hidden-admin-add-overlay .je-hidden-management-grid {\n        grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));\n        gap: 10px;\n        padding: 12px;\n      }\n      .je-hidden-admin-add-overlay .je-hidden-item-name { font-size: 12px; }\n      .je-hidden-admin-add-overlay .je-hidden-item-meta { font-size: 10px; }\n      .je-hidden-admin-add-overlay .je-hidden-item-unhide { font-size: 11px; padding: 5px; }\n    }\n  ";
 
+  // client/src/features/hidden-content/hidden-content-page-styles.ts
+  (function() {
+    if (!installOnce(host.JellyfinEnhanced, "hidden-content-page-styles")) return;
+    "use strict";
+    const JE = host.JellyfinEnhanced;
+    const internal = registry(JE, "hiddenContentPage");
+    const CSS_STYLES = hidden_content_page_default;
+    function injectStyles() {
+      if (document.getElementById("je-hidden-content-page-styles")) return;
+      const style = document.createElement("style");
+      style.id = "je-hidden-content-page-styles";
+      style.textContent = CSS_STYLES;
+      document.head.appendChild(style);
+    }
+    Object.assign(internal, { injectStyles });
+  })();
 })();
+})();
+//# sourceMappingURL=hidden-content-page-styles.js.map

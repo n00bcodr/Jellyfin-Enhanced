@@ -2,7 +2,7 @@
 // Builds data/colours-expected.json: the Poster Tag Styles preset's colours
 // for synthetic posters (solid, two-tone, gradient, letterboxed, near-black,
 // translucent, noise), computed by the REAL js/tags/tag-poster-colours.js in a
-// VM, so `PosterTagParity colours` can check Services/PosterTags/PosterColour.cs
+// VM, so `PosterTagParity colours` can check Shared/MediaTags/PosterTags/PosterColour.cs
 // against it.
 //
 // Posters at sample size (32px on the long side or less) are compared exactly:

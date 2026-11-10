@@ -1,0 +1,9 @@
+mutations.py:stale-user-hidden-response: anchor occurs 0x in Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/hiddencontent/hidden-content-data.js
+tests/history/early-mutations.json:history-55-meta-refresh: anchor occurs 0x in Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/config.js
+tests/history/middle-mutations.json:history414-native-cue: anchor occurs 0x in Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/player/subtitles.js
+tests/history/middle-mutations.json:history504-avatar-dedup: anchor occurs 0x in Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/helpers.js
+tests/history/middle-mutations.json:history519-primary-locale: anchor occurs 0x in Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/translations.js
+tests/history/middle-mutations.json:history551-avatar-basepath: anchor occurs 0x in Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/helpers.js
+tests/history/recent-mutations.json:history-658-repeated-dispatch: anchor occurs 0x in Jellyfin.Plugin.JellyfinEnhanced/js/arr/requests/requests-page-render.js
+tests/history/recent-mutations.json:history-659-audio-stream-order: anchor occurs 0x in Jellyfin.Plugin.JellyfinEnhanced/js/tags/qualitytags.js
+tests/history/recent-mutations.json:history-774-bookmark-episode: anchor occurs 0x in Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/bookmarks/bookmarks.js

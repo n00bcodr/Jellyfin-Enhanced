@@ -2,20 +2,35 @@
   "name": "jellyfin-enhanced-regression",
   "private": true,
   "version": "1.0.0",
-  "engines": { "node": ">=22.12.0" },
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
     "test": "npm run test:frontend",
     "test:frontend": "node tests/frontend/run.mjs",
     "test:frontend:coverage": "node tests/frontend/helpers/coverage.mjs",
     "test:browser": "playwright test --config tests/browser/playwright.config.cjs",
-    "test:visual": "playwright test --config tests/browser/playwright.config.cjs --grep @visual"
+    "test:visual": "playwright test --config tests/browser/playwright.config.cjs --grep @visual",
+    "contracts:generate": "dotnet run --project tools/ClientContracts/ClientContracts.csproj --configuration Release -- .",
+    "contracts:check": "dotnet run --project tools/ClientContracts/ClientContracts.csproj --configuration Release -- . --check",
+    "client:typecheck": "node scripts/client-build.mjs --typecheck",
+    "client:build": "node scripts/client-build.mjs",
+    "client:check": "node scripts/client-build.mjs --check",
+    "test:client-build": "node --test --test-concurrency=1 tests/client-build/*.test.mjs",
+    "verify:rewrite": "node scripts/client-verify.mjs",
+    "verify:restructure": "scripts/restructure-gates.sh all && scripts/restructure-gates.sh browser",
+    "inventory:rewrite": "node scripts/rewrite-inventory.mjs",
+    "inventory:rewrite:check": "node scripts/rewrite-inventory.mjs --check",
+    "test:contract-boundary": "node --test tools/ClientContracts/boundary.test.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.58.2",
-    "jsdom": "26.1.0",
-    "istanbul-lib-instrument": "6.0.3",
+    "esbuild": "0.28.2",
     "istanbul-lib-coverage": "3.2.2",
+    "istanbul-lib-instrument": "6.0.3",
     "istanbul-lib-report": "3.0.1",
-    "istanbul-reports": "3.2.0"
+    "istanbul-reports": "3.2.0",
+    "jsdom": "26.1.0",
+    "typescript": "6.0.3"
   }
 }

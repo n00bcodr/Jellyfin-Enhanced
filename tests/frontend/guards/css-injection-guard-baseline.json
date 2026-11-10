@@ -1,0 +1,88 @@
+{
+  "_comment": "X2: values interpolated into CSS text (style attributes, stylesheets, cssText) that are not recognisably safe or validated. Ratchet recorded by tests/frontend/guards/record.mjs: {file: {\"<rule> <scope>[ <detail>]\": count}}. Counts may only fall: run record.mjs after a fix to lower them. Never add a key or raise a count; fix the code instead. Triage: artifacts/restructure-plan/step-logs/canopy-k2-triage.md.",
+  "client/src/admin/config/engine/mirrors.ts": {
+    "X2 copyLeaf": 1
+  },
+  "client/src/admin/config/startup.ts": {
+    "X2 beginStartup": 1
+  },
+  "client/src/bootstrap/loader/maintenance.ts": {
+    "X2 offsetRules": 6
+  },
+  "client/src/core/ui/runtime.ts": {
+    "X2 createUi.injectCss": 1,
+    "X2 createUi.skeletonGridHtml": 2
+  },
+  "client/src/features/calendar/calendar-page-render-events.ts": {
+    "X2 normalizeImageUrl": 1
+  },
+  "client/src/features/chrome/login-image.ts": {
+    "X2 cleanImageUrl": 2
+  },
+  "client/src/features/media-tags/admin/page.ts": {
+    "X2 createPage.loadPreviewStyles": 1
+  },
+  "client/src/features/media-tags/layout/looks.ts": {
+    "X2 createLooks.injectStyles": 1
+  },
+  "client/src/features/media-tags/layout/tag-layout-entry.ts": {
+    "X2 injectCss": 1
+  },
+  "client/src/features/media-tags/pipeline/tag-pipeline.ts": {
+    "X2 createTagPipeline.initialize": 1
+  },
+  "client/src/features/media-tags/pipeline/tag-renderer-base.ts": {
+    "X2 createTagRenderer.createTag.injectCss": 2,
+    "X2 createTagRenderer.ensureStyles": 2
+  },
+  "client/src/features/media-tags/settings/ui-panel-tag-editor.ts": {
+    "X2 installUiPanelTagEditor.buildTagGroupEditorHtml": 2,
+    "X2 installUiPanelTagEditor.extrasHtml": 3,
+    "X2 installUiPanelTagEditor.extrasHtml.scopeRow": 1,
+    "X2 installUiPanelTagEditor.rowHtml": 1,
+    "X2 installUiPanelTagEditor.scopeBlockHtml": 1
+  },
+  "client/src/features/media-tags/settings/ui-panel-tag-preview.ts": {
+    "X2 installUiPanelTagPreview.containerClass": 1
+  },
+  "client/src/features/media-tags/types/ratings/userreviewtags.ts": {
+    "X2 createUserReviewTags.initializeUserReviewTags": 1
+  },
+  "client/src/features/player/subtitles.ts": {
+    "X2 applySubtitleStyles": 1,
+    "X2 restoreOriginalStyle": 1
+  },
+  "client/src/features/seerr/core/modal.ts": {
+    "X2 installModal.create": 2
+  },
+  "client/src/features/seerr/details/moreinfo/badge-icons.ts": {
+    "X2 tmdbSvg": 1
+  },
+  "client/src/features/seerr/details/moreinfo/render-entry.ts": {
+    "X2 buildModalContent": 1
+  },
+  "client/src/features/settings-panel/release-markdown.ts": {
+    "X2 markdownToHtml": 2
+  },
+  "client/src/features/settings-panel/ui-panel-shortcut-editor.ts": {
+    "X2 installUiPanelShortcutEditor.wireShortcutEditor.addIndicator": 1
+  },
+  "client/src/features/settings-panel/ui-panel-template.ts": {
+    "X2 installUiPanelTemplate.buildPanelHtml": 115,
+    "X2 installUiPanelTemplate.buildPanelHtml.generatePresetHTML": 5
+  },
+  "client/src/features/settings-panel/ui-styles.ts": {
+    "X2 installUiStyles.injectGlobalStyles": 4
+  },
+  "client/src/features/shared/helpers.ts": {
+    "X2 createHelpers.addCSS": 1
+  },
+  "client/src/features/spoiler-guard/image-refresh.ts": {
+    "X2 refreshSpoilerableImages": 3,
+    "X2 refreshSpoilerableImages.bust": 1
+  },
+  "client/src/features/spoiler-guard/settings-tab.ts": {
+    "X2 buildSettingsHtml": 3,
+    "X2 buildSettingsHtml.row": 2
+  }
+}

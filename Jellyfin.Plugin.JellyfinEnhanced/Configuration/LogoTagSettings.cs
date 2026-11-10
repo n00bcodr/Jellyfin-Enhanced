@@ -1,5 +1,5 @@
 using System;
-using Jellyfin.Plugin.JellyfinEnhanced.Services;
+using Jellyfin.Plugin.JellyfinEnhanced.Shared.Tmdb;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 {

@@ -96,7 +96,7 @@ for (const [path, close] of Object.entries(closePaths)) {
     assert.equal(h.panel().querySelectorAll('.je-mtp-card .je-tag-host').length, h.ui.tagPreviewData.SAMPLES.length, 'every preview sample is drawn');
     h.panel().querySelector('.je-tge-row[data-group="quality"] [data-slot="br"]').click();
     await h.settle();
-    assert.equal(JSON.parse(h.writes.at(-1).data).qualityTagsPosition, 'bottom-right');
+    assert.equal(JSON.parse(h.writes.at(-1).data).Settings.qualityTagsPosition, 'bottom-right');
     assert.ok(h.panel().querySelector('.je-mtp-sample[data-sample="movie"] .je-tag-slot[data-je-slot="br"] .quality-overlay-container'), 'the preview follows the edit');
   });
 }

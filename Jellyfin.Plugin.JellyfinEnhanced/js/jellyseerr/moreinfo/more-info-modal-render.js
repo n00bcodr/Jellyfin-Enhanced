@@ -1,47 +1,391 @@
-// /js/jellyseerr/moreinfo/more-info-modal-render.js
-// Static HTML builders for the more-info modal body (header, panels,
-// crew/cast, trailers, keywords, collection card).
-(function(JE) {
-    'use strict';
+(() => {
+"use strict";
+(() => {
+  // client/src/host/context.ts
+  function featureContext(feature, core, slots) {
+    const shared = core.core?.featureContext;
+    if (typeof shared !== "function") {
+      throw new Error(`${feature}: JE.core.featureContext is missing; core/ui-kit.js must load before feature scripts`);
+    }
+    return shared(feature, core, slots);
+  }
 
-    JE.internals = JE.internals || {};
-    // Shared state is seeded by more-info-modal-data.js, which plugin.js loads
-    // first in this group.
-    const internal = JE.internals.moreInfoModal;
-    const escapeHtml = JE.escapeHtml;
+  // client/src/features/seerr/host-details.ts
+  function bridge() {
+    const host = window;
+    if (!host.JellyfinEnhanced) throw new Error("Seerr details loaded before Jellyfin Enhanced");
+    return host.JellyfinEnhanced;
+  }
+  var detailsContexts = /* @__PURE__ */ new WeakMap();
+  function seerrDetailsContext(JE2) {
+    let ctx = detailsContexts.get(JE2);
+    if (!ctx) {
+      ctx = featureContext("seerr", JE2, {
+        internalSlots: ["moreInfoModal"],
+        internalsObject: () => JE2.internals ?? (JE2.internals = {})
+      });
+      detailsContexts.set(JE2, ctx);
+    }
+    return ctx;
+  }
+  function moreInfoRegistry(JE2) {
+    const own = seerrDetailsContext(JE2).own;
+    return own.moreInfoModal ?? (own.moreInfoModal = { state: { currentModal: null } });
+  }
+  function sibling(registry, key) {
+    const value = registry[key];
+    if (value === void 0) throw new Error(`More Info loader dependency missing: ${key}`);
+    return value;
+  }
+  function translator(JE2) {
+    return (key, fallback = "", params) => {
+      const text = params ? JE2.t?.(key, params) : JE2.t?.(key);
+      return text || fallback;
+    };
+  }
+  function escaper(JE2) {
+    return (value) => {
+      if (JE2.escapeHtml) return JE2.escapeHtml(value);
+      return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+    };
+  }
 
-/**
- * Build the modal content HTML
- */
-function buildModalContent(data, mediaType) {
-    const title = mediaType === 'movie' ? data.title : data.name;
-    const releaseDate = mediaType === 'movie' ? data.releaseDate : data.firstAirDate;
-    const formatRuntime = (min) => `${min >= 60 ? `${Math.floor(min / 60)}h ` : ''}${min % 60 ? `${min % 60}m` : ''}`.trim();
-    const runtime = mediaType === 'movie'
-        ? (data.runtime ? formatRuntime(data.runtime) : 'N/A')
-        : data.episodeRunTime?.length ? `${data.episodeRunTime[0]} min episodes` : 'N/A';
+  // client/src/features/seerr/details/domain/dates.ts
+  var ISO_DATE = /^\d{4}-\d{2}-\d{2}/;
+  var LONG_DATE = { year: "numeric", month: "long", day: "numeric" };
+  function isIsoDate(value) {
+    return ISO_DATE.test(value);
+  }
+  function calendarYear(value) {
+    if (isIsoDate(value)) return Number(value.slice(0, 4));
+    const year = new Date(value).getFullYear();
+    return Number.isNaN(year) ? void 0 : year;
+  }
+  function longDate(value) {
+    const iso = isIsoDate(value);
+    const date = new Date(iso ? `${value.slice(0, 10)}T00:00:00Z` : value);
+    if (Number.isNaN(date.getTime())) return void 0;
+    return date.toLocaleDateString("en-US", iso ? { ...LONG_DATE, timeZone: "UTC" } : LONG_DATE);
+  }
 
-    // With Colored Ratings on, mark the badge so css/ratings.css (and its
-    // observer) colour it like the details-page rating box.
-    const contentRating = internal.getContentRating(data, mediaType);
-    const colorRating = JE.pluginConfig?.ColoredRatingsEnabled && contentRating && contentRating !== 'N/A';
-    const ratingBadge = colorRating
-        ? `<span class="rating-badge mediaInfoOfficialRating" rating="${escapeHtml(JE.normalizeOfficialRating?.(contentRating) || contentRating)}">${escapeHtml(contentRating)}</span>`
-        : `<span class="rating-badge">${escapeHtml(contentRating)}</span>`;
+  // client/src/features/seerr/details/domain/json.ts
+  function isRecord(value) {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
+  }
+  function record(value) {
+    return isRecord(value) ? value : null;
+  }
+  function str(value) {
+    return typeof value === "string" ? value : void 0;
+  }
+  function filled(value) {
+    return typeof value === "string" && value.length > 0 ? value : null;
+  }
+  function num(value) {
+    return typeof value === "number" && Number.isFinite(value) ? value : void 0;
+  }
+  function list(value) {
+    return Array.isArray(value) ? value : [];
+  }
+  function records(value) {
+    return list(value).filter(isRecord);
+  }
+  function idText(value) {
+    if (typeof value === "number" && Number.isFinite(value)) return String(value);
+    return filled(value);
+  }
 
-    // Spoiler Guard can hide the dates while the year stays visible, as on the item itself.
-    const year = data.jeYear || (releaseDate ? new Date(releaseDate).getFullYear() : 'N/A');
-    const budget = data.budget ? internal.formatCurrency(data.budget) : null;
-    const revenue = data.revenue ? internal.formatCurrency(data.revenue) : null;
+  // client/src/features/seerr/details/domain/links.ts
+  function safeHttpUrl(value) {
+    if (typeof value !== "string" || value.length === 0) return null;
+    try {
+      const { protocol } = new URL(value);
+      return protocol === "http:" || protocol === "https:" ? value : null;
+    } catch {
+      return null;
+    }
+  }
+  function urlSafePath(path) {
+    return path.replace(/[\s'"()\\<>]/g, (character) => encodeURIComponent(character).replace(
+      /[()']/g,
+      (escaped) => `%${escaped.charCodeAt(0).toString(16).toUpperCase()}`
+    ));
+  }
+  function tmdbImage(size, path) {
+    const value = str(path);
+    return value ? `https://image.tmdb.org/t/p/${size}${urlSafePath(value)}` : "";
+  }
 
-    const backdropUrl = data.backdropPath
-        ? `https://image.tmdb.org/t/p/original${data.backdropPath}`
-        : '';
+  // client/src/features/seerr/details/domain/media.ts
+  function titleOf(details, mediaType) {
+    return str(mediaType === "movie" ? details.title : details.name) ?? "";
+  }
+  function pickByRegion(entries, region) {
+    return entries.find((entry) => entry.iso_3166_1 === region) ?? entries.find((entry) => entry.iso_3166_1 === "US") ?? entries[0];
+  }
+  function streamingProviders(details, region) {
+    if (!Array.isArray(details.watchProviders)) return [];
+    const unique = [];
+    const seen = /* @__PURE__ */ new Set();
+    for (const provider of records(pickByRegion(records(details.watchProviders), region)?.flatrate)) {
+      if (seen.has(provider.id)) continue;
+      seen.add(provider.id);
+      unique.push(provider);
+      if (unique.length >= 6) break;
+    }
+    return unique;
+  }
+  function formatRuntime(minutes) {
+    return `${minutes >= 60 ? `${Math.floor(minutes / 60)}h ` : ""}${minutes % 60 ? `${minutes % 60}m` : ""}`.trim();
+  }
+  function runtimeText(details, mediaType) {
+    if (mediaType === "movie") {
+      const runtime = num(details.runtime);
+      return runtime ? formatRuntime(runtime) : "N/A";
+    }
+    const first = Array.isArray(details.episodeRunTime) ? num(details.episodeRunTime[0]) : void 0;
+    return first !== void 0 ? `${first} min episodes` : "N/A";
+  }
+  function headerYear(details, releaseDate) {
+    return idText(details.jeYear) ?? (releaseDate ? calendarYear(releaseDate) ?? "N/A" : "N/A");
+  }
+  function crewSummary(details) {
+    const credits = record(details.credits);
+    if (!credits || !Array.isArray(credits.crew)) return null;
+    const crew = records(credits.crew);
+    return {
+      director: crew.find((person) => person.job === "Director"),
+      writers: crew.filter((person) => person.job === "Screenplay" || person.job === "Writer" || person.job === "Story").slice(0, 3)
+    };
+  }
 
-    const posterUrl = data.posterPath
-        ? `https://image.tmdb.org/t/p/w500${data.posterPath}`
-        : '';
-
+  // client/src/features/seerr/details/moreinfo/render-entry.ts
+  var JE = bridge();
+  var seerr = seerrDetailsContext(JE);
+  var internal = moreInfoRegistry(JE);
+  var escapeHtml = escaper(JE);
+  var t = translator(JE);
+  var label = (key, fallback = "") => escapeHtml(t(key, fallback));
+  function statRow(title, value) {
+    return `
+                <div class="je-more-info-stat-row">
+                    <div class="je-more-info-stat-label">${title}</div>
+                    <div class="je-more-info-stat-value">${value}</div>
+                </div>
+            `;
+  }
+  function dateRow(key, value) {
+    const text = filled(value);
+    const date = text ? longDate(text) : void 0;
+    return date ? statRow(label(key), escapeHtml(date)) : "";
+  }
+  function ratingBadge(details, mediaType) {
+    const rating = sibling(internal, "getContentRating")(details, mediaType);
+    if (JE.pluginConfig?.ColoredRatingsEnabled && rating && rating !== "N/A") {
+      return `<span class="rating-badge mediaInfoOfficialRating" rating="${escapeHtml(seerr.peer("normalizeOfficialRating")?.(rating) || rating)}">${escapeHtml(rating)}</span>`;
+    }
+    return `<span class="rating-badge">${escapeHtml(rating)}</span>`;
+  }
+  function buildRightPanel(rawDetails, mediaType, { budget, revenue, releaseDate, tmdbId }) {
+    const details = record(rawDetails) ?? {};
+    const countries = records(details.productionCountries);
+    const companies = records(details.productionCompanies);
+    const language = filled(details.originalLanguage);
+    const ratings = details.ratings ? sibling(internal, "buildRatingLogos")(details.ratings, details, mediaType, tmdbId) : `
+                    <div class="je-more-info-ratings-skeleton">
+                        <span class="je-skel-badge"></span>
+                        <span class="je-skel-badge" style="width:72px"></span>
+                    </div>
+                `;
+    return `
+        <div class="je-more-info-right-panel">
+            <div class="je-more-info-media-ratings" data-mount="ratings">
+                ${ratings}
+            </div>
+            ${mediaType === "movie" && details.collection ? buildCollectionCard(details.collection) : ""}
+            <div class="je-more-info-stats-panel">
+                ${statRow(label("jellyseerr_modal_status"), escapeHtml(filled(details.status) ?? "N/A"))}
+                ${mediaType === "tv" ? `${dateRow("jellyseerr_modal_first_air_date", details.firstAirDate)}${dateRow("jellyseerr_modal_last_air_date", details.lastAirDate)}` : dateRow("jellyseerr_modal_release_date", releaseDate)}
+                ${revenue ? statRow(label("jellyseerr_modal_revenue"), escapeHtml(revenue)) : ""}
+                ${budget ? statRow(label("jellyseerr_modal_budget"), escapeHtml(budget)) : ""}
+                ${language ? statRow(label("jellyseerr_modal_original_language"), escapeHtml(language.toUpperCase())) : ""}
+                ${countries.length ? statRow(label("jellyseerr_modal_production_country"), countries.map((country) => {
+      const name = str(country.name) ?? "";
+      const shown = name === "United States of America" ? "United States" : name;
+      const flag = JE.cdn?.flagPng((str(country.iso_3166_1) ?? "").toLowerCase()) ?? "";
+      return `<div><img src="${escapeHtml(flag)}" alt="${escapeHtml(shown)}" title="${escapeHtml(shown)}" style="margin-right: 6px; vertical-align: middle;" /> ${escapeHtml(shown)}</div>`;
+    }).join("")) : ""}
+                ${companies.length ? statRow(label("jellyseerr_modal_studios"), companies.slice(0, 3).map((company) => escapeHtml(str(company.name))).join(", ")) : ""}
+                ${buildStreamingProviders(details)}
+            </div>
+            ${sibling(internal, "buildMediaFacts")(details, mediaType, tmdbId)}
+        </div>
+    `;
+  }
+  function buildStreamingProviders(rawDetails) {
+    if (!JE.pluginConfig?.TmdbEnabled || !isRecord(rawDetails)) return "";
+    const region = (JE.userConfig?.elsewhere?.Region || JE.pluginConfig?.DEFAULT_REGION || "US").toUpperCase();
+    const providers = streamingProviders(rawDetails, region);
+    if (!providers.length) return "";
+    return `
+        <div class="je-more-info-stat-row">
+            <div class="je-more-info-stat-label">${label("jellyseerr_modal_streaming")}</div>
+            <div class="je-more-info-providers-list">
+                ${providers.map((provider) => {
+      const name = escapeHtml(str(provider.name));
+      return `<img src="${escapeHtml(tmdbImage("w92", provider.logoPath))}" alt="${name}" title="${name}" />`;
+    }).join("")}
+            </div>
+        </div>
+    `;
+  }
+  function buildCollectionCard(raw) {
+    const collection = record(raw);
+    if (!collection) return "";
+    const name = escapeHtml(str(collection.name));
+    const backdrop = filled(collection.backdropPath);
+    const image = backdrop ? `https://image.tmdb.org/t/p/w1440_and_h320_multi_faces/${encodeURI(backdrop)}` : "data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22400%22 height=%22200%22%3E%3Crect fill=%22%23374151%22 width=%22400%22 height=%22200%22/%3E%3C/svg%3E";
+    return `
+        <div class="je-collection-card">
+            <div class="je-collection-card-backdrop">
+                <img src="${escapeHtml(image)}" alt="${name}" loading="lazy" />
+                <div class="je-collection-card-overlay"></div>
+            </div>
+            <div class="je-collection-card-content">
+                <div class="je-collection-card-title">${name}</div>
+                <button class="je-collection-card-button" data-collection-id="${escapeHtml(idText(collection.id))}" data-collection-name="${name}">
+                    ${label("jellyseerr_btn_view_collection", "View")}
+                </button>
+            </div>
+        </div>
+    `;
+  }
+  function buildKeywordsSection(rawDetails) {
+    const keywords = records(record(rawDetails)?.keywords);
+    if (!keywords.length) return "";
+    return `
+        <div class="keywords-section">
+            <h3>${label("jellyseerr_modal_keywords", "Keywords")}</h3>
+            <div class="keywords-grid">
+                ${keywords.slice(0, 20).map((keyword) => `<span class="keyword">${escapeHtml(str(keyword.name))}</span>`).join("")}
+            </div>
+        </div>
+    `;
+  }
+  function crewItem(title, names) {
+    return `
+                <div class="crew-item">
+                    <h4>${title}</h4>
+                    <p>${names}</p>
+                </div>
+            `;
+  }
+  function buildCrewSection(rawDetails, mediaType) {
+    const details = record(rawDetails) ?? {};
+    const creators = records(details.createdBy);
+    if (mediaType === "tv" && creators.length) {
+      return `
+            <div class="creators">
+                <h4>${label("jellyseerr_modal_created_by", "Created By")}</h4>
+                <p>${creators.map((creator) => escapeHtml(str(creator.name))).join(", ")}</p>
+            </div>
+        `;
+    }
+    const crew = crewSummary(details);
+    if (!crew) return "";
+    const parts = [
+      crew.director ? crewItem(label("jellyseerr_modal_director", "Director"), escapeHtml(str(crew.director.name))) : "",
+      crew.writers.length ? crewItem(label("jellyseerr_modal_writers", "Writers"), crew.writers.map((writer) => escapeHtml(str(writer.name))).join(", ")) : ""
+    ].join("");
+    return parts ? `<div class="crew-section">${parts}</div>` : "";
+  }
+  function buildTrailerCard(trailer, href) {
+    const name = escapeHtml(str(trailer.name));
+    const youtube = trailer.site === "YouTube";
+    const key = filled(trailer.key);
+    const thumbnail = youtube && key ? `https://img.youtube.com/vi/${encodeURIComponent(key)}/mqdefault.jpg` : "";
+    const icon = youtube ? `<img src="${escapeHtml(JE.cdn?.selfhst("png/youtube.png"))}" alt="YouTube" class="trailer-youtube-icon" />` : "";
+    return `
+                        <a is="emby-linkbutton" href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer" title="${name}" class="trailer-item">
+                            <div class="trailer-thumbnail">
+                                ${thumbnail ? `<img src="${escapeHtml(thumbnail)}" alt="${name}" />` : ""}
+                                <div class="je-modal-play-button">
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                                        <path d="M8 5v14l11-7z"/>
+                                    </svg>
+                                </div>
+                                ${icon}
+                            </div>
+                            <div class="trailer-info">
+                                <div class="trailer-name">${name}</div>
+                                <div class="trailer-type">${escapeHtml(str(trailer.type))}</div>
+                            </div>
+                        </a>
+                    `;
+  }
+  function buildTrailersSection(rawDetails) {
+    const cards = records(record(rawDetails)?.relatedVideos).filter((video) => video.type === "Trailer" || video.type === "Teaser").slice(0, 6).flatMap((video) => {
+      const href = safeHttpUrl(video.url);
+      return href ? [buildTrailerCard(video, href)] : [];
+    });
+    if (!cards.length) return "";
+    return `
+        <div class="trailers-section">
+            <h3>${label("jellyseerr_modal_trailers")}</h3>
+            <div class="trailers-grid">
+                ${cards.join("")}
+            </div>
+        </div>
+    `;
+  }
+  function buildPersonPlaceholder() {
+    return `
+        <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+            <rect width="100" height="100" fill="#2a2a2a"/>
+            <circle cx="50" cy="40" r="15" fill="#555"/>
+            <path d="M 25 75 Q 25 60, 50 60 Q 75 60, 75 75 L 75 100 L 25 100 Z" fill="#555"/>
+        </svg>
+    `;
+  }
+  function buildCastSection(rawDetails) {
+    const cast = records(record(record(rawDetails)?.credits)?.cast);
+    if (!cast.length) return "";
+    return `
+        <div class="cast-section">
+            <h3>${label("jellyseerr_modal_cast")}</h3>
+            <div class="cast-scroll">
+                ${cast.slice(0, 20).map((person) => {
+      const name = escapeHtml(str(person.name));
+      const character = escapeHtml(str(person.character) ?? "");
+      const image = tmdbImage("w185", person.profilePath);
+      return `
+                        <div class="cast-member">
+                            <div class="person-avatar">
+                                ${image ? `<img src="${escapeHtml(image)}" alt="${name}" />` : buildPersonPlaceholder()}
+                            </div>
+                            <div class="person-name" title="${name}">${name}</div>
+                            <div class="person-character" title="${character}">${character}</div>
+                        </div>
+                    `;
+    }).join("")}
+            </div>
+        </div>
+    `;
+  }
+  function buildModalContent(rawDetails, mediaType) {
+    const details = record(rawDetails) ?? {};
+    const title = titleOf(details, mediaType);
+    const releaseDate = str(mediaType === "movie" ? details.releaseDate : details.firstAirDate);
+    const year = headerYear(details, releaseDate);
+    const currency = sibling(internal, "formatCurrency");
+    const budget = details.budget ? currency(details.budget) : null;
+    const revenue = details.revenue ? currency(details.revenue) : null;
+    const backdrop = tmdbImage("original", details.backdropPath);
+    const poster = tmdbImage("w500", details.posterPath);
+    const genres = records(details.genres).map((genre) => escapeHtml(str(genre.name))).join(", ") || "N/A";
+    const tagline = filled(details.tagline);
+    const overview = filled(details.overview);
+    const tmdbId = idText(details.id) ?? "";
     return `
         <div class="modal-overlay">
             <div class="modal-container">
@@ -59,7 +403,7 @@ function buildModalContent(data, mediaType) {
                     </svg>
                 </button>
 
-                <div class="modal-backdrop" style="background-image: url('${backdropUrl}');">
+                <div class="modal-backdrop" style="background-image: url('${escapeHtml(backdrop)}');">
                     <div class="je-modal-backdrop-overlay"></div>
                 </div>
 
@@ -68,19 +412,19 @@ function buildModalContent(data, mediaType) {
                         <div class="modal-left">
                             <div class="header-section">
                                 <div class="header-poster">
-                                    ${posterUrl ? `<img src="${posterUrl}" alt="${title}" />` : ''}
+                                    ${poster ? `<img src="${escapeHtml(poster)}" alt="${escapeHtml(title)}" />` : ""}
                                 </div>
                                 <div class="header-info">
                                     <div class="title-row">
-                                    <h1 class="title">${escapeHtml(title)} ${year ? `<span class="year">(${year})</span>` : ''}</h1>
+                                    <h1 class="title">${escapeHtml(title)} ${year ? `<span class="year">(${escapeHtml(year)})</span>` : ""}</h1>
                                     <div class="title-chip" data-mount="je-status-chip"></div>
                                     </div>
                                     <div class="meta-info">
-                                        ${ratingBadge}
-                                        <span class="runtime">${runtime}</span>
-                                        <span class="genres">${data.genres?.map(g => escapeHtml(g.name)).join(', ') || 'N/A'}</span>
+                                        ${ratingBadge(details, mediaType)}
+                                        <span class="runtime">${escapeHtml(runtimeText(details, mediaType))}</span>
+                                        <span class="genres">${genres}</span>
                                     </div>
-                                    ${data.tagline ? `<p class="tagline">${escapeHtml(data.tagline)}</p>` : ''}
+                                    ${tagline ? `<p class="tagline">${escapeHtml(tagline)}</p>` : ""}
                                     <div class="je-requested-by" data-mount="je-requested-by"></div>
                                     <div class="je-downloads" data-mount="je-downloads"></div>
                                     <div class="je-more-info-actions" data-mount="je-actions"></div>
@@ -88,352 +432,42 @@ function buildModalContent(data, mediaType) {
                                 </div>
                             </div>
 
-                            ${data.overview ? `
+                            ${overview ? `
                                 <div class="overview-section">
-                                    <h3>${JE.t('jellyseerr_modal_overview') || 'Overview'}</h3>
-                                    <p>${escapeHtml(data.overview)}</p>
+                                    <h3>${label("jellyseerr_modal_overview", "Overview")}</h3>
+                                    <p>${escapeHtml(overview)}</p>
                                 </div>
-                            ` : ''}
+                            ` : ""}
 
-                            ${buildCrewSection(data, mediaType)}
+                            ${buildCrewSection(details, mediaType)}
 
-                            ${buildCastSection(data)}
+                            ${buildCastSection(details)}
 
-                            ${buildTrailersSection(data)}
+                            ${buildTrailersSection(details)}
 
-                            ${buildKeywordsSection(data)}
+                            ${buildKeywordsSection(details)}
                         </div>
 
                         <div class="modal-right">
-                            ${buildRightPanel(data, mediaType, { budget, revenue, releaseDate, tmdbId: data.id })}
+                            ${buildRightPanel(details, mediaType, { budget, revenue, releaseDate, tmdbId })}
                         </div>
                     </div>
 
-                    ${mediaType === 'tv' ? internal.buildSeasonsSection(data) : ''}
+                    ${mediaType === "tv" ? sibling(internal, "buildSeasonsSection")(details) : ""}
                 </div>
             </div>
         </div>
     `;
-}
-
-/**
- * Build right panel with ratings and stats
- */
-function buildRightPanel(data, mediaType, { budget, revenue, releaseDate, tmdbId }) {
-    return `
-        <div class="je-more-info-right-panel">
-            <div class="je-more-info-media-ratings" data-mount="ratings">
-                ${data.ratings ? internal.buildRatingLogos(data.ratings, data, mediaType, tmdbId) : `
-                    <div class="je-more-info-ratings-skeleton">
-                        <span class="je-skel-badge"></span>
-                        <span class="je-skel-badge" style="width:72px"></span>
-                    </div>
-                `}
-            </div>
-            ${mediaType === 'movie' && data.collection ? buildCollectionCard(data.collection) : ''}
-            <div class="je-more-info-stats-panel">
-                <div class="je-more-info-stat-row">
-                    <div class="je-more-info-stat-label">${JE.t('jellyseerr_modal_status')}</div>
-                    <div class="je-more-info-stat-value">${escapeHtml(data.status || 'N/A')}</div>
-                </div>
-
-                ${mediaType === 'tv' ? `
-                    ${data.firstAirDate ? `
-                        <div class="je-more-info-stat-row">
-                            <div class="je-more-info-stat-label">${JE.t('jellyseerr_modal_first_air_date')}</div>
-                            <div class="je-more-info-stat-value">${new Date(data.firstAirDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
-                        </div>
-                    ` : ''}
-                    ${data.lastAirDate ? `
-                        <div class="je-more-info-stat-row">
-                            <div class="je-more-info-stat-label">${JE.t('jellyseerr_modal_last_air_date')}</div>
-                            <div class="je-more-info-stat-value">${new Date(data.lastAirDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
-                        </div>
-                    ` : ''}
-                ` : `
-                    ${releaseDate ? `
-                        <div class="je-more-info-stat-row">
-                            <div class="je-more-info-stat-label">${JE.t('jellyseerr_modal_release_date')}</div>
-                            <div class="je-more-info-stat-value">${new Date(releaseDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
-                        </div>
-                    ` : ''}
-                `}
-
-                ${revenue ? `
-                    <div class="je-more-info-stat-row">
-                        <div class="je-more-info-stat-label">${JE.t('jellyseerr_modal_revenue')}</div>
-                        <div class="je-more-info-stat-value">${revenue}</div>
-                    </div>
-                ` : ''}
-
-                ${budget ? `
-                    <div class="je-more-info-stat-row">
-                        <div class="je-more-info-stat-label">${JE.t('jellyseerr_modal_budget')}</div>
-                        <div class="je-more-info-stat-value">${budget}</div>
-                    </div>
-                ` : ''}
-
-                ${data.originalLanguage ? `
-                    <div class="je-more-info-stat-row">
-                        <div class="je-more-info-stat-label">${JE.t('jellyseerr_modal_original_language')}</div>
-                        <div class="je-more-info-stat-value">${data.originalLanguage.toUpperCase()}</div>
-                    </div>
-                ` : ''}
-
-                ${data.productionCountries?.length ? `
-                    <div class="je-more-info-stat-row">
-                        <div class="je-more-info-stat-label">${JE.t('jellyseerr_modal_production_country')}</div>
-                        <div class="je-more-info-stat-value">${data.productionCountries.map(c => {
-                            const disp = c?.name === 'United States of America' ? 'United States' : (c?.name || '');
-                            const code = (c?.iso_3166_1 || '').toLowerCase();
-                            return `<div><img src="${JE.cdn.flagPng(code)}" alt="${escapeHtml(disp)}" title="${escapeHtml(disp)}" style="margin-right: 6px; vertical-align: middle;" /> ${escapeHtml(disp)}</div>`;
-                        }).join('')}</div>
-                    </div>
-                ` : ''}
-
-                ${data.productionCompanies?.length ? `
-                    <div class="je-more-info-stat-row">
-                        <div class="je-more-info-stat-label">${JE.t('jellyseerr_modal_studios')}</div>
-                        <div class="je-more-info-stat-value">${data.productionCompanies.slice(0, 3).map(c => escapeHtml(c.name)).join(', ')}</div>
-                    </div>
-                ` : ''}
-
-                ${buildStreamingProviders(data)}
-            </div>
-            ${internal.buildMediaFacts(data, mediaType, tmdbId)}
-        </div>
-    `;
-}
-
-/**
- * Build streaming providers section
- */
-function buildStreamingProviders(data) {
-    // Early exit if TMDB is not configured
-    if (!JE?.pluginConfig?.TmdbEnabled) {
-        return '';
-    }
-
-    // Resolve region: prefer Elsewhere user setting → plugin fallback → US
-    const region = (JE?.userConfig?.elsewhere?.Region || JE?.pluginConfig?.DEFAULT_REGION || 'US')?.toUpperCase();
-
-    // watchProviders is already the array of region objects
-    if (!Array.isArray(data.watchProviders)) return '';
-
-    let regionNode = data.watchProviders.find(r => r.iso_3166_1 === region);
-    if (!regionNode) {
-        regionNode = data.watchProviders.find(r => r.iso_3166_1 === 'US');
-    }
-    if (!regionNode && data.watchProviders.length > 0) {
-        regionNode = data.watchProviders[0];
-    }
-
-    if (!regionNode || !regionNode.flatrate?.length) return '';
-
-    // Only flatrate providers, unique by ID, limit to 6
-    const uniqueProviders = [];
-    const seenIds = new Set();
-    for (const p of regionNode.flatrate) {
-        if (!seenIds.has(p.id)) {
-            seenIds.add(p.id);
-            uniqueProviders.push(p);
-            if (uniqueProviders.length >= 6) break;
-        }
-    }
-
-    if (!uniqueProviders.length) return '';
-
-    return `
-        <div class="je-more-info-stat-row">
-            <div class="je-more-info-stat-label">${JE.t('jellyseerr_modal_streaming')}</div>
-            <div class="je-more-info-providers-list">
-                ${uniqueProviders.map(p => `<img src="https://image.tmdb.org/t/p/w92${p.logoPath}" alt="${escapeHtml(p.name)}" title="${escapeHtml(p.name)}" />`).join('')}
-            </div>
-        </div>
-    `;
-}
-
-/**
- * Build collection card (Jellyseerr-style)
- */
-function buildCollectionCard(collection) {
-    if (!collection) return '';
-
-    const backdropUrl = collection.backdropPath
-        ? `https://image.tmdb.org/t/p/w1440_and_h320_multi_faces/${collection.backdropPath}`
-        : 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22400%22 height=%22200%22%3E%3Crect fill=%22%23374151%22 width=%22400%22 height=%22200%22/%3E%3C/svg%3E';
-
-    return `
-        <div class="je-collection-card">
-            <div class="je-collection-card-backdrop">
-                <img src="${escapeHtml(backdropUrl)}" alt="${escapeHtml(collection.name)}" loading="lazy" />
-                <div class="je-collection-card-overlay"></div>
-            </div>
-            <div class="je-collection-card-content">
-                <div class="je-collection-card-title">${escapeHtml(collection.name)}</div>
-                <button class="je-collection-card-button" data-collection-id="${collection.id}" data-collection-name="${escapeHtml(collection.name)}">
-                    ${JE.t('jellyseerr_btn_view_collection') || 'View'}
-                </button>
-            </div>
-        </div>
-    `;
-}
-
-/**
- * Build keywords section
- */
-function buildKeywordsSection(data) {
-    if (!data.keywords?.length) return '';
-
-    return `
-        <div class="keywords-section">
-            <h3>${JE.t('jellyseerr_modal_keywords') || 'Keywords'}</h3>
-            <div class="keywords-grid">
-                ${data.keywords.slice(0, 20).map(k => `<span class="keyword">${escapeHtml(k.name)}</span>`).join('')}
-            </div>
-        </div>
-    `;
-}
-
-/**
- * Build crew section (director, writers, etc.)
- */
-function buildCrewSection(data, mediaType) {
-    if (mediaType === 'tv' && data.createdBy?.length) {
-        return `
-            <div class="creators">
-                <h4>${JE.t('jellyseerr_modal_created_by') || 'Created By'}</h4>
-                <p>${data.createdBy.map(c => escapeHtml(c.name)).join(', ')}</p>
-            </div>
-        `;
-    }
-
-    if (data.credits?.crew) {
-        const director = data.credits.crew.find(c => c.job === 'Director');
-        const writers = data.credits.crew.filter(c =>
-            c.job === 'Screenplay' || c.job === 'Writer' || c.job === 'Story'
-        ).slice(0, 3);
-
-        let html = '';
-        if (director) {
-            html += `
-                <div class="crew-item">
-                    <h4>${JE.t('jellyseerr_modal_director') || 'Director'}</h4>
-                    <p>${escapeHtml(director.name)}</p>
-                </div>
-            `;
-        }
-        if (writers.length) {
-            html += `
-                <div class="crew-item">
-                    <h4>${JE.t('jellyseerr_modal_writers') || 'Writers'}</h4>
-                    <p>${writers.map(w => escapeHtml(w.name)).join(', ')}</p>
-                </div>
-            `;
-        }
-        return html ? `<div class="crew-section">${html}</div>` : '';
-    }
-
-    return '';
-}
-
-/**
- * Build trailers section
- */
-function buildTrailersSection(data) {
-    if (!data.relatedVideos || !data.relatedVideos.length) return '';
-
-    const trailers = data.relatedVideos
-        .filter(v => v.type === 'Trailer' || v.type === 'Teaser')
-        .slice(0, 6);
-
-    if (!trailers.length) return '';
-
-    return `
-        <div class="trailers-section">
-            <h3>${JE.t('jellyseerr_modal_trailers')}</h3>
-            <div class="trailers-grid">
-                ${trailers.map(trailer => {
-                    const thumbnailUrl = trailer.site === 'YouTube'
-                        ? `https://img.youtube.com/vi/${trailer.key}/mqdefault.jpg`
-                        : '';
-                    const youtubeIcon = trailer.site === 'YouTube' ? `<img src="${JE.cdn.selfhst('png/youtube.png')}" alt="YouTube" class="trailer-youtube-icon" />` : '';
-
-                    return `
-                        <a is="emby-linkbutton" href="${escapeHtml(trailer.url)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(trailer.name)}" class="trailer-item">
-                            <div class="trailer-thumbnail">
-                                ${thumbnailUrl ? `<img src="${thumbnailUrl}" alt="${escapeHtml(trailer.name)}" />` : ''}
-                                <div class="je-modal-play-button">
-                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
-                                        <path d="M8 5v14l11-7z"/>
-                                    </svg>
-                                </div>
-                                ${youtubeIcon}
-                            </div>
-                            <div class="trailer-info">
-                                <div class="trailer-name">${escapeHtml(trailer.name)}</div>
-                                <div class="trailer-type">${escapeHtml(trailer.type)}</div>
-                            </div>
-                        </a>
-                    `;
-                }).join('')}
-            </div>
-        </div>
-    `;
-}
-
-/**
- * Build cast section (horizontal scrollable)
- */
-function buildCastSection(data) {
-    if (!data.credits?.cast || !data.credits.cast.length) return '';
-
-    const cast = data.credits.cast.slice(0, 20);
-
-    return `
-        <div class="cast-section">
-            <h3>${JE.t('jellyseerr_modal_cast')}</h3>
-            <div class="cast-scroll">
-                ${cast.map(person => {
-                    const imageUrl = person.profilePath
-                        ? `https://image.tmdb.org/t/p/w185${person.profilePath}`
-                        : '';
-
-                    return `
-                        <div class="cast-member">
-                            <div class="person-avatar">
-                                ${imageUrl ? `<img src="${imageUrl}" alt="${escapeHtml(person.name)}" />` : buildPersonPlaceholder()}
-                            </div>
-                            <div class="person-name" title="${escapeHtml(person.name)}">${escapeHtml(person.name)}</div>
-                            <div class="person-character" title="${escapeHtml(person.character || '')}">${escapeHtml(person.character || '')}</div>
-                        </div>
-                    `;
-                }).join('')}
-            </div>
-        </div>
-    `;
-}
-
-/**
- * Build person placeholder SVG
- */
-function buildPersonPlaceholder() {
-    return `
-        <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100" height="100" fill="#2a2a2a"/>
-            <circle cx="50" cy="40" r="15" fill="#555"/>
-            <path d="M 25 75 Q 25 60, 50 60 Q 75 60, 75 75 L 75 100 L 25 100 Z" fill="#555"/>
-        </svg>
-    `;
-}
-    internal.buildModalContent = buildModalContent;
-    internal.buildRightPanel = buildRightPanel;
-    internal.buildStreamingProviders = buildStreamingProviders;
-    internal.buildCollectionCard = buildCollectionCard;
-    internal.buildKeywordsSection = buildKeywordsSection;
-    internal.buildCrewSection = buildCrewSection;
-    internal.buildTrailersSection = buildTrailersSection;
-    internal.buildCastSection = buildCastSection;
-    internal.buildPersonPlaceholder = buildPersonPlaceholder;
-
-})(window.JellyfinEnhanced);
+  }
+  internal.buildModalContent = buildModalContent;
+  internal.buildRightPanel = buildRightPanel;
+  internal.buildStreamingProviders = buildStreamingProviders;
+  internal.buildCollectionCard = buildCollectionCard;
+  internal.buildKeywordsSection = buildKeywordsSection;
+  internal.buildCrewSection = buildCrewSection;
+  internal.buildTrailersSection = buildTrailersSection;
+  internal.buildCastSection = buildCastSection;
+  internal.buildPersonPlaceholder = buildPersonPlaceholder;
+})();
+})();
+//# sourceMappingURL=more-info-modal-render.js.map

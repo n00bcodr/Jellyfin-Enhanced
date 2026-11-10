@@ -1,185 +1,211 @@
-/**
- * @file Display-language selector (locale enumeration + persistence) and the
- * clear-translation-cache button in the settings panel.
- * Split from ui.js (code motion; bodies verbatim).
- */
-(function(JE) {
-    'use strict';
+(() => {
+"use strict";
+(() => {
+  // client/src/features/shared/panel-host.ts
+  function panelHost() {
+    const host = window;
+    if (!host.JellyfinEnhanced) throw new TypeError("Jellyfin Enhanced must load before the settings panel");
+    return host.JellyfinEnhanced;
+  }
+  function apiClient() {
+    const client = optionalApiClient();
+    if (!client) throw new ReferenceError("ApiClient is not defined");
+    return client;
+  }
+  function optionalApiClient() {
+    const host = window;
+    return host.ApiClient;
+  }
 
+  // client/src/features/settings-panel/host.ts
+  function registry(JE) {
     JE.internals = JE.internals || {};
-    const internal = JE.internals.enhancedUi = JE.internals.enhancedUi || {};
+    return JE.internals.enhancedUi = JE.internals.enhancedUi || {};
+  }
 
-    /**
-     * Wires the language dropdown and translation-cache controls.
-     * @param {object} ctx Shared panel context assembled in ui-panel.js.
-     */
+  // client/src/features/shared/dom.ts
+  function selectById(id) {
+    const element = document.getElementById(id);
+    return element instanceof HTMLSelectElement ? element : null;
+  }
+
+  // client/src/features/settings-panel/language-options.ts
+  var text = (record, key) => {
+    const value = Reflect.get(record, key);
+    return typeof value === "string" ? value : "";
+  };
+  function decodeCultures(value) {
+    if (!Array.isArray(value)) throw new TypeError("Cultures response is not a list");
+    return value.filter((entry) => entry !== null && typeof entry === "object").map((entry) => ({
+      twoLetter: text(entry, "TwoLetterISOLanguageName"),
+      threeLetter: text(entry, "ThreeLetterISOLanguageName"),
+      displayName: text(entry, "DisplayName"),
+      name: text(entry, "Name")
+    }));
+  }
+  function decodeLocaleCodes(value) {
+    if (!Array.isArray(value)) throw new TypeError("Locale response is not a list");
+    return value.filter((code) => typeof code === "string");
+  }
+  var CUSTOM_DISPLAY_NAMES = {
+    "pr": "Pirate",
+    "en-GB": "English (United Kingdom)",
+    "en-US": "English (United States)",
+    "zh-CN": "Chinese (Simplified)",
+    "zh-HK": "Chinese (Hong Kong)",
+    "pt-BR": "Portuguese (Brazil)"
+  };
+  function displayLanguageOptions(localeCodes, cultures) {
+    const cultureMap = /* @__PURE__ */ new Map();
+    for (const c of cultures) cultureMap.set(c.twoLetter.toLowerCase(), c);
+    const localeSet = new Set(localeCodes.map((c) => c.toLowerCase()));
+    const options = localeCodes.map((code) => {
+      let displayName = (Object.prototype.hasOwnProperty.call(CUSTOM_DISPLAY_NAMES, code) ? CUSTOM_DISPLAY_NAMES[code] : void 0) || cultureMap.get(code.toLowerCase())?.displayName;
+      if (!displayName && code.includes("-")) {
+        const [base = "", region = ""] = code.split("-");
+        const baseName = cultureMap.get(base.toLowerCase())?.displayName;
+        displayName = baseName && localeSet.has(base.toLowerCase()) ? `${baseName} (${region})` : baseName;
+      }
+      return { code, displayName: displayName || code };
+    });
+    options.sort((a, b) => a.displayName.localeCompare(b.displayName));
+    return options;
+  }
+  function normalizeSavedLanguage(saved, optionValues) {
+    if (!saved) return "";
+    const [base = "", region = ""] = saved.split("-");
+    const normalized = saved.includes("-") ? `${base.toLowerCase()}-${region.toUpperCase()}` : saved.toLowerCase();
+    const exact = optionValues.some((value) => value.toLowerCase() === normalized.toLowerCase());
+    return exact ? normalized : normalized.split("-")[0] ?? "";
+  }
+  function normalizeLangCode(code) {
+    if (!code) return code;
+    const parts = code.split("-");
+    if (parts.length === 1) return (parts[0] ?? "").toLowerCase();
+    if (parts.length === 2) return `${(parts[0] ?? "").toLowerCase()}-${(parts[1] ?? "").toUpperCase()}`;
+    return code;
+  }
+
+  // client/src/features/settings-panel/ui-panel-language.ts
+  var CACHE_PREFIX = "JE_translation_";
+  var CACHE_TIMESTAMP_PREFIX = "JE_translation_ts_";
+  function installUiPanelLanguage(JE) {
+    const internal = registry(JE);
     internal.wireLanguageControls = function(ctx) {
-        const { resetAutoCloseTimer } = ctx;
-
-        // --- Language Settings ---
-        const displayLanguageSelect = document.getElementById('displayLanguageSelect');
-        if (displayLanguageSelect) {
-            // Get current user ID for localStorage key
-            const userId = ApiClient.getCurrentUserId();
-            const languageKey = `${userId}-language`;
-
-            // Get saved language from localStorage as well
-            const localStorageLang = localStorage.getItem(languageKey);
-            const savedLanguage = JE.currentSettings.displayLanguage || localStorageLang || '';
-
-            console.log('🪼 Jellyfin Enhanced: Current language setting:', {
-                fromSettings: JE.currentSettings.displayLanguage,
-                fromLocalStorage: localStorageLang,
-                willUse: savedLanguage
-            });
-
-            // Populate language options from server-side locale enumeration
-            (async () => {
-                const CUSTOM_DISPLAY_NAMES = {
-                    'pr': 'Pirate',
-                    'en-GB': 'English (United Kingdom)',
-                    'en-US': 'English (United States)',
-                    'zh-CN': 'Chinese (Simplified)',
-                    'zh-HK': 'Chinese (Hong Kong)',
-                    'pt-BR': 'Portuguese (Brazil)'
-                };
-
-                try {
-                    const [localeCodes, cultures] = await Promise.all([
-                        ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/JellyfinEnhanced/locales'), dataType: 'json' }),
-                        ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/Localization/Cultures'), dataType: 'json' })
-                    ]);
-
-                    // Check GitHub for any new locale files added since the last plugin release (1 request)
-                    try {
-                        const ghResp = await fetch('https://api.github.com/repos/n00bcodr/Jellyfin-Enhanced/contents/Jellyfin.Plugin.JellyfinEnhanced/js/locales');
-                        if (ghResp.ok) {
-                            const files = await ghResp.json();
-                            const serverSet = new Set(localeCodes.map(c => c.toLowerCase()));
-                            files.forEach(f => {
-                                if (f.name.endsWith('.json') && f.name !== 'en.json') {
-                                    const code = f.name.replace('.json', '');
-                                    if (!serverSet.has(code.toLowerCase())) {
-                                        localeCodes.push(code);
-                                    }
-                                }
-                            });
-                        }
-                    } catch (_) { /* GitHub unavailable, server list is sufficient */ }
-
-                    const cultureMap = {};
-                    cultures.forEach(c => {
-                        cultureMap[c.TwoLetterISOLanguageName.toLowerCase()] = c;
-                    });
-
-                    const localeSet = new Set(localeCodes.map(c => c.toLowerCase()));
-                    const options = localeCodes.map(code => {
-                        let displayName = CUSTOM_DISPLAY_NAMES[code]
-                            || cultureMap[code.toLowerCase()]?.DisplayName;
-                        if (!displayName && code.includes('-')) {
-                            const baseName = cultureMap[code.split('-')[0].toLowerCase()]?.DisplayName;
-                            // Append region qualifier when the base code also exists to avoid duplicate labels
-                            displayName = baseName && localeSet.has(code.split('-')[0].toLowerCase())
-                                ? `${baseName} (${code.split('-')[1]})`
-                                : baseName;
-                        }
-                        return { code, displayName: displayName || code };
-                    });
-
-                    options.sort((a, b) => a.displayName.localeCompare(b.displayName));
-                    options.forEach(({ code, displayName }) => {
-                        const option = document.createElement('option');
-                        option.value = code;
-                        option.textContent = displayName;
-                        option.style.background = 'rgba(30,30,30,1)';
-                        option.style.color = '#fff';
-                        displayLanguageSelect.appendChild(option);
-                    });
-                } catch (err) {
-                    console.warn('🪼 Jellyfin Enhanced: Failed to load language options:', err);
-                }
-
-                // Normalize saved language code with region support (e.g., zh-HK) when available
-                let normalizedLanguage = '';
-                if (savedLanguage) {
-                    // Normalize the saved language to match dropdown format (e.g., en-GB, zh-HK)
-                    const normalizedSaved = savedLanguage.includes('-')
-                        ? `${savedLanguage.split('-')[0].toLowerCase()}-${savedLanguage.split('-')[1].toUpperCase()}`
-                        : savedLanguage.toLowerCase();
-
-                    const hasExactOption = Array.from(displayLanguageSelect.options)
-                        .some(option => option.value.toLowerCase() === normalizedSaved.toLowerCase());
-                    normalizedLanguage = hasExactOption ? normalizedSaved : normalizedSaved.split('-')[0];
-                }
-
-                // Set the saved language after options are added
-                if (normalizedLanguage) {
-                    displayLanguageSelect.value = normalizedLanguage;
-                }
-                console.log('🪼 Jellyfin Enhanced: Set language dropdown to:', savedLanguage || 'Auto', 'Normalized to:', normalizedLanguage, 'Select element value is now:', displayLanguageSelect.value);
-            })();
-
-            // Save language on change
-            displayLanguageSelect.addEventListener('change', async (e) => {
-                const newLang = e.target.value;
-
-                const normalizeLangCode = (code) => {
-                    if (!code) return code;
-                    const parts = code.split('-');
-                    if (parts.length === 1) return parts[0].toLowerCase();
-                    if (parts.length === 2) return `${parts[0].toLowerCase()}-${parts[1].toUpperCase()}`;
-                    return code;
-                };
-
-                // Use the language code as-is, no special mapping
-                const fullCultureCode = normalizeLangCode(newLang);
-
-                // All dropdown options come from /JellyfinEnhanced/locales, so they are guaranteed valid
-                const translationExists = true;
-
-                // Save to settings.json (use base language code)
-                JE.currentSettings.displayLanguage = newLang;
-                await JE.saveUserSettings('settings.json', JE.currentSettings);
-
-                // Save to localStorage (use the same code)
-                if (fullCultureCode) {
-                    localStorage.setItem(languageKey, fullCultureCode);
-                } else {
-                    // Set empty value instead of removing key
-                    localStorage.setItem(languageKey, '');
-                }
-
-                if (newLang && !translationExists) {
-                    JE.toast(`${JE.icon(JE.IconName.WARNING)} Translation file not available for selected language. Falling back to English.`);
-                } else {
-                    JE.toast(JE.t('toast_language_changed'));
-                }
-                setTimeout(() => window.location.reload(), 1500);
-            });
+      const { resetAutoCloseTimer } = ctx;
+      const candidateSelect = selectById("displayLanguageSelect");
+      if (candidateSelect) {
+        const displayLanguageSelect = candidateSelect;
+        const client = apiClient();
+        const userId = client.getCurrentUserId();
+        const languageKey = `${userId}-language`;
+        const origin = JE.userConfig;
+        const settings = JE.currentSettings;
+        const epoch = JE.session?.getEpoch();
+        const serverRoot = client.getUrl("/");
+        const token = client.accessToken?.();
+        const serverId = () => typeof client.serverId === "function" ? client.serverId() : client.serverId;
+        const server = serverId();
+        let closed = false;
+        let reloadTimer = null;
+        const sameDocument = () => apiClient() === client && client.getCurrentUserId() === userId && client.getUrl("/") === serverRoot && client.accessToken?.() === token && serverId() === server && JE.session?.getEpoch() === epoch && JE.userConfig === origin && JE.currentSettings === settings;
+        const current = () => !closed && displayLanguageSelect.isConnected && sameDocument();
+        const dispose = () => {
+          closed = true;
+          if (reloadTimer !== null) clearTimeout(reloadTimer);
+          displayLanguageSelect.removeEventListener("change", saveLanguage);
+        };
+        ctx.onClose?.(dispose);
+        const localStorageLang = localStorage.getItem(languageKey);
+        const fromSettings = settings.displayLanguage;
+        const savedLanguage = typeof fromSettings === "string" && fromSettings || localStorageLang || "";
+        let userChanged = false;
+        let saving = false;
+        let localeCodes = [];
+        let cultures = [];
+        const renderOptions = () => {
+          if (!current()) return;
+          const selected = userChanged ? displayLanguageSelect.value : savedLanguage;
+          Array.from(displayLanguageSelect.options).forEach((option) => {
+            if (option.value) option.remove();
+          });
+          displayLanguageOptions(localeCodes, cultures).forEach(({ code, displayName }) => {
+            const option = document.createElement("option");
+            option.value = code;
+            option.textContent = displayName;
+            option.style.background = "rgba(30,30,30,1)";
+            option.style.color = "#fff";
+            displayLanguageSelect.appendChild(option);
+          });
+          const normalized = normalizeSavedLanguage(selected, Array.from(displayLanguageSelect.options, (option) => option.value));
+          displayLanguageSelect.value = Array.from(displayLanguageSelect.options).find((option) => option.value.toLowerCase() === normalized.toLowerCase())?.value ?? "";
+        };
+        void client.ajax({ type: "GET", url: client.getUrl("/JellyfinEnhanced/locales"), dataType: "json" }).then((response) => {
+          if (current()) {
+            localeCodes = decodeLocaleCodes(response);
+            renderOptions();
+          }
+        }).catch((err) => {
+          if (current()) console.warn("🪼 Jellyfin Enhanced: Failed to load language options:", err);
+        });
+        void client.ajax({ type: "GET", url: client.getUrl("/Localization/Cultures"), dataType: "json" }).then((response) => {
+          if (current()) {
+            cultures = decodeCultures(response);
+            renderOptions();
+          }
+        }).catch(() => void 0);
+        async function saveLanguage() {
+          if (!current() || saving) return;
+          userChanged = true;
+          saving = true;
+          const newLang = displayLanguageSelect.value;
+          const previous = settings.displayLanguage;
+          const hadValue = Object.prototype.hasOwnProperty.call(settings, "displayLanguage");
+          displayLanguageSelect.disabled = true;
+          settings.displayLanguage = newLang;
+          const rollback = () => {
+            if (!sameDocument() || settings.displayLanguage !== newLang) return;
+            if (hadValue) settings.displayLanguage = previous;
+            else delete settings.displayLanguage;
+            displayLanguageSelect.value = typeof previous === "string" ? previous : "";
+          };
+          try {
+            await JE.saveUserSettings("settings.json", settings, { throwOnError: true, isCurrent: sameDocument, notifyOnError: current, onError: rollback });
+            if (!sameDocument()) return;
+            localStorage.setItem(languageKey, normalizeLangCode(newLang) || "");
+            if (!current()) return;
+            JE.toast(JE.t("toast_language_changed"));
+            reloadTimer = setTimeout(() => {
+              if (current()) window.location.reload();
+            }, 1500);
+          } catch (_) {
+            rollback();
+          } finally {
+            saving = false;
+            if (current()) displayLanguageSelect.disabled = false;
+          }
         }
-
-        // Clear translation cache button
-        const clearTranslationCacheButton = document.getElementById('clearTranslationCacheButton');
-        if (clearTranslationCacheButton) {
-            clearTranslationCacheButton.addEventListener('click', () => {
-                const cacheKeys = [];
-                const CACHE_PREFIX = 'JE_translation_';
-                const CACHE_TIMESTAMP_PREFIX = 'JE_translation_ts_';
-
-                for (let i = 0; i < localStorage.length; i++) {
-                    const key = localStorage.key(i);
-                    if (key && (key.startsWith(CACHE_PREFIX) || key.startsWith(CACHE_TIMESTAMP_PREFIX))) {
-                        cacheKeys.push(key);
-                    }
-                }
-
-                cacheKeys.forEach(key => localStorage.removeItem(key));
-
-                JE.toast(JE.t('toast_translation_cache_cleared', { count: cacheKeys.length }));
-                setTimeout(() => window.location.reload(), 2000);
-                resetAutoCloseTimer();
-            });
-        }
+        displayLanguageSelect.addEventListener("change", saveLanguage);
+      }
+      const clearTranslationCacheButton = document.getElementById("clearTranslationCacheButton");
+      if (clearTranslationCacheButton) {
+        clearTranslationCacheButton.addEventListener("click", () => {
+          const cacheKeys = [];
+          for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key && (key.startsWith(CACHE_PREFIX) || key.startsWith(CACHE_TIMESTAMP_PREFIX))) {
+              cacheKeys.push(key);
+            }
+          }
+          cacheKeys.forEach((key) => localStorage.removeItem(key));
+          JE.toast(JE.t("toast_translation_cache_cleared", { count: cacheKeys.length }));
+          setTimeout(() => window.location.reload(), 2e3);
+          resetAutoCloseTimer();
+        });
+      }
     };
-
-})(window.JellyfinEnhanced);
+  }
+  installUiPanelLanguage(panelHost());
+})();
+})();
+//# sourceMappingURL=ui-panel-language.js.map

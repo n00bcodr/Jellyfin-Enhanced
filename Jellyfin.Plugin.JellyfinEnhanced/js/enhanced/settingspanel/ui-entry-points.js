@@ -1,185 +1,133 @@
-/**
- * @file Page-location helpers and the panel entry points: sidebar menu button,
- * video-OSD settings button and the user-preferences menu link.
- * Split from ui.js (code motion; bodies verbatim).
- */
-(function(JE) {
-    'use strict';
+(() => {
+"use strict";
+(() => {
+  // client/src/features/shared/panel-host.ts
+  function panelHost() {
+    const host = window;
+    if (!host.JellyfinEnhanced) throw new TypeError("Jellyfin Enhanced must load before the settings panel");
+    return host.JellyfinEnhanced;
+  }
 
-    /**
-     * Helper function to determine if the current page is the video player.
-     * @returns {boolean} True if the current page is the video player.
-     */
-    JE.isVideoPage = () => window.location.hash.startsWith('#/video');
-
-    /**
-     * Helper function to determine if the current page is an item details page.
-     * @returns {boolean} True if on an item details page.
-     */
-    JE.isDetailsPage = () => window.location.hash.includes('/details?id=');
-
-    // JE.toast moved to js/core/ui-kit.js (JE.core.ui.toast); the JE.toast
-    // alias is assigned there. Callers are unchanged.
-
-    /**
-     * Adds the "Jellyfin Enhanced" menu button to the sidebar.
-     */
+  // client/src/features/settings-panel/ui-entry-points.ts
+  var openPanel = (JE) => {
+    void JE.showEnhancedPanel?.();
+  };
+  function installUiEntryPoints(JE) {
+    JE.isVideoPage = () => window.location.hash.startsWith("#/video");
+    JE.isDetailsPage = () => window.location.hash.includes("/details?id=");
     JE.addPluginMenuButton = () => {
-        const addMenuButton = (sidebar) => {
-            let jellyfinEnhancedSection = sidebar.querySelector('.jellyfinEnhancedSection');
-
-            if (!jellyfinEnhancedSection) {
-                jellyfinEnhancedSection = document.createElement('div');
-                jellyfinEnhancedSection.className = 'jellyfinEnhancedSection';
-                jellyfinEnhancedSection.innerHTML = '<h3 class="sidebarHeader">Jellyfin Enhanced</h3>';
-
-                // Insert just above Media section
-                const mediaSection = sidebar.querySelector('.libraryMenuOptions');
-                if (mediaSection) {
-                    sidebar.insertBefore(jellyfinEnhancedSection, mediaSection);
-                } else {
-                    sidebar.appendChild(jellyfinEnhancedSection);
-                }
-            }
-
-            if (!jellyfinEnhancedSection.querySelector('#jellyfinEnhancedSettingsLink')) {
-                const jellyfinEnhancedLink = document.createElement('a');
-                jellyfinEnhancedLink.setAttribute('is', 'emby-linkbutton');
-                jellyfinEnhancedLink.className = 'lnkMediaFolder navMenuOption emby-button';
-                jellyfinEnhancedLink.href = '#';
-                jellyfinEnhancedLink.id = 'jellyfinEnhancedSettingsLink';
-                jellyfinEnhancedLink.innerHTML = `
+      const addMenuButton = (sidebar) => {
+        let jellyfinEnhancedSection = sidebar.querySelector(".jellyfinEnhancedSection");
+        if (!jellyfinEnhancedSection) {
+          jellyfinEnhancedSection = document.createElement("div");
+          jellyfinEnhancedSection.className = "jellyfinEnhancedSection";
+          jellyfinEnhancedSection.innerHTML = '<h3 class="sidebarHeader">Jellyfin Enhanced</h3>';
+          const mediaSection = sidebar.querySelector(".libraryMenuOptions");
+          if (mediaSection) {
+            sidebar.insertBefore(jellyfinEnhancedSection, mediaSection);
+          } else {
+            sidebar.appendChild(jellyfinEnhancedSection);
+          }
+        }
+        if (!jellyfinEnhancedSection.querySelector("#jellyfinEnhancedSettingsLink")) {
+          const jellyfinEnhancedLink = document.createElement("a");
+          jellyfinEnhancedLink.setAttribute("is", "emby-linkbutton");
+          jellyfinEnhancedLink.className = "lnkMediaFolder navMenuOption emby-button";
+          jellyfinEnhancedLink.href = "#";
+          jellyfinEnhancedLink.id = "jellyfinEnhancedSettingsLink";
+          jellyfinEnhancedLink.innerHTML = `
                     <span class="material-icons navMenuOptionIcon" aria-hidden="true">tune</span>
                     <span class="sectionName navMenuOptionText">Enhanced Panel</span>
                 `;
-
-                jellyfinEnhancedLink.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    JE.showEnhancedPanel();
-                });
-
-                jellyfinEnhancedSection.appendChild(jellyfinEnhancedLink);
-            }
-        };
-
-        // Debounced because getSidebarContainer() reads layout.
-        const addMenuButtonDebounced = JE.helpers.debounce(() => {
-            if (document.getElementById('jellyfinEnhancedSettingsLink')) return;
-            // getSidebarContainer() falls back to the new MUI drawer (mobile only)
-            // when the legacy sidebar is hidden under Jellyfin 12's experimental
-            // layout. Every other module that looks for `.jellyfinEnhancedSection`
-            // queries it unscoped, so creating it here - wherever it ends up - is
-            // the only choke point that needs to know about the new drawer.
-            const sidebar = JE.helpers.getSidebarContainer();
-            if (sidebar && !sidebar.querySelector('#jellyfinEnhancedSettingsLink')) {
-                addMenuButton(sidebar);
-            }
-        }, 300);
-        /** @type {Element|null} */
-        let menuLink = null;
-        JE.helpers.onBodyMutation('ui-menu-button', () => {
-            // Cheap connected check first, so a mutation batch on a page whose
-            // link is already in place never touches the debounce timer.
-            if (menuLink && menuLink.isConnected) return;
-            menuLink = document.getElementById('jellyfinEnhancedSettingsLink');
-            if (menuLink) return;
-            addMenuButtonDebounced();
-        });
+          jellyfinEnhancedLink.addEventListener("click", (e) => {
+            e.preventDefault();
+            openPanel(JE);
+          });
+          jellyfinEnhancedSection.appendChild(jellyfinEnhancedLink);
+        }
+      };
+      const addMenuButtonDebounced = JE.helpers.debounce(() => {
+        if (document.getElementById("jellyfinEnhancedSettingsLink")) return;
+        const sidebar = JE.helpers.getSidebarContainer();
+        if (sidebar && !sidebar.querySelector("#jellyfinEnhancedSettingsLink")) {
+          addMenuButton(sidebar);
+        }
+      }, 300);
+      let menuLink = null;
+      JE.helpers.onBodyMutation("ui-menu-button", () => {
+        if (menuLink && menuLink.isConnected) return;
+        menuLink = document.getElementById("jellyfinEnhancedSettingsLink");
+        if (menuLink) return;
+        addMenuButtonDebounced();
+      });
     };
-
-    /**
-     * Injects the "Jellyfin Enhanced" settings button into the video player OSD.
-     */
     JE.addOsdSettingsButton = () => {
-        if (document.getElementById('enhancedSettingsBtn')) return;
-        const controlsContainer = document.querySelector('.videoOsdBottom .buttons.focuscontainer-x');
-        if (!controlsContainer) return;
-        const nativeSettingsButton = controlsContainer.querySelector('.btnVideoOsdSettings');
-        if (!nativeSettingsButton) return;
-
-        const enhancedSettingsBtn = document.createElement('button');
-        enhancedSettingsBtn.id = 'enhancedSettingsBtn';
-        enhancedSettingsBtn.setAttribute('is', 'paper-icon-button-light');
-        enhancedSettingsBtn.className = 'autoSize paper-icon-button-light';
-        enhancedSettingsBtn.title = 'Jellyfin Enhanced';
-        enhancedSettingsBtn.innerHTML = '<span class="largePaperIconButton material-icons" aria-hidden="true">tune</span>';
-
-        enhancedSettingsBtn.onclick = (e) => {
-            e.stopPropagation();
-            JE.showEnhancedPanel();
-        };
-
-        nativeSettingsButton.parentElement.insertBefore(enhancedSettingsBtn, nativeSettingsButton);
+      if (document.getElementById("enhancedSettingsBtn")) return;
+      const controlsContainer = document.querySelector(".videoOsdBottom .buttons.focuscontainer-x");
+      if (!controlsContainer) return;
+      const nativeSettingsButton = controlsContainer.querySelector(".btnVideoOsdSettings");
+      if (!nativeSettingsButton) return;
+      const enhancedSettingsBtn = document.createElement("button");
+      enhancedSettingsBtn.id = "enhancedSettingsBtn";
+      enhancedSettingsBtn.setAttribute("is", "paper-icon-button-light");
+      enhancedSettingsBtn.className = "autoSize paper-icon-button-light";
+      enhancedSettingsBtn.title = "Jellyfin Enhanced";
+      enhancedSettingsBtn.innerHTML = '<span class="largePaperIconButton material-icons" aria-hidden="true">tune</span>';
+      enhancedSettingsBtn.onclick = (e) => {
+        e.stopPropagation();
+        openPanel(JE);
+      };
+      const parent = nativeSettingsButton.parentElement;
+      if (!parent) throw new TypeError("The OSD settings button has no parent");
+      parent.insertBefore(enhancedSettingsBtn, nativeSettingsButton);
     };
-
-    /**
-     * Adds the "Jellyfin Enhanced" link to the avatar dropdown (`#app-user-menu`)
-     * on Jellyfin 12's MUI toolbar, which has no sidebar to fall back to.
-     * Clones the real "Settings" item so it inherits MUI's actual classes.
-     */
     JE.addUserMenuLink = () => {
-        const inject = () => {
-            if (document.getElementById('jellyfinEnhancedUserMenuLink')) return;
-            const settingsLink = document.querySelector('#app-user-menu a[href="#/mypreferencesmenu"]');
-            if (!settingsLink) return;
-
-            const link = settingsLink.cloneNode(true);
-            link.id = 'jellyfinEnhancedUserMenuLink';
-            link.href = '#';
-
-            const icon = link.querySelector('svg');
-            if (icon) {
-                const replacement = document.createElement('span');
-                replacement.className = 'material-icons';
-                replacement.setAttribute('aria-hidden', 'true');
-                replacement.textContent = 'tune';
-                icon.replaceWith(replacement);
-            }
-            const text = link.querySelector('.MuiListItemText-primary');
-            if (text) text.textContent = 'Jellyfin Enhanced';
-
-            link.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                // Not a real MenuItem, so nothing calls onMenuClose -- clicking
-                // the popover's own backdrop closes it instead.
-                document.getElementById('app-user-menu')?.querySelector(':scope > .MuiBackdrop-root')?.click();
-                JE.showEnhancedPanel();
-            });
-
-            settingsLink.insertAdjacentElement('afterend', link);
-        };
-
-        inject();
-        JE.helpers.onBodyMutation('user-menu-link', inject);
+      const inject = () => {
+        if (document.getElementById("jellyfinEnhancedUserMenuLink")) return;
+        const settingsLink = document.querySelector('#app-user-menu a[href="#/mypreferencesmenu"]');
+        if (!(settingsLink instanceof HTMLAnchorElement)) return;
+        const link = settingsLink.cloneNode(true);
+        if (!(link instanceof HTMLAnchorElement)) return;
+        link.id = "jellyfinEnhancedUserMenuLink";
+        link.href = "#";
+        const icon = link.querySelector("svg");
+        if (icon) {
+          const replacement = document.createElement("span");
+          replacement.className = "material-icons";
+          replacement.setAttribute("aria-hidden", "true");
+          replacement.textContent = "tune";
+          icon.replaceWith(replacement);
+        }
+        const text = link.querySelector(".MuiListItemText-primary");
+        if (text) text.textContent = "Jellyfin Enhanced";
+        link.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const backdrop = document.getElementById("app-user-menu")?.querySelector(":scope > .MuiBackdrop-root");
+          if (backdrop instanceof HTMLElement) backdrop.click();
+          openPanel(JE);
+        });
+        settingsLink.insertAdjacentElement("afterend", link);
+      };
+      inject();
+      JE.helpers.onBodyMutation("user-menu-link", inject);
     };
-
-    /**
-     * Injects the "Jellyfin Enhanced" link into the user preferences menu (mypreferencesmenu.html).
-     * Adds it as the last item in the first vertical section (after Controls).
-     */
     let userPrefsViewHookInstalled = false;
-
     JE.addUserPreferencesLink = () => {
-        const addLinkToMenu = () => {
-            const menuContainer = document.querySelector('#myPreferencesMenuPage:not(.hide) .verticalSection');
-            if (!menuContainer) return false;
-
-            // Check if link already exists
-            if (document.querySelector('#jellyfinEnhancedUserPrefsLink')) return true;
-
-            // Create the link element matching Jellyfin's structure
-            const enhancedLink = document.createElement('a');
-            enhancedLink.id = 'jellyfinEnhancedUserPrefsLink';
-            enhancedLink.setAttribute('is', 'emby-linkbutton');
-            enhancedLink.setAttribute('data-ripple', 'false');
-            enhancedLink.href = '#';
-            enhancedLink.className = 'listItem-border emby-button';
-            enhancedLink.style.display = 'block';
-            enhancedLink.style.padding = '0';
-            enhancedLink.style.margin = '0';
-
-            enhancedLink.innerHTML = `
+      const addLinkToMenu = () => {
+        const menuContainer = document.querySelector("#myPreferencesMenuPage:not(.hide) .verticalSection");
+        if (!menuContainer) return false;
+        if (document.querySelector("#jellyfinEnhancedUserPrefsLink")) return true;
+        const enhancedLink = document.createElement("a");
+        enhancedLink.id = "jellyfinEnhancedUserPrefsLink";
+        enhancedLink.setAttribute("is", "emby-linkbutton");
+        enhancedLink.setAttribute("data-ripple", "false");
+        enhancedLink.href = "#";
+        enhancedLink.className = "listItem-border emby-button";
+        enhancedLink.style.display = "block";
+        enhancedLink.style.padding = "0";
+        enhancedLink.style.margin = "0";
+        enhancedLink.innerHTML = `
                 <div class="listItem">
                     <span class="material-icons listItemIcon listItemIcon-transparent tune" aria-hidden="true"></span>
                     <div class="listItemBody">
@@ -187,31 +135,22 @@
                     </div>
                 </div>
             `;
-
-            enhancedLink.addEventListener('click', (e) => {
-                e.preventDefault();
-                JE.showEnhancedPanel();
-            });
-
-            // Insert at the end of the first vertical section
-            menuContainer.appendChild(enhancedLink);
-            return true;
-        };
-
-        // Try to add immediately
-        if (addLinkToMenu()) return;
-
-        // Not visible yet. This function already runs on every body mutation
-        // batch (see the dom-observer in events.js), which covers the menu's
-        // content arriving. The remaining case is a cached menu page being
-        // re-shown by a class toggle alone, which the shared childList observer
-        // does not see: hook the view-show pipeline once for that instead of
-        // the document-wide attribute observer that used to stay attached (and
-        // fire on every class change anywhere) until the menu was first opened.
-        if (userPrefsViewHookInstalled) return;
-        userPrefsViewHookInstalled = true;
-        JE.core.navigation.onViewPage(() => {
-            if (!addLinkToMenu()) JE.core.dom.afterNextPaint(addLinkToMenu);
+        enhancedLink.addEventListener("click", (e) => {
+          e.preventDefault();
+          openPanel(JE);
         });
+        menuContainer.appendChild(enhancedLink);
+        return true;
+      };
+      if (addLinkToMenu()) return;
+      if (userPrefsViewHookInstalled) return;
+      userPrefsViewHookInstalled = true;
+      JE.core.navigation.onViewPage(() => {
+        if (!addLinkToMenu()) JE.core.dom.afterNextPaint(addLinkToMenu);
+      });
     };
-})(window.JellyfinEnhanced);
+  }
+  installUiEntryPoints(panelHost());
+})();
+})();
+//# sourceMappingURL=ui-entry-points.js.map

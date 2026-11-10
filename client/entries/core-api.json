@@ -1,0 +1,3 @@
+{
+  "js/core/api-client.js": "client/src/core/api/entry.ts"
+}

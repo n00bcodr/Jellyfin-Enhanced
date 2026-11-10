@@ -1,0 +1,282 @@
+{
+  "_comment": "X1: values interpolated into HTML that are not recognisably safe or escaped. Ratchet recorded by tests/frontend/guards/record.mjs: {file: {\"<rule> <scope>[ <detail>]\": count}}. Counts may only fall: run record.mjs after a fix to lower them. Never add a key or raise a count; fix the code instead. Triage: artifacts/restructure-plan/step-logs/canopy-k2-triage.md.",
+  "client/src/admin/config/engine/render.ts": {
+    "X1 attributes": 1,
+    "X1 breakLines": 4,
+    "X1 descriptionHtml": 2,
+    "X1 fieldHtml": 21,
+    "X1 markupHtml": 5,
+    "X1 sectionHtml": 3,
+    "X1 showIfWrapper": 2
+  },
+  "client/src/admin/config/page/save.ts": {
+    "X1 createSave.wire": 1
+  },
+  "client/src/admin/config/sections/display.ts": {
+    "X1 defineDisplay.UL": 1
+  },
+  "client/src/admin/config/sections/pages.ts": {
+    "X1 definePages.placement": 7
+  },
+  "client/src/core/ui/runtime.ts": {
+    "X1 createUi.skeletonGridHtml": 2,
+    "X1 createUi.toast": 1
+  },
+  "client/src/features/activity/activity-page.ts": {
+    "X1 renderRow": 1,
+    "X1 renderSection": 2
+  },
+  "client/src/features/activity/colored-activity-icons.ts": {
+    "X1 updateActivityIcons": 1
+  },
+  "client/src/features/bookmarks/bookmarks.ts": {
+    "X1 install.createBookmarkMarkers": 1,
+    "X1 install.showBookmarkModal": 3
+  },
+  "client/src/features/bookmarks/library-items.ts": {
+    "X1 install.formatTimestamp": 1,
+    "X1 install.playItemAtTime": 1,
+    "X1 install.renderBookmarkItems": 4
+  },
+  "client/src/features/bookmarks/library-modals.ts": {
+    "X1 install.formatTimestamp": 1,
+    "X1 install.showDuplicatesSyncModal": 4,
+    "X1 install.showOffsetAdjustmentModal": 1
+  },
+  "client/src/features/bookmarks/library-render.ts": {
+    "X1 install.renderBookmarksLibrary": 1
+  },
+  "client/src/features/bookmarks/library-replacements.ts": {
+    "X1 install.showReplacementSelectionModal": 2
+  },
+  "client/src/features/calendar/calendar-page-render-views.ts": {
+    "X1 renderAgendaView": 1,
+    "X1 renderDayView": 6,
+    "X1 renderMonthView": 2,
+    "X1 renderPage": 2,
+    "X1 renderWeekView": 2
+  },
+  "client/src/features/catchup/catchup-deck.ts": {
+    "X1 toast": 1
+  },
+  "client/src/features/chrome/theme-selector.ts": {
+    "X1 createThemeSelector.notify": 1
+  },
+  "client/src/features/details-providers/awards.ts": {
+    "X1 initializeAwardsScript.escapeHtml": 1
+  },
+  "client/src/features/details-providers/doesthedogdie.ts": {
+    "X1 initializeDoesTheDogDieScript.openPicker": 1
+  },
+  "client/src/features/details-providers/media-info-domain.ts": {
+    "X1 watchProgressText": 1
+  },
+  "client/src/features/details-providers/review-domain.ts": {
+    "X1 parseMarkdown": 3,
+    "X1 parseMarkdown.anchor": 2
+  },
+  "client/src/features/details-providers/reviews.ts": {
+    "X1 initializeReviewsScript.createReviewElement": 1,
+    "X1 initializeReviewsScript.translateFailedMessage": 1
+  },
+  "client/src/features/downloads/render-cards.ts": {
+    "X1 install.renderDownloadCard": 1,
+    "X1 install.renderIssueCard": 1,
+    "X1 install.renderRequestCard": 1,
+    "X1 install.renderSeasonPackCard": 4
+  },
+  "client/src/features/downloads/render.ts": {
+    "X1 install.buildHistorySection": 4,
+    "X1 install.buildIssuesSection": 4,
+    "X1 install.buildRequestsSection": 4,
+    "X1 install.renderPage": 6,
+    "X1 install.renderSection": 1
+  },
+  "client/src/features/hidden-content/features-remove-home.ts": {
+    "X1 buildNativeActionSheetItem": 3
+  },
+  "client/src/features/hidden-content/hidden-content-page-render.ts": {
+    "X1 renderPage": 1
+  },
+  "client/src/features/media-tags/admin/fields.ts": {
+    "X1 fieldHtml": 12,
+    "X1 fieldsHtml": 1,
+    "X1 optionLabel": 1,
+    "X1 orderedHtml": 1,
+    "X1 redrawList": 1
+  },
+  "client/src/features/media-tags/admin/format.ts": {
+    "X1 fmt": 4,
+    "X1 word": 1
+  },
+  "client/src/features/media-tags/admin/page.ts": {
+    "X1 createPage.docsLink": 1,
+    "X1 createPage.drawSaveState.names": 1,
+    "X1 createPage.groupRowHtml": 3,
+    "X1 createPage.scopesHtml": 1,
+    "X1 createPage.sectionHtml": 6,
+    "X1 fieldName": 1,
+    "X1 pascal": 2,
+    "X1 valueLabel": 6
+  },
+  "client/src/features/media-tags/admin/sections/badges.ts": {
+    "X1 chipHtml": 1,
+    "X1 render": 1
+  },
+  "client/src/features/media-tags/admin/sections/colours.ts": {
+    "X1 render": 1
+  },
+  "client/src/features/media-tags/admin/sections/custom.ts": {
+    "X1 render": 1
+  },
+  "client/src/features/media-tags/admin/sections/layout.ts": {
+    "X1 capOf": 2,
+    "X1 groupSettingsLink": 1,
+    "X1 rowHtml": 6
+  },
+  "client/src/features/media-tags/admin/sections/overview.ts": {
+    "X1 render": 2
+  },
+  "client/src/features/media-tags/admin/sections/portable.ts": {
+    "X1 failed": 3,
+    "X1 refresh": 2,
+    "X1 render": 5,
+    "X1 render.check": 1,
+    "X1 render.nameStep": 3,
+    "X1 render.preview": 4,
+    "X1 render.showExport": 3,
+    "X1 render.step": 3
+  },
+  "client/src/features/media-tags/admin/sections/rating.ts": {
+    "X1 rowsHtml": 2
+  },
+  "client/src/features/media-tags/admin/sections/rules.ts": {
+    "X1 ruleHtml": 2,
+    "X1 valueControl": 3
+  },
+  "client/src/features/media-tags/admin/tag-styles-editor.ts": {
+    "X1 createTagStylesEditor.renderGroupPreset": 3
+  },
+  "client/src/features/media-tags/admin/tag-styles-model.ts": {
+    "X1 ownOf": 1
+  },
+  "client/src/features/media-tags/admin/values.ts": {
+    "X1 own": 1
+  },
+  "client/src/features/media-tags/editor/tag-item-editor.ts": {
+    "X1 createItemEditor.open": 1,
+    "X1 createItemEditor.open.renderGroups.rowHtml": 14
+  },
+  "client/src/features/media-tags/settings/ui-panel-media-tags.ts": {
+    "X1 docsAnchor": 1,
+    "X1 installUiPanelMediaTags.buildMediaTagsHubHtml": 9,
+    "X1 installUiPanelMediaTags.layoutPanelHtml": 1,
+    "X1 installUiPanelMediaTags.shapeRowHtml": 6,
+    "X1 installUiPanelMediaTags.shapeRowHtml.sizeSelect": 1,
+    "X1 installUiPanelMediaTags.sizeControlHtml": 1,
+    "X1 installUiPanelMediaTags.statusChipHtml": 4
+  },
+  "client/src/features/media-tags/settings/ui-panel-tag-editor.ts": {
+    "X1 installUiPanelTagEditor.buildTagGroupEditorHtml": 2,
+    "X1 installUiPanelTagEditor.extrasHtml": 4,
+    "X1 installUiPanelTagEditor.extrasHtml.scopeRow": 1,
+    "X1 installUiPanelTagEditor.languageIncludeHtml": 1,
+    "X1 installUiPanelTagEditor.languageIncludeHtml.select": 1,
+    "X1 installUiPanelTagEditor.pillsHtml": 1,
+    "X1 installUiPanelTagEditor.qualityIncludeHtml": 4,
+    "X1 installUiPanelTagEditor.ratingIncludeHtml": 2,
+    "X1 installUiPanelTagEditor.rowHtml": 7,
+    "X1 installUiPanelTagEditor.scopeBlockHtml": 8
+  },
+  "client/src/features/media-tags/settings/ui-panel-tag-looks.ts": {
+    "X1 installUiPanelTagLooks.buildView.settle": 1
+  },
+  "client/src/features/media-tags/settings/ui-panel-tag-portable.ts": {
+    "X1 installUiPanelTagPortable.wireTagPortable.drawPresets.group": 1
+  },
+  "client/src/features/player/native-track-menu.ts": {
+    "X1 createTrackMenu.cycleTrackMenu": 1,
+    "X1 createTrackMenu.cycleWithinSheet": 2
+  },
+  "client/src/features/player/playback.ts": {
+    "X1 adjustPlaybackSpeed": 1,
+    "X1 jumpToPercentage": 1
+  },
+  "client/src/features/player/segment-controls.ts": {
+    "X1 installSegmentControls.clickSkipButton": 1,
+    "X1 installSegmentControls.skipIntroOutro": 1
+  },
+  "client/src/features/seerr/core/modal.ts": {
+    "X1 installModal.create": 1
+  },
+  "client/src/features/seerr/core/runtime.ts": {
+    "X1 toast": 1
+  },
+  "client/src/features/seerr/core/ui/badges.ts": {
+    "X1 installBadges.appendBadgeIcon": 1,
+    "X1 installBadges.setStatusBadge": 1
+  },
+  "client/src/features/seerr/core/ui/buttons.ts": {
+    "X1 installButtons.configureMovieButton": 3,
+    "X1 installButtons.configureTvShowButton.setButton": 1
+  },
+  "client/src/features/seerr/core/ui/cards.ts": {
+    "X1 installCards.createOverview": 1
+  },
+  "client/src/features/seerr/core/ui/request-modals.ts": {
+    "X1 installRequestModals.showCollectionRequestModal": 1
+  },
+  "client/src/features/seerr/core/ui/season-modal.ts": {
+    "X1 installSeasonModal.showSeasonSelectionModal": 1
+  },
+  "client/src/features/seerr/details/issues/issue-reporter-entry.ts": {
+    "X1 toast": 1
+  },
+  "client/src/features/seerr/details/issues/report-markup.ts": {
+    "X1 reportFormHtml": 8
+  },
+  "client/src/features/seerr/details/moreinfo/actions-entry.ts": {
+    "X1 requestButtonView.failed": 1,
+    "X1 requestButtonView.idle": 1
+  },
+  "client/src/features/seerr/details/moreinfo/badges-entry.ts": {
+    "X1 buildMediaFacts": 2
+  },
+  "client/src/features/seerr/details/moreinfo/init-entry.ts": {
+    "X1 open": 2,
+    "X1 showModal": 1
+  },
+  "client/src/features/seerr/details/moreinfo/render-entry.ts": {
+    "X1 buildModalContent": 1,
+    "X1 buildRightPanel": 2
+  },
+  "client/src/features/settings-panel/release-markdown.ts": {
+    "X1 markdownToHtml": 7
+  },
+  "client/src/features/settings-panel/ui-panel-resize.ts": {
+    "X1 installUiPanelResize.buildPanelSizeControlsHtml.preset": 1
+  },
+  "client/src/features/settings-panel/ui-panel-settings.ts": {
+    "X1 installUiPanelSettings.wireSettingsListeners.addSettingToggleListener": 1
+  },
+  "client/src/features/settings-panel/ui-panel-template.ts": {
+    "X1 installUiPanelTemplate.buildPanelHtml": 133,
+    "X1 installUiPanelTemplate.buildPanelHtml.generatePresetHTML": 7
+  },
+  "client/src/features/settings-panel/ui-panel.ts": {
+    "X1 installUiPanel.showEnhancedPanel": 1
+  },
+  "client/src/features/settings-panel/ui-styles.ts": {
+    "X1 installUiStyles.injectGlobalStyles": 4
+  },
+  "client/src/features/shared/icons.ts": {
+    "X1 createIcons.wrapEmoji": 1
+  },
+  "client/src/features/shared/wire.ts": {
+    "X1 errorMessage": 2
+  },
+  "client/src/features/spoiler-guard/settings-tab.ts": {
+    "X1 buildSettingsHtml": 3,
+    "X1 buildSettingsHtml.row": 2
+  }
+}

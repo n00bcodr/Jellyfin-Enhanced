@@ -56,7 +56,7 @@ function setup(t, { stored = {}, plugin = {}, looks = false } = {}) {
   const $ = selector => h.document.querySelector(selector);
   const row = group => $(`.je-tge-row[data-group="${group}"]`);
   return { ...h, writes, toasts, calls, settle, $, row,
-    saved: () => JSON.parse(writes.at(-1).data),
+    saved: () => JSON.parse(writes.at(-1).data).Settings,
     order: () => Array.from(h.document.querySelectorAll('.je-tge-row')).map(r => r.dataset.group),
     async click(el) { el.dispatchEvent(new h.window.MouseEvent('click', { bubbles: true })); await settle(); },
     async change(el, value) {
@@ -575,11 +575,11 @@ test('priority save fails while a subtitles toggle save is queued: persisted doc
   const requests = [];
   let rejectFirst, persisted;
   h.window.ApiClient.ajax = req => {
-    const doc = JSON.parse(req.data);
+    const doc = JSON.parse(req.data).Settings;
     requests.push(doc);
     if (requests.length === 1) return new Promise((resolve, reject) => { rejectFirst = reject; });
     persisted = doc;
-    return Promise.resolve();
+    return Promise.resolve({ Revision: 'fixture-saved' });
   };
   await h.click(h.$('[data-language-priority-code="fr"] [data-language-priority-action="up"]'));
   assert.deepEqual(requests[0].languageTagsPriority, ['ja', 'fr', 'en']);
@@ -601,9 +601,9 @@ test('two priority edits in quick succession where the first fails: pending edit
   const requests = [];
   let rejectFirst;
   h.window.ApiClient.ajax = req => {
-    requests.push(JSON.parse(req.data));
+    requests.push(JSON.parse(req.data).Settings);
     if (requests.length === 1) return new Promise((resolve, reject) => { rejectFirst = reject; });
-    return Promise.resolve();
+    return Promise.resolve({ Revision: 'fixture-saved' });
   };
   await h.click(h.$('[data-language-priority-code="fr"] [data-language-priority-action="up"]'));
   assert.equal(h.$('.je-language-priority').disabled, true);
@@ -630,12 +630,12 @@ test('earlier queued settings saves cannot persist a priority edit that later fa
   const requests = [];
   let finishFirst, persisted;
   h.window.ApiClient.ajax = req => {
-    const doc = JSON.parse(req.data);
+    const doc = JSON.parse(req.data).Settings;
     requests.push(doc);
-    if (requests.length === 1) return new Promise(resolve => { finishFirst = () => { persisted = doc; resolve(); }; });
+    if (requests.length === 1) return new Promise(resolve => { finishFirst = () => { persisted = doc; resolve({ Revision: 'fixture-saved' }); }; });
     if (requests.length === 3) return Promise.reject(new Error('HTTP 500'));
     persisted = doc;
-    return Promise.resolve();
+    return Promise.resolve({ Revision: 'fixture-saved' });
   };
   await h.change(h.$('[data-language-key="languageTagsShowSubtitles"]'), true);
   await h.change(h.$('[data-language-key="languageTagsStyle"]'), 'codes');

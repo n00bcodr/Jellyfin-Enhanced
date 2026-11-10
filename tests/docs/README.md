@@ -1,12 +1,12 @@
 # Regression testing
 
-JE has separate .NET builds for Jellyfin 10.11 (`jf10`, .NET 9) and Jellyfin 12 (`jf12`, .NET 10). Tests exercise production code, browser modules, and disposable Jellyfin servers. See [the coverage matrix](coverage-matrix.md) for tested behavior and remaining gaps; a green run does not mean every feature or combination is covered.
+This rewrite supports Jellyfin 12.x only (`jf12`, .NET 10). Tests exercise production code, browser modules, and disposable Jellyfin servers. See [the coverage matrix](coverage-matrix.md) for tested behavior and remaining gaps; a green run does not mean every feature or combination is covered.
 
 ## Setup
 
 The complete suite is validated on native Linux. The native renderer test packages and direct container-IP access are Linux-specific; Windows, macOS, and Docker Desktop runs are not validated.
 
-Use Python 3.10+, Node.js 26.2.0 for the full suite (22.14+ suffices for frontend/browser tests), npm, a .NET 10 SDK, and both .NET 9 and .NET 10 ASP.NET Core runtimes. Install current servicing patches: an older runtime patch can fail to launch the test host even when compilation succeeds. `dotnet --list-sdks` and `dotnet --list-runtimes` show what the selected executable uses. If installing .NET in a separate directory, put its `dotnet` executable first on `PATH` and set `DOTNET_ROOT` to that directory.
+Use Python 3.10+, Node.js 26.2.0 for the full suite (22.14+ suffices for frontend/browser tests), npm, a .NET 10 SDK, and the .NET 10 ASP.NET Core runtime. Install current servicing patches: an older runtime patch can fail to launch the test host even when compilation succeeds. `dotnet --list-sdks` and `dotnet --list-runtimes` show what the selected executable uses. If installing .NET in a separate directory, put its `dotnet` executable first on `PATH` and set `DOTNET_ROOT` to that directory.
 
 ```sh
 npm ci
@@ -14,9 +14,9 @@ npx playwright install --with-deps chromium firefox
 python3 tests/run.py fast
 ```
 
-The real-host suite additionally requires a running Linux Docker engine accessible to your user. It creates an internal network, temporary configuration/media, and disposable users, builds the plugin, and installs it in the newest official Jellyfin image of each compatibility line (`jellyfin/jellyfin:10.11` and `jellyfin/jellyfin:12`, pulled fresh on every run). Each target's `report.json` records the exact image digest and Jellyfin server version that were tested. It never needs your Jellyfin server, personal library, or provider credentials. Container IP access currently requires native Linux Docker; Docker Desktop is not a validated environment.
+The real-host suite additionally requires a running Linux Docker engine accessible to your user. It creates an internal network, temporary configuration/media, and disposable users, builds the plugin, and installs it in the newest official Jellyfin image of the supported compatibility line (`jellyfin/jellyfin:12`, pulled fresh on every run). Each target's `report.json` records the exact image digest and Jellyfin server version that were tested. It never needs your Jellyfin server, personal library, or provider credentials. Container IP access currently requires native Linux Docker; Docker Desktop is not a validated environment.
 
-The strict poster language-parity checks use Node 26.2.0 / ICU 78.3, matching the generated production language tables; a different ICU version can legitimately produce different names. Initial package/browser/container downloads require network access. Provider integration tests use deterministic local or in-process responses; they do not call live provider accounts. NuGet dependencies have separate `packages.jf10.lock.json` and `packages.jf12.lock.json` files for both projects, and the backend runner restores in locked mode. `package-lock.json` records the npm dependency graph. After an intentional NuGet dependency change, regenerate both targets with `dotnet restore tests/backend/JE.Tests.csproj -p:JellyfinTarget=jf10 --force-evaluate` and the corresponding `jf12` command, then review the lockfile changes.
+The strict poster language-parity checks use Node 26.2.0 / ICU 78.3, matching the generated production language tables; a different ICU version can legitimately produce different names. Initial package/browser/container downloads require network access. Provider integration tests use deterministic local or in-process responses; they do not call live provider accounts. NuGet dependencies have a `packages.jf12.lock.json` file beside each of the plugin and backend test projects, and the backend runner restores in locked mode. `package-lock.json` records the npm dependency graph. After an intentional NuGet dependency change, regenerate both project locks with `dotnet restore tests/backend/JE.Tests.csproj -p:JellyfinTarget=jf12 --force-evaluate`, then review the lockfile changes.
 
 ## Commands
 
@@ -24,7 +24,7 @@ Run commands from the repository root:
 
 | Command | Scope |
 | --- | --- |
-| `python3 tests/run.py fast` | Inventory freshness, backend on both targets, frontend with coverage |
+| `python3 tests/run.py fast` | Inventory freshness, backend on Jellyfin 12, frontend with coverage |
 | `python3 tests/run.py backend --target jf12` | Backend behavior and HTTP pipeline, one build target |
 | `python3 tests/run.py frontend` | JavaScript behavioral tests and full-source coverage |
 | `python3 tests/run.py browser` | Mock-host browser component tests, including visual assertions |
@@ -32,14 +32,14 @@ Run commands from the repository root:
 | `python3 tests/run.py host --target all` | Actual Jellyfin host API and Chromium UI journeys on both compatibility lines |
 | `python3 tests/runner/poster.py` | Existing native pipeline, offline JS/C# parity, embedded poster assets |
 | `python3 tests/runner/mutations.py --target jf12` | Isolated representative fault injection |
-| `python3 tests/run.py history` | Replay selected historical issue/PR faults in disposable copies, both backend targets |
+| `python3 tests/run.py history` | Replay selected historical issue/PR faults in disposable copies, the Jellyfin 12 backend |
 | `python3 tests/run.py all` | Complete regression entry point |
 | `python3 tests/inventory/generate.py` | Regenerate production inventory after source changes |
 | `python3 tests/runner/clean.py` | Install dependencies and run the full suite in a fresh copy of tracked and unignored local files |
 
 The results of the latest complete run are recorded in [validation](validation.md).
 
-`--target jf10`, `--target jf12`, or `--target all` selects backend/host compatibility coverage. A single-target run is not a complete compatibility run. Direct test commands support focused iteration:
+`--target jf12` and `--target all` both select Jellyfin 12. `--target jf10` and other targets fail explicitly before running tests. Keep backend artifacts inside this checkout: HTTP/browser integration tests locate their source helpers by walking up from the test assembly directory. Direct test commands support focused iteration:
 
 ```sh
 dotnet test tests/backend/JE.Tests.csproj -p:JellyfinTarget=jf12 --artifacts-path artifacts/focused-jf12 --filter 'FullyQualifiedName~JE.Tests.Core'
@@ -71,7 +71,7 @@ Run visual tests in the pinned Playwright Linux environment. Review the failed s
 
 ## CI and troubleshooting
 
-`regression.yml` runs backend checks for both targets, JavaScript coverage, and browser checks on pull requests, plus the offline poster parity harness when a pull request touches tag code. Scheduled/manual runs additionally execute real-host compatibility and the broader checks. Existing security, translation, and static-analysis workflows remain in place. Failed test commands fail their jobs; artifacts are uploaded even on failure.
+`regression.yml` runs backend checks for Jellyfin 12, JavaScript coverage, and browser checks on pull requests, plus the offline poster parity harness when a pull request touches tag code. Scheduled/manual runs additionally execute real-host compatibility and the broader checks. Existing security, translation, and static-analysis workflows remain in place. Failed test commands fail their jobs; artifacts are uploaded even on failure.
 
 Missing runtimes, dependencies, browser executables, or Docker access are failures, not skips. Check `dotnet --list-runtimes`, run `npm ci`, install the pinned Playwright browsers, or check `docker info` as appropriate. A host-startup failure should be investigated using the saved build/server logs. The host runner removes resources it created; it must never prune unrelated containers or networks.
 

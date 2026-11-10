@@ -1,0 +1,10 @@
+{
+  "js/enhanced/bookmarks/bookmarks.js": "client/src/features/bookmarks/bookmarks.ts",
+  "js/enhanced/bookmarks/bookmarks-library-styles.js": "client/src/features/bookmarks/library-styles.ts",
+  "js/enhanced/bookmarks/bookmarks-library-page.js": "client/src/features/bookmarks/library-page.ts",
+  "js/enhanced/bookmarks/bookmarks-library-render.js": "client/src/features/bookmarks/library-render.ts",
+  "js/enhanced/bookmarks/bookmarks-library-items.js": "client/src/features/bookmarks/library-items.ts",
+  "js/enhanced/bookmarks/bookmarks-library-modals.js": "client/src/features/bookmarks/library-modals.ts",
+  "js/enhanced/bookmarks/bookmarks-library-replacements.js": "client/src/features/bookmarks/library-replacements.ts",
+  "js/enhanced/bookmarks/bookmarks-library-init.js": "client/src/features/bookmarks/library-init.ts"
+}

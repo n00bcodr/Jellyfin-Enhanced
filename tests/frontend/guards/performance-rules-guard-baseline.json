@@ -1,0 +1,83 @@
+{
+  "_comment": "R3/R5/R6: body-wide MutationObservers, setInterval DOM polling, runtime loads of remote assets. Ratchet recorded by tests/frontend/guards/record.mjs: {file: {\"<rule> <scope>[ <detail>]\": count}}. Counts may only fall: run record.mjs after a fix to lower them. Never add a key or raise a count; fix the code instead. Triage: artifacts/restructure-plan/step-logs/canopy-k2-triage.md.",
+  "client/src/admin/config/page/actions.ts": {
+    "R5-interval-dom createActions.wire": 1
+  },
+  "client/src/bootstrap/loader/maintenance.ts": {
+    "R5-interval-dom injectMaintenanceBanner": 1
+  },
+  "client/src/core/dom/runtime.ts": {
+    "R3-body-observer createDom.ensureBody": 1
+  },
+  "client/src/features/activity/activity-page.ts": {
+    "R3-body-observer renderForCustomTab": 1,
+    "R5-interval-dom renderForCustomTab": 1
+  },
+  "client/src/features/activity/colored-activity-icons.ts": {
+    "R3-body-observer startMonitoring": 1
+  },
+  "client/src/features/bookmarks/library-page.ts": {
+    "R5-interval-dom install.startLocationWatcher": 1
+  },
+  "client/src/features/calendar/calendar-custom-tab.ts": {
+    "R5-interval-dom (module)": 1
+  },
+  "client/src/features/calendar/calendar-page-init.ts": {
+    "R5-interval-dom startLocationWatcher": 1
+  },
+  "client/src/features/catchup/catchup-activity.ts": {
+    "R3-body-observer mount": 1,
+    "R5-interval-dom mount.open": 1
+  },
+  "client/src/features/catchup/catchup-deck.ts": {
+    "R3-body-observer mount": 1
+  },
+  "client/src/features/chrome/active-streams.ts": {
+    "R3-body-observer createActiveStreams.startObserver": 1
+  },
+  "client/src/features/chrome/plugin-icons.ts": {
+    "R3-body-observer createPluginIcons.startMonitoring": 1
+  },
+  "client/src/features/chrome/splashscreen.ts": {
+    "R3-body-observer createSplashScreen.startReadyObserver": 1,
+    "R5-interval-dom createSplashScreen.hideSplashScreen.completeRemoval": 1
+  },
+  "client/src/features/chrome/theme-selector.ts": {
+    "R3-body-observer createThemeSelector.initialize": 1
+  },
+  "client/src/features/details-providers/colored-ratings.ts": {
+    "R3-body-observer setupMutationObserver": 1
+  },
+  "client/src/features/downloads/init.ts": {
+    "R5-interval-dom install.startLocationWatcher": 1,
+    "R5-interval-dom install.startPolling": 1
+  },
+  "client/src/features/hidden-content/hidden-content-page-nav.ts": {
+    "R5-interval-dom startLocationWatcher": 1
+  },
+  "client/src/features/media-tags/types/quality/qualitytags.ts": {
+    "R5-interval-dom createQualityTags.watchVersionPicker": 1
+  },
+  "client/src/features/media-tags/types/status/statustags.ts": {
+    "R3-body-observer createStatusTags.observeSeriesCard": 1
+  },
+  "client/src/features/seerr/core/modal.ts": {
+    "R5-interval-dom installModal.populateAdvancedOptions": 1,
+    "R6-remote-asset installModal.create": 1
+  },
+  "client/src/features/seerr/core/ui/season-modal.ts": {
+    "R5-interval-dom installSeasonModal.showSeasonSelectionModal": 1
+  },
+  "client/src/features/seerr/details/scroll/seamless-scroll.ts": {
+    "R5-interval-dom createScrollEngine.setupInfiniteScroll.armPoll": 1
+  },
+  "client/src/features/seerr/discovery/page-ready.ts": {
+    "R5-interval-dom createPageReady.waitForPageReady": 1
+  },
+  "client/src/features/seerr/recommendations/recommendations-custom-tab.ts": {
+    "R5-interval-dom (module)": 1
+  },
+  "client/src/features/settings-panel/ui-release-notes.ts": {
+    "R6-remote-asset installUiReleaseNotes.showReleaseNotesNotification": 1
+  }
+}

@@ -1,495 +1,344 @@
-/**
- * @file Details-page dispatcher: the debounced item-details observer, the Hide
- * button on detail pages, and the per-item-type feature gating.
- * Split from features.js (code motion; bodies verbatim).
- */
-(function(JE) {
-    'use strict';
+(() => {
+"use strict";
+(() => {
+  // client/src/host/context.ts
+  function sharedModule(id) {
+    const namespace = window.JellyfinEnhanced?.core?.sharedModules?.[id];
+    if (!namespace) throw new Error(`${id} is not in JE.core.sharedModules: load its provider first (client/shared-modules.json)`);
+    return namespace;
+  }
+  function sharedExport(namespace, name) {
+    return namespace[name];
+  }
 
-    JE.internals = JE.internals || {};
-    const internal = JE.internals.features = JE.internals.features || {};
+  // client/generated-shared/stub/client/src/features/details-providers/host.ts
+  var shared = /* @__PURE__ */ sharedModule("features/details-providers/host");
+  var export0 = /* @__PURE__ */ sharedExport(shared, "api");
+  var export1 = /* @__PURE__ */ sharedExport(shared, "bridge");
+  var export3 = /* @__PURE__ */ sharedExport(shared, "currentUserId");
+  var export5 = /* @__PURE__ */ sharedExport(shared, "detailsContext");
 
-    const {
-        displayWatchProgress, displayItemSize, displayAudioLanguages, displayReleaseDate,
-        prefetchItemStats, discardItemStatsPrefetch, prefetchReleaseDate, discardReleasePrefetch
-    } = internal;
+  // client/generated-shared/stub/client/src/features/details-providers/page.ts
+  var shared2 = /* @__PURE__ */ sharedModule("features/details-providers/page");
+  var export12 = /* @__PURE__ */ sharedExport(shared2, "detailsLease");
+  var export32 = /* @__PURE__ */ sharedExport(shared2, "hashItemId");
+  var export7 = /* @__PURE__ */ sharedExport(shared2, "lookupDetailsItem");
+  var export8 = /* @__PURE__ */ sharedExport(shared2, "lookupItem");
+  var export11 = /* @__PURE__ */ sharedExport(shared2, "visibleDetailPage");
 
-    /**
-     * Handle item details page display with debounced observer
-     */
-    // Cache the last item id and type to avoid repeated ApiClient calls
-    let lastDetailsItemId = null;
-    let lastDetailsItemType = null;
-    // A single-version item's only media source: the id Jellyfin's
-    // `.selectSource` will hold once it fills it, used as the chips' source
-    // until it has. Multi-version items keep waiting for the select (an
-    // unplayable one never fills it and shows the all-versions total).
-    let lastDetailsDefaultSourceId = null;
-    // The pending item lookup, as { itemId }, or null. Keyed by item so that
-    // navigating away while it is pending neither blocks the new item's own
-    // lookup nor lets the old one's answer land in the new item's state.
-    let itemTypeFetch = null;
+  // client/generated-shared/stub/client/src/features/details-providers/wire.ts
+  var shared3 = /* @__PURE__ */ sharedModule("features/details-providers/wire");
+  var export13 = /* @__PURE__ */ sharedExport(shared3, "decodeDetailsItem");
+  var export52 = /* @__PURE__ */ sharedExport(shared3, "field");
 
-    // Types that support file size and watch progress
-    const FEATURES_SUPPORTED_TYPES = ['Episode', 'Season', 'Series', 'Movie', 'BoxSet', 'Playlist'];
-    // Types that support audio languages (excludes BoxSet and Playlist)
-    const AUDIO_LANGUAGES_SUPPORTED_TYPES = ['Episode', 'Season', 'Series', 'Movie'];
-
-    // Types that support hiding
-    const HIDE_SUPPORTED_TYPES = ['Movie', 'Series', 'Episode', 'Season'];
-
-    /**
-     * Adds a "Hide" button to the item detail page action buttons area.
-     * Supports Movies, Series, Episodes, and Seasons.
-     * For Episodes: shows a choice dialog between hiding the episode or the entire show.
-     * @param {string} itemId The item's Jellyfin ID.
-     * @param {HTMLElement} visiblePage The visible detail page element.
-     */
-    function addHideContentButton(itemId, visiblePage) {
-        if (!JE.hiddenContent) return;
-        const settings = JE.hiddenContent.getSettings();
-        if (!settings.enabled || !settings.showHideButtons) return;
-        const isPerson = lastDetailsItemType === 'Person';
-        if (isPerson) {
-            if (!settings.showButtonCast) return;
-        } else {
-            if (settings.showButtonDetails === false) return;
-            if (!HIDE_SUPPORTED_TYPES.includes(lastDetailsItemType)) return;
-        }
-
-        // Don't add duplicate
-        if (visiblePage.querySelector('.je-detail-hide-btn')) return;
-
-        const selectors = [
-            '.detailButtons',
-            '.itemActionsBottom',
-            '.mainDetailButtons',
-            '.detailButtonsContainer'
-        ];
-        let buttonContainer = null;
-        for (const sel of selectors) {
-            const found = visiblePage.querySelector(sel);
-            if (found) {
-                buttonContainer = found;
-                break;
-            }
-        }
-        if (!buttonContainer) return;
-
-        const button = document.createElement('button');
-        button.setAttribute('is', 'emby-button');
-        button.className = 'button-flat detailButton emby-button je-detail-hide-btn';
-        button.type = 'button';
-
-        const hideLabel = JE.t('hidden_content_hide_button') !== 'hidden_content_hide_button'
-            ? JE.t('hidden_content_hide_button')
-            : 'Hide';
-        const hiddenLabel = JE.t('hidden_content_already_hidden') !== 'hidden_content_already_hidden'
-            ? JE.t('hidden_content_already_hidden')
-            : 'Hidden';
-        const unhideLabel = JE.t('hidden_content_unhide') !== 'hidden_content_unhide'
-            ? JE.t('hidden_content_unhide')
-            : 'Unhide';
-
-        const content = document.createElement('div');
-        content.className = 'detailButton-content';
-        button.appendChild(content);
-
-        function renderContent(text, iconName) {
-            content.replaceChildren();
-            const icon = document.createElement('span');
-            icon.className = 'material-icons detailButton-icon';
-            icon.setAttribute('aria-hidden', 'true');
-            icon.textContent = iconName || 'visibility';
-            content.appendChild(icon);
-            if (text) {
-                const textSpan = document.createElement('span');
-                textSpan.className = 'detailButton-icon-text';
-                textSpan.textContent = text;
-                content.appendChild(textSpan);
-            }
-        }
-
-        function setHiddenState() {
-            button.classList.add('je-already-hidden');
-            button.setAttribute('aria-label', hiddenLabel);
-            button.title = hiddenLabel;
-            renderContent('', 'visibility_off');
-
-            button.onmouseenter = () => {
-                button.title = unhideLabel;
-            };
-            button.onmouseleave = () => {
-                button.title = hiddenLabel;
-            };
-            button.onclick = (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                JE.hiddenContent.unhideItem(itemId);
-                setHideState();
-            };
-        }
-
-        function setHideState() {
-            button.classList.remove('je-already-hidden');
-            button.setAttribute('aria-label', hideLabel);
-            button.title = hideLabel;
-            renderContent('', 'visibility');
-            button.onmouseenter = null;
-            button.onmouseleave = null;
-            button.onclick = async (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-
-                // Get item name from the page title
-                const nameEl = visiblePage.querySelector('.itemName, h1, h2, [class*="itemName"]');
-                const itemName = nameEl?.textContent?.trim() || 'Unknown';
-
-                // Fetch full item data for TMDb ID and episode/series metadata
-                let tmdbId = '';
-                let seriesId = '';
-                let seriesName = '';
-                let seasonNumber = null;
-                let episodeNumber = null;
-                try {
-                    const userId = ApiClient.getCurrentUserId();
-                    const item = JE.helpers?.getItemCached
-                        ? await JE.helpers.getItemCached(itemId, { userId })
-                        : await ApiClient.getItem(userId, itemId);
-                    tmdbId = item?.ProviderIds?.Tmdb || '';
-                    seriesId = item?.SeriesId || '';
-                    seriesName = item?.SeriesName || '';
-                    seasonNumber = item?.ParentIndexNumber != null ? item.ParentIndexNumber : null;
-                    episodeNumber = item?.IndexNumber != null ? item.IndexNumber : null;
-                } catch (err) {
-                    console.warn('🪼 Jellyfin Enhanced: Could not fetch item metadata for hide button', err);
-                }
-
-                const isEpisode = lastDetailsItemType === 'Episode';
-                const isSeason = lastDetailsItemType === 'Season';
-
-                // Build base item data
-                const baseItemData = {
-                    itemId,
-                    name: itemName,
-                    type: lastDetailsItemType,
-                    tmdbId,
-                    seriesId,
-                    seriesName,
-                    seasonNumber,
-                    episodeNumber
-                };
-
-                if (isEpisode && seriesId) {
-                    // Episode on a detail page: show choice dialog
-                    JE.hiddenContent.confirmAndHide(baseItemData, () => {
-                        setHiddenState();
-                    }, {
-                        showEpisodeChoice: true,
-                        onChooseShow: async () => {
-                            // User chose to hide the entire show
-                            let seriesTmdbId = '';
-                            try {
-                                const userId = ApiClient.getCurrentUserId();
-                                const series = await ApiClient.getItem(userId, seriesId);
-                                seriesTmdbId = series?.ProviderIds?.Tmdb || '';
-                            } catch (err) {
-                                console.warn('🪼 Jellyfin Enhanced: Could not fetch series metadata for hide-show action', err);
-                            }
-                            JE.hiddenContent.hideItem({
-                                itemId: seriesId,
-                                name: seriesName || itemName,
-                                type: 'Series',
-                                tmdbId: seriesTmdbId,
-                                posterPath: ''
-                            });
-                            setHiddenState();
-                        }
-                    });
-                } else if (isSeason && seriesId) {
-                    // Season: hide with series metadata
-                    JE.hiddenContent.confirmAndHide(baseItemData, () => {
-                        setHiddenState();
-                    });
-                } else {
-                    // Movie or Series: standard hide
-                    JE.hiddenContent.confirmAndHide(baseItemData, () => {
-                        setHiddenState();
-                    });
-                }
-            };
-        }
-
-        if (JE.hiddenContent.isHidden(itemId)) {
-            setHiddenState();
-        } else {
-            setHideState();
-        }
-
-        // Keep Jellyfin's overflow menu (three-dots) as the last action button.
-        const moreButton = buttonContainer.querySelector('.btnMoreCommands');
-        if (moreButton) {
-            buttonContainer.insertBefore(button, moreButton);
-        } else {
-            buttonContainer.appendChild(button);
-        }
+  // client/src/features/details-providers/details-page.ts
+  var JE = export1("Details page features");
+  var ctx = export5(JE);
+  void ctx.own.features;
+  var features = () => {
+    var _a;
+    return (_a = ctx.own).features ?? (_a.features = {});
+  };
+  var lastDetailsItemId = null;
+  var lastDetailsLease = null;
+  var lastDetailsItemType = null;
+  var lastDetailsDefaultSourceId = null;
+  var itemTypeFetch = null;
+  var FEATURES_SUPPORTED_TYPES = ["Episode", "Season", "Series", "Movie", "BoxSet", "Playlist"];
+  var AUDIO_LANGUAGES_SUPPORTED_TYPES = ["Episode", "Season", "Series", "Movie"];
+  var HIDE_SUPPORTED_TYPES = ["Movie", "Series", "Episode", "Season"];
+  function label(key, fallback) {
+    const value = JE.t(key);
+    return value !== key ? value : fallback;
+  }
+  function singleSourceId(item) {
+    const sources = item?.MediaSources;
+    return sources?.length === 1 ? sources[0]?.Id || null : null;
+  }
+  function addHideContentButton(hidden, itemId, visiblePage, itemType) {
+    const settings = hidden.getSettings();
+    if (!settings.enabled || !settings.showHideButtons) return;
+    if (itemType === "Person") {
+      if (!settings.showButtonCast) return;
+    } else {
+      if (settings.showButtonDetails === false) return;
+      if (!itemType || !HIDE_SUPPORTED_TYPES.includes(itemType)) return;
     }
-
-    // The chips JE adds to Jellyfin's primary info row.
-    const JE_INFO_CHIP = /\bmediaInfoItem-(watchProgress|fileSize|audioLanguage|releaseDate)\b/;
-
-    /**
-     * Whether Jellyfin has rendered its own items into the info row. Jellyfin
-     * (re)builds that row while the page loads; chips added before it has
-     * would be wiped by that render and re-added — a visible flicker.
-     * @param {HTMLElement} container - The .itemMiscInfo-primary row.
-     * @returns {boolean}
-     */
-    function hasJellyfinInfo(container) {
-        for (const child of container.children) {
-            if (!JE_INFO_CHIP.test(child.className)) return true;
-        }
-        return false;
+    if (visiblePage.querySelector(".je-detail-hide-btn")) return;
+    let buttonContainer = null;
+    for (const selector of [".detailButtons", ".itemActionsBottom", ".mainDetailButtons", ".detailButtonsContainer"]) {
+      buttonContainer = visiblePage.querySelector(selector);
+      if (buttonContainer) break;
     }
-
-    /**
-     * Places the details-page features (hide/Spoiler Guard buttons, the media
-     * info chips) for the visible item. Idempotent: every feature skips an
-     * item it has already placed.
-     * @param {boolean} settled - The page's mutations have gone quiet. Early
-     *   (unsettled) runs place the chips only once Jellyfin's own info items
-     *   are in the row; the settled run places them regardless (some pages,
-     *   e.g. seasons, leave the row empty).
-     */
-    function runItemDetails(settled) {
-        const visiblePage = document.querySelector('#itemDetailPage:not(.hide)');
-        if (!visiblePage) return;
-
-        const container = visiblePage.querySelector('.itemMiscInfo.itemMiscInfo-primary');
-        if (!container) return;
-
-        try {
-            const itemId = new URLSearchParams(window.location.hash.split('?')[1]).get('id');
-            if (!itemId) return;
-
-            // Reset cache when navigating to a new item
-            if (lastDetailsItemId !== itemId) {
-                lastDetailsItemId = itemId;
-                lastDetailsItemType = null;
-                lastDetailsDefaultSourceId = null;
-            }
-
-            // Fetch item type once per item to decide applicability
-            if (!lastDetailsItemType) {
-                if (itemTypeFetch?.itemId !== itemId) {
-                    const userId = ApiClient.getCurrentUserId();
-                    const lookup = { itemId };
-                    itemTypeFetch = lookup;
-                    (JE.helpers?.getItemCached
-                        ? JE.helpers.getItemCached(itemId, { userId })
-                        : ApiClient.getItem(userId, itemId))
-                        .then(item => {
-                            if (itemTypeFetch === lookup) itemTypeFetch = null;
-                            // The page has moved on to another item: this answer
-                            // is not its type or source (that item runs its own
-                            // lookup).
-                            if (lastDetailsItemId !== itemId) return;
-                            lastDetailsItemType = item?.Type || null;
-                            lastDetailsDefaultSourceId = item?.MediaSources?.length === 1 ? (item.MediaSources[0].Id || null) : null;
-                            // Re-run once the type is known, without waiting for
-                            // the page's mutations to go quiet again.
-                            runItemDetails(false);
-                        })
-                        .catch(() => { if (itemTypeFetch === lookup) itemTypeFetch = null; });
-                }
-                return;
-            }
-
-            // Add hide content button on detail pages (including Person pages)
-            if (JE.hiddenContent) {
-                addHideContentButton(itemId, visiblePage);
-            }
-
-            // Spoiler Guard supports Series, Movie, and BoxSet detail pages.
-            // Keep this before the media-info type gate so the action remains
-            // available even when other detail enhancements are disabled.
-            if ((lastDetailsItemType === 'Series' || lastDetailsItemType === 'Movie' || lastDetailsItemType === 'BoxSet')
-                && typeof JE.spoilerBlur?.addSpoilerBlurButton === 'function') {
-                JE.spoilerBlur.addSpoilerBlurButton(itemId, visiblePage, lastDetailsItemType);
-            }
-
-            // Skip unsupported item types for media features
-            if (!FEATURES_SUPPORTED_TYPES.includes(lastDetailsItemType)) {
-                return;
-            }
-
-            if (!settled && !hasJellyfinInfo(container)) return;
-
-            // Jellyfin has filled the info row: its cast comes next.
-            if (visit && visit.itemId === itemId && visit.view === visiblePage) startPeoplePrefetch(visit);
-
-            // Jellyfin fills the version <select> after the info row (and the
-            // settled run may come before either): for a single-version item
-            // an empty select will hold its only source, so use that id now —
-            // otherwise the chips fetch once for "no source" and again, with
-            // the same answer, once the select holds the id.
-            const sourceSelect = visiblePage.querySelector('.selectSource');
-            const selectedSourceId = sourceSelect?.value
-                || (sourceSelect && sourceSelect.options.length === 0 ? lastDetailsDefaultSourceId : null);
-            if (JE?.currentSettings?.showWatchProgress) {
-                displayWatchProgress(itemId, container, selectedSourceId);
-            }
-            if (JE?.currentSettings?.showFileSizes) {
-                displayItemSize(itemId, container, selectedSourceId);
-            }
-            if (JE?.currentSettings?.showAudioLanguages && AUDIO_LANGUAGES_SUPPORTED_TYPES.includes(lastDetailsItemType)) {
-                displayAudioLanguages(itemId, container, selectedSourceId);
-            }
-            if (JE.pluginConfig?.ShowReleaseDates && JE.pluginConfig?.TmdbEnabled && AUDIO_LANGUAGES_SUPPORTED_TYPES.includes(lastDetailsItemType)) {
-                displayReleaseDate(itemId, container);
-            }
-        } catch (e) {
-        console.warn('🪼 Jellyfin Enhanced: Error in item details handler', e);
-    }
-    }
-
-    // Two schedules over the page's mutation bursts. The settled one waits
-    // for 100 ms of quiet, as before. The early one runs within ~100 ms even
-    // while Jellyfin is still building the page (mutations never go quiet
-    // then, which postponed the chips by up to ~0.8 s); it places the chips
-    // as soon as Jellyfin's info row is filled.
-    const settledItemDetails = JE.helpers.debounce(() => runItemDetails(true), 100);
-    const earlyItemDetails = JE.helpers.debounce(() => runItemDetails(false), 16, { maxWait: 100 });
-    const handleItemDetails = () => {
-        earlyItemDetails();
-        settledItemDetails();
+    if (!buttonContainer) return;
+    const buttonLease = export12(JE.session, itemId, visiblePage);
+    const button = document.createElement("button");
+    button.setAttribute("is", "emby-button");
+    button.className = "button-flat detailButton emby-button je-detail-hide-btn";
+    button.type = "button";
+    const hideLabel = label("hidden_content_hide_button", "Hide");
+    const hiddenLabel = label("hidden_content_already_hidden", "Hidden");
+    const unhideLabel = label("hidden_content_unhide", "Unhide");
+    const content = document.createElement("div");
+    content.className = "detailButton-content";
+    button.appendChild(content);
+    const renderContent = (text, iconName) => {
+      content.replaceChildren();
+      const icon = document.createElement("span");
+      icon.className = "material-icons detailButton-icon";
+      icon.setAttribute("aria-hidden", "true");
+      icon.textContent = iconName || "visibility";
+      content.appendChild(icon);
+      if (text) {
+        const textSpan = document.createElement("span");
+        textSpan.className = "detailButton-icon-text";
+        textSpan.textContent = text;
+        content.appendChild(textSpan);
+      }
     };
-
-    // ── Details visits ──────────────────────────────────────────────────
-    // The chips used to ask for their data only once they were placed, after
-    // Jellyfin had filled its info row (~0.3 s into the page). A visit starts
-    // when Jellyfin shows a freshly built details view and, once the item is
-    // known (the same shared lookup runItemDetails makes), starts the chips'
-    // item-stats and release lookups, which the chips then take over. What no
-    // chip took over is dropped when the visit ends, so a later visit asks
-    // again exactly as before. Restored views (history back) start no visit:
-    // Jellyfin doesn't reload them and their chips are already in place.
-    // People tags' people/info requests start once Jellyfin has filled the
-    // info row (its cast follows), so they don't compete with the page's own
-    // item request.
-    let visit = null; // { itemId, view, epoch, item, peopleStarted }
-
-    function hashItemId() {
-        return new URLSearchParams(window.location.hash.split('?')[1]).get('id');
-    }
-
-    function endDetailsVisit() {
-        const ended = visit;
-        if (!ended) return;
-        visit = null;
-        discardItemStatsPrefetch?.(ended);
-        discardReleasePrefetch?.(ended);
-        JE.internals.peopleTags?.leave?.(ended.itemId);
-    }
-
-    /**
-     * @param {HTMLElement} view The details view being shown.
-     * @param {object|undefined} detail The viewshow event's detail.
-     */
-    function beginDetailsVisit(view, detail) {
-        endDetailsVisit();
-        const itemId = hashItemId();
-        if (!itemId || (detail?.params?.id && detail.params.id !== itemId)) return;
-        const settings = JE.currentSettings || {};
-        const config = JE.pluginConfig || {};
-        if (!(settings.showWatchProgress || settings.showFileSizes || (config.ShowReleaseDates && config.TmdbEnabled)
-            || (settings.peopleTagsEnabled && JE.internals.peopleTags))) return;
-        // runItemDetails already knows this item (A, home, A again) and makes
-        // no lookup: neither does the visit.
-        if (lastDetailsItemId === itemId && lastDetailsItemType) return;
-        const userId = ApiClient.getCurrentUserId?.();
-        if (!userId || !JE.helpers?.getItemCached) return;
-        const current = visit = { itemId, view, epoch: JE.session ? JE.session.getEpoch() : 0, item: null, peopleStarted: false };
-        // The same cached lookup (key and promise) runItemDetails and Seerr make.
-        JE.helpers.getItemCached(itemId, { userId }).then((item) => {
-            if (visit !== current || !item) return;
-            current.item = item;
-            // Best effort: Seerr's lookups waiting on this item go first.
-            setTimeout(() => prefetchChipData(current), 0);
-        }).catch(() => { /* runItemDetails looks it up again */ });
-    }
-
-    function visitLive(current) {
-        return visit === current
-            && (!JE.session || JE.session.isCurrent(current.epoch))
-            && hashItemId() === current.itemId
-            && current.view.isConnected
-            && !current.view.classList.contains('hide');
-    }
-
-    /**
-     * Starts the lookups the chips of the visit's item will make, under the
-     * same switches and type gates as runItemDetails.
-     * @param {object} current The visit.
-     */
-    function prefetchChipData(current) {
-        if (!visitLive(current)) return;
-        const { item } = current;
-        const settings = JE.currentSettings || {};
-        const config = JE.pluginConfig || {};
-        const sources = item.MediaSources;
-        // The source runItemDetails hands the chips is the single version's
-        // id (what Jellyfin's select will hold), or none without a version.
-        // With several versions the selected one isn't known yet: no prefetch.
-        if (FEATURES_SUPPORTED_TYPES.includes(item.Type) && (settings.showWatchProgress || settings.showFileSizes)
-            && (!Array.isArray(sources) || sources.length <= 1)) {
-            prefetchItemStats?.(current.itemId, sources?.length === 1 ? (sources[0].Id || null) : null,
-                { watchProgress: !!settings.showWatchProgress, fileSize: !!settings.showFileSizes }, current);
+    const setHiddenState = () => {
+      button.classList.add("je-already-hidden");
+      button.setAttribute("aria-label", hiddenLabel);
+      button.title = hiddenLabel;
+      renderContent("", "visibility_off");
+      button.onmouseenter = () => {
+        button.title = unhideLabel;
+      };
+      button.onmouseleave = () => {
+        button.title = hiddenLabel;
+      };
+      button.onclick = (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!buttonLease.current()) return;
+        hidden.unhideItem(itemId);
+        setHideState();
+      };
+    };
+    const setHideState = () => {
+      button.classList.remove("je-already-hidden");
+      button.setAttribute("aria-label", hideLabel);
+      button.title = hideLabel;
+      renderContent("", "visibility");
+      button.onmouseenter = null;
+      button.onmouseleave = null;
+      button.onclick = async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!buttonLease.current()) return;
+        const clickLease = export12(JE.session, itemId, visiblePage);
+        const nameEl = visiblePage.querySelector('.itemName, h1, h2, [class*="itemName"]');
+        const itemName = nameEl?.textContent?.trim() || "Unknown";
+        let tmdbId = "", seriesId = "", seriesName = "";
+        let seasonNumber = null, episodeNumber = null;
+        try {
+          const item = await export7(JE.helpers, itemId, true);
+          tmdbId = item?.ProviderIds.Tmdb || "";
+          seriesId = item?.SeriesId || "";
+          seriesName = item?.SeriesName || "";
+          seasonNumber = item?.ParentIndexNumber ?? null;
+          episodeNumber = item?.IndexNumber ?? null;
+        } catch (err) {
+          console.warn("🪼 Jellyfin Enhanced: Could not fetch item metadata for hide button", err);
         }
-        if (config.ShowReleaseDates && config.TmdbEnabled && AUDIO_LANGUAGES_SUPPORTED_TYPES.includes(item.Type)) {
-            prefetchReleaseDate?.(current.itemId, item, current);
+        if (!clickLease.current()) return;
+        const baseItemData = {
+          itemId,
+          name: itemName,
+          type: itemType ?? "",
+          tmdbId,
+          seriesId,
+          seriesName,
+          seasonNumber,
+          episodeNumber
+        };
+        if (itemType === "Episode" && seriesId) {
+          hidden.confirmAndHide(baseItemData, () => {
+            if (clickLease.current()) setHiddenState();
+          }, {
+            showEpisodeChoice: true,
+            onChooseShow: async () => {
+              if (!clickLease.current()) return;
+              let seriesTmdbId = "";
+              try {
+                const series = export13(await export0().getItem(export3(), seriesId));
+                seriesTmdbId = series?.ProviderIds.Tmdb || "";
+              } catch (err) {
+                console.warn("🪼 Jellyfin Enhanced: Could not fetch series metadata for hide-show action", err);
+              }
+              if (!clickLease.current()) return;
+              hidden.hideItem({ itemId: seriesId, name: seriesName || itemName, type: "Series", tmdbId: seriesTmdbId, posterPath: "" });
+              setHiddenState();
+            }
+          });
+        } else {
+          hidden.confirmAndHide(baseItemData, () => {
+            if (clickLease.current()) setHiddenState();
+          });
         }
-        // The info row was filled before the item came back.
-        const row = current.view.querySelector('.itemMiscInfo.itemMiscInfo-primary');
-        if (row && hasJellyfinInfo(row)) startPeoplePrefetch(current);
+      };
+    };
+    if (hidden.isHidden(itemId)) setHiddenState();
+    else setHideState();
+    const moreButton = buttonContainer.querySelector(".btnMoreCommands");
+    if (moreButton) buttonContainer.insertBefore(button, moreButton);
+    else buttonContainer.appendChild(button);
+  }
+  var JE_INFO_CHIP = /\bmediaInfoItem-(watchProgress|fileSize|audioLanguage|releaseDate)\b/;
+  function hasJellyfinInfo(container) {
+    for (const child of container.children) {
+      if (!JE_INFO_CHIP.test(child.className)) return true;
     }
-
-    /**
-     * Starts people tags' people/info requests for the visit's cast, once.
-     * @param {object} current The visit.
-     */
-    function startPeoplePrefetch(current) {
-        if (current.peopleStarted || !current.item || !visitLive(current)) return;
-        current.peopleStarted = true;
-        JE.internals.peopleTags?.prefetch?.(current.itemId, current.item, current.view, current.epoch);
-    }
-
-    JE.core.navigation.onViewPage((_view, _element, _hash, _itemPromise, rawEvent) => {
-        const target = rawEvent?.target;
-        if (target && target.id === 'itemDetailPage' && rawEvent.detail?.isRestored !== true) {
-            beginDetailsVisit(target, rawEvent.detail);
+    return false;
+  }
+  function runItemDetails(settled) {
+    const visiblePage = export11();
+    if (!visiblePage) return;
+    const container = visiblePage.querySelector(".itemMiscInfo.itemMiscInfo-primary");
+    if (!container) return;
+    try {
+      const itemId = export32();
+      if (!itemId) return;
+      if (lastDetailsItemId !== itemId || !lastDetailsLease?.current()) {
+        visiblePage.querySelectorAll(".je-detail-hide-btn").forEach((button) => button.remove());
+        lastDetailsLease = export12(JE.session, itemId, visiblePage);
+        lastDetailsItemId = itemId;
+        lastDetailsItemType = null;
+        lastDetailsDefaultSourceId = null;
+      }
+      if (!lastDetailsItemType) {
+        if (itemTypeFetch?.itemId !== itemId || !itemTypeFetch.current()) {
+          const lease = export12(JE.session, itemId, visiblePage);
+          const lookup = { itemId, current: lease.current };
+          itemTypeFetch = lookup;
+          export8(JE.helpers, itemId, true).then((raw) => {
+            if (itemTypeFetch === lookup) itemTypeFetch = null;
+            if (lastDetailsItemId !== itemId || !lease.current()) return;
+            const item = export13(raw);
+            if (!item?.Type) return;
+            lastDetailsItemType = item?.Type || null;
+            lastDetailsDefaultSourceId = singleSourceId(item);
+            runItemDetails(false);
+          }).catch(() => {
+            if (itemTypeFetch === lookup) itemTypeFetch = null;
+          });
         }
+        return;
+      }
+      const itemType = lastDetailsItemType;
+      const hiddenContent = ctx.peer("hiddenContent");
+      if (hiddenContent) addHideContentButton(hiddenContent, itemId, visiblePage, itemType);
+      const spoilerBlur = ctx.peer("spoilerBlur");
+      const addSpoilerButton = spoilerBlur?.addSpoilerBlurButton;
+      if ((itemType === "Series" || itemType === "Movie" || itemType === "BoxSet") && typeof addSpoilerButton === "function") {
+        addSpoilerButton.call(spoilerBlur, itemId, visiblePage, itemType);
+      }
+      if (!FEATURES_SUPPORTED_TYPES.includes(itemType)) return;
+      if (!settled && !hasJellyfinInfo(container)) return;
+      if (visit && visit.itemId === itemId && visit.view === visiblePage) startPeoplePrefetch(visit);
+      const sourceSelect = visiblePage.querySelector(".selectSource");
+      const selectedSourceId = sourceSelect?.value || (sourceSelect && sourceSelect.options.length === 0 ? lastDetailsDefaultSourceId : null);
+      const settings = JE.currentSettings;
+      const chips = features();
+      if (settings?.showWatchProgress) chips.displayWatchProgress?.(itemId, container, selectedSourceId);
+      if (settings?.showFileSizes) chips.displayItemSize?.(itemId, container, selectedSourceId);
+      if (settings?.showAudioLanguages && AUDIO_LANGUAGES_SUPPORTED_TYPES.includes(itemType)) {
+        chips.displayAudioLanguages?.(itemId, container, selectedSourceId);
+      }
+      if (JE.pluginConfig?.ShowReleaseDates && JE.pluginConfig.TmdbEnabled && AUDIO_LANGUAGES_SUPPORTED_TYPES.includes(itemType)) {
+        chips.displayReleaseDate?.(itemId, container);
+      }
+    } catch (e) {
+      console.warn("🪼 Jellyfin Enhanced: Error in item details handler", e);
+    }
+  }
+  var settledItemDetails = JE.helpers.debounce(() => runItemDetails(true), 100);
+  var earlyItemDetails = JE.helpers.debounce(() => runItemDetails(false), 16, { maxWait: 100 });
+  var handleItemDetails = () => {
+    earlyItemDetails();
+    settledItemDetails();
+  };
+  var visit = null;
+  function endDetailsVisit() {
+    const ended = visit;
+    if (!ended) return;
+    visit = null;
+    features().discardItemStatsPrefetch?.(ended);
+    features().discardReleasePrefetch?.(ended);
+    ctx.peer("peopleTags")?.leave?.(ended.itemId);
+  }
+  function beginDetailsVisit(view, detail) {
+    endDetailsVisit();
+    const itemId = export32();
+    const paramsId = export52(export52(detail, "params"), "id");
+    if (!itemId || paramsId && paramsId !== itemId) return;
+    const settings = JE.currentSettings || {};
+    const config = JE.pluginConfig || {};
+    if (!(settings.showWatchProgress || settings.showFileSizes || config.ShowReleaseDates && config.TmdbEnabled || settings.peopleTagsEnabled && ctx.peer("peopleTags"))) return;
+    if (lastDetailsItemId === itemId && lastDetailsItemType) return;
+    const userId = export3();
+    const getItemCached = JE.helpers.getItemCached;
+    if (!userId || !getItemCached) return;
+    const current = visit = { itemId, view, epoch: JE.session ? JE.session.getEpoch() : 0, item: null, peopleStarted: false };
+    getItemCached.call(JE.helpers, itemId, { userId }).then((item) => {
+      if (visit !== current || !item) return;
+      current.item = item;
+      setTimeout(() => prefetchChipData(current), 0);
+    }).catch(() => {
     });
-    JE.core.navigation.onNavigate(() => {
-        if (visit && hashItemId() !== visit.itemId) endDetailsVisit();
-    });
-    JE.session?.onUserChange('details-prefetch', () => endDetailsVisit());
-
-    // Managed observer for item details. childList-only routes it through the
-    // shared body observer (Jellyfin re-renders the detail page's children on
-    // navigation); the previous class/style attribute filter made it a
-    // dedicated document-wide observer firing on every hover, focus and
-    // lazy-image style change, and it called the handler once per record.
-    JE.helpers.createObserver(
-        'item-details-info',
-        () => handleItemDetails(),
-        document.body,
-        {
-            childList: true,
-            subtree: true
-        }
-    );
-    // A cached detail page re-shown by a class toggle alone produces no
-    // childList mutation, so re-run on view show as well.
-    JE.helpers.onViewPage(() => handleItemDetails());
-})(window.JellyfinEnhanced);
+  }
+  function visitLive(current) {
+    return visit === current && (!JE.session || JE.session.isCurrent(current.epoch)) && export32() === current.itemId && current.view.isConnected && !current.view.classList.contains("hide");
+  }
+  function prefetchChipData(current) {
+    if (!visitLive(current)) return;
+    const item = export13(current.item);
+    const settings = JE.currentSettings || {};
+    const config = JE.pluginConfig || {};
+    const sources = item?.MediaSources;
+    const type = item?.Type ?? "";
+    if (FEATURES_SUPPORTED_TYPES.includes(type) && (settings.showWatchProgress || settings.showFileSizes) && (!sources || sources.length <= 1)) {
+      features().prefetchItemStats?.(
+        current.itemId,
+        sources?.length === 1 ? sources[0]?.Id || null : null,
+        { watchProgress: !!settings.showWatchProgress, fileSize: !!settings.showFileSizes },
+        current
+      );
+    }
+    if (config.ShowReleaseDates && config.TmdbEnabled && AUDIO_LANGUAGES_SUPPORTED_TYPES.includes(type)) {
+      features().prefetchReleaseDate?.(current.itemId, current.item, current);
+    }
+    const row = current.view.querySelector(".itemMiscInfo.itemMiscInfo-primary");
+    if (row && hasJellyfinInfo(row)) startPeoplePrefetch(current);
+  }
+  function startPeoplePrefetch(current) {
+    if (current.peopleStarted || !current.item || !visitLive(current)) return;
+    current.peopleStarted = true;
+    ctx.peer("peopleTags")?.prefetch?.(current.itemId, current.item, current.view, current.epoch);
+  }
+  JE.core.navigation.onViewPage((_view, _element, _hash, _itemPromise, rawEvent) => {
+    const target = rawEvent?.target;
+    if (target instanceof Element && target.id === "itemDetailPage" && export52(eventDetail(rawEvent), "isRestored") !== true) {
+      beginDetailsVisit(target, eventDetail(rawEvent));
+    }
+  });
+  JE.core.navigation.onNavigate(() => {
+    if (visit && export32() !== visit.itemId) endDetailsVisit();
+  });
+  JE.session?.onUserChange("details-prefetch", () => {
+    endDetailsVisit();
+    lastDetailsItemId = null;
+    lastDetailsLease = null;
+    lastDetailsItemType = null;
+    lastDetailsDefaultSourceId = null;
+    itemTypeFetch = null;
+    document.querySelectorAll(".je-detail-hide-btn").forEach((button) => button.remove());
+  });
+  function eventDetail(event) {
+    return event && "detail" in event ? event.detail : void 0;
+  }
+  JE.helpers.createObserver("item-details-info", () => handleItemDetails(), document.body, { childList: true, subtree: true });
+  JE.helpers.onViewPage(() => handleItemDetails());
+})();
+})();
+//# sourceMappingURL=features-details-page.js.map

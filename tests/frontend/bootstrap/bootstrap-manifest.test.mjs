@@ -29,7 +29,7 @@ function unwrappedProblem(source, filename) {
 }
 
 // The production bundle runs every js/component-scripts.json entry in order, each wrapped
-// in its own function (Services/ClientScriptBundle.cs); the harness load() uses that
+// in its own function (Features/Platform/Services/ClientScriptBundle.cs); the harness load() uses that
 // wrapper. Host stubs are only what plugin.js provides before the component stage.
 test('every manifest module loads in bundle order without load-time errors', async t => {
   const manifest = manifestFiles();

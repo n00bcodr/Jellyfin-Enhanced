@@ -1,4 +1,5 @@
 import { readdirSync } from 'node:fs';
+import { availableParallelism } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -19,11 +20,20 @@ export function discoverTests(directory = frontendRoot) {
 }
 
 /**
+ * Test files run at once: JE_TEST_CONCURRENCY when it is a positive integer, otherwise one
+ * less than the machine's cores and never below 4 (the four-core CI runner keeps 4).
+ */
+const requestedConcurrency = Number(process.env.JE_TEST_CONCURRENCY);
+export const testConcurrency = Number.isInteger(requestedConcurrency) && requestedConcurrency > 0
+  ? requestedConcurrency
+  : Math.max(4, availableParallelism() - 1);
+
+/**
  * A hung test fails on its own instead of stalling the whole run. Node 22 (CI)
  * applies --test-timeout to each test file as a whole, newer Node to each test,
  * so the limit leaves room for the heaviest file on a slow runner.
  */
-export const testArguments = ['--test-timeout=300000', '--test-concurrency=4'];
+export const testArguments = ['--test-timeout=300000', `--test-concurrency=${testConcurrency}`];
 
 /** Dates and locale-formatted text must not depend on the machine running the tests. */
 export function testEnvironment(extra = {}) {

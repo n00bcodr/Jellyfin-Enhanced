@@ -1,4 +1,4 @@
-// Parity harness for Services/PosterTags (native poster tags): runs the C# resolver over the
+// Parity harness for Features/MediaTags/PosterTags (native poster tags): runs the C# resolver over the
 // same profiles and tag-cache entries as web-expected.mjs and writes data/out/cs-<profile>.json.
 //
 //   dotnet run -- prepare <dataDir>   web view of synthetic settings + server-faithful synthetic entries
@@ -13,11 +13,13 @@ using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using System.Xml.Serialization;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
-using Jellyfin.Plugin.JellyfinEnhanced.Model;
-using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags;
+using Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.PosterTags;
+using Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags.PosterTags;
 using Newtonsoft.Json.Linq;
-using Jellyfin.Plugin.JellyfinEnhanced.Services;
-using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution;
+using Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.PosterTags.Resolution;
+using Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags.PosterTags.Resolution;
+using Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags;
+using Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services;
 
 var mode = args.Length > 0 ? args[0] : "resolve";
 var dataDir = args.Length > 1 ? args[1] : Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "data");
@@ -26,7 +28,7 @@ var onlyProfile = args.Length > 2 ? args[2] : null;
 if (mode == "compact")
 {
     var cases = JsonSerializer.Deserialize<string[][]>(File.ReadAllText(Path.Combine(dataDir, "compact-expected.json")))!;
-    var method = typeof(PosterTagResolver).Assembly.GetType("Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution.QualityTagRules")!
+    var method = typeof(PosterTagResolver).Assembly.GetType("Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags.PosterTags.Resolution.QualityTagRules")!
         .GetMethod("CompactLabel", BindingFlags.Static | BindingFlags.NonPublic)!;
     foreach (var pair in cases)
         if ((string)method.Invoke(null, new object[] { pair[0] })! != pair[1]) throw new Exception("Compact quality mismatch: " + pair[0]);
@@ -154,7 +156,7 @@ JellyfinEnhancedUserSettings ReadSettingsText(string json)
     }
 }
 
-// JellyfinEnhancedController.GetUserSettingsSettings default construction, copied verbatim.
+// JeSettingsController.GetUserSettingsSettings default construction, copied verbatim.
 static JellyfinEnhancedUserSettings ControllerDefaults(PluginConfiguration defaultConfig) => new()
 {
     AutoPauseEnabled = defaultConfig.AutoPauseEnabled,
@@ -434,7 +436,7 @@ static string LayoutId(PosterTagGroup group) => group switch
 
 // Name chip text (Resolution.LogoRules.ShortName, internal).
 static string ShortName(string name) => (string)typeof(PosterTagSettings).Assembly
-    .GetType("Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution.LogoRules", throwOnError: true)!
+    .GetType("Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.PosterTags.Resolution.LogoRules", throwOnError: true)!
     .GetMethod("ShortName", BindingFlags.Public | BindingFlags.Static)!.Invoke(null, new object[] { name })!;
 
 static string Describe(PosterTag tag) => tag switch
@@ -460,7 +462,7 @@ int CheckNames()
 {
     var expected = Read<Dictionary<string, string?>>("names-expected.json");
     var of = typeof(PosterTagSettings).Assembly
-        .GetType("Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution.LanguageNames", throwOnError: true)!
+        .GetType("Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags.PosterTags.Resolution.LanguageNames", throwOnError: true)!
         .GetMethod("Of", BindingFlags.Public | BindingFlags.Static)!;
     var mismatches = new List<string>();
     foreach (var (code, name) in expected)
@@ -524,7 +526,7 @@ int CheckCasing()
 {
     var expected = Read<List<string?[]>>("casing-expected.json");
     var jsText = typeof(PosterTagSettings).Assembly
-        .GetType("Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution.JsText", throwOnError: true)!;
+        .GetType("Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags.PosterTags.Resolution.JsText", throwOnError: true)!;
     var lower = jsText.GetMethod("ToLower", BindingFlags.NonPublic | BindingFlags.Static)!;
     var upper = jsText.GetMethod("ToUpper", BindingFlags.NonPublic | BindingFlags.Static)!;
     var mismatches = new List<string>();

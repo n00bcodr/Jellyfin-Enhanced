@@ -1,13 +1,7 @@
-<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk" InitialTargets="ValidateJellyfinTarget">
 
     <PropertyGroup>
-        <!-- Build target selector (the default is the JellyfinTarget value set just below).
-             The same source produces two artifacts — one per runtime, never one DLL for both:
-               -p:JellyfinTarget=jf12  -> Jellyfin 12, .NET 10
-               -p:JellyfinTarget=jf10  -> Jellyfin 10.11, .NET 9
-             The request-time injection (ScriptInjectionStartupFilter /
-             BrandingAssetStartupFilter) uses only standard ASP.NET, so it works on
-             both runtimes. -->
+        <!-- Jellyfin 12.x only. Keep the jf12 selector for existing build tooling. -->
         <JellyfinTarget Condition="'$(JellyfinTarget)' == ''">jf12</JellyfinTarget>
         <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
         <NuGetLockFilePath>$(MSBuildProjectDirectory)/packages.$(JellyfinTarget).lock.json</NuGetLockFilePath>
@@ -29,14 +23,6 @@
         <DefineConstants>$(DefineConstants);JF12</DefineConstants>
     </PropertyGroup>
 
-    <!-- Jellyfin 10.11 / .NET 9. Pinned to 10.11.0 (as upstream does) so the artifact
-         loads across the whole 10.11.x line — a newer host satisfies the lower ref. -->
-    <PropertyGroup Condition="'$(JellyfinTarget)' == 'jf10'">
-        <TargetFramework>net9.0</TargetFramework>
-        <JellyfinVersion>10.11.0</JellyfinVersion>
-        <DefineConstants>$(DefineConstants);JF10</DefineConstants>
-    </PropertyGroup>
-
     <ItemGroup>
       <PackageReference Include="Jellyfin.Controller" Version="$(JellyfinVersion)" />
       <PackageReference Include="Jellyfin.Model" Version="$(JellyfinVersion)" />
@@ -49,7 +35,7 @@
       </PackageReference>
       <!--
         Native poster tags shape text with HarfBuzz (kerning). Jellyfin.Drawing.Skia ships SkiaSharp.HarfBuzz and
-        HarfBuzzSharp next to SkiaSharp on both 10.11 and 12, so it is referenced the same way: compile-only, the
+        HarfBuzzSharp next to SkiaSharp on Jellyfin 12, so it is referenced the same way: compile-only, the
         host's copy is used at runtime. The renderer falls back to unshaped text if a host lacks it.
       -->
       <PackageReference Include="SkiaSharp.HarfBuzz" Version="3.116.1" PrivateAssets="all">
@@ -65,7 +51,7 @@
       <EmbeddedResource Include="Assets\PosterTags\*.json;Assets\PosterTags\THIRD_PARTY_NOTICES.md" Exclude="Assets\PosterTags\manifest.json" LogicalName="Jellyfin.Plugin.JellyfinEnhanced.Assets.PosterTags.%(Filename)%(Extension)" WithCulture="false" />
     </ItemGroup>
 
-    <!-- Built-in Media Tags presets (Helpers/MediaTagsPortable.cs reads them in file name order). -->
+    <!-- Built-in Media Tags presets (Shared/MediaTags/MediaTagsPortable.cs reads them in file name order). -->
     <ItemGroup>
       <EmbeddedResource Include="Assets\TagPresets\*.json" LogicalName="Jellyfin.Plugin.JellyfinEnhanced.Assets.TagPresets.%(Filename)%(Extension)" WithCulture="false" />
     </ItemGroup>
@@ -119,6 +105,17 @@
     <EmbeddedResource Include="Configuration\whats-new-seed.json"/>
     <None Remove="plugin.js"/>
     <EmbeddedResource Include="js\**" />
+    <!-- Minified twins of the component scripts (scripts/client-build.mjs), read only by the served bundle
+         (Features/Platform/Services/ClientScriptBundle.cs); never served per file. -->
+    <EmbeddedResource Include="min\**" />
   </ItemGroup>
+
+
+  <Target Name="ValidateJellyfinTarget">
+    <Error Condition="'$(JellyfinTarget)' != '' and '$(JellyfinTarget)' != 'jf12'"
+           Text="This rewrite supports Jellyfin 12.x only. Use JellyfinTarget=jf12; '$(JellyfinTarget)' is unsupported." />
+    <Error Condition="'$(TargetFramework)' != 'net10.0' or '$(TargetFrameworks)' != ''"
+           Text="This rewrite supports only TargetFramework=net10.0 (Jellyfin 12.x)." />
+  </Target>
 
 </Project>

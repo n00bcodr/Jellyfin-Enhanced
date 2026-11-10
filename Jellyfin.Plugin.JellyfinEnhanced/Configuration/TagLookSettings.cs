@@ -197,6 +197,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// kept. Null in, null out (inherit); an empty list stays empty.
         /// </summary>
         public static List<TagLookRule>? NormalizeRules(IEnumerable<TagLookRule?>? rules)
+            => NormalizeRules(rules, null);
+
+        // Persistence uses the exact source-to-result correspondence, including repaired IDs.
+        internal static List<TagLookRule>? NormalizeRules(IEnumerable<TagLookRule?>? rules, Action<TagLookRule, TagLookRule>? onNormalized)
         {
             if (rules == null) return null;
             var result = new List<TagLookRule>();
@@ -226,7 +230,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 }
 
                 ids.Add(id);
-                result.Add(new TagLookRule
+                var normalized = new TagLookRule
                 {
                     Id = id,
                     Enabled = rule.Enabled,
@@ -236,7 +240,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                     ColourPreset = NormalizePreset(rule.ColourPreset),
                     Slots = TagLayoutRules.NormalizeProfile(layout, rule.Slots == null ? null : new TagLayoutProfile { Groups = rule.Slots })?.Groups,
                     Shapes = TagShapeRules.NormalizeDefaults(rule.Shapes),
-                });
+                };
+                result.Add(normalized);
+                onNormalized?.Invoke(rule, normalized);
             }
 
             return result;
@@ -249,6 +255,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <see cref="MaxLocks"/> the oldest go. Null in, null out.
         /// </summary>
         public static Dictionary<string, TagLayoutLock>? NormalizeLocks(IDictionary<string, TagLayoutLock?>? locks)
+            => NormalizeLocks(locks, null);
+
+        internal static Dictionary<string, TagLayoutLock>? NormalizeLocks(IDictionary<string, TagLayoutLock?>? locks, Action<TagLayoutLock, TagLayoutLock>? onNormalized)
         {
             if (locks == null) return null;
             var byId = new Dictionary<string, TagLayoutLock>(StringComparer.Ordinal);
@@ -273,6 +282,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                     Scope = string.Equals(value.Scope?.Trim(), "item", StringComparison.OrdinalIgnoreCase) ? "item" : null,
                     LockedAt = Math.Max(0, value.LockedAt),
                 };
+                onNormalized?.Invoke(value, normalized);
                 if (!byId.TryGetValue(id, out var existing) || existing.LockedAt < normalized.LockedAt)
                 {
                     byId[id] = normalized;

@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Jellyfin Enhanced browser entry manifest",
+  "description": "Production-relative JavaScript outputs mapped to repository-relative TypeScript entries. Additional path, duplicate-key and embedded-resource collision checks run in scripts/client-build.mjs.",
+  "type": "object",
+  "minProperties": 1,
+  "propertyNames": {
+    "pattern": "^(?:[A-Za-z_][A-Za-z0-9_]*/)*[A-Za-z0-9_][A-Za-z0-9_-]*\\.js$"
+  },
+  "additionalProperties": {
+    "type": "string",
+    "pattern": "^client/src/(?:[A-Za-z0-9_][A-Za-z0-9_.-]*/)*[A-Za-z0-9_][A-Za-z0-9_.-]*\\.ts$"
+  }
+}

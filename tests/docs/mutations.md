@@ -6,10 +6,9 @@ Run from any working directory:
 
 ```sh
 python3 tests/runner/mutations.py --target jf12
-python3 tests/runner/mutations.py --target jf10 --layer backend --artifacts artifacts/mutations-jf10
 ```
 
-Prerequisites are the .NET SDK/runtime for the selected target (jf12: .NET 10; jf10: .NET 9), Node 22.12 or newer, and `npm ci`. Install current servicing patches for both Microsoft.NETCore.App and Microsoft.AspNetCore.App: a test host built against a newer patch cannot run on an older runtime. A portable installation works by setting PATH and DOTNET_ROOT to its directory. NuGet packages must be cached or available for restore. Use `--layer frontend` for the JavaScript-only checks. The default report location is `artifacts/mutations`; use distinct artifact directories to retain multiple target reports.
+Prerequisites are the .NET SDK/runtime for the supported target (jf12: .NET 10), Node 22.12 or newer, and `npm ci`. Install current servicing patches for both Microsoft.NETCore.App and Microsoft.AspNetCore.App: a test host built against a newer patch cannot run on an older runtime. A portable installation works by setting PATH and DOTNET_ROOT to its directory. NuGet packages must be cached or available for restore. Use `--layer frontend` for the JavaScript-only checks. The default report location is `artifacts/mutations`; use distinct artifact directories to retain multiple runs.
 
 The runner copies the current checkout, including uncommitted production files and tests, into a disposable directory managed by Python. It excludes Git metadata, dependencies and build artifacts; JavaScript dependencies are linked read-only by convention and are never installed or modified by the runner. The actual mutations and builds happen exclusively inside the copied tree. It neither commits nor changes production files in the original checkout. Temporary directories are removed on normal completion and exceptions.
 

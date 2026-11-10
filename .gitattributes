@@ -1,2 +1,13 @@
 # Auto detect text files and perform LF normalization
 * text=auto eol=lf
+
+# Generated files (frontend.md §5.3, step E1): regenerate them, never hand-edit. The header of each client/src file
+# names its generator; tests/frontend/architecture/generated-markers.test.mjs checks both.
+client/src/contracts/generated.ts linguist-generated=true
+client/src/contracts/schema.ts linguist-generated=true
+client/src/features/media-tags/types/status/status-vocabulary.ts linguist-generated=true
+client/src/features/media-tags/types/quality/compact-quality.ts linguist-generated=true
+client/src/features/media-tags/types/genre/genre-table.ts linguist-generated=true
+client/src/admin/config/per-user-props.ts linguist-generated=true
+client/generated-manifest.json linguist-generated=true
+Jellyfin.Plugin.JellyfinEnhanced/js/**/*.js.map linguist-generated=true

@@ -1,7 +1,7 @@
 using System.Text.Json;
-using Jellyfin.Plugin.JellyfinEnhanced.Model;
-using Jellyfin.Plugin.JellyfinEnhanced.Model.Arr;
+using Jellyfin.Plugin.JellyfinEnhanced.Shared.Arr;
 using MediaBrowser.Model.Plugins;
+using Jellyfin.Plugin.JellyfinEnhanced.Features.Platform.Models;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 {
@@ -991,7 +991,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// </summary>
         public string CustomTagRuleKey { get; set; } = string.Empty;
 
-        // Media Tags presets the administrator offers users (see Helpers/MediaTagsPortable.cs).
+        // Media Tags presets the administrator offers users (see Shared/MediaTags/MediaTagsPortable.cs).
         /// <summary>
         /// The presets offered to every user's Presets list: a JSON array of preset documents
         /// (<c>{"v":1,"kind":"je-media-tags-preset","id","name","description","settings":{…}}</c>), at most 20,

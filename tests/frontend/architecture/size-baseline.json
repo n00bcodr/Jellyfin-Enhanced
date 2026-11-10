@@ -1,0 +1,22 @@
+{
+  "_comment": "frontend.md §5.1 ratchet, recorded at step S1. {file: lines} for files over their limit (800; 1500 for *-styles.ts/*.css; generated-header files exempt). Lines may only fall: lower or delete an entry when a file shrinks or is split. A file move renames its key. Never add an entry or raise a count.",
+  "client/src/features/bookmarks/bookmarks.ts": 849,
+  "client/src/features/details-providers/elsewhere.ts": 1103,
+  "client/src/features/details-providers/reviews.ts": 1006,
+  "client/src/features/media-tags/admin/page.ts": 867,
+  "client/src/features/media-tags/admin/tag-styles-editor.ts": 1119,
+  "client/src/features/media-tags/editor/tag-item-editor.ts": 1053,
+  "client/src/features/media-tags/pipeline/tag-renderer-base.ts": 899,
+  "client/src/features/media-tags/settings/ui-panel-media-tags.ts": 1235,
+  "client/src/features/media-tags/settings/ui-panel-tag-editor.ts": 1133,
+  "client/src/features/media-tags/settings/ui-panel-tag-looks.ts": 978,
+  "client/src/features/media-tags/settings/ui-panel-tag-portable.ts": 1183,
+  "client/src/features/media-tags/settings/ui-panel-tag-preview.ts": 821,
+  "client/src/features/media-tags/types/direct-play/tag-direct-play.ts": 878,
+  "client/src/features/media-tags/types/language/media-language.ts": 903,
+  "client/src/features/media-tags/types/people/peopletags.ts": 1123,
+  "client/src/features/media-tags/types/quality/quality-rules.ts": 970,
+  "client/src/features/media-tags/types/status/statustags.ts": 1454,
+  "client/src/features/seerr/discovery/controller.ts": 813,
+  "client/src/features/settings-panel/ui-panel-settings.ts": 1007
+}

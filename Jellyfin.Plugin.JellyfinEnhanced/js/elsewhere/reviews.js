@@ -1,494 +1,414 @@
-// /js/elsewhere/reviews.js
-(function (JE) {
-    'use strict';
+(() => {
+"use strict";
+(() => {
+  // client/src/host/context.ts
+  function sharedModule(id) {
+    const namespace = window.JellyfinEnhanced?.core?.sharedModules?.[id];
+    if (!namespace) throw new Error(`${id} is not in JE.core.sharedModules: load its provider first (client/shared-modules.json)`);
+    return namespace;
+  }
+  function sharedExport(namespace, name) {
+    return namespace[name];
+  }
 
-    JE.initializeReviewsScript = function () {
-        const tmdbReviewsEnabled = JE.pluginConfig.ShowReviews && JE.pluginConfig.TmdbEnabled;
-        const userReviewsEnabled = JE.pluginConfig.ShowUserReviews;
-        const anilistReviewsEnabled = JE.pluginConfig.ShowAnilistReviews;
-        if (!tmdbReviewsEnabled && !userReviewsEnabled && !anilistReviewsEnabled) {
-            console.log('🪼 Jellyfin Enhanced: Reviews feature disabled.');
+  // client/generated-shared/stub/client/src/features/details-providers/host.ts
+  var shared = /* @__PURE__ */ sharedModule("features/details-providers/host");
+  var export0 = /* @__PURE__ */ sharedExport(shared, "api");
+  var export1 = /* @__PURE__ */ sharedExport(shared, "bridge");
+  var export2 = /* @__PURE__ */ sharedExport(shared, "browserTranslator");
+  var export3 = /* @__PURE__ */ sharedExport(shared, "currentUserId");
+  var export4 = /* @__PURE__ */ sharedExport(shared, "dashboard");
+  var export5 = /* @__PURE__ */ sharedExport(shared, "detailsContext");
+
+  // client/generated-shared/stub/client/src/features/details-providers/page.ts
+  var shared2 = /* @__PURE__ */ sharedModule("features/details-providers/page");
+  var export12 = /* @__PURE__ */ sharedExport(shared2, "detailsLease");
+  var export32 = /* @__PURE__ */ sharedExport(shared2, "hashItemId");
+  var export7 = /* @__PURE__ */ sharedExport(shared2, "lookupDetailsItem");
+  var export11 = /* @__PURE__ */ sharedExport(shared2, "visibleDetailPage");
+
+  // client/generated-shared/stub/client/src/features/details-providers/links.ts
+  var shared3 = /* @__PURE__ */ sharedModule("features/details-providers/links");
+  var export22 = /* @__PURE__ */ sharedExport(shared3, "pathSegment");
+
+  // client/generated-shared/stub/client/src/features/details-providers/wire.ts
+  var shared4 = /* @__PURE__ */ sharedModule("features/details-providers/wire");
+  var export02 = /* @__PURE__ */ sharedExport(shared4, "bool");
+  var export13 = /* @__PURE__ */ sharedExport(shared4, "decodeDetailsItem");
+  var export42 = /* @__PURE__ */ sharedExport(shared4, "errorShape");
+  var export52 = /* @__PURE__ */ sharedExport(shared4, "field");
+  var export72 = /* @__PURE__ */ sharedExport(shared4, "isRecord");
+  var export8 = /* @__PURE__ */ sharedExport(shared4, "list");
+  var export9 = /* @__PURE__ */ sharedExport(shared4, "num");
+  var export112 = /* @__PURE__ */ sharedExport(shared4, "str");
+  var export132 = /* @__PURE__ */ sharedExport(shared4, "text");
+
+  // client/src/features/details-providers/review-domain.ts
+  function htmlToMarkdown(value) {
+    return String(value).replace(/<a\s[^>]*?href=["'](https?:\/\/[^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi, "[$2]($1)").replace(/<(strong|b)>([\s\S]*?)<\/\1>/gi, "**$2**").replace(/<(em|i)>([\s\S]*?)<\/\1>/gi, "*$2*").replace(/<br\s*\/?>/gi, "\n").replace(/<\/p>\s*<p[^>]*>/gi, "\n\n").replace(/<\/?[a-z][^>]*>/gi, "");
+  }
+  function toPlainText(value) {
+    return htmlToMarkdown(value).replace(/\[([^\]]+)\]\(https?:\/\/[^)\s]+\)/g, "$1").replace(/https?:\/\/[^\s<]+/g, "").replace(/(\*\*|__|~~|\*|`)/g, "").replace(/(^|\W)_([^_\n]+)_(?=\W|$)/g, "$1$2").replace(/[ \t]+/g, " ").replace(/ ?\n ?/g, "\n").trim();
+  }
+  function extractLinks(value) {
+    const links = [];
+    for (const match of htmlToMarkdown(value).matchAll(/\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/g)) {
+      if (match[1] !== void 0 && match[2] !== void 0) links.push({ label: match[1], url: match[2] });
+    }
+    return links;
+  }
+  function relink(translated, links, labels) {
+    if (labels.length !== links.length) return translated;
+    let out = translated;
+    const linked = [];
+    links.forEach((link, i) => {
+      const lower = out.toLowerCase();
+      const label = [link.label, labels[i] || ""].map((l) => l.trim().replace(/[[\]]/g, "")).find((l) => l && lower.includes(l.toLowerCase()));
+      if (!label) return;
+      const at = lower.indexOf(label.toLowerCase());
+      linked.push(`[${out.substr(at, label.length)}](${link.url})`);
+      out = `${out.slice(0, at)}${linked.length - 1}${out.slice(at + label.length)}`;
+    });
+    return out.replace(/\u0001(\d+)\u0002/g, (_match, n) => linked[Number(n)] ?? "");
+  }
+  function parseMarkdown(value, escapeHtml) {
+    if (!value) return "";
+    let html = escapeHtml(htmlToMarkdown(value));
+    let marker = "\0JE";
+    while (html.includes(marker)) marker += "J";
+    const protectedHtml = [];
+    const protect = (content) => `${marker}${protectedHtml.push(content) - 1}\0`;
+    const emphasize = (text) => text.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/__(.+?)__/g, "<strong>$1</strong>").replace(/\*(.+?)\*/g, "<em>$1</em>").replace(/_(.+?)_/g, "<em>$1</em>").replace(/~~(.+?)~~/g, "<del>$1</del>");
+    const anchor = (label, url) => `<a is="emby-linkbutton" href="${url}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+    html = html.replace(
+      /`([^`\n]+)`|\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)|(https?:\/\/[^\s<]+)/gi,
+      (_match, code, label, url, plainUrl) => {
+        if (code !== void 0) return protect(`<code>${code}</code>`);
+        if (label !== void 0 && url !== void 0) return protect(anchor(emphasize(label), url));
+        const raw = plainUrl ?? "";
+        const trimmed = raw.replace(/[.,;!?)]+$/, "");
+        return protect(anchor(trimmed, trimmed)) + raw.slice(trimmed.length);
+      }
+    );
+    html = emphasize(html);
+    const lines = html.split(/\r?\n/);
+    const processed = [];
+    let inBlockquote = false;
+    let blockquoteLines = [];
+    let inList = false;
+    let listItems = [];
+    for (const line of lines) {
+      const trimmedLine = line.trim();
+      if (trimmedLine.startsWith("&gt; ")) {
+        if (!inBlockquote) {
+          inBlockquote = true;
+          blockquoteLines = [];
+        }
+        blockquoteLines.push(trimmedLine.substring(5));
+        continue;
+      } else if (inBlockquote) {
+        processed.push("<blockquote>" + blockquoteLines.join("<br>") + "</blockquote>");
+        inBlockquote = false;
+        blockquoteLines = [];
+      }
+      if (/^[-*]\s+/.test(trimmedLine)) {
+        if (!inList) {
+          inList = true;
+          listItems = [];
+        }
+        listItems.push("<li>" + trimmedLine.substring(2) + "</li>");
+        continue;
+      } else if (inList) {
+        processed.push("<ul>" + listItems.join("") + "</ul>");
+        inList = false;
+        listItems = [];
+      }
+      const heading = /^(#{1,6})\s/.exec(trimmedLine);
+      if (heading?.[1]) {
+        const level = /^#+/.exec(trimmedLine)?.[0].length ?? heading[1].length;
+        processed.push(`<h${level}>${trimmedLine.substring(level + 1)}</h${level}>`);
+        continue;
+      }
+      if (/^([-*]){3,}$/.test(trimmedLine)) {
+        processed.push("<hr>");
+        continue;
+      }
+      processed.push(trimmedLine ? line : "<br>");
+    }
+    if (inBlockquote) processed.push("<blockquote>" + blockquoteLines.join("<br>") + "</blockquote>");
+    if (inList) processed.push("<ul>" + listItems.join("") + "</ul>");
+    return protectedHtml.reduce((text, content, index) => text.split(`${marker}${index}\0`).join(content), processed.join(""));
+  }
+  var STAR_POLYGON = '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>';
+  function starIconHtml(fillFraction) {
+    const pct = Math.round(Math.max(0, Math.min(1, fillFraction)) * 100);
+    return `<span class="je-star-icon" aria-hidden="true">
+                <svg class="je-star-icon-base" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${STAR_POLYGON}</svg>
+                <svg class="je-star-icon-fill" style="clip-path: inset(0 ${100 - pct}% 0 0);" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${STAR_POLYGON}</svg>
+            </span>`;
+  }
+  function renderUserStarRating(rating) {
+    if (!rating) return "";
+    const stars = Array.from({ length: 5 }, (_, index) => starIconHtml(Math.max(0, Math.min(1, rating - index)))).join("");
+    return `<span class="je-user-star-rating">${stars}</span>`;
+  }
+  function reviewDate(value) {
+    return value ? new Date(value).toLocaleDateString(void 0, { year: "numeric", month: "short", day: "numeric" }) : "";
+  }
+  function decodeTmdbReviews(value) {
+    return export8(export52(value, "results")).filter(export72).map((review) => ({
+      author: export112(review.author),
+      created_at: export112(review.created_at),
+      content: export112(review.content),
+      // Rendered into markup: only a finite number is a rating.
+      rating: export9(export52(review.author_details, "rating")) ?? null,
+      url: export112(review.url)
+    }));
+  }
+  function decodeAnilistReviews(value) {
+    return export8(export52(value, "Reviews")).filter(export72).map((review) => {
+      const content = export112(review.Content);
+      const summary = export112(review.Summary);
+      const score = export9(review.Score);
+      return {
+        source: "anilist",
+        author: export132(review.Author) || "Anonymous",
+        created_at: export112(review.CreatedAt),
+        content: summary ? `**${summary}**
+
+${content}` : content,
+        rating: score ? Number((score / 10).toFixed(1)) : null,
+        url: export112(review.Url)
+      };
+    });
+  }
+  function decodeUserReviews(value) {
+    return export8(export52(value, "reviews")).filter(export72).map((review) => ({
+      userId: export112(review.userId) ?? "",
+      userName: export112(review.userName),
+      content: export112(review.content),
+      rating: export9(review.rating) ?? null,
+      createdAt: export112(review.createdAt),
+      updatedAt: export112(review.updatedAt)
+    }));
+  }
+  var sameUser = (a, b) => a.replace(/-/g, "") === b.replace(/-/g, "");
+  function averageUserRating(reviews) {
+    const rated = reviews.filter((review) => !!review.rating);
+    if (rated.length === 0) return null;
+    const raw = rated.reduce((sum, review) => sum + review.rating, 0) / rated.length * 2;
+    return { display: Number.isInteger(raw) ? `${raw}` : `${raw.toFixed(1)}`, count: rated.length };
+  }
+  function translationTargets(language) {
+    const [base, region] = language.split("-");
+    const code = (base || "").toLowerCase();
+    if (!code || code === "en") return null;
+    const traditional = code === "zh" && /^(tw|hk|mo)$/i.test(region || "");
+    return { server: traditional ? "zt" : code, browser: traditional ? "zh-Hant" : code };
+  }
+  function interpolate(template, params) {
+    let out = template;
+    if (params) {
+      for (const [key, value] of Object.entries(params)) {
+        out = out.replace(new RegExp(`\\{${key}\\}`, "g"), () => String(value));
+      }
+    }
+    return out;
+  }
+  function memoUntilFailure(load) {
+    let pending = null;
+    return () => {
+      if (pending) return pending;
+      const current = pending = load();
+      current.catch(() => {
+        if (pending === current) pending = null;
+      });
+      return current;
+    };
+  }
+
+  // client/src/features/details-providers/reviews.ts
+  var JE = export1("Reviews");
+  var ctx = export5(JE);
+  var REVIEW_PREVIEW_LENGTH = 350;
+  JE.initializeReviewsScript = function initializeReviewsScript() {
+    const config = JE.pluginConfig;
+    const tmdbReviewsEnabled = config.ShowReviews && config.TmdbEnabled;
+    const userReviewsEnabled = config.ShowUserReviews;
+    const anilistReviewsEnabled = config.ShowAnilistReviews;
+    if (!tmdbReviewsEnabled && !userReviewsEnabled && !anilistReviewsEnabled) {
+      console.log("🪼 Jellyfin Enhanced: Reviews feature disabled.");
+      return;
+    }
+    const logPrefix = "🪼 Jellyfin Enhanced: Reviews:";
+    let renderedOwners = /* @__PURE__ */ new WeakMap();
+    let pageLoads = /* @__PURE__ */ new WeakMap();
+    JE.session?.onUserChange("details-reviews", () => {
+      document.querySelectorAll(".tmdb-reviews-section, .je-avg-user-rating-chip").forEach((section) => section.remove());
+      renderedOwners = /* @__PURE__ */ new WeakMap();
+      pageLoads = /* @__PURE__ */ new WeakMap();
+    });
+    const escapeHtml = (value) => JE.escapeHtml(value);
+    const markdown = (value) => parseMarkdown(value, escapeHtml);
+    async function shouldSuppressForSpoilerMode(item, mediaType) {
+      try {
+        if (mediaType !== "Series" && mediaType !== "Movie" && mediaType !== "Season" && mediaType !== "Episode") return false;
+        if (!JE.pluginConfig.SpoilerBlurEnabled) return false;
+        if (JE.pluginConfig.SpoilerStripReviews === false) return false;
+        const guard = ctx.peer("spoilerBlur");
+        if (!guard) return false;
+        if (typeof guard.whenLoaded === "function") await guard.whenLoaded();
+        if (typeof guard.isLoadOk === "function" && !guard.isLoadOk()) {
+          console.warn(`${logPrefix} Spoiler Guard state load failed; suppressing reviews fail-closed.`);
+          return true;
+        }
+        if (typeof guard.getUserPrefs === "function") {
+          const prefs = guard.getUserPrefs() || {};
+          if (prefs.HideReviews === false) return false;
+        }
+        if (mediaType === "Movie") {
+          const inScope = guard.isMovieInScope;
+          if (typeof inScope !== "function") throw new TypeError("Spoiler Guard movie scope unavailable");
+          return await inScope.call(guard, item?.Id || "");
+        }
+        const seriesKey = mediaType === "Series" ? item?.Id || "" : item?.SeriesId || "";
+        return !!(guard.isEnabledFor && guard.isEnabledFor(seriesKey));
+      } catch (e) {
+        console.warn(`${logPrefix} Spoiler Guard check failed; suppressing reviews:`, e);
+        return true;
+      }
+    }
+    function removeReviewsSection(page) {
+      try {
+        const root = page || export11() || document;
+        root.querySelector(".tmdb-reviews-section")?.remove();
+        root.querySelector(".je-avg-user-rating-chip")?.remove();
+      } catch (e) {
+        console.warn(`${logPrefix} removeReviewsSection failed:`, e);
+      }
+    }
+    function fetchReviews(tmdbId, mediaType) {
+      const apiMediaType = mediaType === "Series" ? "tv" : "movie";
+      const id = export22(tmdbId);
+      const path = `/${apiMediaType}/${id}/reviews?language=en-US&page=1`;
+      const url = `${export0().getUrl(`/JellyfinEnhanced/tmdb/${apiMediaType}/${id}/reviews`)}?language=en-US&page=1`;
+      return JE.core.api.fetch(url, { cacheKey: `tmdb:${path}` }).then(decodeTmdbReviews).catch((error) => {
+        console.error(`${logPrefix} Failed to fetch reviews.`, error);
+        return null;
+      });
+    }
+    function fetchAnilistReviews(item) {
+      const ids = item?.ProviderIds;
+      const anilistId = parseInt(ids?.AniList || ids?.Anilist || "", 10);
+      if (!anilistId) return Promise.resolve(null);
+      const query = `anilistId=${anilistId}`;
+      return JE.core.api.fetch(`${export0().getUrl("/JellyfinEnhanced/anilist/reviews")}?${query}`, { cacheKey: `anilist:${query}` }).then(decodeAnilistReviews).catch((error) => {
+        console.error(`${logPrefix} Failed to fetch AniList reviews.`, error);
+        return null;
+      });
+    }
+    async function fetchExternalReviews(item, tmdbKey, mediaType) {
+      if (mediaType !== "Movie" && mediaType !== "Series") return null;
+      const [tmdb, anilist] = await Promise.all([
+        tmdbReviewsEnabled ? fetchReviews(tmdbKey.split(":")[0] ?? "", mediaType) : null,
+        anilistReviewsEnabled ? fetchAnilistReviews(item) : null
+      ]);
+      return tmdb || anilist ? [...tmdb || [], ...anilist || []] : null;
+    }
+    const keyPath = (tmdbKey) => tmdbKey.split(":").map(export22).join(":");
+    function fetchUserReviews(tmdbKey, mediaType) {
+      return JE.core.api.plugin(`/reviews/${mediaType}/${keyPath(tmdbKey)}`).then(decodeUserReviews).catch((err) => {
+        console.error(`${logPrefix} Failed to fetch user reviews.`, err);
+        return null;
+      });
+    }
+    async function saveUserReview(tmdbKey, mediaType, content, rating) {
+      try {
+        return await JE.core.api.plugin(`/reviews/${mediaType}/${keyPath(tmdbKey)}`, { method: "POST", body: { content, rating: rating || null }, skipRetry: true });
+      } catch (e) {
+        const shape = export42(e);
+        throw new Error(shape.responseMessage || shape.message);
+      }
+    }
+    async function deleteUserReview(tmdbKey, mediaType) {
+      await JE.core.api.plugin(`/reviews/${mediaType}/${keyPath(tmdbKey)}`, { method: "DELETE", skipRetry: true });
+    }
+    async function adminDeleteUserReview(targetUserId, tmdbKey, mediaType) {
+      const userIdN = (targetUserId || "").replace(/-/g, "");
+      try {
+        await JE.core.api.plugin(`/reviews/admin/${export22(userIdN)}/${mediaType}/${keyPath(tmdbKey)}`, { method: "DELETE", skipRetry: true });
+      } catch (e) {
+        if (export42(e).status === 404) throw new Error("No matching review to delete (it may have already been removed).");
+        throw e;
+      }
+    }
+    function jeConfirm(message, title) {
+      return new Promise((resolve) => {
+        const host = export4();
+        if (host && typeof host.confirm === "function") {
+          try {
+            host.confirm(message, title, resolve);
             return;
+          } catch (err) {
+            console.warn(`${logPrefix} Dashboard.confirm threw, falling back:`, err);
+          }
         }
+        resolve(window.confirm(title ? `${title}
 
-        const logPrefix = '🪼 Jellyfin Enhanced: Reviews:';
-
-        // Suppress the reviews panel when the item has Spoiler Guard enabled by the
-        // user AND the admin has SpoilerStripReviews on — TMDB and user reviews
-        // routinely contain plot spoilers. Async because Spoiler Guard loads its
-        // state lazily; whenLoaded() gives an authoritative answer even on a cold
-        // page load before the state XHR completes.
-        async function shouldSuppressForSpoilerMode(item, mediaType) {
-            try {
-                // Season / Episode pages also render reviews (keyed by parent series
-                // TMDB id), so they must be suppressible too or a guarded series
-                // leaks reviews on its per-season / per-episode pages.
-                if (mediaType !== 'Series' && mediaType !== 'Movie'
-                    && mediaType !== 'Season' && mediaType !== 'Episode') return false;
-                if (!JE.pluginConfig?.SpoilerBlurEnabled) return false;
-                // Default-on if the field is missing (older plugin XML
-                // without the key — server returns the C# default true).
-                var stripReviews = JE.pluginConfig?.SpoilerStripReviews;
-                if (stripReviews === false) return false;
-                if (!JE.spoilerBlur) return false;
-                if (typeof JE.spoilerBlur.whenLoaded === 'function') {
-                    await JE.spoilerBlur.whenLoaded();
-                }
-                // Fail-CLOSED when the initial state load failed — the enabled sets
-                // and userPrefs are unreliable, so we can't tell if THIS item is
-                // guarded. Without it, a transient blip on /spoiler-blur/series leaks
-                // reviews for every guarded item until the next navigation.
-                if (typeof JE.spoilerBlur.isLoadOk === 'function' && !JE.spoilerBlur.isLoadOk()) {
-                    console.warn(`${logPrefix} Spoiler Guard state load failed; suppressing reviews fail-closed.`);
-                    return true;
-                }
-                // Honor the user-side opt-out: admin policy is the cap (handled
-                // above), but a user with HideReviews=false has explicitly asked to
-                // see reviews on their guarded items.
-                if (typeof JE.spoilerBlur.getUserPrefs === 'function') {
-                    var userPrefs = JE.spoilerBlur.getUserPrefs() || {};
-                    if (userPrefs.HideReviews === false) return false;
-                }
-                if (mediaType === 'Movie') {
-                    // A failed lookup rejects into the catch below, which suppresses.
-                    return await JE.spoilerBlur.isMovieInScope(item?.Id || '');
-                }
-                // Series → own id; Season / Episode → parent series id (item.SeriesId),
-                // so the whole series' guarded state governs its child pages.
-                var seriesKey = (mediaType === 'Series') ? (item?.Id || '') : (item?.SeriesId || '');
-                return !!(JE.spoilerBlur.isEnabledFor && JE.spoilerBlur.isEnabledFor(seriesKey));
-            } catch (e) {
-                // Fail-CLOSED: "show reviews" is the spoiler-leaking path, so if any
-                // check above throws, suppress the panel rather than render it.
-                console.warn(`${logPrefix} Spoiler Guard check failed; suppressing reviews:`, e);
-                return true;
-            }
+${message}` : message));
+      });
+    }
+    function jeAlert(message, title) {
+      const host = export4();
+      if (host && typeof host.alert === "function") {
+        try {
+          host.alert({ title: title || "", message: message || "" });
+          return;
+        } catch (err) {
+          console.warn(`${logPrefix} Dashboard.alert threw, falling back:`, err);
         }
+      }
+      window.alert(title ? `${title}
 
-        // If suppression flips on between two visits to the same page (e.g. user
-        // just enabled Spoiler Guard this session), an existing reviews section may
-        // already be in the DOM. Strip it on suppress.
-        function removeReviewsSection(page) {
-            try {
-                const root = page || document.querySelector('#itemDetailPage:not(.hide)') || document;
-                const sec = root.querySelector('.tmdb-reviews-section');
-                if (sec && sec.parentNode) sec.parentNode.removeChild(sec);
-            } catch (e) {
-                console.warn(`${logPrefix} removeReviewsSection failed:`, e);
-            }
+${message}` : message);
+    }
+    const tFallbackWarned = /* @__PURE__ */ new Set();
+    function tWithFallback(key, fallback, params) {
+      let result;
+      try {
+        result = JE.t(key, params);
+      } catch (err) {
+        console.warn(`${logPrefix} JE.t('${key}') threw, using fallback:`, err);
+        result = null;
+      }
+      if (!result || result === key) {
+        if (!tFallbackWarned.has(key)) {
+          tFallbackWarned.add(key);
+          console.warn(`${logPrefix} Missing translation key '${key}', using inline fallback.`);
         }
-
-        /**
-         * Fetches TMDB's reviews for a title. Kept in the core response cache
-         * (30 minutes, dropped on a user switch; same key shape as the Seerr TMDB
-         * helper) — the server keeps them for hours.
-         * @param {string} tmdbId
-         * @param {string} mediaType - Jellyfin item type ('Series' or 'Movie').
-         * @returns {Promise<Array<object>|null>} The reviews, or null on failure.
-         */
-        function fetchReviews(tmdbId, mediaType) {
-            const apiMediaType = mediaType === 'Series' ? 'tv' : 'movie';
-            const path = `/${apiMediaType}/${tmdbId}/reviews?language=en-US&page=1`;
-            const url = `${ApiClient.getUrl(`/JellyfinEnhanced/tmdb/${apiMediaType}/${tmdbId}/reviews`)}?language=en-US&page=1`;
-            return JE.core.api.fetch(url, { cacheKey: `tmdb:${path}` })
-                .then(data => data.results || [])
-                .catch(error => {
-                    console.error(`${logPrefix} Failed to fetch reviews.`, error);
-                    return null;
-                });
-        }
-
-        // Needs the AniList id that the AniList metadata provider sets. Maps reviews to the TMDB card shape.
-        function fetchAnilistReviews(item) {
-            const ids = item?.ProviderIds || {};
-            const anilistId = parseInt(ids.AniList || ids.Anilist, 10);
-            if (!anilistId) return Promise.resolve(null);
-
-            const query = `anilistId=${anilistId}`;
-            return JE.core.api.fetch(`${ApiClient.getUrl('/JellyfinEnhanced/anilist/reviews')}?${query}`, { cacheKey: `anilist:${query}` })
-                // Jellyfin serializes PascalCase
-                .then(data => (data?.Reviews || []).map(r => ({
-                    source: 'anilist',
-                    author: r.Author || 'Anonymous',
-                    created_at: r.CreatedAt,
-                    content: r.Summary ? `**${r.Summary}**
-
-${r.Content}` : r.Content,
-                    author_details: { rating: r.Score ? Number((r.Score / 10).toFixed(1)) : null },
-                    url: r.Url,
-                })))
-                .catch(error => {
-                    console.error(`${logPrefix} Failed to fetch AniList reviews.`, error);
-                    return null;
-                });
-        }
-
-        async function fetchExternalReviews(item, tmdbKey, mediaType) {
-            if (mediaType !== 'Movie' && mediaType !== 'Series') return null;
-            const [tmdb, anilist] = await Promise.all([
-                tmdbReviewsEnabled ? fetchReviews(tmdbKey.split(':')[0], mediaType) : null,
-                anilistReviewsEnabled ? fetchAnilistReviews(item) : null,
-            ]);
-            return tmdb || anilist ? [...(tmdb || []), ...(anilist || [])] : null;
-        }
-
-        /**
-         * The parent Series of a Season/Episode, through the shared item cache
-         * so the other details-page modules asking for it get the same fetch.
-         * @param {string} userId
-         * @param {string} seriesId
-         * @returns {Promise<object|null>}
-         */
-        function getSeriesItem(userId, seriesId) {
-            return JE.helpers?.getItemCached
-                ? JE.helpers.getItemCached(seriesId, { userId })
-                : ApiClient.getItem(userId, seriesId);
-        }
-
-        /**
-         * Fetches all user-written reviews for a TMDB item (aggregated across all users).
-         */
-        function fetchUserReviews(tmdbId, mediaType) {
-            // mediaType is already in API format ('movie' or 'tv') — no conversion needed
-            return JE.core.api.plugin(`/reviews/${mediaType}/${tmdbId}`)
-                .then(data => data.reviews || [])
-                .catch(err => {
-                    console.error(`${logPrefix} Failed to fetch user reviews.`, err);
-                    return [];
-                });
-        }
-
-        /**
-         * Saves (creates or updates) the current user's review for a TMDB item.
-         */
-        async function saveUserReview(tmdbId, mediaType, content, rating) {
-            const body = { content, rating: rating || null };
-            try {
-                // skipRetry: saving a review is not idempotent — never auto-repeat it.
-                return await JE.core.api.plugin(`/reviews/${mediaType}/${tmdbId}`, {
-                    method: 'POST',
-                    body,
-                    skipRetry: true
-                });
-            } catch (e) {
-                // Preserve the server-provided message when present, matching the
-                // hand-rolled fetch's `err.message || \`HTTP ${status}\`` shape.
-                throw new Error(e?.responseJSON?.message || e.message);
-            }
-        }
-
-        /**
-         * Deletes the current user's review for a TMDB item.
-         */
-        async function deleteUserReview(tmdbId, mediaType) {
-            // skipRetry keeps the original single-attempt semantics for this mutation.
-            // Core throws Error('HTTP <status>') on failure — same shape as before.
-            await JE.core.api.plugin(`/reviews/${mediaType}/${tmdbId}`, { method: 'DELETE', skipRetry: true });
-        }
-
-        /**
-         * Admin moderation: deletes another user's review for a TMDB item.
-         * Backed by DELETE /JellyfinEnhanced/reviews/admin/{userIdN}/{mediaType}/{tmdbId},
-         * which is gated on IsAdministrator server-side. A 404 from the
-         * server now means "no matching review to delete" (race with a
-         * concurrent admin, already-deleted review, wrong target) — we
-         * translate that into a human-readable Error so the caller can
-         * show a sensible message.
-         */
-        async function adminDeleteUserReview(targetUserId, tmdbId, mediaType) {
-            const userIdN = (targetUserId || '').replace(/-/g, '');
-            try {
-                // skipRetry keeps the original single-attempt semantics for this mutation.
-                await JE.core.api.plugin(`/reviews/admin/${userIdN}/${mediaType}/${tmdbId}`, { method: 'DELETE', skipRetry: true });
-            } catch (e) {
-                if (e && e.status === 404) {
-                    throw new Error('No matching review to delete (it may have already been removed).');
-                }
-                throw e;
-            }
-        }
-
-        const escapeHtml = JE.escapeHtml;
-
-        /**
-         * Shows a Jellyfin-native confirm dialog and returns a Promise<boolean>.
-         * Prefers window.Dashboard.confirm (the built-in Jellyfin modal, which
-         * auto-themes and handles keyboard nav). Falls back to window.confirm
-         * on unusual clients where Dashboard is not exposed, so the feature
-         * still works even if the platform surface changes.
-         *
-         * The native-confirm fallback prepends the title to the text because
-         * window.confirm() has no title parameter — without this, an admin
-         * deleting someone else's review would lose the "(admin)" context.
-         */
-        function jeConfirm(text, title) {
-            return new Promise(resolve => {
-                if (window.Dashboard && typeof window.Dashboard.confirm === 'function') {
-                    try {
-                        window.Dashboard.confirm(text, title, resolve);
-                        return;
-                    } catch (err) {
-                        console.warn(`${logPrefix} Dashboard.confirm threw, falling back:`, err);
-                    }
-                }
-                const combined = title ? `${title}\n\n${text}` : text;
-                resolve(window.confirm(combined));
-            });
-        }
-
-        /**
-         * Shows a Jellyfin-native alert dialog. Falls back to window.alert on
-         * clients without Dashboard. Used to surface delete failures so admins
-         * get visible feedback instead of a silent console.error.
-         */
-        function jeAlert(text, title) {
-            if (window.Dashboard && typeof window.Dashboard.alert === 'function') {
-                try {
-                    window.Dashboard.alert({ title: title || '', message: text || '' });
-                    return;
-                } catch (err) {
-                    console.warn(`${logPrefix} Dashboard.alert threw, falling back:`, err);
-                }
-            }
-            window.alert(title ? `${title}\n\n${text}` : text);
-        }
-
-        // Track which translation keys we've already warned about falling
-        // back on, so a broken i18n system is visible in the console once per
-        // key instead of spamming on every render.
-        const _tFallbackWarned = new Set();
-
-        /**
-         * JE.t with an inline English fallback. Needed because the translation
-         * loader prefers remote en.json over the bundled copy, which means a
-         * brand-new key can return its literal name for one release cycle
-         * until the remote catches up.
-         *
-         * Uses String.prototype.replace with a replacement *function* rather
-         * than a string literal, because a raw replacement string treats `$&`,
-         * `$'`, `` $` ``, `$1`-`$99`, and `$$` as backreferences. Jellyfin's
-         * username regex doesn't allow `$`, so today's only param (a username)
-         * is safe — but if a future caller interpolates a free-form string
-         * into the fallback, the function form avoids the footgun.
-         */
-        function tWithFallback(key, fallback, params) {
-            let result;
-            try {
-                result = JE.t(key, params);
-            } catch (err) {
-                console.warn(`${logPrefix} JE.t('${key}') threw, using fallback:`, err);
-                result = null;
-            }
-            if (!result || result === key) {
-                if (!_tFallbackWarned.has(key)) {
-                    _tFallbackWarned.add(key);
-                    console.warn(`${logPrefix} Missing translation key '${key}', using inline fallback.`);
-                }
-                let out = fallback;
-                if (params) {
-                    for (const [k, v] of Object.entries(params)) {
-                        out = out.replace(new RegExp(`\\{${k}\\}`, 'g'), () => String(v));
-                    }
-                }
-                return out;
-            }
-            return result;
-        }
-
-        /**
-         * Converts markdown text to safe HTML. Escapes raw HTML before applying
-         * markdown transforms so that API-sourced review content cannot inject tags.
-         * @param {string} text - Raw markdown text from TMDB reviews.
-         * @returns {string} HTML string safe for innerHTML assignment.
-         */
-        /**
-         * TMDB reviews are a mix of markdown and HTML (<em>, <a href>, <br>).
-         * Turns the HTML into the markdown parseMarkdown understands and drops
-         * any other tag, so tags never show up as text.
-         */
-        function htmlToMarkdown(text) {
-            return String(text)
-                .replace(/<a\s[^>]*?href=["'](https?:\/\/[^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi, '[$2]($1)')
-                .replace(/<(strong|b)>([\s\S]*?)<\/\1>/gi, '**$2**')
-                .replace(/<(em|i)>([\s\S]*?)<\/\1>/gi, '*$2*')
-                .replace(/<br\s*\/?>/gi, '\n')
-                .replace(/<\/p>\s*<p[^>]*>/gi, '\n\n')
-                .replace(/<\/?[a-z][^>]*>/gi, '');
-        }
-
-        /**
-         * Review text as plain prose, for translation: translators mangle
-         * markdown syntax and URLs, so links keep only their text and bare
-         * URLs and emphasis markers are dropped.
-         */
-        function toPlainText(text) {
-            return htmlToMarkdown(text)
-                .replace(/\[([^\]]+)\]\(https?:\/\/[^)\s]+\)/g, '$1')
-                .replace(/https?:\/\/[^\s<]+/g, '')
-                .replace(/(\*\*|__|~~|\*|`)/g, '')
-                .replace(/(^|\W)_([^_\n]+)_(?=\W|$)/g, '$1$2')
-                .replace(/[ \t]+/g, ' ')
-                .replace(/ ?\n ?/g, '\n')
-                .trim();
-        }
-
-        /** The links of a review, in order, to put back after it is translated. */
-        function extractLinks(text) {
-            const links = [];
-            htmlToMarkdown(text).replace(/\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/g, (m, label, url) => { links.push({ label, url }); return m; });
-            return links;
-        }
-
-        /**
-         * Links each label inside the translated text. A label is found by its
-         * translation or by its original wording (titles and names usually stay
-         * untranslated, and a label translated alone can differ from the same
-         * words inside a sentence). Links with no match stay plain text.
-         */
-        function relink(text, links, labels) {
-            if (labels.length !== links.length) return text;
-            let out = text;
-            const linked = [];
-            links.forEach((link, i) => {
-                const lower = out.toLowerCase();
-                const label = [link.label, labels[i] || ''].map(l => l.trim().replace(/[[\]]/g, '')).find(l => l && lower.includes(l.toLowerCase()));
-                if (!label) return;
-                const at = lower.indexOf(label.toLowerCase());
-                linked.push(`[${out.substr(at, label.length)}](${link.url})`);
-                out = `${out.slice(0, at)}\u0001${linked.length - 1}\u0002${out.slice(at + label.length)}`;
-            });
-            return out.replace(/\u0001(\d+)\u0002/g, (m, n) => linked[n]);
-        }
-
-        function parseMarkdown(text) {
-            if (!text) return '';
-
-            // Escape HTML first
-            let html = escapeHtml(htmlToMarkdown(text));
-
-            // Parse markdown elements
-            // Bold (**text** or __text__)
-            html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-            html = html.replace(/__(.+?)__/g, '<strong>$1</strong>');
-
-            // Italic (*text* or _text_)
-            html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
-            html = html.replace(/_(.+?)_/g, '<em>$1</em>');
-
-            // Strikethrough (~~text~~)
-            html = html.replace(/~~(.+?)~~/g, '<del>$1</del>');
-
-            // Inline code (`code`)
-            html = html.replace(/`(.+?)`/g, '<code>$1</code>');
-
-            // Links [text](url) - only allow http(s) schemes
-            html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/gi, '<a is="emby-linkbutton" href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
-
-            // Auto-link plain URLs (http:// or https://)
-            // Match URLs that aren't already inside href attributes
-            html = html.replace(/(^|[^"'>])(https?:\/\/[^\s<]+[^\s<.,;!?)])/gi, function(match, prefix, url) {
-                // Don't linkify if already part of an anchor tag
-                return prefix + '<a is="emby-linkbutton" href="' + url + '" target="_blank" rel="noopener noreferrer">' + url + '</a>';
-            });
-
-            // Process line by line for block elements
-            const lines = html.split(/\r?\n/);
-            const processed = [];
-            let inBlockquote = false;
-            let blockquoteLines = [];
-            let inList = false;
-            let listItems = [];
-
-            for (let i = 0; i < lines.length; i++) {
-                const line = lines[i];
-                const trimmedLine = line.trim();
-
-                // Blockquotes (> text)
-                if (trimmedLine.startsWith('&gt; ')) {
-                    if (!inBlockquote) {
-                        inBlockquote = true;
-                        blockquoteLines = [];
-                    }
-                    blockquoteLines.push(trimmedLine.substring(5));
-                    continue;
-                } else if (inBlockquote) {
-                    processed.push('<blockquote>' + blockquoteLines.join('<br>') + '</blockquote>');
-                    inBlockquote = false;
-                    blockquoteLines = [];
-                }
-
-                // Unordered lists (- item or * item)
-                if (trimmedLine.match(/^[-*]\s+/)) {
-                    if (!inList) {
-                        inList = true;
-                        listItems = [];
-                    }
-                    listItems.push('<li>' + trimmedLine.substring(2) + '</li>');
-                    continue;
-                } else if (inList) {
-                    processed.push('<ul>' + listItems.join('') + '</ul>');
-                    inList = false;
-                    listItems = [];
-                }
-
-                // Headings (### text)
-                if (trimmedLine.match(/^#{1,6}\s/)) {
-                    const level = trimmedLine.match(/^#+/)[0].length;
-                    const text = trimmedLine.substring(level + 1);
-                    processed.push(`<h${level}>${text}</h${level}>`);
-                    continue;
-                }
-
-                // Horizontal rule (--- or ***)
-                if (trimmedLine.match(/^([-*]){3,}$/)) {
-                    processed.push('<hr>');
-                    continue;
-                }
-
-                // Regular line
-                if (trimmedLine) {
-                    processed.push(line);
-                } else {
-                    processed.push('<br>');
-                }
-            }
-
-            // Close any open blocks
-            if (inBlockquote) {
-                processed.push('<blockquote>' + blockquoteLines.join('<br>') + '</blockquote>');
-            }
-            if (inList) {
-                processed.push('<ul>' + listItems.join('') + '</ul>');
-            }
-
-            return processed.join('');
-        }
-
-        function createReviewElement(review) {
-            const REVIEW_PREVIEW_LENGTH = 350;
-            const reviewCard = document.createElement('div');
-            reviewCard.className = 'tmdb-review-card';
-            if (review.source === 'anilist') {
-                reviewCard.classList.add('je-anilist-review-card');
-                reviewCard.dataset.fullContent = review.content || '';
-            }
-
-            const content = review.content || 'No content available';
-            const isLongReview = content.length > REVIEW_PREVIEW_LENGTH;
-            const previewContent = isLongReview ? content.substring(0, REVIEW_PREVIEW_LENGTH) : content;
-
-            const reviewDate = review.created_at ? new Date(review.created_at).toLocaleDateString(undefined, {
-                year: 'numeric', month: 'short', day: 'numeric'
-            }) : '';
-
-            const rating = review.author_details?.rating;
-            const ratingDisplay = rating ? `<span class="tmdb-review-rating">${JE.icon(JE.IconName.STAR)} ${rating}</span>` : '';
-
-            reviewCard.innerHTML = `
+        return interpolate(fallback, params);
+      }
+      return result;
+    }
+    const toggleHtml = (key) => `<span class="tmdb-review-toggle">${JE.t(key)}</span>`;
+    function previewHtml(content, expanded) {
+      const long = content.length > REVIEW_PREVIEW_LENGTH;
+      return markdown(long && !expanded ? content.substring(0, REVIEW_PREVIEW_LENGTH) : content) + (long ? toggleHtml(expanded ? "reviews_read_less" : "reviews_read_more") : "");
+    }
+    function createReviewElement(review) {
+      const reviewCard = document.createElement("div");
+      reviewCard.className = "tmdb-review-card";
+      const isAnilist = review.source === "anilist";
+      if (isAnilist) reviewCard.classList.add("je-anilist-review-card");
+      reviewCard.dataset.fullContent = review.content || "";
+      const content = review.content || "No content available";
+      const date = reviewDate(review.created_at);
+      const ratingDisplay = review.rating ? `<span class="tmdb-review-rating">${JE.icon(JE.IconName.STAR)} ${review.rating}</span>` : "";
+      reviewCard.innerHTML = `
                 <div class="tmdb-review-header">
                     <div class="tmdb-review-author-info">
-                        <strong class="tmdb-review-author">${escapeHtml(review.author || 'Anonymous')}</strong>
-                        <span class="tmdb-review-date">${reviewDate}</span>
+                        <strong class="tmdb-review-author">${escapeHtml(review.author || "Anonymous")}</strong>
+                        <span class="tmdb-review-date">${escapeHtml(date)}</span>
                     </div>
                     ${ratingDisplay}
                 </div>
@@ -496,318 +416,208 @@ ${r.Content}` : r.Content,
                     <p class="tmdb-review-text"></p>
                 </div>
             `;
-
-            // Source tag with logo; only links to the original review on the expected host
-            const isAnilist = review.source === 'anilist';
-            const sourceUrl = isAnilist ? /^https:\/\/anilist\.co\//.test(review.url || '') && review.url
-                : /^https:\/\/www\.themoviedb\.org\//.test(review.url || '') && review.url;
-            const tag = sourceUrl
-                ? JE.helpers.createExternalLink(sourceUrl, { className: 'je-review-source', resetStyle: true })
-                : Object.assign(document.createElement('span'), { className: 'je-review-source' });
-            const logo = document.createElement('img');
-            logo.src = JE.cdn.url('mdblist-logos', isAnilist ? 'anilist.png' : 'tmdb.png');
-            logo.alt = '';
-            logo.className = 'je-review-source-logo';
-            logo.loading = 'lazy';
-            tag.append(logo, isAnilist ? 'AniList' : 'TMDB');
-            const dateEl = reviewCard.querySelector('.tmdb-review-date');
-            if (reviewDate) dateEl.append(Object.assign(document.createElement('span'), { textContent: '·' }));
-            dateEl.append(tag);
-
-            const textElement = reviewCard.querySelector('.tmdb-review-text');
-            textElement.innerHTML = parseMarkdown(previewContent) +
-                (isLongReview ? `<span class="tmdb-review-toggle">${JE.t('reviews_read_more')}</span>` : '');
-
-            attachTranslateButton(reviewCard, review.content || '');
-            return reviewCard;
-        }
-
-        /**
-         * The language to translate English reviews into: the user's Jellyfin
-         * language, as the UI strings use. Null when it is English or unknown.
-         * The browser and LibreTranslate name Traditional Chinese differently.
-         * @returns {{server: string, browser: string}|null}
-         */
-        function getTranslationTargets() {
-            let lang = '';
-            try { lang = localStorage.getItem(`${ApiClient.getCurrentUserId()}-language`) || ''; } catch (e) { /* storage unavailable */ }
-            lang = lang || document.documentElement.lang || '';
-            const [base, region] = lang.split('-');
-            const code = (base || '').toLowerCase();
-            if (!code || code === 'en') return null;
-            const traditional = code === 'zh' && /^(tw|hk|mo)$/i.test(region || '');
-            return { server: traditional ? 'zt' : code, browser: traditional ? 'zh-Hant' : code };
-        }
-
-        let translationLanguages = null;
-        /** Target languages the configured LibreTranslate instance offers, fetched once per page load. */
-        function getTranslationLanguages() {
-            if (!translationLanguages) {
-                translationLanguages = JE.core.api.plugin('/translate/languages', { skipRetry: true })
-                    .then(res => res?.languages || [])
-                    .catch(() => []);
-            }
-            return translationLanguages;
-        }
-
-        /** Whether the browser's built-in translator can do English to the target (secure contexts only). */
-        async function browserCanTranslate(target) {
+      const url = review.url || "";
+      const sourceUrl = isAnilist ? /^https:\/\/anilist\.co\//.test(url) ? url : "" : /^https:\/\/www\.themoviedb\.org\//.test(url) ? url : "";
+      const tag = sourceUrl ? JE.helpers.createExternalLink(sourceUrl, { className: "je-review-source", resetStyle: true }) : Object.assign(document.createElement("span"), { className: "je-review-source" });
+      const logo = document.createElement("img");
+      logo.src = JE.cdn.url("mdblist-logos", isAnilist ? "anilist.png" : "tmdb.png");
+      logo.alt = "";
+      logo.className = "je-review-source-logo";
+      logo.loading = "lazy";
+      tag.append(logo, isAnilist ? "AniList" : "TMDB");
+      const dateEl = reviewCard.querySelector(".tmdb-review-date");
+      if (date) dateEl?.append(Object.assign(document.createElement("span"), { textContent: "·" }));
+      dateEl?.append(tag);
+      const textElement = reviewCard.querySelector(".tmdb-review-text");
+      if (textElement) textElement.innerHTML = previewHtml(content, false);
+      attachTranslateButton(reviewCard, review.content || "");
+      return reviewCard;
+    }
+    function getTranslationTargets() {
+      let language = "";
+      try {
+        language = localStorage.getItem(`${export3()}-language`) || "";
+      } catch {
+      }
+      return translationTargets(language || document.documentElement.lang || "");
+    }
+    const getTranslationLanguages = memoUntilFailure(() => JE.core.api.plugin("/translate/languages", { skipRetry: true }).then((response) => export8(export52(response, "languages")).filter((code) => typeof code === "string")));
+    async function browserCanTranslate(target) {
+      try {
+        const translator = export2();
+        if (!window.isSecureContext || !translator) return false;
+        return await translator.availability({ sourceLanguage: "en", targetLanguage: target }) !== "unavailable";
+      } catch {
+        return false;
+      }
+    }
+    async function translateInBrowser(value, target) {
+      const factory = export2();
+      if (!factory) throw new Error("Browser translator unavailable");
+      const translator = await factory.create({ sourceLanguage: "en", targetLanguage: target });
+      try {
+        const lines = [];
+        for (const line of value.split("\n")) lines.push(line.trim() ? await translator.translate(line) : line);
+        return lines.join("\n");
+      } finally {
+        translator.destroy?.();
+      }
+    }
+    function translateFailedMessage(error) {
+      const shape = export42(error);
+      if (shape.status === 429 || shape.responseCode === "translation_rate_limited") {
+        const seconds = shape.retryAfterSeconds;
+        return seconds !== void 0 && seconds > 0 ? JE.t("reviews_translate_rate_limited_wait", { seconds }) : JE.t("reviews_translate_rate_limited");
+      }
+      if (shape.responseCode === "translation_refused") return JE.t("reviews_translate_refused");
+      return JE.t("reviews_translate_failed");
+    }
+    function attachTranslateButton(card, original) {
+      if (!JE.pluginConfig.ReviewTranslationEnabled || !original.trim()) return;
+      const targets = getTranslationTargets();
+      if (!targets) return;
+      void Promise.all([
+        browserCanTranslate(targets.browser),
+        JE.pluginConfig.ReviewTranslationServer ? getTranslationLanguages().then((languages) => languages.includes(targets.server), (error) => {
+          console.warn(`${logPrefix} Translation languages unavailable; asking again on the next render.`, error);
+          return false;
+        }) : false
+      ]).then(([browserOk, serverOk]) => {
+        if (!browserOk && !serverOk) return;
+        const textElement = card.querySelector(".tmdb-review-text");
+        const parent = textElement?.parentElement;
+        if (!textElement || !parent) return;
+        const button = document.createElement("span");
+        button.className = "je-review-translate";
+        const icon = Object.assign(document.createElement("span"), { className: "je-msym-rounded", textContent: "translate" });
+        icon.setAttribute("aria-hidden", "true");
+        const label = Object.assign(document.createElement("span"), { className: "je-review-translate-label" });
+        button.append(icon, label);
+        const setLabel = (key) => {
+          label.textContent = JE.t(key);
+        };
+        setLabel("reviews_translate");
+        parent.appendChild(button);
+        const translateText = async (value) => {
+          if (browserOk) {
             try {
-                if (!window.isSecureContext || typeof window.Translator === 'undefined') return false;
-                return (await window.Translator.availability({ sourceLanguage: 'en', targetLanguage: target })) !== 'unavailable';
+              return await translateInBrowser(value, targets.browser);
             } catch (e) {
-                return false;
+              if (!serverOk) throw e;
             }
-        }
-
-        /** Translates line by line in the browser, so blank lines and paragraph breaks survive. */
-        async function translateInBrowser(text, target) {
-            const translator = await window.Translator.create({ sourceLanguage: 'en', targetLanguage: target });
+          }
+          const response = await JE.core.api.plugin("/translate", { method: "POST", body: { text: value, target: targets.server }, skipRetry: true });
+          const translated = export112(export52(response, "text"));
+          if (translated === void 0) throw new Error("Invalid translation response");
+          return translated;
+        };
+        const translate = async () => {
+          const body = await translateText(toPlainText(original));
+          const links = extractLinks(original);
+          if (!links.length) return body;
+          const labels = await translateText(links.map((link) => link.label.replace(/\s+/g, " ")).join("\n"));
+          return relink(body, links, labels.split("\n"));
+        };
+        const show = (full) => {
+          textElement.innerHTML = previewHtml(full, textElement.classList.contains("expanded"));
+        };
+        let busy = false;
+        button.addEventListener("click", async () => {
+          if (busy) return;
+          if (card.dataset.showTranslated === "1") {
+            card.dataset.showTranslated = "0";
+            show(original);
+            setLabel("reviews_translate");
+            return;
+          }
+          if (card.dataset.translatedContent === void 0) {
+            busy = true;
+            setLabel("reviews_translating");
             try {
-                const lines = [];
-                for (const line of text.split('\n')) lines.push(line.trim() ? await translator.translate(line) : line);
-                return lines.join('\n');
+              card.dataset.translatedContent = await translate();
+            } catch (e) {
+              setLabel("reviews_translate");
+              JE.toast(translateFailedMessage(e));
+              return;
             } finally {
-                translator.destroy?.();
+              busy = false;
             }
-        }
-
-        /**
-         * The toast for a failed translation. The server answers 429 when
-         * LibreTranslate is rate limiting (with the wait, when it gave one)
-         * and code translation_refused when LibreTranslate refused the request.
-         * @param {*} error - The error thrown by JE.core.api.plugin.
-         * @returns {string}
-         */
-        function translateFailedMessage(error) {
-            const code = error?.responseJSON?.code;
-            if (error?.status === 429 || code === 'translation_rate_limited') {
-                const seconds = error?.responseJSON?.retryAfterSeconds;
-                return Number.isFinite(seconds) && seconds > 0
-                    ? JE.t('reviews_translate_rate_limited_wait', { seconds })
-                    : JE.t('reviews_translate_rate_limited');
-            }
-            if (code === 'translation_refused') return JE.t('reviews_translate_refused');
-            return JE.t('reviews_translate_failed');
-        }
-
-        /**
-         * Adds a Translate / Show original toggle under an English review. It
-         * translates in the browser when the browser can, and through the
-         * admin's LibreTranslate otherwise; it is absent when neither offers
-         * the user's language.
-         */
-        function attachTranslateButton(card, original) {
-            if (!JE.pluginConfig?.ReviewTranslationEnabled || !original.trim()) return;
-            const targets = getTranslationTargets();
-            if (!targets) return;
-            Promise.all([
-                browserCanTranslate(targets.browser),
-                JE.pluginConfig.ReviewTranslationServer ? getTranslationLanguages().then(l => l.includes(targets.server)) : false
-            ]).then(([browserOk, serverOk]) => {
-                if (!browserOk && !serverOk) return;
-                const textElement = card.querySelector('.tmdb-review-text');
-                const button = document.createElement('span');
-                button.className = 'je-review-translate';
-                const icon = Object.assign(document.createElement('span'), { className: 'je-msym-rounded', textContent: 'translate' });
-                icon.setAttribute('aria-hidden', 'true');
-                const label = Object.assign(document.createElement('span'), { className: 'je-review-translate-label' });
-                button.append(icon, label);
-                const setLabel = (key) => { label.textContent = JE.t(key); };
-                setLabel('reviews_translate');
-                textElement.parentElement.appendChild(button);
-
-                const translateText = async (text) => {
-                    if (browserOk) {
-                        try {
-                            return await translateInBrowser(text, targets.browser);
-                        } catch (e) {
-                            if (!serverOk) throw e;
-                        }
-                    }
-                    return (await JE.core.api.plugin('/translate', { method: 'POST', body: { text, target: targets.server }, skipRetry: true })).text;
-                };
-
-                const translate = async () => {
-                    const body = await translateText(toPlainText(original));
-                    const links = extractLinks(original);
-                    if (!links.length) return body;
-                    const labels = await translateText(links.map(link => link.label.replace(/\s+/g, ' ')).join('\n'));
-                    return relink(body, links, labels.split('\n'));
-                };
-
-                const show = (full) => {
-                    const long = full.length > 350;
-                    const expanded = textElement.classList.contains('expanded');
-                    textElement.innerHTML = parseMarkdown(long && !expanded ? full.substring(0, 350) : full) +
-                        (long ? `<span class="tmdb-review-toggle">${JE.t(expanded ? 'reviews_read_less' : 'reviews_read_more')}</span>` : '');
-                };
-
-                let busy = false;
-                button.addEventListener('click', async () => {
-                    if (busy) return;
-                    if (card.dataset.showTranslated === '1') {
-                        card.dataset.showTranslated = '0';
-                        show(original);
-                        setLabel('reviews_translate');
-                        return;
-                    }
-                    if (card.dataset.translatedContent === undefined) {
-                        busy = true;
-                        setLabel('reviews_translating');
-                        try {
-                            card.dataset.translatedContent = await translate();
-                        } catch (e) {
-                            setLabel('reviews_translate');
-                            JE.toast(translateFailedMessage(e));
-                            return;
-                        } finally {
-                            busy = false;
-                        }
-                    }
-                    card.dataset.showTranslated = '1';
-                    show(card.dataset.translatedContent);
-                    setLabel('reviews_show_original');
-                });
-            });
-        }
-
-        const STAR_POLYGON = '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>';
-
-        /**
-         * Builds a single star icon: an outline star with a filled star on
-         * top, clipped to `fillFraction` (0-1) of its width — 0 is empty,
-         * 1 is full, 0.5 is a half-star.
-         */
-        function starIconHtml(fillFraction) {
-            const pct = Math.round(Math.max(0, Math.min(1, fillFraction)) * 100);
-            return `<span class="je-star-icon" aria-hidden="true">
-                <svg class="je-star-icon-base" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${STAR_POLYGON}</svg>
-                <svg class="je-star-icon-fill" style="clip-path: inset(0 ${100 - pct}% 0 0);" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${STAR_POLYGON}</svg>
-            </span>`;
-        }
-
-        /**
-         * Builds the star display HTML for a 1–5 rating.
-         * @param {number} rating - 1 to 5, in 0.5 increments.
-         */
-        function renderUserStarRating(rating) {
-            if (!rating) return '';
-
-            const stars = Array.from({ length: 5 }, (_, index) => {
-                const fillFraction = Math.max(0, Math.min(1, rating - index));
-                return starIconHtml(fillFraction);
-            }).join('');
-
-            return `<span class="je-user-star-rating">${stars}</span>`;
-        }
-
-        /**
-         * Creates a review card for a user-written review (different border colour).
-         * Own reviews get edit + delete. Non-own reviews get an admin delete button
-         * when the viewer is an admin (for moderation).
-         */
-        function createUserReviewElement(review, currentUserId, viewerIsAdmin, onEditCallback, onDeleteCallback) {
-            const REVIEW_PREVIEW_LENGTH = 350;
-            const reviewCard = document.createElement('div');
-            reviewCard.className = 'tmdb-review-card je-user-review-card';
-
-            const content = review.content || '';
-            const hasContent = content.length > 0;
-            const isLongReview = content.length > REVIEW_PREVIEW_LENGTH;
-            const previewContent = isLongReview ? content.substring(0, REVIEW_PREVIEW_LENGTH) : content;
-
-            const reviewDate = review.updatedAt
-                ? new Date(review.updatedAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
-                : (review.createdAt ? new Date(review.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '');
-
-            const ratingDisplay = review.rating
-                ? `<span class="tmdb-review-rating je-user-review-rating">${renderUserStarRating(review.rating)}</span>`
-                : '';
-
-            // Avatar URL — Jellyfin serves user images at /Users/{id}/Images/Primary
-            // userId stored in "N" format (no dashes); Jellyfin accepts both formats
-            const avatarSrc = ApiClient.getUrl(`/Users/${review.userId}/Images/Primary`) + '?width=48&quality=90';
-
-            const isOwn = review.userId.replace(/-/g, '') === currentUserId.replace(/-/g, '');
-            const showModerationDelete = !isOwn && viewerIsAdmin;
-            // Tooltips route through tWithFallback because JE.t returns the
-            // raw key on miss (which is truthy), so a plain `JE.t(key) || 'X'`
-            // would show literal `reviews_edit` until the remote en.json
-            // catches up.
-            const editTitle = tWithFallback('reviews_edit', 'Edit');
-            const deleteTitle = tWithFallback('reviews_delete', 'Delete');
-            const adminDeleteTitle = tWithFallback('reviews_admin_delete', 'Delete as admin');
-            let actionButtons = '';
-            if (isOwn) {
-                actionButtons = `
+          }
+          card.dataset.showTranslated = "1";
+          show(card.dataset.translatedContent ?? "");
+          setLabel("reviews_show_original");
+        });
+      });
+    }
+    function createUserReviewElement(review, viewer, onEdit, onDelete) {
+      const reviewCard = document.createElement("div");
+      reviewCard.className = "tmdb-review-card je-user-review-card";
+      const content = review.content || "";
+      const date = reviewDate(review.updatedAt) || reviewDate(review.createdAt);
+      const ratingDisplay = review.rating ? `<span class="tmdb-review-rating je-user-review-rating">${renderUserStarRating(review.rating)}</span>` : "";
+      const avatarSrc = export0().getUrl(`/Users/${export22(review.userId)}/Images/Primary`) + "?width=48&quality=90";
+      const isOwn = sameUser(review.userId, viewer.id);
+      const showModerationDelete = !isOwn && viewer.isAdmin;
+      const editTitle = tWithFallback("reviews_edit", "Edit");
+      const deleteTitle = tWithFallback("reviews_delete", "Delete");
+      const adminDeleteTitle = tWithFallback("reviews_admin_delete", "Delete as admin");
+      let actionButtons = "";
+      if (isOwn) {
+        actionButtons = `
                 <div class="je-user-review-actions">
                     <button class="je-review-btn je-review-edit-btn" title="${escapeHtml(editTitle)}"><span class="material-icons" aria-hidden="true">edit</span></button>
                     <button class="je-review-btn je-review-delete-btn" title="${escapeHtml(deleteTitle)}"><span class="material-icons" aria-hidden="true">delete</span></button>
                 </div>`;
-            } else if (showModerationDelete) {
-                actionButtons = `
+      } else if (showModerationDelete) {
+        actionButtons = `
                 <div class="je-user-review-actions">
                     <button class="je-review-btn je-review-delete-btn je-review-admin-delete-btn" title="${escapeHtml(adminDeleteTitle)}"><span class="material-icons" aria-hidden="true">delete</span></button>
                 </div>`;
-            }
-
-            reviewCard.innerHTML = `
+      }
+      reviewCard.innerHTML = `
                 <div class="tmdb-review-header je-user-review-header">
                     <div class="je-user-review-avatar-wrapper">
-                        <img class="je-user-avatar" src="${escapeHtml(avatarSrc)}" alt="" onerror="this.style.display='none'">
+                        <img class="je-user-avatar" src="${escapeHtml(avatarSrc)}" alt="">
                     </div>
                     <div class="tmdb-review-author-info">
-                        <strong class="tmdb-review-author">${escapeHtml(review.userName || 'User')}</strong>
-                        <span class="tmdb-review-date">${reviewDate}</span>
+                        <strong class="tmdb-review-author">${escapeHtml(review.userName || "User")}</strong>
+                        <span class="tmdb-review-date">${escapeHtml(date)}</span>
                     </div>
                     ${ratingDisplay}
                     ${actionButtons}
                 </div>
-                ${hasContent ? `
+                ${content.length > 0 ? `
                 <div class="tmdb-review-content-wrapper">
                     <p class="tmdb-review-text"></p>
-                </div>` : ''}
+                </div>` : ""}
             `;
-
-            const textElement = reviewCard.querySelector('.tmdb-review-text');
-            if (textElement) {
-                textElement.innerHTML = parseMarkdown(previewContent) +
-                    (isLongReview ? `<span class="tmdb-review-toggle">${JE.t('reviews_read_more')}</span>` : '');
-            }
-
-            // Store full content for toggling
-            reviewCard.dataset.fullContent = content;
-
-            if (isOwn) {
-                reviewCard.querySelector('.je-review-edit-btn').addEventListener('click', () => onEditCallback(review));
-                reviewCard.querySelector('.je-review-delete-btn').addEventListener('click', () => onDeleteCallback(review));
-            } else if (showModerationDelete) {
-                reviewCard.querySelector('.je-review-admin-delete-btn').addEventListener('click', () => onDeleteCallback(review));
-            }
-
-            return reviewCard;
-        }
-
-        /**
-         * Creates and injects the inline review form (add / edit).
-         * @param {object|null} existingReview - Existing review data when editing, null when adding.
-         * @param {function} onSave - Called with (content, rating) when the user submits.
-         * @param {function} onCancel - Called when the user cancels.
-         */
-        function createReviewForm(existingReview, onSave, onCancel) {
-            const form = document.createElement('div');
-            form.className = 'je-review-form';
-            let currentRating = existingReview?.rating || 0;
-
-            form.innerHTML = `
-                ${existingReview ? '' : `<h4 class="je-review-form-title">${JE.t('reviews_add')}</h4>`}
+      const avatar = reviewCard.querySelector(".je-user-avatar");
+      if (avatar) avatar.onerror = () => {
+        avatar.style.display = "none";
+      };
+      const textElement = reviewCard.querySelector(".tmdb-review-text");
+      if (textElement) textElement.innerHTML = previewHtml(content, false);
+      reviewCard.dataset.fullContent = content;
+      if (isOwn) {
+        reviewCard.querySelector(".je-review-edit-btn")?.addEventListener("click", () => onEdit(review));
+        reviewCard.querySelector(".je-review-delete-btn")?.addEventListener("click", () => onDelete(review));
+      } else if (showModerationDelete) {
+        reviewCard.querySelector(".je-review-admin-delete-btn")?.addEventListener("click", () => onDelete(review));
+      }
+      return reviewCard;
+    }
+    function createReviewForm(existingReview, onSave, onCancel) {
+      const form = document.createElement("div");
+      form.className = "je-review-form";
+      let currentRating = existingReview?.rating || 0;
+      form.innerHTML = `
+                ${existingReview ? "" : `<h4 class="je-review-form-title">${JE.t("reviews_add")}</h4>`}
                 <div class="je-review-star-picker" role="radiogroup">
-                    ${[1,2,3,4,5].map(n => `<button class="je-star-btn" data-value="${n}" type="button" aria-label="${n} stars">${starIconHtml(0)}</button>`).join('')}
+                    ${[1, 2, 3, 4, 5].map((n) => `<button class="je-star-btn" data-value="${n}" type="button" aria-label="${n} stars">${starIconHtml(0)}</button>`).join("")}
                     <button class="je-star-clear-btn" type="button"><span class="material-icons" aria-hidden="true">close</span></button>
                     <span class="je-star-label"></span>
                 </div>
-                <textarea class="je-review-textarea" maxlength="2000">${escapeHtml(existingReview?.content || '')}</textarea>
+                <textarea class="je-review-textarea" maxlength="2000">${escapeHtml(existingReview?.content || "")}</textarea>
                 <div class="je-review-char-counter"><span class="je-review-char-count">${existingReview?.content?.length || 0}</span>/2000</div>
                 <div class="je-review-form-btns">
                     <button class="je-review-btn je-review-submit-btn" type="button"><span class="material-icons" aria-hidden="true">save</span></button>
@@ -815,395 +625,294 @@ ${r.Content}` : r.Content,
                 </div>
                 <div class="je-review-form-error" aria-live="polite"></div>
             `;
-
-            const starBtns = form.querySelectorAll('.je-star-btn');
-            const clearBtn = form.querySelector('.je-star-clear-btn');
-            const starLabel = form.querySelector('.je-star-label');
-            const textarea = form.querySelector('.je-review-textarea');
-            const charCount = form.querySelector('.je-review-char-count');
-            const submitBtn = form.querySelector('.je-review-submit-btn');
-            const cancelBtn = form.querySelector('.je-review-cancel-btn');
-            const errorEl = form.querySelector('.je-review-form-error');
-
-            // Used for both the committed rating and the live hover preview.
-            function setFill(value) {
-                starBtns.forEach(btn => {
-                    const n = parseInt(btn.dataset.value, 10);
-                    const fillFraction = Math.max(0, Math.min(1, value - (n - 1)));
-                    const pct = Math.round(fillFraction * 100);
-                    const fillSvg = btn.querySelector('.je-star-icon-fill');
-                    if (fillSvg) fillSvg.style.clipPath = `inset(0 ${100 - pct}% 0 0)`;
-                });
-            }
-
-            function updateStars(value) {
-                currentRating = value;
-                setFill(value);
-                starLabel.textContent = currentRating > 0 ? `${currentRating}/5` : '';
-            }
-
-            // Left half of a star button = n - 0.5, right half = n.
-            function valueForPointer(btn, clientX) {
-                const n = parseInt(btn.dataset.value, 10);
-                const rect = btn.getBoundingClientRect();
-                const isLeftHalf = (clientX - rect.left) < rect.width / 2;
-                return isLeftHalf ? n - 0.5 : n;
-            }
-
-            updateStars(currentRating);
-
-            starBtns.forEach(btn => {
-                btn.addEventListener('click', (e) => updateStars(valueForPointer(btn, e.clientX)));
-                btn.addEventListener('mousemove', (e) => setFill(valueForPointer(btn, e.clientX)));
-                btn.addEventListener('mouseleave', () => setFill(currentRating));
-            });
-
-            clearBtn.addEventListener('click', () => updateStars(0));
-
-            textarea.addEventListener('input', () => {
-                charCount.textContent = textarea.value.length;
-            });
-
-            submitBtn.addEventListener('click', async () => {
-                const content = textarea.value.trim();
-                if (!content && !currentRating) {
-                    errorEl.textContent = JE.t('reviews_form_error_empty');
-                    return;
-                }
-                errorEl.textContent = '';
-                submitBtn.disabled = true;
-                submitBtn.innerHTML = '<span class="material-icons" aria-hidden="true">hourglass_empty</span>';
-                try {
-                    await onSave(content, currentRating || null);
-                } catch (err) {
-                    errorEl.textContent = JE.t('reviews_form_error_save');
-                    submitBtn.disabled = false;
-                    submitBtn.innerHTML = '<span class="material-icons" aria-hidden="true">save</span>';
-                }
-            });
-
-            cancelBtn.addEventListener('click', onCancel);
-
-            return form;
+      const starBtns = form.querySelectorAll(".je-star-btn");
+      const required = (selector) => {
+        const found = form.querySelector(selector);
+        if (!found) throw new Error(`Review form is missing ${selector}`);
+        return found;
+      };
+      const clearBtn = required(".je-star-clear-btn");
+      const starLabel = required(".je-star-label");
+      const textarea = required(".je-review-textarea");
+      const charCount = required(".je-review-char-count");
+      const submitBtn = required(".je-review-submit-btn");
+      const cancelBtn = required(".je-review-cancel-btn");
+      const errorEl = required(".je-review-form-error");
+      const setFill = (value) => {
+        starBtns.forEach((btn) => {
+          const n = parseInt(btn.dataset.value ?? "0", 10);
+          const pct = Math.round(Math.max(0, Math.min(1, value - (n - 1))) * 100);
+          const fillSvg = btn.querySelector(".je-star-icon-fill");
+          if (fillSvg) fillSvg.style.clipPath = `inset(0 ${100 - pct}% 0 0)`;
+        });
+      };
+      const updateStars = (value) => {
+        currentRating = value;
+        setFill(value);
+        starLabel.textContent = currentRating > 0 ? `${currentRating}/5` : "";
+      };
+      const valueForPointer = (btn, clientX) => {
+        const n = parseInt(btn.dataset.value ?? "0", 10);
+        const rect = btn.getBoundingClientRect();
+        return clientX - rect.left < rect.width / 2 ? n - 0.5 : n;
+      };
+      updateStars(currentRating);
+      starBtns.forEach((btn) => {
+        btn.addEventListener("click", (event) => updateStars(valueForPointer(btn, event.clientX)));
+        btn.addEventListener("mousemove", (event) => setFill(valueForPointer(btn, event.clientX)));
+        btn.addEventListener("mouseleave", () => setFill(currentRating));
+      });
+      clearBtn.addEventListener("click", () => updateStars(0));
+      textarea.addEventListener("input", () => {
+        charCount.textContent = String(textarea.value.length);
+      });
+      submitBtn.addEventListener("click", async () => {
+        const content = textarea.value.trim();
+        if (!content && !currentRating) {
+          errorEl.textContent = JE.t("reviews_form_error_empty");
+          return;
         }
-
-        function addReviewsToPage(reviews, userReviews, contextPage, tmdbId, tmdbMediaType, currentUser) {
-            const existingSection = contextPage.querySelector('.tmdb-reviews-section');
-            if (existingSection) {
-                existingSection.remove();
-            }
-
-            // Inject average user rating chip next to the TMDB/RT rating chips
-            if (userReviewsEnabled && userReviews.length > 0) {
-                const ratingsWithValue = userReviews.filter(r => r.rating);
-                if (ratingsWithValue.length > 0) {
-                    const avg = ratingsWithValue.reduce((sum, r) => sum + r.rating, 0) / ratingsWithValue.length;
-                    const raw = avg * 2; // convert 1-5 → raw out of 10
-                    const avgDisplay = Number.isInteger(raw) ? `${raw}` : `${raw.toFixed(1)}`;
-
-                    // Remove any existing chip first
-                    contextPage.querySelector('.je-avg-user-rating-chip')?.remove();
-
-                    const chip = document.createElement('div');
-                    chip.className = 'mediaInfoCriticRating mediaInfoItem je-avg-user-rating-chip';
-                    chip.title = tWithFallback('reviews_avg_rating_tooltip',
-                        'Average rating from {count} user(s)', { count: ratingsWithValue.length });
-                    chip.innerHTML = `<span class="je-msym-rounded starIcon" aria-hidden="true" style="color:#e91e8c;">person_heart</span>${avgDisplay}`;
-
-                    // Insert after starRatingContainer, or after mediaInfoCriticRating if present,
-                    // falling back to appending to the mediaInfoItems container
-                    const criticRating = contextPage.querySelector('.mediaInfoCriticRating');
-                    const starRating = contextPage.querySelector('.starRatingContainer');
-                    const anchor = criticRating || starRating;
-                    if (anchor && anchor.parentNode) {
-                        anchor.parentNode.insertBefore(chip, anchor.nextSibling);
-                    } else {
-                        const container = contextPage.querySelector('.mediaInfoItems');
-                        if (container) container.appendChild(chip);
-                    }
-                }
-            }
-
-            // `currentUser` is resolved fresh by the caller (processPage /
-            // refreshReviews) via a live ApiClient.getCurrentUser() call so an
-            // in-session login switch (Jellyfin's SPA router doesn't re-init
-            // the plugin) can't show phantom admin controls to a non-admin who
-            // logged in after an admin. The backend still blocks the actual
-            // delete with 403 regardless.
-            const currentUserId = (currentUser?.Id) || ApiClient.getCurrentUserId() || '';
-            const viewerIsAdmin = currentUser?.Policy?.IsAdministrator === true;
-            const ownReview = userReviews.find(r => r.userId.replace(/-/g, '') === currentUserId.replace(/-/g, ''));
-            let reviewsSection;
-
-            // Always build the section, even with zero reviews, so users can add their own.
-            {
-                reviewsSection = document.createElement('details');
-                reviewsSection.className = 'detailSection tmdb-reviews-section';
-                if (JE.currentSettings?.reviewsExpandedByDefault) {
-                    reviewsSection.setAttribute('open', '');
-                }
-
-                const totalCount = (reviews ? reviews.length : 0) + userReviews.length;
-                const summary = document.createElement('summary');
-                summary.className = 'sectionTitle';
-                summary.innerHTML = `${JE.t('reviews_title', { count: totalCount })} <i class="material-icons expand-icon">expand_more</i>`;
-                reviewsSection.appendChild(summary);
-
-                // ── "Write a Review" / "Edit Review" button bar ──────────────
-                const actionBar = document.createElement('div');
-                actionBar.className = 'je-review-action-bar';
-                let writeBtn = null;
-
-                if (userReviewsEnabled && !ownReview) {
-                    writeBtn = document.createElement('button');
-                    writeBtn.className = 'je-review-btn je-review-write-btn';
-                    writeBtn.textContent = JE.t('reviews_add');
-                    actionBar.appendChild(writeBtn);
-                }
-                reviewsSection.appendChild(actionBar);
-
-                // ── Inline form placeholder (hidden until button clicked) ──────────
-                const formPlaceholder = document.createElement('div');
-                formPlaceholder.className = 'je-review-form-placeholder';
-                reviewsSection.appendChild(formPlaceholder);
-
-                const swipeContainer = document.createElement('div');
-                swipeContainer.className = 'tmdb-review-swipe-container';
-
-                // Render user reviews first (distinct border colour)
-                userReviews.forEach(userReview => {
-                    const card = createUserReviewElement(
-                        userReview,
-                        currentUserId,
-                        viewerIsAdmin,
-                        // Edit callback (own reviews only)
-                        (r) => openForm(r),
-                        // Delete callback — routes to self-delete for own reviews,
-                        // admin moderation delete for others (admin viewers only).
-                        async (r) => {
-                            const isOwn = r.userId.replace(/-/g, '') === currentUserId.replace(/-/g, '');
-                            const userName = r.userName || 'user';
-                            const title = isOwn
-                                ? tWithFallback('reviews_delete_title', 'Delete review')
-                                : tWithFallback('reviews_admin_delete_title', 'Delete review (admin)');
-                            const body = isOwn
-                                ? tWithFallback('reviews_delete_confirm',
-                                    'Delete your review for this item?')
-                                : tWithFallback('reviews_admin_delete_confirm',
-                                    'Delete this review by {user}? This cannot be undone.',
-                                    { user: userName });
-                            if (!(await jeConfirm(body, title))) return;
-                            try {
-                                if (isOwn) {
-                                    await deleteUserReview(tmdbId, tmdbMediaType);
-                                } else {
-                                    await adminDeleteUserReview(r.userId, tmdbId, tmdbMediaType);
-                                }
-                                refreshReviews(contextPage);
-                            } catch (e) {
-                                // Surface the failure to the admin instead of
-                                // silently failing: without this, a 403/404/500
-                                // on the delete call would leave the review on
-                                // screen with no feedback, making the admin
-                                // believe the content was moderated when it
-                                // wasn't.
-                                console.error(`${logPrefix} Delete failed`, e);
-                                const errTitle = tWithFallback('reviews_delete_error_title',
-                                    'Delete failed');
-                                const errBody = tWithFallback('reviews_delete_error_body',
-                                    'Could not delete the review: {err}',
-                                    { err: (e && e.message) ? e.message : 'Unknown error' });
-                                jeAlert(errBody, errTitle);
-                                // Re-fetch so the admin sees the real current state
-                                // (in case the review was actually removed but the
-                                // response was 500 on the way back, or a concurrent
-                                // admin deleted it first).
-                                refreshReviews(contextPage);
-                            }
-                        }
-                    );
-                    swipeContainer.appendChild(card);
-                });
-
-                // Render TMDB reviews after
-                if (reviews && reviews.length > 0) {
-                    reviews.slice(0, 10).forEach(review => {
-                        swipeContainer.appendChild(createReviewElement(review));
-                    });
-                }
-
-                reviewsSection.appendChild(swipeContainer);
-
-                // ── Form open/close helpers ──────────────────────────────────────
-                function openForm(existingReview) {
-                    formPlaceholder.innerHTML = '';
-                    const form = createReviewForm(
-                        existingReview || null,
-                        async (content, rating) => {
-                            await saveUserReview(tmdbId, tmdbMediaType, content, rating);
-                            refreshReviews(contextPage);
-                        },
-                        () => { formPlaceholder.innerHTML = ''; }
-                    );
-                    formPlaceholder.appendChild(form);
-                    // Automatically open the details section so the form is visible
-                    reviewsSection.setAttribute('open', '');
-                    form.querySelector('.je-review-textarea').focus();
-                }
-
-                if (writeBtn) {
-                    writeBtn.addEventListener('click', () => {
-                        if (formPlaceholder.querySelector('.je-review-form')) {
-                            formPlaceholder.innerHTML = '';
-                        } else {
-                            openForm(ownReview || null);
-                        }
-                    });
-                }
-
-                // ── Read-more toggle for TMDB reviews ─────────────────────────────
-                swipeContainer.addEventListener('click', function (e) {
-                    if (e.target.classList.contains('tmdb-review-toggle')) {
-                        const textElement = e.target.parentElement;
-                        const card = textElement.closest('.tmdb-review-card');
-                        // A translated review expands to its translation
-                        if (card.dataset.showTranslated === '1' || card.dataset.fullContent !== undefined) {
-                            const full = (card.dataset.showTranslated === '1' ? card.dataset.translatedContent : card.dataset.fullContent) || '';
-                            if (textElement.classList.toggle('expanded')) {
-                                textElement.innerHTML = parseMarkdown(full) + `<span class="tmdb-review-toggle">${JE.t('reviews_read_less')}</span>`;
-                            } else {
-                                textElement.innerHTML = parseMarkdown(full.substring(0, 350)) + `<span class="tmdb-review-toggle">${JE.t('reviews_read_more')}</span>`;
-                            }
-                            return;
-                        }
-                        const review = reviews.find(r => escapeHtml(r.author) === card.querySelector('.tmdb-review-author').textContent);
-                        if (!review) return;
-                        if (textElement.classList.toggle('expanded')) {
-                            textElement.innerHTML = parseMarkdown(review.content) + `<span class="tmdb-review-toggle">${JE.t('reviews_read_less')}</span>`;
-                        } else {
-                            const previewContent = review.content.substring(0, 350);
-                            textElement.innerHTML = parseMarkdown(previewContent) + `<span class="tmdb-review-toggle">${JE.t('reviews_read_more')}</span>`;
-                        }
-                    }
-                });
-
-                // Persist user's expand/collapse choice for future pages
-                reviewsSection.addEventListener('toggle', function () {
-                    try {
-                        if (!window.JellyfinEnhanced) return;
-                        const JE = window.JellyfinEnhanced;
-                        JE.currentSettings = JE.currentSettings || JE.loadSettings?.() || {};
-                        if (JE.currentSettings.reviewsExpandedByDefault !== reviewsSection.open) {
-                            JE.currentSettings.reviewsExpandedByDefault = reviewsSection.open;
-                            if (typeof JE.saveUserSettings === 'function') {
-                                JE.saveUserSettings('settings.json', JE.currentSettings);
-                            }
-                        }
-                    } catch (err) {
-                        console.error(`${logPrefix} Failed to persist reviews expanded state`, err);
-                    }
-                });
-            }
-
-            const insertionAnchor =
-                contextPage.querySelector('.streaming-lookup-container') ||
-                contextPage.querySelector('.itemExternalLinks') ||
-                contextPage.querySelector('.tagline');
-
-            if (insertionAnchor && insertionAnchor.parentNode) {
-                insertionAnchor.parentNode.insertBefore(reviewsSection, insertionAnchor.nextSibling);
-            } else {
-                console.error(`${logPrefix} Could not find a suitable anchor to insert reviews.`);
-            }
+        errorEl.textContent = "";
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="material-icons" aria-hidden="true">hourglass_empty</span>';
+        try {
+          await onSave(content, currentRating || null);
+        } catch {
+          errorEl.textContent = JE.t("reviews_form_error_save");
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = '<span class="material-icons" aria-hidden="true">save</span>';
         }
-
-        /**
-         * Re-fetches and re-renders the review section for the current page.
-         */
-        async function refreshReviews(contextPage) {
-            try {
-                const itemId = new URLSearchParams(window.location.hash.split('?')[1]).get('id');
-                const userId = ApiClient.getCurrentUserId();
-                if (!itemId || !userId) return;
-
-                const item = JE.helpers?.getItemCached
-                    ? await JE.helpers.getItemCached(itemId, { userId })
-                    : await ApiClient.getItem(userId, itemId);
-                const mediaType = item?.Type;
-
-                if (await shouldSuppressForSpoilerMode(item, mediaType)) {
-                    removeReviewsSection(contextPage);
-                    return;
-                }
-
-                let tmdbKey = null;
-                let apiMediaType;
-
-                if (mediaType === 'Movie') {
-                    const tmdbId = item?.ProviderIds?.Tmdb;
-                    if (!tmdbId) return;
-                    tmdbKey = String(tmdbId);
-                    apiMediaType = 'movie';
-                } else if (mediaType === 'Series') {
-                    const tmdbId = item?.ProviderIds?.Tmdb;
-                    if (!tmdbId) return;
-                    tmdbKey = String(tmdbId);
-                    apiMediaType = 'tv';
-                } else if (mediaType === 'Season') {
-                    let seriesTmdbId = item?.SeriesProviderIds?.Tmdb;
-                    if (!seriesTmdbId && item?.SeriesId) {
-                        try {
-                            const series = await ApiClient.getItem(userId, item.SeriesId);
-                            seriesTmdbId = series?.ProviderIds?.Tmdb;
-                        } catch (_) {}
-                    }
-                    if (!seriesTmdbId || item?.IndexNumber == null) return;
-                    tmdbKey = `${seriesTmdbId}:s${item.IndexNumber}`;
-                    apiMediaType = 'tv';
-                } else if (mediaType === 'Episode') {
-                    let seriesTmdbId = item?.SeriesProviderIds?.Tmdb;
-                    if (!seriesTmdbId && item?.SeriesId) {
-                        try {
-                            const series = await ApiClient.getItem(userId, item.SeriesId);
-                            seriesTmdbId = series?.ProviderIds?.Tmdb;
-                        } catch (_) {}
-                    }
-                    if (!seriesTmdbId || item?.ParentIndexNumber == null || item?.IndexNumber == null) return;
-                    tmdbKey = `${seriesTmdbId}:s${item.ParentIndexNumber}:e${item.IndexNumber}`;
-                    apiMediaType = 'tv';
-                } else {
-                    return;
-                }
-
-                if (!tmdbKey) return;
-
-                // Fetch the current user fresh alongside the review data so
-                // admin status reflects the actual live session.
-                const [tmdbReviews, userReviews, currentUser] = await Promise.all([
-                    fetchExternalReviews(item, tmdbKey, mediaType),
-                    userReviewsEnabled ? fetchUserReviews(tmdbKey, apiMediaType) : Promise.resolve([]),
-                    ApiClient.getCurrentUser().catch(() => null),
-                ]);
-
-                const page = document.querySelector('#itemDetailPage:not(.hide)') || contextPage;
-                addReviewsToPage(tmdbReviews, userReviews, page, tmdbKey, apiMediaType, currentUser);
-
-                // Bust the poster tag cache for this item so the overlay updates
-                if (typeof JE.invalidateUserReviewTagCache === 'function') {
-                    JE.invalidateUserReviewTagCache(tmdbKey);
-                }
-            } catch (err) {
-                console.error(`${logPrefix} Failed to refresh reviews:`, err);
-            }
+      });
+      cancelBtn.addEventListener("click", onCancel);
+      return form;
+    }
+    function insertAverageChip(contextPage, userReviews) {
+      const average = averageUserRating(userReviews);
+      contextPage.querySelector(".je-avg-user-rating-chip")?.remove();
+      if (!average) return;
+      const chip = document.createElement("div");
+      chip.className = "mediaInfoCriticRating mediaInfoItem je-avg-user-rating-chip";
+      chip.title = tWithFallback("reviews_avg_rating_tooltip", "Average rating from {count} user(s)", { count: average.count });
+      chip.innerHTML = `<span class="je-msym-rounded starIcon" aria-hidden="true" style="color:#e91e8c;">person_heart</span>${escapeHtml(average.display)}`;
+      const anchor = contextPage.querySelector(".mediaInfoCriticRating") || contextPage.querySelector(".starRatingContainer");
+      if (anchor?.parentNode) anchor.parentNode.insertBefore(chip, anchor.nextSibling);
+      else contextPage.querySelector(".mediaInfoItems")?.appendChild(chip);
+    }
+    function addReviewsToPage(reviews, fetched, contextPage, target, viewer) {
+      removeReviewsSection(contextPage);
+      const userReviews = fetched ?? [], userReviewsFailed = userReviewsEnabled && fetched === null;
+      if (userReviewsEnabled && userReviews.length > 0) insertAverageChip(contextPage, userReviews);
+      const { tmdbKey, apiMediaType } = target;
+      const ownReview = userReviews.find((review) => sameUser(review.userId, viewer.id));
+      const reviewsSection = document.createElement("details");
+      reviewsSection.className = "detailSection tmdb-reviews-section";
+      const owner = export12(JE.session, export32() || "", contextPage);
+      const current = () => reviewsSection.isConnected && owner.current();
+      if (JE.currentSettings?.reviewsExpandedByDefault) reviewsSection.setAttribute("open", "");
+      const totalCount = (reviews ? reviews.length : 0) + userReviews.length;
+      const summary = document.createElement("summary");
+      summary.className = "sectionTitle";
+      summary.innerHTML = `${JE.t("reviews_title", { count: totalCount })} <i class="material-icons expand-icon">expand_more</i>`;
+      reviewsSection.appendChild(summary);
+      const actionBar = document.createElement("div");
+      actionBar.className = "je-review-action-bar";
+      let writeBtn = null;
+      if (userReviewsFailed) actionBar.appendChild(Object.assign(document.createElement("div"), {
+        className: "je-review-unavailable",
+        textContent: tWithFallback("reviews_user_unavailable", "User reviews couldn't be loaded. Reload the page to try again.")
+      }));
+      else if (userReviewsEnabled && !ownReview) {
+        writeBtn = document.createElement("button");
+        writeBtn.className = "je-review-btn je-review-write-btn";
+        writeBtn.textContent = JE.t("reviews_add");
+        actionBar.appendChild(writeBtn);
+      }
+      reviewsSection.appendChild(actionBar);
+      const formPlaceholder = document.createElement("div");
+      formPlaceholder.className = "je-review-form-placeholder";
+      reviewsSection.appendChild(formPlaceholder);
+      const swipeContainer = document.createElement("div");
+      swipeContainer.className = "tmdb-review-swipe-container";
+      const openForm = (existingReview) => {
+        if (!current()) return;
+        formPlaceholder.replaceChildren();
+        const form = createReviewForm(existingReview, async (content, rating) => {
+          if (!current()) return;
+          await saveUserReview(tmdbKey, apiMediaType, content, rating);
+          if (current()) void refreshReviews(contextPage);
+        }, () => {
+          formPlaceholder.replaceChildren();
+        });
+        formPlaceholder.appendChild(form);
+        reviewsSection.setAttribute("open", "");
+        form.querySelector(".je-review-textarea")?.focus();
+      };
+      const deleteReview = async (review) => {
+        if (!current()) return;
+        const isOwn = sameUser(review.userId, viewer.id);
+        const userName = review.userName || "user";
+        const title = isOwn ? tWithFallback("reviews_delete_title", "Delete review") : tWithFallback("reviews_admin_delete_title", "Delete review (admin)");
+        const body = isOwn ? tWithFallback("reviews_delete_confirm", "Delete your review for this item?") : tWithFallback("reviews_admin_delete_confirm", "Delete this review by {user}? This cannot be undone.", { user: userName });
+        if (!await jeConfirm(body, title) || !current()) return;
+        try {
+          if (isOwn) await deleteUserReview(tmdbKey, apiMediaType);
+          else await adminDeleteUserReview(review.userId, tmdbKey, apiMediaType);
+          if (current()) void refreshReviews(contextPage);
+        } catch (e) {
+          if (!current()) return;
+          console.error(`${logPrefix} Delete failed`, e);
+          const errTitle = tWithFallback("reviews_delete_error_title", "Delete failed");
+          const errBody = tWithFallback("reviews_delete_error_body", "Could not delete the review: {err}", { err: export42(e).message || "Unknown error" });
+          jeAlert(errBody, errTitle);
+          void refreshReviews(contextPage);
         }
-
-        function injectCss() {
-            const styleId = 'tmdb-reviews-enhanced-styles';
-            if (document.getElementById(styleId)) return;
-
-            const style = document.createElement('style');
-            style.id = styleId;
-            style.textContent = `
+      };
+      for (const userReview of userReviews) swipeContainer.appendChild(createUserReviewElement(userReview, viewer, (review) => openForm(review), deleteReview));
+      for (const review of (reviews ?? []).slice(0, 10)) swipeContainer.appendChild(createReviewElement(review));
+      reviewsSection.appendChild(swipeContainer);
+      writeBtn?.addEventListener("click", () => {
+        if (formPlaceholder.querySelector(".je-review-form")) formPlaceholder.replaceChildren();
+        else openForm(ownReview || null);
+      });
+      swipeContainer.addEventListener("click", (event) => {
+        const toggle = event.target;
+        if (!(toggle instanceof Element) || !toggle.classList.contains("tmdb-review-toggle")) return;
+        const textElement = toggle.parentElement;
+        const card = textElement?.closest(".tmdb-review-card");
+        if (!textElement || !card) return;
+        const full = (card.dataset.showTranslated === "1" ? card.dataset.translatedContent : card.dataset.fullContent) || "";
+        const expanded = textElement.classList.toggle("expanded");
+        textElement.innerHTML = expanded ? markdown(full) + toggleHtml("reviews_read_less") : markdown(full.substring(0, REVIEW_PREVIEW_LENGTH)) + toggleHtml("reviews_read_more");
+      });
+      reviewsSection.addEventListener("toggle", () => {
+        if (!current()) return;
+        try {
+          const settings = JE.currentSettings = JE.currentSettings || JE.loadSettings?.() || {};
+          if (settings.reviewsExpandedByDefault !== reviewsSection.open) {
+            settings.reviewsExpandedByDefault = reviewsSection.open;
+            if (typeof JE.saveUserSettings === "function") JE.saveUserSettings("settings.json", settings);
+          }
+        } catch (err) {
+          console.error(`${logPrefix} Failed to persist reviews expanded state`, err);
+        }
+      });
+      const insertionAnchor = contextPage.querySelector(".streaming-lookup-container") || contextPage.querySelector(".itemExternalLinks") || contextPage.querySelector(".tagline");
+      if (insertionAnchor?.parentNode) insertionAnchor.parentNode.insertBefore(reviewsSection, insertionAnchor.nextSibling);
+      else console.error(`${logPrefix} Could not find a suitable anchor to insert reviews.`);
+    }
+    async function resolveTarget(item, mediaType, seriesLookup) {
+      if (!item) return null;
+      if (mediaType === "Movie" || mediaType === "Series") {
+        const tmdbId = item.ProviderIds.Tmdb;
+        return tmdbId ? { tmdbKey: tmdbId, apiMediaType: mediaType === "Movie" ? "movie" : "tv" } : null;
+      }
+      if (mediaType !== "Season" && mediaType !== "Episode") return null;
+      let seriesTmdbId = item.SeriesProviderIds.Tmdb;
+      if (!seriesTmdbId && item.SeriesId) {
+        try {
+          seriesTmdbId = (await seriesLookup(item.SeriesId))?.ProviderIds.Tmdb;
+        } catch {
+        }
+      }
+      if (!seriesTmdbId || item.IndexNumber == null) return null;
+      if (mediaType === "Season") return { tmdbKey: `${seriesTmdbId}:s${item.IndexNumber}`, apiMediaType: "tv" };
+      if (item.ParentIndexNumber == null) return null;
+      return { tmdbKey: `${seriesTmdbId}:s${item.ParentIndexNumber}:e${item.IndexNumber}`, apiMediaType: "tv" };
+    }
+    async function fetchViewer() {
+      const client = export0();
+      let user = null;
+      try {
+        user = client.getCurrentUser ? await client.getCurrentUser() : null;
+      } catch {
+        user = null;
+      }
+      return {
+        id: export112(export52(user, "Id")) || client.getCurrentUserId() || "",
+        isAdmin: export02(export52(export52(user, "Policy"), "IsAdministrator")) === true
+      };
+    }
+    async function loadInto(page, seriesLookup, force = false) {
+      const itemId = export32();
+      const userId = export3();
+      if (!itemId || !userId) return;
+      const lease = export12(JE.session, itemId, page);
+      const request = {};
+      pageLoads.set(page, request);
+      const current = () => lease.current() && pageLoads.get(page) === request;
+      const item = await export7(JE.helpers, itemId, true, userId);
+      if (!current()) return;
+      const mediaType = item?.Type;
+      if (!item || !mediaType) {
+        removeReviewsSection(page);
+        renderedOwners.delete(page);
+        return;
+      }
+      if (await shouldSuppressForSpoilerMode(item, mediaType)) {
+        if (current()) {
+          removeReviewsSection(page);
+          renderedOwners.delete(page);
+        }
+        return;
+      }
+      if (!current()) return;
+      if (!force && renderedOwners.get(page)?.current() && page.querySelector(".tmdb-reviews-section")) return;
+      const target = await resolveTarget(item, mediaType, (seriesId) => seriesLookup(userId, seriesId));
+      if (!target || !mediaType || !current()) return;
+      const [externalReviews, userReviews, viewer] = await Promise.all([
+        // TMDB and AniList reviews are movie/series only
+        fetchExternalReviews(item, target.tmdbKey, mediaType),
+        userReviewsEnabled ? fetchUserReviews(target.tmdbKey, target.apiMediaType) : Promise.resolve([]),
+        fetchViewer()
+      ]);
+      if (!current()) return;
+      addReviewsToPage(externalReviews, userReviews, page, target, viewer);
+      renderedOwners.set(page, lease);
+      const invalidateTags = ctx.peer("invalidateUserReviewTagCache");
+      if (typeof invalidateTags === "function") invalidateTags(target.tmdbKey);
+    }
+    async function refreshReviews(contextPage) {
+      try {
+        await loadInto(export11() || contextPage, async (userId, seriesId) => export13(await export0().getItem(userId, seriesId)), true);
+      } catch (err) {
+        console.error(`${logPrefix} Failed to refresh reviews:`, err);
+      }
+    }
+    async function processPage(visiblePage) {
+      if (!visiblePage) return;
+      if (!renderedOwners.get(visiblePage)?.current()) {
+        removeReviewsSection(visiblePage);
+        renderedOwners.delete(visiblePage);
+      }
+      try {
+        await loadInto(visiblePage, (userId, seriesId) => export7(JE.helpers, seriesId, true, userId));
+      } catch (error) {
+        console.error(`${logPrefix} Error processing page:`, error);
+      }
+    }
+    function injectCss() {
+      const styleId = "tmdb-reviews-enhanced-styles";
+      if (document.getElementById(styleId)) return;
+      const style = document.createElement("style");
+      style.id = styleId;
+      style.textContent = REVIEWS_CSS;
+      document.head.appendChild(style);
+    }
+    injectCss();
+    const unregister = JE.helpers.onViewPage(async (_view, element, hash) => {
+      if (!JE.pluginConfig.ShowReviews && !JE.pluginConfig.ShowUserReviews && !JE.pluginConfig.ShowAnilistReviews) {
+        unregister?.();
+        return;
+      }
+      const hasItemId = window.location.hash.includes("id=") || typeof hash === "string" && hash.includes("id=");
+      const isItemDetailElement = !!element && (element.id === "itemDetailPage" || element.classList.contains("itemDetailPage"));
+      if (!hasItemId && !isItemDetailElement) return;
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      const visiblePage = export11();
+      if (visiblePage) void processPage(visiblePage);
+    }, { pages: null, fetchItem: false, immediate: true });
+  };
+  var REVIEWS_CSS = `
                 .je-msym-rounded {
                     font-family: 'JE Material Symbols Rounded';
                     font-weight: normal;
@@ -1304,7 +1013,7 @@ ${r.Content}` : r.Content,
                 .je-user-avatar { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; border: 2px solid rgb(94, 213, 95); display: block; }
 
                 /* Action bar */
-                .je-review-action-bar { padding: 0.5em 0.5em 0; display: flex; gap: 0.75em; }
+                .je-review-action-bar { padding: 0.5em 0.5em 0; display: flex; gap: 0.75em; } .je-review-unavailable { opacity: 0.75; font-size: 0.9em; }
                 .je-user-review-actions { display: flex; gap: 0.5em; flex-shrink: 0; }
 
                 /* Shared button style */
@@ -1406,122 +1115,6 @@ ${r.Content}` : r.Content,
                     content: "";
                 }
             `;
-            document.head.appendChild(style);
-        }
-
-        async function processPage(visiblePage) {
-            if (!visiblePage || visiblePage.querySelector('.tmdb-reviews-section')) {
-                return;
-            }
-
-            try {
-                const itemId = new URLSearchParams(window.location.hash.split('?')[1]).get('id');
-                const userId = ApiClient.getCurrentUserId();
-
-                if (itemId && userId) {
-                    const item = JE.helpers?.getItemCached
-                        ? await JE.helpers.getItemCached(itemId, { userId })
-                        : await ApiClient.getItem(userId, itemId);
-                    const mediaType = item?.Type;
-
-                    if (await shouldSuppressForSpoilerMode(item, mediaType)) {
-                        removeReviewsSection(visiblePage);
-                        return;
-                    }
-
-                    // Resolve tmdbKey and apiMediaType based on item type
-                    let tmdbKey = null;
-                    let apiMediaType;
-
-                    if (mediaType === 'Movie') {
-                        const tmdbId = item?.ProviderIds?.Tmdb;
-                        if (!tmdbId) return;
-                        tmdbKey = String(tmdbId);
-                        apiMediaType = 'movie';
-                    } else if (mediaType === 'Series') {
-                        const tmdbId = item?.ProviderIds?.Tmdb;
-                        if (!tmdbId) return;
-                        tmdbKey = String(tmdbId);
-                        apiMediaType = 'tv';
-                    } else if (mediaType === 'Season') {
-                        // The show's TMDB id lives on the parent Series (the DTO has
-                        // no SeriesProviderIds); the shared item cache hands every
-                        // module on the page the same fetch.
-                        let seriesTmdbId = null;
-                        if (item?.SeriesId) {
-                            try {
-                                const series = await getSeriesItem(userId, item.SeriesId);
-                                seriesTmdbId = series?.ProviderIds?.Tmdb;
-                            } catch (_) {}
-                        }
-                        if (!seriesTmdbId || item?.IndexNumber == null) return;
-                        tmdbKey = `${seriesTmdbId}:s${item.IndexNumber}`;
-                        apiMediaType = 'tv';
-                    } else if (mediaType === 'Episode') {
-                        let seriesTmdbId = null;
-                        if (item?.SeriesId) {
-                            try {
-                                const series = await getSeriesItem(userId, item.SeriesId);
-                                seriesTmdbId = series?.ProviderIds?.Tmdb;
-                            } catch (_) {}
-                        }
-                        if (!seriesTmdbId || item?.ParentIndexNumber == null || item?.IndexNumber == null) return;
-                        tmdbKey = `${seriesTmdbId}:s${item.ParentIndexNumber}:e${item.IndexNumber}`;
-                        apiMediaType = 'tv';
-                    } else {
-                        return;
-                    }
-
-                    if (tmdbKey) {
-                        // See refreshReviews for why currentUser is resolved fresh here.
-                        const [tmdbReviews, userReviews, currentUser] = await Promise.all([
-                            // TMDB and AniList reviews are movie/series only
-                            fetchExternalReviews(item, tmdbKey, mediaType),
-                            userReviewsEnabled ? fetchUserReviews(tmdbKey, apiMediaType) : Promise.resolve([]),
-                            ApiClient.getCurrentUser().catch(() => null),
-                        ]);
-                        addReviewsToPage(tmdbReviews, userReviews, visiblePage, tmdbKey, apiMediaType, currentUser);
-                    }
-                }
-            } catch (error) {
-                console.error(`${logPrefix} Error processing page:`, error);
-            }
-        }
-
-        injectCss();
-
-        // Use Emby.Page.onViewShow hook for reliable page navigation detection
-        const unregister = JE.helpers.onViewPage(async (view, element, hash, itemPromise) => {
-            // Check if feature is still enabled
-            if (!JE?.pluginConfig?.ShowReviews && !JE?.pluginConfig?.ShowUserReviews && !JE?.pluginConfig?.ShowAnilistReviews) {
-                unregister();
-                return;
-            }
-
-            // Check if this might be an item detail page by looking at current URL or element
-            const currentHash = window.location.hash;
-            const hasItemId = currentHash.includes('id=') || (hash && hash.includes('id='));
-            const isItemDetailElement = element && (
-                element.id === 'itemDetailPage' ||
-                element.classList?.contains('itemDetailPage')
-            );
-
-            if (!hasItemId && !isItemDetailElement) {
-                return;
-            }
-
-            // Wait for the page to be visible
-            await new Promise(resolve => setTimeout(resolve, 150));
-
-            const visiblePage = document.querySelector('#itemDetailPage:not(.hide)');
-            if (visiblePage) {
-                processPage(visiblePage);
-            }
-        }, {
-            pages: null, // Trigger on all pages, we'll filter by hash
-            fetchItem: false,
-            immediate: true // Process current page immediately on load
-        });
-    };
-})(window.JellyfinEnhanced);
-
+})();
+})();
+//# sourceMappingURL=reviews.js.map

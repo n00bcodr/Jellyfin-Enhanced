@@ -51,7 +51,7 @@ function setup(t, { stored = {}, plugin = {} } = {}) {
   const $ = selector => h.document.querySelector(selector);
   return { ...h, writes, toasts, renderers, settle, $,
     row: group => $(`.je-tge-row[data-group="${group}"]`),
-    saved: () => JSON.parse(writes.at(-1).data),
+    saved: () => JSON.parse(writes.at(-1).data).Settings,
     async click(el) { el.dispatchEvent(new h.window.MouseEvent('click', { bubbles: true })); await settle(); },
     async change(el, value) {
       if (typeof value === 'boolean') el.checked = value; else el.value = value;

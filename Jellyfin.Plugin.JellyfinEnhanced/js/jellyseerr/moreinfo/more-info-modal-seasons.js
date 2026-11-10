@@ -1,433 +1,424 @@
-// /js/jellyseerr/moreinfo/more-info-modal-seasons.js
-// Season-level logic: metadata backfill from TMDB, Jellyfin season links,
-// availability chips, unrequested-season detection and the seasons section.
-(function(JE) {
-    'use strict';
+(() => {
+"use strict";
+(() => {
+  // client/src/host/context.ts
+  function featureContext(feature, core, slots) {
+    const shared = core.core?.featureContext;
+    if (typeof shared !== "function") {
+      throw new Error(`${feature}: JE.core.featureContext is missing; core/ui-kit.js must load before feature scripts`);
+    }
+    return shared(feature, core, slots);
+  }
 
-    JE.internals = JE.internals || {};
-    // Shared state is seeded by more-info-modal-data.js, which plugin.js loads
-    // first in this group.
-    const internal = JE.internals.moreInfoModal;
-    const state = internal.state;
-    const logPrefix = '🪼 Jellyfin Enhanced: Jellyseerr More Info:';
-    const escapeHtml = JE.escapeHtml;
-    const MediaStatus = JE.seerrStatus.MEDIA;
+  // client/src/features/seerr/host-details.ts
+  function bridge() {
+    const host = window;
+    if (!host.JellyfinEnhanced) throw new Error("Seerr details loaded before Jellyfin Enhanced");
+    return host.JellyfinEnhanced;
+  }
+  function apiClient() {
+    const host = window;
+    if (!host.ApiClient) throw new Error("Jellyfin ApiClient unavailable");
+    return host.ApiClient;
+  }
+  var detailsContexts = /* @__PURE__ */ new WeakMap();
+  function seerrDetailsContext(JE2) {
+    let ctx = detailsContexts.get(JE2);
+    if (!ctx) {
+      ctx = featureContext("seerr", JE2, {
+        internalSlots: ["moreInfoModal"],
+        internalsObject: () => JE2.internals ?? (JE2.internals = {})
+      });
+      detailsContexts.set(JE2, ctx);
+    }
+    return ctx;
+  }
+  function moreInfoRegistry(JE2) {
+    const own = seerrDetailsContext(JE2).own;
+    return own.moreInfoModal ?? (own.moreInfoModal = { state: { currentModal: null } });
+  }
+  function translator(JE2) {
+    return (key, fallback = "", params) => {
+      const text = params ? JE2.t?.(key, params) : JE2.t?.(key);
+      return text || fallback;
+    };
+  }
+  function escaper(JE2) {
+    return (value) => {
+      if (JE2.escapeHtml) return JE2.escapeHtml(value);
+      return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+    };
+  }
+  var SEERR_LOG = "🪼 Jellyfin Enhanced:";
 
-    /**
-     * Validates that a string starts with an ISO date format (YYYY-MM-DD).
-     * @param {string} d - The date string to validate.
-     * @returns {boolean} True if the string matches the date pattern.
-     */
-    const isValidDate = (d) => /^\d{4}-\d{2}-\d{2}/.test(d);
+  // client/src/features/seerr/details/domain/dates.ts
+  var ISO_DATE = /^\d{4}-\d{2}-\d{2}/;
+  function isIsoDate(value) {
+    return ISO_DATE.test(value);
+  }
+  function calendarYear(value) {
+    if (isIsoDate(value)) return Number(value.slice(0, 4));
+    const year = new Date(value).getFullYear();
+    return Number.isNaN(year) ? void 0 : year;
+  }
 
-    /** Validates that a TMDB poster path matches the expected format (e.g., /abc123.jpg). */
-    const isValidPosterPath = (p) => /^\/[a-zA-Z0-9._-]+\.[a-zA-Z]+$/.test(p);
+  // client/src/features/seerr/details/domain/json.ts
+  function isRecord(value) {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
+  }
+  function record(value) {
+    return isRecord(value) ? value : null;
+  }
+  function str(value) {
+    return typeof value === "string" ? value : void 0;
+  }
+  function filled(value) {
+    return typeof value === "string" && value.length > 0 ? value : null;
+  }
+  function num(value) {
+    return typeof value === "number" && Number.isFinite(value) ? value : void 0;
+  }
+  function list(value) {
+    return Array.isArray(value) ? value : [];
+  }
+  function records(value) {
+    return list(value).filter(isRecord);
+  }
+  function idText(value) {
+    if (typeof value === "number" && Number.isFinite(value)) return String(value);
+    return filled(value);
+  }
 
-/**
- * Backfills missing season metadata (posterPath, overview, airDate) from TMDB and episode data.
- * Fetches data asynchronously, then updates DOM season cards in-place.
- * @param {number} tmdbId - The TMDB ID of the TV show.
- * @param {object} data - The Seerr TV show details object (seasons are mutated with backfilled values).
- */
-async function backfillSeasonMetadata(tmdbId, data) {
+  // client/src/features/seerr/details/domain/links.ts
+  function urlSafePath(path) {
+    return path.replace(/[\s'"()\\<>]/g, (character) => encodeURIComponent(character).replace(
+      /[()']/g,
+      (escaped) => `%${escaped.charCodeAt(0).toString(16).toUpperCase()}`
+    ));
+  }
+  function tmdbImage(size, path) {
+    const value = str(path);
+    return value ? `https://image.tmdb.org/t/p/${size}${urlSafePath(value)}` : "";
+  }
+  function isPosterPath(value) {
+    return typeof value === "string" && /^\/[a-zA-Z0-9._-]+\.[a-zA-Z]+$/.test(value);
+  }
+  function detailsHref(itemId) {
+    return `#!/details?id=${encodeURIComponent(itemId)}`;
+  }
+
+  // client/src/features/seerr/details/domain/seasons.ts
+  function seasonNumberOf(season) {
+    return num(season.seasonNumber);
+  }
+  function seasonStatus(details, seasonNumber) {
+    if (!seasonNumber) return null;
+    return records(record(record(details)?.mediaInfo)?.seasons).find((season) => Number(season.seasonNumber) === Number(seasonNumber)) ?? null;
+  }
+  function seasonJellyfinId(season, is4k = false) {
+    if (!season) return null;
+    return is4k ? filled(season.jellyfinMediaId4k) ?? filled(season.jellyfinSeasonId4k) ?? filled(season.jellyfinId4k) : filled(season.jellyfinMediaId) ?? filled(season.jellyfinSeasonId) ?? filled(season.jellyfinId);
+  }
+  function seasonDisplayName(season, specials, numbered) {
+    const number = seasonNumberOf(season) ?? 0;
+    const trimmed = (str(season.name) ?? "").trim();
+    const numericOnly = trimmed === String(number) || /^0*\d+$/.test(trimmed);
+    if (trimmed && !numericOnly) return trimmed;
+    return number === 0 ? specials : numbered(number);
+  }
+  function seasonYear(season) {
+    const guarded = idText(season.jeYear);
+    if (guarded) return guarded;
+    const date = str(season.airDate);
+    return date && isIsoDate(date) ? date.slice(0, 4) : "";
+  }
+  function mergeSeasonStatuses(requests, tmdbId, mediaSeasons) {
+    const statuses = /* @__PURE__ */ new Map();
+    const note = (season) => {
+      const number = num(season.seasonNumber);
+      if (number === void 0) return;
+      const status = num(season.status);
+      const previous = statuses.get(number);
+      if (!previous || status !== void 0 && status > previous) statuses.set(number, status);
+    };
+    for (const request of records(requests)) {
+      const media = record(request.media);
+      if (request.type !== "tv" || !media || String(media.tmdbId) !== String(tmdbId)) continue;
+      records(request.seasons).forEach(note);
+    }
+    records(mediaSeasons).forEach(note);
+    return statuses;
+  }
+  function requestableSeasons(details) {
+    const numbers = [];
+    for (const season of records(details.seasons)) {
+      const number = num(season.seasonNumber);
+      if (number !== void 0 && number > 0 && (num(season.episodeCount) ?? 0) > 0) numbers.push(number);
+    }
+    return numbers;
+  }
+  function jellyfinSeasonMap(reply) {
+    const map = {};
+    for (const season of records(record(reply)?.Items)) {
+      const number = Number(season.IndexNumber);
+      const id = filled(season.Id);
+      if (id && Number.isFinite(number) && number > 0) map[number] = { id, name: filled(season.Name) };
+    }
+    return map;
+  }
+  function seasonPresence(reply) {
+    const presence = {};
+    for (const season of list(record(reply)?.Items)) {
+      const number = Number(record(season)?.IndexNumber);
+      if (Number.isFinite(number) && number >= 0) presence[number] = true;
+    }
+    return presence;
+  }
+
+  // client/src/features/seerr/details/moreinfo/scope.ts
+  function isLive(state2, modal) {
+    return modal !== null && state2.currentModal === modal && modal._isClosing !== true;
+  }
+
+  // client/src/features/seerr/details/moreinfo/seasons-entry.ts
+  var JE = bridge();
+  var internal = moreInfoRegistry(JE);
+  var { state } = internal;
+  var logPrefix = `${SEERR_LOG} Jellyseerr More Info:`;
+  var escapeHtml = escaper(JE);
+  var t = translator(JE);
+  async function lookupSeason(tmdbId, seasonNumber, options) {
     try {
-        if (!state.currentModal || !data?.seasons) return;
-        // Bound to this modal: a reopen of the same title can show different data.
-        const modal = state.currentModal;
-
-        const api = JE.jellyseerrAPI;
-        const followUp = api?.followUpOptions?.(data);
-        const seasonsMissingData = data.seasons.filter(s => s.episodeCount > 0 && (!s.airDate || !s.posterPath || !s.overview));
-        if (seasonsMissingData.length === 0) return;
-
-        // Fetch TMDB data + per-season episode data in parallel
-        const tmdbPromise = (JE.pluginConfig?.TmdbEnabled && api?.fetchTmdbTvDetails)
-            ? api.fetchTmdbTvDetails(tmdbId, followUp).catch(() => null)
-            : Promise.resolve(null);
-
-        const episodePromises = (api?.fetchTvSeasonDetails)
-            ? seasonsMissingData.map(s =>
-                api.fetchTvSeasonDetails(tmdbId, s.seasonNumber, followUp)
-                    .then(detail => ({ seasonNumber: s.seasonNumber, firstEpDate: detail?.episodes?.[0]?.airDate || '', firstEpYear: detail?.episodes?.[0]?.jeYear || '', detail }))
-                    .catch(() => ({ seasonNumber: s.seasonNumber, firstEpDate: '', firstEpYear: '' }))
-            )
-            : [];
-
-        const [tmdbData, ...episodeResults] = await Promise.all([tmdbPromise, ...episodePromises]);
-
-        // Build TMDB season lookup
-        const tmdbMap = {};
-        if (tmdbData?.seasons) {
-            tmdbData.seasons.forEach(s => { tmdbMap[s.season_number] = s; });
+      const detail = await JE.jellyseerrAPI?.fetchTvSeasonDetails?.(tmdbId, seasonNumber, options);
+      const first = records(record(detail)?.episodes)[0];
+      return { seasonNumber, firstEpDate: filled(first?.airDate) ?? "", firstEpYear: idText(first?.jeYear) ?? "", detail };
+    } catch {
+      return { seasonNumber, firstEpDate: "", firstEpYear: "", detail: void 0 };
+    }
+  }
+  function backfillCard(card, season, details, tmdbSeason, own, episode) {
+    const ownName = filled(own?.name);
+    if (ownName && ownName !== season.name) {
+      season.name = ownName;
+      const nameEl = card.querySelector(".season-name");
+      if (nameEl) nameEl.textContent = ownName;
+    }
+    if (!season.posterPath) {
+      const candidate = filled(tmdbSeason?.poster_path) ?? filled(own?.posterPath);
+      const fallback = isPosterPath(candidate) ? candidate : details.posterPath;
+      if (isPosterPath(fallback)) {
+        season.posterPath = fallback;
+        const posterEl = card.querySelector(".season-poster");
+        if (posterEl) {
+          const source = tmdbImage("w185", fallback);
+          const existing = posterEl.querySelector("img");
+          if (existing) {
+            if (existing.src !== source) existing.src = source;
+          } else {
+            const image = document.createElement("img");
+            image.src = source;
+            image.alt = card.querySelector(".season-name")?.textContent ?? "";
+            posterEl.appendChild(image);
+          }
         }
-
-        // Build episode air date lookup
-        const epDateMap = {};
-        const epYearMap = {};
-        const seasonDetailMap = {};
-        episodeResults.forEach(r => {
-            if (r.firstEpDate && isValidDate(r.firstEpDate)) {
-                epDateMap[r.seasonNumber] = r.firstEpDate;
-            }
-            if (r.firstEpYear) epYearMap[r.seasonNumber] = r.firstEpYear;
-            seasonDetailMap[r.seasonNumber] = r.detail;
-        });
-
-        // Bail if modal was closed/replaced during async fetch
-        if (state.currentModal !== modal || modal._isClosing || String(modal.dataset?.tmdbId) !== String(tmdbId)) return;
-
-        // Update each season card in the DOM
-        data.seasons.forEach(season => {
-            const sNum = season.seasonNumber;
-            const card = modal.querySelector(`.season-card[data-season-number="${CSS.escape(String(sNum))}"]`);
-            if (!card) return;
-
-            const tmdbSeason = tmdbMap[sNum];
-            // On a protected title a started season can come back whole here, through an id
-            // the details don't carry. The server has decided, so what it sent can show.
-            const ownSeason = data.jeSpoilerGuard ? seasonDetailMap[sNum] : null;
-
-            if (ownSeason?.name && ownSeason.name !== season.name) {
-                season.name = ownSeason.name;
-                const nameEl = card.querySelector('.season-name');
-                if (nameEl) nameEl.textContent = season.name;
-            }
-
-            // Backfill posterPath (validate format to prevent loading from unexpected URLs)
-            // Try TMDB season poster first, then fall back to the show poster
-            if (!season.posterPath) {
-                const tmdbPoster = tmdbSeason?.poster_path || ownSeason?.posterPath;
-                const fallbackPoster = (tmdbPoster && isValidPosterPath(tmdbPoster)) ? tmdbPoster : data.posterPath;
-                if (fallbackPoster && isValidPosterPath(fallbackPoster)) {
-                    season.posterPath = fallbackPoster;
-                    const posterEl = card.querySelector('.season-poster');
-                    if (posterEl) {
-                        const newSrc = `https://image.tmdb.org/t/p/w185${season.posterPath}`;
-                        const existingImg = posterEl.querySelector('img');
-                        if (existingImg) {
-                            // Update src if it changed (e.g., replacing show poster with season poster)
-                            if (existingImg.src !== newSrc) existingImg.src = newSrc;
-                        } else {
-                            const img = document.createElement('img');
-                            img.src = newSrc;
-                            img.alt = card.querySelector('.season-name')?.textContent || '';
-                            posterEl.appendChild(img);
-                        }
-                    }
-                }
-            }
-
-            // Backfill overview (textContent is safe from XSS)
-            const backfilledOverview = tmdbSeason?.overview || ownSeason?.overview;
-            if (!season.overview && backfilledOverview) {
-                season.overview = backfilledOverview;
-                const infoEl = card.querySelector('.season-info');
-                if (infoEl && !infoEl.querySelector('.season-overview')) {
-                    const overviewEl = document.createElement('div');
-                    overviewEl.className = 'season-overview';
-                    overviewEl.textContent = season.overview;
-                    infoEl.appendChild(overviewEl);
-                }
-            }
-
-            // Backfill airDate (episode date first, then TMDB fallback)
-            if (!season.airDate) {
-                const epDate = epDateMap[sNum];
-                const tmdbDate = tmdbSeason?.air_date || '';
-                const bestDate = epDate || (isValidDate(tmdbDate) ? tmdbDate : '');
-                // Spoiler Guard leaves only the year of a date it hides.
-                const year = bestDate ? new Date(bestDate).getFullYear() : (season.jeYear || epYearMap[sNum] || tmdbSeason?.jeYear);
-                if (bestDate) season.airDate = bestDate;
-                if (year) {
-                    const metaEl = card.querySelector('.season-meta');
-                    if (metaEl) {
-                        const currentText = metaEl.textContent || '';
-                        if (!currentText.includes(String(year))) {
-                            metaEl.textContent = `${season.episodeCount} Episodes \u2022 ${year}`;
-                        }
-                    }
-                }
-            }
-        });
-    } catch (e) {
-        console.debug(`${logPrefix} Failed to backfill season metadata:`, e);
+      }
     }
-}
-
-function getSeasonStatusInfo(data, seasonNumber) {
-    const seasons = data?.mediaInfo?.seasons;
-    if (!Array.isArray(seasons) || !seasonNumber) return null;
-    return seasons.find(s => Number(s?.seasonNumber) === Number(seasonNumber)) || null;
-}
-
-function getSeasonJellyfinId(seasonInfo, is4k = false) {
-    if (!seasonInfo || typeof seasonInfo !== 'object') return null;
-    if (is4k) {
-        return seasonInfo.jellyfinMediaId4k || seasonInfo.jellyfinSeasonId4k || seasonInfo.jellyfinId4k || null;
+    const overview = filled(tmdbSeason?.overview) ?? filled(own?.overview);
+    if (!season.overview && overview) {
+      season.overview = overview;
+      const infoEl = card.querySelector(".season-info");
+      if (infoEl && !infoEl.querySelector(".season-overview")) {
+        const overviewEl = document.createElement("div");
+        overviewEl.className = "season-overview";
+        overviewEl.textContent = overview;
+        infoEl.appendChild(overviewEl);
+      }
     }
-    return seasonInfo.jellyfinMediaId || seasonInfo.jellyfinSeasonId || seasonInfo.jellyfinId || null;
-}
-
-function buildSeasonAvailabilityLinks(seasonInfo, jellyfinSeasonId = null, jellyfinSeasonId4k = null) {
-    const normalStatus = seasonInfo?.status;
-    const status4k = seasonInfo?.status4k;
-    // A season is only "available" if Jellyseerr says so AND we have a real Jellyfin ID to back it up.
-    // If Jellyseerr reports status 5 (available) but there's no jellyfinSeasonId, the library entry
-    // was deleted and Jellyseerr's status is stale — don't show the Available chip.
-    const isNormalAvailable = (normalStatus === MediaStatus.AVAILABLE && !!jellyfinSeasonId)
-        || normalStatus === MediaStatus.PARTIALLY_AVAILABLE
-        || (!normalStatus && !!jellyfinSeasonId);
-    const is4kAvailable = (status4k === MediaStatus.AVAILABLE && !!jellyfinSeasonId4k)
-        || status4k === MediaStatus.PARTIALLY_AVAILABLE
-        || (!status4k && !!jellyfinSeasonId4k);
-
+    if (!season.airDate) {
+      const episodeDate = episode?.firstEpDate && isIsoDate(episode.firstEpDate) ? episode.firstEpDate : "";
+      const tmdbDate = filled(tmdbSeason?.air_date) ?? "";
+      const best = episodeDate || (isIsoDate(tmdbDate) ? tmdbDate : "");
+      const year = best ? calendarYear(best) : idText(season.jeYear) ?? (episode?.firstEpYear || idText(tmdbSeason?.jeYear));
+      if (best) season.airDate = best;
+      if (year) {
+        const metaEl = card.querySelector(".season-meta");
+        if (metaEl && !(metaEl.textContent ?? "").includes(String(year))) {
+          metaEl.textContent = `${num(season.episodeCount) ?? 0} Episodes • ${year}`;
+        }
+      }
+    }
+  }
+  async function backfillSeasonMetadata(tmdbId, details) {
+    try {
+      const modal = state.currentModal;
+      if (!modal || !isRecord(details) || !Array.isArray(details.seasons)) return;
+      const api = JE.jellyseerrAPI;
+      const followUp = api?.followUpOptions?.(details);
+      const seasons = records(details.seasons);
+      const missing = seasons.filter((season) => (num(season.episodeCount) ?? 0) > 0 && (!season.airDate || !season.posterPath || !season.overview));
+      if (missing.length === 0) return;
+      const tmdbLookup = JE.pluginConfig?.TmdbEnabled && api?.fetchTmdbTvDetails ? api.fetchTmdbTvDetails(tmdbId, followUp).catch(() => null) : Promise.resolve(null);
+      const episodeLookups = api?.fetchTvSeasonDetails ? missing.map((season) => lookupSeason(tmdbId, seasonNumberOf(season) ?? 0, followUp)) : [];
+      const [tmdbData, episodes] = await Promise.all([tmdbLookup, Promise.all(episodeLookups)]);
+      if (state.currentModal !== modal || modal._isClosing || String(modal.dataset?.tmdbId) !== String(tmdbId)) return;
+      const tmdbSeasons = /* @__PURE__ */ new Map();
+      for (const season of records(record(tmdbData)?.seasons)) {
+        const number = num(season.season_number);
+        if (number !== void 0) tmdbSeasons.set(number, season);
+      }
+      const episodesBySeason = new Map(episodes.map((result) => [result.seasonNumber, result]));
+      for (const season of seasons) {
+        const number = seasonNumberOf(season);
+        if (number === void 0) continue;
+        const card = modal.querySelector(`.season-card[data-season-number="${CSS.escape(String(number))}"]`);
+        if (!card) continue;
+        const episode = episodesBySeason.get(number);
+        backfillCard(card, season, details, tmdbSeasons.get(number), details.jeSpoilerGuard ? record(episode?.detail) : null, episode);
+      }
+    } catch (error) {
+      console.debug(`${logPrefix} Failed to backfill season metadata:`, error);
+    }
+  }
+  function linkChip(className, itemId, label) {
+    return `<a is="emby-linkbutton" class="season-link-chip ${className}" href="${escapeHtml(detailsHref(itemId))}">${label}</a>`;
+  }
+  function buildSeasonAvailabilityLinks(season, seasonId = null, seasonId4k = null) {
+    const media = JE.seerrStatus?.MEDIA;
+    const status = num(season?.status);
+    const status4k = num(season?.status4k);
+    const available = status === media?.AVAILABLE && !!seasonId || status === media?.PARTIALLY_AVAILABLE || !status && !!seasonId;
+    const available4k = status4k === media?.AVAILABLE && !!seasonId4k || status4k === media?.PARTIALLY_AVAILABLE || !status4k && !!seasonId4k;
     const pills = [];
-
-    if (isNormalAvailable) {
-        if (jellyfinSeasonId) {
-            pills.push(`<a is="emby-linkbutton" class="season-link-chip available" href="#!/details?id=${encodeURIComponent(jellyfinSeasonId)}">Available</a>`);
-        } else {
-            pills.push('<span class="season-link-chip available">Available</span>');
-        }
+    if (available) pills.push(seasonId ? linkChip("available", seasonId, "Available") : '<span class="season-link-chip available">Available</span>');
+    if (available4k) {
+      const target = seasonId4k ?? seasonId;
+      pills.push(target ? linkChip("available-4k", target, "4K Available") : '<span class="season-link-chip available-4k">4K Available</span>');
     }
-
-    if (is4kAvailable) {
-        if (jellyfinSeasonId4k) {
-            pills.push(`<a is="emby-linkbutton" class="season-link-chip available-4k" href="#!/details?id=${encodeURIComponent(jellyfinSeasonId4k)}">4K Available</a>`);
-        } else if (jellyfinSeasonId) {
-            pills.push(`<a is="emby-linkbutton" class="season-link-chip available-4k" href="#!/details?id=${encodeURIComponent(jellyfinSeasonId)}">4K Available</a>`);
-        } else {
-            pills.push('<span class="season-link-chip available-4k">4K Available</span>');
-        }
-    }
-
-    if (!pills.length) return '';
-    return `<div class="season-links">${pills.join('')}</div>`;
-}
-
-async function fetchJellyfinSeasonMap(seriesId) {
-    const userId = ApiClient.getCurrentUserId?.();
+    return pills.length ? `<div class="season-links">${pills.join("")}</div>` : "";
+  }
+  async function fetchJellyfinSeasonMap(seriesId) {
+    const client = apiClient();
+    const userId = client.getCurrentUserId();
     if (!userId || !seriesId) return {};
-
     try {
-        const response = await ApiClient.ajax({
-            type: 'GET',
-            url: ApiClient.getUrl(`/Users/${userId}/Items`, {
-                ParentId: seriesId,
-                IncludeItemTypes: 'Season',
-                Recursive: false,
-                Fields: 'ParentIndexNumber,IndexNumber,Name'
-            }),
-            dataType: 'json'
-        });
-
-        const map = {};
-        const items = Array.isArray(response?.Items) ? response.Items : [];
-        for (const season of items) {
-            const seasonNumber = Number(season?.IndexNumber);
-            if (season?.Id && Number.isFinite(seasonNumber) && seasonNumber > 0) {
-                map[seasonNumber] = { id: season.Id, name: season.Name || null };
-            }
-        }
-        return map;
+      const reply = await client.ajax({
+        type: "GET",
+        dataType: "json",
+        url: client.getUrl(`/Users/${userId}/Items`, { ParentId: seriesId, IncludeItemTypes: "Season", Recursive: false, Fields: "ParentIndexNumber,IndexNumber,Name" })
+      });
+      return jellyfinSeasonMap(reply);
     } catch (error) {
-        console.debug(`${logPrefix} Could not load Jellyfin season links:`, error);
-        return {};
+      console.debug(`${logPrefix} Could not load Jellyfin season links:`, error);
+      return {};
     }
-}
-
-async function enrichSeasonCardsWithJellyfinLinks(data, modal = state.currentModal) {
-    if (!modal || data?.mediaType === 'movie') return;
-
-    const cards = modal.querySelectorAll('[data-season-number]');
-    if (!cards.length) return;
-
-    const seriesId = data?.mediaInfo?.jellyfinMediaId;
-    if (!seriesId) return;
-
-    if (!data._jellyfinSeasonIdMap) {
-        data._jellyfinSeasonIdMap = await fetchJellyfinSeasonMap(seriesId);
+  }
+  var seasonMaps = /* @__PURE__ */ new WeakMap();
+  async function enrichSeasonCardsWithJellyfinLinks(details, modal = state.currentModal, options = {}) {
+    if (!modal || !isRecord(details) || details.mediaType === "movie") return;
+    const seriesId = filled(record(details.mediaInfo)?.jellyfinMediaId);
+    if (!seriesId || !modal.querySelector("[data-season-number]")) return;
+    let known = options.refresh ? void 0 : seasonMaps.get(details);
+    if (!known) {
+      known = await fetchJellyfinSeasonMap(seriesId);
+      if (Object.keys(known).length > 0) seasonMaps.set(details, known);
+      else seasonMaps.delete(details);
+      if (!isLive(state, modal)) return;
     }
-
-    cards.forEach(card => {
-        const seasonNumber = Number(card.dataset.seasonNumber);
-        const mount = card.querySelector('[data-season-links]');
-        if (!mount || !Number.isFinite(seasonNumber)) return;
-
-        const seasonInfo = getSeasonStatusInfo(data, seasonNumber);
-        const jellyfinEntry = data._jellyfinSeasonIdMap?.[seasonNumber];
-        const jellyfinId = typeof jellyfinEntry === 'object' ? jellyfinEntry?.id : jellyfinEntry;
-        const seasonId = jellyfinId || getSeasonJellyfinId(seasonInfo, false) || null;
-        const seasonId4k = getSeasonJellyfinId(seasonInfo, true) || null;
-        mount.innerHTML = buildSeasonAvailabilityLinks(seasonInfo, seasonId, seasonId4k);
-
-        // Override the season display name with what Jellyfin actually calls it,
-        // so TVDB subtitles like "Beast Hunters" are replaced with "Season 3".
-        const jellyfinName = typeof jellyfinEntry === 'object' ? jellyfinEntry?.name : null;
-        if (jellyfinName) {
-            const nameEl = card.querySelector('.season-name');
-            if (nameEl) nameEl.textContent = jellyfinName;
-        }
+    const map = known;
+    modal.querySelectorAll("[data-season-number]").forEach((card) => {
+      const number = Number(card.dataset.seasonNumber);
+      const mount = card.querySelector("[data-season-links]");
+      if (!mount || !Number.isFinite(number)) return;
+      const season = seasonStatus(details, number);
+      const entry = map[number];
+      mount.innerHTML = buildSeasonAvailabilityLinks(season, entry?.id ?? seasonJellyfinId(season), seasonJellyfinId(season, true));
+      if (entry?.name) {
+        const nameEl = card.querySelector(".season-name");
+        if (nameEl) nameEl.textContent = entry.name;
+      }
     });
-}
-
-/**
- * Check if a TV show has any unrequested seasons by querying the request endpoint
- * @param {object} data - The TV show data from Jellyseerr
- * @param {AbortSignal} [signal] - Cancels the lookups (a details page left
- *   before they answered); the result is then meaningless and false.
- * @returns {Promise<boolean>} - True if there are seasons that can be requested
- */
-async function checkForUnrequestedSeasons(data, signal) {
-    // Get all seasons from TMDB data that have episodes (excluding specials and unaired seasons)
-    const tmdbSeasons = (data.seasons || []).filter(s => s.seasonNumber > 0 && s.episodeCount > 0);
-    if (tmdbSeasons.length === 0) return false;
-
-    const tmdbId = data.id;
-
+  }
+  async function checkForUnrequestedSeasons(details, signal) {
+    if (!isRecord(details)) return false;
+    const seasons = requestableSeasons(details);
+    if (seasons.length === 0) return false;
+    const seerrStatus = JE.seerrStatus;
+    const coreApi = JE.core?.api;
     try {
-        // Query the request endpoint to get ALL requests for this show. Through
-        // the core client (single attempt, like ApiClient.ajax) so the caller's
-        // signal really cancels the request instead of only its result.
-        const response = await JE.core.api.plugin('/jellyseerr/request?take=500&skip=0&filter=all', { skipRetry: true, signal });
-
-        // Collect all season statuses from all requests for this TMDB ID
-        const statusMap = {};
-
-        if (response.results) {
-            for (const request of response.results) {
-                if (request.type === 'tv' && request.media && request.media.tmdbId === tmdbId) {
-                    if (request.seasons) {
-                        for (const season of request.seasons) {
-                            const seasonNum = season.seasonNumber;
-                            const status = season.status;
-                            if (!statusMap[seasonNum] || status > statusMap[seasonNum]) {
-                                statusMap[seasonNum] = status;
-                            }
-                        }
-                    }
-                }
-            }
+      if (!seerrStatus || !coreApi) throw new Error("Seerr status or core API unavailable");
+      const signalOption = signal ? { signal } : {};
+      const reply = await coreApi.plugin("/jellyseerr/request?take=500&skip=0&filter=all", { skipRetry: true, ...signalOption });
+      const mediaInfo = record(details.mediaInfo);
+      const statuses = mergeSeasonStatuses(records(record(reply)?.results), details.id, mediaInfo?.seasons);
+      const jellyfinMediaId = filled(mediaInfo?.jellyfinMediaId);
+      let presence = null;
+      if (jellyfinMediaId) {
+        try {
+          const client = apiClient();
+          const userId = client.getCurrentUserId();
+          if (userId) {
+            presence = seasonPresence(await coreApi.fetch(client.getUrl(`/Users/${userId}/Items`, {
+              ParentId: jellyfinMediaId,
+              IncludeItemTypes: "Season",
+              Recursive: false,
+              Fields: "IndexNumber"
+            }), { skipRetry: true, ...signalOption }));
+          }
+        } catch {
         }
-
-        // Also check mediaInfo.seasons for available seasons
-        if (data.mediaInfo && data.mediaInfo.seasons) {
-            for (const season of data.mediaInfo.seasons) {
-                const seasonNum = season.seasonNumber;
-                const status = season.status;
-                if (!statusMap[seasonNum] || status > statusMap[seasonNum]) {
-                    statusMap[seasonNum] = status;
-                }
-            }
-        }
-
-        // Check if any TMDB season is unrequested. Status 0/undefined and 1
-        // (Unknown) mean it has never been requested. Status 7 (Deleted) means
-        // a prior request was removed and the season can be re-requested.
-        // Status 5 (Available) can be stale: Seerr keeps showing a season as
-        // available after it was deleted from the library. The show-level check
-        // (!jellyfinMediaId) only catches full-show deletions; for partial
-        // deletions (one missing season in an otherwise-present show) the show
-        // still has a jellyfinMediaId so the old check misses them. Query
-        // Jellyfin directly to get the authoritative per-season presence map.
-        const jellyfinMediaId = data.mediaInfo?.jellyfinMediaId || null;
-        let jellyfinSeasonPresenceMap = null;
-        if (jellyfinMediaId) {
-            try {
-                const userId = ApiClient.getCurrentUserId?.();
-                if (userId) {
-                    const resp = await JE.core.api.fetch(ApiClient.getUrl(`/Users/${userId}/Items`, {
-                        ParentId: jellyfinMediaId,
-                        IncludeItemTypes: 'Season',
-                        Recursive: false,
-                        Fields: 'IndexNumber'
-                    }), { skipRetry: true, signal });
-                    jellyfinSeasonPresenceMap = {};
-                    for (const s of (resp?.Items || [])) {
-                        const idx = Number(s?.IndexNumber);
-                        if (Number.isFinite(idx) && idx >= 0) jellyfinSeasonPresenceMap[idx] = true;
-                    }
-                }
-            } catch (_) {}
-        }
-
-        for (const tmdbSeason of tmdbSeasons) {
-            const rawStatus = statusMap[tmdbSeason.seasonNumber];
-            const effectiveStatus = JE.seerrStatus.effectiveMediaStatus(
-                rawStatus, jellyfinMediaId, jellyfinSeasonPresenceMap, tmdbSeason.seasonNumber
-            );
-            if (JE.seerrStatus.isRequestable(effectiveStatus)) {
-                return true;
-            }
-        }
-
-        return false;
+      }
+      return seasons.some((number) => seerrStatus.isRequestable(seerrStatus.effectiveMediaStatus(statuses.get(number), jellyfinMediaId, presence, number)));
     } catch (error) {
-        if (signal?.aborted) return false; // cancelled by the caller, not a failure
-        console.error(`[More Info Modal] Error checking unrequested seasons:`, error);
-        return false;
+      if (signal?.aborted) return false;
+      console.error("[More Info Modal] Error checking unrequested seasons:", error);
+      return false;
     }
-}
-
-/**
- * Build seasons section (TV shows only)
- */
-function buildSeasonsSection(data) {
-    if (!data.seasons || !data.seasons.length) return '';
-
+  }
+  function buildSeasonCard(details, season) {
+    const number = seasonNumberOf(season) ?? 0;
+    const status = seasonStatus(details, number);
+    const poster = filled(season.posterPath) ?? (isPosterPath(details.posterPath) ? details.posterPath : null);
+    const posterUrl = poster ? tmdbImage("w185", poster) : "";
+    const name = seasonDisplayName(season, t("jellyseerr_season_specials"), (value) => t("jellyseerr_season_name", "", { number: value }));
+    const year = seasonYear(season);
+    return `
+                        <div class="season-card" data-season-number="${escapeHtml(String(number))}">
+                            <div class="season-poster">
+                                ${posterUrl ? `<img src="${escapeHtml(posterUrl)}" alt="${escapeHtml(name)}" />` : ""}
+                            </div>
+                            <div class="season-info">
+                                <div class="season-name">${escapeHtml(name)}</div>
+                                <div class="season-meta">
+                                    ${escapeHtml(num(season.episodeCount) ?? 0)} Episodes
+                                    ${year ? ` • ${escapeHtml(year)}` : ""}
+                                </div>
+                                <div data-season-links>${buildSeasonAvailabilityLinks(status, seasonJellyfinId(status), seasonJellyfinId(status, true))}</div>
+                                ${season.overview ? `<div class="season-overview">${escapeHtml(str(season.overview))}</div>` : ""}
+                            </div>
+                        </div>
+                    `;
+  }
+  function buildSeasonsSection(details) {
+    if (!isRecord(details)) return "";
+    const seasons = records(details.seasons);
+    if (!seasons.length) return "";
     return `
         <div class="seasons-section">
             <h3>Seasons</h3>
             <div class="seasons-grid">
-                ${data.seasons.map(season => {
-                    const seasonInfo = getSeasonStatusInfo(data, season.seasonNumber);
-                    const seasonJellyfinId = getSeasonJellyfinId(seasonInfo, false);
-                    const seasonJellyfinId4k = getSeasonJellyfinId(seasonInfo, true);
-                    const seasonPosterPath = season.posterPath
-                        || (data.posterPath && isValidPosterPath(data.posterPath) ? data.posterPath : null);
-                    const posterUrl = seasonPosterPath
-                        ? `https://image.tmdb.org/t/p/w185${seasonPosterPath}`
-                        : '';
-
-                    // Derive a display name: if the API returns just the number (TheTVDB), generate a proper label.
-                    // The numeric regex catches bare numbers and zero-padded variants (e.g., "01");
-                    // this may also match year-named seasons, which is an acceptable tradeoff.
-                    const sNum = season.seasonNumber;
-                    const trimmedName = (season.name || '').trim();
-                    const isNumericOnly = trimmedName === String(sNum) || /^0*\d+$/.test(trimmedName);
-                    const displayName = (trimmedName && !isNumericOnly)
-                        ? trimmedName
-                        : (sNum === 0 ? JE.t('jellyseerr_season_specials') : JE.t('jellyseerr_season_name', { number: sNum }));
-                    const seasonYear = season.jeYear || (season.airDate && isValidDate(season.airDate) ? season.airDate.substring(0, 4) : '');
-
-                    return `
-                        <div class="season-card" data-season-number="${escapeHtml(String(sNum))}">
-                            <div class="season-poster">
-                                ${posterUrl ? `<img src="${escapeHtml(posterUrl)}" alt="${escapeHtml(displayName)}" />` : ''}
-                            </div>
-                            <div class="season-info">
-                                <div class="season-name">${escapeHtml(displayName)}</div>
-                                <div class="season-meta">
-                                    ${escapeHtml(season.episodeCount || 0)} Episodes
-                                    ${seasonYear ? ` \u2022 ${escapeHtml(seasonYear)}` : ''}
-                                </div>
-                                <div data-season-links>${buildSeasonAvailabilityLinks(seasonInfo, seasonJellyfinId, seasonJellyfinId4k)}</div>
-                                ${season.overview ? `<div class="season-overview">${escapeHtml(season.overview)}</div>` : ''}
-                            </div>
-                        </div>
-                    `;
-                }).join('')}
+                ${seasons.map((season) => buildSeasonCard(details, season)).join("")}
             </div>
         </div>
     `;
-}
-    internal.backfillSeasonMetadata = backfillSeasonMetadata;
-    internal.getSeasonStatusInfo = getSeasonStatusInfo;
-    internal.getSeasonJellyfinId = getSeasonJellyfinId;
-    internal.buildSeasonAvailabilityLinks = buildSeasonAvailabilityLinks;
-    internal.fetchJellyfinSeasonMap = fetchJellyfinSeasonMap;
-    internal.enrichSeasonCardsWithJellyfinLinks = enrichSeasonCardsWithJellyfinLinks;
-    internal.checkForUnrequestedSeasons = checkForUnrequestedSeasons;
-    internal.buildSeasonsSection = buildSeasonsSection;
-
-})(window.JellyfinEnhanced);
+  }
+  internal.backfillSeasonMetadata = backfillSeasonMetadata;
+  internal.getSeasonStatusInfo = seasonStatus;
+  internal.getSeasonJellyfinId = seasonJellyfinId;
+  internal.buildSeasonAvailabilityLinks = buildSeasonAvailabilityLinks;
+  internal.fetchJellyfinSeasonMap = fetchJellyfinSeasonMap;
+  internal.enrichSeasonCardsWithJellyfinLinks = enrichSeasonCardsWithJellyfinLinks;
+  internal.checkForUnrequestedSeasons = checkForUnrequestedSeasons;
+  internal.buildSeasonsSection = buildSeasonsSection;
+})();
+})();
+//# sourceMappingURL=more-info-modal-seasons.js.map

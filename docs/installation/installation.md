@@ -1,3 +1,5 @@
+> This branch is a Jellyfin 12.x-only development rewrite, not a published release. The repository installation instructions below describe released artifacts; do not deploy this rewrite to a live server during development.
+
 # Installation Guide
 
 Install Jellyfin Enhanced (JE) through Jellyfin's plugin manager, then restart the server and reload the web client.
@@ -6,7 +8,7 @@ Install Jellyfin Enhanced (JE) through Jellyfin's plugin manager, then restart t
 
 !!! note "Before you install"
 
-    - You need Jellyfin Server 12.x or 10.11.x and administrator access.
+    - You need Jellyfin Server 12.x and administrator access.
     - Use a browser with the web interface served by that Jellyfin server.
     - The account running Jellyfin needs write access to plugin configuration/data storage and Jellyfin log storage.
 

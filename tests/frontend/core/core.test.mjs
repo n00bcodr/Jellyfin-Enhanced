@@ -118,7 +118,8 @@ test('late previous-user response cannot repopulate cleared cache', async t => {
   const { JE } = setup(t, { apiClient: { getCurrentUserId: () => user }, fetch: () => pending.promise });
   JE.core.api.manager.setCache('old',{private:true});
   const request = JE.core.api.fetch('/private',{cacheKey:'private'});
-  user = 'b'; JE.session.checkNow('test'); pending.resolve(jsonResponse({owner:'a'})); await request;
+  const rejected = assert.rejects(request, { name: 'AbortError' });
+  user = 'b'; JE.session.checkNow('test'); pending.resolve(jsonResponse({owner:'a'})); await rejected;
   assert.equal(JE.core.api.manager.getCached('private'),null); assert.equal(JE.core.api.manager.getCached('old'),null);
 });
 
@@ -142,8 +143,9 @@ test('user switch cancels queued writes before they can use new credentials', as
   const running = JE.core.api.fetch('/one');
   const queued = JE.core.api.fetch('/write',{method:'POST'});
   const rejected = assert.rejects(queued,{name:'AbortError'});
+  const runningRejected = assert.rejects(running,{name:'AbortError'});
   user = 'b'; JE.session.checkNow('test'); await rejected;
-  pending.resolve(jsonResponse({})); await running; assert.equal(calls,1);
+  pending.resolve(jsonResponse({})); await runningRejected; assert.equal(calls,1);
 });
 
 test('aborted queued requests release their place without consuming transport', async t => {

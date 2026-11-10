@@ -54,7 +54,7 @@
     "before": "      if (isEpisode && bookmark.episodeNumber != null) {\n        const bookmarkIsSameEpisode = bookmark.episodeNumber === episodeNumber\n          && (bookmark.seasonNumber ?? null) === (seasonNumber ?? null);\n        if (!bookmarkIsSameEpisode) continue;\n      }\n",
     "after": "",
     "test": "episode provider fallback excludes other episodes and seasons but retains legacy records",
-    "test_file": "tests/frontend/features/features-bookmarks.test.mjs",
+    "test_file": "tests/frontend/features/bookmarks/features-bookmarks.test.mjs",
     "assertion": "ERR_ASSERTION",
     "issue": 774,
     "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/774",

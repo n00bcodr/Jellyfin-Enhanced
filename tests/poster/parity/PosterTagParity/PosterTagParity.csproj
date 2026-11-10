@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk" InitialTargets="ValidateJellyfinTarget">
 
     <!-- Parity harness for the native poster tag resolver. Not part of the plugin build:
          it lives outside Jellyfin.Plugin.JellyfinEnhanced/. Run through ../run.mjs, which
@@ -25,5 +25,13 @@
     <ItemGroup>
         <ProjectReference Include="../../../../Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.csproj" AdditionalProperties="JellyfinTarget=jf12" />
     </ItemGroup>
+
+
+  <Target Name="ValidateJellyfinTarget">
+    <Error Condition="'$(JellyfinTarget)' != '' and '$(JellyfinTarget)' != 'jf12'"
+           Text="This rewrite supports Jellyfin 12.x only. Use JellyfinTarget=jf12; '$(JellyfinTarget)' is unsupported." />
+    <Error Condition="'$(TargetFramework)' != 'net10.0' or '$(TargetFrameworks)' != ''"
+           Text="This rewrite supports only TargetFramework=net10.0 (Jellyfin 12.x)." />
+  </Target>
 
 </Project>

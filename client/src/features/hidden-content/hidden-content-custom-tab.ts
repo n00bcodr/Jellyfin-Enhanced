@@ -1,0 +1,152 @@
+import { installOnce, onDispose, selectionLease, enqueueWrite, pendingWrites } from './host';
+import { lease } from './host';
+import { record, decodeLibraryItem, decodeSeerrItem, decodeSeerrSearch, type HiddenItem, type ListedItem } from './model';
+import type { PageState, Group, SearchResult, PageSurface } from './page-model';
+import { host, registry, type HiddenHost } from './host';
+/**
+ * Hidden Content Custom Tab
+ * Creates <div class="jellyfinenhanced hidden-content"></div>, either inside a
+ * tab panel managed by the external Custom Tabs plugin
+ * (HiddenContentUseCustomTabs), or inside a panel JE creates itself via the
+ * shared native-tabs registry (HiddenContentUseNativeTab, see
+ * enhanced/native-tabs.js) -- no external plugin needed for the latter. The
+ * rest of this file doesn't care which one created the wrapping panel.
+ *
+ * Uses a persistent observer to remount whenever the home page DOM is rebuilt
+ * (e.g. after SPA navigation). Only runs when on the home page; suspends
+ * when navigated away.
+ */
+
+(function () {
+  'use strict';
+
+  if (!host.JellyfinEnhanced?.pluginConfig?.HiddenContentEnabled) {
+    return;
+  }
+
+  var useCustomTabs = !!host.JellyfinEnhanced?.pluginConfig?.HiddenContentUseCustomTabs;
+  var useNativeTab = !!host.JellyfinEnhanced?.pluginConfig?.HiddenContentUseNativeTab;
+
+  if (!useCustomTabs && !useNativeTab) {
+    return;
+  }
+
+  if (useNativeTab) {
+    host.JellyfinEnhanced.nativeTabs.register('hidden-content', host.JellyfinEnhanced.t('hidden_content_manage_title') || 'Hidden Content', function (panel) {
+      var marker = document.createElement('div');
+      marker.className = 'jellyfinenhanced hidden-content';
+      panel.appendChild(marker);
+    }, 'remove_red_eye');
+  }
+
+  var style = document.createElement('style');
+  style.textContent = [
+    '.jellyfinenhanced.hidden-content {',
+    '  padding: 12px 3vw;',
+    '}',
+    '.backgroundContainer.withBackdrop:has(~ * #indexPage .tabContent.is-active .jellyfinenhanced.hidden-content) {',
+    '  background: rgba(0, 0, 0, 0.7) !important;',
+    '  opacity: 1 !important;',
+    '}'
+  ].join('\n');
+  document.head.appendChild(style);
+
+  /** The last DOM node we mounted into. */
+  var lastMountedContainer: HTMLElement | null = null;
+
+  /** @returns {boolean} Whether the current URL hash is the home page. */
+  function isOnHomePage() {
+    var hash = window.location.hash;
+    return hash === '' || hash === '#/home' || hash === '#/home.html'
+      || hash.indexOf('#/home?') !== -1 || hash.indexOf('#/home.html?') !== -1;
+  }
+
+  /** Wait for JE.hiddenContentPage and JE.hiddenContent to be ready before initializing (30s timeout). */
+  function waitForHiddenContent(callback: (JE: HiddenHost) => void) {
+    var attempts = 0;
+    var check = setInterval(function () {
+      if (++attempts > 300) { clearInterval(check); return; }
+      var JE = host.JellyfinEnhanced;
+      if (JE?.hiddenContentPage && JE?.hiddenContent) {
+        clearInterval(check);
+        callback(JE);
+      }
+    }, 100);
+  }
+
+  /**
+   * Find the hidden content container inside the active (non-hidden) home page.
+   * Returns null if no visible container exists -- never falls back to a
+   * stale DOM-cached copy.
+   * @returns {HTMLElement|null}
+   */
+  function findActiveContainer() {
+    var all = document.querySelectorAll<HTMLElement>('.jellyfinenhanced.hidden-content');
+    for (var i = all.length - 1; i >= 0; i--) {
+      var el = all[i];
+      if (el && host.JellyfinEnhanced.helpers.isActiveTabContainer(el)) return el;
+    }
+    return null;
+  }
+
+  /**
+   * Render hidden content into the given container using a scoped child element.
+   * @param {HTMLElement} container - The active .jellyfinenhanced.hidden-content element.
+   * @param {Object} JE - The JellyfinEnhanced global object.
+   */
+  function renderHiddenContent(container: HTMLElement, JE: HiddenHost) {
+    if (!container || !JE.hiddenContentPage) return;
+
+    container.classList.remove('hide');
+    container.style.display = '';
+
+    var child = document.createElement('div');
+    child.id = 'je-hidden-content-container-tab';
+    container.textContent = '';
+    container.appendChild(child);
+
+    JE.hiddenContentPage.renderForCustomTab?.(child);
+
+    lastMountedContainer = container;
+  }
+
+  /**
+   * Persistent watcher -- observes document.body (via shared observer) for
+   * DOM rebuilds and remounts the hidden content tab when a new active
+   * container appears. Suspends checks when not on the home page.
+   * @param {Object} JE - The JellyfinEnhanced global object.
+   */
+  function watchForContainer(JE: HiddenHost) {
+    function tryMount() {
+      if (!isOnHomePage()) return;
+
+      var container = findActiveContainer();
+      if (!container) {
+        lastMountedContainer = null;
+        return;
+      }
+
+      var shouldMount = container !== lastMountedContainer
+        || !container.hasChildNodes()
+        || (lastMountedContainer && !document.contains(lastMountedContainer));
+
+      if (shouldMount) {
+        renderHiddenContent(container, JE);
+      }
+    }
+
+    tryMount();
+
+    // Observe document.body (not .mainAnimatedPages) because Jellyfin replaces
+    // .mainAnimatedPages when navigating to the admin dashboard — an observer
+    // bound to the old element would become orphaned after returning to home
+    // (issue 536). Routes to the shared multiplexed body observer.
+    JE.helpers.observeTabContainers('hidden-content-custom-tab', '.jellyfinenhanced.hidden-content', tryMount);
+  }
+
+  waitForHiddenContent(function (JE: HiddenHost) {
+    if(!installOnce(JE,'hidden-content-custom-tab'))return;
+    watchForContainer(JE);
+  });
+
+})();

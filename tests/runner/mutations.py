@@ -14,26 +14,27 @@ import xml.etree.ElementTree as ET
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN = 'Jellyfin.Plugin.JellyfinEnhanced/'
 CASES = [
-    dict(name='explicit-user-authorization', layer='backend', file=PLUGIN+'Helpers/UserHelper.cs',
+    dict(name='explicit-user-authorization', layer='backend', file=PLUGIN+'Infrastructure/Auth/UserHelper.cs',
          before='if (isAdministrator || (!currentUserId.IsNullOrEmpty() && userId.Equals(currentUserId)))',
          after='if (true)', test='ExplicitUserSelectionRequiresSelfOrAdministrator', assertion='Assert.Null'),
-    dict(name='blocked-tags-precedence', layer='backend', file=PLUGIN+'Helpers/Jellyseerr/ParentalTagDecision.cs',
+    dict(name='blocked-tags-precedence', layer='backend', file=PLUGIN+'Shared/Parental/ParentalTagDecision.cs',
          before='return false; // blocked wins, even over an allowed match',
          after='return true; // MUTATION: allow a blocked title',
          test='TagsUseWholeValuesBlockedWinsAndGenresCannotGrantAccess', assertion='Assert.Equal'),
-    dict(name='cookie-negative-cache', layer='backend', file=PLUGIN+'Services/Identity/RequestIdentityService.cs',
+    dict(name='cookie-negative-cache', layer='backend', file=PLUGIN+'Infrastructure/Identity/RequestIdentityService.cs',
          before='if (!recentMiss)', after='if (true)',
          test='RepeatedForgedCookieDoesNotCauseSessionScanStorm', assertion='Expected invocation'),
     dict(name='stale-user-hidden-response', layer='frontend', file=PLUGIN+'js/enhanced/hiddencontent/hidden-content-data.js',
          before='if (JE.session && !JE.session.isCurrent(requestEpoch)) return false;',
          after='/* MUTATION: accept stale user response */',
-         test='old-user hidden-content refresh cannot overwrite incoming preferences', assertion='ERR_ASSERTION'),
+         test='old-user hidden-content refresh cannot overwrite incoming preferences', assertion='ERR_ASSERTION',
+         test_file='tests/frontend/features/hidden-content/features-hidden.test.mjs'),
 ]
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--target', choices=['jf10', 'jf12'], default='jf12')
+    parser.add_argument('--target', choices=['jf12'], default='jf12')
     parser.add_argument('--layer', choices=['all', 'backend', 'frontend'], default='all')
     parser.add_argument('--cases', type=Path, help='Local JSON case list, e.g. tests/history/backend-mutations.json')
     parser.add_argument('--artifacts', type=Path, default=ROOT/'artifacts/mutations')
@@ -84,7 +85,7 @@ def main():
                            '-p:JellyfinTarget='+args.target, '--filter', 'FullyQualifiedName~'+case['test'],
                            '--results-directory', str(artifacts), '--logger', 'trx;LogFileName='+trx.name]
             else:
-                command = ['node', '--test', '--test-reporter=tap', '--test-timeout=120000', '--test-name-pattern='+case['test'], case.get('test_file', 'tests/frontend/features/features-hidden.test.mjs')]
+                command = ['node', '--test', '--test-reporter=tap', '--test-timeout=120000', '--test-name-pattern='+case['test'], case.get('test_file', 'tests/frontend/features/hidden-content/features-hidden.test.mjs')]
             started = time.monotonic()
             env = dict(os.environ)
             env.pop('JE_COVERAGE_DIR', None)
@@ -117,7 +118,7 @@ def main():
             source = work/case['file']
             if not source.resolve().is_relative_to(work):
                 raise RuntimeError('Mutation source escaped the disposable checkout.')
-            test_file = work/case.get('test_file', 'tests/frontend/features/features-hidden.test.mjs')
+            test_file = work/case.get('test_file', 'tests/frontend/features/hidden-content/features-hidden.test.mjs')
             if not test_file.resolve().is_relative_to(work):
                 raise RuntimeError('Test file escaped the disposable checkout.')
             original = source.read_text()

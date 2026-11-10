@@ -1,0 +1,6 @@
+{
+  "version": 3,
+  "sources": ["../../../../client/src/host/context.ts", "../../../../client/generated-shared/stub/client/src/features/spoiler-guard/host.ts", "../../../../client/src/features/spoiler-guard/spoiler-guard.css", "../../../../client/src/features/spoiler-guard/styles.ts"],
+  "mappings": ";mBAuJO,SAASA,EAAaC,EAAqC,CAC9D,IAAMC,EAAa,OAA+D,kBAAkB,MAAM,gBAAgBD,CAAE,EAC5H,GAAI,CAACC,EAAW,MAAM,IAAI,MAAM,GAAGD,CAAE,wFAAwF,EAC7H,OAAOC,CACX,CAGO,SAASC,EAAaD,EAAoCE,EAAuB,CACpF,OAAOF,EAAUE,CAAI,CACzB,CC9JA,IAAMC,EAAyBC,EAAa,6BAA6B,EACnEC,EAA0BC,EAAaH,EAAQ,aAAa,ECHlE,IAAAI,EAAA;AAAA;AAAA;AAAA;AAAA;AAAA;AAAA;AAAA;AAAA;AAAA;AAAA;AAAA;AAAA;AAAA;AAAA;AAAA;AAAA;AAAA;AAAA;AAAA;AAAA;AAAA;AAAA;AAAA;AAAA;AAAA;AAAA;AAAA;AAAA;AAAA;AAAA;AAAA;AAAA;AAAA;AAAA;AAAA;AAAA;AAAA;AAAA;AAAA;AAAA;AAAA;AAAA;AAAA;AAAA;AAAA;AAAA;AAAA;UCEA,GAAM,CAAE,GAAAC,EAAI,SAAAC,CAAS,EAAIC,EAAY,EACjCD,EAAS,aAAe,UAAW,CAC/BD,EAAG,KAAK,GAAG,UAAU,0BAA2BG,CAAe,CACnE",
+  "names": ["sharedModule", "id", "namespace", "sharedExport", "name", "shared", "sharedModule", "export0", "sharedExport", "spoiler_guard_default", "JE", "internal", "export0", "spoiler_guard_default"]
+}

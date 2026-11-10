@@ -1,221 +1,194 @@
-// @ts-check
-// /js/jellyseerr/discovery/collection-discovery.js
-// Shows missing collection movies on BoxSet detail pages with request buttons.
-// One-shot spec over JE.discoveryBase — the base owns page dedup, abort,
-// metrics and lifecycle wiring; this module keeps only the BoxSet lookup
-// and the missing-movies render.
-(function(JE) {
-    'use strict';
+(() => {
+"use strict";
+(() => {
+  // client/src/features/seerr/host-discovery.ts
+  function discoveryHost() {
+    const host = window;
+    const JE = host.JellyfinEnhanced ?? (host.JellyfinEnhanced = {});
+    return { JE, api: () => host.ApiClient };
+  }
+  function filterOf(JE) {
+    if (!JE.discoveryFilter) throw new Error("Discovery filter utilities are not loaded");
+    return JE.discoveryFilter;
+  }
+  function baseOf(JE) {
+    if (!JE.discoveryBase) throw new Error("Discovery base is not loaded");
+    return JE.discoveryBase;
+  }
 
-    const logPrefix = '🪼 Jellyfin Enhanced: Collection Discovery:';
+  // client/src/features/seerr/discovery/domain.ts
+  var MEDIA_AVAILABLE = 5;
+  function isRecord(value) {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
+  }
+  function isSeerrResult(value) {
+    return isRecord(value);
+  }
+  function isAbortError(error) {
+    return isRecord(error) && error.name === "AbortError";
+  }
+  function abortError(message = "Aborted") {
+    const error = new Error(message);
+    error.name = "AbortError";
+    return error;
+  }
+  function throwIfAborted(signal) {
+    if (signal?.aborted) throw abortError();
+  }
+  var text = (value) => typeof value === "string" ? value : "";
+  function mediaInfoOf(item) {
+    return isRecord(item.mediaInfo) ? item.mediaInfo : null;
+  }
+  function decodeNamedInfo(value) {
+    if (!isRecord(value) || typeof value.name !== "string") return null;
+    const id = value.tmdbId;
+    return { name: value.name, tmdbId: typeof id === "string" ? id : typeof id === "number" ? String(id) : null };
+  }
+  function positiveInt(value) {
+    const parsed = typeof value === "number" ? value : typeof value === "string" ? parseInt(value, 10) : NaN;
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+  }
+  function isUserActive(status) {
+    return isRecord(status) && !!status.active;
+  }
+  function hasItemType(item, type) {
+    return isRecord(item) && item.Type === type;
+  }
+  function decodeCollection(value) {
+    if (!isRecord(value) || !Array.isArray(value.parts)) return null;
+    const parts = value.parts.filter(isSeerrResult);
+    const missing = parts.map((movie) => ({ ...movie, mediaType: movie.mediaType || "movie" })).filter((movie) => (mediaInfoOf(movie)?.status || 1) !== MEDIA_AVAILABLE).sort((a, b) => text(a.releaseDate).localeCompare(text(b.releaseDate)));
+    return { parts, missing };
+  }
 
-    const boxsetInfoCache = new Map();
-
-    // Alias for shared utilities
-    const fetchWithManagedRequest = (path, options) =>
-        JE.discoveryFilter.fetchWithManagedRequest(path, 'collection', options);
-
-    /**
-     * Gets BoxSet information from Jellyfin (with caching)
-     * @param {string} boxsetId - Jellyfin item ID
-     * @param {AbortSignal} [signal]
-     * @returns {Promise<{id: string, name: string, tmdbId: string|null, type: string}|null>}
-     */
-    async function getBoxSetInfo(boxsetId, signal) {
-        if (boxsetInfoCache.has(boxsetId)) {
-            return boxsetInfoCache.get(boxsetId);
-        }
-        try {
-            if (signal?.aborted) {
-                throw new DOMException('Aborted', 'AbortError');
-            }
-
-            const response = await fetchWithManagedRequest(`/JellyfinEnhanced/boxset/${boxsetId}`, { signal });
-
-            if (signal?.aborted) {
-                throw new DOMException('Aborted', 'AbortError');
-            }
-
-            if (response) {
-                boxsetInfoCache.set(boxsetId, response);
-            }
-            return response;
-        } catch (error) {
-            if (error.name === 'AbortError') throw error;
-            return null;
-        }
+  // client/src/features/seerr/discovery/lookups.ts
+  function managedFetch(JE, prefix) {
+    return (path, options) => filterOf(JE).fetchWithManagedRequest(path, prefix, options);
+  }
+  async function isItemType(JE, itemId, type, signal) {
+    try {
+      throwIfAborted(signal);
+      const client = discoveryHost().api();
+      const item = JE.helpers?.getItemCached ? await JE.helpers.getItemCached(itemId) : await client?.getItem?.(client.getCurrentUserId(), itemId);
+      throwIfAborted(signal);
+      return hasItemType(item, type);
+    } catch (error) {
+      if (isAbortError(error)) throw error;
+      return false;
     }
-
-    /**
-     * Checks if the current detail page is a BoxSet
-     * @param {string} itemId - Jellyfin item ID
-     * @param {AbortSignal} [signal]
-     * @returns {Promise<boolean>}
-     */
-    async function isBoxSetPage(itemId, signal) {
-        try {
-            if (signal?.aborted) {
-                throw new DOMException('Aborted', 'AbortError');
-            }
-
-            const item = JE.helpers?.getItemCached
-                ? await JE.helpers.getItemCached(itemId)
-                : await ApiClient.getItem(ApiClient.getCurrentUserId(), itemId);
-
-            if (signal?.aborted) {
-                throw new DOMException('Aborted', 'AbortError');
-            }
-
-            return item && item.Type === 'BoxSet';
-        } catch (error) {
-            if (error.name === 'AbortError') throw error;
-            return false;
-        }
+  }
+  async function tolerant(signal, fetch) {
+    try {
+      throwIfAborted(signal);
+      const value = await fetch();
+      throwIfAborted(signal);
+      return value;
+    } catch (error) {
+      if (isAbortError(error)) throw error;
+      return null;
     }
+  }
 
-    /**
-     * Creates a document fragment of media cards from results using shared utility
-     * @param {Array} results - Array of media result objects
-     * @returns {DocumentFragment} Fragment containing rendered card elements
-     */
-    function createCardsFragment(results) {
-        return JE.discoveryFilter.createCardsFragment(results, { cardClass: 'overflowPortraitCard' });
+  // client/src/features/seerr/discovery/collection-discovery.ts
+  var logPrefix = "🪼 Jellyfin Enhanced: Collection Discovery:";
+  var SECTION_CLASS = "jellyseerr-collection-discovery-section";
+  function createSectionContainer(title) {
+    const section = document.createElement("div");
+    section.className = `verticalSection ${SECTION_CLASS}`;
+    section.setAttribute("data-jellyseerr-collection-discovery", "true");
+    section.style.cssText = "margin-top:2em;padding-top:1em;border-top:1px solid rgba(255,255,255,0.1)";
+    const heading = document.createElement("h2");
+    heading.className = "sectionTitle sectionTitle-cards padded-left";
+    heading.textContent = title;
+    heading.style.marginBottom = "0.5em";
+    section.appendChild(heading);
+    const itemsContainer = document.createElement("div");
+    itemsContainer.setAttribute("is", "emby-itemscontainer");
+    itemsContainer.className = "itemsContainer padded-right vertical-wrap";
+    section.appendChild(itemsContainer);
+    return section;
+  }
+  function start(JE) {
+    const base = baseOf(JE);
+    const fetchManaged = managedFetch(JE, "collection");
+    const boxsetCache = /* @__PURE__ */ new Map();
+    function getBoxSetInfo(boxsetId, signal) {
+      const cached = boxsetCache.get(boxsetId);
+      if (cached) return Promise.resolve(cached);
+      return tolerant(signal, async () => {
+        const info = decodeNamedInfo(await fetchManaged(`/JellyfinEnhanced/boxset/${boxsetId}`, { signal }));
+        if (info && !signal.aborted) boxsetCache.set(boxsetId, info);
+        return info;
+      });
     }
-
-    /**
-     * Creates the section container for missing collection movies
-     * @param {string} title - Section heading text
-     * @returns {HTMLElement} The section element
-     */
-    function createSectionContainer(title) {
-        const section = document.createElement('div');
-        section.className = 'verticalSection jellyseerr-collection-discovery-section';
-        section.setAttribute('data-jellyseerr-collection-discovery', 'true');
-        section.style.cssText = 'margin-top:2em;padding-top:1em;border-top:1px solid rgba(255,255,255,0.1)';
-
-        const titleElement = document.createElement('h2');
-        titleElement.className = 'sectionTitle sectionTitle-cards padded-left';
-        titleElement.textContent = title;
-        titleElement.style.marginBottom = '0.5em';
-        section.appendChild(titleElement);
-
-        const itemsContainer = document.createElement('div');
-        itemsContainer.setAttribute('is', 'emby-itemscontainer');
-        itemsContainer.className = 'itemsContainer padded-right vertical-wrap';
-        section.appendChild(itemsContainer);
-
-        return section;
+    async function renderMissing({ id: itemId, signal, waitForPageReady }, pageWait) {
+      const isBoxSet = await isItemType(JE, itemId, "BoxSet", signal);
+      if (signal.aborted || !isBoxSet) return void 0;
+      const boxsetPromise = getBoxSetInfo(itemId, signal);
+      const statusPromise = JE.jellyseerrAPI?.checkUserStatus?.();
+      const pageReadyPromise = waitForPageReady(pageWait);
+      const [boxset, status] = await Promise.all([boxsetPromise, statusPromise]);
+      if (signal.aborted) return void 0;
+      if (!isUserActive(status) || !boxset?.tmdbId) {
+        if (!boxset?.tmdbId) console.debug(`${logPrefix} No TMDB collection ID for BoxSet ${itemId}`);
+        return void 0;
+      }
+      const collectionId = positiveInt(boxset.tmdbId);
+      if (!collectionId) return void 0;
+      const collection = decodeCollection(await JE.jellyseerrAPI?.fetchCollectionDetails?.(collectionId));
+      if (signal.aborted) return void 0;
+      if (!collection || collection.parts.length === 0) {
+        console.debug(`${logPrefix} No parts found in collection ${collectionId}`);
+        return void 0;
+      }
+      const { parts, missing } = collection;
+      if (missing.length === 0) {
+        console.debug(`${logPrefix} All movies in collection ${boxset.name} are available`);
+        return void 0;
+      }
+      const detailSection = await pageReadyPromise;
+      if (signal.aborted) return void 0;
+      if (!detailSection) {
+        console.debug(`${logPrefix} Could not find detail section to insert into`);
+        return void 0;
+      }
+      document.querySelector(`.${SECTION_CLASS}`)?.remove();
+      const available = parts.length - missing.length;
+      const section = createSectionContainer(`Missing from ${boxset.name} (${available}/${parts.length})`);
+      const fragment = filterOf(JE).createCardsFragment(missing, { cardClass: "overflowPortraitCard" });
+      const itemsContainer = section.querySelector(".itemsContainer");
+      if (!itemsContainer || fragment.childNodes.length === 0) {
+        console.debug(`${logPrefix} No cards created from missing movies`);
+        return void 0;
+      }
+      itemsContainer.appendChild(fragment);
+      detailSection.appendChild(section);
+      console.debug(`${logPrefix} Section added with ${missing.length} missing movies from ${boxset.name}`);
+      return true;
     }
-
-    /**
-     * Renders the collection discovery section (one-shot body).
-     * @param {{id: string, signal: AbortSignal, waitForPageReady: (signal?: AbortSignal) => Promise<HTMLElement|null>}} ctx
-     * @returns {Promise<boolean|undefined>} true when the section was rendered
-     */
-    async function renderCollectionDiscovery({ id: itemId, signal, waitForPageReady }) {
-        // Check if this is a BoxSet page
-        const isBoxSet = await isBoxSetPage(itemId, signal);
-        if (signal.aborted) return;
-        if (!isBoxSet) return;
-
-        // Fetch boxset info, user status, and page readiness in parallel
-        // pageReadyPromise is started here but awaited later to overlap DOM wait with API calls
-        const boxsetInfoPromise = getBoxSetInfo(itemId, signal);
-        const statusPromise = JE.jellyseerrAPI?.checkUserStatus();
-        const pageReadyPromise = waitForPageReady(signal);
-
-        const [boxsetInfo, status] = await Promise.all([boxsetInfoPromise, statusPromise]);
-
-        if (signal.aborted) return;
-
-        if (!status?.active || !boxsetInfo?.tmdbId) {
-            if (!boxsetInfo?.tmdbId) {
-                console.debug(`${logPrefix} No TMDB collection ID for BoxSet ${itemId}`);
-            }
-            return;
-        }
-
-        const tmdbCollectionId = parseInt(boxsetInfo.tmdbId, 10);
-        if (!tmdbCollectionId) return;
-
-        // Fetch collection details from Seerr
-        const collectionDetails = await JE.jellyseerrAPI.fetchCollectionDetails(tmdbCollectionId);
-        if (signal.aborted) return;
-
-        if (!collectionDetails?.parts || collectionDetails.parts.length === 0) {
-            console.debug(`${logPrefix} No parts found in collection ${tmdbCollectionId}`);
-            return;
-        }
-
-        // Filter to only missing movies (not fully available in library)
-        // Status: 1=not available, 2=requested, 3=pending, 4=partial, 5=available
-        // No user filter/sort controls needed — collections are small fixed sets
-        // Ensure each part has mediaType set to 'movie' for the shared card renderer
-        const missingMovies = collectionDetails.parts
-            .map(movie => ({ ...movie, mediaType: movie.mediaType || 'movie' }))
-            .filter(movie => {
-                const movieStatus = movie.mediaInfo?.status || 1;
-                return movieStatus !== 5;
-            });
-
-        // Sort by release date
-        missingMovies.sort((a, b) => {
-            const dateA = a.releaseDate || '';
-            const dateB = b.releaseDate || '';
-            return dateA.localeCompare(dateB);
-        });
-
-        if (missingMovies.length === 0) {
-            console.debug(`${logPrefix} All movies in collection ${boxsetInfo.name} are available`);
-            return;
-        }
-
-        // Wait for page DOM
-        const detailSection = await pageReadyPromise;
-        if (signal.aborted) return;
-
-        if (!detailSection) {
-            console.debug(`${logPrefix} Could not find detail section to insert into`);
-            return;
-        }
-
-        // Remove existing section
-        const existing = document.querySelector('.jellyseerr-collection-discovery-section');
-        if (existing) existing.remove();
-
-        // Build section title
-        const totalInCollection = collectionDetails.parts.length;
-        const availableCount = totalInCollection - missingMovies.length;
-        const sectionTitle = `Missing from ${boxsetInfo.name} (${availableCount}/${totalInCollection})`;
-
-        const section = createSectionContainer(sectionTitle);
-        const itemsContainer = section.querySelector('.itemsContainer');
-
-        // Create cards using the same shared card renderer as all other discovery modules
-        const fragment = createCardsFragment(missingMovies);
-        if (fragment.childNodes.length === 0) {
-            console.debug(`${logPrefix} No cards created from missing movies`);
-            return;
-        }
-
-        itemsContainer.appendChild(fragment);
-
-        detailSection.appendChild(section);
-        console.debug(`${logPrefix} Section added with ${missingMovies.length} missing movies from ${boxsetInfo.name}`);
-
-        return true;
+    async function renderCollectionDiscovery(context) {
+      const pageWait = new AbortController();
+      context.signal.addEventListener("abort", () => pageWait.abort(), { once: true, signal: pageWait.signal });
+      try {
+        return await renderMissing(context, pageWait.signal);
+      } finally {
+        pageWait.abort();
+      }
     }
-
-    const discovery = JE.discoveryBase.createDiscovery({
-        key: 'collection',
-        mode: 'one-shot',
-        logLabel: 'Collection Discovery',
-        configKey: 'JellyseerrShowCollectionDiscovery',
-        getIdFromUrl: JE.discoveryBase.idFromDetailUrl,
-        renderOneShot: renderCollectionDiscovery,
-        onCleanup: () => boxsetInfoCache.clear()
-    });
-
-    discovery.start();
-
-})(window.JellyfinEnhanced);
+    base.createDiscovery({
+      key: "collection",
+      mode: "one-shot",
+      logLabel: "Collection Discovery",
+      configKey: "JellyseerrShowCollectionDiscovery",
+      getIdFromUrl: base.idFromDetailUrl,
+      renderOneShot: renderCollectionDiscovery,
+      onCleanup: () => boxsetCache.clear()
+    }).start();
+  }
+  (function() {
+    "use strict";
+    start(discoveryHost().JE);
+  })();
+})();
+})();
+//# sourceMappingURL=collection-discovery.js.map

@@ -1,0 +1,22 @@
+{
+  "js/enhanced/admintags/admin-tags.js": "client/src/features/media-tags/admin/admin-tags.ts",
+  "js/enhanced/admintags/custom-rules-editor.js": "client/src/features/media-tags/admin/custom-rules-editor.ts",
+  "js/enhanced/admintags/sections/agerating.js": "client/src/features/media-tags/admin/sections/agerating.ts",
+  "js/enhanced/admintags/sections/awards.js": "client/src/features/media-tags/admin/sections/awards.ts",
+  "js/enhanced/admintags/sections/badges.js": "client/src/features/media-tags/admin/sections/badges.ts",
+  "js/enhanced/admintags/sections/colours.js": "client/src/features/media-tags/admin/sections/colours.ts",
+  "js/enhanced/admintags/sections/custom.js": "client/src/features/media-tags/admin/sections/custom.ts",
+  "js/enhanced/admintags/sections/genre.js": "client/src/features/media-tags/admin/sections/genre.ts",
+  "js/enhanced/admintags/sections/language.js": "client/src/features/media-tags/admin/sections/language.ts",
+  "js/enhanced/admintags/sections/layout.js": "client/src/features/media-tags/admin/sections/layout.ts",
+  "js/enhanced/admintags/sections/logos.js": "client/src/features/media-tags/admin/sections/logos.ts",
+  "js/enhanced/admintags/sections/overview.js": "client/src/features/media-tags/admin/sections/overview.ts",
+  "js/enhanced/admintags/sections/people.js": "client/src/features/media-tags/admin/sections/people.ts",
+  "js/enhanced/admintags/sections/portable.js": "client/src/features/media-tags/admin/sections/portable.ts",
+  "js/enhanced/admintags/sections/quality.js": "client/src/features/media-tags/admin/sections/quality.ts",
+  "js/enhanced/admintags/sections/rating.js": "client/src/features/media-tags/admin/sections/rating.ts",
+  "js/enhanced/admintags/sections/rules.js": "client/src/features/media-tags/admin/sections/rules.ts",
+  "js/enhanced/admintags/sections/server.js": "client/src/features/media-tags/admin/sections/server.ts",
+  "js/enhanced/admintags/sections/status.js": "client/src/features/media-tags/admin/sections/status.ts",
+  "js/enhanced/admintags/tag-styles-editor.js": "client/src/features/media-tags/admin/tag-styles-editor.ts"
+}

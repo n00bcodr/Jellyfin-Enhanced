@@ -1,5 +1,5 @@
 {
- "description": "Audio track titles and whether they name a commentary or audio-description role (Helpers/TrackRoles.cs, mediaLanguage.isSecondaryAudio).",
+ "description": "Audio track titles and whether they name a commentary or audio-description role (Shared/Media/TrackRoles.cs, mediaLanguage.isSecondaryAudio).",
  "cases": [
   {
    "title": "Commentary by director",

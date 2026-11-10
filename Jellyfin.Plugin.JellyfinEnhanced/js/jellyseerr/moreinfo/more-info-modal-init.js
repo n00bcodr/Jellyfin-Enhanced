@@ -1,352 +1,353 @@
-// /js/jellyseerr/moreinfo/more-info-modal-init.js
-// Public surface + orchestration for the Jellyseerr more-info modal:
-// open/close, modal lifecycle, refresh and navigation cleanup.
-(function(JE) {
-    'use strict';
+(() => {
+"use strict";
+(() => {
+  // client/src/host/context.ts
+  function featureContext(feature, core, slots) {
+    const shared = core.core?.featureContext;
+    if (typeof shared !== "function") {
+      throw new Error(`${feature}: JE.core.featureContext is missing; core/ui-kit.js must load before feature scripts`);
+    }
+    return shared(feature, core, slots);
+  }
 
-    const moreInfoModal = JE.jellyseerrMoreInfo = JE.jellyseerrMoreInfo || {};
-    JE.internals = JE.internals || {};
-    // Shared state is seeded by more-info-modal-data.js, which plugin.js loads
-    // first in this group.
-    const internal = JE.internals.moreInfoModal;
-    const state = internal.state;
-    const logPrefix = '🪼 Jellyfin Enhanced: Jellyseerr More Info:';
-    let openGeneration = 0;
-    // Back (B on a TV controller) has to close the modal instead of leaving the
-    // page behind it, so an open modal owns one history entry that Back pops.
-    let historyEntryActive = false;
-    let popPending = false;
-    const FOCUSABLE = 'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+  // client/src/features/seerr/host-details.ts
+  function bridge() {
+    const host = window;
+    if (!host.JellyfinEnhanced) throw new Error("Seerr details loaded before Jellyfin Enhanced");
+    return host.JellyfinEnhanced;
+  }
+  var detailsContexts = /* @__PURE__ */ new WeakMap();
+  function seerrDetailsContext(JE2) {
+    let ctx = detailsContexts.get(JE2);
+    if (!ctx) {
+      ctx = featureContext("seerr", JE2, {
+        internalSlots: ["moreInfoModal"],
+        internalsObject: () => JE2.internals ?? (JE2.internals = {})
+      });
+      detailsContexts.set(JE2, ctx);
+    }
+    return ctx;
+  }
+  function moreInfoRegistry(JE2) {
+    const own = seerrDetailsContext(JE2).own;
+    return own.moreInfoModal ?? (own.moreInfoModal = { state: { currentModal: null } });
+  }
+  function sibling(registry, key) {
+    const value = registry[key];
+    if (value === void 0) throw new Error(`More Info loader dependency missing: ${key}`);
+    return value;
+  }
+  var SEERR_LOG = "🪼 Jellyfin Enhanced:";
 
-/**
- * Open the more info modal for a movie or TV show
- * @param {number} tmdbId - The TMDB ID
- * @param {string} mediaType - 'movie' or 'tv'
- */
-moreInfoModal.open = async function(tmdbId, mediaType) {
+  // client/src/features/seerr/details/domain/json.ts
+  function isRecord(value) {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
+  }
+  function record(value) {
+    return isRecord(value) ? value : null;
+  }
+  function filled(value) {
+    return typeof value === "string" && value.length > 0 ? value : null;
+  }
+  function num(value) {
+    return typeof value === "number" && Number.isFinite(value) ? value : void 0;
+  }
+  function idText(value) {
+    if (typeof value === "number" && Number.isFinite(value)) return String(value);
+    return filled(value);
+  }
+  function detailOf(event) {
+    return event instanceof CustomEvent ? record(event.detail) : null;
+  }
+
+  // client/src/features/seerr/details/domain/media.ts
+  function parseMediaType(value) {
+    return value === "movie" || value === "tv" ? value : null;
+  }
+  function tmdbIdOf(details) {
+    return num(details.id) ?? idText(details.id) ?? "";
+  }
+  function ownMediaInfo(details) {
+    if (isRecord(details.mediaInfo)) return details.mediaInfo;
+    const info = {};
+    details.mediaInfo = info;
+    return info;
+  }
+  var CLIENT_FIELDS = /* @__PURE__ */ new Set(["ratings"]);
+  function replaceDetails(details, fresh) {
+    for (const key of Object.keys(details)) {
+      if (!CLIENT_FIELDS.has(key) && !(key in fresh)) delete details[key];
+    }
+    Object.assign(details, fresh);
+  }
+
+  // client/src/features/seerr/details/moreinfo/scope.ts
+  function createModalScope() {
+    const controller = new AbortController();
+    const disposers = /* @__PURE__ */ new Set();
+    return {
+      signal: controller.signal,
+      requests: 0,
+      onDispose(callback) {
+        if (controller.signal.aborted) callback();
+        else disposers.add(callback);
+      },
+      dispose() {
+        controller.abort();
+        for (const dispose of [...disposers]) dispose();
+        disposers.clear();
+      }
+    };
+  }
+  function isLive(state2, modal) {
+    return modal !== null && state2.currentModal === modal && modal._isClosing !== true;
+  }
+
+  // client/src/features/seerr/details/moreinfo/init-entry.ts
+  var JE = bridge();
+  var internal = moreInfoRegistry(JE);
+  var { state } = internal;
+  var logPrefix = `${SEERR_LOG} Jellyseerr More Info:`;
+  var moreInfoModal = JE.jellyseerrMoreInfo ?? (JE.jellyseerrMoreInfo = {});
+  var FOCUSABLE = 'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+  var DIALOG_OPEN_CLASS = "jellyseerr-modal-is-open";
+  var EXIT_MS = 300;
+  var LOAD_FAILED = "Failed to load media information";
+  var openGeneration = 0;
+  var historyEntryActive = false;
+  var popPending = false;
+  var HISTORY_KEY = "jeMoreInfo";
+  var historyToken = "";
+  var dialogOpen = () => document.body.classList.contains(DIALOG_OPEN_CLASS);
+  var keyOf = (event) => "key" in event ? event.key : void 0;
+  async function open(tmdbId, rawType) {
     const generation = ++openGeneration;
-    try {
-        // Fetch details first so the modal can open immediately
-        const data = await internal.fetchMediaDetails(tmdbId, mediaType);
-        if (generation !== openGeneration) return;
-        if (!data) {
-            internal.showError('Failed to load media information');
-            return;
-        }
-
-        // Render modal immediately
-        showModal(data, mediaType);
-        const openedModal = state.currentModal;
-
-        // For TV shows, backfill missing season metadata (poster, overview, airDate) from TMDB/episodes
-        if (mediaType === 'tv' && data.seasons?.some(s => s.episodeCount > 0 && (!s.airDate || !s.posterPath))) {
-            internal.backfillSeasonMetadata(tmdbId, data);
-        }
-
-        // Fetch ratings in the background and populate when ready
-        internal.fetchRatings(tmdbId, mediaType, data)
-            .then((ratings) => {
-                // Modal might have been closed or replaced; ensure we're updating the correct one
-                if (state.currentModal !== openedModal || openedModal._isClosing) return;
-                const modalTmdbId = state.currentModal?.dataset?.tmdbId;
-                const modalMediaType = state.currentModal?.dataset?.mediaType;
-                if (String(modalTmdbId) !== String(data.id) || modalMediaType !== mediaType) return;
-
-                data.ratings = ratings;
-                const mount = state.currentModal.querySelector('[data-mount="ratings"]');
-                if (mount) {
-                    const logos = internal.buildRatingLogos(ratings, data, mediaType, tmdbId);
-                    mount.innerHTML = logos || '';
-                }
-            })
-            .catch((error) => {
-                console.error(`${logPrefix} Failed to fetch ratings for TMDB ID ${tmdbId}:`, error);
-                // Silently fail; modal is already shown without ratings
-            });
-    } catch (error) {
-        if (generation !== openGeneration) return;
-        console.error('Error opening more info modal:', error);
-        internal.showError('Failed to load media information');
+    const mediaType = parseMediaType(rawType);
+    if (!mediaType) {
+      console.warn(`${logPrefix} Unknown media type ${rawType} for TMDB ID ${tmdbId}`);
+      sibling(internal, "showError")(LOAD_FAILED);
+      return;
     }
-}
-
-/**
- * Refresh modal data and update displays
- */
-async function refreshModalData(data, mediaType, modal, refreshBtn) {
     try {
-        // Show loading state on button
-        refreshBtn.classList.add('loading');
-        refreshBtn.disabled = true;
-
-        // Fetch fresh data
-        const freshData = await internal.fetchMediaDetails(data.id, mediaType);
-        if (state.currentModal !== modal || modal._isClosing) return;
-        if (!freshData) {
-            internal.showError('Failed to refresh media information');
-            refreshBtn.classList.remove('loading');
-            refreshBtn.disabled = false;
-            return;
-        }
-
-        // Update data object with fresh info
-        Object.assign(data, freshData);
-
-        // Re-render the action buttons/chips to show updated status (chip, downloads, request button)
-        internal.renderActions(data, mediaType);
-        if (mediaType === 'tv') {
-            internal.enrichSeasonCardsWithJellyfinLinks(data, modal);
-        }
-
-        refreshBtn.classList.remove('loading');
-        refreshBtn.disabled = false;
-
+      const data = await sibling(internal, "fetchMediaDetails")(tmdbId, mediaType);
+      if (generation !== openGeneration) return;
+      if (!isRecord(data)) {
+        sibling(internal, "showError")(LOAD_FAILED);
+        return;
+      }
+      const modal = showModal(data, mediaType);
+      if (mediaType === "tv" && Array.isArray(data.seasons) && data.seasons.some((season) => isRecord(season) && Number(season.episodeCount) > 0 && (!season.airDate || !season.posterPath))) {
+        void sibling(internal, "backfillSeasonMetadata")(tmdbId, data);
+      }
+      sibling(internal, "fetchRatings")(tmdbId, mediaType, data, modal._scope?.signal).then((ratings) => {
+        if (!isLive(state, modal)) return;
+        if (String(modal.dataset.tmdbId) !== String(data.id) || modal.dataset.mediaType !== mediaType) return;
+        data.ratings = ratings;
+        const mount = modal.querySelector('[data-mount="ratings"]');
+        if (mount) mount.innerHTML = sibling(internal, "buildRatingLogos")(ratings, data, mediaType, tmdbId) || "";
+        const facts = modal.querySelector(".je-more-info-media-facts");
+        if (facts && ratings && internal.buildMediaFacts) facts.outerHTML = internal.buildMediaFacts(data, mediaType, tmdbId);
+      }).catch((error) => console.error(`${logPrefix} Failed to fetch ratings for TMDB ID ${tmdbId}:`, error));
     } catch (error) {
-        if (state.currentModal !== modal || modal._isClosing) return;
-        console.error('Error refreshing modal data:', error);
-        internal.showError('Failed to refresh modal data');
-        refreshBtn.classList.remove('loading');
-        refreshBtn.disabled = false;
+      if (generation !== openGeneration) return;
+      console.error("Error opening more info modal:", error);
+      sibling(internal, "showError")(LOAD_FAILED);
     }
-}
-
-/**
- * Show the modal with media information
- */
-function showModal(data, mediaType) {
-    // Replace the current modal without canceling this open operation.
-    closeCurrentModal();
-
-    const modal = document.createElement('div');
-    modal.className = 'je-more-info-modal';
-    modal.innerHTML = internal.buildModalContent(data, mediaType);
-    // Tag modal so async updates only apply to the current item
-    modal.dataset.tmdbId = String(data.id || '');
-    modal.dataset.mediaType = mediaType;
-
-    // Add event listeners
-    modal.addEventListener('click', (e) => {
-        if (e.target === modal || e.target.classList.contains('modal-overlay')) {
-            dismissModal();
-        }
+  }
+  async function refreshModalData(data, mediaType, modal, button) {
+    if (!isLive(state, modal)) return;
+    const idle = () => {
+      button.classList.remove("loading");
+      button.disabled = false;
+    };
+    try {
+      button.classList.add("loading");
+      button.disabled = true;
+      const fresh = await sibling(internal, "fetchMediaDetails")(tmdbIdOf(data), mediaType);
+      if (!isLive(state, modal)) return;
+      if (!isRecord(fresh)) {
+        sibling(internal, "showError")("Failed to refresh media information");
+        idle();
+        return;
+      }
+      replaceDetails(data, fresh);
+      sibling(internal, "renderActions")(data, mediaType, modal);
+      if (mediaType === "tv") void sibling(internal, "enrichSeasonCardsWithJellyfinLinks")(data, modal, { refresh: true });
+      idle();
+    } catch (error) {
+      if (!isLive(state, modal)) return;
+      console.error("Error refreshing modal data:", error);
+      sibling(internal, "showError")("Failed to refresh modal data");
+      idle();
+    }
+  }
+  function refreshAfterRequest(data, mediaType, modal) {
+    const markRequested = () => {
+      const info = ownMediaInfo(data);
+      info.status = info.status || 2;
+    };
+    return async (event) => {
+      const detail = detailOf(event);
+      if (!detail?.tmdbId || String(detail.tmdbId) !== String(data.id)) return;
+      if (mediaType === "movie" && (detail.mediaType !== "movie" || (modal._scope?.requests ?? 0) > 0)) return;
+      try {
+        const fresh = await sibling(internal, "fetchMediaDetails")(tmdbIdOf(data), mediaType);
+        if (!isLive(state, modal)) return;
+        if (isRecord(fresh) && fresh.mediaInfo) data.mediaInfo = fresh.mediaInfo;
+        else markRequested();
+      } catch {
+        if (!isLive(state, modal)) return;
+        markRequested();
+      }
+      sibling(internal, "renderActions")(data, mediaType, modal);
+      if (mediaType === "tv") void sibling(internal, "enrichSeasonCardsWithJellyfinLinks")(data, modal);
+    };
+  }
+  function wireButtons(modal, data, mediaType) {
+    modal.addEventListener("click", (event) => {
+      if (event.target === modal || event.target instanceof Element && event.target.classList.contains("modal-overlay")) dismissModal();
     });
-
-    // Refresh button handler
-    const refreshBtn = modal.querySelector('.modal-refresh');
-    if (refreshBtn) {
-        refreshBtn.addEventListener('click', async (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            await refreshModalData(data, mediaType, modal, refreshBtn);
-        });
-    }
-
-    // Close button handler
-    const closeBtn = modal.querySelector('.modal-close');
-    if (closeBtn) {
-        closeBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            dismissModal();
-        });
-    }
-
-    // Collection button handler
-    const collectionBtn = modal.querySelector('.je-collection-card-button');
-    if (collectionBtn) {
-        collectionBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            const collectionId = parseInt(collectionBtn.dataset.collectionId, 10);
-            const collectionName = collectionBtn.dataset.collectionName;
-            if (collectionId && collectionName) {
-                JE.jellyseerrUI.showCollectionRequestModal(collectionId, collectionName);
-            }
-        });
-    }
-
+    const silent = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    const refreshButton = modal.querySelector(".modal-refresh");
+    refreshButton?.addEventListener("click", (event) => {
+      silent(event);
+      void refreshModalData(data, mediaType, modal, refreshButton);
+    });
+    modal.querySelector(".modal-close")?.addEventListener("click", (event) => {
+      silent(event);
+      dismissModal();
+    });
+    const collectionButton = modal.querySelector(".je-collection-card-button");
+    collectionButton?.addEventListener("click", (event) => {
+      silent(event);
+      if (!isLive(state, modal)) return;
+      const id = parseInt(collectionButton.dataset.collectionId ?? "", 10);
+      const name = collectionButton.dataset.collectionName;
+      if (id && name) JE.jellyseerrUI?.showCollectionRequestModal?.(id, name);
+    });
+  }
+  function listen(scope, type, listener, capture = false) {
+    document.addEventListener(type, listener, capture);
+    scope.onDispose(() => document.removeEventListener(type, listener, capture));
+  }
+  function showModal(data, mediaType) {
+    closeCurrentModal();
+    const modal = document.createElement("div");
+    const scope = createModalScope();
+    modal._scope = scope;
+    modal.className = "je-more-info-modal";
+    modal.innerHTML = sibling(internal, "buildModalContent")(data, mediaType);
+    modal.dataset.tmdbId = String(data.id ?? "");
+    modal.dataset.mediaType = mediaType;
+    wireButtons(modal, data, mediaType);
     document.body.appendChild(modal);
     state.currentModal = modal;
-
     if (!historyEntryActive) {
-        history.pushState(null, '', location.href);
-        historyEntryActive = true;
+      historyToken = `${Date.now()}:${openGeneration}`;
+      history.pushState({ [HISTORY_KEY]: historyToken }, "", location.href);
+      historyEntryActive = true;
     }
-
-    // Add Escape key handler
-    const handleEscape = (e) => {
-        if (e.key === 'Escape') {
-            dismissModal();
-        }
-    };
-    document.addEventListener('keydown', handleEscape);
-    // Capture phase so Jellyfin's focus manager never sees the D-pad while the
-    // modal is open; otherwise focus walks out to the page behind it.
-    const handleNav = (e) => trapDirectionalFocus(e, modal);
-    document.addEventListener('keydown', handleNav, true);
-    modal._cleanupEscapeListener = () => {
-        document.removeEventListener('keydown', handleEscape);
-        document.removeEventListener('keydown', handleNav, true);
-    };
-
-    // Render action buttons/chips after mount
-    internal.renderActions(data, mediaType);
-    if (mediaType === 'tv') {
-        internal.enrichSeasonCardsWithJellyfinLinks(data, modal);
-    }
-
-    // Listen for TV season requests to update status
-    if (mediaType === 'tv') {
-        const handleTvRequest = async (e) => {
-            if (!e.detail?.tmdbId || String(e.detail.tmdbId) !== String(data.id)) return;
-
-            try {
-                // Refresh details to pull latest status/progress
-                const fresh = await internal.fetchMediaDetails(data.id, 'tv');
-                if (state.currentModal !== modal || modal._isClosing) return;
-                if (fresh?.mediaInfo) {
-                    data.mediaInfo = fresh.mediaInfo;
-                } else {
-                    // Fallback: mark requested
-                    const mediaInfo = data.mediaInfo || (data.mediaInfo = {});
-                    mediaInfo.status = mediaInfo.status || 2;
-                }
-            } catch (_) {
-                if (state.currentModal !== modal || modal._isClosing) return;
-                const mediaInfo = data.mediaInfo || (data.mediaInfo = {});
-                mediaInfo.status = mediaInfo.status || 2;
-            }
-
-            internal.renderActions(data, mediaType);
-            internal.enrichSeasonCardsWithJellyfinLinks(data, modal);
-        };
-        document.addEventListener('jellyseerr-tv-requested', handleTvRequest);
-        modal._cleanupTvListener = () => document.removeEventListener('jellyseerr-tv-requested', handleTvRequest);
-    }
-
-    // Trigger animation
-    setTimeout(() => modal.classList.add('active'), 10);
-
+    listen(scope, "keydown", (event) => {
+      if (keyOf(event) === "Escape" && !dialogOpen()) dismissModal();
+    });
+    listen(scope, "keydown", (event) => trapDirectionalFocus(event, modal), true);
+    sibling(internal, "renderActions")(data, mediaType, modal);
+    if (mediaType === "tv") void sibling(internal, "enrichSeasonCardsWithJellyfinLinks")(data, modal);
+    const onRequested = refreshAfterRequest(data, mediaType, modal);
+    listen(scope, mediaType === "tv" ? "jellyseerr-tv-requested" : "jellyseerr-media-requested", (event) => {
+      void onRequested(event);
+    });
+    setTimeout(() => {
+      if (isLive(state, modal)) modal.classList.add("active");
+    }, 10);
     if (JE.core?.ui?.isTvLayout?.()) {
-        setTimeout(() => {
-            if (state.currentModal !== modal || modal._isClosing) return;
-            const first = modal.querySelector('.je-more-info-actions button:not([disabled])')
-                || modal.querySelector('.modal-close');
-            first?.focus();
-        }, 60);
+      setTimeout(() => {
+        if (!isLive(state, modal)) return;
+        const first = modal.querySelector(".je-more-info-actions button:not([disabled])") ?? modal.querySelector(".modal-close");
+        first?.focus();
+      }, 60);
     }
-}
-
-/**
- * Close from a user action (X, backdrop, Escape). Goes through history so the
- * entry pushed on open is consumed and the popstate handler closes the modal.
- */
-function dismissModal() {
+    return modal;
+  }
+  function dismissModal() {
     if (!historyEntryActive) {
-        moreInfoModal.close();
-        return;
+      close();
+      return;
     }
     if (popPending) return;
     popPending = true;
     history.back();
-}
-
-/**
- * Keep D-pad / arrow navigation inside the modal.
- */
-function trapDirectionalFocus(e, modal) {
-    const dir = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' }[e.key];
-    if (!dir || modal._isClosing || state.currentModal !== modal) return;
-    // Another dialog (e.g. the season request modal) is on top and owns focus.
-    if (document.body.classList.contains('jellyseerr-modal-is-open')) return;
+  }
+  var DIRECTIONS = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right" };
+  function trapDirectionalFocus(event, modal) {
+    const key = keyOf(event);
+    const direction = typeof key === "string" ? DIRECTIONS[key] : void 0;
+    if (!direction || !isLive(state, modal)) return;
+    if (dialogOpen()) return;
     const active = document.activeElement;
     if (active && /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName)) return;
-
-    e.preventDefault();
-    e.stopPropagation();
-
-    const items = Array.from(modal.querySelectorAll(FOCUSABLE)).filter(el => el.getClientRects().length > 0);
+    event.preventDefault();
+    event.stopPropagation();
+    const items = Array.from(modal.querySelectorAll(FOCUSABLE)).filter((element) => element.getClientRects().length > 0);
     if (!items.length) return;
     if (!active || !modal.contains(active)) {
-        items[0].focus();
-        return;
+      items[0]?.focus();
+      return;
     }
-
     const from = active.getBoundingClientRect();
-    const fx = from.left + from.width / 2;
-    const fy = from.top + from.height / 2;
+    const fromX = from.left + from.width / 2;
+    const fromY = from.top + from.height / 2;
     let best = null;
     let bestScore = Infinity;
-    for (const el of items) {
-        if (el === active) continue;
-        const r = el.getBoundingClientRect();
-        const dx = r.left + r.width / 2 - fx;
-        const dy = r.top + r.height / 2 - fy;
-        const along = dir === 'up' ? -dy : dir === 'down' ? dy : dir === 'left' ? -dx : dx;
-        if (along <= 1) continue;
-        const across = dir === 'up' || dir === 'down' ? Math.abs(dx) : Math.abs(dy);
-        const score = along + across * 2;
-        if (score < bestScore) { bestScore = score; best = el; }
+    for (const element of items) {
+      if (element === active) continue;
+      const rect = element.getBoundingClientRect();
+      const dx = rect.left + rect.width / 2 - fromX;
+      const dy = rect.top + rect.height / 2 - fromY;
+      const along = direction === "up" ? -dy : direction === "down" ? dy : direction === "left" ? -dx : dx;
+      if (along <= 1) continue;
+      const across = direction === "up" || direction === "down" ? Math.abs(dx) : Math.abs(dy);
+      const score = along + across * 2;
+      if (score < bestScore) {
+        bestScore = score;
+        best = element;
+      }
     }
     best?.focus();
-}
-
-/**
- * Close the modal
- */
-function closeCurrentModal() {
-    if (state.currentModal) {
-        if (state.currentModal._isClosing) return;
-        state.currentModal._isClosing = true;
-
-        // Clean up TV request listener if exists
-        if (state.currentModal._cleanupTvListener) {
-            state.currentModal._cleanupTvListener();
-        }
-        // Clean up Escape key listener if exists
-        if (state.currentModal._cleanupEscapeListener) {
-            state.currentModal._cleanupEscapeListener();
-        }
-        state.currentModal.classList.remove('active');
-        // A replacement can open during the exit animation. Remove only the
-        // modal this close owns, never the replacement stored in currentModal.
-        const closingModal = state.currentModal;
-        setTimeout(() => {
-            closingModal.remove();
-            if (state.currentModal === closingModal) state.currentModal = null;
-            // Work held back while the modal covered the page (the
-            // seamless-scroll fill) resumes on this.
-            document.dispatchEvent(new CustomEvent('jellyseerr-more-info-closed'));
-        }, 300);
-    }
-}
-
-    moreInfoModal.close = function() {
-        openGeneration++;
-        historyEntryActive = false;
-        popPending = false;
-        closeCurrentModal();
-    };
-
-    window.addEventListener('popstate', function() {
-        if (!historyEntryActive) return;
-        // A dialog stacked above the modal closes first and keeps this entry.
-        if (document.body.classList.contains('jellyseerr-modal-is-open')) return;
-        moreInfoModal.close();
-    });
-
-    // Request permissions and details belong to the active account. Invalidate
-    // pending opens immediately on identity changes, before navigation arrives.
-    JE.session?.onUserChange('jellyseerr-more-info', () => moreInfoModal.close());
-
-    // Close modal on page navigation
-    document.addEventListener('viewshow', function() {
-        moreInfoModal.close();
-    });
-
-    // Expose helpers used by other modules (e.g., item-details.js for the
-    // Series page "Request More" button) so the unrequested-seasons check
-    // logic does not need to be duplicated.
-    moreInfoModal.checkForUnrequestedSeasons = internal.checkForUnrequestedSeasons;
-
-})(window.JellyfinEnhanced);
+  }
+  function closeCurrentModal() {
+    const closing = state.currentModal;
+    if (!closing || closing._isClosing) return;
+    closing._isClosing = true;
+    closing._scope?.dispose();
+    closing.classList.remove("active");
+    setTimeout(() => {
+      closing.remove();
+      if (state.currentModal === closing) state.currentModal = null;
+      document.dispatchEvent(new CustomEvent("jellyseerr-more-info-closed"));
+    }, EXIT_MS);
+  }
+  function close() {
+    openGeneration++;
+    historyEntryActive = false;
+    popPending = false;
+    closeCurrentModal();
+  }
+  moreInfoModal.open = open;
+  moreInfoModal.close = close;
+  window.addEventListener("popstate", (event) => {
+    if (!historyEntryActive) return;
+    if (dialogOpen()) return;
+    const landed = event.state;
+    if (isRecord(landed) && landed[HISTORY_KEY] === historyToken) return;
+    close();
+  });
+  JE.session?.onUserChange?.("jellyseerr-more-info", close);
+  document.addEventListener("viewshow", close);
+  if (internal.checkForUnrequestedSeasons) moreInfoModal.checkForUnrequestedSeasons = internal.checkForUnrequestedSeasons;
+})();
+})();
+//# sourceMappingURL=more-info-modal-init.js.map

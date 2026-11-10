@@ -1,41 +1,64 @@
-// /js/others/letterboxd-links.js
-(function (JE) {
-    'use strict';
+(() => {
+"use strict";
+(() => {
+  // client/src/host/context.ts
+  function sharedModule(id) {
+    const namespace = window.JellyfinEnhanced?.core?.sharedModules?.[id];
+    if (!namespace) throw new Error(`${id} is not in JE.core.sharedModules: load its provider first (client/shared-modules.json)`);
+    return namespace;
+  }
+  function sharedExport(namespace, name) {
+    return namespace[name];
+  }
 
-    JE.initializeLetterboxdLinksScript = async function () {
-        const logPrefix = '🪼 Jellyfin Enhanced: Letterboxd Links:';
+  // client/generated-shared/stub/client/src/features/details-providers/host.ts
+  var shared = /* @__PURE__ */ sharedModule("features/details-providers/host");
+  var export1 = /* @__PURE__ */ sharedExport(shared, "bridge");
 
-        if (!JE?.pluginConfig?.LetterboxdEnabled) {
-            console.log(`${logPrefix} Integration disabled in plugin settings.`);
-            return;
-        }
+  // client/generated-shared/stub/client/src/features/details-providers/page.ts
+  var shared2 = /* @__PURE__ */ sharedModule("features/details-providers/page");
+  var export3 = /* @__PURE__ */ sharedExport(shared2, "hashItemId");
+  var export8 = /* @__PURE__ */ sharedExport(shared2, "lookupItem");
+  var export10 = /* @__PURE__ */ sharedExport(shared2, "sessionLease");
+  var export11 = /* @__PURE__ */ sharedExport(shared2, "visibleDetailPage");
 
-        console.log(`${logPrefix} Initializing...`);
+  // client/generated-shared/stub/client/src/features/details-providers/links.ts
+  var shared3 = /* @__PURE__ */ sharedModule("features/details-providers/links");
+  var export0 = /* @__PURE__ */ sharedExport(shared3, "externalLink");
+  var export2 = /* @__PURE__ */ sharedExport(shared3, "pathSegment");
 
-        let isAddingLinks = false; // Lock to prevent concurrent runs
-        let processedItemIds = new Set(); // Cache of items we've already processed
-        let lastVisibleItemId = null; // Track the currently visible item
+  // client/generated-shared/stub/client/src/features/details-providers/wire.ts
+  var shared4 = /* @__PURE__ */ sharedModule("features/details-providers/wire");
+  var export12 = /* @__PURE__ */ sharedExport(shared4, "decodeDetailsItem");
 
-        const LETTERBOXD_ICON_URL = JE.cdn.selfhst('svg/letterboxd.svg');
-
-        // Safe fallback for helpers.js Stage-3 load-order races.
-        const extLink = JE.helpers?.createExternalLink || ((u, o) => {
-            const a = document.createElement('a');
-            a.setAttribute('is', 'emby-linkbutton');
-            a.href = u;
-            a.target = '_blank';
-            a.rel = 'noopener noreferrer';
-            if (o?.text) a.textContent = o.text;
-            if (o?.title) a.title = o.title;
-            if (o?.className) a.className = o.className;
-            return a;
-        });
-
-        const styleId = 'letterboxd-links-styles';
-        if (!document.getElementById(styleId)) {
-            const style = document.createElement('style');
-            style.id = styleId;
-            style.textContent = `
+  // client/src/features/details-providers/letterboxd-links.ts
+  var JE = export1("Letterboxd links");
+  function personSlug(name) {
+    if (!name) return null;
+    const slug = name.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+    return slug || null;
+  }
+  JE.initializeLetterboxdLinksScript = async function initializeLetterboxdLinksScript() {
+    const logPrefix = "🪼 Jellyfin Enhanced: Letterboxd Links:";
+    if (!JE.pluginConfig?.LetterboxdEnabled) {
+      console.log(`${logPrefix} Integration disabled in plugin settings.`);
+      return;
+    }
+    console.log(`${logPrefix} Initializing...`);
+    let isAddingLinks = false;
+    let rescan = false;
+    const processedItemIds = /* @__PURE__ */ new Set();
+    let lastVisibleItemId = null;
+    JE.session?.onUserChange("letterboxd-links", () => {
+      processedItemIds.clear();
+      lastVisibleItemId = null;
+    });
+    const LETTERBOXD_ICON_URL = JE.cdn.selfhst("svg/letterboxd.svg");
+    const styleId = "letterboxd-links-styles";
+    if (!document.getElementById(styleId)) {
+      const style = document.createElement("style");
+      style.id = styleId;
+      style.textContent = `
                 .letterboxd-link-icon::before {
                     content: "";
                     display: inline-block;
@@ -48,168 +71,101 @@
                     margin-right: 5px;
                 }
             `;
-            document.head.appendChild(style);
+      document.head.appendChild(style);
+    }
+    function createLinkButton(label, url) {
+      const button = export0(JE.helpers, url, { title: label });
+      if (JE.pluginConfig?.ShowLetterboxdLinkAsText) {
+        button.textContent = label;
+        button.className = "button-link emby-button letterboxd-link";
+      } else {
+        button.className = "button-link emby-button letterboxd-link letterboxd-link-icon";
+        button.style.setProperty("--je-icon-size", `${JE.helpers.getExternalLinkIconSize()}px`);
+      }
+      return button;
+    }
+    async function addLetterboxdLinks() {
+      if (isAddingLinks) {
+        rescan = true;
+        return;
+      }
+      const visiblePage = export11();
+      if (!visiblePage) return;
+      const itemId = export3();
+      if (!itemId) return;
+      if (processedItemIds.has(itemId)) return;
+      if (lastVisibleItemId && lastVisibleItemId !== itemId) processedItemIds.clear();
+      lastVisibleItemId = itemId;
+      const anchorElement = visiblePage.querySelector(".itemExternalLinks");
+      document.querySelectorAll("#itemDetailPage.hide .letterboxd-link").forEach((staleLink) => {
+        if (staleLink.previousSibling?.nodeType === Node.TEXT_NODE) staleLink.previousSibling.remove();
+        staleLink.remove();
+      });
+      if (!anchorElement || anchorElement.querySelector(".letterboxd-link")) return;
+      isAddingLinks = true;
+      const session = export10(JE.session);
+      try {
+        const item = export12(await export8(JE.helpers, itemId, false));
+        if (export3() !== itemId || !anchorElement.isConnected || export11() !== visiblePage || !session()) return;
+        if (!item?.Type) return;
+        if (item.Type !== "Movie" && item.Type !== "Person") {
+          console.log(`${logPrefix} Skipping ${item.Type} - Letterboxd links not supported.`);
+          processedItemIds.add(itemId);
+          return;
         }
-
-        // Letterboxd has no IMDb/TMDB lookup for people, only a name-based slug
-        // (e.g. https://letterboxd.com/actor/tommy-lee-jones/), so we derive it
-        // from the person's name the same way Letterboxd does.
-        function getPersonSlug(name) {
-            if (!name) return null;
-            const slug = name
-                .toLowerCase()
-                .normalize("NFD").replace(new RegExp("[\\u0300-\\u036f]", "g"), "")
-                .replace(/[^a-z0-9]+/g, "-")
-                .replace(/^-+|-+$/g, '');
-            return slug || null;
-        }
-
-        async function addLetterboxdLinks() {
-            if (isAddingLinks) {
-                return;
-            }
-
-            const visiblePage = document.querySelector('#itemDetailPage:not(.hide)');
-            if (!visiblePage) return;
-
-            const itemId = new URLSearchParams(window.location.hash.split('?')[1]).get('id');
-            if (!itemId) return;
-
-            // Only caches "unsupported" verdicts (wrong type, no IMDb id) — never
-            // success, since Jellyfin can spawn a fresh #itemDetailPage instance
-            // for an already-processed item; the DOM check below owns that case.
-            if (processedItemIds.has(itemId)) {
-                return;
-            }
-
-            // If item changed, clear the processed set to allow reprocessing on new item
-            if (lastVisibleItemId && lastVisibleItemId !== itemId) {
-                processedItemIds.clear();
-            }
-            lastVisibleItemId = itemId;
-
-            const anchorElement = visiblePage.querySelector('.itemExternalLinks');
-
-            // Cleanup stale links from any non-visible pages to prevent future conflicts
-            document.querySelectorAll('#itemDetailPage.hide .letterboxd-link').forEach(staleLink => {
-                if (staleLink.previousSibling && staleLink.previousSibling.nodeType === Node.TEXT_NODE) {
-                   staleLink.previousSibling.remove();
-                }
-                staleLink.remove();
-            });
-
-            if (!anchorElement || anchorElement.querySelector('.letterboxd-link')) {
-                return;
-            }
-
-            isAddingLinks = true;
-            try {
-                const item = JE.helpers?.getItemCached
-                    ? await JE.helpers.getItemCached(itemId)
-                    : await ApiClient.getItem(ApiClient.getCurrentUserId(), itemId);
-                // The SPA can reuse this detail DOM while the lookup is pending.
-                // Never attach the previous item's link to the new route/page.
-                const currentItemId = new URLSearchParams(window.location.hash.split('?')[1]).get('id');
-                if (currentItemId !== itemId || !anchorElement.isConnected ||
-                    document.querySelector('#itemDetailPage:not(.hide)') !== visiblePage) return;
-                if (!item?.Type) {
-                    processedItemIds.add(itemId);
-                    return;
-                }
-
-                // Note: Letterboxd does not support TV shows, Add 'Series' if letterboxd ever adds support for them in the future.
-                if (!['Movie', 'Person'].includes(item.Type)) {
-                    console.log(`${logPrefix} Skipping ${item.Type} - Letterboxd links not supported.`);
-                    processedItemIds.add(itemId);
-                    return;
-                }
-
-                let letterboxdUrl;
-                if (item.Type === 'Person') {
-                    const personSlug = getPersonSlug(item.Name);
-                    if (!personSlug) {
-                        console.log(`${logPrefix} Could not derive a Letterboxd slug for ${item.Name}.`);
-                        processedItemIds.add(itemId);
-                        return;
-                    }
-                    letterboxdUrl = `https://letterboxd.com/actor/${personSlug}`;
-                } else {
-                    const imdbId = item.ProviderIds?.Imdb;
-                    if (!imdbId) {
-                        console.log(`${logPrefix} No IMDb ID found for ${item.Type}.`);
-                        processedItemIds.add(itemId);
-                        return;
-                    }
-                    letterboxdUrl = `https://letterboxd.com/imdb/${imdbId}`;
-                }
-
-                anchorElement.appendChild(document.createTextNode(' '));
-                anchorElement.appendChild(createLinkButton("Letterboxd", letterboxdUrl, "letterboxd-link-icon"));
-            } catch (err) {
-                console.error(`${logPrefix} Error adding Letterboxd link:`, err);
-            } finally {
-                isAddingLinks = false;
-            }
-        }
-
-        function createLinkButton(text, url, className) {
-            const button = extLink(url, { title: text });
-            if (JE.pluginConfig.ShowLetterboxdLinkAsText) {
-                button.textContent = text;
-                button.className = 'button-link emby-button letterboxd-link';
-            } else {
-                button.className = 'button-link emby-button letterboxd-link letterboxd-link-icon';
-                button.style.setProperty('--je-icon-size', `${JE.helpers.getExternalLinkIconSize()}px`);
-            }
-            return button;
-        }
-
-        // Replace polling with MutationObserver for better performance
-        let processingLetterboxd = false;
-        const scheduleLetterboxdLinks = () => {
-            if (!JE?.pluginConfig?.LetterboxdEnabled) {
-                letterboxdObserver.disconnect();
-                console.log(`${logPrefix} Stopped - feature disabled`);
-                return;
-            }
-
-            if (!processingLetterboxd) {
-                processingLetterboxd = true;
-                if (typeof requestIdleCallback !== 'undefined') {
-                    requestIdleCallback(() => {
-                        addLetterboxdLinks();
-                        processingLetterboxd = false;
-                    }, { timeout: 500 });
-                } else {
-                    setTimeout(() => {
-                        addLetterboxdLinks();
-                        processingLetterboxd = false;
-                    }, 100);
-                }
-            }
-        };
-        // childList-only routes this through the shared body observer (Jellyfin
-        // re-renders the detail page's children on navigation); the previous
-        // `attributeFilter` made it a dedicated document-wide observer that
-        // fired on every hover/focus class change. A cached detail page being
-        // re-shown by a class toggle alone is covered by the view-show hook.
-        const letterboxdObserver = JE.helpers.createObserver('letterboxd-links', scheduleLetterboxdLinks, document.body, {
-            childList: true,
-            subtree: true
-        });
-        JE.helpers.onViewPage(scheduleLetterboxdLinks);
-
-        // Initial check
-        if (typeof requestIdleCallback !== 'undefined') {
-            requestIdleCallback(() => addLetterboxdLinks(), { timeout: 1000 });
+        let letterboxdUrl;
+        if (item.Type === "Person") {
+          const slug = personSlug(item.Name);
+          if (!slug) {
+            console.log(`${logPrefix} Could not derive a Letterboxd slug for ${item.Name}.`);
+            processedItemIds.add(itemId);
+            return;
+          }
+          letterboxdUrl = `https://letterboxd.com/actor/${slug}`;
         } else {
-            setTimeout(addLetterboxdLinks, 500);
+          const imdbId = item.ProviderIds.Imdb;
+          if (!imdbId) {
+            console.log(`${logPrefix} No IMDb ID found for ${item.Type}.`);
+            processedItemIds.add(itemId);
+            return;
+          }
+          letterboxdUrl = `https://letterboxd.com/imdb/${export2(imdbId)}`;
         }
-
-        try {
-            console.log(`${logPrefix} Letterboxd links integration initialized successfully.`);
-        } catch (err) {
-            console.error(`${logPrefix} Failed to initialize`, err);
+        anchorElement.appendChild(document.createTextNode(" "));
+        anchorElement.appendChild(createLinkButton("Letterboxd", letterboxdUrl));
+      } catch (err) {
+        console.error(`${logPrefix} Error adding Letterboxd link:`, err);
+      } finally {
+        isAddingLinks = false;
+        if (rescan) {
+          rescan = false;
+          scheduleLetterboxdLinks();
         }
-    };
-})(window.JellyfinEnhanced);
+      }
+    }
+    let processingLetterboxd = false;
+    let letterboxdObserver;
+    function scheduleLetterboxdLinks() {
+      if (!JE.pluginConfig?.LetterboxdEnabled) {
+        letterboxdObserver?.disconnect();
+        console.log(`${logPrefix} Stopped - feature disabled`);
+        return;
+      }
+      if (processingLetterboxd) return;
+      processingLetterboxd = true;
+      const run = () => {
+        void addLetterboxdLinks();
+        processingLetterboxd = false;
+      };
+      if (typeof requestIdleCallback !== "undefined") requestIdleCallback(run, { timeout: 500 });
+      else setTimeout(run, 100);
+    }
+    letterboxdObserver = JE.helpers.createObserver("letterboxd-links", scheduleLetterboxdLinks, document.body, { childList: true, subtree: true });
+    JE.helpers.onViewPage(scheduleLetterboxdLinks);
+    if (typeof requestIdleCallback !== "undefined") requestIdleCallback(() => addLetterboxdLinks(), { timeout: 1e3 });
+    else setTimeout(() => addLetterboxdLinks(), 500);
+    console.log(`${logPrefix} Letterboxd links integration initialized successfully.`);
+  };
+})();
+})();
+//# sourceMappingURL=letterboxd-links.js.map

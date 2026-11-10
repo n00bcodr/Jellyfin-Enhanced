@@ -44,7 +44,7 @@ const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 
 /**
  * POST JellyfinEnhanced/admin/configuration as the server answers it
- * (Helpers/PluginConfigurationPatch.cs): refused with the server's values when
+ * (Shared/MediaTags/PluginConfigurationPatch.cs): refused with the server's values when
  * an expected field moved on (and is not already the requested value),
  * otherwise only the changed fields are written.
  * @param {object} server
@@ -84,7 +84,11 @@ function boot(t, { server, url, apiClient = {}, globals = {}, patch, routes = {}
     url: url || 'http://jellyfin.test/web/index.html#/configurationpage?name=Jellyfin%20Enhanced&jeSection=media-tags',
     JE: { t: (key, params) => (params ? `${key}:${Object.values(params).join('|')}` : key), pluginConfig: {}, currentSettings: {} },
     apiClient: {
-      getUrl: (path, query) => `http://jellyfin.test/${path.replace(/^\//, '')}${query ? `?${new URLSearchParams(query)}` : ''}`,
+      // Jellyfin's real ApiClient rejects an empty URL name (as the harness does).
+      getUrl: (path, query) => {
+        if (!path) throw new Error('Url name cannot be empty');
+        return `http://jellyfin.test/${path.replace(/^\//, '')}${query ? `?${new URLSearchParams(query)}` : ''}`;
+      },
       getJSON: async () => [{ ItemId: LIBRARY, Name: 'Movies' }, { ItemId: OTHER_LIBRARY, Name: 'Shows' }],
       getPluginConfiguration: async () => structuredClone(server),
       ajax: async (request) => {
@@ -158,7 +162,7 @@ function setup(t, { config = {}, url, confirm = true, apiClient = {}, patch, rou
  * (configPage.html at aa1354dd) and the PluginConfiguration field its own
  * load/save line used there.
  */
-const OLD_FORM = JSON.parse(readFileSync(new URL('../features/features-admin-tags-page.old-form-fields.json', import.meta.url), 'utf8'));
+const OLD_FORM = JSON.parse(readFileSync(new URL('../features/media-tags/admin/features-admin-tags-page.old-form-fields.json', import.meta.url), 'utf8'));
 /** Positions are the nine anchors on Layout defaults now (Corners). */
 const POSITION_GROUPS = { qualityTagsPosition: 'quality', genreTagsPosition: 'genre', languageTagsPosition: 'language', ratingTagsPosition: 'rating', ageRatingTagsPosition: 'ageRating', statusTagsPosition: 'status', awardsTagsPosition: 'awards', logoTagsPosition: 'logos', customTagsPosition: 'custom' };
 /** Fields the new page writes with a control on purpose: without the server cache the browser cache is always on. */

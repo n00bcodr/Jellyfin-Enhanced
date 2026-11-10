@@ -1,0 +1,5 @@
+{
+  "js/core/navigation.js": "client/src/core/navigation-entry.ts",
+  "js/core/session.js": "client/src/core/session-entry.ts",
+  "js/core/lifecycle.js": "client/src/core/lifecycle-entry.ts"
+}

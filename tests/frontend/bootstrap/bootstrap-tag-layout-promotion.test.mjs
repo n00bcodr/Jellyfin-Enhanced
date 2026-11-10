@@ -116,7 +116,7 @@ function setup(t, settings = {}) {
   const row = group => h.document.querySelector(`.je-tge-row[data-group="${group}"]`);
   return {
     ...h, host, writes, row, render,
-    saved: () => JSON.parse(writes.at(-1).data),
+    saved: () => JSON.parse(writes.at(-1).data).Settings,
     async click(el) { el.dispatchEvent(new h.window.MouseEvent('click', { bubbles: true })); await settle(); },
     async change(el, value) {
       if (typeof value === 'boolean') el.checked = value; else el.value = value;

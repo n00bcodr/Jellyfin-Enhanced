@@ -1,1055 +1,958 @@
-/**
- * @file Settings-tab wiring: feature toggles, quality-tag categories, subtitle
- * styling/position controls and subtitle presets (the poster tag group
- * editor is ui-panel-tag-editor.js).
- * Split from ui.js (code motion; bodies verbatim).
- */
-(function(JE) {
-    'use strict';
+(() => {
+"use strict";
+(() => {
+  // client/src/host/context.ts
+  function featureContext(feature, core, slots) {
+    const shared = core.core?.featureContext;
+    if (typeof shared !== "function") {
+      throw new Error(`${feature}: JE.core.featureContext is missing; core/ui-kit.js must load before feature scripts`);
+    }
+    return shared(feature, core, slots);
+  }
 
+  // client/src/features/shared/panel-host.ts
+  function panelHost() {
+    const host = window;
+    if (!host.JellyfinEnhanced) throw new TypeError("Jellyfin Enhanced must load before the settings panel");
+    return host.JellyfinEnhanced;
+  }
+  function apiClient() {
+    const client = optionalApiClient();
+    if (!client) throw new ReferenceError("ApiClient is not defined");
+    return client;
+  }
+  function optionalApiClient() {
+    const host = window;
+    return host.ApiClient;
+  }
+
+  // client/src/features/settings-panel/host.ts
+  function settingsPanelContext(JE) {
+    return featureContext("settings-panel", JE, {
+      internalSlots: ["enhancedUi"],
+      internalsObject: () => JE.internals = JE.internals || {}
+    });
+  }
+  function registry(JE) {
     JE.internals = JE.internals || {};
-    const internal = JE.internals.enhancedUi = JE.internals.enhancedUi || {};
+    return JE.internals.enhancedUi = JE.internals.enhancedUi || {};
+  }
 
+  // client/src/features/shared/dom.ts
+  function requireId(id) {
+    const element = document.getElementById(id);
+    if (!element) throw new TypeError(`Missing panel control #${id}`);
+    return element;
+  }
+  function inputById(id) {
+    const element = document.getElementById(id);
+    return element instanceof HTMLInputElement ? element : null;
+  }
+  function selectById(id) {
+    const element = document.getElementById(id);
+    return element instanceof HTMLSelectElement ? element : null;
+  }
+  function targetElement(event) {
+    return event.target instanceof Element ? event.target : null;
+  }
+  function closestTarget(event, selector) {
+    const found = targetElement(event)?.closest(selector);
+    return found instanceof HTMLElement ? found : null;
+  }
+  function queryInput(root, selector) {
+    const found = root.querySelector(selector);
+    return found instanceof HTMLInputElement ? found : null;
+  }
+  function queryElements(root, selector) {
+    return Array.from(root.querySelectorAll(selector)).filter((node) => node instanceof HTMLElement);
+  }
+  function controlValue(target) {
+    return target instanceof HTMLInputElement || target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement ? target.value : void 0;
+  }
+  function controlChecked(target) {
+    return target instanceof HTMLInputElement ? target.checked : void 0;
+  }
+  function setDisabled(node, disabled) {
+    if (node instanceof HTMLButtonElement || node instanceof HTMLInputElement || node instanceof HTMLSelectElement || node instanceof HTMLTextAreaElement || node instanceof HTMLFieldSetElement || node instanceof HTMLOptionElement) node.disabled = disabled;
+  }
+  function isDisabled(node) {
+    return (node instanceof HTMLButtonElement || node instanceof HTMLInputElement || node instanceof HTMLSelectElement || node instanceof HTMLTextAreaElement || node instanceof HTMLFieldSetElement || node instanceof HTMLOptionElement) && node.disabled;
+  }
+
+  // client/src/features/settings-panel/language-options.ts
+  var text = (record, key) => {
+    const value = Reflect.get(record, key);
+    return typeof value === "string" ? value : "";
+  };
+  function decodeCultures(value) {
+    if (!Array.isArray(value)) throw new TypeError("Cultures response is not a list");
+    return value.filter((entry) => entry !== null && typeof entry === "object").map((entry) => ({
+      twoLetter: text(entry, "TwoLetterISOLanguageName"),
+      threeLetter: text(entry, "ThreeLetterISOLanguageName"),
+      displayName: text(entry, "DisplayName"),
+      name: text(entry, "Name")
+    }));
+  }
+  function audioLanguageOptions(cultures) {
+    const seen = /* @__PURE__ */ new Set();
+    return cultures.map((c) => ({ code: c.twoLetter || c.threeLetter, name: c.displayName || c.name })).filter((o) => o.code && o.name && !seen.has(o.code) && seen.add(o.code)).sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  // client/src/features/shared/settings-values.ts
+  function indexKey(value) {
+    if (typeof value === "number") return Number.isInteger(value) && value >= 0 ? value : void 0;
+    if (typeof value === "string" && value !== "" && String(Number(value)) === value) {
+      const n = Number(value);
+      return Number.isInteger(n) && n >= 0 ? n : void 0;
+    }
+    return void 0;
+  }
+  function entryAt(list, value, fallback) {
+    const key = indexKey(value ?? fallback);
+    return key === void 0 ? void 0 : list[key];
+  }
+
+  // client/src/features/settings-panel/subtitle-format.ts
+  var NON_TEXT_CODECS = /* @__PURE__ */ new Set(["ass", "ssa", "pgssub", "pgs", "dvdsub", "dvbsub", "vobsub"]);
+  var field = (value, key) => value !== null && typeof value === "object" ? Reflect.get(value, key) : void 0;
+  function activeSubtitleIsBitmap(sessions) {
+    if (!Array.isArray(sessions)) return false;
+    const session = sessions.find((s) => !!field(s, "NowPlayingItem"));
+    const streams = field(field(session, "NowPlayingItem"), "MediaStreams");
+    const activeIndex = field(field(session, "PlayState"), "SubtitleStreamIndex");
+    if (activeIndex == null || !Array.isArray(streams)) return false;
+    const active = streams.find((s) => field(s, "Type") === "Subtitle" && field(s, "Index") === activeIndex);
+    const codec = field(active, "Codec");
+    return !!active && NON_TEXT_CODECS.has((typeof codec === "string" ? codec : "").toLowerCase());
+  }
+  function colorWithAlpha(swatch, alpha) {
+    return swatch + parseInt(alpha).toString(16).padStart(2, "0").toUpperCase();
+  }
+  function clampPauseDelay(raw) {
+    return Math.max(1, Math.min(60, parseInt(raw, 10) || 5));
+  }
+  function clampPosition(pct) {
+    return Math.max(2, Math.min(98, pct));
+  }
+
+  // client/src/features/settings-panel/ui-panel-settings.ts
+  var TAG_GROUP_TOGGLES = ["qualityTagsToggle", "genreTagsToggle", "languageTagsToggle", "ratingTagsToggle", "ageRatingTagsToggle", "statusTagsToggle", "awardsTagsToggle", "logoTagsToggle", "customTagsToggle"];
+  var anyEntryHasLogos = (entries) => {
+    for (const entry of entries) {
+      const logos = entry !== null && typeof entry === "object" ? Reflect.get(entry, "Logos") : void 0;
+      if (Array.isArray(logos) && logos.length > 0) return true;
+    }
+    return false;
+  };
+  var sourceItems = (response) => {
+    const items = response !== null && typeof response === "object" ? Reflect.get(response, "Items") : void 0;
+    if (!Array.isArray(items)) return [];
+    return items.filter((item) => item !== null && typeof item === "object").map((item) => {
+      const id = Reflect.get(item, "Id");
+      const name = Reflect.get(item, "Name");
+      return { id: typeof id === "string" ? id : String(id), name: typeof name === "string" ? name : "", type: Reflect.get(item, "Type") };
+    });
+  };
+  function installUiPanelSettings(JE, featureCtx = settingsPanelContext(JE)) {
+    const internal = registry(JE);
     const { showReleaseNotesNotification } = internal;
-
-    // Position-tab preview text ("AaBbCcDd") mirrors the real font family, and
-    // its size scaled relative to "Normal" so it stays legible in the small
-    // preview box instead of rendering at the real on-video vw-based size.
-    // Module-scoped (not inside wireSettingsListeners) since it's also called
-    // from wireMiscSettingsControls' preset-click handlers, a separate closure.
+    const fontSizeAt = (value) => entryAt(JE.fontSizePresets, value, 2) || JE.fontSizePresets[2];
+    const fontFamilyAt = (value) => entryAt(JE.fontFamilyPresets, value, 0) || JE.fontFamilyPresets[0];
+    const requirePreset = (preset, what) => {
+      if (preset === void 0) throw new TypeError(`Missing subtitle ${what} preset`);
+      return preset;
+    };
     const updatePositionPreviewFont = (fontSizePreset, fontFamilyPreset) => {
-        const posPreviewEl = document.getElementById('subtitlePositionPreview');
-        if (!posPreviewEl || !fontSizePreset || !fontFamilyPreset) return;
-        const normalSize = JE.fontSizePresets[2].size;
-        const px = Math.max(8, Math.min(22, 13 * (fontSizePreset.size / normalSize)));
-        posPreviewEl.style.fontSize = `${px}px`;
-        posPreviewEl.style.fontFamily = fontFamilyPreset.family;
+      const posPreviewEl = document.getElementById("subtitlePositionPreview");
+      const normal = JE.fontSizePresets[2];
+      if (!posPreviewEl || !fontSizePreset || !fontFamilyPreset || !normal) return;
+      const px = Math.max(8, Math.min(22, 13 * (fontSizePreset.size / normal.size)));
+      posPreviewEl.style.fontSize = `${px}px`;
+      posPreviewEl.style.fontFamily = fontFamilyPreset.family;
     };
-
-    /**
-     * Re-measure corner stacking on every card that still has tag overlays.
-     * Called after a tag type's overlays are removed by its panel toggle, so
-     * an overlay that was stacked above them (e.g. the age rating badge over
-     * the rating chip) drops back into its corner instead of keeping a stale
-     * translateY.
-     */
     const restackTagCorners = () => {
-        const restack = JE.core?.tagRenderer?.applyCornerStacking;
-        if (typeof restack !== 'function') return;
-        const hosts = new Set();
-        document.querySelectorAll('[data-je-corner]').forEach(el => { if (el.parentElement) hosts.add(el.parentElement); });
-        hosts.forEach(host => restack(host));
+      const restack = JE.core?.tagRenderer?.applyCornerStacking;
+      if (typeof restack !== "function") return;
+      const hosts = /* @__PURE__ */ new Set();
+      document.querySelectorAll("[data-je-corner]").forEach((el) => {
+        if (el.parentElement) hosts.add(el.parentElement);
+      });
+      hosts.forEach((host) => restack(host));
     };
-
-    /**
-     * Remove one tag group from every card after its toggle is switched off:
-     * through the layout controller (which also drops its pill facts, dots
-     * and hover copies), plus any wrapper it does not manage.
-     * @param {string} group - Layout group id (e.g. 'ageRating').
-     * @param {string} containerClass - The group's wrapper class.
-     */
     const removeTagGroup = (group, containerClass) => {
-        JE.core?.tagLayout?.removeGroupEverywhere(group);
-        document.querySelectorAll(`.${containerClass}`).forEach(el => el.remove());
-        restackTagCorners();
+      JE.core?.tagLayout?.removeGroupEverywhere(group);
+      document.querySelectorAll(`.${containerClass}`).forEach((el) => el.remove());
+      restackTagCorners();
     };
-    // An imported Media Tags document turns groups off the same way (ui-panel-tag-portable.js).
     internal.removeTagGroup = removeTagGroup;
-
-    /**
-     * @param {Iterable<object>} entries - Server tag-cache entries.
-     * @returns {boolean} Whether any entry carries logos.
-     */
-    const anyEntryHasLogos = (entries) => {
-        for (const entry of entries) {
-            if (Array.isArray(entry?.Logos) && entry.Logos.length > 0) return true;
-        }
-        return false;
-    };
-
-    /**
-     * The Logos group was switched on. When nobody showed it before, the
-     * server only now looks the logos up and republishes every entry in the
-     * background, so the cards on the page were drawn from entries without
-     * them: once a delta brings entries with logos, redraw the group once.
-     * Entries that already carry logos (someone else shows the group) need
-     * no wait.
-     */
     const redrawLogosWhenServerHasThem = () => {
-        const pipeline = JE.tagPipeline;
-        if (!pipeline?.waitForServerCache || anyEntryHasLogos(pipeline.serverEntries?.() || [])) return;
-        pipeline.waitForServerCache(anyEntryHasLogos).then((ready) => {
-            if (ready && JE.currentSettings?.logoTagsEnabled) JE.reinitializeLogoTags?.();
-        }).catch(() => {});
+      const pipeline = featureCtx.peer("tagPipeline");
+      if (!pipeline?.waitForServerCache || anyEntryHasLogos(pipeline.serverEntries?.() || [])) return;
+      pipeline.waitForServerCache(anyEntryHasLogos).then((ready) => {
+        if (ready && JE.currentSettings?.logoTagsEnabled) featureCtx.peer("reinitializeLogoTags")?.();
+      }).catch(() => {
+      });
     };
-
-    /** Panel toggles of the poster tag groups the layout controller places. */
-    const TAG_GROUP_TOGGLES = ['qualityTagsToggle', 'genreTagsToggle', 'languageTagsToggle', 'ratingTagsToggle', 'ageRatingTagsToggle', 'statusTagsToggle', 'awardsTagsToggle', 'logoTagsToggle', 'customTagsToggle'];
-
-    /**
-     * Wires the feature toggles, quality-tag category controls and subtitle
-     * styling/position controls of the Settings tab.
-     * @param {object} ctx Shared panel context assembled in ui-panel.js.
-     */
+    const TAG_TOGGLE_ACTIONS = {
+      qualityTagsToggle: { on: () => {
+        const peerFn = featureCtx.peer("initializeQualityTags");
+        if (typeof peerFn === "function") peerFn();
+      }, off: () => removeTagGroup("quality", "quality-overlay-container") },
+      genreTagsToggle: { on: () => {
+        const peerFn = featureCtx.peer("initializeGenreTags");
+        if (typeof peerFn === "function") peerFn();
+      }, off: () => removeTagGroup("genre", "genre-overlay-container") },
+      languageTagsToggle: { on: () => {
+        const peerFn = featureCtx.peer("initializeLanguageTags");
+        if (typeof peerFn === "function") peerFn();
+      }, off: () => removeTagGroup("language", "language-overlay-container") },
+      ratingTagsToggle: { on: () => {
+        const peerFn = featureCtx.peer("initializeRatingTags");
+        if (typeof peerFn === "function") peerFn();
+      }, off: () => removeTagGroup("rating", "rating-overlay-container") },
+      ageRatingTagsToggle: { on: () => {
+        const peerFn = featureCtx.peer("initializeAgeRatingTags");
+        if (typeof peerFn === "function") peerFn();
+      }, off: () => removeTagGroup("ageRating", "age-rating-overlay-container") },
+      logoTagsToggle: {
+        on: () => {
+          const peerFn = featureCtx.peer("initializeLogoTags");
+          if (typeof peerFn === "function") peerFn();
+          redrawLogosWhenServerHasThem();
+        },
+        off: () => {
+          featureCtx.peer("tagPipeline")?.stopWaitingForServerCache?.();
+          removeTagGroup("logos", "logo-overlay-container");
+        }
+      },
+      statusTagsToggle: { on: () => {
+        const peerFn = featureCtx.peer("initializeStatusTags");
+        if (typeof peerFn === "function") peerFn();
+      }, off: () => removeTagGroup("status", "status-overlay-container") },
+      awardsTagsToggle: { on: () => featureCtx.peer("initializeAwardsTags")?.(), off: () => removeTagGroup("awards", "awards-overlay-container") },
+      customTagsToggle: { on: () => {
+        const peerFn = featureCtx.peer("initializeCustomTags");
+        if (typeof peerFn === "function") peerFn();
+      }, off: () => removeTagGroup("custom", "custom-overlay-container") },
+      peopleTagsToggle: {
+        on: () => {
+          const peerFn = featureCtx.peer("initializePeopleTags");
+          if (typeof peerFn === "function") peerFn();
+        },
+        off: () => {
+          document.querySelectorAll(".je-people-place-banner").forEach((el) => el.remove());
+          document.querySelectorAll(".je-people-age-container").forEach((el) => el.remove());
+          document.querySelectorAll(".je-deceased-poster").forEach((el) => el.classList.remove("je-deceased-poster"));
+        }
+      }
+    };
+    function refreshQualityCatArrowStates(group) {
+      const rows = queryElements(group, ".je-quality-cat-row");
+      rows.forEach((row, idx) => {
+        const upBtn = row.querySelector(".je-cat-up");
+        const downBtn = row.querySelector(".je-cat-down");
+        const isFirst = idx === 0;
+        const isLast = idx === rows.length - 1;
+        if (upBtn instanceof HTMLElement) {
+          setDisabled(upBtn, isFirst);
+          upBtn.style.cursor = isFirst ? "not-allowed" : "pointer";
+          upBtn.style.opacity = isFirst ? "0.4" : "1";
+        }
+        if (downBtn instanceof HTMLElement) {
+          setDisabled(downBtn, isLast);
+          downBtn.style.cursor = isLast ? "not-allowed" : "pointer";
+          downBtn.style.opacity = isLast ? "0.4" : "1";
+        }
+      });
+    }
+    const wireNestedList = (masterId, wrapId, groupId, expanderId) => {
+      const master = inputById(masterId);
+      const wrap = document.getElementById(wrapId);
+      const group = document.getElementById(groupId);
+      const expander = document.getElementById(expanderId);
+      if (master && wrap) {
+        master.addEventListener("change", () => {
+          wrap.style.display = master.checked ? "block" : "none";
+          if (!master.checked && group && expander) {
+            group.style.display = "none";
+            expander.setAttribute("aria-expanded", "false");
+          }
+        });
+      }
+      if (expander && group) {
+        expander.addEventListener("click", () => {
+          const expanded = expander.getAttribute("aria-expanded") === "true";
+          expander.setAttribute("aria-expanded", expanded ? "false" : "true");
+          group.style.display = expanded ? "none" : "block";
+        });
+      }
+      return group;
+    };
     internal.wireSettingsListeners = function(ctx) {
-        const { createToast, resetAutoCloseTimer } = ctx;
-
-        // Detail-page languages belong to UI Settings, including search results.
-        const unregisterAudioSearch = ctx.registerSearch?.({
-            pane: 'ui',
-            /** Find the moved detail-page preference by its visible label. */
-            search(query) {
-                const control = ctx.help?.querySelector('[data-pane="ui"] #showAudioLanguagesToggle');
-                const label = JE.t('panel_settings_ui_audio_languages');
-                return control && label.toLowerCase().includes(query) ? [{ label, path: JE.t('panel_settings_ui'),
-                    run() { control.scrollIntoView?.({ block: 'center' }); control.focus({ preventScroll: true }); } }] : [];
-            },
-        });
-        if (unregisterAudioSearch) ctx.onClose?.(unregisterAudioSearch);
-
-        const addSettingToggleListener = (id, settingKey, featureKey, requiresRefresh = false) => {
-            document.getElementById(id).addEventListener('change', (e) => {
-                JE.currentSettings[settingKey] = e.target.checked;
-                // The layout settings depend on which tag types are on (caption
-                // space is reserved only while a group can fill it).
-                JE.core?.tagLayout?.invalidateSettings();
-                JE.saveUserSettings('settings.json', JE.currentSettings);
-                let toastMessage = createToast(featureKey, e.target.checked);
-
-                // Handle tag features with dynamic re-initialization
-                if (id === 'qualityTagsToggle') {
-                    if (e.target.checked) {
-                        // Initialize for the first time if enabling
-                        if (typeof JE.initializeQualityTags === 'function') {
-                            JE.initializeQualityTags();
-                        }
-                    } else {
-                        // Remove all tags if disabling
-                        removeTagGroup('quality', 'quality-overlay-container');
-                    }
-                    requiresRefresh = false; // No longer needs refresh
-                } else if (id === 'genreTagsToggle') {
-                    if (e.target.checked) {
-                        if (typeof JE.initializeGenreTags === 'function') {
-                            JE.initializeGenreTags();
-                        }
-                    } else {
-                        removeTagGroup('genre', 'genre-overlay-container');
-                    }
-                    requiresRefresh = false;
-                } else if (id === 'languageTagsToggle') {
-                    if (e.target.checked) {
-                        if (typeof JE.initializeLanguageTags === 'function') {
-                            JE.initializeLanguageTags();
-                        }
-                    } else {
-                        removeTagGroup('language', 'language-overlay-container');
-                    }
-                    requiresRefresh = false;
-                } else if (id === 'ratingTagsToggle') {
-                    if (e.target.checked) {
-                        if (typeof JE.initializeRatingTags === 'function') {
-                            JE.initializeRatingTags();
-                        }
-                    } else {
-                        removeTagGroup('rating', 'rating-overlay-container');
-                    }
-                    requiresRefresh = false;
-                } else if (id === 'ageRatingTagsToggle') {
-                    if (e.target.checked) {
-                        if (typeof JE.initializeAgeRatingTags === 'function') {
-                            JE.initializeAgeRatingTags();
-                        }
-                    } else {
-                        removeTagGroup('ageRating', 'age-rating-overlay-container');
-                    }
-                    requiresRefresh = false;
-                } else if (id === 'logoTagsToggle') {
-                    if (e.target.checked) {
-                        if (typeof JE.initializeLogoTags === 'function') {
-                            JE.initializeLogoTags();
-                        }
-                        redrawLogosWhenServerHasThem();
-                    } else {
-                        JE.tagPipeline?.stopWaitingForServerCache?.();
-                        removeTagGroup('logos', 'logo-overlay-container');
-                    }
-                    requiresRefresh = false;
-                } else if (id === 'statusTagsToggle') {
-                    if (e.target.checked) {
-                        if (typeof JE.initializeStatusTags === 'function') {
-                            JE.initializeStatusTags();
-                        }
-                    } else {
-                        removeTagGroup('status', 'status-overlay-container');
-                    }
-                    requiresRefresh = false;
-                } else if (id === 'awardsTagsToggle') {
-                    if (e.target.checked) JE.initializeAwardsTags?.();
-                    else removeTagGroup('awards', 'awards-overlay-container');
-                    requiresRefresh = false;
-                } else if (id === 'customTagsToggle') {
-                    if (e.target.checked) {
-                        if (typeof JE.initializeCustomTags === 'function') {
-                            JE.initializeCustomTags();
-                        }
-                    } else {
-                        removeTagGroup('custom', 'custom-overlay-container');
-                    }
-                    requiresRefresh = false;
-                } else if (id === 'peopleTagsToggle') {
-                    if (e.target.checked) {
-                        if (typeof JE.initializePeopleTags === 'function') {
-                            JE.initializePeopleTags();
-                        }
-                    } else {
-                        document.querySelectorAll('.je-people-place-banner').forEach(el => el.remove());
-                        document.querySelectorAll('.je-people-age-container').forEach(el => el.remove());
-                        document.querySelectorAll('.je-deceased-poster').forEach(el => el.classList.remove('je-deceased-poster'));
-                    }
-                    requiresRefresh = false;
-                }
-                // Re-present every card for the new set of groups: caption space
-                // is reserved on every card when a group that can fill it comes
-                // on, and given back once none is left.
-                if (TAG_GROUP_TOGGLES.includes(id)) JE.reinitializeTagLayout?.();
-
-                if (requiresRefresh) {
-                    toastMessage += ".<br> Refresh page to apply.";
-                }
-                JE.toast(toastMessage);
-                if (id === 'randomButtonToggle') JE.addRandomButton();
-                if (id === 'showWatchProgressToggle' && !e.target.checked) document.querySelectorAll('.mediaInfoItem-watchProgress').forEach(el => el.remove());
-                if (id === 'showFileSizesToggle' && !e.target.checked) document.querySelectorAll('.mediaInfoItem-fileSize').forEach(el => el.remove());
-                if (id === 'showAudioLanguagesToggle' && !e.target.checked) document.querySelectorAll('.mediaInfoItem-audioLanguage').forEach(el => el.remove());
-                resetAutoCloseTimer();
-            });
-        };
-
-        addSettingToggleListener('autoPauseToggle', 'autoPauseEnabled', 'feature_auto_pause');
-        addSettingToggleListener('autoResumeToggle', 'autoResumeEnabled', 'feature_auto_resume');
-        addSettingToggleListener('autoPipToggle', 'autoPipEnabled', 'feature_auto_pip');
-        addSettingToggleListener('autoSkipIntroToggle', 'autoSkipIntro', 'feature_auto_skip_intro');
-        addSettingToggleListener('autoSkipOutroToggle', 'autoSkipOutro', 'feature_auto_skip_outro');
-        addSettingToggleListener('randomButtonToggle', 'randomButtonEnabled', 'feature_random_button');
-        addSettingToggleListener('randomUnwatchedOnly', 'randomUnwatchedOnly', 'feature_unwatched_only');
-        addSettingToggleListener('randomScopeCurrentContainer', 'randomScopeCurrentContainer', 'feature_random_scope_current');
-        addSettingToggleListener('showWatchProgressToggle', 'showWatchProgress', 'feature_watch_progress_display');
-                // Watch progress selects
-                const modeSel = document.getElementById('watchProgressModeSelect');
-                const fmtSel = document.getElementById('watchProgressTimeFormatSelect');
-                if (modeSel) {
-                    modeSel.addEventListener('change', (e) => {
-                        JE.currentSettings.watchProgressMode = e.target.value;
-                        JE.saveUserSettings('settings.json', JE.currentSettings);
-                        resetAutoCloseTimer();
-                    });
-                }
-                if (fmtSel) {
-                    fmtSel.addEventListener('change', (e) => {
-                        JE.currentSettings.watchProgressTimeFormat = e.target.value;
-                        JE.saveUserSettings('settings.json', JE.currentSettings);
-                        resetAutoCloseTimer();
-                    });
-                }
-        addSettingToggleListener('showFileSizesToggle', 'showFileSizes', 'feature_file_size_display');
-        addSettingToggleListener('showAudioLanguagesToggle', 'showAudioLanguages', 'feature_audio_language_display');
-        addSettingToggleListener('removeContinueWatchingToggle', 'removeContinueWatchingEnabled', 'feature_remove_continue_watching');
-        document.getElementById('nativePosterTagsToggle')?.addEventListener('change', (event) => {
-            if (JE.pluginConfig?.NativePosterTagsEnabled !== true) return;
-            const enabled = event.target.checked;
-            // Record the explicit choice so saveUserSettings writes it (an untouched user stays unset = on).
-            JE.userConfig = JE.userConfig || {};
-            JE.userConfig.settings = JE.userConfig.settings || {};
-            JE.userConfig.settings.useNativePosterTags = enabled;
-            JE.currentSettings.useNativePosterTags = enabled;
-            JE.saveUserSettings('settings.json', JE.currentSettings);
-            JE.toast(JE.t('toast_native_poster_tags_saved'));
-            resetAutoCloseTimer();
-        });
-        addSettingToggleListener('qualityTagsToggle', 'qualityTagsEnabled', 'feature_quality_tags', true);
-        // Show or hide the nested category section when the master quality-tags toggle changes
-        const qualityMasterToggle = document.getElementById('qualityTagsToggle');
-        const qualitySubWrap = document.getElementById('qualityTagsSubWrap');
-        const qualitySubGroup = document.getElementById('qualityTagsSubToggles');
-        const qualitySubExpander = document.getElementById('qualityTagsSubToggleExpander');
-        if (qualityMasterToggle && qualitySubWrap) {
-            qualityMasterToggle.addEventListener('change', () => {
-                qualitySubWrap.style.display = qualityMasterToggle.checked ? 'block' : 'none';
-                // Collapse the category list when the feature is turned off so it
-                // returns collapsed the next time the user enables it
-                if (!qualityMasterToggle.checked && qualitySubGroup && qualitySubExpander) {
-                    qualitySubGroup.style.display = 'none';
-                    qualitySubExpander.setAttribute('aria-expanded', 'false');
-                }
-            });
+      const { createToast, resetAutoCloseTimer } = ctx;
+      const unregisterAudioSearch = ctx.registerSearch?.({
+        pane: "ui",
+        /** Find the moved detail-page preference by its visible label. */
+        search(query) {
+          const control = ctx.help?.querySelector('[data-pane="ui"] #showAudioLanguagesToggle');
+          const label = JE.t("panel_settings_ui_audio_languages");
+          return control instanceof HTMLElement && label.toLowerCase().includes(query) ? [{
+            label,
+            path: JE.t("panel_settings_ui"),
+            run() {
+              control.scrollIntoView?.({ block: "center" });
+              control.focus({ preventScroll: true });
+            }
+          }] : [];
         }
-        // Expand or collapse the 6 category rows when the user clicks the chevron.
-        // The chevron rotation is driven by CSS via the aria-expanded attribute.
-        if (qualitySubExpander && qualitySubGroup) {
-            qualitySubExpander.addEventListener('click', () => {
-                const expanded = qualitySubExpander.getAttribute('aria-expanded') === 'true';
-                qualitySubExpander.setAttribute('aria-expanded', expanded ? 'false' : 'true');
-                qualitySubGroup.style.display = expanded ? 'none' : 'block';
-            });
+      });
+      if (unregisterAudioSearch) ctx.onClose?.(unregisterAudioSearch);
+      const addSettingToggleListener = (id, settingKey, featureKey, requiresRefresh = false) => {
+        requireId(id).addEventListener("change", (e) => {
+          const checked = controlChecked(e.target);
+          JE.currentSettings[settingKey] = checked;
+          JE.core?.tagLayout?.invalidateSettings();
+          JE.saveUserSettings("settings.json", JE.currentSettings);
+          let toastMessage = createToast(featureKey, checked === true);
+          const tagAction = Object.prototype.hasOwnProperty.call(TAG_TOGGLE_ACTIONS, id) ? TAG_TOGGLE_ACTIONS[id] : void 0;
+          if (tagAction) {
+            if (checked) tagAction.on();
+            else tagAction.off();
+            requiresRefresh = false;
+          }
+          if (TAG_GROUP_TOGGLES.includes(id)) featureCtx.peer("reinitializeTagLayout")?.();
+          if (requiresRefresh) {
+            toastMessage += ".<br> Refresh page to apply.";
+          }
+          JE.toast(toastMessage);
+          if (id === "randomButtonToggle") JE.addRandomButton();
+          if (id === "showWatchProgressToggle" && !checked) document.querySelectorAll(".mediaInfoItem-watchProgress").forEach((el) => el.remove());
+          if (id === "showFileSizesToggle" && !checked) document.querySelectorAll(".mediaInfoItem-fileSize").forEach((el) => el.remove());
+          if (id === "showAudioLanguagesToggle" && !checked) document.querySelectorAll(".mediaInfoItem-audioLanguage").forEach((el) => el.remove());
+          resetAutoCloseTimer();
+        });
+      };
+      const addSelectListener = (id, settingKey) => {
+        const select = document.getElementById(id);
+        if (!select) return;
+        select.addEventListener("change", (e) => {
+          JE.currentSettings[settingKey] = controlValue(e.target);
+          JE.saveUserSettings("settings.json", JE.currentSettings);
+          resetAutoCloseTimer();
+        });
+      };
+      addSettingToggleListener("autoPauseToggle", "autoPauseEnabled", "feature_auto_pause");
+      addSettingToggleListener("autoResumeToggle", "autoResumeEnabled", "feature_auto_resume");
+      addSettingToggleListener("autoPipToggle", "autoPipEnabled", "feature_auto_pip");
+      addSettingToggleListener("autoSkipIntroToggle", "autoSkipIntro", "feature_auto_skip_intro");
+      addSettingToggleListener("autoSkipOutroToggle", "autoSkipOutro", "feature_auto_skip_outro");
+      addSettingToggleListener("randomButtonToggle", "randomButtonEnabled", "feature_random_button");
+      addSettingToggleListener("randomUnwatchedOnly", "randomUnwatchedOnly", "feature_unwatched_only");
+      addSettingToggleListener("randomScopeCurrentContainer", "randomScopeCurrentContainer", "feature_random_scope_current");
+      addSettingToggleListener("showWatchProgressToggle", "showWatchProgress", "feature_watch_progress_display");
+      addSelectListener("watchProgressModeSelect", "watchProgressMode");
+      addSelectListener("watchProgressTimeFormatSelect", "watchProgressTimeFormat");
+      addSettingToggleListener("showFileSizesToggle", "showFileSizes", "feature_file_size_display");
+      addSettingToggleListener("showAudioLanguagesToggle", "showAudioLanguages", "feature_audio_language_display");
+      addSettingToggleListener("removeContinueWatchingToggle", "removeContinueWatchingEnabled", "feature_remove_continue_watching");
+      document.getElementById("nativePosterTagsToggle")?.addEventListener("change", (event) => {
+        if (JE.pluginConfig?.NativePosterTagsEnabled !== true) return;
+        const enabled = controlChecked(event.target);
+        JE.userConfig = JE.userConfig || { shortcuts: { Shortcuts: [] } };
+        JE.userConfig.settings = JE.userConfig.settings || {};
+        JE.userConfig.settings.useNativePosterTags = enabled;
+        JE.currentSettings.useNativePosterTags = enabled;
+        JE.saveUserSettings("settings.json", JE.currentSettings);
+        JE.toast(JE.t("toast_native_poster_tags_saved"));
+        resetAutoCloseTimer();
+      });
+      addSettingToggleListener("qualityTagsToggle", "qualityTagsEnabled", "feature_quality_tags", true);
+      const qualitySubGroup = wireNestedList("qualityTagsToggle", "qualityTagsSubWrap", "qualityTagsSubToggles", "qualityTagsSubToggleExpander");
+      if (qualitySubGroup) {
+        qualitySubGroup.addEventListener("change", (e) => {
+          const target = e.target;
+          if (!(target instanceof HTMLInputElement) || target.type !== "checkbox") return;
+          const row = target.closest(".je-quality-cat-row");
+          if (!(row instanceof HTMLElement)) return;
+          const settingKey = row.dataset.catKey;
+          if (!settingKey) return;
+          JE.setSettingInherited?.(JE.currentSettings, settingKey, false);
+          JE.currentSettings[settingKey] = target.checked;
+          JE.saveUserSettings("settings.json", JE.currentSettings);
+          const reinitQuality = featureCtx.peer("reinitializeQualityTags");
+          if (typeof reinitQuality === "function" && JE.currentSettings.qualityTagsEnabled) {
+            reinitQuality();
+          }
+          resetAutoCloseTimer();
+        });
+        qualitySubGroup.addEventListener("click", (e) => {
+          const btn = closestTarget(e, ".je-cat-up, .je-cat-down");
+          if (!btn || isDisabled(btn)) return;
+          const row = btn.closest(".je-quality-cat-row");
+          if (!row) return;
+          const isUp = btn.classList.contains("je-cat-up");
+          const sibling = isUp ? row.previousElementSibling : row.nextElementSibling;
+          if (!sibling || !sibling.classList.contains("je-quality-cat-row")) return;
+          const parent = sibling.parentNode;
+          if (!parent) return;
+          if (isUp) {
+            parent.insertBefore(row, sibling);
+          } else {
+            parent.insertBefore(sibling, row);
+          }
+          queryElements(qualitySubGroup, ".je-quality-cat-row").forEach((r, idx) => {
+            const orderKey = r.dataset.orderKey;
+            if (!orderKey) return;
+            JE.setSettingInherited?.(JE.currentSettings, orderKey, false);
+            JE.currentSettings[orderKey] = idx + 1;
+          });
+          JE.saveUserSettings("settings.json", JE.currentSettings);
+          refreshQualityCatArrowStates(qualitySubGroup);
+          const reinitQuality = featureCtx.peer("reinitializeQualityTags");
+          if (typeof reinitQuality === "function" && JE.currentSettings.qualityTagsEnabled) {
+            reinitQuality();
+          }
+          resetAutoCloseTimer();
+        });
+      }
+      queryElements(document, "[data-quality-display-key]").forEach((select) => {
+        select.addEventListener("change", () => {
+          const key = select.dataset.qualityDisplayKey ?? "";
+          const value = controlValue(select);
+          if (value === "") {
+            if (!JE.setSettingInherited?.(JE.currentSettings, key, true)) JE.currentSettings[key] = null;
+          } else {
+            JE.setSettingInherited?.(JE.currentSettings, key, false);
+            JE.currentSettings[key] = key === "qualityHideSdr" ? value === "true" : value;
+          }
+          JE.saveUserSettings("settings.json", JE.currentSettings);
+          featureCtx.peer("reinitializeQualityTags")?.();
+          featureCtx.peer("reinitializeTagLayout")?.();
+          resetAutoCloseTimer();
+        });
+      });
+      const lowSourceToggle = inputById("showLowQualitySourceTagToggle");
+      if (lowSourceToggle) lowSourceToggle.addEventListener("change", () => {
+        JE.setSettingInherited?.(JE.currentSettings, "showLowQualitySourceTag", false);
+        JE.currentSettings.showLowQualitySourceTag = lowSourceToggle.checked;
+        JE.saveUserSettings("settings.json", JE.currentSettings);
+        if (JE.currentSettings.qualityTagsEnabled) featureCtx.peer("reinitializeQualityTags")?.();
+        resetAutoCloseTimer();
+      });
+      const aggregationSelect = selectById("seriesQualityAggregationSelect");
+      if (aggregationSelect) {
+        const policy = JE.currentSettings.seriesQualityAggregation;
+        aggregationSelect.value = JE.isSettingInherited?.(JE.currentSettings, "seriesQualityAggregation") ? "" : String(policy || "representative");
+        aggregationSelect.addEventListener("change", () => {
+          const chosen = aggregationSelect.value;
+          if (!chosen) {
+            if (!JE.setSettingInherited?.(JE.currentSettings, "seriesQualityAggregation", true)) JE.currentSettings.seriesQualityAggregation = null;
+          } else {
+            JE.setSettingInherited?.(JE.currentSettings, "seriesQualityAggregation", false);
+            JE.currentSettings.seriesQualityAggregation = chosen;
+          }
+          JE.saveUserSettings("settings.json", JE.currentSettings);
+          featureCtx.peer("reinitializeQualityTags")?.();
+          resetAutoCloseTimer();
+        });
+      }
+      const qualityFollowServer = document.getElementById("qualityTagsFollowServer");
+      if (qualityFollowServer) qualityFollowServer.addEventListener("click", () => {
+        for (const key of JE.inheritedSettingKeys || []) {
+          if (!JE.setSettingInherited?.(JE.currentSettings, key, true)) JE.currentSettings[key] = null;
         }
-        // Wire the per-category sub-toggle controls via event delegation
+        JE.saveUserSettings("settings.json", JE.currentSettings);
+        if (qualitySubGroup) queryElements(qualitySubGroup, ".je-quality-cat-row").forEach((row) => {
+          const input = queryInput(row, 'input[type="checkbox"]');
+          const value = JE.currentSettings[row.dataset.catKey ?? ""];
+          if (input && typeof value === "boolean") input.checked = value;
+        });
+        queryElements(document, "[data-quality-display-key]").forEach((select) => {
+          if (select instanceof HTMLSelectElement) select.value = "";
+        });
+        const lowSource = JE.currentSettings.showLowQualitySourceTag;
+        if (lowSourceToggle && typeof lowSource === "boolean") lowSourceToggle.checked = lowSource;
+        if (aggregationSelect) aggregationSelect.value = "";
         if (qualitySubGroup) {
-            // Persist sub-toggle state and re-render existing cards with the new filter
-            qualitySubGroup.addEventListener('change', (e) => {
-                const target = e.target;
-                if (!(target instanceof HTMLInputElement) || target.type !== 'checkbox') return;
-                const row = target.closest('.je-quality-cat-row');
-                if (!row) return;
-                const settingKey = row.dataset.catKey;
-                if (!settingKey) return;
-                // Any change is the user's own, even back to the administrator's value.
-                JE.setSettingInherited?.(JE.currentSettings, settingKey, false);
-                JE.currentSettings[settingKey] = target.checked;
-                JE.saveUserSettings('settings.json', JE.currentSettings);
-                if (typeof JE.reinitializeQualityTags === 'function' && JE.currentSettings.qualityTagsEnabled) {
-                    JE.reinitializeQualityTags();
-                }
-                resetAutoCloseTimer();
-            });
-            // Handle ↑/↓ stack reorder buttons
-            qualitySubGroup.addEventListener('click', (e) => {
-                const btn = e.target.closest('.je-cat-up, .je-cat-down');
-                if (!btn || btn.disabled) return;
-                const row = btn.closest('.je-quality-cat-row');
-                if (!row) return;
-                const isUp = btn.classList.contains('je-cat-up');
-                const sibling = isUp ? row.previousElementSibling : row.nextElementSibling;
-                if (!sibling || !sibling.classList.contains('je-quality-cat-row')) return;
-
-                // Move the row in the DOM so the user sees the change immediately
-                if (isUp) {
-                    sibling.parentNode.insertBefore(row, sibling);
-                } else {
-                    sibling.parentNode.insertBefore(sibling, row);
-                }
-
-                // Normalize order values to 1..N from visual position so any
-                // pre-existing duplicates (e.g. admin set two rows to the same
-                // value via XML) self-heal on the next user reorder. The whole
-                // order is the user's now (none of it follows the admin's).
-                const allRows = qualitySubGroup.querySelectorAll('.je-quality-cat-row');
-                allRows.forEach((r, idx) => {
-                    const orderKey = r.dataset.orderKey;
-                    if (!orderKey) return;
-                    JE.setSettingInherited?.(JE.currentSettings, orderKey, false);
-                    JE.currentSettings[orderKey] = idx + 1;
-                });
-                JE.saveUserSettings('settings.json', JE.currentSettings);
-
-                refreshQualityCatArrowStates(qualitySubGroup);
-                if (typeof JE.reinitializeQualityTags === 'function' && JE.currentSettings.qualityTagsEnabled) {
-                    JE.reinitializeQualityTags();
-                }
-                resetAutoCloseTimer();
-            });
+          const orderOf = (r) => Number(JE.currentSettings[r.dataset.orderKey ?? ""]) || Number(r.dataset.defaultOrder) || 0;
+          const rows = queryElements(qualitySubGroup, ".je-quality-cat-row");
+          rows.sort((a, b) => orderOf(a) - orderOf(b) || Number(a.dataset.defaultOrder) - Number(b.dataset.defaultOrder)).forEach((r) => qualitySubGroup.appendChild(r));
+          refreshQualityCatArrowStates(qualitySubGroup);
         }
-
-        // Nullable display preferences retain live admin inheritance until explicitly chosen.
-        document.querySelectorAll('[data-quality-display-key]').forEach(select => {
-            select.addEventListener('change', () => {
-                const key = select.dataset.qualityDisplayKey;
-                const value = select.value;
-                if (value === '') {
-                    if (!JE.setSettingInherited?.(JE.currentSettings, key, true)) JE.currentSettings[key] = null;
-                } else {
-                    JE.setSettingInherited?.(JE.currentSettings, key, false);
-                    JE.currentSettings[key] = key === 'qualityHideSdr' ? value === 'true' : value;
-                }
-                JE.saveUserSettings('settings.json', JE.currentSettings);
-                JE.reinitializeQualityTags?.();
-                JE.reinitializeTagLayout?.();
-                resetAutoCloseTimer();
-            });
-        });
-
-        // Low-quality sources are a gate within Source, separate from category ordering.
-        const lowSourceToggle = document.getElementById('showLowQualitySourceTagToggle');
-        if (lowSourceToggle) lowSourceToggle.addEventListener('change', () => {
-            JE.setSettingInherited?.(JE.currentSettings, 'showLowQualitySourceTag', false);
-            JE.currentSettings.showLowQualitySourceTag = lowSourceToggle.checked;
-            JE.saveUserSettings('settings.json', JE.currentSettings);
-            if (JE.currentSettings.qualityTagsEnabled) JE.reinitializeQualityTags?.();
-            resetAutoCloseTimer();
-        });
-
-        // Preferred audio language for the sound tag (#433). The fixed choices
-        // (server default / my Jellyfin audio language / none) are in the
-        // template; the language list comes from Jellyfin's cultures endpoint,
-        // like the display-language dropdown.
-        // Series and seasons share a quality policy; the summary supports switching without refetching.
-        // The empty option follows the administrator (saved as null); a named policy is the user's.
-        const aggregationSelect = document.getElementById('seriesQualityAggregationSelect');
-        if (aggregationSelect) {
-            aggregationSelect.value = JE.isSettingInherited?.(JE.currentSettings, 'seriesQualityAggregation')
-                ? '' : (JE.currentSettings.seriesQualityAggregation || 'representative');
-            aggregationSelect.addEventListener('change', () => {
-                const policy = aggregationSelect.value;
-                if (!policy) {
-                    if (!JE.setSettingInherited?.(JE.currentSettings, 'seriesQualityAggregation', true)) JE.currentSettings.seriesQualityAggregation = null;
-                } else {
-                    JE.setSettingInherited?.(JE.currentSettings, 'seriesQualityAggregation', false);
-                    JE.currentSettings.seriesQualityAggregation = policy;
-                }
-                JE.saveUserSettings('settings.json', JE.currentSettings);
-                JE.reinitializeQualityTags?.();
-                resetAutoCloseTimer();
-            });
-        }
-
-        // "Follow server settings": all nullable Quality switches, orders, display
-        // preferences and the series policy follow the administrator again (saved as null).
-        const qualityFollowServer = document.getElementById('qualityTagsFollowServer');
-        if (qualityFollowServer) qualityFollowServer.addEventListener('click', () => {
-            for (const key of JE.inheritedSettingKeys || []) {
-                if (!JE.setSettingInherited?.(JE.currentSettings, key, true)) JE.currentSettings[key] = null;
-            }
-            JE.saveUserSettings('settings.json', JE.currentSettings);
-            qualitySubGroup?.querySelectorAll('.je-quality-cat-row').forEach(row => {
-                const input = row.querySelector('input[type="checkbox"]');
-                const value = JE.currentSettings[row.dataset.catKey];
-                if (input && typeof value === 'boolean') input.checked = value;
-            });
-            document.querySelectorAll('[data-quality-display-key]').forEach(select => { select.value = ''; });
-            if (lowSourceToggle && typeof JE.currentSettings.showLowQualitySourceTag === 'boolean') lowSourceToggle.checked = JE.currentSettings.showLowQualitySourceTag;
-            if (aggregationSelect) aggregationSelect.value = '';
-            if (qualitySubGroup) {
-                const orderOf = (r) => Number(JE.currentSettings[r.dataset.orderKey]) || Number(r.dataset.defaultOrder) || 0;
-                const rows = Array.from(qualitySubGroup.querySelectorAll('.je-quality-cat-row'));
-                rows.sort((a, b) => (orderOf(a) - orderOf(b)) || (Number(a.dataset.defaultOrder) - Number(b.dataset.defaultOrder)))
-                    .forEach(r => qualitySubGroup.appendChild(r));
-                refreshQualityCatArrowStates(qualitySubGroup);
-            }
-            if (JE.currentSettings.qualityTagsEnabled) JE.reinitializeQualityTags?.();
-            JE.reinitializeTagLayout?.();
-            JE.toast(JE.t('toast_quality_tags_follow_server'));
-            resetAutoCloseTimer();
-        });
-
-        const audioLangSelect = document.getElementById('qualityTagsAudioLanguageSelect');
-        if (audioLangSelect) {
-            // The fixed choices exist already; a language is selected once the list loads.
-            const initial = JE.currentSettings.qualityTagsPreferredAudioLanguage || '';
-            if (Array.from(audioLangSelect.options).some(o => o.value === initial)) audioLangSelect.value = initial;
-            (async () => {
-                try {
-                    const cultures = await ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/Localization/Cultures'), dataType: 'json' });
-                    const seen = new Set();
-                    cultures
-                        .map(c => ({ code: c.TwoLetterISOLanguageName || c.ThreeLetterISOLanguageName, name: c.DisplayName || c.Name }))
-                        .filter(o => o.code && o.name && !seen.has(o.code) && seen.add(o.code))
-                        .sort((a, b) => a.name.localeCompare(b.name))
-                        .forEach(({ code, name }) => {
-                            const option = document.createElement('option');
-                            option.value = code;
-                            option.textContent = name;
-                            option.style.background = 'rgba(30,30,30,1)';
-                            option.style.color = '#fff';
-                            audioLangSelect.appendChild(option);
-                        });
-                } catch (err) {
-                    console.warn('🪼 Jellyfin Enhanced: Failed to load audio language options:', err);
-                }
-                // Read the setting only now: the user may have picked one of the
-                // fixed choices while the list was loading.
-                const saved = JE.currentSettings.qualityTagsPreferredAudioLanguage || '';
-                // A saved code the list doesn't offer (e.g. a hand-edited pt-BR) still shows as selected.
-                if (saved && !Array.from(audioLangSelect.options).some(o => o.value === saved)) {
-                    const option = document.createElement('option');
-                    option.value = saved;
-                    option.textContent = saved;
-                    audioLangSelect.appendChild(option);
-                }
-                audioLangSelect.value = saved;
-            })();
-            audioLangSelect.addEventListener('change', (e) => {
-                JE.currentSettings.qualityTagsPreferredAudioLanguage = e.target.value;
-                JE.saveUserSettings('settings.json', JE.currentSettings);
-                if (typeof JE.reinitializeQualityTags === 'function' && JE.currentSettings.qualityTagsEnabled) {
-                    JE.reinitializeQualityTags();
-                }
-                resetAutoCloseTimer();
-            });
-        }
-
-        /**
-         * Updates ↑/↓ button enabled state to reflect each row's position in the list
-         * @param {HTMLElement} group - The container holding the category rows
-         */
-        function refreshQualityCatArrowStates(group) {
-            const rows = group.querySelectorAll('.je-quality-cat-row');
-            rows.forEach((row, idx) => {
-                const upBtn = row.querySelector('.je-cat-up');
-                const downBtn = row.querySelector('.je-cat-down');
-                const isFirst = idx === 0;
-                const isLast = idx === rows.length - 1;
-                if (upBtn) {
-                    upBtn.disabled = isFirst;
-                    upBtn.style.cursor = isFirst ? 'not-allowed' : 'pointer';
-                    upBtn.style.opacity = isFirst ? '0.4' : '1';
-                }
-                if (downBtn) {
-                    downBtn.disabled = isLast;
-                    downBtn.style.cursor = isLast ? 'not-allowed' : 'pointer';
-                    downBtn.style.opacity = isLast ? '0.4' : '1';
-                }
-            });
-        }
-        addSettingToggleListener('genreTagsToggle', 'genreTagsEnabled', 'feature_genre_tags', true);
-        addSettingToggleListener('pauseScreenToggle', 'pauseScreenEnabled', 'feature_custom_pause_screen', true);
-
-        const pauseScreenDelayInput = document.getElementById('pauseScreenDelayInput');
-        if (pauseScreenDelayInput) {
-            // Without this, digit keydowns bubble to the document and Jellyfin's
-            // native player intercepts them as percent-seek shortcuts (0-9)
-            // instead of letting them reach the input.
-            pauseScreenDelayInput.addEventListener('keydown', (e) => e.stopPropagation());
-            pauseScreenDelayInput.addEventListener('change', () => {
-                const val = Math.max(1, Math.min(60, parseInt(pauseScreenDelayInput.value, 10) || 5));
-                pauseScreenDelayInput.value = val;
-                JE.currentSettings.pauseScreenDelaySeconds = val;
-                JE.saveUserSettings('settings.json', JE.currentSettings);
-                // Push the new delay into the already-running pause-screen
-                // instance so it takes effect immediately, without a page reload.
-                if (JE.pauseScreenInstance) {
-                    JE.pauseScreenInstance.pauseScreenDelayMs = val * 1000;
-                }
-            });
-        }
-        addSettingToggleListener('languageTagsToggle', 'languageTagsEnabled', 'feature_language_tags', true);
-        addSettingToggleListener('ratingTagsToggle', 'ratingTagsEnabled', 'feature_rating_tags', true);
-        addSettingToggleListener('ageRatingTagsToggle', 'ageRatingTagsEnabled', 'feature_age_rating_tags', true);
-        addSettingToggleListener('statusTagsToggle', 'statusTagsEnabled', 'feature_status_tags', true);
-        if (document.getElementById('awardsTagsToggle')) addSettingToggleListener('awardsTagsToggle', 'awardsTagsEnabled', 'feature_awards_tags', true);
-        addSettingToggleListener('logoTagsToggle', 'logoTagsEnabled', 'feature_logo_tags', true);
-        addSettingToggleListener('customTagsToggle', 'customTagsEnabled', 'feature_custom_tags', true);
-        addSettingToggleListener('peopleTagsToggle', 'peopleTagsEnabled', 'feature_people_tags', true);
-        addSettingToggleListener('tagsHideOnHoverToggle', 'tagsHideOnHover', 'feature_tags_hide_on_hover', false);
-        // --- Tag layout, label density and edge spacing ---
-        // Either choice promotes a document saved before layouts existed to the
-        // normalized version (its corners, positions, arrival order, full labels
-        // and limits carry over, so only the chosen value changes), then every
-        // card is re-presented from the facts it already holds.
-        const saveTagLayoutSetting = (key, value) => {
-            JE.core?.tagLayout?.promoteLegacySettings(JE.currentSettings);
-            JE.currentSettings[key] = value;
-            JE.currentSettings.tagLayoutSettingsVersion = 1;
-            JE.saveUserSettings('settings.json', JE.currentSettings);
-            if (typeof JE.reinitializeTagLayout === 'function') JE.reinitializeTagLayout();
-            JE.toast(JE.t('toast_tag_layout_updated'));
-            resetAutoCloseTimer();
+        if (JE.currentSettings.qualityTagsEnabled) featureCtx.peer("reinitializeQualityTags")?.();
+        featureCtx.peer("reinitializeTagLayout")?.();
+        JE.toast(JE.t("toast_quality_tags_follow_server"));
+        resetAutoCloseTimer();
+      });
+      const audioLangSelect = selectById("qualityTagsAudioLanguageSelect");
+      if (audioLangSelect) {
+        const savedLanguage = () => {
+          const value = JE.currentSettings.qualityTagsPreferredAudioLanguage;
+          return value ? String(value) : "";
         };
-        // The Media Tags hub's layout tiles and density pills (radio groups).
-        document.getElementById('jeTagLayoutChoice')?.addEventListener('change', (e) => saveTagLayoutSetting('tagLayout', e.target.value));
-        document.getElementById('jeTagDensityChoice')?.addEventListener('change', (e) => saveTagLayoutSetting('tagLabelDensity', e.target.value));
-        document.getElementById('jeTagScaleChoice')?.addEventListener('change', (e) => saveTagLayoutSetting('tagScale', e.target.value));
-        document.getElementById('jeTagGapChoice')?.addEventListener('change', (e) => saveTagLayoutSetting('tagGap', e.target.value));
-        document.getElementById('jeTagEdgeChoice')?.addEventListener('change', (e) => saveTagLayoutSetting('tagEdgeSpacing', e.target.value));
-
-        // --- Tag Styles: user presets ---
-        // The empty choice stores null (follow the admin's preset); the web
-        // stylesheet is re-fetched right away, native posters pick the change
-        // up through the per-user settings digest.
-        document.getElementById('jeTagPresetChoice')?.addEventListener('change', (e) => {
-            JE.currentSettings.tagStylePreset = e.target.value || null;
-            JE.saveUserSettings('settings.json', JE.currentSettings);
-            if (typeof JE.initializeTagStyles === 'function') JE.initializeTagStyles();
-            JE.toast(JE.t('toast_tag_style_preset_updated'));
-            resetAutoCloseTimer();
-        });
-
-        // Live-toggle the body class so hover fade CSS applies immediately (no refresh needed)
-        const hideOnHoverCheckbox = document.getElementById('tagsHideOnHoverToggle');
-        if (hideOnHoverCheckbox) {
-            hideOnHoverCheckbox.addEventListener('change', () => {
-                document.body.classList.toggle('je-tags-hide-on-hover', hideOnHoverCheckbox.checked);
+        const initial = savedLanguage();
+        if (Array.from(audioLangSelect.options).some((o) => o.value === initial)) audioLangSelect.value = initial;
+        (async () => {
+          try {
+            const client = apiClient();
+            const cultures = decodeCultures(await client.ajax({ type: "GET", url: client.getUrl("/Localization/Cultures"), dataType: "json" }));
+            audioLanguageOptions(cultures).forEach(({ code, name }) => {
+              const option = document.createElement("option");
+              option.value = code;
+              option.textContent = name;
+              option.style.background = "rgba(30,30,30,1)";
+              option.style.color = "#fff";
+              audioLangSelect.appendChild(option);
             });
-        }
-        // Rating tag scope (item types / home rows): nested under the master
-        // toggle exactly like the quality-tag categories above.
-        const ratingMasterToggle = document.getElementById('ratingTagsToggle');
-        const ratingSubWrap = document.getElementById('ratingTagsSubWrap');
-        const ratingSubGroup = document.getElementById('ratingTagsSubToggles');
-        const ratingSubExpander = document.getElementById('ratingTagsSubToggleExpander');
-        if (ratingMasterToggle && ratingSubWrap) {
-            ratingMasterToggle.addEventListener('change', () => {
-                ratingSubWrap.style.display = ratingMasterToggle.checked ? 'block' : 'none';
-                if (!ratingMasterToggle.checked && ratingSubGroup && ratingSubExpander) {
-                    ratingSubGroup.style.display = 'none';
-                    ratingSubExpander.setAttribute('aria-expanded', 'false');
-                }
-            });
-        }
-        if (ratingSubExpander && ratingSubGroup) {
-            ratingSubExpander.addEventListener('click', () => {
-                const expanded = ratingSubExpander.getAttribute('aria-expanded') === 'true';
-                ratingSubExpander.setAttribute('aria-expanded', expanded ? 'false' : 'true');
-                ratingSubGroup.style.display = expanded ? 'none' : 'block';
-            });
-        }
-        if (ratingSubGroup) {
-            ratingSubGroup.addEventListener('change', (e) => {
-                const target = e.target;
-                if (!(target instanceof HTMLInputElement) || target.type !== 'checkbox') return;
-                const settingKey = target.closest('.je-quality-cat-row')?.dataset.catKey;
-                if (!settingKey) return;
-                JE.currentSettings[settingKey] = target.checked;
-                JE.saveUserSettings('settings.json', JE.currentSettings);
-                if (typeof JE.reinitializeRatingTags === 'function' && JE.currentSettings.ratingTagsEnabled) {
-                    JE.reinitializeRatingTags();
-                }
-                resetAutoCloseTimer();
-            });
-        }
-        // Status tag badges (Trending / New / Just Added): same nested
-        // sub-toggle pattern as the rating scope above.
-        const statusMasterToggle = document.getElementById('statusTagsToggle');
-        const statusSubWrap = document.getElementById('statusTagsSubWrap');
-        const statusSubGroup = document.getElementById('statusTagsSubToggles');
-        const statusSubExpander = document.getElementById('statusTagsSubToggleExpander');
-        if (statusMasterToggle && statusSubWrap) {
-            statusMasterToggle.addEventListener('change', () => {
-                statusSubWrap.style.display = statusMasterToggle.checked ? 'block' : 'none';
-                if (!statusMasterToggle.checked && statusSubGroup && statusSubExpander) {
-                    statusSubGroup.style.display = 'none';
-                    statusSubExpander.setAttribute('aria-expanded', 'false');
-                }
-            });
-        }
-        if (statusSubExpander && statusSubGroup) {
-            statusSubExpander.addEventListener('click', () => {
-                const expanded = statusSubExpander.getAttribute('aria-expanded') === 'true';
-                statusSubExpander.setAttribute('aria-expanded', expanded ? 'false' : 'true');
-                statusSubGroup.style.display = expanded ? 'none' : 'block';
-            });
-        }
-        if (statusSubGroup) {
-            statusSubGroup.addEventListener('change', (e) => {
-                const target = e.target;
-                if (!(target instanceof HTMLInputElement) || target.type !== 'checkbox') return;
-                const settingKey = target.closest('.je-quality-cat-row')?.dataset.catKey;
-                if (!settingKey) return;
-                JE.currentSettings[settingKey] = target.checked;
-                JE.saveUserSettings('settings.json', JE.currentSettings);
-                if (typeof JE.reinitializeStatusTags === 'function' && JE.currentSettings.statusTagsEnabled) {
-                    JE.reinitializeStatusTags();
-                }
-                resetAutoCloseTimer();
-            });
-        }
-        addSettingToggleListener('disableCustomSubtitleStyles', 'disableCustomSubtitleStyles', 'feature_disable_custom_subtitle_styles', true);
-        addSettingToggleListener('longPress2xEnabled', 'longPress2xEnabled', 'feature_long_press_2x_speed');
-
-        // --- Dynamic subtitle-styling warnings ---
-        // Both warnings only matter when JE's custom subtitle styling is actually
-        // in play (disableCustomSubtitleStyles off) -- otherwise nothing is being
-        // applied and flagging why it "wouldn't work" is just noise.
-        // Position only takes effect when Jellyfin's own subtitle appearance is set
-        // to "Custom" (native player settings write that choice to localStorage
-        // per-user) -- non-Custom mode renders native browser ::cue captions instead
-        // of the repositionable .videoSubtitles container. Color/font/size still
-        // apply either way (JE styles both .videoSubtitlesInner and ::cue), so only
-        // the position note needs to flag the missing setting.
-        (function wireSubtitleStylingWarnings() {
-            const positionNote = document.getElementById('je-subtitle-position-note');
-            const formatWarning = document.getElementById('je-subtitle-format-warning');
-            if (!positionNote && !formatWarning) return;
-
-            const disableStylesCheckbox = document.getElementById('disableCustomSubtitleStyles');
-            const stylesEnabled = () => !JE.currentSettings.disableCustomSubtitleStyles;
-
-            // Read once, when the panel opens -- this setting doesn't change while
-            // the panel is up, so there's no need to re-read localStorage on every
-            // DOM mutation.
-            if (positionNote) {
-                let appearance = null;
-                try {
-                    const userId = ApiClient.getCurrentUserId?.();
-                    const raw = userId && localStorage.getItem(`${userId}-localplayersubtitleappearance3`);
-                    appearance = raw ? JSON.parse(raw) : null;
-                } catch (e) { /* ignore, treat as not-custom */ }
-                const isCustom = appearance?.subtitleStyling === 'Custom';
-
-                const applyPositionNoteState = () => {
-                    positionNote.style.display = (stylesEnabled() && !isCustom) ? 'flex' : 'none';
-                };
-                applyPositionNoteState();
-                if (disableStylesCheckbox) disableStylesCheckbox.addEventListener('change', applyPositionNoteState);
-            }
-
-            // Bitmap/graphical subtitle formats (ASS/SSA, PGS, VobSub, DVB) never
-            // pass through the styled .videoSubtitlesInner text node -- they either
-            // render to their own canvas client-side, or get burned directly into
-            // the video pixels by a server-side transcode when the client can't
-            // render them (confirmed live: a PGS track here shows up as
-            // TranscodeReasons: ["SubtitleCodecNotSupported", ...] with no DOM
-            // element at all). Checked once against the live playback session
-            // rather than polled, since it's a network call, not a cheap read.
-            if (formatWarning) {
-                const NON_TEXT_CODECS = new Set(['ass', 'ssa', 'pgssub', 'pgs', 'dvdsub', 'dvbsub', 'vobsub']);
-                (async () => {
-                    let isUnsupportedFormat = false;
-                    try {
-                        const userId = ApiClient.getCurrentUserId?.();
-                        const sessions = userId ? await ApiClient.getSessions({ ControllableByUserId: userId }) : [];
-                        const session = sessions.find(s => s.NowPlayingItem);
-                        const streams = session?.NowPlayingItem?.MediaStreams || [];
-                        const activeIndex = session?.PlayState?.SubtitleStreamIndex;
-                        const activeStream = activeIndex != null
-                            ? streams.find(s => s.Type === 'Subtitle' && s.Index === activeIndex)
-                            : null;
-                        isUnsupportedFormat = !!activeStream && NON_TEXT_CODECS.has((activeStream.Codec || '').toLowerCase());
-                    } catch (e) { /* leave hidden on failure */ }
-
-                    const applyFormatWarningState = () => {
-                        formatWarning.style.display = (stylesEnabled() && isUnsupportedFormat) ? 'flex' : 'none';
-                    };
-                    applyFormatWarningState();
-                    if (disableStylesCheckbox) disableStylesCheckbox.addEventListener('change', applyFormatWarningState);
-                })();
-            }
+          } catch (err) {
+            console.warn("🪼 Jellyfin Enhanced: Failed to load audio language options:", err);
+          }
+          const saved = savedLanguage();
+          if (saved && !Array.from(audioLangSelect.options).some((o) => o.value === saved)) {
+            const option = document.createElement("option");
+            option.value = saved;
+            option.textContent = saved;
+            audioLangSelect.appendChild(option);
+          }
+          audioLangSelect.value = saved;
         })();
-
-        // Keeps the two panel previews showing the same text effect as the video.
-        const syncPreviewTextShadow = (bgColor) => {
-            const shadow = JE.getSubtitleTextShadow(bgColor);
-            ['subtitleColorPreview', 'subtitlePositionPreview'].forEach(id => {
-                const el = document.getElementById(id);
-                if (el) el.style.textShadow = shadow;
-            });
-        };
-        internal.syncSubtitlePreviewTextShadow = syncPreviewTextShadow;
-
-        // Inline custom subtitle color pickers
-        const customTextColorPicker = document.getElementById('customSubtitleTextColorPicker');
-        const customTextAlpha = document.getElementById('customSubtitleTextAlpha');
-        const customBgColorPicker = document.getElementById('customSubtitleBgColorPicker');
-        const customBgAlpha = document.getElementById('customSubtitleBgAlpha');
-
-        const updateCustomSubtitleColors = () => {
-            const textColor = customTextColorPicker.value + parseInt(customTextAlpha.value).toString(16).padStart(2, '0').toUpperCase();
-            const bgColor = customBgColorPicker.value + parseInt(customBgAlpha.value).toString(16).padStart(2, '0').toUpperCase();
-
-            JE.currentSettings.customSubtitleTextColor = textColor;
-            JE.currentSettings.customSubtitleBgColor = bgColor;
-            JE.currentSettings.usingCustomColors = true;
-
-            // Remove border from all style presets
-            const styleContainer = document.getElementById('subtitle-style-presets-container');
-            if (styleContainer) {
-                styleContainer.querySelectorAll('.preset-box').forEach(box => {
-                    box.style.setProperty('border', '2px solid transparent', 'important');
-                });
-            }
-
-            // Update live preview
-            const preview = document.getElementById('subtitleColorPreview');
-            if (preview) {
-                preview.style.color = textColor;
-                preview.style.backgroundColor = bgColor;
-            }
-            const posPreviewEl = document.getElementById('subtitlePositionPreview');
-            if (posPreviewEl) {
-                posPreviewEl.style.color = textColor;
-                posPreviewEl.style.backgroundColor = bgColor;
-            }
-            syncPreviewTextShadow(bgColor);
-
-            JE.saveUserSettings('settings.json', JE.currentSettings);
-            JE.applySavedStylesWhenReady();
-            resetAutoCloseTimer();
-        };
-
-        if (customTextColorPicker) customTextColorPicker.addEventListener('input', updateCustomSubtitleColors);
-        if (customTextAlpha) customTextAlpha.addEventListener('input', updateCustomSubtitleColors);
-        if (customBgColorPicker) customBgColorPicker.addEventListener('input', updateCustomSubtitleColors);
-        if (customBgAlpha) customBgAlpha.addEventListener('input', updateCustomSubtitleColors);
-
-        // --- Subtitle position drag grid ---
-        const posGrid = document.getElementById('subtitlePositionGrid');
-        const posPreview = document.getElementById('subtitlePositionPreview');
-        const posResetBtn = document.getElementById('subtitlePositionReset');
-
-        if (posGrid) {
-            const updatePosition = (xPct, yPct) => {
-                xPct = Math.max(2, Math.min(98, xPct));
-                yPct = Math.max(2, Math.min(98, yPct));
-                if (posPreview) {
-                    posPreview.style.left = `${xPct}%`;
-                    posPreview.style.top = 'auto';
-                    posPreview.style.bottom = `${100 - yPct}%`;
-                }
-                JE.currentSettings.subtitleHorizontalPosition = Math.round(xPct);
-                JE.currentSettings.subtitleVerticalPosition = Math.round(yPct);
-                if (typeof JE.applySubtitlePosition === 'function') JE.applySubtitlePosition();
-            };
-
-            const getPctFromEvent = (e) => {
-                const rect = posGrid.getBoundingClientRect();
-                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-                return {
-                    x: ((clientX - rect.left) / rect.width) * 100,
-                    y: ((clientY - rect.top) / rect.height) * 100
-                };
-            };
-
-            let dragging = false;
-
-            posGrid.addEventListener('mousedown', (e) => {
-                const { x, y } = getPctFromEvent(e);
-                updatePosition(x, y);
-                dragging = true;
-                e.preventDefault();
-            });
-
-            document.addEventListener('mousemove', (e) => {
-                if (!dragging) return;
-                const { x, y } = getPctFromEvent(e);
-                updatePosition(x, y);
-                resetAutoCloseTimer();
-            });
-
-            document.addEventListener('mouseup', () => {
-                if (!dragging) return;
-                dragging = false;
-                JE.saveUserSettings('settings.json', JE.currentSettings);
-            });
-
-            posGrid.addEventListener('touchstart', (e) => {
-                const { x, y } = getPctFromEvent(e);
-                updatePosition(x, y);
-                dragging = true;
-                e.preventDefault();
-            }, { passive: false });
-
-            document.addEventListener('touchmove', (e) => {
-                if (!dragging) return;
-                const { x, y } = getPctFromEvent(e);
-                updatePosition(x, y);
-                resetAutoCloseTimer();
-            }, { passive: true });
-
-            document.addEventListener('touchend', () => {
-                if (!dragging) return;
-                dragging = false;
-                JE.saveUserSettings('settings.json', JE.currentSettings);
-            });
-        }
-
-        if (posResetBtn) {
-            posResetBtn.addEventListener('click', () => {
-                JE.currentSettings.subtitleHorizontalPosition = 50;
-                JE.currentSettings.subtitleVerticalPosition = 95;
-                if (posPreview) { posPreview.style.left = '50%'; posPreview.style.top = 'auto'; posPreview.style.bottom = '5%'; }
-                if (typeof JE.applySubtitlePosition === 'function') JE.applySubtitlePosition();
-                JE.saveUserSettings('settings.json', JE.currentSettings);
-                resetAutoCloseTimer();
-            });
-        }
-    };
-
-    /**
-     * Wires the remaining panel controls: random-button item types, the
-     * release-notes button, tag position selectors and subtitle preset grids.
-     * @param {object} ctx Shared panel context assembled in ui-panel.js.
-     */
-    internal.wireMiscSettingsControls = function(ctx) {
-        const { primaryAccentColor, resetAutoCloseTimer } = ctx;
-
-        document.getElementById('randomIncludeMovies').addEventListener('change', (e) => { if (!e.target.checked && !document.getElementById('randomIncludeShows').checked) { e.target.checked = true; JE.toast(JE.t('toast_at_least_one_item_type')); return; } JE.currentSettings.randomIncludeMovies = e.target.checked; JE.saveUserSettings('settings.json', JE.currentSettings); JE.toast(JE.t('toast_random_selection_status', { item_type: 'Movies', status: e.target.checked ? JE.t('selection_included') : JE.t('selection_excluded') })); resetAutoCloseTimer(); });
-        document.getElementById('randomIncludeShows').addEventListener('change', (e) => { if (!e.target.checked && !document.getElementById('randomIncludeMovies').checked) { e.target.checked = true; JE.toast(JE.t('toast_at_least_one_item_type')); return; } JE.currentSettings.randomIncludeShows = e.target.checked; JE.saveUserSettings('settings.json', JE.currentSettings); JE.toast(JE.t('toast_random_selection_status', { item_type: 'Shows', status: e.target.checked ? JE.t('selection_included') : JE.t('selection_excluded') })); resetAutoCloseTimer(); });
-
-        // Random source picker: lists the user's playlists and collections; '' = whole library.
-        const sourceSelect = document.getElementById('randomSourceSelect');
-        if (sourceSelect) {
-            const savedId = JE.currentSettings.randomSourceId || '';
-            const userId = ApiClient.getCurrentUserId();
-            ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl(`/Users/${userId}/Items?IncludeItemTypes=Playlist,BoxSet&Recursive=true&SortBy=SortName`), dataType: 'json' })
-                .then(async response => {
-                    if (!sourceSelect.isConnected) return; // panel closed before the list arrived
-                    const groups = { Playlist: 'panel_settings_random_button_source_playlists', BoxSet: 'panel_settings_random_button_source_collections' };
-                    for (const [type, labelKey] of Object.entries(groups)) {
-                        const items = (response?.Items || []).filter(item => item.Type === type);
-                        if (items.length === 0) continue;
-                        const group = document.createElement('optgroup');
-                        group.label = JE.t(labelKey);
-                        items.forEach(item => group.appendChild(new Option(item.Name, item.Id, false, item.Id === savedId)));
-                        sourceSelect.appendChild(group);
-                    }
-                    // A saved source missing from the list is either gone (show why picks fall back) or
-                    // still readable but filtered out of lists, e.g. hidden with Hidden Content, in which
-                    // case the button still draws from it, so show its real name.
-                    if (savedId && sourceSelect.value !== savedId) {
-                        const saved = await ApiClient.getItem(userId, savedId).catch(() => null);
-                        if (!sourceSelect.isConnected || JE.currentSettings.randomSourceId !== savedId) return;
-                        const label = saved && ['Playlist', 'BoxSet'].includes(saved.Type)
-                            ? saved.Name
-                            : JE.t('panel_settings_random_button_source_missing');
-                        sourceSelect.appendChild(new Option(label, savedId, false, true));
-                    }
-                })
-                .catch(err => console.warn('🪼 Jellyfin Enhanced: Could not list playlists for the random source picker', err));
-            sourceSelect.addEventListener('change', (e) => {
-                JE.currentSettings.randomSourceId = e.target.value;
-                JE.saveUserSettings('settings.json', JE.currentSettings);
-                JE.toast(JE.t('toast_random_source_set', { name: JE.escapeHtml(e.target.selectedOptions[0]?.textContent || '') }));
-                resetAutoCloseTimer();
-            });
-        }
-
-        document.getElementById('releaseNotesBtn').addEventListener('click', async () => {
-            // Release this dialog's focus boundary before opening the secondary modal.
-            ctx.closePanel();
-            await showReleaseNotesNotification();
+        audioLangSelect.addEventListener("change", () => {
+          JE.currentSettings.qualityTagsPreferredAudioLanguage = audioLangSelect.value;
+          JE.saveUserSettings("settings.json", JE.currentSettings);
+          const reinitQuality = featureCtx.peer("reinitializeQualityTags");
+          if (typeof reinitQuality === "function" && JE.currentSettings.qualityTagsEnabled) {
+            reinitQuality();
+          }
+          resetAutoCloseTimer();
         });
-
-        const setupPresetHandlers = (containerId, presets, type) => {
-            const container = document.getElementById(containerId);
-            if (!container) return;
-
-            container.addEventListener('click', (e) => {
-                const presetBox = e.target.closest(`.${type}-preset`);
-                if (!presetBox) return;
-
-                const presetIndex = parseInt(presetBox.dataset.presetIndex, 10);
-                const selectedPreset = presets[presetIndex];
-
-                if (selectedPreset) {
-                    if (type === 'style') {
-                        JE.currentSettings.selectedStylePresetIndex = presetIndex;
-                        JE.currentSettings.usingCustomColors = false;
-                        JE.currentSettings.customSubtitleTextColor = selectedPreset.textColor;
-                        JE.currentSettings.customSubtitleBgColor = selectedPreset.bgColor;
-
-                        // Update UI inputs
-                        const textColorPicker = document.getElementById('customSubtitleTextColorPicker');
-                        const textAlphaSlider = document.getElementById('customSubtitleTextAlpha');
-                        const bgColorPicker = document.getElementById('customSubtitleBgColorPicker');
-                        const bgAlphaSlider = document.getElementById('customSubtitleBgAlpha');
-                        const preview = document.getElementById('subtitleColorPreview');
-
-                        if (textColorPicker && textAlphaSlider) {
-                            const decodedText = JE.decodeSubtitleColor(selectedPreset.textColor, { fallbackSwatch: '#FFFFFF', fallbackAlphaValue: 255 });
-                            textColorPicker.value = decodedText.swatch;
-                            textAlphaSlider.value = decodedText.alphaValue;
-                        }
-                        if (bgColorPicker && bgAlphaSlider) {
-                            const decodedBg = JE.decodeSubtitleColor(selectedPreset.bgColor, { fallbackSwatch: '#000000', fallbackAlphaValue: 0 });
-                            bgColorPicker.value = decodedBg.swatch;
-                            bgAlphaSlider.value = decodedBg.alphaValue;
-                        }
-                        if (preview) {
-                            preview.style.color = selectedPreset.textColor;
-                            preview.style.backgroundColor = selectedPreset.bgColor;
-                        }
-                        const posPreviewEl = document.getElementById('subtitlePositionPreview');
-                        if (posPreviewEl) {
-                            posPreviewEl.style.color = selectedPreset.textColor;
-                            posPreviewEl.style.backgroundColor = selectedPreset.bgColor;
-                        }
-
-                        const fontSizeIndex = JE.currentSettings.selectedFontSizePresetIndex ?? 2;
-                        const fontFamilyIndex = JE.currentSettings.selectedFontFamilyPresetIndex ?? 0;
-                        const fontSize = JE.fontSizePresets[fontSizeIndex].size;
-                        const fontFamily = JE.fontFamilyPresets[fontFamilyIndex].family;
-                        updatePositionPreviewFont(JE.fontSizePresets[fontSizeIndex], JE.fontFamilyPresets[fontFamilyIndex]);
-                        internal.syncSubtitlePreviewTextShadow?.(selectedPreset.bgColor);
-                        JE.applySubtitleStyles(selectedPreset.textColor, selectedPreset.bgColor, fontSize, fontFamily, JE.getSubtitleTextShadow(selectedPreset.bgColor));
-                        JE.toast(JE.t('toast_subtitle_style', { style: selectedPreset.name }));
-                    } else if (type === 'font-size') {
-                        JE.currentSettings.selectedFontSizePresetIndex = presetIndex;
-                        const fontFamilyIndex = JE.currentSettings.selectedFontFamilyPresetIndex ?? 0;
-                        const fontFamily = JE.fontFamilyPresets[fontFamilyIndex].family;
-
-                        // Use saved custom colors
-                        const textColor = JE.currentSettings.customSubtitleTextColor || '#FFFFFFFF';
-                        const bgColor = JE.currentSettings.customSubtitleBgColor || '#00000000';
-                        const textShadow = JE.getSubtitleTextShadow(bgColor);
-
-                        updatePositionPreviewFont(selectedPreset, JE.fontFamilyPresets[fontFamilyIndex]);
-                        JE.applySubtitleStyles(textColor, bgColor, selectedPreset.size, fontFamily, textShadow);
-                        JE.toast(JE.t('toast_subtitle_size', { size: selectedPreset.name }));
-                    } else if (type === 'font-family') {
-                        JE.currentSettings.selectedFontFamilyPresetIndex = presetIndex;
-                        const fontSizeIndex = JE.currentSettings.selectedFontSizePresetIndex ?? 2;
-                        const fontSize = JE.fontSizePresets[fontSizeIndex].size;
-
-                        // Use saved custom colors
-                        const textColor = JE.currentSettings.customSubtitleTextColor || '#FFFFFFFF';
-                        const bgColor = JE.currentSettings.customSubtitleBgColor || '#00000000';
-                        const textShadow = JE.getSubtitleTextShadow(bgColor);
-
-                        updatePositionPreviewFont(JE.fontSizePresets[fontSizeIndex], selectedPreset);
-                        JE.applySubtitleStyles(textColor, bgColor, fontSize, selectedPreset.family, textShadow);
-                        JE.toast(JE.t('toast_subtitle_font', { font: selectedPreset.name }));
-                    } else if (type === 'text-effect') {
-                        JE.currentSettings.selectedTextEffectPresetIndex = presetIndex;
-                        const fontSizeIndex = JE.currentSettings.selectedFontSizePresetIndex ?? 2;
-                        const fontFamilyIndex = JE.currentSettings.selectedFontFamilyPresetIndex ?? 0;
-                        const fontSize = JE.fontSizePresets[fontSizeIndex].size;
-                        const fontFamily = JE.fontFamilyPresets[fontFamilyIndex].family;
-
-                        // Use saved custom colors
-                        const textColor = JE.currentSettings.customSubtitleTextColor || '#FFFFFFFF';
-                        const bgColor = JE.currentSettings.customSubtitleBgColor || '#00000000';
-
-                        internal.syncSubtitlePreviewTextShadow?.(bgColor);
-                        JE.applySubtitleStyles(textColor, bgColor, fontSize, fontFamily, JE.getSubtitleTextShadow(bgColor, presetIndex));
-                        JE.toast(JE.t('toast_subtitle_text_effect', { effect: selectedPreset.name }));
-                    }
-
-                    JE.saveUserSettings('settings.json', JE.currentSettings);
-                    container.querySelectorAll('.preset-box').forEach(box => {
-                        box.style.setProperty('border', '2px solid transparent', 'important');
-                    });
-                    presetBox.style.setProperty('border', `2px solid ${primaryAccentColor}`, 'important');
-                    resetAutoCloseTimer();
-                }
-            });
-
-            let currentIndex;
-            if (type === 'style') {
-                currentIndex = JE.currentSettings.selectedStylePresetIndex ?? 0;
-                // Only highlight if not using custom colors
-                if (!JE.currentSettings.usingCustomColors) {
-                    const activeBox = container.querySelector(`[data-preset-index="${currentIndex}"]`);
-                    if (activeBox) {
-                        activeBox.style.setProperty('border', `2px solid ${primaryAccentColor}`, 'important');
-                    }
-                }
-            } else if (type === 'font-size') {
-                currentIndex = JE.currentSettings.selectedFontSizePresetIndex ?? 2;
-                const activeBox = container.querySelector(`[data-preset-index="${currentIndex}"]`);
-                if (activeBox) {
-                    activeBox.style.setProperty('border', `2px solid ${primaryAccentColor}`, 'important');
-                }
-            } else if (type === 'font-family') {
-                currentIndex = JE.currentSettings.selectedFontFamilyPresetIndex ?? 0;
-                const activeBox = container.querySelector(`[data-preset-index="${currentIndex}"]`);
-                if (activeBox) {
-                    activeBox.style.setProperty('border', `2px solid ${primaryAccentColor}`, 'important');
-                }
-            } else if (type === 'text-effect') {
-                currentIndex = JE.currentSettings.selectedTextEffectPresetIndex;
-                // An unknown index renders as Auto (see JE.getSubtitleTextShadow), so highlight that.
-                if (!Number.isInteger(currentIndex) || !JE.subtitleTextEffectPresets[currentIndex]) currentIndex = 0;
-                const activeBox = container.querySelector(`[data-preset-index="${currentIndex}"]`);
-                if (activeBox) {
-                    activeBox.style.setProperty('border', `2px solid ${primaryAccentColor}`, 'important');
-                }
+      }
+      addSettingToggleListener("genreTagsToggle", "genreTagsEnabled", "feature_genre_tags", true);
+      addSettingToggleListener("pauseScreenToggle", "pauseScreenEnabled", "feature_custom_pause_screen", true);
+      const pauseScreenDelayInput = document.getElementById("pauseScreenDelayInput");
+      if (pauseScreenDelayInput instanceof HTMLInputElement) {
+        pauseScreenDelayInput.addEventListener("keydown", (e) => e.stopPropagation());
+        pauseScreenDelayInput.addEventListener("change", () => {
+          const val = clampPauseDelay(pauseScreenDelayInput.value);
+          pauseScreenDelayInput.value = String(val);
+          JE.currentSettings.pauseScreenDelaySeconds = val;
+          JE.saveUserSettings("settings.json", JE.currentSettings);
+          if (JE.pauseScreenInstance) {
+            JE.pauseScreenInstance.pauseScreenDelayMs = val * 1e3;
+          }
+        });
+      }
+      addSettingToggleListener("languageTagsToggle", "languageTagsEnabled", "feature_language_tags", true);
+      addSettingToggleListener("ratingTagsToggle", "ratingTagsEnabled", "feature_rating_tags", true);
+      addSettingToggleListener("ageRatingTagsToggle", "ageRatingTagsEnabled", "feature_age_rating_tags", true);
+      addSettingToggleListener("statusTagsToggle", "statusTagsEnabled", "feature_status_tags", true);
+      if (document.getElementById("awardsTagsToggle")) addSettingToggleListener("awardsTagsToggle", "awardsTagsEnabled", "feature_awards_tags", true);
+      addSettingToggleListener("logoTagsToggle", "logoTagsEnabled", "feature_logo_tags", true);
+      addSettingToggleListener("customTagsToggle", "customTagsEnabled", "feature_custom_tags", true);
+      addSettingToggleListener("peopleTagsToggle", "peopleTagsEnabled", "feature_people_tags", true);
+      addSettingToggleListener("tagsHideOnHoverToggle", "tagsHideOnHover", "feature_tags_hide_on_hover", false);
+      const saveTagLayoutSetting = (key, value) => {
+        JE.core?.tagLayout?.promoteLegacySettings(JE.currentSettings);
+        JE.currentSettings[key] = value;
+        JE.currentSettings.tagLayoutSettingsVersion = 1;
+        JE.saveUserSettings("settings.json", JE.currentSettings);
+        const peerFn = featureCtx.peer("reinitializeTagLayout");
+        if (typeof peerFn === "function") peerFn();
+        JE.toast(JE.t("toast_tag_layout_updated"));
+        resetAutoCloseTimer();
+      };
+      document.getElementById("jeTagLayoutChoice")?.addEventListener("change", (e) => saveTagLayoutSetting("tagLayout", controlValue(e.target)));
+      document.getElementById("jeTagDensityChoice")?.addEventListener("change", (e) => saveTagLayoutSetting("tagLabelDensity", controlValue(e.target)));
+      document.getElementById("jeTagScaleChoice")?.addEventListener("change", (e) => saveTagLayoutSetting("tagScale", controlValue(e.target)));
+      document.getElementById("jeTagGapChoice")?.addEventListener("change", (e) => saveTagLayoutSetting("tagGap", controlValue(e.target)));
+      document.getElementById("jeTagEdgeChoice")?.addEventListener("change", (e) => saveTagLayoutSetting("tagEdgeSpacing", controlValue(e.target)));
+      document.getElementById("jeTagPresetChoice")?.addEventListener("change", (e) => {
+        JE.currentSettings.tagStylePreset = controlValue(e.target) || null;
+        JE.saveUserSettings("settings.json", JE.currentSettings);
+        const peerFn = featureCtx.peer("initializeTagStyles");
+        if (typeof peerFn === "function") peerFn();
+        JE.toast(JE.t("toast_tag_style_preset_updated"));
+        resetAutoCloseTimer();
+      });
+      const hideOnHoverCheckbox = inputById("tagsHideOnHoverToggle");
+      if (hideOnHoverCheckbox) {
+        hideOnHoverCheckbox.addEventListener("change", () => {
+          document.body.classList.toggle("je-tags-hide-on-hover", hideOnHoverCheckbox.checked);
+        });
+      }
+      const wireCatKeyToggles = (group, enabledKey, reinitialize) => {
+        if (!group) return;
+        group.addEventListener("change", (e) => {
+          const target = e.target;
+          if (!(target instanceof HTMLInputElement) || target.type !== "checkbox") return;
+          const row = target.closest(".je-quality-cat-row");
+          const settingKey = row instanceof HTMLElement ? row.dataset.catKey : void 0;
+          if (!settingKey) return;
+          JE.currentSettings[settingKey] = target.checked;
+          JE.saveUserSettings("settings.json", JE.currentSettings);
+          if (JE.currentSettings[enabledKey]) reinitialize();
+          resetAutoCloseTimer();
+        });
+      };
+      wireCatKeyToggles(
+        wireNestedList("ratingTagsToggle", "ratingTagsSubWrap", "ratingTagsSubToggles", "ratingTagsSubToggleExpander"),
+        "ratingTagsEnabled",
+        () => {
+          const peerFn = featureCtx.peer("reinitializeRatingTags");
+          if (typeof peerFn === "function") peerFn();
+        }
+      );
+      wireCatKeyToggles(
+        wireNestedList("statusTagsToggle", "statusTagsSubWrap", "statusTagsSubToggles", "statusTagsSubToggleExpander"),
+        "statusTagsEnabled",
+        () => {
+          const peerFn = featureCtx.peer("reinitializeStatusTags");
+          if (typeof peerFn === "function") peerFn();
+        }
+      );
+      addSettingToggleListener("disableCustomSubtitleStyles", "disableCustomSubtitleStyles", "feature_disable_custom_subtitle_styles", true);
+      addSettingToggleListener("longPress2xEnabled", "longPress2xEnabled", "feature_long_press_2x_speed");
+      (function wireSubtitleStylingWarnings() {
+        const positionNote = document.getElementById("je-subtitle-position-note");
+        const formatWarning = document.getElementById("je-subtitle-format-warning");
+        if (!positionNote && !formatWarning) return;
+        const disableStylesCheckbox = document.getElementById("disableCustomSubtitleStyles");
+        const stylesEnabled = () => !JE.currentSettings.disableCustomSubtitleStyles;
+        if (positionNote) {
+          let isCustom = false;
+          try {
+            const userId = optionalApiClient()?.getCurrentUserId?.();
+            const raw = userId && localStorage.getItem(`${userId}-localplayersubtitleappearance3`);
+            const appearance = raw ? JSON.parse(raw) : null;
+            isCustom = appearance !== null && typeof appearance === "object" && Reflect.get(appearance, "subtitleStyling") === "Custom";
+          } catch {
+          }
+          const applyPositionNoteState = () => {
+            positionNote.style.display = stylesEnabled() && !isCustom ? "flex" : "none";
+          };
+          applyPositionNoteState();
+          if (disableStylesCheckbox) disableStylesCheckbox.addEventListener("change", applyPositionNoteState);
+        }
+        if (formatWarning) {
+          (async () => {
+            let isUnsupportedFormat = false;
+            try {
+              const client = apiClient();
+              const userId = client.getCurrentUserId?.();
+              const sessions = userId ? await client.getSessions({ ControllableByUserId: userId }) : [];
+              isUnsupportedFormat = activeSubtitleIsBitmap(sessions);
+            } catch {
             }
+            const applyFormatWarningState = () => {
+              formatWarning.style.display = stylesEnabled() && isUnsupportedFormat ? "flex" : "none";
+            };
+            applyFormatWarningState();
+            if (disableStylesCheckbox) disableStylesCheckbox.addEventListener("change", applyFormatWarningState);
+          })();
+        }
+      })();
+      const syncPreviewTextShadow = (bgColor) => {
+        const shadow = JE.getSubtitleTextShadow(bgColor);
+        ["subtitleColorPreview", "subtitlePositionPreview"].forEach((id) => {
+          const el = document.getElementById(id);
+          if (el) el.style.textShadow = shadow;
+        });
+      };
+      internal.syncSubtitlePreviewTextShadow = syncPreviewTextShadow;
+      const customTextColorPicker = inputById("customSubtitleTextColorPicker");
+      const customTextAlpha = inputById("customSubtitleTextAlpha");
+      const customBgColorPicker = inputById("customSubtitleBgColorPicker");
+      const customBgAlpha = inputById("customSubtitleBgAlpha");
+      const updateCustomSubtitleColors = () => {
+        if (!customTextColorPicker || !customTextAlpha || !customBgColorPicker || !customBgAlpha) {
+          throw new TypeError("The custom subtitle colour controls are incomplete");
+        }
+        const textColor = colorWithAlpha(customTextColorPicker.value, customTextAlpha.value);
+        const bgColor = colorWithAlpha(customBgColorPicker.value, customBgAlpha.value);
+        JE.currentSettings.customSubtitleTextColor = textColor;
+        JE.currentSettings.customSubtitleBgColor = bgColor;
+        JE.currentSettings.usingCustomColors = true;
+        const styleContainer = document.getElementById("subtitle-style-presets-container");
+        if (styleContainer) {
+          queryElements(styleContainer, ".preset-box").forEach((box) => {
+            box.style.setProperty("border", "2px solid transparent", "important");
+          });
+        }
+        const preview = document.getElementById("subtitleColorPreview");
+        if (preview) {
+          preview.style.color = textColor;
+          preview.style.backgroundColor = bgColor;
+        }
+        const posPreviewEl = document.getElementById("subtitlePositionPreview");
+        if (posPreviewEl) {
+          posPreviewEl.style.color = textColor;
+          posPreviewEl.style.backgroundColor = bgColor;
+        }
+        syncPreviewTextShadow(bgColor);
+        JE.saveUserSettings("settings.json", JE.currentSettings);
+        JE.applySavedStylesWhenReady();
+        resetAutoCloseTimer();
+      };
+      if (customTextColorPicker) customTextColorPicker.addEventListener("input", updateCustomSubtitleColors);
+      if (customTextAlpha) customTextAlpha.addEventListener("input", updateCustomSubtitleColors);
+      if (customBgColorPicker) customBgColorPicker.addEventListener("input", updateCustomSubtitleColors);
+      if (customBgAlpha) customBgAlpha.addEventListener("input", updateCustomSubtitleColors);
+      const posGrid = document.getElementById("subtitlePositionGrid");
+      const posPreview = document.getElementById("subtitlePositionPreview");
+      const posResetBtn = document.getElementById("subtitlePositionReset");
+      if (posGrid) {
+        const updatePosition = (rawX, rawY) => {
+          const xPct = clampPosition(rawX);
+          const yPct = clampPosition(rawY);
+          if (posPreview) {
+            posPreview.style.left = `${xPct}%`;
+            posPreview.style.top = "auto";
+            posPreview.style.bottom = `${100 - yPct}%`;
+          }
+          JE.currentSettings.subtitleHorizontalPosition = Math.round(xPct);
+          JE.currentSettings.subtitleVerticalPosition = Math.round(yPct);
+          if (typeof JE.applySubtitlePosition === "function") JE.applySubtitlePosition();
         };
-
-        setupPresetHandlers('subtitle-style-presets-container', JE.subtitlePresets, 'style');
-        setupPresetHandlers('font-size-presets-container', JE.fontSizePresets, 'font-size');
-        setupPresetHandlers('font-family-presets-container', JE.fontFamilyPresets, 'font-family');
-        setupPresetHandlers('text-effect-presets-container', JE.subtitleTextEffectPresets, 'text-effect');
+        const pctFrom = (clientX, clientY) => {
+          const rect = posGrid.getBoundingClientRect();
+          return {
+            x: (clientX - rect.left) / rect.width * 100,
+            y: (clientY - rect.top) / rect.height * 100
+          };
+        };
+        const pctFromTouch = (e) => {
+          const touch = e.touches[0];
+          return touch ? pctFrom(touch.clientX, touch.clientY) : null;
+        };
+        let dragging = false;
+        posGrid.addEventListener("mousedown", (e) => {
+          const { x, y } = pctFrom(e.clientX, e.clientY);
+          updatePosition(x, y);
+          dragging = true;
+          e.preventDefault();
+        });
+        const onMouseMove = (e) => {
+          if (!dragging) return;
+          const { x, y } = pctFrom(e.clientX, e.clientY);
+          updatePosition(x, y);
+          resetAutoCloseTimer();
+        };
+        const endDrag = () => {
+          if (!dragging) return;
+          dragging = false;
+          JE.saveUserSettings("settings.json", JE.currentSettings);
+        };
+        posGrid.addEventListener("touchstart", (e) => {
+          const at = pctFromTouch(e);
+          if (at) updatePosition(at.x, at.y);
+          dragging = true;
+          e.preventDefault();
+        }, { passive: false });
+        const onTouchMove = (e) => {
+          if (!dragging) return;
+          const at = pctFromTouch(e);
+          if (at) updatePosition(at.x, at.y);
+          resetAutoCloseTimer();
+        };
+        document.addEventListener("mousemove", onMouseMove);
+        document.addEventListener("mouseup", endDrag);
+        document.addEventListener("touchmove", onTouchMove, { passive: true });
+        document.addEventListener("touchend", endDrag);
+        ctx.onClose?.(() => {
+          document.removeEventListener("mousemove", onMouseMove);
+          document.removeEventListener("mouseup", endDrag);
+          document.removeEventListener("touchmove", onTouchMove);
+          document.removeEventListener("touchend", endDrag);
+          endDrag();
+        });
+      }
+      if (posResetBtn) {
+        posResetBtn.addEventListener("click", () => {
+          JE.currentSettings.subtitleHorizontalPosition = 50;
+          JE.currentSettings.subtitleVerticalPosition = 95;
+          if (posPreview) {
+            posPreview.style.left = "50%";
+            posPreview.style.top = "auto";
+            posPreview.style.bottom = "5%";
+          }
+          if (typeof JE.applySubtitlePosition === "function") JE.applySubtitlePosition();
+          JE.saveUserSettings("settings.json", JE.currentSettings);
+          resetAutoCloseTimer();
+        });
+      }
     };
-
-})(window.JellyfinEnhanced);
+    internal.wireMiscSettingsControls = function(ctx) {
+      const { primaryAccentColor, resetAutoCloseTimer } = ctx;
+      const includeMovies = requireId("randomIncludeMovies");
+      const includeShows = requireId("randomIncludeShows");
+      const wireItemType = (own, other, key, itemType) => {
+        own.addEventListener("change", (e) => {
+          const target = e.target;
+          if (!controlChecked(target) && !controlChecked(other)) {
+            if (target instanceof HTMLInputElement) target.checked = true;
+            JE.toast(JE.t("toast_at_least_one_item_type"));
+            return;
+          }
+          const checked = controlChecked(target);
+          JE.currentSettings[key] = checked;
+          JE.saveUserSettings("settings.json", JE.currentSettings);
+          JE.toast(JE.t("toast_random_selection_status", { item_type: itemType, status: checked ? JE.t("selection_included") : JE.t("selection_excluded") }));
+          resetAutoCloseTimer();
+        });
+      };
+      wireItemType(includeMovies, includeShows, "randomIncludeMovies", "Movies");
+      wireItemType(includeShows, includeMovies, "randomIncludeShows", "Shows");
+      const sourceSelect = selectById("randomSourceSelect");
+      if (sourceSelect) {
+        const savedId = String(JE.currentSettings.randomSourceId || "");
+        const client = apiClient();
+        const userId = client.getCurrentUserId() ?? "";
+        client.ajax({ type: "GET", url: client.getUrl(`/Users/${userId}/Items?IncludeItemTypes=Playlist,BoxSet&Recursive=true&SortBy=SortName`), dataType: "json" }).then(async (response) => {
+          if (!sourceSelect.isConnected) return;
+          const groups = { Playlist: "panel_settings_random_button_source_playlists", BoxSet: "panel_settings_random_button_source_collections" };
+          const all = sourceItems(response);
+          for (const [type, labelKey] of Object.entries(groups)) {
+            const items = all.filter((item) => item.type === type);
+            if (items.length === 0) continue;
+            const group = document.createElement("optgroup");
+            group.label = JE.t(labelKey);
+            items.forEach((item) => group.appendChild(new Option(item.name, item.id, false, item.id === savedId)));
+            sourceSelect.appendChild(group);
+          }
+          if (savedId && sourceSelect.value !== savedId) {
+            const saved = await apiClient().getItem(userId, savedId).catch(() => null);
+            if (!sourceSelect.isConnected || JE.currentSettings.randomSourceId !== savedId) return;
+            const type = saved !== null && typeof saved === "object" ? Reflect.get(saved, "Type") : void 0;
+            const name = saved !== null && typeof saved === "object" ? Reflect.get(saved, "Name") : void 0;
+            const label = (type === "Playlist" || type === "BoxSet") && typeof name === "string" ? name : JE.t("panel_settings_random_button_source_missing");
+            sourceSelect.appendChild(new Option(label, savedId, false, true));
+          }
+        }).catch((err) => console.warn("🪼 Jellyfin Enhanced: Could not list playlists for the random source picker", err));
+        sourceSelect.addEventListener("change", () => {
+          JE.currentSettings.randomSourceId = sourceSelect.value;
+          JE.saveUserSettings("settings.json", JE.currentSettings);
+          JE.toast(JE.t("toast_random_source_set", { name: JE.escapeHtml(sourceSelect.selectedOptions[0]?.textContent || "") }));
+          resetAutoCloseTimer();
+        });
+      }
+      requireId("releaseNotesBtn").addEventListener("click", async () => {
+        ctx.closePanel();
+        if (!showReleaseNotesNotification) throw new TypeError("Release notes are unavailable");
+        await showReleaseNotesNotification();
+      });
+      const highlight = (box) => {
+        if (box instanceof HTMLElement) box.style.setProperty("border", `2px solid ${primaryAccentColor}`, "important");
+      };
+      const savedColors = () => ({
+        textColor: String(JE.currentSettings.customSubtitleTextColor || "#FFFFFFFF"),
+        bgColor: String(JE.currentSettings.customSubtitleBgColor || "#00000000")
+      });
+      const applyPreset = (type, presetIndex) => {
+        if (type === "style") {
+          const selectedPreset2 = JE.subtitlePresets[presetIndex];
+          if (!selectedPreset2) return null;
+          JE.currentSettings.selectedStylePresetIndex = presetIndex;
+          JE.currentSettings.usingCustomColors = false;
+          JE.currentSettings.customSubtitleTextColor = selectedPreset2.textColor;
+          JE.currentSettings.customSubtitleBgColor = selectedPreset2.bgColor;
+          const textColorPicker = inputById("customSubtitleTextColorPicker");
+          const textAlphaSlider = inputById("customSubtitleTextAlpha");
+          const bgColorPicker = inputById("customSubtitleBgColorPicker");
+          const bgAlphaSlider = inputById("customSubtitleBgAlpha");
+          const preview = document.getElementById("subtitleColorPreview");
+          if (textColorPicker && textAlphaSlider) {
+            const decodedText = JE.decodeSubtitleColor(selectedPreset2.textColor, { fallbackSwatch: "#FFFFFF", fallbackAlphaValue: 255 });
+            textColorPicker.value = decodedText.swatch;
+            textAlphaSlider.value = String(decodedText.alphaValue);
+          }
+          if (bgColorPicker && bgAlphaSlider) {
+            const decodedBg = JE.decodeSubtitleColor(selectedPreset2.bgColor, { fallbackSwatch: "#000000", fallbackAlphaValue: 0 });
+            bgColorPicker.value = decodedBg.swatch;
+            bgAlphaSlider.value = String(decodedBg.alphaValue);
+          }
+          if (preview) {
+            preview.style.color = selectedPreset2.textColor;
+            preview.style.backgroundColor = selectedPreset2.bgColor;
+          }
+          const posPreviewEl = document.getElementById("subtitlePositionPreview");
+          if (posPreviewEl) {
+            posPreviewEl.style.color = selectedPreset2.textColor;
+            posPreviewEl.style.backgroundColor = selectedPreset2.bgColor;
+          }
+          const fontSize2 = requirePreset(fontSizeAt(JE.currentSettings.selectedFontSizePresetIndex), "size");
+          const fontFamily2 = requirePreset(fontFamilyAt(JE.currentSettings.selectedFontFamilyPresetIndex), "font");
+          updatePositionPreviewFont(fontSize2, fontFamily2);
+          internal.syncSubtitlePreviewTextShadow?.(selectedPreset2.bgColor);
+          JE.applySubtitleStyles(selectedPreset2.textColor, selectedPreset2.bgColor, fontSize2.size, fontFamily2.family, JE.getSubtitleTextShadow(selectedPreset2.bgColor));
+          return JE.t("toast_subtitle_style", { style: selectedPreset2.name });
+        }
+        if (type === "font-size") {
+          const selectedPreset2 = JE.fontSizePresets[presetIndex];
+          if (!selectedPreset2) return null;
+          JE.currentSettings.selectedFontSizePresetIndex = presetIndex;
+          const fontFamily2 = requirePreset(fontFamilyAt(JE.currentSettings.selectedFontFamilyPresetIndex), "font");
+          const { textColor: textColor2, bgColor: bgColor2 } = savedColors();
+          const textShadow = JE.getSubtitleTextShadow(bgColor2);
+          updatePositionPreviewFont(selectedPreset2, fontFamily2);
+          JE.applySubtitleStyles(textColor2, bgColor2, selectedPreset2.size, fontFamily2.family, textShadow);
+          return JE.t("toast_subtitle_size", { size: selectedPreset2.name });
+        }
+        if (type === "font-family") {
+          const selectedPreset2 = JE.fontFamilyPresets[presetIndex];
+          if (!selectedPreset2) return null;
+          JE.currentSettings.selectedFontFamilyPresetIndex = presetIndex;
+          const fontSize2 = requirePreset(fontSizeAt(JE.currentSettings.selectedFontSizePresetIndex), "size");
+          const { textColor: textColor2, bgColor: bgColor2 } = savedColors();
+          const textShadow = JE.getSubtitleTextShadow(bgColor2);
+          updatePositionPreviewFont(fontSize2, selectedPreset2);
+          JE.applySubtitleStyles(textColor2, bgColor2, fontSize2.size, selectedPreset2.family, textShadow);
+          return JE.t("toast_subtitle_font", { font: selectedPreset2.name });
+        }
+        const selectedPreset = JE.subtitleTextEffectPresets[presetIndex];
+        if (!selectedPreset) return null;
+        JE.currentSettings.selectedTextEffectPresetIndex = presetIndex;
+        const fontSize = requirePreset(fontSizeAt(JE.currentSettings.selectedFontSizePresetIndex), "size");
+        const fontFamily = requirePreset(fontFamilyAt(JE.currentSettings.selectedFontFamilyPresetIndex), "font");
+        const { textColor, bgColor } = savedColors();
+        internal.syncSubtitlePreviewTextShadow?.(bgColor);
+        JE.applySubtitleStyles(textColor, bgColor, fontSize.size, fontFamily.family, JE.getSubtitleTextShadow(bgColor, presetIndex));
+        return JE.t("toast_subtitle_text_effect", { effect: selectedPreset.name });
+      };
+      const currentIndexFor = (type) => {
+        if (type === "style") {
+          return JE.currentSettings.usingCustomColors ? void 0 : JE.currentSettings.selectedStylePresetIndex ?? 0;
+        }
+        if (type === "font-size") return JE.currentSettings.selectedFontSizePresetIndex ?? 2;
+        if (type === "font-family") return JE.currentSettings.selectedFontFamilyPresetIndex ?? 0;
+        const effect = JE.currentSettings.selectedTextEffectPresetIndex;
+        return typeof effect === "number" && Number.isInteger(effect) && JE.subtitleTextEffectPresets[effect] ? effect : 0;
+      };
+      const setupPresetHandlers = (containerId, type) => {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+        container.addEventListener("click", (e) => {
+          const presetBox = closestTarget(e, `.${type}-preset`);
+          if (!presetBox) return;
+          const presetIndex = parseInt(presetBox.dataset.presetIndex ?? "", 10);
+          const toast = applyPreset(type, presetIndex);
+          if (toast === null) return;
+          JE.toast(toast);
+          JE.saveUserSettings("settings.json", JE.currentSettings);
+          queryElements(container, ".preset-box").forEach((box) => {
+            box.style.setProperty("border", "2px solid transparent", "important");
+          });
+          presetBox.style.setProperty("border", `2px solid ${primaryAccentColor}`, "important");
+          resetAutoCloseTimer();
+        });
+        const currentIndex = currentIndexFor(type);
+        if (currentIndex !== void 0) highlight(container.querySelector(`[data-preset-index="${String(currentIndex)}"]`));
+      };
+      setupPresetHandlers("subtitle-style-presets-container", "style");
+      setupPresetHandlers("font-size-presets-container", "font-size");
+      setupPresetHandlers("font-family-presets-container", "font-family");
+      setupPresetHandlers("text-effect-presets-container", "text-effect");
+    };
+  }
+  installUiPanelSettings(panelHost());
+})();
+})();
+//# sourceMappingURL=ui-panel-settings.js.map

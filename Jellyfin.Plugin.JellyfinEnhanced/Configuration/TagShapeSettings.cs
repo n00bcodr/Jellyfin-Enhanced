@@ -146,11 +146,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// stay quality's); null when none is left.
         /// </summary>
         private static List<TagLayoutGroupSlot>? NormalizeSlots(string? layout, List<TagLayoutGroupSlot>? slots)
+            => NormalizeSlots(layout, slots, null);
+
+        internal static List<TagLayoutGroupSlot>? NormalizeSlots(string? layout, List<TagLayoutGroupSlot>? slots, Action<TagLayoutGroupSlot, TagLayoutGroupSlot>? onNormalized)
         {
             if (slots == null) return null;
             if (layout != null)
             {
-                return TagLayoutRules.NormalizeProfile(layout, new TagLayoutProfile { Groups = slots })?.Groups;
+                return TagLayoutRules.NormalizeProfile(layout, new TagLayoutProfile { Groups = slots }, onNormalized)?.Groups;
             }
 
             var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -162,7 +165,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 if (group == null || !AnySlot.Contains(slot) || seen.Contains(group)) continue;
                 if (slot == "dots" && group != "quality") continue;
                 seen.Add(group);
-                result.Add(new TagLayoutGroupSlot { Group = group, Slot = slot });
+                var normalized = new TagLayoutGroupSlot { Group = group, Slot = slot };
+                result.Add(normalized);
+                onNormalized?.Invoke(entry!, normalized);
             }
 
             return result.Count == 0 ? null : result;

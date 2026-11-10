@@ -1,18 +1,58 @@
-// /js/arr/calendar/calendar-page-styles.js
-// Calendar Page — CSS and theme-color injection (split from calendar-page.js).
-// Owns the single injection site for the feature's styles; all former call
-// sites route through P.injectStyles, deduped by style id via JE.core.ui.injectCss.
-(function () {
-  "use strict";
+(() => {
+"use strict";
+(() => {
+  var __defProp = Object.defineProperty;
+  var __export = (target, all) => {
+    for (var name in all)
+      __defProp(target, name, { get: all[name], enumerable: true });
+  };
 
-  const JE = window.JellyfinEnhanced;
-  // Private cross-module wiring for the split calendar page (js/arr/calendar/calendar-page-*.js).
-  // Not part of the public JE.* surface.
-  JE.internals = JE.internals || {};
-  const P = (JE.internals.calendarPage = JE.internals.calendarPage || {});
+  // client/src/host/context.ts
+  function featureContext(feature, core, slots) {
+    const shared = core.core?.featureContext;
+    if (typeof shared !== "function") {
+      throw new Error(`${feature}: JE.core.featureContext is missing; core/ui-kit.js must load before feature scripts`);
+    }
+    return shared(feature, core, slots);
+  }
+  function publishSharedModules(modules) {
+    const JE = window.JellyfinEnhanced;
+    if (!JE) return;
+    const core = JE.core ?? (JE.core = {});
+    let registry = core.sharedModules;
+    if (!registry) {
+      registry = /* @__PURE__ */ Object.create(null);
+      Object.defineProperty(core, "sharedModules", { value: registry, configurable: true, writable: true, enumerable: false });
+    }
+    for (const [id, namespace] of Object.entries(modules)) registry[id] ?? (registry[id] = namespace);
+  }
 
-  // CSS Styles
-  const CSS_STYLES = `
+  // client/src/features/calendar/host.ts
+  var host_exports = {};
+  __export(host_exports, {
+    calendarHost: () => calendarHost
+  });
+  function calendarHost() {
+    var _a;
+    const host = window;
+    const JE = host.JellyfinEnhanced;
+    if (!JE) throw new Error("Calendar loaded before Jellyfin Enhanced");
+    JE.internals || (JE.internals = {});
+    const partial = (_a = JE.internals).calendarPage || (_a.calendarPage = {});
+    const P = partial;
+    const ctx = featureContext("calendar", JE, {
+      facades: ["initializeCalendarPage"],
+      internalSlots: ["calendarLifetime", "calendarPage"],
+      internalsObject: () => JE.internals || (JE.internals = {})
+    });
+    return { JE, ctx, host, P };
+  }
+
+  // client/generated-shared/publish/js/arr/calendar/calendar-page-styles.js.ts
+  publishSharedModules({ "features/calendar/host": host_exports });
+
+  // client/src/features/calendar/calendar-page.css
+  var calendar_page_default = `
 
     .je-msym-rounded {
       font-family: 'JE Material Symbols Rounded';
@@ -1116,21 +1156,20 @@
     }
   `;
 
-  // Inject CSS styles into page
-  function injectStyles() {
-    if (document.getElementById("je-calendar-styles")) return;
-    JE.core.ui.injectCss("je-calendar-styles", CSS_STYLES);
-
-    // Inject dynamic theme colors
-    injectThemeColors();
-  }
-
-  // Inject dynamic theme colors
-  function injectThemeColors() {
-    const themeVars = JE.themer?.getThemeVariables() || {};
-    const primaryAccent = themeVars.primaryAccent || '#00a4dc';
-
-    JE.core.ui.injectCss("je-calendar-theme-colors", `
+  // client/src/features/calendar/calendar-page-styles.ts
+  (function() {
+    "use strict";
+    const { JE, P } = calendarHost();
+    const CSS_STYLES = calendar_page_default;
+    function injectStyles() {
+      if (document.getElementById("je-calendar-styles")) return;
+      JE.core.ui.injectCss("je-calendar-styles", CSS_STYLES);
+      injectThemeColors();
+    }
+    function injectThemeColors() {
+      const themeVars = JE.themer?.getThemeVariables() || {};
+      const primaryAccent = themeVars.primaryAccent || "#00a4dc";
+      JE.core.ui.injectCss("je-calendar-theme-colors", `
       .je-calendar-view-btn.active {
         background: ${primaryAccent} !important;
         border-color: ${primaryAccent} !important;
@@ -1147,7 +1186,9 @@
         color: ${primaryAccent} !important;
       }
     `);
-  }
-
-  P.injectStyles = injectStyles;
+    }
+    P.injectStyles = injectStyles;
+  })();
 })();
+})();
+//# sourceMappingURL=calendar-page-styles.js.map

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createHarness } from '../helpers/harness.mjs';
+import { contractValue } from '../contracts/fixtures.mjs';
 
 const STORE = 'JE_panelSize_user-a';
 
@@ -627,11 +628,14 @@ for (const transition of ['user', 'round-trip', 'server', 'unannounced', 'reject
     let user = 'user-a', server = 'server-a', resolve, reject;
     h.window.ApiClient.getCurrentUserId = () => user;
     h.window.ApiClient.serverId = () => server;
+    h.window.ApiClient.getCurrentUser = async () => ({ Policy: { IsAdministrator: false } });
     h.load('core/navigation.js');
     h.load('core/session.js');
     const pending = new Promise((yes, no) => { resolve = yes; reject = no; });
     h.window.ApiClient.ajax = () => pending;
-    h.JE.toCamelCase = data => ({ owner: data.Owner });
+    // The panel refreshes the revisioned settings document through the generated contract.
+    h.load('contracts/bootstrap.js');
+    h.JE.toCamelCase = data => ({ owner: data.LastOpenedTab });
     let loads = 0, shortcuts = 0;
     h.JE.loadSettings = () => { loads++; return h.JE.userConfig.settings; };
     h.JE.initializeShortcuts = () => shortcuts++;
@@ -645,10 +649,12 @@ for (const transition of ['user', 'round-trip', 'server', 'unannounced', 'reject
       h.JE.session.checkNow('test-return');
     }
     const incoming = { owner: 'incoming' };
-    h.JE.userConfig.settings = incoming;
-    h.JE.currentSettings = incoming;
+    if (transition !== 'unchanged') {
+      h.JE.userConfig.settings = incoming;
+      h.JE.currentSettings = incoming;
+    }
     if (transition === 'rejection') reject(new Error('old identity request failed'));
-    else resolve({ Owner: 'opening-user' });
+    else resolve(contractValue('RevisionedSettingsResponse', { Revision: 'opening-revision', Settings: { IsAdmin: false, LastOpenedTab: 'opening-user' } }));
     await opening;
     if (transition === 'unchanged') {
       assert.equal(h.JE.userConfig.settings.owner, 'opening-user');

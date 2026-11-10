@@ -10,9 +10,8 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Jellyfin-10.11%20%7C%2012.x-AA5CC3?logo=jellyfin&logoColor=00A4DC&labelColor=black" alt="Jellyfin 10.11 | 12.x">
+  <img src="https://img.shields.io/badge/Jellyfin-12.x-AA5CC3?logo=jellyfin&logoColor=00A4DC&labelColor=black" alt="Jellyfin 12.x">
   <img src="https://img.shields.io/github/last-commit/n00bcodr/Jellyfin-Enhanced/main?logo=semantic-release&logoColor=white&label=Updated&labelColor=black&color=00A4DC&cacheSeconds=3600" alt="Last updated">
-  <img alt="Downloads for 10.11" src="https://img.shields.io/github/downloads/n00bcodr/Jellyfin-Enhanced/latest/Jellyfin.Plugin.JellyfinEnhanced_10.11.0.zip?displayAssetName=false&label=10.11%20downloads&labelColor=black&color=AA5CC3&cacheSeconds=60">
   <img alt="Downloads for 12.x" src="https://img.shields.io/github/downloads/n00bcodr/Jellyfin-Enhanced/latest/Jellyfin.Plugin.JellyfinEnhanced_12.0.0.zip?displayAssetName=false&label=12.x%20downloads&labelColor=black&color=AA5CC3&cacheSeconds=60">
   <a href="https://discord.gg/EYNFf7y4CG"><img alt="Discord" src="https://img.shields.io/badge/Discord-Join%20us-5865F2?logo=discord&logoColor=white&labelColor=black"></a>
 </p>
@@ -52,7 +51,7 @@
 4. **Restart** Jellyfin and refresh your browser (<kbd>Ctrl</kbd>+<kbd>F5</kbd>). Press <kbd>?</kbd> outside an input or textarea, or choose **Enhanced Panel** in the drawer. On Jellyfin 12, choose **Jellyfin Enhanced** in the avatar menu. If the panel opens, JE’s web tools have loaded.
 
 > [!IMPORTANT]
-> Current JE builds target **Jellyfin 12.x and 10.11.x**. The same repository URL serves every version, and Jellyfin installs the build that matches your server. Something not working? See the [installation guide](https://n00bcodr.github.io/Jellyfin-Enhanced/installation/installation/) and [troubleshooting](https://n00bcodr.github.io/Jellyfin-Enhanced/installation/troubleshooting/).
+> This development rewrite targets **Jellyfin 12.x only** and is not a published release. Older and future major hosts are unsupported. See [rewrite scope and status](docs/rewrite/README.md). Something not working? See the [installation guide](https://n00bcodr.github.io/Jellyfin-Enhanced/installation/installation/) and [troubleshooting](https://n00bcodr.github.io/Jellyfin-Enhanced/installation/troubleshooting/).
 
 <details>
 <summary>First admin settings and defaults</summary>

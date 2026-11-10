@@ -1,0 +1,9 @@
+{
+  "js/enhanced/player/playback.js": "client/src/features/player/playback.ts",
+  "js/enhanced/player/now-playing.js": "client/src/features/player/now-playing.ts",
+  "js/enhanced/player/auto-skip.js": "client/src/features/player/auto-skip.ts",
+  "js/enhanced/player/subtitles.js": "client/src/features/player/subtitles.ts",
+  "js/enhanced/player/osd-rating.js": "client/src/features/player/osd-rating.ts",
+  "js/enhanced/player/pausescreen.js": "client/src/features/player/pausescreen.ts",
+  "js/enhanced/player/playback-rating-badge.js": "client/src/features/player/playback-rating-badge.ts"
+}

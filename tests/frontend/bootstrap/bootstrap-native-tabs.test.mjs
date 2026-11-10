@@ -36,6 +36,9 @@ function setup(t, { count = 0, hash = '#/home', configRequest } = {}) {
   return { ...h, tabs, register, panel, button, mountCounts, reconcile, get refreshes() { return refreshes; }, get selections() { return selections; } };
 }
 
+/** Two after-paint turns: the DOM observer and the after-paint reconciliation have run. */
+const settled = h => new Promise(resolve => h.JE.core.dom.afterNextPaint(() => h.JE.core.dom.afterNextPaint(resolve)));
+
 function assertAligned(h) {
   for (const selector of ['.emby-tabs-slider .emby-tab-button', '#home > .tabContent']) {
     const nodes = [...h.document.querySelectorAll(selector)];
@@ -55,10 +58,13 @@ test('native tabs mount once, escape labels, and remain stable across duplicate 
   assert.equal(h.mountCounts.requests, 1); assertAligned(h);
 });
 
+// JE tabs mount at once from the live tabs and are relabelled when the Custom Tabs count arrives
+// (native-tabs.ts: a hung optional request must never block JE's own navigation).
 test('Custom Tabs count reserves positional slots before JE tabs', async t => {
   const h = setup(t, { count: 3 }); h.register(); h.register('calendar');
-  await until(() => h.panel('calendar'));
+  await until(() => h.panel('calendar') && h.button().dataset.index === '5');
   assert.equal(h.button().dataset.index, '5'); assert.equal(h.panel('calendar').dataset.index, '6');
+  assert.equal(h.mountCounts.requests, 1, 'relabelled, not remounted'); assert.equal(h.mountCounts.calendar, 1);
   assert.equal(h.document.querySelectorAll('[id^="je-native-tab-reserved-btn-"]').length, 3);
   assertAligned(h);
 });
@@ -82,7 +88,9 @@ test('header-only external tab claims get placeholders to preserve positional se
 
 test('stable JE deep link rewrites stale index and clears partially selected host panels', async t => {
   const h = setup(t, { count: 2, hash: '#/home?tab=2&jeTab=requests' }); h.register();
-  await until(() => h.panel()?.classList.contains('is-active'));
+  // The tab mounts at index 2 first; the late count moves it to 4 and the deep link follows it.
+  await until(() => h.window.location.hash === '#/home?tab=4&jeTab=requests' && h.panel()?.classList.contains('is-active'));
+  await settled(h);
   assert.equal(h.window.location.hash, '#/home?tab=4&jeTab=requests');
   assert.equal(h.tabs.selectedIndex(), 4);
   assert.equal(h.document.querySelectorAll('.tabContent.is-active').length, 1);
@@ -108,10 +116,27 @@ test('unregister removes button, panel and allows a clean future mount', async t
   assert.equal(h.mountCounts.requests, 2); assertAligned(h);
 });
 
-test('unknown Custom Tabs state waits for response and recovers from provider failure', async t => {
+test('unknown Custom Tabs state never blocks the JE tab and recovers from provider failure', async t => {
   const response = deferred(); const h = setup(t, { configRequest: () => response.promise }); h.register();
-  await new Promise(resolve => h.JE.core.dom.afterNextPaint(() => h.JE.core.dom.afterNextPaint(resolve)));
-  assert.equal(h.panel(), null);
+  // The request hangs: the tab is already there, after the live tabs.
+  await until(() => h.panel());
+  await settled(h);
+  assert.equal(h.button().dataset.index, '2'); assertAligned(h);
+  const panel = h.panel();
   response.reject(new Error('plugin unavailable'));
-  await until(() => h.panel()); assert.equal(h.button().dataset.index, '2'); assertAligned(h);
+  await settled(h);
+  assert.equal(h.panel(), panel); assert.equal(h.button().dataset.index, '2'); assertAligned(h);
+  assert.equal(h.mountCounts.requests, 1);
+});
+
+test('a Custom Tabs count that arrives late relabels the mounted JE tab without remounting it', async t => {
+  const response = deferred(); const h = setup(t, { configRequest: () => response.promise }); h.register();
+  await until(() => h.panel());
+  const panel = h.panel();
+  assert.equal(h.button().dataset.index, '2');
+  response.resolve([{}, {}, {}]);
+  await until(() => h.button().dataset.index === '5');
+  assert.equal(h.panel(), panel); assert.equal(panel.dataset.index, '5'); assert.equal(h.mountCounts.requests, 1);
+  assert.equal(h.document.querySelectorAll('[id^="je-native-tab-reserved-btn-"]').length, 3);
+  assertAligned(h);
 });

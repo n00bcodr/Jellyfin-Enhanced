@@ -1,11 +1,16 @@
 using System.Security.Claims;
 using System.Text.Json;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
-using Jellyfin.Plugin.JellyfinEnhanced.Services;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Session;
 using Microsoft.AspNetCore.Mvc;
 using Moq;
+using Jellyfin.Plugin.JellyfinEnhanced.Features.Admin.Services;
+using Jellyfin.Plugin.JellyfinEnhanced.Features.Settings;
+using Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags;
+using Jellyfin.Plugin.JellyfinEnhanced.Shared.SpoilerGuard;
+using Jellyfin.Plugin.JellyfinEnhanced.Features.SpoilerGuard;
+using Jellyfin.Plugin.JellyfinEnhanced.Shared.Maintenance;
 
 namespace JE.Tests;
 
@@ -21,7 +26,7 @@ public class ApiConfigurationTests
         using var fixture = new ApiPluginFixture();
         fixture.Plugin.Configuration.SeriesQualityAggregation = configured;
         var userId = Guid.NewGuid().ToString("N");
-        var controller = ApiAssetTests.Controller(fixture.Core, fixture.Core.Manager, Mock.Of<IUserManager>());
+        var controller = (JeSettingsController)ApiAssetTests.Controller(typeof(JeSettingsController), fixture.Core, fixture.Core.Manager, Mock.Of<IUserManager>());
         controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim("Jellyfin-UserId", userId)], "test"));
         var first = Assert.IsType<OkObjectResult>(controller.GetUserSettingsSettings(userId));
         using var seeded = JsonDocument.Parse(JsonSerializer.Serialize(first.Value));
@@ -151,8 +156,8 @@ public class ApiConfigurationTests
         var controller = ApiAssetTests.Controller(fixture.Core, fixture.Core.Manager);
         controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim("Jellyfin-UserId", user.ToString())], "test"));
         var body = new SpoilerBlurUserPrefs { HideTrickplay = hideTrickplay, HideReviews = false, UseAdvancedCategories = false };
-        Assert.IsType<OkObjectResult>(controller.SetSpoilerBlurUserPrefs(body));
-        var reloaded = Assert.IsType<SpoilerBlurUserPrefs>(Assert.IsType<OkObjectResult>(controller.GetSpoilerBlurUserPrefs()).Value);
+        Assert.IsType<OkObjectResult>(ApiAssetTests.SiblingOf<JeSpoilerGuardController>(controller).SetSpoilerBlurUserPrefs(body));
+        var reloaded = Assert.IsType<SpoilerBlurUserPrefs>(Assert.IsType<OkObjectResult>(ApiAssetTests.SiblingOf<JeSpoilerGuardController>(controller).GetSpoilerBlurUserPrefs()).Value);
         Assert.Equal(hideTrickplay, reloaded.HideTrickplay);
         Assert.False(reloaded.HideReviews);
         Assert.False(reloaded.UseAdvancedCategories);

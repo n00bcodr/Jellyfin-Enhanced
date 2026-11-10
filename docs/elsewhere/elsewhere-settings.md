@@ -176,7 +176,7 @@ Per-user settings:
 
     Closing without saving does not reset the dialog's unsaved controls; they can still be present when you reopen it. The country reset selects the admin country rather than clearing your saved override back to an inherited empty value.
 
-    Save failures are logged without an error shown in this dialog. If preferences do not persist after reloading, check the browser console and Jellyfin logs.
+    If loading or saving preferences fails, the dialog shows an error and keeps the controls available for recovery. Failed loads do not become editable empty defaults. A failed save keeps your choices so you can retry; it does not report success or close the dialog.
 
 ## Per-season providers
 

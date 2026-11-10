@@ -1,0 +1,1 @@
+jellyfin/jellyfin:12.4 jellyfin/jellyfin@sha256:b45218a461bf9663a4076d467e57f168ea54bc62bc20c7481ab43c4ba338575d

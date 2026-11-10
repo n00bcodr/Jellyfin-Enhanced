@@ -1,487 +1,460 @@
-/**
- * @file The Media Tags hub: the settings panel section that gathers every
- * poster tag control behind one tab strip, with a live preview beside it.
- *
- *   Layout         layout tiles, label density, the quick switches, and
- *                  presets with import and export (ui-panel-tag-portable.js)
- *   Groups         the group editor (ui-panel-tag-editor.js)
- *   Status badges  the status badge families and the admin's time windows
- *   Rules & locks  the tag look rules and locked items (ui-panel-tag-looks.js)
- *   Colours        the user's colour preset (only while the admin allows
- *                  one), and for admins the way to the colour editor
- *   Server         admins only: links to the Media Tags admin tab
- *
- * Every control reads and writes the per-user setting it always did; the
- * ids the settings wiring (ui-panel-settings.js) binds are kept. Admin-only
- * content is never rendered for other users. The preview
- * (ui-panel-tag-preview.js) is a right-hand column on a wide pane and a
- * one-line strip under the tabs on a narrow one; it is built the first time
- * the section shows and disposed with the panel. The panel's settings search
- * finds each control here through the provider this module registers.
- */
-(function(JE) {
-    'use strict';
+(() => {
+"use strict";
+(() => {
+  // client/src/features/shared/panel-host.ts
+  function panelHost() {
+    const host = window;
+    if (!host.JellyfinEnhanced) throw new TypeError("Jellyfin Enhanced must load before the settings panel");
+    return host.JellyfinEnhanced;
+  }
+  function apiClient() {
+    const client = optionalApiClient();
+    if (!client) throw new ReferenceError("ApiClient is not defined");
+    return client;
+  }
+  function optionalApiClient() {
+    const host = window;
+    return host.ApiClient;
+  }
+  function currentUserKey() {
+    return optionalApiClient()?.getCurrentUserId?.() || "";
+  }
 
+  // client/src/features/media-tags/settings/host.ts
+  function registry(JE) {
     JE.internals = JE.internals || {};
-    const internal = JE.internals.enhancedUi = JE.internals.enhancedUi || {};
+    return JE.internals.enhancedUi = JE.internals.enhancedUi || {};
+  }
 
-    const LAYOUTS = ['corners', 'bands', 'caption', 'summary', 'minimal'];
-    const PRESETS = ['default', 'glass', 'outline', 'dark', 'light', 'mono', 'poster'];
-    /** The administrator configuration page (Configuration/configPage.html) and its Media Tags tab. */
-    const ADMIN_PAGE_NAME = 'Jellyfin Enhanced';
-    const ADMIN_TAB = 'media-tags';
-    const TAB_STORE_PREFIX = 'JE_mediaTagsTab:';
+  // client/src/features/shared/dom.ts
+  function targetElement(event) {
+    return event.target instanceof Element ? event.target : null;
+  }
+  function closestTarget(event, selector) {
+    const found = targetElement(event)?.closest(selector);
+    return found instanceof HTMLElement ? found : null;
+  }
+  function queryElement(root, selector) {
+    const found = root.querySelector(selector);
+    return found instanceof HTMLElement ? found : null;
+  }
+  function queryElements(root, selector) {
+    return Array.from(root.querySelectorAll(selector)).filter((node) => node instanceof HTMLElement);
+  }
+  function controlValue(target) {
+    return target instanceof HTMLInputElement || target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement ? target.value : void 0;
+  }
+  function isDisabled(node) {
+    return (node instanceof HTMLButtonElement || node instanceof HTMLInputElement || node instanceof HTMLSelectElement || node instanceof HTMLTextAreaElement || node instanceof HTMLFieldSetElement || node instanceof HTMLOptionElement) && node.disabled;
+  }
+  function focusElement(node, options) {
+    if (node instanceof HTMLElement || node instanceof SVGElement) node.focus(options);
+  }
 
-    /**
-     * The status badge families: the setting each switch writes (ids kept from
-     * the group editor, so ui-panel-settings.js saves them), its built-in
-     * default, its name and description, the sample chip it shows, and the
-     * admin's time window it is limited by.
-     */
-    const BADGE_FAMILIES = [
-        { key: 'statusTagsJustAdded', id: 'statusTagsJustAddedToggle', fallback: true, nameKey: 'status_tag_just_added', descKey: 'panel_media_tags_badge_just_added_desc', chip: ['added', 'added', 'status_tag_just_added'], windowKey: 'panel_media_tags_badge_window_added', windowSetting: 'StatusTagsJustAddedDays', windowFallback: 7 },
-        { key: 'statusTagsNewRelease', id: 'statusTagsNewReleaseToggle', fallback: true, nameKey: 'panel_media_tags_badge_new_release', descKey: 'panel_settings_ui_status_tags_new_release', chip: ['new', 'newMovie', 'status_tag_new_movie'], windowKey: 'panel_media_tags_badge_window_new', windowSetting: 'StatusTagsNewReleaseDays', windowFallback: 30 },
-        { key: 'statusTagsTrending', id: 'statusTagsTrendingToggle', fallback: true, nameKey: 'recommendations_trending', descKey: 'panel_media_tags_badge_trending_desc', chip: ['trending', 'trending', 'status_tag_trending_today'] },
-        { key: 'statusTagsSchedule', id: 'statusTagsScheduleToggle', fallback: true, nameKey: 'panel_media_tags_badge_schedule', descKey: 'panel_settings_ui_status_tags_schedule', chip: ['schedule', 'airing_today', 'status_tag_airing_today'] },
-        { key: 'statusTagsMilestones', id: 'statusTagsMilestonesToggle', fallback: true, nameKey: 'panel_media_tags_badge_milestones', descKey: 'panel_settings_ui_status_tags_milestones', chip: ['milestone', 'season_finale', 'status_tag_season_finale'] },
-        { key: 'statusTagsSeriesStatus', id: 'statusTagsSeriesStatusToggle', fallback: false, nameKey: 'panel_media_tags_badge_series_status', descKey: 'panel_settings_ui_status_tags_series_status', chip: ['status', 'returning', 'status_tag_returning'] },
-        { key: 'statusTagsScenes', id: 'statusTagsScenesToggle', fallback: false, nameKey: 'panel_media_tags_badge_scenes', descKey: 'panel_settings_ui_status_tags_scenes', chip: ['scenes', 'post_credits', 'status_tag_post_credits'] },
-        { key: 'statusTagsLeaving', id: 'statusTagsLeavingToggle', fallback: false, nameKey: 'common_leaving_soon', descKey: 'panel_media_tags_badge_leaving_desc', chip: ['leaving', 'leaving', 'status_tag_leaving_days', { days: 5 }], requires: 'LeavingSoonAvailable', requiresKey: 'panel_media_tags_badge_leaving_unavailable' },
-        { key: 'statusTagsDirectPlay', id: 'statusTagsDirectPlayToggle', fallback: false, nameKey: 'panel_media_tags_badge_direct_play', descKey: 'panel_media_tags_badge_direct_play_desc', chip: ['playback', 'direct_play', 'status_tag_transcode'] },
-    ];
+  // client/src/features/shared/settings-values.ts
+  function isJson(value) {
+    if (value === null || typeof value === "string" || typeof value === "boolean") return true;
+    if (typeof value === "number") return Number.isFinite(value);
+    if (Array.isArray(value)) return value.every(isJson);
+    if (typeof value === "object") return Object.values(value).every(isJson);
+    return false;
+  }
 
-    /** The admin pointers: the Media Tags admin tab's section each one opens. */
-    const SERVER_LINKS = [
-        { nameKey: 'panel_media_tags_server_defaults', descKey: 'panel_media_tags_server_defaults_desc', tab: 'layout' },
-        { nameKey: 'panel_media_tags_server_colours', descKey: 'panel_media_tags_server_colours_desc', tab: 'colours' },
-        { nameKey: 'panel_media_tags_server_cache', descKey: 'panel_media_tags_server_cache_desc', tab: 'server' },
-        { nameKey: 'panel_media_tags_server_native', descKey: 'panel_media_tags_server_native_desc', tab: 'server' },
-    ];
-
-    /** Built-in colours of the chips a preset tile shows, for parts a preset leaves alone. */
-    const CHIP_DEFAULTS = {
-        quality: { background: 'rgba(189, 5, 232, 0.95)', color: '#ffffff', border: 'transparent' },
-        status: { background: 'rgba(15, 15, 15, 0.72)', color: '#ffffff', border: 'rgba(255, 255, 255, 0.18)' },
-        rating: { background: 'rgba(0, 0, 0, 0.85)', color: '#ffc107', border: 'transparent' },
-        genre: { background: 'rgba(10, 10, 10, 0.8)', color: '#E0E0E0', border: 'rgba(255, 255, 255, 0.2)' },
-    };
-
-    /** The genre a preset tile shows when the administrator coloured none of their own. */
-    const GENRE_SAMPLE = 'drama';
-
-    /**
-     * The Poster preset's tile: each chip in the colours a different artwork
-     * gives it (a red, a blue and a teal poster), through the same
-     * normalisation as the cards (tags/tag-poster-colours.js).
-     */
-    const POSTER_SAMPLE_ART = { quality: [178, 34, 34], status: [30, 60, 140], rating: [20, 120, 130], genre: [96, 40, 128] };
-
+  // client/src/features/media-tags/settings/ui-panel-media-tags.ts
+  var LAYOUTS = ["corners", "bands", "caption", "summary", "minimal"];
+  var isLayout = (value) => LAYOUTS.some((id) => id === value);
+  var PRESETS = ["default", "glass", "outline", "dark", "light", "mono", "poster"];
+  var ADMIN_PAGE_NAME = "Jellyfin Enhanced";
+  var ADMIN_TAB = "media-tags";
+  var TAB_STORE_PREFIX = "JE_mediaTagsTab:";
+  var BADGE_FAMILIES = [
+    { key: "statusTagsJustAdded", id: "statusTagsJustAddedToggle", fallback: true, nameKey: "status_tag_just_added", descKey: "panel_media_tags_badge_just_added_desc", chip: ["added", "added", "status_tag_just_added"], windowKey: "panel_media_tags_badge_window_added", windowSetting: "StatusTagsJustAddedDays", windowFallback: 7 },
+    { key: "statusTagsNewRelease", id: "statusTagsNewReleaseToggle", fallback: true, nameKey: "panel_media_tags_badge_new_release", descKey: "panel_settings_ui_status_tags_new_release", chip: ["new", "newMovie", "status_tag_new_movie"], windowKey: "panel_media_tags_badge_window_new", windowSetting: "StatusTagsNewReleaseDays", windowFallback: 30 },
+    { key: "statusTagsTrending", id: "statusTagsTrendingToggle", fallback: true, nameKey: "recommendations_trending", descKey: "panel_media_tags_badge_trending_desc", chip: ["trending", "trending", "status_tag_trending_today"] },
+    { key: "statusTagsSchedule", id: "statusTagsScheduleToggle", fallback: true, nameKey: "panel_media_tags_badge_schedule", descKey: "panel_settings_ui_status_tags_schedule", chip: ["schedule", "airing_today", "status_tag_airing_today"] },
+    { key: "statusTagsMilestones", id: "statusTagsMilestonesToggle", fallback: true, nameKey: "panel_media_tags_badge_milestones", descKey: "panel_settings_ui_status_tags_milestones", chip: ["milestone", "season_finale", "status_tag_season_finale"] },
+    { key: "statusTagsSeriesStatus", id: "statusTagsSeriesStatusToggle", fallback: false, nameKey: "panel_media_tags_badge_series_status", descKey: "panel_settings_ui_status_tags_series_status", chip: ["status", "returning", "status_tag_returning"] },
+    { key: "statusTagsScenes", id: "statusTagsScenesToggle", fallback: false, nameKey: "panel_media_tags_badge_scenes", descKey: "panel_settings_ui_status_tags_scenes", chip: ["scenes", "post_credits", "status_tag_post_credits"] },
+    { key: "statusTagsLeaving", id: "statusTagsLeavingToggle", fallback: false, nameKey: "common_leaving_soon", descKey: "panel_media_tags_badge_leaving_desc", chip: ["leaving", "leaving", "status_tag_leaving_days", { days: 5 }], requires: "LeavingSoonAvailable", requiresKey: "panel_media_tags_badge_leaving_unavailable" },
+    { key: "statusTagsDirectPlay", id: "statusTagsDirectPlayToggle", fallback: false, nameKey: "panel_media_tags_badge_direct_play", descKey: "panel_media_tags_badge_direct_play_desc", chip: ["playback", "direct_play", "status_tag_transcode"] }
+  ];
+  var SERVER_LINKS = [
+    { nameKey: "panel_media_tags_server_defaults", descKey: "panel_media_tags_server_defaults_desc", tab: "layout" },
+    { nameKey: "panel_media_tags_server_colours", descKey: "panel_media_tags_server_colours_desc", tab: "colours" },
+    { nameKey: "panel_media_tags_server_cache", descKey: "panel_media_tags_server_cache_desc", tab: "server" },
+    { nameKey: "panel_media_tags_server_native", descKey: "panel_media_tags_server_native_desc", tab: "server" }
+  ];
+  var isChipKind = (value) => value === "quality" || value === "status" || value === "rating" || value === "genre";
+  var CHIP_DEFAULTS = {
+    quality: { background: "rgba(189, 5, 232, 0.95)", color: "#ffffff", border: "transparent" },
+    status: { background: "rgba(15, 15, 15, 0.72)", color: "#ffffff", border: "rgba(255, 255, 255, 0.18)" },
+    rating: { background: "rgba(0, 0, 0, 0.85)", color: "#ffc107", border: "transparent" },
+    genre: { background: "rgba(10, 10, 10, 0.8)", color: "#E0E0E0", border: "rgba(255, 255, 255, 0.2)" }
+  };
+  var GENRE_SAMPLE = "drama";
+  var POSTER_SAMPLE_ART = { quality: [178, 34, 34], status: [30, 60, 140], rating: [20, 120, 130], genre: [96, 40, 128] };
+  var DOCS_URL = "https://n00bcodr.github.io/Jellyfin-Enhanced/enhanced/tags/";
+  var DOCS_ANCHORS = { layout: "layouts", groups: "tag-groups-order-position-limits", badges: "badges-and-priority", rules: "rules-and-locked-items", colours: "tag-styles-and-css", server: "server-side-tag-cache" };
+  var docsAnchor = (tab) => new Map(Object.entries(DOCS_ANCHORS)).get(tab);
+  var EDGES = ["default", "tight", "flush"];
+  var SHAPE_SELECTS = ["enabled", "layout", "density", "tagScale", "tagGap"];
+  var field = (value, key) => value !== null && typeof value === "object" ? Reflect.get(value, key) : void 0;
+  var coloursOf = (value) => {
+    const out = {};
+    for (const key of ["background", "color", "border"]) {
+      const v = field(value, key);
+      if (v) out[key] = String(v);
+    }
+    return out;
+  };
+  function controlLabel(el) {
+    const text = (node) => (node?.textContent || "").replace(/\s+/g, " ").trim();
+    const ownLabel = el.getAttribute("aria-label");
+    if (ownLabel) return ownLabel.trim();
+    const named = el.querySelector?.("[data-je-label]");
+    if (named) return text(named);
+    const label = el instanceof HTMLInputElement || el instanceof HTMLSelectElement || el instanceof HTMLButtonElement || el instanceof HTMLOutputElement || el instanceof HTMLTextAreaElement ? el.labels?.[0] : void 0;
+    if (label) return text(label.querySelector("[data-je-label]") || label);
+    const by = el.getAttribute("aria-labelledby");
+    if (by) return by.split(/\s+/).map((id) => text(document.getElementById(id))).join(" ").trim();
+    return text(el);
+  }
+  function installUiPanelMediaTags(JE) {
+    const internal = registry(JE);
     const escapeHtml = (value) => JE.escapeHtml(String(value));
-    /** @param {string} key @param {Object} [params] @returns {string} Translated and escaped. */
-    const tx = (key, params) => escapeHtml(JE.t(key, params));
-
-    /** @returns {boolean} Whether the signed-in user is an administrator (server-computed flag). */
-    const isAdmin = () => (JE.helpers?.isAdmin ? JE.helpers.isAdmin() : JE.currentSettings?.isAdmin === true);
-    /** @returns {boolean} Whether the admin lets users pick their own colour preset. */
+    const tx = (key, params) => escapeHtml(JE.t(key ?? "", params));
+    const t = (key, params) => JE.t(key ?? "", params);
+    const isAdmin = () => JE.helpers?.isAdmin ? JE.helpers.isAdmin() : JE.currentSettings?.isAdmin === true;
     const presetsAllowed = () => JE.pluginConfig?.TagStylesAllowUserPreset === true;
-
-    /**
-     * The tabs this user gets, in order. Colours only while presets are
-     * allowed (admins always, for the colour editor); Server for admins only.
-     * @returns {Array<{id: string, nameKey: string, shortKey?: string, admin?: boolean}>}
-     */
+    const layout = () => {
+      const L = JE.core?.tagLayout;
+      if (!L) throw new TypeError("The tag layout controller is unavailable");
+      return L;
+    };
+    const vocab = () => layout().VOCABULARY_KEYS;
     function tabsFor() {
-        const tabs = [
-            // The admin page's icons for the same sections.
-            { id: 'layout', nameKey: 'common_layout', icon: 'view_quilt' },
-            { id: 'groups', nameKey: 'common_groups', icon: 'label' },
-            { id: 'badges', nameKey: 'panel_media_tags_tab_badges', shortKey: 'common_badges', icon: 'new_releases' },
-            { id: 'rules', nameKey: 'panel_media_tags_tab_rules', shortKey: 'common_rules', icon: 'rule' },
-        ];
-        if (presetsAllowed() || isAdmin()) tabs.push({ id: 'colours', nameKey: 'common_colours', icon: 'palette' });
-        if (isAdmin()) tabs.push({ id: 'server', nameKey: 'common_server', admin: true, icon: 'dns' });
-        return tabs;
+      const tabs = [
+        // The admin page's icons for the same sections.
+        { id: "layout", nameKey: "common_layout", icon: "view_quilt" },
+        { id: "groups", nameKey: "common_groups", icon: "label" },
+        { id: "badges", nameKey: "panel_media_tags_tab_badges", shortKey: "common_badges", icon: "new_releases" },
+        { id: "rules", nameKey: "panel_media_tags_tab_rules", shortKey: "common_rules", icon: "rule" }
+      ];
+      if (presetsAllowed() || isAdmin()) tabs.push({ id: "colours", nameKey: "common_colours", icon: "palette" });
+      if (isAdmin()) tabs.push({ id: "server", nameKey: "common_server", admin: true, icon: "dns" });
+      return tabs;
     }
-
-    /** The user guide section behind each tab (docs/enhanced/tags.md headings). */
-    const DOCS_URL = 'https://n00bcodr.github.io/Jellyfin-Enhanced/enhanced/tags/';
-    const DOCS_ANCHORS = { layout: 'layouts', groups: 'tag-groups-order-position-limits', badges: 'badges-and-priority', rules: 'rules-and-locked-items', colours: 'tag-styles-and-css', server: 'server-side-tag-cache' };
-
-    /**
-     * Resolve a boolean setting: user override, then admin default, then the built-in default.
-     * @param {string} userKey
-     * @param {boolean} fallback
-     * @returns {boolean}
-     */
     function effectiveBool(userKey, fallback) {
-        const u = JE.currentSettings?.[userKey];
-        if (typeof u === 'boolean') return u;
-        const a = JE.pluginConfig?.[userKey.charAt(0).toUpperCase() + userKey.slice(1)];
-        return typeof a === 'boolean' ? a : fallback;
+      const u = JE.currentSettings?.[userKey];
+      if (typeof u === "boolean") return u;
+      const a = JE.pluginConfig?.[userKey.charAt(0).toUpperCase() + userKey.slice(1)];
+      return typeof a === "boolean" ? a : fallback;
     }
-
-    /**
-     * The configuration page's Media Tags tab (`jeSection=media-tags`), optionally
-     * opened at one of its own tabs (`&tab=`; see js/enhanced/admintags/admin-tags.js).
-     * @param {string} [tab] - Tab id: layout, colours, badges, server, …
-     * @returns {string}
-     */
     function configUrl(tab) {
-        const base = `${window.location.origin}${window.location.pathname}`;
-        return `${base}#/configurationpage?name=${encodeURIComponent(ADMIN_PAGE_NAME)}&jeSection=${ADMIN_TAB}${tab ? `&tab=${encodeURIComponent(tab)}` : ''}`;
+      const base = `${window.location.origin}${window.location.pathname}`;
+      return `${base}#/configurationpage?name=${encodeURIComponent(ADMIN_PAGE_NAME)}&jeSection=${ADMIN_TAB}${tab ? `&tab=${encodeURIComponent(tab)}` : ""}`;
     }
-
-    /** @returns {any} The effective layout settings (layout, density, edge spacing), read fresh. */
     function layoutConf() {
-        const L = JE.core?.tagLayout;
-        if (!L) return { layout: 'corners', density: 'full', edge: 'default' };
-        L.invalidateSettings();
-        return L.normalizeSettings();
+      const L = JE.core?.tagLayout;
+      if (!L) return { layout: "corners", density: "full", edge: "default" };
+      L.invalidateSettings();
+      return L.normalizeSettings();
     }
-
-    // ── Markup ─────────────────────────────────────────────────────────
-
-    /**
-     * A checkbox row (quick switch): the input keeps its old id.
-     * @param {string} id
-     * @param {boolean} checked
-     * @param {string} nameKey
-     * @param {string} descKey
-     * @returns {string}
-     */
     function switchRow(id, checked, nameKey, descKey) {
-        return `
+      return `
             <label class="je-mth-switch">
-                <input type="checkbox" id="${id}" ${checked ? 'checked' : ''} aria-describedby="${id}Desc">
+                <input type="checkbox" id="${id}" ${checked ? "checked" : ""} aria-describedby="${id}Desc">
                 <span class="je-mth-switch-text">
                     <span class="je-mth-switch-name" data-je-label>${tx(nameKey)}</span>
                     <span class="je-mth-switch-desc" id="${id}Desc">${tx(descKey)}</span>
                 </span>
             </label>`;
     }
-
-    // Per-shape settings live here, apart from the default layout and group editor.
-    /**
-     * One shape's reduced profile editor: position pills and chip cap steppers.
-     * Uses the controller's group/slot vocabulary; the full group row also owns
-     * enable switches, category filters and reordering, which remain global.
-     * @param {string} shape
-     * @returns {string}
-     */
+    const openShapes = /* @__PURE__ */ new Set();
+    const stepCap = (cap, dir) => {
+      const data = internal.tagGroupEditorData;
+      if (!data) throw new TypeError("The tag group editor is unavailable");
+      return data.stepCap(cap, dir, { capAll: true });
+    };
     function shapeRowHtml(shape) {
-        const L = JE.core.tagLayout;
-        const own = L.normalizeSettings().shapes[shape];
-        const conf = L.resolveLayout({ shape });
-        const shapeName = JE.t(`tag_shapes_${shape}`);
-        // Collapsed, the card says what the shape's look is; its fields open on request.
-        const summary = [JE.t(L.VOCABULARY_KEYS.layout[conf.layout]), JE.t(`panel_settings_ui_tag_density_${conf.density}`),
-            own?.tagScale ? L.sizeLabel('scale', own.tagScale) : ''].filter(Boolean).join(' · ');
-        const controls = own ? `
-            <details class="je-mth-shape-more" data-shape-more ${openShapes.has(shape) ? 'open' : ''}>
-            <summary class="je-mth-shape-summary"><span class="je-mth-shape-summary-text">${escapeHtml(summary)}</span><span class="je-mth-shape-summary-action">${tx('tag_shapes_edit')}<span class="material-icons" aria-hidden="true">expand_more</span></span></summary>
-            <div class="je-mth-shape-fields">
-                <label>${tx('panel_settings_ui_tag_layout')}<select data-shape-action="layout" aria-label="${tx('tag_shapes_layout_for', { shape: shapeName })}">
-                    ${LAYOUTS.map(id => `<option value="${id}" ${conf.layout === id ? 'selected' : ''}>${tx(JE.core.tagLayout.VOCABULARY_KEYS.layout[id])}</option>`).join('')}
-                </select></label>
-                <label>${tx('panel_settings_ui_tag_density')}<select data-shape-action="density" aria-label="${tx('tag_shapes_density_for', { shape: shapeName })}">
-                    ${['full', 'compact'].map(id => `<option value="${id}" ${conf.density === id ? 'selected' : ''}>${tx(`panel_settings_ui_tag_density_${id}`)}</option>`).join('')}
-                </select></label>
-                ${['scale', 'gap'].map(kind => {
-                    const key = kind === 'scale' ? 'tagScale' : 'tagGap';
-                    const choices = kind === 'scale' ? L.TAG_SCALES : L.TAG_GAPS;
-                    return `<label>${tx(`tag_${kind}_label`)}<select data-shape-action="${key}" aria-label="${escapeHtml(shapeName)}: ${tx(`tag_${kind}_label`)}">
-                        <option value="" ${!own[key] ? 'selected' : ''}>${tx('tag_size_inherit')}</option>
-                        ${Object.keys(choices).map(id => `<option value="${id}" ${own[key] === id ? 'selected' : ''}>${escapeHtml(JE.core.tagLayout.sizeLabel(kind, id))}</option>`).join('')}
+      const L = layout();
+      const own = L.normalizeSettings().shapes[shape];
+      const conf = L.resolveLayout({ shape });
+      const shapeName = JE.t(`tag_shapes_${shape}`);
+      const summary = [
+        t(L.VOCABULARY_KEYS.layout[conf.layout]),
+        JE.t(`panel_settings_ui_tag_density_${conf.density}`),
+        own?.tagScale ? L.sizeLabel("scale", own.tagScale) : ""
+      ].filter(Boolean).join(" · ");
+      const sizeSelect = (look, kind) => {
+        const key = kind === "scale" ? "tagScale" : "tagGap";
+        const choices = kind === "scale" ? L.TAG_SCALES : L.TAG_GAPS;
+        const chosen = look[key];
+        return `<label>${tx(`tag_${kind}_label`)}<select data-shape-action="${key}" aria-label="${escapeHtml(shapeName)}: ${tx(`tag_${kind}_label`)}">
+                        <option value="" ${!chosen ? "selected" : ""}>${tx("tag_size_inherit")}</option>
+                        ${Object.keys(choices).map((id) => `<option value="${id}" ${chosen === id ? "selected" : ""}>${escapeHtml(L.sizeLabel(kind, id))}</option>`).join("")}
                     </select></label>`;
-                }).join('')}
-                <button type="button" class="je-mth-button" data-shape-action="recommended">${tx('tag_shapes_recommended')}</button>
+      };
+      const controls = own ? `
+            <details class="je-mth-shape-more" data-shape-more ${openShapes.has(shape) ? "open" : ""}>
+            <summary class="je-mth-shape-summary"><span class="je-mth-shape-summary-text">${escapeHtml(summary)}</span><span class="je-mth-shape-summary-action">${tx("tag_shapes_edit")}<span class="material-icons" aria-hidden="true">expand_more</span></span></summary>
+            <div class="je-mth-shape-fields">
+                <label>${tx("panel_settings_ui_tag_layout")}<select data-shape-action="layout" aria-label="${tx("tag_shapes_layout_for", { shape: shapeName })}">
+                    ${LAYOUTS.map((id) => `<option value="${id}" ${conf.layout === id ? "selected" : ""}>${tx(L.VOCABULARY_KEYS.layout[id])}</option>`).join("")}
+                </select></label>
+                <label>${tx("panel_settings_ui_tag_density")}<select data-shape-action="density" aria-label="${tx("tag_shapes_density_for", { shape: shapeName })}">
+                    ${["full", "compact"].map((id) => `<option value="${id}" ${conf.density === id ? "selected" : ""}>${tx(`panel_settings_ui_tag_density_${id}`)}</option>`).join("")}
+                </select></label>
+                ${sizeSelect(own, "scale")}${sizeSelect(own, "gap")}
+                <button type="button" class="je-mth-button" data-shape-action="recommended">${tx("tag_shapes_recommended")}</button>
             </div>
-            <div class="je-mth-shape-groups">${L.DEFAULT_ORDER.map(group => {
-                const groupName = JE.t(JE.core.tagLayout.VOCABULARY_KEYS.group[`${group === 'ageRating' ? 'age_rating' : group}`]);
-                const cap = conf.caps[group];
-                return `<div class="je-mth-shape-group" data-shape-group="${group}">
+            <div class="je-mth-shape-groups">${L.DEFAULT_ORDER.map((group) => {
+        const groupName = t(L.VOCABULARY_KEYS.group[`${group === "ageRating" ? "age_rating" : group}`]);
+        const cap = conf.caps[group];
+        return `<div class="je-mth-shape-group" data-shape-group="${group}">
                     <span class="je-mth-label">${escapeHtml(groupName)}</span>
-                    <div class="je-mth-shape-positions" role="group" aria-label="${tx('tag_shapes_position_for', { group: groupName, shape: shapeName })}">
-                        ${L.LAYOUT_SLOTS[conf.layout].filter(slot => slot !== 'dots' || group === 'quality').map(slot => `<button type="button" data-shape-action="slot" data-value="${slot}" aria-pressed="${conf.slots[group] === slot}">${tx(slot === 'off' ? 'panel_settings_ui_tag_slot_off' : JE.core.tagLayout.VOCABULARY_KEYS.slot[`${conf.layout}_${slot}`])}</button>`).join('')}
+                    <div class="je-mth-shape-positions" role="group" aria-label="${tx("tag_shapes_position_for", { group: groupName, shape: shapeName })}">
+                        ${L.LAYOUT_SLOTS[conf.layout].filter((slot) => slot !== "dots" || group === "quality").map((slot) => `<button type="button" data-shape-action="slot" data-value="${slot}" aria-pressed="${conf.slots[group] === slot}">${tx(slot === "off" ? "panel_settings_ui_tag_slot_off" : L.VOCABULARY_KEYS.slot[`${conf.layout}_${slot}`])}</button>`).join("")}
                     </div>
-                    <div class="je-mth-shape-cap" data-je-cap-control ${L.singleChipGroup(group) ? 'hidden' : ''} role="group" aria-label="${tx('tag_shapes_cap_for', { group: groupName, shape: shapeName })}">
-                        <button type="button" data-shape-action="cap" data-value="-1" ${internal.tagGroupEditorData.stepCap(cap, -1, { capAll: true }) === null ? 'disabled' : ''} aria-label="${tx('tag_shapes_fewer', { group: groupName })}">−</button>
-                        <output aria-live="polite">${cap === 0 ? tx('panel_settings_ui_tag_editor_summary_all') : cap}</output>
-                        <button type="button" data-shape-action="cap" data-value="1" ${internal.tagGroupEditorData.stepCap(cap, 1, { capAll: true }) === null ? 'disabled' : ''} aria-label="${tx('tag_shapes_more', { group: groupName })}">+</button>
+                    <div class="je-mth-shape-cap" data-je-cap-control ${L.singleChipGroup(group) ? "hidden" : ""} role="group" aria-label="${tx("tag_shapes_cap_for", { group: groupName, shape: shapeName })}">
+                        <button type="button" data-shape-action="cap" data-value="-1" ${stepCap(cap, -1) === null ? "disabled" : ""} aria-label="${tx("tag_shapes_fewer", { group: groupName })}">−</button>
+                        <output aria-live="polite">${cap === 0 ? tx("panel_settings_ui_tag_editor_summary_all") : cap}</output>
+                        <button type="button" data-shape-action="cap" data-value="1" ${stepCap(cap, 1) === null ? "disabled" : ""} aria-label="${tx("tag_shapes_more", { group: groupName })}">+</button>
                     </div>
                 </div>`;
-            }).join('')}</div>
-            </details>` : '';
-        return `<section class="je-mth-card je-mth-shape" data-shape="${shape}" aria-labelledby="jeShape-${shape}">
+      }).join("")}</div>
+            </details>` : "";
+      return `<section class="je-mth-card je-mth-shape" data-shape="${shape}" aria-labelledby="jeShape-${shape}">
             <h4 class="je-mth-card-title" id="jeShape-${shape}">${escapeHtml(shapeName)}</h4>
-            <label class="je-mth-shape-toggle"><input type="checkbox" data-shape-action="enabled" ${own ? 'checked' : ''}>${tx('tag_shapes_different')}</label>
+            <label class="je-mth-shape-toggle"><input type="checkbox" data-shape-action="enabled" ${own ? "checked" : ""}>${tx("tag_shapes_different")}</label>
             ${controls}
         </section>`;
     }
-
-    /** The shape cards opened this session (kept when the cards are drawn again). */
-    const openShapes = new Set();
-
-    /** @returns {string} The independently editable looks for landscape cards and list rows. */
     function shapesHtml() {
-        return JE.core?.tagLayout ? JE.core.tagLayout.SHAPES.map(shapeRowHtml).join('') : '';
+      return JE.core?.tagLayout ? JE.core.tagLayout.SHAPES.map(shapeRowHtml).join("") : "";
     }
-
-    /** Size or gap segmented control, using the layout controller's validated choices.
-     * @param {string} kind @param {Object} conf @returns {string}
-     */
     function sizeControlHtml(kind, conf) {
-        const name = kind === 'scale' ? 'Scale' : 'Gap';
-        const choices = kind === 'scale' ? JE.core.tagLayout.TAG_SCALES : JE.core.tagLayout.TAG_GAPS;
-        return `<div class="je-mth-density">
+      const name = kind === "scale" ? "Scale" : "Gap";
+      const L = layout();
+      const choices = kind === "scale" ? L.TAG_SCALES : L.TAG_GAPS;
+      const chosen = kind === "scale" ? conf.tagScale : conf.tagGap;
+      return `<div class="je-mth-density">
             <div class="je-mth-field-text">
                 <span class="je-mth-label" id="jeMth${name}Label">${tx(`tag_${kind}_label`)}</span>
                 <span class="je-mth-hint" id="jeMth${name}Desc">${tx(`tag_${kind}_desc`)}</span>
             </div>
             <div class="je-mth-pills" id="jeTag${name}Choice" role="radiogroup" aria-labelledby="jeMth${name}Label" aria-describedby="jeMth${name}Desc">
-                ${Object.keys(choices).map(value => `<label class="je-mth-pill"><input type="radio" name="jeTag${name}" value="${value}" ${conf[`tag${name}`] === value ? 'checked' : ''}><span data-je-label>${escapeHtml(JE.core.tagLayout.sizeLabel(kind, value))}</span></label>`).join('')}
+                ${Object.keys(choices).map((value) => `<label class="je-mth-pill"><input type="radio" name="jeTag${name}" value="${value}" ${chosen === value ? "checked" : ""}><span data-je-label>${escapeHtml(L.sizeLabel(kind, value))}</span></label>`).join("")}
             </div>
         </div>`;
     }
-
-    /** Corners edge spacing choices (core/tag-layout.js EDGE_SPACINGS), in display order. */
-    const EDGES = ['default', 'tight', 'flush'];
-
-    /** @returns {string} The Layout tab: tiles, density, edge spacing and the quick switches. */
     function layoutPanelHtml() {
-        const conf = layoutConf();
-        const tiles = LAYOUTS.map((id) => `
+      const conf = layoutConf();
+      const tiles = LAYOUTS.map((id) => `
             <label class="je-mth-tile">
-                <input type="radio" name="jeTagLayout" value="${id}" ${conf.layout === id ? 'checked' : ''}>
+                <input type="radio" name="jeTagLayout" value="${id}" ${conf.layout === id ? "checked" : ""}>
                 <span class="je-mth-tile-art" data-layout="${id}" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
-                <span class="je-mth-tile-name" data-je-label>${tx(JE.core.tagLayout.VOCABULARY_KEYS.layout[id])}</span>
-            </label>`).join('');
-        const density = ['full', 'compact'].map((id) => `
+                <span class="je-mth-tile-name" data-je-label>${tx(vocab().layout[id])}</span>
+            </label>`).join("");
+      const density = ["full", "compact"].map((id) => `
             <label class="je-mth-pill">
-                <input type="radio" name="jeTagDensity" value="${id}" ${conf.density === id ? 'checked' : ''}>
+                <input type="radio" name="jeTagDensity" value="${id}" ${conf.density === id ? "checked" : ""}>
                 <span data-je-label>${tx(`panel_settings_ui_tag_density_${id}`)}</span>
-            </label>`).join('');
-        const edge = EDGES.map((id) => `
+            </label>`).join("");
+      const edge = EDGES.map((id) => `
             <label class="je-mth-pill">
-                <input type="radio" name="jeTagEdge" value="${id}" ${conf.edge === id ? 'checked' : ''}>
-                <span data-je-label>${tx(JE.core.tagLayout.VOCABULARY_KEYS.edge[id])}</span>
-            </label>`).join('');
-        const native = JE.pluginConfig?.NativePosterTagsEnabled === true
-            ? switchRow('nativePosterTagsToggle', JE.currentSettings.useNativePosterTags !== false, 'panel_settings_ui_native_poster_tags', 'panel_settings_ui_native_poster_tags_desc')
-            : '';
-        return `
+                <input type="radio" name="jeTagEdge" value="${id}" ${conf.edge === id ? "checked" : ""}>
+                <span data-je-label>${tx(vocab().edge[id])}</span>
+            </label>`).join("");
+      const native = JE.pluginConfig?.NativePosterTagsEnabled === true ? switchRow("nativePosterTagsToggle", JE.currentSettings.useNativePosterTags !== false, "panel_settings_ui_native_poster_tags", "panel_settings_ui_native_poster_tags_desc") : "";
+      return `
             <section class="je-mth-card" aria-labelledby="jeMthLayoutTitle">
-                <div class="je-mth-card-head"><h4 class="je-mth-card-title" id="jeMthLayoutTitle">${tx('common_layout')}</h4>
-                    <button type="button" class="je-mth-button je-mth-jump" data-je-jump="jeMthPresetsTitle"><span class="material-icons" aria-hidden="true">auto_awesome</span>${tx('panel_media_tags_browse_presets')}</button></div>
-                <p class="je-mth-hint">${tx('panel_media_tags_layout_desc')}</p>
+                <div class="je-mth-card-head"><h4 class="je-mth-card-title" id="jeMthLayoutTitle">${tx("common_layout")}</h4>
+                    <button type="button" class="je-mth-button je-mth-jump" data-je-jump="jeMthPresetsTitle"><span class="material-icons" aria-hidden="true">auto_awesome</span>${tx("panel_media_tags_browse_presets")}</button></div>
+                <p class="je-mth-hint">${tx("panel_media_tags_layout_desc")}</p>
                 <div class="je-mth-tiles" id="jeTagLayoutChoice" role="radiogroup" aria-labelledby="jeMthLayoutTitle" aria-describedby="jeMthLayoutDesc">${tiles}</div>
                 <p class="je-mth-desc" id="jeMthLayoutDesc" aria-live="polite">${tx(`panel_settings_ui_tag_layout_${conf.layout}`)}</p>
                 <div class="je-mth-density">
                     <div class="je-mth-field-text">
-                        <span class="je-mth-label" id="jeMthDensityLabel">${tx('panel_settings_ui_tag_density')}</span>
-                        <span class="je-mth-hint" id="jeMthDensityDesc">${tx('panel_settings_ui_tag_density_desc')}</span>
+                        <span class="je-mth-label" id="jeMthDensityLabel">${tx("panel_settings_ui_tag_density")}</span>
+                        <span class="je-mth-hint" id="jeMthDensityDesc">${tx("panel_settings_ui_tag_density_desc")}</span>
                     </div>
                     <div class="je-mth-pills" id="jeTagDensityChoice" role="radiogroup" aria-labelledby="jeMthDensityLabel" aria-describedby="jeMthDensityDesc">${density}</div>
                 </div>
-                ${sizeControlHtml('scale', conf)}
-                ${sizeControlHtml('gap', conf)}
+                ${sizeControlHtml("scale", conf)}
+                ${sizeControlHtml("gap", conf)}
                 <div class="je-mth-density je-mth-edge">
                     <div class="je-mth-field-text">
-                        <span class="je-mth-label" id="jeMthEdgeLabel">${tx('panel_settings_ui_tag_edge')}</span>
-                        <span class="je-mth-hint" id="jeMthEdgeDesc">${tx('panel_settings_ui_tag_edge_desc')}</span>
+                        <span class="je-mth-label" id="jeMthEdgeLabel">${tx("panel_settings_ui_tag_edge")}</span>
+                        <span class="je-mth-hint" id="jeMthEdgeDesc">${tx("panel_settings_ui_tag_edge_desc")}</span>
                     </div>
                     <div class="je-mth-pills" id="jeTagEdgeChoice" role="radiogroup" aria-labelledby="jeMthEdgeLabel" aria-describedby="jeMthEdgeDesc">${edge}</div>
                 </div>
             </section>
             <div class="je-mth-shapes">${shapesHtml()}</div>
-            <p class="je-mth-hint je-mth-shapes-note">${tx('tag_shapes_limitations')}</p>
+            <p class="je-mth-hint je-mth-shapes-note">${tx("tag_shapes_limitations")}</p>
             <section class="je-mth-card" aria-labelledby="jeMthSwitchesTitle">
-                <h4 class="je-mth-card-title" id="jeMthSwitchesTitle">${tx('panel_media_tags_switches_title')}</h4>
-                <p class="je-mth-hint">${tx('panel_media_tags_switches_desc')}</p>
+                <h4 class="je-mth-card-title" id="jeMthSwitchesTitle">${tx("panel_media_tags_switches_title")}</h4>
+                <p class="je-mth-hint">${tx("panel_media_tags_switches_desc")}</p>
                 <div class="je-mth-switches">
-                    ${switchRow('tagsHideOnHoverToggle', !!JE.currentSettings.tagsHideOnHover, 'panel_settings_ui_hide_tags_on_hover', 'panel_settings_ui_hide_tags_on_hover_desc')}
+                    ${switchRow("tagsHideOnHoverToggle", !!JE.currentSettings.tagsHideOnHover, "panel_settings_ui_hide_tags_on_hover", "panel_settings_ui_hide_tags_on_hover_desc")}
                     ${native}
-                    ${switchRow('peopleTagsToggle', !!JE.currentSettings.peopleTagsEnabled, 'panel_settings_ui_people_tags', 'panel_settings_ui_people_tags_desc')}
-                    <p class="je-mth-hint" data-je-scope-na="people">${tx('tag_scope_people_na')}</p>
+                    ${switchRow("peopleTagsToggle", !!JE.currentSettings.peopleTagsEnabled, "panel_settings_ui_people_tags", "panel_settings_ui_people_tags_desc")}
+                    <p class="je-mth-hint" data-je-scope-na="people">${tx("tag_scope_people_na")}</p>
                 </div>
             </section>
-            ${internal.buildTagPortableHtml?.() || ''}`;
+            ${internal.buildTagPortableHtml?.() || ""}`;
     }
-
-    /**
-     * A status chip as the status module draws it, for a badge card.
-     * @param {string[]} chip - [kind, data-je-status, label key].
-     * @returns {string}
-     */
     function statusChipHtml([kind, status, labelKey, params]) {
-        if (kind === 'trending') {
-            const [before, after = ''] = JE.t(labelKey, { rank: '\u0001' }).split('\u0001');
-            const hash = before.endsWith('#') ? '#' : '';
-            return `<span class="status-tag status-tag--${kind}" data-je-status="${status}">${escapeHtml(before.slice(0, before.length - hash.length))}<span class="status-tag-rank">${hash}1</span>${escapeHtml(after)}</span>`;
-        }
-        return `<span class="status-tag status-tag--${kind}" data-je-status="${status}">${tx(labelKey, params)}</span>`;
+      if (kind === "trending") {
+        const [before = "", after = ""] = JE.t(labelKey, { rank: "" }).split("");
+        const hash = before.endsWith("#") ? "#" : "";
+        return `<span class="status-tag status-tag--${kind}" data-je-status="${status}">${escapeHtml(before.slice(0, before.length - hash.length))}<span class="status-tag-rank">${hash}1</span>${escapeHtml(after)}</span>`;
+      }
+      return `<span class="status-tag status-tag--${kind}" data-je-status="${status}">${tx(labelKey, params)}</span>`;
     }
-
-    /** @returns {string} The Status badges tab. */
     function badgesPanelHtml() {
-        const admin = isAdmin();
-        const rows = BADGE_FAMILIES.map((f) => {
-            const days = Number(JE.pluginConfig?.[f.windowSetting]) || f.windowFallback;
-            const window = f.windowKey ? `<span class="je-mth-badge-window">${tx(f.windowKey, { days })}</span>`
-                : f.requires && JE.pluginConfig?.[f.requires] !== true ? `<span class="je-mth-badge-requires">${tx(f.requiresKey)}</span>` : '';
-            return `
+      const admin = isAdmin();
+      const rows = BADGE_FAMILIES.map((f) => {
+        const days = Number(f.windowSetting ? JE.pluginConfig?.[f.windowSetting] : void 0) || (f.windowFallback ?? NaN);
+        const window2 = f.windowKey ? `<span class="je-mth-badge-window">${tx(f.windowKey, { days })}</span>` : f.requires && JE.pluginConfig?.[f.requires] !== true ? `<span class="je-mth-badge-requires">${tx(f.requiresKey)}</span>` : "";
+        return `
                 <div class="je-quality-cat-row je-mth-badge" data-cat-key="${f.key}">
                     <label class="je-mth-badge-main">
-                        <input type="checkbox" id="${f.id}" ${effectiveBool(f.key, f.fallback) ? 'checked' : ''} aria-describedby="${f.id}Desc">
+                        <input type="checkbox" id="${f.id}" ${effectiveBool(f.key, f.fallback) ? "checked" : ""} aria-describedby="${f.id}Desc">
                         <span class="je-mth-badge-text">
                             <span class="je-mth-badge-name" data-je-label>${tx(f.nameKey)}</span>
-                            <span class="je-mth-badge-desc" id="${f.id}Desc">${tx(f.descKey)}${window ? ' · ' : ''}${window}</span>
+                            <span class="je-mth-badge-desc" id="${f.id}Desc">${tx(f.descKey)}${window2 ? " · " : ""}${window2}</span>
                         </span>
                     </label>
                     <span class="je-mth-badge-sample" aria-hidden="true">${statusChipHtml(f.chip)}</span>
                 </div>`;
-        }).join('');
-        const adminLink = admin ? `
-            <a class="je-mth-link" href="${escapeHtml(configUrl('badges'))}" data-je-config-link>${tx('panel_media_tags_badge_windows_admin')}<span class="material-icons" aria-hidden="true">open_in_new</span></a>` : '';
-        return `
+      }).join("");
+      const adminLink = admin ? `
+            <a class="je-mth-link" href="${escapeHtml(configUrl("badges"))}" data-je-config-link>${tx("panel_media_tags_badge_windows_admin")}<span class="material-icons" aria-hidden="true">open_in_new</span></a>` : "";
+      return `
             <section class="je-mth-card" aria-labelledby="jeMthBadgesTitle">
-                <h4 class="je-mth-card-title" id="jeMthBadgesTitle" tabindex="-1">${tx('panel_media_tags_tab_badges')}</h4>
-                <p class="je-mth-hint">${tx('panel_media_tags_badges_desc')}</p>
-                <div class="je-mth-off je-mth-off--action" id="jeMthBadgesOff" ${JE.currentSettings.statusTagsEnabled ? 'hidden' : ''}><span>${tx('panel_media_tags_badges_off')}</span>
-                    <button type="button" class="je-mth-button" data-je-goto="groups:status">${tx('panel_media_tags_badges_turn_on')}<span class="material-icons" aria-hidden="true">arrow_forward</span></button></div>
+                <h4 class="je-mth-card-title" id="jeMthBadgesTitle" tabindex="-1">${tx("panel_media_tags_tab_badges")}</h4>
+                <p class="je-mth-hint">${tx("panel_media_tags_badges_desc")}</p>
+                <div class="je-mth-off je-mth-off--action" id="jeMthBadgesOff" ${JE.currentSettings.statusTagsEnabled ? "hidden" : ""}><span>${tx("panel_media_tags_badges_off")}</span>
+                    <button type="button" class="je-mth-button" data-je-goto="groups:status">${tx("panel_media_tags_badges_turn_on")}<span class="material-icons" aria-hidden="true">arrow_forward</span></button></div>
                 <div id="statusTagsSubToggles" class="je-mth-badges">${rows}</div>
                 <div class="je-mth-actions">
-                    <button type="button" class="je-mth-button" data-je-goto="groups:status">${tx('panel_media_tags_badges_to_groups')}<span class="material-icons" aria-hidden="true">arrow_forward</span></button>
+                    <button type="button" class="je-mth-button" data-je-goto="groups:status">${tx("panel_media_tags_badges_to_groups")}<span class="material-icons" aria-hidden="true">arrow_forward</span></button>
                     ${adminLink}
                 </div>
             </section>`;
     }
-
-    /** @returns {string} The Rules & locks tab: the rules module renders into the mount. */
     function rulesPanelHtml() {
-        return `
+      return `
             <section class="je-mth-card" aria-labelledby="jeTagLooksTitle">
-                <h4 class="je-mth-card-title" id="jeTagLooksTitle">${tx('panel_media_tags_tab_rules')}</h4>
-                <p class="je-mth-hint">${tx('tag_looks_hub_desc')}</p>
+                <h4 class="je-mth-card-title" id="jeTagLooksTitle">${tx("panel_media_tags_tab_rules")}</h4>
+                <p class="je-mth-hint">${tx("tag_looks_hub_desc")}</p>
                 <div id="jeTagLooksMount"></div>
             </section>`;
     }
-
-    /** @returns {string} The Colours tab: preset tiles while allowed, the editor pointer for admins. */
     function coloursPanelHtml() {
-        const admin = isAdmin();
-        let presets;
-        if (presetsAllowed()) {
-            const mine = PRESETS.includes(JE.currentSettings.tagStylePreset) ? JE.currentSettings.tagStylePreset : '';
-            const server = PRESETS.includes(JE.pluginConfig.TagStylePreset) ? JE.pluginConfig.TagStylePreset : 'default';
-            const tile = (value, name, sub = '') => `
+      const admin = isAdmin();
+      let presets;
+      if (presetsAllowed()) {
+        const chosen = JE.currentSettings.tagStylePreset;
+        const configured = JE.pluginConfig.TagStylePreset;
+        const mine = typeof chosen === "string" && PRESETS.includes(chosen) ? chosen : "";
+        const server = typeof configured === "string" && PRESETS.includes(configured) ? configured : "default";
+        const tile = (value, name, sub = "") => `
                 <label class="je-mth-preset">
-                    <input type="radio" name="jeTagPreset" value="${value}" ${mine === value ? 'checked' : ''}>
-                    <span class="je-mth-preset-chips" data-preset="${value || 'server'}" aria-hidden="true">
-                        <span class="je-mth-chip" data-chip="quality">4K</span><span class="je-mth-chip" data-chip="status">${tx('status_tag_compact_added')}</span><span class="je-mth-chip" data-chip="rating">★ 8.1</span><span class="je-mth-chip je-mth-chip-genre" data-chip="genre" data-je-genre="${GENRE_SAMPLE}"><i class="je-mth-chip-glyph">${escapeHtml(JE.genreTags?.iconFor(GENRE_SAMPLE) || 'theater_comedy')}</i></span>
+                    <input type="radio" name="jeTagPreset" value="${value}" ${mine === value ? "checked" : ""}>
+                    <span class="je-mth-preset-chips" data-preset="${value || "server"}" aria-hidden="true">
+                        <span class="je-mth-chip" data-chip="quality">4K</span><span class="je-mth-chip" data-chip="status">${tx("status_tag_compact_added")}</span><span class="je-mth-chip" data-chip="rating">★ 8.1</span><span class="je-mth-chip je-mth-chip-genre" data-chip="genre" data-je-genre="${GENRE_SAMPLE}"><i class="je-mth-chip-glyph">${escapeHtml(JE.genreTags?.iconFor?.(GENRE_SAMPLE) || "theater_comedy")}</i></span>
                     </span>
-                    <span class="je-mth-preset-name" data-je-label>${escapeHtml(name)}</span>${sub ? `<span class="je-mth-preset-sub">${escapeHtml(sub)}</span>` : ''}
+                    <span class="je-mth-preset-name" data-je-label>${escapeHtml(name)}</span>${sub ? `<span class="je-mth-preset-sub">${escapeHtml(sub)}</span>` : ""}
                 </label>`;
-            presets = `
+        presets = `
                 <div class="je-mth-presets" id="jeTagPresetChoice" role="radiogroup" aria-labelledby="jeMthColoursTitle" aria-describedby="jeMthColoursDesc">
-                    ${tile('', JE.t('panel_settings_ui_tag_style_preset_follow'), JE.t('panel_settings_ui_tag_style_preset_server', { preset: JE.t(JE.core.tagLayout.VOCABULARY_KEYS.preset[server]) }))}
-                    ${PRESETS.map((id) => tile(id, JE.t(JE.core.tagLayout.VOCABULARY_KEYS.preset[id]))).join('')}
+                    ${tile("", JE.t("panel_settings_ui_tag_style_preset_follow"), JE.t("panel_settings_ui_tag_style_preset_server", { preset: t(vocab().preset[server]) }))}
+                    ${PRESETS.map((id) => tile(id, t(vocab().preset[id]))).join("")}
                 </div>`;
-        } else {
-            presets = `<p class="je-mth-off">${tx('panel_media_tags_colours_presets_off')}</p>`;
-        }
-        const editor = admin ? `
+      } else {
+        presets = `<p class="je-mth-off">${tx("panel_media_tags_colours_presets_off")}</p>`;
+      }
+      const editor = admin ? `
             <section class="je-mth-card je-mth-admin" aria-labelledby="jeMthColourEditorTitle">
                 <div class="je-mth-pointer">
                     <div>
-                        <h4 class="je-mth-card-title" id="jeMthColourEditorTitle">${tx('panel_media_tags_server_colours')} <span class="je-mth-admin-chip">${tx('common_admin')}</span></h4>
-                        <p class="je-mth-hint">${tx('panel_media_tags_server_colours_desc')}</p>
+                        <h4 class="je-mth-card-title" id="jeMthColourEditorTitle">${tx("panel_media_tags_server_colours")} <span class="je-mth-admin-chip">${tx("common_admin")}</span></h4>
+                        <p class="je-mth-hint">${tx("panel_media_tags_server_colours_desc")}</p>
                     </div>
-                    <a class="je-mth-button" href="${escapeHtml(configUrl('colours'))}" data-je-config-link aria-label="${tx('panel_media_tags_open_named', { name: JE.t('panel_media_tags_server_colours') })}">${tx('common_open')}<span class="material-icons" aria-hidden="true">open_in_new</span></a>
+                    <a class="je-mth-button" href="${escapeHtml(configUrl("colours"))}" data-je-config-link aria-label="${tx("panel_media_tags_open_named", { name: JE.t("panel_media_tags_server_colours") })}">${tx("common_open")}<span class="material-icons" aria-hidden="true">open_in_new</span></a>
                 </div>
-            </section>` : '';
-        return `
+            </section>` : "";
+      return `
             <section class="je-mth-card" aria-labelledby="jeMthColoursTitle">
-                <h4 class="je-mth-card-title" id="jeMthColoursTitle">${tx('panel_settings_ui_tag_style_preset')}</h4>
-                <p class="je-mth-hint" id="jeMthColoursDesc">${tx('panel_settings_ui_tag_style_preset_desc')}</p>
+                <h4 class="je-mth-card-title" id="jeMthColoursTitle">${tx("panel_settings_ui_tag_style_preset")}</h4>
+                <p class="je-mth-hint" id="jeMthColoursDesc">${tx("panel_settings_ui_tag_style_preset_desc")}</p>
                 ${presets}
             </section>
             ${editor}`;
     }
-
-    /** @returns {string} The Server tab (admins only): one row per configuration page section. */
     function serverPanelHtml() {
-        const rows = SERVER_LINKS.map((link) => `
+      const rows = SERVER_LINKS.map((link) => `
             <li class="je-mth-pointer">
                 <div>
                     <div class="je-mth-pointer-name" data-je-label>${tx(link.nameKey)}</div>
                     <div class="je-mth-hint">${tx(link.descKey)}</div>
                 </div>
-                <a class="je-mth-button" href="${escapeHtml(configUrl(link.tab))}" data-je-config-link aria-label="${tx('panel_media_tags_open_named', { name: JE.t(link.nameKey) })}">${tx('common_open')}<span class="material-icons" aria-hidden="true">open_in_new</span></a>
-            </li>`).join('');
-        return `
+                <a class="je-mth-button" href="${escapeHtml(configUrl(link.tab))}" data-je-config-link aria-label="${tx("panel_media_tags_open_named", { name: JE.t(link.nameKey) })}">${tx("common_open")}<span class="material-icons" aria-hidden="true">open_in_new</span></a>
+            </li>`).join("");
+      return `
             <section class="je-mth-card je-mth-admin" aria-labelledby="jeMthServerTitle">
-                <h4 class="je-mth-card-title" id="jeMthServerTitle">${tx('panel_media_tags_server_title')} <span class="je-mth-admin-chip">${tx('common_admin')}</span></h4>
-                <p class="je-mth-hint">${tx('panel_media_tags_server_desc')}</p>
+                <h4 class="je-mth-card-title" id="jeMthServerTitle">${tx("panel_media_tags_server_title")} <span class="je-mth-admin-chip">${tx("common_admin")}</span></h4>
+                <p class="je-mth-hint">${tx("panel_media_tags_server_desc")}</p>
                 <ul class="je-mth-pointers">${rows}</ul>
             </section>`;
     }
-
-    /**
-     * The whole Media Tags section for the panel template.
-     * @param {Object} ctx - Panel context from ui-panel.js.
-     * @returns {string}
-     */
     internal.buildMediaTagsHubHtml = function(ctx) {
-        const tabs = tabsFor();
-        const content = {
-            layout: layoutPanelHtml,
-            groups: () => internal.buildTagGroupEditorHtml?.(ctx) || '',
-            badges: badgesPanelHtml,
-            rules: rulesPanelHtml,
-            colours: coloursPanelHtml,
-            server: serverPanelHtml,
-        };
-        const tabButtons = tabs.map((tab, i) => {
-            const name = JE.t(tab.nameKey);
-            const short = tab.shortKey ? JE.t(tab.shortKey) : name;
-            // The accessible name always contains the visible (short) label.
-            const label = tab.admin ? JE.t('panel_media_tags_tab_server_name', { name }) : name;
-            return `<button type="button" role="tab" class="je-mth-tab${tab.admin ? ' je-mth-tab--admin' : ''}" id="jeMthTab-${tab.id}" data-tab="${tab.id}" aria-controls="jeMthPanel-${tab.id}" aria-selected="${i === 0}" tabindex="${i === 0 ? 0 : -1}" aria-label="${escapeHtml(label)}">`
-                + `<span class="material-icons je-mth-tab-icon" aria-hidden="true">${tab.icon}</span><span class="je-mth-tab-long">${escapeHtml(name)}</span><span class="je-mth-tab-short" aria-hidden="true">${escapeHtml(short)}</span>`
-                + (tab.admin ? `<span class="je-mth-admin-chip" aria-hidden="true">${tx('common_admin')}</span>` : '')
-                + '</button>';
-        }).join('');
-        const docsLink = (tab) => `<p class="je-mth-docs"><a href="${DOCS_URL}#${DOCS_ANCHORS[tab.id]}" target="_blank" rel="noopener" aria-label="${tx('media_tags_docs_link_label', { name: JE.t(tab.nameKey) })}"><span class="material-icons" aria-hidden="true">menu_book</span>${tx('media_tags_docs_link')}</a></p>`;
-        const panels = tabs.map((tab, i) => `
-            <div class="je-mth-panel" role="tabpanel" id="jeMthPanel-${tab.id}" data-tab="${tab.id}" aria-labelledby="jeMthTab-${tab.id}" ${i === 0 ? '' : 'hidden'}>${content[tab.id]()}${docsLink(tab)}</div>`).join('');
-        return `
+      const tabs = tabsFor();
+      const content = {
+        layout: layoutPanelHtml,
+        groups: () => internal.buildTagGroupEditorHtml?.(ctx) || "",
+        badges: badgesPanelHtml,
+        rules: rulesPanelHtml,
+        colours: coloursPanelHtml,
+        server: serverPanelHtml
+      };
+      const tabButtons = tabs.map((tab, i) => {
+        const name = JE.t(tab.nameKey);
+        const short = tab.shortKey ? JE.t(tab.shortKey) : name;
+        const label = tab.admin ? JE.t("panel_media_tags_tab_server_name", { name }) : name;
+        return `<button type="button" role="tab" class="je-mth-tab${tab.admin ? " je-mth-tab--admin" : ""}" id="jeMthTab-${tab.id}" data-tab="${tab.id}" aria-controls="jeMthPanel-${tab.id}" aria-selected="${i === 0}" tabindex="${i === 0 ? 0 : -1}" aria-label="${escapeHtml(label)}"><span class="material-icons je-mth-tab-icon" aria-hidden="true">${tab.icon}</span><span class="je-mth-tab-long">${escapeHtml(name)}</span><span class="je-mth-tab-short" aria-hidden="true">${escapeHtml(short)}</span>` + (tab.admin ? `<span class="je-mth-admin-chip" aria-hidden="true">${tx("common_admin")}</span>` : "") + "</button>";
+      }).join("");
+      const docsLink = (tab) => `<p class="je-mth-docs"><a href="${DOCS_URL}#${docsAnchor(tab.id)}" target="_blank" rel="noopener" aria-label="${tx("media_tags_docs_link_label", { name: JE.t(tab.nameKey) })}"><span class="material-icons" aria-hidden="true">menu_book</span>${tx("media_tags_docs_link")}</a></p>`;
+      const panels = tabs.map((tab, i) => `
+            <div class="je-mth-panel" role="tabpanel" id="jeMthPanel-${tab.id}" data-tab="${tab.id}" aria-labelledby="jeMthTab-${tab.id}" ${i === 0 ? "" : "hidden"}>${content[tab.id]?.() ?? ""}${docsLink(tab)}</div>`).join("");
+      return `
             <section class="je-pane" data-pane="media-tags">
-                <div class="je-mth" id="jeMediaTagsHub" data-tab="${tabs[0].id}">
+                <div class="je-mth" id="jeMediaTagsHub" data-tab="${tabs[0]?.id}">
                     <div class="je-mth-top">
-                        <h3 class="je-pane-title">${JE.icon(JE.IconName.TAG)} ${tx('common_media_tags')}</h3>
-                        <div class="je-mth-tabs" role="tablist" aria-label="${tx('common_media_tags')}">${tabButtons}</div>
-                        <span class="je-mth-autosave"><span class="material-icons" aria-hidden="true">cloud_done</span>${tx('panel_media_tags_autosave')}</span>
+                        <h3 class="je-pane-title">${JE.icon(JE.IconName.TAG)} ${tx("common_media_tags")}</h3>
+                        <div class="je-mth-tabs" role="tablist" aria-label="${tx("common_media_tags")}">${tabButtons}</div>
+                        <span class="je-mth-autosave"><span class="material-icons" aria-hidden="true">cloud_done</span>${tx("panel_media_tags_autosave")}</span>
                     </div>
                     <div class="je-mth-strip" id="jeMthStrip">
-                        <button type="button" class="je-mth-strip-toggle" id="jeMthStripToggle" aria-expanded="false" aria-controls="jeMthPreview">${tx('common_preview')}<span class="material-icons" aria-hidden="true">expand_more</span></button>
+                        <button type="button" class="je-mth-strip-toggle" id="jeMthStripToggle" aria-expanded="false" aria-controls="jeMthPreview">${tx("common_preview")}<span class="material-icons" aria-hidden="true">expand_more</span></button>
                         <div class="je-mth-strip-thumb" aria-hidden="true"></div>
                         <div class="je-mth-strip-info">
                             <div class="je-mth-strip-text"></div>
                             <div class="je-mth-strip-chips"></div>
                         </div>
-                        <span class="material-icons je-mth-strip-saved" role="img" aria-label="${tx('panel_media_tags_autosave')}" title="${tx('panel_media_tags_autosave')}">cloud_done</span>
+                        <span class="material-icons je-mth-strip-saved" role="img" aria-label="${tx("panel_media_tags_autosave")}" title="${tx("panel_media_tags_autosave")}">cloud_done</span>
                     </div>
                     <div class="je-mth-body">
-                        <aside class="je-mth-preview" id="jeMthPreview" aria-label="${tx('panel_media_tags_preview')}"></aside>
+                        <aside class="je-mth-preview" id="jeMthPreview" aria-label="${tx("panel_media_tags_preview")}"></aside>
                         <div class="je-mth-panels">${panels}</div>
                     </div>
                     <div class="je-mth-live" id="jeMthLive" role="status" aria-live="polite"></div>
                 </div>
             </section>`;
     };
-
-    /** The hub's stylesheet (panel-scoped). */
     const HUB_CSS = `
         #jellyfin-enhanced-panel .je-mth { container: je-mth / inline-size; padding-bottom: 8px; --je-mth-sel: color-mix(in srgb, var(--je-mth-accent) 72%, #000); }
         #jellyfin-enhanced-panel .je-mth-top { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0 20px; border-bottom: 1px solid rgba(255,255,255,0.12); margin-bottom: 12px; }
@@ -711,476 +684,417 @@
             #jellyfin-enhanced-panel .je-mth-tabs { order: 2; }
         }
     `;
-
-    // ── Wiring ─────────────────────────────────────────────────────────
-
-    /**
-     * The visible label of a hub control, for the settings search: its
-     * aria-label, the [data-je-label] part of its own label (a tile's or a
-     * switch's name, not its description), its aria-labelledby text, or its text.
-     * @param {HTMLElement} el
-     * @returns {string}
-     */
-    function controlLabel(el) {
-        const text = (node) => (node?.textContent || '').replace(/\s+/g, ' ').trim();
-        const own = el.getAttribute('aria-label');
-        if (own) return own.trim();
-        const named = el.querySelector?.('[data-je-label]');
-        if (named) return text(named);
-        const label = /** @type {HTMLInputElement} */ (el).labels?.[0];
-        if (label) return text(label.querySelector('[data-je-label]') || label);
-        const by = el.getAttribute('aria-labelledby');
-        if (by) return by.split(/\s+/).map((id) => text(document.getElementById(id))).join(' ').trim();
-        return text(el);
-    }
-
-    /**
-     * Wire the hub: tabs, layout and density tiles, the preview (built the
-     * first time the section shows), the phone strip, search and the
-     * pointers to the configuration page. Torn down when the panel closes.
-     * @param {Object} ctx - Panel context ({ help, resetAutoCloseTimer, onClose, registerSearch, closePanel }).
-     */
     internal.wireMediaTagsHub = function(ctx) {
-        internal.mediaTagsHub?.dispose?.();
-        const hub = /** @type {HTMLElement|null} */ (document.getElementById('jeMediaTagsHub'));
-        if (!hub) return;
-        JE.core.ui?.injectCss?.('je-media-tags-hub', HUB_CSS);
-        hub.style.setProperty('--je-mth-accent', ctx.toggleAccentColor || '#00a4dc');
-        hub.style.setProperty('--je-mth-box', ctx.presetBoxBackground || 'rgba(255,255,255,0.04)');
-        const touch = () => { try { ctx.resetAutoCloseTimer?.(); } catch { /* panel closing */ } };
-        const tablist = /** @type {HTMLElement} */ (hub.querySelector('[role="tablist"]'));
-        const tabs = /** @type {HTMLElement[]} */ (Array.from(hub.querySelectorAll('[role="tab"]')));
-        const live = /** @type {HTMLElement} */ (hub.querySelector('#jeMthLive'));
-        const stripToggle = /** @type {HTMLElement|null} */ (hub.querySelector('#jeMthStripToggle'));
-        const storeKey = `${TAB_STORE_PREFIX}${(typeof ApiClient !== 'undefined' && ApiClient.getCurrentUserId?.()) || ''}`;
-        let disposed = false;
-        /** @type {ReturnType<typeof internal.createTagPreview>|null} */
-        let preview = null;
-        /** @type {IntersectionObserver|null} */
-        let io = null;
-        let presetsLoaded = false;
-        const cleanups = [];
-
-        /** @param {string} message - Said by screen readers (polite). */
-        const announce = (message) => {
-            live.textContent = '';
-            // A fresh node each time, so the same message twice is announced twice.
-            setTimeout(() => { if (!disposed) live.textContent = message; }, 30);
-        };
-
-        /** @returns {string} The tab shown now. */
-        const current = () => hub.dataset.tab || 'layout';
-
-        /** Spotlight and strip sample for what is being edited on the current tab. */
-        const syncFocusOfPreview = () => {
-            if (!preview) return;
-            const tab = current();
-            let spot = null;
-            if (tab === 'badges') spot = 'status';
-            else if (tab === 'groups') {
-                const open = hub.querySelector('.je-tge-row .je-tge-expand[aria-expanded="true"]');
-                spot = /** @type {HTMLElement|null} */ (open?.closest('.je-tge-row'))?.dataset.group || null;
-            }
-            preview.setSpotlight(spot);
-            preview.follow(tab === 'rules' ? 'episode' : 'movie');
-        };
-
-        /**
-         * Show a tab.
-         * @param {string} id
-         * @param {{focusTab?: boolean, focus?: boolean}} [opts] - focusTab moves
-         *   focus to the tab; focus moves it to the panel's heading.
-         * @returns {boolean} False when this user has no such tab.
-         */
-        const select = (id, opts = {}) => {
-            const tab = tabs.find((t) => t.dataset.tab === id);
-            if (!tab) return false;
-            for (const t of tabs) {
-                const on = t === tab;
-                t.setAttribute('aria-selected', String(on));
-                t.tabIndex = on ? 0 : -1;
-                const panel = document.getElementById(`jeMthPanel-${t.dataset.tab}`);
-                if (panel) panel.hidden = !on;
-            }
-            hub.dataset.tab = id;
-            try { window.localStorage.setItem(storeKey, id); } catch { /* storage unavailable */ }
-            if (id === 'rules') internal.tagLooksPanel?.show?.();
-            if (id === 'colours') loadPresetChips();
-            syncFocusOfPreview();
-            if (opts.focusTab) tab.focus();
-            if (opts.focus) {
-                const heading = /** @type {HTMLElement|null} */ (document.getElementById(`jeMthPanel-${id}`)?.querySelector('.je-mth-card-title, .je-tge-title'));
-                if (heading) {
-                    heading.tabIndex = -1;
-                    heading.focus();
-                }
-            }
-            touch();
-            return true;
-        };
-
-        tablist.addEventListener('click', (e) => {
-            const tab = /** @type {HTMLElement|null} */ (/** @type {HTMLElement} */ (e.target).closest('[role="tab"]'));
-            if (tab) select(tab.dataset.tab || 'layout');
-        });
-        // Roving focus with automatic activation (WAI tabs pattern).
-        tablist.addEventListener('keydown', (e) => {
-            const index = tabs.indexOf(/** @type {HTMLElement} */ (document.activeElement));
-            if (index < 0) return;
-            let next = -1;
-            // In a right-to-left interface the tabs run from the right: ArrowLeft goes to the next one.
-            const step = getComputedStyle(tablist).direction === 'rtl' || tablist.closest('[dir]')?.getAttribute('dir') === 'rtl' ? -1 : 1;
-            if (e.key === 'ArrowRight') next = (index + step + tabs.length) % tabs.length;
-            else if (e.key === 'ArrowLeft') next = (index - step + tabs.length) % tabs.length;
-            else if (e.key === 'Home') next = 0;
-            else if (e.key === 'End') next = tabs.length - 1;
-            if (next < 0) return;
-            e.preventDefault();
-            select(tabs[next].dataset.tab || 'layout', { focusTab: true });
-        });
-
-        // ── Layout tiles and density ──
-        const layoutDesc = hub.querySelector('#jeMthLayoutDesc');
-        /** Keep the tiles, the description and the density pills on the effective settings. */
-        const syncLayoutChoice = () => {
-            if (disposed) return;
-            const conf = layoutConf();
-            hub.querySelectorAll('input[name="jeTagLayout"]').forEach((r) => { /** @type {HTMLInputElement} */ (r).checked = /** @type {HTMLInputElement} */ (r).value === conf.layout; });
-            hub.querySelectorAll('input[name="jeTagDensity"]').forEach((r) => { /** @type {HTMLInputElement} */ (r).checked = /** @type {HTMLInputElement} */ (r).value === conf.density; });
-            for (const name of ['Scale', 'Gap']) {
-                hub.querySelectorAll(`input[name="jeTag${name}"]`).forEach(r => { r.checked = r.value === conf[`tag${name}`]; });
-            }
-            hub.querySelectorAll('input[name="jeTagEdge"]').forEach((r) => { /** @type {HTMLInputElement} */ (r).checked = /** @type {HTMLInputElement} */ (r).value === conf.edge; });
-            if (layoutDesc) layoutDesc.textContent = JE.t(`panel_settings_ui_tag_layout_${conf.layout}`);
-            const off = hub.querySelector('#jeMthBadgesOff');
-            if (off) /** @type {HTMLElement} */ (off).hidden = !!JE.currentSettings?.statusTagsEnabled;
-        };
-        document.addEventListener('je:tag-layout-changed', syncLayoutChoice);
-        cleanups.push(() => document.removeEventListener('je:tag-layout-changed', syncLayoutChoice));
-
-        // Shape controls save only their own block. Keep an explicit all-off
-        // object: null would inherit the administrator's overrides again.
-        const shapeMount = hub.querySelector('.je-mth-shapes');
-        /** Redraw shape controls after a default layout change or a reset. */
-        const syncShapes = () => {
-            if (disposed || !shapeMount) return;
-            const active = document.activeElement;
-            const row = active?.closest('.je-mth-shape');
-            const focus = row ? { shape: row.dataset.shape, action: active.dataset.shapeAction, group: active.closest('[data-shape-group]')?.dataset.shapeGroup, value: active.dataset.value } : null;
-            shapeMount.innerHTML = shapesHtml();
-            if (focus) {
-                const selector = `[data-shape="${focus.shape}"] ${focus.group ? `[data-shape-group="${focus.group}"] ` : ''}[data-shape-action="${focus.action}"]${focus.value ? `[data-value="${focus.value}"]` : ''}`;
-                shapeMount.querySelector(selector)?.focus({ preventScroll: true });
-            }
-        };
-        document.addEventListener('je:tag-layout-changed', syncShapes);
-        cleanups.push(() => document.removeEventListener('je:tag-layout-changed', syncShapes));
-
-        /** @param {Event} event - A shape select, switch, position or cap edit. */
-        const editShape = (event) => {
-            const control = event.target.closest('[data-shape-action]');
-            const row = control?.closest('[data-shape]');
-            if (!control || control.disabled || !row || !shapeMount?.contains(row)) return;
-            const action = control.dataset.shapeAction;
-            if ((event.type === 'change') !== ['enabled', 'layout', 'density', 'tagScale', 'tagGap'].includes(action)) return;
-            const L = JE.core.tagLayout;
-            const shape = row.dataset.shape;
-            L.invalidateSettings();
-            const shapes = L.readShapeOverrides(L.normalizeSettings().shapes);
-            // Preserve the effective looks of both shapes before promotion.
-            L.promoteLegacySettings(JE.currentSettings);
-            let look = shapes[shape];
-            if (action === 'enabled') {
-                look = control.checked ? L.readShapeOverrides(L.RECOMMENDED_SHAPES)[shape] : null;
-                // Just turned on: show its fields.
-                if (control.checked) openShapes.add(shape);
-            }
-            else if (action === 'recommended') look = L.readShapeOverrides(L.RECOMMENDED_SHAPES)[shape];
-            else if (look) {
-                const group = control.closest('[data-shape-group]')?.dataset.shapeGroup;
-                if (action === 'layout') { look.layout = control.value; look.slots = null; }
-                if (action === 'density') look.density = control.value;
-                if (action === 'tagScale' || action === 'tagGap') {
-                    if (control.value) look[action] = control.value;
-                    else delete look[action];
-                }
-                if (action === 'slot') look.slots = { ...(look.slots || {}), [group]: control.dataset.value };
-                if (action === 'cap') {
-                    const cap = L.resolveLayout({ shape }).caps[group];
-                    const next = internal.tagGroupEditorData.stepCap(cap, Number(control.dataset.value), { capAll: true });
-                    if (next === null) return;
-                    look.caps = { ...(look.caps || {}), [group]: next };
-                }
-            }
-            shapes[shape] = look;
-            JE.currentSettings.tagShapeOverrides = L.shapesToWire(shapes) || { landscape: null, list: null };
-            L.invalidateSettings();
-            JE.saveUserSettings('settings.json', JE.currentSettings);
-            JE.reinitializeTagLayout?.();
-            preview?.follow(shape === 'landscape' ? 'episode' : 'list');
-            preview?.refresh();
-            touch();
-        };
-        shapeMount?.addEventListener('toggle', (e) => {
-            const more = /** @type {HTMLDetailsElement} */ (e.target);
-            const shape = more.closest?.('[data-shape]')?.dataset.shape;
-            if (!shape || !more.matches?.('[data-shape-more]')) return;
-            if (more.open) openShapes.add(shape); else openShapes.delete(shape);
-        }, true);
-        shapeMount?.addEventListener('change', editShape);
-        shapeMount?.addEventListener('click', editShape);
-
-        // Any change in the hub may change what the samples show: redraw
-        // after the control's own handler (ui-panel-settings.js and the
-        // editor, which listen closer to the control) saved it.
-        hub.addEventListener('change', (e) => {
-            const target = /** @type {HTMLInputElement} */ (e.target);
-            if (target.name === 'jeTagLayout' && layoutDesc) layoutDesc.textContent = JE.t(`panel_settings_ui_tag_layout_${target.value}`);
-            if (target.id === 'statusTagsToggle') syncLayoutChoice();
-            preview?.refresh();
-            if (BADGE_FAMILIES.some((f) => f.id === target.id)) {
-                preview?.follow(['statusTagsScheduleToggle', 'statusTagsSeriesStatusToggle'].includes(target.id) ? 'series'
-                    : target.id === 'statusTagsMilestonesToggle' ? 'episode' : 'movie');
-            }
-        });
-        hub.addEventListener('click', (e) => {
-            const target = /** @type {HTMLElement} */ (e.target);
-            // "Browse presets": straight to the presets card, focus on its heading.
-            const jump = /** @type {HTMLElement|null} */ (target.closest('[data-je-jump]'));
-            if (jump) {
-                const heading = /** @type {HTMLElement|null} */ (hub.querySelector(`#${jump.dataset.jeJump}`));
-                if (heading) {
-                    heading.tabIndex = -1;
-                    heading.scrollIntoView?.({ block: 'start' });
-                    heading.focus({ preventScroll: true });
-                }
-                return;
-            }
-            const goto = /** @type {HTMLElement|null} */ (target.closest('[data-je-goto]'));
-            if (goto && goto.dataset.jeGoto?.startsWith('groups:')) {
-                const group = goto.dataset.jeGoto.slice(7);
-                select('groups');
-                const row = hub.querySelector(`.je-tge-row[data-group="${group}"]`);
-                const expand = /** @type {HTMLElement|null} */ (row?.querySelector('.je-tge-expand') || null);
-                if (expand?.getAttribute('aria-expanded') !== 'true') expand?.click();
-                expand?.focus();
-                expand?.scrollIntoView?.({ block: 'nearest' });
-                return;
-            }
-            if (target.closest('[data-je-config-link]')) {
-                // The configuration page replaces the current view: the panel goes with it.
-                ctx.closePanel?.();
-                return;
-            }
-            if (target.closest('.je-tge-expand, .je-tge-move')) syncFocusOfPreview();
-            if (target.closest('button, input, [role="tab"]')) preview?.refresh();
-        });
-
-        // ── Presets, import and export (ui-panel-tag-portable.js) ──
-        const stopPortable = internal.wireTagPortable?.(hub, ctx, { announce });
-        if (typeof stopPortable === 'function') cleanups.push(stopPortable);
-
-        // ── Phone strip ──
-        stripToggle?.addEventListener('click', () => {
-            const open = stripToggle.getAttribute('aria-expanded') !== 'true';
-            stripToggle.setAttribute('aria-expanded', String(open));
-            hub.classList.toggle('je-mth-strip-open', open);
-            touch();
-        });
-
-        // ── Colours: the three chips of each preset tile in that preset's real palette ──
-        /**
-         * Fetch every tile's palette once (GET tag-styles, the same answer the
-         * web overlays use) and paint its chips with it. Inline !important,
-         * so the user's own preset stylesheet can't bleed into another tile.
-         */
-        function loadPresetChips() {
-            if (presetsLoaded || !hub.querySelector('#jeTagPresetChoice')) return;
-            presetsLoaded = true;
-            if (typeof ApiClient === 'undefined' || !ApiClient.ajax) return;
-            hub.querySelectorAll('.je-mth-preset-chips').forEach((box) => {
-                const preset = /** @type {HTMLElement} */ (box).dataset.preset;
-                ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellyfinEnhanced/tag-styles', preset && preset !== 'server' ? { preset } : undefined), dataType: 'json' })
-                    .then((styles) => {
-                        if (disposed || !box.isConnected) return;
-                        // Genre: the first genre the administrator coloured, else the sample one.
-                        const genres = styles?.genre && typeof styles.genre === 'object' ? styles.genre : {};
-                        const genre = Object.keys(genres).find((key) => key !== '*' && genres[key]) || GENRE_SAMPLE;
-                        const pick = {
-                            quality: styles?.quality?.['4K'] || styles?.quality?.['*'],
-                            status: styles?.status?.added,
-                            rating: styles?.rating?.community,
-                            genre: genres[genre] || genres['*'],
-                        };
-                        const glyph = box.querySelector('[data-chip="genre"]');
-                        if (glyph && genre !== GENRE_SAMPLE) {
-                            /** @type {HTMLElement} */ (glyph).dataset.jeGenre = genre;
-                            const icon = glyph.querySelector('.je-mth-chip-glyph');
-                            if (icon) icon.textContent = JE.genreTags?.iconFor(genre) || 'theaters';
-                        }
-                        const sampled = styles?.preset === 'poster' || styles?.posterGroups?.length ? JE.tagPosterColours : null;
-                        box.querySelectorAll('[data-chip]').forEach((chip) => {
-                            const kind = /** @type {HTMLElement} */ (chip).dataset.chip || 'quality';
-                            // With a preset per group, only the chips of a group under Poster take the artwork's colours.
-                            const posterGroups = styles?.preset === 'poster' ? null : (styles?.posterGroups || []);
-                            const art = sampled && (!posterGroups || posterGroups.includes(kind === 'age' ? 'ageRating' : kind)) ? sampled.normalise(POSTER_SAMPLE_ART[kind]) : null;
-                            const base = art ? { background: sampled.css(art.background), color: sampled.css(art.text), border: sampled.css(art.border) } : CHIP_DEFAULTS[kind];
-                            // Overrides the admin set stay on top, field by field.
-                            const own = Object.fromEntries(Object.entries(pick[kind] || {}).filter(([, v]) => v));
-                            const colours = { ...base, ...own };
-                            const style = /** @type {HTMLElement} */ (chip).style;
-                            style.setProperty('background', colours.background, 'important');
-                            style.setProperty('color', colours.color, 'important');
-                            style.setProperty('border-color', colours.border || 'transparent', 'important');
-                        });
-                    })
-                    .catch((err) => console.warn('🪼 Jellyfin Enhanced: could not load a tag colour preset for the panel', err));
-            });
+      internal.mediaTagsHub?.dispose?.();
+      const hub = document.getElementById("jeMediaTagsHub");
+      if (!hub) return;
+      JE.core.ui?.injectCss?.("je-media-tags-hub", HUB_CSS);
+      hub.style.setProperty("--je-mth-accent", ctx.toggleAccentColor || "#00a4dc");
+      hub.style.setProperty("--je-mth-box", ctx.presetBoxBackground || "rgba(255,255,255,0.04)");
+      const touch = () => {
+        try {
+          ctx.resetAutoCloseTimer?.();
+        } catch {
         }
-
-        // ── Preview: built the first time the section is on screen ──
-        const mount = /** @type {HTMLElement|null} */ (hub.querySelector('#jeMthPreview'));
-        const build = () => {
-            if (preview || disposed || !mount) return;
-            preview = internal.createTagPreview?.(mount, { strip: hub.querySelector('#jeMthStrip'), touch }) || null;
-            syncFocusOfPreview();
-        };
-        if (mount && typeof window.IntersectionObserver === 'function') {
-            io = new window.IntersectionObserver((entries) => {
-                if (entries.some((entry) => entry.isIntersecting)) {
-                    io?.disconnect();
-                    io = null;
-                    build();
-                }
-            });
-            io.observe(hub);
-        } else {
-            build();
+      };
+      const tablist = queryElement(hub, '[role="tablist"]');
+      const tabs = queryElements(hub, '[role="tab"]');
+      const live = queryElement(hub, "#jeMthLive");
+      if (!tablist || !live) throw new TypeError("The Media Tags hub markup is incomplete");
+      const stripToggle = queryElement(hub, "#jeMthStripToggle");
+      const storeKey = `${TAB_STORE_PREFIX}${currentUserKey()}`;
+      let disposed = false;
+      let preview = null;
+      let io = null;
+      let presetsLoaded = false;
+      const cleanups = [];
+      const announce = (message) => {
+        live.textContent = "";
+        setTimeout(() => {
+          if (!disposed) live.textContent = message;
+        }, 30);
+      };
+      const current = () => hub.dataset.tab || "layout";
+      const syncFocusOfPreview = () => {
+        if (!preview) return;
+        const tab = current();
+        let spot = null;
+        if (tab === "badges") spot = "status";
+        else if (tab === "groups") {
+          const open = hub.querySelector('.je-tge-row .je-tge-expand[aria-expanded="true"]');
+          const row = open?.closest(".je-tge-row");
+          spot = row instanceof HTMLElement ? row.dataset.group || null : null;
         }
-
-        // ── Search: every control by its visible label ──
-        /**
-         * The hub's search entries: each control in a tab panel with its
-         * label and where it sits ("Groups › Language").
-         * @returns {Array<{label: string, path: string, el: HTMLElement}>}
-         */
-        const searchIndex = () => {
-            const out = [];
-            const seen = new Set();
-            for (const panel of hub.querySelectorAll('[role="tabpanel"]')) {
-                const tabName = JE.t(JE.core.tagLayout.VOCABULARY_KEYS.tab[`${/** @type {HTMLElement} */ (panel).dataset.tab}`]);
-                const controls = panel.querySelectorAll('input:not([type="hidden"]), select, button, a[href], [role="group"][aria-labelledby], [role="radiogroup"][aria-labelledby]');
-                for (const node of controls) {
-                    const el = /** @type {HTMLElement} */ (node);
-                    if (el.closest('datalist, [data-je-cap-control][hidden]')) continue;
-                    const label = controlLabel(el);
-                    if (!label) continue;
-                    const row = /** @type {HTMLElement|null} */ (el.closest('.je-tge-row'));
-                    const group = row ? (row.querySelector('.je-tge-name')?.textContent || '').trim() : '';
-                    const path = [JE.t('common_media_tags'), tabName, group].filter(Boolean).join(' › ');
-                    const key = `${path}|${label}`;
-                    if (seen.has(key)) continue;
-                    seen.add(key);
-                    out.push({ label, path, el });
-                }
-            }
-            return out;
-        };
-
-        /**
-         * Open the tab (and group, or locks list) a control is in, then focus it.
-         * Opening the tab or a list can rebuild the control (the first visit
-         * to Rules & locks redraws the locked items), so it is found again by
-         * its stable key afterwards, or replaced by the nearest connected
-         * stand-in: its rule row, else the tab panel's heading, else the tab.
-         * @param {HTMLElement} el
-         */
-        const reveal = (el) => {
-            // Read where the control sits before anything redraws it.
-            const panel = /** @type {HTMLElement|null} */ (el.closest('[role="tabpanel"]'));
-            const tabId = panel?.dataset.tab || 'layout';
-            const focusKey = el.dataset.jeFocusKey || '';
-            const elId = el.id;
-            const ruleId = /** @type {HTMLElement|null} */ (el.closest('[data-je-rule-id]'))?.dataset.jeRuleId || '';
-            const inLocks = !!el.closest('.je-tag-looks-locks');
-            const body = /** @type {HTMLElement|null} */ (el.closest('.je-tge-body'));
-            if (panel) select(tabId);
-            if (body?.hidden) /** @type {HTMLElement|null} */ (body.closest('.je-tge-row')?.querySelector('.je-tge-expand') || null)?.click();
-            const locksToggle = /** @type {HTMLElement|null} */ (inLocks ? hub.querySelector('.je-tag-looks-locks-toggle') : null);
-            if (locksToggle && locksToggle.getAttribute('aria-expanded') === 'false' && locksToggle.offsetParent !== null) locksToggle.click();
-            /** @param {string} attr @param {string} value @returns {HTMLElement|null} */
-            const byData = (attr, value) => /** @type {HTMLElement|null} */ (Array.from(hub.querySelectorAll(`[${attr}]`)).find((node) => node.getAttribute(attr) === value) || null);
-            let target = el.isConnected ? el
-                : (focusKey && byData('data-je-focus-key', focusKey))
-                || (elId && hub.contains(document.getElementById(elId)) && document.getElementById(elId))
-                || (ruleId && byData('data-je-rule-id', ruleId))
-                || /** @type {HTMLElement|null} */ (document.getElementById(`jeMthPanel-${tabId}`)?.querySelector('.je-mth-card-title, .je-tge-title') || null)
-                || tabs.find((t) => t.dataset.tab === tabId)
-                || el;
-            // A control inside a closed disclosure (Quality's More options) is shown first.
-            const closed = /** @type {HTMLDetailsElement|null} */ (target.closest('details:not([open])'));
-            if (closed) closed.open = true;
-            if (target !== el && !target.matches('button, input, select, a[href], [tabindex]')) target.tabIndex = -1;
-            if (target.matches('[role="group"], [role="radiogroup"]')) {
-                target = /** @type {HTMLElement} */ (target.querySelector('input:checked, button:not(:disabled), input:not(:disabled)') || target);
-            }
-            if (/** @type {HTMLButtonElement} */ (target).disabled) {
-                target = /** @type {HTMLElement} */ (target.parentElement?.querySelector('button:not(:disabled), input:not(:disabled), select:not(:disabled)') || target);
-            }
-            target.scrollIntoView?.({ block: 'center' });
-            target.focus({ preventScroll: true });
-        };
-
-        const unregister = ctx.registerSearch?.({
-            pane: 'media-tags',
-            /**
-             * @param {string} query - Lower-case, trimmed.
-             * @returns {Array<{label: string, path: string, run: () => void}>}
-             */
-            search(query) {
-                const words = query.split(/\s+/).filter(Boolean);
-                if (!words.length) return [];
-                const scored = [];
-                for (const entry of searchIndex()) {
-                    const label = entry.label.toLowerCase();
-                    const hay = `${entry.path} ${entry.label}`.toLowerCase();
-                    if (!words.every((w) => hay.includes(w))) continue;
-                    const score = label.startsWith(query) ? 0 : label.includes(query) ? 1 : 2;
-                    scored.push({ score, entry });
-                }
-                scored.sort((a, b) => a.score - b.score);
-                return scored.map(({ entry }) => ({ label: entry.label, path: entry.path, run: () => reveal(entry.el) }));
-            },
+        preview.setSpotlight(spot);
+        preview.follow(tab === "rules" ? "episode" : "movie");
+      };
+      const select = (id, opts = {}) => {
+        const tab = tabs.find((candidate) => candidate.dataset.tab === id);
+        if (!tab) return false;
+        for (const other of tabs) {
+          const on = other === tab;
+          other.setAttribute("aria-selected", String(on));
+          other.tabIndex = on ? 0 : -1;
+          const panel = document.getElementById(`jeMthPanel-${other.dataset.tab}`);
+          if (panel) panel.hidden = !on;
+        }
+        hub.dataset.tab = id;
+        try {
+          window.localStorage.setItem(storeKey, id);
+        } catch {
+        }
+        if (id === "rules") internal.tagLooksPanel?.show?.();
+        if (id === "colours") loadPresetChips();
+        syncFocusOfPreview();
+        if (opts.focusTab) tab.focus();
+        if (opts.focus) {
+          const panel = document.getElementById(`jeMthPanel-${id}`);
+          const heading = panel ? queryElement(panel, ".je-mth-card-title, .je-tge-title") : null;
+          if (heading) {
+            heading.tabIndex = -1;
+            heading.focus();
+          }
+        }
+        touch();
+        return true;
+      };
+      tablist.addEventListener("click", (e) => {
+        const tab = closestTarget(e, '[role="tab"]');
+        if (tab) select(tab.dataset.tab || "layout");
+      });
+      tablist.addEventListener("keydown", (e) => {
+        const index = tabs.findIndex((tab) => tab === document.activeElement);
+        if (index < 0) return;
+        let next = -1;
+        const step = getComputedStyle(tablist).direction === "rtl" || tablist.closest("[dir]")?.getAttribute("dir") === "rtl" ? -1 : 1;
+        if (e.key === "ArrowRight") next = (index + step + tabs.length) % tabs.length;
+        else if (e.key === "ArrowLeft") next = (index - step + tabs.length) % tabs.length;
+        else if (e.key === "Home") next = 0;
+        else if (e.key === "End") next = tabs.length - 1;
+        const target = tabs[next];
+        if (next < 0 || !target) return;
+        e.preventDefault();
+        select(target.dataset.tab || "layout", { focusTab: true });
+      });
+      const layoutDesc = hub.querySelector("#jeMthLayoutDesc");
+      const check = (name, value) => {
+        hub.querySelectorAll(`input[name="${name}"]`).forEach((r) => {
+          if (r instanceof HTMLInputElement) r.checked = r.value === value;
         });
-        if (typeof unregister === 'function') cleanups.push(unregister);
-
-        // Start on the tab this user last had open (per user, this browser).
-        let initial = 'layout';
-        try { initial = window.localStorage.getItem(storeKey) || 'layout'; } catch { /* storage unavailable */ }
-        if (!select(initial)) select('layout');
-
-        /** Tear the hub down: the preview, its observer and every document listener. */
-        const dispose = () => {
-            if (disposed) return;
-            disposed = true;
+      };
+      const syncLayoutChoice = () => {
+        if (disposed) return;
+        const conf = layoutConf();
+        check("jeTagLayout", conf.layout);
+        check("jeTagDensity", conf.density);
+        check("jeTagScale", conf.tagScale);
+        check("jeTagGap", conf.tagGap);
+        check("jeTagEdge", conf.edge);
+        if (layoutDesc) layoutDesc.textContent = JE.t(`panel_settings_ui_tag_layout_${conf.layout}`);
+        const off = queryElement(hub, "#jeMthBadgesOff");
+        if (off) off.hidden = !!JE.currentSettings?.statusTagsEnabled;
+      };
+      document.addEventListener("je:tag-layout-changed", syncLayoutChoice);
+      cleanups.push(() => document.removeEventListener("je:tag-layout-changed", syncLayoutChoice));
+      const shapeMount = queryElement(hub, ".je-mth-shapes");
+      const syncShapes = () => {
+        if (disposed || !shapeMount) return;
+        const active = document.activeElement;
+        const row = active?.closest(".je-mth-shape");
+        const focus = row instanceof HTMLElement && active instanceof HTMLElement ? {
+          shape: row.dataset.shape,
+          action: active.dataset.shapeAction,
+          group: queryClosestData(active, "[data-shape-group]", "shapeGroup"),
+          value: active.dataset.value
+        } : null;
+        shapeMount.innerHTML = shapesHtml();
+        if (focus) {
+          const selector = `[data-shape="${focus.shape}"] ${focus.group ? `[data-shape-group="${focus.group}"] ` : ""}[data-shape-action="${focus.action}"]${focus.value ? `[data-value="${focus.value}"]` : ""}`;
+          focusElement(shapeMount.querySelector(selector), { preventScroll: true });
+        }
+      };
+      function queryClosestData(el, selector, key) {
+        const found = el.closest(selector);
+        return found instanceof HTMLElement ? found.dataset[key] : void 0;
+      }
+      document.addEventListener("je:tag-layout-changed", syncShapes);
+      cleanups.push(() => document.removeEventListener("je:tag-layout-changed", syncShapes));
+      const editShape = (event) => {
+        const control = closestTarget(event, "[data-shape-action]");
+        const row = control?.closest("[data-shape]");
+        if (!control || isDisabled(control) || !(row instanceof HTMLElement) || !shapeMount?.contains(row)) return;
+        const action = control.dataset.shapeAction ?? "";
+        if (event.type === "change" !== SHAPE_SELECTS.includes(action)) return;
+        const L = layout();
+        const shape = row.dataset.shape;
+        if (shape !== "landscape" && shape !== "list") return;
+        L.invalidateSettings();
+        const shapes = L.readShapeOverrides(L.normalizeSettings().shapes);
+        L.promoteLegacySettings(JE.currentSettings);
+        let look = shapes[shape];
+        const value = controlValue(control) ?? "";
+        if (action === "enabled") {
+          const on = control instanceof HTMLInputElement && control.checked;
+          look = on ? L.readShapeOverrides(L.RECOMMENDED_SHAPES)[shape] : null;
+          if (on) openShapes.add(shape);
+        } else if (action === "recommended") look = L.readShapeOverrides(L.RECOMMENDED_SHAPES)[shape];
+        else if (look) {
+          const groupName = queryClosestData(control, "[data-shape-group]", "shapeGroup");
+          const group = groupName && L.normalizeGroup(groupName);
+          if (action === "layout" && isLayout(value)) {
+            look.layout = value;
+            look.slots = null;
+          }
+          if (action === "density") look.density = value;
+          if (action === "tagScale" || action === "tagGap") {
+            if (value) look[action] = value;
+            else delete look[action];
+          }
+          if (action === "slot" && group) look.slots = { ...look.slots || {}, [group]: control.dataset.value ?? "" };
+          if (action === "cap" && group) {
+            const cap = L.resolveLayout({ shape }).caps[group];
+            const next = stepCap(cap, Number(control.dataset.value));
+            if (next === null) return;
+            look.caps = { ...look.caps || {}, [group]: next };
+          }
+        }
+        shapes[shape] = look;
+        const wire = L.shapesToWire(shapes);
+        if (wire && !isJson(wire)) throw new TypeError("Shape overrides are not JSON");
+        JE.currentSettings.tagShapeOverrides = wire && isJson(wire) ? wire : { landscape: null, list: null };
+        L.invalidateSettings();
+        JE.saveUserSettings("settings.json", JE.currentSettings);
+        JE.reinitializeTagLayout?.();
+        preview?.follow(shape === "landscape" ? "episode" : "list");
+        preview?.refresh();
+        touch();
+      };
+      shapeMount?.addEventListener("toggle", (e) => {
+        const more = e.target;
+        if (!(more instanceof HTMLDetailsElement) || !more.matches("[data-shape-more]")) return;
+        const shape = queryClosestData(more, "[data-shape]", "shape");
+        if (!shape) return;
+        if (more.open) openShapes.add(shape);
+        else openShapes.delete(shape);
+      }, true);
+      shapeMount?.addEventListener("change", editShape);
+      shapeMount?.addEventListener("click", editShape);
+      hub.addEventListener("change", (e) => {
+        const target = e.target;
+        if (!(target instanceof Element)) return;
+        const name = target instanceof HTMLInputElement ? target.name : "";
+        if (name === "jeTagLayout" && layoutDesc) layoutDesc.textContent = JE.t(`panel_settings_ui_tag_layout_${controlValue(target)}`);
+        if (target.id === "statusTagsToggle") syncLayoutChoice();
+        preview?.refresh();
+        if (BADGE_FAMILIES.some((f) => f.id === target.id)) {
+          preview?.follow(["statusTagsScheduleToggle", "statusTagsSeriesStatusToggle"].includes(target.id) ? "series" : target.id === "statusTagsMilestonesToggle" ? "episode" : "movie");
+        }
+      });
+      hub.addEventListener("click", (e) => {
+        const target = targetElement(e);
+        if (!target) return;
+        const jump = closestTarget(e, "[data-je-jump]");
+        if (jump) {
+          const heading = queryElement(hub, `#${jump.dataset.jeJump}`);
+          if (heading) {
+            heading.tabIndex = -1;
+            heading.scrollIntoView?.({ block: "start" });
+            heading.focus({ preventScroll: true });
+          }
+          return;
+        }
+        const goto = closestTarget(e, "[data-je-goto]");
+        const gotoGroup = goto?.dataset.jeGoto;
+        if (gotoGroup?.startsWith("groups:")) {
+          const group = gotoGroup.slice(7);
+          select("groups");
+          const row = hub.querySelector(`.je-tge-row[data-group="${group}"]`);
+          const expand = row ? queryElement(row, ".je-tge-expand") : null;
+          if (expand?.getAttribute("aria-expanded") !== "true") expand?.click();
+          expand?.focus();
+          expand?.scrollIntoView?.({ block: "nearest" });
+          return;
+        }
+        if (target.closest("[data-je-config-link]")) {
+          ctx.closePanel?.();
+          return;
+        }
+        if (target.closest(".je-tge-expand, .je-tge-move")) syncFocusOfPreview();
+        if (target.closest('button, input, [role="tab"]')) preview?.refresh();
+      });
+      const stopPortable = internal.wireTagPortable?.(hub, ctx, { announce });
+      if (typeof stopPortable === "function") cleanups.push(stopPortable);
+      stripToggle?.addEventListener("click", () => {
+        const open = stripToggle.getAttribute("aria-expanded") !== "true";
+        stripToggle.setAttribute("aria-expanded", String(open));
+        hub.classList.toggle("je-mth-strip-open", open);
+        touch();
+      });
+      function loadPresetChips() {
+        if (presetsLoaded || !hub?.querySelector("#jeTagPresetChoice")) return;
+        presetsLoaded = true;
+        const client = optionalApiClient();
+        if (!client || !client.ajax) return;
+        queryElements(hub, ".je-mth-preset-chips").forEach((box) => {
+          const preset = box.dataset.preset;
+          const styleClient = apiClient();
+          styleClient.ajax({ type: "GET", url: styleClient.getUrl("JellyfinEnhanced/tag-styles", preset && preset !== "server" ? { preset } : void 0), dataType: "json" }).then((styles) => {
+            if (disposed || !box.isConnected) return;
+            const genreField = field(styles, "genre");
+            const genres = genreField !== null && typeof genreField === "object" ? genreField : {};
+            const genre = Object.keys(genres).find((key) => key !== "*" && Reflect.get(genres, key)) || GENRE_SAMPLE;
+            const quality = field(styles, "quality");
+            const pick = {
+              quality: field(quality, "4K") || field(quality, "*"),
+              status: field(field(styles, "status"), "added"),
+              rating: field(field(styles, "rating"), "community"),
+              genre: Reflect.get(genres, genre) || Reflect.get(genres, "*")
+            };
+            const glyph = box.querySelector('[data-chip="genre"]');
+            if (glyph instanceof HTMLElement && genre !== GENRE_SAMPLE) {
+              glyph.dataset.jeGenre = genre;
+              const icon = glyph.querySelector(".je-mth-chip-glyph");
+              if (icon) icon.textContent = JE.genreTags?.iconFor?.(genre) || "theaters";
+            }
+            const stylePreset = field(styles, "preset");
+            const posterGroupsField = field(styles, "posterGroups");
+            const posterList = Array.isArray(posterGroupsField) ? posterGroupsField : [];
+            const sampled = stylePreset === "poster" || posterList.length ? JE.tagPosterColours : null;
+            queryElements(box, "[data-chip]").forEach((chip) => {
+              const chipKind = chip.dataset.chip || "quality";
+              const kind = isChipKind(chipKind) ? chipKind : "quality";
+              const posterGroups = stylePreset === "poster" ? null : posterList;
+              const art = sampled && (!posterGroups || posterGroups.includes(kind)) ? sampled.normalise(POSTER_SAMPLE_ART[kind]) : null;
+              const base = sampled && art ? { background: sampled.css(art.background), color: sampled.css(art.text), border: sampled.css(art.border) } : CHIP_DEFAULTS[kind];
+              const colours = { ...base, ...coloursOf(pick[kind]) };
+              chip.style.setProperty("background", colours.background, "important");
+              chip.style.setProperty("color", colours.color, "important");
+              chip.style.setProperty("border-color", colours.border || "transparent", "important");
+            });
+          }).catch((err) => console.warn("🪼 Jellyfin Enhanced: could not load a tag colour preset for the panel", err));
+        });
+      }
+      const mount = queryElement(hub, "#jeMthPreview");
+      const build = () => {
+        if (preview || disposed || !mount) return;
+        preview = internal.createTagPreview?.(mount, { strip: queryElement(hub, "#jeMthStrip"), touch }) || null;
+        syncFocusOfPreview();
+      };
+      if (mount && typeof window.IntersectionObserver === "function") {
+        io = new window.IntersectionObserver((entries) => {
+          if (entries.some((entry) => entry.isIntersecting)) {
             io?.disconnect();
             io = null;
-            preview?.dispose();
-            preview = null;
-            while (cleanups.length) cleanups.pop()();
-            if (internal.mediaTagsHub === api) internal.mediaTagsHub = null;
-        };
-        const api = {
-            /** @param {string} id @param {{focus?: boolean, focusTab?: boolean}} [opts] */
-            openTab: (id, opts) => select(id, opts),
-            announce,
-            refreshPreview: () => preview?.refresh(),
-            hasPreview: () => !!preview,
-            searchIndex,
-            reveal,
-            dispose,
-        };
-        internal.mediaTagsHub = api;
-        ctx.onClose?.(dispose);
+            build();
+          }
+        });
+        io.observe(hub);
+      } else {
+        build();
+      }
+      const searchIndex = () => {
+        const out = [];
+        const seen = /* @__PURE__ */ new Set();
+        for (const panel of queryElements(hub, '[role="tabpanel"]')) {
+          const tabName = t(vocab().tab[`${panel.dataset.tab}`]);
+          const controls = queryElements(panel, 'input:not([type="hidden"]), select, button, a[href], [role="group"][aria-labelledby], [role="radiogroup"][aria-labelledby]');
+          for (const el of controls) {
+            if (el.closest("datalist, [data-je-cap-control][hidden]")) continue;
+            const label = controlLabel(el);
+            if (!label) continue;
+            const row = el.closest(".je-tge-row");
+            const group = row ? (row.querySelector(".je-tge-name")?.textContent || "").trim() : "";
+            const path = [JE.t("common_media_tags"), tabName, group].filter(Boolean).join(" › ");
+            const key = `${path}|${label}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            out.push({ label, path, el });
+          }
+        }
+        return out;
+      };
+      const reveal = (el) => {
+        const panelEl = el.closest('[role="tabpanel"]');
+        const panel = panelEl instanceof HTMLElement ? panelEl : null;
+        const tabId = panel?.dataset.tab || "layout";
+        const focusKey = el.dataset.jeFocusKey || "";
+        const elId = el.id;
+        const ruleId = queryClosestData(el, "[data-je-rule-id]", "jeRuleId") || "";
+        const inLocks = !!el.closest(".je-tag-looks-locks");
+        const bodyEl = el.closest(".je-tge-body");
+        const body = bodyEl instanceof HTMLElement ? bodyEl : null;
+        if (panel) select(tabId);
+        if (body?.hidden) {
+          const expand = body.closest(".je-tge-row")?.querySelector(".je-tge-expand");
+          if (expand instanceof HTMLElement) expand.click();
+        }
+        const locksToggle = inLocks ? queryElement(hub, ".je-tag-looks-locks-toggle") : null;
+        if (locksToggle && locksToggle.getAttribute("aria-expanded") === "false" && locksToggle.offsetParent !== null) locksToggle.click();
+        const byData = (attr, value) => queryElements(hub, `[${attr}]`).find((node) => node.getAttribute(attr) === value) || null;
+        const byId = elId ? document.getElementById(elId) : null;
+        const panelNow = document.getElementById(`jeMthPanel-${tabId}`);
+        let target = el.isConnected ? el : focusKey && byData("data-je-focus-key", focusKey) || (byId && hub.contains(byId) ? byId : null) || ruleId && byData("data-je-rule-id", ruleId) || (panelNow ? queryElement(panelNow, ".je-mth-card-title, .je-tge-title") : null) || tabs.find((tab) => tab.dataset.tab === tabId) || el;
+        const closed = target.closest("details:not([open])");
+        if (closed instanceof HTMLDetailsElement) closed.open = true;
+        if (target !== el && !target.matches("button, input, select, a[href], [tabindex]")) target.tabIndex = -1;
+        if (target.matches('[role="group"], [role="radiogroup"]')) {
+          target = queryElement(target, "input:checked, button:not(:disabled), input:not(:disabled)") || target;
+        }
+        if (isDisabled(target)) {
+          target = (target.parentElement ? queryElement(target.parentElement, "button:not(:disabled), input:not(:disabled), select:not(:disabled)") : null) || target;
+        }
+        target.scrollIntoView?.({ block: "center" });
+        target.focus({ preventScroll: true });
+      };
+      const unregister = ctx.registerSearch?.({
+        pane: "media-tags",
+        /** `query` is lower-case and trimmed. */
+        search(query) {
+          const words = query.split(/\s+/).filter(Boolean);
+          if (!words.length) return [];
+          const scored = [];
+          for (const entry of searchIndex()) {
+            const label = entry.label.toLowerCase();
+            const hay = `${entry.path} ${entry.label}`.toLowerCase();
+            if (!words.every((w) => hay.includes(w))) continue;
+            const score = label.startsWith(query) ? 0 : label.includes(query) ? 1 : 2;
+            scored.push({ score, entry });
+          }
+          scored.sort((a, b) => a.score - b.score);
+          return scored.map(({ entry }) => ({ label: entry.label, path: entry.path, run: () => reveal(entry.el) }));
+        }
+      });
+      if (typeof unregister === "function") cleanups.push(unregister);
+      let initial = "layout";
+      try {
+        initial = window.localStorage.getItem(storeKey) || "layout";
+      } catch {
+      }
+      if (!select(initial)) select("layout");
+      const dispose = () => {
+        if (disposed) return;
+        disposed = true;
+        io?.disconnect();
+        io = null;
+        preview?.dispose();
+        preview = null;
+        for (let cleanup = cleanups.pop(); cleanup; cleanup = cleanups.pop()) cleanup();
+        if (internal.mediaTagsHub === api) internal.mediaTagsHub = null;
+      };
+      const api = {
+        openTab: (id, opts) => select(id, opts),
+        announce,
+        refreshPreview: () => preview?.refresh(),
+        hasPreview: () => !!preview,
+        searchIndex,
+        reveal,
+        dispose
+      };
+      internal.mediaTagsHub = api;
+      ctx.onClose?.(dispose);
     };
-})(window.JellyfinEnhanced);
+  }
+  installUiPanelMediaTags(panelHost());
+})();
+})();
+//# sourceMappingURL=ui-panel-media-tags.js.map

@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--suite', choices=['fast', 'all'], default='all')
-    parser.add_argument('--target', choices=['jf10', 'jf12', 'all'], default='all')
+    parser.add_argument('--target', choices=['jf12', 'all'], default='all')
     parser.add_argument('--artifacts', type=Path, default=ROOT / 'artifacts' / 'clean')
     args = parser.parse_args()
     output = args.artifacts.resolve()

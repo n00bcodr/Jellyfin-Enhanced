@@ -11,21 +11,28 @@
         </div>
     </div>
     <script>
-        // The Media Tags settings are a tab of the main Jellyfin Enhanced page now. This page only
-        // keeps the older links working (the settings panel, bookmarks, the docs): it forwards them,
-        // keeping the tab and group they asked for.
-        (function () {
-            var hash = window.location.hash || '';
-            if (hash.indexOf('name=JellyfinEnhancedMediaTags') === -1) return;
-            var query = hash.split('?')[1] || '';
-            var params = new URLSearchParams(query);
-            var target = '#/configurationpage?name=' + encodeURIComponent('Jellyfin Enhanced') + '&jeSection=media-tags';
-            ['tab', 'group'].forEach(function (key) {
-                if (params.get(key)) target += '&' + key + '=' + encodeURIComponent(params.get(key));
-            });
-            window.location.replace(target);
-        })();
-    </script>
+(() => {
+"use strict";
+(() => {
+  // client/src/admin/config/media-tags-redirect.ts
+  function mediaTagsRedirectTarget(hash) {
+    if (hash.indexOf("name=JellyfinEnhancedMediaTags") === -1) return null;
+    const params = new URLSearchParams(hash.split("?")[1] || "");
+    let target2 = "#/configurationpage?name=" + encodeURIComponent("Jellyfin Enhanced") + "&jeSection=media-tags";
+    for (const key of ["tab", "group"]) {
+      const value = params.get(key);
+      if (value) target2 += "&" + key + "=" + encodeURIComponent(value);
+    }
+    return target2;
+  }
+
+  // client/src/admin/config/media-tags-redirect-entry.ts
+  var target = mediaTagsRedirectTarget(window.location.hash || "");
+  if (target) window.location.replace(target);
+})();
+})();
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiQ29uZmlndXJhdGlvbi9tZWRpYVRhZ3NQYWdlLmh0bWwjbWFpbiIsInNvdXJjZXMiOlsiY2xpZW50L3NyYy9hZG1pbi9jb25maWcvbWVkaWEtdGFncy1yZWRpcmVjdC50cyIsImNsaWVudC9zcmMvYWRtaW4vY29uZmlnL21lZGlhLXRhZ3MtcmVkaXJlY3QtZW50cnkudHMiXSwic291cmNlc0NvbnRlbnQiOlsiLyoqIFdoZXJlIHRoZSBvbGRlciBNZWRpYSBUYWdzIHBhZ2UncyBhZGRyZXNzIG5vdyBsZWFkcywgb3IgbnVsbCBmb3IgYW55IG90aGVyIGFkZHJlc3MuICovXG5leHBvcnQgZnVuY3Rpb24gbWVkaWFUYWdzUmVkaXJlY3RUYXJnZXQoaGFzaDogc3RyaW5nKTogc3RyaW5nIHwgbnVsbCB7XG4gICAgaWYgKGhhc2guaW5kZXhPZignbmFtZT1KZWxseWZpbkVuaGFuY2VkTWVkaWFUYWdzJykgPT09IC0xKSByZXR1cm4gbnVsbDtcbiAgICBjb25zdCBwYXJhbXMgPSBuZXcgVVJMU2VhcmNoUGFyYW1zKGhhc2guc3BsaXQoJz8nKVsxXSB8fCAnJyk7XG4gICAgbGV0IHRhcmdldCA9ICcjL2NvbmZpZ3VyYXRpb25wYWdlP25hbWU9JyArIGVuY29kZVVSSUNvbXBvbmVudCgnSmVsbHlmaW4gRW5oYW5jZWQnKSArICcmamVTZWN0aW9uPW1lZGlhLXRhZ3MnO1xuICAgIGZvciAoY29uc3Qga2V5IG9mIFsndGFiJywgJ2dyb3VwJ10pIHtcbiAgICAgICAgY29uc3QgdmFsdWUgPSBwYXJhbXMuZ2V0KGtleSk7XG4gICAgICAgIGlmICh2YWx1ZSkgdGFyZ2V0ICs9ICcmJyArIGtleSArICc9JyArIGVuY29kZVVSSUNvbXBvbmVudCh2YWx1ZSk7XG4gICAgfVxuICAgIHJldHVybiB0YXJnZXQ7XG59XG4iLCJpbXBvcnQgeyBtZWRpYVRhZ3NSZWRpcmVjdFRhcmdldCB9IGZyb20gJy4vbWVkaWEtdGFncy1yZWRpcmVjdCc7XG5cbi8vIFRoZSBNZWRpYSBUYWdzIHNldHRpbmdzIGFyZSBhIHRhYiBvZiB0aGUgbWFpbiBKZWxseWZpbiBFbmhhbmNlZCBwYWdlIG5vdy4gVGhpcyBwYWdlIG9ubHkga2VlcHMgdGhlIG9sZGVyXG4vLyBsaW5rcyB3b3JraW5nICh0aGUgc2V0dGluZ3MgcGFuZWwsIGJvb2ttYXJrcywgdGhlIGRvY3MpOiBpdCBmb3J3YXJkcyB0aGVtLCBrZWVwaW5nIHRoZWlyIHRhYiBhbmQgZ3JvdXAuXG5jb25zdCB0YXJnZXQgPSBtZWRpYVRhZ3NSZWRpcmVjdFRhcmdldCh3aW5kb3cubG9jYXRpb24uaGFzaCB8fCAnJyk7XG5pZiAodGFyZ2V0KSB3aW5kb3cubG9jYXRpb24ucmVwbGFjZSh0YXJnZXQpO1xuIl0sIm5hbWVzIjpbInRhcmdldCJdLCJtYXBwaW5ncyI6Ijs7Ozs7QUFDTyxXQUFTLHdCQUF3QixNQUE2QjtBQUNqRSxRQUFJLEtBQUssUUFBUSxnQ0FBZ0MsTUFBTSxHQUFJLFFBQU87QUFDbEUsVUFBTSxTQUFTLElBQUksZ0JBQWdCLEtBQUssTUFBTSxHQUFHLEVBQUUsQ0FBQyxLQUFLLEVBQUU7QUFDM0QsUUFBSUEsVUFBUyw4QkFBOEIsbUJBQW1CLG1CQUFtQixJQUFJO0FBQ3JGLGVBQVcsT0FBTyxDQUFDLE9BQU8sT0FBTyxHQUFHO0FBQ2hDLFlBQU0sUUFBUSxPQUFPLElBQUksR0FBRztBQUM1QixVQUFJLE1BQU8sQ0FBQUEsV0FBVSxNQUFNLE1BQU0sTUFBTSxtQkFBbUIsS0FBSztBQUFBLElBQ25FO0FBQ0EsV0FBT0E7QUFBQSxFQUNYOzs7QUNOQSxNQUFNLFNBQVMsd0JBQXdCLE9BQU8sU0FBUyxRQUFRLEVBQUU7QUFDakUsTUFBSSxPQUFRLFFBQU8sU0FBUyxRQUFRLE1BQU07In0=
+</script>
 </div>
 </body>
 </html>

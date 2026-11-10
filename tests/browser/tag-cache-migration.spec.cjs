@@ -27,7 +27,7 @@ for (const oldVersion of [1, 2]) test(`v${oldVersion} tag cache upgrades in plac
     db.close();
   }, {schema: currentSchema,oldVersion});
   await page.reload(); // Closes the baseline connection, as a new plugin page would.
-  await page.evaluate(source => { window.JellyfinEnhanced = {}; (0, eval)(source); }, currentSource);
+  await page.evaluate(() => { window.JellyfinEnhanced = {}; }); await page.addScriptTag({ url: '/tests/browser/shared-modules.js' }); await page.evaluate(source => { (0, eval)(source); }, currentSource); // canopy K1b: /tests/browser/shared-modules.js publishes what tag-cache-store.js reads (client/shared-modules.json)
   const result = await page.evaluate(async () => {
     const s = JellyfinEnhanced.tagCacheStore;
     const original = await s.getMany('server:A', ['item']);

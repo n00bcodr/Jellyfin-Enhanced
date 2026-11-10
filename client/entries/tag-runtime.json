@@ -1,0 +1,21 @@
+{
+  "js/core/tag-renderer-base.js": "client/src/features/media-tags/pipeline/tag-renderer-base-entry.ts",
+  "js/tags/ageratingtags.js": "client/src/features/media-tags/types/age-rating/ageratingtags-entry.ts",
+  "js/tags/awardstags.js": "client/src/features/media-tags/types/awards/awardstags-entry.ts",
+  "js/tags/customtags.js": "client/src/features/media-tags/types/custom/customtags-entry.ts",
+  "js/tags/genretags.js": "client/src/features/media-tags/types/genre/genretags-entry.ts",
+  "js/tags/languagetags.js": "client/src/features/media-tags/types/language/languagetags-entry.ts",
+  "js/tags/logotags.js": "client/src/features/media-tags/types/logo/logotags-entry.ts",
+  "js/tags/peopletags.js": "client/src/features/media-tags/types/people/peopletags-entry.ts",
+  "js/tags/qualitytags.js": "client/src/features/media-tags/types/quality/qualitytags-entry.ts",
+  "js/tags/ratingtags.js": "client/src/features/media-tags/types/ratings/ratingtags-entry.ts",
+  "js/tags/statustags.js": "client/src/features/media-tags/types/status/statustags-entry.ts",
+  "js/tags/tag-cache-store.js": "client/src/features/media-tags/pipeline/tag-cache-store-entry.ts",
+  "js/tags/tag-direct-play.js": "client/src/features/media-tags/types/direct-play/tag-direct-play-entry.ts",
+  "js/tags/tag-item-editor.js": "client/src/features/media-tags/editor/tag-item-editor-entry.ts",
+  "js/tags/tag-item-menu.js": "client/src/features/media-tags/editor/tag-item-menu-entry.ts",
+  "js/tags/tag-layout-styles.js": "client/src/features/media-tags/layout/tag-layout-styles-entry.ts",
+  "js/tags/tag-pipeline.js": "client/src/features/media-tags/pipeline/tag-pipeline-entry.ts",
+  "js/tags/tag-styles.js": "client/src/features/media-tags/layout/tag-styles-entry.ts",
+  "js/tags/userreviewtags.js": "client/src/features/media-tags/types/ratings/userreviewtags-entry.ts"
+}

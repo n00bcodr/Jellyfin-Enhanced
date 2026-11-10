@@ -289,8 +289,8 @@
     "title": "🐛[BUG] Quality Tags are showing wrong info",
     "status": "partial-existing",
     "tests": [
-      "tests/backend/PosterTags/PosterRegressionTests.cs",
-      "tests/frontend/core/core-tag-renderer.test.mjs"
+      "tests/backend/Features/MediaTags/PosterTags/PosterRegressionTests.cs",
+      "tests/frontend/features/media-tags/core-tag-renderer.test.mjs"
     ],
     "assessment": "Production tag renderer and stream-height resolution tested; original TV-mode div-card and 1328x720 fixture not all replayed. Width-sensitive threshold may escape height-only test."
   },
@@ -355,7 +355,7 @@
     "title": "🐛[BUG] Not working with \"/jellyfin\" BaseUrl",
     "status": "partial-existing",
     "tests": [
-      "tests/backend/Api/ApiMiddlewareTests.cs",
+      "tests/backend/Features/Platform/ApiMiddlewareTests.cs",
       "tests/frontend/bootstrap/bootstrap.test.mjs"
     ],
     "assessment": "Base-path asset/bootstrap coverage exists; historical reverse-proxy deployment and branded-image route not reproduced end-to-end."
@@ -376,7 +376,7 @@
     "title": "➕[Feature Request]",
     "status": "partial-existing",
     "tests": [
-      "tests/backend/Api/ApiSeerrTests.cs",
+      "tests/backend/Features/Seerr/ApiSeerrTests.cs",
       "tests/frontend/requests/request-submission.test.mjs"
     ],
     "assessment": "Request identity/permission/advanced option gates and submission covered; each historical partial-request control and ARR queue visibility not replayed."
@@ -700,7 +700,7 @@
     "title": "🐛[BUG] Pause Screen backdrop is still blurred after disabling backdrop",
     "status": "partial-existing",
     "tests": [
-      "tests/frontend/features/features-pause.test.mjs"
+      "tests/frontend/features/player/features-pause.test.mjs"
     ],
     "assessment": "Disabled initial mount and pause lifecycle covered; administrator precedence/backdrop unblur/mouse-delay original reports need separate fixtures."
   },
@@ -1114,7 +1114,7 @@
     "title": "➕[Feature Request] Respect Override Rules from Jellyseerr when Requesting content",
     "status": "partial-existing",
     "tests": [
-      "tests/backend/Api/ApiSeerrTests.cs",
+      "tests/backend/Features/Seerr/ApiSeerrTests.cs",
       "tests/frontend/requests/request-submission.test.mjs"
     ],
     "assessment": "Request identity/permission/advanced option gates and submission covered; each historical partial-request control and ARR queue visibility not replayed."
@@ -1164,8 +1164,8 @@
     "title": "Fix quality tags for TV mode",
     "status": "partial-existing",
     "tests": [
-      "tests/backend/PosterTags/PosterRegressionTests.cs",
-      "tests/frontend/core/core-tag-renderer.test.mjs"
+      "tests/backend/Features/MediaTags/PosterTags/PosterRegressionTests.cs",
+      "tests/frontend/features/media-tags/core-tag-renderer.test.mjs"
     ],
     "assessment": "Production tag renderer and stream-height resolution tested; original TV-mode div-card and 1328x720 fixture not all replayed. Width-sensitive threshold may escape height-only test."
   },
@@ -1295,8 +1295,8 @@
     "title": "🐛[BUG] Quality tags are incorrect for 720p media",
     "status": "partial-existing",
     "tests": [
-      "tests/backend/PosterTags/PosterRegressionTests.cs",
-      "tests/frontend/core/core-tag-renderer.test.mjs"
+      "tests/backend/Features/MediaTags/PosterTags/PosterRegressionTests.cs",
+      "tests/frontend/features/media-tags/core-tag-renderer.test.mjs"
     ],
     "assessment": "Production tag renderer and stream-height resolution tested; original TV-mode div-card and 1328x720 fixture not all replayed. Width-sensitive threshold may escape height-only test."
   },
@@ -1363,7 +1363,7 @@
     "title": "Partial TV Show Requests Ignore Jellyseerr Settings",
     "status": "partial-existing",
     "tests": [
-      "tests/backend/Api/ApiSeerrTests.cs",
+      "tests/backend/Features/Seerr/ApiSeerrTests.cs",
       "tests/frontend/requests/request-submission.test.mjs"
     ],
     "assessment": "Request identity/permission/advanced option gates and submission covered; each historical partial-request control and ARR queue visibility not replayed."
@@ -1384,7 +1384,7 @@
     "title": "🐛[BUG] isPartialRequestsEnabled failed with 403 for user account",
     "status": "partial-existing",
     "tests": [
-      "tests/backend/Api/ApiSeerrTests.cs",
+      "tests/backend/Features/Seerr/ApiSeerrTests.cs",
       "tests/frontend/requests/request-submission.test.mjs"
     ],
     "assessment": "Request identity/permission/advanced option gates and submission covered; each historical partial-request control and ARR queue visibility not replayed."
@@ -1695,7 +1695,7 @@
     "title": "🐛[BUG] Automatic Advance Season Request not working",
     "status": "partial-existing",
     "tests": [
-      "tests/backend/ScheduledTasks/TaskAutoRequestTests.cs"
+      "tests/backend/Features/Seerr/TaskAutoRequestTests.cs"
     ],
     "assessment": "SeasonThresholdAvailabilityAndExistingRequestsControlAutomaticRequest covers thresholds/existence/requests; cross-user concurrency/restart request de-dup and every reported release combination remain gaps."
   },
@@ -1751,7 +1751,7 @@
     "title": "🐛[BUG] Jellyseerr Automatic Advance Season Requests is requesting seasons that don't exist.",
     "status": "partial-existing",
     "tests": [
-      "tests/backend/ScheduledTasks/TaskAutoRequestTests.cs"
+      "tests/backend/Features/Seerr/TaskAutoRequestTests.cs"
     ],
     "assessment": "SeasonThresholdAvailabilityAndExistingRequestsControlAutomaticRequest covers thresholds/existence/requests; cross-user concurrency/restart request de-dup and every reported release combination remain gaps."
   },
@@ -1811,7 +1811,7 @@
     "title": "🐛[BUG] Custom Pause Screen not working if moving mouse before default delay",
     "status": "partial-existing",
     "tests": [
-      "tests/frontend/features/features-pause.test.mjs"
+      "tests/frontend/features/player/features-pause.test.mjs"
     ],
     "assessment": "Disabled initial mount and pause lifecycle covered; administrator precedence/backdrop unblur/mouse-delay original reports need separate fixtures."
   },
@@ -1849,7 +1849,7 @@
     "title": "🐛[BUG] [auto request]  \"season 2 already exists locally\" <-- but it does not.",
     "status": "partial-existing",
     "tests": [
-      "tests/backend/ScheduledTasks/TaskAutoRequestTests.cs"
+      "tests/backend/Features/Seerr/TaskAutoRequestTests.cs"
     ],
     "assessment": "SeasonThresholdAvailabilityAndExistingRequestsControlAutomaticRequest covers thresholds/existence/requests; cross-user concurrency/restart request de-dup and every reported release combination remain gaps."
   },
@@ -1923,7 +1923,7 @@
     "title": "🐛[BUG] Automatic advance season request feature requests too much",
     "status": "partial-existing",
     "tests": [
-      "tests/backend/ScheduledTasks/TaskAutoRequestTests.cs"
+      "tests/backend/Features/Seerr/TaskAutoRequestTests.cs"
     ],
     "assessment": "SeasonThresholdAvailabilityAndExistingRequestsControlAutomaticRequest covers thresholds/existence/requests; cross-user concurrency/restart request de-dup and every reported release combination remain gaps."
   },
@@ -2062,7 +2062,7 @@
     "title": "🐛[BUG] Jellyseerr Watchlist integration adds all Jellyseerr requests to all users",
     "status": "partial-existing",
     "tests": [
-      "tests/backend/ScheduledTasks/TaskSeerrSyncTests.cs"
+      "tests/backend/Features/Seerr/TaskSeerrSyncTests.cs"
     ],
     "assessment": "InboundWatchlistIsUserScopedIdempotentAndDoesNotReaddRemovedItems covers per-user ownership and scheduled removal preservation; manual endpoint and library-event path are not equivalent proof."
   },
@@ -2266,7 +2266,7 @@
     "title": "🐛[BUG] Custom xxxx does not support base URL",
     "status": "partial-existing",
     "tests": [
-      "tests/backend/Api/ApiMiddlewareTests.cs",
+      "tests/backend/Features/Platform/ApiMiddlewareTests.cs",
       "tests/frontend/bootstrap/bootstrap.test.mjs"
     ],
     "assessment": "Base-path asset/bootstrap coverage exists; historical reverse-proxy deployment and branded-image route not reproduced end-to-end."
@@ -2296,7 +2296,7 @@
     "title": "🐛[BUG] Disabling custom pause screen does not disable custom pause screen.",
     "status": "partial-existing",
     "tests": [
-      "tests/frontend/features/features-pause.test.mjs"
+      "tests/frontend/features/player/features-pause.test.mjs"
     ],
     "assessment": "Disabled initial mount and pause lifecycle covered; administrator precedence/backdrop unblur/mouse-delay original reports need separate fixtures."
   },
@@ -2336,7 +2336,7 @@
     "title": "🐛[BUG] Random Unwatched only option not working",
     "status": "partial-existing",
     "tests": [
-      "tests/frontend/features/features-random.test.mjs"
+      "tests/frontend/features/details-providers/features-random.test.mjs"
     ],
     "assessment": "Pinned collection unwatched-empty fallback covered; full historical only-unwatched API filter contract not proven."
   },
@@ -2397,7 +2397,7 @@
     "title": "🐛[BUG] Auto-Season Request does not check unreleased episodes for threshold",
     "status": "partial-existing",
     "tests": [
-      "tests/backend/ScheduledTasks/TaskAutoRequestTests.cs"
+      "tests/backend/Features/Seerr/TaskAutoRequestTests.cs"
     ],
     "assessment": "SeasonThresholdAvailabilityAndExistingRequestsControlAutomaticRequest covers thresholds/existence/requests; cross-user concurrency/restart request de-dup and every reported release combination remain gaps."
   },
@@ -2581,7 +2581,7 @@
     "title": "Modify arr/requests endpoint to enforce Jellyseerr user permissions",
     "status": "partial-existing",
     "tests": [
-      "tests/backend/Api/ApiSeerrTests.cs",
+      "tests/backend/Features/Seerr/ApiSeerrTests.cs",
       "tests/frontend/requests/request-submission.test.mjs"
     ],
     "assessment": "Request identity/permission/advanced option gates and submission covered; each historical partial-request control and ARR queue visibility not replayed."
@@ -2780,7 +2780,7 @@
     "status": "partial-existing",
     "tests": [
       "tests/frontend/pages/pages-calendar.test.mjs",
-      "tests/backend/Integrations/IntegrationCalendarTests.cs"
+      "tests/backend/Features/Calendar/IntegrationCalendarTests.cs"
     ],
     "assessment": "Calendar settings/filtering/provider integration has coverage; last-day RFC3339 boundary and each historical navigation/layout change not proven by this audit."
   },
@@ -2792,7 +2792,7 @@
     "status": "partial-existing",
     "tests": [
       "tests/frontend/pages/pages-calendar.test.mjs",
-      "tests/backend/Integrations/IntegrationCalendarTests.cs"
+      "tests/backend/Features/Calendar/IntegrationCalendarTests.cs"
     ],
     "assessment": "Calendar settings/filtering/provider integration has coverage; last-day RFC3339 boundary and each historical navigation/layout change not proven by this audit."
   },
@@ -2812,7 +2812,7 @@
     "title": "➕[Feature Request]/[Bug] allow Watchlist Removal",
     "status": "partial-existing",
     "tests": [
-      "tests/backend/ScheduledTasks/TaskSeerrSyncTests.cs"
+      "tests/backend/Features/Seerr/TaskSeerrSyncTests.cs"
     ],
     "assessment": "InboundWatchlistIsUserScopedIdempotentAndDoesNotReaddRemovedItems covers per-user ownership and scheduled removal preservation; manual endpoint and library-event path are not equivalent proof."
   },
@@ -2823,7 +2823,7 @@
     "title": "fix: prevent watchlist sync from re-adding user-removed items",
     "status": "partial-existing",
     "tests": [
-      "tests/backend/ScheduledTasks/TaskSeerrSyncTests.cs"
+      "tests/backend/Features/Seerr/TaskSeerrSyncTests.cs"
     ],
     "assessment": "InboundWatchlistIsUserScopedIdempotentAndDoesNotReaddRemovedItems covers per-user ownership and scheduled removal preservation; manual endpoint and library-event path are not equivalent proof."
   },
@@ -2870,8 +2870,8 @@
     "title": "feat: per-user hidden content system",
     "status": "partial-existing",
     "tests": [
-      "tests/frontend/features/features-hidden.test.mjs",
-      "tests/backend/Privacy/PrivacyHiddenContentTests.cs"
+      "tests/frontend/features/hidden-content/features-hidden.test.mjs",
+      "tests/backend/Features/HiddenContent/PrivacyHiddenContentTests.cs"
     ],
     "assessment": "Current hidden-state isolation/filtering covered; all nine surfaces plus dialogs/undo/native-host paths are not exhaustively exercised."
   },
@@ -2901,7 +2901,7 @@
     "status": "partial-existing",
     "tests": [
       "tests/frontend/pages/pages-calendar.test.mjs",
-      "tests/backend/Integrations/IntegrationCalendarTests.cs"
+      "tests/backend/Features/Calendar/IntegrationCalendarTests.cs"
     ],
     "assessment": "Calendar settings/filtering/provider integration has coverage; last-day RFC3339 boundary and each historical navigation/layout change not proven by this audit."
   },
@@ -2994,7 +2994,7 @@
     "status": "partial-existing",
     "tests": [
       "tests/frontend/pages/pages-calendar.test.mjs",
-      "tests/backend/Integrations/IntegrationCalendarTests.cs"
+      "tests/backend/Features/Calendar/IntegrationCalendarTests.cs"
     ],
     "assessment": "Calendar settings/filtering/provider integration has coverage; last-day RFC3339 boundary and each historical navigation/layout change not proven by this audit."
   },
@@ -3005,7 +3005,7 @@
     "title": "🐛[BUG] Jellyseerr next season requests arent being de-duplicated",
     "status": "partial-existing",
     "tests": [
-      "tests/backend/ScheduledTasks/TaskAutoRequestTests.cs"
+      "tests/backend/Features/Seerr/TaskAutoRequestTests.cs"
     ],
     "assessment": "SeasonThresholdAvailabilityAndExistingRequestsControlAutomaticRequest covers thresholds/existence/requests; cross-user concurrency/restart request de-dup and every reported release combination remain gaps."
   }

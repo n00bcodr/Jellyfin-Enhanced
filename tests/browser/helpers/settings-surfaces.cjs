@@ -8,12 +8,11 @@ const english = require('../../../Jellyfin.Plugin.JellyfinEnhanced/js/locales/en
 const LIBRARY = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const ITEM = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 
+// JE.t exactly as plugin.js defines it (`t: createTranslator(liveNamespace)`, plural forms included), not a stand-in.
+const { loaderSource } = require('./loader-source.cjs');
+
 // Jellyfin web's UI font family (the repo ships its bold cut for native posters): text is measured as wide
 // as on a real dashboard, not in the fixture's narrower default face.
-// JE.t exactly as plugin.js defines it (plural forms included), not a stand-in.
-const pluginSource = require('node:fs').readFileSync(path.join(root, 'plugin.js'), 'utf8');
-const translate = pluginSource.slice(pluginSource.indexOf('        t: (key, params = {}) => {'), pluginSource.indexOf('        loadSettings: () =>'));
-
 const noto = require('node:zlib').brotliDecompressSync(require('node:fs').readFileSync(path.join(root, '../Assets/PosterTags/fonts/NotoSans-Bold.ttf.br'))).toString('base64');
 
 /** Shared JE globals and an ApiClient whose answers come from small fixtures. */
@@ -21,7 +20,7 @@ async function base(page, { plugin = {}, settings = {}, admin = true, theme = 'd
   await page.goto('/');
   await page.addStyleTag({ content: `@font-face { font-family: 'JE Fixture Noto'; src: url(data:font/ttf;base64,${noto}); } html, body, button, input, select, textarea { font-family: 'JE Fixture Noto', sans-serif; }` });
   await page.evaluate(() => document.fonts.ready);
-  await page.evaluate(({ english, plugin, settings, admin, theme, LIBRARY, ITEM, translate }) => {
+  await page.evaluate(({ english, plugin, settings, admin, theme, LIBRARY, ITEM, loader }) => {
     document.documentElement.dataset.jeFixtureTheme = theme;
     document.documentElement.style.colorScheme = theme;
     // The host page's own colours, which the surfaces detect their theme from.
@@ -34,10 +33,13 @@ async function base(page, { plugin = {}, settings = {}, admin = true, theme = 'd
     icons.textContent = '.material-icons, .material-icons-outlined, .material-symbols-outlined, .je-msym, .je-msym-outlined { display: inline-block; width: 1em; height: 1em; overflow: hidden; line-height: 1; white-space: nowrap; color: transparent; vertical-align: middle; flex-shrink: 0; }';
     document.head.append(icons);
     // eslint-disable-next-line no-eval
-    const { t } = (0, eval)(`({${translate}})`);
+    const { createTranslator } = (0, eval)(loader);
+    const t = createTranslator(() => window.JellyfinEnhanced);
+    // The loader keeps the loaded settings document's revision (bootstrap/loader/user-config.ts); without one the
+    // settings panel refuses to open ("Settings could not be loaded").
     window.JellyfinEnhanced = { core: {}, helpers: {}, internals: {}, pluginConfig: { TagCacheServerMode: true, ...plugin },
       userConfig: { settings: { tagLayoutSettingsVersion: 1, qualityTagsEnabled: true, ratingTagsEnabled: true, statusTagsEnabled: true, genreTagsEnabled: true,
-        languageTagsEnabled: true, ageRatingTagsEnabled: true, ...settings, isAdmin: admin }, shortcuts: { Shortcuts: [] } },
+        languageTagsEnabled: true, ageRatingTagsEnabled: true, ...settings, isAdmin: admin }, shortcuts: { Shortcuts: [] }, settingsRevision: 'fixture-loaded' },
       currentSettings: {}, t, translations: english, translationsLang: 'en', IconName: {}, toast() {}, keyListener() {}, initializeShortcuts() {}, state: { activeShortcuts: { x: 1 } }, pauseScreenInstance: {},
       themer: { getThemeVariables: () => (theme === 'light'
         ? { panelBg: '#fff', secondaryBg: '#f2f2f2', primaryAccent: '#0077aa', altAccent: '#ddd', blur: '0px', textColor: '#111', logo: '' }
@@ -64,10 +66,16 @@ async function base(page, { plugin = {}, settings = {}, admin = true, theme = 'd
         if (url.pathname.endsWith('/Genres')) return { Items: [{ Name: 'Drama' }] };
         if (url.pathname.includes('/JellyfinEnhanced/tag-data/')) return { Items: [{ Id: ITEM, Type: 'Movie', Genres: ['Drama'], OfficialRating: 'PG-13', CommunityRating: 7.5 }] };
         if (url.pathname.includes('/Items')) return { Items: [{ Id: ITEM, Name: 'Sample Movie', Type: 'Movie' }], TotalRecordCount: 1 };
+        // Everything else, the panel's settings-document refresh included, has no document: the panel keeps the
+        // document the page loaded with (userConfig above, at its revision).
         return null;
       },
     };
-  }, { english, plugin, settings, admin, theme, LIBRARY, ITEM, translate });
+    // Fixture self-check: JE.t is the real translator over en.json. If the loader moves, this fails here, once,
+    // instead of as "JE.t is not a function" in every surface.
+    const probe = window.JellyfinEnhanced.t('panel_media_tags_badge_window_added', { days: 1 });
+    if (probe !== 'within 1 day of being added') throw new Error(`settings-surfaces fixture: JE.t is not the loader's translator (got ${JSON.stringify(probe)})`);
+  }, { english, plugin, settings, admin, theme, LIBRARY, ITEM, loader: loaderSource() });
 }
 
 /** Load plugin scripts in order (paths relative to js/). */

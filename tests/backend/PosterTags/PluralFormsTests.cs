@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
-using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
-using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution;
+using Jellyfin.Plugin.JellyfinEnhanced.Shared.Text;
+using Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags.PosterTags.Resolution;
 using Xunit;
 
 namespace JE.Tests;
@@ -57,6 +57,6 @@ public class PluralFormsTests
     [InlineData("12h 05m", true, "12h05")]
     public void RuntimeTextReadsTheLabelInTheLocaleUnitsAndEnglishIsUnchanged(string label, bool compact, string expected)
     {
-        Assert.Equal(expected, Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution.TechnicalQualityRules.RuntimeText(label, compact, CultureInfo.GetCultureInfo("en")));
+        Assert.Equal(expected, Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags.PosterTags.Resolution.TechnicalQualityRules.RuntimeText(label, compact, CultureInfo.GetCultureInfo("en")));
     }
 }

@@ -1,243 +1,165 @@
-// /js/tags/ratingtags.js
-// Jellyfin Rating Tags - Display ordered Jellyfin and MDBList scores on posters.
-// A spec over the core tag-renderer factory (js/core/tag-renderer-base.js),
-// which owns the cache/ignore/tagged/CSS/reinitialize plumbing. This module
-// supplies only the rating-specific parts: rating normalization, the chip
-// markup, and the synthetic items handed to the user-review tag module.
-(function(JE) {
-    'use strict';
+(() => {
+"use strict";
+(() => {
+  // client/src/host/context.ts
+  function sharedModule(id) {
+    const namespace = window.JellyfinEnhanced?.core?.sharedModules?.[id];
+    if (!namespace) throw new Error(`${id} is not in JE.core.sharedModules: load its provider first (client/shared-modules.json)`);
+    return namespace;
+  }
+  function sharedExport(namespace, name) {
+    return namespace[name];
+  }
 
-    const logPrefix = '🪼 Jellyfin Enhanced: Rating Tags:';
-    const containerClass = 'rating-overlay-container';
-    const tagClass = 'rating-tag';
-    // How long a batch answer given while the server was still fetching named-source scores counts as a hit.
-    const PENDING_RETRY_MS = 60 * 1000;
-    // A batch answer is never kept past the time the server gave for asking again (RatingsRefreshAt).
+  // client/generated-shared/stub/client/src/features/media-tags/host.ts
+  var shared = /* @__PURE__ */ sharedModule("features/media-tags/host");
+  var export2 = /* @__PURE__ */ sharedExport(shared, "mediaTagsContext");
 
-    /**
-     * Normalize a raw critic rating to a 0-100 integer percentage.
-     * @param {*} raw - Raw critic rating value.
-     * @returns {number|null} Normalized percentage or null if invalid.
-     */
+  // client/generated-shared/stub/client/src/features/media-tags/pipeline/dto.ts
+  var shared2 = /* @__PURE__ */ sharedModule("features/media-tags/pipeline/dto");
+  var export22 = /* @__PURE__ */ sharedExport(shared2, "finite");
+  var export4 = /* @__PURE__ */ sharedExport(shared2, "isRecord");
+  var export9 = /* @__PURE__ */ sharedExport(shared2, "own");
+  var export10 = /* @__PURE__ */ sharedExport(shared2, "record");
+
+  // client/src/features/media-tags/types/ratings/ratingtags.ts
+  var SCOPE_OF_KEY = {
+    ratingTagsOnMovies: "movies",
+    ratingTagsOnSeries: "series",
+    ratingTagsOnSeasons: "seasons",
+    ratingTagsOnEpisodes: "episodes",
+    ratingTagsOnContinueWatching: "continueWatching",
+    ratingTagsOnNextUp: "nextUp"
+  };
+  function createRatingTags(ctx) {
+    const JE = ctx.core;
+    const logPrefix = "🪼 Jellyfin Enhanced: Rating Tags:";
+    const containerClass = "rating-overlay-container";
+    const tagClass = "rating-tag";
+    const PENDING_RETRY_MS = 60 * 1e3;
     function normalizeCriticPercent(raw) {
-        if (raw === null || raw === undefined) return null;
-        const num = Number(raw);
-        if (!Number.isFinite(num)) return null;
-        return Math.max(0, Math.min(100, Math.round(num)));
+      if (raw === null || raw === void 0) return null;
+      const num = Number(raw);
+      if (!Number.isFinite(num)) return null;
+      return Math.max(0, Math.min(100, Math.round(num)));
     }
-
-    // Where rating tags may render. Item types gate on the card's Jellyfin
-    // type; the two home rows gate on the row the card sits in (resolved by
-    // the Remove-from-Home module's row detector). Each resolves user override
-    // -> admin default -> true, so an install that has never touched these
-    // renders exactly as before.
     const ITEM_TYPE_SCOPES = {
-        Movie: { userKey: 'ratingTagsOnMovies', pluginKey: 'RatingTagsOnMovies' },
-        Series: { userKey: 'ratingTagsOnSeries', pluginKey: 'RatingTagsOnSeries' },
-        Season: { userKey: 'ratingTagsOnSeasons', pluginKey: 'RatingTagsOnSeasons' },
-        Episode: { userKey: 'ratingTagsOnEpisodes', pluginKey: 'RatingTagsOnEpisodes' },
+      Movie: { userKey: "ratingTagsOnMovies", pluginKey: "RatingTagsOnMovies" },
+      Series: { userKey: "ratingTagsOnSeries", pluginKey: "RatingTagsOnSeries" },
+      Season: { userKey: "ratingTagsOnSeasons", pluginKey: "RatingTagsOnSeasons" },
+      Episode: { userKey: "ratingTagsOnEpisodes", pluginKey: "RatingTagsOnEpisodes" }
     };
     const HOME_ROW_SCOPES = {
-        continuewatching: { userKey: 'ratingTagsOnContinueWatching', pluginKey: 'RatingTagsOnContinueWatching' },
-        nextup: { userKey: 'ratingTagsOnNextUp', pluginKey: 'RatingTagsOnNextUp' },
+      continuewatching: { userKey: "ratingTagsOnContinueWatching", pluginKey: "RatingTagsOnContinueWatching" },
+      nextup: { userKey: "ratingTagsOnNextUp", pluginKey: "RatingTagsOnNextUp" }
     };
     const HOME_ROW_SCOPE_LIST = Object.values(HOME_ROW_SCOPES);
-
-    /**
-     * Resolve one scope switch: user override, then admin default, then on.
-     * @param {{userKey: string, pluginKey: string}} scope
-     * @returns {boolean}
-     */
     function isScopeEnabled(scope) {
-        // The shared "Where to show" rule (core/tag-renderer-base.js tagScopes): personal, then the administrator.
-        const id = { ratingTagsOnMovies: 'movies', ratingTagsOnSeries: 'series', ratingTagsOnSeasons: 'seasons', ratingTagsOnEpisodes: 'episodes',
-            ratingTagsOnContinueWatching: 'continueWatching', ratingTagsOnNextUp: 'nextUp' }[scope.userKey];
-        if (id && JE.core?.tagScopes) return JE.core.tagScopes.allows('rating', id);
-        const u = JE.currentSettings?.[scope.userKey];
-        if (typeof u === 'boolean') return u;
-        const a = JE.pluginConfig?.[scope.pluginKey];
-        return typeof a === 'boolean' ? a : true;
+      const id = export9(SCOPE_OF_KEY, scope.userKey);
+      if (id && JE.core?.tagScopes) return JE.core.tagScopes.allows("rating", id);
+      const u = JE.currentSettings?.[scope.userKey];
+      if (typeof u === "boolean") return u;
+      const a = JE.pluginConfig?.[scope.pluginKey];
+      return typeof a === "boolean" ? a : true;
     }
-
-    /**
-     * True when rating tags are switched off for this card, either by its item
-     * type or by the home row it is displayed in. Types outside the four
-     * scoped ones (BoxSet, Video) and unrecognised rows are never excluded.
-     * The card's own data-type wins over the fetched item's type: a Next Up
-     * episode card borrows its series artwork, so the pipeline resolves (and
-     * caches) the SERIES item for it, yet what the user sees is an episode.
-     * @param {HTMLElement} el - The render target (or any element inside the card).
-     * @param {string|null|undefined} type - Fetched item type, used when the card carries no data-type.
-     * @returns {boolean}
-     */
     function isExcludedByScope(el, type) {
-        const itemType = el.closest('[data-type]')?.getAttribute('data-type') || type || null;
-        const typeScope = itemType ? ITEM_TYPE_SCOPES[itemType] : null;
-        if (typeScope && !isScopeEnabled(typeScope)) return true;
-        // Row detection classifies the card's home section and, on native
-        // rows, primes the user's home-section preferences with a fetch, so
-        // only pay for it once a row switch is actually off.
-        if (typeof JE.detectCardRowSurface === 'function'
-            && HOME_ROW_SCOPE_LIST.some((scope) => !isScopeEnabled(scope))) {
-            const rowScope = HOME_ROW_SCOPES[JE.detectCardRowSurface(el)];
-            if (rowScope && !isScopeEnabled(rowScope)) return true;
+      const itemType = el.closest("[data-type]")?.getAttribute("data-type") || (typeof type === "string" ? type : null);
+      const typeScope = itemType ? export9(ITEM_TYPE_SCOPES, itemType) : null;
+      if (typeScope && !isScopeEnabled(typeScope)) return true;
+      if (typeof JE.detectCardRowSurface === "function" && HOME_ROW_SCOPE_LIST.some((scope) => !isScopeEnabled(scope))) {
+        const rowScope = export9(HOME_ROW_SCOPES, JE.detectCardRowSurface(el));
+        if (rowScope && !isScopeEnabled(rowScope)) return true;
+      }
+      return false;
+    }
+    JE.isRatingTagExcludedByScope = isExcludedByScope;
+    function isSuppressionPending() {
+      try {
+        const sg = ctx.peer("spoilerBlur");
+        if (!sg || JE.pluginConfig?.SpoilerBlurEnabled !== true) return false;
+        if (typeof sg.isLoaded === "function") return sg.isLoaded() !== true;
+        return typeof sg.isLoadOk === "function" && sg.isLoadOk() !== true;
+      } catch {
+        return false;
+      }
+    }
+    function shouldSuppressRatingTag(item) {
+      try {
+        if (!item) return false;
+        if (!JE.pluginConfig || JE.pluginConfig.SpoilerBlurEnabled !== true) return false;
+        if (JE.pluginConfig.SpoilerStripRatings === false) return false;
+        const sg = ctx.peer("spoilerBlur");
+        if (!sg || typeof sg.isEnabledFor !== "function") return false;
+        if (typeof sg.getUserPrefs === "function") {
+          if (sg.getUserPrefs()?.HideRatings === false) return false;
+        }
+        const stateReady = typeof sg.isLoadOk === "function" ? sg.isLoadOk() === true : true;
+        if (item.Type === "Series") {
+          if (!item.Id) return false;
+          return stateReady ? sg.isEnabledFor(item.Id) === true : true;
+        }
+        if (item.Type === "Season") {
+          if (!item.SeriesId) return false;
+          return stateReady ? sg.isEnabledFor(item.SeriesId) === true : true;
+        }
+        if (item.Type === "Episode") {
+          if (export10(item.UserData).Played === true) return false;
+          if (!item.SeriesId) return false;
+          return stateReady ? sg.isEnabledFor(item.SeriesId) === true : true;
         }
         return false;
+      } catch (e) {
+        return !!(JE.pluginConfig && JE.pluginConfig.SpoilerBlurEnabled === true);
+      }
     }
-
-    // The review chips (userreviewtags.js) update cards outside this renderer
-    // when the review averages change; they use the same scope rule so a card
-    // this renderer leaves bare never gets a chip.
-    JE.isRatingTagExcludedByScope = isExcludedByScope;
-
-    /**
-     * True while rating suppression is only the fail-closed default because
-     * Spoiler Guard's per-user state request is still in flight (see
-     * shouldSuppressRatingTag). Such cards get NOTHING yet — not even the
-     * user-review chip, whose overlay would make the card look finished — so
-     * the rescan Spoiler Guard runs once its state loads renders them
-     * properly. After a FAILED load nothing rescans, so suppression is final
-     * then and the chip goes on as before.
-     * @returns {boolean}
-     */
-    function isSuppressionPending() {
-        try {
-            const sg = JE.spoilerBlur;
-            if (!sg || JE.pluginConfig?.SpoilerBlurEnabled !== true) return false;
-            if (typeof sg.isLoaded === 'function') return sg.isLoaded() !== true;
-            return typeof sg.isLoadOk === 'function' && sg.isLoadOk() !== true;
-        } catch {
-            return false;
-        }
+    function getCachedEntry(ctx2, itemId) {
+      const entry = ctx2.getPersistent(itemId) ?? ctx2.hot?.get(itemId);
+      if (!entry) return null;
+      const refreshAt = export4(entry) ? export22(entry.refreshAt) : null;
+      if (refreshAt !== null && Date.now() >= refreshAt) return null;
+      if (typeof entry === "string" || typeof entry === "number") {
+        return { tmdb: String(entry), critic: null };
+      }
+      if (export4(entry)) {
+        return {
+          ...entry,
+          tmdb: entry.tmdb ?? null,
+          critic: entry.critic ?? null
+        };
+      }
+      return null;
     }
-
-    /**
-     * True when the community/critic rating tag must be SUPPRESSED because the
-     * item is (or belongs to) a Spoiler-Guarded series and ratings are being
-     * hidden for this user. Series suppress their own card; Seasons and unwatched
-     * Episodes would otherwise leak the series rating via the parent-series
-     * fallback (the server strips their own rating). Watched episodes reveal
-     * normally, matching the server strip which only strips unwatched. Gated on
-     * ratings actually being stripped (SpoilerStripRatings !== false and
-     * HideRatings !== false) and on the master switch + JE.spoilerBlur being
-     * present; everything else returns false.
-     * @param {object} item - Jellyfin item DTO (or synthetic {Type, Id, SeriesId, UserData}).
-     * @returns {boolean}
-     */
-    function shouldSuppressRatingTag(item) {
-        try {
-            if (!item) return false;
-            if (!JE.pluginConfig || JE.pluginConfig.SpoilerBlurEnabled !== true) return false;
-            // Only when ratings are truly being hidden for this user.
-            if (JE.pluginConfig.SpoilerStripRatings === false) return false;
-            const sg = JE.spoilerBlur;
-            if (!sg || typeof sg.isEnabledFor !== 'function') return false;
-            if (typeof sg.getUserPrefs === 'function') {
-                var prefs = sg.getUserPrefs() || {};
-                if (prefs.HideRatings === false) return false; // user opted to keep ratings
-            }
-            // Fail CLOSED while Spoiler Guard state hasn't authoritatively loaded
-            // (initial GET in flight or failed): the enabled-series set isn't
-            // trustworthy yet, so suppress on any guardable surface rather than
-            // flash a guarded show's rating. Mirrors reviews.js isLoadOk gate.
-            var stateReady = typeof sg.isLoadOk === 'function' ? sg.isLoadOk() === true : true;
-            if (item.Type === 'Series') {
-                if (!item.Id) return false;
-                return stateReady ? sg.isEnabledFor(item.Id) === true : true;
-            }
-            if (item.Type === 'Season') {
-                if (!item.SeriesId) return false;
-                return stateReady ? sg.isEnabledFor(item.SeriesId) === true : true;
-            }
-            if (item.Type === 'Episode') {
-                // Watched episode is no longer a spoiler — reveal its rating.
-                if (item.UserData && item.UserData.Played === true) return false;
-                if (!item.SeriesId) return false;
-                return stateReady ? sg.isEnabledFor(item.SeriesId) === true : true;
-            }
-            return false;
-        } catch (e) {
-            // Unexpected failure: fail CLOSED when Spoiler Guard is enabled
-            // (suppress) rather than risk revealing a guarded rating.
-            return !!(JE.pluginConfig && JE.pluginConfig.SpoilerBlurEnabled === true);
-        }
+    function setCachedEntry(ctx2, itemId, rating) {
+      ctx2.setPersistent(itemId, rating);
+      ctx2.hot?.set(itemId, rating);
     }
-
-    /**
-     * Retrieve a cached rating entry from localStorage or hot cache.
-     * @param {Object} ctx - Factory context.
-     * @param {string} itemId - Jellyfin item ID.
-     * @returns {Object|null} Cached rating or null.
-     */
-    function getCachedEntry(ctx, itemId) {
-        const entry = ctx.getPersistent(itemId) ?? ctx.hot?.get(itemId);
-        if (!entry) return null;
-        // An answer counts only until the server said to ask again (scores still on their way, a retry after
-        // a failed refresh, or the end of MDBList's lifetime for the scores it has).
-        if (typeof entry === 'object' && Number.isFinite(entry.refreshAt) && Date.now() >= entry.refreshAt) return null;
-        if (typeof entry === 'string' || typeof entry === 'number') {
-            return { tmdb: String(entry), critic: null };
-        }
-        if (typeof entry === 'object') {
-            return {
-                ...entry,
-                tmdb: entry.tmdb ?? null,
-                critic: entry.critic ?? null
-            };
-        }
-        return null;
+    function applyRatingTag(ctx2, el, rating) {
+      if (!rating) return;
+      const facts = JE.ratingSources.resolve(rating.tmdb, rating.critic, rating.ratings);
+      ctx2.removeExistingOverlay(el);
+      if (!facts.length) return;
+      const container = document.createElement("div");
+      container.className = containerClass;
+      for (const fact of facts) container.appendChild(JE.ratingSources.chip(fact));
+      ctx2.commitOverlay(el, container);
     }
-
-    /**
-     * Store a rating entry in both localStorage cache and hot cache.
-     * @param {Object} ctx - Factory context.
-     * @param {string} itemId - Jellyfin item ID.
-     * @param {Object} rating - Rating data to cache.
-     * @returns {void}
-     */
-    function setCachedEntry(ctx, itemId, rating) {
-        ctx.setPersistent(itemId, rating);
-        ctx.hot?.set(itemId, rating);
-    }
-
-    /**
-     * Create ordered source chips before the shared layout applies density and caps.
-     * @param {Object} ctx - Factory context.
-     * @param {HTMLElement} el - The card container to receive the rating overlay.
-     * @param {{tmdb: string|null, critic: number|null, ratings?: Object|null}} rating - Rating data to display.
-     * @returns {void}
-     */
-    function applyRatingTag(ctx, el, rating) {
-        if (!rating) return;
-        const facts = JE.ratingSources.resolve(rating.tmdb, rating.critic, rating.ratings);
-        ctx.removeExistingOverlay(el);
-        if (!facts.length) return;
-        const container = document.createElement('div');
-        container.className = containerClass;
-        for (const fact of facts) container.appendChild(JE.ratingSources.chip(fact));
-
-        ctx.commitOverlay(el, container);
-    }
-
-    /** @type {Object} Factory spec — everything rating-specific lives here. */
     const spec = {
-        logPrefix,
-        settingKey: 'ratingTagsEnabled',
-        containerClass,
-        taggedAttr: 'jeRatingTagged',
-        styleId: 'jellyfin-enhanced-rating-tags-css',
-        position: { userKey: 'ratingTagsPosition', pluginKey: 'RatingTagsPosition', fallback: 'bottom-right' },
-        cache: {
-            key: 'JellyfinEnhanced-ratingTagsCache',
-            legacyPrefix: 'ratingTagsCache',
-            hotBucket: 'rating',
-            // Pre-factory ratingtags only saved via the cache manager (no
-            // beforeunload hook) — preserved.
-            saveOnUnload: false,
-        },
-        buildCss() {
-            // Placement comes from the layout stylesheet (tags/tag-layout-styles.js).
-            return `
+      logPrefix,
+      settingKey: "ratingTagsEnabled",
+      containerClass,
+      taggedAttr: "jeRatingTagged",
+      styleId: "jellyfin-enhanced-rating-tags-css",
+      position: { userKey: "ratingTagsPosition", pluginKey: "RatingTagsPosition", fallback: "bottom-right" },
+      cache: {
+        key: "JellyfinEnhanced-ratingTagsCache",
+        legacyPrefix: "ratingTagsCache",
+        hotBucket: "rating",
+        // Pre-factory ratingtags only saved via the cache manager (no
+        // beforeunload hook) — preserved.
+        saveOnUnload: false
+      },
+      buildCss() {
+        return `
                 .${containerClass} {
                     display: flex;
                     flex-direction: column;
@@ -301,204 +223,175 @@
                     .rating-tomato-icon { width: calc(clamp(10px, 2.5vw, 11px) * var(--je-tag-scale, 1)); height: calc(clamp(10px, 2.5vw, 11px) * var(--je-tag-scale, 1)); }
                 }
             `;
+      },
+      pipeline: {
+        needsFirstEpisode: false,
+        needsParentSeries: false,
+        render(ctx2, el, item, extras) {
+          if (ctx2.shouldIgnore(el)) return;
+          if (ctx2.isTagged(el)) return;
+          if (el.closest(".je-hidden")) return;
+          if (isExcludedByScope(el, item.Type)) {
+            ctx2.markTagged(el);
+            return;
+          }
+          const itemId = String(item.Id);
+          if (shouldSuppressRatingTag(item)) {
+            ctx2.markTagged(el);
+            if (!isSuppressionPending() && typeof JE.appendUserRatingToContainer === "function") {
+              JE.appendUserRatingToContainer(el, item, extras);
+            }
+            return;
+          }
+          const cached = getCachedEntry(ctx2, itemId);
+          if (cached && cached.tmdb !== void 0) {
+            if (cached.tmdb || cached.critic !== null || cached.ratings) {
+              applyRatingTag(ctx2, el, cached);
+            }
+            if (typeof JE.appendUserRatingToContainer === "function") {
+              JE.appendUserRatingToContainer(el, item, extras);
+            }
+            return;
+          }
+          let sourceItem = item;
+          if (extras.ratingParentSeries && !item.CommunityRating && !item.CriticRating) {
+            sourceItem = extras.ratingParentSeries;
+          }
+          const tmdb = sourceItem.CommunityRating != null ? parseFloat(String(sourceItem.CommunityRating)).toFixed(1) : null;
+          const critic = sourceItem.CriticRating != null ? normalizeCriticPercent(sourceItem.CriticRating) : null;
+          const rating = { tmdb, critic, ratings: item.Ratings ?? extras.ratingParentSeries?.Ratings };
+          const providers = export10(item.ProviderIds);
+          const seriesProviders = export10(extras?.parentSeries?.ProviderIds);
+          const tmdbId = providers.Tmdb || providers.tmdb || null;
+          const seriesTmdbId = seriesProviders.Tmdb || seriesProviders.tmdb || null;
+          const tmdbMediaType = item.Type === "Series" ? "tv" : "movie";
+          const serverRefreshAt = export22(item.RatingsRefreshAt);
+          const refreshAt = item.RatingsPending === true ? Date.now() + PENDING_RETRY_MS : serverRefreshAt !== null ? Math.max(serverRefreshAt, Date.now() + PENDING_RETRY_MS) : null;
+          setCachedEntry(ctx2, itemId, {
+            ...rating,
+            ...refreshAt !== null ? { refreshAt } : {},
+            tmdbId,
+            seriesTmdbId,
+            tmdbMediaType,
+            seasonNumber: item.IndexNumber ?? null,
+            episodeNumber: item.Type === "Episode" ? item.IndexNumber : null,
+            parentSeasonNumber: item.Type === "Episode" ? item.ParentIndexNumber : null,
+            sgType: item.Type,
+            sgSeriesId: item.SeriesId || (item.Type === "Series" ? item.Id : null),
+            sgPlayed: export10(item.UserData).Played === true
+          });
+          if (tmdb || critic !== null || rating.ratings) {
+            applyRatingTag(ctx2, el, rating);
+            if (typeof JE.appendUserRatingToContainer === "function") {
+              JE.appendUserRatingToContainer(el, item, extras);
+            }
+          } else if (typeof JE.appendUserRatingToContainer === "function") {
+            JE.appendUserRatingToContainer(el, item, extras);
+          }
         },
-        pipeline: {
-            needsFirstEpisode: false,
-            needsParentSeries: false,
-            render(ctx, el, item, extras) {
-                if (ctx.shouldIgnore(el)) return;
-                if (ctx.isTagged(el)) return;
-                if (el.closest('.je-hidden')) return;
-                if (isExcludedByScope(el, item.Type)) {
-                    ctx.markTagged(el);
-                    return;
-                }
-
-                const itemId = item.Id;
-
-                // Suppress before consulting the cache: a rating cached before
-                // Spoiler Guard was enabled must never flash back onto a card.
-                if (shouldSuppressRatingTag(item)) {
-                    ctx.markTagged(el);
-                    // Guarded: hide the rating, keep the user-review chip. Still
-                    // loading: add nothing, the post-load rescan decides.
-                    if (!isSuppressionPending() && typeof JE.appendUserRatingToContainer === 'function') {
-                        JE.appendUserRatingToContainer(el, item, extras);
-                    }
-                    return;
-                }
-
-                // Check hot cache
-                const cached = getCachedEntry(ctx, itemId);
-                if (cached && cached.tmdb !== undefined) {
-                    if (cached.tmdb || cached.critic !== null || cached.ratings) {
-                        applyRatingTag(ctx, el, cached);
-                    }
-                    // Still need to append user rating even on cache hit
-                    if (typeof JE.appendUserRatingToContainer === 'function') {
-                        JE.appendUserRatingToContainer(el, item, extras);
-                    }
-                    return;
-                }
-
-                // Extract ratings from item, falling back to parent series for Season/Episode
-                var sourceItem = item;
-                if (extras.ratingParentSeries && !item.CommunityRating && !item.CriticRating) {
-                    sourceItem = extras.ratingParentSeries;
-                }
-
-                const tmdb = sourceItem.CommunityRating != null
-                    ? parseFloat(sourceItem.CommunityRating).toFixed(1)
-                    : null;
-                const critic = sourceItem.CriticRating != null
-                    ? normalizeCriticPercent(sourceItem.CriticRating)
-                    : null;
-
-                const rating = { tmdb, critic, ratings: item.Ratings ?? extras.ratingParentSeries?.Ratings };
-                // Store tmdbId in cache entry so renderFromCache can call appendUserRatingToContainer
-                const tmdbId = item.ProviderIds?.Tmdb || item.ProviderIds?.tmdb || null;
-                const seriesTmdbId = extras?.parentSeries?.ProviderIds?.Tmdb || extras?.parentSeries?.ProviderIds?.tmdb || null;
-                const tmdbMediaType = item.Type === 'Series' ? 'tv' : 'movie';
-                // Named-source scores still on their way are asked for again in a minute; otherwise this answer
-                // lasts until the server's refresh time (never longer than the Local Storage lifetime).
-                const refreshAt = item.RatingsPending === true ? Date.now() + PENDING_RETRY_MS
-                    : Number.isFinite(item.RatingsRefreshAt) ? Math.max(item.RatingsRefreshAt, Date.now() + PENDING_RETRY_MS) : null;
-                setCachedEntry(ctx, itemId, { ...rating, ...(refreshAt !== null ? { refreshAt } : {}), tmdbId, seriesTmdbId, tmdbMediaType,
-                    seasonNumber: item.IndexNumber ?? null,
-                    episodeNumber: item.Type === 'Episode' ? item.IndexNumber : null,
-                    parentSeasonNumber: item.Type === 'Episode' ? item.ParentIndexNumber : null,
-                    sgType: item.Type,
-                    sgSeriesId: item.SeriesId || (item.Type === 'Series' ? item.Id : null),
-                    sgPlayed: item.UserData?.Played === true });
-
-                if (tmdb || critic !== null || rating.ratings) {
-                    applyRatingTag(ctx, el, rating);
-                    if (typeof JE.appendUserRatingToContainer === 'function') {
-                        JE.appendUserRatingToContainer(el, item, extras);
-                    }
-                } else if (typeof JE.appendUserRatingToContainer === 'function') {
-                    JE.appendUserRatingToContainer(el, item, extras);
-                }
-            },
-            renderFromCache(ctx, el, itemId) {
-                if (ctx.isTagged(el)) return true;
-                if (ctx.shouldIgnore(el)) return true;
-                if (el.closest('.je-hidden')) return true;
-                const cached = getCachedEntry(ctx, itemId);
-                if (isExcludedByScope(el, cached?.sgType)) {
-                    ctx.markTagged(el);
-                    return true;
-                }
-                if (!cached) return false;
-                if (shouldSuppressRatingTag({
-                    Type: cached.sgType,
-                    Id: itemId,
-                    SeriesId: cached.sgSeriesId,
-                    UserData: { Played: cached.sgPlayed === true }
-                })) {
-                    ctx.markTagged(el);
-                    if (typeof JE.appendUserRatingToContainer === 'function' && (cached.tmdbId || cached.seriesTmdbId)) {
-                        JE.appendUserRatingToContainer(el, {
-                            Type: cached.sgType,
-                            ProviderIds: cached.tmdbId ? { Tmdb: cached.tmdbId } : {},
-                            SeriesProviderIds: cached.seriesTmdbId ? { Tmdb: cached.seriesTmdbId } : {}
-                        });
-                    }
-                    return true;
-                }
-                if (cached.tmdb || cached.critic !== null || cached.ratings) {
-                    applyRatingTag(ctx, el, cached);
-                }
-                if (typeof JE.appendUserRatingToContainer === 'function' && (cached.tmdbId || cached.seriesTmdbId)) {
-                    const syntheticItem = {
-                        Type: cached.tmdbMediaType === 'tv' ? 'Series' : 'Movie',
-                        ProviderIds: cached.tmdbId ? { Tmdb: cached.tmdbId } : {},
-                        SeriesProviderIds: cached.seriesTmdbId ? { Tmdb: cached.seriesTmdbId } : {},
-                        IndexNumber: cached.seasonNumber,
-                        ParentIndexNumber: cached.parentSeasonNumber,
-                    };
-                    // Refine Type for Season/Episode based on available data
-                    if (cached.seriesTmdbId && cached.episodeNumber != null) {
-                        syntheticItem.Type = 'Episode';
-                        syntheticItem.IndexNumber = cached.episodeNumber;
-                        syntheticItem.ParentIndexNumber = cached.parentSeasonNumber;
-                    } else if (cached.seriesTmdbId && cached.seasonNumber != null) {
-                        syntheticItem.Type = 'Season';
-                        syntheticItem.IndexNumber = cached.seasonNumber;
-                    }
-                    JE.appendUserRatingToContainer(el, syntheticItem);
-                }
-                return true; // An authoritative empty rating is a valid fallback hit.
-            },
-            renderFromServerCache(ctx, el, entry, itemId) {
-                if (ctx.isTagged(el)) return;
-                if (ctx.shouldIgnore(el)) return;
-                if (isExcludedByScope(el, entry.Type)) {
-                    ctx.markTagged(el);
-                    return;
-                }
-                // Server-cache episode entries lack Played state, so only apply
-                // the parent-series suppression where it is authoritative.
-                // (A cache entry carries no Id of its own; the pipeline passes it.)
-                // Suppression hides the community/critic rating only: the
-                // user-review chip still goes on, as in the batch render path.
-                const suppressed = (entry.Type === 'Series' || entry.Type === 'Season')
-                    && shouldSuppressRatingTag({
-                        Type: entry.Type,
-                        Id: itemId,
-                        SeriesId: entry.SeriesId
-                    });
-                if (suppressed) {
-                    ctx.markTagged(el);
-                    // Still loading Spoiler Guard state: add nothing, not even
-                    // the review chip (its overlay would mark the card finished
-                    // and keep the rating off after the post-load rescan).
-                    if (isSuppressionPending()) return;
-                } else {
-                    const tmdb = entry.CommunityRating != null
-                        ? parseFloat(entry.CommunityRating).toFixed(1)
-                        : null;
-                    const critic = entry.CriticRating != null
-                        ? normalizeCriticPercent(entry.CriticRating)
-                        : null;
-                    if (tmdb || critic !== null || entry.Ratings) {
-                        applyRatingTag(ctx, el, { tmdb, critic, ratings: entry.Ratings });
-                    }
-                }
-                if (typeof JE.appendUserRatingToContainer === 'function') {
-                    // Build a synthetic item so resolveTmdbKey can derive the correct key
-                    // for Movie/Series (TmdbId) and Season/Episode (SeriesTmdbId + numbers)
-                    const syntheticItem = {
-                        Type: entry.Type,
-                        ProviderIds: entry.TmdbId ? { Tmdb: entry.TmdbId } : {},
-                        SeriesProviderIds: entry.SeriesTmdbId ? { Tmdb: entry.SeriesTmdbId } : {},
-                        IndexNumber: entry.SeasonNumber,
-                        ParentIndexNumber: entry.SeasonNumber,
-                        // For Episode, SeasonNumber is ParentIndexNumber and EpisodeNumber is IndexNumber
-                        ...(entry.Type === 'Episode' ? { ParentIndexNumber: entry.SeasonNumber, IndexNumber: entry.EpisodeNumber } : {})
-                    };
-                    if (entry.TmdbId || entry.SeriesTmdbId) {
-                        JE.appendUserRatingToContainer(el, syntheticItem, null);
-                    }
-                }
-            },
+        renderFromCache(ctx2, el, itemId) {
+          if (ctx2.isTagged(el)) return true;
+          if (ctx2.shouldIgnore(el)) return true;
+          if (el.closest(".je-hidden")) return true;
+          const cached = getCachedEntry(ctx2, itemId);
+          if (isExcludedByScope(el, cached?.sgType)) {
+            ctx2.markTagged(el);
+            return true;
+          }
+          if (!cached) return false;
+          if (shouldSuppressRatingTag({
+            Type: cached.sgType,
+            Id: itemId,
+            SeriesId: cached.sgSeriesId,
+            UserData: { Played: cached.sgPlayed === true }
+          })) {
+            ctx2.markTagged(el);
+            if (isSuppressionPending()) return true;
+            if (typeof JE.appendUserRatingToContainer === "function" && (cached.tmdbId || cached.seriesTmdbId)) {
+              JE.appendUserRatingToContainer(el, {
+                Type: cached.sgType,
+                ProviderIds: cached.tmdbId ? { Tmdb: cached.tmdbId } : {},
+                SeriesProviderIds: cached.seriesTmdbId ? { Tmdb: cached.seriesTmdbId } : {}
+              });
+            }
+            return true;
+          }
+          if (cached.tmdb || cached.critic !== null || cached.ratings) {
+            applyRatingTag(ctx2, el, cached);
+          }
+          if (typeof JE.appendUserRatingToContainer === "function" && (cached.tmdbId || cached.seriesTmdbId)) {
+            const syntheticItem = {
+              Type: cached.tmdbMediaType === "tv" ? "Series" : "Movie",
+              ProviderIds: cached.tmdbId ? { Tmdb: cached.tmdbId } : {},
+              SeriesProviderIds: cached.seriesTmdbId ? { Tmdb: cached.seriesTmdbId } : {},
+              IndexNumber: cached.seasonNumber,
+              ParentIndexNumber: cached.parentSeasonNumber
+            };
+            if (cached.seriesTmdbId && cached.episodeNumber != null) {
+              syntheticItem.Type = "Episode";
+              syntheticItem.IndexNumber = cached.episodeNumber;
+              syntheticItem.ParentIndexNumber = cached.parentSeasonNumber;
+            } else if (cached.seriesTmdbId && cached.seasonNumber != null) {
+              syntheticItem.Type = "Season";
+              syntheticItem.IndexNumber = cached.seasonNumber;
+            }
+            JE.appendUserRatingToContainer(el, syntheticItem);
+          }
+          return true;
         },
+        renderFromServerCache(ctx2, el, entry, itemId) {
+          if (ctx2.isTagged(el)) return;
+          if (ctx2.shouldIgnore(el)) return;
+          if (isExcludedByScope(el, entry.Type)) {
+            ctx2.markTagged(el);
+            return;
+          }
+          const suppressed = (entry.Type === "Series" || entry.Type === "Season") && shouldSuppressRatingTag({
+            Type: entry.Type,
+            Id: itemId,
+            SeriesId: entry.SeriesId
+          });
+          if (suppressed) {
+            ctx2.markTagged(el);
+            if (isSuppressionPending()) return;
+          } else {
+            const tmdb = entry.CommunityRating != null ? parseFloat(String(entry.CommunityRating)).toFixed(1) : null;
+            const critic = entry.CriticRating != null ? normalizeCriticPercent(entry.CriticRating) : null;
+            if (tmdb || critic !== null || entry.Ratings) {
+              applyRatingTag(ctx2, el, { tmdb, critic, ratings: entry.Ratings });
+            }
+          }
+          if (typeof JE.appendUserRatingToContainer === "function") {
+            const syntheticItem = {
+              Type: entry.Type,
+              ProviderIds: entry.TmdbId ? { Tmdb: entry.TmdbId } : {},
+              SeriesProviderIds: entry.SeriesTmdbId ? { Tmdb: entry.SeriesTmdbId } : {},
+              IndexNumber: entry.SeasonNumber,
+              ParentIndexNumber: entry.SeasonNumber,
+              // For Episode, SeasonNumber is ParentIndexNumber and EpisodeNumber is IndexNumber
+              ...entry.Type === "Episode" ? { ParentIndexNumber: entry.SeasonNumber, IndexNumber: entry.EpisodeNumber } : {}
+            };
+            if (entry.TmdbId || entry.SeriesTmdbId) {
+              JE.appendUserRatingToContainer(el, syntheticItem, null);
+            }
+          }
+        }
+      }
     };
-
     JE.initializeRatingTags = function() {
-        console.log(`${logPrefix} Starting...`);
-
-        const ctx = JE.core.tagRenderer.register('rating', spec);
-        ctx.injectCss();
-
-        console.log(`${logPrefix} Initialized successfully.`);
+      console.log(`${logPrefix} Starting...`);
+      const ctx2 = JE.core.tagRenderer.register("rating", spec);
+      ctx2.injectCss();
+      console.log(`${logPrefix} Initialized successfully.`);
     };
-
     JE.reinitializeRatingTags = function() {
-        JE.core.tagRenderer.reinitialize('rating', spec);
+      JE.core.tagRenderer.reinitialize("rating", spec);
     };
-
-    // Previews may enable this group while the signed-in user has it off.
     JE.core.tagRenderer.registerStyles(spec);
+  }
 
-})(window.JellyfinEnhanced);
+  // client/src/features/media-tags/types/ratings/ratingtags-entry.ts
+  createRatingTags(export2());
+})();
+})();
+//# sourceMappingURL=ratingtags.js.map

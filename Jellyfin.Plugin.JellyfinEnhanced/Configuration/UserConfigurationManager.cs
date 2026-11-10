@@ -2,6 +2,9 @@ using System;
 using System.Collections.Concurrent;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
+using Jellyfin.Plugin.JellyfinEnhanced.Infrastructure.Persistence;
 using System.Text.RegularExpressions;
 using MediaBrowser.Common.Configuration;
 using Newtonsoft.Json;
@@ -16,12 +19,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         private readonly Logger _logger;
 
         // Static so the Singleton ResponseFilter and the Scoped IEventConsumer share one pool.
-        private static readonly ConcurrentDictionary<string, object> _userFileLocks = new ConcurrentDictionary<string, object>();
+        private static readonly ConcurrentDictionary<string, object> _userFileLocks = new ConcurrentDictionary<string, object>(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
 
         public UserConfigurationManager(IApplicationPaths appPaths, Logger logger)
         {
             _configBaseDir = Path.Combine(appPaths.PluginsPath, "configurations", "Jellyfin.Plugin.JellyfinEnhanced");
             Directory.CreateDirectory(_configBaseDir);
+            _configBaseDir = CanonicalDirectory(_configBaseDir);
             _logger = logger;
 
             // One-shot migration: pre-fix callers normalized user IDs case-sensitively
@@ -43,16 +47,38 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <summary>Raised after the shared reviews.json was written (review added, edited or deleted).</summary>
         public event Action? ReviewsChanged;
 
+        // Resolve every existing ancestor: PluginsPath itself or one of its parents may
+        // be a trusted symlink. Physical aliases must share ordinary-write and CAS locks.
+        private static string CanonicalDirectory(string path)
+        {
+            var absolute = Path.GetFullPath(path);
+            var root = Path.GetPathRoot(absolute)!;
+            var current = root;
+            foreach (var segment in absolute[root.Length..].Split(
+                new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                var next = Path.Combine(current, segment);
+                var target = new DirectoryInfo(next).ResolveLinkTarget(returnFinalTarget: true);
+                current = target == null ? next : CanonicalDirectory(target.FullName);
+            }
+            return current;
+        }
+
         public object GetUserFileLock(string userId, string fileName)
         {
-            var normalized = (userId ?? string.Empty).Replace("-", "").ToLowerInvariant();
-            var key = normalized + "|" + (fileName ?? string.Empty);
-            return _userFileLocks.GetOrAdd(key, _ => new object());
+            // Key by the actual validated document path, including the store root.
+            return _userFileLocks.GetOrAdd(ResolveUserFile(userId, fileName), _ => new object());
         }
 
         private string GetUserConfigDir(string userId)
         {
             var normalizedUserId = (userId ?? string.Empty).Replace("-", "").ToLowerInvariant();
+            if (string.IsNullOrWhiteSpace(normalizedUserId) || normalizedUserId == "." || normalizedUserId == ".."
+                || normalizedUserId.Contains('/') || normalizedUserId.Contains('\\')
+                || normalizedUserId.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+            {
+                throw new InvalidOperationException("Invalid user-config user directory.");
+            }
             var userDir = Path.Combine(_configBaseDir, normalizedUserId);
 
             // Refuse paths outside _configBaseDir in case a future caller forwards untrusted input.
@@ -64,8 +90,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                     $"Refusing user-config path outside base directory: '{userId}'");
             }
 
+            RejectSymbolicLink(userDir);
             Directory.CreateDirectory(userDir);
-            return userDir;
+            return Path.GetFullPath(userDir);
         }
 
         private string ResolveUserFile(string userId, string fileName)
@@ -78,7 +105,156 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             {
                 throw new ArgumentException($"Invalid user-config filename: '{fileName}'", nameof(fileName));
             }
-            return Path.Combine(GetUserConfigDir(userId), fileName);
+            var path = Path.Combine(GetUserConfigDir(userId), fileName);
+            RejectSymbolicLink(path);
+            return path;
+        }
+
+        // Do not allow on-disk aliases to bypass confinement or the per-document lock.
+        private static void RejectSymbolicLink(string path)
+        {
+            if (new FileInfo(path).LinkTarget != null
+                || (File.Exists(path) || Directory.Exists(path))
+                    && (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
+                throw new InvalidOperationException("Symbolic links are not supported in user configuration paths.");
+        }
+
+        /// <summary>Reads an unwrapped JSON document and its byte-content revision. Corruption is never quarantined here.</summary>
+        public UserConfigurationDocument ReadUserConfigurationDocument(string userId, string fileName)
+        {
+            lock (GetUserFileLock(userId, fileName))
+            {
+                return ReadDocument(ResolveUserFile(userId, fileName));
+            }
+        }
+
+        /// <summary>
+        /// Applies a mutation only if the stored byte revision still matches. The callback receives
+        /// the complete JSON tree (null for absent), so it can retain fields unknown to typed models.
+        /// On conflict it is not called, no event is emitted, and result contains the current document.
+        /// The callback must not write this document itself. Corrupt input throws without modifying it.
+        /// </summary>
+        public bool TryUpdateUserConfigurationDocument(string userId, string fileName, string expectedRevision,
+            Func<JToken?, JToken> update, out UserConfigurationDocument result)
+        {
+            ArgumentNullException.ThrowIfNull(expectedRevision);
+            ArgumentNullException.ThrowIfNull(update);
+            lock (GetUserFileLock(userId, fileName))
+            {
+                var path = ResolveUserFile(userId, fileName);
+                result = ReadDocument(path);
+                if (!string.Equals(expectedRevision, result.Revision, StringComparison.Ordinal)) return false;
+                var updated = update(result.Document);
+                if (updated == null || updated.Type == JTokenType.Null || updated.Type == JTokenType.Undefined)
+                    throw new InvalidDataException("A user configuration document cannot be null.");
+                // Reject non-finite CLR numbers before Newtonsoft can silently stringify them.
+                ValidateFiniteNumbers(updated);
+                // Validate all serialized JSON, including caller-created raw literals.
+                var bytes = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(updated, Formatting.Indented));
+                var committed = ParseDocument(bytes);
+                WriteUserDocument(path, bytes);
+                result = committed;
+                NotifyUserConfigurationSaved(userId, fileName);
+                return true;
+            }
+        }
+
+        private static UserConfigurationDocument ReadDocument(string path)
+        {
+            byte[] bytes;
+            try { bytes = File.ReadAllBytes(path); }
+            catch (FileNotFoundException) { return UserConfigurationDocument.Missing(); }
+            catch (DirectoryNotFoundException) { return UserConfigurationDocument.Missing(); }
+            return ParseDocument(bytes);
+        }
+
+        private static UserConfigurationDocument ParseDocument(byte[] bytes)
+        {
+            try
+            {
+                // Accept legacy UTF-8 BOMs, but hash the original bytes including the BOM.
+                var offset = bytes.Length >= 3 && bytes[0] == 0xef && bytes[1] == 0xbb && bytes[2] == 0xbf ? 3 : 0;
+                var json = new UTF8Encoding(false, true).GetString(bytes, offset, bytes.Length - offset);
+                using var validated = System.Text.Json.JsonDocument.Parse(json);
+                if (validated.RootElement.ValueKind == System.Text.Json.JsonValueKind.Null)
+                    throw new InvalidDataException("User configuration document is literal null.");
+                var token = LosslessToken(validated.RootElement);
+                return new UserConfigurationDocument(token, "sha256:" + Convert.ToHexStringLower(SHA256.HashData(bytes)));
+            }
+            catch (Exception ex) when (ex is System.Text.Json.JsonException || ex is Newtonsoft.Json.JsonException || ex is DecoderFallbackException)
+            {
+                throw new InvalidDataException("User configuration document is corrupt; original bytes were preserved.", ex);
+            }
+        }
+
+        private static void ValidateFiniteNumbers(JToken token)
+        {
+            if (token is JValue value
+                && (value.Value is double d && !double.IsFinite(d)
+                    || value.Value is float f && !float.IsFinite(f)))
+                throw new InvalidDataException("Non-finite numbers cannot be stored in JSON.");
+            foreach (var child in token.Children()) ValidateFiniteNumbers(child);
+        }
+
+        // JToken's default double parsing rounds unknown numbers and can turn large
+        // exponents into strings on save. Keep ordinary numeric values usable by typed
+        // callbacks; retain unrepresentable values as validated JSON numeric literals.
+        internal static JToken LosslessToken(System.Text.Json.JsonElement element)
+        {
+            switch (element.ValueKind)
+            {
+                case System.Text.Json.JsonValueKind.Object:
+                    var obj = new JObject();
+                    foreach (var property in element.EnumerateObject())
+                    {
+                        if (obj.Property(property.Name, StringComparison.Ordinal) != null)
+                            throw new InvalidDataException("Duplicate user configuration property.");
+                        obj.Add(property.Name, LosslessToken(property.Value));
+                    }
+                    return obj;
+                case System.Text.Json.JsonValueKind.Array:
+                    return new JArray(element.EnumerateArray().Select(LosslessToken));
+                case System.Text.Json.JsonValueKind.Number:
+                    if (element.TryGetInt64(out var integer)) return new JValue(integer);
+                    var literal = element.GetRawText();
+                    if (literal.IndexOfAny(new[] { '.', 'e', 'E' }) < 0)
+                        return new JValue(System.Numerics.BigInteger.Parse(literal, System.Globalization.CultureInfo.InvariantCulture));
+                    if (element.TryGetDecimal(out var number)
+                        && System.Text.Json.JsonElement.DeepEquals(element, System.Text.Json.JsonSerializer.SerializeToElement(number)))
+                        return new JValue(number);
+                    return new JRaw(literal);
+                case System.Text.Json.JsonValueKind.String:
+                    return new JValue(element.GetString());
+                case System.Text.Json.JsonValueKind.True:
+                    return new JValue(true);
+                case System.Text.Json.JsonValueKind.False:
+                    return new JValue(false);
+                case System.Text.Json.JsonValueKind.Null:
+                    return JValue.CreateNull();
+                default:
+                    throw new InvalidDataException("Invalid user configuration value.");
+            }
+        }
+
+        private static void WriteUserDocument(string path, byte[] bytes)
+        {
+            var temporaryPath = path + ".tmp." + Guid.NewGuid().ToString("N");
+            try
+            {
+                using (var stream = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                {
+                    stream.Write(bytes);
+                    stream.Flush(flushToDisk: true);
+                }
+                File.Move(temporaryPath, path, overwrite: true);
+            }
+            finally
+            {
+                // A failed cleanup must not hide the original error or report a committed save as failed.
+                try { File.Delete(temporaryPath); }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
+            }
         }
 
         public bool UserConfigurationExists(string userId, string fileName)
@@ -144,59 +320,62 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // quarantineCorrupt: false = throw without moving the file aside (read-only callers such as dry runs).
         public T GetUserConfigurationStrict<T>(string userId, string fileName, bool quarantineCorrupt = true) where T : new()
         {
-            var configPath = ResolveUserFile(userId, fileName);
-            if (!File.Exists(configPath)) return new T();
+            lock (GetUserFileLock(userId, fileName))
+            {
+                var configPath = ResolveUserFile(userId, fileName);
+                if (!File.Exists(configPath)) return new T();
 
-            string json;
-            try
-            {
-                json = File.ReadAllText(configPath);
-            }
-            catch (Exception ex)
-            {
-                _logger.Error($"Failed to read '{fileName}' for user '{userId}': {ex.Message}");
-                if (quarantineCorrupt) BackupCorruptFile(configPath);
-                throw;
-            }
-
-            if (string.IsNullOrWhiteSpace(json)
-                || string.Equals(json.Trim(), "null", StringComparison.Ordinal))
-            {
-                _logger.Error($"'{fileName}' for user '{userId}' exists but is empty or literal-null; refusing to overwrite.");
-                if (quarantineCorrupt) BackupCorruptFile(configPath);
-                throw new InvalidDataException($"'{fileName}' is empty or literal null; refusing to overwrite.");
-            }
-
-            try
-            {
-                // Same null-skipping policy as the lenient GetUserConfiguration above:
-                // a stored JSON null for a field that has since become non-nullable
-                // (bool? -> bool migrations) is schema drift, not corruption. Without
-                // this the strict path would back the file up as .corrupt-* and 503,
-                // losing the user's real data — the exact failure the lenient reader
-                // was fixed to avoid. The empty/"null"-literal checks above still
-                // treat genuinely unusable files as corruption.
-                var parsed = JsonConvert.DeserializeObject<T>(json, new JsonSerializerSettings
+                string json;
+                try
                 {
-                    NullValueHandling = NullValueHandling.Ignore
-                });
-                if (parsed == null)
-                {
-                    _logger.Error($"'{fileName}' for user '{userId}' deserialized to null; refusing to overwrite.");
-                    if (quarantineCorrupt) BackupCorruptFile(configPath);
-                    throw new InvalidDataException($"'{fileName}' deserialized to null.");
+                    json = File.ReadAllText(configPath);
                 }
-                return parsed;
-            }
-            catch (InvalidDataException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                _logger.Error($"Failed to parse '{fileName}' for user '{userId}': {ex.Message}");
-                if (quarantineCorrupt) BackupCorruptFile(configPath);
-                throw;
+                catch (Exception ex)
+                {
+                    _logger.Error($"Failed to read '{fileName}' for user '{userId}': {ex.Message}");
+                    if (quarantineCorrupt) BackupCorruptFile(configPath);
+                    throw;
+                }
+
+                if (string.IsNullOrWhiteSpace(json)
+                    || string.Equals(json.Trim(), "null", StringComparison.Ordinal))
+                {
+                    _logger.Error($"'{fileName}' for user '{userId}' exists but is empty or literal-null; refusing to overwrite.");
+                    if (quarantineCorrupt) BackupCorruptFile(configPath);
+                    throw new InvalidDataException($"'{fileName}' is empty or literal null; refusing to overwrite.");
+                }
+
+                try
+                {
+                    // Same null-skipping policy as the lenient GetUserConfiguration above:
+                    // a stored JSON null for a field that has since become non-nullable
+                    // (bool? -> bool migrations) is schema drift, not corruption. Without
+                    // this the strict path would back the file up as .corrupt-* and 503,
+                    // losing the user's real data — the exact failure the lenient reader
+                    // was fixed to avoid. The empty/"null"-literal checks above still
+                    // treat genuinely unusable files as corruption.
+                    var parsed = JsonConvert.DeserializeObject<T>(json, new JsonSerializerSettings
+                    {
+                        NullValueHandling = NullValueHandling.Ignore
+                    });
+                    if (parsed == null)
+                    {
+                        _logger.Error($"'{fileName}' for user '{userId}' deserialized to null; refusing to overwrite.");
+                        if (quarantineCorrupt) BackupCorruptFile(configPath);
+                        throw new InvalidDataException($"'{fileName}' deserialized to null.");
+                    }
+                    return parsed;
+                }
+                catch (InvalidDataException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _logger.Error($"Failed to parse '{fileName}' for user '{userId}': {ex.Message}");
+                    if (quarantineCorrupt) BackupCorruptFile(configPath);
+                    throw;
+                }
             }
         }
 
@@ -215,46 +394,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             }
         }
 
-        // Atomic save via temp file + File.Move(overwrite). RMW callers must hold GetUserFileLock.
+        // All saves participate in the same lock as strict RMW and revision comparisons.
         public void SaveUserConfiguration(string userId, string fileName, object config)
         {
-            string configPath = string.Empty;
-            string tempPath = string.Empty;
-            try
+            lock (GetUserFileLock(userId, fileName))
             {
-                configPath = ResolveUserFile(userId, fileName);
-                // Per-call random suffix avoids collisions between concurrent non-RMW writers on a shared .tmp.
-                tempPath = configPath + ".tmp." + Guid.NewGuid().ToString("N");
-
-                JToken token;
-                if (config is System.Text.Json.JsonElement jsonElement)
+                try
                 {
-                    var rawJson = jsonElement.GetRawText();
-                    token = JToken.Parse(rawJson);
+                    var token = config is System.Text.Json.JsonElement jsonElement
+                        ? JToken.Parse(jsonElement.GetRawText()) : JToken.FromObject(config);
+                    var bytes = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(token, Formatting.Indented));
+                    WriteUserDocument(ResolveUserFile(userId, fileName), bytes);
+                    NotifyUserConfigurationSaved(userId, fileName);
                 }
-                else
+                catch (Exception ex)
                 {
-                    token = JToken.FromObject(config);
+                    _logger.Error($"Failed to save user configuration for user '{userId}' to file '{fileName}'. Exception: {ex.Message}");
+                    throw;
                 }
-
-                var jsonToSave = JsonConvert.SerializeObject(token, Formatting.Indented);
-
-                File.WriteAllText(tempPath, jsonToSave);
-                File.Move(tempPath, configPath, overwrite: true);
-                if (string.Equals(fileName, Jellyfin.Plugin.JellyfinEnhanced.Services.SpoilerBlurImageFilter.SpoilerBlurFileName, StringComparison.OrdinalIgnoreCase))
-                {
-                    Jellyfin.Plugin.JellyfinEnhanced.Services.SpoilerUserResolver.InvalidateUser(userId);
-                }
-
-                RaiseUserConfigurationSaved(userId, fileName);
             }
-            catch (Exception ex)
-            {
-                _logger.Error($"Failed to save user configuration for user '{userId}' to file '{fileName}'. Exception: {ex.Message}");
-                try { if (!string.IsNullOrEmpty(tempPath) && File.Exists(tempPath)) File.Delete(tempPath); }
-                catch (Exception cleanupEx) { _logger.Warning($"Failed to clean up stale .tmp for '{fileName}': {cleanupEx.Message}"); }
-                throw;
-            }
+        }
+
+        private void NotifyUserConfigurationSaved(string userId, string fileName)
+        {
+            if (string.Equals(fileName, Features.SpoilerGuard.Services.SpoilerBlurImageFilter.SpoilerBlurFileName, StringComparison.OrdinalIgnoreCase))
+                Shared.SpoilerGuard.SpoilerUserResolver.InvalidateUser(userId);
+            RaiseUserConfigurationSaved(userId, fileName);
         }
 
         // Swallows subscriber exceptions so a misbehaving handler can never turn
@@ -263,13 +428,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         {
             var handler = UserConfigurationSaved;
             if (handler == null) return;
-            try
+            foreach (Action<string, string> subscriber in handler.GetInvocationList())
             {
-                handler((userId ?? string.Empty).Replace("-", "").ToLowerInvariant(), fileName);
-            }
-            catch (Exception ex)
-            {
-                _logger.Warning($"User configuration save hook failed for '{fileName}': {ex.Message}");
+                try
+                {
+                    subscriber((userId ?? string.Empty).Replace("-", "").ToLowerInvariant(), fileName);
+                }
+                catch (Exception ex)
+                {
+                    _logger.Warning($"User configuration save hook failed for '{fileName}': {ex.Message}");
+                }
             }
         }
 
@@ -868,7 +1036,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 // re-watch of something already finished (or watched
                 // further) once shouldn't erase that.
                 store.Entries.TryGetValue(key, out var existing);
-                if (existing != null && activityType == Services.ActivityService.ActivityTypeFavorited) return;
+                if (existing != null && activityType == Features.Activity.Services.ActivityService.ActivityTypeFavorited) return;
                 var wasCompleted = existing?.Completed == true;
                 var priorProgress = existing?.Progress ?? 0;
                 store.Entries[key] = new ActivityEntry

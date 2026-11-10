@@ -1,483 +1,382 @@
-/**
- * @file Manages all event listeners and observers for the plugin.
- */
-(function(JE) {
-    'use strict';
-
-    /**
-     * An always-active key listener specifically for opening the panel.
-     * @param {KeyboardEvent} e The keyboard event.
-     */
-    function panelKeyListener(e) {
-        // Don't open if the panel is already open or if typing in an input field.
-        if (document.getElementById('jellyfin-enhanced-panel') || ['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
-            return;
-        }
-
-        if (e.key === '?') {
-            e.preventDefault();
-            e.stopPropagation();
-            JE.showEnhancedPanel();
-        }
+(() => {
+"use strict";
+(() => {
+  // client/src/host/context.ts
+  function featureContext(feature, core, slots) {
+    const shared = core.core?.featureContext;
+    if (typeof shared !== "function") {
+      throw new Error(`${feature}: JE.core.featureContext is missing; core/ui-kit.js must load before feature scripts`);
     }
+    return shared(feature, core, slots);
+  }
 
-    const MODIFIER_ORDER = ['Meta', 'Ctrl', 'Alt', 'Shift'];
-
-    /**
-     * Rewrites a stored shortcut ("Shift+Ctrl+S", "Ctrl+Shift+S") as its modifier set in the
-     * shortcut editor's order followed by the key, so a binding typed with the modifiers in any
-     * order matches the runtime combo.
-     * @param {*} combo A stored shortcut; anything but a non-empty string is returned unchanged.
-     * @returns {*} The canonical combo.
-     */
-    function canonicalCombo(combo) {
-        if (typeof combo !== 'string' || !combo) return combo;
-        const modifiers = new Set();
-        let rest = combo;
-        let match;
-        // A trailing "+" is the key itself ("Ctrl++"), never a separator.
-        while ((match = /^(Meta|Ctrl|Alt|Shift)\+(?=.)/.exec(rest))) {
-            modifiers.add(match[1]);
-            rest = rest.slice(match[0].length);
-        }
-        const key = /^[a-zA-Z]$/.test(rest) ? rest.toUpperCase() : rest;
-        return MODIFIER_ORDER.filter(name => modifiers.has(name)).map(name => name + '+').join('') + key;
+  // client/src/features/chrome/host.ts
+  function eventsContext(JE) {
+    return featureContext("chrome", JE, {
+      facades: ["keyListener", "initializeEnhancedScript"],
+      internalSlots: ["canonicalCombo"],
+      internalsObject: () => JE.internals || (JE.internals = {})
+    });
+  }
+  function chromeBridge() {
+    const host = window;
+    if (!host.JellyfinEnhanced) throw new Error("Jellyfin Enhanced must initialize before chrome modules");
+    return host.JellyfinEnhanced;
+  }
+  function hostClient() {
+    const host = window;
+    return host.ApiClient;
+  }
+  function idString(value) {
+    return typeof value === "string" && value.length > 0 ? value : null;
+  }
+  function readClientIdentity(client) {
+    let userId = null;
+    let serverId = null;
+    try {
+      userId = idString(client?.getCurrentUserId?.());
+    } catch {
     }
-
-    // The shortcut editor's conflict check compares bindings the same way.
-    JE.internals = JE.internals || {};
-    JE.internals.canonicalCombo = canonicalCombo;
-
-    /**
-     * The active shortcuts with every combo canonicalised (see canonicalCombo).
-     * @returns {Object<string, *>} Action name to canonical combo.
-     */
-    function canonicalShortcuts() {
-        const canonical = {};
-        for (const [name, combo] of Object.entries(JE.state.activeShortcuts || {})) {
-            canonical[name] = canonicalCombo(combo);
-        }
-        return canonical;
+    try {
+      const raw = client?.serverId;
+      serverId = idString(typeof raw === "function" ? raw.call(client) : raw) || idString(client?._serverInfo?.Id);
+    } catch {
     }
-
-    /**
-     * The main key listener for all other shortcuts.
-     * @param {KeyboardEvent} e The keyboard event.
-     */
-    JE.keyListener = (e) => {
-        if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
-        // A key recorder (admin shortcut grid) is capturing the next press; don't also run it.
-        if (document.activeElement.hasAttribute('data-je-key-recorder')) return;
-
-        const key = e.key;
-        const combo = JE.keyCombo(e);
-
-        const video = document.querySelector('video');
-        const activeShortcuts = canonicalShortcuts();
-
-        // --- Global Shortcuts ---
-        if (combo === activeShortcuts.OpenSearch) {
-            e.preventDefault();
-            document.querySelector('button.headerSearchButton')?.click();
-            setTimeout(() => document.querySelector('input[type="search"]')?.focus(), 100);
-            JE.toast(JE.t('toast_search'));
-        } else if (combo === activeShortcuts.GoToHome) {
-            e.preventDefault();
-            window.location.hash = '#/home.html';
-            JE.toast(JE.t('toast_home'));
-        } else if (combo === activeShortcuts.GoToDashboard) {
-            e.preventDefault();
-            window.location.hash = '#/dashboard';
-            JE.toast(JE.t('toast_dashboard'));
-        } else if (combo === activeShortcuts.QuickConnect) {
-            e.preventDefault();
-            window.location.hash = '#/quickconnect';
-            JE.toast(`${JE.icon(JE.IconName.LINK)} Quick Connect`);
-        } else if (combo === activeShortcuts.PlayRandomItem && !JE.isVideoPage()) {
-            e.preventDefault();
-            document.getElementById('randomItemButton')?.click();
-        }
-
-        // --- Player-Only Shortcuts ---
-        if (!JE.isVideoPage() || !video) return;
-
-        switch (combo) {
-            case activeShortcuts.BookmarkCurrentTime:
-                e.preventDefault();
-                e.stopImmediatePropagation();
-                // Open bookmark modal to add/view bookmarks
-                if (JE.bookmarks?.showModal) {
-                    JE.bookmarks.showModal('add');
-                } else {
-                    console.warn('🪼 Jellyfin Enhanced: New bookmark system not loaded, using fallback');
-                }
-                break;
-            case activeShortcuts.CycleAspectRatio:
-                e.preventDefault();
-                e.stopImmediatePropagation();
-                JE.cycleAspect();
-                break;
-            case activeShortcuts.ShowPlaybackInfo:
-                e.preventDefault();
-                e.stopImmediatePropagation();
-                // Toggles the plugin-rendered playback-info overlay — no
-                // settings menu / stats panel is ever opened.
-                JE.togglePlaybackInfo();
-                break;
-            case activeShortcuts.SubtitleMenu:
-                e.preventDefault();
-                e.stopImmediatePropagation();
-                const subtitleMenuTitle = Array.from(document.querySelectorAll('.actionSheetContent .actionSheetTitle')).find(el => el.textContent === 'Subtitles');
-                if (subtitleMenuTitle) {
-                    // Subtitle menu is already open, close it
-                    const dialogBackdrop = document.querySelector('.dialogBackdrop.dialogBackdropOpened');
-                    const dialogContainer = document.querySelector('.dialogContainer');
-                    if (dialogBackdrop) dialogBackdrop.remove();
-                    if (dialogContainer) dialogContainer.remove();
-                } else {
-                    // Subtitle menu is not open, open it
-                    document.querySelector('button.btnSubtitles')?.click();
-                }
-                break;
-            case activeShortcuts.CycleSubtitleTracks:
-                e.preventDefault();
-                e.stopImmediatePropagation();
-                // Not on key auto-repeat: each cycle is now a real track switch (a stale
-                // check mark no longer collapses repeats onto the same track), and a held
-                // key would fire a ~30ms burst of stream changes — for burned-in subtitles
-                // or audio that means transcode restarts.
-                if (e.repeat) break;
-                JE.cycleSubtitleTrack();
-                break;
-            case activeShortcuts.CycleAudioTracks:
-                e.preventDefault();
-                e.stopImmediatePropagation();
-                if (e.repeat) break;
-                JE.cycleAudioTrack();
-                break;
-            case activeShortcuts.ResetPlaybackSpeed:
-                e.preventDefault();
-                e.stopImmediatePropagation();
-                JE.resetPlaybackSpeed();
-                break;
-            case activeShortcuts.IncreasePlaybackSpeed:
-                e.preventDefault();
-                e.stopImmediatePropagation();
-                JE.adjustPlaybackSpeed('increase');
-                break;
-            case activeShortcuts.DecreasePlaybackSpeed:
-                e.preventDefault();
-                e.stopImmediatePropagation();
-                JE.adjustPlaybackSpeed('decrease');
-                break;
-            case activeShortcuts.OpenEpisodePreview:
-                e.preventDefault();
-                e.stopImmediatePropagation();
-                const popupFocusContainer = document.getElementById('popupFocusContainer');
-                if (popupFocusContainer && popupFocusContainer.classList.contains('opened')) {
-                    // Popup is already open, close it the way the plugin does: since its
-                    // Nov 2025 refactor everything (backdrop included) sits in #previewPopup.
-                    // Older plugin versions add a separate backdrop and dialog container.
-                    const previewPopup = document.getElementById('previewPopup');
-                    if (previewPopup) {
-                        previewPopup.remove();
-                    } else {
-                        document.getElementById('dialogBackdropContainer')?.remove();
-                        document.getElementById('dialogContainer')?.remove();
-                    }
-                } else {
-                    // Popup is not open, try to open it
-                    const popupPreviewButton = document.querySelector('button#popupPreviewButton.autoSize.paper-icon-button-light[is="paper-icon-button-light"]');
-                    if (popupPreviewButton) {
-                        popupPreviewButton.click();
-                    }
-                }
-                break;
-            case activeShortcuts.SkipIntroOutro:
-                e.preventDefault();
-                e.stopImmediatePropagation();
-                JE.skipIntroOutro();
-                break;
-            case activeShortcuts.FrameStepBack:
-                e.preventDefault();
-                e.stopImmediatePropagation();
-                JE.frameStep('back');
-                break;
-            case activeShortcuts.FrameStepForward:
-                e.preventDefault();
-                e.stopImmediatePropagation();
-                JE.frameStep('forward');
-                break;
-            case activeShortcuts.JumpToLastPosition:
-                e.preventDefault();
-                e.stopImmediatePropagation();
-                JE.jumpToLastPosition();
-                break;
-        }
-
-        if (activeShortcuts.JumpToPercentage !== '' && !e.altKey && !e.ctrlKey && !e.metaKey && key.match(/^[0-9]$/)) {
-            JE.jumpToPercentage(parseInt(key) * 10);
-        }
+    return { userId, serverId };
+  }
+  function captureIdentity(session, client) {
+    const live = readClientIdentity(client);
+    let epoch = null;
+    try {
+      epoch = typeof session?.getEpoch === "function" ? session.getEpoch() : null;
+    } catch {
+      epoch = null;
+    }
+    const read = (get) => {
+      try {
+        return idString(get());
+      } catch {
+        return null;
+      }
     };
+    const token = read(() => client?.accessToken?.());
+    const root = read(() => client?.getUrl?.("/"));
+    return {
+      userId: live.userId,
+      serverId: live.serverId,
+      epoch,
+      client,
+      credentialsCurrent: () => read(() => client?.accessToken?.()) === token && read(() => client?.getUrl?.("/")) === root
+    };
+  }
+  function isSameIdentity(owner, current) {
+    return owner.client === current.client && owner.credentialsCurrent() && current.credentialsCurrent() && owner.userId === current.userId && owner.serverId === current.serverId && owner.epoch === current.epoch;
+  }
 
-    /**
-     * Sets up listeners for DOM changes to inject UI elements dynamically.
-     */
+  // client/src/features/chrome/events.ts
+  var MODIFIER_ORDER = ["Meta", "Ctrl", "Alt", "Shift"];
+  function canonicalCombo(combo) {
+    if (typeof combo !== "string" || !combo) return combo;
+    const modifiers = /* @__PURE__ */ new Set();
+    let rest = combo;
+    let match;
+    while (match = /^(Meta|Ctrl|Alt|Shift)\+(?=.)/.exec(rest)) {
+      modifiers.add(match[1] ?? "");
+      rest = rest.slice(match[0].length);
+    }
+    const key = /^[a-zA-Z]$/.test(rest) ? rest.toUpperCase() : rest;
+    return MODIFIER_ORDER.filter((name) => modifiers.has(name)).map((name) => name + "+").join("") + key;
+  }
+  function canonicalShortcuts(active) {
+    const canonical = {};
+    for (const [name, combo] of Object.entries(active || {})) canonical[name] = canonicalCombo(combo);
+    return canonical;
+  }
+  var isTyping = () => ["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName ?? "");
+  var SHEET_SELECTOR = ".actionSheet, .actionSheetScroller, .dialogContainer";
+  function createEvents(ctx2) {
+    const JE = ctx2.core;
+    let installed = false;
+    function panelKeyListener(event) {
+      if (document.getElementById("jellyfin-enhanced-panel") || isTyping()) return;
+      if (event.key === "?") {
+        event.preventDefault();
+        event.stopPropagation();
+        JE.showEnhancedPanel?.();
+      }
+    }
+    function playerActions(event) {
+      return [
+        ["BookmarkCurrentTime", () => {
+          const bookmarks = ctx2.peer("bookmarks");
+          if (bookmarks?.showModal) bookmarks.showModal("add");
+          else console.warn("🪼 Jellyfin Enhanced: New bookmark system not loaded, using fallback");
+        }],
+        ["CycleAspectRatio", () => JE.cycleAspect?.()],
+        // Toggles the plugin-rendered playback-info overlay; no host settings menu opens.
+        ["ShowPlaybackInfo", () => JE.togglePlaybackInfo?.()],
+        ["SubtitleMenu", () => {
+          const open = [...document.querySelectorAll(".actionSheetContent .actionSheetTitle")].find((el) => el.textContent === "Subtitles");
+          if (open) {
+            document.querySelector(".dialogBackdrop.dialogBackdropOpened")?.remove();
+            document.querySelector(".dialogContainer")?.remove();
+          } else {
+            document.querySelector("button.btnSubtitles")?.click();
+          }
+        }],
+        // Never on auto-repeat: each cycle is a real stream switch (transcode restarts).
+        ["CycleSubtitleTracks", () => {
+          if (!event.repeat) JE.cycleSubtitleTrack?.();
+        }],
+        ["CycleAudioTracks", () => {
+          if (!event.repeat) JE.cycleAudioTrack?.();
+        }],
+        ["ResetPlaybackSpeed", () => JE.resetPlaybackSpeed?.()],
+        ["IncreasePlaybackSpeed", () => JE.adjustPlaybackSpeed?.("increase")],
+        ["DecreasePlaybackSpeed", () => JE.adjustPlaybackSpeed?.("decrease")],
+        ["OpenEpisodePreview", () => {
+          const focus = document.getElementById("popupFocusContainer");
+          if (focus?.classList.contains("opened")) {
+            const popup = document.getElementById("previewPopup");
+            if (popup) popup.remove();
+            else {
+              document.getElementById("dialogBackdropContainer")?.remove();
+              document.getElementById("dialogContainer")?.remove();
+            }
+          } else {
+            document.querySelector('button#popupPreviewButton.autoSize.paper-icon-button-light[is="paper-icon-button-light"]')?.click();
+          }
+        }],
+        ["SkipIntroOutro", () => JE.skipIntroOutro?.()],
+        ["FrameStepBack", () => JE.frameStep?.("back")],
+        ["FrameStepForward", () => JE.frameStep?.("forward")],
+        ["JumpToLastPosition", () => JE.jumpToLastPosition?.()]
+      ];
+    }
+    function keyListener(event) {
+      if (isTyping()) return;
+      if (document.activeElement?.hasAttribute("data-je-key-recorder")) return;
+      const key = event.key;
+      const combo = JE.keyCombo(event);
+      const video = document.querySelector("video");
+      const shortcuts = canonicalShortcuts(JE.state.activeShortcuts);
+      if (combo === shortcuts.OpenSearch) {
+        event.preventDefault();
+        document.querySelector("button.headerSearchButton")?.click();
+        setTimeout(() => document.querySelector('input[type="search"]')?.focus(), 100);
+        JE.toast(JE.t("toast_search"));
+      } else if (combo === shortcuts.GoToHome) {
+        event.preventDefault();
+        window.location.hash = "#/home.html";
+        JE.toast(JE.t("toast_home"));
+      } else if (combo === shortcuts.GoToDashboard) {
+        event.preventDefault();
+        window.location.hash = "#/dashboard";
+        JE.toast(JE.t("toast_dashboard"));
+      } else if (combo === shortcuts.QuickConnect) {
+        event.preventDefault();
+        window.location.hash = "#/quickconnect";
+        JE.toast(`${JE.icon?.(JE.IconName?.LINK) ?? ""} Quick Connect`);
+      } else if (combo === shortcuts.PlayRandomItem && !JE.isVideoPage()) {
+        event.preventDefault();
+        document.getElementById("randomItemButton")?.click();
+      }
+      if (!JE.isVideoPage() || !video) return;
+      const action = playerActions(event).find(([name]) => combo === shortcuts[name]);
+      if (action) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        action[1]();
+      }
+      if (shortcuts.JumpToPercentage !== "" && !event.altKey && !event.ctrlKey && !event.metaKey && /^[0-9]$/.test(key)) {
+        JE.jumpToPercentage?.(parseInt(key, 10) * 10);
+      }
+    }
     function setupDOMObserver() {
-        const runPageSpecificFunctions = () => {
-            if (JE.isVideoPage()) {
-                JE.addOsdSettingsButton();
-                JE.initializeAutoSkipObserver();
-                JE.applySavedStylesWhenReady();
-                // Attach seek tracker to the video element as soon as it exists
-                const video = document.querySelector('video');
-                if (video) JE.attachSeekTracker(video);
-            } else {
-                JE.stopAutoSkip();
-            }
-        };
-
-        // Create managed observer for general DOM changes
-        JE.helpers.createObserver(
-            'dom-observer',
-            JE.helpers.throttle(() => {
-                runPageSpecificFunctions();
-                JE.addRandomButton();
-                JE.addUserPreferencesLink();
-            }, 100),
-            document.body,
-            { childList: true, subtree: true }
-        );
+      const runPageSpecificFunctions = () => {
+        if (JE.isVideoPage()) {
+          JE.addOsdSettingsButton?.();
+          JE.initializeAutoSkipObserver?.();
+          JE.applySavedStylesWhenReady?.();
+          const video = document.querySelector("video");
+          if (video) JE.attachSeekTracker?.(video);
+        } else {
+          JE.stopAutoSkip?.();
+        }
+      };
+      JE.helpers.createObserver("dom-observer", JE.helpers.throttle(() => {
+        runPageSpecificFunctions();
+        JE.addRandomButton?.();
+        JE.addUserPreferencesLink?.();
+      }, 100), document.body, { childList: true, subtree: true });
     }
-
-    /**
-     * Sets up the action-sheet observer that injects the "Remove" item.
-     *
-     * Injection is coalesced onto a requestAnimationFrame rather than a timer: rAF runs after
-     * the mutation but BEFORE the browser paints the freshly-opened sheet, so the Remove item
-     * is present on the sheet's first frame and never appears late to reflow it (which would
-     * jank the open animation). Coalescing also means at most one pass per frame regardless of
-     * how many mutations fire, and the handlers early-return cheaply when no sheet is open.
-     */
     function observeActionSheets() {
-        let scheduled = false;
-        const runInjection = () => {
-            scheduled = false;
-            if (!JE.currentSettings.removeContinueWatchingEnabled) return;
-            if (typeof JE.addRemoveButton === 'function') {
-                JE.addRemoveButton();
-            } else {
-                console.warn('🪼 Jellyfin Enhanced: addRemoveButton not available');
-            }
-            // Also offer Remove in the multi-select / long-press menu (touch devices
-            // with no per-item "…" button).
-            if (typeof JE.addMultiSelectRemoveButton === 'function') {
-                JE.addMultiSelectRemoveButton();
-            }
-        };
-
-        // Skip mutations unrelated to action sheets; runInjection reads layout.
-        const SHEET_SELECTOR = '.actionSheet, .actionSheetScroller, .dialogContainer';
-        const touchesActionSheet = (mutations) => {
-            for (const m of mutations) {
-                if (m.target.closest?.(SHEET_SELECTOR)) return true;
-                for (const node of m.addedNodes) {
-                    if (node.nodeType === 1 && (node.matches(SHEET_SELECTOR) || node.querySelector(SHEET_SELECTOR))) return true;
-                }
-            }
-            return false;
-        };
-
-        // Priority keeps this synchronous; deferring to after paint would add the
-        // Remove item after the sheet's first frame.
-        JE.helpers.onBodyMutation(
-            'action-sheets',
-            (mutations) => {
-                if (scheduled || !touchesActionSheet(mutations)) return;
-                scheduled = true;
-                requestAnimationFrame(runInjection);
-            },
-            { priority: 1 }
-        );
+      let scheduled = false;
+      const runInjection = () => {
+        scheduled = false;
+        if (!JE.currentSettings.removeContinueWatchingEnabled) return;
+        if (typeof JE.addRemoveButton === "function") JE.addRemoveButton();
+        else console.warn("🪼 Jellyfin Enhanced: addRemoveButton not available");
+        if (typeof JE.addMultiSelectRemoveButton === "function") JE.addMultiSelectRemoveButton();
+      };
+      const touchesActionSheet = (mutations) => {
+        for (const mutation of mutations) {
+          if (mutation.target instanceof Element && mutation.target.closest(SHEET_SELECTOR)) return true;
+          for (const node of mutation.addedNodes) {
+            if (node instanceof Element && (node.matches(SHEET_SELECTOR) || node.querySelector(SHEET_SELECTOR))) return true;
+          }
+        }
+        return false;
+      };
+      JE.helpers.onBodyMutation("action-sheets", (mutations) => {
+        if (scheduled || !touchesActionSheet(mutations)) return;
+        scheduled = true;
+        requestAnimationFrame(runInjection);
+      }, { priority: 1 });
     }
-
-    /**
-     * Listens for menu triggers to capture which home surface ("Continue Watching" or
-     * "Next Up") an item belongs to, so the matching Remove button can be added to the
-     * action sheet that opens next. Context is captured on the trigger (menu mousedown /
-     * right-click) because that is the only moment the source card is known.
-     */
     function addContextMenuListener() {
-        /**
-         * Records the item + its home surface (or clears it) for the action-sheet observer.
-         * @param {Element|null} itemElement The element carrying the item's `data-id`.
-         */
-        const captureRemoveContext = (itemElement) => {
-            if (!itemElement) { JE.state.removeContext = null; return; }
-
-            const card = itemElement.closest('.card') || itemElement;
-            const itemId = card?.dataset?.id || itemElement?.dataset?.id || null;
-            if (!itemId) { JE.state.removeContext = null; return; }
-
-            const surface = (typeof JE.detectCardSurface === 'function') ? JE.detectCardSurface(card) : null;
-            JE.state.removeContext = { itemId, surface, card, ts: Date.now() };
-            if (surface) {
-                console.log(`🪼 Jellyfin Enhanced: ${surface} item detected for Remove action sheet:`, itemId);
-            }
-        };
-
-        // Clicks/right-clicks inside an already-open action sheet or dialog are menu interactions,
-        // not card triggers — capturing context there would bind to a menu row (e.g. "resume").
-        const isInsideOpenMenu = (target) =>
-            !!(target.closest && target.closest('.actionSheetContent, .actionSheet, .dialogContainer, dialog'));
-
-        // Listen for three-dot menu button clicks
-        document.body.addEventListener('mousedown', (e) => {
-            if (!JE.currentSettings.removeContinueWatchingEnabled) return;
-
-            const menuButton = e.target.closest('button[data-action="menu"]');
-            if (!menuButton) return;
-
-            const itemElement = menuButton.closest('.card[data-id]') || menuButton.closest('[data-id]');
-            captureRemoveContext(itemElement);
-        }, true);
-
-        // Listen for right-click (contextmenu) / long-press on home cards
-        document.body.addEventListener('contextmenu', (e) => {
-            if (!JE.currentSettings.removeContinueWatchingEnabled) return;
-            if (isInsideOpenMenu(e.target)) return;
-
-            // Only real cards carry a removable home surface; ignore other [data-id] targets.
-            captureRemoveContext(e.target.closest('.card[data-id]'));
-        }, true);
+      const capture = (itemElement) => {
+        if (!itemElement) {
+          JE.state.removeContext = null;
+          return;
+        }
+        const card = itemElement.closest(".card") || itemElement;
+        const itemId = (card instanceof HTMLElement ? card.dataset.id : void 0) || (itemElement instanceof HTMLElement ? itemElement.dataset.id : void 0) || null;
+        if (!itemId) {
+          JE.state.removeContext = null;
+          return;
+        }
+        const surface = typeof JE.detectCardSurface === "function" ? JE.detectCardSurface(card) : null;
+        JE.state.removeContext = { itemId, surface, card, ts: Date.now() };
+        if (surface) console.log(`🪼 Jellyfin Enhanced: ${String(surface)} item detected for Remove action sheet:`, itemId);
+      };
+      const insideOpenMenu = (target) => !!target.closest(".actionSheetContent, .actionSheet, .dialogContainer, dialog");
+      document.body.addEventListener("mousedown", (event) => {
+        if (!JE.currentSettings.removeContinueWatchingEnabled || !(event.target instanceof Element)) return;
+        const menuButton = event.target.closest('button[data-action="menu"]');
+        if (!menuButton) return;
+        capture(menuButton.closest(".card[data-id]") || menuButton.closest("[data-id]"));
+      }, true);
+      document.body.addEventListener("contextmenu", (event) => {
+        if (!JE.currentSettings.removeContinueWatchingEnabled || !(event.target instanceof Element)) return;
+        if (insideOpenMenu(event.target)) return;
+        capture(event.target.closest(".card[data-id]"));
+      }, true);
     }
-
-    /**
-     * Initializes all event listeners for the core Jellyfin Enhanced script.
-     */
-    JE.initializeEnhancedScript = function() {
-        // Check if local storage needs to be cleared by admin request
-        const serverClearTimestamp = JE.pluginConfig.ClearLocalStorageTimestamp || 0;
-        const localClearedTimestamp = parseInt(localStorage.getItem('jellyfinEnhancedLastCleared') || '0', 10);
-        if (serverClearTimestamp > localClearedTimestamp) {
-            localStorage.removeItem('jellyfinEnhancedSettings');
-            localStorage.setItem('jellyfinEnhancedLastCleared', serverClearTimestamp.toString());
+    function clearLocalStorageIfRequested() {
+      try {
+        const serverClear = Number(JE.pluginConfig.ClearLocalStorageTimestamp) || 0;
+        const localCleared = parseInt(localStorage.getItem("jellyfinEnhancedLastCleared") || "0", 10);
+        if (serverClear > localCleared) {
+          localStorage.removeItem("jellyfinEnhancedSettings");
+          localStorage.setItem("jellyfinEnhancedLastCleared", serverClear.toString());
         }
-
-        // Initial UI setup
-        JE.injectGlobalStyles();
-        JE.addPluginMenuButton();
-        JE.addUserMenuLink();
-        JE.addRandomButton();
-        JE.applySavedStylesWhenReady();
-
-        // Setup persistent listeners and observers
-        setupDOMObserver();
-        observeActionSheets();
-        addContextMenuListener();
-
-        // Always listen for the panel-opening key
-        document.addEventListener('keydown', panelKeyListener);
-
-        // Conditionally listen for all other shortcuts
-        if (!JE.pluginConfig.DisableAllShortcuts) {
-            // Capture phase so a matching player shortcut runs before (and suppresses)
-            // Jellyfin's own player key handlers, which would otherwise fire as well.
-            document.addEventListener('keydown', JE.keyListener, true);
+      } catch (error) {
+        console.warn("🪼 Jellyfin Enhanced: Could not apply the local-storage reset request:", error);
+      }
+    }
+    function installLongPress() {
+      const onVideoPage = (name) => (event) => {
+        if (!JE.isVideoPage()) return;
+        if (event.isTrusted === false) return;
+        if (event.target instanceof Element && event.target.closest(".osdControls, .pause-screen-active, .jellyfin-enhanced-panel")) return;
+        JE[name]?.(event);
+      };
+      document.addEventListener("mousedown", onVideoPage("handleLongPressDown"), true);
+      document.addEventListener("mouseup", onVideoPage("handleLongPressUp"), true);
+      document.addEventListener("mousemove", onVideoPage("handleLongPressMove"), true);
+      document.addEventListener("click", onVideoPage("handleLongPressClick"), true);
+      document.addEventListener("mouseleave", onVideoPage("handleLongPressCancel"), true);
+      document.addEventListener("touchstart", onVideoPage("handleLongPressDown"), { capture: true, passive: true });
+      document.addEventListener("touchmove", onVideoPage("handleLongPressMove"), { capture: true, passive: true });
+      document.addEventListener("touchend", onVideoPage("handleLongPressUp"), { capture: true, passive: false });
+      document.addEventListener("touchcancel", onVideoPage("handleLongPressCancel"), { capture: true, passive: false });
+    }
+    function installVisibility() {
+      const pausedOwners = /* @__PURE__ */ new Map();
+      const mediaSource = (video) => video.currentSrc || video.getAttribute("src") || video.src;
+      const clearPaused = (video) => {
+        pausedOwners.delete(video);
+        delete video.dataset.wasPlayingBeforeHidden;
+      };
+      for (const name of ["emptied", "loadstart"]) document.addEventListener(name, (event) => {
+        if (event.target instanceof HTMLVideoElement) clearPaused(event.target);
+      }, true);
+      JE.session?.onUserChange("chrome-auto-resume", () => {
+        for (const video of pausedOwners.keys()) delete video.dataset.wasPlayingBeforeHidden;
+        pausedOwners.clear();
+      });
+      let autoPipVideo = null;
+      const canAutoPip = (video) => document.pictureInPictureEnabled && !video.disablePictureInPicture && video.readyState >= HTMLMediaElement.HAVE_METADATA;
+      const exitAutoPip = () => {
+        const pipVideo = autoPipVideo;
+        autoPipVideo = null;
+        if (pipVideo && document.pictureInPictureElement === pipVideo) {
+          document.exitPictureInPicture().catch((error) => console.error("🪼 Jellyfin Enhanced: Auto PiP Error:", error));
         }
-
-        // Add Long Press listeners if enabled
-        if (JE.currentSettings.longPress2xEnabled) {
-            const videoPageCheck = (handler) => (e) => {
-                if (JE.isVideoPage()) {
-                    // Long-press 2x is a physical gesture. Synthetic events (e.g. closeActionSheet
-                    // replaying dialogHelper's outside tap on a .dialogContainer) must neither arm
-                    // the press timer nor be cancelled by the click guard below — these are
-                    // capture-phase document listeners, so stopImmediatePropagation here would eat
-                    // the event before dialogHelper's own listener ever sees it.
-                    if (e.isTrusted === false) return;
-                    // Don't interfere with clicks on OSD buttons / the pause screen overlay / Enhanced Panel
-                    if (e.target && e.target.closest && e.target.closest('.osdControls, .pause-screen-active, .jellyfin-enhanced-panel')) return;
-                    handler(e);
-                }
-            };
-
-            document.addEventListener('mousedown', videoPageCheck(JE.handleLongPressDown), true);
-            document.addEventListener('mouseup', videoPageCheck(JE.handleLongPressUp), true);
-            document.addEventListener('mousemove', videoPageCheck(JE.handleLongPressMove), true);
-            document.addEventListener('click', videoPageCheck(JE.handleLongPressClick), true);
-            document.addEventListener('mouseleave', videoPageCheck(JE.handleLongPressCancel), true);
-            document.addEventListener('touchstart', videoPageCheck(JE.handleLongPressDown), { capture: true, passive: true });
-            document.addEventListener('touchmove', videoPageCheck(JE.handleLongPressMove), { capture: true, passive: true });
-            document.addEventListener('touchend', videoPageCheck(JE.handleLongPressUp), { capture: true, passive: false });
-            document.addEventListener('touchcancel', videoPageCheck(JE.handleLongPressCancel), { capture: true, passive: false });
+      };
+      document.addEventListener("leavepictureinpicture", (event) => {
+        if (event.target === autoPipVideo) autoPipVideo = null;
+      }, true);
+      document.addEventListener("visibilitychange", () => {
+        const video = document.querySelector("video");
+        if (!video) return;
+        JE.attachSeekTracker?.(video);
+        if (document.hidden) {
+          if (!video.paused && JE.currentSettings.autoPauseEnabled) {
+            pausedOwners.set(video, { identity: captureIdentity(JE.session, hostClient()), source: mediaSource(video) });
+            video.pause();
+            video.dataset.wasPlayingBeforeHidden = "true";
+          }
+          if (JE.currentSettings.autoPipEnabled && !document.pictureInPictureElement && canAutoPip(video)) {
+            video.requestPictureInPicture().then(() => {
+              autoPipVideo = video;
+              if (!document.hidden) exitAutoPip();
+            }).catch((error) => {
+              if (error instanceof Error && error.name === "NotAllowedError") {
+                console.debug("🪼 Jellyfin Enhanced: Auto PiP not allowed by the browser:", error.message);
+              } else {
+                console.error("🪼 Jellyfin Enhanced: Auto PiP Error:", error);
+              }
+            });
+          }
+        } else {
+          const owner = pausedOwners.get(video);
+          if (video.paused && video.dataset.wasPlayingBeforeHidden === "true" && JE.currentSettings.autoResumeEnabled && owner && owner.source === mediaSource(video) && isSameIdentity(owner.identity, captureIdentity(JE.session, hostClient()))) {
+            Promise.resolve(video.play()).catch((error) => console.debug("🪼 Jellyfin Enhanced: Auto resume refused:", error));
+          }
+          clearPaused(video);
+          exitAutoPip();
         }
+      });
+    }
+    function initializeEnhancedScript() {
+      clearLocalStorageIfRequested();
+      JE.injectGlobalStyles?.();
+      JE.addPluginMenuButton?.();
+      JE.addUserMenuLink?.();
+      JE.addRandomButton?.();
+      JE.applySavedStylesWhenReady?.();
+      setupDOMObserver();
+      observeActionSheets();
+      if (installed) return;
+      installed = true;
+      addContextMenuListener();
+      document.addEventListener("keydown", panelKeyListener);
+      if (!JE.pluginConfig.DisableAllShortcuts) document.addEventListener("keydown", keyListener, true);
+      installLongPress();
+      installVisibility();
+    }
+    return { keyListener, initializeEnhancedScript };
+  }
 
-        // Auto PiP only closes a PiP window it opened itself. Chromium browsers (Edge, Chrome) can
-        // open their own automatic PiP on tab switch and close it again when the tab returns;
-        // calling exitPictureInPicture() on that window races the browser's close and leaves the
-        // player dark with audio only (#910).
-        let autoPipVideo = null;
-
-        /**
-         * Whether the video can enter PiP right now (avoids InvalidStateError before metadata loads).
-         * @param {HTMLVideoElement} video The player's video element.
-         * @returns {boolean} True if a PiP request can succeed.
-         */
-        const canAutoPip = (video) => document.pictureInPictureEnabled
-            && !video.disablePictureInPicture
-            && video.readyState >= HTMLMediaElement.HAVE_METADATA;
-
-        /**
-         * Leaves PiP if the current PiP window is the one Auto PiP opened.
-         */
-        const exitAutoPip = () => {
-            const pipVideo = autoPipVideo;
-            autoPipVideo = null;
-            if (pipVideo && document.pictureInPictureElement === pipVideo) {
-                document.exitPictureInPicture().catch(err => console.error("🪼 Jellyfin Enhanced: Auto PiP Error:", err));
-            }
-        };
-
-        // Forget our window once it closes by any route (PiP "back to tab" button, browser, player stop).
-        document.addEventListener('leavepictureinpicture', (e) => {
-            if (e.target === autoPipVideo) autoPipVideo = null;
-        }, true);
-
-        // Listeners for tab visibility (auto-pause/resume/PiP)
-        document.addEventListener('visibilitychange', () => {
-            const video = document.querySelector('video');
-            if (!video) return;
-
-            JE.attachSeekTracker(video);
-
-            if (document.hidden) {
-                if (!video.paused && JE.currentSettings.autoPauseEnabled) {
-                    video.pause();
-                    video.dataset.wasPlayingBeforeHidden = 'true';
-                }
-                if (JE.currentSettings.autoPipEnabled && !document.pictureInPictureElement && canAutoPip(video)) {
-                    video.requestPictureInPicture().then(() => {
-                        autoPipVideo = video;
-                        // The tab came back before the window finished opening.
-                        if (!document.hidden) exitAutoPip();
-                    }).catch(err => {
-                        // Expected in Chromium without a user gesture; the browser may open its own PiP instead.
-                        if (err && err.name === 'NotAllowedError') {
-                            console.debug("🪼 Jellyfin Enhanced: Auto PiP not allowed by the browser:", err.message);
-                        } else {
-                            console.error("🪼 Jellyfin Enhanced: Auto PiP Error:", err);
-                        }
-                    });
-                }
-            } else {
-                if (video.paused && video.dataset.wasPlayingBeforeHidden === 'true' && JE.currentSettings.autoResumeEnabled) {
-                    video.play();
-                }
-                delete video.dataset.wasPlayingBeforeHidden;
-                exitAutoPip();
-            }
-        });
-    };
-
-})(window.JellyfinEnhanced);
+  // client/src/features/chrome/events-entry.ts
+  var ctx = eventsContext(chromeBridge());
+  ctx.own.canonicalCombo = canonicalCombo;
+  ctx.core.canonicalCombo = canonicalCombo;
+  var events = createEvents(ctx);
+  ctx.own.keyListener = events.keyListener;
+  ctx.own.initializeEnhancedScript = events.initializeEnhancedScript;
+})();
+})();
+//# sourceMappingURL=events.js.map

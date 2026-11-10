@@ -46,17 +46,23 @@ def inventory():
     for path in sorted(PRODUCTION.rglob('*'), key=lambda p: p.relative_to(ROOT).as_posix()):
         if not path.is_file() or any(part in ('obj', 'bin') for part in path.relative_to(PRODUCTION).parts):
             continue
+        # min/ (canopy K1): generated minified twins of the js/ outputs listed here, read only by the served bundle.
+        if path.relative_to(PRODUCTION).parts[0] == 'min':
+            continue
         relative = path.relative_to(ROOT).as_posix()
         if path.suffix not in ('.cs', '.js', '.html', '.css', '.json'):
             continue
         text = path.read_text(encoding='utf-8-sig')
         category = path.relative_to(PRODUCTION).parts[0]
         result['files'].append({'path': relative, 'category': category})
-        if category == 'Controllers' and path.suffix == '.cs':
+        # Routes come from any plugin .cs file, wherever it lives (Features/<F>/ today; Controllers/ before the restructure), that declares a
+        # public class named *Controller: a partial without a base list and a class deriving from a shared base
+        # (JeControllerBase) count too. A base class whose name does not end in Controller contributes nothing.
+        controllers = [(declaration.start(), next(iter(re.findall(r'\[Route\("([^"\n]*)"\)\]', declaration[1])), 'JellyfinEnhanced'))
+                       for declaration in re.finditer(r'((?:\[[^\n]+\]\s*)*)public\s+(?:sealed\s+|partial\s+)*class\s+\w+Controller\b', text)] if path.suffix == '.cs' else []
+        if controllers:
             # Each action's template is relative to its controller's class-level [Route];
             # a controller without one falls back to JellyfinEnhanced.
-            controllers = [(declaration.start(), next(iter(re.findall(r'\[Route\("([^"\n]*)"\)\]', declaration[1])), 'JellyfinEnhanced'))
-                           for declaration in re.finditer(r'((?:\[[^\n]+\]\s*)*)public\s+(?:sealed\s+|partial\s+)*class\s+\w+\s*:\s*(?:ControllerBase|Controller)\b', text)]
             for match in re.finditer(r'\[Http(Get|Post|Put|Delete|Patch|Head|Options)\("([^"\n]*)"\)\]', text):
                 tail = text[match.end():]
                 method = re.search(r'\bpublic\s+(?:async\s+)?[^\n]+?\s+(\w+)\s*\(', tail)
@@ -78,7 +84,7 @@ def inventory():
             # One entry per literal and file: repeating a known reference is not a new one.
             literals = sorted({match[1] for match in re.finditer(r'''["']([^"'\n]{1,180}\.(?:json|xml|db|sqlite))["']''', text)})
             result['storage_references'].extend({'literal': literal, 'file': relative} for literal in literals)
-        # Any plugin class implementing IScheduledTask, wherever it lives (Services/StartupService.cs too).
+        # Any plugin class implementing IScheduledTask, wherever it lives (Features/Platform/Services/StartupService.cs too).
         if path.suffix == '.cs':
             for task in re.finditer(r'\bclass\s+(\w+)[^{;]*?:[^{;]*?\bIScheduledTask\b', text):
                 result['scheduled_tasks'].append({'file': relative, 'class': task[1],

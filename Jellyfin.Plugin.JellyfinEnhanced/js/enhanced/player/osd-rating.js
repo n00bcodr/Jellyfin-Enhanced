@@ -1,84 +1,93 @@
-// /js/enhanced/player/osd-rating.js
-// Injects rating into the Jellyfin video OSD near the "Ends at" text
-(function(JE) {
-  'use strict';
+(() => {
+"use strict";
+(() => {
+  // client/src/host/context.ts
+  function sharedModule(id) {
+    const namespace = window.JellyfinEnhanced?.core?.sharedModules?.[id];
+    if (!namespace) throw new Error(`${id} is not in JE.core.sharedModules: load its provider first (client/shared-modules.json)`);
+    return namespace;
+  }
+  function sharedExport(namespace, name) {
+    return namespace[name];
+  }
 
-  const logPrefix = '🪼 Jellyfin Enhanced: OSD Rating:';
-  const CONTAINER_ID = 'je-osd-rating-container';
-  // Hot cache (per session) so each item is fetched once
-  const ratingCache = new Map();
-  const pendingRatings = new Map();
+  // client/generated-shared/stub/client/src/features/player/host.ts
+  var shared = /* @__PURE__ */ sharedModule("features/player/host");
+  var export0 = /* @__PURE__ */ sharedExport(shared, "playerHost");
 
-  // Ratings are the signed-in user's own — drop them on a user switch.
-  window.JellyfinEnhanced.session?.onUserChange('osd-rating', () => {
+  // client/generated-shared/stub/client/src/features/player/wire.ts
+  var shared2 = /* @__PURE__ */ sharedModule("features/player/wire");
+  var export1 = /* @__PURE__ */ sharedExport(shared2, "decodeItems");
+
+  // client/generated-shared/stub/client/src/features/player/lifetime.ts
+  var shared3 = /* @__PURE__ */ sharedModule("features/player/lifetime");
+  var export02 = /* @__PURE__ */ sharedExport(shared3, "createPlayerLifetime");
+
+  // client/src/features/player/osd-rating.ts
+  var { JE, ApiClient } = export0();
+  var lifetime = export02(JE, "osd-rating");
+  var logPrefix = "🪼 Jellyfin Enhanced: OSD Rating:";
+  var CONTAINER_ID = "je-osd-rating-container";
+  var ratingCache = /* @__PURE__ */ new Map();
+  var pendingRatings = /* @__PURE__ */ new Map();
+  JE.session?.onUserChange("osd-rating", () => {
     ratingCache.clear();
     pendingRatings.clear();
   });
-  let scheduledUpdate = null;
-  let osdObserver = null;
-
+  var scheduledUpdate = null;
+  var osdObserver = null;
   function isEnabled() {
-    // Controlled by server config; default true unless explicitly disabled
     return JE.pluginConfig?.ShowRatingInPlayer !== false;
   }
-
   function normalizeCriticPercent(raw) {
-    if (raw === null || raw === undefined) return null;
+    if (raw === null || raw === void 0) return null;
     const num = Number(raw);
     if (!Number.isFinite(num)) return null;
     return Math.max(0, Math.min(100, Math.round(num)));
   }
-
   function createTomatoIcon(isRotten) {
-    const span = document.createElement('span');
-    span.className = `je-tomato ${isRotten ? 'rotten' : 'fresh'}`;
+    const span = document.createElement("span");
+    span.className = `je-tomato ${isRotten ? "rotten" : "fresh"}`;
     return span;
   }
-
   function getCurrentItemId() {
-    // Pull from the favorite button in the OSD
-    const favBtn = document.querySelector('.videoOsdBottom .btnUserRating[data-id]');
+    const favBtn = document.querySelector(".videoOsdBottom .btnUserRating[data-id]");
     return favBtn?.dataset?.id || null;
   }
-
   async function fetchItemRatings(userId, itemId) {
     try {
       const result = await ApiClient.ajax({
-        type: 'GET',
-        url: ApiClient.getUrl(`/Users/${userId}/Items`, { Ids: itemId, Fields: 'CommunityRating,CriticRating,Type' }),
-        dataType: 'json'
+        type: "GET",
+        url: ApiClient.getUrl(`/Users/${userId}/Items`, { Ids: itemId, Fields: "CommunityRating,CriticRating,Type" }),
+        dataType: "json"
       });
-      const item = result?.Items?.[0];
+      const item = export1(result)[0];
       if (!item) return { tmdb: null, critic: null };
-
       let sourceItem = item;
-      if ((item.Type === 'Season' || item.Type === 'Episode') && item.SeriesId && !item.CommunityRating && !item.CriticRating) {
+      if ((item.Type === "Season" || item.Type === "Episode") && item.SeriesId && !item.CommunityRating && !item.CriticRating) {
         try {
           const seriesResult = await ApiClient.ajax({
-            type: 'GET',
-            url: ApiClient.getUrl(`/Users/${userId}/Items`, { Ids: item.SeriesId, Fields: 'CommunityRating,CriticRating,Type' }),
-            dataType: 'json'
+            type: "GET",
+            url: ApiClient.getUrl(`/Users/${userId}/Items`, { Ids: item.SeriesId, Fields: "CommunityRating,CriticRating,Type" }),
+            dataType: "json"
           });
-          sourceItem = seriesResult?.Items?.[0] || item;
+          sourceItem = export1(seriesResult)[0] || item;
         } catch (e) {
           console.warn(`${logPrefix} Failed to fetch series rating for ${item.Type}`, e);
         }
       }
-
       const tmdb = sourceItem.CommunityRating != null ? Number(sourceItem.CommunityRating).toFixed(1) : null;
       const critic = normalizeCriticPercent(sourceItem.CriticRating);
-
       return { tmdb, critic };
     } catch (e) {
       console.warn(`${logPrefix} Failed to fetch rating for ${itemId}`, e);
       return { tmdb: null, critic: null };
     }
   }
-
   function ensureStyles() {
-    if (document.getElementById('je-osd-rating-style')) return;
-    const style = document.createElement('style');
-    style.id = 'je-osd-rating-style';
+    if (document.getElementById("je-osd-rating-style")) return;
+    const style = document.createElement("style");
+    style.id = "je-osd-rating-style";
     style.textContent = `
       #${CONTAINER_ID} { display: inline-flex; align-items: center; gap: 6px; margin-left: 10px; vertical-align: middle; }
       #${CONTAINER_ID} .je-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; border-radius: 4px; font-weight: 600; line-height: 1; }
@@ -92,55 +101,43 @@
     `;
     document.head.appendChild(style);
   }
-
   function injectRating(osdRoot, rating, itemId) {
-    if (!osdRoot || (!rating.tmdb && rating.critic === null)) return;
+    if (!osdRoot || !rating.tmdb && rating.critic === null) return;
     ensureStyles();
-
-    const osdTimeContainer = osdRoot.querySelector('.osdTimeText');
+    const osdTimeContainer = osdRoot.querySelector(".osdTimeText");
     if (!osdTimeContainer) return;
-
-    osdRoot.querySelectorAll(`#${CONTAINER_ID}`).forEach(el => el.remove());
-
-    const container = document.createElement('span');
+    osdRoot.querySelectorAll(`#${CONTAINER_ID}`).forEach((el) => el.remove());
+    const container = document.createElement("span");
     container.id = CONTAINER_ID;
     container.dataset.itemId = itemId;
-
     if (rating.critic !== null) {
-      const criticChip = document.createElement('span');
-      criticChip.className = 'je-chip critic';
+      const criticChip = document.createElement("span");
+      criticChip.className = "je-chip critic";
       criticChip.appendChild(createTomatoIcon(rating.critic < 60));
-
-      const criticText = document.createElement('span');
-      criticText.className = 'je-text';
+      const criticText = document.createElement("span");
+      criticText.className = "je-text";
       criticText.textContent = `${rating.critic}%`;
-
       criticChip.appendChild(criticText);
       container.appendChild(criticChip);
     }
-
     if (rating.tmdb) {
-      const tmdbChip = document.createElement('span');
-      tmdbChip.className = 'je-chip tmdb';
-
-      const star = document.createElement('span');
-      star.className = 'je-star';
-      star.textContent = 'star';
-
-      const text = document.createElement('span');
-      text.className = 'je-text';
+      const tmdbChip = document.createElement("span");
+      tmdbChip.className = "je-chip tmdb";
+      const star = document.createElement("span");
+      star.className = "je-star";
+      star.textContent = "star";
+      const text = document.createElement("span");
+      text.className = "je-text";
       text.textContent = rating.tmdb;
-
       tmdbChip.appendChild(star);
       tmdbChip.appendChild(text);
       container.appendChild(tmdbChip);
     }
-
     if (container.children.length === 0) return;
-    osdTimeContainer.insertAdjacentElement('beforebegin', container);
+    osdTimeContainer.insertAdjacentElement("beforebegin", container);
   }
-
   async function updateOsdRating() {
+    const lease = lifetime.lease();
     if (!isEnabled()) {
       console.debug(`${logPrefix} Skipped - feature disabled`);
       return;
@@ -148,69 +145,50 @@
     if (!JE.isVideoPage()) {
       return;
     }
-    const osdRoot = document.querySelector('.videoOsdBottom');
+    const osdRoot = document.querySelector(".videoOsdBottom");
     if (!osdRoot) return;
-
     const userId = ApiClient.getCurrentUserId?.();
     const itemId = getCurrentItemId();
     if (!userId || !itemId) return;
-
-    // Skip re-injection only if the container already shows the correct item
     const existing = osdRoot.querySelector(`#${CONTAINER_ID}`);
     if (existing && existing.dataset.itemId === itemId) return;
-
-    // Remove stale container from previous episode before injecting new one
     if (existing) existing.remove();
-
-    // Serve from cache if available (including null-rating to avoid refetch loops)
     if (ratingCache.has(itemId)) {
       const cached = ratingCache.get(itemId);
       if (cached && (cached.tmdb || cached.critic !== null)) injectRating(osdRoot, cached, itemId);
       return;
     }
-
-    // Reuse in-flight fetch
     if (pendingRatings.has(itemId)) {
       const rating = await pendingRatings.get(itemId);
-      if (rating && (rating.tmdb || rating.critic !== null)) injectRating(osdRoot, rating, itemId);
+      if (lease.current() && getCurrentItemId() === itemId && osdRoot.isConnected && rating && (rating.tmdb || rating.critic !== null)) injectRating(osdRoot, rating, itemId);
       return;
     }
-
     const promise = (async () => {
       const rating = await fetchItemRatings(userId, itemId);
-      ratingCache.set(itemId, rating);
+      if (lease.current()) ratingCache.set(itemId, rating);
       return rating;
     })();
-
     pendingRatings.set(itemId, promise);
-
     try {
       const rating = await promise;
-      if (rating && (rating.tmdb || rating.critic !== null)) injectRating(osdRoot, rating, itemId);
+      if (lease.current() && getCurrentItemId() === itemId && osdRoot.isConnected && rating && (rating.tmdb || rating.critic !== null)) injectRating(osdRoot, rating, itemId);
     } finally {
-      pendingRatings.delete(itemId);
+      if (pendingRatings.get(itemId) === promise) pendingRatings.delete(itemId);
     }
   }
-
   function scheduleUpdate() {
     if (scheduledUpdate) return;
-    scheduledUpdate = setTimeout(() => {
+    scheduledUpdate = lifetime.timeout(() => {
       scheduledUpdate = null;
       if (JE.isVideoPage()) updateOsdRating();
     }, 200);
   }
-
   function observeOsd() {
-    if (osdObserver) return; // Already observing
-    // The player container does not exist yet when this runs, so a dedicated
-    // observer always ended up on document.body. Subscribe to the shared
-    // (post-paint, batched) body observer instead and ignore batches off the
-    // video page before touching the update timer.
-    osdObserver = JE.helpers.onBodyMutation('osd-rating', () => {
+    if (osdObserver) return;
+    osdObserver = JE.helpers.onBodyMutation("osd-rating", () => {
       if (JE.isVideoPage()) scheduleUpdate();
     });
   }
-
   JE.initializeOsdRating = function() {
     if (!isEnabled()) {
       console.log(`${logPrefix} Feature is disabled in settings.`);
@@ -219,7 +197,16 @@
     try {
       observeOsd();
       console.log(`${logPrefix} Initialized successfully.`);
-    } catch (e) { console.warn(`${logPrefix} Init failed`, e); }
+    } catch (e) {
+      console.warn(`${logPrefix} Init failed`, e);
+    }
   };
-
-})(window.JellyfinEnhanced = window.JellyfinEnhanced || {});
+  lifetime.onReset(() => {
+    ratingCache.clear();
+    pendingRatings.clear();
+    scheduledUpdate = null;
+    document.getElementById(CONTAINER_ID)?.remove();
+  });
+})();
+})();
+//# sourceMappingURL=osd-rating.js.map

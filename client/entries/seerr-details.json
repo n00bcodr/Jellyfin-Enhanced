@@ -1,0 +1,15 @@
+{
+  "js/jellyseerr/moreinfo/more-info-modal-styles.js": "client/src/features/seerr/details/moreinfo/styles-entry.ts",
+  "js/jellyseerr/moreinfo/more-info-modal-data.js": "client/src/features/seerr/details/moreinfo/data-entry.ts",
+  "js/jellyseerr/moreinfo/more-info-modal-seasons.js": "client/src/features/seerr/details/moreinfo/seasons-entry.ts",
+  "js/jellyseerr/moreinfo/more-info-modal-badges.js": "client/src/features/seerr/details/moreinfo/badges-entry.ts",
+  "js/jellyseerr/moreinfo/more-info-modal-render.js": "client/src/features/seerr/details/moreinfo/render-entry.ts",
+  "js/jellyseerr/moreinfo/more-info-modal-actions-tv.js": "client/src/features/seerr/details/moreinfo/actions-tv-entry.ts",
+  "js/jellyseerr/moreinfo/more-info-modal-actions.js": "client/src/features/seerr/details/moreinfo/actions-entry.ts",
+  "js/jellyseerr/moreinfo/more-info-modal-init.js": "client/src/features/seerr/details/moreinfo/init-entry.ts",
+  "js/jellyseerr/seerr-detail-link.js": "client/src/features/seerr/details/seerr-detail-link-entry.ts",
+  "js/jellyseerr/hss-discovery-handler.js": "client/src/features/seerr/details/hss-discovery-entry.ts",
+  "js/jellyseerr/item-details.js": "client/src/features/seerr/details/details-page/item-details-entry.ts",
+  "js/jellyseerr/issue-reporter.js": "client/src/features/seerr/details/issues/issue-reporter-entry.ts",
+  "js/jellyseerr/seamless-scroll.js": "client/src/features/seerr/details/scroll/seamless-scroll-entry.ts"
+}

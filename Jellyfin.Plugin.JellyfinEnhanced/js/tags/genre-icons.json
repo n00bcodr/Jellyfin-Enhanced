@@ -1,5 +1,5 @@
 {
-  "_about": "The genre chips' Material Symbols glyphs and Tag Styles labels, shared by js/tags/genretags.js (scripts/generate_genre_labels.py writes its table) and Services/PosterTags/Resolution/GenreIcons.cs (reads this file). A genre is looked up by its lowercased name; each label is one glyph's canonical English genre, so every alias resolves to it.",
+  "_about": "The genre chips' Material Symbols glyphs and Tag Styles labels, shared by js/tags/genretags.js (scripts/generate_genre_labels.py writes its table) and Shared/MediaTags/PosterTags/Resolution/GenreIcons.cs (reads this file). A genre is looked up by its lowercased name; each label is one glyph's canonical English genre, so every alias resolves to it.",
   "defaultIcon": "theaters",
   "other": {
     "key": "other",

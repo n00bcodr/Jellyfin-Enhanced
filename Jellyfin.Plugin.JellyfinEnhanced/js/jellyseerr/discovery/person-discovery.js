@@ -1,233 +1,197 @@
-// @ts-check
-// /js/jellyseerr/discovery/person-discovery.js
-// Adds "More from [Actor]" section to person detail pages using Seerr API.
-// Client-paged spec over JE.discoveryBase — the base owns the chunked
-// pagination, filter/sort controls, infinite scroll and lifecycle wiring;
-// this module keeps the TMDB person resolution and the credits fetch.
-(function(JE) {
-    'use strict';
+(() => {
+"use strict";
+(() => {
+  // client/src/features/seerr/host-discovery.ts
+  function discoveryHost() {
+    const host = window;
+    const JE = host.JellyfinEnhanced ?? (host.JellyfinEnhanced = {});
+    return { JE, api: () => host.ApiClient };
+  }
+  function filterOf(JE) {
+    if (!JE.discoveryFilter) throw new Error("Discovery filter utilities are not loaded");
+    return JE.discoveryFilter;
+  }
+  function baseOf(JE) {
+    if (!JE.discoveryBase) throw new Error("Discovery base is not loaded");
+    return JE.discoveryBase;
+  }
+  function translate(JE, key, params) {
+    return JE.t?.(key, params) ?? key;
+  }
 
-    const logPrefix = '🪼 Jellyfin Enhanced: Person Discovery:';
-
-    // Cache for person ID mappings (personName -> TMDB personId) and for the
-    // Jellyfin person's name and TMDB id (personId -> {name, tmdbId}); both
-    // kept for the tab, per user (see JE.discoveryFilter.createSessionCache:
-    // the person search is answered by Seerr for the signed-in user).
-    const personIdCache = JE.discoveryFilter.createSessionCache('person-id',
-        (v) => Number.isInteger(v) && v > 0);
-    const personInfoCache = JE.discoveryFilter.createSessionCache('person-info',
-        (v) => !!v && typeof v === 'object' && typeof v.name === 'string'
-            && (v.tmdbId === null || v.tmdbId === undefined || typeof v.tmdbId === 'string'));
-
-    // Alias for shared utilities
-    const fetchWithManagedRequest = (path, options) =>
-        JE.discoveryFilter.fetchWithManagedRequest(path, 'person', options);
-
-    /**
-     * Gets person information from Jellyfin (with caching)
-     * @param {string} personId
-     * @param {AbortSignal} [signal]
-     */
-    async function getPersonInfo(personId, signal) {
-        const cache = personInfoCache.scope();
-        if (cache.has(personId)) {
-            return cache.get(personId);
-        }
-        try {
-            if (signal?.aborted) {
-                throw new DOMException('Aborted', 'AbortError');
-            }
-
-            const response = await fetchWithManagedRequest(`/JellyfinEnhanced/person/${personId}`, { signal });
-
-            if (signal?.aborted) {
-                throw new DOMException('Aborted', 'AbortError');
-            }
-
-            if (response) {
-                // Only the name and TMDB id are used here (and kept for the tab).
-                cache.set(personId, { name: response.name, tmdbId: response.tmdbId ?? null });
-            }
-            return response;
-        } catch (error) {
-            if (error.name === 'AbortError') throw error;
-            return null;
-        }
+  // client/src/features/seerr/discovery/domain.ts
+  function isRecord(value) {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
+  }
+  function isSeerrResult(value) {
+    return isRecord(value);
+  }
+  function isAbortError(error) {
+    return isRecord(error) && error.name === "AbortError";
+  }
+  function abortError(message = "Aborted") {
+    const error = new Error(message);
+    error.name = "AbortError";
+    return error;
+  }
+  function throwIfAborted(signal) {
+    if (signal?.aborted) throw abortError();
+  }
+  function decodeError(what) {
+    const error = new Error(`Unexpected ${what} response`);
+    error.name = "DecodeError";
+    return error;
+  }
+  var resultKey = (item) => `${String(item.mediaType)}-${String(item.id)}`;
+  function rowsOf(value) {
+    return isRecord(value) && Array.isArray(value.results) ? value.results : [];
+  }
+  function isNamedTmdbInfo(value) {
+    return isRecord(value) && typeof value.name === "string" && (value.tmdbId === null || value.tmdbId === void 0 || typeof value.tmdbId === "string");
+  }
+  function decodeNamedInfo(value) {
+    if (!isRecord(value) || typeof value.name !== "string") return null;
+    const id = value.tmdbId;
+    return { name: value.name, tmdbId: typeof id === "string" ? id : typeof id === "number" ? String(id) : null };
+  }
+  function positiveInt(value) {
+    const parsed = typeof value === "number" ? value : typeof value === "string" ? parseInt(value, 10) : NaN;
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+  }
+  function isPositiveInt(value) {
+    return typeof value === "number" && Number.isInteger(value) && value > 0;
+  }
+  function isUserActive(status) {
+    return isRecord(status) && !!status.active;
+  }
+  function hasItemType(item, type) {
+    return isRecord(item) && item.Type === type;
+  }
+  function decodeCredits(value) {
+    if (value === null || value === void 0) return [];
+    if (!isRecord(value)) throw decodeError("credits");
+    const rows = [value.cast, value.crew].flatMap((list) => Array.isArray(list) ? list : []);
+    const seen = /* @__PURE__ */ new Set();
+    const results = [];
+    for (const row of rows) {
+      if (!isSeerrResult(row) || !row.id || !row.mediaType) continue;
+      const key = resultKey(row);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      results.push(row);
     }
+    return results;
+  }
+  function namedRows(value) {
+    return rowsOf(value).filter((row) => isRecord(row) && typeof row.id === "number" && typeof row.name === "string");
+  }
+  function bestOf(rows, score) {
+    return [...rows].sort((a, b) => score(b) - score(a))[0]?.id;
+  }
+  var sameName = (row, name) => row.name.toLowerCase() === name.toLowerCase();
+  function pickPerson(response, name) {
+    const people = namedRows(response).filter((row) => row.mediaType === "person");
+    const exact = people.filter((row) => sameName(row, name));
+    return bestOf(exact.length > 0 ? exact : people, (row) => (row.profilePath ? 2 : 0) + Math.min(Array.isArray(row.knownFor) ? row.knownFor.length : 0, 3));
+  }
 
-    /**
-     * Check if current page is a Person detail page
-     * @param {string} itemId
-     * @param {AbortSignal} [signal]
-     */
-    async function isPersonPage(itemId, signal) {
-        try {
-            if (signal?.aborted) {
-                throw new DOMException('Aborted', 'AbortError');
-            }
-
-            const item = JE.helpers?.getItemCached
-                ? await JE.helpers.getItemCached(itemId)
-                : await ApiClient.getItem(ApiClient.getCurrentUserId(), itemId);
-
-            if (signal?.aborted) {
-                throw new DOMException('Aborted', 'AbortError');
-            }
-
-            return item && item.Type === 'Person';
-        } catch (error) {
-            if (error.name === 'AbortError') throw error;
-            return false;
-        }
+  // client/src/features/seerr/discovery/lookups.ts
+  function managedFetch(JE, prefix) {
+    return (path, options) => filterOf(JE).fetchWithManagedRequest(path, prefix, options);
+  }
+  async function isItemType(JE, itemId, type, signal) {
+    try {
+      throwIfAborted(signal);
+      const client = discoveryHost().api();
+      const item = JE.helpers?.getItemCached ? await JE.helpers.getItemCached(itemId) : await client?.getItem?.(client.getCurrentUserId(), itemId);
+      throwIfAborted(signal);
+      return hasItemType(item, type);
+    } catch (error) {
+      if (isAbortError(error)) throw error;
+      return false;
     }
-
-    /**
-     * Searches for TMDB person ID by name
-     * @param {string} personName
-     * @param {AbortSignal} [signal]
-     */
-    async function searchTmdbPerson(personName, signal) {
-        const cacheKey = personName.toLowerCase().trim();
-        const cache = personIdCache.scope();
-        if (cache.has(cacheKey)) {
-            return cache.get(cacheKey);
-        }
-
-        try {
-            if (signal?.aborted) {
-                throw new DOMException('Aborted', 'AbortError');
-            }
-
-            const response = await fetchWithManagedRequest(
-                `/JellyfinEnhanced/tmdb/search/person?query=${encodeURIComponent(personName)}`,
-                { signal }
-            );
-
-            if (signal?.aborted) {
-                throw new DOMException('Aborted', 'AbortError');
-            }
-
-            if (response?.results?.length > 0) {
-                const personResults = response.results.filter(r => r.mediaType === 'person');
-                if (personResults.length > 0) {
-                    // Filter to exact name matches first
-                    const exactMatches = personResults.filter(r =>
-                        r.name?.toLowerCase() === personName.toLowerCase()
-                    );
-
-                    // Score matches: prefer those with profile images and more known works
-                    const scored = (exactMatches.length > 0 ? exactMatches : personResults).map(r => ({
-                        ...r,
-                        score: (r.profilePath ? 2 : 0) + Math.min(r.knownFor?.length || 0, 3)
-                    }));
-
-                    scored.sort((a, b) => b.score - a.score);
-
-                    if (scored.length === 0) return null;
-                    const personId = scored[0].id;
-
-                    cache.set(cacheKey, personId);
-                    return personId;
-                }
-            }
-        } catch (error) {
-            if (error.name === 'AbortError') throw error;
-            // Silent fail
-        }
-        return null;
+  }
+  async function tolerant(signal, fetch) {
+    try {
+      throwIfAborted(signal);
+      const value = await fetch();
+      throwIfAborted(signal);
+      return value;
+    } catch (error) {
+      if (isAbortError(error)) throw error;
+      return null;
     }
+  }
 
-    /**
-     * Fetches person credits from Seerr
-     * @param {number} personId
-     * @param {AbortSignal} [signal]
-     */
+  // client/src/features/seerr/discovery/person-discovery.ts
+  var logPrefix = "🪼 Jellyfin Enhanced: Person Discovery:";
+  function start(JE) {
+    const filter = filterOf(JE);
+    const base = baseOf(JE);
+    const fetchManaged = managedFetch(JE, "person");
+    const personIdCache = filter.createSessionCache("person-id", isPositiveInt);
+    const personInfoCache = filter.createSessionCache("person-info", isNamedTmdbInfo);
+    function getPersonInfo(personId, signal) {
+      const cache = personInfoCache.scope();
+      const cached = cache.get(personId);
+      if (cached) return Promise.resolve(cached);
+      return tolerant(signal, async () => {
+        const info = decodeNamedInfo(await fetchManaged(`/JellyfinEnhanced/person/${personId}`, { signal }));
+        if (info && !signal.aborted) cache.set(personId, info);
+        return info;
+      });
+    }
+    function searchTmdbPerson(name, signal) {
+      const cacheKey = name.toLowerCase().trim();
+      const cache = personIdCache.scope();
+      const cached = cache.get(cacheKey);
+      if (cached) return Promise.resolve(cached);
+      return tolerant(signal, async () => {
+        const response = await fetchManaged(`/JellyfinEnhanced/tmdb/search/person?query=${encodeURIComponent(name)}`, { signal });
+        const personId = pickPerson(response, name);
+        if (personId === void 0) return null;
+        if (!signal.aborted) cache.set(cacheKey, personId);
+        return personId;
+      });
+    }
     async function fetchPersonCredits(personId, signal) {
-        try {
-            if (signal?.aborted) {
-                throw new DOMException('Aborted', 'AbortError');
-            }
-
-            const response = await fetchWithManagedRequest(
-                `/JellyfinEnhanced/jellyseerr/person/${personId}/combined_credits`,
-                { signal }
-            );
-
-            if (signal?.aborted) {
-                throw new DOMException('Aborted', 'AbortError');
-            }
-
-            return response || { cast: [], crew: [] };
-        } catch (error) {
-            if (error.name === 'AbortError') throw error;
-            console.error(`${logPrefix} Error fetching credits:`, error);
-            // In particular, parental_pending is not an empty filmography.
-            // Let the discovery base offer a retry once automatic retries end.
-            throw error;
-        }
+      try {
+        throwIfAborted(signal);
+        const credits = decodeCredits(await fetchManaged(`/JellyfinEnhanced/jellyseerr/person/${personId}/combined_credits`, { signal }));
+        throwIfAborted(signal);
+        return credits;
+      } catch (error) {
+        if (!isAbortError(error)) console.error(`${logPrefix} Error fetching credits:`, error);
+        throw error;
+      }
     }
-
-    /**
-     * Resolves the full deduped credits list + section title for the base.
-     * @param {{id: string, signal: AbortSignal}} ctx
-     * @returns {Promise<{items: Array<any>, title: string}|null>}
-     */
     async function resolveItems({ id: itemId, signal }) {
-        // Check if this is a person page
-        const isPerson = await isPersonPage(itemId, signal);
-        if (signal.aborted) return null;
-        if (!isPerson) return null;
-
-        const personInfoPromise = getPersonInfo(itemId, signal);
-        const statusPromise = JE.jellyseerrAPI?.checkUserStatus();
-
-        const [personInfo, status] = await Promise.all([personInfoPromise, statusPromise]);
-
-        if (signal.aborted) return null;
-
-        if (!status?.active || !personInfo?.name) return null;
-
-        // Get TMDB person ID
-        const tmdbPersonId = personInfo.tmdbId
-            ? parseInt(personInfo.tmdbId)
-            : await searchTmdbPerson(personInfo.name, signal);
-
-        if (signal.aborted) return null;
-
-        if (!tmdbPersonId) return null;
-
-        // Fetch credits
-        const credits = await fetchPersonCredits(tmdbPersonId, signal);
-        if (signal.aborted) return null;
-
-        const allResults = [...(credits.cast || []), ...(credits.crew || [])];
-        const dedupedResults = [];
-        const seenItems = new Set();
-        for (const item of allResults) {
-            const key = `${item?.mediaType}-${item?.id}`;
-            if (!item?.id || !item?.mediaType || seenItems.has(key)) continue;
-            seenItems.add(key);
-            dedupedResults.push(item);
-        }
-
-        console.debug(`${logPrefix} Fetched ${dedupedResults.length} credits for ${personInfo.name}`);
-
-        return {
-            items: dedupedResults,
-            title: JE.t('discovery_more_from_person', { person: personInfo.name })
-        };
+      const isPerson = await isItemType(JE, itemId, "Person", signal);
+      if (signal.aborted || !isPerson) return null;
+      const [personInfo, status] = await Promise.all([getPersonInfo(itemId, signal), JE.jellyseerrAPI?.checkUserStatus?.()]);
+      if (signal.aborted) return null;
+      if (!isUserActive(status) || !personInfo?.name) return null;
+      const tmdbPersonId = positiveInt(personInfo.tmdbId) ?? await searchTmdbPerson(personInfo.name, signal);
+      if (signal.aborted || !tmdbPersonId) return null;
+      const items = await fetchPersonCredits(tmdbPersonId, signal);
+      if (signal.aborted) return null;
+      console.debug(`${logPrefix} Fetched ${items.length} credits for ${personInfo.name}`);
+      return { items, title: translate(JE, "discovery_more_from_person", { person: personInfo.name }) };
     }
-
-    const discovery = JE.discoveryBase.createDiscovery({
-        key: 'person',
-        mode: 'client-paged',
-        logLabel: 'Person Discovery',
-        configKey: 'JellyseerrShowPersonDiscovery',
-        getIdFromUrl: JE.discoveryBase.idFromDetailUrl,
-        pageSize: 40,
-        resolveItems
-    });
-
-    discovery.start();
-
-})(window.JellyfinEnhanced);
+    base.createDiscovery({
+      key: "person",
+      mode: "client-paged",
+      logLabel: "Person Discovery",
+      configKey: "JellyseerrShowPersonDiscovery",
+      getIdFromUrl: base.idFromDetailUrl,
+      pageSize: 40,
+      resolveItems
+    }).start();
+  }
+  (function() {
+    "use strict";
+    start(discoveryHost().JE);
+  })();
+})();
+})();
+//# sourceMappingURL=person-discovery.js.map

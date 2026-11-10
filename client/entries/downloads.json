@@ -1,0 +1,10 @@
+{
+  "js/arr/requests/requests-page-styles.js": "client/src/features/downloads/styles-entry.ts",
+  "js/arr/requests/requests-page-data.js": "client/src/features/downloads/data-entry.ts",
+  "js/arr/requests/requests-page-render-helpers.js": "client/src/features/downloads/render-helpers-entry.ts",
+  "js/arr/requests/requests-page-render-cards.js": "client/src/features/downloads/render-cards-entry.ts",
+  "js/arr/requests/requests-page-render.js": "client/src/features/downloads/render-entry.ts",
+  "js/arr/requests/requests-page-actions.js": "client/src/features/downloads/actions-entry.ts",
+  "js/arr/requests/requests-page-init.js": "client/src/features/downloads/init-entry.ts",
+  "js/arr/requests/requests-custom-tab.js": "client/src/features/downloads/custom-tab-entry.ts"
+}

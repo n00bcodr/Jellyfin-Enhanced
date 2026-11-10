@@ -65,7 +65,7 @@ Every enabled report includes these fields, even if you uncheck all three catego
 
 ??? info "How it works"
 
-    The build target is `jf10` or `jf12`. During registration, the service returns the installation ID and secret. JE stores them in its plugin configuration.
+    This rewrite reports build target `jf12` only. Historical analytics may still contain `jf10` records. During registration, the service returns the installation ID and secret. JE stores them in its plugin configuration.
 
 ### Feature toggle states
 
@@ -381,14 +381,11 @@ Data reloads when you arrive on the page or refresh your browser. A version warn
     return `<span title="${escapeHtml(rawName)}">${escapeHtml(display)}</span>`;
   }
 
-  // Flags a jf10 build running on a v12+ server or vice versa (both work,
-  // since the injection middleware is plain ASP.NET on either runtime, but
-  // it's the wrong build for that server). Compares major-version ranges
-  // rather than startsWith('12.'), so this doesn't misfire once Jellyfin 13 ships.
+  // Includes historical jf10 records; this rewrite supports exactly major 12.
   function isTargetMismatch(target, jellyfinVersion) {
     const major = parseInt(jellyfinVersion, 10);
     if (!Number.isFinite(major)) return false;
-    return (target === 'jf10' && major >= 12) || (target === 'jf12' && major < 12);
+    return (target === 'jf10' && major >= 12) || (target === 'jf12' && major !== 12);
   }
 
   function renderVersionCards(rows) {

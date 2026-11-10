@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Jellyfin Enhanced typed HTML manifest",
+  "description": "Production-relative HTML outputs mapped to one template and its named typed scripts. Duplicate keys, template markup policy, marker pairing, symlinks, collisions and embedded-resource checks run in scripts/client/html-entries.mjs.",
+  "type": "object",
+  "minProperties": 1,
+  "propertyNames": {
+    "pattern": "^(?:[A-Za-z_][A-Za-z0-9_]*/)*[A-Za-z0-9_][A-Za-z0-9_-]*\\.html$"
+  },
+  "additionalProperties": {
+    "type": "object",
+    "required": ["template", "scripts"],
+    "additionalProperties": false,
+    "properties": {
+      "template": {
+        "type": "string",
+        "pattern": "^client/html/(?:[A-Za-z0-9_][A-Za-z0-9_.-]*/)*[A-Za-z0-9_][A-Za-z0-9_.-]*\\.html$"
+      },
+      "scripts": {
+        "type": "object",
+        "minProperties": 1,
+        "propertyNames": {
+          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
+        },
+        "additionalProperties": {
+          "type": "string",
+          "pattern": "^client/src/(?:[A-Za-z0-9_][A-Za-z0-9_.-]*/)*[A-Za-z0-9_][A-Za-z0-9_.-]*\\.ts$"
+        }
+      }
+    }
+  }
+}

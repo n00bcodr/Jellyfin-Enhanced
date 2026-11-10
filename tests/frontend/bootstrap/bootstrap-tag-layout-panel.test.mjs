@@ -45,14 +45,14 @@ test('the layout tiles and density pills save a normalized document and re-prese
   const h = setup(t);
   assert.equal(h.JE.currentSettings.tagLayoutSettingsVersion, 0, 'a document from before layouts');
   await h.choose('jeTagLayout', 'caption');
-  let saved = JSON.parse(h.writes.at(-1).data);
+  let saved = JSON.parse(h.writes.at(-1).data).Settings;
   assert.equal(saved.tagLayout, 'caption');
   assert.equal(saved.tagLayoutSettingsVersion, 1, 'saving a layout setting promotes the document');
   assert.equal(saved.tagLayouts, null, 'profiles keep inheriting until edited');
   assert.deepEqual(h.reinit, ['caption']);
   assert.equal(h.JE.core.tagLayout.normalizeSettings().layout, 'caption');
   await h.choose('jeTagDensity', 'compact');
-  saved = JSON.parse(h.writes.at(-1).data);
+  saved = JSON.parse(h.writes.at(-1).data).Settings;
   assert.equal(saved.tagLabelDensity, 'compact');
   assert.equal(h.reinit.length, 2);
   assert.equal(h.toasts.at(-1), 'toast_tag_layout_updated');
@@ -76,7 +76,7 @@ test('the tag toggles re-evaluate the caption reservation: the last caption grou
   assert.equal(h.JE.core.tagLayout.normalizeSettings().reserveCaption, true);
   await toggle('languageTagsToggle', false, { sync: () => assert.equal(strips(), 0, 'the toggle itself gives the space back, not only a later re-present') });
   assert.equal(strips(), 0);
-  assert.equal(JSON.parse(h.writes.at(-1).data).languageTagsEnabled, false);
+  assert.equal(JSON.parse(h.writes.at(-1).data).Settings.languageTagsEnabled, false);
   await toggle('statusTagsToggle', true);
   assert.equal(strips(), 0, 'status shows on the poster: still nothing for the strip');
   await toggle('ratingTagsToggle', true);

@@ -1,0 +1,170 @@
+{
+  "$comment": [
+    "Canonical feature map of the v12 restructure (artifacts/restructure-plan/PLAN.md, 'Canonical feature list'). One row per feature, plus the two areas that are not features (admin, platform).",
+    "client: repo-relative client/src folders. For a feature the first one is client/src/features/<name>.",
+    "backend: the folder under backendRoot (backend.md §7.4: feature folders = this column; there is no kebab-to-Pascal rule). null = no backend folder; backendServedBy names the folder that serves it.",
+    "controller: the feature's controller type (Je<Feature>Controller, partials Je<Feature>Controller.<Area>.cs allowed); null = none.",
+    "tests.frontend / tests.backend: repo-relative test folders. Step F1 mirrored feature tests into tests/frontend/features/<name> where they had a by-prefix home; the rest stay in the cross-cutting folders F1 kept (bootstrap, core, pages, requests, chrome), which a row then names.",
+    "tests.backend names only the feature's own tests/backend/Features/<backend> folder (FeatureMapParityTests.BackendTestFoldersMatchTheMap rejects another feature's folder). A feature whose backend tests sit in other folders' mixed files lists none, and its notes say where they are.",
+    "Read by tests/frontend/architecture/feature-map.test.mjs and feature-readme.test.mjs (frontend), tests/backend/Architecture/FeatureMapParityTests.cs (backend) and the CONTRIBUTING.md 'Where things live' table. admin-tags is folded into media-tags on both sides."
+  ],
+  "backendRoot": "Jellyfin.Plugin.JellyfinEnhanced/Features",
+  "features": [
+    {
+      "name": "activity",
+      "kind": "feature",
+      "client": ["client/src/features/activity"],
+      "backend": "Activity",
+      "controller": "JeActivityController",
+      "tests": { "frontend": ["tests/frontend/pages"], "backend": ["tests/backend/Features/Activity"] },
+      "notes": "Its frontend tests (pages-activity, pages-social-*, pages-plugin-pages-features) stay in the cross-cutting pages/ folder, which F1 kept. Backend: tests/backend/Features/Activity holds the ActivityFeedBuilder tests (round 13 moved them out of DetailsProviders/ReviewActivityVisibilityTests.cs). The activity store itself is Configuration/UserConfigurationManager, tested in tests/backend/Core/CoreSharedStoresTests.cs."
+    },
+    {
+      "name": "bookmarks",
+      "kind": "feature",
+      "client": ["client/src/features/bookmarks"],
+      "backend": "Bookmarks",
+      "controller": "JeBookmarksController",
+      "tests": { "frontend": ["tests/frontend/features/bookmarks"], "backend": ["tests/backend/Features/Bookmarks"] }
+    },
+    {
+      "name": "calendar",
+      "kind": "feature",
+      "client": ["client/src/features/calendar"],
+      "backend": "Calendar",
+      "controller": "JeCalendarController",
+      "tests": { "frontend": ["tests/frontend/pages"], "backend": ["tests/backend/Features/Calendar"] },
+      "notes": "Its frontend tests (pages-calendar*) stay in the cross-cutting pages/ folder, which F1 kept."
+    },
+    {
+      "name": "catchup",
+      "kind": "feature",
+      "client": ["client/src/features/catchup"],
+      "backend": "Catchup",
+      "controller": "JeCatchupController",
+      "tests": { "frontend": ["tests/frontend/pages"], "backend": [] },
+      "notes": "Its frontend tests (pages-social-*) stay in the cross-cutting pages/ folder, which F1 kept. Backend: no tests/backend/Features/Catchup folder; JeCatchupController is covered only by tests/backend/Architecture/ControllerActivationTests.cs and the route/auth snapshots."
+    },
+    {
+      "name": "chrome",
+      "kind": "feature",
+      "client": ["client/src/features/chrome"],
+      "backend": "Chrome",
+      "controller": "JeChromeController",
+      "tests": { "frontend": ["tests/frontend/chrome"], "backend": ["tests/backend/Features/Chrome"] },
+      "notes": "Branding, active streams. Its frontend tests already have their own folder, which F1 keeps."
+    },
+    {
+      "name": "details-providers",
+      "kind": "feature",
+      "client": ["client/src/features/details-providers"],
+      "backend": "DetailsProviders",
+      "controller": "JeDetailsProvidersController",
+      "tests": { "frontend": ["tests/frontend/features/details-providers"], "backend": ["tests/backend/Features/DetailsProviders"] }
+    },
+    {
+      "name": "downloads",
+      "kind": "feature",
+      "client": ["client/src/features/downloads"],
+      "backend": "Downloads",
+      "controller": "JeDownloadsController",
+      "tests": { "frontend": ["tests/frontend/features/downloads"], "backend": ["tests/backend/Features/Downloads"] },
+      "notes": "Backend: tests/backend/Features/Downloads holds the arr/queue, arr/history and arr/requests route tests (round 13 moved them out of Seerr/ApiSeerrTests.cs; they still use its Seerr fixture)."
+    },
+    {
+      "name": "hidden-content",
+      "kind": "feature",
+      "client": ["client/src/features/hidden-content"],
+      "backend": "HiddenContent",
+      "controller": "JeHiddenContentController",
+      "tests": { "frontend": ["tests/frontend/features/hidden-content"], "backend": ["tests/backend/Features/HiddenContent"] },
+      "notes": "Its settings-panel section is in settings/."
+    },
+    {
+      "name": "media-tags",
+      "kind": "feature",
+      "client": ["client/src/features/media-tags"],
+      "backend": "MediaTags",
+      "controller": "JeMediaTagsController",
+      "tests": { "frontend": ["tests/frontend/features/media-tags"], "backend": ["tests/backend/Features/MediaTags"] },
+      "formerNames": ["admin-tags", "AdminTags"],
+      "notes": "Was admin-tags / AdminTags. The admin page is in admin/ and the settings-panel sections in settings/; the admin routes are in JeMediaTagsController.Admin.cs."
+    },
+    {
+      "name": "player",
+      "kind": "feature",
+      "client": ["client/src/features/player"],
+      "backend": null,
+      "controller": null,
+      "tests": { "frontend": ["tests/frontend/features/player"], "backend": [] },
+      "notes": "Client-only."
+    },
+    {
+      "name": "seerr",
+      "kind": "feature",
+      "client": ["client/src/features/seerr"],
+      "backend": "Seerr",
+      "controller": "JeSeerrController",
+      "tests": { "frontend": ["tests/frontend/requests", "tests/frontend/pages"], "backend": ["tests/backend/Features/Seerr"] },
+      "notes": "Its frontend tests stay in the cross-cutting requests/ and pages/ (pages-seerr-*, -moreinfo, -scroll, -discovery*, -recommendations*) folders, which F1 kept."
+    },
+    {
+      "name": "settings",
+      "kind": "feature",
+      "client": ["client/src/features/settings"],
+      "backend": "Settings",
+      "controller": "JeSettingsController",
+      "tests": { "frontend": ["tests/frontend/bootstrap"], "backend": ["tests/backend/Features/Settings"] },
+      "notes": "Its frontend tests (settings-revisions, bootstrap, bootstrap-loader-rewrite) stay in the cross-cutting bootstrap/ folder, which F1 kept."
+    },
+    {
+      "name": "settings-panel",
+      "kind": "feature",
+      "client": ["client/src/features/settings-panel"],
+      "backend": null,
+      "backendServedBy": "Settings",
+      "controller": null,
+      "tests": { "frontend": ["tests/frontend/features/settings-panel"], "backend": [] },
+      "notes": "The panel shell; feature sections live in their features."
+    },
+    {
+      "name": "spoiler-guard",
+      "kind": "feature",
+      "client": ["client/src/features/spoiler-guard"],
+      "backend": "SpoilerGuard",
+      "controller": "JeSpoilerGuardController",
+      "tests": { "frontend": ["tests/frontend/features/spoiler-guard"], "backend": ["tests/backend/Features/SpoilerGuard"] }
+    },
+    {
+      "name": "shared",
+      "kind": "feature",
+      "client": ["client/src/features/shared"],
+      "backend": null,
+      "backendServedBy": "Platform",
+      "controller": null,
+      "tests": { "frontend": ["tests/frontend/core"], "backend": [] },
+      "notes": "Pure helpers every feature may import. Part of Platform; not the backend Shared/ layer. Its frontend tests (core-shared-*, core-translat*) stay in the cross-cutting core/ folder, which F1 kept."
+    },
+    {
+      "name": "admin",
+      "kind": "area",
+      "client": ["client/src/admin/config"],
+      "backend": "Admin",
+      "controller": "JeAdminController",
+      "tests": { "frontend": ["tests/frontend/admin"], "backend": ["tests/backend/Features/Admin"] },
+      "notes": "The plugin configuration page. Not under features/."
+    },
+    {
+      "name": "platform",
+      "kind": "area",
+      "client": ["client/src/bootstrap", "client/src/core", "client/src/host", "client/src/pages", "client/src/features/shared"],
+      "backend": "Platform",
+      "controller": "JePlatformController",
+      "tests": {
+        "frontend": ["tests/frontend/bootstrap", "tests/frontend/core", "tests/frontend/pages", "tests/frontend/contracts", "tests/frontend/regressions"],
+        "backend": ["tests/backend/Features/Platform"]
+      },
+      "notes": "Bootstrap, core services and hosts. The backend Shared/ and Infrastructure/ folders are layers, not features."
+    }
+  ]
+}

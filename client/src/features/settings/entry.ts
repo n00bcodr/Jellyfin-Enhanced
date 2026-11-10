@@ -1,0 +1,10 @@
+import { settingsHost } from './host';
+import { installState } from './state';
+import { installInheritance } from './inheritance';
+import { loadSettings } from './defaults';
+import { installSave } from './save';
+const { JE: je, ctx, apiClient } = settingsHost();
+installState(je);
+installInheritance(je);
+je.loadSettings = () => loadSettings(je);
+installSave(je, apiClient, ctx);

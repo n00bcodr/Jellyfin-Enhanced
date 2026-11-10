@@ -1,388 +1,63 @@
-/**
- * @file Hidden Content — CSS for hide buttons, undo toast, management panel,
- * and the confirmation dialog.
- * Split from hidden-content.js (code motion; CSS verbatim).
- */
-(function (JE) {
-    'use strict';
+(() => {
+"use strict";
+(() => {
+  // client/src/features/hidden-content/host.ts
+  var browser = window;
+  if (!browser.JellyfinEnhanced || !browser.ApiClient) throw new Error("Hidden Content host unavailable");
+  var host = { JellyfinEnhanced: browser.JellyfinEnhanced, Dashboard: browser.Dashboard, Emby: browser.Emby };
+  function registry(JE, name) {
+    const internals = JE.internals ?? (JE.internals = {});
+    if (name === "features") return internals.features ?? (internals.features = {});
+    if (name === "hiddenContentPage") return internals.hiddenContentPage ?? (internals.hiddenContentPage = {});
+    const surface = internals.hiddenContent ?? (internals.hiddenContent = {});
+    return new Proxy(surface, { get(target, key) {
+      if (typeof key !== "string") return Reflect.get(target, key);
+      const value = Reflect.get(target, key);
+      if (value === void 0) throw new Error(`Missing hidden-content loader dependency: ${key}`);
+      return value;
+    } });
+  }
+  function runtime(JE) {
+    const internals = JE.internals ?? (JE.internals = {});
+    if (internals.hiddenContentRuntime) return internals.hiddenContentRuntime;
+    const state = { modules: /* @__PURE__ */ new Set(), view: 0, policy: 0, queues: /* @__PURE__ */ new Map(), cleanups: /* @__PURE__ */ new Set(), identityCleanups: /* @__PURE__ */ new Set() };
+    internals.hiddenContentRuntime = state;
+    const invalidate = () => {
+      state.view++;
+      for (const cleanup of [...state.cleanups]) cleanup();
+    };
+    window.addEventListener("hashchange", invalidate);
+    window.addEventListener("popstate", invalidate);
+    document.addEventListener("viewhide", invalidate);
+    const invalidateIdentity = () => {
+      invalidate();
+      for (const cleanup of [...state.identityCleanups]) cleanup();
+    };
+    window.addEventListener("pagehide", invalidateIdentity);
+    JE.session?.onUserChange("hidden-content-runtime", invalidateIdentity);
+    return state;
+  }
+  function installOnce(JE, name) {
+    const modules = runtime(JE).modules;
+    if (modules.has(name)) return false;
+    modules.add(name);
+    return true;
+  }
 
-    JE.internals = JE.internals || {};
-    const internal = JE.internals.hiddenContent = JE.internals.hiddenContent || {};
+  // client/src/features/hidden-content/hidden-content.css
+  var hidden_content_default = '\n            .je-hidden { display: none !important; }\n            .je-hide-btn {\n                --je-danger-rgb: 220, 50, 50;\n                position: absolute;\n                top: 6px;\n                right: 6px;\n                z-index: 10;\n                width: 28px;\n                height: 28px;\n                border-radius: 50%;\n                background: rgba(0,0,0,0.7);\n                border: 1px solid rgba(255,255,255,0.2);\n                color: #fff;\n                cursor: pointer;\n                display: flex;\n                align-items: center;\n                justify-content: center;\n                opacity: 0;\n                transition: opacity 0.2s ease, background 0.2s ease;\n                padding: 0;\n                font-size: 16px;\n                line-height: 1;\n            }\n            .je-hide-btn .material-icons {\n                font-size: 16px;\n            }\n            .cardBox:hover .je-hide-btn,\n            .je-hide-btn:focus {\n                opacity: 1;\n            }\n            .je-hide-btn:hover {\n                background: rgba(var(--je-danger-rgb, 220, 50, 50), 0.85);\n                border-color: rgba(255,255,255,0.4);\n            }\n            .je-hide-btn.je-already-hidden {\n                opacity: 0;\n                background: rgba(0,0,0,0.7);\n                border-color: rgba(255,255,255,0.2);\n                cursor: pointer;\n                pointer-events: auto;\n                font-size: 16px;\n                width: 28px;\n                border-radius: 50%;\n                padding: 0;\n                height: 28px;\n                line-height: 1;\n            }\n            .cardBox:hover .je-hide-btn.je-already-hidden {\n                opacity: 0.85;\n            }\n            .je-hide-btn.je-already-hidden:hover {\n                background: rgba(0,0,0,0.82);\n                border-color: rgba(255,255,255,0.28);\n            }\n            .je-detail-hide-btn.je-already-hidden {\n                opacity: 0.85;\n                pointer-events: auto;\n                transition: background 0.2s ease, opacity 0.2s ease;\n            }\n            .je-detail-hide-btn.je-already-hidden:hover {\n                opacity: 1;\n                background: rgba(255,255,255,0.08);\n            }\n\n            .je-undo-toast {\n                position: fixed;\n                bottom: 20px;\n                right: 20px;\n                color: #fff;\n                padding: 12px 16px;\n                border-radius: 8px;\n                z-index: 99999;\n                font-size: clamp(13px, 2vw, 16px);\n                font-weight: 500;\n                text-shadow: -1px -1px 10px black;\n                box-shadow: 0 4px 20px rgba(0,0,0,0.3);\n                display: flex;\n                align-items: center;\n                gap: 12px;\n                transform: translateX(100%);\n                transition: transform 0.3s ease-out;\n                max-width: 380px;\n            }\n            .je-undo-toast.je-visible {\n                transform: translateX(0);\n            }\n            .je-undo-toast-text {\n                flex: 1;\n            }\n            .je-undo-btn {\n                background: rgba(255,255,255,0.15);\n                border: 1px solid rgba(255,255,255,0.25);\n                color: #fff;\n                padding: 4px 12px;\n                border-radius: 4px;\n                cursor: pointer;\n                font-size: 13px;\n                font-weight: 600;\n                white-space: nowrap;\n                transition: background 0.2s ease, border-color 0.2s ease;\n            }\n            .je-undo-btn:hover {\n                filter: brightness(1.3);\n            }\n\n            .je-hidden-management-overlay {\n                position: fixed;\n                inset: 0;\n                z-index: 100000;\n                background: rgba(0,0,0,0.85);\n                backdrop-filter: blur(10px);\n                display: flex;\n                flex-direction: column;\n                align-items: center;\n                padding: 40px 20px;\n                overflow-y: auto;\n            }\n            .je-hidden-management-panel {\n                width: 100%;\n                max-width: 900px;\n                background: linear-gradient(135deg, rgba(30,30,35,0.98), rgba(20,20,25,0.98));\n                border-radius: 12px;\n                border: 1px solid rgba(255,255,255,0.1);\n                overflow: hidden;\n            }\n            .je-hidden-management-header {\n                display: flex;\n                align-items: center;\n                justify-content: space-between;\n                padding: 20px 24px;\n                border-bottom: 1px solid rgba(255,255,255,0.1);\n            }\n            .je-hidden-management-header h2 {\n                margin: 0;\n                font-size: 20px;\n                font-weight: 600;\n                color: #fff;\n            }\n            .je-hidden-management-close {\n                background: rgba(255,255,255,0.1);\n                border: 1px solid rgba(255,255,255,0.15);\n                color: #fff;\n                width: 32px;\n                height: 32px;\n                border-radius: 50%;\n                cursor: pointer;\n                display: flex;\n                align-items: center;\n                justify-content: center;\n                font-size: 18px;\n                transition: background 0.2s ease;\n            }\n            .je-hidden-management-close:hover {\n                background: rgba(255,80,80,0.4);\n            }\n            .je-hidden-management-toolbar {\n                display: flex;\n                align-items: center;\n                gap: 12px;\n                padding: 16px 24px;\n                border-bottom: 1px solid rgba(255,255,255,0.06);\n            }\n            .je-hidden-management-search {\n                flex: 1;\n                background: rgba(255,255,255,0.08);\n                border: 1px solid rgba(255,255,255,0.12);\n                border-radius: 6px;\n                color: #fff;\n                padding: 8px 12px;\n                font-size: 14px;\n                outline: none;\n            }\n            .je-hidden-management-search::placeholder {\n                color: rgba(255,255,255,0.4);\n            }\n            .je-hidden-management-search:focus {\n                border-color: rgba(255,255,255,0.3);\n            }\n            .je-hidden-management-unhide-all {\n                background: rgba(220,50,50,0.3);\n                border: 1px solid rgba(220,50,50,0.5);\n                color: #fff;\n                padding: 8px 16px;\n                border-radius: 6px;\n                cursor: pointer;\n                font-size: 13px;\n                font-weight: 500;\n                white-space: nowrap;\n                transition: background 0.2s ease;\n            }\n            .je-hidden-management-unhide-all:hover {\n                background: rgba(220,50,50,0.5);\n            }\n            .je-hidden-management-grid {\n                display: grid;\n                grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));\n                gap: 16px;\n                padding: 24px;\n            }\n            .je-hidden-management-empty {\n                text-align: center;\n                padding: 60px 24px;\n                color: rgba(255,255,255,0.4);\n                font-size: 15px;\n            }\n            .je-hidden-item-card {\n                background: rgba(255,255,255,0.05);\n                border-radius: 8px;\n                overflow: hidden;\n                border: 1px solid rgba(255,255,255,0.08);\n                transition: border-color 0.2s ease, transform 0.2s ease;\n            }\n            .je-hidden-item-card:hover {\n                border-color: rgba(255,255,255,0.2);\n            }\n            .je-hidden-item-poster-link {\n                display: block;\n                cursor: pointer;\n                text-decoration: none;\n            }\n            .je-hidden-item-poster {\n                width: 100%;\n                aspect-ratio: 2/3;\n                object-fit: cover;\n                background: rgba(255,255,255,0.05);\n                display: block;\n                transition: opacity 0.2s ease;\n            }\n            .je-hidden-item-poster-link:hover .je-hidden-item-poster {\n                opacity: 0.8;\n            }\n            .je-hidden-item-info {\n                padding: 10px;\n            }\n            .je-hidden-item-name {\n                font-size: 13px;\n                font-weight: 500;\n                color: #fff;\n                white-space: nowrap;\n                overflow: hidden;\n                text-overflow: ellipsis;\n                margin-bottom: 4px;\n                text-decoration: none;\n                display: block;\n            }\n            .je-hidden-item-name:hover {\n                text-decoration: underline;\n                color: #fff;\n            }\n            .je-hidden-item-meta {\n                font-size: 11px;\n                color: rgba(255,255,255,0.4);\n                margin-bottom: 8px;\n            }\n            .je-hidden-item-unhide {\n                width: 100%;\n                background: rgba(255,255,255,0.1);\n                border: 1px solid rgba(255,255,255,0.15);\n                color: #fff;\n                padding: 6px;\n                border-radius: 4px;\n                cursor: pointer;\n                font-size: 12px;\n                font-weight: 500;\n                transition: background 0.2s ease;\n            }\n            .je-hidden-item-unhide:hover {\n                background: rgba(100,200,100,0.3);\n                border-color: rgba(100,200,100,0.5);\n            }\n            .je-hidden-item-removing {\n                animation: je-hidden-fadeout 0.3s ease forwards;\n            }\n            @keyframes je-hidden-fadeout {\n                to { opacity: 0; transform: scale(0.9); }\n            }\n\n            .je-hide-confirm-overlay {\n                position: fixed;\n                inset: 0;\n                z-index: 100001;\n                background: rgba(0,0,0,0.75);\n                backdrop-filter: blur(6px);\n                display: flex;\n                align-items: center;\n                justify-content: center;\n            }\n            .je-hide-confirm-dialog {\n                background: linear-gradient(135deg, rgba(30,30,35,0.98), rgba(20,20,25,0.98));\n                border: 1px solid rgba(255,255,255,0.12);\n                border-radius: 12px;\n                padding: 24px;\n                max-width: 420px;\n                width: 90%;\n                color: #fff;\n            }\n            .je-hide-confirm-dialog h3 {\n                margin: 0 0 12px 0;\n                font-size: 18px;\n                font-weight: 600;\n            }\n            .je-hide-confirm-dialog p {\n                margin: 0 0 16px 0;\n                font-size: 14px;\n                color: rgba(255,255,255,0.7);\n                line-height: 1.5;\n            }\n            .je-hide-confirm-options {\n                display: flex;\n                flex-direction: column;\n                gap: 8px;\n                margin-bottom: 20px;\n            }\n            .je-hide-confirm-options label {\n                display: flex;\n                align-items: center;\n                gap: 8px;\n                font-size: 13px;\n                color: rgba(255,255,255,0.6);\n                cursor: pointer;\n            }\n            .je-hide-confirm-options input[type="checkbox"] {\n                width: 16px;\n                height: 16px;\n                accent-color: #e0e0e0;\n                cursor: pointer;\n            }\n            .je-hide-confirm-buttons {\n                display: flex;\n                justify-content: flex-end;\n                gap: 10px;\n            }\n            .je-hide-confirm-cancel {\n                background: rgba(255,255,255,0.1);\n                border: 1px solid rgba(255,255,255,0.15);\n                color: #fff;\n                padding: 8px 20px;\n                border-radius: 6px;\n                cursor: pointer;\n                font-size: 14px;\n                font-weight: 500;\n                transition: background 0.2s ease;\n            }\n            .je-hide-confirm-cancel:hover {\n                background: rgba(255,255,255,0.2);\n            }\n            .je-hide-confirm-hide {\n                background: rgba(220,50,50,0.6);\n                border: 1px solid rgba(220,50,50,0.7);\n                color: #fff;\n                padding: 8px 20px;\n                border-radius: 6px;\n                cursor: pointer;\n                font-size: 14px;\n                font-weight: 600;\n                transition: background 0.2s ease;\n            }\n            .je-hide-confirm-hide:hover {\n                background: rgba(220,50,50,0.8);\n            }\n        ';
 
-    // ============================================================
-    // CSS injection
-    // ============================================================
-
-    /**
-     * Injects the CSS rules used by hide buttons, undo toast, management panel,
-     * and confirmation dialog.  No-ops if the stylesheet is already present.
-     */
+  // client/src/features/hidden-content/hidden-content-styles.ts
+  (function(JE) {
+    if (!installOnce(JE, "hidden-content-styles")) return;
+    "use strict";
+    const internal = registry(JE, "hiddenContent");
     function injectCSS() {
-        if (!JE.helpers?.addCSS) return;
-        JE.helpers.addCSS('je-hidden-content', `
-            .je-hidden { display: none !important; }
-            .je-hide-btn {
-                --je-danger-rgb: 220, 50, 50;
-                position: absolute;
-                top: 6px;
-                right: 6px;
-                z-index: 10;
-                width: 28px;
-                height: 28px;
-                border-radius: 50%;
-                background: rgba(0,0,0,0.7);
-                border: 1px solid rgba(255,255,255,0.2);
-                color: #fff;
-                cursor: pointer;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                opacity: 0;
-                transition: opacity 0.2s ease, background 0.2s ease;
-                padding: 0;
-                font-size: 16px;
-                line-height: 1;
-            }
-            .je-hide-btn .material-icons {
-                font-size: 16px;
-            }
-            .cardBox:hover .je-hide-btn,
-            .je-hide-btn:focus {
-                opacity: 1;
-            }
-            .je-hide-btn:hover {
-                background: rgba(var(--je-danger-rgb, 220, 50, 50), 0.85);
-                border-color: rgba(255,255,255,0.4);
-            }
-            .je-hide-btn.je-already-hidden {
-                opacity: 0;
-                background: rgba(0,0,0,0.7);
-                border-color: rgba(255,255,255,0.2);
-                cursor: pointer;
-                pointer-events: auto;
-                font-size: 16px;
-                width: 28px;
-                border-radius: 50%;
-                padding: 0;
-                height: 28px;
-                line-height: 1;
-            }
-            .cardBox:hover .je-hide-btn.je-already-hidden {
-                opacity: 0.85;
-            }
-            .je-hide-btn.je-already-hidden:hover {
-                background: rgba(0,0,0,0.82);
-                border-color: rgba(255,255,255,0.28);
-            }
-            .je-detail-hide-btn.je-already-hidden {
-                opacity: 0.85;
-                pointer-events: auto;
-                transition: background 0.2s ease, opacity 0.2s ease;
-            }
-            .je-detail-hide-btn.je-already-hidden:hover {
-                opacity: 1;
-                background: rgba(255,255,255,0.08);
-            }
-
-            .je-undo-toast {
-                position: fixed;
-                bottom: 20px;
-                right: 20px;
-                color: #fff;
-                padding: 12px 16px;
-                border-radius: 8px;
-                z-index: 99999;
-                font-size: clamp(13px, 2vw, 16px);
-                font-weight: 500;
-                text-shadow: -1px -1px 10px black;
-                box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-                display: flex;
-                align-items: center;
-                gap: 12px;
-                transform: translateX(100%);
-                transition: transform 0.3s ease-out;
-                max-width: 380px;
-            }
-            .je-undo-toast.je-visible {
-                transform: translateX(0);
-            }
-            .je-undo-toast-text {
-                flex: 1;
-            }
-            .je-undo-btn {
-                background: rgba(255,255,255,0.15);
-                border: 1px solid rgba(255,255,255,0.25);
-                color: #fff;
-                padding: 4px 12px;
-                border-radius: 4px;
-                cursor: pointer;
-                font-size: 13px;
-                font-weight: 600;
-                white-space: nowrap;
-                transition: background 0.2s ease, border-color 0.2s ease;
-            }
-            .je-undo-btn:hover {
-                filter: brightness(1.3);
-            }
-
-            .je-hidden-management-overlay {
-                position: fixed;
-                inset: 0;
-                z-index: 100000;
-                background: rgba(0,0,0,0.85);
-                backdrop-filter: blur(10px);
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                padding: 40px 20px;
-                overflow-y: auto;
-            }
-            .je-hidden-management-panel {
-                width: 100%;
-                max-width: 900px;
-                background: linear-gradient(135deg, rgba(30,30,35,0.98), rgba(20,20,25,0.98));
-                border-radius: 12px;
-                border: 1px solid rgba(255,255,255,0.1);
-                overflow: hidden;
-            }
-            .je-hidden-management-header {
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                padding: 20px 24px;
-                border-bottom: 1px solid rgba(255,255,255,0.1);
-            }
-            .je-hidden-management-header h2 {
-                margin: 0;
-                font-size: 20px;
-                font-weight: 600;
-                color: #fff;
-            }
-            .je-hidden-management-close {
-                background: rgba(255,255,255,0.1);
-                border: 1px solid rgba(255,255,255,0.15);
-                color: #fff;
-                width: 32px;
-                height: 32px;
-                border-radius: 50%;
-                cursor: pointer;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-size: 18px;
-                transition: background 0.2s ease;
-            }
-            .je-hidden-management-close:hover {
-                background: rgba(255,80,80,0.4);
-            }
-            .je-hidden-management-toolbar {
-                display: flex;
-                align-items: center;
-                gap: 12px;
-                padding: 16px 24px;
-                border-bottom: 1px solid rgba(255,255,255,0.06);
-            }
-            .je-hidden-management-search {
-                flex: 1;
-                background: rgba(255,255,255,0.08);
-                border: 1px solid rgba(255,255,255,0.12);
-                border-radius: 6px;
-                color: #fff;
-                padding: 8px 12px;
-                font-size: 14px;
-                outline: none;
-            }
-            .je-hidden-management-search::placeholder {
-                color: rgba(255,255,255,0.4);
-            }
-            .je-hidden-management-search:focus {
-                border-color: rgba(255,255,255,0.3);
-            }
-            .je-hidden-management-unhide-all {
-                background: rgba(220,50,50,0.3);
-                border: 1px solid rgba(220,50,50,0.5);
-                color: #fff;
-                padding: 8px 16px;
-                border-radius: 6px;
-                cursor: pointer;
-                font-size: 13px;
-                font-weight: 500;
-                white-space: nowrap;
-                transition: background 0.2s ease;
-            }
-            .je-hidden-management-unhide-all:hover {
-                background: rgba(220,50,50,0.5);
-            }
-            .je-hidden-management-grid {
-                display: grid;
-                grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-                gap: 16px;
-                padding: 24px;
-            }
-            .je-hidden-management-empty {
-                text-align: center;
-                padding: 60px 24px;
-                color: rgba(255,255,255,0.4);
-                font-size: 15px;
-            }
-            .je-hidden-item-card {
-                background: rgba(255,255,255,0.05);
-                border-radius: 8px;
-                overflow: hidden;
-                border: 1px solid rgba(255,255,255,0.08);
-                transition: border-color 0.2s ease, transform 0.2s ease;
-            }
-            .je-hidden-item-card:hover {
-                border-color: rgba(255,255,255,0.2);
-            }
-            .je-hidden-item-poster-link {
-                display: block;
-                cursor: pointer;
-                text-decoration: none;
-            }
-            .je-hidden-item-poster {
-                width: 100%;
-                aspect-ratio: 2/3;
-                object-fit: cover;
-                background: rgba(255,255,255,0.05);
-                display: block;
-                transition: opacity 0.2s ease;
-            }
-            .je-hidden-item-poster-link:hover .je-hidden-item-poster {
-                opacity: 0.8;
-            }
-            .je-hidden-item-info {
-                padding: 10px;
-            }
-            .je-hidden-item-name {
-                font-size: 13px;
-                font-weight: 500;
-                color: #fff;
-                white-space: nowrap;
-                overflow: hidden;
-                text-overflow: ellipsis;
-                margin-bottom: 4px;
-                text-decoration: none;
-                display: block;
-            }
-            .je-hidden-item-name:hover {
-                text-decoration: underline;
-                color: #fff;
-            }
-            .je-hidden-item-meta {
-                font-size: 11px;
-                color: rgba(255,255,255,0.4);
-                margin-bottom: 8px;
-            }
-            .je-hidden-item-unhide {
-                width: 100%;
-                background: rgba(255,255,255,0.1);
-                border: 1px solid rgba(255,255,255,0.15);
-                color: #fff;
-                padding: 6px;
-                border-radius: 4px;
-                cursor: pointer;
-                font-size: 12px;
-                font-weight: 500;
-                transition: background 0.2s ease;
-            }
-            .je-hidden-item-unhide:hover {
-                background: rgba(100,200,100,0.3);
-                border-color: rgba(100,200,100,0.5);
-            }
-            .je-hidden-item-removing {
-                animation: je-hidden-fadeout 0.3s ease forwards;
-            }
-            @keyframes je-hidden-fadeout {
-                to { opacity: 0; transform: scale(0.9); }
-            }
-
-            .je-hide-confirm-overlay {
-                position: fixed;
-                inset: 0;
-                z-index: 100001;
-                background: rgba(0,0,0,0.75);
-                backdrop-filter: blur(6px);
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            }
-            .je-hide-confirm-dialog {
-                background: linear-gradient(135deg, rgba(30,30,35,0.98), rgba(20,20,25,0.98));
-                border: 1px solid rgba(255,255,255,0.12);
-                border-radius: 12px;
-                padding: 24px;
-                max-width: 420px;
-                width: 90%;
-                color: #fff;
-            }
-            .je-hide-confirm-dialog h3 {
-                margin: 0 0 12px 0;
-                font-size: 18px;
-                font-weight: 600;
-            }
-            .je-hide-confirm-dialog p {
-                margin: 0 0 16px 0;
-                font-size: 14px;
-                color: rgba(255,255,255,0.7);
-                line-height: 1.5;
-            }
-            .je-hide-confirm-options {
-                display: flex;
-                flex-direction: column;
-                gap: 8px;
-                margin-bottom: 20px;
-            }
-            .je-hide-confirm-options label {
-                display: flex;
-                align-items: center;
-                gap: 8px;
-                font-size: 13px;
-                color: rgba(255,255,255,0.6);
-                cursor: pointer;
-            }
-            .je-hide-confirm-options input[type="checkbox"] {
-                width: 16px;
-                height: 16px;
-                accent-color: #e0e0e0;
-                cursor: pointer;
-            }
-            .je-hide-confirm-buttons {
-                display: flex;
-                justify-content: flex-end;
-                gap: 10px;
-            }
-            .je-hide-confirm-cancel {
-                background: rgba(255,255,255,0.1);
-                border: 1px solid rgba(255,255,255,0.15);
-                color: #fff;
-                padding: 8px 20px;
-                border-radius: 6px;
-                cursor: pointer;
-                font-size: 14px;
-                font-weight: 500;
-                transition: background 0.2s ease;
-            }
-            .je-hide-confirm-cancel:hover {
-                background: rgba(255,255,255,0.2);
-            }
-            .je-hide-confirm-hide {
-                background: rgba(220,50,50,0.6);
-                border: 1px solid rgba(220,50,50,0.7);
-                color: #fff;
-                padding: 8px 20px;
-                border-radius: 6px;
-                cursor: pointer;
-                font-size: 14px;
-                font-weight: 600;
-                transition: background 0.2s ease;
-            }
-            .je-hide-confirm-hide:hover {
-                background: rgba(220,50,50,0.8);
-            }
-        `);
+      if (!JE.helpers?.addCSS) return;
+      JE.helpers.addCSS("je-hidden-content", hidden_content_default);
     }
-
     Object.assign(internal, { injectCSS });
-
-})(window.JellyfinEnhanced);
+  })(host.JellyfinEnhanced);
+})();
+})();
+//# sourceMappingURL=hidden-content-styles.js.map

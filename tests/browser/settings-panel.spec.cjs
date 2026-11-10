@@ -2,6 +2,9 @@ const { test, expect } = require('@playwright/test');
 const { readFileSync, mkdirSync } = require('node:fs');
 const path = require('node:path');
 const root = path.resolve(__dirname, '../../Jellyfin.Plugin.JellyfinEnhanced/js');
+const { loaderSource } = require('./helpers/loader-source.cjs');
+const { provideFeatureContext } = require('../frontend/helpers/feature-context.cjs');
+const english = require('../../Jellyfin.Plugin.JellyfinEnhanced/js/locales/en.json');
 // Optional run against an already deployed, authorised Jellyfin test server:
 // JE_PANEL_LAB_URL=http://127.0.0.1:8096 JE_PANEL_LAB_USER=admin JE_PANEL_LAB_PASSWORD=... \
 // npx playwright test -c tests/browser/playwright.config.cjs settings-panel --project=chromium --workers=1
@@ -47,14 +50,22 @@ async function setup(page) {
     expect(await page.evaluate(() => JellyfinEnhanced.showEnhancedPanel.toString())).toContain('guardBlur');
   } else {
     await page.goto('/');
-    await page.evaluate(() => {
+    await page.evaluate(({ loader, english }) => {
       document.body.innerHTML = '<button id="opener">Open settings</button>';
       window.ApiClient = { getCurrentUserId: () => 'user-a', getUrl: x => x, ajax: async () => null };
       const ui = { buildPanelHtml: () => '<div class="panel-header"><h2 id="jePanelTitle">Settings</h2><button id="closeSettingsPanel">Close</button></div>' };
       for (const name of ['wireShortcutEditor', 'wireSettingsListeners', 'wireHiddenContentListeners', 'wireMiscSettingsControls', 'wireTagGroupEditor', 'wireLanguageControls']) ui[name] = () => {};
+      // The loader's translator, and a loaded settings document with its revision (as bootstrap/loader/user-config.ts
+      // leaves it); the panel's refresh finds no newer document (ajax answers null) and keeps this one.
+      // eslint-disable-next-line no-eval
+      const { createTranslator } = (0, eval)(loader);
       window.JellyfinEnhanced = { core: { navigation: window.JellyfinEnhanced.core.navigation }, internals: { enhancedUi: ui }, pluginConfig: {}, currentSettings: {}, state: { activeShortcuts: { x: 1 } },
+        userConfig: { settings: {}, shortcuts: { Shortcuts: [] }, settingsRevision: 'fixture-loaded' }, translations: english, translationsLang: 'en', IconName: {},
+        t: createTranslator(() => window.JellyfinEnhanced),
         CONFIG: { HELP_PANEL_AUTOCLOSE_DELAY: 60000 }, keyListener() {}, themer: { getThemeVariables: () => ({}) } };
-    });
+    }, { loader: loaderSource(), english });
+    // canopy K1: ui-kit.js publishes featureContext in production; this fixture loads the panel host without it.
+    await provideFeatureContext(page);
     await page.addScriptTag({ path: path.join(root, 'enhanced/settingspanel/ui-panel.js') });
   }
 }

@@ -1,15 +1,19 @@
-// @ts-check
-// /js/jellyseerr/request-manager.js
-//
-// The retry/dedup/concurrency/cache machinery moved to js/core/api-client.js
-// so every module (not just Seerr) can use it. This file keeps the frozen
-// JE.requestManager surface as an alias; the navigation-abort wiring that
-// used to live here is owned by core/api-client.js (via JE.core.navigation,
-// which also covers the pushState transitions the old raw hashchange/popstate
-// listeners missed).
-(function(JE) {
-    'use strict';
+(() => {
+"use strict";
+(() => {
+  // client/src/features/seerr/host-core.ts
+  function seerrCoreHost() {
+    const host = window;
+    const JE2 = host.JellyfinEnhanced;
+    if (!JE2) throw new Error("Jellyfin Enhanced must be initialized before the Seerr core group");
+    return { JE: JE2, window: host, document, apiClient: () => host.ApiClient, liveBridge: () => host.JellyfinEnhanced };
+  }
 
-    JE.requestManager = JE.core.api.manager;
-
-})(window.JellyfinEnhanced);
+  // client/src/features/seerr/core/request-manager-entry.ts
+  var { JE } = seerrCoreHost();
+  var manager = JE.core?.api?.manager;
+  if (!manager) throw new Error("Seerr request manager loaded before the core API client");
+  JE.requestManager = manager;
+})();
+})();
+//# sourceMappingURL=request-manager.js.map

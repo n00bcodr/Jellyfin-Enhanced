@@ -86,6 +86,20 @@ for(const enabled of [false,true]){
   });
 }
 test('downloads approval uses a single non-retried mutation then refreshes permission and data',async t=>{
-  const h=setup(t,{api:async()=>({requests:[],canApproveRequests:false})});h.document.body.innerHTML='<button data-request-id="17"><span class="material-icons">check</span></button>';
+  let first=true;const h=setup(t,{api:async()=>{if(first){first=false;return {requests:[{id:17,requestStatus:1}],canApproveRequests:true};}return {requests:[],canApproveRequests:false};}});await h.P.fetchRequests();h.calls.length=0;h.document.body.innerHTML='<button data-request-id="17"><span class="material-icons">check</span></button>';
   await h.P.handleRequestAction(h.document.querySelector('button'),'approve');assert.equal(h.calls[0][0],'/arr/requests/17/approve');assert.deepEqual(plain(h.calls[0][1]),{method:'POST',skipRetry:true});assert.equal(h.calls.length,2);assert.equal(h.P.state.canApproveRequests,false);
+});
+// BUG-010: a failed issue-media lookup is not cached as "no media"; the next load asks again and shows it.
+test('downloads issue media that failed to load is looked up again on the next load instead of staying blank',async t=>{
+  let fail=true;const lookups=[];
+  const h=setup(t,{ajax:async options=>{
+    if(options.url.includes('/issue'))return {results:[{id:1,media:{mediaType:'movie',tmdbId:43}}]};
+    lookups.push(options.url);if(fail)throw Error('offline');return {id:43,title:'Recovered'};
+  }});
+  await h.P.fetchIssues();assert.equal(lookups.length,1);
+  fail=false;await h.P.fetchIssues();
+  assert.equal(lookups.length,2,'the failure was not remembered');
+  assert.equal(h.P.state.issues[0].media.title,'Recovered');
+  // A success is cached as before.
+  await h.P.fetchIssues();assert.equal(lookups.length,2);
 });

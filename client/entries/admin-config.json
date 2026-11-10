@@ -1,0 +1,5 @@
+{
+  "Configuration/jeAdmin.js": "client/src/admin/config/engine-entry.ts",
+  "Configuration/admin/per-user.js": "client/src/admin/config/per-user-entry.ts",
+  "Configuration/admin/sections.js": "client/src/admin/config/sections-entry.ts"
+}

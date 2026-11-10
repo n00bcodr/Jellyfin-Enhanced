@@ -8,7 +8,7 @@ const origin = `http://127.0.0.1:${port}`;
 const labOrigin = process.env.JE_BROWSER_LAB_URL;
 module.exports = defineConfig({
   testDir: __dirname, fullyParallel: true, forbidOnly: !!process.env.CI,
-  retries: 0, workers: process.env.CI ? 2 : 3, timeout: 15000,
+  retries: 0, workers: process.env.JE_BROWSER_WORKERS ? Number(process.env.JE_BROWSER_WORKERS) : process.env.CI ? 2 : 3, timeout: 15000,
   reporter: [['list'], ['html', { outputFolder: path.join(root, 'artifacts/browser/report'), open: 'never' }], ['junit', { outputFile: path.join(root, 'artifacts/browser/results.xml') }]],
   outputDir: path.join(root, 'artifacts/browser/results'),
   use: { baseURL: labOrigin || origin, locale: 'en-US', timezoneId: 'UTC', colorScheme: 'dark', reducedMotion: 'reduce', trace: 'retain-on-failure', screenshot: 'only-on-failure' },

@@ -1,19 +1,21 @@
-/**
- * @file Global CSS injected once for plugin features (JE.injectGlobalStyles).
- * Split from ui.js (code motion; bodies verbatim).
- */
-(function(JE) {
-    'use strict';
+(() => {
+"use strict";
+(() => {
+  // client/src/features/shared/panel-host.ts
+  function panelHost() {
+    const host = window;
+    if (!host.JellyfinEnhanced) throw new TypeError("Jellyfin Enhanced must load before the settings panel");
+    return host.JellyfinEnhanced;
+  }
 
-    /**
-     * Injects custom CSS for plugin features.
-     */
+  // client/src/features/settings-panel/ui-styles.ts
+  function installUiStyles(JE) {
     JE.injectGlobalStyles = () => {
-        const styleId = 'jellyfin-enhanced-styles';
-        if (document.getElementById(styleId)) return;
-        const style = document.createElement('style');
-        style.id = styleId;
-        style.innerHTML = `
+      const styleId = "jellyfin-enhanced-styles";
+      if (document.getElementById(styleId)) return;
+      const style = document.createElement("style");
+      style.id = styleId;
+      style.innerHTML = `
             @keyframes dice { 0%, 100% { transform: rotate(0deg) scale(1); } 10%, 30%, 50% { transform: rotate(-10deg) scale(1.1); } 20%, 40% { transform: rotate(10deg) scale(1.1); } 60% { transform: rotate(360deg) scale(1); } }
             #randomItemButton { display: inline-flex; align-items: center; justify-content: center; }
             #randomItemButton .je-dice-spin,
@@ -110,13 +112,13 @@
               font-style: normal;
               font-weight: 100 700;
               font-display: block;
-              src: url(${JE.cdn.font('materialsymbolsrounded-subset.woff2')}) format('woff2');
+              src: url(${JE.cdn.font("materialsymbolsrounded-subset.woff2")}) format('woff2');
             }
             @font-face {
               font-family: 'JE Material Symbols Outlined';
               font-style: normal;
               font-weight: 400;
-              src: url(${JE.cdn.font('materialsymbolsoutlined-subset.woff2')}) format('woff2');
+              src: url(${JE.cdn.font("materialsymbolsoutlined-subset.woff2")}) format('woff2');
             }
             /* The full fonts under the public family names, for themes and
                custom CSS that rely on JE providing them (e.g. Jellyfish points
@@ -130,13 +132,13 @@
               font-style: normal;
               font-weight: 100 700;
               font-display: block;
-              src: url(${JE.cdn.font('materialsymbolsrounded.woff2')}) format('woff2');
+              src: url(${JE.cdn.font("materialsymbolsrounded.woff2")}) format('woff2');
             }
             @font-face {
               font-family: 'Material Symbols Outlined';
               font-style: normal;
               font-weight: 400;
-              src: url(${JE.cdn.font('materialsymbolsoutlined.woff2')}) format('woff2');
+              src: url(${JE.cdn.font("materialsymbolsoutlined.woff2")}) format('woff2');
             }
             /* Google's standard classes on the full fonts, for icons from
                themes, other plugins and custom HTML that rely on JE providing
@@ -312,6 +314,10 @@
                 cursor: not-allowed;
             }
         `;
-        document.head.appendChild(style);
+      document.head.appendChild(style);
     };
-})(window.JellyfinEnhanced);
+  }
+  installUiStyles(panelHost());
+})();
+})();
+//# sourceMappingURL=ui-styles.js.map

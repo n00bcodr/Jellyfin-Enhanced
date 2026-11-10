@@ -1,0 +1,17 @@
+{
+  "js/enhanced/ui-styles.js": "client/src/features/settings-panel/ui-styles.ts",
+  "js/enhanced/settingspanel/ui-entry-points.js": "client/src/features/settings-panel/ui-entry-points.ts",
+  "js/enhanced/settingspanel/ui-release-notes.js": "client/src/features/settings-panel/ui-release-notes.ts",
+  "js/enhanced/settingspanel/ui-panel-template.js": "client/src/features/settings-panel/ui-panel-template.ts",
+  "js/enhanced/settingspanel/ui-panel-shortcut-editor.js": "client/src/features/settings-panel/ui-panel-shortcut-editor.ts",
+  "js/enhanced/settingspanel/ui-panel-settings.js": "client/src/features/settings-panel/ui-panel-settings.ts",
+  "js/enhanced/settingspanel/ui-panel-tag-editor.js": "client/src/features/media-tags/settings/ui-panel-tag-editor.ts",
+  "js/enhanced/settingspanel/ui-panel-hidden-content.js": "client/src/features/hidden-content/settings/ui-panel-hidden-content.ts",
+  "js/enhanced/settingspanel/ui-panel-language.js": "client/src/features/settings-panel/ui-panel-language.ts",
+  "js/enhanced/settingspanel/ui-panel-tag-looks.js": "client/src/features/media-tags/settings/ui-panel-tag-looks.ts",
+  "js/enhanced/settingspanel/ui-panel-tag-preview.js": "client/src/features/media-tags/settings/ui-panel-tag-preview.ts",
+  "js/enhanced/settingspanel/ui-panel-tag-portable.js": "client/src/features/media-tags/settings/ui-panel-tag-portable.ts",
+  "js/enhanced/settingspanel/ui-panel-media-tags.js": "client/src/features/media-tags/settings/ui-panel-media-tags.ts",
+  "js/enhanced/settingspanel/ui-panel-resize.js": "client/src/features/settings-panel/ui-panel-resize.ts",
+  "js/enhanced/settingspanel/ui-panel.js": "client/src/features/settings-panel/ui-panel.ts"
+}

@@ -25,19 +25,15 @@ Install the build that matches your Jellyfin version, then restart the server. S
 2. Replace the mismatched installation using the shared repository in the [Installation Guide](installation.md).
 3. Restart Jellyfin.
 
-!!! warning "Jellyfin 13 and newer"
+!!! warning "Unsupported Jellyfin majors"
 
-    Skip the steps above. The page shows **This Jellyfin version is not supported yet** instead and names no build to install, because no current JE build supports that version, so replacing the build and restarting won't help. Stay on Jellyfin 12.x until a JE release lists Jellyfin 13 support.
+    This rewrite supports Jellyfin 12.x only. Hosts older than 12 and future majors such as 13 are unsupported. There is no matching asset of this rewrite for them. Older runtimes may reject the DLL before plugin diagnostics can run. Upgrade an older host to 12.x before using the rewrite; for a newer major, use a JE release that explicitly supports it.
 
 ??? info "How it works"
 
-    The administrator page can show **Wrong plugin build for this Jellyfin version**. The startup log reports `BUILD/HOST MISMATCH`. On Jellyfin 12.x and 10.11.x it also names the expected release asset: `Jellyfin.Plugin.JellyfinEnhanced_12.0.0.zip` for Jellyfin 12, or `Jellyfin.Plugin.JellyfinEnhanced_10.11.0.zip` for Jellyfin 10.11. On Jellyfin 13 and newer there is no expected asset.
+    The startup log reports `BUILD/HOST MISMATCH` for any major other than 12. Authenticated administrator-only `GET /JellyfinEnhanced/host-compat` reports `builtFor: jf12`, `hostTarget: jf12` for major 12 or `unsupported` otherwise, and the server's version. The expected asset is `Jellyfin.Plugin.JellyfinEnhanced_12.0.0.zip` on 12.x and null on every unsupported host. The filename identifies the build target, not the JE release version. Manifest and release URLs refer to upstream releases, not an unpublished rewrite artifact.
 
-    These filenames identify the build target, not the JE release version.
-
-    For administrator diagnostics, authenticated `GET /JellyfinEnhanced/host-compat` reports the build target, host target, expected asset (on Jellyfin 12.x and 10.11.x only; on 13 and newer there is none), and manifest URL. It also checks administrator access; a signed-out request or an ordinary user cannot use it. There is no configuration switch to disable the compatibility check.
-
-    The same JE version number on two ZIP files does not make their build targets interchangeable.
+    The endpoint also detects when the DLL on disk differs from the loaded module. After replacing a DLL, stop and start the Jellyfin service or container; a dashboard restart can keep the old module loaded. Restarting does not make an unsupported host compatible. Ordinary users and signed-out requests cannot read these diagnostics. There is no configuration switch to disable the compatibility check.
 
 ## Scripts Not Loading
 

@@ -1,0 +1,11 @@
+{
+  "js/enhanced/catchup/catchup-styles.js": "client/src/features/catchup/catchup-styles.ts",
+  "js/enhanced/catchup/catchup-custom-tab.js": "client/src/features/catchup/catchup-custom-tab.ts",
+  "js/enhanced/catchup/catchup-deck.js": "client/src/features/catchup/catchup-deck.ts",
+  "js/enhanced/catchup/catchup-page.js": "client/src/features/catchup/catchup-page.ts",
+  "js/enhanced/catchup/catchup-activity.js": "client/src/features/catchup/catchup-activity.ts",
+  "js/enhanced/catchup/catchup-core.js": "client/src/features/catchup/catchup-core.ts",
+  "js/extras/activity-page.js": "client/src/features/activity/activity-page.ts",
+  "js/extras/activity-custom-tab.js": "client/src/features/activity/activity-custom-tab.ts",
+  "js/extras/colored-activity-icons.js": "client/src/features/activity/colored-activity-icons.ts"
+}

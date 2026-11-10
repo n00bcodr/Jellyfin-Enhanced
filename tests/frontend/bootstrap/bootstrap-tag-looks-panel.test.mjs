@@ -34,7 +34,7 @@ function setup(t, { settings = {}, genresFail = false, html = '', tagData = id =
         if (u.pathname.includes('/JellyfinEnhanced/tag-data/')) return { Items: (await Promise.all(JSON.parse(data).map(tagData))).filter(Boolean) };
         if (u.pathname.includes('/JellyfinEnhanced/user-settings/')) {
           if (io.saveStatus !== 200) throw Object.assign(new Error('Internal Server Error'), { status: io.saveStatus });
-          writes.push(JSON.parse(data));
+          writes.push(JSON.parse(data).Settings);
           return null;
         }
         if (u.pathname.endsWith('/UserViews')) return { Items: [{ Id: KIDS, Name: 'Kids' }, { Id: '33333333-3333-3333-3333-333333333333', Name: 'Movies' }] };
@@ -48,6 +48,7 @@ function setup(t, { settings = {}, genresFail = false, html = '', tagData = id =
   });
   t.after(() => h.close());
   const files = ['core/ui-kit.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'core/tag-look.js', 'enhanced/settingspanel/ui-panel-tag-looks.js', 'tags/tag-pipeline.js', 'enhanced/settingspanel/ui-panel-tag-preview.js', 'tags/tag-item-editor.js'];
+  if (realSave) { h.JE.userConfig ||= {}; h.JE.userConfig.settingsRevision = 'fixture-loaded'; }
   if (realSave) files.unshift('tags/rating-sources.js', 'enhanced/config.js');
   for (const file of files) h.load(file);
   h.JE.toast = message => toasts.push(message);

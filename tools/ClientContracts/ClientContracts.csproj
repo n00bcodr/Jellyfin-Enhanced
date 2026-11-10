@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+  </PropertyGroup>
+  <!-- Tool-only compilation of authoritative sources, never the loadable plugin.
+       Configuration helpers/defaults require PluginConfiguration and its small
+       model dependency closure; keep whole files so serialization metadata and
+       nullable annotations are identical to the server's compilation. -->
+  <ItemGroup>
+    <Compile Include="../../Jellyfin.Plugin.JellyfinEnhanced/Transport/BootstrapResponse.cs" Link="Transport/BootstrapResponse.cs" />
+    <Compile Include="../../Jellyfin.Plugin.JellyfinEnhanced/Transport/BookmarkDocument.cs" Link="Transport/BookmarkDocument.cs" />
+    <Compile Include="../../Jellyfin.Plugin.JellyfinEnhanced/Transport/BootstrapConfig.cs" Link="Transport/BootstrapConfig.cs" />
+    <Compile Include="../../Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs" Link="Configuration/UserConfiguration.cs" />
+    <Compile Include="../../Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs" Link="Configuration/PluginConfiguration.cs" />
+    <Compile Include="../../Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLayoutSettings.cs" Link="Configuration/TagLayoutSettings.cs" />
+    <Compile Include="../../Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLookSettings.cs" Link="Configuration/TagLookSettings.cs" />
+    <Compile Include="../../Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagShapeSettings.cs" Link="Configuration/TagShapeSettings.cs" />
+    <Compile Include="../../Jellyfin.Plugin.JellyfinEnhanced/Configuration/NativePosterDateContext.cs" Link="Configuration/NativePosterDateContext.cs" />
+    <Compile Include="../../Jellyfin.Plugin.JellyfinEnhanced/Configuration/CustomTagRuleSet.cs" Link="Configuration/CustomTagRuleSet.cs" />
+    <Compile Include="../../Jellyfin.Plugin.JellyfinEnhanced/Shared/Arr/ArrInstance.cs" Link="Shared/Arr/ArrInstance.cs" />
+    <Compile Include="../../Jellyfin.Plugin.JellyfinEnhanced/Features/Platform/Models/AnalyticsData.cs" Link="Features/Platform/Models/AnalyticsData.cs" />
+    <!-- BasePluginConfiguration only; no controller/host/plugin project reference. -->
+    <PackageReference Include="Jellyfin.Model" Version="12.0.0" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,17 @@
+{
+  "js/jellyseerr/discovery/discovery-filter-utils.js": "client/src/features/seerr/discovery/discovery-filter-utils.ts",
+  "js/jellyseerr/discovery/discovery-base.js": "client/src/features/seerr/discovery/discovery-base.ts",
+  "js/jellyseerr/discovery/network-discovery.js": "client/src/features/seerr/discovery/network-discovery.ts",
+  "js/jellyseerr/discovery/person-discovery.js": "client/src/features/seerr/discovery/person-discovery.ts",
+  "js/jellyseerr/discovery/genre-discovery.js": "client/src/features/seerr/discovery/genre-discovery.ts",
+  "js/jellyseerr/discovery/tag-discovery.js": "client/src/features/seerr/discovery/tag-discovery.ts",
+  "js/jellyseerr/discovery/collection-discovery.js": "client/src/features/seerr/discovery/collection-discovery.ts",
+  "js/jellyseerr/recommendations/recommendations-styles.js": "client/src/features/seerr/recommendations/recommendations-styles.ts",
+  "js/jellyseerr/recommendations/recommendations-catalog.js": "client/src/features/seerr/recommendations/recommendations-catalog.ts",
+  "js/jellyseerr/recommendations/recommendations-data.js": "client/src/features/seerr/recommendations/recommendations-data.ts",
+  "js/jellyseerr/recommendations/recommendations-render.js": "client/src/features/seerr/recommendations/recommendations-render.ts",
+  "js/jellyseerr/recommendations/recommendations-page.js": "client/src/features/seerr/recommendations/recommendations-page.ts",
+  "js/jellyseerr/recommendations/recommendations-category.js": "client/src/features/seerr/recommendations/recommendations-category.ts",
+  "js/jellyseerr/recommendations/recommendations-init.js": "client/src/features/seerr/recommendations/recommendations-init.ts",
+  "js/jellyseerr/recommendations/recommendations-custom-tab.js": "client/src/features/seerr/recommendations/recommendations-custom-tab.ts"
+}

@@ -1,609 +1,846 @@
-/* Jellyfin Enhanced admin UI: schema-driven sections.
- * Section definitions live in Configuration/admin/*.js (all embedded and served concatenated after this file) and call
- * JEAdmin.define({ key: spec }). A <div data-je-section="key"> placeholder in configPage.html is replaced by the rendered
- * fieldset. Markup keeps the ids and class names the legacy page code keys on (.checkboxContainer, .inputContainer,
- * .je-setting-description[data-desc-for], fieldset/.sectionTitle), so search, NEW badges and the overview keep working.
- * A field here owns its load and save: delete the matching lines from configPage.html when adding one.
- *
- * Section: { title, icon?, items: [item] }          (`fields` is accepted as an alias of `items`)
- * Item is one of:
- *   field  { id, prop, type, label, desc?, descClass?, default?, main?, perUser?, showIf?, ...type options }
- *            type 'toggle'                          main: true = the section's master switch, later items hide while it is off
- *            type 'text' | 'password'               placeholder
- *            type 'number'                          min, max, step; saved as a Number (default when blank)
- *            type 'textarea'                        rows, placeholder
- *            type 'select'                          options: [[value, label]]
- *            toConfig(uiValue, config) / fromConfig(configValue, config) override the default conversion
- *            perUser: users hold a personal copy (see ResetAllUsersSettings); shows a badge and an apply-to-all banner
- *            showIf: 'otherToggleId' | { id, equals }  hides this field while the condition is false
- *   { type: 'note', html, tone?: 'info'|'warn' }     inline banner (trusted static markup)
- *   { type: 'html', html }                           raw markup, e.g. legacy widgets whose handlers bind by id
- *   { type: 'button', id, label, hint?, variant?: 'primary'|'danger' }   action button; handlers bind by id as before
- *   { type: 'custom', html, init?(rootDocument) }    raw markup plus a callback run right after the section is in the DOM
- * Any field also takes: manual: true (rendered only; load/save stay in configPage.html, so no prop is needed),
- *   attrs / rowAttrs / descAttrs: { 'data-x': 'y' } extra attributes on the control, its row, its description,
- *   rowClass: extra class on the row.
- * Section also takes: id, class, attrs (on the fieldset, e.g. { 'data-dep-setup': '' }), icon (Material) or iconImg
- *   ('selfhst/svg/sonarr.svg', a path under the plugin CDN route), main-less sections simply show every item.
- *   { type: 'group', title, open?, items: [item] }   collapsible block
- * Descriptions and notes are trusted static markup written in source, never user data. */
-(function () {
-    'use strict';
-    const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-    const sections = {};
-    // A section with mirrorOf renders a linked copy of another section: same fields under suffixed ids, kept in step with the
-    // originals (which keep the load/save), so a card can appear in a second tab without duplicate ids.
-    const MIRROR = '--mirror';
-    const mirrorCond = (c) => (typeof c === 'string' ? c + MIRROR : Object.assign({}, c, { id: c.id + MIRROR }));
-    const mirrorItems = (src) => {
-        const walk = (items) => items.map((i) => {
-            const c = Object.assign({}, i);
-            if (c.type === 'group') c.items = walk(c.items);
-            if (c.id) { c.id += MIRROR; c.manual = true; delete c.prop; delete c.toConfig; delete c.fromConfig; delete c.perUser; }
-            if (c.showIf) c.showIf = mirrorCond(c.showIf);
-            if (c.html) c.html = c.html.replace(/\b(id|for)="([^"]+)"/g, (m, k, v) => k + '="' + v + MIRROR + '"');
-            delete c.init;
-            return c;
-        });
-        return walk(src.items || src.fields || []);
+(() => {
+"use strict";
+(() => {
+  var __typeError = (msg) => {
+    throw TypeError(msg);
+  };
+  var __accessCheck = (obj, member, msg) => member.has(obj) || __typeError("Cannot " + msg);
+  var __privateGet = (obj, member, getter) => (__accessCheck(obj, member, "read from private field"), getter ? getter.call(obj) : member.get(obj));
+  var __privateAdd = (obj, member, value) => member.has(obj) ? __typeError("Cannot add the same private member more than once") : member instanceof WeakSet ? member.add(obj) : member.set(obj, value);
+
+  // client/src/host/admin-config-host.ts
+  function globals() {
+    return window;
+  }
+  function engine() {
+    return globals().JEAdmin;
+  }
+  function publishEngine(value) {
+    window.JEAdmin = value;
+  }
+
+  // client/src/admin/config/engine/schema.ts
+  var NON_FIELD = ["note", "html", "button", "custom", "group"];
+  function isField(item) {
+    return !NON_FIELD.includes(item.type);
+  }
+  var MIRROR = "--mirror";
+
+  // client/src/admin/config/engine/render.ts
+  var ENTITIES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" };
+  var esc = (value) => String(value).replace(/[&<>"]/g, (c) => ENTITIES[c] ?? c);
+  var mirrorCondition = (c) => typeof c === "string" ? c + MIRROR : { ...c, id: c.id + MIRROR };
+  var mirrorMarkup = (html) => html.replace(/\b(id|for)="([^"]+)"/g, (_match, key, value) => key + '="' + value + MIRROR + '"');
+  function mirrorItem(item) {
+    const copy = { ...item };
+    if (copy.type === "group") copy.items = copy.items.map(mirrorItem);
+    if (copy.id) copy.id += MIRROR;
+    if (isField(copy) && copy.id) {
+      copy.manual = true;
+      delete copy.prop;
+      delete copy.toConfig;
+      delete copy.fromConfig;
+      delete copy.perUser;
+    }
+    if (copy.showIf) copy.showIf = mirrorCondition(copy.showIf);
+    if (copy.type === "note" || copy.type === "html" || copy.type === "custom") copy.html = mirrorMarkup(copy.html);
+    if (copy.type === "custom") delete copy.init;
+    return copy;
+  }
+  function itemsOf(section, sections) {
+    if (section.mirrorOf !== void 0) {
+      const source = sections[section.mirrorOf];
+      return (source?.items ?? source?.fields ?? []).map(mirrorItem);
+    }
+    return section.items ?? section.fields ?? [];
+  }
+  var flat = (items) => items.flatMap((item) => item.type === "group" ? flat(item.items) : [item]);
+  function fieldsOf(section, sections) {
+    return flat(itemsOf(section, sections)).filter((item) => !!item.id && isField(item));
+  }
+  function allFields(sections) {
+    return Object.values(sections).flatMap((section) => fieldsOf(section, sections));
+  }
+  function boundFields(sections) {
+    return allFields(sections).filter((field) => !!field.prop && !field.manual);
+  }
+  var attributes = (values) => Object.entries(values ?? {}).map(([key, value]) => ` ${key}="${esc(value)}"`).join("");
+  function propOf(field) {
+    return field.prop || (field.id ? field.id[0]?.toUpperCase() + field.id.slice(1) : "");
+  }
+  function isPerUser(field, perUserProps) {
+    return field.perUser === true || field.perUser !== false && perUserProps.has(propOf(field));
+  }
+  var BADGE = '<i class="material-icons jea-badge" aria-label="Per-user setting" title="Each user has a personal copy. Existing users keep theirs until you overwrite it.">group</i>';
+  function breakLines(html) {
+    if (!html || html.length < 140 || /<(br|ul|li|p)\b/i.test(html)) return html;
+    return html.replace(/([.!?])\s+(?=[A-Z])/g, (match, end, offset, text) => /(e\.g|i\.e|etc|vs|cf)\.$/i.test(text.slice(Math.max(0, offset - 5), offset + 1)) ? match : end + "<br>");
+  }
+  function descriptionHtml(field) {
+    return field.desc ? `<div class="je-setting-description" data-desc-for="${field.id}"${attributes(field.descAttrs)}><div class="fieldDescription${field.descClass ? " " + field.descClass : ""}">${breakLines(field.desc)}</div></div>` : "";
+  }
+  function optionsHtml(options) {
+    return options.map(([value, label]) => `<option value="${esc(value)}">${esc(label)}</option>`).join("");
+  }
+  function fieldHtml(field, perUserProps) {
+    const desc = descriptionHtml(field);
+    const label = field.label ?? "";
+    const perUser = isPerUser(field, perUserProps);
+    if (field.type === "toggle") {
+      return `<div class="checkboxContainer jea-row${field.main ? " je-main-feature" : ""}${field.rowClass ? " " + field.rowClass : ""}"${attributes(field.rowAttrs)}><label class="jea-toggle"><input id="${field.id}" type="checkbox" class="jea-switch"${attributes(field.attrs)}/><span>${esc(label)}</span>${perUser ? BADGE : ""}</label></div>${desc}`;
+    }
+    if (field.type === "position") {
+      const cells = ["top-left", "top-right", "bottom-left", "bottom-right"].map((p) => `<button type="button" class="jea-pos-cell" data-pos="${p}" title="${p.replace("-", " ")}" aria-label="${p.replace("-", " ")}"></button>`).join("");
+      return `<div class="checkboxContainer jea-row jea-pos-row${field.rowClass ? " " + field.rowClass : ""}"${attributes(field.rowAttrs)}><label class="jea-pos-label" for="${field.id}">${esc(label || "Position")}</label><div class="jea-pos" role="group" aria-label="${esc(label || "Position")}" data-for="${field.id}">${cells}</div><select id="${field.id}" name="${field.id}" hidden${attributes(field.attrs)}>${optionsHtml(field.options)}</select></div>${desc}`;
+    }
+    const labelHtml = `<label class="inputLabel" for="${field.id}">${esc(label)}${perUser ? BADGE : ""}</label>`;
+    let control;
+    if (field.type === "select") {
+      control = `<select id="${field.id}" name="${field.id}" class="jea-input"${attributes(field.attrs)}>${optionsHtml(field.options)}</select>`;
+    } else if (field.type === "textarea") {
+      control = `<textarea id="${field.id}" name="${field.id}" class="jea-input"${attributes(field.attrs)} rows="${field.rows || 3}" placeholder="${esc(field.placeholder || "")}"></textarea>`;
+    } else if (field.type === "number") {
+      control = `<input id="${field.id}" name="${field.id}" type="number" class="jea-input"${attributes(field.attrs)} ${field.min !== void 0 ? `min="${field.min}"` : ""} ${field.max !== void 0 ? `max="${field.max}"` : ""} ${field.step !== void 0 ? `step="${field.step}"` : ""} placeholder="${esc(field.placeholder || "")}"/>`;
+    } else {
+      control = `<input id="${field.id}" name="${field.id}" type="${field.type === "password" ? "password" : "text"}" class="jea-input"${attributes(field.attrs)} autocomplete="off" placeholder="${esc(field.placeholder || "")}"/>`;
+    }
+    const inline = field.type === "number" || field.type === "select";
+    return `<div class="inputContainer jea-row${inline ? " jea-inline" : ""}${field.rowClass ? " " + field.rowClass : ""}"${attributes(field.rowAttrs)}>${labelHtml}${control}</div>${desc}`;
+  }
+  function showIfWrapper(item, html) {
+    const condition = item.showIf;
+    if (condition === void 0) return html;
+    const id = typeof condition === "string" ? condition : condition.id;
+    const equals = typeof condition === "string" ? void 0 : condition.equals;
+    return `<div data-jea-showif="${esc(id)}"${equals !== void 0 ? ` data-jea-equals="${esc(equals)}"` : ""}>${html}</div>`;
+  }
+  function sectionLook(source) {
+    const { attrs, icon, iconImg } = source;
+    return { ...attrs ? { attrs } : {}, ...icon ? { icon } : {}, ...iconImg ? { iconImg } : {} };
+  }
+  function markupHtml(item, state) {
+    switch (item.type) {
+      case "note":
+        return `<div class="jea-note jea-note-${item.tone || "info"}">${item.html}</div>`;
+      case "html":
+        return item.html;
+      case "custom":
+        if (item.init) state.inits.push(item.init);
+        return item.html;
+      case "button":
+        return `<div class="jea-actions"><button type="button" id="${item.id}" class="jea-btn${item.variant ? " jea-btn-" + item.variant : ""}">${esc(item.label)}</button>${item.hint ? `<span class="jea-hint">${item.hint}</span>` : ""}</div>`;
+      case "group":
+        return `<details class="jea-group"${item.open ? " open" : ""}><summary>${esc(item.title)}</summary><div class="jea-group-body">${item.items.map((child) => itemHtml(child, state)).join("")}</div></details>`;
+    }
+  }
+  function itemHtml(item, state) {
+    return isField(item) ? fieldHtml(item, state.perUserProps) : showIfWrapper(item, markupHtml(item, state));
+  }
+  function sectionHtml(input, sections, state) {
+    const source = input.mirrorOf !== void 0 ? sections[input.mirrorOf] : void 0;
+    const section = source ? { title: source.title ?? "", ...sectionLook(source), items: itemsOf(input, sections), class: ((source.class || "") + " jea-mirror").trim() } : input;
+    const icon = section.iconImg ? `<img class="je-legend-icon-img" data-je-cdn="${esc(section.iconImg)}" alt="">` : section.icon ? `<i class="material-icons je-legend-icon" aria-hidden="true">${section.icon}</i>` : "";
+    const items = itemsOf(section, sections);
+    const mainIndex = items.findIndex((item) => isField(item) && item.main);
+    const top = mainIndex < 0 ? [] : items.slice(0, mainIndex + 1);
+    const rest = mainIndex < 0 ? items : items.slice(mainIndex + 1);
+    const body = top.map((item) => itemHtml(item, state)).join("") + (rest.length ? `<div class="jea-sub">${rest.map((item) => itemHtml(item, state)).join("")}</div>` : "");
+    const banner = fieldsOf(section, sections).some((field) => isPerUser(field, state.perUserProps)) ? '<div class="jea-apply" hidden><div class="jea-apply-text"></div><span class="jea-apply-actions"><button type="button" class="jea-btn jea-btn-primary jea-apply-sel" title="Copies only the settings listed here into the personal settings of every user">Apply the above</button><button type="button" class="jea-btn jea-apply-btn" title="Copies every plugin setting that users also hold personally into every user, replacing their own values">Apply all plugin settings</button></span></div>' : "";
+    return `<fieldset class="jea-section${section.class ? " " + section.class : ""}"${section.id ? ` id="${section.id}"` : ""}${attributes(section.attrs)}><legend class="sectionTitle">${icon}${esc(section.title ?? "")}</legend><div class="configSection">${body}</div>${banner}</fieldset>`;
+  }
+
+  // client/src/admin/config/engine/dialogs.ts
+  function safeHtml(text) {
+    return esc(text ?? "").replace(/&lt;(\/?(?:br|b|strong|em|i|code|ul|li|p))\s*\/?&gt;/gi, "<$1>").replace(/\r?\n/g, "<br>");
+  }
+  function dialog({ title, message, confirmLabel, cancelLabel, danger }) {
+    return new Promise((resolve) => {
+      const previous = document.activeElement;
+      const wrap = document.createElement("div");
+      wrap.className = "jea-dialog-backdrop";
+      wrap.innerHTML = `<div class="jea-dialog" role="dialog" aria-modal="true" aria-label="${esc(title || "Message")}"><h3 class="jea-dialog-title">${esc(title || "")}</h3><div class="jea-dialog-body">${safeHtml(message)}</div><div class="jea-dialog-actions">${cancelLabel ? `<button type="button" class="jea-btn" data-r="0">${esc(cancelLabel)}</button>` : ""}<button type="button" class="jea-btn ${danger ? "jea-btn-danger" : "jea-btn-primary"}" data-r="1">${esc(confirmLabel || "OK")}</button></div></div>`;
+      const done = (value) => {
+        document.removeEventListener("keydown", onKey, true);
+        wrap.remove();
+        if (previous instanceof HTMLElement) previous.focus();
+        resolve(value);
+      };
+      const onKey = (event) => {
+        if (event.key === "Escape") {
+          event.stopPropagation();
+          done(false);
+        }
+      };
+      wrap.addEventListener("click", (event) => {
+        const target = event.target instanceof Element ? event.target : null;
+        const button = target ? target.closest("[data-r]") : null;
+        if (button) done(button.dataset.r === "1");
+        else if (target === wrap && !cancelLabel) done(true);
+      });
+      document.addEventListener("keydown", onKey, true);
+      (document.getElementById("JellyfinEnhancedPage") || document.body).appendChild(wrap);
+      wrap.querySelector('[data-r="1"]')?.focus();
+    });
+  }
+  function alertBox(input) {
+    const options = typeof input === "string" ? { message: input } : input ?? {};
+    return dialog({ title: options.title, message: options.message || options.text }).then(() => {
+      if (typeof options.callback === "function") options.callback();
+    });
+  }
+  function confirmBox(message, title, danger) {
+    return dialog({ title: title || "Please confirm", message, confirmLabel: "Confirm", cancelLabel: "Cancel", danger: !!danger });
+  }
+
+  // client/src/admin/config/engine/lifecycle.ts
+  var _controller, _timers, _intervals, _frames, _observers, _cleanups;
+  var MountLifecycle = class {
+    constructor() {
+      __privateAdd(this, _controller, new AbortController());
+      __privateAdd(this, _timers, /* @__PURE__ */ new Set());
+      __privateAdd(this, _intervals, /* @__PURE__ */ new Set());
+      __privateAdd(this, _frames, /* @__PURE__ */ new Set());
+      __privateAdd(this, _observers, /* @__PURE__ */ new Set());
+      __privateAdd(this, _cleanups, /* @__PURE__ */ new Set());
+    }
+    get signal() {
+      return __privateGet(this, _controller).signal;
+    }
+    get disposed() {
+      return __privateGet(this, _controller).signal.aborted;
+    }
+    track(observer) {
+      __privateGet(this, _observers).add(observer);
+      if (this.disposed) observer.disconnect();
+      return observer;
+    }
+    /** A timer that never fires after disposal. */
+    timeout(callback, delay) {
+      if (this.disposed) return 0;
+      const id = window.setTimeout(() => {
+        __privateGet(this, _timers).delete(id);
+        callback();
+      }, delay);
+      __privateGet(this, _timers).add(id);
+      return id;
+    }
+    interval(callback, delay) {
+      if (this.disposed) return 0;
+      const id = window.setInterval(callback, delay);
+      __privateGet(this, _intervals).add(id);
+      return id;
+    }
+    frame(callback) {
+      if (this.disposed) return 0;
+      const id = window.requestAnimationFrame(() => {
+        __privateGet(this, _frames).delete(id);
+        callback();
+      });
+      __privateGet(this, _frames).add(id);
+      return id;
+    }
+    onDispose(cleanup) {
+      if (this.disposed) cleanup();
+      else __privateGet(this, _cleanups).add(cleanup);
+    }
+    dispose() {
+      if (this.disposed) return;
+      __privateGet(this, _controller).abort();
+      __privateGet(this, _timers).forEach((id) => window.clearTimeout(id));
+      __privateGet(this, _intervals).forEach((id) => window.clearInterval(id));
+      __privateGet(this, _frames).forEach((id) => window.cancelAnimationFrame(id));
+      __privateGet(this, _observers).forEach((observer) => observer.disconnect());
+      __privateGet(this, _cleanups).forEach((cleanup) => cleanup());
+      __privateGet(this, _timers).clear();
+      __privateGet(this, _intervals).clear();
+      __privateGet(this, _frames).clear();
+      __privateGet(this, _observers).clear();
+      __privateGet(this, _cleanups).clear();
+    }
+  };
+  _controller = new WeakMap();
+  _timers = new WeakMap();
+  _intervals = new WeakMap();
+  _frames = new WeakMap();
+  _observers = new WeakMap();
+  _cleanups = new WeakMap();
+
+  // client/src/admin/config/engine/masonry.ts
+  var GAP = 20;
+  var MIN_COL = 500;
+  var placements = /* @__PURE__ */ new WeakMap();
+  var tabColumns = /* @__PURE__ */ new WeakMap();
+  function placementOf(element) {
+    let placement = placements.get(element);
+    if (!placement) placements.set(element, placement = {});
+    return placement;
+  }
+  var isWide = (element) => element.tagName !== "FIELDSET" || element.matches(".je-fieldset-wide, .je-overview-section");
+  var heightOf = (element) => element.getBoundingClientRect().height;
+  var htmlChildren = (tab) => Array.from(tab.children).filter((c) => c instanceof HTMLElement);
+  function unpack(tab) {
+    if (!tab.classList.contains("jea-masonry")) return;
+    tab.classList.remove("jea-masonry");
+    tab.style.removeProperty("--jea-cols");
+    htmlChildren(tab).forEach((element) => {
+      element.style.gridColumn = "";
+      element.style.gridRow = "";
+    });
+  }
+  function layoutTab(tab, repackRequested) {
+    const form = document.getElementById("JellyfinEnhancedForm");
+    if (!tab.classList.contains("active") || tab.id === "docs" || tab.classList.contains("jea-focused") || form && form.classList.contains("je-search-mode")) {
+      unpack(tab);
+      return;
+    }
+    let repack = repackRequested;
+    const columns = Math.max(1, Math.floor((tab.clientWidth + GAP) / (MIN_COL + GAP)));
+    if (tabColumns.get(tab) !== columns) {
+      repack = true;
+      tabColumns.set(tab, columns);
+    }
+    if (!tab.classList.contains("jea-masonry")) tab.classList.add("jea-masonry");
+    tab.style.setProperty("--jea-cols", String(columns));
+    const items = htmlChildren(tab).filter((element) => getComputedStyle(element).display !== "none");
+    if (repack) {
+      items.forEach((element) => {
+        element.style.gridColumn = isWide(element) ? "1 / -1" : "1";
+        element.style.gridRow = "auto";
+        delete placementOf(element).column;
+      });
+    }
+    const ends = new Array(columns).fill(0);
+    items.forEach((element) => {
+      const height = Math.ceil(heightOf(element));
+      if (isWide(element)) {
+        const start = Math.max(...ends);
+        element.style.gridColumn = "1 / -1";
+        element.style.gridRow = start + 1 + " / span " + (height + GAP);
+        ends.fill(start + height + GAP);
+        return;
+      }
+      const placement = placementOf(element);
+      if (placement.column === void 0) {
+        placement.column = ends.indexOf(Math.min(...ends));
+        element.style.gridColumn = String(placement.column + 1);
+      }
+      const column = placement.column;
+      const end = ends[column] ?? 0;
+      element.style.gridRow = end + 1 + " / span " + (height + GAP);
+      ends[column] = end + height + GAP;
+    });
+  }
+  function initMasonry(lifecycle) {
+    const form = document.getElementById("JellyfinEnhancedForm");
+    if (!form || typeof ResizeObserver === "undefined") return;
+    const activeTabs = () => form.querySelectorAll(".jellyfin-tab-content.active");
+    let pending = null;
+    const schedule = (repack) => {
+      if (pending) {
+        pending.repack = pending.repack || repack;
+        return;
+      }
+      pending = { repack };
+      lifecycle.frame(() => {
+        const request = pending;
+        pending = null;
+        activeTabs().forEach((tab) => layoutTab(tab, request?.repack ?? false));
+      });
     };
-    const itemsOf = (s) => (s.mirrorOf ? mirrorItems(sections[s.mirrorOf]) : (s.items || s.fields || []));
-    const flat = (items) => items.flatMap((i) => (i.type === 'group' ? flat(i.items) : [i]));
-    const NON_FIELD = ['note', 'html', 'button', 'custom', 'group'];
-    // Every item with an id (including manual ones); auto-load/save only covers those with a prop and not manual.
-    const fieldsOf = (s) => flat(itemsOf(s)).filter((i) => i.id && !NON_FIELD.includes(i.type));
-    const all = () => Object.values(sections).flatMap(fieldsOf);
-    const bound = () => all().filter((f) => f.prop && !f.manual);
-    const attrs = (o) => Object.entries(o || {}).map(([k, v]) => ` ${k}="${esc(v)}"`).join('');
-    const pendingInits = [];
-    // Filled by admin/per-user.js (generated from the controller). Manual fields have no prop, so the id is capitalised.
-    const perUserProps = new Set();
-    const propOf = (f) => f.prop || (f.id ? f.id[0].toUpperCase() + f.id.slice(1) : '');
-    const isPU = (f) => f.perUser === true || (f.perUser !== false && perUserProps.has(propOf(f)));
-    const BADGE = '<i class="material-icons jea-badge" aria-label="Per-user setting" title="Each user has a personal copy. Existing users keep theirs until you overwrite it.">group</i>';
-
-    // A long description reads as a wall of text, so each sentence gets its own line (unless the author already structured it).
-    function breakLines(html) {
-        if (!html || html.length < 140 || /<(br|ul|li|p)\b/i.test(html)) return html;
-        return html.replace(/([.!?])\s+(?=[A-Z])/g, (m, p, off, str) => (/(e\.g|i\.e|etc|vs|cf)\.$/i.test(str.slice(Math.max(0, off - 5), off + 1)) ? m : p + '<br>'));
-    }
-
-    function descHtml(f) {
-        return f.desc
-            ? `<div class="je-setting-description" data-desc-for="${f.id}"${attrs(f.descAttrs)}><div class="fieldDescription${f.descClass ? ' ' + f.descClass : ''}">${breakLines(f.desc)}</div></div>`
-            : '';
-    }
-
-    function fieldHtml(f) {
-        const desc = descHtml(f);
-        if (f.type === 'toggle') {
-            return `<div class="checkboxContainer jea-row${f.main ? ' je-main-feature' : ''}${f.rowClass ? ' ' + f.rowClass : ''}"${attrs(f.rowAttrs)}><label class="jea-toggle"><input id="${f.id}" type="checkbox" class="jea-switch"${attrs(f.attrs)}/><span>${esc(f.label)}</span>${isPU(f) ? BADGE : ''}</label></div>${desc}`;
+    const resizes = lifecycle.track(new ResizeObserver(() => schedule(false)));
+    const watch = (tab) => htmlChildren(tab).forEach((element) => {
+      const placement = placementOf(element);
+      if (!placement.watched) {
+        placement.watched = true;
+        resizes.observe(element);
+      }
+    });
+    form.querySelectorAll(".jellyfin-tab-content").forEach((tab) => {
+      watch(tab);
+      let signature = tab.className.replace(/jea-masonry/g, "").trim();
+      lifecycle.track(new MutationObserver(() => {
+        const now = tab.className.replace(/jea-masonry/g, "").trim();
+        if (now !== signature) {
+          signature = now;
+          layoutTab(tab, true);
         }
-        if (f.type === 'position') {
-            // Same 2x2 corner picker as the Enhanced panel. A hidden <select> with the same id keeps load/save working.
-            const cells = ['top-left', 'top-right', 'bottom-left', 'bottom-right'].map((p) => `<button type="button" class="jea-pos-cell" data-pos="${p}" title="${p.replace('-', ' ')}" aria-label="${p.replace('-', ' ')}"></button>`).join('');
-            return `<div class="checkboxContainer jea-row jea-pos-row${f.rowClass ? ' ' + f.rowClass : ''}"${attrs(f.rowAttrs)}><label class="jea-pos-label" for="${f.id}">${esc(f.label || 'Position')}</label><div class="jea-pos" role="group" aria-label="${esc(f.label || 'Position')}" data-for="${f.id}">${cells}</div><select id="${f.id}" name="${f.id}" hidden${attrs(f.attrs)}>${f.options.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join('')}</select></div>${desc}`;
-        }
-        const label = `<label class="inputLabel" for="${f.id}">${esc(f.label)}${isPU(f) ? BADGE : ''}</label>`;
-        let ctl;
-        if (f.type === 'select') {
-            ctl = `<select id="${f.id}" name="${f.id}" class="jea-input"${attrs(f.attrs)}>${f.options.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join('')}</select>`;
-        } else if (f.type === 'textarea') {
-            ctl = `<textarea id="${f.id}" name="${f.id}" class="jea-input"${attrs(f.attrs)} rows="${f.rows || 3}" placeholder="${esc(f.placeholder || '')}"></textarea>`;
-        } else if (f.type === 'number') {
-            ctl = `<input id="${f.id}" name="${f.id}" type="number" class="jea-input"${attrs(f.attrs)} ${f.min !== undefined ? `min="${f.min}"` : ''} ${f.max !== undefined ? `max="${f.max}"` : ''} ${f.step !== undefined ? `step="${f.step}"` : ''} placeholder="${esc(f.placeholder || '')}"/>`;
-        } else {
-            ctl = `<input id="${f.id}" name="${f.id}" type="${f.type === 'password' ? 'password' : 'text'}" class="jea-input"${attrs(f.attrs)} autocomplete="off" placeholder="${esc(f.placeholder || '')}"/>`;
-        }
-        const inline = f.type === 'number' || f.type === 'select';
-        return `<div class="inputContainer jea-row${inline ? ' jea-inline' : ''}${f.rowClass ? ' ' + f.rowClass : ''}"${attrs(f.rowAttrs)}>${label}${ctl}</div>${desc}`;
+      })).observe(tab, { attributes: true, attributeFilter: ["class"] });
+      lifecycle.track(new MutationObserver(() => {
+        watch(tab);
+        schedule(false);
+      })).observe(tab, { childList: true });
+    });
+    lifecycle.track(new MutationObserver(() => activeTabs().forEach((tab) => layoutTab(tab, true)))).observe(form, { attributes: true, attributeFilter: ["class"] });
+    let timer;
+    window.addEventListener("resize", () => {
+      window.clearTimeout(timer);
+      timer = lifecycle.timeout(() => schedule(true), 120);
+    }, { signal: lifecycle.signal });
+    activeTabs().forEach((tab) => layoutTab(tab, true));
+  }
+
+  // client/src/admin/config/engine/mirrors.ts
+  var isFormField = (element) => element instanceof HTMLInputElement || element instanceof HTMLSelectElement || element instanceof HTMLTextAreaElement;
+  var copies = () => Array.from(document.querySelectorAll('[id$="' + MIRROR + '"]'));
+  var sourceOf = (mirror) => document.getElementById(mirror.id.slice(0, -MIRROR.length));
+  function copyValue(source, mirror) {
+    if (mirror instanceof HTMLInputElement && mirror.type === "checkbox") {
+      if (source instanceof HTMLInputElement) mirror.checked = source.checked;
+    } else {
+      if (source instanceof HTMLSelectElement && mirror.innerHTML !== source.innerHTML) mirror.innerHTML = source.innerHTML;
+      if (mirror.value !== source.value) mirror.value = source.value;
     }
+    mirror.disabled = source.disabled;
+  }
+  function copyLeaf(source, mirror) {
+    if (mirror.children.length) return;
+    mirror.className = source.className;
+    mirror.style.cssText = source.style.cssText;
+    const html = source.innerHTML.replace(/\sid="[^"]*"/g, "");
+    if (mirror.innerHTML !== html) mirror.innerHTML = html;
+  }
+  function syncMirrors() {
+    copies().forEach((mirror) => {
+      const source = sourceOf(mirror);
+      if (!source) return;
+      if (isFormField(mirror)) {
+        if (isFormField(source)) copyValue(source, mirror);
+      } else if (mirror.tagName !== "BUTTON") {
+        copyLeaf(source, mirror);
+      }
+    });
+  }
+  function wireMirrors(lifecycle) {
+    const { signal } = lifecycle;
+    copies().forEach((mirror) => {
+      const source = sourceOf(mirror);
+      if (!source) return;
+      if (isFormField(mirror)) {
+        if (!isFormField(source)) return;
+        const toSource = (event) => {
+          if (mirror instanceof HTMLInputElement && mirror.type === "checkbox") {
+            if (source instanceof HTMLInputElement) source.checked = mirror.checked;
+          } else {
+            source.value = mirror.value;
+          }
+          source.dispatchEvent(new Event(event.type, { bubbles: true }));
+        };
+        mirror.addEventListener("input", toSource, { signal });
+        mirror.addEventListener("change", toSource, { signal });
+        const toMirror = () => copyValue(source, mirror);
+        source.addEventListener("input", toMirror, { signal });
+        source.addEventListener("change", toMirror, { signal });
+      } else if (mirror.tagName === "BUTTON") {
+        mirror.addEventListener("click", () => source.click(), { signal });
+      } else {
+        lifecycle.track(new MutationObserver(() => copyLeaf(source, mirror))).observe(source, { attributes: true, childList: true, characterData: true, subtree: true });
+      }
+    });
+    syncMirrors();
+  }
 
-    function itemHtml(i) {
-        const h = rawItemHtml(i);
-        return i.showIf && NON_FIELD.includes(i.type) ? `<div data-jea-showif="${esc(typeof i.showIf === 'string' ? i.showIf : i.showIf.id)}"${i.showIf.equals !== undefined ? ` data-jea-equals="${esc(i.showIf.equals)}"` : ''}>${h}</div>` : h;
+  // client/src/admin/config/engine/shell.ts
+  var NAV_GROUPS = [
+    ["Appearance", ["display", "media-tags", "elsewhere"]],
+    ["Behaviour", ["playback", "pages", "extras", "keyboard"]],
+    ["Connections", ["services", "seerr", "arr"]],
+    ["Server", ["admin"]],
+    ["About", ["about", "docs"]]
+  ];
+  var textOf = (element) => Array.from(element.childNodes).filter((node) => node.nodeType === 3).map((node) => node.textContent).join("").trim();
+  function sectionTitle(fieldset) {
+    const legend = fieldset.querySelector(":scope > legend");
+    return legend ? textOf(legend) : "";
+  }
+  function showAll(tab) {
+    if (!tab) return;
+    const button = document.querySelector('.jellyfin-tab-button[data-tab="' + tab.id + '"]');
+    if (button && button.nextElementSibling) button.nextElementSibling.querySelectorAll(".jea-nav-leaf.on").forEach((leaf) => leaf.classList.remove("on"));
+    tab.classList.remove("jea-focused");
+    tab.querySelectorAll(":scope > fieldset.jea-focus").forEach((fieldset) => fieldset.classList.remove("jea-focus"));
+  }
+  function focusCard(tab, card, group) {
+    tab.classList.add("jea-focused");
+    tab.querySelectorAll(":scope > fieldset").forEach((fieldset) => fieldset.classList.toggle("jea-focus", fieldset === card));
+    if (group) {
+      card.querySelectorAll(".jea-group").forEach((other) => {
+        other.open = other === group;
+      });
+      group.scrollIntoView({ behavior: "smooth", block: "start" });
+    } else {
+      window.scrollTo({ top: 0, behavior: "smooth" });
     }
-
-    function rawItemHtml(i) {
-        if (i.type === 'note') return `<div class="jea-note jea-note-${i.tone || 'info'}">${i.html}</div>`;
-        if (i.type === 'html') return i.html;
-        if (i.type === 'custom') { if (i.init) pendingInits.push(i.init); return i.html; }
-        if (i.type === 'button') return `<div class="jea-actions"><button type="button" id="${i.id}" class="jea-btn${i.variant ? ' jea-btn-' + i.variant : ''}">${esc(i.label)}</button>${i.hint ? `<span class="jea-hint">${i.hint}</span>` : ''}</div>`;
-        if (i.type === 'group') return `<details class="jea-group"${i.open ? ' open' : ''}><summary>${esc(i.title)}</summary><div class="jea-group-body">${i.items.map(itemHtml).join('')}</div></details>`;
-        return fieldHtml(i);
-    }
-
-    function sectionHtml(s) {
-        if (s.mirrorOf) s = Object.assign({}, sections[s.mirrorOf], { items: itemsOf(s), id: undefined, class: ((sections[s.mirrorOf].class || '') + ' jea-mirror').trim() });
-        const icon = s.iconImg ? `<img class="je-legend-icon-img" data-je-cdn="${esc(s.iconImg)}" alt="">`
-            : (s.icon ? `<i class="material-icons je-legend-icon" aria-hidden="true">${s.icon}</i>` : '');
-        const items = itemsOf(s);
-        // The main toggle stays visible; everything after it sits in .jea-sub, which collapses while the main toggle is off.
-        const mainIdx = items.findIndex((i) => i.main);
-        const top = mainIdx < 0 ? [] : items.slice(0, mainIdx + 1);
-        const rest = mainIdx < 0 ? items : items.slice(mainIdx + 1);
-        const body = top.map(itemHtml).join('') + (rest.length ? `<div class="jea-sub">${rest.map(itemHtml).join('')}</div>` : '');
-        const banner = fieldsOf(s).some(isPU)
-            ? '<div class="jea-apply" hidden><div class="jea-apply-text"></div><span class="jea-apply-actions"><button type="button" class="jea-btn jea-btn-primary jea-apply-sel" title="Copies only the settings listed here into the personal settings of every user">Apply the above</button><button type="button" class="jea-btn jea-apply-btn" title="Copies every plugin setting that users also hold personally into every user, replacing their own values">Apply all plugin settings</button></span></div>' : '';
-        return `<fieldset class="jea-section${s.class ? ' ' + s.class : ''}"${s.id ? ` id="${s.id}"` : ''}${attrs(s.attrs)}><legend class="sectionTitle">${icon}${esc(s.title)}</legend><div class="configSection">${body}</div>${banner}</fieldset>`;
-    }
-
-    const read = (f) => { const el = document.getElementById(f.id); return el ? (f.type === 'toggle' ? el.checked : el.value) : undefined; };
-    const base = {};
-
-    // A section whose main toggle is off hides its sub-settings (search mode and the main toggle itself keep them reachable).
-    function syncCollapse() {
-        document.querySelectorAll('.jea-section').forEach((fs) => {
-            const main = fs.querySelector('.je-main-feature input');
-            fs.classList.toggle('jea-off', !!main && !main.checked);
-        });
-    }
-
-    // Per-field showIf: hide the row and its description until the controlling toggle (or select value) matches.
-    function syncShowIf() {
-        document.querySelectorAll('[data-jea-showif]').forEach((w) => {
-            const el = document.getElementById(w.dataset.jeaShowif);
-            const on = !el ? true : (w.dataset.jeaEquals !== undefined ? el.value === w.dataset.jeaEquals : (el.type === 'checkbox' ? el.checked : !!el.value));
-            w.classList.toggle('jea-dep-hidden', !on);
-        });
-        all().forEach((f) => {
-            if (!f.showIf) return;
-            const cond = typeof f.showIf === 'string' ? { id: f.showIf } : f.showIf;
-            const el = document.getElementById(cond.id);
-            const on = !el ? true : (cond.equals !== undefined ? el.value === String(cond.equals) : (el.type === 'checkbox' ? el.checked : !!el.value));
-            const ctl = document.getElementById(f.id);
-            const row = ctl && ctl.closest('.jea-row');
-            if (row) row.classList.toggle('jea-dep-hidden', !on);
-            const d = document.querySelector('.je-setting-description[data-desc-for="' + f.id + '"]');
-            if (d) d.classList.toggle('jea-dep-hidden', !on);
-        });
-    }
-
-    // Show the banner in each section with per-user fields that differ from the last loaded or applied values.
-    function syncPos() {
-        document.querySelectorAll('.jea-pos').forEach((g) => {
-            const sel = document.getElementById(g.dataset.for);
-            g.querySelectorAll('.jea-pos-cell').forEach((c) => c.classList.toggle('on', !!sel && sel.value === c.dataset.pos));
-        });
-    }
-
-    const isField = (el) => /^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName);
-    const sourceOf = (m) => document.getElementById(m.id.slice(0, -MIRROR.length));
-    function copyValue(src, m) {
-        if (m.type === 'checkbox') m.checked = src.checked;
+  }
+  function topGroups(card) {
+    return Array.from(card.querySelectorAll(".jea-group")).filter((group) => !group.parentElement?.closest(".jea-group"));
+  }
+  function buildTree(bar, lifecycle) {
+    const { signal } = lifecycle;
+    bar.querySelectorAll(".jellyfin-tab-button").forEach((button) => {
+      const tab = document.getElementById(button.dataset.tab ?? "");
+      if (!tab) return;
+      button.addEventListener("click", () => showAll(tab), { signal });
+      const cards = Array.from(tab.querySelectorAll(":scope > fieldset")).filter((card) => sectionTitle(card));
+      if (cards.length < 2) return;
+      const tree = document.createElement("div");
+      tree.className = "jea-nav-tree";
+      const open = (action) => {
+        if (button.classList.contains("active")) action();
         else {
-            if (src.tagName === 'SELECT' && m.innerHTML !== src.innerHTML) m.innerHTML = src.innerHTML;
-            if (m.value !== src.value) m.value = src.value;
+          button.click();
+          lifecycle.timeout(action, 350);
         }
-        m.disabled = src.disabled;
-    }
-    function copyLeaf(src, m) {
-        if (m.children.length) return;
-        m.className = src.className;
-        m.style.cssText = src.style.cssText;
-        const html = src.innerHTML.replace(/\sid="[^"]*"/g, '');
-        if (m.innerHTML !== html) m.innerHTML = html;
-    }
-    // Originals can change without an event (the page script loads values straight in), so copy them across now and then.
-    function syncMirrors() {
-        document.querySelectorAll('[id$="' + MIRROR + '"]').forEach((m) => {
-            const src = sourceOf(m);
-            if (!src) return;
-            if (isField(m)) copyValue(src, m);
-            else if (m.tagName !== 'BUTTON') copyLeaf(src, m);
-        });
-    }
-    function wireMirrors() {
-        document.querySelectorAll('[id$="' + MIRROR + '"]').forEach((m) => {
-            const src = sourceOf(m);
-            if (!src || m._mirrored) return;
-            m._mirrored = true;
-            if (isField(m)) {
-                const toSource = (e) => {
-                    if (m.type === 'checkbox') src.checked = m.checked; else src.value = m.value;
-                    src.dispatchEvent(new Event(e.type, { bubbles: true }));
-                };
-                m.addEventListener('input', toSource);
-                m.addEventListener('change', toSource);
-                const toMirror = () => copyValue(src, m);
-                src.addEventListener('input', toMirror);
-                src.addEventListener('change', toMirror);
-            } else if (m.tagName === 'BUTTON') {
-                m.addEventListener('click', () => src.click());
-            } else {
-                new MutationObserver(() => copyLeaf(src, m)).observe(src, { attributes: true, childList: true, characterData: true, subtree: true });
-            }
-        });
-        syncMirrors();
-    }
-
-    function refresh() {
-        syncMirrors();
-        syncCollapse();
-        syncPos();
-        syncShowIf();
-        Object.values(sections).forEach((s) => {
-            const fields = fieldsOf(s);
-            const first = fields[0] && document.getElementById(fields[0].id);
-            const box = first && first.closest('fieldset');
-            const banner = box && box.querySelector('.jea-apply');
-            if (!banner) return;
-            const changed = fields.filter((f) => isPU(f) && base[f.id] !== undefined && read(f) !== base[f.id]);
-            banner.hidden = !changed.length;
-            banner._changed = changed;
-            banner.querySelector('.jea-apply-text').innerHTML = '<strong>' + 'Save and apply the changes below to all users' + '</strong>'
-                + '<ul>' + changed.map((f) => '<li>' + esc(f.label) + '</li>').join('') + '</ul>'
-                + '<span class="jea-apply-hint">Users keep their own values until you apply this.</span>';
-        });
-    }
-
-    // Sidebar groups. Tabs not listed (e.g. ones added by Custom Tabs) stay at the end, ungrouped.
-    const NAV_GROUPS = [
-        ['Appearance', ['display', 'media-tags', 'elsewhere']],
-        ['Behaviour', ['playback', 'pages', 'extras', 'keyboard']],
-        ['Connections', ['services', 'seerr', 'arr']],
-        ['Server', ['admin']],
-        ['About', ['about', 'docs']]
-    ];
-
-    // Turn the horizontal tab strip into a grouped sidebar (a menu on phones). Moves existing nodes, so the page's
-    // own tab, drag and search handlers keep working; they all look elements up by selector.
-    function mountShell() {
-        const bar = document.querySelector('.je-tab-bar');
-        const header = document.querySelector('.je-sticky-header');
-        const form = document.getElementById('JellyfinEnhancedForm');
-        if (!bar || !header || !form || document.querySelector('.jea-layout')) return;
-        const layout = document.createElement('div');
-        layout.className = 'jea-layout';
-        const nav = document.createElement('nav');
-        nav.className = 'jea-nav';
-        nav.setAttribute('aria-label', 'Settings sections');
-        const toggle = document.createElement('button');
-        toggle.type = 'button';
-        toggle.className = 'jea-nav-toggle';
-        toggle.setAttribute('aria-expanded', 'false');
-        toggle.innerHTML = '<i class="material-icons" aria-hidden="true">menu</i><span class="jea-nav-current"></span>';
-        const main = document.createElement('div');
-        main.className = 'jea-main';
-        const ver = (document.querySelector('script[plugin="Jellyfin Enhanced"]') || {}).getAttribute && document.querySelector('script[plugin="Jellyfin Enhanced"]').getAttribute('version');
-        const title = header.querySelector('h2.sectionTitle');
-        if (ver && title && !title.querySelector('.jea-ver')) {
-            const chip = document.createElement('span');
-            chip.className = 'jea-ver';
-            chip.textContent = 'v' + ver.split('-')[0];
-            title.appendChild(chip);
+      };
+      const mark = (leaf, sub) => {
+        tree.querySelectorAll(".jea-nav-leaf").forEach((other) => other.classList.toggle("on", other === leaf || other === sub));
+      };
+      cards.forEach((card) => {
+        const link = document.createElement("a");
+        link.href = "#";
+        link.className = "jea-nav-leaf";
+        link.textContent = sectionTitle(card);
+        link.addEventListener("click", (event) => {
+          event.preventDefault();
+          open(() => {
+            focusCard(tab, card);
+            mark(link);
+          });
+        }, { signal });
+        tree.appendChild(link);
+        const groups = topGroups(card);
+        if (groups.length >= 2) {
+          const sub = document.createElement("div");
+          sub.className = "jea-nav-subtree";
+          groups.forEach((group) => {
+            const subLink = document.createElement("a");
+            subLink.href = "#";
+            subLink.className = "jea-nav-leaf jea-nav-sub";
+            subLink.textContent = (group.querySelector(":scope > summary")?.textContent ?? "").trim();
+            subLink.addEventListener("click", (event) => {
+              event.preventDefault();
+              open(() => {
+                focusCard(tab, card, group);
+                mark(link, subLink);
+              });
+            }, { signal });
+            sub.appendChild(subLink);
+          });
+          tree.appendChild(sub);
         }
-        header.parentNode.insertBefore(layout, header.nextSibling);
-        layout.append(nav, main);
-        nav.append(toggle, bar);
-        while (layout.nextSibling) main.appendChild(layout.nextSibling);
-
-        // Insert a heading before each group's first tab and gather the group's other tabs after it, in listed order.
-        NAV_GROUPS.forEach(([name, ids]) => {
-            const btns = ids.map((id) => bar.querySelector('[data-tab="' + id + '"]')).filter(Boolean);
-            if (!btns.length) return;
-            const h = document.createElement('div');
-            h.className = 'jea-nav-group';
-            h.textContent = name;
-            bar.appendChild(h);
-            btns.forEach((b) => bar.appendChild(b));
+      });
+      button.after(tree);
+    });
+    const search = document.getElementById("settingsSearchInput");
+    if (search instanceof HTMLInputElement) {
+      search.addEventListener("input", () => {
+        if (search.value) document.querySelectorAll(".jellyfin-tab-content.jea-focused").forEach(showAll);
+      }, { signal });
+    }
+  }
+  function mountShell(lifecycle) {
+    const { signal } = lifecycle;
+    const bar = document.querySelector(".je-tab-bar");
+    const header = document.querySelector(".je-sticky-header");
+    const form = document.getElementById("JellyfinEnhancedForm");
+    const parent = header?.parentNode;
+    if (!bar || !header || !parent || !form || document.querySelector(".jea-layout")) return;
+    const layout = document.createElement("div");
+    layout.className = "jea-layout";
+    const nav = document.createElement("nav");
+    nav.className = "jea-nav";
+    nav.setAttribute("aria-label", "Settings sections");
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "jea-nav-toggle";
+    toggle.setAttribute("aria-expanded", "false");
+    toggle.innerHTML = '<i class="material-icons" aria-hidden="true">menu</i><span class="jea-nav-current"></span>';
+    const main = document.createElement("div");
+    main.className = "jea-main";
+    const version = document.querySelector('script[plugin="Jellyfin Enhanced"]')?.getAttribute("version");
+    const title = header.querySelector("h2.sectionTitle");
+    if (version && title && !title.querySelector(".jea-ver")) {
+      const chip = document.createElement("span");
+      chip.className = "jea-ver";
+      chip.textContent = "v" + version.split("-")[0];
+      title.appendChild(chip);
+    }
+    parent.insertBefore(layout, header.nextSibling);
+    layout.append(nav, main);
+    nav.append(toggle, bar);
+    while (layout.nextSibling) main.appendChild(layout.nextSibling);
+    NAV_GROUPS.forEach(([name, ids]) => {
+      const buttons = ids.flatMap((id) => {
+        const button = bar.querySelector('[data-tab="' + id + '"]');
+        return button ? [button] : [];
+      });
+      if (!buttons.length) return;
+      const heading = document.createElement("div");
+      heading.className = "jea-nav-group";
+      heading.textContent = name;
+      bar.appendChild(heading);
+      buttons.forEach((button) => bar.appendChild(button));
+    });
+    const grouped = new Set(NAV_GROUPS.flatMap((group) => group[1]));
+    Array.from(bar.querySelectorAll(".jellyfin-tab-button")).reverse().forEach((button) => {
+      if (!grouped.has(button.dataset.tab ?? "")) bar.prepend(button);
+    });
+    buildTree(bar, lifecycle);
+    const backdrop = document.createElement("div");
+    backdrop.className = "jea-nav-backdrop";
+    nav.appendChild(backdrop);
+    const head = document.createElement("div");
+    head.className = "jea-drawer-head";
+    head.innerHTML = '<span>Settings</span><button type="button" class="jea-drawer-close" aria-label="Close menu"><i class="material-icons" aria-hidden="true">close</i></button>';
+    bar.prepend(head);
+    const locked = [];
+    const scrollParent = () => {
+      for (let node = nav.parentElement; node; node = node.parentElement) {
+        const overflow = getComputedStyle(node).overflowY;
+        if ((overflow === "auto" || overflow === "scroll") && node.scrollHeight > node.clientHeight) return node;
+      }
+      return document.scrollingElement;
+    };
+    const lock = (on) => {
+      if (on) {
+        [scrollParent(), document.documentElement, document.body].forEach((element) => {
+          if (element instanceof HTMLElement && !locked.some((entry) => entry.element === element)) {
+            locked.push({ element, previous: element.style.overflow });
+            element.style.overflow = "hidden";
+          }
         });
-        // Overview (and anything unlisted) goes first.
-        const grouped = new Set(NAV_GROUPS.flatMap((g) => g[1]));
-        [...bar.querySelectorAll('.jellyfin-tab-button')].reverse().forEach((b) => { if (!grouped.has(b.dataset.tab)) bar.prepend(b); });
-
-        buildTree(bar);
-
-        // Phone drawer: dimmed backdrop, a header with a close button, and the page behind is locked while it is open.
-        const backdrop = document.createElement('div');
-        backdrop.className = 'jea-nav-backdrop';
-        nav.appendChild(backdrop);
-        const head = document.createElement('div');
-        head.className = 'jea-drawer-head';
-        head.innerHTML = '<span>Settings</span><button type="button" class="jea-drawer-close" aria-label="Close menu"><i class="material-icons" aria-hidden="true">close</i></button>';
-        bar.prepend(head);
-
-        const locked = [];
-        const scrollParent = () => {
-            for (let p = nav.parentElement; p; p = p.parentElement) {
-                const o = getComputedStyle(p).overflowY;
-                if ((o === 'auto' || o === 'scroll') && p.scrollHeight > p.clientHeight) return p;
-            }
-            return document.scrollingElement;
-        };
-        const lock = (on) => {
-            if (on) {
-                [scrollParent(), document.documentElement, document.body].forEach((el) => {
-                    if (el && !locked.some((l) => l.el === el)) { locked.push({ el, prev: el.style.overflow }); el.style.overflow = 'hidden'; }
-                });
-            } else {
-                while (locked.length) { const l = locked.pop(); l.el.style.overflow = l.prev; }
-            }
-        };
-        const setOpen = (open) => {
-            nav.classList.toggle('jea-open', open);
-            toggle.setAttribute('aria-expanded', String(open));
-            lock(open);
-        };
-        backdrop.addEventListener('click', () => setOpen(false));
-        head.querySelector('.jea-drawer-close').addEventListener('click', () => setOpen(false));
-        document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && nav.classList.contains('jea-open')) setOpen(false); });
-        // Leaving the phone layout (rotate, resize) must not leave the page locked.
-        window.addEventListener('resize', () => { if (window.innerWidth > 900 && nav.classList.contains('jea-open')) setOpen(false); });
-
-        const label = () => { const a = bar.querySelector('.jellyfin-tab-button.active'); toggle.querySelector('.jea-nav-current').textContent = a ? [...a.querySelector('h3').childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join('').trim() : 'Settings'; };
+      } else {
+        for (let entry = locked.pop(); entry; entry = locked.pop()) entry.element.style.overflow = entry.previous;
+      }
+    };
+    const setOpen = (open) => {
+      nav.classList.toggle("jea-open", open);
+      toggle.setAttribute("aria-expanded", String(open));
+      lock(open);
+    };
+    lifecycle.onDispose(() => lock(false));
+    backdrop.addEventListener("click", () => setOpen(false), { signal });
+    head.querySelector(".jea-drawer-close")?.addEventListener("click", () => setOpen(false), { signal });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && nav.classList.contains("jea-open")) setOpen(false);
+    }, { signal });
+    window.addEventListener("resize", () => {
+      if (window.innerWidth > 900 && nav.classList.contains("jea-open")) setOpen(false);
+    }, { signal });
+    const label = () => {
+      const active = bar.querySelector(".jellyfin-tab-button.active h3");
+      const current = toggle.querySelector(".jea-nav-current");
+      if (current) current.textContent = active ? textOf(active) : "Settings";
+    };
+    label();
+    lifecycle.track(new MutationObserver(label)).observe(bar, { subtree: true, attributes: true, attributeFilter: ["class"] });
+    toggle.addEventListener("click", () => setOpen(!nav.classList.contains("jea-open")), { signal });
+    bar.addEventListener("click", (event) => {
+      if (event.target instanceof Element && event.target.closest(".jea-drawer-head")) return;
+      lifecycle.timeout(() => {
         label();
-        // A tab shown without a click (restored from the session, opened by an address or a link) relabels the phone menu too.
-        new MutationObserver(label).observe(bar, { subtree: true, attributes: true, attributeFilter: ['class'] });
-        toggle.addEventListener('click', () => setOpen(!nav.classList.contains('jea-open')));
-        // Tab clicks are handled by the page; close the phone menu after the active class has moved.
-        bar.addEventListener('click', (e) => { if (e.target.closest('.jea-drawer-head')) return; setTimeout(() => { label(); setOpen(false); syncMirrors(); }, 0); });
-    }
+        setOpen(false);
+        syncMirrors();
+      }, 0);
+    }, { signal });
+  }
 
-    // Sidebar tree: under the active tab, one link per card on that tab. Clicking jumps to the card; the one in view is highlighted.
-    function sectionTitle(fs) {
-        const lg = fs.querySelector(':scope > legend');
-        return lg ? [...lg.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join('').trim() : '';
+  // client/src/admin/config/engine/index.ts
+  function controlOf(id) {
+    const element = document.getElementById(id);
+    return element instanceof HTMLInputElement || element instanceof HTMLSelectElement || element instanceof HTMLTextAreaElement ? element : null;
+  }
+  function isChecked(control) {
+    return control instanceof HTMLInputElement && control.checked;
+  }
+  function read(field) {
+    const control = controlOf(field.id);
+    if (!control) return void 0;
+    return field.type === "toggle" ? isChecked(control) : control.value;
+  }
+  function conditionHolds(controlId, equals) {
+    const element = controlOf(controlId);
+    if (!element) return true;
+    if (equals !== void 0) return element.value === equals;
+    return element.type === "checkbox" ? isChecked(element) : !!element.value;
+  }
+  function syncCollapse() {
+    document.querySelectorAll(".jea-section").forEach((section) => {
+      const main = section.querySelector(".je-main-feature input");
+      section.classList.toggle("jea-off", !!main && !main.checked);
+    });
+  }
+  function syncPos() {
+    document.querySelectorAll(".jea-pos").forEach((group) => {
+      const select = controlOf(group.dataset.for ?? "");
+      group.querySelectorAll(".jea-pos-cell").forEach((cell) => cell.classList.toggle("on", !!select && select.value === cell.dataset.pos));
+    });
+  }
+  var conditionOf = (showIf) => typeof showIf === "string" ? { id: showIf } : showIf;
+  function convert(field, value, config) {
+    if (!field.toConfig) return value;
+    return field.type === "select" || field.type === "position" ? field.toConfig(value, config) : field.toConfig(String(value), config);
+  }
+  function createEngine() {
+    const sections = {};
+    const perUserProps = /* @__PURE__ */ new Set();
+    const base = {};
+    const render = { perUserProps, inits: [] };
+    const changedByBanner = /* @__PURE__ */ new WeakMap();
+    let mounted = null;
+    let loadSettle;
+    function syncShowIf() {
+      document.querySelectorAll("[data-jea-showif]").forEach((wrapper) => {
+        wrapper.classList.toggle("jea-dep-hidden", !conditionHolds(wrapper.dataset.jeaShowif ?? "", wrapper.dataset.jeaEquals));
+      });
+      allFields(sections).forEach((field) => {
+        if (!field.showIf) return;
+        const condition = conditionOf(field.showIf);
+        const on = conditionHolds(condition.id, condition.equals === void 0 ? void 0 : String(condition.equals));
+        const control = document.getElementById(field.id);
+        const row = control && control.closest(".jea-row");
+        if (row) row.classList.toggle("jea-dep-hidden", !on);
+        const description = document.querySelector('.je-setting-description[data-desc-for="' + field.id + '"]');
+        if (description) description.classList.toggle("jea-dep-hidden", !on);
+      });
     }
-
-    // Focus mode: picking a card (or a group inside it) in the sidebar shows only that on screen; picking the tab itself shows everything.
-    function showAll(tab) {
-        if (!tab) return;
-        const bt = document.querySelector('.jellyfin-tab-button[data-tab="' + tab.id + '"]');
-        if (bt && bt.nextElementSibling) bt.nextElementSibling.querySelectorAll('.jea-nav-leaf.on').forEach((l) => l.classList.remove('on'));
-        tab.classList.remove('jea-focused');
-        tab.querySelectorAll(':scope > fieldset.jea-focus').forEach((f) => f.classList.remove('jea-focus'));
-    }
-
-    function focusCard(tab, fs, group) {
-        tab.classList.add('jea-focused');
-        tab.querySelectorAll(':scope > fieldset').forEach((f) => f.classList.toggle('jea-focus', f === fs));
-        if (group) {
-            fs.querySelectorAll('.jea-group').forEach((g) => { g.open = g === group; });
-            group.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        } else {
-            window.scrollTo({ top: 0, behavior: 'smooth' });
+    function refresh() {
+      syncMirrors();
+      syncCollapse();
+      syncPos();
+      syncShowIf();
+      Object.values(sections).forEach((section) => {
+        const fields = fieldsOf(section, sections);
+        const first = fields[0] && document.getElementById(fields[0].id);
+        const box = first && first.closest("fieldset");
+        const banner = box && box.querySelector(".jea-apply");
+        if (!banner) return;
+        const changed = fields.filter((field) => isPerUser(field, perUserProps) && base[field.id] !== void 0 && read(field) !== base[field.id]);
+        banner.hidden = !changed.length;
+        changedByBanner.set(banner, { props: changed.map(propOf), labels: changed.map((field) => field.label ?? "") });
+        const text = banner.querySelector(".jea-apply-text");
+        if (text) {
+          text.innerHTML = "<strong>Save and apply the changes below to all users</strong><ul>" + changed.map((field) => "<li>" + esc(field.label) + "</li>").join("") + '</ul><span class="jea-apply-hint">Users keep their own values until you apply this.</span>';
         }
+      });
     }
-
-    function topGroups(fs) {
-        return [...fs.querySelectorAll('.jea-group')].filter((g) => !g.parentElement.closest('.jea-group'));
+    function wireMount(lifecycle) {
+      const { signal } = lifecycle;
+      document.addEventListener("click", (event) => {
+        const cell = event.target instanceof Element ? event.target.closest(".jea-pos-cell") : null;
+        if (!cell || !(cell.parentElement instanceof HTMLElement)) return;
+        const select = controlOf(cell.parentElement.dataset.for ?? "");
+        if (!select) return;
+        select.value = cell.dataset.pos ?? "";
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+        syncPos();
+      }, { signal });
+      mountShell(lifecycle);
+      wireMirrors(lifecycle);
+      initMasonry(lifecycle);
+      document.querySelectorAll(".jea-section").forEach((section) => {
+        section.addEventListener("change", refresh, { signal });
+        section.addEventListener("input", refresh, { signal });
+        section.querySelector(".jea-apply-btn")?.addEventListener("click", () => document.getElementById("resetAllUserSettingsBtn")?.click(), { signal });
+        section.querySelector(".jea-apply-sel")?.addEventListener("click", () => {
+          const banner = section.querySelector(".jea-apply");
+          const changed = banner ? changedByBanner.get(banner) : void 0;
+          if (changed && changed.props.length) document.dispatchEvent(new CustomEvent("jea-apply-selected", { detail: changed }));
+        }, { signal });
+      });
     }
-
-    function buildTree(bar) {
-        bar.querySelectorAll('.jellyfin-tab-button').forEach((btn) => {
-            const tab = document.getElementById(btn.dataset.tab);
-            if (!tab) return;
-            btn.addEventListener('click', () => showAll(tab));
-            const cards = [...tab.querySelectorAll(':scope > fieldset')].filter((f) => sectionTitle(f));
-            if (cards.length < 2) return;
-            const tree = document.createElement('div');
-            tree.className = 'jea-nav-tree';
-            const open = (fn) => { if (btn.classList.contains('active')) fn(); else { btn.click(); setTimeout(fn, 350); } };
-            const mark = (leaf, sub) => {
-                tree.querySelectorAll('.jea-nav-leaf').forEach((l) => l.classList.toggle('on', l === leaf || l === sub));
-            };
-            cards.forEach((fs) => {
-                const a = document.createElement('a');
-                a.href = '#';
-                a.className = 'jea-nav-leaf';
-                a.textContent = sectionTitle(fs);
-                a._card = fs;
-                a.addEventListener('click', (e) => { e.preventDefault(); open(() => { focusCard(tab, fs); mark(a); }); });
-                tree.appendChild(a);
-                const groups = topGroups(fs);
-                if (groups.length >= 2) {
-                    const sub = document.createElement('div');
-                    sub.className = 'jea-nav-subtree';
-                    groups.forEach((g) => {
-                        const sa = document.createElement('a');
-                        sa.href = '#';
-                        sa.className = 'jea-nav-leaf jea-nav-sub';
-                        sa.textContent = (g.querySelector(':scope > summary') || { textContent: '' }).textContent.trim();
-                        sa.addEventListener('click', (e) => { e.preventDefault(); open(() => { focusCard(tab, fs, g); mark(a, sa); }); });
-                        sub.appendChild(sa);
-                    });
-                    tree.appendChild(sub);
-                }
-            });
-            btn.after(tree);
-        });
-        const search = document.getElementById('settingsSearchInput');
-        if (search) search.addEventListener('input', () => { if (search.value) document.querySelectorAll('.jellyfin-tab-content.jea-focused').forEach(showAll); });
-    }
-
-    // ---- Our own dialogs (replace Jellyfin's Dashboard.alert / Dashboard.confirm and the browser confirm) ----
-    // Messages may carry a few trusted formatting tags; everything else is escaped.
-    function safeHtml(text) {
-        return esc(text == null ? '' : text)
-            .replace(/&lt;(\/?(?:br|b|strong|em|i|code|ul|li|p))\s*\/?&gt;/gi, '<$1>')
-            .replace(/\r?\n/g, '<br>');
-    }
-
-    function dialog({ title, message, confirmLabel, cancelLabel, danger }) {
-        return new Promise((resolve) => {
-            const prev = document.activeElement;
-            const wrap = document.createElement('div');
-            wrap.className = 'jea-dialog-backdrop';
-            wrap.innerHTML = `<div class="jea-dialog" role="dialog" aria-modal="true" aria-label="${esc(title || 'Message')}">`
-                + `<h3 class="jea-dialog-title">${esc(title || '')}</h3>`
-                + `<div class="jea-dialog-body">${safeHtml(message)}</div>`
-                + `<div class="jea-dialog-actions">${cancelLabel ? `<button type="button" class="jea-btn" data-r="0">${esc(cancelLabel)}</button>` : ''}`
-                + `<button type="button" class="jea-btn ${danger ? 'jea-btn-danger' : 'jea-btn-primary'}" data-r="1">${esc(confirmLabel || 'OK')}</button></div></div>`;
-            const done = (v) => { document.removeEventListener('keydown', onKey, true); wrap.remove(); if (prev && prev.focus) prev.focus(); resolve(v); };
-            const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); done(false); } };
-            wrap.addEventListener('click', (e) => {
-                const b = e.target.closest('[data-r]');
-                if (b) done(b.dataset.r === '1');
-                else if (e.target === wrap && !cancelLabel) done(true);
-            });
-            document.addEventListener('keydown', onKey, true);
-            (document.getElementById('JellyfinEnhancedPage') || document.body).appendChild(wrap);
-            wrap.querySelector('[data-r="1"]').focus();
-        });
-    }
-
-    const alertBox = (o) => {
-        const opts = typeof o === 'string' ? { message: o } : (o || {});
-        return dialog({ title: opts.title, message: opts.message || opts.text }).then(() => { if (typeof opts.callback === 'function') opts.callback(); });
-    };
-    const confirmBox = (message, title, danger) => dialog({ title: title || 'Please confirm', message, confirmLabel: 'Confirm', cancelLabel: 'Cancel', danger: !!danger });
-
-    // ---- Packed columns that stay put ----
-    // Each card is given a column once (shortest column first, when a tab is shown, resized, or leaves search/focus mode) and keeps it.
-    // Rows are 1px tracks, so a card spans its own height: when one grows, only the cards below it in the same column move.
-    const GAP = 20;
-    const MIN_COL = 500;
-    const isWide = (el) => el.tagName !== 'FIELDSET' || el.matches('.je-fieldset-wide, .je-overview-section');
-    const tall = (el) => el.getBoundingClientRect().height;
-
-    function unpack(tab) {
-        if (!tab.classList.contains('jea-masonry')) return;
-        tab.classList.remove('jea-masonry');
-        tab.style.removeProperty('--jea-cols');
-        [...tab.children].forEach((el) => { el.style.gridColumn = ''; el.style.gridRow = ''; });
-    }
-
-    function layoutTab(tab, repack) {
-        const form = document.getElementById('JellyfinEnhancedForm');
-        if (!tab.classList.contains('active') || tab.id === 'docs' || tab.classList.contains('jea-focused') || (form && form.classList.contains('je-search-mode'))) { unpack(tab); return; }
-        const cols = Math.max(1, Math.floor((tab.clientWidth + GAP) / (MIN_COL + GAP)));
-        if (tab._jeaCols !== cols) { repack = true; tab._jeaCols = cols; }
-        if (!tab.classList.contains('jea-masonry')) tab.classList.add('jea-masonry');
-        tab.style.setProperty('--jea-cols', cols);
-        const items = [...tab.children].filter((el) => getComputedStyle(el).display !== 'none');
-        if (repack) items.forEach((el) => { el.style.gridColumn = isWide(el) ? '1 / -1' : '1'; el.style.gridRow = 'auto'; delete el._jeaCol; });
-        const ends = new Array(cols).fill(0);
-        items.forEach((el) => {
-            const h = Math.ceil(tall(el));
-            if (isWide(el)) {
-                const start = Math.max(...ends);
-                el.style.gridColumn = '1 / -1';
-                el.style.gridRow = (start + 1) + ' / span ' + (h + GAP);
-                ends.fill(start + h + GAP);
-                return;
-            }
-            if (el._jeaCol === undefined) {
-                el._jeaCol = ends.indexOf(Math.min(...ends));
-                el.style.gridColumn = String(el._jeaCol + 1);
-            }
-            el.style.gridRow = (ends[el._jeaCol] + 1) + ' / span ' + (h + GAP);
-            ends[el._jeaCol] += h + GAP;
-        });
-    }
-
-    function initMasonry() {
-        const form = document.getElementById('JellyfinEnhancedForm');
-        if (!form || form._jeaMasonry || typeof ResizeObserver === 'undefined') return;
-        form._jeaMasonry = true;
-        let pending = null;
-        const schedule = (tab, repack) => {
-            if (pending) { pending.repack = pending.repack || repack; return; }
-            pending = { repack };
-            requestAnimationFrame(() => { const p = pending; pending = null; form.querySelectorAll('.jellyfin-tab-content.active').forEach((t) => layoutTab(t, p.repack)); });
+    const engine2 = {
+      sections,
+      mountShell() {
+        mountShell(new MountLifecycle());
+      },
+      alert: alertBox,
+      confirm: confirmBox,
+      dashboardShim(real) {
+        const source = real ?? {};
+        return {
+          showLoadingMsg: () => source.showLoadingMsg?.(),
+          hideLoadingMsg: () => source.hideLoadingMsg?.(),
+          processPluginConfigurationUpdateResult: (result) => source.processPluginConfigurationUpdateResult?.(result),
+          alert: (options) => engine2.alert(options),
+          confirm: (message, title, callback) => engine2.confirm(message, title).then((accepted) => {
+            if (typeof callback === "function") callback(accepted);
+            return accepted;
+          })
         };
-        const ro = new ResizeObserver(() => schedule(null, false));
-        const watch = (tab) => [...tab.children].forEach((el) => { if (!el._jeaWatched) { el._jeaWatched = true; ro.observe(el); } });
-        form.querySelectorAll('.jellyfin-tab-content').forEach((tab) => {
-            watch(tab);
-            // Showing, focusing or unfocusing a tab repacks it before the browser paints.
-            let sig = tab.className.replace(/jea-masonry/g, '').trim();
-            new MutationObserver(() => {
-                // Our own jea-masonry class change must not retrigger the layout.
-                const now = tab.className.replace(/jea-masonry/g, '').trim();
-                if (now !== sig) { sig = now; layoutTab(tab, true); }
-            }).observe(tab, { attributes: true, attributeFilter: ['class'] });
-            // Late additions (dependency banners, dashboards) join the flow.
-            new MutationObserver(() => { watch(tab); schedule(tab, false); }).observe(tab, { childList: true });
+      },
+      // Register section definitions (called by Configuration/admin/*.js).
+      define(definitions) {
+        Object.assign(sections, definitions);
+      },
+      // Replace every <div data-je-section="key"> with its rendered fieldset. Run before the page script queries ids.
+      mount(root, options) {
+        (root ?? document).querySelectorAll("[data-je-section]").forEach((placeholder) => {
+          const key = placeholder.getAttribute("data-je-section") ?? "";
+          const section = sections[key];
+          if (section) placeholder.outerHTML = sectionHtml(section, sections, render);
+          else console.warn("[JE] No section definition for", key);
         });
-        new MutationObserver(() => form.querySelectorAll('.jellyfin-tab-content.active').forEach((t) => layoutTab(t, true))).observe(form, { attributes: true, attributeFilter: ['class'] });
-        let timer;
-        window.addEventListener('resize', () => { clearTimeout(timer); timer = setTimeout(() => schedule(null, true), 120); });
-        form.querySelectorAll('.jellyfin-tab-content.active').forEach((t) => layoutTab(t, true));
-    }
-
-    window.JEAdmin = {
-        sections,
-        mountShell,
-        alert: alertBox,
-        confirm: confirmBox,
-        dashboardShim(real) {
-            return new Proxy(real || {}, {
-                get(t, k) {
-                    if (k === 'alert') return (o) => alertBox(o);
-                    if (k === 'confirm') return (m, title, cb) => confirmBox(m, title).then((v) => { if (typeof cb === 'function') cb(v); return v; });
-                    const v = t[k];
-                    return typeof v === 'function' ? v.bind(t) : v;
-                }
-            });
-        },
-        // Register section definitions (called by Configuration/admin/*.js).
-        define(defs) { Object.assign(sections, defs); },
-        // Replace every <div data-je-section="key"> with its rendered fieldset. Run before the page script queries ids.
-        // opts.shell === false renders the sections only (no sidebar, no event wiring): used to read the finished page offline.
-        mount(root, opts) {
-            (root || document).querySelectorAll('[data-je-section]').forEach((el) => {
-                const s = sections[el.getAttribute('data-je-section')];
-                if (s) el.outerHTML = sectionHtml(s);
-                else console.warn('[JE] No section definition for', el.getAttribute('data-je-section'));
-            });
-            while (pendingInits.length) pendingInits.shift()(document);
-            if (opts && opts.shell === false) return;
-            document.addEventListener('click', (e) => {
-                const c = e.target.closest && e.target.closest('.jea-pos-cell');
-                if (!c) return;
-                const sel = document.getElementById(c.parentElement.dataset.for);
-                if (!sel) return;
-                sel.value = c.dataset.pos;
-                sel.dispatchEvent(new Event('change', { bubbles: true }));
-                syncPos();
-            });
-            mountShell();
-            wireMirrors();
-            initMasonry();
-            document.querySelectorAll('.jea-section').forEach((fs) => {
-                fs.addEventListener('change', refresh);
-                fs.addEventListener('input', refresh);
-                const btn = fs.querySelector('.jea-apply-btn');
-                // Reuses the Overview quick action, which saves first and asks for confirmation.
-                if (btn) btn.addEventListener('click', () => document.getElementById('resetAllUserSettingsBtn').click());
-                const sel = fs.querySelector('.jea-apply-sel');
-                // Hands the changed settings to the page script, which saves and calls apply-user-settings.
-                if (sel) sel.addEventListener('click', () => {
-                    const changed = (fs.querySelector('.jea-apply') || {})._changed || [];
-                    if (changed.length) document.dispatchEvent(new CustomEvent('jea-apply-selected', { detail: { props: changed.map(propOf), labels: changed.map((f) => f.label) } }));
-                });
-            });
-        },
-        load(config) {
-            bound().forEach((f) => {
-                const el = document.getElementById(f.id);
-                if (!el) return;
-                const raw = config[f.prop];
-                const v = f.fromConfig ? f.fromConfig(raw, config) : raw;
-                if (f.type === 'toggle') el.checked = f.default === true ? v !== false : v === true;
-                else el.value = (v === undefined || v === null || v === '') ? (f.default !== undefined ? f.default : '') : v;
-                base[f.id] = read(f);
-            });
-            refresh();
-            // Manual fields are loaded by configPage.html right after this call; once they have, record their baselines
-            // (for the per-user banner) and re-sync collapse.
-            setTimeout(() => { all().forEach((f) => { if (f.manual) base[f.id] = read(f); }); refresh(); }, 0);
-        },
-        collect(config) {
-            bound().forEach((f) => {
-                const el = document.getElementById(f.id);
-                if (!el) return;
-                let v;
-                if (f.type === 'toggle') v = el.checked;
-                else if (f.type === 'number') v = el.value === '' ? (f.default !== undefined ? f.default : 0) : Number(el.value);
-                else v = el.value || (f.default !== undefined ? f.default : '');
-                config[f.prop] = f.toConfig ? f.toConfig(v, config) : v;
-            });
-            return config;
-        },
-        // Call after the overwrite succeeds so the banners clear.
-        markApplied() { all().forEach((f) => { base[f.id] = read(f); }); refresh(); },
-        setPerUser(list) { list.forEach((p) => perUserProps.add(p)); }
+        render.inits.splice(0).forEach((init) => init(document));
+        if (options?.shell === false) return;
+        mounted?.dispose();
+        mounted = options?.lifecycle ?? new MountLifecycle();
+        wireMount(mounted);
+      },
+      load(config) {
+        boundFields(sections).forEach((field) => {
+          const control = controlOf(field.id);
+          if (!control) return;
+          const raw = config[field.prop];
+          const value = field.fromConfig ? field.fromConfig(raw, config) : raw;
+          if (field.type === "toggle") {
+            if (control instanceof HTMLInputElement) control.checked = field.default === true ? value !== false : value === true;
+          } else {
+            control.value = String(value === void 0 || value === null || value === "" ? field.default !== void 0 ? field.default : "" : value);
+          }
+          base[field.id] = read(field);
+        });
+        refresh();
+        window.clearTimeout(loadSettle);
+        loadSettle = window.setTimeout(() => {
+          allFields(sections).forEach((field) => {
+            if (field.manual) base[field.id] = read(field);
+          });
+          refresh();
+        }, 0);
+      },
+      collect(config) {
+        boundFields(sections).forEach((field) => {
+          const control = controlOf(field.id);
+          if (!control) return;
+          if (field.type === "toggle") {
+            const value = isChecked(control);
+            config[field.prop] = field.toConfig ? field.toConfig(value, config) : value;
+          } else if (field.type === "number") {
+            const value = control.value === "" ? field.default !== void 0 ? field.default : 0 : Number(control.value);
+            config[field.prop] = field.toConfig ? field.toConfig(value, config) : value;
+          } else {
+            const value = control.value || (field.default !== void 0 ? field.default : "");
+            config[field.prop] = convert(field, value, config);
+          }
+        });
+        return config;
+      },
+      // Call after the overwrite succeeds so the banners clear.
+      markApplied() {
+        allFields(sections).forEach((field) => {
+          base[field.id] = read(field);
+        });
+        refresh();
+      },
+      setPerUser(properties) {
+        properties.forEach((property) => perUserProps.add(property));
+      }
     };
+    return engine2;
+  }
+
+  // client/src/admin/config/engine-entry.ts
+  if (!engine()) publishEngine(createEngine());
 })();
+})();
+//# sourceMappingURL=jeAdmin.js.map

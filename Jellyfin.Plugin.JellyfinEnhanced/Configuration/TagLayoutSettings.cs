@@ -202,6 +202,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// Quality is the only group allowed in the minimal layout's dots slot.
         /// </summary>
         public static TagLayoutProfile? NormalizeProfile(string layout, TagLayoutProfile? profile)
+            => NormalizeProfile(layout, profile, null);
+
+        internal static TagLayoutProfile? NormalizeProfile(string layout, TagLayoutProfile? profile, Action<TagLayoutGroupSlot, TagLayoutGroupSlot>? onNormalized)
         {
             if (profile?.Groups == null) return null;
             var slots = LayoutSlots[layout];
@@ -213,7 +216,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 var slot = (entry?.Slot ?? string.Empty).Trim().ToLowerInvariant();
                 if (group == null || !slots.Contains(slot) || !seen.Add(group)) continue;
                 if (slot == "dots" && group != "quality") continue;
-                groups.Add(new TagLayoutGroupSlot { Group = group, Slot = slot });
+                var normalized = new TagLayoutGroupSlot { Group = group, Slot = slot };
+                groups.Add(normalized);
+                onNormalized?.Invoke(entry!, normalized);
             }
 
             return groups.Count == 0 ? null : new TagLayoutProfile { Groups = groups };

@@ -1,432 +1,285 @@
-// @ts-check
-// /js/core/dom-observer.js
-//
-// Shared DOM observation layer (moved from enhanced/helpers.js).
-//
-// One multiplexed MutationObserver on document.body dispatches to all
-// registered subscribers instead of N separate observers cloning N
-// MutationRecord lists. Non-body/complex observers are created per-id and
-// tracked so they can be disconnected by name.
-//
-// Public surface: JE.core.dom { onBodyMutation, removeBodySubscriber,
-// createObserver, disconnectObserver, disconnectAllObservers, waitForElement }.
-// JE.helpers keeps thin aliases for unmigrated callers.
-(function(JE) {
-    'use strict';
-
-    // Monotonic id suffix: Date.now() collides when two waits start in the same millisecond.
-    let waitForElementSeq = 0;
-
-    JE.core = JE.core || {};
-
-    // Active observers registry for lifecycle management (non-body targets only)
-    /** @type {Map<string, { disconnect: Function }>} */
-    const activeObservers = new Map();
-
-    // --- Multiplexed Body Observer ---
-    // Single MutationObserver on document.body that dispatches to all registered subscribers.
-    // This replaces the previous pattern of N separate observers on document.body,
-    // reducing browser overhead from cloning MutationRecord lists N times and scheduling
-    // N separate microtask callbacks down to a single observer + single dispatch loop.
-    /** @type {Map<string, { callback: Function, priority: number }>} */
-    const bodySubscribers = new Map();
-    /** @type {MutationObserver|null} */
-    let bodyObserver = null;
-
-    // Priority-0 subscribers are batched and run after the next paint. Jellyfin
-    // mutates the DOM from requestAnimationFrame callbacks (blurhash canvases),
-    // so running subscribers in the observer microtask forced a layout pass per
-    // callback whenever they read geometry, freezing the home screen for seconds.
-    /** @type {MutationRecord[]} */
-    let pendingMutations = [];
-    let flushScheduled = false;
-    let flushGeneration = 0;
-
-    // Callbacks waiting for the next paint. All callers that ask within the
-    // same frame share one animation frame + one timeout pair instead of
-    // scheduling three timers each; on a busy page (observer flush plus the
-    // tab-container watchers) that was ~450 timers per ten navigations.
-    /** @type {Function[]} */
-    let paintQueue = [];
-    let paintScheduled = false;
-
-    function runPaintQueue() {
-        paintScheduled = false;
-        const batch = paintQueue;
-        paintQueue = [];
+(() => {
+"use strict";
+(() => {
+  // client/src/core/dom/scheduling.ts
+  function createPaintQueue(clock) {
+    let queue = [];
+    let scheduled = false;
+    return (callback) => {
+      queue.push(callback);
+      if (scheduled) return;
+      scheduled = true;
+      let done = false;
+      let afterFrame;
+      const run = () => {
+        if (done) return;
+        done = true;
+        clock.clearTimeout(fallback);
+        clock.cancelFrame(frame);
+        if (afterFrame !== void 0) clock.clearTimeout(afterFrame);
+        scheduled = false;
+        const batch = queue;
+        queue = [];
         for (const fn of batch) {
-            try {
-                fn();
-            } catch (err) {
-                console.error('🪼 Jellyfin Enhanced: Error in afterNextPaint callback:', err);
-            }
+          try {
+            fn();
+          } catch (error) {
+            clock.report("Error in afterNextPaint callback:", error);
+          }
         }
-    }
-
-    /**
-     * Run `fn` after the next paint, when layout is clean. The timer fallback
-     * covers hidden tabs, where animation frames do not fire.
-     * @param {Function} fn
-     */
-    function afterNextPaint(fn) {
-        paintQueue.push(fn);
-        if (paintScheduled) return;
-        paintScheduled = true;
-        let done = false;
-        const run = () => {
-            if (done) return;
-            done = true;
-            clearTimeout(fallback);
-            runPaintQueue();
-        };
-        const fallback = setTimeout(run, 250);
-        requestAnimationFrame(() => setTimeout(run, 0));
-    }
-
-    function flushPendingMutations() {
-        flushScheduled = false;
-        const batch = pendingMutations;
-        pendingMutations = [];
-        if (batch.length === 0) return;
-        for (const [id, sub] of Array.from(bodySubscribers)) {
-            if (bodySubscribers.get(id) !== sub) continue;
-            if (sub.priority > 0) continue;
-            try {
-                sub.callback(batch);
-            } catch (err) {
-                console.error(`🪼 Jellyfin Enhanced: Error in body observer subscriber "${id}":`, err);
-            }
-        }
-    }
-
-    // Player chrome jellyfin-web rewrites with innerHTML all through playback:
-    // the position/duration/ends-at clocks of the OSD once a second and the
-    // subtitle cue boxes on every cue (jellyfin-web 12 videoosd template and
-    // htmlVideoPlayer). Each rewrite is a childList mutation (text node, or
-    // text plus <br>/<i> for a styled cue) that no subscriber has any use for
-    // — they wait for elements such as the OSD, its favourite button or the
-    // subtitle container itself, all of which appear outside these nodes — yet
-    // it used to wake every subscriber (card scans, header layout...) at
-    // cue/clock rate for the whole of playback.
-    const PLAYER_NOISE_SELECTOR = '.osdPositionText, .osdDurationText, .startTimeText, .endTimeText, .endsAtText, .videoSubtitlesInner, .videoSecondarySubtitlesInner';
-
-    /**
-     * Whether a mutation record is one the subscribers should hear about: it
-     * added or removed nodes, somewhere other than inside the player's clock
-     * and subtitle cue nodes.
-     * @param {MutationRecord} record
-     * @returns {boolean}
-     */
-    function isStructuralChange(record) {
-        if (record.addedNodes.length === 0 && record.removedNodes.length === 0) return false;
-        const target = record.target;
-        return !(target.nodeType === 1 && /** @type {Element} */ (target).closest(PLAYER_NOISE_SELECTOR));
-    }
-
-    function ensureBodyObserver() {
-        if (bodyObserver) return;
-        bodyObserver = new MutationObserver((mutations) => {
-            // Fast-path: skip dispatch entirely if no nodes were added or removed.
-            // This filters out attribute changes, text changes, hover effects, focus
-            // changes, etc. that fire frequently but never add new content — and
-            // the player's clock/cue rewrites, which add nodes nobody listens for.
-            let hasStructuralChange = false;
-            for (let i = 0; i < mutations.length; i++) {
-                if (isStructuralChange(mutations[i])) {
-                    hasStructuralChange = true;
-                    break;
-                }
-            }
-            if (!hasStructuralChange) return;
-
-            // Callbacks can subscribe, replace, or unsubscribe during dispatch. Snapshot
-            // this batch so resorting the live Map cannot revisit callbacks.
-            // Priority subscribers (sorted first) stay synchronous so they can act before paint.
-            for (const [id, sub] of Array.from(bodySubscribers)) {
-                if (bodySubscribers.get(id) !== sub) continue;
-                if (sub.priority <= 0) break;
-                try {
-                    sub.callback(mutations);
-                } catch (err) {
-                    console.error(`🪼 Jellyfin Enhanced: Error in body observer subscriber "${id}":`, err);
-                }
-            }
-
-            for (let i = 0; i < mutations.length; i++) pendingMutations.push(mutations[i]);
-            if (!flushScheduled) {
-                flushScheduled = true;
-                const generation = flushGeneration;
-                afterNextPaint(() => { if (generation === flushGeneration) flushPendingMutations(); });
-            }
-        });
-        bodyObserver.observe(document.body, { childList: true, subtree: true });
-        console.log('🪼 Jellyfin Enhanced: Shared body observer started');
-    }
-
-    function stopBodyObserverIfEmpty() {
-        if (bodyObserver && bodySubscribers.size === 0) {
-            bodyObserver.disconnect();
-            bodyObserver = null;
-            flushGeneration++;
-            flushScheduled = false;
-            pendingMutations = [];
-            console.log('🪼 Jellyfin Enhanced: Shared body observer stopped (no subscribers)');
-        }
-    }
-
-    /**
-     * Re-sort bodySubscribers Map by priority (highest first).
-     * Called when a subscriber with non-default priority is added.
-     */
-    function resortBodySubscribers() {
-        const sorted = [...bodySubscribers.entries()].sort((a, b) => b[1].priority - a[1].priority);
-        bodySubscribers.clear();
-        for (const [id, sub] of sorted) {
-            bodySubscribers.set(id, sub);
-        }
-    }
-
-    /**
-     * Register a callback with the shared body MutationObserver.
-     * All subscribers share a single observer on document.body with { childList: true, subtree: true }.
-     * @param {string} id - Unique identifier for this subscriber
-     * @param {Function} callback - Called with (mutations) on each body mutation batch
-     * @param {Object} [options] - Options
-     * @param {number} [options.priority=0] - Execution priority. Higher values run first.
-     *   Use priority > 0 for subscribers that should filter/hide content before others process it.
-     * @returns {{ unsubscribe: Function, disconnect: Function }} Handle to remove this subscriber.
-     *   Both unsubscribe() and disconnect() do the same thing -- provided so callers can use
-     *   either the subscription convention or the MutationObserver convention consistently.
-     */
-    function onBodyMutation(id, callback, options) {
-        const priority = (options && typeof options.priority === 'number') ? options.priority : 0;
-        if (bodySubscribers.has(id)) {
-            console.warn(`🪼 Jellyfin Enhanced: Replacing body observer subscriber: ${id}`);
-        }
-        const subscription = { callback, priority };
-        bodySubscribers.set(id, subscription);
-        // Replacing a high-priority entry with priority zero must also move it
-        // behind the remaining priority subscribers: dispatch stops at the first zero.
-        resortBodySubscribers();
-        ensureBodyObserver();
-        // console.log(`🪼 Jellyfin Enhanced: Body subscriber registered: ${id} (priority: ${priority}, total: ${bodySubscribers.size})`);
-        const cleanup = () => {
-            if (bodySubscribers.get(id) !== subscription) return;
-            bodySubscribers.delete(id);
-            // console.log(`🪼 Jellyfin Enhanced: Body subscriber removed: ${id} (remaining: ${bodySubscribers.size})`);
-            stopBodyObserverIfEmpty();
-        };
-        return { unsubscribe: cleanup, disconnect: cleanup };
-    }
-
-    /**
-     * Remove a subscriber from the shared body observer.
-     * @param {string} id - The subscriber ID
-     * @returns {boolean} True if found and removed
-     */
-    function removeBodySubscriber(id) {
-        const removed = bodySubscribers.delete(id);
-        if (removed) {
-            // console.log(`🪼 Jellyfin Enhanced: Body subscriber removed: ${id} (remaining: ${bodySubscribers.size})`);
-            stopBodyObserverIfEmpty();
-        }
-        return removed;
-    }
-
-    /**
-     * Create a managed MutationObserver that can be properly cleaned up.
-     * If target is document.body with { childList: true, subtree: true }, the callback
-     * is automatically routed to the shared multiplexed body observer instead of
-     * creating a separate MutationObserver instance.
-     * @param {string} id - Unique identifier for this observer
-     * @param {MutationCallback} callback - The mutation callback
-     * @param {Node} target - The element to observe
-     * @param {MutationObserverInit} config - The observer configuration
-     * @returns {MutationObserver|{ disconnect: Function, unsubscribe: Function }} Observer handle
-     */
-    function createObserver(id, callback, target, config) {
-        // Dispose the previous observer even when its replacement changes from a
-        // dedicated observer to the shared body path (or vice versa).
-        if (activeObservers.has(id)) {
-            activeObservers.get(id).disconnect();
-            activeObservers.delete(id);
-        }
-        // Route body observers to the shared multiplexed observer
-        const isBodyTarget = target === document.body || target === document.documentElement || target === document;
-        const isSubtreeWatch = config && config.childList && config.subtree;
-
-        if (isBodyTarget && isSubtreeWatch && !config.attributes && !config.attributeFilter && !config.characterData) {
-            // Use shared body observer
-            const handle = onBodyMutation(id, callback);
-            // Return a duck-typed object compatible with both MutationObserver and subscription conventions
-            const cleanup = () => handle.disconnect();
-            const proxy = {
-                disconnect: cleanup,
-                unsubscribe: cleanup,
-                observe() { /* no-op, already observing via shared observer */ },
-                takeRecords() { return []; }
-            };
-            activeObservers.set(id, proxy);
-            return proxy;
-        }
-
-        // For non-body targets or complex configs (attributes, characterData),
-        // create a dedicated observer as before
-
-        const observer = new MutationObserver(callback);
-        observer.observe(target, config);
-
-        activeObservers.set(id, observer);
-        // console.log(`🪼 Jellyfin Enhanced: Created dedicated observer: ${id} (total: ${activeObservers.size})`);
-
-        return observer;
-    }
-
-    /**
-     * Disconnect and remove a managed observer (or body subscriber)
-     * @param {string} id - The observer ID
-     * @returns {boolean} True if observer was found and disconnected
-     */
-    function disconnectObserver(id) {
-        // Check body subscribers first
-        if (bodySubscribers.has(id)) {
-            removeBodySubscriber(id);
-            activeObservers.delete(id);
-            return true;
-        }
-        if (activeObservers.has(id)) {
-            const observer = activeObservers.get(id);
-            observer.disconnect();
-            activeObservers.delete(id);
-            console.log(`🪼 Jellyfin Enhanced: Disconnected observer: ${id} (remaining: ${activeObservers.size})`);
-            return true;
-        }
-        return false;
-    }
-
-    /**
-     * Disconnect all managed observers and body subscribers
-     */
-    function disconnectAllObservers() {
-        activeObservers.forEach((observer) => {
-            observer.disconnect();
-        });
-        activeObservers.clear();
-        bodySubscribers.clear();
-        if (bodyObserver) {
-            bodyObserver.disconnect();
-            bodyObserver = null;
-        }
-        flushGeneration++;
-        flushScheduled = false;
-        pendingMutations = [];
-        console.log('🪼 Jellyfin Enhanced: All observers and body subscribers disconnected');
-    }
-
-    /**
-     * @typedef {Object} WaitForElementOptions
-     * @property {number} [timeout] - Maximum wait time in ms (default 10000).
-     * @property {(el: Element) => boolean} [predicate] - Extra acceptance test. The wait resolves only
-     *   for a match that also satisfies this, and keeps observing otherwise. Needed whenever an
-     *   element already in the DOM could satisfy the selector but is the wrong one — Jellyfin leaves
-     *   dismissed action-sheet DOM in the document for the duration of its exit animation, so
-     *   `.actionSheet` matches a stale sheet immediately.
-     * @property {ParentNode} [root] - Node to query within (default `document`). Re-checks are
-     *   triggered by mutations under `document.body`, so changes confined to a detached or
-     *   out-of-body root never retrigger the check and such a wait can only time out.
-     * @property {boolean} [quiet] - Suppress the timeout warning.
-     */
-
-    /**
-     * Wait for an element to appear in the DOM.
-     *
-     * Built on the multiplexed body observer, which only dispatches for batches containing
-     * added/removed nodes — it cannot detect a `classList.remove('hide')` or a text change. Use
-     * `createObserver` with `{ attributes: true, attributeFilter: [...] }` for those.
-     *
-     * @param {string} selector - CSS selector.
-     * @param {number|WaitForElementOptions} [options] - Timeout in ms, or an options object.
-     * @returns {Promise<Element|null>} The matching element, or null on timeout.
-     */
-    function waitForElement(selector, options = {}) {
-        const opts = typeof options === 'number' ? { timeout: options } : (options || {});
-        const timeout = opts.timeout ?? 10000;
-        const root = opts.root || document;
-        const predicate = typeof opts.predicate === 'function' ? opts.predicate : null;
-
-        let warnedPredicateThrow = false;
-
-        /** @returns {Element|null} */
-        const find = () => {
-            if (!predicate) return root.querySelector(selector);
-            // With a predicate every candidate matters, not just the first.
-            for (const el of Array.from(root.querySelectorAll(selector))) {
-                // Treat a throwing predicate as a non-match. The observer path already
-                // swallows throws (onBodyMutation wraps callbacks in try/catch), so without
-                // this the initial call would reject while later checks silently hang.
-                // Warn once per wait — a busy page re-runs this on every mutation batch.
-                try {
-                    if (predicate(el)) return el;
-                } catch (err) {
-                    if (!warnedPredicateThrow) {
-                        warnedPredicateThrow = true;
-                        console.warn(`🪼 Jellyfin Enhanced: waitForElement predicate threw for ${selector}:`, err);
-                    }
-                }
-            }
-            return null;
-        };
-
-        return new Promise((resolve) => {
-            const existing = find();
-            if (existing) {
-                resolve(existing);
-                return;
-            }
-
-            const observerId = `wait-${selector}-${++waitForElementSeq}`;
-            /** @type {*} */
-            let timeoutId = null;
-
-            const handle = onBodyMutation(observerId, () => {
-                const element = find();
-                if (element) {
-                    if (timeoutId) clearTimeout(timeoutId);
-                    handle.unsubscribe();
-                    resolve(element);
-                }
-            });
-
-            // Set timeout
-            timeoutId = setTimeout(() => {
-                handle.unsubscribe();
-                if (!opts.quiet) {
-                    console.warn(`🪼 Jellyfin Enhanced: Timeout waiting for element: ${selector}`);
-                }
-                resolve(null);
-            }, timeout);
-        });
-    }
-
-    // Cleanup on page unload
-    window.addEventListener('beforeunload', () => {
-        disconnectAllObservers();
-    });
-
-    JE.core.dom = {
-        onBodyMutation,
-        removeBodySubscriber,
-        createObserver,
-        disconnectObserver,
-        disconnectAllObservers,
-        waitForElement,
-        afterNextPaint,
-        /** @returns {number} */
-        getObserverCount: () => activeObservers.size,
-        /** @returns {number} */
-        getBodySubscriberCount: () => bodySubscribers.size
+      };
+      const fallback = clock.setTimeout(run, 250);
+      const frame = clock.requestFrame(() => {
+        if (!done) afterFrame = clock.setTimeout(run, 0);
+      });
     };
+  }
+  function createBodyDispatch(afterPaint, report) {
+    const subscribers = /* @__PURE__ */ new Map();
+    let pending = [];
+    let starts = /* @__PURE__ */ new Map();
+    let scheduled = false;
+    let generation = 0;
+    const invoke = (id, sub, records) => {
+      try {
+        sub.callback(records);
+      } catch (error) {
+        report(id, error);
+      }
+    };
+    const reset = () => {
+      generation++;
+      pending = [];
+      starts.clear();
+      scheduled = false;
+    };
+    return {
+      subscribers,
+      reset,
+      dispatch(records) {
+        const epoch = generation;
+        const snapshot = [...subscribers].sort((a, b) => b[1].priority - a[1].priority);
+        for (const [id, sub] of snapshot) {
+          if (epoch !== generation) return;
+          if (subscribers.get(id) !== sub) continue;
+          if (sub.priority > 0) invoke(id, sub, records);
+          else {
+            if (!starts.has(sub)) starts.set(sub, pending.length);
+          }
+        }
+        if (epoch !== generation || starts.size === 0) return;
+        for (const record of records) pending.push(record);
+        if (scheduled) return;
+        scheduled = true;
+        afterPaint(() => {
+          if (epoch !== generation) return;
+          scheduled = false;
+          const batch = pending;
+          const offsets = starts;
+          pending = [];
+          starts = /* @__PURE__ */ new Map();
+          for (const [id, sub] of [...subscribers].sort((a, b) => b[1].priority - a[1].priority)) {
+            if (epoch !== generation) return;
+            const start = offsets.get(sub);
+            if (subscribers.get(id) === sub && start !== void 0) {
+              invoke(id, sub, start === 0 ? batch : batch.slice(start));
+            }
+          }
+        });
+      }
+    };
+  }
 
-    console.log('🪼 Jellyfin Enhanced: DOM observer core initialized');
+  // client/src/core/dom/runtime.ts
+  function createDom(host) {
+    const afterNextPaint = createPaintQueue(host);
+    const body = createBodyDispatch(
+      afterNextPaint,
+      (id, error) => host.report(`Error in body observer subscriber "${id}":`, error)
+    );
+    const owners = /* @__PURE__ */ new Map();
+    const waits = /* @__PURE__ */ new Set();
+    let observer = null;
+    let waitSequence = 0;
+    let teardownGeneration = 0;
+    function stopIfEmpty() {
+      if (body.subscribers.size !== 0) return;
+      observer?.disconnect();
+      observer = null;
+      body.reset();
+    }
+    function ensureBody() {
+      if (observer) return;
+      const current = host.createObserver((records) => {
+        if (observer !== current || !records.some(host.isStructuralChange)) return;
+        body.dispatch(records);
+      });
+      current.observe(host.document.body, { childList: true, subtree: true });
+      observer = current;
+    }
+    function disconnectObserver(id) {
+      const owner = owners.get(id);
+      if (!owner) return false;
+      owner.disconnect();
+      return true;
+    }
+    function onBodyMutation(id, callback, options) {
+      disconnectObserver(id);
+      const sub = { callback, priority: typeof options?.priority === "number" ? options.priority : 0 };
+      const owner = { managed: false, disconnect() {
+        if (owners.get(id) !== owner) return;
+        owners.delete(id);
+        body.subscribers.delete(id);
+        stopIfEmpty();
+      } };
+      owners.set(id, owner);
+      body.subscribers.set(id, sub);
+      ensureBody();
+      return { disconnect: owner.disconnect, unsubscribe: owner.disconnect };
+    }
+    function removeBodySubscriber(id) {
+      return body.subscribers.has(id) && disconnectObserver(id);
+    }
+    function createObserver(id, callback, target, config) {
+      disconnectObserver(id);
+      if (host.isBodyTarget(target) && config.childList && config.subtree && !config.attributes && !config.attributeFilter && !config.characterData && !config.characterDataOldValue && !config.attributeOldValue) {
+        const handle = onBodyMutation(id, (records) => callback(records, proxy));
+        const owner2 = owners.get(id);
+        if (owner2) owner2.managed = true;
+        const proxy = {
+          ...handle,
+          observe() {
+          },
+          takeRecords: () => []
+        };
+        return proxy;
+      }
+      const native = host.createObserver((records) => {
+        if (owners.get(id) === owner) callback(records, native);
+      });
+      const disconnectNative = native.disconnect.bind(native);
+      const observeNative = native.observe.bind(native);
+      const owner = { managed: true, disconnect() {
+        disconnectNative();
+        if (owners.get(id) === owner) owners.delete(id);
+      } };
+      observeNative(target, config);
+      owners.set(id, owner);
+      native.disconnect = owner.disconnect;
+      native.observe = (node, options) => {
+        observeNative(node, options);
+        if (owners.get(id) !== owner) {
+          disconnectObserver(id);
+          owners.set(id, owner);
+        }
+      };
+      return native;
+    }
+    function disconnectAllObservers() {
+      teardownGeneration++;
+      for (const owner of [...owners.values()]) owner.disconnect();
+      stopIfEmpty();
+      for (const cancel of [...waits]) cancel();
+    }
+    function waitForElement(selector, options = {}) {
+      const opts = typeof options === "number" ? { timeout: options } : options ?? {};
+      const root = opts.root ?? host.document;
+      let warned = false;
+      const find = () => {
+        if (!opts.predicate) return root.querySelector(selector);
+        for (const element of Array.from(root.querySelectorAll(selector))) {
+          try {
+            if (opts.predicate(element)) return element;
+          } catch (error) {
+            if (!warned) {
+              warned = true;
+              host.warn(`waitForElement predicate threw for ${selector}:`, error);
+            }
+          }
+        }
+        return null;
+      };
+      return new Promise((resolve) => {
+        if (opts.signal?.aborted) {
+          resolve(null);
+          return;
+        }
+        const generation = teardownGeneration;
+        const existing = find();
+        if (opts.signal?.aborted || generation !== teardownGeneration) {
+          resolve(null);
+          return;
+        }
+        if (existing) {
+          resolve(existing);
+          return;
+        }
+        let timer;
+        let settled = false;
+        let handle;
+        const finish = (element) => {
+          if (settled) return;
+          settled = true;
+          if (timer !== void 0) host.clearTimeout(timer);
+          handle?.unsubscribe();
+          waits.delete(cancel);
+          opts.signal?.removeEventListener("abort", cancel);
+          resolve(element);
+        };
+        const cancel = () => finish(null);
+        waits.add(cancel);
+        handle = onBodyMutation(`wait-${selector}-${++waitSequence}`, () => {
+          const element = find();
+          if (element) finish(element);
+        });
+        opts.signal?.addEventListener("abort", cancel, { once: true });
+        timer = host.setTimeout(() => {
+          if (!opts.quiet) host.warn(`Timeout waiting for element: ${selector}`);
+          finish(null);
+        }, opts.timeout ?? 1e4);
+      });
+    }
+    host.onUnload(disconnectAllObservers);
+    return {
+      onBodyMutation,
+      removeBodySubscriber,
+      createObserver,
+      disconnectObserver,
+      disconnectAllObservers,
+      waitForElement,
+      afterNextPaint,
+      getObserverCount: () => [...owners.values()].filter((owner) => owner.managed).length,
+      getBodySubscriberCount: () => body.subscribers.size
+    };
+  }
 
-})(window.JellyfinEnhanced);
+  // client/src/host/dom-host.ts
+  function domBridge() {
+    const host = window;
+    if (!host.JellyfinEnhanced) throw new Error("Jellyfin Enhanced must be initialized before DOM core");
+    return host.JellyfinEnhanced;
+  }
+  function browserDomHost() {
+    const noise = ".osdPositionText, .osdDurationText, .startTimeText, .endTimeText, .endsAtText, .videoSubtitlesInner, .videoSecondarySubtitlesInner";
+    return {
+      document,
+      createObserver: (callback) => new MutationObserver(callback),
+      isStructuralChange: (record) => (record.addedNodes.length > 0 || record.removedNodes.length > 0) && !(record.target instanceof Element && record.target.closest(noise)),
+      isBodyTarget: (node) => node === document.body || node === document.documentElement || node === document,
+      setTimeout: (callback, delay) => window.setTimeout(callback, delay),
+      clearTimeout: (id) => window.clearTimeout(id),
+      requestFrame: (callback) => window.requestAnimationFrame(callback),
+      cancelFrame: (id) => window.cancelAnimationFrame(id),
+      onUnload: (callback) => window.addEventListener("beforeunload", callback),
+      report: (context, error) => console.error(`🪼 Jellyfin Enhanced: ${context}`, error),
+      warn: (context, error) => console.warn(`🪼 Jellyfin Enhanced: ${context}`, error)
+    };
+  }
+
+  // client/src/core/dom/entry.ts
+  var bridge = domBridge();
+  var core = bridge.core ?? (bridge.core = {});
+  core.dom ?? (core.dom = createDom(browserDomHost()));
+})();
+})();
+//# sourceMappingURL=dom-observer.js.map

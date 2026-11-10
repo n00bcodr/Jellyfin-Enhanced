@@ -30,7 +30,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
         private readonly IApplicationPaths _applicationPaths;
         private readonly IServerConfigurationManager _serverConfigurationManager;
         private readonly Logger _logger;
-        private readonly Services.AnalyticsReportingService _analyticsReportingService;
+        private readonly Features.Platform.Services.AnalyticsReportingService _analyticsReportingService;
         private const string PluginName = "Jellyfin Enhanced";
 
         public JellyfinEnhanced(
@@ -38,8 +38,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             IServerConfigurationManager serverConfigurationManager,
             IXmlSerializer xmlSerializer,
             Logger logger,
-            Services.AnalyticsReportingService analyticsReportingService,
-            Services.HostCompatibilityService hostCompatibility) : base(applicationPaths, xmlSerializer)
+            Features.Platform.Services.AnalyticsReportingService analyticsReportingService,
+            Shared.Host.HostCompatibilityService hostCompatibility) : base(applicationPaths, xmlSerializer)
         {
             Instance = this;
             _applicationPaths = applicationPaths;
@@ -64,7 +64,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
 
             // Set the User-Agent used by every Seerr/TMDB outbound HTTP call.
             // Cloudflare's Browser Integrity Check / Bot Fight Mode flags
-            // empty UA as bot �            Helpers.Jellyseerr.SeerrHttpHelper.UserAgent = $"JellyfinEnhanced/{Version}";
+            // empty UA as bot �            Shared.Seerr.SeerrHttpHelper.UserAgent = $"JellyfinEnhanced/{Version}";
             CleanupOldScript();
             CheckPluginPages(applicationPaths, serverConfigurationManager, 1);
             BackfillMissingDefaultShortcuts();
@@ -325,10 +325,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 // unrelated config save (this method fires on every save).
                 var stored = Configuration;
                 tagCacheWasEnabled = stored.TagCacheServerMode;
-                sourceRatingsWereConfigured = Services.TagCacheService.SourceRatingsConfigured;
+                sourceRatingsWereConfigured = Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services.TagCacheService.SourceRatingsConfigured;
                 analyticsWasEnabled = stored.AnalyticsEnabled;
-                awardsBefore = Services.AwardTagsService.ConfigurationIdentity(stored);
-                leavingBefore = Services.LeavingSoonService.ConfigurationIdentity(stored);
+                awardsBefore = Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services.AwardTagsService.ConfigurationIdentity(stored);
+                leavingBefore = Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services.LeavingSoonService.ConfigurationIdentity(stored);
 
                 var configuration = build(stored);
                 if (configuration == null) return false;
@@ -381,7 +381,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 // Tag Styles: only a valid document is stored (normalised to version 2); anything
                 // else keeps the current one, since a save can come from anywhere (API, restored backup).
                 if (configuration is PluginConfiguration stylesConfig
-                    && !Services.PosterTags.TagStyleSet.ApplyToSave(stylesConfig, Configuration, out var styleError))
+                    && !Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags.PosterTags.TagStyleSet.ApplyToSave(stylesConfig, Configuration, out var styleError))
                 {
                     _logger.Warning($"Jellyfin Enhanced: Tag Styles not saved ({styleError}); keeping the current styles.");
                 }
@@ -392,11 +392,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             CheckPluginPages(_applicationPaths, _serverConfigurationManager, 1);
 
             // The trending source (TMDB key, Seerr) or the switches may have changed.
-            Services.StatusTagsTrendingService.Invalidate();
+            Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services.StatusTagsTrendingService.Invalidate();
 
             try
             {
-                Controllers.JellyfinEnhancedController.ClearAllSeerrCachesOnConfigChange();
+                Shared.Seerr.SeerrCaches.ClearAllSeerrCachesOnConfigChange();
                 _logger.Info("Jellyfin Enhanced: configuration updated — Seerr caches cleared.");
             }
             catch (Exception ex)
@@ -408,31 +408,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // TagCacheService (the save request must not block behind cache work).
             if (tagCacheWasEnabled != (Configuration?.TagCacheServerMode == true))
             {
-                Services.TagCacheService.Instance?.QueueServerModeTransition();
+                Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services.TagCacheService.Instance?.QueueServerModeTransition();
             }
 
             // The Logos switch, modes, region or maximum may have changed what cache entries carry.
-            Services.TagCacheService.Instance?.OnLogoSettingsChanged();
-            Services.TagCacheService.Instance?.OnScenesSettingsChanged();
+            Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services.TagCacheService.Instance?.OnLogoSettingsChanged();
+            Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services.TagCacheService.Instance?.OnScenesSettingsChanged();
             // Custom tag rules that match differently re-match the cache in the background.
-            Services.TagCacheService.Instance?.QueueCustomTagRefreshIfStale();
+            Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services.TagCacheService.Instance?.QueueCustomTagRefreshIfStale();
 
             // Removing an MDBList key must also retire previously cached source scores.
             // This waits on TagCacheService's rebuild lock, so a key change saved during
             // a full rebuild blocks the save until it finishes (T1R-6: queue it if slow).
-            if (sourceRatingsWereConfigured != Services.TagCacheService.SourceRatingsConfigured)
-                Services.TagCacheService.Instance?.RefreshRatingSourceAvailability();
+            if (sourceRatingsWereConfigured != Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services.TagCacheService.SourceRatingsConfigured)
+                Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services.TagCacheService.Instance?.RefreshRatingSourceAvailability();
 
-            if (awardsBefore != Services.AwardTagsService.ConfigurationIdentity(Configuration))
+            if (awardsBefore != Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services.AwardTagsService.ConfigurationIdentity(Configuration))
             {
-                Services.TagCacheService.Instance?.RefreshAwardAvailability();
+                Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services.TagCacheService.Instance?.RefreshAwardAvailability();
                 // Turned on (or its providers changed) with nothing fetched yet: fetch now, not at the nightly run.
-                Services.TagCacheService.Instance?.QueueAwardsFirstRefresh();
+                Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services.TagCacheService.Instance?.QueueAwardsFirstRefresh();
             }
 
             // A new Leaving soon source (URL, key or names) is read in the background.
-            if (leavingBefore != Services.LeavingSoonService.ConfigurationIdentity(Configuration))
-                Services.TagCacheService.Instance?.QueueLeavingRefresh();
+            if (leavingBefore != Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services.LeavingSoonService.ConfigurationIdentity(Configuration))
+                Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services.TagCacheService.Instance?.QueueLeavingRefresh();
 
             // ON->OFF: flag this install as opted out on the backend so it
             // drops out of every public view without deleting its history.

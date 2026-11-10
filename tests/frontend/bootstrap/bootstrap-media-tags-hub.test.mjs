@@ -46,7 +46,7 @@ function setup(t, { stored = {}, plugin = {}, admin = false, observer = false, p
       getUrl: (path, query) => `http://jellyfin.test/${path}${query ? `?${new URLSearchParams(query)}` : ''}`,
       ajax: async request => {
         requests.push(request.url);
-        if (request.type !== 'GET') { writes.push(JSON.parse(request.data)); return null; }
+        if (request.type !== 'GET') { writes.push(JSON.parse(request.data).Settings); return null; }
         const url = new URL(request.url);
         if (url.pathname.includes('/user-settings/')) return null;
         if (url.pathname.endsWith('/UserViews')) return { Items: [{ Id: KIDS, Name: 'Kids' }] };

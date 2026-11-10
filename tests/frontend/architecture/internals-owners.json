@@ -1,0 +1,23 @@
+{
+  "_comment": "frontend.md §2.4 rule 3: which feature owns each JE.internals slot. Only a host file of an owning feature (features/<f>/host*.ts) may touch a slot. Evidence: the file that creates the slot. 'features' is created by both details-providers (details-page.ts, media-info.ts, release-dates.ts) and hidden-content (hidden-content/host.ts, features-remove-home.ts), so both own it until C3 splits it. 'enhancedUi' (step C4, coordinator decision D1) is the settings registry: settings-panel's shell and the Media Tags and Hidden Content panels (moved out in A1/A2, and loaded without the shell by unit and browser tests) each create it on first use and fill their own members, and media-tags' admin page, admin sections and item editor read those members back, so all three co-own that slot only.",
+  "autoSkip": ["player"],
+  "bookmarkLifetimes": ["bookmarks"],
+  "bookmarksLibrary": ["bookmarks"],
+  "calendarLifetime": ["calendar"],
+  "calendarPage": ["calendar"],
+  "canonicalCombo": ["chrome"],
+  "catchUp": ["catchup"],
+  "enhancedUi": ["settings-panel", "media-tags", "hidden-content"],
+  "features": ["details-providers", "hidden-content"],
+  "hiddenContent": ["hidden-content"],
+  "hiddenContentPage": ["hidden-content"],
+  "hiddenContentRuntime": ["hidden-content"],
+  "jellyseerrUi": ["seerr"],
+  "moreInfoModal": ["seerr"],
+  "nowPlaying": ["player"],
+  "peopleTags": ["media-tags"],
+  "player": ["player"],
+  "recommendationsPage": ["seerr"],
+  "requestsPage": ["downloads"],
+  "spoilerGuard": ["spoiler-guard"]
+}

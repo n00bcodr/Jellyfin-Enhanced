@@ -33,7 +33,7 @@ test('scores and language names follow the user locale while matching keeps Engl
  assert.equal(h.JE.core.mediaLanguage.displayName('ja'), 'Japanese');
 });
 
-// Shared with TagCacheSubtitleLanguagesTests (Helpers/TrackRoles.cs).
+// Shared with TagCacheSubtitleLanguagesTests (Shared/Media/TrackRoles.cs).
 const roles = JSON.parse(readFileSync(new URL('../../fixtures/track-roles.json', import.meta.url)));
 test('commentary and audio-description titles are secondary audio in every listed script', t => {
  const m = setup(t);

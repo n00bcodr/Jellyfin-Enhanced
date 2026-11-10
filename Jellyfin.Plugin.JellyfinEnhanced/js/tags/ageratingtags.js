@@ -1,196 +1,123 @@
-// /js/tags/ageratingtags.js
-// Jellyfin Age Rating Tags - Display the item's parental / age rating (PG-13,
-// TV-MA, FSK 12, ...) as a colour-coded badge on posters.
-// A spec over the core tag-renderer factory (js/core/tag-renderer-base.js),
-// which owns the cache/ignore/tagged/CSS/reinitialize plumbing. This module
-// supplies only the age-rating-specific parts: reading OfficialRating, the
-// badge markup, and the per-rating colour table shared with Colored Ratings.
-//
-// Spoiler Guard: the badge stays on guarded items — a series' / movie's age
-// rating says nothing about the plot and Jellyfin shows it in the details
-// header. An unwatched Episode's (or unstarted Season's) OWN rating can differ
-// from the series and Jellyfin never shows it, so while ratings are stripped
-// the server hands those items the series rating instead; cached entries for
-// guarded series are re-fetched rather than trusted (see isGuardedSeries).
-(function(JE) {
-    'use strict';
+(() => {
+"use strict";
+(() => {
+  // client/src/host/context.ts
+  function sharedModule(id) {
+    const namespace = window.JellyfinEnhanced?.core?.sharedModules?.[id];
+    if (!namespace) throw new Error(`${id} is not in JE.core.sharedModules: load its provider first (client/shared-modules.json)`);
+    return namespace;
+  }
+  function sharedExport(namespace, name) {
+    return namespace[name];
+  }
 
-    const logPrefix = '🪼 Jellyfin Enhanced: Age Rating Tags:';
-    const containerClass = 'age-rating-overlay-container';
-    const tagClass = 'age-rating-tag';
-    // Per-rating colour rules derived from css/ratings.css (the Colored Ratings
-    // stylesheet), injected once under this id.
-    const colourStyleId = 'jellyfin-enhanced-age-rating-colours-css';
-    /** @type {Promise<void>|null} in-flight / completed colour stylesheet load */
+  // client/generated-shared/stub/client/src/features/media-tags/host.ts
+  var shared = /* @__PURE__ */ sharedModule("features/media-tags/host");
+  var export2 = /* @__PURE__ */ sharedExport(shared, "mediaTagsContext");
+
+  // client/generated-shared/stub/client/src/features/media-tags/pipeline/dto.ts
+  var shared2 = /* @__PURE__ */ sharedModule("features/media-tags/pipeline/dto");
+  var export4 = /* @__PURE__ */ sharedExport(shared2, "isRecord");
+  var export13 = /* @__PURE__ */ sharedExport(shared2, "text");
+
+  // client/src/features/media-tags/types/age-rating/ageratingtags.ts
+  function createAgeRatingTags(ctx) {
+    const JE = ctx.core;
+    const logPrefix = "🪼 Jellyfin Enhanced: Age Rating Tags:";
+    const containerClass = "age-rating-overlay-container";
+    const tagClass = "age-rating-tag";
+    const colourStyleId = "jellyfin-enhanced-age-rating-colours-css";
     let colourCssPromise = null;
-
-    /**
-     * Normalize a raw OfficialRating to the key the colour table uses. Delegates
-     * to the Colored Ratings normalizer (DE-12 → FSK-12, "Not Rated" → NR, ...)
-     * when it is loaded, so the poster badge and the details-page box always
-     * agree on both text and colour; otherwise just collapses whitespace.
-     * @param {*} raw - OfficialRating as stored by Jellyfin.
-     * @returns {string|null} Normalized rating or null when empty.
-     */
     function normalizeRating(raw) {
-        if (raw === null || raw === undefined) return null;
-        const text = String(raw).replace(/\s+/g, ' ').trim();
-        if (!text) return null;
-        const shared = JE.normalizeOfficialRating;
-        return (typeof shared === 'function' ? shared(text) : text) || null;
+      if (raw === null || raw === void 0) return null;
+      const text = String(raw).replace(/\s+/g, " ").trim();
+      if (!text) return null;
+      const shared3 = JE.normalizeOfficialRating;
+      return export13(typeof shared3 === "function" ? shared3(text) : text);
     }
-
-    /**
-     * Extract only the `[rating=...]` colour rules from the Colored Ratings
-     * stylesheet and re-target them at the poster badge class. The sheet's base
-     * `.mediaInfoOfficialRating` rule (sizing, hover transform, !important
-     * resets) and its @media blocks are dropped so nothing leaks onto the
-     * details page when Colored Ratings itself is off. The sheet's `!important`
-     * flags are dropped too: the attribute selector already outranks the
-     * badge's base rule, and this style element lands after Jellyfin's Custom
-     * CSS, so keeping them would make a user's own `.age-rating-tag[rating=…]`
-     * override unreachable.
-     * @param {string} cssText - Raw css/ratings.css contents.
-     * @returns {string} Scoped colour rules for `.age-rating-tag[rating=...]`.
-     */
     function scopeRatingColours(cssText) {
-        const withoutComments = cssText.replace(/\/\*[\s\S]*?\*\//g, '');
-        const rules = [];
-        const blockRe = /([^{}]+)\{([^{}]*)\}/g;
-        let match;
-        while ((match = blockRe.exec(withoutComments)) !== null) {
-            const selectors = match[1].split(',')
-                .map((s) => s.trim())
-                .filter((s) => s.startsWith('.mediaInfoOfficialRating[rating='))
-                .map((s) => s.replace('.mediaInfoOfficialRating', `.${tagClass}`));
-            if (selectors.length === 0) continue;
-            const declarations = match[2].replace(/\s*!important/g, '').trim();
-            rules.push(`${selectors.join(',\n')} { ${declarations} }`);
-        }
-        return rules.join('\n');
+      const withoutComments = cssText.replace(/\/\*[\s\S]*?\*\//g, "");
+      const rules = [];
+      const blockRe = /([^{}]+)\{([^{}]*)\}/g;
+      let match;
+      while ((match = blockRe.exec(withoutComments)) !== null) {
+        const [, selectorList = "", body = ""] = match;
+        const selectors = selectorList.split(",").map((s) => s.trim()).filter((s) => s.startsWith(".mediaInfoOfficialRating[rating=")).map((s) => s.replace(".mediaInfoOfficialRating", `.${tagClass}`));
+        if (selectors.length === 0) continue;
+        const declarations = body.replace(/\s*!important/g, "").trim();
+        rules.push(`${selectors.join(",\n")} { ${declarations} }`);
+      }
+      return rules.join("\n");
     }
-
-    /**
-     * Load css/ratings.css through the plugin's local CDN route (same asset
-     * Colored Ratings uses) and inject the scoped colour rules once. Badges
-     * fall back to the neutral blue-grey until this resolves, or permanently if
-     * the asset cannot be fetched — the rating text is still shown.
-     * @returns {Promise<void>}
-     */
     function ensureColourCss() {
-        if (colourCssPromise) return colourCssPromise;
-        if (document.getElementById(colourStyleId)) return (colourCssPromise = Promise.resolve());
-        colourCssPromise = (async () => {
-            try {
-                const response = await fetch(JE.cdn.url('je-css', 'ratings.css'));
-                if (!response.ok) throw new Error(`HTTP ${response.status}`);
-                const scoped = scopeRatingColours(await response.text());
-                if (!scoped) throw new Error('no [rating=] rules found');
-                JE.core.ui.injectCss(colourStyleId, scoped);
-            } catch (e) {
-                console.warn(`${logPrefix} Could not load rating colours, badges will use the default colour.`, e);
-                colourCssPromise = null; // allow a retry on the next (re)initialize
-            }
-        })();
-        return colourCssPromise;
-    }
-
-    /**
-     * True when Spoiler Guard may be stripping ratings for this series, so a
-     * cached Episode/Season rating (possibly the item's own, captured before
-     * the guard was switched on) must not be trusted. Mirrors the gating of
-     * ratingtags.js shouldSuppressRatingTag. Returning true only costs a
-     * re-fetch — the server decides what the item may show — so unknown or
-     * not-yet-loaded guard state errs towards true.
-     * @param {string|null|undefined} seriesId - Parent series of the cached item.
-     * @returns {boolean}
-     */
-    function isGuardedSeries(seriesId) {
-        if (!seriesId) return false;
+      if (colourCssPromise) return colourCssPromise;
+      if (document.getElementById(colourStyleId)) return colourCssPromise = Promise.resolve();
+      colourCssPromise = (async () => {
         try {
-            const cfg = JE.pluginConfig;
-            if (!cfg || cfg.SpoilerBlurEnabled !== true || cfg.SpoilerStripRatings === false) return false;
-            const sg = JE.spoilerBlur;
-            if (!sg || typeof sg.isEnabledFor !== 'function') return false;
-            const prefs = (typeof sg.getUserPrefs === 'function' && sg.getUserPrefs()) || {};
-            if (prefs.HideRatings === false) return false;
-            if (typeof sg.isLoadOk === 'function' && sg.isLoadOk() !== true) return true;
-            return sg.isEnabledFor(seriesId) === true;
-        } catch {
-            return true;
+          const response = await fetch(JE.cdn.url("je-css", "ratings.css"));
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const scoped = scopeRatingColours(await response.text());
+          if (!scoped) throw new Error("no [rating=] rules found");
+          JE.core.ui.injectCss(colourStyleId, scoped);
+        } catch (e) {
+          console.warn(`${logPrefix} Could not load rating colours, badges will use the default colour.`, e);
+          colourCssPromise = null;
         }
+      })();
+      return colourCssPromise;
     }
-
-    /**
-     * Retrieve a cached entry from localStorage or hot cache.
-     * @param {Object} ctx - Factory context.
-     * @param {string} itemId - Jellyfin item ID.
-     * @returns {{rating: string|null, seriesId: string|null}|null} Cached entry or null when unknown.
-     */
-    function getCachedEntry(ctx, itemId) {
-        const entry = ctx.getPersistent(itemId) ?? ctx.hot?.get(itemId);
-        if (!entry || typeof entry !== 'object') return null;
-        return { rating: entry.rating ?? null, seriesId: entry.s ?? null };
+    function isGuardedSeries(seriesId) {
+      if (!seriesId) return false;
+      try {
+        const cfg = JE.pluginConfig;
+        if (!cfg || cfg.SpoilerBlurEnabled !== true || cfg.SpoilerStripRatings === false) return false;
+        const sg = ctx.peer("spoilerBlur");
+        if (!sg || typeof sg.isEnabledFor !== "function") return false;
+        const prefs = typeof sg.getUserPrefs === "function" && sg.getUserPrefs() || {};
+        if (prefs.HideRatings === false) return false;
+        if (typeof sg.isLoadOk === "function" && sg.isLoadOk() !== true) return true;
+        return sg.isEnabledFor(seriesId) === true;
+      } catch {
+        return true;
+      }
     }
-
-    /**
-     * Store an entry in both localStorage cache and hot cache. A null rating is
-     * cached too, so items without one are not re-fetched on every visit.
-     * @param {Object} ctx - Factory context.
-     * @param {string} itemId - Jellyfin item ID.
-     * @param {string|null} rating - Normalized rating.
-     * @param {string|null} seriesId - Parent series for Episodes/Seasons, else null.
-     * @returns {void}
-     */
-    function setCachedEntry(ctx, itemId, rating, seriesId) {
-        const entry = seriesId ? { rating, s: seriesId } : { rating };
-        ctx.setPersistent(itemId, entry);
-        ctx.hot?.set(itemId, entry);
+    function getCachedEntry(ctx2, itemId) {
+      const entry = ctx2.getPersistent(itemId) ?? ctx2.hot?.get(itemId);
+      if (!export4(entry)) return null;
+      return { rating: export13(entry.rating), seriesId: export13(entry.s) };
     }
-
-    /**
-     * Create and append the age rating badge to a card.
-     * @param {Object} ctx - Factory context.
-     * @param {HTMLElement} el - The card container to receive the overlay.
-     * @param {string|null} rating - Normalized rating text (also the colour key).
-     * @returns {void}
-     */
-    function applyAgeRatingTag(ctx, el, rating) {
-        if (!rating) return;
-
-        ctx.removeExistingOverlay(el);
-
-        const container = document.createElement('div');
-        container.className = containerClass;
-
-        const tag = document.createElement('div');
-        tag.className = tagClass;
-        // Same attribute Colored Ratings sets on .mediaInfoOfficialRating, so
-        // the scoped [rating=...] colour rules match verbatim.
-        tag.setAttribute('rating', rating);
-        tag.textContent = rating;
-        container.appendChild(tag);
-
-        ctx.commitOverlay(el, container);
+    function setCachedEntry(ctx2, itemId, rating, seriesId) {
+      const entry = seriesId ? { rating, s: seriesId } : { rating };
+      ctx2.setPersistent(itemId, entry);
+      ctx2.hot?.set(itemId, entry);
     }
-
-    /** @type {Object} Factory spec — everything age-rating-specific lives here. */
+    function applyAgeRatingTag(ctx2, el, rating) {
+      if (!rating) return;
+      ctx2.removeExistingOverlay(el);
+      const container = document.createElement("div");
+      container.className = containerClass;
+      const tag = document.createElement("div");
+      tag.className = tagClass;
+      tag.setAttribute("rating", rating);
+      tag.textContent = rating;
+      container.appendChild(tag);
+      ctx2.commitOverlay(el, container);
+    }
     const spec = {
-        logPrefix,
-        settingKey: 'ageRatingTagsEnabled',
-        containerClass,
-        taggedAttr: 'jeAgeRatingTagged',
-        styleId: 'jellyfin-enhanced-age-rating-tags-css',
-        position: { userKey: 'ageRatingTagsPosition', pluginKey: 'AgeRatingTagsPosition', fallback: 'bottom-right' },
-        cache: {
-            key: 'JellyfinEnhanced-ageRatingTagsCache',
-            legacyPrefix: 'ageRatingTagsCache',
-            hotBucket: 'ageRating',
-            saveOnUnload: false,
-        },
-        buildCss() {
-            // Placement comes from the layout stylesheet (tags/tag-layout-styles.js).
-            return `
+      logPrefix,
+      settingKey: "ageRatingTagsEnabled",
+      containerClass,
+      taggedAttr: "jeAgeRatingTagged",
+      styleId: "jellyfin-enhanced-age-rating-tags-css",
+      position: { userKey: "ageRatingTagsPosition", pluginKey: "AgeRatingTagsPosition", fallback: "bottom-right" },
+      cache: {
+        key: "JellyfinEnhanced-ageRatingTagsCache",
+        legacyPrefix: "ageRatingTagsCache",
+        hotBucket: "ageRating",
+        saveOnUnload: false
+      },
+      buildCss() {
+        return `
                 .${containerClass} {
                     display: flex;
                     flex-direction: column;
@@ -243,67 +170,54 @@
                     .${tagClass} { padding: calc(2px * var(--je-tag-scale, 1)) calc(4px * var(--je-tag-scale, 1)); font-size: calc(clamp(10px, 2vw, 11px) * var(--je-tag-scale, 1)); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4); }
                 }
             `;
+      },
+      pipeline: {
+        needsFirstEpisode: false,
+        needsParentSeries: false,
+        render(ctx2, el, item, extras) {
+          if (ctx2.shouldIgnore(el)) return;
+          if (ctx2.isTagged(el)) return;
+          if (el.closest(".je-hidden")) return;
+          const rating = normalizeRating(item.OfficialRating) ?? normalizeRating(extras?.parentSeries?.OfficialRating);
+          const isChild = item.Type === "Episode" || item.Type === "Season";
+          if (!isChild || item.SeriesId) {
+            setCachedEntry(ctx2, String(item.Id), rating, isChild ? String(item.SeriesId) : null);
+          }
+          applyAgeRatingTag(ctx2, el, rating);
         },
-        pipeline: {
-            needsFirstEpisode: false,
-            needsParentSeries: false,
-            render(ctx, el, item, extras) {
-                if (ctx.shouldIgnore(el)) return;
-                if (ctx.isTagged(el)) return;
-                if (el.closest('.je-hidden')) return;
-
-                // Always read the item just fetched rather than the cache: it is
-                // fresh and Spoiler-Guard-aware, a cached entry may predate the guard.
-                // /tag-data resolves the Season/Episode → Series fallback server-side;
-                // the parent series handed over by the pipeline (when another renderer
-                // asked for it) only covers the raw /Items fallback path.
-                const rating = normalizeRating(item.OfficialRating)
-                    ?? normalizeRating(extras?.parentSeries?.OfficialRating);
-                const isChild = item.Type === 'Episode' || item.Type === 'Season';
-                // A child with no SeriesId is a Spoiler Guard strip stub carrying the
-                // series rating: show it, but don't persist it as the item's own.
-                if (!isChild || item.SeriesId) {
-                    setCachedEntry(ctx, item.Id, rating, isChild ? String(item.SeriesId) : null);
-                }
-                applyAgeRatingTag(ctx, el, rating);
-            },
-            renderFromCache(ctx, el, itemId) {
-                if (ctx.isTagged(el)) return true;
-                if (ctx.shouldIgnore(el)) return true;
-                if (el.closest('.je-hidden')) return true;
-                const cached = getCachedEntry(ctx, itemId);
-                if (!cached) return false;
-                // Guarded series: re-fetch so the server can swap an episode's own
-                // rating for the series one.
-                if (isGuardedSeries(cached.seriesId)) return false;
-                applyAgeRatingTag(ctx, el, cached.rating);
-                // A cached "no rating" is still a cache hit — nothing to fetch.
-                return true;
-            },
-            renderFromServerCache(ctx, el, entry) {
-                if (ctx.isTagged(el)) return;
-                if (ctx.shouldIgnore(el)) return;
-                applyAgeRatingTag(ctx, el, normalizeRating(entry.OfficialRating));
-            },
+        renderFromCache(ctx2, el, itemId) {
+          if (ctx2.isTagged(el)) return true;
+          if (ctx2.shouldIgnore(el)) return true;
+          if (el.closest(".je-hidden")) return true;
+          const cached = getCachedEntry(ctx2, itemId);
+          if (!cached) return false;
+          if (isGuardedSeries(cached.seriesId)) return false;
+          applyAgeRatingTag(ctx2, el, cached.rating);
+          return true;
         },
+        renderFromServerCache(ctx2, el, entry) {
+          if (ctx2.isTagged(el)) return;
+          if (ctx2.shouldIgnore(el)) return;
+          applyAgeRatingTag(ctx2, el, normalizeRating(entry.OfficialRating));
+        }
+      }
     };
-
     JE.initializeAgeRatingTags = function() {
-        console.log(`${logPrefix} Starting...`);
-
-        const ctx = JE.core.tagRenderer.register('agerating', spec);
-        ctx.injectCss();
-        ensureColourCss();
-
-        console.log(`${logPrefix} Initialized successfully.`);
+      console.log(`${logPrefix} Starting...`);
+      const ctx2 = JE.core.tagRenderer.register("agerating", spec);
+      ctx2.injectCss();
+      ensureColourCss();
+      console.log(`${logPrefix} Initialized successfully.`);
     };
-
     JE.reinitializeAgeRatingTags = function() {
-        JE.core.tagRenderer.reinitialize('agerating', spec);
-        ensureColourCss();
+      JE.core.tagRenderer.reinitialize("agerating", spec);
+      ensureColourCss();
     };
-
-    // Previews may enable this group while the signed-in user has it off.
     JE.core.tagRenderer.registerStyles(spec);
+  }
 
-})(window.JellyfinEnhanced);
+  // client/src/features/media-tags/types/age-rating/ageratingtags-entry.ts
+  createAgeRatingTags(export2());
+})();
+})();
+//# sourceMappingURL=ageratingtags.js.map

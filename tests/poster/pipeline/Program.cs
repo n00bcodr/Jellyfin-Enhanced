@@ -2,9 +2,10 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
-using Jellyfin.Plugin.JellyfinEnhanced.Services;
-using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags;
+using Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.PosterTags;
+using Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags.PosterTags;
 using SkiaSharp;
+using Jellyfin.Plugin.JellyfinEnhanced.Shared.SpoilerGuard;
 
 var failures = 0;
 var passes = 0;
@@ -137,12 +138,12 @@ void Tokens()
     // The live pipeline mints and verifies against PosterTagComposer.PixelVersion, which carries both the
     // renderer and the composition version, so bumping either retires issued URLs.
     Check("PixelVersion = renderer version + composition version",
-        PosterTagComposer.PixelVersion == Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering.PosterTagRenderer.Version + "." + PosterTagComposer.CompositionVersion,
+        PosterTagComposer.PixelVersion == Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.PosterTags.Rendering.PosterTagRenderer.Version + "." + PosterTagComposer.CompositionVersion,
         PosterTagComposer.PixelVersion);
     var pixelToken = tokens.Mint(user, item, digest, PosterTagComposer.PixelVersion, PosterTagVariantFlags.None, "a1b2c3");
     Check("verify: composition version bump rejects the token",
         tokens.Verify(pixelToken, user, item, digest, PosterTagComposer.PixelVersion, out _)
-        && !tokens.Verify(pixelToken, user, item, digest, Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering.PosterTagRenderer.Version + ".999", out _));
+        && !tokens.Verify(pixelToken, user, item, digest, Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.PosterTags.Rendering.PosterTagRenderer.Version + ".999", out _));
     Check("verify: flags tampered", !tokens.Verify("3" + token[1..], user, item, digest, version, out _) && !tokens.Verify("0" + token[1..], user, item, digest, version, out _));
     Check("verify: data hash tampered", !tokens.Verify(token[..1] + "a1b2c4" + token[7..], user, item, digest, version, out _));
     for (var i = 7; i < token.Length; i++)

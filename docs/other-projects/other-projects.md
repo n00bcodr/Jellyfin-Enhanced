@@ -74,18 +74,18 @@ See [JE installation](../installation/installation.md) for the full workflow and
 
 ## Compatibility
 
-Choose the JE build for your Jellyfin version. Current builds target Jellyfin 12.x and 10.11.x.
+This development rewrite targets Jellyfin 12.x only. Check upstream release requirements separately for historical JE versions.
 
 | Project | Jellyfin 12.x | Jellyfin 10.11.x | Older servers |
 | --- | --- | --- | --- |
-| Jellyfin Enhanced | Current build | Current build | 10.10: archived at JE 10.11.1.0 |
+| Jellyfin Enhanced rewrite | Supported host line | Unsupported | Unsupported |
 | Jellyfin Tweaks | Check [release requirements](https://github.com/n00bcodr/JellyfinTweaks/releases) | Check release requirements | Use that project's release information |
 | JavaScript Injector | Check [release requirements](https://github.com/n00bcodr/Jellyfin-JavaScript-Injector/releases) | Check release requirements | Use that project's release information |
 | Jellyfish | Check [theme documentation](https://github.com/n00bcodr/Jellyfish/#installation) | Check theme documentation | Use the theme's own compatibility guidance |
 
 ??? note "Details"
 
-    The shared manifest contains separate builds; one DLL does not serve every Jellyfin version. The Jellyfin 10.10 build is archived at JE 10.11.1.0.
+    The upstream shared manifest includes historical releases. This rewrite builds only for Jellyfin 12.x and is not yet a published release.
 
 ## Support & community
 

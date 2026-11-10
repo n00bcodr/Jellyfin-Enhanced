@@ -1,356 +1,373 @@
-// /js/tags/peopletags.js
-// Jellyfin Enhanced People Tags - Show cast member information (birthplace, age, deceased status)
-//
-// NOTE: unlike the poster tag modules, this one is NOT a tag-pipeline
-// renderer — it targets person cards on the item detail page with its own
-// managed observer and batch backend endpoint (people/info), so the
-// tag-renderer factory does not apply here. Facts are cached per person and
-// ages are derived locally, so episodes of a series share their cast.
-(function(JE) {
-    'use strict';
+(() => {
+"use strict";
+(() => {
+  // client/src/host/context.ts
+  function sharedModule(id) {
+    const namespace = window.JellyfinEnhanced?.core?.sharedModules?.[id];
+    if (!namespace) throw new Error(`${id} is not in JE.core.sharedModules: load its provider first (client/shared-modules.json)`);
+    return namespace;
+  }
+  function sharedExport(namespace, name) {
+    return namespace[name];
+  }
 
-    // ── Person facts model (pure) ──────────────────────────────────────────
-    // The cache holds item-independent facts per person; every age is
-    // derived at render time with the server's CalculateAge semantics, so a
-    // series' recurring cast is fetched once and shared by all episodes.
-    // "Today" is the browser's local date (the server used its own clock), so
-    // values can differ by a day around midnight across timezones; that is
-    // acceptable, and more current than the previous 30-day cached value.
+  // client/generated-shared/stub/client/src/features/media-tags/host.ts
+  var shared = /* @__PURE__ */ sharedModule("features/media-tags/host");
+  var export0 = /* @__PURE__ */ sharedExport(shared, "apiClient");
+  var export2 = /* @__PURE__ */ sharedExport(shared, "mediaTagsContext");
 
-    const DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})(?:$|T)/;
-    const PERSON_ID_PATTERN = /^[0-9a-f]{32}$/;
-    const MAX_BIRTHPLACE_LENGTH = 300;
+  // client/generated-shared/stub/client/src/features/media-tags/pipeline/dto.ts
+  var shared2 = /* @__PURE__ */ sharedModule("features/media-tags/pipeline/dto");
+  var export1 = /* @__PURE__ */ sharedExport(shared2, "errorStatus");
+  var export4 = /* @__PURE__ */ sharedExport(shared2, "isRecord");
+  var export10 = /* @__PURE__ */ sharedExport(shared2, "record");
 
-    function isLeapYear(year) {
-        return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+  // client/src/features/media-tags/types/people/people-countries.ts
+  var COUNTRY_MAP = {
+    "United States": "US",
+    "USA": "US",
+    "America": "US",
+    "United Kingdom": "GB",
+    "UK": "GB",
+    "England": "GB",
+    "Scotland": "GB",
+    "Wales": "GB",
+    "Canada": "CA",
+    "Australia": "AU",
+    "New Zealand": "NZ",
+    "Germany": "DE",
+    "France": "FR",
+    "Italy": "IT",
+    "Spain": "ES",
+    "Mexico": "MX",
+    "Brazil": "BR",
+    "Argentina": "AR",
+    "Japan": "JP",
+    "South Korea": "KR",
+    "China": "CN",
+    "India": "IN",
+    "Russia": "RU",
+    "Sweden": "SE",
+    "Norway": "NO",
+    "Denmark": "DK",
+    "Finland": "FI",
+    "Netherlands": "NL",
+    "Belgium": "BE",
+    "Austria": "AT",
+    "Switzerland": "CH",
+    "Poland": "PL",
+    "Czech Republic": "CZ",
+    "Czechia": "CZ",
+    "Greece": "GR",
+    "Portugal": "PT",
+    "Turkey": "TR",
+    "Israel": "IL",
+    "South Africa": "ZA",
+    "Chile": "CL",
+    "Colombia": "CO",
+    "Peru": "PE",
+    "Thailand": "TH",
+    "Malaysia": "MY",
+    "Singapore": "SG",
+    "Philippines": "PH",
+    "Indonesia": "ID",
+    "Vietnam": "VN",
+    "Ukraine": "UA",
+    "Iran": "IR",
+    "Ireland": "IE",
+    "Hungary": "HU",
+    "Romania": "RO",
+    "Bulgaria": "BG",
+    "Croatia": "HR",
+    "Serbia": "RS",
+    "Slovenia": "SI",
+    "Estonia": "EE",
+    "Latvia": "LV",
+    "Lithuania": "LT",
+    "Iceland": "IS",
+    "Luxembourg": "LU",
+    "Monaco": "MC",
+    "Liechtenstein": "LI",
+    "Malta": "MT",
+    "Cyprus": "CY",
+    "Slovakia": "SK",
+    "Bosnia and Herzegovina": "BA",
+    "Bosnia": "BA",
+    "North Macedonia": "MK",
+    "Macedonia": "MK",
+    "Albania": "AL",
+    "Montenegro": "ME",
+    "Moldova": "MD",
+    "Belarus": "BY",
+    "Kosovo": "XK",
+    "Georgia": "GE",
+    "Armenia": "AM",
+    "Azerbaijan": "AZ",
+    "Saudi Arabia": "SA",
+    "United Arab Emirates": "AE",
+    "UAE": "AE",
+    "Qatar": "QA",
+    "Kuwait": "KW",
+    "Bahrain": "BH",
+    "Oman": "OM",
+    "Jordan": "JO",
+    "Lebanon": "LB",
+    "Egypt": "EG",
+    "Iraq": "IQ",
+    "Syria": "SY",
+    "Yemen": "YE",
+    "Palestine": "PS",
+    "Pakistan": "PK",
+    "Bangladesh": "BD",
+    "Sri Lanka": "LK",
+    "Nepal": "NP",
+    "Taiwan": "TW",
+    "Hong Kong": "HK",
+    "Macau": "MO",
+    "Kazakhstan": "KZ",
+    "Uzbekistan": "UZ",
+    "Afghanistan": "AF",
+    "Mongolia": "MN",
+    "Myanmar": "MM",
+    "Cambodia": "KH",
+    "Laos": "LA",
+    "Venezuela": "VE",
+    "Ecuador": "EC",
+    "Uruguay": "UY",
+    "Paraguay": "PY",
+    "Bolivia": "BO",
+    "Costa Rica": "CR",
+    "Panama": "PA",
+    "Nicaragua": "NI",
+    "Honduras": "HN",
+    "El Salvador": "SV",
+    "Guatemala": "GT",
+    "Belize": "BZ",
+    "Cuba": "CU",
+    "Jamaica": "JM",
+    "Dominican Republic": "DO",
+    "Puerto Rico": "PR",
+    "Trinidad and Tobago": "TT",
+    "Barbados": "BB",
+    "Haiti": "HT",
+    "Bahamas": "BS",
+    "Guyana": "GY",
+    "Suriname": "SR",
+    "Nigeria": "NG",
+    "Kenya": "KE",
+    "Ghana": "GH",
+    "Ethiopia": "ET",
+    "Morocco": "MA",
+    "Algeria": "DZ",
+    "Tunisia": "TN",
+    "Libya": "LY",
+    "Senegal": "SN",
+    "Uganda": "UG",
+    "Tanzania": "TZ",
+    "Zimbabwe": "ZW",
+    "Zambia": "ZM",
+    "Botswana": "BW",
+    "Namibia": "NA",
+    "Angola": "AO",
+    "Mozambique": "MZ",
+    "Madagascar": "MG",
+    "Cameroon": "CM",
+    "Ivory Coast": "CI",
+    "Côte d'Ivoire": "CI",
+    "Mali": "ML",
+    "Burkina Faso": "BF",
+    "Papua New Guinea": "PG",
+    "Fiji": "FJ",
+    "Samoa": "WS",
+    "Tonga": "TO"
+  };
+
+  // client/src/features/media-tags/types/people/people-model.ts
+  var DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})(?:$|T)/;
+  var PERSON_ID_PATTERN = /^[0-9a-f]{32}$/;
+  var MAX_BIRTHPLACE_LENGTH = 300;
+  function isLeapYear(year) {
+    return year % 4 === 0 && year % 100 !== 0 || year % 400 === 0;
+  }
+  function daysInMonth(year, month) {
+    return month === 2 ? isLeapYear(year) ? 29 : 28 : [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1] ?? 31;
+  }
+  function parseCalendarDate(value) {
+    if (typeof value !== "string") return null;
+    const match = DATE_PATTERN.exec(value);
+    if (!match) return null;
+    const y = Number(match[1]);
+    const m = Number(match[2]);
+    const d = Number(match[3]);
+    if (y < 1 || m < 1 || m > 12 || d < 1 || d > daysInMonth(y, m)) return null;
+    return { y, m, d };
+  }
+  function compareDates(a, b) {
+    return a.y - b.y || a.m - b.m || a.d - b.d;
+  }
+  function calculateAge(birth, reference) {
+    let age = reference.y - birth.y;
+    const anniversary = { y: reference.y, m: birth.m, d: Math.min(birth.d, daysInMonth(reference.y, birth.m)) };
+    if (compareDates(reference, anniversary) < 0) age--;
+    return Math.max(0, age);
+  }
+  function todayDate(now = /* @__PURE__ */ new Date()) {
+    return { y: now.getFullYear(), m: now.getMonth() + 1, d: now.getDate() };
+  }
+  function factsFromResponse(data) {
+    if (!export4(data)) return null;
+    const facts = {};
+    if (parseCalendarDate(data.birthDate)) facts.birthDate = String(data.birthDate).slice(0, 10);
+    if (parseCalendarDate(data.deathDate)) facts.deathDate = String(data.deathDate).slice(0, 10);
+    if (typeof data.birthPlace === "string" && data.birthPlace.trim()) {
+      facts.birthPlace = data.birthPlace.trim().slice(0, MAX_BIRTHPLACE_LENGTH);
     }
-
-    function daysInMonth(year, month) {
-        return month === 2 ? (isLeapYear(year) ? 29 : 28) : [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1];
+    return facts;
+  }
+  function describePerson(facts, premiere, today) {
+    const birth = parseCalendarDate(facts.birthDate);
+    const death = parseCalendarDate(facts.deathDate);
+    const isDeceased = !!death && compareDates(death, today) <= 0;
+    let currentAge = null;
+    let ageAtDeath = null;
+    let ageAtItemRelease = null;
+    if (birth) {
+      if (death && isDeceased) ageAtDeath = calculateAge(birth, death);
+      else currentAge = calculateAge(birth, today);
+      if (premiere) ageAtItemRelease = calculateAge(birth, premiere);
     }
-
-    /**
-     * Parse the calendar date of 'yyyy-MM-dd' (optionally followed by a time
-     * part, e.g. a Jellyfin PremiereDate) without any timezone conversion.
-     * @param {*} value
-     * @returns {{y: number, m: number, d: number}|null}
-     */
-    function parseCalendarDate(value) {
-        if (typeof value !== 'string') return null;
-        const match = DATE_PATTERN.exec(value);
-        if (!match) return null;
-        const y = Number(match[1]);
-        const m = Number(match[2]);
-        const d = Number(match[3]);
-        if (y < 1 || m < 1 || m > 12 || d < 1 || d > daysInMonth(y, m)) return null;
-        return { y, m, d };
+    return { birthPlace: facts.birthPlace || null, isDeceased, currentAge, ageAtDeath, ageAtItemRelease };
+  }
+  function sanitizeEntry(id, entry, now, ttlMs) {
+    if (!PERSON_ID_PATTERN.test(id) || !export4(entry)) return null;
+    const ts = entry.ts;
+    if (typeof ts !== "number" || !Number.isFinite(ts) || now - ts >= ttlMs || ts > now + 864e5) return null;
+    const clean = { ts };
+    for (const field of ["b", "d"]) {
+      const value = entry[field];
+      if (value === void 0) continue;
+      if (typeof value !== "string" || value.length !== 10 || !parseCalendarDate(value)) return null;
+      clean[field] = value;
     }
-
-    function compareDates(a, b) {
-        return (a.y - b.y) || (a.m - b.m) || (a.d - b.d);
+    if (entry.p !== void 0) {
+      if (typeof entry.p !== "string" || !entry.p || entry.p.length > MAX_BIRTHPLACE_LENGTH) return null;
+      clean.p = entry.p;
     }
-
-    /**
-     * Same result as the server's CalculateAge(birthDate, referenceDate):
-     * year difference, minus one if the reference falls before that year's
-     * anniversary (DateTime.AddYears moves Feb 29 to Feb 28 in non-leap
-     * years), never below zero.
-     * @param {{y: number, m: number, d: number}} birth
-     * @param {{y: number, m: number, d: number}} reference
-     * @returns {number}
-     */
-    function calculateAge(birth, reference) {
-        let age = reference.y - birth.y;
-        const anniversary = { y: reference.y, m: birth.m, d: Math.min(birth.d, daysInMonth(reference.y, birth.m)) };
-        if (compareDates(reference, anniversary) < 0) age--;
-        return Math.max(0, age);
+    return clean;
+  }
+  function evictOldest(people, maxEntries) {
+    if (people.size <= maxEntries) return false;
+    const oldestFirst = [...people].sort((a, b) => a[1].ts - b[1].ts);
+    for (const [id] of oldestFirst.slice(0, oldestFirst.length - maxEntries)) people.delete(id);
+    return true;
+  }
+  function loadPeopleStore(raw, owner, now, ttlMs, maxEntries) {
+    const people = /* @__PURE__ */ new Map();
+    if (raw === null || raw === void 0) return { people, rewrite: false };
+    let value = null;
+    try {
+      value = JSON.parse(raw);
+    } catch {
+      value = null;
     }
-
-    /**
-     * @param {Date} [now]
-     * @returns {{y: number, m: number, d: number}} Local calendar date.
-     */
-    function todayDate(now = new Date()) {
-        return { y: now.getFullYear(), m: now.getMonth() + 1, d: now.getDate() };
+    const parsed = export10(value);
+    if (parsed.v !== 2 || parsed.owner !== owner || !export4(parsed.people)) {
+      return { people, rewrite: true };
     }
-
-    /**
-     * Item-independent facts from a people/info (or person/{id}) response.
-     * @param {*} data
-     * @returns {{birthDate?: string, deathDate?: string, birthPlace?: string}|null}
-     */
-    function factsFromResponse(data) {
-        if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
-        const facts = {};
-        if (parseCalendarDate(data.birthDate)) facts.birthDate = data.birthDate.slice(0, 10);
-        if (parseCalendarDate(data.deathDate)) facts.deathDate = data.deathDate.slice(0, 10);
-        if (typeof data.birthPlace === 'string' && data.birthPlace.trim()) {
-            facts.birthPlace = data.birthPlace.trim().slice(0, MAX_BIRTHPLACE_LENGTH);
-        }
-        return facts;
+    let rewrite = false;
+    for (const [id, entry] of Object.entries(parsed.people)) {
+      const clean = sanitizeEntry(id, entry, now, ttlMs);
+      if (clean) people.set(id, clean);
+      else rewrite = true;
     }
+    if (evictOldest(people, maxEntries)) rewrite = true;
+    return { people, rewrite };
+  }
+  function serializePeopleStore(owner, people) {
+    return JSON.stringify({ v: 2, owner, people: Object.fromEntries(people) });
+  }
 
-    /**
-     * Derive what a card shows, mirroring the server's person response.
-     * @param {{birthDate?: string, deathDate?: string, birthPlace?: string}} facts
-     * @param {{y: number, m: number, d: number}|null} premiere - Item premiere date (visible items only)
-     * @param {{y: number, m: number, d: number}} today
-     */
-    function describePerson(facts, premiere, today) {
-        const birth = parseCalendarDate(facts.birthDate);
-        const death = parseCalendarDate(facts.deathDate);
-        // Server: EndDate < DateTime.Now, i.e. the death date is today or earlier.
-        const isDeceased = !!death && compareDates(death, today) <= 0;
-        let currentAge = null;
-        let ageAtDeath = null;
-        let ageAtItemRelease = null;
-        if (birth) {
-            if (isDeceased) ageAtDeath = calculateAge(birth, death);
-            else currentAge = calculateAge(birth, today);
-            if (premiere) ageAtItemRelease = calculateAge(birth, premiere);
-        }
-        return { birthPlace: facts.birthPlace || null, isDeceased, currentAge, ageAtDeath, ageAtItemRelease };
-    }
-
-    /**
-     * Validate one persisted entry { b, d, p, ts }; null if invalid/expired.
-     */
-    function sanitizeEntry(id, entry, now, ttlMs) {
-        if (!PERSON_ID_PATTERN.test(id) || !entry || typeof entry !== 'object' || Array.isArray(entry)) return null;
-        const ts = entry.ts;
-        if (typeof ts !== 'number' || !Number.isFinite(ts) || now - ts >= ttlMs || ts > now + 86400000) return null;
-        const clean = { ts };
-        for (const field of ['b', 'd']) {
-            if (entry[field] === undefined) continue;
-            if (typeof entry[field] !== 'string' || entry[field].length !== 10 || !parseCalendarDate(entry[field])) return null;
-            clean[field] = entry[field];
-        }
-        if (entry.p !== undefined) {
-            if (typeof entry.p !== 'string' || !entry.p || entry.p.length > MAX_BIRTHPLACE_LENGTH) return null;
-            clean.p = entry.p;
-        }
-        return clean;
-    }
-
-    /**
-     * Keep at most maxEntries, dropping the oldest (by fetch time).
-     * @param {Map<string, {ts: number}>} people
-     * @returns {boolean} True if anything was evicted.
-     */
-    function evictOldest(people, maxEntries) {
-        if (people.size <= maxEntries) return false;
-        const oldestFirst = [...people].sort((a, b) => a[1].ts - b[1].ts);
-        for (let i = 0; i < oldestFirst.length - maxEntries; i++) people.delete(oldestFirst[i][0]);
-        return true;
-    }
-
-    /**
-     * Parse and validate the persisted v2 store. A payload with another
-     * owner, another version or a corrupt shape yields an empty store;
-     * expired/invalid entries are dropped and the size is capped.
-     * @returns {{people: Map<string, object>, rewrite: boolean}}
-     */
-    function loadPeopleStore(raw, owner, now, ttlMs, maxEntries) {
-        const people = new Map();
-        if (raw === null || raw === undefined) return { people, rewrite: false };
-        let parsed = null;
-        try {
-            parsed = JSON.parse(raw);
-        } catch {
-            parsed = null;
-        }
-        if (!parsed || typeof parsed !== 'object' || parsed.v !== 2 || parsed.owner !== owner
-            || !parsed.people || typeof parsed.people !== 'object' || Array.isArray(parsed.people)) {
-            return { people, rewrite: true };
-        }
-        let rewrite = false;
-        for (const [id, entry] of Object.entries(parsed.people)) {
-            const clean = sanitizeEntry(id, entry, now, ttlMs);
-            if (clean) people.set(id, clean);
-            else rewrite = true;
-        }
-        if (evictOldest(people, maxEntries)) rewrite = true;
-        return { people, rewrite };
-    }
-
-    function serializePeopleStore(owner, people) {
-        return JSON.stringify({ v: 2, owner, people: Object.fromEntries(people) });
-    }
-
+  // client/src/features/media-tags/types/people/peopletags.ts
+  function isHotPerson(value) {
+    return export4(value) && export4(value.data) && typeof value.timestamp === "number";
+  }
+  function createPeopleTags(ctx) {
+    const JE = ctx.core;
     JE.initializePeopleTags = function() {
-        if (!JE.currentSettings.peopleTagsEnabled) {
-            console.log('🪼 Jellyfin Enhanced: People Tags: Feature is disabled in settings.');
-            return;
+      if (!JE.currentSettings?.peopleTagsEnabled) {
+        console.log("🪼 Jellyfin Enhanced: People Tags: Feature is disabled in settings.");
+        return;
+      }
+      const logPrefix = "🪼 Jellyfin Enhanced: People Tags:";
+      const CACHE_KEY = "JellyfinEnhanced-peopleTagsCache-v2";
+      const LEGACY_KEYS = [
+        "JellyfinEnhanced-peopleTagsCache",
+        "JellyfinEnhanced-peopleTagsCacheTimestamp",
+        "JellyfinEnhanced-peopleTagsCacheIdentityOwner"
+      ];
+      const MAX_CACHED_PEOPLE = 3e3;
+      const CACHE_TTL = Number(JE.pluginConfig?.TagsCacheTtlDays || 30) * 24 * 60 * 60 * 1e3;
+      const BATCH_SIZE = 100;
+      const FIRST_CHUNK_SIZE = 8;
+      const RETRY_DELAYS_MS = [1e3, 3e3];
+      const MAX_PASSES = 5;
+      const currentOwner = () => `${JE.session?.getServerId() || ""}:${JE.session?.getUserId() || export0().getCurrentUserId() || ""}`;
+      let storeOwner = currentOwner();
+      let peopleStore = /* @__PURE__ */ new Map();
+      try {
+        for (const key of LEGACY_KEYS) localStorage.removeItem(key);
+        const loaded = loadPeopleStore(localStorage.getItem(CACHE_KEY), storeOwner, Date.now(), CACHE_TTL, MAX_CACHED_PEOPLE);
+        peopleStore = loaded.people;
+        if (loaded.rewrite) persistPeopleStore();
+      } catch (e) {
+        console.warn(`${logPrefix} Could not read people cache`, e);
+        peopleStore = /* @__PURE__ */ new Map();
+      }
+      const Hot = JE._hotCache = JE._hotCache || { ttl: CACHE_TTL };
+      const sharedHot = Hot.peopleTags;
+      const hotPeople = typeof sharedHot === "object" ? sharedHot : /* @__PURE__ */ new Map();
+      Hot.peopleTags = hotPeople;
+      JE.session?.onUserChange("people-tags", (change) => {
+        resetBatchController();
+        for (const itemId of [...prefetches.keys()]) dropPrefetch(itemId);
+        peopleStore = /* @__PURE__ */ new Map();
+        hotPeople.clear();
+        storeOwner = `${change.serverId || ""}:${change.userId || ""}`;
+        persistPeopleStore();
+      });
+      let processedCastMembers = /* @__PURE__ */ new WeakSet();
+      let pendingCards = /* @__PURE__ */ new WeakSet();
+      let failedCards = /* @__PURE__ */ new WeakSet();
+      let lastProcessedItemId = null;
+      let peopleTagsComplete = false;
+      let isProcessing = false;
+      let processingFast = false;
+      let debouncedSkipped = false;
+      let cardsClaimed = false;
+      const lifecycle = JE.core.lifecycle.register("people-tags");
+      lifecycle.teardown();
+      let batchController = null;
+      const retryWaits = /* @__PURE__ */ new Set();
+      function resetBatchController() {
+        cancelRetryWaits();
+        if (batchController) {
+          batchController.abort();
+          lifecycle.untrack(batchController);
         }
-
-        const logPrefix = '🪼 Jellyfin Enhanced: People Tags:';
-        // Per-person facts: { v: 2, owner: 'serverId:userId', people: { id: { b, d, p, ts } } }.
-        const CACHE_KEY = 'JellyfinEnhanced-peopleTagsCache-v2';
-        // Item-keyed v1 cache (one entry per person per item): removed on load.
-        const LEGACY_KEYS = [
-            'JellyfinEnhanced-peopleTagsCache',
-            'JellyfinEnhanced-peopleTagsCacheTimestamp',
-            'JellyfinEnhanced-peopleTagsCacheIdentityOwner'
-        ];
-        const MAX_CACHED_PEOPLE = 3000;
-        const CACHE_TTL = (JE.pluginConfig?.TagsCacheTtlDays || 30) * 24 * 60 * 60 * 1000;
-        // Must not exceed the server's people/info cap (MaxPeopleInfoBatchSize).
-        const BATCH_SIZE = 100;
-        // The start of the cast row (what is on screen) is requested on its own
-        // so those cards are tagged without waiting for the rest of the cast.
-        const FIRST_CHUNK_SIZE = 8;
-        // Extra attempts for a chunk that failed after the transport's retries.
-        const RETRY_DELAYS_MS = [1000, 3000];
-        // Follow-up batches for cards that mount while a batch is in flight.
-        const MAX_PASSES = 5;
-
-        // Country mapping dictionary
-        const COUNTRY_MAP = {
-            'United States': 'US', 'USA': 'US', 'America': 'US',
-            'United Kingdom': 'GB', 'UK': 'GB', 'England': 'GB', 'Scotland': 'GB', 'Wales': 'GB',
-            'Canada': 'CA', 'Australia': 'AU', 'New Zealand': 'NZ',
-            'Germany': 'DE', 'France': 'FR', 'Italy': 'IT', 'Spain': 'ES',
-            'Mexico': 'MX', 'Brazil': 'BR', 'Argentina': 'AR',
-            'Japan': 'JP', 'South Korea': 'KR', 'China': 'CN',
-            'India': 'IN', 'Russia': 'RU', 'Sweden': 'SE',
-            'Norway': 'NO', 'Denmark': 'DK', 'Finland': 'FI',
-            'Netherlands': 'NL', 'Belgium': 'BE', 'Austria': 'AT',
-            'Switzerland': 'CH', 'Poland': 'PL', 'Czech Republic': 'CZ',
-            'Czechia': 'CZ', 'Greece': 'GR', 'Portugal': 'PT',
-            'Turkey': 'TR', 'Israel': 'IL', 'South Africa': 'ZA',
-            'Chile': 'CL', 'Colombia': 'CO', 'Peru': 'PE',
-            'Thailand': 'TH', 'Malaysia': 'MY', 'Singapore': 'SG',
-            'Philippines': 'PH', 'Indonesia': 'ID', 'Vietnam': 'VN',
-            'Ukraine': 'UA', 'Iran': 'IR', 'Ireland': 'IE',
-            'Hungary': 'HU', 'Romania': 'RO', 'Bulgaria': 'BG',
-            'Croatia': 'HR', 'Serbia': 'RS', 'Slovenia': 'SI',
-            'Estonia': 'EE', 'Latvia': 'LV', 'Lithuania': 'LT', 'Iceland': 'IS',
-            'Luxembourg': 'LU', 'Monaco': 'MC', 'Liechtenstein': 'LI',
-            'Malta': 'MT', 'Cyprus': 'CY',
-            'Slovakia': 'SK', 'Bosnia and Herzegovina': 'BA', 'Bosnia': 'BA',
-            'North Macedonia': 'MK', 'Macedonia': 'MK', 'Albania': 'AL',
-            'Montenegro': 'ME', 'Moldova': 'MD', 'Belarus': 'BY',
-            'Kosovo': 'XK', 'Georgia': 'GE', 'Armenia': 'AM', 'Azerbaijan': 'AZ',
-            'Saudi Arabia': 'SA', 'United Arab Emirates': 'AE', 'UAE': 'AE',
-            'Qatar': 'QA', 'Kuwait': 'KW', 'Bahrain': 'BH', 'Oman': 'OM',
-            'Jordan': 'JO', 'Lebanon': 'LB', 'Egypt': 'EG', 'Iraq': 'IQ',
-            'Syria': 'SY', 'Yemen': 'YE', 'Palestine': 'PS',
-            'Pakistan': 'PK', 'Bangladesh': 'BD', 'Sri Lanka': 'LK', 'Nepal': 'NP',
-            'Taiwan': 'TW', 'Hong Kong': 'HK', 'Macau': 'MO',
-            'Kazakhstan': 'KZ', 'Uzbekistan': 'UZ', 'Afghanistan': 'AF',
-            'Mongolia': 'MN', 'Myanmar': 'MM', 'Cambodia': 'KH', 'Laos': 'LA',
-            'Venezuela': 'VE', 'Ecuador': 'EC', 'Uruguay': 'UY', 'Paraguay': 'PY',
-            'Bolivia': 'BO', 'Costa Rica': 'CR', 'Panama': 'PA', 'Nicaragua': 'NI',
-            'Honduras': 'HN', 'El Salvador': 'SV', 'Guatemala': 'GT', 'Belize': 'BZ',
-            'Cuba': 'CU', 'Jamaica': 'JM', 'Dominican Republic': 'DO',
-            'Puerto Rico': 'PR', 'Trinidad and Tobago': 'TT', 'Barbados': 'BB',
-            'Haiti': 'HT', 'Bahamas': 'BS', 'Guyana': 'GY', 'Suriname': 'SR',
-            'Nigeria': 'NG', 'Kenya': 'KE', 'Ghana': 'GH', 'Ethiopia': 'ET',
-            'Morocco': 'MA', 'Algeria': 'DZ', 'Tunisia': 'TN', 'Libya': 'LY',
-            'Senegal': 'SN', 'Uganda': 'UG', 'Tanzania': 'TZ', 'Zimbabwe': 'ZW',
-            'Zambia': 'ZM', 'Botswana': 'BW', 'Namibia': 'NA', 'Angola': 'AO',
-            'Mozambique': 'MZ', 'Madagascar': 'MG', 'Cameroon': 'CM',
-            'Ivory Coast': 'CI', "Côte d'Ivoire": 'CI', 'Mali': 'ML', 'Burkina Faso': 'BF',
-            'Papua New Guinea': 'PG', 'Fiji': 'FJ', 'Samoa': 'WS', 'Tonga': 'TO'
-        };
-
-        // People metadata is fetched with the signed-in user's library access,
-        // so the store is scoped to server:user (owner inside the payload): a
-        // payload written for anyone else is dropped instead of served.
-        const currentOwner = () => `${JE.session?.getServerId() || ''}:${JE.session?.getUserId() || ApiClient.getCurrentUserId() || ''}`;
-        let storeOwner = currentOwner();
-
-        /**
-         * @param {*} value
-         * @returns {boolean}
-         */
-        function isPlainObject(value) {
-            return !!value && typeof value === 'object' && !Array.isArray(value);
+        batchController = lifecycle.track(new AbortController());
+        return batchController;
+      }
+      const prefetches = /* @__PURE__ */ new Map();
+      function dropPrefetch(itemId) {
+        const entry = prefetches.get(itemId);
+        if (!entry) return;
+        prefetches.delete(itemId);
+        if (entry.ctl) {
+          entry.ctl.abort();
+          lifecycle.untrack(entry.ctl);
         }
-
-        /** @type {Map<string, {b?: string, d?: string, p?: string, ts: number}>} */
-        let peopleStore = new Map();
-        try {
-            for (const key of LEGACY_KEYS) localStorage.removeItem(key);
-            const loaded = loadPeopleStore(localStorage.getItem(CACHE_KEY), storeOwner, Date.now(), CACHE_TTL, MAX_CACHED_PEOPLE);
-            peopleStore = loaded.people;
-            if (loaded.rewrite) persistPeopleStore();
-        } catch (e) {
-            console.warn(`${logPrefix} Could not read people cache`, e);
-            peopleStore = new Map();
-        }
-        const Hot = (JE._hotCache = JE._hotCache || { ttl: CACHE_TTL });
-        Hot.peopleTags = Hot.peopleTags || new Map();
-
-        // Full wipe on user switch; the new owner is stamped immediately.
-        JE.session?.onUserChange('people-tags', (change) => {
-            // In-flight batches and prefetches belong to the previous user.
-            resetBatchController();
-            for (const itemId of [...prefetches.keys()]) dropPrefetch(itemId);
-            peopleStore = new Map();
-            Hot.peopleTags.clear();
-            storeOwner = `${change.serverId || ''}:${change.userId || ''}`;
-            persistPeopleStore();
-        });
-
-        // Cards that are done (rendered, or the server answered without that
-        // person) and cards claimed by an in-flight request.
-        let processedCastMembers = new WeakSet();
-        let pendingCards = new WeakSet();
-        // Cards whose request failed for good: not retried again this visit.
-        let failedCards = new WeakSet();
-        let lastProcessedItemId = null;
-        let peopleTagsComplete = false; // Set true after all cast members tagged for current item
-        let isProcessing = false;
-        // Whether the running pass is a fast one (see tryFastPath), and whether
-        // a debounced run was skipped while it ran: that run is the one that
-        // arms the completion latch, so it runs once the fast pass is done.
-        let processingFast = false;
-        let debouncedSkipped = false;
-        // Whether a card pass has claimed a card of lastProcessedItemId: a
-        // quiet run over the template's still-empty cast section takes the
-        // item with none, and leaves the visit's prefetch free to start (and
-        // its completion latch waits while that prefetch has no card yet).
-        let cardsClaimed = false;
-
-        // One AbortController per detail item: aborted when the user navigates
-        // to another item or switches account, so a late batch is discarded.
-        // Re-init (settings toggle) aborts the previous instance's batch.
-        const lifecycle = JE.core.lifecycle.register('people-tags');
-        lifecycle.teardown();
-        let batchController = null;
-        // Retry waits are lifecycle-owned and cancelled with the batch.
-        const retryWaits = new Set();
-        function resetBatchController() {
-            cancelRetryWaits();
-            if (batchController) {
-                batchController.abort();
-                lifecycle.untrack(batchController);
-            }
-            batchController = lifecycle.track(new AbortController());
-            return batchController;
-        }
-
-        // People-info requests a details visit started before the cast cards
-        // were on the page (see prefetch), by item id:
-        // { ctl, view, epoch, people: Map<personId, Promise<outcome>> }, where
-        // an outcome is { status: 'answered', factsById, cached } or
-        // { status: 'failed' | 'aborted' } and every person of one request
-        // shares its promise. At most the visit's item and the item a card
-        // pass owns.
-        const prefetches = new Map();
-        function dropPrefetch(itemId) {
-            const entry = prefetches.get(itemId);
-            if (!entry) return;
-            prefetches.delete(itemId);
-            if (entry.ctl) {
-                entry.ctl.abort();
-                lifecycle.untrack(entry.ctl);
-            }
-        }
-
-        // Styles for deceased indicators, overlay positioning, and je-msym-rounded font
-        JE.core.ui.injectCss('je-people-tags-styles', `
+      }
+      JE.core.ui.injectCss("je-people-tags-styles", `
 
             .je-msym-rounded {
                 font-family: 'JE Material Symbols Rounded';
@@ -445,348 +462,203 @@
                 flex: 0 1 auto !important;
             }
         `);
-
-        console.log(`${logPrefix} Initialized`);
-
-        /**
-         * Extract country code from birthplace string
-         * @param {string} placeString - Full birthplace string like "London, England, UK"
-         * @returns {string|null} - ISO 3166-1 alpha-2 country code or null
-         */
-        function getCountryCodeFromBirthPlace(placeString) {
-            if (!placeString || typeof placeString !== 'string') return null;
-
-            // Split by comma and take the last part (country is typically last)
-            const parts = placeString.split(',').map(p => p.trim());
-            if (parts.length === 0) return null;
-
-            const lastPart = parts[parts.length - 1];
-
-            // Check if it matches any country name (case-insensitive)
-            for (const [countryName, code] of Object.entries(COUNTRY_MAP)) {
-                if (countryName.toLowerCase() === lastPart.toLowerCase()) {
-                    return code;
-                }
+      console.log(`${logPrefix} Initialized`);
+      function getCountryCodeFromBirthPlace(placeString) {
+        if (!placeString || typeof placeString !== "string") return null;
+        const parts = placeString.split(",").map((p) => p.trim());
+        if (parts.length === 0) return null;
+        const lastPart = parts[parts.length - 1] ?? "";
+        for (const [countryName, code] of Object.entries(COUNTRY_MAP)) {
+          if (countryName.toLowerCase() === lastPart.toLowerCase()) {
+            return code;
+          }
+        }
+        return null;
+      }
+      function normalizeId(id) {
+        return String(id).toLowerCase().replace(/-/g, "");
+      }
+      function getCachedFacts(personKey, now) {
+        const hot = hotPeople.get(personKey);
+        if (isHotPerson(hot) && now - hot.timestamp < CACHE_TTL) return hot.data;
+        const entry = peopleStore.get(personKey);
+        if (entry && now - entry.ts < CACHE_TTL) {
+          const data = { birthDate: entry.b, deathDate: entry.d, birthPlace: entry.p };
+          hotPeople.set(personKey, { data, timestamp: entry.ts });
+          return data;
+        }
+        return null;
+      }
+      function rememberFacts(personKey, facts, now) {
+        const entry = { ts: now };
+        if (facts.birthDate) entry.b = facts.birthDate;
+        if (facts.deathDate) entry.d = facts.deathDate;
+        if (facts.birthPlace) entry.p = facts.birthPlace;
+        peopleStore.delete(personKey);
+        peopleStore.set(personKey, entry);
+        hotPeople.set(personKey, { data: facts, timestamp: now });
+      }
+      function persistPeopleStore() {
+        evictOldest(peopleStore, MAX_CACHED_PEOPLE);
+        for (let attempt = 0; attempt < 2; attempt++) {
+          try {
+            localStorage.setItem(CACHE_KEY, serializePeopleStore(storeOwner, peopleStore));
+            return;
+          } catch (e) {
+            if (attempt === 0 && peopleStore.size > 0) {
+              evictOldest(peopleStore, Math.floor(peopleStore.size / 2));
+              continue;
             }
-
-            return null;
+            console.debug(`${logPrefix} People cache not persisted`, e);
+            return;
+          }
         }
-
-        /**
-         * Canonical form of a person id (server keys use the 32-hex "N" form).
-         * @param {string} id
-         * @returns {string}
-         */
-        function normalizeId(id) {
-            return String(id).toLowerCase().replace(/-/g, '');
+      }
+      function getItemPremiereDate(itemId) {
+        const load = typeof JE.helpers?.getItemCached === "function" ? JE.helpers.getItemCached(itemId) : export0().getItem(export0().getCurrentUserId(), itemId);
+        return Promise.resolve(load).then((item) => parseCalendarDate(export10(item).PremiereDate)).catch(() => null);
+      }
+      function peopleInfoPath(ids) {
+        return `/people/info?ids=${ids.map(encodeURIComponent).join(",")}`;
+      }
+      function rememberResponse(ids, response) {
+        const people = export10(export10(response).people);
+        const now = Date.now();
+        let cached = false;
+        const facts = ids.map((id) => {
+          const personFacts = factsFromResponse(people[normalizeId(id)]);
+          if (personFacts) {
+            rememberFacts(normalizeId(id), personFacts, now);
+            cached = true;
+          }
+          return personFacts;
+        });
+        return { facts, cached };
+      }
+      function chunkMisses(list) {
+        const chunks = [];
+        if (list.length > 0) {
+          chunks.push(list.slice(0, FIRST_CHUNK_SIZE));
+          for (let i = FIRST_CHUNK_SIZE; i < list.length; i += BATCH_SIZE) {
+            chunks.push(list.slice(i, i + BATCH_SIZE));
+          }
         }
-
-        /**
-         * Cached facts for one person (hot map first, then the persisted store).
-         * @param {string} personKey - Normalized person id
-         * @param {number} now
-         * @returns {object|null}
-         */
-        function getCachedFacts(personKey, now) {
-            const hot = Hot.peopleTags.get(personKey);
-            if (hot && now - hot.timestamp < CACHE_TTL) return hot.data;
-
-            const entry = peopleStore.get(personKey);
-            if (entry && now - entry.ts < CACHE_TTL) {
-                const data = { birthDate: entry.b, deathDate: entry.d, birthPlace: entry.p };
-                Hot.peopleTags.set(personKey, { data, timestamp: entry.ts });
-                return data;
+        return chunks;
+      }
+      function paintPerson(cards, personId, facts, premiere) {
+        const view = describePerson(facts, premiere, todayDate());
+        for (const card of cards) {
+          renderPersonCard(card, personId, view);
+          pendingCards.delete(card);
+          processedCastMembers.add(card);
+        }
+      }
+      function isCurrentEpoch(epoch) {
+        return !JE.session || JE.session.isCurrent(epoch);
+      }
+      function waitForRetry(ms) {
+        return new Promise((resolve) => {
+          const wait = { timeoutId: 0, cancel: () => {
+          } };
+          const finish = (proceed) => {
+            if (!retryWaits.delete(wait)) return;
+            lifecycle.untrack(wait.cancel);
+            resolve(proceed);
+          };
+          wait.cancel = () => {
+            clearTimeout(wait.timeoutId);
+            finish(false);
+          };
+          wait.timeoutId = setTimeout(() => finish(true), ms);
+          retryWaits.add(wait);
+          lifecycle.track(wait.cancel);
+        });
+      }
+      function cancelRetryWaits() {
+        for (const wait of [...retryWaits]) wait.cancel();
+      }
+      function releaseCards(entries, failed = false) {
+        for (const [, cards] of entries) {
+          for (const card of cards) {
+            pendingCards.delete(card);
+            if (failed) failedCards.add(card);
+          }
+        }
+      }
+      async function fetchAndRenderChunk(chunk, itemId, signal, requestEpoch, premierePromise) {
+        const ids = chunk.map(([personId]) => personId);
+        const path = peopleInfoPath(ids);
+        let response = null;
+        for (let attempt = 0; ; attempt++) {
+          try {
+            response = await JE.core.api.plugin(path, { signal, skipRetry: true });
+            break;
+          } catch (error) {
+            if (signal.aborted) {
+              releaseCards(chunk);
+              return false;
             }
-            return null;
-        }
-
-        function rememberFacts(personKey, facts, now) {
-            const entry = { ts: now };
-            if (facts.birthDate) entry.b = facts.birthDate;
-            if (facts.deathDate) entry.d = facts.deathDate;
-            if (facts.birthPlace) entry.p = facts.birthPlace;
-            peopleStore.delete(personKey); // re-insert as newest
-            peopleStore.set(personKey, entry);
-            Hot.peopleTags.set(personKey, { data: facts, timestamp: now });
-        }
-
-        /**
-         * Persist the store (once per batch). Bounded; on a quota error the
-         * oldest half is evicted and the write retried once, then given up.
-         */
-        function persistPeopleStore() {
-            evictOldest(peopleStore, MAX_CACHED_PEOPLE);
-            for (let attempt = 0; attempt < 2; attempt++) {
-                try {
-                    localStorage.setItem(CACHE_KEY, serializePeopleStore(storeOwner, peopleStore));
-                    return;
-                } catch (e) {
-                    if (attempt === 0 && peopleStore.size > 0) {
-                        evictOldest(peopleStore, Math.floor(peopleStore.size / 2));
-                        continue;
-                    }
-                    console.debug(`${logPrefix} People cache not persisted`, e);
-                    return;
-                }
+            const status = export1(error);
+            const retryable = !status || status >= 500 || status === 408 || status === 429;
+            if (!retryable || attempt >= RETRY_DELAYS_MS.length) {
+              console.warn(`${logPrefix} Failed to fetch person info for ${ids.length} people:`, error);
+              releaseCards(chunk, true);
+              return false;
             }
-        }
-
-        /**
-         * Premiere date of the detail item, read through the shared per-user
-         * item cache (Jellyfin only returns items the user can see; others
-         * yield null, so no age-at-release is shown). Never rejects.
-         * @param {string} itemId
-         * @returns {Promise<{y: number, m: number, d: number}|null>}
-         */
-        function getItemPremiereDate(itemId) {
-            const load = typeof JE.helpers?.getItemCached === 'function'
-                ? JE.helpers.getItemCached(itemId)
-                : ApiClient.getItem(ApiClient.getCurrentUserId(), itemId);
-            return Promise.resolve(load)
-                .then(item => parseCalendarDate(item?.PremiereDate))
-                .catch(() => null);
-        }
-
-        /**
-         * @param {string[]} ids - Person ids as the cards carry them
-         * @returns {string} The people/info path for them.
-         */
-        function peopleInfoPath(ids) {
-            // Person facts are item-independent: no itemId, so the answer is
-            // cached per person and shared by every item (episode) they are in.
-            return `/people/info?ids=${ids.map(encodeURIComponent).join(',')}`;
-        }
-
-        /**
-         * Cache the facts a people/info response holds for the requested people.
-         * @param {string[]} ids - The requested person ids
-         * @param {*} response
-         * @returns {{facts: Array<object|null>, cached: boolean}} Facts per id in
-         *   order (null: answered without that person), and whether any was cached.
-         */
-        function rememberResponse(ids, response) {
-            const people = isPlainObject(response?.people) ? response.people : {};
-            const now = Date.now();
-            let cached = false;
-            const facts = ids.map((id) => {
-                const personFacts = factsFromResponse(people[normalizeId(id)]);
-                if (personFacts) {
-                    rememberFacts(normalizeId(id), personFacts, now);
-                    cached = true;
-                }
-                return personFacts;
-            });
-            return { facts, cached };
-        }
-
-        /**
-         * The requests for people without cached facts: the first
-         * FIRST_CHUNK_SIZE (start of the row) on their own, then BATCH_SIZE chunks.
-         * @template T
-         * @param {T[]} list
-         * @returns {T[][]}
-         */
-        function chunkMisses(list) {
-            const chunks = [];
-            if (list.length > 0) {
-                chunks.push(list.slice(0, FIRST_CHUNK_SIZE));
-                for (let i = FIRST_CHUNK_SIZE; i < list.length; i += BATCH_SIZE) {
-                    chunks.push(list.slice(i, i + BATCH_SIZE));
-                }
+            const retryDelay = RETRY_DELAYS_MS[attempt] ?? 0;
+            console.debug(`${logPrefix} Person info request failed, retrying in ${retryDelay}ms`, error);
+            if (!await waitForRetry(retryDelay) || signal.aborted) {
+              releaseCards(chunk);
+              return false;
             }
-            return chunks;
+          }
         }
-
-        /**
-         * Paint every card of a person from the cached facts.
-         * @param {Element[]} cards
-         * @param {string} personId
-         * @param {object} facts
-         * @param {{y: number, m: number, d: number}|null} premiere
-         */
-        function paintPerson(cards, personId, facts, premiere) {
-            const view = describePerson(facts, premiere, todayDate());
+        if (signal.aborted || !isCurrentEpoch(requestEpoch) || lastProcessedItemId !== itemId) {
+          releaseCards(chunk);
+          return false;
+        }
+        const { facts, cached } = rememberResponse(ids, response);
+        const answered = chunk.map((entry, i) => [entry, facts[i] ?? null]);
+        const premiere = await premierePromise;
+        if (signal.aborted || !isCurrentEpoch(requestEpoch) || lastProcessedItemId !== itemId) {
+          releaseCards(chunk);
+          return cached;
+        }
+        applyAnswers(answered, premiere);
+        return cached;
+      }
+      function applyAnswers(answered, premiere) {
+        const paint = !!JE.currentSettings?.peopleTagsEnabled;
+        for (const [[personId, cards], facts] of answered) {
+          if (!paint) {
+            releaseCards([[personId, cards]]);
+          } else if (facts) {
+            paintPerson(cards, personId, facts, premiere);
+          } else {
             for (const card of cards) {
-                renderPersonCard(card, personId, view);
-                pendingCards.delete(card);
-                processedCastMembers.add(card);
+              pendingCards.delete(card);
+              processedCastMembers.add(card);
             }
+          }
         }
-
-        /**
-         * @param {number} epoch
-         * @returns {boolean} True while the identity that started a request is current.
-         */
-        function isCurrentEpoch(epoch) {
-            return !JE.session || JE.session.isCurrent(epoch);
+      }
+      async function joinPrefetchedChunk(chunk, outcomePromise, itemId, signal, requestEpoch, premierePromise) {
+        const outcome = await outcomePromise;
+        const premiere = await premierePromise;
+        if (signal.aborted || !isCurrentEpoch(requestEpoch) || lastProcessedItemId !== itemId) {
+          releaseCards(chunk);
+          return false;
         }
-
-        /**
-         * Wait before retrying a chunk. Resolves false if the batch is reset
-         * (navigation to another item, user switch) or the feature is torn down.
-         * @param {number} ms
-         * @returns {Promise<boolean>}
-         */
-        function waitForRetry(ms) {
-            return new Promise((resolve) => {
-                const wait = { timeoutId: 0, cancel: () => {} };
-                const finish = (proceed) => {
-                    if (!retryWaits.delete(wait)) return;
-                    lifecycle.untrack(wait.cancel);
-                    resolve(proceed);
-                };
-                wait.cancel = () => {
-                    clearTimeout(wait.timeoutId);
-                    finish(false);
-                };
-                wait.timeoutId = setTimeout(() => finish(true), ms);
-                retryWaits.add(wait);
-                lifecycle.track(wait.cancel);
-            });
+        if (outcome.status !== "answered") {
+          return fetchAndRenderChunk(chunk, itemId, signal, requestEpoch, premierePromise);
         }
-
-        function cancelRetryWaits() {
-            for (const wait of [...retryWaits]) wait.cancel();
-        }
-
-        /**
-         * Release claimed cards without marking them done, so a later pass or
-         * visit can pick them up again.
-         * @param {Array<[string, Element[]]>} entries
-         * @param {boolean} [failed=false] - Request gave up: skip for the rest of this visit.
-         */
-        function releaseCards(entries, failed = false) {
-            for (const [, cards] of entries) {
-                for (const card of cards) {
-                    pendingCards.delete(card);
-                    if (failed) failedCards.add(card);
-                }
-            }
-        }
-
-        /**
-         * Fetch one chunk of people (retrying a failed request a bounded number
-         * of times), cache the answers and render every card of each person.
-         * @param {Array<[string, Element[]]>} chunk - [personId, cards] pairs
-         * @param {string} itemId - Detail item being painted
-         * @param {AbortSignal} signal
-         * @param {number} requestEpoch
-         * @param {Promise<object|null>} premierePromise - Item premiere date (for age at release)
-         * @returns {Promise<boolean>} True when new data was cached.
-         */
-        async function fetchAndRenderChunk(chunk, itemId, signal, requestEpoch, premierePromise) {
-            const ids = chunk.map(([personId]) => personId);
-            const path = peopleInfoPath(ids);
-
-            let response = null;
-            for (let attempt = 0; ; attempt++) {
-                try {
-                    // Single transport attempt: this loop owns the retries, so a
-                    // failing chunk costs at most 1 + RETRY_DELAYS_MS.length requests.
-                    response = await JE.core.api.plugin(path, { signal, skipRetry: true });
-                    break;
-                } catch (error) {
-                    if (signal.aborted) {
-                        releaseCards(chunk);
-                        return false;
-                    }
-                    // A client error (bad request, auth) would fail the same way again.
-                    const status = Number(error?.status) || 0;
-                    const retryable = !status || status >= 500 || status === 408 || status === 429;
-                    if (!retryable || attempt >= RETRY_DELAYS_MS.length) {
-                        console.warn(`${logPrefix} Failed to fetch person info for ${ids.length} people:`, error);
-                        releaseCards(chunk, true);
-                        return false;
-                    }
-                    console.debug(`${logPrefix} Person info request failed, retrying in ${RETRY_DELAYS_MS[attempt]}ms`, error);
-                    if (!(await waitForRetry(RETRY_DELAYS_MS[attempt])) || signal.aborted) {
-                        releaseCards(chunk);
-                        return false;
-                    }
-                }
-            }
-
-            // A response resolving after a user switch or navigation to another
-            // item must not be cached under the new identity or rendered.
-            if (signal.aborted || !isCurrentEpoch(requestEpoch) || lastProcessedItemId !== itemId) {
-                releaseCards(chunk);
-                return false;
-            }
-
-            const { facts, cached } = rememberResponse(ids, response);
-            const answered = chunk.map((entry, i) => [entry, facts[i]]);
-
-            const premiere = await premierePromise;
-            if (signal.aborted || !isCurrentEpoch(requestEpoch) || lastProcessedItemId !== itemId) {
-                releaseCards(chunk);
-                return cached;
-            }
-            applyAnswers(answered, premiere);
-            return cached;
-        }
-
-        /**
-         * Paint the cards of answered people (current pass only).
-         * @param {Array<[[string, Element[]], object|null]>} answered - Each
-         *   [personId, cards] entry with its facts (null: answered without them)
-         * @param {{y: number, m: number, d: number}|null} premiere
-         */
-        function applyAnswers(answered, premiere) {
-            const paint = !!JE.currentSettings?.peopleTagsEnabled;
-            for (const [[personId, cards], facts] of answered) {
-                if (!paint) {
-                    releaseCards([[personId, cards]]);
-                } else if (facts) {
-                    paintPerson(cards, personId, facts, premiere);
-                } else {
-                    // Answered without this person: nothing to show, done.
-                    for (const card of cards) {
-                        pendingCards.delete(card);
-                        processedCastMembers.add(card);
-                    }
-                }
-            }
-        }
-
-        /**
-         * Paint cards whose people a details visit's prefetch requested (one of
-         * its requests), with the same guards as fetchAndRenderChunk. A failed
-         * prefetch is never shown: those people are requested here instead, as
-         * the one chunk the prefetch sent, with the usual retries.
-         * @param {Array<[string, Element[]]>} chunk - [personId, cards] pairs
-         * @param {Promise<object>} outcomePromise - The prefetch request's outcome
-         * @param {string} itemId
-         * @param {AbortSignal} signal
-         * @param {number} requestEpoch
-         * @param {Promise<object|null>} premierePromise
-         * @returns {Promise<boolean>} True when the fallback request cached new data.
-         */
-        async function joinPrefetchedChunk(chunk, outcomePromise, itemId, signal, requestEpoch, premierePromise) {
-            const outcome = await outcomePromise;
-            const premiere = await premierePromise;
-            if (signal.aborted || !isCurrentEpoch(requestEpoch) || lastProcessedItemId !== itemId) {
-                releaseCards(chunk);
-                return false;
-            }
-            if (outcome.status !== 'answered') {
-                return fetchAndRenderChunk(chunk, itemId, signal, requestEpoch, premierePromise);
-            }
-            applyAnswers(chunk.map(entry => [entry, outcome.factsById.get(entry[0]) || null]), premiere);
-            return false;
-        }
-
-        /**
-         * Create one age chip (deceased / current / at-release share markup).
-         * @param {string} variant - Suffix for the chip class (deceased|current|release)
-         * @param {string} background - Chip background color
-         * @param {string} iconName - Material Symbols icon name
-         * @param {number} age - Age value to display
-         * @returns {HTMLElement}
-         */
-        function createAgeChip(variant, background, iconName, age) {
-            const ageChip = document.createElement('div');
-            ageChip.className = `je-people-age-chip je-people-age-${variant}`;
-            ageChip.style.cssText = `
+        applyAnswers(chunk.map((entry) => [entry, outcome.factsById.get(entry[0]) || null]), premiere);
+        return false;
+      }
+      function createAgeChip(variant, background, iconName, age) {
+        const ageChip = document.createElement("div");
+        ageChip.className = `je-people-age-chip je-people-age-${variant}`;
+        ageChip.style.cssText = `
                 display: flex;
                 align-items: center;
                 gap: 4px;
@@ -798,33 +670,22 @@
                 color: white;
                 box-shadow: 0 1px 3px rgba(0,0,0,0.3);
             `;
-
-            const icon = document.createElement('span');
-            icon.className = 'je-msym-rounded je-people-age-icon';
-            icon.textContent = iconName;
-            icon.style.cssText = 'font-size: 13px;';
-            ageChip.appendChild(icon);
-
-            const text = document.createElement('span');
-            text.className = 'je-people-age-text';
-            // "42y" in the user's language: the short age unit comes from the locale files.
-            const short = typeof JE.t === 'function' ? JE.t('tag_people_age_short', { age }) : 'tag_people_age_short';
-            text.textContent = short === 'tag_people_age_short' ? `${age}y` : short;
-            ageChip.appendChild(text);
-
-            return ageChip;
-        }
-
-        /**
-         * Create people tag chips in top-left corner and birthplace banner at bottom
-         * @param {object} personData
-         * @returns {object} Object with ageContainer and placeContainer elements
-         */
-        function createPeopleTag(personData) {
-            // Age chips container (top-left)
-            const ageContainer = document.createElement('div');
-            ageContainer.className = 'je-people-age-container';
-            ageContainer.style.cssText = `
+        const icon = document.createElement("span");
+        icon.className = "je-msym-rounded je-people-age-icon";
+        icon.textContent = iconName;
+        icon.style.cssText = "font-size: 13px;";
+        ageChip.appendChild(icon);
+        const text = document.createElement("span");
+        text.className = "je-people-age-text";
+        const short = typeof JE.t === "function" ? JE.t("tag_people_age_short", { age }) : "tag_people_age_short";
+        text.textContent = short === "tag_people_age_short" ? `${age}y` : short;
+        ageChip.appendChild(text);
+        return ageChip;
+      }
+      function createPeopleTag(personData) {
+        const ageContainer = document.createElement("div");
+        ageContainer.className = "je-people-age-container";
+        ageContainer.style.cssText = `
                 position: absolute;
                 top: 8px;
                 left: 8px;
@@ -835,23 +696,17 @@
                 z-index: 3;
                 pointer-events: none;
             `;
-
-            // Current age or age at death chip
-            if (personData.isDeceased && personData.ageAtDeath !== null && personData.ageAtDeath !== undefined) {
-                ageContainer.appendChild(createAgeChip('deceased', 'rgba(180, 50, 50, 0.85)', 'event_busy', personData.ageAtDeath));
-            } else if (personData.currentAge !== null && personData.currentAge !== undefined) {
-                ageContainer.appendChild(createAgeChip('current', 'rgba(100, 170, 100, 0.85)', 'cake', personData.currentAge));
-            }
-
-            // Age at item release chip
-            if (personData.ageAtItemRelease !== null && personData.ageAtItemRelease !== undefined) {
-                ageContainer.appendChild(createAgeChip('release', 'rgba(70, 130, 180, 0.85)', 'movie', personData.ageAtItemRelease));
-            }
-
-            // Birthplace banner (bottom of card)
-            const placeContainer = document.createElement('div');
-            placeContainer.className = 'je-people-place-banner';
-            placeContainer.style.cssText = `
+        if (personData.isDeceased && personData.ageAtDeath !== null && personData.ageAtDeath !== void 0) {
+          ageContainer.appendChild(createAgeChip("deceased", "rgba(180, 50, 50, 0.85)", "event_busy", personData.ageAtDeath));
+        } else if (personData.currentAge !== null && personData.currentAge !== void 0) {
+          ageContainer.appendChild(createAgeChip("current", "rgba(100, 170, 100, 0.85)", "cake", personData.currentAge));
+        }
+        if (personData.ageAtItemRelease !== null && personData.ageAtItemRelease !== void 0) {
+          ageContainer.appendChild(createAgeChip("release", "rgba(70, 130, 180, 0.85)", "movie", personData.ageAtItemRelease));
+        }
+        const placeContainer = document.createElement("div");
+        placeContainer.className = "je-people-place-banner";
+        placeContainer.style.cssText = `
                 position: absolute;
                 bottom: 0;
                 left: 0;
@@ -866,505 +721,330 @@
                 z-index: 1;
                 pointer-events: none;
             `;
-
-            if (personData.birthPlace) {
-                // Extract country code from birthplace
-                const countryCode = getCountryCodeFromBirthPlace(personData.birthPlace);
-
-                // Use flagcdn for country flags
-                if (countryCode) {
-                    const flagImg = document.createElement('img');
-                    flagImg.className = 'je-people-flag';
-                    flagImg.src = JE.cdn.flagPng(countryCode);
-                    flagImg.style.cssText = 'width: 16px; height: 12px; border-radius: 2px; object-fit: cover;';
-                    flagImg.alt = countryCode;
-                    placeContainer.appendChild(flagImg);
-                }
-
-                const locationIcon = document.createElement('span');
-                locationIcon.className = 'je-msym-rounded je-people-place-icon';
-                locationIcon.textContent = 'place';
-                locationIcon.style.cssText = 'font-size: 14px; opacity: 0.9;';
-                placeContainer.appendChild(locationIcon);
-
-                const placeText = document.createElement('span');
-                placeText.className = 'je-people-place-text';
-                placeText.textContent = personData.birthPlace;
-                placeText.style.cssText = 'overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; opacity: 0.95;';
-                placeText.title = personData.birthPlace;
-                placeContainer.appendChild(placeText);
+        if (personData.birthPlace) {
+          const countryCode = getCountryCodeFromBirthPlace(personData.birthPlace);
+          if (countryCode) {
+            const flagImg = document.createElement("img");
+            flagImg.className = "je-people-flag";
+            flagImg.src = JE.cdn.flagPng(countryCode);
+            flagImg.style.cssText = "width: 16px; height: 12px; border-radius: 2px; object-fit: cover;";
+            flagImg.alt = countryCode;
+            placeContainer.appendChild(flagImg);
+          }
+          const locationIcon = document.createElement("span");
+          locationIcon.className = "je-msym-rounded je-people-place-icon";
+          locationIcon.textContent = "place";
+          locationIcon.style.cssText = "font-size: 14px; opacity: 0.9;";
+          placeContainer.appendChild(locationIcon);
+          const placeText = document.createElement("span");
+          placeText.className = "je-people-place-text";
+          placeText.textContent = personData.birthPlace;
+          placeText.style.cssText = "overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; opacity: 0.95;";
+          placeText.title = personData.birthPlace;
+          placeContainer.appendChild(placeText);
+        }
+        return { ageContainer, placeContainer };
+      }
+      function renderPersonCard(card, personId, personData) {
+        try {
+          if (personData.isDeceased) {
+            card.classList.add("je-deceased-poster");
+            console.debug(`${logPrefix} Marked ${personId} as deceased`);
+          }
+          const cardScalable = card.querySelector(".cardScalable");
+          if (!cardScalable) {
+            console.warn(`${logPrefix} No cardScalable found for ${personId}`);
+            return;
+          }
+          const radius = getComputedStyle(cardScalable).borderRadius;
+          card.classList.toggle("je-people-round", radius.includes("%") && parseFloat(radius) >= 40);
+          const existingAgeContainer = cardScalable.querySelector(".je-people-age-container");
+          if (existingAgeContainer) {
+            existingAgeContainer.remove();
+          }
+          const existingPlaceBanner = cardScalable.querySelector(".je-people-place-banner");
+          if (existingPlaceBanner) {
+            existingPlaceBanner.remove();
+          }
+          const tags = createPeopleTag(personData);
+          if (tags.ageContainer.children.length > 0) {
+            cardScalable.appendChild(tags.ageContainer);
+          }
+          if (tags.placeContainer.children.length > 0) {
+            cardScalable.appendChild(tags.placeContainer);
+          }
+        } catch (error) {
+          console.warn(`${logPrefix} Error processing cast member ${personId}:`, error);
+        }
+      }
+      function forEachCandidateCard(page, fn, log = false) {
+        for (const collapsibleSelector of ["#castCollapsible", "#guestCastCollapsible"]) {
+          const collapsible = page ? page.querySelector(collapsibleSelector) : document.querySelector(`#itemDetailPage:not(.hide) ${collapsibleSelector}`);
+          if (!collapsible) continue;
+          const castCards = collapsible.querySelectorAll(".personCard");
+          if (castCards.length === 0) continue;
+          if (log) console.debug(`${logPrefix} Found ${castCards.length} cast members in ${collapsibleSelector}`);
+          for (const card of castCards) fn(card);
+        }
+      }
+      function collectPendingCards() {
+        const groups = /* @__PURE__ */ new Map();
+        forEachCandidateCard(null, (card) => {
+          if (processedCastMembers.has(card) || pendingCards.has(card) || failedCards.has(card)) return;
+          const personId = card.getAttribute("data-id");
+          if (!personId) return;
+          pendingCards.add(card);
+          cardsClaimed = true;
+          const cards = groups.get(personId);
+          if (cards) cards.push(card);
+          else groups.set(personId, [card]);
+        }, true);
+        return groups;
+      }
+      async function processPendingCards(groups, currentItemId, signal) {
+        const entries = [...groups];
+        if (!JE.currentSettings?.peopleTagsEnabled) {
+          releaseCards(entries);
+          return;
+        }
+        const now = Date.now();
+        const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
+        const premierePromise = getItemPremiereDate(currentItemId);
+        const prefetched = prefetches.get(currentItemId)?.people;
+        const hits = [];
+        const joined = /* @__PURE__ */ new Map();
+        const misses = [];
+        for (const entry of entries) {
+          const facts = getCachedFacts(normalizeId(entry[0]), now);
+          const outcome = facts ? null : prefetched?.get(entry[0]);
+          if (facts) {
+            hits.push([entry, facts]);
+          } else if (outcome) {
+            const waiting = joined.get(outcome);
+            if (waiting) waiting.push(entry);
+            else joined.set(outcome, [entry]);
+          } else {
+            misses.push(entry);
+          }
+        }
+        const pendingChunks = chunkMisses(misses).map((chunk) => fetchAndRenderChunk(chunk, currentItemId, signal, requestEpoch, premierePromise));
+        for (const [outcome, chunk] of joined) {
+          pendingChunks.push(joinPrefetchedChunk(chunk, outcome, currentItemId, signal, requestEpoch, premierePromise));
+        }
+        if (hits.length > 0) {
+          const premiere = await premierePromise;
+          if (signal.aborted || !isCurrentEpoch(requestEpoch) || lastProcessedItemId !== currentItemId || !JE.currentSettings?.peopleTagsEnabled) {
+            releaseCards(hits.map(([entry]) => entry));
+          } else {
+            for (const [[personId, cards], facts] of hits) paintPerson(cards, personId, facts, premiere);
+          }
+        }
+        const results = await Promise.all(pendingChunks);
+        if (results.some(Boolean) && isCurrentEpoch(requestEpoch)) persistPeopleStore();
+      }
+      async function processCastMembers() {
+        if (isProcessing) return;
+        isProcessing = true;
+        try {
+          const hash = window.location.hash;
+          const params = new URLSearchParams(hash.split("?")[1]);
+          const currentItemId = params.get("id");
+          if (!currentItemId) {
+            console.debug(`${logPrefix} No item ID found in URL`);
+            return;
+          }
+          const signal = (batchController || resetBatchController()).signal;
+          for (let pass = 0; pass < MAX_PASSES && JE.currentSettings?.peopleTagsEnabled; pass++) {
+            const pending = collectPendingCards();
+            if (pending.size === 0) break;
+            await processPendingCards(pending, currentItemId, signal);
+            if (signal.aborted || lastProcessedItemId !== currentItemId) break;
+          }
+        } catch (error) {
+          console.error(`${logPrefix} Error in processCastMembers:`, error);
+        } finally {
+          isProcessing = false;
+        }
+      }
+      function currentHashItemId() {
+        try {
+          return new URLSearchParams(window.location.hash.split("?")[1]).get("id");
+        } catch {
+          return null;
+        }
+      }
+      function castOrderPersonIds(item) {
+        if (!Array.isArray(item?.People)) return null;
+        const cast = [];
+        const guestStars = [];
+        for (const entry of item.People) {
+          const person = export10(entry);
+          if (typeof person.Id !== "string" || !person.Id) return null;
+          if (person.Type === "Artist" || person.Type === "AlbumArtist") return null;
+          (person.Type === "GuestStar" ? guestStars : cast).push(person.Id);
+        }
+        return [.../* @__PURE__ */ new Set([...cast, ...guestStars])];
+      }
+      function initialize() {
+        console.debug(`${logPrefix} Initializing with managed observer pattern`);
+        function runPeopleTags(fast) {
+          if (!JE.currentSettings?.peopleTagsEnabled) return;
+          const castSection = document.querySelector("#itemDetailPage:not(.hide) #castCollapsible");
+          const guestCastSection = document.querySelector("#itemDetailPage:not(.hide) #guestCastCollapsible");
+          if (!castSection && !guestCastSection) return;
+          try {
+            const itemId = new URLSearchParams(window.location.hash.split("?")[1]).get("id");
+            if (!itemId) return;
+            if (lastProcessedItemId !== itemId) {
+              lastProcessedItemId = itemId;
+              resetBatchController();
+              processedCastMembers = /* @__PURE__ */ new WeakSet();
+              pendingCards = /* @__PURE__ */ new WeakSet();
+              failedCards = /* @__PURE__ */ new WeakSet();
+              peopleTagsComplete = false;
+              debouncedSkipped = false;
+              cardsClaimed = false;
+              for (const key of [...prefetches.keys()]) {
+                if (key !== itemId) dropPrefetch(key);
+              }
+              console.debug(`${logPrefix} New item detected: ${itemId}`);
             }
-
-            return { ageContainer, placeContainer };
-        }
-
-        /**
-         * Decorate one cast card with the person's tags.
-         * @param {Element} card
-         * @param {string} personId
-         * @param {object} personData
-         */
-        function renderPersonCard(card, personId, personData) {
-            try {
-                // Apply deceased styling to poster if applicable
-                if (personData.isDeceased) {
-                    card.classList.add('je-deceased-poster');
-                    console.debug(`${logPrefix} Marked ${personId} as deceased`);
-                }
-
-                // Find the cardScalable element (image container with position: relative)
-                const cardScalable = card.querySelector('.cardScalable');
-                if (!cardScalable) {
-                    console.warn(`${logPrefix} No cardScalable found for ${personId}`);
-                    return;
-                }
-
-                // Flag circular portraits so their tags use the round layout.
-                const radius = getComputedStyle(cardScalable).borderRadius;
-                card.classList.toggle('je-people-round', radius.includes('%') && parseFloat(radius) >= 40);
-
-                // Remove existing tags if any
-                const existingAgeContainer = cardScalable.querySelector('.je-people-age-container');
-                if (existingAgeContainer) {
-                    existingAgeContainer.remove();
-                }
-                const existingPlaceBanner = cardScalable.querySelector('.je-people-place-banner');
-                if (existingPlaceBanner) {
-                    existingPlaceBanner.remove();
-                }
-
-                // Create and append age chips (top-left) and place banner (bottom)
-                const tags = createPeopleTag(personData);
-                if (tags.ageContainer.children.length > 0) {
-                    cardScalable.appendChild(tags.ageContainer);
-                }
-                if (tags.placeContainer.children.length > 0) {
-                    cardScalable.appendChild(tags.placeContainer);
-                }
-            } catch (error) {
-                console.warn(`${logPrefix} Error processing cast member ${personId}:`, error);
+            if (peopleTagsComplete) {
+              return;
             }
-        }
-
-        /**
-         * Visit the person cards of the cast, then the guest cast section, in
-         * DOM order.
-         * @param {Element|null} page - The details view to look in; null for
-         *   the first visible one holding each section.
-         * @param {(card: Element) => void} fn
-         * @param {boolean} [log=false] - Log each section's card count.
-         */
-        function forEachCandidateCard(page, fn, log = false) {
-            for (const collapsibleSelector of ['#castCollapsible', '#guestCastCollapsible']) {
-                const collapsible = page
-                    ? page.querySelector(collapsibleSelector)
-                    : document.querySelector(`#itemDetailPage:not(.hide) ${collapsibleSelector}`);
-                if (!collapsible) continue;
-
-                const castCards = collapsible.querySelectorAll('.personCard');
-                if (castCards.length === 0) continue;
-
-                if (log) console.debug(`${logPrefix} Found ${castCards.length} cast members in ${collapsibleSelector}`);
-
-                for (const card of castCards) fn(card);
+            if (isProcessing) {
+              if (!fast && processingFast) debouncedSkipped = true;
+              return;
             }
-        }
-
-        /**
-         * Claim not-yet-processed cards from the cast and guest cast sections
-         * in one pass, grouped by person (a person can have several cards,
-         * e.g. actor and director, or cast and guest cast). DOM order is kept.
-         * @returns {Map<string, Element[]>}
-         */
-        function collectPendingCards() {
-            const groups = new Map();
-            forEachCandidateCard(null, (card) => {
-                if (processedCastMembers.has(card) || pendingCards.has(card) || failedCards.has(card)) return;
-
-                const personId = card.getAttribute('data-id');
-                if (!personId) return;
-
-                pendingCards.add(card);
-                cardsClaimed = true;
-                const cards = groups.get(personId);
-                if (cards) cards.push(card);
-                else groups.set(personId, [card]);
-            }, true);
-            return groups;
-        }
-
-        /**
-         * Render cached people immediately, then fetch the misses: the first
-         * FIRST_CHUNK_SIZE people (start of the row) and the rest (in
-         * BATCH_SIZE chunks) in parallel, rendering each chunk as it returns.
-         * @param {Map<string, Element[]>} groups
-         * @param {string} currentItemId
-         * @param {AbortSignal} signal
-         */
-        async function processPendingCards(groups, currentItemId, signal) {
-            const entries = [...groups];
-            // Feature switched off: paint nothing.
-            if (!JE.currentSettings?.peopleTagsEnabled) {
-                releaseCards(entries);
+            const processingItemId = itemId;
+            processingFast = fast;
+            processCastMembers().then(() => {
+              if (lastProcessedItemId !== processingItemId) {
+                debouncedSkipped = false;
+                handlePeopleTags();
                 return;
-            }
-
-            const now = Date.now();
-            const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
-            const premierePromise = getItemPremiereDate(currentItemId);
-            // People a details visit's prefetch already requested join its
-            // requests (grouped per request) instead of asking again.
-            const prefetched = prefetches.get(currentItemId)?.people;
-            const hits = [];
-            const joined = new Map();
-            const misses = [];
-            for (const entry of entries) {
-                const facts = getCachedFacts(normalizeId(entry[0]), now);
-                const outcome = facts ? null : prefetched?.get(entry[0]);
-                if (facts) {
-                    hits.push([entry, facts]);
-                } else if (outcome) {
-                    const waiting = joined.get(outcome);
-                    if (waiting) waiting.push(entry);
-                    else joined.set(outcome, [entry]);
-                } else {
-                    misses.push(entry);
+              }
+              if (fast) {
+                if (debouncedSkipped) {
+                  debouncedSkipped = false;
+                  handlePeopleTags();
                 }
-            }
-
-            const pendingChunks = chunkMisses(misses).map(chunk => fetchAndRenderChunk(chunk, currentItemId, signal, requestEpoch, premierePromise));
-            for (const [outcome, chunk] of joined) {
-                pendingChunks.push(joinPrefetchedChunk(chunk, outcome, currentItemId, signal, requestEpoch, premierePromise));
-            }
-
-            // Cached people only need the item's premiere date.
-            if (hits.length > 0) {
-                const premiere = await premierePromise;
-                if (signal.aborted || !isCurrentEpoch(requestEpoch) || lastProcessedItemId !== currentItemId
-                    || !JE.currentSettings?.peopleTagsEnabled) {
-                    releaseCards(hits.map(([entry]) => entry));
-                } else {
-                    for (const [[personId, cards], facts] of hits) paintPerson(cards, personId, facts, premiere);
+                return;
+              }
+              setTimeout(() => {
+                if (lastProcessedItemId === processingItemId && (cardsClaimed || !prefetches.has(processingItemId))) {
+                  peopleTagsComplete = true;
                 }
-            }
-
-            const results = await Promise.all(pendingChunks);
-            // One localStorage write per batch, once every chunk has settled.
-            if (results.some(Boolean) && isCurrentEpoch(requestEpoch)) persistPeopleStore();
+              }, 2e3);
+            });
+          } catch (e) {
+          }
         }
-
-        /**
-         * Process cast and guest cast members in the current view
-         */
-        async function processCastMembers() {
-            if (isProcessing) return;
-            isProcessing = true;
-
-            try {
-                // Get current item ID from URL
-                const hash = window.location.hash;
-                const params = new URLSearchParams(hash.split('?')[1]);
-                const currentItemId = params.get('id');
-
-                if (!currentItemId) {
-                    console.debug(`${logPrefix} No item ID found in URL`);
-                    return;
-                }
-
-                const signal = (batchController || resetBatchController()).signal;
-
-                // Cast and guest cast share one batch; cards that mount while
-                // a batch is in flight are picked up by a small follow-up batch.
-                for (let pass = 0; pass < MAX_PASSES && JE.currentSettings?.peopleTagsEnabled; pass++) {
-                    const pending = collectPendingCards();
-                    if (pending.size === 0) break;
-                    await processPendingCards(pending, currentItemId, signal);
-                    if (signal.aborted || lastProcessedItemId !== currentItemId) break;
-                }
-
-            } catch (error) {
-                console.error(`${logPrefix} Error in processCastMembers:`, error);
-            } finally {
-                isProcessing = false;
-            }
+        const helpers = JE.helpers;
+        if (!helpers) return;
+        const handlePeopleTags = helpers.debounce(() => runPeopleTags(false), 100);
+        function tryFastPath(hashId = currentHashItemId()) {
+          const entry = hashId ? prefetches.get(hashId) : null;
+          if (!entry || !entry.view || !isCurrentEpoch(entry.epoch) || !JE.currentSettings?.peopleTagsEnabled) return;
+          const sameItem = lastProcessedItemId === hashId;
+          if (sameItem && (peopleTagsComplete || isProcessing)) return;
+          if (document.querySelector("#itemDetailPage:not(.hide)") !== entry.view) return;
+          const now = Date.now();
+          let unclaimed = 0;
+          let covered = true;
+          forEachCandidateCard(entry.view, (card) => {
+            if (!covered) return;
+            if (sameItem && (processedCastMembers.has(card) || pendingCards.has(card) || failedCards.has(card))) return;
+            const personId = card.getAttribute("data-id");
+            if (!personId) return;
+            unclaimed++;
+            if (!entry.people.has(personId) && !getCachedFacts(normalizeId(personId), now)) covered = false;
+          });
+          if (covered && unclaimed > 0) runPeopleTags(true);
         }
-
-        /**
-         * @returns {string|null} The item id in the URL.
-         */
-        function currentHashItemId() {
-            try {
-                return new URLSearchParams(window.location.hash.split('?')[1]).get('id');
-            } catch {
-                return null;
-            }
+        function prefetch(itemId, item, view, epoch) {
+          if (!JE.currentSettings?.peopleTagsEnabled || !isCurrentEpoch(epoch) || typeof JE.core?.api?.plugin !== "function") return;
+          if (!itemId || prefetches.has(itemId)) return;
+          if (lastProcessedItemId === itemId && (cardsClaimed || peopleTagsComplete)) return;
+          const ids = castOrderPersonIds(item);
+          if (!ids || ids.length === 0) return;
+          for (const key of [...prefetches.keys()]) {
+            if (key !== lastProcessedItemId) dropPrefetch(key);
+          }
+          const now = Date.now();
+          const misses = ids.filter((id) => !getCachedFacts(normalizeId(id), now));
+          const ctl = misses.length ? lifecycle.track(new AbortController()) : null;
+          const entry = { ctl, view, epoch, people: /* @__PURE__ */ new Map() };
+          prefetches.set(itemId, entry);
+          const outcomes = chunkMisses(misses).map((chunk) => {
+            const signal = ctl?.signal;
+            const outcome = JE.core.api.plugin(peopleInfoPath(chunk), { ...signal ? { signal } : {}, skipRetry: true }).then((response) => {
+              if (signal?.aborted || !isCurrentEpoch(epoch)) return { status: "aborted" };
+              const { facts, cached } = rememberResponse(chunk, response);
+              return { status: "answered", factsById: new Map(chunk.map((id, i) => [id, facts[i] ?? null])), cached };
+            }).catch((error) => {
+              console.debug(`${logPrefix} Person info prefetch failed`, error);
+              return { status: signal?.aborted ? "aborted" : "failed" };
+            });
+            for (const id of chunk) entry.people.set(id, outcome);
+            return outcome;
+          });
+          if (ctl) {
+            Promise.all(outcomes).then((settled) => {
+              if (settled.some((outcome) => outcome.cached) && isCurrentEpoch(epoch)) persistPeopleStore();
+              lifecycle.untrack(ctl);
+            });
+          }
+          tryFastPath();
         }
-
-        /**
-         * The cast's person ids in the order the card pass groups them (cast,
-         * then guest stars, each person once), or null when the cards may not
-         * follow item.People (Jellyfin 12 leaves artists out; a person without
-         * an id).
-         * @param {object} item
-         * @returns {string[]|null}
-         */
-        function castOrderPersonIds(item) {
-            if (!Array.isArray(item?.People)) return null;
-            const cast = [];
-            const guestStars = [];
-            for (const person of item.People) {
-                if (!person || typeof person.Id !== 'string' || !person.Id) return null;
-                if (person.Type === 'Artist' || person.Type === 'AlbumArtist') return null;
-                (person.Type === 'GuestStar' ? guestStars : cast).push(person.Id);
-            }
-            return [...new Set([...cast, ...guestStars])];
+        function leave(itemId) {
+          if (lastProcessedItemId !== itemId || !cardsClaimed) {
+            dropPrefetch(itemId);
+            return;
+          }
+          const entry = prefetches.get(itemId);
+          if (entry) entry.view = null;
         }
-
-        /**
-         * Main initialization using proper page navigation hooks
-         */
-        function initialize() {
-            console.debug(`${logPrefix} Initializing with managed observer pattern`);
-
-            /**
-             * Tag the cast of the details item in the URL.
-             * @param {boolean} fast - Started by tryFastPath, without waiting for
-             *   the page's mutations to go quiet. Only the debounced (quiet) run
-             *   arms the completion latch, as before.
-             */
-            function runPeopleTags(fast) {
-                if (!JE.currentSettings?.peopleTagsEnabled) return;
-                const castSection = document.querySelector('#itemDetailPage:not(.hide) #castCollapsible');
-                const guestCastSection = document.querySelector('#itemDetailPage:not(.hide) #guestCastCollapsible');
-
-                if (!castSection && !guestCastSection) return;
-
-                try {
-                    const itemId = new URLSearchParams(window.location.hash.split('?')[1]).get('id');
-                    if (!itemId) return;
-
-                    // Reset cache when navigating to a new item
-                    if (lastProcessedItemId !== itemId) {
-                        lastProcessedItemId = itemId;
-                        resetBatchController();
-                        processedCastMembers = new WeakSet();
-                        pendingCards = new WeakSet();
-                        failedCards = new WeakSet();
-                        peopleTagsComplete = false;
-                        debouncedSkipped = false;
-                        cardsClaimed = false;
-                        for (const key of [...prefetches.keys()]) {
-                            if (key !== itemId) dropPrefetch(key);
-                        }
-                        console.debug(`${logPrefix} New item detected: ${itemId}`);
-                    }
-
-                    // Skip if already fully processed for this item
-                    if (peopleTagsComplete) {
-                        return;
-                    }
-                    if (isProcessing) {
-                        // A quiet run skipped by a fast pass runs once that is done.
-                        if (!fast && processingFast) debouncedSkipped = true;
-                        return;
-                    }
-
-                    // Process cast members for this item, then mark complete
-                    // after a short delay to allow late-arriving DOM updates.
-                    // Capture the itemId so stale completions from previous
-                    // navigations don't mark the wrong item as done.
-                    const processingItemId = itemId;
-                    processingFast = fast;
-                    processCastMembers().then(() => {
-                        // Another item arrived while this batch was in flight
-                        // (its run was skipped by isProcessing): process it now.
-                        if (lastProcessedItemId !== processingItemId) {
-                            debouncedSkipped = false;
-                            handlePeopleTags();
-                            return;
-                        }
-                        if (fast) {
-                            // The quiet-point run came while this one painted.
-                            if (debouncedSkipped) {
-                                debouncedSkipped = false;
-                                handlePeopleTags();
-                            }
-                            return;
-                        }
-                        setTimeout(() => {
-                            // A pass that claimed no card does not end an item
-                            // whose prefetch waits for its cards: the cards
-                            // take it over, and the quiet run after they mount
-                            // arms the latch again.
-                            if (lastProcessedItemId === processingItemId
-                                && (cardsClaimed || !prefetches.has(processingItemId))) {
-                                peopleTagsComplete = true;
-                            }
-                        }, 2000);
-                    });
-                } catch (e) {
-                    // Ignore errors (likely not on an item page)
-                }
+        helpers.createObserver?.(
+          "people-tags",
+          (mutations) => {
+            if (!JE.currentSettings?.peopleTagsEnabled) return;
+            const hashId = currentHashItemId();
+            if (hashId && hashId !== lastProcessedItemId) {
+              peopleTagsComplete = false;
             }
-
-            // Handle item details page display with debounced observer (same pattern as features.js)
-            const handlePeopleTags = JE.helpers.debounce(() => runPeopleTags(false), 100);
-
-            /**
-             * Paint at once, instead of after 100 ms without mutations, when the
-             * visit's prefetch covers every card still to tag: those people are
-             * cached or already requested, so the pass makes no people/info
-             * request. Only on the view the visit was started for, so another
-             * item's cards are never painted with this item's premiere date.
-             * @param {string|null} [hashId] - The item id in the URL.
-             */
-            function tryFastPath(hashId = currentHashItemId()) {
-                const entry = hashId ? prefetches.get(hashId) : null;
-                if (!entry || !entry.view || !isCurrentEpoch(entry.epoch) || !JE.currentSettings?.peopleTagsEnabled) return;
-                const sameItem = lastProcessedItemId === hashId;
-                if (sameItem && (peopleTagsComplete || isProcessing)) return;
-                if (document.querySelector('#itemDetailPage:not(.hide)') !== entry.view) return;
-
-                const now = Date.now();
-                let unclaimed = 0;
-                let covered = true;
-                forEachCandidateCard(entry.view, (card) => {
-                    if (!covered) return;
-                    // A new item's pass starts with no card claimed.
-                    if (sameItem && (processedCastMembers.has(card) || pendingCards.has(card) || failedCards.has(card))) return;
-                    const personId = card.getAttribute('data-id');
-                    if (!personId) return;
-                    unclaimed++;
-                    if (!entry.people.has(personId) && !getCachedFacts(normalizeId(personId), now)) covered = false;
-                });
-                if (covered && unclaimed > 0) runPeopleTags(true);
+            if (peopleTagsComplete) return;
+            if (!document.querySelector("#itemDetailPage:not(.hide)")) return;
+            let hasNewNodes = false;
+            for (const mutation of mutations) {
+              if (mutation.addedNodes.length > 0) {
+                hasNewNodes = true;
+                break;
+              }
             }
-
-            /**
-             * Start the people/info requests for a details item's cast before its
-             * cards are on the page (features-details-page.js calls this once
-             * Jellyfin has filled the item's info row): the same requests the card
-             * pass would make, without retries. The card pass takes the answers
-             * over (joinPrefetchedChunk).
-             * @param {string} itemId
-             * @param {object} item - The item, with People
-             * @param {Element} view - The details view the visit belongs to
-             * @param {number} epoch - The identity epoch of the visit
-             */
-            function prefetch(itemId, item, view, epoch) {
-                if (!JE.currentSettings?.peopleTagsEnabled || !isCurrentEpoch(epoch) || typeof JE.core?.api?.plugin !== 'function') return;
-                // A card pass already owns this item: it requests what it needs
-                // (or the item is done). A pass that claimed no card owns nothing.
-                if (!itemId || prefetches.has(itemId)) return;
-                if (lastProcessedItemId === itemId && (cardsClaimed || peopleTagsComplete)) return;
-                const ids = castOrderPersonIds(item);
-                if (!ids || ids.length === 0) return;
-                for (const key of [...prefetches.keys()]) {
-                    if (key !== lastProcessedItemId) dropPrefetch(key);
-                }
-
-                const now = Date.now();
-                const misses = ids.filter(id => !getCachedFacts(normalizeId(id), now));
-                const ctl = misses.length ? lifecycle.track(new AbortController()) : null;
-                const entry = { ctl, view, epoch, people: new Map() };
-                prefetches.set(itemId, entry);
-                const outcomes = chunkMisses(misses).map((chunk) => {
-                    const outcome = JE.core.api.plugin(peopleInfoPath(chunk), { signal: ctl.signal, skipRetry: true })
-                        .then((response) => {
-                            // Left, or another user: nothing is kept.
-                            if (ctl.signal.aborted || !isCurrentEpoch(epoch)) return { status: 'aborted' };
-                            const { facts, cached } = rememberResponse(chunk, response);
-                            return { status: 'answered', factsById: new Map(chunk.map((id, i) => [id, facts[i]])), cached };
-                        })
-                        .catch((error) => {
-                            console.debug(`${logPrefix} Person info prefetch failed`, error);
-                            return { status: ctl.signal.aborted ? 'aborted' : 'failed' };
-                        });
-                    for (const id of chunk) entry.people.set(id, outcome);
-                    return outcome;
-                });
-                if (ctl) {
-                    Promise.all(outcomes).then((settled) => {
-                        if (settled.some(outcome => outcome.cached) && isCurrentEpoch(epoch)) persistPeopleStore();
-                        lifecycle.untrack(ctl);
-                    });
-                }
-                tryFastPath();
-            }
-
-            /**
-             * The visit of a details item ended: drop its prefetch unless a card
-             * pass took it over (that pass ends with its item, as before). A
-             * kept one lets go of the visit's view, which only the fast path
-             * used, so a view Jellyfin evicts is not held until the next item.
-             * @param {string} itemId
-             */
-            function leave(itemId) {
-                if (lastProcessedItemId !== itemId || !cardsClaimed) {
-                    dropPrefetch(itemId);
-                    return;
-                }
-                const entry = prefetches.get(itemId);
-                if (entry) entry.view = null;
-            }
-
-            // Create managed observer for people tags.
-            // Only watches childList (not attributes) to avoid firing on every hover
-            // class/style change. Cast sections appear via childList mutations.
-            JE.helpers.createObserver(
-                'people-tags',
-                (mutations) => {
-                    if (!JE.currentSettings?.peopleTagsEnabled) return;
-
-                    // Reset completion flag when navigating to a different item
-                    // (must happen BEFORE the peopleTagsComplete check)
-                    const hashId = currentHashItemId();
-                    if (hashId && hashId !== lastProcessedItemId) {
-                        peopleTagsComplete = false;
-                    }
-
-                    if (peopleTagsComplete) return;
-
-                    // Quick check: only process if we're on a detail page
-                    if (!document.querySelector('#itemDetailPage:not(.hide)')) return;
-
-                    // Only react to actual node additions, not attribute changes
-                    let hasNewNodes = false;
-                    for (const mutation of mutations) {
-                        if (mutation.addedNodes.length > 0) {
-                            hasNewNodes = true;
-                            break;
-                        }
-                    }
-                    if (!hasNewNodes) return;
-
-                    const castSection = document.querySelector('#itemDetailPage:not(.hide) #castCollapsible');
-                    const guestCastSection = document.querySelector('#itemDetailPage:not(.hide) #guestCastCollapsible');
-                    if (!castSection && !guestCastSection) return;
-
-                    tryFastPath(hashId);
-                    handlePeopleTags();
-                },
-                document.body,
-                {
-                    childList: true,
-                    subtree: true
-                }
-            );
-
-            // The cast may already be on screen (feature enabled from the
-            // settings panel, or JE loaded after the detail page rendered).
+            if (!hasNewNodes) return;
+            const castSection = document.querySelector("#itemDetailPage:not(.hide) #castCollapsible");
+            const guestCastSection = document.querySelector("#itemDetailPage:not(.hide) #guestCastCollapsible");
+            if (!castSection && !guestCastSection) return;
+            tryFastPath(hashId);
             handlePeopleTags();
-
-            // For the details page's visits (features-details-page.js); a
-            // re-init replaces the previous instance's.
-            JE.internals = JE.internals || {};
-            JE.internals.peopleTags = { prefetch, leave };
-
-            console.debug(`${logPrefix} Initialization complete`);
-        }
-
-        initialize();
+          },
+          document.body,
+          {
+            childList: true,
+            subtree: true
+          }
+        );
+        handlePeopleTags();
+        ctx.own.peopleTags = JE.peopleTags = { prefetch, leave };
+        console.debug(`${logPrefix} Initialization complete`);
+      }
+      initialize();
     };
+  }
 
-})(window.JellyfinEnhanced || (window.JellyfinEnhanced = {}));
+  // client/src/features/media-tags/types/people/peopletags-entry.ts
+  createPeopleTags(export2());
+})();
+})();
+//# sourceMappingURL=peopletags.js.map

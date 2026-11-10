@@ -1,0 +1,14 @@
+{
+  "js/enhanced/spoilerguard/detail-button.js": "client/src/features/spoiler-guard/detail-button.ts",
+  "js/enhanced/spoilerguard/dialog.js": "client/src/features/spoiler-guard/dialog.ts",
+  "js/enhanced/spoilerguard/identity.js": "client/src/features/spoiler-guard/identity.ts",
+  "js/enhanced/spoilerguard/ids.js": "client/src/features/spoiler-guard/ids.ts",
+  "js/enhanced/spoilerguard/image-refresh.js": "client/src/features/spoiler-guard/image-refresh.ts",
+  "js/enhanced/spoilerguard/index.js": "client/src/features/spoiler-guard/index.ts",
+  "js/enhanced/spoilerguard/seerr-toggle.js": "client/src/features/spoiler-guard/seerr-toggle.ts",
+  "js/enhanced/spoilerguard/settings-tab.js": "client/src/features/spoiler-guard/settings-tab.ts",
+  "js/enhanced/spoilerguard/snooze.js": "client/src/features/spoiler-guard/snooze.ts",
+  "js/enhanced/spoilerguard/state.js": "client/src/features/spoiler-guard/state.ts",
+  "js/enhanced/spoilerguard/styles.js": "client/src/features/spoiler-guard/styles.ts",
+  "js/enhanced/spoilerguard/watched-refresh.js": "client/src/features/spoiler-guard/watched-refresh.ts"
+}

@@ -1,0 +1,6 @@
+{
+  "version": 3,
+  "sources": ["../../../client/src/features/seerr/host-core.ts", "../../../client/src/features/seerr/core/request-manager-entry.ts"],
+  "mappings": ";mBAqLO,SAASA,GAA+B,CAC3C,IAAMC,EAAoB,OACpBC,EAAKD,EAAK,iBAChB,GAAI,CAACC,EAAI,MAAM,IAAI,MAAM,mEAAmE,EAC5F,MAAO,CAAE,GAAAA,EAAI,OAAQD,EAAM,SAAU,UAAW,IAAMA,EAAK,UAAW,WAAY,IAAMA,EAAK,gBAAiB,CAClH,CCrLA,GAAM,CAAE,GAAAE,CAAG,EAAIC,EAAc,EACvBC,EAAUF,EAAG,MAAM,KAAK,QAC9B,GAAI,CAACE,EAAS,MAAM,IAAI,MAAM,yDAAyD,EACvFF,EAAG,eAAiBE",
+  "names": ["seerrCoreHost", "host", "JE", "JE", "seerrCoreHost", "manager"]
+}

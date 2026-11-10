@@ -29,8 +29,8 @@ for (const [input, expected] of [['0', 5], ['-3', 1], ['200', 60], ['12', 12], [
     const h = setup(t); await h.change('pauseScreenDelayInput', input);
     assert.equal(h.JE.pauseScreenInstance.pauseScreenDelayMs, expected * 1000);
     assert.equal(h.writes.length, 1);
-    assert.ok(h.writes[0].url.endsWith('/user-a/settings.json'));
-    assert.equal(JSON.parse(h.writes[0].data).pauseScreenDelaySeconds, expected);
+    assert.ok(h.writes[0].url.endsWith('/user-a/settings-document'));
+    assert.equal(JSON.parse(h.writes[0].data).Settings.pauseScreenDelaySeconds, expected);
   });
 }
 
@@ -44,7 +44,7 @@ for (const enabled of [false, true]) test(`native poster preference is editable 
   const h = setup(t, { NativePosterTagsEnabled: enabled }); await h.change('nativePosterTagsToggle', false);
   assert.equal(h.writes.length, enabled ? 1 : 0);
   assert.equal(h.JE.userConfig.settings.useNativePosterTags, enabled ? false : undefined);
-  if (enabled) assert.equal(JSON.parse(h.writes[0].data).useNativePosterTags, false);
+  if (enabled) assert.equal(JSON.parse(h.writes[0].data).Settings.useNativePosterTags, false);
 });
 
 test('quality toggle initializes on enable and removes overlays on disable while persisting each choice', async t => {
@@ -56,7 +56,7 @@ test('quality toggle initializes on enable and removes overlays on disable while
   assert.equal(h.document.querySelector('.quality-overlay-container'), null);
   assert.ok(h.document.querySelector('.genre-overlay-container'));
   assert.equal(h.writes.length, 2);
-  assert.equal(JSON.parse(h.writes[1].data).qualityTagsEnabled, false);
+  assert.equal(JSON.parse(h.writes[1].data).Settings.qualityTagsEnabled, false);
 });
 
 
@@ -67,10 +67,10 @@ for (const key of ['statusTagsSchedule', 'statusTagsMilestones', 'statusTagsSeri
     h.JE.currentSettings.statusTagsEnabled = true;
     h.JE.reinitializeStatusTags = () => refreshed++;
     await h.change(`${key}Toggle`, false);
-    assert.equal(JSON.parse(h.writes.at(-1).data)[key], false);
+    assert.equal(JSON.parse(h.writes.at(-1).data).Settings[key], false);
     assert.equal(refreshed, 1);
     await h.change(`${key}Toggle`, true);
-    assert.equal(JSON.parse(h.writes.at(-1).data)[key], true);
+    assert.equal(JSON.parse(h.writes.at(-1).data).Settings[key], true);
     assert.equal(refreshed, 2);
   });
 }
@@ -96,7 +96,7 @@ test('a personal status save remembers web date context without changing legacy 
   h.JE.currentSettings.tagLayoutSettingsVersion = 0;
   h.JE.getStatusDateContext = () => ({ locale: 'de-DE', timeZone: 'Australia/Perth' });
   await h.JE.saveUserSettings('settings.json', h.JE.currentSettings);
-  const saved = JSON.parse(h.writes.at(-1).data);
+  const saved = JSON.parse(h.writes.at(-1).data).Settings;
   assert.equal(saved.nativePosterDateLocale, 'de-DE');
   assert.equal(saved.nativePosterTimeZone, 'Australia/Perth');
   assert.equal(saved.tagLayoutSettingsVersion, 0);
@@ -127,7 +127,7 @@ test('switching Logos on for the first user redraws the group once the server re
   state.finish();
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(state.redraws, 1, 'the cards on the page get their logos without a reload');
-  assert.equal(JSON.parse(h.writes.at(-1).data).logoTagsEnabled, true);
+  assert.equal(JSON.parse(h.writes.at(-1).data).Settings.logoTagsEnabled, true);
 });
 
 test('switching Logos on when entries already carry logos needs no wait, and switching off ends a wait without a redraw', async t => {

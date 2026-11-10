@@ -1,7 +1,6 @@
 using System.Text.Json;
-using Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr;
-using Jellyfin.Plugin.JellyfinEnhanced.Services;
-using Jellyfin.Plugin.JellyfinEnhanced.Model;
+using Jellyfin.Plugin.JellyfinEnhanced.Shared.Arr;
+using Jellyfin.Plugin.JellyfinEnhanced.Shared.Seerr;
 
 namespace JE.Tests;
 

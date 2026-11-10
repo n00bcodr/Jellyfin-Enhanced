@@ -1,0 +1,10 @@
+{
+  "comment": "FeatureBoundaryTests (artifacts/restructure-plan/backend.md §7.2). allow: Features.<A> types may reference Features.<B> for each B listed under A (\"*\" = any). Controllers may reference only their own feature plus Shared/Infrastructure/Configuration/Transport/Logger, whatever this list says. Any type may reference another feature's Features.<B>.PublicApi namespace (forwarding only; backend.md §7.7). Every feature is enforced since S3 (the per-feature \"enforced\" list is retired): any reference outside this list fails. A new edge needs an edit to this file in the same PR. Step 12 removed the entries the test reported unused (Downloads->Seerr, Seerr->SpoilerGuard, SpoilerGuard->HiddenContent, Platform->*). Round 13 (review G1): types are attributed to a feature by the folder of their source file, so the scheduled-task types in Features/<F>/Tasks/ and StartupService are scanned too. allowType lists, per referencing type (\"<folder>/<type>\"), the other features that one type may reference; it holds only the edges that measurement fix made visible: StartupService is the startup task that receives other features' monitors and services through its constructor so that DI builds them at startup (a static PublicApi forwarder cannot replace a constructor dependency). MdblistRatingsFetchTask's TagCacheService.Instance call, also made visible then, now goes through MediaTagsApi.TagCache (round 13 item 3), so its entry was removed. The two allow edges are constructor dependencies too: SpoilerGuard's SpoilerIdentityTagFilter receives MediaTags' NativePosterTagStamper, and MediaTags' AwardTagsService and TagCacheService receive DetailsProviders' MdblistService and WikidataAwardsService.",
+  "allow": {
+    "SpoilerGuard": ["MediaTags"],
+    "MediaTags": ["DetailsProviders"]
+  },
+  "allowType": {
+    "Features/Platform/Services/StartupService": ["Activity", "Admin", "MediaTags", "Seerr"]
+  }
+}

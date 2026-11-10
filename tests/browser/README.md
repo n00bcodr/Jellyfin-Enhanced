@@ -9,6 +9,8 @@ npm run test:browser
 npm run test:visual
 ```
 
+Playwright runs `JE_BROWSER_WORKERS` workers when that is set, otherwise 3 (2 on CI).
+
 To run the centre-anchor geometry regressions on an existing lab origin without
 starting the fixture server:
 

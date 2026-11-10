@@ -1,0 +1,15 @@
+{
+  "Configuration/configPage.html": {
+    "template": "client/html/admin-config/configPage.html",
+    "scripts": {
+      "startup": "client/src/admin/config/startup-entry.ts",
+      "main": "client/src/admin/config/page-entry.ts"
+    }
+  },
+  "Configuration/mediaTagsPage.html": {
+    "template": "client/html/admin-config/mediaTagsPage.html",
+    "scripts": {
+      "main": "client/src/admin/config/media-tags-redirect-entry.ts"
+    }
+  }
+}

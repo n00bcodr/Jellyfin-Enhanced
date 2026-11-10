@@ -1,6 +1,6 @@
 # Maintenance recovery regression contract
 
-`tests/backend/Core/CoreMaintenanceTests.cs` exercises the actual maintenance service against a disposable state directory and a mocked Jellyfin policy store. Policy copies model independent persisted reads, so a failed update cannot accidentally mutate the test store.
+`tests/backend/Features/Admin/CoreMaintenanceTests.cs` exercises the actual maintenance service against a disposable state directory and a mocked Jellyfin policy store. Policy copies model independent persisted reads, so a failed update cannot accidentally mutate the test store.
 
 The suite verifies that administrators and previously restricted users keep their original access, only successful maintenance changes enter restoration lists, and failed restores remain pending across restart. Each successfully restored user is removed from the journal; retries do not change that user's later administrator-set restrictions. Null persisted lists are normalized.
 

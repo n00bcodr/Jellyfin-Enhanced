@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Real Jellyfin smoke tests. Every resource belongs to this invocation."""
 import argparse
+import hashlib
 import json
 import os
 import ipaddress
@@ -13,14 +14,19 @@ import time
 import urllib.error
 import urllib.request
 import uuid
+import sys
 import wave
+
+# Tests load this file by path, so its own directory is not always on sys.path.
+if str(pathlib.Path(__file__).resolve().parent) not in sys.path:
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from bookmarks import prepare as prepare_bookmarks  # noqa: E402
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 # Floating tags: each run pulls the newest release of its compatibility line and
 # records the digest and server version it actually tested in report.json.
 # Never use `latest`, which would move to the next major line.
 IMAGES = {
-    "jf10": "jellyfin/jellyfin:10.11",
     "jf12": "jellyfin/jellyfin:12",
 }
 PLUGIN_ID = "f69e946a-4b3c-4e9a-8f0a-8d7c1b2c4d9b"
@@ -123,6 +129,8 @@ def pull(image):
 
 
 def run(target, artifacts, browser=False):
+    if target not in IMAGES:
+        raise ValueError(f"Unsupported target {target!r}; this rewrite supports Jellyfin 12.x only (jf12)")
     output = artifacts / target
     output.mkdir(parents=True, exist_ok=True)
     name = "je-regression-" + uuid.uuid4().hex[:12]
@@ -141,6 +149,7 @@ def run(target, artifacts, browser=False):
             assert result.returncode == 0, f"Build failed: {output / 'build.log'}"
             dlls = list((temp / "build/bin").rglob("Jellyfin.Plugin.JellyfinEnhanced.dll"))
             assert len(dlls) == 1, f"Expected one built plugin, found {dlls}"
+            report["plugin_sha256"] = hashlib.sha256(dlls[0].read_bytes()).hexdigest()
             plugin = temp / "config/plugins/JellyfinEnhanced"
             plugin.mkdir(parents=True)
             shutil.copyfile(dlls[0], plugin / dlls[0].name)
@@ -205,6 +214,7 @@ def run(target, artifacts, browser=False):
             prefix = "/JellyfinEnhanced"
             plugin_config_route = f"/Plugins/{PLUGIN_ID}/Configuration"
             configuration = host.request(plugin_config_route, token=admin_token)
+            configuration["BookmarksEnabled"] = True
             configuration["JellyseerrApiKey"] = "regression-fake-secret-do-not-expose"
             host.request(plugin_config_route, "POST", configuration, admin_token, expected=204)
             def bootstrap_privacy(user):
@@ -245,33 +255,57 @@ def run(target, artifacts, browser=False):
                     host.check("cross-user write denied " + user["User"]["Name"] + document,
                                lambda route=route, token=token: host.request(route, "POST", {}, token, expected=403))
             route = f"{prefix}/user-settings/{regular['User']['Id']}/settings.json"
-            saved = host.request(route, token=regular["AccessToken"])
-            # Production's JSON contract uses camelCase for user settings.
+            document_route = f"{prefix}/user-settings/{regular['User']['Id']}/settings-document"
+            snapshot = host.request(document_route, token=regular["AccessToken"])
+            saved = snapshot["Settings"]
             setting_key = next(key for key in saved if key.lower() == "autopauseenabled")
+            for user in users:
+                guarded_target = f"{prefix}/user-settings/{admin['User']['Id']}/settings-document"
+                host.check("revisioned cross-user read denied " + user["User"]["Name"],
+                           lambda route=guarded_target, user=user: host.request(route, token=user["AccessToken"], expected=403))
+                host.check("revisioned cross-user write denied " + user["User"]["Name"],
+                           lambda route=guarded_target, user=user: host.request(route, "POST",
+                               {"Revision": "missing", "Settings": {}}, user["AccessToken"], expected=403))
+            host.check("anonymous revisioned settings denied", lambda: host.request(document_route, expected=401))
             restricted_route = f"{prefix}/user-settings/{restricted['User']['Id']}/settings.json"
             restricted_before = host.request(restricted_route, token=restricted["AccessToken"])
             saved[setting_key] = not saved[setting_key]
-            host.check("save own preferences", lambda: host.request(route, "POST", saved, regular["AccessToken"]))
+            update = {"Revision": snapshot["Revision"], "Settings": saved}
+            host.check("save revisioned preferences", lambda: host.request(document_route, "POST", update, regular["AccessToken"]))
+            host.check("stale settings revision rejected", lambda: host.request(document_route, "POST", update,
+                       regular["AccessToken"], expected=409))
+            def revision_matches():
+                actual = host.request(document_route, token=regular["AccessToken"])
+                bootstrap = host.request(prefix + "/bootstrap", token=regular["AccessToken"])
+                assert actual["Revision"] != snapshot["Revision"], "Changed settings did not advance their content revision"
+                assert actual["Settings"][setting_key] == saved[setting_key], "Rejected stale save changed preferences"
+                assert bootstrap["UserSettings"]["SettingsRevision"] == actual["Revision"], "Bootstrap revision is not the document revision"
+            host.check("bootstrap and settings agree after conflict", revision_matches)
             def persisted():
                 actual = host.request(route, token=regular["AccessToken"])
                 assert actual[setting_key] == saved[setting_key]
                 other = host.request(restricted_route, token=restricted["AccessToken"])
                 assert other == restricted_before, "Saving one user changed another user's preferences"
             host.check("read back own preferences", persisted)
+            bookmarks_persisted, bookmark_fixture = prepare_bookmarks(host, prefix, regular, restricted, admin, item_id)
             command("docker", "restart", name)
             host.ready()
             host.check("plugin reload after restart", compatibility)
             host.check("preferences persist across restart", persisted)
+            host.check("settings revisions persist across restart", revision_matches)
             host.check("restricted library policy persists across restart", library_access)
+            host.check("bookmark data, revision and metadata persist across restart", bookmarks_persisted)
             if browser:
                 result = subprocess.run(["node", str(ROOT / "tests/host/browser.mjs")],
                     input=json.dumps({"url": host.url, "password": password, "artifacts": str(output),
-                                      "users": ["regression-regular", "regression-admin"]}),
+                                      "users": ["regression-regular", "regression-admin"], "bookmarkFixture": bookmark_fixture}),
                     text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=ROOT)
                 (output / "browser.log").write_text(result.stdout.replace(password, "[REDACTED]"))
                 assert result.returncode == 0, f"Real browser journey failed: {output / 'browser.log'}"
                 host.passed.append("real Chromium regular/admin login, panel and preference persistence")
                 print(result.stdout, flush=True)
+                host.check("browser bookmark edit preserves exact text and stored extensions",
+                    lambda: bookmarks_persisted(bookmark_fixture["savedLabel"], False))
             report.update({"passed": host.passed, "status": "passed"})
             (output / "report.json").write_text(json.dumps(report, indent=2))
             print(f"{target}: {len(host.passed)} checks passed on Jellyfin {report['server_version']} ({report['resolved_image']})", flush=True)

@@ -1,0 +1,4 @@
+{
+  "comment": "FeatureBoundaryTests ratchet (review M2; folder-keyed since round 13, review G1): references from types declared under Shared/ or Infrastructure/ into types declared under Features/, keyed <folder>/<referencing top-level type> -> <folder>/<referenced type>: occurrences. A new edge or a higher count fails; lower counts are a note, so shrink this file when an edge goes away. Never add an edge to make the test pass.",
+  "edges": {}
+}

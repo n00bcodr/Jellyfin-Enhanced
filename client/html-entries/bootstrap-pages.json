@@ -1,0 +1,44 @@
+{
+  "PluginPages/ActivityPage.html": {
+    "template": "client/html/bootstrap-pages/ActivityPage.html",
+    "scripts": {
+      "main": "client/src/pages/activity-page.ts"
+    }
+  },
+  "PluginPages/BookmarksPage.html": {
+    "template": "client/html/bootstrap-pages/BookmarksPage.html",
+    "scripts": {
+      "main": "client/src/pages/bookmarks-page.ts"
+    }
+  },
+  "PluginPages/CalendarPage.html": {
+    "template": "client/html/bootstrap-pages/CalendarPage.html",
+    "scripts": {
+      "main": "client/src/pages/calendar-page.ts"
+    }
+  },
+  "PluginPages/CatchUpPage.html": {
+    "template": "client/html/bootstrap-pages/CatchUpPage.html",
+    "scripts": {
+      "main": "client/src/pages/catchup-page.ts"
+    }
+  },
+  "PluginPages/DownloadsPage.html": {
+    "template": "client/html/bootstrap-pages/DownloadsPage.html",
+    "scripts": {
+      "main": "client/src/pages/downloads-page.ts"
+    }
+  },
+  "PluginPages/HiddenContentPage.html": {
+    "template": "client/html/bootstrap-pages/HiddenContentPage.html",
+    "scripts": {
+      "main": "client/src/pages/hidden-content-page.ts"
+    }
+  },
+  "PluginPages/RecommendationsPage.html": {
+    "template": "client/html/bootstrap-pages/RecommendationsPage.html",
+    "scripts": {
+      "main": "client/src/pages/recommendations-page.ts"
+    }
+  }
+}

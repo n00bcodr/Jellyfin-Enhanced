@@ -1,0 +1,6 @@
+{
+  "version": 3,
+  "sources": ["../../../client/src/features/seerr/host-details.ts", "../../../client/src/features/seerr/details/domain/media.ts", "../../../client/src/features/seerr/details/hss-discovery-entry.ts"],
+  "mappings": ";mBAwLO,SAASA,GAA6B,CACzC,IAAMC,EAA2D,OACjE,GAAI,CAACA,EAAK,iBAAkB,MAAM,IAAI,MAAM,+CAA+C,EAC3F,OAAOA,EAAK,gBAChB,CA+JO,IAAMC,EAAY,wBCvVlB,SAASC,EAAeC,EAAkC,CAC7D,OAAOA,IAAU,SAAWA,IAAU,KAAOA,EAAQ,IACzD,CCCA,IAAMC,EAAKC,EAAO,EACZC,EAAY,GAAGC,CAAS,0BAE9B,SAAS,iBAAiB,QAASC,GAAS,CAExC,GADI,EAAEA,EAAM,kBAAkB,UAC1BA,EAAM,OAAO,QAAQ,yBAAyB,EAAG,OACrD,IAAMC,EAAOD,EAAM,OAAO,QAAqB,gBAAgB,EAC/D,GAAI,CAACC,EAAM,OAEX,IAAMC,EAASD,EAAK,QAAQ,OACtBE,EAAYC,EAAeH,EAAK,QAAQ,SAAS,EACjDI,EAAOT,EAAG,oBAAoB,KAChC,CAACM,GAAU,CAAC,QAAQ,KAAKA,CAAM,GAAK,CAACC,GAAa,CAACE,IACvD,QAAQ,IAAI,GAAGP,CAAS,yCAAyCI,CAAM,WAAWC,CAAS,EAAE,EAC7FH,EAAM,eAAe,EACrBA,EAAM,gBAAgB,EACjBK,EAAK,KAAKT,EAAG,mBAAoBM,EAAQC,CAAS,EAC3D,EAAG,EAAI",
+  "names": ["bridge", "host", "SEERR_LOG", "parseMediaType", "value", "JE", "bridge", "logPrefix", "SEERR_LOG", "event", "card", "tmdbId", "mediaType", "parseMediaType", "open"]
+}

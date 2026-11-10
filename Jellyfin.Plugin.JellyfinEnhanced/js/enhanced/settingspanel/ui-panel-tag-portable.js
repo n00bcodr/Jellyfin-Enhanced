@@ -1,341 +1,336 @@
-/**
- * @file Media Tags import, export and presets: the hub's Presets and
- * Import & export cards (bottom of the Layout tab), and the dialogs, file and
- * clipboard helpers the Media Tags admin tab reuses
- * (js/enhanced/admintags/sections/portable.js).
- *
- * A document is `{"v":1,"kind":"je-media-tags-user","settings":{…}}` with the
- * server's PascalCase field names (Helpers/MediaTagsPortable.cs); a preset adds
- * an id, a name and a description. Every import is checked by the server first
- * (POST user-settings/{id}/media-tags/preview, the settings save path's
- * validators): the dialog shows what changes and which fields are skipped, and
- * only after a confirmation are the changed fields written into the user's
- * document and saved the usual way. The panel then opens again on the new
- * settings with Undo for a few seconds.
- */
-(function(JE) {
-    'use strict';
+(() => {
+"use strict";
+(() => {
+  // client/src/features/shared/panel-host.ts
+  function panelHost() {
+    const host = window;
+    if (!host.JellyfinEnhanced) throw new TypeError("Jellyfin Enhanced must load before the settings panel");
+    return host.JellyfinEnhanced;
+  }
+  function apiClient() {
+    const client = optionalApiClient();
+    if (!client) throw new ReferenceError("ApiClient is not defined");
+    return client;
+  }
+  function optionalApiClient() {
+    const host = window;
+    return host.ApiClient;
+  }
 
+  // client/src/features/media-tags/settings/host.ts
+  function registry(JE) {
     JE.internals = JE.internals || {};
-    const internal = JE.internals.enhancedUi = JE.internals.enhancedUi || {};
+    return JE.internals.enhancedUi = JE.internals.enhancedUi || {};
+  }
 
-    const USER_KIND = 'je-media-tags-user';
-    const PRESET_KIND = 'je-media-tags-preset';
-    const UNDO_MS = 10000;
-    const MAX_NAME = 60;
-    const MAX_DESCRIPTION = 240;
-    /** Values longer than this are cut in the change list (the whole value is still applied). */
-    const MAX_VALUE_TEXT = 80;
+  // client/src/features/shared/dom.ts
+  function targetElement(event) {
+    return event.target instanceof Element ? event.target : null;
+  }
+  function closestTarget(event, selector) {
+    const found = targetElement(event)?.closest(selector);
+    return found instanceof HTMLElement ? found : null;
+  }
+  function queryElement(root, selector) {
+    const found = root.querySelector(selector);
+    return found instanceof HTMLElement ? found : null;
+  }
+  function queryButton(root, selector) {
+    const found = root.querySelector(selector);
+    return found instanceof HTMLButtonElement ? found : null;
+  }
+  function queryElements(root, selector) {
+    return Array.from(root.querySelectorAll(selector)).filter((node) => node instanceof HTMLElement);
+  }
+  function setDisabled(node, disabled) {
+    if (node instanceof HTMLButtonElement || node instanceof HTMLInputElement || node instanceof HTMLSelectElement || node instanceof HTMLTextAreaElement || node instanceof HTMLFieldSetElement || node instanceof HTMLOptionElement) node.disabled = disabled;
+  }
+  function focusElement(node, options) {
+    if (node instanceof HTMLElement || node instanceof SVGElement) node.focus(options);
+  }
 
-    /**
-     * The group switches an import can change, and how the page follows each
-     * one live (the same calls the group editor's switches make).
-     */
+  // client/src/features/media-tags/settings/portable-model.ts
+  var record = (value) => value !== null && typeof value === "object" ? value : {};
+  var get = (value, key) => Reflect.get(record(value), key);
+  var list = (value) => Array.isArray(value) ? value : [];
+  var changesOf = (value) => list(value).map((c) => ({ field: get(c, "field"), from: get(c, "from"), to: get(c, "to") }));
+  var skipsOf = (value) => list(value).map((s) => ({ field: get(s, "field"), reason: get(s, "reason"), detail: get(s, "detail") }));
+  function decodePreview(value) {
+    const imported = get(value, "imported");
+    return {
+      changes: changesOf(get(value, "changes")),
+      skipped: skipsOf(get(value, "skipped")),
+      imported: imported !== null && typeof imported === "object" ? Object.keys(imported) : [],
+      name: get(value, "name")
+    };
+  }
+  var presetOf = (value) => ({ id: get(value, "id"), name: get(value, "name"), description: get(value, "description"), v: get(value, "v"), settings: get(value, "settings") });
+  var isPresetSource = (value) => value === "builtIn" || value === "offered" || value === "mine";
+  function decodePresets(value) {
+    return {
+      max: Number(get(value, "max")) || 10,
+      builtIn: list(get(value, "builtIn")).map(presetOf),
+      offered: list(get(value, "offered")).map(presetOf),
+      mine: list(get(value, "mine")).map(presetOf)
+    };
+  }
+  function exportedParts(value) {
+    const settings = get(value, "settings");
+    return { v: get(value, "v"), settings, fieldCount: Object.keys(record(settings)).length };
+  }
+  function savedPreset(value) {
+    return { name: get(get(value, "preset"), "name"), skipped: skipsOf(get(value, "skipped")) };
+  }
+  function refusal(body) {
+    const code = get(body, "error");
+    return typeof code === "string" ? { code, max: get(body, "max") } : { code: "save" };
+  }
+  var statusOf = (err) => get(err, "status");
+
+  // client/src/features/shared/settings-values.ts
+  function isJson(value) {
+    if (value === null || typeof value === "string" || typeof value === "boolean") return true;
+    if (typeof value === "number") return Number.isFinite(value);
+    if (Array.isArray(value)) return value.every(isJson);
+    if (typeof value === "object") return Object.values(value).every(isJson);
+    return false;
+  }
+
+  // client/src/features/media-tags/settings/ui-panel-tag-portable.ts
+  var PRESET_KIND = "je-media-tags-preset";
+  var UNDO_MS = 1e4;
+  var MAX_NAME = 60;
+  var MAX_DESCRIPTION = 240;
+  var MAX_VALUE_TEXT = 80;
+  var ERROR_CODES = ["not-json", "not-object", "kind", "version", "newer", "settings", "name", "description", "empty", "full", "save"];
+  var SKIP_REASONS = ["unknown", "secret", "signal", "invalid"];
+  var FIELD_LABELS = {
+    TagLayout: "common_layout",
+    TagLabelDensity: "panel_settings_ui_tag_density",
+    TagScale: "tag_scale_label",
+    TagGap: "tag_gap_label",
+    TagEdgeSpacing: "panel_settings_ui_tag_edge",
+    TagStylePreset: "panel_settings_ui_tag_style_preset"
+  };
+  var GROUP_FIELDS = {
+    QualityTagsEnabled: "quality",
+    GenreTagsEnabled: "genre",
+    LanguageTagsEnabled: "language",
+    RatingTagsEnabled: "rating",
+    AgeRatingTagsEnabled: "age_rating",
+    StatusTagsEnabled: "status",
+    AwardsTagsEnabled: "awards",
+    LogoTagsEnabled: "logos",
+    CustomTagsEnabled: "custom"
+  };
+  var own = (map, key) => Object.prototype.hasOwnProperty.call(map, key) ? map[key] : void 0;
+  function installUiPanelTagPortable(JE) {
+    const internal = registry(JE);
     const GROUP_SWITCHES = [
-        { key: 'qualityTagsEnabled', group: 'quality', container: 'quality-overlay-container', init: 'initializeQualityTags', reinit: 'reinitializeQualityTags' },
-        { key: 'genreTagsEnabled', group: 'genre', container: 'genre-overlay-container', init: 'initializeGenreTags', reinit: 'reinitializeGenreTags' },
-        { key: 'languageTagsEnabled', group: 'language', container: 'language-overlay-container', init: 'initializeLanguageTags', reinit: 'reinitializeLanguageTags' },
-        { key: 'ratingTagsEnabled', group: 'rating', container: 'rating-overlay-container', init: 'initializeRatingTags', reinit: 'reinitializeRatingTags' },
-        { key: 'ageRatingTagsEnabled', group: 'ageRating', container: 'age-rating-overlay-container', init: 'initializeAgeRatingTags', reinit: 'reinitializeAgeRatingTags' },
-        { key: 'statusTagsEnabled', group: 'status', container: 'status-overlay-container', init: 'initializeStatusTags', reinit: 'reinitializeStatusTags' },
-        { key: 'awardsTagsEnabled', group: 'awards', container: 'awards-overlay-container', init: 'initializeAwardsTags', reinit: 'reinitializeAwardsTags' },
-        { key: 'logoTagsEnabled', group: 'logos', container: 'logo-overlay-container', init: 'initializeLogoTags', reinit: 'reinitializeLogoTags' },
-        { key: 'customTagsEnabled', group: 'custom', container: 'custom-overlay-container', init: 'initializeCustomTags', reinit: 'reinitializeCustomTags' },
+      { key: "qualityTagsEnabled", group: "quality", container: "quality-overlay-container", init: () => JE.initializeQualityTags?.(), reinit: () => JE.reinitializeQualityTags?.() },
+      { key: "genreTagsEnabled", group: "genre", container: "genre-overlay-container", init: () => JE.initializeGenreTags?.(), reinit: () => JE.reinitializeGenreTags?.() },
+      { key: "languageTagsEnabled", group: "language", container: "language-overlay-container", init: () => JE.initializeLanguageTags?.(), reinit: () => JE.reinitializeLanguageTags?.() },
+      { key: "ratingTagsEnabled", group: "rating", container: "rating-overlay-container", init: () => JE.initializeRatingTags?.(), reinit: () => JE.reinitializeRatingTags?.() },
+      { key: "ageRatingTagsEnabled", group: "ageRating", container: "age-rating-overlay-container", init: () => JE.initializeAgeRatingTags?.(), reinit: () => JE.reinitializeAgeRatingTags?.() },
+      { key: "statusTagsEnabled", group: "status", container: "status-overlay-container", init: () => JE.initializeStatusTags?.(), reinit: () => JE.reinitializeStatusTags?.() },
+      { key: "awardsTagsEnabled", group: "awards", container: "awards-overlay-container", init: () => JE.initializeAwardsTags?.(), reinit: () => JE.reinitializeAwardsTags?.() },
+      { key: "logoTagsEnabled", group: "logos", container: "logo-overlay-container", init: () => JE.initializeLogoTags?.(), reinit: () => JE.reinitializeLogoTags?.() },
+      { key: "customTagsEnabled", group: "custom", container: "custom-overlay-container", init: () => JE.initializeCustomTags?.(), reinit: () => JE.reinitializeCustomTags?.() }
     ];
-
-    const esc = (value) => JE.escapeHtml(String(value ?? ''));
-    /** @param {string} key @param {Object} [params] @returns {string} Translated and escaped. */
+    const esc = (value) => JE.escapeHtml(String(value ?? ""));
     const tx = (key, params) => esc(JE.t(key, params));
-
-    /**
-     * The last import applied in this browser tab, for Undo after the panel
-     * opened again: the changes it made, until when Undo is offered and
-     * whether the session that made it is still the signed-in one.
-     * @type {{changes: Array<{field: string, from: *, to: *}>, until: number, count: number, isCurrent: () => boolean}|null}
-     */
     let lastImport = null;
-
-    // ── Shared helpers (the admin page uses them too) ───────────────────
-
-    /** Fields the settings show under their own label (the label key the control uses). */
-    const FIELD_LABELS = {
-        TagLayout: 'common_layout',
-        TagLabelDensity: 'panel_settings_ui_tag_density',
-        TagScale: 'tag_scale_label',
-        TagGap: 'tag_gap_label',
-        TagEdgeSpacing: 'panel_settings_ui_tag_edge',
-        TagStylePreset: 'panel_settings_ui_tag_style_preset',
-    };
-
-    /** Group switches, by the group's vocabulary key. */
-    const GROUP_FIELDS = {
-        QualityTagsEnabled: 'quality', GenreTagsEnabled: 'genre', LanguageTagsEnabled: 'language', RatingTagsEnabled: 'rating',
-        AgeRatingTagsEnabled: 'age_rating', StatusTagsEnabled: 'status', AwardsTagsEnabled: 'awards', LogoTagsEnabled: 'logos', CustomTagsEnabled: 'custom',
-    };
-
-    /**
-     * A field's name as the settings label it ("Tag size", "Genre tags"),
-     * else spelled out ("Tag Group Caps").
-     * @param {string} field - A PascalCase field.
-     * @returns {string}
-     */
     const fieldName = (field) => {
-        const key = String(field);
-        const vocab = JE.core?.tagLayout?.VOCABULARY_KEYS;
-        if (FIELD_LABELS[key] && JE.t(FIELD_LABELS[key]) !== FIELD_LABELS[key]) return JE.t(FIELD_LABELS[key]);
-        if (GROUP_FIELDS[key] && vocab?.group?.[GROUP_FIELDS[key]]) {
-            const group = JE.t(vocab.group[GROUP_FIELDS[key]]);
-            if (group !== vocab.group[GROUP_FIELDS[key]]) return JE.t('tag_portable_field_group', { group });
-        }
-        return key.replace(/([a-z0-9])([A-Z])/g, '$1 $2');
+      const key = String(field);
+      const vocab = JE.core?.tagLayout?.VOCABULARY_KEYS;
+      const label = own(FIELD_LABELS, key);
+      if (label && JE.t(label) !== label) return JE.t(label);
+      const groupKey = own(GROUP_FIELDS, key);
+      const groupLabel = groupKey ? vocab?.group?.[groupKey] : void 0;
+      if (groupLabel) {
+        const group = JE.t(groupLabel);
+        if (group !== groupLabel) return JE.t("tag_portable_field_group", { group });
+      }
+      return key.replace(/([a-z0-9])([A-Z])/g, "$1 $2");
     };
-
-    /**
-     * A field's value as the option the settings show for it ("115%", "Corners"), or null.
-     * @param {string} field
-     * @param {*} value
-     * @returns {string|null}
-     */
     function optionText(field, value) {
-        const L = JE.core?.tagLayout;
-        if (!L || typeof value !== 'string' || !value) return null;
-        const vocab = L.VOCABULARY_KEYS;
-        let key = null;
-        if (field === 'TagScale' && L.TAG_SCALES?.[value] !== undefined) return L.sizeLabel('scale', value);
-        if (field === 'TagLayout') key = vocab.layout?.[value];
-        else if (field === 'TagLabelDensity') key = `panel_settings_ui_tag_density_${value}`;
-        else if (field === 'TagGap') key = vocab.gap?.[value];
-        else if (field === 'TagEdgeSpacing') key = vocab.edge?.[value];
-        else if (field === 'TagStylePreset') key = vocab.preset?.[value];
-        if (!key) return null;
-        const text = JE.t(key);
-        return text === key ? null : text;
+      const L = JE.core?.tagLayout;
+      if (!L || typeof value !== "string" || !value) return null;
+      const vocab = L.VOCABULARY_KEYS;
+      let key;
+      if (field === "TagScale" && L.TAG_SCALES?.[value] !== void 0) return L.sizeLabel("scale", value);
+      if (field === "TagLayout") key = vocab.layout?.[value];
+      else if (field === "TagLabelDensity") key = `panel_settings_ui_tag_density_${value}`;
+      else if (field === "TagGap") key = vocab.gap?.[value];
+      else if (field === "TagEdgeSpacing") key = vocab.edge?.[value];
+      else if (field === "TagStylePreset") key = vocab.preset?.[value];
+      if (!key) return null;
+      const text = JE.t(key);
+      return text === key ? null : text;
     }
-
-    /**
-     * A value as one short line for the change list.
-     * @param {*} value
-     * @param {string} [field] - The field, to name the value as its option.
-     * @returns {string}
-     */
     function valueText(value, field) {
-        if (value === null || value === undefined) return JE.t('tag_portable_value_inherit');
-        if (typeof value === 'boolean') return JE.t(value ? 'tag_portable_value_on' : 'tag_portable_value_off');
-        const option = field ? optionText(field, value) : null;
-        if (option) return option;
-        const text = typeof value === 'string' ? (value === '' ? JE.t('tag_portable_value_empty') : value) : JSON.stringify(value);
-        return text.length > MAX_VALUE_TEXT ? `${text.slice(0, MAX_VALUE_TEXT - 1)}…` : text;
+      if (value === null || value === void 0) return JE.t("tag_portable_value_inherit");
+      if (typeof value === "boolean") return JE.t(value ? "tag_portable_value_on" : "tag_portable_value_off");
+      const option = field ? optionText(field, value) : null;
+      if (option) return option;
+      const text = typeof value === "string" ? value === "" ? JE.t("tag_portable_value_empty") : value : String(JSON.stringify(value));
+      return text.length > MAX_VALUE_TEXT ? `${text.slice(0, MAX_VALUE_TEXT - 1)}…` : text;
     }
-
-    /**
-     * The change list and the skipped list of a preview.
-     * @param {{changes?: Array<{field: string, from: *, to: *}>, skipped?: Array<{field: string, reason: string, detail?: string}>}} preview
-     * @param {{summary?: boolean}} [opts] - summary: false leaves out the "N changes" line.
-     * @returns {string}
-     */
     function previewHtml(preview, opts = {}) {
-        const changes = preview.changes || [];
-        const skipped = preview.skipped || [];
-        const rows = changes.map((c) => `<li class="je-pt-change"><span class="je-pt-field" data-je-field="${esc(c.field)}">${esc(fieldName(c.field))}</span>`
-            + `<span class="je-pt-values"><span class="je-pt-sr">${tx('tag_portable_was')} </span><span class="je-pt-from">${esc(valueText(c.from, c.field))}</span><span class="je-pt-arrow" aria-hidden="true">→</span><span class="je-pt-sr"> ${tx('tag_portable_becomes')} </span><span class="je-pt-to">${esc(valueText(c.to, c.field))}</span></span></li>`).join('');
-        const skips = skipped.map((s) => `<li class="je-pt-skip"><span class="je-pt-field" data-je-field="${esc(s.field)}">${esc(fieldName(s.field))}</span>`
-            + `<span class="je-pt-reason">${tx(`tag_portable_skip_${['unknown', 'secret', 'signal', 'invalid'].includes(s.reason) ? s.reason : 'unknown'}`)}${s.detail ? ` <span class="je-pt-detail">(${esc(s.detail)})</span>` : ''}</span></li>`).join('');
-        return (opts.summary === false ? '' : `<p class="je-pt-summary" data-je-summary>${tx(changes.length ? 'tag_portable_changes_count' : 'tag_portable_no_changes', { count: changes.length })}</p>`)
-            + (changes.length ? `<ul class="je-pt-changes" aria-label="${tx('tag_portable_changes')}">${rows}</ul>` : '')
-            + (skipped.length ? `<h4 class="je-pt-subtitle">${tx('tag_portable_skipped_count', { count: skipped.length })}</h4><p class="je-pt-hint">${tx('tag_portable_skipped_desc')}</p><ul class="je-pt-skips">${skips}</ul>` : '');
+      const { changes, skipped } = decodePreview(preview);
+      const rows = changes.map((c) => `<li class="je-pt-change"><span class="je-pt-field" data-je-field="${esc(c.field)}">${esc(fieldName(c.field))}</span><span class="je-pt-values"><span class="je-pt-sr">${tx("tag_portable_was")} </span><span class="je-pt-from">${esc(valueText(c.from, String(c.field)))}</span><span class="je-pt-arrow" aria-hidden="true">→</span><span class="je-pt-sr"> ${tx("tag_portable_becomes")} </span><span class="je-pt-to">${esc(valueText(c.to, String(c.field)))}</span></span></li>`).join("");
+      const skips = skipped.map((s) => `<li class="je-pt-skip"><span class="je-pt-field" data-je-field="${esc(s.field)}">${esc(fieldName(s.field))}</span><span class="je-pt-reason">${tx(`tag_portable_skip_${typeof s.reason === "string" && SKIP_REASONS.includes(s.reason) ? s.reason : "unknown"}`)}${s.detail ? ` <span class="je-pt-detail">(${esc(s.detail)})</span>` : ""}</span></li>`).join("");
+      return (opts.summary === false ? "" : `<p class="je-pt-summary" data-je-summary>${tx(changes.length ? "tag_portable_changes_count" : "tag_portable_no_changes", { count: changes.length })}</p>`) + (changes.length ? `<ul class="je-pt-changes" aria-label="${tx("tag_portable_changes")}">${rows}</ul>` : "") + (skipped.length ? `<h4 class="je-pt-subtitle">${tx("tag_portable_skipped_count", { count: skipped.length })}</h4><p class="je-pt-hint">${tx("tag_portable_skipped_desc")}</p><ul class="je-pt-skips">${skips}</ul>` : "");
     }
-
-    /**
-     * The message for a document the server refused as a whole.
-     * @param {string} code - not-json, not-object, kind, version, newer, settings, name, description, empty, full, save.
-     * @param {Object} [params]
-     * @returns {string}
-     */
-    const errorText = (code, params) => JE.t(`tag_portable_error_${['not-json', 'not-object', 'kind', 'version', 'newer', 'settings', 'name', 'description', 'empty', 'full', 'save'].includes(code) ? code : 'save'}`.replace(/-/g, '_'), params);
-
-    /**
-     * The `error` code of a refused request (a fetch Response from ApiClient.ajax), or 'save'.
-     * @param {*} err
-     * @returns {Promise<{code: string, max?: number}>}
-     */
+    const errorText = (code, params) => JE.t(`tag_portable_error_${ERROR_CODES.includes(code) ? code : "save"}`.replace(/-/g, "_"), params);
     async function errorOf(err) {
-        try {
-            const body = typeof err?.json === 'function' ? await err.json() : err;
-            if (body && typeof body.error === 'string') return { code: body.error, max: body.max };
-        } catch { /* not JSON */ }
-        return { code: 'save' };
+      try {
+        const json = err !== null && typeof err === "object" ? Reflect.get(err, "json") : void 0;
+        const body = typeof json === "function" ? await Reflect.apply(json, err, []) : err;
+        return refusal(body);
+      } catch {
+      }
+      return { code: "save" };
     }
-
-    /**
-     * Parse pasted or loaded text as a JSON document.
-     * @param {string} text
-     * @returns {{document?: Object, error?: string}}
-     */
     function parseDocument(text) {
-        try {
-            const document = JSON.parse(String(text || '').trim());
-            if (!document || typeof document !== 'object' || Array.isArray(document)) return { error: 'not-object' };
-            return { document };
-        } catch {
-            return { error: 'not-json' };
-        }
+      try {
+        const document2 = JSON.parse(String(text || "").trim());
+        if (!document2 || typeof document2 !== "object" || Array.isArray(document2)) return { error: "not-object" };
+        return { document: document2 };
+      } catch {
+        return { error: "not-json" };
+      }
     }
-
-    /**
-     * Offer a document as a file download.
-     * @param {Object} document
-     * @param {string} name - File name without extension.
-     */
-    function download(document, name) {
-        const blob = new Blob([`${JSON.stringify(document, null, 2)}\n`], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = window.document.createElement('a');
-        a.href = url;
-        a.download = `${name}.json`;
-        a.style.display = 'none';
-        window.document.body.appendChild(a);
-        a.click();
-        a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
+    function download(document2, name) {
+      const blob = new Blob([`${JSON.stringify(document2, null, 2)}
+`], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = window.document.createElement("a");
+      a.href = url;
+      a.download = `${name}.json`;
+      a.style.display = "none";
+      window.document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1e3);
     }
-
-    /**
-     * Copy text to the clipboard (the textarea fallback where the async API is missing or refused).
-     * @param {string} text
-     * @param {HTMLTextAreaElement} [fallback] - Selected and copied when the API fails.
-     * @returns {Promise<boolean>}
-     */
     async function copyText(text, fallback) {
-        try {
-            if (navigator.clipboard?.writeText) {
-                await navigator.clipboard.writeText(text);
-                return true;
-            }
-        } catch { /* fall back */ }
-        if (!fallback) return false;
-        // The document may sit in a closed disclosure: show it to select it.
-        fallback.closest('details')?.setAttribute('open', '');
-        fallback.focus();
-        fallback.select();
-        try { return window.document.execCommand('copy'); } catch { return false; }
+      try {
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(text);
+          return true;
+        }
+      } catch {
+      }
+      if (!fallback) return false;
+      fallback.closest("details")?.setAttribute("open", "");
+      fallback.focus();
+      fallback.select();
+      try {
+        return window.document.execCommand("copy");
+      } catch {
+        return false;
+      }
     }
-
-    /**
-     * Read a chosen file as text.
-     * @param {File} file
-     * @returns {Promise<string>}
-     */
     function readFile(file) {
-        if (typeof file.text === 'function') return file.text();
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(String(reader.result || ''));
-            reader.onerror = () => reject(reader.error);
-            reader.readAsText(file);
-        });
+      if (typeof file.text === "function") return file.text();
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.onerror = () => reject(reader.error);
+        reader.readAsText(file);
+      });
     }
-
-    /** @returns {string} A date stamp for file names (2026-10-31). */
-    const stamp = () => new Date().toISOString().slice(0, 10);
-
-    /**
-     * A modal dialog drawn inside `host` (the settings panel or the admin
-     * page): focus moves in and is kept there, Escape and Cancel close it and
-     * focus returns to the control that opened it. Escape is not passed on,
-     * so it never closes the settings panel behind it.
-     * @param {{host: HTMLElement, title: string, className?: string, onClose?: () => void}} options
-     * @returns {{el: HTMLElement, body: HTMLElement, foot: HTMLElement, status: (message: string, kind?: string) => void, close: () => void, focusFirst: () => void, closed: () => boolean}}
-     */
-    function openDialog({ host, title, className = '', onClose }) {
-        const opener = /** @type {HTMLElement|null} */ (window.document.activeElement);
-        const id = `jePt${Math.random().toString(36).slice(2, 8)}`;
-        const backdrop = window.document.createElement('div');
-        backdrop.className = `je-pt-backdrop ${className}`.trim();
-        backdrop.innerHTML = `<div class="je-pt-dialog" role="dialog" aria-modal="true" aria-labelledby="${id}Title" tabindex="-1">`
-            + `<div class="je-pt-head"><h3 class="je-pt-title" id="${id}Title">${esc(title)}</h3><button type="button" class="je-pt-close" data-pt-close aria-label="${tx('awards_close')}"><span class="material-icons" aria-hidden="true">close</span></button></div>`
-            + '<div class="je-pt-body"></div><p class="je-pt-status" role="status" aria-live="polite"></p><div class="je-pt-foot"></div></div>';
-        host.appendChild(backdrop);
-        const dialog = /** @type {HTMLElement} */ (backdrop.firstElementChild);
-        const statusEl = /** @type {HTMLElement} */ (dialog.querySelector('.je-pt-status'));
-        let isClosed = false;
-        // Tab order: disclosure rows included; nothing inside a closed disclosure, hidden or taken out of it.
-        const focusables = () => Array.from(dialog.querySelectorAll('button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), a[href], summary'))
-            .filter((el) => !el.closest('[hidden]') && !(el.tagName !== 'SUMMARY' && el.closest('details:not([open])')) && /** @type {HTMLElement} */ (el).tabIndex >= 0);
-        const close = () => {
-            if (isClosed) return;
-            isClosed = true;
-            backdrop.remove();
-            onClose?.();
-            if (opener?.isConnected) opener.focus({ preventScroll: true });
-        };
-        dialog.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') {
-                e.preventDefault();
-                e.stopPropagation();
-                close();
-                return;
-            }
-            if (e.key !== 'Tab') return;
-            const list = focusables();
-            if (!list.length) return;
-            e.stopPropagation();
-            const at = list.indexOf(/** @type {HTMLElement} */ (window.document.activeElement));
-            if (e.shiftKey && at <= 0) { e.preventDefault(); list[list.length - 1].focus(); }
-            else if (!e.shiftKey && at === list.length - 1) { e.preventDefault(); list[0].focus(); }
-        });
-        backdrop.addEventListener('click', (e) => {
-            if (/** @type {HTMLElement} */ (e.target).closest('[data-pt-close]')) close();
-        });
-        const focusFirst = () => {
-            const first = /** @type {HTMLElement|undefined} */ (dialog.querySelector('[data-pt-autofocus]') || focusables().find((el) => !el.matches('[data-pt-close]')));
-            (first || dialog).focus({ preventScroll: true });
-        };
-        return {
-            el: dialog,
-            body: /** @type {HTMLElement} */ (dialog.querySelector('.je-pt-body')),
-            foot: /** @type {HTMLElement} */ (dialog.querySelector('.je-pt-foot')),
-            status(message, kind = '') {
-                statusEl.textContent = message;
-                statusEl.dataset.kind = kind;
-            },
-            close,
-            focusFirst,
-            closed: () => isClosed,
-        };
+    const stamp = () => (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+    function openDialog({ host, title, className = "", onClose }) {
+      const active = window.document.activeElement;
+      const opener = active instanceof HTMLElement ? active : null;
+      const id = `jePt${Math.random().toString(36).slice(2, 8)}`;
+      const backdrop = window.document.createElement("div");
+      backdrop.className = `je-pt-backdrop ${className}`.trim();
+      backdrop.innerHTML = `<div class="je-pt-dialog" role="dialog" aria-modal="true" aria-labelledby="${id}Title" tabindex="-1"><div class="je-pt-head"><h3 class="je-pt-title" id="${id}Title">${esc(title)}</h3><button type="button" class="je-pt-close" data-pt-close aria-label="${tx("awards_close")}"><span class="material-icons" aria-hidden="true">close</span></button></div><div class="je-pt-body"></div><p class="je-pt-status" role="status" aria-live="polite"></p><div class="je-pt-foot"></div></div>`;
+      host.appendChild(backdrop);
+      const dialog = backdrop.firstElementChild;
+      const statusEl = dialog?.querySelector(".je-pt-status");
+      const body = dialog?.querySelector(".je-pt-body");
+      const foot = dialog?.querySelector(".je-pt-foot");
+      if (!(dialog instanceof HTMLElement) || !(statusEl instanceof HTMLElement) || !(body instanceof HTMLElement) || !(foot instanceof HTMLElement)) {
+        throw new TypeError("The dialog markup is incomplete");
+      }
+      let isClosed = false;
+      const focusables = () => queryElements(dialog, "button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), a[href], summary").filter((el) => !el.closest("[hidden]") && !(el.tagName !== "SUMMARY" && el.closest("details:not([open])")) && el.tabIndex >= 0);
+      const close = () => {
+        if (isClosed) return;
+        isClosed = true;
+        backdrop.remove();
+        onClose?.();
+        if (opener?.isConnected) opener.focus({ preventScroll: true });
+      };
+      dialog.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          e.stopPropagation();
+          close();
+          return;
+        }
+        if (e.key !== "Tab") return;
+        const items = focusables();
+        const first = items[0];
+        const last = items[items.length - 1];
+        if (!first || !last) return;
+        e.stopPropagation();
+        const at = items.findIndex((el) => el === window.document.activeElement);
+        if (e.shiftKey && at <= 0) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && at === items.length - 1) {
+          e.preventDefault();
+          first.focus();
+        }
+      });
+      backdrop.addEventListener("click", (e) => {
+        if (closestTarget(e, "[data-pt-close]")) close();
+      });
+      const focusFirst = () => {
+        const first = queryElement(dialog, "[data-pt-autofocus]") || focusables().find((el) => !el.matches("[data-pt-close]"));
+        (first || dialog).focus({ preventScroll: true });
+      };
+      return {
+        el: dialog,
+        body,
+        foot,
+        status(message, kind = "") {
+          statusEl.textContent = message;
+          statusEl.dataset.kind = kind;
+        },
+        close,
+        focusFirst,
+        closed: () => isClosed
+      };
     }
-
-    /**
-     * The "load a file or paste" step of an import.
-     * @param {string} hintKey
-     * @returns {string}
-     */
     function sourceHtml(hintKey) {
-        return `<p class="je-pt-hint">${tx(hintKey)}</p>
-            <label class="je-pt-file"><span class="material-icons" aria-hidden="true">upload_file</span><span>${tx('tag_portable_choose_file')}</span><input type="file" accept=".json,application/json" data-pt-file></label>
-            <label class="je-pt-label" for="jePtPaste">${tx('tag_portable_paste')}</label>
+      return `<p class="je-pt-hint">${tx(hintKey)}</p>
+            <label class="je-pt-file"><span class="material-icons" aria-hidden="true">upload_file</span><span>${tx("tag_portable_choose_file")}</span><input type="file" accept=".json,application/json" data-pt-file></label>
+            <label class="je-pt-label" for="jePtPaste">${tx("tag_portable_paste")}</label>
             <textarea id="jePtPaste" class="je-pt-text" rows="8" spellcheck="false" data-pt-paste data-pt-autofocus placeholder='{"v":1,"kind":"je-media-tags-user","settings":{…}}'></textarea>`;
     }
-
-    /**
-     * Wire a source step: a chosen file fills the paste box.
-     * @param {ReturnType<typeof openDialog>} dialog
-     */
     function wireSource(dialog) {
-        const file = /** @type {HTMLInputElement} */ (dialog.body.querySelector('[data-pt-file]'));
-        const paste = /** @type {HTMLTextAreaElement} */ (dialog.body.querySelector('[data-pt-paste]'));
-        file?.addEventListener('change', async () => {
-            const chosen = file.files?.[0];
-            if (!chosen) return;
-            try {
-                paste.value = await readFile(chosen);
-                dialog.status(JE.t('tag_portable_file_loaded', { name: chosen.name }));
-            } catch {
-                dialog.status(errorText('not-json'), 'error');
-            }
-        });
+      const file = dialog.body.querySelector("[data-pt-file]");
+      const paste = dialog.body.querySelector("[data-pt-paste]");
+      if (!(file instanceof HTMLInputElement)) return;
+      file.addEventListener("change", async () => {
+        const chosen = file.files?.[0];
+        if (!chosen) return;
+        try {
+          const text = await readFile(chosen);
+          if (!(paste instanceof HTMLTextAreaElement)) throw new TypeError("The paste box is missing");
+          paste.value = text;
+          dialog.status(JE.t("tag_portable_file_loaded", { name: chosen.name }));
+        } catch {
+          dialog.status(errorText("not-json"), "error");
+        }
+      });
     }
-
-    /** The dialogs' stylesheet: used in the settings panel and on the admin page. */
     const DIALOG_CSS = `
         .je-pt-backdrop { position: fixed; inset: 0; z-index: 100000; display: flex; align-items: flex-start; justify-content: center; padding: 24px 12px; box-sizing: border-box; background: rgba(0,0,0,0.6); overflow-y: auto; }
         .je-pt-dialog { width: min(640px, 100%); box-sizing: border-box; margin: auto 0; padding: 0; border-radius: 10px; border: 1px solid rgba(255,255,255,0.18); background: #1d2026; color: #fff; box-shadow: 0 10px 40px rgba(0,0,0,0.5); font-size: 14px; text-align: left; }
@@ -393,78 +388,50 @@
             .je-pt-text, .je-pt-input { font-size: 16px; }
         }
     `;
-
-    /** Inject the dialogs' stylesheet once. */
-    const injectDialogCss = () => JE.core?.ui?.injectCss?.('je-tag-portable-dialog', DIALOG_CSS);
-
-    /**
-     * A footer button.
-     * @param {string} action
-     * @param {string} labelKey
-     * @param {{primary?: boolean, icon?: string, params?: Object}} [opts]
-     * @returns {string}
-     */
-    const buttonHtml = (action, labelKey, opts = {}) => `<button type="button" class="je-pt-btn" data-pt-action="${esc(action)}"${opts.primary ? ' data-primary' : ''}>${opts.icon ? `<span class="material-icons" aria-hidden="true">${esc(opts.icon)}</span>` : ''}${tx(labelKey, opts.params)}</button>`;
-
-    internal.tagPortable = { openDialog, previewHtml, valueText, fieldName, errorText, errorOf, parseDocument, download, copyText, readFile, sourceHtml, wireSource, buttonHtml, injectDialogCss, stamp };
-
-    // ── The hub's cards ────────────────────────────────────────────────
-
-    /** @returns {string} The user id the requests are for. */
-    const userId = () => (typeof ApiClient !== 'undefined' && ApiClient.getCurrentUserId?.()) || '';
-    /** @param {string} path @returns {string} */
-    const userUrl = (path) => ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId()}/media-tags/${path}`);
-    /** @returns {string} The server the requests go to. */
-    const serverId = () => {
-        try {
-            return (typeof ApiClient !== 'undefined' && (typeof ApiClient.serverId === 'function' ? ApiClient.serverId() : ApiClient.serverId)) || '';
-        } catch {
-            return '';
-        }
+    const injectDialogCss = () => {
+      JE.core?.ui?.injectCss?.("je-tag-portable-dialog", DIALOG_CSS);
     };
-
-    /**
-     * Capture the signed-in session (user, server and JE.session epoch) at the
-     * start of an operation. The check stays true only while that session
-     * lasts: A → B → A and the same user id on another server both end it, so
-     * a late answer never writes into, or offers Undo to, the next account.
-     * @returns {() => boolean}
-     */
+    const buttonHtml = (action, labelKey, opts = {}) => `<button type="button" class="je-pt-btn" data-pt-action="${esc(action)}"${opts.primary ? " data-primary" : ""}>${opts.icon ? `<span class="material-icons" aria-hidden="true">${esc(opts.icon)}</span>` : ""}${tx(labelKey, opts.params)}</button>`;
+    const tools = { openDialog, previewHtml, valueText, fieldName, errorText, errorOf, parseDocument, download, copyText, readFile, sourceHtml, wireSource, buttonHtml, injectDialogCss, stamp };
+    internal.tagPortable = tools;
+    const userId = () => optionalApiClient()?.getCurrentUserId?.() || "";
+    const userUrl = (path) => apiClient().getUrl(`/JellyfinEnhanced/user-settings/${userId()}/media-tags/${path}`);
+    const serverId = () => {
+      try {
+        const client = optionalApiClient();
+        return client && (typeof client.serverId === "function" ? client.serverId() : client.serverId) || "";
+      } catch {
+        return "";
+      }
+    };
     function sessionCheck() {
-        const user = userId();
-        const server = serverId();
-        const epoch = JE.session?.getEpoch?.();
-        return () => userId() === user && serverId() === server && JE.session?.getEpoch?.() === epoch;
+      const user = userId();
+      const server = serverId();
+      const epoch = JE.session?.getEpoch?.();
+      return () => userId() === user && serverId() === server && JE.session?.getEpoch?.() === epoch;
     }
-
-    /**
-     * The hub's two cards for the Layout tab.
-     * @returns {string}
-     */
     internal.buildTagPortableHtml = function() {
-        return `
+      return `
             <section class="je-mth-card je-mth-tp" id="jeMthPresets" aria-labelledby="jeMthPresetsTitle">
-                <h4 class="je-mth-card-title" id="jeMthPresetsTitle">${tx('tag_presets_title')}</h4>
-                <p class="je-mth-hint">${tx('tag_presets_desc')}</p>
-                <div class="je-mth-tp-list" data-tp-list aria-live="polite"><p class="je-mth-hint">${tx('hidden_content_admin_loading')}</p></div>
-                <div class="je-mth-tp-error" data-tp-error role="alert" hidden><span data-tp-error-text></span><button type="button" class="je-mth-button" data-tp="delete-retry">${tx('admin_tags_retry')}</button></div>
+                <h4 class="je-mth-card-title" id="jeMthPresetsTitle">${tx("tag_presets_title")}</h4>
+                <p class="je-mth-hint">${tx("tag_presets_desc")}</p>
+                <div class="je-mth-tp-list" data-tp-list aria-live="polite"><p class="je-mth-hint">${tx("hidden_content_admin_loading")}</p></div>
+                <div class="je-mth-tp-error" data-tp-error role="alert" hidden><span data-tp-error-text></span><button type="button" class="je-mth-button" data-tp="delete-retry">${tx("admin_tags_retry")}</button></div>
                 <div class="je-mth-actions">
-                    <button type="button" class="je-mth-button" data-tp="save-preset"><span class="material-icons" aria-hidden="true">bookmark_add</span><span data-je-label>${tx('tag_presets_save')}</span></button>
-                    <button type="button" class="je-mth-button" data-tp="import-preset"><span class="material-icons" aria-hidden="true">file_open</span><span data-je-label>${tx('tag_presets_import')}</span></button>
+                    <button type="button" class="je-mth-button" data-tp="save-preset"><span class="material-icons" aria-hidden="true">bookmark_add</span><span data-je-label>${tx("tag_presets_save")}</span></button>
+                    <button type="button" class="je-mth-button" data-tp="import-preset"><span class="material-icons" aria-hidden="true">file_open</span><span data-je-label>${tx("tag_presets_import")}</span></button>
                 </div>
             </section>
             <section class="je-mth-card je-mth-tp" id="jeMthPortable" aria-labelledby="jeMthPortableTitle">
-                <h4 class="je-mth-card-title" id="jeMthPortableTitle">${tx('tag_portable_title')}</h4>
-                <p class="je-mth-hint">${tx('tag_portable_desc')}</p>
+                <h4 class="je-mth-card-title" id="jeMthPortableTitle">${tx("tag_portable_title")}</h4>
+                <p class="je-mth-hint">${tx("tag_portable_desc")}</p>
                 <div class="je-mth-tp-undo" data-tp-undo role="status" hidden></div>
                 <div class="je-mth-actions">
-                    <button type="button" class="je-mth-button" data-tp="export"><span class="material-icons" aria-hidden="true">download</span><span data-je-label>${tx('tag_portable_export')}</span></button>
-                    <button type="button" class="je-mth-button" data-tp="import"><span class="material-icons" aria-hidden="true">upload</span><span data-je-label>${tx('tag_portable_import')}</span></button>
+                    <button type="button" class="je-mth-button" data-tp="export"><span class="material-icons" aria-hidden="true">download</span><span data-je-label>${tx("tag_portable_export")}</span></button>
+                    <button type="button" class="je-mth-button" data-tp="import"><span class="material-icons" aria-hidden="true">upload</span><span data-je-label>${tx("tag_portable_import")}</span></button>
                 </div>
             </section>`;
     };
-
-    /** The cards' stylesheet (panel-scoped). */
     const CARD_CSS = `
         #jellyfin-enhanced-panel .je-mth-tp-list { display: flex; flex-direction: column; gap: 10px; }
         #jellyfin-enhanced-panel .je-mth-tp-group-title { margin: 4px 0 4px; font-size: 12px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: rgba(255,255,255,0.6); }
@@ -482,725 +449,619 @@
         #jellyfin-enhanced-panel .je-mth-tp-error[hidden] { display: none; }
         #jellyfin-enhanced-panel .je-mth-tp-count { font-weight: 400; color: rgba(255,255,255,0.55); text-transform: none; letter-spacing: 0; }
     `;
-
-    /**
-     * Converts a server value (PascalCase objects) the way settings.json is
-     * read into JE.currentSettings (JE.toCamelCase: object keys, not arrays).
-     * @param {*} value
-     * @returns {*}
-     */
-    const toClient = (value) => (typeof JE.toCamelCase === 'function' ? JE.toCamelCase({ v: value }).v : value);
-
-    /** @param {string} field @returns {string} The camelCase settings key of a PascalCase field. */
-    const clientKey = (field) => field.charAt(0).toLowerCase() + field.slice(1);
-
-    /**
-     * Write changed fields into the user's document and save it through the
-     * normal settings save (which normalises them once more), then follow the
-     * new group switches on the page. A null value keeps (or makes) the field
-     * follow the administrator: it is saved as null, never as today's default.
-     * A failed save rolls back only what the import still owns: a field the
-     * panel changed while the save was on its way keeps that newer edit.
-     * @param {Array<{field: string, to: *}>} changes
-     * @param {() => boolean} isCurrent - The session the import belongs to (sessionCheck).
-     * @returns {Promise<boolean>} False when that session ended first (nothing
-     *   more is done for it); rejects when the save failed (nothing is kept then).
-     */
+    const toClient = (value) => {
+      const converted = typeof JE.toCamelCase === "function" ? Reflect.get(Object(JE.toCamelCase({ v: value })), "v") : value;
+      if (converted === void 0) return null;
+      if (!isJson(converted)) throw new TypeError("An imported value is not JSON");
+      return converted;
+    };
+    const clientKey = (field) => {
+      const name = String(field);
+      return name.charAt(0).toLowerCase() + name.slice(1);
+    };
     async function writeChanges(changes, isCurrent) {
-        const settings = JE.currentSettings;
-        const before = {};
-        const inheritedBefore = {};
-        const wasOn = Object.fromEntries(GROUP_SWITCHES.map((g) => [g.key, !!settings[g.key]]));
-        const nativeBefore = JE.userConfig?.settings?.useNativePosterTags;
-        let nativeWritten;
-        for (const change of changes) {
-            const key = clientKey(change.field);
-            before[key] = settings[key];
-            inheritedBefore[key] = JE.isSettingInherited?.(settings, key) === true;
-            const value = toClient(change.to);
-            if (key === 'useNativePosterTags') {
-                // Saved as chosen (null stays "not chosen", which is on).
-                JE.userConfig = JE.userConfig || {};
-                JE.userConfig.settings = JE.userConfig.settings || {};
-                JE.userConfig.settings.useNativePosterTags = value;
-                nativeWritten = value;
-                settings.useNativePosterTags = value !== false;
-            } else if (JE.setSettingInherited?.(settings, key, value === null)) {
-                // Shown resolved, saved as null while inherited (config.js).
-                if (value !== null) settings[key] = value;
-            } else settings[key] = value;
+      const settings = JE.currentSettings;
+      const before = {};
+      const inheritedBefore = {};
+      const wasOn = Object.fromEntries(GROUP_SWITCHES.map((g) => [g.key, !!settings[g.key]]));
+      const nativeBefore = JE.userConfig?.settings?.useNativePosterTags;
+      let nativeWritten;
+      for (const change of changes) {
+        const key = clientKey(change.field);
+        before[key] = settings[key];
+        inheritedBefore[key] = JE.isSettingInherited?.(settings, key) === true;
+        const value = toClient(change.to);
+        if (key === "useNativePosterTags") {
+          JE.userConfig = JE.userConfig || { shortcuts: { Shortcuts: [] } };
+          JE.userConfig.settings = JE.userConfig.settings || {};
+          JE.userConfig.settings.useNativePosterTags = value;
+          nativeWritten = value;
+          settings.useNativePosterTags = value !== false;
+        } else if (JE.setSettingInherited?.(settings, key, value === null)) {
+          if (value !== null) settings[key] = value;
+        } else settings[key] = value;
+      }
+      const owned = (key) => JSON.stringify([settings[key] ?? null, JE.isSettingInherited?.(settings, key) === true]);
+      const written = Object.fromEntries(Object.keys(before).map((key) => [key, owned(key)]));
+      let rolledBack = false;
+      const rollback = () => {
+        rolledBack = true;
+        for (const key of Object.keys(before)) {
+          if (owned(key) !== written[key]) continue;
+          if (key === "useNativePosterTags") {
+            const native = JE.userConfig?.settings;
+            if (native?.useNativePosterTags !== nativeWritten) continue;
+            if (native) native.useNativePosterTags = nativeBefore;
+          }
+          settings[key] = before[key];
+          if (JE.setSettingInherited?.(settings, key, inheritedBefore[key] === true)) settings[key] = before[key];
         }
-        // What the import wrote, to tell its fields from a newer edit at rollback.
-        const owned = (key) => JSON.stringify([settings[key] ?? null, JE.isSettingInherited?.(settings, key) === true]);
-        const written = Object.fromEntries(Object.keys(before).map((key) => [key, owned(key)]));
-        let rolledBack = false;
-        /**
-         * Runs in the save queue, before the next queued save reads the
-         * document, and only while the import's session lasts (config.js).
-         */
-        const rollback = () => {
-            rolledBack = true;
-            for (const key of Object.keys(before)) {
-                if (owned(key) !== written[key]) continue;
-                if (key === 'useNativePosterTags') {
-                    if (JE.userConfig?.settings?.useNativePosterTags !== nativeWritten) continue;
-                    JE.userConfig.settings.useNativePosterTags = nativeBefore;
-                }
-                settings[key] = before[key];
-                if (JE.setSettingInherited?.(settings, key, inheritedBefore[key])) settings[key] = before[key];
-            }
-        };
+      };
+      try {
+        await JE.saveUserSettings("settings.json", settings, { throwOnError: true, isCurrent, onError: rollback });
+      } catch (err) {
+        if (rolledBack && isCurrent()) {
+          JE.core?.tagLayout?.invalidateSettings?.();
+          JE.reinitializeTagLayout?.();
+        }
+        throw err;
+      }
+      if (!isCurrent()) return false;
+      JE.core?.tagLayout?.invalidateSettings?.();
+      for (const g of GROUP_SWITCHES) {
+        const on = !!settings[g.key];
         try {
-            // Queued saves read the document at their turn: one for a session that
-            // ended by then is dropped, never sent for the next account.
-            await JE.saveUserSettings('settings.json', settings, { throwOnError: true, isCurrent, onError: rollback });
+          if (on && !wasOn[g.key]) g.init();
+          else if (on) g.reinit();
+          else if (wasOn[g.key]) internal.removeTagGroup?.(g.group, g.container);
         } catch (err) {
-            // The tags drawn meanwhile may show the import's values: draw them again.
-            if (rolledBack && isCurrent()) {
-                JE.core?.tagLayout?.invalidateSettings?.();
-                JE.reinitializeTagLayout?.();
-            }
-            throw err;
+          console.warn(`🪼 Jellyfin Enhanced: could not redraw the ${g.group} tags after an import`, err);
         }
-        if (!isCurrent()) return false;
-        JE.core?.tagLayout?.invalidateSettings?.();
-        for (const g of GROUP_SWITCHES) {
-            const on = !!settings[g.key];
-            try {
-                if (on && !wasOn[g.key]) JE[g.init]?.();
-                else if (on) JE[g.reinit]?.();
-                else if (wasOn[g.key]) internal.removeTagGroup?.(g.group, g.container);
-            } catch (err) {
-                console.warn(`🪼 Jellyfin Enhanced: could not redraw the ${g.group} tags after an import`, err);
-            }
-        }
-        JE.reinitializeTagLayout?.();
-        return true;
+      }
+      JE.reinitializeTagLayout?.();
+      return true;
     }
-
-    /**
-     * Wire the hub's cards. Called by wireMediaTagsHub; returns the teardown.
-     * @param {HTMLElement} hub - #jeMediaTagsHub.
-     * @param {Object} ctx - Panel context (help, closePanel, openPane, resetAutoCloseTimer).
-     * @param {{announce: (message: string) => void}} hooks
-     * @returns {() => void}
-     */
-    internal.wireTagPortable = function(hub, ctx, hooks) {
-        const presetsCard = /** @type {HTMLElement|null} */ (hub.querySelector('#jeMthPresets'));
-        const portableCard = /** @type {HTMLElement|null} */ (hub.querySelector('#jeMthPortable'));
-        if (!presetsCard || !portableCard || typeof ApiClient === 'undefined') return () => {};
-        JE.core?.ui?.injectCss?.('je-media-tags-portable', CARD_CSS);
-        injectDialogCss();
-        const host = /** @type {HTMLElement} */ (ctx.help || hub);
-        const list = /** @type {HTMLElement} */ (presetsCard.querySelector('[data-tp-list]'));
-        const undoBar = /** @type {HTMLElement} */ (portableCard.querySelector('[data-tp-undo]'));
-        const deleteError = /** @type {HTMLElement} */ (presetsCard.querySelector('[data-tp-error]'));
-        const touch = () => { try { ctx.resetAutoCloseTimer?.(); } catch { /* panel closing */ } };
-        const viewSession = sessionCheck();
-        let disposed = false;
-        /** @type {ReturnType<typeof openDialog>|null} */
-        let dialog = null;
-        let undoTimer = null;
-        /** @type {{max: number, builtIn: Object[], offered: Object[], mine: Object[]}|null} */
-        let presets = null;
-        /** @type {Object|null} The preset whose deletion failed (Retry deletes it). */
-        let failedDelete = null;
-
-        /** @returns {boolean} Whether answers still belong to this view and its session. */
-        const live = () => !disposed && viewSession();
-
-        /** @param {Object} preset @returns {{name: string, description: string}} A preset's shown name (built-ins are translated). */
-        const presetText = (preset, source) => source === 'builtIn'
-            ? { name: JE.t(JE.core.tagLayout.VOCABULARY_KEYS.builtin[`${preset.id}`]), description: JE.t(JE.core.tagLayout.VOCABULARY_KEYS.builtin[`${preset.id}_desc`]) }
-            : { name: String(preset.name || ''), description: String(preset.description || '') };
-
-        /** Draw the presets list. */
-        const drawPresets = () => {
-            if (!presets) return;
-            const group = (source, titleKey, items, count) => items.length || source === 'mine' ? `
+    const wireTagPortable = function(hub, ctx, hooks) {
+      const presetsCard = queryElement(hub, "#jeMthPresets");
+      const portableCard = queryElement(hub, "#jeMthPortable");
+      const client = optionalApiClient();
+      if (!presetsCard || !portableCard || !client) return () => {
+      };
+      const list2 = queryElement(presetsCard, "[data-tp-list]");
+      const undoBar = queryElement(portableCard, "[data-tp-undo]");
+      const deleteError = queryElement(presetsCard, "[data-tp-error]");
+      if (!list2 || !undoBar || !deleteError) return () => {
+      };
+      JE.core?.ui?.injectCss?.("je-media-tags-portable", CARD_CSS);
+      injectDialogCss();
+      const host = ctx.help || hub;
+      const touch = () => {
+        try {
+          ctx.resetAutoCloseTimer?.();
+        } catch {
+        }
+      };
+      const viewSession = sessionCheck();
+      let disposed = false;
+      let dialog = null;
+      let undoTimer;
+      let presets = null;
+      let failedDelete = null;
+      const ajax = (request) => apiClient().ajax(request);
+      const live = () => !disposed && viewSession();
+      const presetText = (preset, source) => {
+        if (source !== "builtIn") return { name: String(preset.name || ""), description: String(preset.description || "") };
+        const builtin = JE.core.tagLayout?.VOCABULARY_KEYS.builtin;
+        return { name: JE.t(builtin?.[`${preset.id}`] ?? ""), description: JE.t(builtin?.[`${preset.id}_desc`] ?? "") };
+      };
+      const drawPresets = () => {
+        if (!presets) return;
+        const loaded = presets;
+        const group = (source, titleKey, items, count) => items.length || source === "mine" ? `
                 <div class="je-mth-tp-group" data-tp-source="${source}">
-                    <h5 class="je-mth-tp-group-title">${tx(titleKey)}${count ? ` <span class="je-mth-tp-count">${esc(count)}</span>` : ''}</h5>
+                    <h5 class="je-mth-tp-group-title">${tx(titleKey)}${count ? ` <span class="je-mth-tp-count">${esc(count)}</span>` : ""}</h5>
                     ${items.length ? `<ul class="je-mth-tp-items">${items.map((p, i) => {
-                        const text = presetText(p, source);
-                        return `<li class="je-mth-tp-item" data-tp-index="${i}" data-tp-id="${esc(p.id ?? '')}">
-                            <div class="je-mth-tp-text"><div class="je-mth-tp-name" data-je-label>${esc(text.name)}</div>${text.description ? `<div class="je-mth-tp-desc">${esc(text.description)}</div>` : ''}</div>
+          const text = presetText(p, source);
+          return `<li class="je-mth-tp-item" data-tp-index="${i}" data-tp-id="${esc(p.id ?? "")}">
+                            <div class="je-mth-tp-text"><div class="je-mth-tp-name" data-je-label>${esc(text.name)}</div>${text.description ? `<div class="je-mth-tp-desc">${esc(text.description)}</div>` : ""}</div>
                             <div class="je-mth-tp-buttons">
-                                <button type="button" class="je-mth-button" data-tp="apply" aria-label="${tx('tag_presets_apply_named', { name: text.name })}">${tx('tag_presets_apply')}</button>
-                                <button type="button" class="je-mth-button" data-tp="share" aria-label="${tx('tag_presets_share_named', { name: text.name })}">${tx('tag_presets_share')}</button>
-                                ${source === 'mine' ? `<button type="button" class="je-mth-button" data-tp="delete" aria-label="${tx('admin_tags_rules_delete', { name: text.name })}">${tx('reviews_delete')}</button>` : ''}
+                                <button type="button" class="je-mth-button" data-tp="apply" aria-label="${tx("tag_presets_apply_named", { name: text.name })}">${tx("tag_presets_apply")}</button>
+                                <button type="button" class="je-mth-button" data-tp="share" aria-label="${tx("tag_presets_share_named", { name: text.name })}">${tx("tag_presets_share")}</button>
+                                ${source === "mine" ? `<button type="button" class="je-mth-button" data-tp="delete" aria-label="${tx("admin_tags_rules_delete", { name: text.name })}">${tx("reviews_delete")}</button>` : ""}
                             </div>
                         </li>`;
-                    }).join('')}</ul>` : `<p class="je-mth-hint">${tx('tag_presets_none_yet')}</p>`}
-                </div>` : '';
-            // Redrawn after a save, a delete or a reload: keep keyboard focus on the same preset's button.
-            const active = /** @type {HTMLElement|null} */ (window.document.activeElement);
-            const keep = active && list.contains(active) && active.dataset.tp ? {
-                source: active.closest('[data-tp-source]')?.getAttribute('data-tp-source'),
-                id: active.closest('[data-tp-id]')?.getAttribute('data-tp-id'),
-                action: active.dataset.tp,
-            } : null;
-            list.innerHTML = group('builtIn', 'tag_presets_builtin', presets.builtIn)
-                + group('offered', 'tag_presets_offered', presets.offered)
-                + group('mine', 'tag_presets_mine', presets.mine, JE.t('tag_looks_condition_count', { count: presets.mine.length, max: presets.max }));
-            if (keep) {
-                const again = Array.from(list.querySelectorAll(`[data-tp-source="${keep.source}"] [data-tp="${keep.action}"]`))
-                    .find((el) => el.closest('[data-tp-id]')?.getAttribute('data-tp-id') === keep.id);
-                /** @type {HTMLElement|null} */ (again || presetsCard.querySelector('[data-tp="save-preset"]:not([disabled])'))?.focus({ preventScroll: true });
-            }
-            // A full list: saving or importing another is off until one is deleted.
-            const full = presets.mine.length >= presets.max;
-            for (const button of presetsCard.querySelectorAll('[data-tp="save-preset"], [data-tp="import-preset"]')) {
-                /** @type {HTMLButtonElement} */ (button).disabled = full;
-                /** @type {HTMLElement} */ (button).title = full ? JE.t('tag_presets_full', { max: presets.max }) : '';
-            }
-        };
-
-        /** Load (or reload) the presets list. */
-        const loadPresets = async () => {
-            try {
-                const answer = await ApiClient.ajax({ type: 'GET', url: userUrl('presets'), dataType: 'json' });
-                if (!live()) return;
-                presets = { max: Number(answer?.max) || 10, builtIn: answer?.builtIn || [], offered: answer?.offered || [], mine: answer?.mine || [] };
-                drawPresets();
-            } catch (err) {
-                if (!live()) return;
-                console.warn('🪼 Jellyfin Enhanced: could not load the Media Tags presets', err);
-                const hadFocus = list.contains(window.document.activeElement);
-                list.innerHTML = `<p class="je-mth-off">${tx('tag_presets_load_failed')}</p>`;
-                if (hadFocus) /** @type {HTMLElement|null} */ (presetsCard.querySelector('[data-tp="save-preset"]'))?.focus({ preventScroll: true });
-            }
-        };
-
-        /**
-         * Save the panel's settings before the server reads them: the preview
-         * compares with, and the export reads, the stored settings.json. An edit
-         * still on its way is waited for; one kept after a failed save is sent
-         * again.
-         * @param {() => boolean} isCurrent - The operation's session (sessionCheck).
-         * @returns {Promise<boolean>} False when the save failed (the panel keeps the edit).
-         */
-        const saveFirst = async (isCurrent) => {
-            try {
-                await JE.saveUserSettings('settings.json', JE.currentSettings, { throwOnError: true, isCurrent });
-                return true;
-            } catch (err) {
-                console.warn('🪼 Jellyfin Enhanced: the Media Tags settings are not saved yet', err);
-                return false;
-            }
-        };
-
-        /**
-         * The user's own export, after the panel's settings were saved.
-         * @param {() => boolean} isCurrent - The operation's session (sessionCheck).
-         * @returns {Promise<{document?: Object, unsaved?: boolean}|null>} unsaved when
-         *   the save failed (nothing was exported); null when that session ended first.
-         */
-        const fetchExport = async (isCurrent) => {
-            const saved = await saveFirst(isCurrent);
-            if (!isCurrent()) return null;
-            if (!saved) return { unsaved: true };
-            return { document: await ApiClient.ajax({ type: 'GET', url: userUrl('export'), dataType: 'json' }) };
-        };
-
-        /**
-         * The panel's values of some fields (with their inherited state), to see
-         * whether they changed since a preview compared them.
-         * @param {string[]} fields - PascalCase fields.
-         * @returns {string}
-         */
-        const clientSnapshot = (fields) => JSON.stringify(fields.map((field) => {
-            const key = clientKey(field);
-            const settings = JE.currentSettings || {};
-            return [settings[key] ?? null, JE.isSettingInherited?.(settings, key) === true,
-                key === 'useNativePosterTags' ? JE.userConfig?.settings?.useNativePosterTags ?? null : null];
-        }));
-
-        /**
-         * Show or hide a dialog's loading line (hidden while its status says why nothing loads).
-         * @param {ReturnType<typeof openDialog>} d
-         * @param {boolean} on
-         */
-        const showLoading = (d, on) => {
-            const line = /** @type {HTMLElement|null} */ (d.body.querySelector('[data-pt-loading]'));
-            if (line) line.hidden = !on;
-        };
-
-        /**
-         * Open a dialog in the panel (one at a time).
-         * @param {string} title
-         * @returns {ReturnType<typeof openDialog>}
-         */
-        const show = (title) => {
-            dialog?.close();
-            dialog = openDialog({ host, title, onClose: () => { dialog = null; touch(); } });
-            dialog.el.addEventListener('input', touch);
-            dialog.el.addEventListener('click', touch);
-            return dialog;
-        };
-
-        // ── Export ──
-        const openExport = async () => {
-            const current = sessionCheck();
-            const d = show(JE.t('tag_portable_export_title'));
-            d.body.innerHTML = `<p class="je-pt-hint">${tx('tag_portable_export_desc')}</p><p class="je-pt-hint" data-pt-loading>${tx('hidden_content_admin_loading')}</p>`;
-            d.foot.innerHTML = buttonHtml('close', 'awards_close');
-            d.foot.onclick = (e) => {
-                const button = /** @type {HTMLElement} */ (e.target).closest('[data-pt-action]');
-                const action = button?.getAttribute('data-pt-action');
-                if (action === 'retry') {
-                    // Busy, not replaced: a focused Retry keeps focus inside the dialog.
-                    if (button.getAttribute('aria-disabled') === 'true') return;
-                    button.setAttribute('aria-disabled', 'true');
-                    showLoading(d, true);
-                    d.status(JE.t('tag_portable_checking'));
-                    load();
-                } else if (action === 'close') d.close();
-            };
-            d.focusFirst();
-            /** Offer Retry again: the same button when there is one (focus stays on it). */
-            const offerRetry = () => {
-                const retry = /** @type {HTMLElement|null} */ (d.foot.querySelector('[data-pt-action="retry"]'));
-                if (retry) { retry.removeAttribute('aria-disabled'); return; }
-                d.foot.innerHTML = buttonHtml('close', 'awards_close') + buttonHtml('retry', 'admin_tags_retry', { primary: true });
-                /** @type {HTMLElement|null} */ (d.foot.querySelector('[data-pt-action="retry"]'))?.focus();
-            };
-            const load = async () => {
-                let result;
-                try {
-                    result = await fetchExport(current);
-                } catch (err) {
-                    if (!live() || !current() || d.closed()) return;
-                    console.warn('🪼 Jellyfin Enhanced: could not export the Media Tags settings', err);
-                    showLoading(d, false);
-                    d.status(JE.t('tag_portable_export_failed'), 'error');
-                    offerRetry();
-                    return;
-                }
-                if (!live() || !current() || d.closed() || !result) return;
-                if (result.unsaved) {
-                    // The stored settings are not the ones the panel shows: no export of them.
-                    showLoading(d, false);
-                    d.status(JE.t('tag_portable_export_unsaved'), 'error');
-                    offerRetry();
-                    return;
-                }
-                d.status('');
-                showExport(d, result.document);
-            };
-            await load();
-        };
-
-        /**
-         * The export step: the document with Download and Copy.
-         * @param {ReturnType<typeof openDialog>} d
-         * @param {Object} document
-         */
-        const showExport = (d, document) => {
-            const text = JSON.stringify(document, null, 2);
-            d.body.innerHTML = `<p class="je-pt-hint">${tx('tag_portable_export_desc')}</p>
-                <details class="je-pt-doc"><summary class="je-pt-doc-toggle"><span class="material-icons" aria-hidden="true">expand_more</span>${tx('tag_portable_show_document', { count: Object.keys(document?.settings || {}).length })}</summary>
-                <label class="je-pt-label" for="jePtExport">${tx('tag_portable_export_document', { count: Object.keys(document?.settings || {}).length })}</label>
-                <textarea id="jePtExport" class="je-pt-text" rows="12" readonly spellcheck="false">${esc(text)}</textarea></details>`;
-            d.foot.innerHTML = buttonHtml('close', 'awards_close') + buttonHtml('copy', 'tag_portable_copy', { icon: 'content_copy' }) + buttonHtml('download', 'tag_portable_download', { icon: 'download', primary: true });
-            const area = /** @type {HTMLTextAreaElement} */ (d.body.querySelector('textarea'));
-            d.foot.onclick = async (e) => {
-                const action = /** @type {HTMLElement} */ (e.target).closest('[data-pt-action]')?.getAttribute('data-pt-action');
-                if (action === 'download') {
-                    download(document, `jellyfin-media-tags-${stamp()}`);
-                    d.status(JE.t('tag_portable_downloaded'));
-                } else if (action === 'copy') {
-                    d.status(JE.t(await copyText(text, area) ? 'tag_portable_copied' : 'tag_portable_copy_failed'), '');
-                } else if (action === 'close') d.close();
-            };
-            /** @type {HTMLElement|null} */ (d.foot.querySelector('[data-pt-action="download"]'))?.focus();
-        };
-
-        // ── Import (a document, or a preset to apply) ──
-        /**
-         * Ask the server what a document would change and show it, with Apply.
-         * The panel's settings are saved first (an edit on its way or kept after a
-         * failed save), else the server would compare with settings the panel no
-         * longer shows and leave out a field the panel changed.
-         * @param {ReturnType<typeof openDialog>} d
-         * @param {Object} document
-         * @param {() => void} [back] - Shows the source step again.
-         * @param {string} [note] - Status shown with the preview.
-         */
-        const showPreview = async (d, document, back, note) => {
-            const current = sessionCheck();
-            d.status(JE.t('tag_portable_checking'));
+        }).join("")}</ul>` : `<p class="je-mth-hint">${tx("tag_presets_none_yet")}</p>`}
+                </div>` : "";
+        const active = window.document.activeElement;
+        const keep = active instanceof HTMLElement && list2.contains(active) && active.dataset.tp ? {
+          source: active.closest("[data-tp-source]")?.getAttribute("data-tp-source"),
+          id: active.closest("[data-tp-id]")?.getAttribute("data-tp-id"),
+          action: active.dataset.tp
+        } : null;
+        list2.innerHTML = group("builtIn", "tag_presets_builtin", loaded.builtIn) + group("offered", "tag_presets_offered", loaded.offered) + group("mine", "tag_presets_mine", loaded.mine, JE.t("tag_looks_condition_count", { count: loaded.mine.length, max: loaded.max }));
+        if (keep) {
+          const again = Array.from(list2.querySelectorAll(`[data-tp-source="${keep.source}"] [data-tp="${keep.action}"]`)).find((el) => el.closest("[data-tp-id]")?.getAttribute("data-tp-id") === keep.id);
+          focusElement(again || presetsCard.querySelector('[data-tp="save-preset"]:not([disabled])'), { preventScroll: true });
+        }
+        const full = loaded.mine.length >= loaded.max;
+        for (const button of queryElements(presetsCard, '[data-tp="save-preset"], [data-tp="import-preset"]')) {
+          setDisabled(button, full);
+          button.title = full ? JE.t("tag_presets_full", { max: loaded.max }) : "";
+        }
+      };
+      const loadPresets = async () => {
+        try {
+          const answer = await ajax({ type: "GET", url: userUrl("presets"), dataType: "json" });
+          if (!live()) return;
+          presets = decodePresets(answer);
+          drawPresets();
+        } catch (err) {
+          if (!live()) return;
+          console.warn("🪼 Jellyfin Enhanced: could not load the Media Tags presets", err);
+          const hadFocus = list2.contains(window.document.activeElement);
+          list2.innerHTML = `<p class="je-mth-off">${tx("tag_presets_load_failed")}</p>`;
+          if (hadFocus) focusElement(presetsCard.querySelector('[data-tp="save-preset"]'), { preventScroll: true });
+        }
+      };
+      const saveFirst = async (isCurrent) => {
+        try {
+          await JE.saveUserSettings("settings.json", JE.currentSettings, { throwOnError: true, isCurrent });
+          return true;
+        } catch (err) {
+          console.warn("🪼 Jellyfin Enhanced: the Media Tags settings are not saved yet", err);
+          return false;
+        }
+      };
+      const fetchExport = async (isCurrent) => {
+        const saved = await saveFirst(isCurrent);
+        if (!isCurrent()) return null;
+        if (!saved) return { unsaved: true };
+        return { document: await ajax({ type: "GET", url: userUrl("export"), dataType: "json" }) };
+      };
+      const clientSnapshot = (fields) => JSON.stringify(fields.map((field) => {
+        const key = clientKey(field);
+        const settings = JE.currentSettings || {};
+        return [
+          settings[key] ?? null,
+          JE.isSettingInherited?.(settings, key) === true,
+          key === "useNativePosterTags" ? JE.userConfig?.settings?.useNativePosterTags ?? null : null
+        ];
+      }));
+      const showLoading = (d, on) => {
+        const line = queryElement(d.body, "[data-pt-loading]");
+        if (line) line.hidden = !on;
+      };
+      const show = (title) => {
+        dialog?.close();
+        const opened = openDialog({ host, title, onClose: () => {
+          dialog = null;
+          touch();
+        } });
+        dialog = opened;
+        opened.el.addEventListener("input", touch);
+        opened.el.addEventListener("click", touch);
+        return opened;
+      };
+      const actionOf = (e) => closestTarget(e, "[data-pt-action]");
+      const openExport = async () => {
+        const current = sessionCheck();
+        const d = show(JE.t("tag_portable_export_title"));
+        d.body.innerHTML = `<p class="je-pt-hint">${tx("tag_portable_export_desc")}</p><p class="je-pt-hint" data-pt-loading>${tx("hidden_content_admin_loading")}</p>`;
+        d.foot.innerHTML = buttonHtml("close", "awards_close");
+        d.foot.onclick = (e) => {
+          const button = actionOf(e);
+          const action = button?.getAttribute("data-pt-action");
+          if (button && action === "retry") {
+            if (button.getAttribute("aria-disabled") === "true") return;
+            button.setAttribute("aria-disabled", "true");
             showLoading(d, true);
-            /**
-             * Say why nothing is shown, without the loading line. On the source
-             * step Check tries again; elsewhere Retry does (the same button when
-             * there is one, so a focused Retry keeps focus).
-             * @param {string} message
-             */
-            const failed = (message) => {
-                showLoading(d, false);
-                d.status(message, 'error');
-                if (d.body.querySelector('[data-pt-paste]')) return;
-                const again = d.foot.querySelector('[data-pt-action="retry"]');
-                if (again) { again.removeAttribute('aria-disabled'); return; }
-                d.foot.innerHTML = (back ? buttonHtml('back', 'tag_portable_back') : '') + buttonHtml('cancel', 'jellyseerr_modal_cancel')
-                    + buttonHtml('retry', 'admin_tags_retry', { primary: true });
-                d.foot.onclick = (e) => {
-                    const button = /** @type {HTMLElement} */ (e.target).closest('[data-pt-action]');
-                    const action = button?.getAttribute('data-pt-action');
-                    if (action === 'back') back?.();
-                    else if (action === 'cancel') d.close();
-                    else if (action === 'retry' && button.getAttribute('aria-disabled') !== 'true') {
-                        button.setAttribute('aria-disabled', 'true');
-                        showPreview(d, document, back, note);
-                    }
-                };
-                /** @type {HTMLElement|null} */ (d.foot.querySelector('[data-pt-action="retry"]'))?.focus();
-            };
-            const saved = await saveFirst(current);
+            d.status(JE.t("tag_portable_checking"));
+            load();
+          } else if (action === "close") d.close();
+        };
+        d.focusFirst();
+        const offerRetry = () => {
+          const retry = d.foot.querySelector('[data-pt-action="retry"]');
+          if (retry) {
+            retry.removeAttribute("aria-disabled");
+            return;
+          }
+          d.foot.innerHTML = buttonHtml("close", "awards_close") + buttonHtml("retry", "admin_tags_retry", { primary: true });
+          focusElement(d.foot.querySelector('[data-pt-action="retry"]'));
+        };
+        const load = async () => {
+          let result;
+          try {
+            result = await fetchExport(current);
+          } catch (err) {
             if (!live() || !current() || d.closed()) return;
-            if (!saved) {
-                failed(JE.t('tag_portable_import_unsaved'));
-                return;
+            console.warn("🪼 Jellyfin Enhanced: could not export the Media Tags settings", err);
+            showLoading(d, false);
+            d.status(JE.t("tag_portable_export_failed"), "error");
+            offerRetry();
+            return;
+          }
+          if (!live() || !current() || d.closed() || !result) return;
+          if (result.unsaved) {
+            showLoading(d, false);
+            d.status(JE.t("tag_portable_export_unsaved"), "error");
+            offerRetry();
+            return;
+          }
+          d.status("");
+          showExport(d, result.document);
+        };
+        await load();
+      };
+      const showExport = (d, document2) => {
+        const text = JSON.stringify(document2, null, 2);
+        const { fieldCount } = exportedParts(document2);
+        d.body.innerHTML = `<p class="je-pt-hint">${tx("tag_portable_export_desc")}</p>
+                <details class="je-pt-doc"><summary class="je-pt-doc-toggle"><span class="material-icons" aria-hidden="true">expand_more</span>${tx("tag_portable_show_document", { count: fieldCount })}</summary>
+                <label class="je-pt-label" for="jePtExport">${tx("tag_portable_export_document", { count: fieldCount })}</label>
+                <textarea id="jePtExport" class="je-pt-text" rows="12" readonly spellcheck="false">${esc(text)}</textarea></details>`;
+        d.foot.innerHTML = buttonHtml("close", "awards_close") + buttonHtml("copy", "tag_portable_copy", { icon: "content_copy" }) + buttonHtml("download", "tag_portable_download", { icon: "download", primary: true });
+        const area = d.body.querySelector("textarea");
+        d.foot.onclick = async (e) => {
+          const action = actionOf(e)?.getAttribute("data-pt-action");
+          if (action === "download") {
+            download(document2, `jellyfin-media-tags-${stamp()}`);
+            d.status(JE.t("tag_portable_downloaded"));
+          } else if (action === "copy") {
+            d.status(JE.t(await copyText(text, area ?? void 0) ? "tag_portable_copied" : "tag_portable_copy_failed"), "");
+          } else if (action === "close") d.close();
+        };
+        focusElement(d.foot.querySelector('[data-pt-action="download"]'));
+      };
+      const showPreview = async (d, document2, back, note) => {
+        const current = sessionCheck();
+        d.status(JE.t("tag_portable_checking"));
+        showLoading(d, true);
+        const failed = (message) => {
+          showLoading(d, false);
+          d.status(message, "error");
+          if (d.body.querySelector("[data-pt-paste]")) return;
+          const again = d.foot.querySelector('[data-pt-action="retry"]');
+          if (again) {
+            again.removeAttribute("aria-disabled");
+            return;
+          }
+          d.foot.innerHTML = (back ? buttonHtml("back", "tag_portable_back") : "") + buttonHtml("cancel", "jellyseerr_modal_cancel") + buttonHtml("retry", "admin_tags_retry", { primary: true });
+          d.foot.onclick = (e) => {
+            const button = actionOf(e);
+            const action = button?.getAttribute("data-pt-action");
+            if (action === "back") back?.();
+            else if (action === "cancel") d.close();
+            else if (button && action === "retry" && button.getAttribute("aria-disabled") !== "true") {
+              button.setAttribute("aria-disabled", "true");
+              showPreview(d, document2, back, note);
             }
-            let preview;
+          };
+          focusElement(d.foot.querySelector('[data-pt-action="retry"]'));
+        };
+        const saved = await saveFirst(current);
+        if (!live() || !current() || d.closed()) return;
+        if (!saved) {
+          failed(JE.t("tag_portable_import_unsaved"));
+          return;
+        }
+        let answer;
+        try {
+          answer = await ajax({ type: "POST", url: userUrl("preview"), data: JSON.stringify(document2), contentType: "application/json", dataType: "json" });
+        } catch (err) {
+          if (!live() || d.closed()) return;
+          const { code } = await errorOf(err);
+          if (!live() || !current() || d.closed()) return;
+          failed(errorText(code));
+          return;
+        }
+        if (!live() || !current() || d.closed()) return;
+        d.status(note || "");
+        const preview = decodePreview(answer);
+        const changes = preview.changes;
+        const fields = Array.from(/* @__PURE__ */ new Set([...preview.imported, ...changes.map((c) => c.field)]));
+        const compared = clientSnapshot(fields);
+        d.body.innerHTML = (preview.name ? `<p class="je-pt-hint">${tx("tag_portable_preset_named", { name: String(preview.name) })}</p>` : "") + previewHtml(answer || {});
+        d.foot.innerHTML = (back ? buttonHtml("back", "tag_portable_back") : "") + buttonHtml("cancel", "jellyseerr_modal_cancel") + (changes.length ? buttonHtml("apply", "tag_portable_apply_count", { primary: true, params: { count: changes.length } }) : "");
+        d.foot.onclick = async (e) => {
+          const button = actionOf(e);
+          const action = button?.dataset.ptAction;
+          if (action === "back") back?.();
+          else if (action === "cancel") d.close();
+          else if (action === "apply" && button) {
+            if (clientSnapshot(fields) !== compared) {
+              showPreview(d, document2, back, JE.t("tag_portable_import_changed"));
+              return;
+            }
+            setDisabled(button, true);
+            d.status(JE.t("tag_portable_applying"));
             try {
-                preview = await ApiClient.ajax({ type: 'POST', url: userUrl('preview'), data: JSON.stringify(document), contentType: 'application/json', dataType: 'json' });
+              await apply(changes);
             } catch (err) {
-                if (!live() || d.closed()) return;
-                const { code } = await errorOf(err);
-                if (!live() || !current() || d.closed()) return;
-                failed(errorText(code));
+              if (!live()) return;
+              console.warn("🪼 Jellyfin Enhanced: could not apply the imported Media Tags settings", err);
+              if (d.closed()) {
+                hooks.announce(JE.t("tag_portable_apply_failed"));
                 return;
+              }
+              setDisabled(button, false);
+              d.status(JE.t("tag_portable_apply_failed"), "error");
             }
-            if (!live() || !current() || d.closed()) return;
-            d.status(note || '');
-            const changes = preview?.changes || [];
-            // The panel's values of every field the document sets, as the preview compared them.
-            const fields = Array.from(new Set([...Object.keys(preview?.imported || {}), ...changes.map((c) => c.field)]));
-            const compared = clientSnapshot(fields);
-            d.body.innerHTML = (preview?.name ? `<p class="je-pt-hint">${tx('tag_portable_preset_named', { name: preview.name })}</p>` : '') + previewHtml(preview || {});
-            d.foot.innerHTML = (back ? buttonHtml('back', 'tag_portable_back') : '') + buttonHtml('cancel', 'jellyseerr_modal_cancel')
-                + (changes.length ? buttonHtml('apply', 'tag_portable_apply_count', { primary: true, params: { count: changes.length } }) : '');
-            d.foot.onclick = async (e) => {
-                const button = /** @type {HTMLButtonElement|null} */ (/** @type {HTMLElement} */ (e.target).closest('[data-pt-action]'));
-                const action = button?.dataset.ptAction;
-                if (action === 'back') back?.();
-                else if (action === 'cancel') d.close();
-                else if (action === 'apply' && button) {
-                    // Changed in the panel since the preview: it no longer says what Apply changes.
-                    if (clientSnapshot(fields) !== compared) {
-                        showPreview(d, document, back, JE.t('tag_portable_import_changed'));
-                        return;
-                    }
-                    button.disabled = true;
-                    d.status(JE.t('tag_portable_applying'));
-                    try {
-                        await apply(changes);
-                    } catch (err) {
-                        if (!live()) return;
-                        console.warn('🪼 Jellyfin Enhanced: could not apply the imported Media Tags settings', err);
-                        // Closed while the save was on its way: say it on the panel instead.
-                        if (d.closed()) { hooks.announce(JE.t('tag_portable_apply_failed')); return; }
-                        button.disabled = false;
-                        d.status(JE.t('tag_portable_apply_failed'), 'error');
-                    }
-                }
-            };
-            /** @type {HTMLElement|null} */ (d.foot.querySelector('[data-pt-action="apply"]') || d.foot.querySelector('[data-pt-action="cancel"]'))?.focus();
+          }
         };
-
-        /**
-         * The import dialog: a file or pasted text, then the preview.
-         * @param {{titleKey: string, hintKey: string, nextKey?: string, onDocument: (d: ReturnType<typeof openDialog>, doc: Object, back: () => void) => void}} options
-         */
-        const openSource = ({ titleKey, hintKey, onDocument, nextKey = 'tag_portable_preview' }) => {
-            const d = show(JE.t(titleKey));
-            const step = () => {
-                d.body.innerHTML = sourceHtml(hintKey);
-                d.foot.innerHTML = buttonHtml('cancel', 'jellyseerr_modal_cancel') + buttonHtml('next', nextKey, { primary: true });
-                wireSource(d);
-                d.foot.onclick = (e) => {
-                    const action = /** @type {HTMLElement} */ (e.target).closest('[data-pt-action]')?.getAttribute('data-pt-action');
-                    if (action === 'cancel') { d.close(); return; }
-                    if (action !== 'next') return;
-                    const text = /** @type {HTMLTextAreaElement} */ (d.body.querySelector('[data-pt-paste]')).value;
-                    const parsed = parseDocument(text);
-                    if (parsed.error) { d.status(errorText(parsed.error), 'error'); return; }
-                    onDocument(d, /** @type {Object} */ (parsed.document), () => { d.status(''); step(); d.focusFirst(); });
-                };
-                d.focusFirst();
-            };
-            step();
-        };
-
-        /**
-         * Apply a preview's changes, then open the panel again on the new
-         * settings with Undo.
-         * @param {Array<{field: string, from: *, to: *}>} changes
-         * @param {{undo?: boolean}} [opts] - undo: this is the Undo itself (no new Undo).
-         */
-        const apply = async (changes, opts = {}) => {
-            const current = sessionCheck();
-            if (!live() || !await writeChanges(changes, current)) return;
-            // Published only while the import's session lasts; a closed panel
-            // of that session still offers it when opened again.
-            if (!opts.undo) lastImport = { changes, until: Date.now() + UNDO_MS, count: changes.length, isCurrent: current };
-            if (!live()) return;
-            dialog?.close();
-            reopen(opts.undo ? 'tag_portable_undone' : null);
-        };
-
-        /**
-         * Open the panel again (every control reads the new settings) on the Media Tags Layout tab.
-         * @param {string|null} messageKey - Announced after it opened.
-         */
-        const reopen = (messageKey) => {
-            internal.tagPortableReopen = { messageKey };
-            ctx.closePanel?.();
-            Promise.resolve(JE.showEnhancedPanel?.()).catch((err) => console.warn('🪼 Jellyfin Enhanced: could not open the settings again', err));
-        };
-
-        /** Show Undo for what is left of the last import's window. */
-        const drawUndo = () => {
-            clearTimeout(undoTimer);
-            const left = lastImport ? lastImport.until - Date.now() : 0;
-            if (!lastImport || left <= 0 || !lastImport.isCurrent() || !live()) {
-                // Undo used or expired while it had focus: hand focus to Import beside it.
-                const hadFocus = undoBar.contains(window.document.activeElement);
-                undoBar.hidden = true;
-                undoBar.innerHTML = '';
-                if (hadFocus) /** @type {HTMLElement|null} */ (portableCard.querySelector('[data-tp="import"]'))?.focus({ preventScroll: true });
-                return;
+        focusElement(d.foot.querySelector('[data-pt-action="apply"]') || d.foot.querySelector('[data-pt-action="cancel"]'));
+      };
+      const openSource = ({ titleKey, hintKey, onDocument, nextKey = "tag_portable_preview" }) => {
+        const d = show(JE.t(titleKey));
+        const step = () => {
+          d.body.innerHTML = sourceHtml(hintKey);
+          d.foot.innerHTML = buttonHtml("cancel", "jellyseerr_modal_cancel") + buttonHtml("next", nextKey, { primary: true });
+          wireSource(d);
+          d.foot.onclick = (e) => {
+            const action = actionOf(e)?.getAttribute("data-pt-action");
+            if (action === "cancel") {
+              d.close();
+              return;
             }
-            undoBar.hidden = false;
-            undoBar.innerHTML = `<span>${tx('tag_portable_applied', { count: lastImport.count })}</span><button type="button" class="je-mth-button" data-tp="undo">${tx('hidden_content_undo')}</button>`;
-            undoTimer = setTimeout(() => { if (!disposed) drawUndo(); }, left);
-        };
-
-        const undo = async () => {
-            const last = lastImport;
-            if (!last || !last.isCurrent() || !live()) return;
-            lastImport = null;
-            drawUndo();
-            try {
-                await apply(last.changes.map((c) => ({ field: c.field, from: c.to, to: c.from })), { undo: true });
-            } catch (err) {
-                console.warn('🪼 Jellyfin Enhanced: could not undo the Media Tags import', err);
-                if (live()) hooks.announce(JE.t('tag_portable_apply_failed'));
+            if (action !== "next") return;
+            const paste = d.body.querySelector("[data-pt-paste]");
+            if (!(paste instanceof HTMLTextAreaElement)) throw new TypeError("The paste box is missing");
+            const parsed = parseDocument(paste.value);
+            if (parsed.error || !parsed.document) {
+              d.status(errorText(parsed.error ?? "not-object"), "error");
+              return;
             }
+            onDocument(d, parsed.document, () => {
+              d.status("");
+              step();
+              d.focusFirst();
+            });
+          };
+          d.focusFirst();
         };
-
-        // ── Presets ──
-        /** @param {HTMLElement} button @returns {{preset: Object, source: string}|null} */
-        const presetOf = (button) => {
-            const item = button.closest('[data-tp-index]');
-            const source = button.closest('[data-tp-source]')?.getAttribute('data-tp-source');
-            if (!item || !source || !presets) return null;
-            const preset = presets[source]?.[Number(item.getAttribute('data-tp-index'))];
-            return preset ? { preset, source } : null;
-        };
-
-        /** @param {Object} preset @param {string} source @returns {Object} The preset as shared: the shown name, no server id for built-ins. */
-        const shareable = (preset, source) => {
-            const text = presetText(preset, source);
-            return { v: preset.v || 1, kind: PRESET_KIND, name: text.name, description: text.description, settings: preset.settings || {} };
-        };
-
-        const openSavePreset = () => {
-            const d = show(JE.t('tag_presets_save'));
-            d.body.innerHTML = `<p class="je-pt-hint">${tx('tag_presets_save_desc')}</p>
-                <label class="je-pt-label" for="jePtName">${tx('tag_presets_name')}</label>
+        step();
+      };
+      const apply = async (changes, opts = {}) => {
+        const current = sessionCheck();
+        if (!live() || !await writeChanges(changes, current)) return;
+        if (!opts.undo) lastImport = { changes: changes.slice(), until: Date.now() + UNDO_MS, count: changes.length, isCurrent: current };
+        if (!live()) return;
+        dialog?.close();
+        reopen(opts.undo ? "tag_portable_undone" : null);
+      };
+      const reopen = (messageKey) => {
+        internal.tagPortableReopen = { messageKey };
+        ctx.closePanel?.();
+        Promise.resolve(JE.showEnhancedPanel?.()).catch((err) => console.warn("🪼 Jellyfin Enhanced: could not open the settings again", err));
+      };
+      const drawUndo = () => {
+        clearTimeout(undoTimer);
+        const left = lastImport ? lastImport.until - Date.now() : 0;
+        if (!lastImport || left <= 0 || !lastImport.isCurrent() || !live()) {
+          const hadFocus = undoBar.contains(window.document.activeElement);
+          undoBar.hidden = true;
+          undoBar.innerHTML = "";
+          if (hadFocus) focusElement(portableCard.querySelector('[data-tp="import"]'), { preventScroll: true });
+          return;
+        }
+        undoBar.hidden = false;
+        undoBar.innerHTML = `<span>${tx("tag_portable_applied", { count: lastImport.count })}</span><button type="button" class="je-mth-button" data-tp="undo">${tx("hidden_content_undo")}</button>`;
+        undoTimer = setTimeout(() => {
+          if (!disposed) drawUndo();
+        }, left);
+      };
+      const undo = async () => {
+        const last = lastImport;
+        if (!last || !last.isCurrent() || !live()) return;
+        lastImport = null;
+        drawUndo();
+        try {
+          await apply(last.changes.map((c) => ({ field: c.field, from: c.to, to: c.from })), { undo: true });
+        } catch (err) {
+          console.warn("🪼 Jellyfin Enhanced: could not undo the Media Tags import", err);
+          if (live()) hooks.announce(JE.t("tag_portable_apply_failed"));
+        }
+      };
+      const presetOf2 = (button) => {
+        const item = button.closest("[data-tp-index]");
+        const source = button.closest("[data-tp-source]")?.getAttribute("data-tp-source");
+        if (!item || !isPresetSource(source) || !presets) return null;
+        const preset = presets[source][Number(item.getAttribute("data-tp-index"))];
+        return preset ? { preset, source } : null;
+      };
+      const shareable = (preset, source) => {
+        const text = presetText(preset, source);
+        return { v: preset.v || 1, kind: PRESET_KIND, name: text.name, description: text.description, settings: preset.settings || {} };
+      };
+      const openSavePreset = () => {
+        const d = show(JE.t("tag_presets_save"));
+        d.body.innerHTML = `<p class="je-pt-hint">${tx("tag_presets_save_desc")}</p>
+                <label class="je-pt-label" for="jePtName">${tx("tag_presets_name")}</label>
                 <input id="jePtName" class="je-pt-input" type="text" maxlength="${MAX_NAME}" data-pt-autofocus required>
-                <label class="je-pt-label" for="jePtDesc">${tx('tag_presets_description')}</label>
+                <label class="je-pt-label" for="jePtDesc">${tx("tag_presets_description")}</label>
                 <textarea id="jePtDesc" class="je-pt-input" rows="2" maxlength="${MAX_DESCRIPTION}"></textarea>`;
-            d.foot.innerHTML = buttonHtml('cancel', 'jellyseerr_modal_cancel') + buttonHtml('save', 'elsewhere_settings_save', { primary: true });
-            d.foot.onclick = async (e) => {
-                const button = /** @type {HTMLButtonElement|null} */ (/** @type {HTMLElement} */ (e.target).closest('[data-pt-action]'));
-                if (button?.dataset.ptAction === 'cancel') { d.close(); return; }
-                if (button?.dataset.ptAction !== 'save') return;
-                const name = /** @type {HTMLInputElement} */ (d.body.querySelector('#jePtName')).value.trim();
-                const description = /** @type {HTMLTextAreaElement} */ (d.body.querySelector('#jePtDesc')).value.trim();
-                if (!name) { d.status(errorText('name'), 'error'); /** @type {HTMLElement} */ (d.body.querySelector('#jePtName')).focus(); return; }
-                const current = sessionCheck();
-                button.disabled = true;
-                try {
-                    const exported = await fetchExport(current);
-                    if (!live() || !current() || d.closed() || !exported) return;
-                    if (exported.unsaved) {
-                        // A preset of the stored settings would not be what the panel shows.
-                        button.disabled = false;
-                        d.status(JE.t('tag_presets_save_unsaved'), 'error');
-                        return;
-                    }
-                    await savePreset(d, { v: exported.document.v, kind: PRESET_KIND, name, description, settings: exported.document.settings }, current);
-                } catch (err) {
-                    if (!live() || !current() || d.closed()) return;
-                    button.disabled = false;
-                    d.status(errorText((await errorOf(err)).code, { max: presets?.max || 10 }), 'error');
-                }
-            };
-            d.focusFirst();
-        };
-
-        /**
-         * Save a preset to the user's list and report what was skipped.
-         * @param {ReturnType<typeof openDialog>} d
-         * @param {Object} document
-         * @param {() => boolean} [isCurrent] - The operation's session (sessionCheck); the
-         *   preset is posted only while it lasts, so always to the user who asked.
-         */
-        const savePreset = async (d, document, isCurrent = sessionCheck()) => {
-            if (!live() || !isCurrent()) return;
-            const answer = await ApiClient.ajax({ type: 'POST', url: userUrl('presets'), data: JSON.stringify(document), contentType: 'application/json', dataType: 'json' });
-            if (!live() || !isCurrent()) return;
-            await loadPresets();
-            const skipped = answer?.skipped || [];
-            if (!skipped.length || d.closed()) {
-                d.close();
-                hooks.announce(JE.t('tag_presets_saved', { name: answer?.preset?.name || document.name }));
-                return;
+        d.foot.innerHTML = buttonHtml("cancel", "jellyseerr_modal_cancel") + buttonHtml("save", "elsewhere_settings_save", { primary: true });
+        d.foot.onclick = async (e) => {
+          const button = actionOf(e);
+          if (button?.dataset.ptAction === "cancel") {
+            d.close();
+            return;
+          }
+          if (!button || button.dataset.ptAction !== "save") return;
+          const nameInput = d.body.querySelector("#jePtName");
+          const descInput = d.body.querySelector("#jePtDesc");
+          if (!(nameInput instanceof HTMLInputElement) || !(descInput instanceof HTMLTextAreaElement)) return;
+          const name = nameInput.value.trim();
+          const description = descInput.value.trim();
+          if (!name) {
+            d.status(errorText("name"), "error");
+            nameInput.focus();
+            return;
+          }
+          const current = sessionCheck();
+          setDisabled(button, true);
+          try {
+            const exported = await fetchExport(current);
+            if (!live() || !current() || d.closed() || !exported) return;
+            if (exported.unsaved) {
+              setDisabled(button, false);
+              d.status(JE.t("tag_presets_save_unsaved"), "error");
+              return;
             }
-            d.body.innerHTML = `<p class="je-pt-summary">${tx('tag_presets_saved', { name: answer?.preset?.name || document.name })}</p>` + previewHtml({ skipped }, { summary: false });
-            d.foot.innerHTML = buttonHtml('close', 'awards_close', { primary: true });
+            const parts = exportedParts(exported.document);
+            await savePreset(d, { v: parts.v, kind: PRESET_KIND, name, description, settings: parts.settings }, current);
+          } catch (err) {
+            if (!live() || !current() || d.closed()) return;
+            setDisabled(button, false);
+            d.status(errorText((await errorOf(err)).code, { max: presets?.max || 10 }), "error");
+          }
+        };
+        d.focusFirst();
+      };
+      const savePreset = async (d, document2, isCurrent = sessionCheck()) => {
+        if (!live() || !isCurrent()) return;
+        const answer = await ajax({ type: "POST", url: userUrl("presets"), data: JSON.stringify(document2), contentType: "application/json", dataType: "json" });
+        if (!live() || !isCurrent()) return;
+        await loadPresets();
+        const saved = savedPreset(answer);
+        const shownName = String(saved.name || Reflect.get(document2, "name"));
+        if (!saved.skipped.length || d.closed()) {
+          d.close();
+          hooks.announce(JE.t("tag_presets_saved", { name: shownName }));
+          return;
+        }
+        d.body.innerHTML = `<p class="je-pt-summary">${tx("tag_presets_saved", { name: shownName })}</p>` + previewHtml({ skipped: saved.skipped }, { summary: false });
+        d.foot.innerHTML = buttonHtml("close", "awards_close", { primary: true });
+        d.foot.onclick = () => d.close();
+        d.focusFirst();
+      };
+      const openImportPreset = () => openSource({
+        titleKey: "tag_presets_import_title",
+        hintKey: "tag_presets_import_desc",
+        nextKey: "tag_presets_import_button",
+        onDocument: async (d, document2) => {
+          if (!Reflect.get(document2, "name")) {
+            d.status(errorText("name"), "error");
+            return;
+          }
+          try {
+            await savePreset(d, document2);
+          } catch (err) {
+            if (!live() || d.closed()) return;
+            d.status(errorText((await errorOf(err)).code, { max: presets?.max || 10 }), "error");
+          }
+        }
+      });
+      const sharePreset = async (preset, source, button) => {
+        const text = JSON.stringify(shareable(preset, source), null, 2);
+        if (await copyText(text)) {
+          hooks.announce(JE.t("tag_presets_shared", { name: presetText(preset, source).name }));
+          const old = button.textContent;
+          button.textContent = JE.t("tag_portable_copied");
+          setTimeout(() => {
+            if (button.isConnected) button.textContent = old;
+          }, 1500);
+          return;
+        }
+        const d = show(JE.t("tag_presets_share_title", { name: presetText(preset, source).name }));
+        d.body.innerHTML = `<p class="je-pt-hint">${tx("tag_presets_share_desc")}</p><textarea class="je-pt-text" rows="10" readonly spellcheck="false" aria-label="${tx("tag_presets_share_title", { name: presetText(preset, source).name })}">${esc(text)}</textarea>`;
+        d.foot.innerHTML = buttonHtml("download", "tag_portable_download", { icon: "download" }) + buttonHtml("close", "awards_close", { primary: true });
+        d.foot.onclick = (e) => {
+          const action = actionOf(e)?.getAttribute("data-pt-action");
+          if (action === "download") download(shareable(preset, source), `jellyfin-media-tags-preset-${String(preset.id || "shared")}`);
+          if (action === "close") d.close();
+        };
+        const area = d.body.querySelector("textarea");
+        area?.focus();
+        area?.select();
+      };
+      const showDeleteError = (preset) => {
+        failedDelete = preset;
+        deleteError.hidden = !preset;
+        const text = deleteError.querySelector("[data-tp-error-text]");
+        if (text) text.textContent = preset ? JE.t("tag_presets_delete_failed", { name: preset.name }) : "";
+      };
+      const deletePreset = async (preset) => {
+        try {
+          await ajax({ type: "DELETE", url: userUrl(`presets/${encodeURIComponent(String(preset.id))}`) });
+        } catch (err) {
+          if (statusOf(err) !== 404) {
+            console.warn("🪼 Jellyfin Enhanced: could not delete the preset", err);
+            if (!live()) return;
+            showDeleteError(preset);
+            focusElement(deleteError.querySelector('[data-tp="delete-retry"]'));
+            return;
+          }
+        }
+        if (!live()) return;
+        showDeleteError(null);
+        await loadPresets();
+        hooks.announce(JE.t("tag_presets_deleted", { name: preset.name }));
+        focusElement(presetsCard.querySelector('[data-tp="save-preset"]'));
+      };
+      const onClick = (e) => {
+        const button = closestTarget(e, "[data-tp]");
+        if (!button || button instanceof HTMLButtonElement && button.disabled || !live()) return;
+        const action = button.dataset.tp;
+        touch();
+        if (action === "export") openExport();
+        else if (action === "import") openSource({ titleKey: "tag_portable_import_title", hintKey: "tag_portable_import_desc", onDocument: (d, doc, back) => showPreview(d, doc, back) });
+        else if (action === "undo") undo();
+        else if (action === "save-preset") openSavePreset();
+        else if (action === "import-preset") openImportPreset();
+        else if (action === "delete-retry") {
+          if (failedDelete) deletePreset(failedDelete);
+        } else {
+          const found = presetOf2(button);
+          if (!found) return;
+          if (action === "apply") {
+            const d = show(JE.t("tag_presets_apply_named", { name: presetText(found.preset, found.source).name }));
+            d.body.innerHTML = `<p class="je-pt-hint" data-pt-loading>${tx("hidden_content_admin_loading")}</p>`;
+            d.foot.innerHTML = buttonHtml("cancel", "jellyseerr_modal_cancel");
             d.foot.onclick = () => d.close();
             d.focusFirst();
-        };
-
-        const openImportPreset = () => openSource({
-            titleKey: 'tag_presets_import_title',
-            hintKey: 'tag_presets_import_desc',
-            nextKey: 'tag_presets_import_button',
-            onDocument: async (d, document) => {
-                if (!document.name) { d.status(errorText('name'), 'error'); return; }
-                try {
-                    await savePreset(d, document);
-                } catch (err) {
-                    if (!live() || d.closed()) return;
-                    d.status(errorText((await errorOf(err)).code, { max: presets?.max || 10 }), 'error');
-                }
-            },
-        });
-
-        const sharePreset = async (preset, source, button) => {
-            const text = JSON.stringify(shareable(preset, source), null, 2);
-            if (await copyText(text)) {
-                hooks.announce(JE.t('tag_presets_shared', { name: presetText(preset, source).name }));
-                const old = button.textContent;
-                button.textContent = JE.t('tag_portable_copied');
-                setTimeout(() => { if (button.isConnected) button.textContent = old; }, 1500);
-                return;
-            }
-            // No clipboard here: show the text to copy by hand.
-            const d = show(JE.t('tag_presets_share_title', { name: presetText(preset, source).name }));
-            d.body.innerHTML = `<p class="je-pt-hint">${tx('tag_presets_share_desc')}</p><textarea class="je-pt-text" rows="10" readonly spellcheck="false" aria-label="${tx('tag_presets_share_title', { name: presetText(preset, source).name })}">${esc(text)}</textarea>`;
-            d.foot.innerHTML = buttonHtml('download', 'tag_portable_download', { icon: 'download' }) + buttonHtml('close', 'awards_close', { primary: true });
-            d.foot.onclick = (e) => {
-                const action = /** @type {HTMLElement} */ (e.target).closest('[data-pt-action]')?.getAttribute('data-pt-action');
-                if (action === 'download') download(shareable(preset, source), `jellyfin-media-tags-preset-${String(preset.id || 'shared')}`);
-                if (action === 'close') d.close();
-            };
-            const area = /** @type {HTMLTextAreaElement} */ (d.body.querySelector('textarea'));
-            area.focus();
-            area.select();
-        };
-
-        /**
-         * Show (or hide, with null) why a preset is still listed, with Retry.
-         * Updated in place, so a focused Retry keeps focus.
-         * @param {Object|null} preset
-         */
-        const showDeleteError = (preset) => {
-            failedDelete = preset;
-            deleteError.hidden = !preset;
-            /** @type {HTMLElement} */ (deleteError.querySelector('[data-tp-error-text]')).textContent = preset ? JE.t('tag_presets_delete_failed', { name: preset.name }) : '';
-        };
-
-        const deletePreset = async (preset) => {
-            try {
-                await ApiClient.ajax({ type: 'DELETE', url: userUrl(`presets/${encodeURIComponent(preset.id)}`) });
-            } catch (err) {
-                // Already gone (another device deleted it): the reload shows that.
-                if (err?.status !== 404) {
-                    console.warn('🪼 Jellyfin Enhanced: could not delete the preset', err);
-                    if (!live()) return;
-                    // Still there: say so (never "deleted"), keep the row and offer Retry.
-                    showDeleteError(preset);
-                    /** @type {HTMLElement} */ (deleteError.querySelector('[data-tp="delete-retry"]')).focus();
-                    return;
-                }
-            }
-            if (!live()) return;
-            showDeleteError(null);
-            await loadPresets();
-            hooks.announce(JE.t('tag_presets_deleted', { name: preset.name }));
-            /** @type {HTMLElement|null} */ (presetsCard.querySelector('[data-tp="save-preset"]'))?.focus();
-        };
-
-        const onClick = (e) => {
-            const button = /** @type {HTMLButtonElement|null} */ (/** @type {HTMLElement} */ (e.target).closest('[data-tp]'));
-            // A panel left from another session starts nothing.
-            if (!button || button.disabled || !live()) return;
-            const action = button.dataset.tp;
-            touch();
-            if (action === 'export') openExport();
-            else if (action === 'import') openSource({ titleKey: 'tag_portable_import_title', hintKey: 'tag_portable_import_desc', onDocument: (d, doc, back) => showPreview(d, doc, back) });
-            else if (action === 'undo') undo();
-            else if (action === 'save-preset') openSavePreset();
-            else if (action === 'import-preset') openImportPreset();
-            else if (action === 'delete-retry') { if (failedDelete) deletePreset(failedDelete); }
-            else {
-                const found = presetOf(button);
-                if (!found) return;
-                if (action === 'apply') {
-                    const d = show(JE.t('tag_presets_apply_named', { name: presetText(found.preset, found.source).name }));
-                    d.body.innerHTML = `<p class="je-pt-hint" data-pt-loading>${tx('hidden_content_admin_loading')}</p>`;
-                    d.foot.innerHTML = buttonHtml('cancel', 'jellyseerr_modal_cancel');
-                    d.foot.onclick = () => d.close();
-                    d.focusFirst();
-                    showPreview(d, shareable(found.preset, found.source));
-                } else if (action === 'share') sharePreset(found.preset, found.source, button);
-                else if (action === 'delete') deletePreset(found.preset);
-            }
-        };
-        presetsCard.addEventListener('click', onClick);
-        portableCard.addEventListener('click', onClick);
-
-        const presetsLoaded = loadPresets();
-        drawUndo();
-        // Opened again after an import: back on the Layout tab, at the Undo
-        // (once the presets list above it has its height).
-        const reopened = internal.tagPortableReopen;
-        if (reopened) {
-            internal.tagPortableReopen = null;
-            presetsLoaded.then(() => setTimeout(() => {
-                if (disposed) return;
-                ctx.openPane?.('media-tags');
-                internal.mediaTagsHub?.openTab?.('layout');
-                const target = /** @type {HTMLElement|null} */ (undoBar.querySelector('button') || portableCard.querySelector('[data-tp="import"]'));
-                // Scroll the pane only: scrollIntoView would also move the panel's own (clipped) box.
-                const main = /** @type {HTMLElement|null} */ (portableCard.closest('.je-panel-main'));
-                if (main && target) {
-                    const box = main.getBoundingClientRect();
-                    main.scrollTop += target.getBoundingClientRect().top - box.top - box.height / 2;
-                }
-                target?.focus({ preventScroll: true });
-                if (reopened.messageKey) hooks.announce(JE.t(reopened.messageKey));
-                else if (lastImport?.isCurrent()) hooks.announce(JE.t('tag_portable_applied', { count: lastImport.count }));
-            }, 0));
+            showPreview(d, shareable(found.preset, found.source));
+          } else if (action === "share") sharePreset(found.preset, found.source, button);
+          else if (action === "delete") deletePreset({ id: found.preset.id, name: String(found.preset.name) });
         }
-
-        return () => {
-            disposed = true;
-            clearTimeout(undoTimer);
-            dialog?.close();
-            presetsCard.removeEventListener('click', onClick);
-            portableCard.removeEventListener('click', onClick);
-        };
-    };
-
-    /** Forget the last import's Undo (a user switch). */
-    JE.session?.onUserChange?.('tag-portable', () => {
-        lastImport = null;
+      };
+      presetsCard.addEventListener("click", onClick);
+      portableCard.addEventListener("click", onClick);
+      const presetsLoaded = loadPresets();
+      drawUndo();
+      const reopened = internal.tagPortableReopen;
+      if (reopened) {
         internal.tagPortableReopen = null;
+        presetsLoaded.then(() => setTimeout(() => {
+          if (disposed) return;
+          ctx.openPane?.("media-tags");
+          internal.mediaTagsHub?.openTab?.("layout");
+          const target = queryButton(undoBar, "button") || queryElement(portableCard, '[data-tp="import"]');
+          const main = portableCard.closest(".je-panel-main");
+          if (main && target) {
+            const box = main.getBoundingClientRect();
+            main.scrollTop += target.getBoundingClientRect().top - box.top - box.height / 2;
+          }
+          target?.focus({ preventScroll: true });
+          if (reopened.messageKey) hooks.announce(JE.t(reopened.messageKey));
+          else if (lastImport?.isCurrent()) hooks.announce(JE.t("tag_portable_applied", { count: lastImport.count }));
+        }, 0));
+      }
+      return () => {
+        disposed = true;
+        clearTimeout(undoTimer);
+        dialog?.close();
+        presetsCard.removeEventListener("click", onClick);
+        portableCard.removeEventListener("click", onClick);
+      };
+    };
+    internal.wireTagPortable = wireTagPortable;
+    JE.session?.onUserChange?.("tag-portable", () => {
+      lastImport = null;
+      internal.tagPortableReopen = null;
     });
-})(window.JellyfinEnhanced);
+  }
+  installUiPanelTagPortable(panelHost());
+})();
+})();
+//# sourceMappingURL=ui-panel-tag-portable.js.map

@@ -1,0 +1,265 @@
+
+            :root {
+              --pause-screen-overlay-bg: rgba(0,0,0,.78);
+              --pause-screen-blur: 50px;
+              --pause-screen-logo-max-w: 45vw;
+              --pause-screen-logo-max-h: 20vh;
+              --pause-screen-logo-top: 20vh;
+              --pause-screen-logo-left: 8vw;
+
+              --pause-screen-details-top: 45vh;
+              --pause-screen-details-left: 8vw;
+              --pause-screen-details-gap: 2rem;
+              --pause-screen-text-size: 1.2rem;
+
+              --pause-screen-plot-top: 55vh;
+              --pause-screen-plot-left: 8vw;
+              --pause-screen-plot-max-w: 50vw;
+              --pause-screen-plot-font: 1.25rem;
+
+              --pause-screen-progress-top: 85vh;
+              --pause-screen-progress-width: 48vw;
+              --pause-screen-progress-height: 6px;
+              --pause-screen-progress-radius: 999px;
+
+              --pause-screen-disc-w: 26vw;
+              --pause-screen-disc-right: 5vw;
+              --pause-screen-disc-rot-sec: 60s;
+            }
+
+            #pause-screen-overlay {
+              position: fixed; inset: 0;
+              display: none;
+              z-index: 99;
+              color: #fff;
+              font-family: inherit;
+              background: var(--pause-screen-overlay-bg);
+            }
+            #pause-screen-overlay[aria-hidden="false"] { display: flex; }
+
+            .pause-screen-active .videoOsdBottom { opacity: 0 !important; pointer-events: none !important; }
+
+            /* To show back button when paused */
+            .pause-screen-active .skinHeader.osdHeader {
+                z-index: 100 !important;
+                opacity: 0.9 !important;
+                visibility: visible !important;
+                background: transparent !important;
+                width: 10vw !important;
+
+            }
+            .pause-screen-active .skinHeader.osdHeader .headerRight {
+                display: none !important;
+            }
+
+            .pause-screen-active .skinHeader.osdHeader {
+                visibility: hidden !important;
+            }
+
+            .pause-screen-active .headerBackButton,
+            .pause-screen-active .skinHeader.osdHeader .videoOsd-appBar > button:first-child {
+                visibility: visible !important;
+            }
+
+            #pause-screen-content {
+              position: relative;
+              width: 100%; height: 100%;
+              backdrop-filter: blur(var(--pause-screen-blur)) brightness(0.5);
+              outline: none;
+            }
+
+            /* Backdrop image (under everything) */
+            #pause-screen-backdrop {
+              position: absolute; inset: 0;
+              background-position: center;
+              background-size: cover;
+              opacity: .28;
+              pointer-events: none;
+            }
+
+            #pause-screen-logo {
+              position: absolute;
+              max-width: var(--pause-screen-logo-max-w);
+              max-height: var(--pause-screen-logo-max-h);
+              width: auto; height: auto;
+              top: var(--pause-screen-logo-top);
+              left: var(--pause-screen-logo-left);
+              display: block;
+              object-fit: contain;
+            }
+
+            #pause-screen-details {
+              position: absolute;
+              top: var(--pause-screen-details-top);
+              left: var(--pause-screen-details-left);
+              display: flex; gap: var(--pause-screen-details-gap); align-items: center;
+              font-size: var(--pause-screen-text-size);
+            }
+
+            #pause-screen-plot {
+              position: absolute;
+              top: var(--pause-screen-plot-top);
+              left: var(--pause-screen-plot-left);
+              max-width: var(--pause-screen-plot-max-w);
+              height: 25vh; /* Adjusted height */
+              display: block;
+              font-size: var(--pause-screen-plot-font);
+              line-height: 1.6;
+              overflow-y: auto;
+              text-align: left;
+            }
+
+            #pause-screen-disc {
+              position: absolute;
+              top: calc(50vh - (var(--pause-screen-disc-w) / 2));
+              right: var(--pause-screen-disc-right);
+              width: var(--pause-screen-disc-w);
+              height: auto;
+              display: block;
+              animation: pause-screen-spin var(--pause-screen-disc-rot-sec) linear infinite;
+              z-index: 1;
+              filter: brightness(80%);
+            }
+
+            @keyframes pause-screen-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+            /* Progress UI */
+            #pause-screen-progress-wrap {
+              position: absolute;
+              top: var(--pause-screen-progress-top);
+              left: var(--pause-screen-details-left);
+              width: var(--pause-screen-progress-width);
+              user-select: none;
+            }
+            #pause-screen-progress-bar {
+              width: 100%;
+              height: var(--pause-screen-progress-height);
+              border-radius: var(--pause-screen-progress-radius);
+              background: rgba(255,255,255,.18);
+              overflow: hidden;
+              position: relative;
+            }
+            #pause-screen-progress-bar > span {
+              display: block;
+              height: 100%;
+              width: 0%;
+              background: rgba(255,255,255,.9);
+            }
+            #pause-screen-progress-meta {
+              margin-top: .5rem;
+              font-size: 0.9rem;
+              opacity: .9;
+              display: flex;
+            }
+            #pause-screen-progress-meta span::before {
+              content: '•';
+              margin: 1em;
+            }
+            #pause-screen-progress-meta .progress-ends-at::after {
+              content: '•';
+              margin: 1em;
+            }
+            #pause-screen-close-btn {
+              position: absolute;
+              top: 20px;
+              right: 20px;
+              background: rgba(0,0,0,0.1);
+              border: 1px solid rgba(255,255,255,0.2);
+              color: white;
+              width: 1.5em;
+              height: 1.5em;
+              border-radius: 50%;
+              font-size: 1.5em;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              cursor: pointer;
+              z-index: 2;
+              transition: background 0.2s;
+            }
+            #pause-screen-close-btn:hover,
+            #pause-screen-close-btn:focus-visible {
+              background: rgba(0,0,0,0.8);
+            }
+            #pause-screen-close-btn:focus-visible {
+              outline: 2px solid #fff;
+              outline-offset: 2px;
+            }
+            /* Accessibility helpers */
+            #pause-screen-focus-start, #pause-screen-focus-end {
+              position: fixed; width:1px; height:1px; overflow:hidden; clip: rect(0 0 0 0);
+            }
+            /* Make this selector more specific to override other plugins */
+            #pause-screen-progress-meta .progress-percentage {
+                font-size: inherit !important;
+                font-weight: normal !important;
+                color: inherit !important;
+                min-width: auto !important;
+                text-align: left !important;
+            }
+
+            /* Tablet */
+            @media (max-width: 1400px) {
+              :root {
+                --pause-screen-logo-max-w: 40vw;
+                --pause-screen-logo-top: 18vh;
+                --pause-screen-logo-left: 6vw;
+                --pause-screen-details-top: 42vh;
+                --pause-screen-details-left: 6vw;
+                --pause-screen-plot-top: 50vh;
+                --pause-screen-plot-left: 6vw;
+                --pause-screen-plot-max-w: 48vw;
+                --pause-screen-disc-w: 24vw;
+                --pause-screen-disc-right: 4vw;
+                --pause-screen-progress-width: 44vw;
+              }
+            }
+
+            /* Narrow / Portrait Mobile - Hides Disc */
+            @media (max-width: 768px) {
+              :root {
+                --pause-screen-logo-max-w: 70vw;
+                --pause-screen-logo-top: 12vh;
+                --pause-screen-logo-left: 50%;
+                --pause-screen-progress-width: 80vw;
+                --pause-screen-progress-top: 88vh;
+              }
+              #pause-screen-logo { transform: translateX(-50%); }
+              #pause-screen-details {
+                left: 50%; transform: translateX(-50%);
+                top: 32vh; font-size: 14px; justify-content: center;
+              }
+              #pause-screen-plot {
+                top: 40vh; left: 50%; transform: translateX(-50%);
+                max-width: 85vw; text-align: center; font-size: 15px; height: 45vh;
+              }
+              #pause-screen-disc {
+                display: none; /* Hide disc on mobile layouts */
+              }
+            }
+
+            /* Mobile Landscape */
+            @media (max-height: 500px) and (orientation: landscape) {
+              :root {
+                --pause-screen-logo-max-h: 18vh;
+                --pause-screen-logo-top: 8vh;
+                --pause-screen-details-top: 30vh;
+                --pause-screen-plot-top: 40vh;
+                --pause-screen-plot-max-w: 45vw;
+                --pause-screen-plot-font: 14px;
+                --pause-screen-progress-top: 78vh;
+                --pause-screen-disc-w: 22vw;
+              }
+              #pause-screen-plot { height: 35vh; }
+              #pause-screen-disc { display: block; } /* Show disc again in landscape */
+            }
+
+            /* Reduced motion: stop spin */
+            @media (prefers-reduced-motion: reduce) {
+              #pause-screen-disc { animation: none !important; }
+            }
+
+            /* Hide absent images */
+            #pause-screen-logo:not([src]), #pause-screen-disc:not([src]) { display: none; }
+
+          

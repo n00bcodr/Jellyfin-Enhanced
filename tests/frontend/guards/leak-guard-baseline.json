@@ -1,0 +1,272 @@
+{
+  "_comment": "L1-L6: unbounded long-lived collections, global listeners, observers and intervals without teardown, uncapped retries, unrevoked object URLs. Ratchet recorded by tests/frontend/guards/record.mjs: {file: {\"<rule> <scope>[ <detail>]\": count}}. Counts may only fall: run record.mjs after a fix to lower them. Never add a key or raise a count; fix the code instead. Triage: artifacts/restructure-plan/step-logs/canopy-k2-triage.md.",
+  "client/src/admin/config/engine/index.ts": {
+    "L1-unbounded-cache createEngine base": 1
+  },
+  "client/src/admin/config/page/banners.ts": {
+    "L1-unbounded-cache createBanners _jeBannerGroups": 1
+  },
+  "client/src/admin/config/page/bindings.ts": {
+    "L3-observer createBindings.wire.wireRequestsBannerReactive": 1
+  },
+  "client/src/admin/config/page/gated-help.ts": {
+    "L1-unbounded-cache createGatedHelp _jeGatedHelpState": 1
+  },
+  "client/src/admin/config/page/load.ts": {
+    "L1-unbounded-cache createLoad wired": 1
+  },
+  "client/src/admin/config/page/service-status.ts": {
+    "L1-unbounded-cache createServiceStatus _jeMissingSelectorsWarned": 1,
+    "L1-unbounded-cache createServiceStatus _jeUsage": 1,
+    "L1-unbounded-cache createServiceStatus _jeUsageAt": 1
+  },
+  "client/src/admin/config/page/tabs.ts": {
+    "L1-unbounded-cache createTabs _jeTabScroll": 1
+  },
+  "client/src/bootstrap/loader/boot.ts": {
+    "L2-global-listener createInitializer.initialize beforeunload": 1
+  },
+  "client/src/bootstrap/loader/early.ts": {
+    "L5-retry-uncapped loadLoginImageEarly": 1,
+    "L5-retry-uncapped loadSplashScreenEarly": 1
+  },
+  "client/src/bootstrap/loader/maintenance.ts": {
+    "L3-observer injectMaintenanceBanner": 1
+  },
+  "client/src/bootstrap/loader/session-integration.ts": {
+    "L2-global-listener registerSessionIntegration je:user-changed": 1
+  },
+  "client/src/core/lifecycle.ts": {
+    "L1-unbounded-cache createLifecycle registry": 1
+  },
+  "client/src/core/ui/runtime.ts": {
+    "L2-global-listener createUi scroll": 1
+  },
+  "client/src/features/activity/activity-custom-tab.ts": {
+    "L2-global-listener watchForContainer hashchange": 1
+  },
+  "client/src/features/catchup/catchup-custom-tab.ts": {
+    "L2-global-listener watchForContainer hashchange": 1
+  },
+  "client/src/features/chrome/active-streams.ts": {
+    "L2-global-listener createActiveStreams.bindSession je:user-data-loaded": 1
+  },
+  "client/src/features/chrome/events.ts": {
+    "L2-global-listener createEvents.addContextMenuListener contextmenu": 1,
+    "L2-global-listener createEvents.addContextMenuListener mousedown": 1,
+    "L2-global-listener createEvents.initializeEnhancedScript keydown": 2,
+    "L2-global-listener createEvents.installLongPress click": 1,
+    "L2-global-listener createEvents.installLongPress mousedown": 1,
+    "L2-global-listener createEvents.installLongPress mouseleave": 1,
+    "L2-global-listener createEvents.installLongPress mousemove": 1,
+    "L2-global-listener createEvents.installLongPress mouseup": 1,
+    "L2-global-listener createEvents.installLongPress touchcancel": 1,
+    "L2-global-listener createEvents.installLongPress touchend": 1,
+    "L2-global-listener createEvents.installLongPress touchmove": 1,
+    "L2-global-listener createEvents.installLongPress touchstart": 1,
+    "L2-global-listener createEvents.installVisibility <dynamic>": 1,
+    "L2-global-listener createEvents.installVisibility leavepictureinpicture": 1,
+    "L2-global-listener createEvents.installVisibility visibilitychange": 1
+  },
+  "client/src/features/chrome/header-actions.ts": {
+    "L2-global-listener createHeaderActions.getTray hashchange": 1,
+    "L2-global-listener createHeaderActions.getTray resize": 1,
+    "L3-observer createHeaderActions": 1
+  },
+  "client/src/features/chrome/login-image.ts": {
+    "L1-unbounded-cache createLoginImage imageCache": 1,
+    "L2-global-listener createLoginImage.initializeLoginImage beforeunload": 1,
+    "L2-global-listener createLoginImage.watchRoutes hashchange": 1,
+    "L2-global-listener createLoginImage.watchRoutes popstate": 1,
+    "L2-global-listener createLoginImage.watchRoutes viewshow": 1
+  },
+  "client/src/features/chrome/native-tabs.ts": {
+    "L2-global-listener createNativeTabs.start keydown": 1,
+    "L2-global-listener createNativeTabs.start pointerdown": 1,
+    "L3-observer createNativeTabs.syncBackdrop": 1
+  },
+  "client/src/features/chrome/theme-selector.ts": {
+    "L5-retry-uncapped createThemeSelector.initialize": 1
+  },
+  "client/src/features/details-providers/arr-links.ts": {
+    "L2-global-listener (module) je:user-data-loaded": 1,
+    "L2-global-listener initializeArrLinksScript click": 1
+  },
+  "client/src/features/details-providers/colored-ratings.ts": {
+    "L2-global-listener (module) beforeunload": 1,
+    "L2-global-listener (module) visibilitychange": 1,
+    "L3-observer setupMutationObserver": 1
+  },
+  "client/src/features/details-providers/elsewhere.ts": {
+    "L2-global-listener initializeElsewhereScript je:user-data-loaded": 1
+  },
+  "client/src/features/details-providers/media-info.ts": {
+    "L1-unbounded-cache (module) languageTagNameCache": 1
+  },
+  "client/src/features/details-providers/release-dates.ts": {
+    "L2-global-listener (module) je:spoiler-state-changed": 1
+  },
+  "client/src/features/hidden-content/hidden-content-data.ts": {
+    "L2-global-listener (module) je:user-data-loaded": 1
+  },
+  "client/src/features/hidden-content/hidden-content-page-init.ts": {
+    "L2-global-listener initialize click": 1,
+    "L2-global-listener initialize hashchange": 2,
+    "L2-global-listener initialize je-hidden-content-changed": 1,
+    "L2-global-listener initialize popstate": 2,
+    "L2-global-listener initialize viewshow": 1
+  },
+  "client/src/features/hidden-content/hidden-content-save.ts": {
+    "L2-global-listener (module) pagehide": 1
+  },
+  "client/src/features/hidden-content/host.ts": {
+    "L2-global-listener runtime hashchange": 1,
+    "L2-global-listener runtime pagehide": 1,
+    "L2-global-listener runtime popstate": 1,
+    "L2-global-listener runtime viewhide": 1
+  },
+  "client/src/features/media-tags/admin/mount.ts": {
+    "L2-global-listener createLifecycle.mountTab beforeunload": 1,
+    "L2-global-listener followToolbar resize": 1
+  },
+  "client/src/features/media-tags/admin/page.ts": {
+    "L1-unbounded-cache createPage openGroups": 1
+  },
+  "client/src/features/media-tags/admin/sections/overview.ts": {
+    "L5-retry-uncapped cacheSummary": 1
+  },
+  "client/src/features/media-tags/editor/tag-item-editor.ts": {
+    "L3-observer createItemEditor.open": 1
+  },
+  "client/src/features/media-tags/editor/tag-item-menu.ts": {
+    "L2-global-listener createItemMenu click": 1,
+    "L2-global-listener createItemMenu contextmenu": 1
+  },
+  "client/src/features/media-tags/layout/fit-apply.ts": {
+    "L2-global-listener createFitApply focusin": 1,
+    "L2-global-listener createFitApply pointerout": 1,
+    "L2-global-listener createFitApply pointerover": 1
+  },
+  "client/src/features/media-tags/layout/fit-measure.ts": {
+    "L3-observer createFitMeasure.watchSize": 1
+  },
+  "client/src/features/media-tags/layout/looks.ts": {
+    "L2-global-listener createLooks.injectStyles resize": 1
+  },
+  "client/src/features/media-tags/layout/tag-styles.ts": {
+    "L2-global-listener createTagStyles.initializeTagStyles je:user-data-loaded": 1
+  },
+  "client/src/features/media-tags/pipeline/tag-pipeline.ts": {
+    "L2-global-listener createTagPipeline je:user-data-loaded": 1
+  },
+  "client/src/features/media-tags/pipeline/tag-renderer-base.ts": {
+    "L1-unbounded-cache createTagRenderer styleSpecs": 1,
+    "L1-unbounded-cache createTagRenderer tags": 1,
+    "L2-global-listener createTagRenderer.createTag.initialize beforeunload": 1
+  },
+  "client/src/features/media-tags/settings/ui-panel-tag-looks.ts": {
+    "L2-global-listener installUiPanelTagLooks je:user-changed": 1,
+    "L3-observer installUiPanelTagLooks.wireTagLooks": 1
+  },
+  "client/src/features/media-tags/types/direct-play/tag-direct-play.ts": {
+    "L3-observer createDirectPlay.watcher": 1,
+    "L5-retry-uncapped createDirectPlay.persistSoon": 1
+  },
+  "client/src/features/media-tags/types/language/languagetags.ts": {
+    "L1-unbounded-cache createLanguageTags displayNameByCode": 1
+  },
+  "client/src/features/media-tags/types/language/media-language.ts": {
+    "L1-unbounded-cache (module) canonicalBaseCache": 1,
+    "L1-unbounded-cache createMediaLanguage localNames": 1,
+    "L1-unbounded-cache createMediaLanguage numberFormats": 1
+  },
+  "client/src/features/media-tags/types/logo/logotags.ts": {
+    "L2-global-listener createLogoTags.listenForImageErrors error": 1
+  },
+  "client/src/features/media-tags/types/quality/qualitytags.ts": {
+    "L2-global-listener createQualityTags.watchVersionPicker change": 1,
+    "L2-global-listener createQualityTags.watchVersionPicker viewshow": 1
+  },
+  "client/src/features/media-tags/types/status/statustags.ts": {
+    "L2-global-listener createStatusTags.initializeStatusTags focus": 1,
+    "L2-global-listener createStatusTags.initializeStatusTags pagehide": 1,
+    "L2-global-listener createStatusTags.initializeStatusTags pageshow": 1,
+    "L2-global-listener createStatusTags.initializeStatusTags visibilitychange": 1,
+    "L3-observer createStatusTags.observeSeriesCard": 1
+  },
+  "client/src/features/player/lifetime.ts": {
+    "L2-global-listener createPlayerLifetime hashchange": 1
+  },
+  "client/src/features/player/native-track-menu.ts": {
+    "L2-global-listener createTrackMenu closing": 1
+  },
+  "client/src/features/player/playback-rating-badge.ts": {
+    "L2-global-listener initializePlaybackRatingBadge hashchange": 1,
+    "L2-global-listener initializePlaybackRatingBadge playing": 1
+  },
+  "client/src/features/player/playback.ts": {
+    "L1-unbounded-cache (module) _tFallbackWarned": 1
+  },
+  "client/src/features/seerr/core/search.ts": {
+    "L2-global-listener installSearch.start click": 2,
+    "L2-global-listener installSearch.start scroll": 1,
+    "L2-global-listener installSearch.start touchstart": 2,
+    "L2-global-listener installSearch.start.initializePageObserver hashchange": 1,
+    "L2-global-listener installSearch.start.initializePageObserver jellyseerr-manual-refresh": 1,
+    "L2-global-listener installSearch.start.initializePageObserver popstate": 1
+  },
+  "client/src/features/seerr/core/ui/badges.ts": {
+    "L1-unbounded-cache installBadges badgeIconTemplates": 1
+  },
+  "client/src/features/seerr/core/ui/cards.ts": {
+    "L2-global-listener installCards <dynamic>": 1,
+    "L3-observer installCards.getIconObserver": 1,
+    "L3-observer installCards.getPosterObserver": 1
+  },
+  "client/src/features/seerr/core/ui/results.ts": {
+    "L2-global-listener installResults jellyseerr-media-requested": 1
+  },
+  "client/src/features/seerr/details/details-page/item-details-entry.ts": {
+    "L2-global-listener (module) DOMContentLoaded": 1
+  },
+  "client/src/features/seerr/details/hss-discovery-entry.ts": {
+    "L2-global-listener (module) click": 1
+  },
+  "client/src/features/seerr/details/issues/issue-reporter-entry.ts": {
+    "L2-global-listener initialize viewshow": 1
+  },
+  "client/src/features/seerr/recommendations/recommendations-init.ts": {
+    "L2-global-listener init viewshow": 1
+  },
+  "client/src/features/settings-panel/ui-panel-template.ts": {
+    "L1-unbounded-cache installUiPanelTemplate _tFallbackWarned": 1
+  },
+  "client/src/features/settings/save.ts": {
+    "L1-unbounded-cache installSave _lastSavedJson": 1,
+    "L1-unbounded-cache installSave _saveChain": 1,
+    "L2-global-listener installSave je:user-changed": 1
+  },
+  "client/src/features/shared/helpers.ts": {
+    "L2-global-listener createHelpers beforeunload": 1,
+    "L2-global-listener createHelpers je:spoiler-state-changed": 1
+  },
+  "client/src/host/api-host.ts": {
+    "L1-unbounded-cache installApi handlers": 1,
+    "L4-interval installApi": 1
+  },
+  "client/src/host/dom-host.ts": {
+    "L2-global-listener browserDomHost.onUnload beforeunload": 1,
+    "L3-observer browserDomHost.createObserver": 1
+  },
+  "client/src/host/navigation-host.ts": {
+    "L2-global-listener installNavigation.initialize <dynamic>": 1,
+    "L2-global-listener installNavigation.initialize viewshow": 2,
+    "L5-retry-uncapped installNavigation.installEmbyHook": 1
+  },
+  "client/src/host/session-host.ts": {
+    "L4-interval installSession": 1
+  },
+  "client/src/pages/calendar-page.ts": {
+    "L2-global-listener render click": 1
+  }
+}

@@ -1,0 +1,3 @@
+{
+  "js/contracts/bootstrap.js": "client/src/contracts/bootstrap-entry.ts"
+}

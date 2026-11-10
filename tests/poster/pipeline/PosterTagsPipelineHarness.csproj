@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk" InitialTargets="ValidateJellyfinTarget">
   <!--
     Unit-style checks for the Native Poster Tags pipeline (module D): tag
     decoration parse/compose (incl. Spoiler Guard's expectations), variant
@@ -26,4 +26,12 @@
       <HintPath>$(PluginDir)/Jellyfin.Plugin.JellyfinEnhanced.dll</HintPath>
     </Reference>
   </ItemGroup>
+
+  <Target Name="ValidateJellyfinTarget">
+    <Error Condition="'$(JellyfinTarget)' != '' and '$(JellyfinTarget)' != 'jf12'"
+           Text="This rewrite supports Jellyfin 12.x only. Use JellyfinTarget=jf12; '$(JellyfinTarget)' is unsupported." />
+    <Error Condition="'$(TargetFramework)' != 'net10.0' or '$(TargetFrameworks)' != ''"
+           Text="This rewrite supports only TargetFramework=net10.0 (Jellyfin 12.x)." />
+  </Target>
+
 </Project>

@@ -1,962 +1,746 @@
-// @ts-check
-// /js/core/api-client.js
-//
-// One fetch layer for every upstream the plugin talks to.
-//
-// The retry / dedup / concurrency / cache machinery here is the former
-// jellyseerr/request-manager.js, moved into core so it is available to all
-// modules (jellyseerr/request-manager.js now re-exports it as
-// JE.requestManager — that surface is frozen). On top of it, JE.core.api
-// exposes a generalized fetch wrapper with the MediaBrowser auth headers
-// that ~35 call sites used to hand-build, plus per-request timeout support.
-//
-// Public surface:
-//   JE.core.api.fetch(url, options)  — full-URL fetch with auth + retry/dedup/cache
-//   JE.core.api.jf(path, options)    — same, path resolved via ApiClient.getUrl
-//   JE.core.api.plugin(path, options)— same, targeting /JellyfinEnhanced/ endpoints
-//   JE.core.api.manager              — the request manager (aliased as JE.requestManager)
-(function(JE) {
-    'use strict';
-
-    JE.core = JE.core || {};
-
-    const logPrefix = '🪼 Jellyfin Enhanced: API Client:';
-
-    // Configuration
-    const CONFIG = {
-        retry: {
-            maxAttempts: 2,
-            baseDelayMs: 500,
-            maxDelayMs: 5000,
-            jitterFactor: 0.3,
-            retryableStatuses: [408, 429, 500, 502, 503, 504],
-            timeoutBudgetMs: 15000
-        },
-        cache: {
-            ttlMs: 30 * 60 * 1000, // 30 minutes - discovery data rarely changes
-            maxEntries: 200
-        },
-        concurrency: {
-            // JE's endpoints share a host with Jellyfin's own API and image
-            // requests. Over HTTP/1.1 browsers open at most 6 connections per
-            // host, so staying below 6 leaves sockets free for jellyfin-web.
-            // Over HTTP/2 (common behind reverse proxies) there is no per-host
-            // socket limit; the cap then simply bounds how much JE work competes
-            // with jellyfin-web's own requests.
-            maxConcurrent: 4,
-            maxQueueSize: 100,
-            // Decorative lane (priority: 'low'): at most this many of the
-            // maxConcurrent slots, and only when no normal request is waiting,
-            // so normal requests always find a slot quickly. While no normal
-            // request is queued or running, the lane widens to maxConcurrent - 1,
-            // which still leaves a slot free for the next normal request. Its
-            // queue (current + previous-page entries) is bounded separately: past
-            // the bound the oldest previous-page lookup is dropped, else the new
-            // one is rejected (callers treat a failed embellishment as "render nothing").
-            maxLowConcurrent: 2,
-            maxLowQueueSize: 200
+(() => {
+"use strict";
+(() => {
+  // client/src/core/api/cache.ts
+  function createCache(config, now) {
+    const entries = /* @__PURE__ */ new Map();
+    const clears = /* @__PURE__ */ new Map();
+    let clock = 0, floor = 0;
+    function get(key) {
+      const entry = entries.get(key);
+      if (!entry) return null;
+      entries.delete(key);
+      if (now() - entry.timestamp >= config.ttlMs) return null;
+      entries.set(key, entry);
+      return entry.data;
+    }
+    function set(key, data, requestedAt) {
+      if (requestedAt !== void 0) {
+        if (requestedAt < floor) return;
+        for (const [pattern, at] of clears) if (at > requestedAt && key.includes(pattern)) return;
+      }
+      entries.delete(key);
+      while (entries.size >= Math.max(1, config.maxEntries)) {
+        const oldest = entries.keys().next();
+        if (oldest.done) break;
+        entries.delete(oldest.value);
+      }
+      if (config.maxEntries > 0) entries.set(key, { data, timestamp: now() });
+    }
+    function clear() {
+      entries.clear();
+      floor = ++clock;
+      clears.clear();
+    }
+    function clearMatching(pattern) {
+      clears.delete(pattern);
+      clears.set(pattern, ++clock);
+      if (clears.size > 32) {
+        const oldest = clears.entries().next();
+        if (!oldest.done) {
+          clears.delete(oldest.value[0]);
+          floor = oldest.value[1];
         }
+      }
+      for (const key of entries.keys()) if (key.includes(pattern)) entries.delete(key);
+    }
+    return { get, set, clear, clearMatching, stamp: () => clock };
+  }
+
+  // client/src/core/api/types.ts
+  function abortError() {
+    const error = new Error("Request aborted");
+    error.name = "AbortError";
+    return error;
+  }
+  function isAbort(error) {
+    return typeof error === "object" && error !== null && "name" in error && error.name === "AbortError";
+  }
+  var HttpError = class extends Error {
+    constructor(status) {
+      super(`HTTP ${status}`);
+      this.status = status;
+      this.name = "HttpError";
+    }
+  };
+  var MutationUncertainError = class extends Error {
+    constructor(cause) {
+      super("Mutation outcome is unknown; verify the server state before retrying");
+      this.cause = cause;
+      this.name = "MutationUncertainError";
+    }
+  };
+  var DecodeError = class extends Error {
+    constructor(cause) {
+      super("Response did not match the expected payload");
+      this.cause = cause;
+      this.name = "DecodeError";
+    }
+  };
+
+  // client/src/core/api/cancellation.ts
+  function cancellation(deps, signals, timeoutMs) {
+    const controller = deps.controller();
+    const inputs = [controller.signal];
+    for (const signal2 of signals) if (signal2) inputs.push(signal2);
+    const signal = deps.combineSignals(inputs);
+    const timer = timeoutMs && timeoutMs > 0 ? deps.setTimer(() => controller.abort(), timeoutMs) : void 0;
+    return {
+      controller,
+      signal,
+      dispose() {
+        if (timer !== void 0) deps.clearTimer(timer);
+      }
     };
-
-    /**
-     * Scheduling options for withConcurrencyLimit. coreFetch keeps the same
-     * object on its dedup entry so a normal caller joining a still-queued low
-     * request can promote it (promoteRequest mutates `priority`).
-     * @typedef {Object} ConcurrencyOptions
-     * @property {'low'|'normal'} [priority='normal'] - 'low' = decorative lane.
-     * @property {AbortSignal|null} [signal] - Leaves the queue and rejects with
-     *   an AbortError as soon as it aborts while waiting for a slot.
-     */
-
-    /**
-     * @typedef {Object} QueuedRequest
-     * @property {ConcurrencyOptions} options
-     * @property {number} enqueuedAt
-     * @property {(lane: 'low'|'normal') => void} start - Hands over an already-acquired slot.
-     * @property {() => void} cancel - Rejects with an AbortError (caller removes it from its queue).
-     */
-
-    // In-flight request deduplication
-    /** @type {Map<string, {promise: Promise<any>, signal: AbortSignal|null, limit: ConcurrencyOptions|null}>} */
-    const inFlightRequests = new Map();
-
-    // Response cache with TTL
-    /** @type {Map<string, {data: any, timestamp: number}>} */
-    const responseCache = new Map();
-    // A clear moves this clock on, so a response requested before it can't write the old
-    // answer back. Bounded: an entry only matters while a request from before it is running.
-    let cacheClock = 0;
-    /** @type {Map<string, number>} */
-    const clearedAt = new Map();
-    const CLEARED_AT_MAX = 32;
-    // Anything requested before an evicted clear is refused, whatever its key.
-    let evictedClearAt = 0;
-
-    // AbortController management per page/context
-    /** @type {Map<string, AbortController>} */
-    const activeControllers = new Map();
-
-    // Concurrency control
-    let activeCount = 0;
-    let activeLowCount = 0;
-    /** @type {Array<QueuedRequest>} */
-    const pendingQueue = [];
-    /** @type {Array<QueuedRequest>} */
-    const lowPriorityQueue = [];
-    // Low requests queued before the last navigation: Jellyfin keeps earlier
-    // views in the DOM and their cards never re-request decorations, so these
-    // still run — but only once the current page's low queue is empty.
-    /** @type {Array<QueuedRequest>} */
-    const staleLowQueue = [];
-
-    // Metrics (debug-gated)
-    const metrics = {
-        enabled: false,
-        /** @type {Map<string, any>} */
-        sections: new Map(),
-        /** @type {Array<any>} */
-        requests: [],
-        /** @type {Array<{priority: 'low'|'normal', waitMs: number}>} */
-        queueWaits: []
-    };
-
-    /**
-     * Sleep utility with jitter support. Rejects with an AbortError as soon as
-     * `signal` aborts, so an aborted request frees its slot without waiting out
-     * a retry backoff.
-     * @param {number} ms
-     * @param {AbortSignal|null} [signal]
-     * @returns {Promise<void>}
-     */
-    function sleep(ms, signal) {
-        return new Promise((resolve, reject) => {
-            if (signal && signal.aborted) {
-                reject(createAbortError());
-                return;
-            }
-            const onAbort = () => {
-                clearTimeout(timer);
-                reject(createAbortError());
-            };
-            const timer = setTimeout(() => {
-                if (signal) signal.removeEventListener('abort', onAbort);
-                resolve();
-            }, ms);
-            if (signal) signal.addEventListener('abort', onAbort, { once: true });
-        });
-    }
-
-    /**
-     * Same AbortError shape fetchWithRetry throws.
-     * @returns {Error}
-     */
-    function createAbortError() {
-        const abortError = new Error('Request aborted');
-        abortError.name = 'AbortError';
-        return abortError;
-    }
-
-    /**
-     * Calculate exponential backoff with jitter
-     * @param {number} attempt
-     * @param {typeof CONFIG.retry} [config]
-     */
-    function calculateBackoff(attempt, config = CONFIG.retry) {
-        const exponentialDelay = config.baseDelayMs * Math.pow(2, attempt - 1);
-        const clampedDelay = Math.min(exponentialDelay, config.maxDelayMs);
-        const jitter = clampedDelay * config.jitterFactor * (Math.random() * 2 - 1);
-        return Math.max(0, Math.round(clampedDelay + jitter));
-    }
-
-    /**
-     * Check if an error/status is retryable
-     * @param {*} error
-     * @param {number} [status]
-     */
-    function isRetryable(error, status) {
-        // Network errors are retryable
-        if (error && !status) {
-            return error.name !== 'AbortError';
+  }
+  function abortable(promise, signal) {
+    if (!signal) return promise;
+    return new Promise((resolve, reject) => {
+      const onAbort = () => {
+        signal.removeEventListener("abort", onAbort);
+        reject(abortError());
+      };
+      if (signal.aborted) onAbort();
+      else signal.addEventListener("abort", onAbort, { once: true });
+      promise.then(
+        (value) => {
+          signal.removeEventListener("abort", onAbort);
+          if (signal.aborted) reject(abortError());
+          else resolve(value);
+        },
+        (error) => {
+          signal.removeEventListener("abort", onAbort);
+          reject(error);
         }
-        return CONFIG.retry.retryableStatuses.includes(/** @type {number} */ (status));
-    }
-
-    /**
-     * Fetch with automatic retry and exponential backoff
-     * @param {string} url
-     * @param {RequestInit} [options]
-     * @param {typeof CONFIG.retry} [retryConfig]
-     * @returns {Promise<Response>}
-     */
-    async function fetchWithRetry(url, options = {}, retryConfig = CONFIG.retry) {
-        const startTime = performance.now();
-        let lastError;
-        let lastStatus;
-
-        for (let attempt = 1; attempt <= retryConfig.maxAttempts; attempt++) {
-            // Check time budget
-            if (performance.now() - startTime > retryConfig.timeoutBudgetMs) {
-                throw new Error(`Time budget exceeded (${retryConfig.timeoutBudgetMs}ms)`);
-            }
-
-            // Check if aborted
-            if (options.signal?.aborted) {
-                const abortError = new Error('Request aborted');
-                abortError.name = 'AbortError';
-                throw abortError;
-            }
-
-            try {
-                const response = await fetch(url, options);
-
-                if (response.ok) {
-                    if (metrics.enabled) {
-                        metrics.requests.push({
-                            url,
-                            attempt,
-                            status: response.status,
-                            duration: performance.now() - startTime
-                        });
-                    }
-                    return response;
-                }
-
-                lastStatus = response.status;
-                lastError = /** @type {any} */ (new Error(`HTTP ${response.status}`));
-                lastError.status = response.status;
-
-                // Capture body so callers can read structured error details (e.g. quota messages).
-                try {
-                    const text = await response.clone().text();
-                    if (text) {
-                        lastError.responseText = text;
-                        try {
-                            lastError.responseJSON = JSON.parse(text);
-                        } catch (e) {
-                            // Body wasn't JSON (Seerr HTML challenge page, etc) — keep responseText.
-                            console.debug(`${logPrefix} Error body not JSON:`, /** @type {Error} */ (e).message);
-                        }
-                    }
-                } catch (readErr) {
-                    if (/** @type {any} */ (readErr)?.name === 'AbortError') throw readErr;
-                    console.debug(`${logPrefix} Failed to read error body:`, readErr);
-                }
-
-                if (!isRetryable(null, response.status)) {
-                    throw lastError;
-                }
-            } catch (error) {
-                lastError = error;
-
-                // Don't retry abort errors
-                if (/** @type {any} */ (error).name === 'AbortError') {
-                    throw error;
-                }
-
-                // Don't retry non-retryable errors
-                if (!isRetryable(error, lastStatus)) {
-                    throw error;
-                }
-            }
-
-            // Wait before retry (except on last attempt)
-            if (attempt < retryConfig.maxAttempts) {
-                const delay = calculateBackoff(attempt, retryConfig);
-                if (metrics.enabled) {
-                    console.debug(`${logPrefix} Retry ${attempt}/${retryConfig.maxAttempts} for ${url} in ${delay}ms`);
-                }
-                await sleep(delay, options.signal);
-            }
-        }
-
-        // All retries exhausted
-        if (metrics.enabled) {
-            console.warn(`${logPrefix} All retries exhausted for ${url}`);
-        }
-        throw lastError;
-    }
-
-    /**
-     * Deduplicated fetch - shares in-flight requests for identical keys
-     * Note: When signal is provided, we clone the result instead of sharing
-     * the promise to prevent abort propagation to other waiters
-     * @param {string} key
-     * @param {() => Promise<any>} fetchFn
-     * @param {AbortSignal} [signal]
-     * @param {ConcurrencyOptions} [limit] - The scheduling options fetchFn passes to
-     *   withConcurrencyLimit; any joiner not itself low priority (including callers
-     *   that omit this) promotes a queued low request.
-     */
-    function deduplicatedFetch(key, fetchFn, signal, limit) {
-        // Share an in-flight request only with callers on the SAME abort signal
-        // (or both unsignalled): a caller must never adopt a request that another
-        // caller's controller can abort — or already has. The entry is dropped
-        // synchronously when its signal aborts, so `abort(); fetch(sameKey)` in
-        // one synchronous block starts a fresh request instead of inheriting a
-        // dead promise (its `.finally` would only run a task later).
-        const wanted = signal || null;
-        const existing = inFlightRequests.get(key);
-        if (existing && existing.signal === wanted && !(signal && signal.aborted)) {
-            if (metrics.enabled) {
-                console.debug(`${logPrefix} Reusing in-flight request for ${key}`);
-            }
-            // A decorative lookup must not make a primary caller wait in the
-            // low lane for the same data.
-            if (existing.limit && (!limit || limit.priority !== 'low')) {
-                promoteRequest(existing.limit);
-            }
-            return existing.promise;
-        }
-
-        /** @type {{promise: Promise<any>, signal: AbortSignal|null, limit: ConcurrencyOptions|null}} */
-        const entry = {
-            promise: /** @type {Promise<any>} */ (/** @type {unknown} */ (null)),
-            signal: wanted,
-            limit: limit || null
-        };
-        const release = () => {
-            // Only remove OUR entry: after a user-switch flush a new
-            // request may already occupy this key — deleting it would let
-            // a third caller start a duplicate fetch.
-            if (inFlightRequests.get(key) === entry) {
-                inFlightRequests.delete(key);
-            }
-        };
-        const onAbort = () => release();
-        if (signal) signal.addEventListener('abort', onAbort, { once: true });
-        entry.promise = fetchFn().finally(() => {
-            release();
-            if (signal) signal.removeEventListener('abort', onAbort);
-        });
-
-        inFlightRequests.set(key, entry);
-        return entry.promise;
-    }
-
-    /**
-     * Low-lane cap: maxLowConcurrent, widened to maxConcurrent - 1 while no
-     * normal request is queued or running (one slot always stays free for the
-     * next normal arrival).
-     */
-    function lowLaneCap() {
-        const idle = pendingQueue.length === 0 && activeCount === activeLowCount;
-        const { maxConcurrent, maxLowConcurrent } = CONFIG.concurrency;
-        return idle ? Math.max(maxLowConcurrent, maxConcurrent - 1) : maxLowConcurrent;
-    }
-
-    /**
-     * Start queued requests while slots are free: every waiting normal request
-     * first, then current-page low requests, then previous-page ones, up to the
-     * low-lane cap. The slot is counted here, before the waiter resumes, so a
-     * synchronous caller in the same tick cannot also claim it.
-     */
-    function drainQueues() {
-        while (activeCount < CONFIG.concurrency.maxConcurrent) {
-            /** @type {QueuedRequest|undefined} */
-            let next;
-            /** @type {'low'|'normal'} */
-            let lane;
-            if (pendingQueue.length > 0) {
-                next = pendingQueue.shift();
-                lane = 'normal';
-            } else if (activeLowCount < lowLaneCap() && (lowPriorityQueue.length > 0 || staleLowQueue.length > 0)) {
-                next = lowPriorityQueue.length > 0 ? lowPriorityQueue.shift() : staleLowQueue.shift();
-                lane = 'low';
-            } else {
-                break;
-            }
-            if (!next) break;
-            activeCount++;
-            if (lane === 'low') activeLowCount++;
-            if (metrics.enabled) {
-                metrics.queueWaits.push({ priority: lane, waitMs: performance.now() - next.enqueuedAt });
-            }
-            next.start(lane);
-        }
-    }
-
-    /**
-     * Move a still-queued low request to the back of the normal queue. A low
-     * request that is already running keeps its low-lane slot until it settles.
-     * Promotion bypasses maxQueueSize: the request is already admitted.
-     * @param {ConcurrencyOptions} options
-     */
-    function promoteRequest(options) {
-        if (options.priority !== 'low') return;
-        options.priority = 'normal';
-        for (const queue of [lowPriorityQueue, staleLowQueue]) {
-            const index = queue.findIndex(entry => entry.options === options);
-            if (index === -1) continue;
-            pendingQueue.push(queue.splice(index, 1)[0]);
-            drainQueues();
-            return;
-        }
-    }
-
-    /**
-     * Remove a waiting request from whichever queue holds it.
-     * @param {QueuedRequest} entry
-     */
-    function removeQueued(entry) {
-        for (const queue of [pendingQueue, lowPriorityQueue, staleLowQueue]) {
-            const index = queue.indexOf(entry);
-            if (index !== -1) queue.splice(index, 1);
-        }
-    }
-
-    /**
-     * Wait in the queue for the request's lane until drainQueues hands over a slot.
-     * @param {ConcurrencyOptions} options
-     * @returns {Promise<'low'|'normal'>} The lane whose slot was acquired.
-     */
-    function enqueue(options) {
-        const low = options.priority === 'low';
-        const queue = low ? lowPriorityQueue : pendingQueue;
-        const maxSize = low ? CONFIG.concurrency.maxLowQueueSize : CONFIG.concurrency.maxQueueSize;
-        const queued = low ? lowPriorityQueue.length + staleLowQueue.length : pendingQueue.length;
-        if (queued >= maxSize) {
-            // A full low lane makes room by dropping the oldest previous-page lookup.
-            const evicted = low ? staleLowQueue.shift() : undefined;
-            if (!evicted) return Promise.reject(new Error('Request queue full - too many pending requests'));
-            evicted.cancel();
-        }
-        const signal = options.signal || null;
-        return new Promise((resolve, reject) => {
-            // Aborted while waiting: leave the queue now instead of holding a
-            // place until a slot frees, and never consume that slot later.
-            const onAbort = () => {
-                removeQueued(entry);
-                entry.cancel();
-            };
-            /** @type {QueuedRequest} */
-            const entry = {
-                options,
-                enqueuedAt: performance.now(),
-                start: (lane) => {
-                    if (signal) signal.removeEventListener('abort', onAbort);
-                    resolve(lane);
-                },
-                cancel: () => {
-                    if (signal) signal.removeEventListener('abort', onAbort);
-                    reject(createAbortError());
-                }
-            };
-            if (signal) signal.addEventListener('abort', onAbort, { once: true });
-            queue.push(entry);
-        });
-    }
-
-    /**
-     * On navigation, demote waiting low requests behind the new page's: they
-     * still run (earlier views stay in the DOM and their cards never retry),
-     * but only once the current low queue is empty. Running requests and the
-     * normal queue (which holds any promoted request) are untouched.
-     */
-    function demoteLowPriorityQueue() {
-        staleLowQueue.push(...lowPriorityQueue.splice(0));
-    }
-
-    /**
-     * Reject every waiting request in every queue (user switch). Headers and
-     * the identity epoch are captured when a request starts, so a request
-     * queued as user A must never go out — writes included — as user B.
-     */
-    function cancelAllQueued() {
-        for (const queue of [pendingQueue, lowPriorityQueue, staleLowQueue]) {
-            for (const entry of queue.splice(0)) entry.cancel();
-        }
-    }
-
-    /**
-     * Execute function with concurrency limit
-     * @param {() => Promise<any>} fn
-     * @param {ConcurrencyOptions} [options] - Optional priority lane and abort signal.
-     */
-    async function withConcurrencyLimit(fn, options = {}) {
-        if (options.signal && options.signal.aborted) throw createAbortError();
-
-        /** @type {'low'|'normal'} */
-        let lane = options.priority === 'low' ? 'low' : 'normal';
-        const canStart = activeCount < CONFIG.concurrency.maxConcurrent && pendingQueue.length === 0
-            && (lane === 'normal'
-                || (lowPriorityQueue.length === 0 && activeLowCount < lowLaneCap()));
-        if (canStart) {
-            activeCount++;
-            if (lane === 'low') activeLowCount++;
-        } else {
-            // Wait if at capacity (the slot is counted by drainQueues)
-            lane = await enqueue(options);
-        }
-
-        try {
-            return await fn();
-        } finally {
-            activeCount--;
-            if (lane === 'low') activeLowCount--;
-            // Release next queued request
-            drainQueues();
-        }
-    }
-
-    /**
-     * Get AbortSignal for a page/context key
-     * Automatically aborts previous request for the same key
-     * @param {string} pageKey
-     */
-    function getAbortSignal(pageKey) {
-        // Abort previous controller for this key
-        const previous = activeControllers.get(pageKey);
-        if (previous) {
-            previous.abort();
-        }
-
-        const controller = new AbortController();
-        activeControllers.set(pageKey, controller);
-        return controller.signal;
-    }
-
-    /**
-     * Abort all active requests (call on navigation)
-     */
-    function abortAllRequests() {
-        for (const controller of activeControllers.values()) {
-            controller.abort();
-        }
-        activeControllers.clear();
-        inFlightRequests.clear();
-    }
-
-    /**
-     * Abort request for a specific page key
-     * @param {string} pageKey
-     */
-    function abortRequest(pageKey) {
-        const controller = activeControllers.get(pageKey);
-        if (controller) {
-            controller.abort();
-            activeControllers.delete(pageKey);
-        }
-    }
-
-    /**
-     * Get cached response (LRU - moves accessed entry to end)
-     * @param {string} key
-     */
-    function getCached(key) {
-        const entry = responseCache.get(key);
-        if (entry && Date.now() - entry.timestamp < CONFIG.cache.ttlMs) {
-            if (metrics.enabled) {
-                console.debug(`${logPrefix} Cache hit for ${key}`);
-            }
-            // LRU: Move to end by re-inserting
-            responseCache.delete(key);
-            responseCache.set(key, entry);
-            return entry.data;
-        }
-        // Remove stale entry
-        if (entry) {
-            responseCache.delete(key);
-        }
-        return null;
-    }
-
-    /**
-     * Set cached response
-     * @param {string} key
-     * @param {*} data
-     * @param {number} [requestedAt] - cacheStamp() from before the request. A clear of
-     *   this key since then drops the write.
-     */
-    function setCache(key, data, requestedAt) {
-        if (requestedAt !== undefined) {
-            if (requestedAt < evictedClearAt) return;
-            for (const [pattern, at] of clearedAt) {
-                if (at > requestedAt && key.includes(pattern)) return;
-            }
-        }
-        // Refresh an existing key without evicting an unrelated entry. Deleting
-        // first also moves the refreshed response to the newest LRU position.
-        responseCache.delete(key);
-        // Evict oldest entries if at capacity
-        if (responseCache.size >= CONFIG.cache.maxEntries) {
-            const oldestKey = responseCache.keys().next().value;
-            if (oldestKey !== undefined) responseCache.delete(oldestKey);
-        }
-
-        responseCache.set(key, {
-            data,
-            timestamp: Date.now()
-        });
-    }
-
-    /**
-     * Clear all cache entries
-     */
-    function clearCache() {
-        responseCache.clear();
-    }
-
-    /**
-     * Clear cache entries matching a pattern
-     * @param {string} pattern
-     */
-    function clearCacheMatching(pattern) {
-        clearedAt.delete(pattern);
-        clearedAt.set(pattern, ++cacheClock);
-        if (clearedAt.size > CLEARED_AT_MAX) {
-            const [oldest, at] = clearedAt.entries().next().value;
-            clearedAt.delete(oldest);
-            evictedClearAt = at;
-        }
-        for (const key of responseCache.keys()) {
-            if (key.includes(pattern)) {
-                responseCache.delete(key);
-            }
-        }
-        // A later request must not join one started before the clear.
-        for (const key of inFlightRequests.keys()) {
-            if (key.includes(pattern)) inFlightRequests.delete(key);
-        }
-    }
-
-    /**
-     * The position to pass to setCache when a response from a request starting now arrives.
-     * @returns {number} The current cache clock.
-     */
-    function cacheStamp() {
-        return cacheClock;
-    }
-
-    // Cache keys never include a user id, but proxied responses (Seerr, tag
-    // data) ARE per-user server-side — flush everything when the signed-in
-    // user changes so user B never reads user A's cached responses.
-    JE.session?.onUserChange('core-api', () => {
-        responseCache.clear();
-        inFlightRequests.clear();
-        cancelAllQueued();
+      );
     });
+  }
 
-    // Metrics API
-
-    /**
-     * Start measuring a section's load time
-     * @param {string} sectionName
-     */
-    function startMeasurement(sectionName) {
-        if (!metrics.enabled) return;
-        metrics.sections.set(sectionName, {
-            startTime: performance.now(),
-            endTime: null,
-            requestCount: 0,
-            totalBytes: 0,
-            cacheHits: 0
-        });
-    }
-
-    /**
-     * Record a request for metrics
-     * @param {string} sectionName
-     * @param {number} bytes
-     * @param {boolean} [fromCache]
-     */
-    function recordRequest(sectionName, bytes, fromCache = false) {
-        if (!metrics.enabled) return;
-        const section = metrics.sections.get(sectionName);
-        if (section) {
-            section.requestCount++;
-            section.totalBytes += bytes || 0;
-            if (fromCache) section.cacheHits++;
-        }
-    }
-
-    /**
-     * End measurement and log results
-     * @param {string} sectionName
-     */
-    function endMeasurement(sectionName) {
-        if (!metrics.enabled) return;
-        const section = metrics.sections.get(sectionName);
-        if (section) {
-            section.endTime = performance.now();
-            const ttfr = section.endTime - section.startTime;
-            console.debug(`[JE Metrics] ${sectionName}:`, {
-                ttfr: `${ttfr.toFixed(1)}ms`,
-                requests: section.requestCount,
-                cacheHits: section.cacheHits,
-                bytes: `${(section.totalBytes / 1024).toFixed(1)}KB`
-            });
-            return {
-                ttfr,
-                requests: section.requestCount,
-                cacheHits: section.cacheHits,
-                bytes: section.totalBytes
-            };
-        }
-        return null;
-    }
-
-    /**
-     * Get all metrics
-     */
-    function getMetrics() {
-        const result = {
-            /** @type {Record<string, any>} */
-            sections: {},
-            requests: metrics.requests.slice(),
-            queueWaits: metrics.queueWaits.slice()
+  // client/src/core/api/dedup.ts
+  function createDedup(controller, promote) {
+    const entries = /* @__PURE__ */ new Map();
+    function run(key, start, signal, priority) {
+      if (signal.aborted) return Promise.reject(abortError());
+      let entry = entries.get(key);
+      if (!entry || entry.controller.signal.aborted) {
+        const ctl = controller();
+        const limit = { priority, signal: ctl.signal };
+        const promise = start(ctl.signal, limit);
+        entry = { promise, controller: ctl, limit, subscribers: 0, settled: false };
+        const created = entry;
+        entries.set(key, created);
+        const finish = () => {
+          created.settled = true;
+          if (entries.get(key) === created) entries.delete(key);
         };
-        for (const [name, data] of metrics.sections) {
-            result.sections[name] = { ...data };
+        void promise.then(finish, finish);
+      } else if (priority !== "low") promote(entry.limit);
+      const current = entry;
+      current.subscribers++;
+      let left = false;
+      const leave = () => {
+        if (left) return;
+        left = true;
+        signal.removeEventListener("abort", leave);
+        current.subscribers--;
+        if (current.subscribers === 0 && !current.settled) {
+          if (entries.get(key) === current) entries.delete(key);
+          current.controller.abort();
         }
-        return result;
+      };
+      signal.addEventListener("abort", leave, { once: true });
+      return abortable(current.promise, signal).finally(leave);
     }
+    return {
+      run,
+      forget(pattern = "") {
+        for (const key of entries.keys()) if (key.includes(pattern)) entries.delete(key);
+      }
+    };
+  }
 
-    /**
-     * Reset metrics
-     */
-    function resetMetrics() {
+  // client/src/core/api/metrics.ts
+  function createMetrics(now, debug) {
+    const metrics = {
+      enabled: false,
+      sections: /* @__PURE__ */ new Map(),
+      requests: [],
+      queueWaits: []
+    };
+    return {
+      metrics,
+      startMeasurement(name) {
+        if (metrics.enabled) metrics.sections.set(name, { startTime: now(), endTime: null, requestCount: 0, totalBytes: 0, cacheHits: 0 });
+      },
+      recordRequest(name, bytes, fromCache = false) {
+        const section = metrics.sections.get(name);
+        if (!metrics.enabled || !section) return;
+        section.requestCount++;
+        section.totalBytes += bytes || 0;
+        if (fromCache) section.cacheHits++;
+      },
+      endMeasurement(name) {
+        if (!metrics.enabled) return void 0;
+        const section = metrics.sections.get(name);
+        if (!section) return null;
+        section.endTime = now();
+        const result = {
+          ttfr: section.endTime - section.startTime,
+          requests: section.requestCount,
+          cacheHits: section.cacheHits,
+          bytes: section.totalBytes
+        };
+        debug(`[JE Metrics] ${name}:`, { ...result, ttfr: `${result.ttfr.toFixed(1)}ms`, bytes: `${(result.bytes / 1024).toFixed(1)}KB` });
+        return result;
+      },
+      getMetrics() {
+        const sections = {};
+        for (const [name, value] of metrics.sections) Object.defineProperty(sections, name, { value: { ...value }, enumerable: true });
+        return { sections, requests: metrics.requests.slice(), queueWaits: metrics.queueWaits.slice() };
+      },
+      resetMetrics() {
         metrics.sections.clear();
         metrics.requests = [];
         metrics.queueWaits = [];
-    }
+      }
+    };
+  }
 
-    // Abort all in-flight requests on SPA navigation so that mid-fetch results
-    // from page A don't land on page B with stale state. Modules continue to
-    // do their own per-section cleanup; this is a belt-and-braces global
-    // handler. Uses the deduplicated navigation pipeline, which covers
-    // popstate, hashchange AND pushState transitions. Queued decorative
-    // (low-priority) lookups are demoted behind the new page's, not dropped.
-    JE.core.navigation.onNavigate(() => {
-        try { abortAllRequests(); } catch (_) { /* never propagate */ }
-        try { demoteLowPriorityQueue(); } catch (_) { /* never propagate */ }
+  // client/src/core/api/retry.ts
+  function backoff(attempt, config, random) {
+    const delay = Math.min(config.baseDelayMs * 2 ** (attempt - 1), config.maxDelayMs);
+    return Math.max(0, Math.round(delay + delay * config.jitterFactor * (random * 2 - 1)));
+  }
+  function sleep(deps, ms, signal) {
+    return new Promise((resolve, reject) => {
+      if (signal.aborted) {
+        reject(abortError());
+        return;
+      }
+      const abort = () => {
+        deps.clearTimer(timer);
+        reject(abortError());
+      };
+      const timer = deps.setTimer(() => {
+        signal.removeEventListener("abort", abort);
+        resolve();
+      }, ms);
+      signal.addEventListener("abort", abort, { once: true });
     });
+  }
+  async function retryFetch(deps, url, options, config, lease, record, retrySafe = false) {
+    const started = deps.now();
+    const safe = retrySafe || ["GET", "HEAD", "OPTIONS"].includes((options.method || "GET").toUpperCase());
+    const attempts = safe ? Math.max(1, config.maxAttempts) : 1;
+    const cancel = cancellation(deps, [lease.signal, options.signal], config.timeoutBudgetMs);
+    const init = { ...options, signal: cancel.signal };
+    let lastError = new Error("No request attempts");
+    try {
+      for (let attempt = 1; attempt <= attempts; attempt++) {
+        lease.throwIfStale();
+        if (cancel.signal.aborted) throw abortError();
+        if (deps.now() - started > config.timeoutBudgetMs) throw new Error(`Time budget exceeded (${config.timeoutBudgetMs}ms)`);
+        try {
+          const response = await abortable(deps.fetch(url, init), cancel.signal);
+          lease.throwIfStale();
+          if (response.ok) {
+            record({ url, attempt, status: response.status, duration: deps.now() - started });
+            return response;
+          }
+          const error = new HttpError(response.status);
+          try {
+            const text2 = await abortable(response.clone().text(), cancel.signal);
+            if (text2) {
+              error.responseText = text2;
+              try {
+                const data = JSON.parse(text2);
+                error.responseJSON = data;
+              } catch (parseError) {
+                deps.debug("Error body not JSON:", parseError);
+              }
+            }
+          } catch (readError) {
+            if (isAbort(readError)) throw readError;
+            deps.debug("Failed to read error body:", readError);
+          }
+          lease.throwIfStale();
+          lastError = error;
+          if (!config.retryableStatuses.includes(response.status) || !safe) throw error;
+        } catch (error) {
+          lease.throwIfStale();
+          if (isAbort(error)) throw error;
+          if (error instanceof HttpError && (!config.retryableStatuses.includes(error.status) || !safe)) throw error;
+          if (!safe) throw new MutationUncertainError(error);
+          lastError = error;
+        }
+        if (attempt < attempts) await sleep(deps, backoff(attempt, config, deps.random()), cancel.signal);
+      }
+      throw lastError;
+    } finally {
+      cancel.dispose();
+    }
+  }
 
+  // client/src/core/api/scheduler.ts
+  function createScheduler(config, now, recordWait) {
+    let active = 0, activeLow = 0;
+    const normal = [], low = [], stale = [];
+    const queues = [normal, low, stale];
+    const cap = () => normal.length === 0 && active === activeLow ? Math.max(config.maxLowConcurrent, config.maxConcurrent - 1) : config.maxLowConcurrent;
+    function drain() {
+      while (active < config.maxConcurrent) {
+        let lane = "normal";
+        let next = normal.shift();
+        if (!next) {
+          if (activeLow >= cap()) break;
+          next = low.shift() || stale.shift();
+          lane = "low";
+        }
+        if (!next) break;
+        active++;
+        if (lane === "low") activeLow++;
+        recordWait(lane, now() - next.enqueuedAt);
+        next.start(lane);
+      }
+    }
+    function enqueue(options) {
+      const decorative = options.priority === "low";
+      const queue = decorative ? low : normal;
+      const size = decorative ? low.length + stale.length : normal.length;
+      if (size >= (decorative ? config.maxLowQueueSize : config.maxQueueSize)) {
+        const evicted = decorative ? stale.shift() : void 0;
+        if (!evicted) return Promise.reject(new Error("Request queue full - too many pending requests"));
+        evicted.cancel();
+      }
+      return new Promise((resolve, reject) => {
+        const signal = options.signal;
+        const onAbort = () => {
+          for (const list of queues) {
+            const index = list.indexOf(entry);
+            if (index >= 0) list.splice(index, 1);
+          }
+          entry.cancel();
+          drain();
+        };
+        const cleanup = () => signal?.removeEventListener("abort", onAbort);
+        const entry = {
+          options,
+          enqueuedAt: now(),
+          start(lane) {
+            cleanup();
+            resolve(lane);
+          },
+          cancel() {
+            cleanup();
+            reject(abortError());
+          }
+        };
+        if (signal?.aborted) {
+          entry.cancel();
+          return;
+        }
+        signal?.addEventListener("abort", onAbort, { once: true });
+        queue.push(entry);
+      });
+    }
+    async function run(fn, options = {}) {
+      if (options.signal?.aborted) throw abortError();
+      let lane = options.priority === "low" ? "low" : "normal";
+      if (active < config.maxConcurrent && normal.length === 0 && (lane === "normal" || low.length === 0 && activeLow < cap())) {
+        active++;
+        if (lane === "low") activeLow++;
+      } else lane = await enqueue(options);
+      try {
+        if (options.signal?.aborted) throw abortError();
+        return await fn();
+      } finally {
+        active--;
+        if (lane === "low") activeLow--;
+        drain();
+      }
+    }
+    function promote(options) {
+      if (options.priority !== "low") return;
+      options.priority = "normal";
+      for (const queue of [low, stale]) {
+        const index = queue.findIndex((entry2) => entry2.options === options);
+        if (index < 0) continue;
+        const entry = queue.splice(index, 1)[0];
+        if (entry) normal.push(entry);
+        drain();
+        return;
+      }
+    }
+    return {
+      run,
+      promote,
+      demote() {
+        stale.push(...low.splice(0));
+      },
+      cancelAll() {
+        for (const queue of queues) for (const entry of queue.splice(0)) entry.cancel();
+      }
+    };
+  }
+
+  // client/src/core/api/api.ts
+  function createApi(deps) {
+    const CONFIG = {
+      retry: {
+        maxAttempts: 2,
+        baseDelayMs: 500,
+        maxDelayMs: 5e3,
+        jitterFactor: 0.3,
+        retryableStatuses: [408, 429, 500, 502, 503, 504],
+        timeoutBudgetMs: 15e3
+      },
+      cache: { ttlMs: 30 * 60 * 1e3, maxEntries: 200 },
+      concurrency: { maxConcurrent: 4, maxQueueSize: 100, maxLowConcurrent: 2, maxLowQueueSize: 200 }
+    };
+    const measurements = createMetrics(deps.now, deps.debug);
+    const { metrics } = measurements;
+    const scheduler = createScheduler(CONFIG.concurrency, deps.now, (priority, waitMs) => {
+      if (metrics.enabled) metrics.queueWaits.push({ priority, waitMs });
+    });
+    const cache = createCache(CONFIG.cache, deps.wallNow);
+    const dedup = createDedup(deps.controller, scheduler.promote);
+    const controllers = /* @__PURE__ */ new Map();
+    const legacy = /* @__PURE__ */ new Map();
+    const scheduledOptions = /* @__PURE__ */ new WeakMap();
+    const record = (metric) => {
+      if (metrics.enabled) metrics.requests.push(metric);
+    };
+    function clearCacheMatching(pattern) {
+      cache.clearMatching(pattern);
+      dedup.forget(pattern);
+      for (const key of legacy.keys()) if (key.includes(pattern)) legacy.delete(key);
+    }
+    function clearCache() {
+      cache.clear();
+      dedup.forget();
+      legacy.clear();
+    }
+    function abortAllRequests() {
+      for (const controller of controllers.values()) controller.abort();
+      controllers.clear();
+      dedup.forget();
+      legacy.clear();
+    }
+    deps.onIdentityChange(() => {
+      clearCache();
+      scheduler.cancelAll();
+      abortAllRequests();
+    });
+    deps.onNavigate(() => {
+      abortAllRequests();
+      scheduler.demote();
+    });
+    function getCached(key) {
+      deps.acquireLease().throwIfStale();
+      return cache.get(key);
+    }
+    function setCache(key, data, requestedAt) {
+      deps.acquireLease().throwIfStale();
+      cache.set(key, data, requestedAt);
+    }
+    async function fetchWithRetry(url, options = {}, config = CONFIG.retry) {
+      const lease = deps.acquireLease();
+      return retryFetch(deps, url, options, config, lease, record);
+    }
+    async function withConcurrencyLimit(fn, options = {}) {
+      const lease = deps.acquireLease();
+      const cancel = cancellation(deps, [lease.signal, options.signal]);
+      const scheduled = { ...options, signal: cancel.signal };
+      scheduledOptions.set(options, scheduled);
+      try {
+        return await scheduler.run(async () => {
+          lease.throwIfStale();
+          const result = await abortable(fn(), cancel.signal);
+          lease.throwIfStale();
+          return result;
+        }, scheduled);
+      } finally {
+        scheduledOptions.delete(options);
+        cancel.dispose();
+      }
+    }
+    function deduplicatedFetch(key, fn, signal, limit) {
+      const lease = deps.acquireLease();
+      if (signal?.aborted) return Promise.reject(abortError());
+      const existing = legacy.get(key);
+      if (existing && existing.signal === (signal || null)) {
+        if (existing.limit && limit?.priority !== "low") {
+          scheduler.promote(scheduledOptions.get(existing.limit) || existing.limit);
+          existing.limit.priority = "normal";
+        }
+        return existing.promise;
+      }
+      const cancel = cancellation(deps, [lease.signal, signal]);
+      let pending;
+      try {
+        lease.throwIfStale();
+        pending = fn();
+      } catch (error) {
+        cancel.dispose();
+        return Promise.reject(error);
+      }
+      const promise = abortable(pending, cancel.signal).then((value) => {
+        lease.throwIfStale();
+        return value;
+      });
+      const entry = { promise, signal: signal || null, ...limit ? { limit } : {} };
+      const release = () => {
+        if (legacy.get(key) === entry) legacy.delete(key);
+      };
+      cancel.signal.addEventListener("abort", release, { once: true });
+      legacy.set(key, entry);
+      const cleanup = () => {
+        release();
+        cancel.signal.removeEventListener("abort", release);
+        cancel.dispose();
+      };
+      void promise.then(cleanup, cleanup);
+      return promise;
+    }
     const manager = {
-        // Core functions
-        fetchWithRetry,
-        deduplicatedFetch,
-        withConcurrencyLimit,
-
-        // Abort management
-        getAbortSignal,
-        abortAllRequests,
-        abortRequest,
-
-        // Cache management
-        getCached,
-        setCache,
-        clearCache,
-        clearCacheMatching,
-        cacheStamp,
-
-        // Metrics
-        metrics,
-        startMeasurement,
-        recordRequest,
-        endMeasurement,
-        getMetrics,
-        resetMetrics,
-
-        // Configuration (for testing/tuning)
-        CONFIG
+      fetchWithRetry,
+      deduplicatedFetch,
+      withConcurrencyLimit,
+      getAbortSignal(key) {
+        controllers.get(key)?.abort();
+        const controller = deps.controller();
+        controllers.set(key, controller);
+        return controller.signal;
+      },
+      abortAllRequests,
+      abortRequest(key) {
+        controllers.get(key)?.abort();
+        controllers.delete(key);
+      },
+      getCached,
+      setCache,
+      clearCache,
+      clearCacheMatching,
+      cacheStamp() {
+        deps.acquireLease().throwIfStale();
+        return cache.stamp();
+      },
+      ...measurements,
+      CONFIG
     };
+    async function request(url, options, lease) {
+      lease.throwIfStale();
+      const method = options.method || "GET";
+      const isGet = method.toUpperCase() === "GET";
+      const priority = options.priority === "low" ? "low" : "normal";
+      const subscriber = cancellation(deps, [lease.signal, options.signal], options.timeoutMs);
+      const requestedAt = cache.stamp();
+      try {
+        if (subscriber.signal.aborted) throw abortError();
+        if (isGet && options.cacheKey && !options.skipCache) {
+          const cached = cache.get(options.cacheKey);
+          if (cached !== null) return cached;
+        }
+        const start = async (signal, limit) => {
+          const transport = cancellation(deps, [signal, lease.signal]);
+          try {
+            return await scheduler.run(async () => {
+              lease.throwIfStale();
+              if (isGet && options.cacheKey && !options.skipCache) {
+                const cached = cache.get(options.cacheKey);
+                if (cached !== null) return cached;
+              }
+              const headers = {
+                ...options.auth === false ? { Accept: "application/json" } : lease.headers,
+                ...options.headers
+              };
+              const init = { method, headers, signal: transport.signal };
+              if (limit.priority === "low") init.priority = "low";
+              if (options.body !== void 0) {
+                if (typeof options.body === "string") init.body = options.body;
+                else {
+                  const body = JSON.stringify(options.body);
+                  if (body !== void 0) init.body = body;
+                  if (!Object.keys(headers).some((key) => key.toLowerCase() === "content-type")) headers["Content-Type"] = "application/json";
+                }
+              }
+              const response = await retryFetch(
+                deps,
+                url,
+                init,
+                options.skipRetry ? { ...CONFIG.retry, maxAttempts: 1 } : CONFIG.retry,
+                lease,
+                record,
+                options.retrySafe
+              );
+              const text2 = await abortable(response.text(), transport.signal);
+              lease.throwIfStale();
+              const data = text2 ? JSON.parse(text2) : {};
+              if (isGet && options.cacheKey) cache.set(options.cacheKey, data, requestedAt);
+              return data;
+            }, limit);
+          } finally {
+            transport.dispose();
+          }
+        };
+        let result;
+        if (isGet && options.cacheKey) {
+          result = await dedup.run(options.cacheKey, start, subscriber.signal, priority);
+        } else if (isGet && options.auth !== false && Object.keys(options.headers || {}).length === 0) {
+          result = deps.clone(await dedup.run(`GET ${url}`, start, subscriber.signal, priority));
+        } else {
+          result = await abortable(start(subscriber.signal, { priority, signal: subscriber.signal }), subscriber.signal);
+        }
+        lease.throwIfStale();
+        return result;
+      } finally {
+        subscriber.dispose();
+      }
+    }
+    function guarded(url, options, lease) {
+      return request(url, options, lease).then((value) => {
+        lease.throwIfStale();
+        if (options.signal?.aborted) throw abortError();
+        return value;
+      });
+    }
+    const fetch = (url, options = {}) => guarded(url, options, deps.acquireLease());
+    function jf(path, options = {}) {
+      const lease = deps.acquireLease();
+      return guarded(lease.resolve(path), options, lease);
+    }
+    const plugin = (path, options) => jf(`/JellyfinEnhanced${path}`, options);
+    async function decoded(pending, decode, lease) {
+      const value = await pending;
+      lease.throwIfStale();
+      let result;
+      try {
+        result = decode(value);
+      } catch (error) {
+        throw new DecodeError(error);
+      }
+      lease.throwIfStale();
+      return result;
+    }
+    return {
+      fetch,
+      jf,
+      plugin,
+      manager,
+      authHeaders: () => ({ ...deps.acquireLease().headers }),
+      fetchDecoded: (url, decode, options) => {
+        const lease = deps.acquireLease();
+        return decoded(fetch(url, options), decode, lease);
+      },
+      jfDecoded: (path, decode, options) => {
+        const lease = deps.acquireLease();
+        return decoded(jf(path, options), decode, lease);
+      },
+      pluginDecoded: (path, decode, options) => {
+        const lease = deps.acquireLease();
+        return decoded(plugin(path, options), decode, lease);
+      }
+    };
+  }
 
-    // ── Generalized authenticated fetch ──────────────────────────────────────
-
-    /**
-     * Build the standard Jellyfin auth headers.
-     * Jellyfin 12 authenticates from the Authorization header; the legacy
-     * X-Emby-Token is kept for 10.11 back-compat. X-Jellyfin-User-Id lets the
-     * plugin's server side resolve the acting user.
-     * @returns {Record<string, string>}
-     */
-    function authHeaders() {
+  // client/src/host/api-host.ts
+  var text = (value) => typeof value === "string" ? value : "";
+  function installApi() {
+    const host = window;
+    const je = host.JellyfinEnhanced;
+    if (!je) throw new Error("Jellyfin Enhanced must be initialized before API");
+    if (je.core?.api) return;
+    let snapshot;
+    let generation = new AbortController();
+    const handlers = /* @__PURE__ */ new Set();
+    function read() {
+      const client = host.ApiClient;
+      try {
         return {
-            'X-Jellyfin-User-Id': ApiClient.getCurrentUserId(),
-            'Authorization': 'MediaBrowser Token="' + ApiClient.accessToken() + '"',
-            'X-Emby-Token': ApiClient.accessToken(),
-            'Accept': 'application/json'
+          client,
+          user: text(client?.getCurrentUserId()),
+          token: text(client?.accessToken()),
+          server: text(typeof client?.serverId === "function" ? client.serverId() : client?.serverId) || text(client?._serverInfo?.Id),
+          base: client?.getUrl("/") || ""
         };
+      } catch {
+        return { client, user: "", token: "", server: "", base: "" };
+      }
     }
-
-    /**
-     * @typedef {Object} CoreFetchOptions
-     * @property {string} [method='GET'] - HTTP method.
-     * @property {Record<string, string>} [headers] - Extra/override headers.
-     * @property {*} [body] - Request body. Non-string values are JSON.stringify'd.
-     * @property {AbortSignal} [signal] - Caller-supplied abort signal.
-     * @property {string} [cacheKey] - Enables response cache + in-flight dedup (GET only). Plain GETs
-     *   without custom headers still share concurrent identical requests.
-     * @property {boolean} [skipCache=false] - Bypass the response cache.
-     * @property {boolean} [skipRetry=false] - Limit to a single attempt.
-     * @property {boolean} [auth=true] - Include the Jellyfin auth headers.
-     * @property {number} [timeoutMs] - Per-request timeout; aborts via AbortController.
-     * @property {'low'} [priority] - Decorative lookup (badges, icons, per-card tags): runs in
-     *   a capped lane that yields to every waiting normal request, and is sent with
-     *   fetch priority 'low'. A normal caller sharing the same in-flight request promotes it.
-     */
-
-    /**
-     * Authenticated JSON fetch with retry, dedup, concurrency limiting,
-     * caching and optional per-request timeout. Generalizes the former
-     * jellyseerr/api.js managedFetch for all upstreams.
-     * @param {string} url - Fully-qualified URL.
-     * @param {CoreFetchOptions} [options]
-     * @returns {Promise<any>} Parsed JSON response ({} for empty bodies).
-     */
-    async function coreFetch(url, options = {}) {
-        const {
-            method = 'GET',
-            headers = {},
-            body,
-            signal,
-            cacheKey,
-            skipCache = false,
-            skipRetry = false,
-            auth = true,
-            timeoutMs,
-            priority
-        } = options;
-
-        const isGet = method.toUpperCase() === 'GET';
-
-        // One object per request: the limiter reads it while queued, and the
-        // dedup entry keeps it so a normal joiner can promote a queued low request.
-        /** @type {ConcurrencyOptions} */
-        const limit = { priority: priority === 'low' ? 'low' : 'normal', signal: signal || null };
-
-        // Check cache first (GET only)
-        if (isGet && !skipCache && cacheKey) {
-            const cached = getCached(cacheKey);
-            if (cached) return cached;
+    function invalidate() {
+      const old = generation;
+      generation = new AbortController();
+      old.abort();
+      for (const handler of handlers) handler();
+    }
+    function synchronize() {
+      je?.session?.checkNow("api");
+      const current = read();
+      if (snapshot && (snapshot.client !== current.client || snapshot.user !== current.user || snapshot.server !== current.server || snapshot.base !== current.base || snapshot.token !== current.token)) {
+        snapshot = current;
+        invalidate();
+      } else snapshot = current;
+      return current;
+    }
+    je.session?.onUserChange("core-api", () => {
+      snapshot = void 0;
+      invalidate();
+    });
+    function acquireLease() {
+      const current = synchronize();
+      const signal = generation.signal;
+      const session = je?.session?.createLease();
+      function throwIfStale() {
+        synchronize();
+        session?.throwIfStale();
+        if (signal.aborted) throw abortError();
+      }
+      return {
+        signal,
+        headers: {
+          "X-Jellyfin-User-Id": current.user,
+          Authorization: `MediaBrowser Token="${current.token}"`,
+          "X-Emby-Token": current.token,
+          Accept: "application/json"
+        },
+        throwIfStale,
+        resolve(path) {
+          throwIfStale();
+          if (!current.client) throw new Error("Jellyfin ApiClient is unavailable");
+          return current.client.getUrl(path);
         }
-
-        const fetchFn = async () => {
-            /** @type {Record<string, string>} */
-            const requestHeaders = {
-                ...(auth ? authHeaders() : { 'Accept': 'application/json' }),
-                ...headers
-            };
-
-            /** @type {RequestInit} */
-            const init = { method, headers: requestHeaders };
-            // Fetch Priority hint; ignored by browsers without support. Read at
-            // start time so a promoted request goes out at normal priority.
-            if (limit.priority === 'low') init.priority = 'low';
-
-            if (body !== undefined) {
-                if (typeof body === 'string') {
-                    init.body = body;
-                } else {
-                    init.body = JSON.stringify(body);
-                    if (!requestHeaders['Content-Type']) {
-                        requestHeaders['Content-Type'] = 'application/json';
-                    }
-                }
-            }
-
-            // Per-request timeout: abort via our own controller, chained to
-            // the caller's signal so either can cancel the request.
-            /** @type {*} */
-            let timeoutId = null;
-            /** @type {(() => void)|null} */
-            let unchain = null;
-            if (timeoutMs && timeoutMs > 0) {
-                const controller = new AbortController();
-                if (signal) {
-                    if (signal.aborted) {
-                        controller.abort();
-                    } else {
-                        const onAbort = () => controller.abort();
-                        signal.addEventListener('abort', onAbort, { once: true });
-                        unchain = () => signal.removeEventListener('abort', onAbort);
-                    }
-                }
-                timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-                init.signal = controller.signal;
-            } else if (signal) {
-                init.signal = signal;
-            }
-
-            // Identity epoch at request start: a response that finishes after
-            // a user switch must not repopulate the (already flushed) cache —
-            // cache keys carry no user id, so a late write would hand user
-            // A's response to user B.
-            const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
-            const requestedAt = cacheClock;
-
-            try {
-                const response = await fetchWithRetry(
-                    url,
-                    init,
-                    skipRetry ? { ...CONFIG.retry, maxAttempts: 1 } : undefined
-                );
-                // Tolerant JSON parse: some endpoints reply with empty bodies.
-                const text = await response.text();
-                const data = text ? JSON.parse(text) : {};
-
-                if (isGet && cacheKey && (!JE.session || JE.session.isCurrent(requestEpoch))) {
-                    setCache(cacheKey, data, requestedAt);
-                }
-                return data;
-            } finally {
-                if (timeoutId) clearTimeout(timeoutId);
-                if (unchain) unchain();
-            }
-        };
-
-        // In-flight dedup OUTSIDE the concurrency limit so only the one unique
-        // fetch takes a pool slot (waiters share its promise without holding
-        // slots), and re-check the cache once a slot is acquired: a prefetch that
-        // completed while this call queued must not be fetched a second time.
-        // The caller's signal goes to the limiter too, so a request aborted while
-        // queued leaves the queue at once; dedup only shares entries between
-        // callers on the same signal, so that abort already applies to every sharer.
-        const limitedFetch = () => withConcurrencyLimit(() => {
-            if (isGet && !skipCache && cacheKey) {
-                const cached = getCached(cacheKey);
-                if (cached) return Promise.resolve(cached);
-            }
-            return fetchFn();
-        }, limit);
-        if (isGet && cacheKey) return deduplicatedFetch(cacheKey, limitedFetch, signal, limit);
-
-        // Plain GETs share concurrent identical requests too, even without a cacheKey
-        // (nothing is cached). Skipped when a caller customises the headers, since the
-        // response could then differ for the same URL. Each caller gets its own copy so
-        // one mutating its result cannot affect the others.
-        if (isGet && auth && Object.keys(headers).length === 0) {
-            return deduplicatedFetch(`GET ${url}`, limitedFetch, signal, limit).then((data) => structuredClone(data));
-        }
-        return limitedFetch();
+      };
     }
+    const api = createApi({
+      acquireLease,
+      onIdentityChange: (callback) => {
+        handlers.add(callback);
+      },
+      onNavigate: (callback) => {
+        je.core?.navigation?.onNavigate(() => {
+          synchronize();
+          callback();
+        });
+      },
+      fetch: (url, options) => window.fetch(url, options),
+      controller: () => new AbortController(),
+      combineSignals: (signals) => AbortSignal.any(signals),
+      now: () => performance.now(),
+      wallNow: () => Date.now(),
+      random: () => Math.random(),
+      setTimer: (callback, ms) => window.setTimeout(callback, ms),
+      clearTimer: (timer) => window.clearTimeout(timer),
+      clone: (value) => structuredClone(value),
+      debug: (...values) => console.debug(...values)
+    });
+    je.core = je.core || {};
+    je.core.api = api;
+    je.requestManager = api.manager;
+    window.setInterval(synchronize, 5e3);
+  }
 
-    /**
-     * Fetch a Jellyfin-server path (resolved via ApiClient.getUrl).
-     * @param {string} path - e.g. '/Plugins'
-     * @param {CoreFetchOptions} [options]
-     */
-    function jf(path, options) {
-        return coreFetch(ApiClient.getUrl(path), options);
-    }
-
-    /**
-     * Fetch a plugin endpoint under /JellyfinEnhanced/.
-     * @param {string} path - e.g. '/jellyseerr/search?query=...'
-     * @param {CoreFetchOptions} [options]
-     */
-    function pluginFetch(path, options) {
-        return jf(`/JellyfinEnhanced${path}`, options);
-    }
-
-    JE.core.api = {
-        fetch: coreFetch,
-        jf,
-        plugin: pluginFetch,
-        authHeaders,
-        manager
-    };
-
-    console.log('🪼 Jellyfin Enhanced: API client core initialized');
-
-})(window.JellyfinEnhanced);
+  // client/src/core/api/entry.ts
+  installApi();
+})();
+})();
+//# sourceMappingURL=api-client.js.map

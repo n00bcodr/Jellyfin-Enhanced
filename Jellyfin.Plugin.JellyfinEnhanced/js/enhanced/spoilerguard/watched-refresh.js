@@ -1,74 +1,81 @@
-// @ts-check
-// Refresh visible images after mark-played / mark-unplayed mutations.
-(function(JE) {
-    'use strict';
+(() => {
+"use strict";
+(() => {
+  // client/src/host/context.ts
+  function sharedModule(id) {
+    const namespace = window.JellyfinEnhanced?.core?.sharedModules?.[id];
+    if (!namespace) throw new Error(`${id} is not in JE.core.sharedModules: load its provider first (client/shared-modules.json)`);
+    return namespace;
+  }
+  function sharedExport(namespace, name) {
+    return namespace[name];
+  }
 
-    JE.internals = JE.internals || {};
-    /** @type {any} Shared cross-file namespace; each module contributes a focused surface. */
-    const internal = JE.internals.spoilerGuard = JE.internals.spoilerGuard || {};
-    const logPrefix = '🪼 Jellyfin Enhanced [SpoilerGuard]:';
-    const playedRoute = /\/(?:Users\/[a-f0-9-]+\/PlayedItems|UserPlayedItems)\/[a-f0-9-]+/i;
+  // client/generated-shared/stub/client/src/features/spoiler-guard/host.ts
+  var shared = /* @__PURE__ */ sharedModule("features/spoiler-guard/host");
+  var export0 = /* @__PURE__ */ sharedExport(shared, "spoilerHost");
 
-    function maybeRefresh(method, url) {
-        if (typeof url !== 'string' || !playedRoute.test(url)) return;
-        if (method !== 'POST' && method !== 'DELETE') return;
-        if (internal.isStateLoaded() && !internal.hasAnyState()) return;
-        setTimeout(function() {
-            try { internal.refreshSpoilerableImages(); }
-            catch (e) { console.warn(`${logPrefix} watched-state image refresh failed:`, e); }
-        }, 200);
-    }
+  // client/generated-shared/stub/client/src/features/spoiler-guard/ownership.ts
+  var shared2 = /* @__PURE__ */ sharedModule("features/spoiler-guard/ownership");
+  var export02 = /* @__PURE__ */ sharedExport(shared2, "own");
 
-    internal.installWatchedRefresh = function() {
-        if (window.__je_spoilerBlurWatchedHookInstalled) return;
-        window.__je_spoilerBlurWatchedHookInstalled = true;
-
-        try {
-            const originalFetch = window.fetch;
-            if (typeof originalFetch === 'function') {
-                window.fetch = function(input, init) {
-                    const url = typeof input === 'string'
-                        ? input
-                        : input instanceof URL
-                            ? input.href
-                            : input.url;
-                    const method = String(
-                        init?.method || (input instanceof Request ? input.method : 'GET')
-                    ).toUpperCase();
-                    const promise = originalFetch.apply(this, arguments);
-                    if (playedRoute.test(url)) {
-                        promise.then(response => {
-                            if (response?.ok) maybeRefresh(method, url);
-                        }).catch(function() {});
-                    }
-                    return promise;
-                };
-            }
-        } catch (e) {
-            console.warn(`${logPrefix} fetch watched-state hook failed:`, e);
-        }
-
-        try {
-            const originalOpen = XMLHttpRequest.prototype.open;
-            const originalSend = XMLHttpRequest.prototype.send;
-            XMLHttpRequest.prototype.open = function(method, url) {
-                this.__je_spoilerMethod = String(method || '').toUpperCase();
-                this.__je_spoilerUrl = typeof url === 'string' ? url : '';
-                return originalOpen.apply(this, arguments);
-            };
-            XMLHttpRequest.prototype.send = function() {
-                const request = this;
-                const method = request.__je_spoilerMethod;
-                const url = request.__je_spoilerUrl;
-                if (url && playedRoute.test(url) && (method === 'POST' || method === 'DELETE')) {
-                    request.addEventListener('loadend', function() {
-                        if (request.status >= 200 && request.status < 300) maybeRefresh(method, url);
-                    });
-                }
-                return originalSend.apply(this, arguments);
-            };
-        } catch (e) {
-            console.warn(`${logPrefix} XHR watched-state hook failed:`, e);
-        }
+  // client/src/features/spoiler-guard/watched-refresh.ts
+  var { JE, internal } = export0();
+  var owner = export02(JE, "watched");
+  var playedRoute = /\/(?:Users\/[a-f0-9-]+\/PlayedItems|UserPlayedItems)\/[a-f0-9-]+/i;
+  var installed = false;
+  function refresh(method, url) {
+    if (!playedRoute.test(url) || method !== "POST" && method !== "DELETE") return;
+    if (internal.isStateLoaded() && internal.isLoadOk() && !internal.hasAnyState()) return;
+    owner.later(() => internal.refreshSpoilerableImages(), 200);
+  }
+  internal.installWatchedRefresh = () => {
+    if (installed) return;
+    installed = true;
+    const originalFetch = window.fetch;
+    const wrappedFetch = function(input, init) {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      const method = String(init?.method || (input instanceof Request ? input.method : "GET")).toUpperCase();
+      const token = owner.lease();
+      const promise = originalFetch.call(this, input, init);
+      if (playedRoute.test(url)) void promise.then((response) => {
+        if (response.ok && token.current()) refresh(method, url);
+      }).catch(() => {
+      });
+      return promise;
     };
-})(window.JellyfinEnhanced);
+    if (typeof originalFetch === "function") window.fetch = wrappedFetch;
+    const requests = /* @__PURE__ */ new WeakMap();
+    const originalOpen = XMLHttpRequest.prototype.open;
+    const originalSend = XMLHttpRequest.prototype.send;
+    const open = function(method, url, async = true, username, password) {
+      requests.set(this, { method: method.toUpperCase(), url: String(url) });
+      originalOpen.call(this, method, url, async, username, password);
+    };
+    const send = function(body) {
+      const request = requests.get(this);
+      const token = owner.lease();
+      if (request && playedRoute.test(request.url)) {
+        const xhr = this;
+        const completed = () => {
+          release();
+          if (token.current() && xhr.status >= 200 && xhr.status < 300) refresh(request.method, request.url);
+        };
+        const release = owner.track(() => xhr.removeEventListener("loadend", completed));
+        xhr.addEventListener("loadend", completed, { once: true });
+      }
+      originalSend.call(this, body);
+    };
+    XMLHttpRequest.prototype.open = open;
+    XMLHttpRequest.prototype.send = send;
+    JE.core?.lifecycle?.register("spoiler-guard-watched-installation").onTeardown(() => {
+      owner.reset();
+      if (window.fetch === wrappedFetch) window.fetch = originalFetch;
+      if (XMLHttpRequest.prototype.open === open) XMLHttpRequest.prototype.open = originalOpen;
+      if (XMLHttpRequest.prototype.send === send) XMLHttpRequest.prototype.send = originalSend;
+      installed = false;
+    });
+  };
+})();
+})();
+//# sourceMappingURL=watched-refresh.js.map

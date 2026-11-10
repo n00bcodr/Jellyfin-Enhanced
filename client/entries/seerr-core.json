@@ -1,0 +1,17 @@
+{
+  "js/jellyseerr/seerr-status.js": "client/src/features/seerr/core/status-entry.ts",
+  "js/jellyseerr/request-manager.js": "client/src/features/seerr/core/request-manager-entry.ts",
+  "js/jellyseerr/api.js": "client/src/features/seerr/core/api-entry.ts",
+  "js/jellyseerr/jellyseerr.js": "client/src/features/seerr/core/search-entry.ts",
+  "js/jellyseerr/ui/ui-icons.js": "client/src/features/seerr/core/ui/icons-entry.ts",
+  "js/jellyseerr/ui/ui-styles.js": "client/src/features/seerr/core/ui/styles-entry.ts",
+  "js/jellyseerr/ui/ui-popover.js": "client/src/features/seerr/core/ui/popover-entry.ts",
+  "js/jellyseerr/ui/ui-badges.js": "client/src/features/seerr/core/ui/badges-entry.ts",
+  "js/jellyseerr/ui/ui-cards.js": "client/src/features/seerr/core/ui/cards-entry.ts",
+  "js/jellyseerr/ui/ui-buttons.js": "client/src/features/seerr/core/ui/buttons-entry.ts",
+  "js/jellyseerr/ui/ui-quota.js": "client/src/features/seerr/core/ui/quota-entry.ts",
+  "js/jellyseerr/ui/ui-results.js": "client/src/features/seerr/core/ui/results-entry.ts",
+  "js/jellyseerr/ui/ui-request-modals.js": "client/src/features/seerr/core/ui/request-modals-entry.ts",
+  "js/jellyseerr/ui/ui-season-modal.js": "client/src/features/seerr/core/ui/season-modal-entry.ts",
+  "js/jellyseerr/modal.js": "client/src/features/seerr/core/modal-entry.ts"
+}

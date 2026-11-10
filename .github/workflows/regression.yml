@@ -80,16 +80,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [jf10, jf12]
+        target: [jf12]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
         with:
-          dotnet-version: |
-            9.0.x
-            10.0.x
+          dotnet-version: '10.0.x'
       # Dependabot bumps package versions but cannot update the per-target lock files
-      # (packages.jf10/jf12.lock.json), so the locked restore below would stop with NU1004.
+      # (packages.jf12.lock.json), so the locked restore below would stop with NU1004.
       # Regenerate this target's lock files and fail with the fix instead.
       - name: Check NuGet lock files (Dependabot)
         if: github.event.pull_request.user.login == 'dependabot[bot]'
@@ -103,7 +101,7 @@ jobs:
           done
           if ! git diff --quiet -- '*.lock.json'; then
             git --no-pager diff -- '*.lock.json'
-            echo "::error::The $TARGET NuGet lock files are out of date after this dependency update. Regenerate both targets' lock files as described in CONTRIBUTING.md (NuGet lock files) and push them to this branch."
+            echo "::error::The $TARGET NuGet lock files are out of date after this dependency update. Regenerate the jf12 lock files as described in CONTRIBUTING.md (NuGet lock files) and push them to this branch."
             exit 1
           fi
       # The item-look HTTP tests drive the production page/store/transport in jsdom.
@@ -177,7 +175,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [jf10, jf12]
+        target: [jf12]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
@@ -213,8 +211,10 @@ jobs:
       - name: Changed tag code
         id: touched
         run: |
-          # The PR merge commit's first parent is the base branch.
-          if git diff --name-only HEAD^1 HEAD | grep -qE '^(Jellyfin\.Plugin\.JellyfinEnhanced/(js/(tags|core)/|js/locales/en\.json|Services/|Model/|Configuration/|Helpers/|Assets/PosterTags/)|tests/(poster/parity|fixtures)/|scripts/)'; then
+          # The PR merge commit's first parent is the base branch. Paths: everything the harness reads (js/tags, js/core,
+          # js/enhanced/config.js, every js/locales file) and the C# it compiles that decides tag data: MediaTags,
+          # SpoilerGuard (tag-data stripping), DetailsProviders (MDBList/award data), Shared, Infrastructure, Configuration.
+          if git diff --name-only HEAD^1 HEAD | grep -qE '^(Jellyfin\.Plugin\.JellyfinEnhanced/(js/(tags|core|locales)/|js/enhanced/config\.js|Configuration/|Features/(MediaTags|SpoilerGuard|DetailsProviders)/|Shared/|Infrastructure/|Assets/PosterTags/|JellyfinEnhanced\.csproj)|tests/(poster/parity|fixtures)/|scripts/)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
@@ -222,9 +222,7 @@ jobs:
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
         if: steps.touched.outputs.run == 'true'
         with:
-          dotnet-version: |
-            9.0.x
-            10.0.x
+          dotnet-version: '10.0.x'
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         if: steps.touched.outputs.run == 'true'
         with:
@@ -246,9 +244,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
         with:
-          dotnet-version: |
-            9.0.x
-            10.0.x
+          dotnet-version: '10.0.x'
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           # Matches the ICU version used to generate poster language tables.

@@ -1,0 +1,94 @@
+currentSettings.autoPauseEnabled
+currentSettings.autoPipEnabled
+currentSettings.autoResumeEnabled
+currentSettings.autoSkipIntro
+currentSettings.autoSkipOutro
+currentSettings.calendarDefaultViewMode
+currentSettings.calendarDisplayMode
+currentSettings.customSubtitleBgColor
+currentSettings.customSubtitleTextColor
+currentSettings.disableCustomSubtitleStyles
+currentSettings.genreTagsEnabled
+currentSettings.isAdmin
+currentSettings.languageTagsEnabled
+currentSettings.languageTagsPriority
+currentSettings.languageTagsPriorityStrict
+currentSettings.lastOpenedTab
+currentSettings.longPress2xEnabled
+currentSettings.pauseScreenDelaySeconds
+currentSettings.pauseScreenEnabled
+currentSettings.peopleTagsEnabled
+currentSettings.qualityHideSdr
+currentSettings.qualityMinimumResolution
+currentSettings.qualityTagsEnabled
+currentSettings.qualityTagsPreferredAudioLanguage
+currentSettings.randomButtonEnabled
+currentSettings.randomIncludeMovies
+currentSettings.randomIncludeShows
+currentSettings.randomScopeCurrentContainer
+currentSettings.randomSourceId
+currentSettings.randomUnwatchedOnly
+currentSettings.ratingTagsColorByScore
+currentSettings.ratingTagsEnabled
+currentSettings.ratingTagsMinScore
+currentSettings.ratingTagsSources
+currentSettings.removeContinueWatchingEnabled
+currentSettings.selectedFontFamilyPresetIndex
+currentSettings.selectedFontSizePresetIndex
+currentSettings.selectedStylePresetIndex
+currentSettings.selectedTextEffectPresetIndex
+currentSettings.seriesQualityAggregation
+currentSettings.showAudioLanguages
+currentSettings.showFileSizes
+currentSettings.showLowQualitySourceTag
+currentSettings.showWatchProgress
+currentSettings.statusTagsEnabled
+currentSettings.subtitleHorizontalPosition
+currentSettings.subtitleVerticalPosition
+currentSettings.tagEdgeSpacing
+currentSettings.tagGap
+currentSettings.tagGroupCaps
+currentSettings.tagGroupOrder
+currentSettings.tagLabelDensity
+currentSettings.tagLayout
+currentSettings.tagLayoutLocks
+currentSettings.tagLayouts
+currentSettings.tagLayoutSettingsVersion
+currentSettings.tagScale
+currentSettings.tagShapeOverrides
+currentSettings.tagsHideOnHover
+currentSettings.tagStylePreset
+currentSettings.useNativePosterTags
+currentSettings.usingCustomColors
+currentSettings.watchProgressMode
+currentSettings.watchProgressTimeFormat
+localStorage.getItem('aspectRatio
+localStorage.getItem("jellyfin_credentials
+localStorage.getItem('jellyfin_credentials
+localStorage.getItem('jellyfinEnhancedLastCleared
+localStorage.getItem('JE_translation_clear_ts
+localStorage.removeItem('je_conn_test_
+localStorage.removeItem('je_hide_confirm_suppressed_until
+localStorage.removeItem('jellyfinEnhancedSettings
+localStorage.setItem('aspectRatio
+localStorage.setItem('je_conn_test_
+localStorage.setItem('jellyfinEnhancedLastCleared
+localStorage.setItem('JE_translation_clear_ts
+saveUserSettings(
+saveUserSettings(${fileName}
+saveUserSettings('ddd-triggers.json', { Triggers: Array.from(submitted
+saveUserSettings('elsewhere.json', elsewhereSettings, { throwOnError: true, isCurrent: current }
+saveUserSettings(file: 'ddd-triggers.json', settings: { Triggers: number[] }, options?: SaveOptio
+saveUserSettings(file: 'elsewhere.json', settings: ElsewhereSettings, options?: SaveOptions
+saveUserSettings(fileName, settings, options
+saveUserSettings(fileName: string
+saveUserSettings(file: string, data: unknown, options: { throwOnError: true }
+saveUserSettings(file: string, settings: SettingsDocument, options?: SaveOptions
+saveUserSettings(file: string, settings: Settings | ShortcutsDocument, options?: SaveOptions
+saveUserSettings('settings.json', JE.currentSettings
+saveUserSettings('settings.json', JE.currentSettings, { throwOnError: true, isCurrent }
+saveUserSettings('settings.json', settings
+saveUserSettings('settings.json', settings, {
+saveUserSettings('settings.json', settings, { throwOnError: true, isCurrent, onError: rollback }
+saveUserSettings('settings.json', settings, { throwOnError: true, isCurrent: sameDocument, notify
+saveUserSettings('shortcuts.json', JE.userConfig.shortcuts

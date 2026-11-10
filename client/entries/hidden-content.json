@@ -1,0 +1,20 @@
+{
+  "js/enhanced/hiddencontent/hidden-content-page-render.js": "client/src/features/hidden-content/hidden-content-page-render.ts",
+  "js/enhanced/hiddencontent/hidden-content-page-state.js": "client/src/features/hidden-content/hidden-content-page-state.ts",
+  "js/enhanced/hiddencontent/hidden-content-filter.js": "client/src/features/hidden-content/hidden-content-filter.ts",
+  "js/enhanced/hiddencontent/hidden-content-page-styles.js": "client/src/features/hidden-content/hidden-content-page-styles.ts",
+  "js/enhanced/hiddencontent/hidden-content-page-init.js": "client/src/features/hidden-content/hidden-content-page-init.ts",
+  "js/enhanced/hiddencontent/hidden-content-page-nav.js": "client/src/features/hidden-content/hidden-content-page-nav.ts",
+  "js/enhanced/hiddencontent/hidden-content-styles.js": "client/src/features/hidden-content/hidden-content-styles.ts",
+  "js/enhanced/hiddencontent/hidden-content-dialogs.js": "client/src/features/hidden-content/hidden-content-dialogs.ts",
+  "js/enhanced/hiddencontent/hidden-content-save.js": "client/src/features/hidden-content/hidden-content-save.ts",
+  "js/enhanced/hiddencontent/hidden-content-buttons.js": "client/src/features/hidden-content/hidden-content-buttons.ts",
+  "js/enhanced/hiddencontent/hidden-content-custom-tab.js": "client/src/features/hidden-content/hidden-content-custom-tab.ts",
+  "js/enhanced/hiddencontent/hidden-content-page-cards.js": "client/src/features/hidden-content/hidden-content-page-cards.ts",
+  "js/enhanced/hiddencontent/hidden-content-init.js": "client/src/features/hidden-content/hidden-content-init.ts",
+  "js/enhanced/hiddencontent/hidden-content-data.js": "client/src/features/hidden-content/hidden-content-data.ts",
+  "js/enhanced/hiddencontent/hidden-content-panel.js": "client/src/features/hidden-content/hidden-content-panel.ts",
+  "js/enhanced/hiddencontent/hidden-content-page-admin.js": "client/src/features/hidden-content/hidden-content-page-admin.ts",
+  "js/enhanced/homeremoval/features-remove-multiselect.js": "client/src/features/hidden-content/features-remove-multiselect.ts",
+  "js/enhanced/homeremoval/features-remove-home.js": "client/src/features/hidden-content/features-remove-home.ts"
+}

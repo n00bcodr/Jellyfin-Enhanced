@@ -1,0 +1,18 @@
+<Project>
+  <PropertyGroup>
+    <_JEClientPluginDirectory>$([System.IO.Path]::Combine('$(MSBuildThisFileDirectory)', 'Jellyfin.Plugin.JellyfinEnhanced'))</_JEClientPluginDirectory>
+  </PropertyGroup>
+  <!-- Check on every real plugin build, even when C# compilation is incremental.
+       No restore/install or generated-file mutation is allowed in this target. -->
+  <Target Name="VerifyJellyfinEnhancedClient"
+          BeforeTargets="PrepareForBuild;CoreCompile;GenerateNuspec"
+          Condition="'$(MSBuildProjectName)' == 'JellyfinEnhanced' and '$(MSBuildProjectDirectory)' == '$(_JEClientPluginDirectory)' and '$(DesignTimeBuild)' != 'true'">
+    <Exec Command="node &quot;$(MSBuildThisFileDirectory)scripts/client-build.mjs&quot; --check"
+          WorkingDirectory="$(MSBuildThisFileDirectory)"
+          IgnoreExitCode="true">
+      <Output TaskParameter="ExitCode" PropertyName="JEClientVerificationExitCode" />
+    </Exec>
+    <Error Condition="'$(JEClientVerificationExitCode)' != '0'"
+           Text="Frontend verification failed. Install Node &gt;=22.12, run npm ci, then npm run client:build from the repository root. Commit generated JavaScript, maps and client/generated-manifest.json with their source. See docs/rewrite/frontend-build.md." />
+  </Target>
+</Project>

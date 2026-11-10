@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHarness, plain, deferred } from '../helpers/harness.mjs';
+import { bootstrapFixture, contractValue } from '../contracts/fixtures.mjs';
 
 const modules = ['core/navigation.js', 'core/session.js', 'enhanced/config.js'];
-const payload = (extra = {}) => ({ UserId: 'user-a', Version: '1.2.3', PublicConfig: {}, PrivateConfig: null,
-  HasCustomTabs: false, HasPluginPages: false, UserSettings: {}, ComponentScripts: modules, ...extra });
+const payload = (extra = {}) => bootstrapFixture({ ComponentScripts: modules, ...extra });
 async function until(predicate) {
   const deadline = performance.now() + 3000;
   while (performance.now() < deadline) {
@@ -15,12 +15,13 @@ async function until(predicate) {
 }
 // Script transport is simulated; plugin.js, config.js and session.js execute unchanged.
 // Optional feature callbacks are spies to verify the bootstrap dispatch contract.
-function setup(t, { data = payload(), ajax, bundle = 'ok', dev = false, storage = {}, expectedConsoleErrors = [] } = {}) {
-  let userId = 'user-a';
+function setup(t, { data = payload(), ajax, bundle = 'ok', dev = false, storage = {}, admin = () => false, expectedConsoleErrors = [] } = {}) {
+  let userId = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+  let serverId = 'server-a';
   const calls = [], scripts = [], initialized = [];
   let translationLoads = 0;
   const h = createHarness({ expectedConsoleErrors, html: `<script plugin="Jellyfin Enhanced" version="1.2.3-build123"${dev ? ' dev="true"' : ''}></script>`,
-    apiClient: { getCurrentUserId: () => userId, ajax: async request => {
+    apiClient: { serverId: () => serverId, getCurrentUserId: () => userId, getCurrentUser: async () => ({ Id: userId, Policy: { IsAdministrator: admin(userId) } }), ajax: async request => {
       const path = new URL(request.url).pathname; calls.push(path);
       if (ajax) return ajax(path, request);
       if (path.endsWith('/bootstrap')) return typeof data === 'function' ? data(userId) : data;
@@ -45,6 +46,7 @@ function setup(t, { data = payload(), ajax, bundle = 'ok', dev = false, storage 
     queueMicrotask(() => {
       const path = new URL(node.src).pathname;
       if (path.endsWith('/translations.js')) h.window.JellyfinEnhanced.loadTranslations = async () => { translationLoads++; return { greeting: 'Hello' }; };
+      else if (path.endsWith('/contracts/bootstrap.js')) h.load('contracts/bootstrap.js');
       else if (path.endsWith('/bundle.js')) {
         if (bundle === 'error') { node.onerror(); return; }
         if (bundle === 'ok') {
@@ -61,6 +63,7 @@ function setup(t, { data = payload(), ajax, bundle = 'ok', dev = false, storage 
   };
   h.load('plugin.js');
   return { ...h, calls, scripts, initialized, get translationLoads() { return translationLoads; }, get plugin() { return h.window.JellyfinEnhanced; },
+    switchServer(id) { serverId = id; h.window.JellyfinEnhanced.session?.checkNow('test'); },
     switchUser(id) { userId = id; h.window.JellyfinEnhanced.session.checkNow('test'); } };
 }
 
@@ -78,13 +81,13 @@ test('bootstrap shares one request and loads actual settings before enabled feat
 });
 
 for (const bundle of ['error', 'malformed']) test(`bundle ${bundle} falls back to ordered real modules`, async t => {
-  const h = setup(t, { bundle, data: payload({ ComponentScripts: [' // comment', null, 'core/navigation.js', ' core/session.js ', '', 'enhanced/config.js'] }) });
+  const h = setup(t, { bundle, data: payload({ ComponentScripts: [' // comment', 'core/navigation.js', ' core/session.js ', '', 'enhanced/config.js'] }) });
   await until(() => h.plugin.initialized);
   const components = h.scripts.filter(s => modules.some(name => s.src.includes(name)));
   assert.equal(components.length, 3);
   assert.ok(components[0].src.includes('core/navigation.js'));
   assert.ok(components.every(s => s.async === false));
-  assert.equal(h.plugin.session.getUserId(), 'user-a');
+  assert.equal(h.plugin.session.getUserId(), 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
 });
 
 test('development mode bypasses bundle and executes manifest modules', async t => {
@@ -105,7 +108,7 @@ test('wrong-user bootstrap is rejected and endpoint failures retain safe default
   assert.equal(h.plugin.currentSettings.qualityTagsEnabled, false);
   assert.equal(h.plugin.pluginVersion, 'unknown');
   assert.deepEqual(plain(h.plugin.userConfig.bookmark), { bookmarks: {} });
-  assert.equal(h.calls.filter(p => p.includes('/user-settings/user-a/')).length, 5);
+  assert.equal(h.calls.filter(p => p.includes('/user-settings/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/')).length, 5);
 });
 
 for (const installed of [true, false]) test(`delivery plugin flags reflect installed=${installed}`, async t => {
@@ -117,25 +120,25 @@ for (const installed of [true, false]) test(`delivery plugin flags reflect insta
 });
 
 test('identity transition immediately removes private admin data and replaces user documents', async t => {
-  const h = setup(t, { data: id => payload({ UserId: id, PrivateConfig: id === 'user-a' ? { SonarrUrl: 'secret' } : null,
-    UserSettings: { Settings: { QualityTagsEnabled: id === 'user-b' }, Bookmark: { Bookmarks: { [id]: { Name: id } } } } }) });
+  const h = setup(t, { admin: id => id === 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', data: id => payload({ UserId: id, PrivateConfig: id === 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' ? { SonarrUrl: 'secret' } : null,
+    UserSettings: { Settings: { IsAdmin: id === 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', QualityTagsEnabled: id === 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' }, Bookmark: null, BookmarkSnapshot: { Revision: 'snapshot:1', Document: JSON.stringify({ Bookmarks: { [id]: contractValue('BookmarkItem', { Name: id }) } }) } } }) });
   await until(() => h.plugin.initialized);
   assert.equal(h.plugin.pluginConfig.SonarrUrl, 'secret');
   const loaded = new Promise(resolve => h.document.addEventListener('je:user-data-loaded', resolve, { once: true }));
-  h.switchUser('user-b');
+  h.switchUser('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
   assert.equal(h.plugin.pluginConfig.SonarrUrl, undefined);
   assert.deepEqual(plain(h.plugin.currentSettings), {});
   assert.deepEqual(plain(h.plugin.userConfig.bookmark), { bookmarks: {} });
   await loaded;
   assert.equal(h.plugin.currentSettings.qualityTagsEnabled, true);
-  assert.deepEqual(plain(h.plugin.userConfig.bookmark.bookmarks), { 'user-b': { name: 'user-b' } });
+  assert.deepEqual(plain(h.plugin.userConfig.bookmark.bookmarks), { 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb': Object.fromEntries(Object.entries(contractValue('BookmarkItem', { Name: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' })).map(([key, value]) => [key.charAt(0).toLowerCase() + key.slice(1), value])) });
   assert.ok(h.initialized.includes('QualityTags'));
 });
 
 for (const saved of [null, 'fr']) test(`default display language respects existing preference ${saved}`, async t => {
-  const h = setup(t, { data: payload({ PublicConfig: { DefaultLanguage: 'pt-br' } }), storage: saved ? { 'user-a-language': saved } : {} });
+  const h = setup(t, { data: payload({ PublicConfig: { DefaultLanguage: 'pt-br' } }), storage: saved ? { 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-language': saved } : {} });
   await until(() => h.plugin.initialized);
-  assert.equal(h.window.localStorage.getItem('user-a-language'), saved || 'pt-BR');
+  assert.equal(h.window.localStorage.getItem('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-language'), saved || 'pt-BR');
 });
 
 test('translation cache clear removes stale locales but preserves newer entries and unrelated storage', async t => {
@@ -174,40 +177,40 @@ for (const expired of [false, true]) test(`maintenance banner treats message as 
 
 test('after a switch, a bootstrap answered for another user is replaced by the new user\'s own data', async t => {
   // A misrouted or cached bootstrap still names the previous user: reload per endpoint instead.
-  let current = 'user-a';
-  const h = setup(t, { ajax: async path => {
-    if (path.endsWith('/bootstrap')) return payload({ UserId: 'user-a', PrivateConfig: { SonarrUrl: 'secret' }, UserSettings: { Bookmark: { Bookmarks: { [current === 'user-a' ? 'user-a' : 'stolen']: {} } } } });
-    if (path === '/JellyfinEnhanced/user-settings/user-b/bookmark.json') return { Bookmarks: { 'user-b': { Name: 'user-b' } } };
-    if (path.startsWith('/JellyfinEnhanced/user-settings/user-b/') || path.endsWith('/private-config')) return {};
+  let current = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+  const h = setup(t, { admin: id => id === 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', ajax: async path => {
+    if (path.endsWith('/bootstrap')) return payload({ UserId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', PrivateConfig: { SonarrUrl: 'secret' }, UserSettings: { Bookmark: { Bookmarks: { [current === 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' ? 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' : 'stolen']: {} } } } });
+    if (path === '/JellyfinEnhanced/user-settings/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/bookmark-document') return { Revision: 'fallback:1', Document: JSON.stringify({ Bookmarks: { 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb': { Name: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' } } }) };
+    if (path.startsWith('/JellyfinEnhanced/user-settings/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/') || path.endsWith('/private-config')) return {};
     throw new Error(`Unexpected endpoint ${path}`);
   } });
   await until(() => h.plugin.initialized);
   assert.equal(h.plugin.pluginConfig.SonarrUrl, 'secret');
   const loaded = new Promise(resolve => h.document.addEventListener('je:user-data-loaded', resolve, { once: true }));
-  current = 'user-b'; h.switchUser('user-b');
+  current = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'; h.switchUser('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
   await loaded;
   assert.equal(h.plugin.pluginConfig.SonarrUrl, undefined);
-  assert.deepEqual(plain(h.plugin.userConfig.bookmark.bookmarks), { 'user-b': { name: 'user-b' } });
-  assert.ok(h.calls.includes('/JellyfinEnhanced/user-settings/user-b/bookmark.json'));
+  assert.deepEqual(plain(h.plugin.userConfig.bookmark.bookmarks), { 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb': { name: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' } });
+  assert.ok(h.calls.includes('/JellyfinEnhanced/user-settings/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/bookmark-document'));
 });
 
 test('late bootstrap for previous identity cannot restore private config or bookmarks', async t => {
   const stale = deferred();
   let bStarted = false;
   const h = setup(t, { data: id => {
-    if (id === 'user-b') { bStarted = true; return stale.promise; }
-    return payload({ UserId: id, UserSettings: { Bookmark: { Bookmarks: { [id]: { Name: id } } } } });
+    if (id === 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb') { bStarted = true; return stale.promise; }
+    return payload({ UserId: id, UserSettings: { Bookmark: null, BookmarkSnapshot: { Revision: 'snapshot:1', Document: JSON.stringify({ Bookmarks: { [id]: contractValue('BookmarkItem', { Name: id }) } }) } } });
   } });
   await until(() => h.plugin.initialized);
-  h.switchUser('user-b');
+  h.switchUser('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
   await until(() => bStarted);
   const loaded = new Promise(resolve => h.document.addEventListener('je:user-data-loaded', resolve, { once: true }));
-  h.switchUser('user-c');
+  h.switchUser('cccccccccccccccccccccccccccccccc');
   await loaded;
-  stale.resolve(payload({ UserId: 'user-b', PrivateConfig: { SonarrUrl: 'secret' }, UserSettings: { Bookmark: { Bookmarks: { stolen: {} } } } }));
+  stale.resolve(payload({ UserId: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', PrivateConfig: { SonarrUrl: 'secret' }, UserSettings: { Bookmark: { Bookmarks: { stolen: {} } } } }));
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(h.plugin.pluginConfig.SonarrUrl, undefined);
-  assert.deepEqual(plain(h.plugin.userConfig.bookmark.bookmarks), { 'user-c': { name: 'user-c' } });
+  assert.deepEqual(plain(h.plugin.userConfig.bookmark.bookmarks), { 'cccccccccccccccccccccccccccccccc': Object.fromEntries(Object.entries(contractValue('BookmarkItem', { Name: 'cccccccccccccccccccccccccccccccc' })).map(([key, value]) => [key.charAt(0).toLowerCase() + key.slice(1), value])) });
 });
 
 // The per-endpoint fallback (a bootstrap naming another user) has its own late-response guards.
@@ -215,36 +218,36 @@ for (const late of ['private-config', 'settings']) test(`per-endpoint fallback d
   const stale = deferred();
   let bWaiting = false;
   const h = setup(t, { ajax: async path => {
-    if (path.endsWith('/bootstrap')) return payload({ UserId: 'user-a' });
+    if (path.endsWith('/bootstrap')) return payload({ UserId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' });
     if (path.endsWith('/private-config')) {
-      if (late === 'private-config' && h.plugin.session.getUserId() === 'user-b') { bWaiting = true; return stale.promise; }
+      if (late === 'private-config' && h.plugin.session.getUserId() === 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb') { bWaiting = true; return stale.promise; }
       return {};
     }
-    if (path === '/JellyfinEnhanced/user-settings/user-b/bookmark.json' && late === 'settings') { bWaiting = true; return stale.promise; }
-    if (path === '/JellyfinEnhanced/user-settings/user-c/bookmark.json') return { Bookmarks: { 'user-c': { Name: 'user-c' } } };
-    if (/^\/JellyfinEnhanced\/user-settings\/user-[bc]\//.test(path)) return {};
+    if (path === '/JellyfinEnhanced/user-settings/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/bookmark-document' && late === 'settings') { bWaiting = true; return stale.promise; }
+    if (path === '/JellyfinEnhanced/user-settings/cccccccccccccccccccccccccccccccc/bookmark-document') return { Revision: 'fallback:1', Document: JSON.stringify({ Bookmarks: { 'cccccccccccccccccccccccccccccccc': { Name: 'cccccccccccccccccccccccccccccccc' } } }) };
+    if (/^\/JellyfinEnhanced\/user-settings\/[bc]{32}\//.test(path)) return {};
     throw new Error(`Unexpected endpoint ${path}`);
   } });
   await until(() => h.plugin.initialized);
-  h.switchUser('user-b');
+  h.switchUser('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
   await until(() => bWaiting);
   const loaded = new Promise(resolve => h.document.addEventListener('je:user-data-loaded', resolve, { once: true }));
-  h.switchUser('user-c');
+  h.switchUser('cccccccccccccccccccccccccccccccc');
   await loaded;
-  stale.resolve(late === 'private-config' ? { SonarrUrl: 'secret' } : { Bookmarks: { stolen: {} } });
+  stale.resolve(late === 'private-config' ? { SonarrUrl: 'secret' } : { Revision: 'stale:1', Document: JSON.stringify({ Bookmarks: { stolen: {} } }) });
   for (let i = 0; i < 5; i++) await new Promise(resolve => setImmediate(resolve));
   assert.equal(h.plugin.pluginConfig.SonarrUrl, undefined);
-  assert.deepEqual(plain(h.plugin.userConfig.bookmark.bookmarks), { 'user-c': { name: 'user-c' } });
+  assert.deepEqual(plain(h.plugin.userConfig.bookmark.bookmarks), { 'cccccccccccccccccccccccccccccccc': { name: 'cccccccccccccccccccccccccccccccc' } });
 });
 
 // Item looks are projected per caller (only items that user can see); a same-tab switch must not keep the last user's list.
-const LOOK_A = [{ ItemId: 'a'.repeat(32), Layout: 'bands' }], LOOK_B = [{ ItemId: 'b'.repeat(32), Layout: 'minimal' }];
+const LOOK_A = [contractValue('TagLookItemOverride', { ItemId: 'a'.repeat(32), Layout: 'bands' })], LOOK_B = [contractValue('TagLookItemOverride', { ItemId: 'b'.repeat(32), Layout: 'minimal' })];
 test('a same-tab user switch serves the incoming user\'s item looks from the bootstrap', async t => {
-  const h = setup(t, { data: id => payload({ UserId: id, PublicConfig: { TagLookItemOverrides: id === 'user-a' ? LOOK_A : LOOK_B } }) });
+  const h = setup(t, { data: id => payload({ UserId: id, PublicConfig: { TagLookItemOverrides: id === 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' ? LOOK_A : LOOK_B } }) });
   await until(() => h.plugin.initialized);
   assert.deepEqual(plain(h.plugin.pluginConfig.TagLookItemOverrides), LOOK_A);
   const loaded = new Promise(resolve => h.document.addEventListener('je:user-data-loaded', resolve, { once: true }));
-  h.switchUser('user-b');
+  h.switchUser('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
   assert.equal(h.plugin.pluginConfig.TagLookItemOverrides, null, 'nothing reads the outgoing list during the switch');
   await loaded;
   assert.deepEqual(plain(h.plugin.pluginConfig.TagLookItemOverrides), LOOK_B);
@@ -252,20 +255,143 @@ test('a same-tab user switch serves the incoming user\'s item looks from the boo
 });
 
 test('a same-tab user switch on the per-endpoint fallback refetches the public config for the item looks', async t => {
-  let id = 'user-a';
+  let id = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
   const h = setup(t, { ajax: async path => {
-    if (path.endsWith('/bootstrap')) return payload({ UserId: 'user-a', PublicConfig: { TagLookItemOverrides: LOOK_A } });
-    if (path.endsWith('/public-config')) return { TagLookItemOverrides: id === 'user-b' ? LOOK_B : LOOK_A, QualityTagsEnabled: true };
-    if (path.endsWith('/private-config') || path.startsWith('/JellyfinEnhanced/user-settings/user-b/')) return {};
+    if (path.endsWith('/bootstrap')) return payload({ UserId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', PublicConfig: { TagLookItemOverrides: LOOK_A } });
+    if (path.endsWith('/public-config')) return { TagLookItemOverrides: id === 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' ? LOOK_B : LOOK_A, QualityTagsEnabled: true };
+    if (path.endsWith('/private-config') || path.startsWith('/JellyfinEnhanced/user-settings/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/')) return {};
     throw new Error(`Unexpected endpoint ${path}`);
   } });
   await until(() => h.plugin.initialized);
   assert.deepEqual(plain(h.plugin.pluginConfig.TagLookItemOverrides), LOOK_A);
   assert.ok(!h.calls.includes('/JellyfinEnhanced/public-config'), 'the boot used the bootstrap');
   const loaded = new Promise(resolve => h.document.addEventListener('je:user-data-loaded', resolve, { once: true }));
-  id = 'user-b'; h.switchUser('user-b');
+  id = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'; h.switchUser('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
   await loaded;
   assert.deepEqual(plain(h.plugin.pluginConfig.TagLookItemOverrides), LOOK_B);
-  assert.equal(h.plugin.pluginConfig.QualityTagsEnabled, undefined, 'only the per-user fields are taken from it');
+  assert.equal(h.plugin.pluginConfig.QualityTagsEnabled, false, 'only the per-user fields are taken from it');
   assert.ok(h.calls.includes('/JellyfinEnhanced/public-config'));
+});
+
+for (const [name, mutate] of [
+  ['missing user identity', p => { delete p.UserId; }],
+  ['malformed public field', p => { p.PublicConfig.QualityTagsEnabled = 'true'; }],
+  ['private data for a non-admin', p => { p.PrivateConfig = contractValue('BootstrapPrivateConfig', { SonarrUrl: 'do-not-apply' }); }],
+  ['forged administrator status', p => { p.UserSettings.Settings = contractValue('BootstrapSettings', { IsAdmin: true }); }],
+  ['partial document', p => { p.UserSettings.Bookmark = { Bookmarks: { stolen: {} } }; }],
+]) test(`real loader rejects ${name} and uses endpoint fallback`, async t => {
+  const invalid = payload({ PublicConfig: { QualityTagsEnabled: true } });
+  mutate(invalid);
+  const h = setup(t, { ajax: async path => {
+    if (path.endsWith('/bootstrap')) return invalid;
+    if (path.endsWith('/component-scripts.json')) return modules;
+    if (path === '/Plugins') return [];
+    if (path.endsWith('/version')) return { Version: 'fallback' };
+    return {};
+  } });
+  await until(() => h.plugin.initialized);
+  assert.ok(h.calls.some(path => path.includes('/user-settings/')));
+  assert.equal(h.plugin.pluginConfig.SonarrUrl, undefined);
+  assert.equal(h.plugin.currentSettings.qualityTagsEnabled, false);
+  assert.equal(h.plugin.userConfig.settings.isAdmin, undefined);
+  assert.deepEqual(plain(h.plugin.userConfig.bookmark), { bookmarks: {} });
+  assert.equal(h.plugin.userConfig.bookmarkRevision, null);
+});
+
+test('real loader preserves null document failures without throwing or inventing a payload', async t => {
+  const h = setup(t, { data: payload({ UserSettings: { Settings: null, Shortcuts: null, Bookmark: null, Elsewhere: null, HiddenContent: null } }) });
+  await until(() => h.plugin.initialized);
+  assert.deepEqual(h.calls, ['/JellyfinEnhanced/bootstrap']);
+  assert.deepEqual(plain(h.plugin.userConfig.bookmark.bookmarks), {});
+  assert.equal(h.plugin.currentSettings.qualityTagsEnabled, false);
+});
+
+
+test('real loader discards a same-user response after server identity changes during boot', async t => {
+  const stale = deferred();
+  let requests = 0;
+  const h = setup(t, { data: () => ++requests === 1 ? stale.promise : payload() });
+  await until(() => requests === 1);
+  h.switchServer('server-b');
+  stale.resolve(payload({ PublicConfig: { MaintenanceModeMessage: 'stale-server', QualityTagsEnabled: true } }));
+  await until(() => h.plugin.initialized);
+  assert.ok(requests >= 2);
+  assert.equal(h.plugin.currentSettings.qualityTagsEnabled, false);
+  assert.notEqual(h.plugin.pluginConfig.MaintenanceModeMessage, 'stale-server');
+  assert.ok(!h.calls.some(path => path.includes('/user-settings/')), 'stale identity retries bootstrap instead of applying fallback for the old user');
+});
+
+test('fallback settings loader carries the validated content and matching revision into actual saves', async t => {
+  const snapshot = contractValue('RevisionedSettingsResponse', { Revision: 'fallback-r1', Settings: { IsAdmin: false, AutoPauseEnabled: false } });
+  const writes = [];
+  const h = setup(t, { ajax: async (path, request) => {
+    if (path.endsWith('/bootstrap')) throw new Error('bootstrap unavailable');
+    if (path.endsWith('/public-config')) return {};
+    if (path.endsWith('/version')) return '1.2.3';
+    if (path.endsWith('/component-scripts.json')) return modules;
+    if (path.endsWith('/settings-document')) {
+      if (request.type === 'GET') return snapshot;
+      writes.push(JSON.parse(request.data)); return { Revision: 'fallback-r2' };
+    }
+    return {};
+  } });
+  await until(() => h.plugin.initialized);
+  assert.equal(h.plugin.userConfig.settingsRevision, 'fallback-r1');
+  assert.equal(h.plugin.currentSettings.autoPauseEnabled, false);
+  h.plugin.currentSettings.autoPauseEnabled = true;
+  await h.plugin.saveUserSettings('settings.json', h.plugin.currentSettings, { throwOnError: true });
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0].Revision, 'fallback-r1');
+  assert.equal(writes[0].Settings.AutoPauseEnabled, true);
+  assert.equal(h.plugin.userConfig.settingsRevision, 'fallback-r2');
+});
+
+
+test('bookmark snapshot loading preserves uppercase record IDs and pairs content with its revision', async t => {
+  const h = setup(t, { data: payload({UserSettings: {Bookmark: null, BookmarkSnapshot: {
+    Revision: 'snapshot:uppercase', Document: '{"Future":1e400,"Bookmarks":{"Bm_UPPER":{"ItemId":"movie","Timestamp":2.5,"Future":1e-400}}}'
+  }}}) });
+  await until(() => h.plugin.initialized);
+  assert.equal(h.plugin.userConfig.bookmarkRevision, 'snapshot:uppercase');
+  assert.deepEqual(Object.keys(h.plugin.userConfig.bookmark.bookmarks), ['Bm_UPPER']);
+  assert.equal(h.plugin.userConfig.bookmark.bookmarks.Bm_UPPER.timestamp, 2.5);
+  assert.equal(h.plugin.userConfig.bookmarkBinding.userId, 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+});
+
+// BUG-008: the per-file fallback needs the component-script manifest. A failed manifest request is retried once
+// after a delay; if it fails again boot reports one clear error instead of "All component scripts loaded" + FATAL.
+function manifestFailure(t, failures, expectedConsoleErrors = []) {
+  let manifestRequests = 0;
+  const h = setup(t, { bundle: 'error', expectedConsoleErrors, ajax: async path => {
+    if (path.endsWith('/bootstrap')) return payload({ ComponentScripts: null });
+    if (path.endsWith('/component-scripts.json')) { if (++manifestRequests <= failures) throw new Error('manifest offline'); return modules; }
+    throw new Error(`Unexpected endpoint ${path}`);
+  } });
+  const logs = [], delays = [];
+  const setTimer = h.window.setTimeout.bind(h.window);
+  for (const level of ['log', 'error']) {
+    const write = h.window.console[level].bind(h.window.console);
+    h.window.console[level] = (...args) => { logs.push(args.map(String).join(' ')); write(...args); };
+  }
+  // The retry waits about a second; run it at once and record the requested delay instead.
+  h.window.setTimeout = (fn, ms, ...rest) => { delays.push(ms); return setTimer(fn, ms >= 500 ? 0 : ms, ...rest); };
+  return { ...h, logs, delays, get manifestRequests() { return manifestRequests; } };
+}
+
+test('a component-script manifest that fails once is retried after a delay and the fallback scripts load', async t => {
+  const h = manifestFailure(t, 1);
+  await until(() => h.plugin.initialized);
+  assert.equal(h.manifestRequests, 2);
+  assert.ok(h.delays.some(ms => ms >= 500), 'the retry waits before asking again');
+  assert.equal(h.scripts.filter(s => modules.some(name => s.src.includes(name))).length, 3);
+});
+
+test('a component-script manifest that keeps failing ends boot with one clear error, not "All component scripts loaded"', async t => {
+  const h = manifestFailure(t, Infinity, [/CRITICAL INITIALIZATION FAILURE.*component-script manifest/]);
+  await until(() => h.logs.some(line => /CRITICAL|FATAL|All components initialized/.test(line)));
+  assert.equal(h.manifestRequests, 2, 'one bounded retry');
+  assert.equal(h.logs.some(line => line.includes('All component scripts loaded')), false);
+  assert.equal(h.logs.filter(line => /CRITICAL|FATAL/.test(line)).length, 1);
+  assert.equal(h.logs.some(line => line.includes('All components initialized')), false);
+  assert.equal(h.plugin.initialized, undefined);
 });

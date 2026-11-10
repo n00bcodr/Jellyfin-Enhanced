@@ -1,125 +1,212 @@
-// /js/others/mdblist-ratings.js
-// Renders a row of MDBList ratings (TMDB, Rotten Tomatoes, IMDb, Trakt, etc.)
-// on the item-details page. Backed by MdblistService's server-side cache via
-// GET /JellyfinEnhanced/mdblist-ratings/{mediaType}/{tmdbId}
-// Purely a display overlay; the separate MdblistRatingsSyncTask scheduled task is what actually fills in
-// Jellyfin's own CommunityRating/CriticRating fields.
-(function (JE) {
-    'use strict';
+(() => {
+"use strict";
+(() => {
+  // client/src/host/context.ts
+  function sharedModule(id) {
+    const namespace = window.JellyfinEnhanced?.core?.sharedModules?.[id];
+    if (!namespace) throw new Error(`${id} is not in JE.core.sharedModules: load its provider first (client/shared-modules.json)`);
+    return namespace;
+  }
+  function sharedExport(namespace, name) {
+    return namespace[name];
+  }
 
-    JE.initializeMdblistRatingsScript = function () {
-        if (!JE.pluginConfig?.MdblistRatingsEnabled || !JE.pluginConfig?.MdblistRatingsShowOnItemDetails) {
-            console.log('🪼 Jellyfin Enhanced: MDBList Ratings feature disabled.');
-            return;
+  // client/generated-shared/stub/client/src/features/details-providers/host.ts
+  var shared = /* @__PURE__ */ sharedModule("features/details-providers/host");
+  var export1 = /* @__PURE__ */ sharedExport(shared, "bridge");
+  var export3 = /* @__PURE__ */ sharedExport(shared, "currentUserId");
+
+  // client/generated-shared/stub/client/src/features/details-providers/page.ts
+  var shared2 = /* @__PURE__ */ sharedModule("features/details-providers/page");
+  var export0 = /* @__PURE__ */ sharedExport(shared2, "detailPageHook");
+  var export12 = /* @__PURE__ */ sharedExport(shared2, "detailsLease");
+  var export32 = /* @__PURE__ */ sharedExport(shared2, "hashItemId");
+  var export7 = /* @__PURE__ */ sharedExport(shared2, "lookupDetailsItem");
+  var export9 = /* @__PURE__ */ sharedExport(shared2, "removeFirst");
+
+  // client/generated-shared/stub/client/src/features/details-providers/links.ts
+  var shared3 = /* @__PURE__ */ sharedModule("features/details-providers/links");
+  var export02 = /* @__PURE__ */ sharedExport(shared3, "externalLink");
+  var export2 = /* @__PURE__ */ sharedExport(shared3, "pathSegment");
+
+  // client/generated-shared/stub/client/src/features/details-providers/wire.ts
+  var shared4 = /* @__PURE__ */ sharedModule("features/details-providers/wire");
+  var export5 = /* @__PURE__ */ sharedExport(shared4, "field");
+  var export6 = /* @__PURE__ */ sharedExport(shared4, "int");
+  var export72 = /* @__PURE__ */ sharedExport(shared4, "isRecord");
+  var export92 = /* @__PURE__ */ sharedExport(shared4, "num");
+  var export11 = /* @__PURE__ */ sharedExport(shared4, "str");
+  var export13 = /* @__PURE__ */ sharedExport(shared4, "text");
+
+  // client/src/features/details-providers/provider-domain.ts
+  async function resolveProviderTarget(item, allowPerson, seriesLookup) {
+    const type = item?.Type;
+    if (!item) return { target: null, unsupported: true };
+    if (type === "Movie") return { target: wrap(item.ProviderIds.Tmdb, "movie"), unsupported: false };
+    if (type === "Person" && allowPerson) return { target: wrap(item.ProviderIds.Tmdb, "person"), unsupported: false };
+    if (type === "Series" || type === "Season" || type === "Episode") {
+      let tmdbId;
+      if (type === "Series") tmdbId = item.ProviderIds.Tmdb;
+      else if (item.SeriesId) {
+        try {
+          tmdbId = (await seriesLookup(item.SeriesId))?.ProviderIds.Tmdb;
+        } catch {
         }
+      }
+      return { target: wrap(tmdbId, "tv"), unsupported: false };
+    }
+    return { target: null, unsupported: true };
+  }
+  function wrap(tmdbId, mediaType) {
+    return tmdbId ? { tmdbId, mediaType } : null;
+  }
+  function isUnconfirmed(value) {
+    return export5(value, "Confirmed") === false;
+  }
+  function decodeMdblistEntry(value) {
+    if (!export72(value) || !value.Found || !Array.isArray(value.Ratings) || value.Ratings.length === 0) return null;
+    const ids = {};
+    if (export72(value.Ids)) {
+      for (const [key, id] of Object.entries(value.Ids)) {
+        const decoded = typeof id === "number" && Number.isFinite(id) ? String(id) : export13(id);
+        if (decoded !== void 0) ids[key] = decoded;
+      }
+    }
+    return {
+      Found: true,
+      Ids: ids,
+      Ratings: value.Ratings.filter(export72).map((rating) => ({
+        Source: export11(rating.Source) ?? "",
+        // Rendered into markup: only finite numbers are scores.
+        Value: export92(rating.Value) ?? null,
+        Score: export92(rating.Score) ?? null,
+        Votes: export92(rating.Votes) ?? null,
+        Url: export11(rating.Url) ?? null,
+        Fresh: export6(rating.Fresh) ?? null
+      }))
+    };
+  }
+  var MDBLIST_LABELS = {
+    master: "Master",
+    imdb: "IMDb",
+    tmdb: "TMDB",
+    trakt: "Trakt",
+    letterboxd: "Letterboxd",
+    tomatoes: "RT Critic",
+    popcorn: "RT Audience",
+    metacritic: "Metascore",
+    metacriticuser: "Metacritic User",
+    rogerebert: "Roger Ebert",
+    myanimelist: "MAL",
+    anilist: "AniList"
+  };
+  var MDBLIST_LOGOS = {
+    master: "master.png",
+    imdb: "imdb.png",
+    tmdb: "tmdb.png",
+    trakt: "trakt.png",
+    letterboxd: "letterboxd.png",
+    tomatoes: "rottentomatoes.png",
+    popcorn: "rottentomatoes_audience.png",
+    metacritic: "metacritic.png",
+    metacriticuser: "metacritic_audience.png",
+    rogerebert: "rogerebert.png",
+    myanimelist: "myanimelist.png",
+    anilist: "anilist.png"
+  };
+  var TOMATOES_STATUS_LOGOS = { 1: "rottentomatoes_fresh.png", 0: "rottentomatoes_rotten.png" };
+  var MDBLIST_DEFAULT_ORDER = ["tmdb", "tomatoes", "popcorn", "imdb", "trakt", "metacritic"];
+  var own = (map, key) => Object.prototype.hasOwnProperty.call(map, key) ? map[key] : void 0;
+  var localSlug = (value) => (value || "").toLowerCase().replace(/'/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  function mdblistLink(sourceKey, ids, apiUrl, mediaType, title) {
+    const sLink = String(apiUrl || "");
+    const safeTitle = encodeURIComponent(title || "");
+    const safeType = mediaType === "tv" ? "tv" : "movie";
+    const id = (key) => own(ids, key);
+    const path = (value) => encodeURIComponent(value);
+    if (sLink.startsWith("http") && sourceKey !== "metacriticuser" && sourceKey !== "rogerebert") return sLink;
+    switch (sourceKey) {
+      case "imdb": {
+        const v = id("imdb");
+        return v ? `https://www.imdb.com/title/${path(v)}/` : null;
+      }
+      case "tmdb": {
+        const v = id("tmdb");
+        return v ? `https://www.themoviedb.org/${safeType}/${path(v)}` : null;
+      }
+      case "trakt": {
+        const v = id("trakt");
+        return v ? `https://trakt.tv/${safeType === "tv" ? "shows" : "movies"}/${path(v)}` : null;
+      }
+      case "letterboxd":
+        return sLink.includes("/film/") || sLink.includes("/slug/") ? `https://letterboxd.com${sLink.startsWith("/") ? "" : "/"}${sLink}` : null;
+      case "metacritic":
+      case "metacriticuser":
+        return title ? `https://www.metacritic.com/${safeType}/${localSlug(title)}` : null;
+      case "tomatoes":
+      case "popcorn":
+        if (sLink.startsWith("/")) return `https://www.rottentomatoes.com${sLink}`;
+        return sLink.length > 2 ? `https://www.rottentomatoes.com/m/${sLink}` : null;
+      case "anilist": {
+        const v = id("anilist");
+        return v ? `https://anilist.co/anime/${path(v)}` : title ? `https://anilist.co/search/anime?search=${safeTitle}` : null;
+      }
+      case "myanimelist": {
+        const v = id("mal");
+        return v ? `https://myanimelist.net/anime/${path(v)}` : title ? `https://myanimelist.net/anime.php?q=${safeTitle}` : null;
+      }
+      case "rogerebert":
+        return sLink.length > 2 ? `https://www.rogerebert.com/reviews/${sLink}` : title ? `https://duckduckgo.com/?q=!ducky+site:rogerebert.com/reviews+${safeTitle}` : null;
+      default:
+        return null;
+    }
+  }
+  function configuredSources(raw) {
+    return (raw || "").split(",").map((source) => source.trim().toLowerCase()).filter(Boolean);
+  }
+  function mdblistBadges(entry, mediaType, title, sources, showPercent) {
+    const order = sources.length ? sources : MDBLIST_DEFAULT_ORDER;
+    const rank = (rating) => {
+      const index = order.indexOf(rating.Source.toLowerCase());
+      return index === -1 ? order.length : index;
+    };
+    return entry.Ratings.filter((rating) => rating.Score !== null || rating.Value !== null).filter((rating) => sources.length === 0 || sources.includes(rating.Source.toLowerCase())).sort((a, b) => rank(a) - rank(b)).map((rating) => {
+      const normalized = rating.Score;
+      const score = normalized ?? rating.Value ?? 0;
+      const sourceKey = rating.Source.toLowerCase();
+      const label = own(MDBLIST_LABELS, sourceKey) || rating.Source;
+      const freshState = normalized !== null ? normalized >= 60 ? 1 : 0 : rating.Fresh;
+      const freshLogo = sourceKey === "tomatoes" && freshState !== null ? own(TOMATOES_STATUS_LOGOS, String(freshState)) : void 0;
+      return {
+        label,
+        logo: freshLogo || own(MDBLIST_LOGOS, sourceKey),
+        link: mdblistLink(sourceKey, entry.Ids, rating.Url, mediaType, title),
+        // A raw fallback Value keeps its precision (rogerebert's 3.5 stays 3.5).
+        scoreText: normalized !== null ? Math.round(normalized) + (showPercent ? "%" : "") : String(score),
+        score,
+        votes: rating.Votes
+      };
+    });
+  }
+  var RUNTIME_PATTERN = /^\d+\s*(?:h(?:ours?)?)?\s*\d*\s*m(?:inutes?)?$/i;
 
-        const logPrefix = '🪼 Jellyfin Enhanced: MDBList Ratings:';
-        const sectionClass = 'je-mdblist-ratings-section';
-        const escapeHtml = (typeof JE.escapeHtml === 'function') ? JE.escapeHtml : (v) => String(v);
-
-        // Safe fallback for helpers.js load-order races (same pattern letterboxd-links.js uses).
-        const extLink = JE.helpers?.createExternalLink || ((url, o = {}) => {
-            const a = document.createElement('a');
-            a.setAttribute('is', 'emby-linkbutton');
-            a.href = url;
-            a.target = '_blank';
-            a.rel = 'noopener noreferrer';
-            if (o.title) a.title = o.title;
-            if (o.className) a.className = o.className;
-            if (o.text) a.textContent = o.text;
-            if (o.resetStyle) a.style.cssText = 'padding:0;background:none;border-radius:0;min-width:0;';
-            if (typeof o.setup === 'function') o.setup(a);
-            return a;
-        });
-
-        // Friendly labels for MDBList's raw source keys. Sources not listed
-        // here still render, using the raw key as a fallback label.
-        const LABELS = {
-            master: 'Master', imdb: 'IMDb', tmdb: 'TMDB', trakt: 'Trakt',
-            letterboxd: 'Letterboxd', tomatoes: 'RT Critic', popcorn: 'RT Audience',
-            metacritic: 'Metascore', metacriticuser: 'Metacritic User',
-            rogerebert: 'Roger Ebert', myanimelist: 'MAL', anilist: 'AniList',
-        };
-
-        // Logo filenames served via the "mdblist-logos" CDN source (see CdnAssetService.cs).
-        // Sources with no logo here fall back to text-only.
-        const LOGOS = {
-            master: 'master.png', imdb: 'imdb.png', tmdb: 'tmdb.png', trakt: 'trakt.png',
-            letterboxd: 'letterboxd.png', tomatoes: 'rottentomatoes.png', popcorn: 'rottentomatoes_audience.png',
-            metacritic: 'metacritic.png', metacriticuser: 'metacritic_audience.png',
-            rogerebert: 'rogerebert.png', myanimelist: 'myanimelist.png', anilist: 'anilist.png',
-        };
-
-        // Only 'tomatoes' (RT Critic) gets a Fresh/Rotten status from MDBList (r.Fresh).
-        // When present, swaps the plain logo for the matching splat, vendored from
-        // jellyfin-web's own fresh.svg/rotten.svg.
-        const TOMATOES_STATUS_LOGOS = { 1: 'rottentomatoes_fresh.png', 0: 'rottentomatoes_rotten.png' };
-
-        // Default display order when the admin hasn't configured one: the
-        // handful of sources most people care about first, anything else
-        // in whatever order the API returned it.
-        const DEFAULT_ORDER = ['tmdb', 'tomatoes', 'popcorn', 'imdb', 'trakt', 'metacritic'];
-
-        const localSlug = (t) => (t || '').toLowerCase().replace(/'/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-
-        /**
-         * Direct link to a rating's source site, ported from xroguel1ke/jellyfin_ratings'
-         * generateLink(). tmdb/imdb/trakt/anilist/myanimelist use the item's
-         * cross-provider ids (MdblistCacheEntry.Ids); letterboxd/tomatoes/popcorn/
-         * rogerebert use the per-source url MDBList returns (MdblistRatingSource.Url)
-         * when it looks usable; metacritic is constructed from the title since
-         * MDBList doesn't provide a slug for it. Returns null (render as plain
-         * text, not a link) when no usable target exists for that source.
-         * @param {string} sourceKey
-         * @param {Object} ids - entry.Ids from the server (imdb/tmdb/trakt/mal/anilist/...)
-         * @param {string|null|undefined} apiUrl - this rating's Url field, if any
-         * @param {string} mediaType - 'movie' or 'tv'
-         * @param {string} title
-         * @returns {string|null}
-         */
-        function generateLink(sourceKey, ids, apiUrl, mediaType, title) {
-            const sLink = String(apiUrl || '');
-            const safeTitle = encodeURIComponent(title || '');
-            const safeType = mediaType === 'tv' ? 'tv' : 'movie';
-            if (sLink.startsWith('http') && sourceKey !== 'metacriticuser' && sourceKey !== 'rogerebert') return sLink;
-
-            switch (sourceKey) {
-                case 'imdb': return ids.imdb ? `https://www.imdb.com/title/${ids.imdb}/` : null;
-                case 'tmdb': return ids.tmdb ? `https://www.themoviedb.org/${safeType}/${ids.tmdb}` : null;
-                case 'trakt': return ids.trakt ? `https://trakt.tv/${safeType === 'tv' ? 'shows' : 'movies'}/${ids.trakt}` : null;
-                case 'letterboxd': return (sLink.includes('/film/') || sLink.includes('/slug/')) ? `https://letterboxd.com${sLink.startsWith('/') ? '' : '/'}${sLink}` : null;
-                case 'metacritic':
-                case 'metacriticuser': return title ? `https://www.metacritic.com/${safeType}/${localSlug(title)}` : null;
-                case 'tomatoes':
-                case 'popcorn':
-                    if (sLink.startsWith('/')) return `https://www.rottentomatoes.com${sLink}`;
-                    return sLink.length > 2 ? `https://www.rottentomatoes.com/m/${sLink}` : null;
-                case 'anilist': return ids.anilist ? `https://anilist.co/anime/${ids.anilist}` : (title ? `https://anilist.co/search/anime?search=${safeTitle}` : null);
-                case 'myanimelist': return ids.mal ? `https://myanimelist.net/anime/${ids.mal}` : (title ? `https://myanimelist.net/anime.php?q=${safeTitle}` : null);
-                case 'rogerebert': return sLink.length > 2 ? `https://www.rogerebert.com/reviews/${sLink}` : (title ? `https://duckduckgo.com/?q=!ducky+site:rogerebert.com/reviews+${safeTitle}` : null);
-                default: return null; // e.g. "master" (MDBList's own aggregate) has no source site to link to
-            }
-        }
-
-        /**
-         * Admin-configured source list (MdblistRatingsSources, config page):
-         * comma-separated source keys. Empty = show every source MDBList has
-         * data for, in DEFAULT_ORDER. Non-empty = show ONLY the listed
-         * sources, in exactly that order.
-         * @returns {Array<string>}
-         */
-        function getConfiguredSources() {
-            const raw = JE.pluginConfig?.MdblistRatingsSources || '';
-            return raw.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
-        }
-
-        function injectCss() {
-            const styleId = 'je-mdblist-ratings-styles';
-            if (document.getElementById(styleId)) return;
-
-            const style = document.createElement('style');
-            style.id = styleId;
-            style.textContent = `
+  // client/src/features/details-providers/mdblist-ratings.ts
+  var JE = export1("MDBList ratings");
+  var enabled = () => !!JE.pluginConfig?.MdblistRatingsEnabled && !!JE.pluginConfig.MdblistRatingsShowOnItemDetails;
+  JE.initializeMdblistRatingsScript = function initializeMdblistRatingsScript() {
+    if (!enabled()) {
+      console.log("🪼 Jellyfin Enhanced: MDBList Ratings feature disabled.");
+      return;
+    }
+    const logPrefix = "🪼 Jellyfin Enhanced: MDBList Ratings:";
+    const sectionClass = "je-mdblist-ratings-section";
+    const escapeHtml = (value) => typeof JE.escapeHtml === "function" ? JE.escapeHtml(value) : String(value);
+    function injectCss() {
+      const styleId = "je-mdblist-ratings-styles";
+      if (document.getElementById(styleId)) return;
+      const style = document.createElement("style");
+      style.id = styleId;
+      style.textContent = `
                 .${sectionClass} {
                     display: flex;
                     flex-wrap: wrap;
@@ -152,262 +239,117 @@
                     object-fit: contain;
                 }
             `;
-            document.head.appendChild(style);
+      document.head.appendChild(style);
+    }
+    function removeSection(page) {
+      try {
+        export9(page, `.${sectionClass}`);
+      } catch (e) {
+        console.warn(`${logPrefix} removeSection failed:`, e);
+      }
+    }
+    function buildSection(entry, mediaType, title) {
+      const wrap2 = document.createElement("div");
+      wrap2.className = sectionClass;
+      const badges = mdblistBadges(
+        entry,
+        mediaType,
+        title,
+        configuredSources(JE.pluginConfig?.MdblistRatingsSources),
+        !!JE.pluginConfig?.MdblistRatingsShowPercentSymbol
+      );
+      for (const badge of badges) {
+        const votesText = badge.votes ? ` (${JE.t("mdblist_ratings_votes", { count: badge.votes })})` : "";
+        const badgeTitle = `${badge.label}: ${badge.score}${votesText}`;
+        const iconHtml = badge.logo ? `<img class="je-mdblist-logo" src="${escapeHtml(JE.cdn.url("mdblist-logos", badge.logo))}" alt="${escapeHtml(badge.label)}" loading="lazy">` : `<span class="je-mdblist-source">${escapeHtml(badge.label)}</span>`;
+        const badgeHtml = `${iconHtml}<span>${escapeHtml(badge.scoreText)}</span>`;
+        const element = badge.link ? export02(JE.helpers, badge.link, { className: "je-mdblist-badge", title: badgeTitle, resetStyle: true, setup: (anchor) => {
+          anchor.innerHTML = badgeHtml;
+        } }) : Object.assign(document.createElement("span"), { className: "je-mdblist-badge", title: badgeTitle, innerHTML: badgeHtml });
+        wrap2.appendChild(element);
+      }
+      return wrap2;
+    }
+    function findInsertionTarget(contextPage) {
+      const official = contextPage.querySelector("div.mediaInfoItem.mediaInfoOfficialRating");
+      if (official) return official;
+      for (const element of contextPage.querySelectorAll("div.mediaInfoItem")) {
+        if (RUNTIME_PATTERN.test((element.textContent ?? "").trim())) return element;
+      }
+      return null;
+    }
+    function insertSection(contextPage, entry, mediaType, title) {
+      removeSection(contextPage);
+      if (!entry) return;
+      const section = buildSection(entry, mediaType, title);
+      if (section.children.length === 0) return;
+      const target = findInsertionTarget(contextPage);
+      const scope = target && (target.closest(".detailRibbon") || target.closest(".mainDetailButtons") || target.closest(".itemMiscInfo")) || target?.parentNode;
+      const extLinks = (scope && "querySelector" in scope ? scope.querySelector(".itemExternalLinks") : null) || contextPage.querySelector(".itemExternalLinks");
+      if (extLinks?.parentNode) {
+        extLinks.insertAdjacentElement("beforebegin", section);
+        return;
+      }
+      if (target?.parentNode) {
+        target.insertAdjacentElement("afterend", section);
+        return;
+      }
+      const afterAnchor = contextPage.querySelector(".je-awards-section") || contextPage.querySelector(".tmdb-reviews-section") || contextPage.querySelector(".streaming-lookup-container") || contextPage.querySelector(".tagline");
+      if (afterAnchor?.parentNode) {
+        afterAnchor.parentNode.insertBefore(section, afterAnchor.nextSibling);
+        return;
+      }
+      const beforeAnchor = contextPage.querySelector("#similarCollapsible");
+      if (beforeAnchor?.parentNode) {
+        beforeAnchor.parentNode.insertBefore(section, beforeAnchor);
+        return;
+      }
+      console.warn(`${logPrefix} Could not find a suitable anchor to insert the ratings row.`);
+    }
+    async function fetchRatings(tmdbId, apiMediaType) {
+      try {
+        const cacheKey = `mdblist-ratings:/${apiMediaType}/${tmdbId}`;
+        const data = await JE.core.api.plugin(`/mdblist-ratings/${apiMediaType}/${export2(tmdbId)}`, { cacheKey });
+        if (isUnconfirmed(data)) JE.core.api.manager.clearCacheMatching(cacheKey);
+        return decodeMdblistEntry(data);
+      } catch (e) {
+        console.warn(`${logPrefix} Failed to fetch ratings.`, e);
+        return null;
+      }
+    }
+    async function processPage(visiblePage) {
+      if (!enabled()) {
+        removeSection(visiblePage);
+        return;
+      }
+      try {
+        const itemId = export32();
+        const userId = export3();
+        if (!itemId || !userId) return;
+        const lease = export12(JE.session, itemId, visiblePage);
+        const item = await export7(JE.helpers, itemId, true, userId);
+        const { target } = await resolveProviderTarget(item, false, (seriesId) => export7(JE.helpers, seriesId, true, userId));
+        if (!lease.current()) return;
+        if (!target) {
+          if (lease.current()) removeSection(visiblePage);
+          return;
         }
-
-        function removeSection(page) {
-            try {
-                const root = page || document.querySelector('#itemDetailPage:not(.hide)') || document;
-                const sec = root.querySelector(`.${sectionClass}`);
-                if (sec && sec.parentNode) sec.parentNode.removeChild(sec);
-            } catch (e) {
-                console.warn(`${logPrefix} removeSection failed:`, e);
-            }
-        }
-
-        function buildSection(entry, mediaType, title) {
-            const wrap = document.createElement('div');
-            wrap.className = sectionClass;
-
-            const configuredSources = getConfiguredSources();
-            const order = configuredSources.length ? configuredSources : DEFAULT_ORDER;
-
-            const rows = (entry.Ratings || [])
-                .filter(r => (r.Score !== null && r.Score !== undefined) || (r.Value !== null && r.Value !== undefined))
-                .filter(r => configuredSources.length === 0 || configuredSources.includes((r.Source || '').toLowerCase()))
-                .sort((a, b) => {
-                    const ai = order.indexOf((a.Source || '').toLowerCase());
-                    const bi = order.indexOf((b.Source || '').toLowerCase());
-                    return (ai === -1 ? order.length : ai) - (bi === -1 ? order.length : bi);
-                });
-
-            const showPercent = !!JE.pluginConfig?.MdblistRatingsShowPercentSymbol;
-
-            rows.forEach(r => {
-                // r.Score is MDBList's own 0-100 figure, present only when that
-                // source is scored (rogerebert never gets one). Falling back to
-                // r.Value is fine, but "%" only makes sense on a true 0-100 Score.
-                const hasNormalizedScore = r.Score !== null && r.Score !== undefined;
-                const score = hasNormalizedScore ? r.Score : r.Value;
-                const sourceKey = (r.Source || '').toLowerCase();
-                const label = LABELS[sourceKey] || r.Source;
-                // MDBList's fresh flag can contradict the score; RT rule: >= 60 is Fresh.
-                const freshState = hasNormalizedScore ? (r.Score >= 60 ? 1 : 0) : r.Fresh;
-                const freshLogo = sourceKey === 'tomatoes' ? TOMATOES_STATUS_LOGOS[freshState] : null;
-                const logo = freshLogo || LOGOS[sourceKey];
-                const link = generateLink(sourceKey, entry.Ids || {}, r.Url, mediaType, title);
-
-                const votesText = r.Votes ? ` (${JE.t('mdblist_ratings_votes', { count: r.Votes })})` : '';
-                const badgeTitle = `${label}: ${score}${votesText}`;
-                const iconHtml = logo
-                    ? `<img class="je-mdblist-logo" src="${JE.cdn.url('mdblist-logos', logo)}" alt="${escapeHtml(label)}" loading="lazy">`
-                    : `<span class="je-mdblist-source">${escapeHtml(label)}</span>`;
-                // Only round a true 0-100 Score (already whole numbers, so this
-                // is a no-op). A raw fallback Value keeps its precision, e.g.
-                // rogerebert's 3.5 stays 3.5, not 4.
-                const scoreText = hasNormalizedScore
-                    ? Math.round(score) + (showPercent ? '%' : '')
-                    : String(score);
-                const badgeHtml = `${iconHtml}<span>${scoreText}</span>`;
-
-                // is="emby-linkbutton" (via createExternalLink) tells the native
-                // app shell to open externally instead of the in-app WebView.
-                // resetStyle strips the emby-button chrome so it renders as our
-                // own flat badge, not a boxed button.
-                const badge = link
-                    ? extLink(link, {
-                        className: 'je-mdblist-badge',
-                        title: badgeTitle,
-                        resetStyle: true,
-                        setup: (a) => { a.innerHTML = badgeHtml; },
-                    })
-                    : Object.assign(document.createElement('span'), {
-                        className: 'je-mdblist-badge',
-                        title: badgeTitle,
-                        innerHTML: badgeHtml,
-                    });
-                wrap.appendChild(badge);
-            });
-
-            return wrap;
-        }
-
-        // Targets the official-rating chip (e.g. "PG-13"), or failing that a
-        // mediaInfoItem that looks like a runtime ("2h 15m"), in the top
-        // metadata row. Same element extras/colored-ratings.js targets elsewhere.
-        function findInsertionTarget(contextPage) {
-            const official = contextPage.querySelector('div.mediaInfoItem.mediaInfoOfficialRating');
-            if (official) return official;
-
-            const runtimePattern = /^\d+\s*(?:h(?:ours?)?)?\s*\d*\s*m(?:inutes?)?$/i;
-            const items = contextPage.querySelectorAll('div.mediaInfoItem');
-            for (const el of items) {
-                if (runtimePattern.test(el.textContent.trim())) return el;
-            }
-            return null;
-        }
-
-        function insertSection(contextPage, entry, mediaType, title) {
-            removeSection(contextPage);
-
-            if (!entry || !entry.Found || !Array.isArray(entry.Ratings) || entry.Ratings.length === 0) {
-                return;
-            }
-
-            const section = buildSection(entry, mediaType, title);
-            if (section.children.length === 0) return;
-
-            const target = findInsertionTarget(contextPage);
-            const scope = (target && (target.closest('.detailRibbon') || target.closest('.mainDetailButtons') || target.closest('.itemMiscInfo'))) || target?.parentNode;
-            const extLinks = (scope && scope.querySelector && scope.querySelector('.itemExternalLinks')) || contextPage.querySelector('.itemExternalLinks');
-
-            if (extLinks && extLinks.parentNode) {
-                extLinks.insertAdjacentElement('beforebegin', section);
-                return;
-            }
-            if (target && target.parentNode) {
-                target.insertAdjacentElement('afterend', section);
-                return;
-            }
-
-            // Fallback anchor chain for a skin/Jellyfin version without the classes
-            // above, same one reviews.js/awards.js use, further down the page.
-            const afterAnchor =
-                contextPage.querySelector('.je-awards-section') ||
-                contextPage.querySelector('.tmdb-reviews-section') ||
-                contextPage.querySelector('.streaming-lookup-container') ||
-                contextPage.querySelector('.tagline');
-
-            if (afterAnchor && afterAnchor.parentNode) {
-                afterAnchor.parentNode.insertBefore(section, afterAnchor.nextSibling);
-                return;
-            }
-
-            const beforeAnchor = contextPage.querySelector('#similarCollapsible');
-            if (beforeAnchor && beforeAnchor.parentNode) {
-                beforeAnchor.parentNode.insertBefore(section, beforeAnchor);
-                return;
-            }
-
-            console.warn(`${logPrefix} Could not find a suitable anchor to insert the ratings row.`);
-        }
-
-        /**
-         * Fetches a title's MDBList ratings. Kept in the core response cache
-         * (30 minutes, dropped on a user switch) so revisits cost no request —
-         * the server keeps this data for days — except a failure placeholder
-         * (Confirmed: false), which the server retries soon, so it is re-asked.
-         * @param {string} tmdbId
-         * @param {string} apiMediaType - 'movie' or 'tv'.
-         * @returns {Promise<object|null>} The ratings entry, or null on failure.
-         */
-        async function fetchRatings(tmdbId, apiMediaType) {
-            try {
-                const cacheKey = `mdblist-ratings:/${apiMediaType}/${tmdbId}`;
-                const data = await JE.core.api.plugin(`/mdblist-ratings/${apiMediaType}/${tmdbId}`, { cacheKey });
-                if (data && data.Confirmed === false) JE.core.api.manager.clearCacheMatching(cacheKey);
-                return data;
-            } catch (e) {
-                // A ratings row is decoration; never surface a fetch failure to the user.
-                console.warn(`${logPrefix} Failed to fetch ratings.`, e);
-                return null;
-            }
-        }
-
-        async function processPage(visiblePage) {
-            if (!JE?.pluginConfig?.MdblistRatingsEnabled || !JE?.pluginConfig?.MdblistRatingsShowOnItemDetails) {
-                removeSection(visiblePage);
-                return;
-            }
-
-            try {
-                const itemId = new URLSearchParams(window.location.hash.split('?')[1]).get('id');
-                const userId = ApiClient.getCurrentUserId();
-                if (!itemId || !userId) return;
-
-                const item = JE.helpers?.getItemCached
-                    ? await JE.helpers.getItemCached(itemId, { userId })
-                    : await ApiClient.getItem(userId, itemId);
-                const mediaType = item?.Type;
-
-                let tmdbId = null;
-                let apiMediaType;
-
-                if (mediaType === 'Movie') {
-                    tmdbId = item?.ProviderIds?.Tmdb;
-                    apiMediaType = 'movie';
-                } else if (mediaType === 'Series' || mediaType === 'Season' || mediaType === 'Episode') {
-                    // Ratings are recorded against the series, not per episode/season
-                    // (same TMDB id resolution as reviews.js/awards.js). A Season's or
-                    // Episode's own ProviderIds.Tmdb is the TMDB season/episode id, so
-                    // the show id comes from the parent Series, through the shared item
-                    // cache every module on the page uses.
-                    if (mediaType === 'Series') {
-                        tmdbId = item?.ProviderIds?.Tmdb;
-                    } else if (item?.SeriesId) {
-                        try {
-                            const series = JE.helpers?.getItemCached
-                                ? await JE.helpers.getItemCached(item.SeriesId, { userId })
-                                : await ApiClient.getItem(userId, item.SeriesId);
-                            tmdbId = series?.ProviderIds?.Tmdb;
-                        } catch (_) { /* fall through to the not-found path below */ }
-                    }
-                    apiMediaType = 'tv';
-                } else {
-                    removeSection(visiblePage);
-                    return;
-                }
-
-                if (!tmdbId) {
-                    removeSection(visiblePage);
-                    return;
-                }
-
-                // Use the series' own title for link generation too (e.g. Metacritic's
-                // slug), not the season/episode's.
-                const title = (mediaType === 'Season' || mediaType === 'Episode') ? (item?.SeriesName || item?.Name) : item?.Name;
-
-                const entry = await fetchRatings(String(tmdbId), apiMediaType);
-                insertSection(visiblePage, entry, apiMediaType, title);
-            } catch (error) {
-                console.error(`${logPrefix} Error processing page:`, error);
-            }
-        }
-
-        injectCss();
-
-        const unregister = JE.helpers.onViewPage(async (view, element, hash) => {
-            if (!JE?.pluginConfig?.MdblistRatingsEnabled || !JE?.pluginConfig?.MdblistRatingsShowOnItemDetails) {
-                unregister();
-                return;
-            }
-
-            const currentHash = window.location.hash;
-            const hasItemId = currentHash.includes('id=') || (hash && hash.includes('id='));
-            const isItemDetailElement = element && (
-                element.id === 'itemDetailPage' ||
-                element.classList?.contains('itemDetailPage')
-            );
-
-            if (!hasItemId && !isItemDetailElement) {
-                return;
-            }
-
-            await new Promise(resolve => setTimeout(resolve, 150));
-
-            const visiblePage = document.querySelector('#itemDetailPage:not(.hide)');
-            if (visiblePage) {
-                processPage(visiblePage);
-            } else {
-                setTimeout(() => {
-                    const retryPage = document.querySelector('#itemDetailPage:not(.hide)');
-                    if (retryPage) processPage(retryPage);
-                }, 500);
-            }
-        }, {
-            pages: null,
-            fetchItem: false,
-            immediate: true
-        });
-    };
-})(window.JellyfinEnhanced);
+        const type = item?.Type;
+        const title = type === "Season" || type === "Episode" ? item?.SeriesName || item?.Name : item?.Name;
+        const entry = await fetchRatings(target.tmdbId, target.mediaType);
+        if (lease.current()) insertSection(visiblePage, entry, target.mediaType, title);
+      } catch (error) {
+        console.error(`${logPrefix} Error processing page:`, error);
+      }
+    }
+    injectCss();
+    const unregister = JE.helpers.onViewPage(
+      export0(enabled, () => unregister?.(), (page) => {
+        void processPage(page);
+      }, true),
+      { pages: null, fetchItem: false, immediate: true }
+    );
+  };
+})();
+})();
+//# sourceMappingURL=mdblist-ratings.js.map

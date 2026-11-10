@@ -70,7 +70,7 @@ function setup(t, { settings = {}, plugin = {}, html = '', admin = false, tagDat
           io.config = { ...io.config, ...values };
           return { values };
         }
-        if (u.pathname.includes('/user-settings/')) { writes.push(JSON.parse(data)); return io.userSave?.() || {}; }
+        if (u.pathname.includes('/user-settings/')) { writes.push(JSON.parse(data).Settings); return io.userSave?.() || {}; }
         throw new Error(`unexpected ${target}`);
       },
     },
@@ -674,6 +674,7 @@ for (const source of ['shape', 'rule', 'lock', 'override']) test(`opening and lo
 
 for (const phase of ['queued', 'post']) test(`real settings transport abandons stale lock work during ${phase}`, async t => {
   const h = setup(t);
+  h.JE.userConfig ||= {}; h.JE.userConfig.settingsRevision = 'fixture-loaded';
   h.load('enhanced/config.js');
   const answer = deferred();
   h.io.userSave = () => answer.promise;

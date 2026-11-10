@@ -1,0 +1,6 @@
+{
+  "js/enhanced/helpers.js": "client/src/features/shared/helpers-entry.ts",
+  "js/enhanced/icons.js": "client/src/features/shared/icons-entry.ts",
+  "js/enhanced/translations.js": "client/src/features/shared/translations-entry.ts",
+  "js/enhanced/themer.js": "client/src/features/shared/themer-entry.ts"
+}

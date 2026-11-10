@@ -284,3 +284,34 @@ test('a failed scope lookup suppresses reviews on a movie, as other failed guard
   const h=await setup(t,{config:{SpoilerBlurEnabled:true},spoilerBlur:{isMovieInScope:async()=>{throw new Error('offline');}}});
   assert.equal(h.document.querySelector('.tmdb-reviews-section'),null);
 });
+// BUG-009: a failed /translate/languages lookup is not remembered as "no languages" for the rest of the session.
+test('a failed translation-language lookup is asked again on the next render instead of hiding Translate until reload',async t=>{
+  let fail=true,lookups=0;
+  const plugin=async url=>{if(url==='/translate/languages'){lookups++;if(fail)throw Error('offline');return {languages:['de']};}return {reviews:[]};};
+  const h=await setup(t,{config:{ReviewTranslationEnabled:true,ReviewTranslationServer:true},tmdb:english,lang:'de',plugin});await nextTurn();
+  assert.equal(h.document.querySelector('.je-review-translate'),null,'no server language list, no server translation');
+  fail=false;h.document.querySelector('.tmdb-reviews-section').remove();await h.navigate();await nextTurn();
+  assert.equal(lookups,2);
+  assert.ok(h.document.querySelector('.je-review-translate'),'the recovered language list offers Translate');
+});
+// BUG-020 (triage G-1): the server upserts one review per user, so offering "Write a Review" after the user-review
+// request failed lets a user overwrite the review they could not see.
+test('when user reviews fail to load, no Write a Review is offered and the section says reviews are unavailable',async t=>{
+  let fail=false;const posts=[];
+  const plugin=async(url,options)=>{
+    if(options?.method==='POST'){posts.push(options.body);return {};}
+    if(url.startsWith('/reviews/')){if(fail)throw Error('HTTP 500');return {reviews:[{userId:'user-a',userName:'Me',content:'Mine',rating:4}]};}
+    return {};
+  };
+  const h=await setup(t,{plugin,tmdb:english});
+  assert.ok(h.document.querySelector('.je-review-edit-btn'),'the own review loads and is editable');
+  fail=true;h.expectConsoleError('Failed to fetch user reviews');
+  h.document.querySelector('.tmdb-reviews-section').remove();await h.navigate();await nextTurn();
+  const section=h.document.querySelector('.tmdb-reviews-section');
+  assert.ok(section,'external reviews still show');
+  assert.equal(section.querySelector('.je-review-write-btn'),null);
+  assert.equal(section.querySelector('.je-review-form'),null);
+  assert.match(section.querySelector('.je-review-unavailable')?.textContent ?? '',/couldn't be loaded/);
+  assert.equal(h.document.querySelector('.je-avg-user-rating-chip'),null);
+  assert.equal(posts.length,0);
+});

@@ -2,7 +2,7 @@
 """
 Build the embedded assets of the native poster tag renderer (issue #590).
 
-The renderer (Services/PosterTags/Rendering) draws JE's card tags into poster
+The renderer (Features/MediaTags/PosterTags/Rendering) draws JE's card tags into poster
 images with SkiaSharp. It needs jellyfin-web's own font, the Material icon
 glyphs, the flag-icons flags and JE's colour tables. This script regenerates all
 of them, reproducibly, into Jellyfin.Plugin.JellyfinEnhanced/Assets/PosterTags/.
@@ -20,14 +20,14 @@ Outputs (relative to the output directory):
                               in font units (y down from hhea.ascent) plus metrics.
   vector-icons.json           jellyfin-web's Rotten Tomatoes fresh/rotten SVGs as
                               path data + fills.
-  rating-source-icons.json    Bundled source logos from js/tags/rating-sources.js.
-  flags/<code>.webp           flag-icons 4x3 for every code js/core/media-language.js
+  rating-source-icons.json    Bundled source logos (LOGOS in media-tags/types/ratings/rating-data.ts).
+  flags/<code>.webp           flag-icons 4x3 for every code media-tags/types/language/media-language.ts
                               can emit (+ its inline "zxx" no-dialogue artwork),
                               rasterised by headless Chromium at 160x120, lossless WebP.
   age-rating-colours.json     [rating=...] colours from css/ratings.css, resolved
                               with the CSS cascade exactly as ageratingtags.js scopes them.
   quality-colours.json        qualityColors (+ the LOW-RES rule and the composite
-                              audio bases) from js/tags/qualitytags.js.
+                              audio bases) from media-tags/types/quality/quality-data.ts.
   THIRD_PARTY_NOTICES.md      Provenance of every asset plus the full licence texts
                               taken from the pinned upstream packages.
   manifest.json               Pins, tool versions, options and sha256 of every output.
@@ -124,6 +124,17 @@ IN_REPO = {
     "symbols-rounded": PLUGIN / "js/fonts/materialsymbolsrounded.woff2",
 }
 
+# Typed modules that hold the tables. client-build emits the IN_REPO scripts from them, so the manifest keeps naming
+# what ships while the tables are read here, where their source formatting is stable.
+TABLE_SOURCE = {
+    "media-language": REPO / "client/src/features/media-tags/types/language/media-language.ts",
+    "qualitytags": REPO / "client/src/features/media-tags/types/quality/quality-data.ts",
+    "rating-sources": REPO / "client/src/features/media-tags/types/ratings/rating-data.ts",
+    "award-tags": REPO / "client/src/features/media-tags/types/awards/awards-data.ts",
+}
+# A declaration's optional TypeScript annotation.
+TYPED = r"(?:: [^=\n]+)?"
+
 NOTO_SUBSETS = ["latin", "latin-ext", "cyrillic", "greek"]
 FLAG_WIDTH, FLAG_HEIGHT = 160, 120
 
@@ -188,7 +199,7 @@ def tar_members(tgz: bytes, prefix: str):
 
 
 def read_repo(name: str) -> str:
-    return IN_REPO[name].read_text(encoding="utf-8")
+    return TABLE_SOURCE.get(name, IN_REPO[name]).read_text(encoding="utf-8")
 
 
 # ── Data derived from the repo's JS/CSS (standard library only: used by --check) ──
@@ -206,19 +217,19 @@ def flag_codes():
     js = read_repo("media-language")
     m = re.search(r"validRegions = new Set\(\((.*?)\)\.split", js, re.S)
     if not m:
-        sys.exit("media-language.js: validRegions not found")
+        sys.exit("media-language.ts: validRegions not found")
     regions = " ".join(re.findall(r"'([a-z ]+)'", m.group(1))).split()
-    base = re.search(r"const baseLanguageFlags = \{(.*?)\n\s*\};", js, re.S)
+    base = re.search(rf"const baseLanguageFlags{TYPED} = \{{(.*?)\n\s*\}};", js, re.S)
     if not base:
-        sys.exit("media-language.js: baseLanguageFlags not found")
+        sys.exit("media-language.ts: baseLanguageFlags not found")
     values = set(re.findall(r":\s*'([a-z-]+)'", base.group(1)))
-    script = re.search(r"const chineseScriptFlags = \{(.*?)\};", js, re.S)
+    script = re.search(rf"const chineseScriptFlags{TYPED} = \{{(.*?)\}};", js, re.S)
     if script:
         values |= set(re.findall(r":\s*'([a-z]+)'", script.group(1)))
     codes = sorted((set(regions) | values) - {"zxx"})
     zm = re.search(r"zxx: 'data:image/svg\+xml,' \+ encodeURIComponent\((.*?)\)\s*\n", js, re.S)
     if not zm:
-        sys.exit("media-language.js: specialFlags.zxx not found")
+        sys.exit("media-language.ts: specialFlags.zxx not found")
     zxx = "".join(re.findall(r"'(<[^']*>)'", zm.group(1)))
     return codes, zxx
 
@@ -227,23 +238,23 @@ def quality_colours() -> dict:
     js = read_repo("qualitytags")
     m = re.search(r"const qualityColors = \{(.*?)\n\s*\};", js, re.S)
     if not m:
-        sys.exit("qualitytags.js: qualityColors not found")
+        sys.exit("quality-data.ts: qualityColors not found")
     colours = {}
     for label, bg, text in re.findall(r"'((?:\\.|[^'\\])+)':\s*\{\s*bg:\s*'([^']+)',\s*text:\s*'([^']+)'\s*\}", m.group(1)):
         colours[label.replace("\\'", "'")] = {"background": bg, "color": text}
     # The generic LOW-RES rule lives in the CSS template, not in qualityColors.
     lm = re.search(r'\[data-quality="LOW-RES"\]\s*\{([^}]*)\}', js)
     if not lm:
-        sys.exit("qualitytags.js: LOW-RES rule not found")
+        sys.exit("quality-data.ts: LOW-RES rule not found")
     decl = dict((k.strip(), v.replace("!important", "").strip())
                 for k, v in re.findall(r"([a-z-]+)\s*:\s*([^;]+)", lm.group(1)))
     colours["LOW-RES"] = {"background": decl["background"], "color": decl["color"]}
     bm = re.search(r"const audioBases = \[(.*?)\];", js, re.S)
     if not bm:
-        sys.exit("qualitytags.js: audioBases not found")
+        sys.exit("quality-data.ts: audioBases not found")
     bases = re.findall(r"'([^']+)'", bm.group(1))
     if not colours or not bases:
-        sys.exit("qualitytags.js: empty colour table")
+        sys.exit("quality-data.ts: empty colour table")
     return {"labels": colours, "compositeBases": bases}
 
 
@@ -419,20 +430,20 @@ def svg_to_paths(svg: bytes) -> dict:
 
 def rating_source_icons() -> dict:
     """Convert the web's bundled source logos to the native renderer's path format."""
-    source = IN_REPO["rating-sources"].read_text(encoding="utf-8")
-    match = re.search(r"const LOGOS = (\{[^\n]+\});", source)
+    source = read_repo("rating-sources")
+    match = re.search(rf"const LOGOS{TYPED} = (\{{[^\n]+\}});", source)
     if not match:
-        raise ValueError("rating-sources.js: bundled LOGOS object not found")
+        raise ValueError("rating-data.ts: bundled LOGOS object not found")
     logos = json.loads(match.group(1))
     return {"rating-" + name: svg_to_paths(svg.encode("utf-8")) for name, svg in logos.items()}
 
 
 def award_icons() -> dict:
     """Convert the same bundled nominative marks used by Awards web chips."""
-    source = IN_REPO["award-tags"].read_text(encoding="utf-8")
-    match = re.search(r"const LOGOS = (\{[^\n]+\});", source)
+    source = read_repo("award-tags")
+    match = re.search(rf"const LOGOS{TYPED} = (\{{[^\n]+\}});", source)
     if not match:
-        raise ValueError("awardstags.js: bundled LOGOS object not found")
+        raise ValueError("awards-data.ts: bundled LOGOS object not found")
     return {"award-" + name: svg_to_paths(svg.encode("utf-8")) for name, svg in json.loads(match.group(1)).items()}
 
 
@@ -523,7 +534,7 @@ def build_licences(out: Path, cache: Path) -> None:
     write(out / "THIRD_PARTY_NOTICES.md", f"""# Native poster tag assets: third-party notices
 
 Generated by `scripts/build_poster_assets.py`; do not edit by hand. Embedded into the plugin
-for the native poster tag renderer (`Services/PosterTags/Rendering`).
+for the native poster tag renderer (`Features/MediaTags/PosterTags/Rendering`).
 
 | Asset | Source | Licence |
 |---|---|---|
@@ -627,14 +638,14 @@ def check(out: Path, full: bool, cache: Path, keep_tmp: bool) -> int:
     for name, text in derived_json().items():
         p = out / name
         if not p.is_file() or p.read_text(encoding="utf-8") != text:
-            problems.append(f"{name}: stale, its in-repo source (js/css) changed")
+            problems.append(f"{name}: stale, its in-repo source (typed table or css) changed")
     if manifest.get("genreIcons") != genre_icon_names():
         problems.append("genre icon list in js/tags/genre-icons.json changed: icons.json is stale")
     codes, zxx = flag_codes()
     if manifest.get("flagCodes") != codes + ["zxx"]:
-        problems.append("flag codes in js/core/media-language.js changed: flags/ are stale")
+        problems.append("flag codes in media-language.ts changed: flags/ are stale")
     if manifest.get("zxxSvgSha256") != sha256(zxx.encode()):
-        problems.append("no-dialogue artwork (specialFlags.zxx in js/core/media-language.js) changed: flags/zxx.webp is stale")
+        problems.append("no-dialogue artwork (specialFlags.zxx in media-language.ts) changed: flags/zxx.webp is stale")
     for rel, digest in input_hashes().items():
         if manifest.get("inputs", {}).get(rel) != digest and not rel.endswith((".js", ".css")):
             problems.append(f"{rel}: changed since the assets were generated")

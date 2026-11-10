@@ -1,0 +1,1552 @@
+{
+  "_source": "What Shared/MediaTags/MediaTagsPageFields.cs, Features/Admin/Services/WhatsNewService.cs and scripts/generate_config_flag_groups.py read from the section modules at 2e0f9251bfe833cb58866e9e245ba62be69a69ad (the hand-written JavaScript), through tests/frontend/helpers/admin-tags-declarations.mjs. The generated modules must read the same.",
+  "allowed": [
+    "AgeRatingTagsEnabled",
+    "AgeRatingTagsPosition",
+    "AspectRatioTagOrder",
+    "AudioInfoTagOrder",
+    "AwardsTagsCertifiedFresh",
+    "AwardsTagsEmmy",
+    "AwardsTagsEnabled",
+    "AwardsTagsImdb",
+    "AwardsTagsImdbList",
+    "AwardsTagsLetterboxd",
+    "AwardsTagsLetterboxdList",
+    "AwardsTagsOscar",
+    "AwardsTagsPosition",
+    "AwardsTagsRefreshHours",
+    "ClearLocalStorageTimestamp",
+    "CustomTagRules",
+    "CustomTagsEnabled",
+    "CustomTagsPosition",
+    "DisableTagsOnSearchPage",
+    "DynamicRangeTagOrder",
+    "EditionTagOrder",
+    "EnableTagsLocalStorageFallback",
+    "FrameRateTagOrder",
+    "GenreTagsEnabled",
+    "GenreTagsPosition",
+    "LanguageTagsCountBadge",
+    "LanguageTagsEnabled",
+    "LanguageTagsMergeRegions",
+    "LanguageTagsPosition",
+    "LanguageTagsPriority",
+    "LanguageTagsPriorityStrict",
+    "LanguageTagsShowAudio",
+    "LanguageTagsShowSubtitles",
+    "LanguageTagsStyle",
+    "LeavingSoonCollections",
+    "LeavingSoonMaintainerrApiKey",
+    "LeavingSoonMaintainerrUrl",
+    "LeavingSoonRefreshHours",
+    "LogoTagsEnabled",
+    "LogoTagsMaxLogos",
+    "LogoTagsMovieMode",
+    "LogoTagsPosition",
+    "LogoTagsRegion",
+    "LogoTagsSeriesMode",
+    "NativePosterTagsEnabled",
+    "NativePosterTagsWebClientNames",
+    "PeopleTagsEnabled",
+    "QualityAudioDisplayMode",
+    "QualityHdrDisplayMode",
+    "QualityHideSdr",
+    "QualityMinimumResolution",
+    "QualityTagsAudioLanguageFromUser",
+    "QualityTagsEnabled",
+    "QualityTagsPosition",
+    "QualityTagsPreferredAudioLanguage",
+    "QualityVideoCodecDisplayMode",
+    "RatingTagsColorByScore",
+    "RatingTagsEnabled",
+    "RatingTagsMinScore",
+    "RatingTagsOnContinueWatching",
+    "RatingTagsOnEpisodes",
+    "RatingTagsOnMovies",
+    "RatingTagsOnNextUp",
+    "RatingTagsOnSeasons",
+    "RatingTagsOnSeries",
+    "RatingTagsPosition",
+    "RatingTagsSources",
+    "ResolutionTagOrder",
+    "RuntimeTagOrder",
+    "SeriesQualityAggregation",
+    "ShowAspectRatioTag",
+    "ShowAudioInfoTag",
+    "ShowDynamicRangeTag",
+    "ShowEditionTag",
+    "ShowFrameRateTag",
+    "ShowLowQualitySourceTag",
+    "ShowRatingInPlayer",
+    "ShowResolutionTag",
+    "ShowRuntimeTag",
+    "ShowSourceTag",
+    "ShowSpecialFormatTag",
+    "ShowVersionsTag",
+    "ShowVideoCodecTag",
+    "SourceTagOrder",
+    "SpecialFormatTagOrder",
+    "StatusTagsDirectPlay",
+    "StatusTagsEnabled",
+    "StatusTagsJustAdded",
+    "StatusTagsJustAddedDays",
+    "StatusTagsLeaving",
+    "StatusTagsMilestones",
+    "StatusTagsNewRelease",
+    "StatusTagsNewReleaseDays",
+    "StatusTagsPosition",
+    "StatusTagsScenes",
+    "StatusTagsSchedule",
+    "StatusTagsSeriesStatus",
+    "StatusTagsTrending",
+    "TagCacheExcludeLibraries",
+    "TagCacheExcludedLibraryIds",
+    "TagCacheServerMode",
+    "TagEdgeSpacing",
+    "TagGap",
+    "TagGroupCaps",
+    "TagGroupOrder",
+    "TagGroupScopes",
+    "TagLabelDensity",
+    "TagLayout",
+    "TagLayouts",
+    "TagLookItemOverrides",
+    "TagLookRules",
+    "TagOfferedPresets",
+    "TagScale",
+    "TagShapeOverrides",
+    "TagStyleOverrides",
+    "TagStylePreset",
+    "TagStyleTarget",
+    "TagStylesAllowUserPreset",
+    "TagStylesEnabled",
+    "TagsCacheTtlDays",
+    "TagsHideOnHover",
+    "VersionsTagOrder",
+    "VideoCodecTagOrder"
+  ],
+  "settingIds": [
+    "ageRatingTagsEnabled",
+    "awardsTagsEnabled",
+    "awardsTagsImdb",
+    "awardsTagsCertifiedFresh",
+    "awardsTagsOscar",
+    "awardsTagsEmmy",
+    "awardsTagsLetterboxd",
+    "awardsTagsImdbList",
+    "awardsTagsLetterboxdList",
+    "awardsTagsRefreshHours",
+    "statusTagsJustAdded",
+    "statusTagsNewRelease",
+    "statusTagsTrending",
+    "statusTagsSchedule",
+    "statusTagsMilestones",
+    "statusTagsSeriesStatus",
+    "statusTagsScenes",
+    "statusTagsLeaving",
+    "statusTagsDirectPlay",
+    "statusTagsJustAddedDays",
+    "statusTagsNewReleaseDays",
+    "leavingSoonMaintainerrUrl",
+    "leavingSoonMaintainerrApiKey",
+    "leavingSoonCollections",
+    "leavingSoonRefreshHours",
+    "tagStylesEnabled",
+    "tagStyleTarget",
+    "tagStylesAllowUserPreset",
+    "customTagsEnabled",
+    "customTagRules",
+    "genreTagsEnabled",
+    "languageTagsEnabled",
+    "languageTagsShowAudio",
+    "languageTagsShowSubtitles",
+    "languageTagsStyle",
+    "languageTagsCountBadge",
+    "languageTagsPriority",
+    "languageTagsPriorityStrict",
+    "languageTagsMergeRegions",
+    "tagLayout",
+    "tagLabelDensity",
+    "tagScale",
+    "tagGap",
+    "tagEdgeSpacing",
+    "qualityTagsPosition",
+    "genreTagsPosition",
+    "languageTagsPosition",
+    "ratingTagsPosition",
+    "ageRatingTagsPosition",
+    "statusTagsPosition",
+    "awardsTagsPosition",
+    "logoTagsPosition",
+    "customTagsPosition",
+    "tagShapeLandscapeDefault",
+    "tagShapeListDefault",
+    "tagsHideOnHover",
+    "disableTagsOnSearchPage",
+    "logoTagsEnabled",
+    "logoTagsMovieMode",
+    "logoTagsSeriesMode",
+    "logoTagsRegion",
+    "logoTagsMaxLogos",
+    "peopleTagsEnabled",
+    "tagOfferedPresets",
+    "qualityTagsEnabled",
+    "showResolutionTag",
+    "showSourceTag",
+    "showDynamicRangeTag",
+    "showSpecialFormatTag",
+    "showVideoCodecTag",
+    "showAudioInfoTag",
+    "showEditionTag",
+    "showRuntimeTag",
+    "showAspectRatioTag",
+    "showFrameRateTag",
+    "showVersionsTag",
+    "showLowQualitySourceTag",
+    "qualityAudioDisplayMode",
+    "qualityVideoCodecDisplayMode",
+    "qualityHdrDisplayMode",
+    "qualityMinimumResolution",
+    "qualityHideSdr",
+    "seriesQualityAggregation",
+    "qualityTagsPreferredAudioLanguage",
+    "qualityTagsAudioLanguageFromUser",
+    "ratingTagsEnabled",
+    "ratingTagsOnMovies",
+    "ratingTagsOnSeries",
+    "ratingTagsOnSeasons",
+    "ratingTagsOnEpisodes",
+    "ratingTagsOnContinueWatching",
+    "ratingTagsOnNextUp",
+    "ratingTagsSources",
+    "ratingTagsMinScore",
+    "ratingTagsColorByScore",
+    "showRatingInPlayer",
+    "tagLookRulesJson",
+    "tagCacheServerMode",
+    "tagCacheExcludeLibraries",
+    "enableTagsLocalStorageFallback",
+    "tagsCacheTtlDays",
+    "nativePosterTagsEnabled",
+    "nativePosterTagsWebClientNames",
+    "statusTagsEnabled"
+  ],
+  "locations": {
+    "agerating.js": [
+      [
+        "ageRatingTagsEnabled",
+        {
+          "tab": "groups",
+          "group": "ageRating"
+        }
+      ]
+    ],
+    "awards.js": [
+      [
+        "awardsTagsEnabled",
+        {
+          "tab": "groups",
+          "group": "awards"
+        }
+      ],
+      [
+        "awardsTagsImdb",
+        {
+          "tab": "groups",
+          "group": "awards"
+        }
+      ],
+      [
+        "awardsTagsCertifiedFresh",
+        {
+          "tab": "groups",
+          "group": "awards"
+        }
+      ],
+      [
+        "awardsTagsOscar",
+        {
+          "tab": "groups",
+          "group": "awards"
+        }
+      ],
+      [
+        "awardsTagsEmmy",
+        {
+          "tab": "groups",
+          "group": "awards"
+        }
+      ],
+      [
+        "awardsTagsLetterboxd",
+        {
+          "tab": "groups",
+          "group": "awards"
+        }
+      ],
+      [
+        "awardsTagsImdbList",
+        {
+          "tab": "groups",
+          "group": "awards"
+        }
+      ],
+      [
+        "awardsTagsLetterboxdList",
+        {
+          "tab": "groups",
+          "group": "awards"
+        }
+      ],
+      [
+        "awardsTagsRefreshHours",
+        {
+          "tab": "groups",
+          "group": "awards"
+        }
+      ]
+    ],
+    "badges.js": [
+      [
+        "statusTagsJustAdded",
+        {
+          "tab": "badges",
+          "group": null
+        }
+      ],
+      [
+        "statusTagsNewRelease",
+        {
+          "tab": "badges",
+          "group": null
+        }
+      ],
+      [
+        "statusTagsTrending",
+        {
+          "tab": "badges",
+          "group": null
+        }
+      ],
+      [
+        "statusTagsSchedule",
+        {
+          "tab": "badges",
+          "group": null
+        }
+      ],
+      [
+        "statusTagsMilestones",
+        {
+          "tab": "badges",
+          "group": null
+        }
+      ],
+      [
+        "statusTagsSeriesStatus",
+        {
+          "tab": "badges",
+          "group": null
+        }
+      ],
+      [
+        "statusTagsScenes",
+        {
+          "tab": "badges",
+          "group": null
+        }
+      ],
+      [
+        "statusTagsLeaving",
+        {
+          "tab": "badges",
+          "group": null
+        }
+      ],
+      [
+        "statusTagsDirectPlay",
+        {
+          "tab": "badges",
+          "group": null
+        }
+      ],
+      [
+        "statusTagsJustAddedDays",
+        {
+          "tab": "badges",
+          "group": null
+        }
+      ],
+      [
+        "statusTagsNewReleaseDays",
+        {
+          "tab": "badges",
+          "group": null
+        }
+      ],
+      [
+        "leavingSoonMaintainerrUrl",
+        {
+          "tab": "badges",
+          "group": null
+        }
+      ],
+      [
+        "leavingSoonMaintainerrApiKey",
+        {
+          "tab": "badges",
+          "group": null
+        }
+      ],
+      [
+        "leavingSoonCollections",
+        {
+          "tab": "badges",
+          "group": null
+        }
+      ],
+      [
+        "leavingSoonRefreshHours",
+        {
+          "tab": "badges",
+          "group": null
+        }
+      ]
+    ],
+    "colours.js": [
+      [
+        "tagStylesEnabled",
+        {
+          "tab": "colours",
+          "group": null
+        }
+      ],
+      [
+        "tagStyleTarget",
+        {
+          "tab": "colours",
+          "group": null
+        }
+      ],
+      [
+        "tagStylesAllowUserPreset",
+        {
+          "tab": "colours",
+          "group": null
+        }
+      ]
+    ],
+    "custom.js": [
+      [
+        "customTagsEnabled",
+        {
+          "tab": "groups",
+          "group": "custom"
+        }
+      ],
+      [
+        "customTagRules",
+        {
+          "tab": "groups",
+          "group": "custom"
+        }
+      ]
+    ],
+    "genre.js": [
+      [
+        "genreTagsEnabled",
+        {
+          "tab": "groups",
+          "group": "genre"
+        }
+      ]
+    ],
+    "language.js": [
+      [
+        "languageTagsEnabled",
+        {
+          "tab": "groups",
+          "group": "language"
+        }
+      ],
+      [
+        "languageTagsShowAudio",
+        {
+          "tab": "groups",
+          "group": "language"
+        }
+      ],
+      [
+        "languageTagsShowSubtitles",
+        {
+          "tab": "groups",
+          "group": "language"
+        }
+      ],
+      [
+        "languageTagsStyle",
+        {
+          "tab": "groups",
+          "group": "language"
+        }
+      ],
+      [
+        "languageTagsCountBadge",
+        {
+          "tab": "groups",
+          "group": "language"
+        }
+      ],
+      [
+        "languageTagsPriority",
+        {
+          "tab": "groups",
+          "group": "language"
+        }
+      ],
+      [
+        "languageTagsPriorityStrict",
+        {
+          "tab": "groups",
+          "group": "language"
+        }
+      ],
+      [
+        "languageTagsMergeRegions",
+        {
+          "tab": "groups",
+          "group": "language"
+        }
+      ]
+    ],
+    "layout.js": [
+      [
+        "tagLayout",
+        {
+          "tab": "layout",
+          "group": null
+        }
+      ],
+      [
+        "tagLabelDensity",
+        {
+          "tab": "layout",
+          "group": null
+        }
+      ],
+      [
+        "tagScale",
+        {
+          "tab": "layout",
+          "group": null
+        }
+      ],
+      [
+        "tagGap",
+        {
+          "tab": "layout",
+          "group": null
+        }
+      ],
+      [
+        "tagEdgeSpacing",
+        {
+          "tab": "layout",
+          "group": null
+        }
+      ],
+      [
+        "qualityTagsPosition",
+        {
+          "tab": "layout",
+          "group": null
+        }
+      ],
+      [
+        "genreTagsPosition",
+        {
+          "tab": "layout",
+          "group": null
+        }
+      ],
+      [
+        "languageTagsPosition",
+        {
+          "tab": "layout",
+          "group": null
+        }
+      ],
+      [
+        "ratingTagsPosition",
+        {
+          "tab": "layout",
+          "group": null
+        }
+      ],
+      [
+        "ageRatingTagsPosition",
+        {
+          "tab": "layout",
+          "group": null
+        }
+      ],
+      [
+        "statusTagsPosition",
+        {
+          "tab": "layout",
+          "group": null
+        }
+      ],
+      [
+        "awardsTagsPosition",
+        {
+          "tab": "layout",
+          "group": null
+        }
+      ],
+      [
+        "logoTagsPosition",
+        {
+          "tab": "layout",
+          "group": null
+        }
+      ],
+      [
+        "customTagsPosition",
+        {
+          "tab": "layout",
+          "group": null
+        }
+      ],
+      [
+        "tagShapeLandscapeDefault",
+        {
+          "tab": "layout",
+          "group": null
+        }
+      ],
+      [
+        "tagShapeListDefault",
+        {
+          "tab": "layout",
+          "group": null
+        }
+      ],
+      [
+        "tagsHideOnHover",
+        {
+          "tab": "layout",
+          "group": null
+        }
+      ],
+      [
+        "disableTagsOnSearchPage",
+        {
+          "tab": "layout",
+          "group": null
+        }
+      ]
+    ],
+    "logos.js": [
+      [
+        "logoTagsEnabled",
+        {
+          "tab": "groups",
+          "group": "logos"
+        }
+      ],
+      [
+        "logoTagsMovieMode",
+        {
+          "tab": "groups",
+          "group": "logos"
+        }
+      ],
+      [
+        "logoTagsSeriesMode",
+        {
+          "tab": "groups",
+          "group": "logos"
+        }
+      ],
+      [
+        "logoTagsRegion",
+        {
+          "tab": "groups",
+          "group": "logos"
+        }
+      ],
+      [
+        "logoTagsMaxLogos",
+        {
+          "tab": "groups",
+          "group": "logos"
+        }
+      ]
+    ],
+    "overview.js": [],
+    "people.js": [
+      [
+        "peopleTagsEnabled",
+        {
+          "tab": "groups",
+          "group": "people"
+        }
+      ]
+    ],
+    "portable.js": [
+      [
+        "tagOfferedPresets",
+        {
+          "tab": "server",
+          "group": null
+        }
+      ]
+    ],
+    "quality.js": [
+      [
+        "qualityTagsEnabled",
+        {
+          "tab": "groups",
+          "group": "quality"
+        }
+      ],
+      [
+        "showResolutionTag",
+        {
+          "tab": "groups",
+          "group": "quality"
+        }
+      ],
+      [
+        "showSourceTag",
+        {
+          "tab": "groups",
+          "group": "quality"
+        }
+      ],
+      [
+        "showDynamicRangeTag",
+        {
+          "tab": "groups",
+          "group": "quality"
+        }
+      ],
+      [
+        "showSpecialFormatTag",
+        {
+          "tab": "groups",
+          "group": "quality"
+        }
+      ],
+      [
+        "showVideoCodecTag",
+        {
+          "tab": "groups",
+          "group": "quality"
+        }
+      ],
+      [
+        "showAudioInfoTag",
+        {
+          "tab": "groups",
+          "group": "quality"
+        }
+      ],
+      [
+        "showEditionTag",
+        {
+          "tab": "groups",
+          "group": "quality"
+        }
+      ],
+      [
+        "showRuntimeTag",
+        {
+          "tab": "groups",
+          "group": "quality"
+        }
+      ],
+      [
+        "showAspectRatioTag",
+        {
+          "tab": "groups",
+          "group": "quality"
+        }
+      ],
+      [
+        "showFrameRateTag",
+        {
+          "tab": "groups",
+          "group": "quality"
+        }
+      ],
+      [
+        "showVersionsTag",
+        {
+          "tab": "groups",
+          "group": "quality"
+        }
+      ],
+      [
+        "showLowQualitySourceTag",
+        {
+          "tab": "groups",
+          "group": "quality"
+        }
+      ],
+      [
+        "qualityAudioDisplayMode",
+        {
+          "tab": "groups",
+          "group": "quality"
+        }
+      ],
+      [
+        "qualityVideoCodecDisplayMode",
+        {
+          "tab": "groups",
+          "group": "quality"
+        }
+      ],
+      [
+        "qualityHdrDisplayMode",
+        {
+          "tab": "groups",
+          "group": "quality"
+        }
+      ],
+      [
+        "qualityMinimumResolution",
+        {
+          "tab": "groups",
+          "group": "quality"
+        }
+      ],
+      [
+        "qualityHideSdr",
+        {
+          "tab": "groups",
+          "group": "quality"
+        }
+      ],
+      [
+        "seriesQualityAggregation",
+        {
+          "tab": "groups",
+          "group": "quality"
+        }
+      ],
+      [
+        "qualityTagsPreferredAudioLanguage",
+        {
+          "tab": "groups",
+          "group": "quality"
+        }
+      ],
+      [
+        "qualityTagsAudioLanguageFromUser",
+        {
+          "tab": "groups",
+          "group": "quality"
+        }
+      ]
+    ],
+    "rating.js": [
+      [
+        "ratingTagsEnabled",
+        {
+          "tab": "groups",
+          "group": "rating"
+        }
+      ],
+      [
+        "ratingTagsOnMovies",
+        {
+          "tab": "groups",
+          "group": "rating"
+        }
+      ],
+      [
+        "ratingTagsOnSeries",
+        {
+          "tab": "groups",
+          "group": "rating"
+        }
+      ],
+      [
+        "ratingTagsOnSeasons",
+        {
+          "tab": "groups",
+          "group": "rating"
+        }
+      ],
+      [
+        "ratingTagsOnEpisodes",
+        {
+          "tab": "groups",
+          "group": "rating"
+        }
+      ],
+      [
+        "ratingTagsOnContinueWatching",
+        {
+          "tab": "groups",
+          "group": "rating"
+        }
+      ],
+      [
+        "ratingTagsOnNextUp",
+        {
+          "tab": "groups",
+          "group": "rating"
+        }
+      ],
+      [
+        "ratingTagsSources",
+        {
+          "tab": "groups",
+          "group": "rating"
+        }
+      ],
+      [
+        "ratingTagsMinScore",
+        {
+          "tab": "groups",
+          "group": "rating"
+        }
+      ],
+      [
+        "ratingTagsColorByScore",
+        {
+          "tab": "groups",
+          "group": "rating"
+        }
+      ],
+      [
+        "showRatingInPlayer",
+        {
+          "tab": "groups",
+          "group": "rating"
+        }
+      ]
+    ],
+    "rules.js": [
+      [
+        "tagLookRulesJson",
+        {
+          "tab": "rules",
+          "group": null
+        }
+      ]
+    ],
+    "server.js": [
+      [
+        "tagCacheServerMode",
+        {
+          "tab": "server",
+          "group": null
+        }
+      ],
+      [
+        "tagCacheExcludeLibraries",
+        {
+          "tab": "server",
+          "group": null
+        }
+      ],
+      [
+        "enableTagsLocalStorageFallback",
+        {
+          "tab": "server",
+          "group": null
+        }
+      ],
+      [
+        "tagsCacheTtlDays",
+        {
+          "tab": "server",
+          "group": null
+        }
+      ],
+      [
+        "nativePosterTagsEnabled",
+        {
+          "tab": "server",
+          "group": null
+        }
+      ],
+      [
+        "nativePosterTagsWebClientNames",
+        {
+          "tab": "server",
+          "group": null
+        }
+      ]
+    ],
+    "status.js": [
+      [
+        "statusTagsEnabled",
+        {
+          "tab": "groups",
+          "group": "status"
+        }
+      ]
+    ]
+  },
+  "docs": {
+    "agerating.js": [
+      [
+        "AgeRatingTagsEnabled",
+        "Age Rating",
+        "Age rating tags for new users"
+      ]
+    ],
+    "awards.js": [
+      [
+        "AwardsTagsEnabled",
+        "Awards",
+        "Awards ribbons for new users"
+      ],
+      [
+        "AwardsTagsImdb",
+        "Awards",
+        "IMDb Top 250"
+      ],
+      [
+        "AwardsTagsCertifiedFresh",
+        "Awards",
+        "Certified Fresh"
+      ],
+      [
+        "AwardsTagsOscar",
+        "Awards",
+        "Oscar winners"
+      ],
+      [
+        "AwardsTagsEmmy",
+        "Awards",
+        "Emmy winners"
+      ],
+      [
+        "AwardsTagsLetterboxd",
+        "Awards",
+        "Letterboxd Top 250"
+      ],
+      [
+        "AwardsTagsImdbList",
+        "Awards",
+        "IMDb Top 250 list (MDBList id or owner/slug)"
+      ],
+      [
+        "AwardsTagsLetterboxdList",
+        "Awards",
+        "Letterboxd Top 250 list (MDBList id or owner/slug)"
+      ],
+      [
+        "AwardsTagsRefreshHours",
+        "Awards",
+        "Refresh cadence (hours)"
+      ]
+    ],
+    "badges.js": [
+      [
+        "StatusTagsJustAdded",
+        "<tab>",
+        "Just Added"
+      ],
+      [
+        "StatusTagsNewRelease",
+        "<tab>",
+        "New releases"
+      ],
+      [
+        "StatusTagsTrending",
+        "<tab>",
+        "Trending"
+      ],
+      [
+        "StatusTagsSchedule",
+        "<tab>",
+        "Schedule"
+      ],
+      [
+        "StatusTagsMilestones",
+        "<tab>",
+        "Milestones"
+      ],
+      [
+        "StatusTagsSeriesStatus",
+        "<tab>",
+        "Series status"
+      ],
+      [
+        "StatusTagsScenes",
+        "<tab>",
+        "Scenes"
+      ],
+      [
+        "StatusTagsLeaving",
+        "<tab>",
+        "Leaving soon"
+      ],
+      [
+        "StatusTagsDirectPlay",
+        "<tab>",
+        "Direct-play warning"
+      ],
+      [
+        "StatusTagsJustAddedDays",
+        "Time windows",
+        "Just added"
+      ],
+      [
+        "StatusTagsNewReleaseDays",
+        "Time windows",
+        "New release"
+      ],
+      [
+        "LeavingSoonMaintainerrUrl",
+        "Leaving soon",
+        "Maintainerr URL"
+      ],
+      [
+        "LeavingSoonMaintainerrApiKey",
+        "Leaving soon",
+        "Maintainerr API key"
+      ],
+      [
+        "LeavingSoonCollections",
+        "Leaving soon",
+        "Leaving collections"
+      ],
+      [
+        "LeavingSoonRefreshHours",
+        "Leaving soon",
+        "Refresh every"
+      ]
+    ],
+    "colours.js": [
+      [
+        "TagStylesEnabled",
+        "Tag colours",
+        "Use tag colours"
+      ],
+      [
+        "TagStyleTarget",
+        "Tag colours",
+        "Apply to"
+      ],
+      [
+        "TagStylesAllowUserPreset",
+        "Tag colours",
+        "Let users pick their own preset"
+      ]
+    ],
+    "custom.js": [
+      [
+        "CustomTagsEnabled",
+        "Custom",
+        "Custom tags for new users"
+      ],
+      [
+        "CustomTagRules",
+        "Custom",
+        "Custom tag rules"
+      ]
+    ],
+    "genre.js": [
+      [
+        "GenreTagsEnabled",
+        "Genre",
+        "Genre tags for new users"
+      ]
+    ],
+    "language.js": [
+      [
+        "LanguageTagsEnabled",
+        "Language",
+        "Language tags for new users"
+      ],
+      [
+        "LanguageTagsShowAudio",
+        "Language",
+        "Include audio languages"
+      ],
+      [
+        "LanguageTagsShowSubtitles",
+        "Language",
+        "Include subtitle languages"
+      ],
+      [
+        "LanguageTagsStyle",
+        "Language",
+        "Style"
+      ],
+      [
+        "LanguageTagsCountBadge",
+        "Language",
+        "Dual / Multi audio badge"
+      ],
+      [
+        "LanguageTagsPriority",
+        "Language",
+        "Priority languages"
+      ],
+      [
+        "LanguageTagsPriorityStrict",
+        "Language",
+        "Only show priority languages"
+      ],
+      [
+        "LanguageTagsMergeRegions",
+        "Language",
+        "Merge regional variants"
+      ]
+    ],
+    "layout.js": [
+      [
+        "TagLayout",
+        "Default look",
+        "Default layout"
+      ],
+      [
+        "TagLabelDensity",
+        "Default look",
+        "Label density"
+      ],
+      [
+        "TagScale",
+        "Default look",
+        "Tag size"
+      ],
+      [
+        "TagGap",
+        "Default look",
+        "Gap"
+      ],
+      [
+        "TagEdgeSpacing",
+        "Default look",
+        "Edge spacing"
+      ],
+      [
+        "QualityTagsPosition",
+        "Group placement",
+        "Quality position"
+      ],
+      [
+        "GenreTagsPosition",
+        "Group placement",
+        "Genre position"
+      ],
+      [
+        "LanguageTagsPosition",
+        "Group placement",
+        "Language position"
+      ],
+      [
+        "RatingTagsPosition",
+        "Group placement",
+        "Rating position"
+      ],
+      [
+        "AgeRatingTagsPosition",
+        "Group placement",
+        "Age rating position"
+      ],
+      [
+        "StatusTagsPosition",
+        "Group placement",
+        "Status position"
+      ],
+      [
+        "AwardsTagsPosition",
+        "Group placement",
+        "Awards position"
+      ],
+      [
+        "LogoTagsPosition",
+        "Group placement",
+        "Logos position"
+      ],
+      [
+        "CustomTagsPosition",
+        "Group placement",
+        "Custom position"
+      ],
+      [
+        "TagShapeOverrides",
+        "Card shapes",
+        "Episode thumbnails"
+      ],
+      [
+        "TagShapeOverrides",
+        "Card shapes",
+        "List rows"
+      ],
+      [
+        "TagsHideOnHover",
+        "Display",
+        "Hide tags on hover"
+      ],
+      [
+        "DisableTagsOnSearchPage",
+        "Display",
+        "No tags on the search page"
+      ]
+    ],
+    "logos.js": [
+      [
+        "LogoTagsEnabled",
+        "Logos",
+        "Logos for new users"
+      ],
+      [
+        "LogoTagsMovieMode",
+        "Logos",
+        "Movie logos"
+      ],
+      [
+        "LogoTagsSeriesMode",
+        "Logos",
+        "Series logos"
+      ],
+      [
+        "LogoTagsRegion",
+        "Logos",
+        "Logo region (two letters; blank follows the server)"
+      ],
+      [
+        "LogoTagsMaxLogos",
+        "Logos",
+        "Maximum logos"
+      ]
+    ],
+    "overview.js": [],
+    "people.js": [
+      [
+        "PeopleTagsEnabled",
+        "People",
+        "People tags for new users"
+      ]
+    ],
+    "portable.js": [
+      [
+        "TagOfferedPresets",
+        "Presets for users",
+        "Presets for users"
+      ]
+    ],
+    "quality.js": [
+      [
+        "QualityTagsEnabled",
+        "Quality",
+        "Quality tags for new users"
+      ],
+      [
+        "ShowResolutionTag",
+        "Quality",
+        "Resolution (4K, 1080p, ...)"
+      ],
+      [
+        "ShowSourceTag",
+        "Quality",
+        "Source (REMUX, BluRay, WEB, HDTV, DVD, …)"
+      ],
+      [
+        "ShowDynamicRangeTag",
+        "Quality",
+        "HDR (HDR10+, Dolby Vision)"
+      ],
+      [
+        "ShowSpecialFormatTag",
+        "Quality",
+        "Special format (IMAX, 3D)"
+      ],
+      [
+        "ShowVideoCodecTag",
+        "Quality",
+        "Video format (HEVC, H264, AV1, ...)"
+      ],
+      [
+        "ShowAudioInfoTag",
+        "Quality",
+        "Sound (Atmos, DTS, 5.1, 7.1, ...)"
+      ],
+      [
+        "ShowEditionTag",
+        "Quality",
+        "Edition (Director’s Cut, Extended, …)"
+      ],
+      [
+        "ShowRuntimeTag",
+        "Quality",
+        "Runtime"
+      ],
+      [
+        "ShowAspectRatioTag",
+        "Quality",
+        "Aspect ratio"
+      ],
+      [
+        "ShowFrameRateTag",
+        "Quality",
+        "Frame rate"
+      ],
+      [
+        "ShowVersionsTag",
+        "Quality",
+        "Versions (2 versions, 3 versions …)"
+      ],
+      [
+        "ShowLowQualitySourceTag",
+        "Quality",
+        "Include low-quality sources (CAM, TS, TC, SCR)"
+      ],
+      [
+        "QualityAudioDisplayMode",
+        "Quality",
+        "Sound display mode"
+      ],
+      [
+        "QualityVideoCodecDisplayMode",
+        "Quality",
+        "Video codec display mode"
+      ],
+      [
+        "QualityHdrDisplayMode",
+        "Quality",
+        "HDR display mode"
+      ],
+      [
+        "QualityMinimumResolution",
+        "Quality",
+        "Minimum resolution to show"
+      ],
+      [
+        "QualityHideSdr",
+        "Quality",
+        "Hide SDR"
+      ],
+      [
+        "SeriesQualityAggregation",
+        "Quality",
+        "Series and season quality"
+      ],
+      [
+        "QualityTagsPreferredAudioLanguage",
+        "Quality",
+        "Preferred audio language for sound tags"
+      ],
+      [
+        "QualityTagsAudioLanguageFromUser",
+        "Quality",
+        "Use each user's Jellyfin audio language"
+      ]
+    ],
+    "rating.js": [
+      [
+        "RatingTagsEnabled",
+        "Rating",
+        "Rating tags for new users"
+      ],
+      [
+        "RatingTagsOnMovies",
+        "Rating",
+        "Show on movies"
+      ],
+      [
+        "RatingTagsOnSeries",
+        "Rating",
+        "Show on series"
+      ],
+      [
+        "RatingTagsOnSeasons",
+        "Rating",
+        "Show on seasons"
+      ],
+      [
+        "RatingTagsOnEpisodes",
+        "Rating",
+        "Show on episodes"
+      ],
+      [
+        "RatingTagsOnContinueWatching",
+        "Rating",
+        "Show in the Continue Watching row"
+      ],
+      [
+        "RatingTagsOnNextUp",
+        "Rating",
+        "Show in the Next Up row"
+      ],
+      [
+        "RatingTagsSources",
+        "Rating",
+        "Rating sources"
+      ],
+      [
+        "RatingTagsMinScore",
+        "Rating",
+        "Minimum score"
+      ],
+      [
+        "RatingTagsColorByScore",
+        "Rating",
+        "Colour by score"
+      ],
+      [
+        "ShowRatingInPlayer",
+        "Rating",
+        "Show the rating in the video player"
+      ]
+    ],
+    "rules.js": [
+      [
+        "TagLookRules",
+        "Default tag look rules",
+        "Edit as JSON"
+      ]
+    ],
+    "server.js": [
+      [
+        "TagCacheServerMode",
+        "Server tag cache",
+        "Server-side tag cache"
+      ],
+      [
+        "TagCacheExcludeLibraries",
+        "Server tag cache",
+        "Exclude libraries from the tag cache"
+      ],
+      [
+        "EnableTagsLocalStorageFallback",
+        "Server tag cache",
+        "Keep a tag cache in each browser"
+      ],
+      [
+        "TagsCacheTtlDays",
+        "Server tag cache",
+        "Browser tag cache lifetime"
+      ],
+      [
+        "NativePosterTagsEnabled",
+        "Native poster tags",
+        "Native poster tags (experimental)"
+      ],
+      [
+        "NativePosterTagsWebClientNames",
+        "Native poster tags",
+        "Additional excluded apps"
+      ]
+    ],
+    "status.js": [
+      [
+        "StatusTagsEnabled",
+        "Status",
+        "Status tags for new users"
+      ]
+    ]
+  }
+}

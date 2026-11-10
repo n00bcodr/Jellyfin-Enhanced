@@ -1,0 +1,9 @@
+{
+  "js/arr/calendar/calendar-custom-tab.js": "client/src/features/calendar/calendar-custom-tab.ts",
+  "js/arr/calendar/calendar-page-actions.js": "client/src/features/calendar/calendar-page-actions.ts",
+  "js/arr/calendar/calendar-page-data.js": "client/src/features/calendar/calendar-page-data.ts",
+  "js/arr/calendar/calendar-page-init.js": "client/src/features/calendar/calendar-page-init.ts",
+  "js/arr/calendar/calendar-page-render-events.js": "client/src/features/calendar/calendar-page-render-events.ts",
+  "js/arr/calendar/calendar-page-render-views.js": "client/src/features/calendar/calendar-page-render-views.ts",
+  "js/arr/calendar/calendar-page-styles.js": "client/src/features/calendar/calendar-page-styles.ts"
+}

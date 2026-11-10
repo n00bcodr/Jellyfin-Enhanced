@@ -120,7 +120,7 @@ for (const split of [false, true]) test(`rapid repeated clicks submit one movie 
 
 for (const split of [false, true]) test(`request failure escapes message and permits explicit retry (split=${split})`, async t => {
   let tries = 0;
-  const h = uiSetup(t, { config: { JellyseerrEnable4KRequests: split }, post: async () => { if (++tries === 1) throw { status: 500, responseJSON: { message: '<img src=x onerror=evil()>' } }; return { id: 7 }; } });
+  const h = uiSetup(t, { config: { JellyseerrEnable4KRequests: split }, post: async () => { if (++tries === 1) throw { status: 400, responseJSON: { message: '<img src=x onerror=evil()>' } }; return { id: 7 }; } });
   h.configure(); const button = split ? h.document.querySelector('.jellyseerr-split-main') : h.button;
   button.click(); await flush(); assert.equal(button.disabled, false); assert.equal(button.querySelector('img'), null); assert.ok(button.textContent.includes('<img'));
   button.click(); await flush(); assert.equal(h.calls.length, 2); assert.equal(button.disabled, true);
@@ -140,7 +140,7 @@ test('quota detection distinguishes permission errors and honors feature toggle'
   const h = uiSetup(t); const ui = h.JE.jellyseerrUI;
   assert.equal(ui.isQuotaError({ status: 403, responseJSON: { message: 'TV Quota exceeded.' } }), true);
   assert.equal(ui.isQuotaError({ status: 403, responseJSON: { message: 'Forbidden' } }), false);
-  assert.equal(ui.isQuotaError({ status: 500, responseJSON: { message: 'Quota exceeded' } }), false);
+  assert.equal(ui.isQuotaError({ status: 400, responseJSON: { message: 'Quota exceeded' } }), false);
   h.JE.pluginConfig.JellyseerrShowQuotaInfo = false;
   assert.equal(ui.isQuotaError({ status: 403, responseJSON: { message: 'Quota exceeded' } }), false);
 });
@@ -227,7 +227,7 @@ for (const split of [false, true]) for (const succeeds of [true, false]) test(`l
   if (split) h.button = h.document.querySelector('.jellyseerr-split-main');
   h.button.click(); await flush(); h.configure(false, true);
   const offlineLabel = h.button.textContent;
-  if (succeeds) pending.resolve({ id: 7 }); else pending.reject({ status: 500, responseJSON: { message: 'old failure' } });
+  if (succeeds) pending.resolve({ id: 7 }); else pending.reject({ status: 400, responseJSON: { message: 'old failure' } });
   await flush(); assert.equal(h.button.disabled, true); assert.equal(h.button.textContent, offlineLabel);
 });
 
@@ -250,7 +250,7 @@ for (const [label, status] of [['available', 5], ['blocked', 6]]) test(`tv ${lab
  * Opens the real season-selection modal over a stubbed modal shell. `save` clicks Request.
  * @returns {Promise<object>} The harness plus the modal element, its request button and `save`.
  */
-async function seasonModal(t, { tvDetails, partial = true, specials = true, post, config, api = {} } = {}) {
+async function seasonModal(t, { tvDetails, partial = true, specials = true, post, config, api = {}, title = 'Show' } = {}) {
   const h = setup(t, { post, config });
   const polls = [];
   h.window.setInterval = callback => polls.push(callback);
@@ -263,7 +263,7 @@ async function seasonModal(t, { tvDetails, partial = true, specials = true, post
   h.JE.jellyseerrModal = { createAdvancedOptionsHTML: () => '', populateAdvancedOptions() {}, create(o) {
     const el = h.document.createElement('div'); el.innerHTML = `<div class="jellyseerr-modal-body">${o.bodyHtml}</div>`;
     h.document.body.append(el); modal = { el, o }; return { modalElement: el, show() {} }; } };
-  await h.JE.jellyseerrUI.showSeasonSelectionModal(42, 'tv', 'Show', null, false);
+  await h.JE.jellyseerrUI.showSeasonSelectionModal(42, 'tv', title, null, false);
   const requestBtn = h.document.createElement('button');
   return { ...h, el: modal.el, requestBtn, save: () => modal.o.onSave(modal.el, requestBtn, () => {}), poll: () => polls.at(-1)() };
 }
@@ -347,6 +347,19 @@ test('season modal keeps a protected season\'s year, from each source that has i
   assert.match(meta(h, 4), /^2023/);
 });
 
+for (const partial of [true, false]) test(`season modal success toast shows a show title holding HTML as text (partial=${partial})`, async t => {
+  const name = '<img src=x id=pwn onerror="window.pwned=1">';
+  const h = await seasonModal(t, { partial, title: '', tvDetails: { name, seasons: tvSeasons, externalIds: { tvdbId: 1 }, mediaInfo: { seasons: [] } } });
+  if (partial) seasonCheckbox(h, 1).checked = true;
+  await h.save();
+  const [message] = h.toasts.find(([m]) => m.startsWith('jellyseerr_modal_toast_request_success'));
+  // JE.toast renders its message as HTML.
+  const toast = h.document.createElement('div');
+  toast.innerHTML = message;
+  assert.equal(toast.querySelector('img'), null, 'no element from the show title');
+  assert.ok(toast.textContent.includes(name), 'the title is shown as written');
+});
+
 test('season modal sends a stored TVDB id with the selected seasons', async t => {
   const h = await seasonModal(t, { tvDetails: { seasons: tvSeasons, externalIds: {}, mediaInfo: { tvdbId: 555, seasons: [] } } });
   assert.equal(h.el.querySelector('#jellyseerr-tvdb-id'), null);
@@ -383,7 +396,7 @@ test('season modal disables requested seasons but re-offers one Seerr still call
 });
 
 test('season modal failure toast escapes the upstream message and re-enables the request button', async t => {
-  const h = await seasonModal(t, { tvDetails: { seasons: tvSeasons, externalIds: { tvdbId: 1 } }, post: async () => { throw { status: 500, responseJSON: { message: '<img src=x>' } }; } });
+  const h = await seasonModal(t, { tvDetails: { seasons: tvSeasons, externalIds: { tvdbId: 1 } }, post: async () => { throw { status: 400, responseJSON: { message: '<img src=x>' } }; } });
   seasonCheckbox(h, 1).checked = true; await h.save();
   assert.equal(h.toasts.at(-1)[0], '&lt;img src=x&gt;'); assert.equal(h.requestBtn.disabled, false);
   assert.equal(h.requestBtn.textContent, 'jellyseerr_modal_request_selected');

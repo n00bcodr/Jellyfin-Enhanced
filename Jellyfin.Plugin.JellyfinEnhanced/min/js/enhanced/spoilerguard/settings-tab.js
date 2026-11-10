@@ -1,0 +1,33 @@
+(() => {
+"use strict";(()=>{function u(n){let l=window.JellyfinEnhanced?.core?.sharedModules?.[n];if(!l)throw new Error(`${n} is not in JE.core.sharedModules: load its provider first (client/shared-modules.json)`);return l}function g(n,l){return n[l]}var h=u("features/spoiler-guard/ownership"),_=g(h,"own");var x=u("features/spoiler-guard/host"),v=g(x,"spoilerHost");var{JE:e,internal:a}=v(),f=_(e,"settings-tab",!0),b="🪼 Jellyfin Enhanced [SpoilerGuard]:";a.buildSettingsHtml=function(n){if(e.pluginConfig?.SpoilerBlurEnabled!==!0)return"";let l=a.getUserPrefs(),o=typeof e.escapeHtml=="function"?e.escapeHtml:r=>String(r),t={seriesOverview:e.pluginConfig.SpoilerStripSeriesOverview!==!1,overview:e.pluginConfig.SpoilerStripOverview!==!1,tags:e.pluginConfig.SpoilerStripTags!==!1,chapters:e.pluginConfig.SpoilerStripChapters!==!1,taglines:e.pluginConfig.SpoilerStripTaglines!==!1,ratings:e.pluginConfig.SpoilerStripRatings!==!1,premiereDate:e.pluginConfig.SpoilerStripPremiereDate!==!1,replaceTitle:e.pluginConfig.SpoilerReplaceTitle!==!1,cast:e.pluginConfig.SpoilerStripCast!==!1,reviews:e.pluginConfig.SpoilerStripReviews!==!1,trickplay:e.pluginConfig.SpoilerBlurTrickplay!==!1,advanced:e.pluginConfig.SpoilerAdvancedMode===!0},p=r=>r===!1?"":"checked",i=(r,d,s,c,w)=>w?`
+            <div style="margin-bottom:8px;padding:12px;background:${n.presetBoxBackground};border-radius:6px;border-left:3px solid rgba(255,255,255,0.15);">
+                <label style="display:flex;align-items:center;gap:12px;cursor:pointer;">
+                    <input type="checkbox" id="${r}" ${p(l[d])} data-pref="${d}" style="width:16px;height:16px;accent-color:${n.toggleAccentColor};cursor:pointer;">
+                    <div><div style="font-weight:500;font-size:13px;">${o(e.t(s))}</div><div style="font-size:11px;color:rgba(255,255,255,0.5);margin-top:1px;">${o(e.t(c))}</div></div>
+                </label>
+            </div>`:"";return`
+            <section class="je-pane" data-pane="spoiler-guard">
+                <h3 class="je-pane-title">${e.icon(e.IconName.BLUR_ON)} ${o(e.t("panel_settings_spoiler_guard"))}</h3>
+                <div style="padding:0 16px 16px 16px;">
+                    <div style="font-weight:500;font-size:13px;color:rgba(255,255,255,0.7);margin-bottom:8px;padding-left:4px;">${o(e.t("panel_settings_spoiler_guard_overrides_section"))}</div>
+                    ${i("sbPrefHideSeriesOverview","HideSeriesDescriptions","panel_settings_spoiler_guard_override_series_overview","panel_settings_spoiler_guard_override_series_overview_desc",t.seriesOverview)}
+                    ${i("sbPrefHideOverview","HideEpisodeDescriptions","panel_settings_spoiler_guard_override_overview","panel_settings_spoiler_guard_override_overview_desc",t.overview)}
+                    ${i("sbPrefReplaceTitle","ReplaceEpisodeTitles","panel_settings_spoiler_guard_override_titles","panel_settings_spoiler_guard_override_titles_desc",t.replaceTitle)}
+                    ${i("sbPrefHideChapters","HideChapterNames","panel_settings_spoiler_guard_override_chapters","panel_settings_spoiler_guard_override_chapters_desc",t.chapters)}
+                    ${i("sbPrefHideCast","HideCast","panel_settings_spoiler_guard_override_cast","panel_settings_spoiler_guard_override_cast_desc",t.cast)}
+                    ${i("sbPrefHideRatings","HideRatings","panel_settings_spoiler_guard_override_ratings","panel_settings_spoiler_guard_override_ratings_desc",t.ratings)}
+                    ${i("sbPrefHideAirDate","HideAirDate","panel_settings_spoiler_guard_override_air_date","panel_settings_spoiler_guard_override_air_date_desc",t.premiereDate)}
+                    ${i("sbPrefHideTaglines","HideTaglines","panel_settings_spoiler_guard_override_taglines","panel_settings_spoiler_guard_override_taglines_desc",t.taglines)}
+                    ${i("sbPrefHideTags","HideTags","panel_settings_spoiler_guard_override_tags","panel_settings_spoiler_guard_override_tags_desc",t.tags)}
+                    ${i("sbPrefHideReviews","HideReviews","panel_settings_spoiler_guard_override_reviews","panel_settings_spoiler_guard_override_reviews_desc",t.reviews)}
+                    ${i("sbPrefHideTrickplay","HideTrickplay","panel_settings_spoiler_guard_override_trickplay","panel_settings_spoiler_guard_override_trickplay_desc",t.trickplay)}
+                    ${i("sbPrefUseAdvancedCategories","UseAdvancedCategories","panel_settings_spoiler_guard_override_advanced","panel_settings_spoiler_guard_override_advanced_desc",t.advanced)}
+                    <div style="margin-top:12px;padding:12px;background:${n.presetBoxBackground};border-radius:6px;border-left:3px solid ${n.toggleAccentColor};">
+                        <label style="display:flex;align-items:center;gap:12px;cursor:pointer;">
+                            <input type="checkbox" id="sbPrefSkipDisableConfirm" ${l.SkipDisableConfirm?"checked":""} data-pref="SkipDisableConfirm" style="width:16px;height:16px;accent-color:${n.toggleAccentColor};cursor:pointer;">
+                            <div><div style="font-weight:500;font-size:13px;">${o(e.t("panel_settings_spoiler_guard_skip_confirm"))}</div><div style="font-size:11px;color:rgba(255,255,255,0.5);margin-top:1px;">${o(e.t("panel_settings_spoiler_guard_skip_confirm_desc"))}</div></div>
+                        </label>
+                    </div>
+                </div>
+            </section>`};a.wireSettings=function(n){if(f.reset(),e.pluginConfig?.SpoilerBlurEnabled!==!0)return;let l=f.lease(),o=()=>l.current()&&n.help.isConnected;n.onClose?.(()=>{l.current()&&f.reset()});let t=Array.from(n.help.querySelectorAll('input[type="checkbox"][id^="sbPref"][data-pref]'));if(t.length===0)return;let p=r=>t.forEach(d=>{d.disabled=r});async function i(r,d){p(!0);try{if(await a.whenLoaded(),!o())return;if(!a.isLoadOk())throw new Error("Initial Spoiler Guard load failed; refusing to overwrite preferences.");let s=a.getUserPrefs(),c=r.dataset.pref;if(!c)throw new Error("Missing preference key");if(s[c]=c==="SkipDisableConfirm"?!!r.checked:r.checked?null:!1,await a.setUserPrefs(s),!o())return}catch(s){if(!o())return;console.error(`${b} preference save failed:`,s),r.checked=d,e.toast?.(e.t("spoiler_blur_error_toast"))}finally{o()&&p(!a.isLoadOk())}}t.forEach(function(r){f.listen(r,"change",function(){i(r,!r.checked),n.resetAutoCloseTimer()})}),(async function(){try{if(await a.whenLoaded(),!o())return;if(!a.isLoadOk()){p(!0);return}let r=a.getUserPrefs();t.forEach(function(d){let s=d.dataset.pref;s&&(d.checked=s==="SkipDisableConfirm"?!!r[s]:r[s]!==!1)})}catch(r){if(!o())return;console.warn(`${b} preference sync failed:`,r),p(!0)}})()};})();
+})();

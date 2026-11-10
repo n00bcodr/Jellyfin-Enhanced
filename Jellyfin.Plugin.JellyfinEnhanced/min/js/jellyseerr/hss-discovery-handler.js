@@ -1,0 +1,3 @@
+(() => {
+"use strict";(()=>{function i(){let e=window;if(!e.JellyfinEnhanced)throw new Error("Seerr details loaded before Jellyfin Enhanced");return e.JellyfinEnhanced}var s="🪼 Jellyfin Enhanced:";function a(e){return e==="movie"||e==="tv"?e:null}var l=i(),d=`${s} HSS Discovery Handler:`;document.addEventListener("click",e=>{if(!(e.target instanceof Element)||e.target.closest(".discover-requestbutton"))return;let o=e.target.closest(".discover-card");if(!o)return;let n=o.dataset.tmdbId,r=a(o.dataset.mediaType),t=l.jellyseerrMoreInfo?.open;!n||!/^\d+$/.test(n)||!r||!t||(console.log(`${d} Opening more-info modal for TMDB ID: ${n}, Type: ${r}`),e.preventDefault(),e.stopPropagation(),t.call(l.jellyseerrMoreInfo,n,r))},!0);})();
+})();
