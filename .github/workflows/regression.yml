@@ -170,11 +170,16 @@ jobs:
             echo run=false >> "$GITHUB_OUTPUT"
           fi
 
+  # One job per Playwright project so the three run in parallel, each installing only its own browser.
   browser:
     needs: browser-changes
     if: needs.browser-changes.outputs.run == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [chromium, mobile-chromium, firefox]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
@@ -182,12 +187,13 @@ jobs:
           node-version: '22.14.0'
           cache: npm
       - run: npm ci
-      - run: npx playwright install --with-deps chromium firefox
-      - run: python3 tests/run.py browser
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps ${{ matrix.project == 'firefox' && 'firefox' || 'chromium' }}
+      - run: python3 tests/run.py browser --project ${{ matrix.project }}
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
-          name: browser-results
+          name: browser-results-${{ matrix.project }}
           path: |
             artifacts/regression/*.log
             artifacts/regression/summary.json
