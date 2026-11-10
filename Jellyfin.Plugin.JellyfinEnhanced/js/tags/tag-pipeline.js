@@ -166,6 +166,14 @@
       });
       return entry.promise;
     }
+    function entryChanged(held, entry) {
+      if (!held) return true;
+      try {
+        return JSON.stringify(held) !== JSON.stringify(entry);
+      } catch {
+        return true;
+      }
+    }
     async function reconcileAccess(resp, base, generation) {
       const revision = textOrEmpty(resp.filterRevision);
       if (!Array.isArray(resp.visible) || !s.serverFilterBase || resp.filterBase !== s.serverFilterBase || !revision || !s.serverCache) return false;
@@ -212,7 +220,9 @@
         s.deltaIds.delete(id);
         s.storeMisses.add(id);
       }
+      const redrawn = [];
       for (const [id, entry] of newEntries) {
+        if (entryChanged(s.serverCache.get(id), entry)) redrawn.push(id);
         deps.forgetItemFacts(id);
         s.serverCache.set(id, entry);
         s.storeMisses.delete(id);
@@ -236,6 +246,7 @@
             }
           }
         }
+        deps.refreshVisibleCards(redrawn.concat(removed, dropped), dropped);
       }
       console.log(`${logPrefix} Access changed: +${newEntries.length} items, -${removed.length + dropped.length} no longer visible`);
       return true;
@@ -281,6 +292,7 @@
                 }
               }
             }
+            deps.refreshVisibleCards();
           } else if (revision !== s.serverFilterRevision) {
             console.log(`${logPrefix} ${why}; reloading the full cache`);
             setTimeout(() => {
@@ -298,6 +310,7 @@
                 }
               }
             }
+            deps.refreshVisibleCards();
           }
           return;
         }
@@ -305,7 +318,9 @@
         const carried = export10(resp.items);
         const removed = export122(resp.removed).filter((id) => !(id in carried));
         if (newEntries.length > 0 || removed.length > 0) {
+          const redrawn = [];
           for (const [id, entry] of newEntries) {
+            if (entryChanged(s.serverCache.get(id), entry)) redrawn.push(id);
             deps.forgetItemFacts(id);
             s.serverCache.set(id, entry);
             s.storeMisses.delete(id);
@@ -328,6 +343,7 @@
               }
             }
           }
+          deps.refreshVisibleCards(redrawn.concat(removed));
           console.log(`${logPrefix} Server cache updated: +${newEntries.length} items, -${removed.length} removed`);
         }
         settled = true;
@@ -588,7 +604,7 @@
         const myGeneration = s.batchGeneration;
         while (s.requestQueue.length > 0) {
           if (myGeneration !== s.batchGeneration) break;
-          const batch = s.requestQueue.splice(0, SERVER_BATCH_LIMIT).filter((entry) => entry.el.isConnected);
+          const batch = s.requestQueue.splice(0, SERVER_BATCH_LIMIT).filter((entry) => entry.el.isConnected && deps.stillShows(entry));
           if (batch.length === 0) continue;
           s.activeBatch = batch;
           await Promise.race([processBatch(batch, myGeneration), cancelled]);
@@ -984,7 +1000,7 @@
         }
         lookup.then((entries) => {
           if (myGeneration !== s.scanGeneration) {
-            for (const card of chunk) s.processedCards.delete(card.el);
+            for (const card of chunk) if (stillShows(card)) s.processedCards.delete(card.el);
             scheduleScan();
             return;
           }
@@ -1044,6 +1060,23 @@
       }
       if (released) scheduleScan();
     }
+    function refreshVisibleCards(updatedIds = null, hiddenIds = []) {
+      const changed = updatedIds ? new Set(updatedIds) : null;
+      const hidden = new Set(hiddenIds);
+      let released = false;
+      for (const el of document.querySelectorAll(CARD_IMAGE_SELECTOR)) {
+        const itemId = getItemId(el);
+        if (!itemId || changed && !changed.has(itemId)) continue;
+        s.cardReuse.set(el, (s.cardReuse.get(el) || 0) + 1);
+        JE.core.tagLayout?.clearCard(el.closest(".cardScalable") || el);
+        if (hidden.has(itemId)) s.processedCards.add(el);
+        else {
+          s.processedCards.delete(el);
+          released = true;
+        }
+      }
+      if (released) scheduleScan();
+    }
     function getItemId(el) {
       const parent = el.closest("[data-id]") || el.closest("[data-itemid]");
       const attrId = parent?.getAttribute("data-id") || parent?.getAttribute("data-itemid");
@@ -1055,7 +1088,7 @@
       const parent = el.closest("[data-type]");
       return parent?.getAttribute("data-type") || null;
     }
-    return { idleYield, scheduleScan, runScan, resolveRenderTarget, stillShows, releaseReusedCards };
+    return { idleYield, scheduleScan, runScan, resolveRenderTarget, stillShows, releaseReusedCards, refreshVisibleCards };
   }
 
   // client/src/features/media-tags/pipeline/series-lookup.ts

@@ -14,6 +14,7 @@ public class TaskVisibilityTests
         (typeof(ArrTagsSyncTask), (c, on) => c.ArrTagsSyncEnabled = on),
         (typeof(AudioLanguageTagsSyncTask), (c, on) => c.AudioLanguageTagSyncEnabled = on),
         (typeof(JellyfinToSeerrWatchlistSyncTask), (c, on) => { c.JellyseerrEnabled = on; c.SyncJellyfinWatchlistToSeerr = on; }),
+        (typeof(WatchlistRemovalSyncTask), (c, on) => { c.JellyseerrEnabled = on; c.SyncJellyfinWatchlistToSeerr = on; c.WatchlistRemovalSync = "jellyfin"; }),
         (typeof(JellyseerrWatchlistSyncTask), (c, on) => { c.JellyseerrEnabled = on; c.SyncJellyseerrWatchlist = on; }),
         (typeof(JellyseerrUserImportTask), (c, on) => { c.JellyseerrEnabled = on; c.JellyseerrAutoImportUsers = on; }),
         (typeof(MdblistRatingsFetchTask), (c, on) => { c.MdblistRatingsEnabled = on; c.MdblistRatingsFetchEnabled = on; }),

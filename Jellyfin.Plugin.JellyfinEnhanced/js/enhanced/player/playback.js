@@ -850,7 +850,28 @@
     }
     JE2.cycleSubtitleTrack = () => cycleTrack("subtitle");
     JE2.cycleAudioTrack = () => cycleTrack("audio");
+    let offsetPanel = null;
+    let offsetPanelTimer = null;
+    const hideOffsetPanel = () => {
+      lifetime2.cancel(offsetPanelTimer);
+      offsetPanel?.classList.add("hide");
+      offsetPanel = offsetPanelTimer = null;
+    };
+    JE2.adjustSubtitleOffset = (deltaSeconds) => {
+      const slider = document.querySelector(".subtitleSyncSlider");
+      const box = document.querySelector(".subtitleSyncContainer");
+      if (!slider || !box || typeof slider.updateOffset !== "function") {
+        JE2.toast(tWithFallback2("toast_subtitle_offset_unavailable", "Subtitle offset is not available"));
+        return;
+      }
+      slider.updateOffset(Math.round(((parseFloat(slider.value) || 0) + deltaSeconds) * 10) / 10);
+      hideOffsetPanel();
+      box.classList.remove("hide");
+      offsetPanel = box;
+      offsetPanelTimer = lifetime2.timeout(hideOffsetPanel, 2e3);
+    };
     lifetime2.onReset(() => {
+      hideOffsetPanel();
       lastCommanded.subtitle = lastCommanded.audio = null;
       trackCycleChains.subtitle = Promise.resolve();
       trackCycleChains.audio = Promise.resolve();

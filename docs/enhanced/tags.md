@@ -83,7 +83,7 @@ You'll see poster badges in library grids, home rows, Jellyfin search results, a
 |---|---|---|
 | [Quality Tags](#quality-tags) | Resolution, source, HDR, special format, video codec, sound, edition | Supported library cards; series/season quality follows your aggregation policy |
 | [Genre Tags](#genre-tags) | Genre icons (three by default), with names on hover | Supported library cards with genre metadata |
-| [Language Tags](#language-tags) | Distinct flags (three by default) or a no-dialogue symbol | Supported library cards; cached series/season flags cover their episodes, collection flags cover linked movies |
+| [Language Tags](#language-tags) | Distinct flags (three by default) or a no-dialogue symbol | Supported library cards; cached series/season flags cover their episodes, collection flags cover linked movies and series |
 | [Rating Tags](#rating-tags) | Community star score and critic percentage | Supported library cards |
 | [User-review chips](#user-review-chips) | Average visible review rating, or an optional dash | Movie, series, season, and episode cards with a usable review identity |
 | [Age Rating Tags](#age-rating-tags) | Official parental/content classification | Supported library cards with classification metadata |
@@ -695,7 +695,7 @@ With **Server-Side Tag Cache** enabled, series and season cards show audio langu
 
     In batch fallback mode, series/season poster flags reflect a representative episode and do not show partial coverage.
 
-    Cached collection flags combine languages from linked movie members. A collection containing an English movie and a Japanese movie can therefore show both flags; it does not mean every member has both languages.
+    Cached collection flags combine languages from linked movie and series members. A collection containing an English movie and a Japanese movie can therefore show both flags; it does not mean every member has both languages. The flags follow the members: when a member file gains or loses an audio or subtitle track, or a member is deleted, the collection changes with it.
 
     Regional flags require explicit regional metadata. For example, `pt-BR` shows Brazil, `pt`/`pt-PT` show Portugal, `es-419`/`es-MX` show Mexico, and `zh-Hant` shows Taiwan. A base language such as `pt`, `es`, or `zh` keeps its default flag; JE does not guess a region.
 
@@ -890,7 +890,7 @@ First match wins, with one badge per card. When switched on, **Leaving soon** co
 | **#N Today / #N This Week** | Movie, series | TMDB daily trending rank, or Seerr weekly trending fallback; requires the item's TMDB ID |
 | **Coming Soon** | Movie, series | Jellyfin `PremiereDate` is in the future, including virtual items returned through fallback |
 | **New Movie / New Series** | Movie / series | Jellyfin premiere date falls within the new-release window and has passed |
-| **New Episode** | Series, season, episode | A container's latest non-virtual episode was added within the just-added window and the container predates that window. An episode itself aired or was added within that window |
+| **New Episode** | Series, season, episode | A container's latest non-virtual episode was added within the just-added window and the container predates that window. An episode itself aired within that window; one that was only added recently shows **Just Added** |
 | **Just Added** | All supported types | Jellyfin `DateCreated`, the date used by **Date Added** sorting, falls within the just-added window |
 | **New Season** | Series | The newest regular season's episode 1 aired within the new-release window; season number must exceed 1 |
 | **Season Premiere** | Season, episode | The season's episode 1 aired within the new-release window; an episode card must itself be episode 1 of a regular season and have aired within the just-added window |
@@ -1166,7 +1166,7 @@ Jellyfin compresses the cache response with Brotli or gzip, so a browser downloa
 
 On the server, every page of a full load reads one shared, sorted list of the cache's keys, made once and made again only when an item is added or removed, instead of sorting the rest of the library for each page. An opt-in benchmark in the backend tests (`PrivacyCachePagingBenchmark`, run with `JE_BENCH_TAG_CACHE=1`) pages through 200,000 entries in about 0.3 s for an account that sees everything (100 pages, four such loads at once in about the same time), where sorting the rest of the library for every page took about 4 s for the keys alone.
 
-Without a stored copy (private browsing, storage blocked or full), a library of up to 20,000 entries stays in memory and the next page load downloads it again; a larger one is not held at all: cards ask for their tags in batches of up to 200 for the rest of the session. Each browser profile downloads in full once, then again only after a full rebuild, more than 20,000 removals between rebuilds, a Spoiler Guard change, or an access change that makes an item visible the browser has not stored (a library or parental limit opened up). When the user can only see less (an item added where they cannot see it, library access removed, an item re-rated above their limit), the next update carries the list of ids they can still see, the browser drops the rest, and the tags on screen stay. If you put Jellyfin behind a reverse proxy, let it pass `Accept-Encoding` through so compression stays on.
+Without a stored copy (private browsing, storage blocked or full), a library of up to 20,000 entries stays in memory and the next page load downloads it again; a larger one is not held at all: cards ask for their tags in batches of up to 200 for the rest of the session. Each browser profile downloads in full once, then again only after a full rebuild, more than 20,000 removals between rebuilds, a Spoiler Guard change, or an access change that makes an item visible the browser has not stored (a library or parental limit opened up). When the user can only see less (an item added where they cannot see it, library access removed, an item re-rated above their limit), the next update carries the list of ids they can still see, and the browser drops the rest and clears their tags from the cards on screen. Any update redraws the cards on screen whose items it changed; the other cards keep their tags. If you put Jellyfin behind a reverse proxy, let it pass `Accept-Encoding` through so compression stays on.
 
 ??? info "Cache lifecycle and excluded libraries"
     When poster review chips are enabled, visible review averages travel with the filtered cache data.

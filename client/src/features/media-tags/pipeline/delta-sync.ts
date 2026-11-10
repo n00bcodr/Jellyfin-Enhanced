@@ -117,6 +117,19 @@ export function createDeltaSync(s: PipelineState, JE: TagRuntimeBridge, deps: Pi
      * @param generation - cacheGeneration when the delta was requested.
      * @returns whether the copy was reconciled (false: the caller replaces it)
      */
+    /**
+     * Whether a delta entry differs from the one memory holds. For a user under
+     * Spoiler Guard every guarded entry rides along with each delta, mostly
+     * unchanged; their cards must not be torn down and redrawn every time.
+     * An entry memory does not hold (a restored copy not yet read) counts as changed.
+     * @param held - The entry in memory before the delta.
+     * @param entry - The entry the delta brought.
+     */
+    function entryChanged(held: JsonRecord | undefined, entry: JsonRecord): boolean {
+        if (!held) return true;
+        try { return JSON.stringify(held) !== JSON.stringify(entry); } catch { return true; }
+    }
+
     async function reconcileAccess(resp: JsonRecord, base: SnapshotBase, generation: number): Promise<boolean> {
         const revision = textOrEmpty(resp.filterRevision);
         if (!Array.isArray(resp.visible) || !s.serverFilterBase || resp.filterBase !== s.serverFilterBase || !revision || !s.serverCache) return false;
@@ -160,7 +173,9 @@ export function createDeltaSync(s: PipelineState, JE: TagRuntimeBridge, deps: Pi
             s.deltaIds.delete(id);
             s.storeMisses.add(id);
         }
+        const redrawn: string[] = [];
         for (const [id, entry] of newEntries) {
+            if (entryChanged(s.serverCache.get(id), entry)) redrawn.push(id);
             deps.forgetItemFacts(id);
             s.serverCache.set(id, entry);
             s.storeMisses.delete(id);
@@ -181,6 +196,7 @@ export function createDeltaSync(s: PipelineState, JE: TagRuntimeBridge, deps: Pi
                     try { renderer.onServerCacheRefresh(changedIds); } catch {}
                 }
             }
+            deps.refreshVisibleCards(redrawn.concat(removed, dropped), dropped);
         }
         console.log(`${logPrefix} Access changed: +${newEntries.length} items, -${removed.length + dropped.length} no longer visible`);
         return true;
@@ -250,6 +266,7 @@ export function createDeltaSync(s: PipelineState, JE: TagRuntimeBridge, deps: Pi
                             try { renderer.onServerCacheRefresh(null, { replaced: true }); } catch {}
                         }
                     }
+                    deps.refreshVisibleCards();
                 } else if (revision !== s.serverFilterRevision) {
                     // Cards already show entries stripped the old way: the full
                     // invalidation also removes their overlays. Not awaited — it
@@ -259,15 +276,13 @@ export function createDeltaSync(s: PipelineState, JE: TagRuntimeBridge, deps: Pi
                 } else {
                     console.log(`${logPrefix} ${why}, reloading full cache`);
                     await deps.downloadFullCache({ fresh: true });
-                    // Clear all derived caches on full rebuild. The cards on the
-                    // page keep what they show (nothing is re-rendered here), so
-                    // a renderer that must not go stale is told the cache under
-                    // them was replaced and can redraw itself.
+                    // Clear derived caches and redraw cards from the replacement.
                     for (const [, renderer] of s.renderers) {
                         if (renderer.onServerCacheRefresh) {
                             try { renderer.onServerCacheRefresh(null, { replaced: true }); } catch {}
                         }
                     }
+                    deps.refreshVisibleCards();
                 }
                 return;
             }
@@ -277,7 +292,9 @@ export function createDeltaSync(s: PipelineState, JE: TagRuntimeBridge, deps: Pi
             const carried = record(resp.items);
             const removed = stringList(resp.removed).filter(id => !(id in carried));
             if (newEntries.length > 0 || removed.length > 0) {
+                const redrawn: string[] = [];
                 for (const [id, entry] of newEntries) {
+                    if (entryChanged(s.serverCache.get(id), entry)) redrawn.push(id);
                     deps.forgetItemFacts(id);
                     s.serverCache.set(id, entry);
                     s.storeMisses.delete(id);
@@ -299,6 +316,7 @@ export function createDeltaSync(s: PipelineState, JE: TagRuntimeBridge, deps: Pi
                         try { renderer.onServerCacheRefresh(changedIds); } catch {}
                     }
                 }
+                deps.refreshVisibleCards(redrawn.concat(removed));
                 console.log(`${logPrefix} Server cache updated: +${newEntries.length} items, -${removed.length} removed`);
             }
             settled = true;

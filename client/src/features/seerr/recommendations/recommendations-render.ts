@@ -117,7 +117,7 @@ function enableRowScroll(section: HTMLElement, scroller: HTMLElement, owner?: Re
     const frame = requestAnimationFrame(update);
     owner?.disposers.push(() => cancelAnimationFrame(frame));
 }
-interface RowShell { section: HTMLElement; items: HTMLElement; finish(owner?: RenderOwner): HTMLElement }
+interface RowShell { section: HTMLElement; scroller: HTMLElement; items: HTMLElement; finish(owner?: RenderOwner): HTMLElement }
 /** The horizontal row layout of the Seerr search-results row, with its scroller still to fill. */
 function createRowShell(): RowShell {
     const section = element('div', 'verticalSection emby-scroller-container je-recommendations-section');
@@ -128,13 +128,39 @@ function createRowShell(): RowShell {
     const items = element('div', 'focuscontainer-x itemsContainer scrollSlider je-pad-left je-pad-right', scroller);
     items.setAttribute('is', 'emby-itemscontainer');
     return {
-        section, items,
+        section, scroller, items,
         finish(owner) {
             section.appendChild(scroller);
             enableRowScroll(section, scroller, owner);
             return section;
         }
     };
+}
+/**
+ * Keeps a mouse drag of a tile row from opening the tile under the cursor on release: a click is dropped once
+ * the pointer has moved more than 8px since the press, even if it came back. Keyboard and touch are untouched.
+ */
+function preventTileDragClicks(scroller: HTMLElement): void {
+    let press: { id: number; x: number; y: number } | null = null;
+    let dragged = false;
+    const moved = (event: MouseEvent, from: { x: number; y: number }) => Math.hypot(event.clientX - from.x, event.clientY - from.y) > 8;
+    scroller.addEventListener('pointerdown', event => {
+        press = event.pointerType === 'mouse' && event.button === 0 ? { id: event.pointerId, x: event.clientX, y: event.clientY } : null;
+        dragged = false;
+    }, true);
+    scroller.addEventListener('pointermove', event => {
+        if (press && event.pointerId === press.id && moved(event, press)) dragged = true;
+    }, true);
+    scroller.addEventListener('pointercancel', () => { press = null; }, true);
+    scroller.addEventListener('click', event => {
+        // detail is 0 for a keyboard activation.
+        const suppress = event.detail > 0 && press !== null && (dragged || moved(event, press));
+        press = null;
+        if (!suppress) return;
+        event.preventDefault();
+        // Capture runs before the tile's own category handler.
+        event.stopImmediatePropagation();
+    }, true);
 }
 function plainHeading(section: HTMLElement, title: string): void {
     const heading = element('h2', 'sectionTitle sectionTitle-cards focuscontainer-x je-pad-left je-pad-right', section);
@@ -181,6 +207,7 @@ function createRows(JE: SeerrDiscoveryHost, P: RecommendationsStage) {
     /** Studio/network tiles: the entry's TMDB logo, or a plain text tile if the image fails. */
     function createTileRow(title: string, items: readonly CatalogEntry[], kind: 'studio' | 'network', owner?: RenderOwner): HTMLElement {
         const shell = createRowShell();
+        preventTileDragClicks(shell.scroller);
         plainHeading(shell.section, title);
         for (const item of items) {
             const image = createTile(shell.items, 'je-tile-image');
@@ -203,6 +230,7 @@ function createRows(JE: SeerrDiscoveryHost, P: RecommendationsStage) {
     /** Genre tiles: a colour-tinted backdrop with the name overlaid, no backdrop repeated in the row. */
     function createGenreTileRow(title: string, genres: readonly GenreSliderEntry[], mediaType: FeedKind, owner?: RenderOwner): HTMLElement {
         const shell = createRowShell();
+        preventTileDragClicks(shell.scroller);
         plainHeading(shell.section, title);
         const usedBackdrops = new Set<string>();
         for (const genre of genres) {

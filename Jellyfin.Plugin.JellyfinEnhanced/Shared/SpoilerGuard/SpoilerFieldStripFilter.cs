@@ -49,6 +49,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.SpoilerGuard
         // - /Items?<search>               → Items.GetItems with searchTerm
         // - /Search/Hints                 → Search.GetSearchHints
         // - /Users/{uid}/Suggestions      → Suggestions.GetSuggestions / Legacy
+        // - /HomeScreen/Section/{type}    → HomeScreen.GetSectionContent (Home Screen Sections plugin)
         private static readonly Dictionary<(string, string), bool> _routes
             = new()
             {
@@ -107,6 +108,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.SpoilerGuard
                 // episodes/movies (e.g. "Watch later"), so the items need
                 // the same strip as a regular library list.
                 { ("Playlists",   "GetPlaylistItems"),       true },
+                // Home Screen Sections builds the web home rows from its
+                // own endpoint instead of the native ones above, so its
+                // combined Continue Watching / Next Up row showed unwatched
+                // episode titles. The response is a plain
+                // QueryResult<BaseItemDto>, which the existing arm strips.
+                // Matching on controller/action name alone means no
+                // dependency on that plugin: without it, this never matches.
+                { ("HomeScreen",  "GetSectionContent"),      true },
             };
 
         // Per-category reveal mask for the advanced Spoiler Guard mode. Each

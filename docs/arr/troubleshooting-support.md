@@ -111,7 +111,7 @@ Filters can hide events even when a source loads successfully. Check the visible
 6. Check [Hidden Content filtering](#hidden-content-filtering) and named source failures.
 
 ??? info "Highlighting, matching, and event times"
-    Watchlist highlighting uses Jellyfin's like (Likes) flag, not the favorite (heart) flag. Under **Seerr**, **Add requested media to Watchlist** and **Sync Seerr Watchlist → Jellyfin** set this flag for matching library items; see [Seerr settings](../seerr/seerr-settings.md). Watched markers reflect whether you have played or started the matched episode or movie; watching other episodes does not mark an upcoming episode.
+    Watchlist highlighting uses Jellyfin's like (Likes) flag, not the favorite (heart) flag. Under **Seerr**, **Requested media goes on the requester's watchlist** and **Seerr → Jellyfin: add Seerr watchlist items to Jellyfin** set this flag for matching library items; see [Seerr settings](../seerr/seerr-settings.md). Watched markers reflect whether you have played or started the matched episode or movie; watching other episodes does not mark an upcoming episode.
 
     If an available event does nothing when clicked, confirm Jellyfin has scanned and matched it. The **Available** arrow opens details rather than starting playback. A Shoko event is **Available** when Shoko reports an episode file. Shoko matching needs `Shoko Series`/`Shoko Episode` provider IDs. Unmatched anime may still offer an administrator's **Open in Shoko** link. Event dates use your browser's local time. Shoko air dates are also converted to your browser's local time, so depending on your timezone an event can show a time or appear on the previous day.
 

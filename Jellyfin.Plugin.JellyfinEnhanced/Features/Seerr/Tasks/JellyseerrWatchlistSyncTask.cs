@@ -664,6 +664,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                     return Task.FromResult(WatchlistItemResult.AlreadyInWatchlist);
                 }
 
+                // When Jellyfin removals are followed, an item that was on both lists and is no
+                // longer on the Jellyfin watchlist was removed (or watched) there on purpose.
+                if (Features.Seerr.Services.WatchlistSyncPlanner.IsActive(config)
+                    && Features.Seerr.Services.WatchlistSyncPlanner.HonoursJellyfinRemovals(Features.Seerr.Services.WatchlistSyncPlanner.ParseMode(config!.WatchlistRemovalSync))
+                    && _userConfigurationManager.GetWatchlistSyncState(user.Id).Synced
+                        .Contains(Features.Seerr.Services.WatchlistSyncPlanner.Key(watchlistItem.MediaType, watchlistItem.TmdbId), StringComparer.OrdinalIgnoreCase))
+                {
+                    return Task.FromResult(WatchlistItemResult.AlreadyProcessed);
+                }
+
                 // Add to watchlist
                 userData.Likes = true;
                 _userDataManager.SaveUserData(user, item, userData, UserDataSaveReason.UpdateUserRating, default);

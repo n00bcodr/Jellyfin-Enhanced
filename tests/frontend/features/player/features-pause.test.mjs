@@ -99,3 +99,13 @@ test('a late response for the previous item cannot fill the overlay after a sour
  gate.resolve();await flush();
  assert.equal(x.p.currentItemId,B);assert.equal(x.plot(),'overview B');
 });
+// Upstream 19cfe99a (#1036): ids and the image tag are encoded in the pause screen's image URLs.
+test('pause screen image URLs encode the item ids and the image tag, and leave ordinary ids as they are',t=>{
+ const h=setup(t);h.JE.initializePauseScreen();const p=h.JE.pauseScreenInstance;
+ const item={ImageTags:{Logo:'tag&x=1'},ParentId:'par/ent?x',SeriesId:'ser#ies'};
+ assert.deepEqual([...p.getLogoUrls(item,'http://local','it/em')],['http://local/Items/it%2Fem/Images/Logo?tag=tag%26x%3D1','http://local/Items/par%2Fent%3Fx/Images/Logo','http://local/Items/ser%23ies/Images/Logo']);
+ assert.deepEqual([...p.getDiscUrls(item,'http://local','it/em')],['http://local/Items/it%2Fem/Images/Disc','http://local/Items/par%2Fent%3Fx/Images/Disc','http://local/Items/ser%23ies/Images/Disc']);
+ assert.deepEqual([...p.getBackdropUrls(item,'http://local','it/em')],['http://local/Items/it%2Fem/Images/Backdrop','http://local/Items/par%2Fent%3Fx/Images/Backdrop','http://local/Items/ser%23ies/Images/Backdrop']);
+ const plain={ImageTags:{Logo:'0123abcd'},SeriesId:'f137a2dd21bbc1b99aa5c0f6bf02a805'};
+ assert.deepEqual([...p.getLogoUrls(plain,'http://local','0ff8461bed0a2658ec63487586efdbd3')],['http://local/Items/0ff8461bed0a2658ec63487586efdbd3/Images/Logo?tag=0123abcd','http://local/Items/f137a2dd21bbc1b99aa5c0f6bf02a805/Images/Logo']);
+});

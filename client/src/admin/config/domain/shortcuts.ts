@@ -37,6 +37,8 @@ export const DEFAULT_SHORTCUTS: readonly ShortcutEntry[] = [
     { Name: "SkipIntroOutro", Key: "O", Label: "Skip Intro/Outro", Category: "Player" },
     { Name: "FrameStepBack", Key: ",", Label: "Step Back One Frame", Category: "Player" },
     { Name: "FrameStepForward", Key: ".", Label: "Step Forward One Frame", Category: "Player" },
+    { Name: "DecreaseSubtitleOffset", Key: "[", Label: "Decrease Subtitle Offset", Category: "Player" },
+    { Name: "IncreaseSubtitleOffset", Key: "]", Label: "Increase Subtitle Offset", Category: "Player" },
     { Name: "JumpToLastPosition", Key: "Z", Label: "Jump to Last Position", Category: "Player" },
     { Name: "JumpToPercentage", Key: "0-9", Label: "Jump to % of video", Category: "Player" }
 ];

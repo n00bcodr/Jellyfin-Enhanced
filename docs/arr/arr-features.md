@@ -322,7 +322,7 @@ To show watchlisted episodes on a phone, expand the filter panel, select **Episo
 ![Phone calendar with Episode and Watchlist filters combined using AND and a watchlist-marked release](../images/arr/calendar-filters-phone.webp)
 
 ??? info "Highlighting, library access, and requested-only limits"
-    Watchlist highlighting uses Jellyfin's like (Likes) flag, not the favorite (heart) flag. Under **Seerr**, **Add requested media to Watchlist** and **Sync Seerr Watchlist → Jellyfin** set this flag for matching library items; see [Seerr settings](../seerr/seerr-settings.md). Watching another episode of a series does not mark an upcoming episode watched.
+    Watchlist highlighting uses Jellyfin's like (Likes) flag, not the favorite (heart) flag. Under **Seerr**, **Requested media goes on the requester's watchlist** and **Seerr → Jellyfin: add Seerr watchlist items to Jellyfin** set this flag for matching library items; see [Seerr settings](../seerr/seerr-settings.md). Watching another episode of a series does not mark an upcoming episode watched.
 
     Library filtering infers unmatched-title access from matched Calendar events sharing an upstream root folder. Unknown roots remain visible; unmatched Shoko events have no root folder for this inference. Turning the option off broadens Calendar results without granting playback access.
 

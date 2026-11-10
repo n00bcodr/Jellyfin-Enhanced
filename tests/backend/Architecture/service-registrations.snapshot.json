@@ -119,6 +119,7 @@
     "UsageEventCounterService | UsageEventCounterService | Singleton",
     "UserConfigurationManager | UserConfigurationManager | Singleton",
     "WatchlistMonitor | WatchlistMonitor | Singleton",
+    "WatchlistRemovalSyncTask | WatchlistRemovalSyncTask | Transient",
     "WhatsNewService | WhatsNewService | Singleton",
     "WikidataAwardsService | WikidataAwardsService | Singleton"
   ],

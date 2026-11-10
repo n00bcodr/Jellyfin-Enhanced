@@ -690,3 +690,83 @@ test('a failure that is not a refusal is not reported as one', async () => {
   assert.equal(isAbortError(Object.assign(new Error('x'), { name: 'AbortError' })), true);
   for (const other of [new Error('x'), { name: 'TypeError' }, null, 'AbortError', undefined]) assert.equal(isAbortError(other), false);
 });
+
+// Upstream af5f9678: the preview follows the real toast: 0 means off, any other value is used as typed.
+test('the toast preview uses the typed duration, and says toasts are off at 0', async t => {
+  const h = await loadedPage(t);
+  const preview = value => {
+    h.document.getElementById('ToastDuration').value = value;
+    h.document.getElementById('jeTestToast').click();
+    const shown = h.document.querySelectorAll('.je-preview-toast');
+    assert.equal(shown.length, 1, 'one preview at a time');
+    return shown[0].textContent;
+  };
+  assert.equal(preview('0'), 'Toasts are turned off (0 ms). Nothing will pop up.');
+  assert.equal(preview('50'), 'Example toast, disappears in 0.1s');
+  assert.equal(preview('4000'), 'Example toast, disappears in 4.0s');
+  assert.equal(preview(''), 'Example toast, disappears in 3.0s');
+  assert.equal(preview('-20'), 'Example toast, disappears in 3.0s');
+  assert.equal(preview('999999'), 'Example toast, disappears in 120.0s');
+  assert.match(h.document.querySelector('[data-desc-for="ToastDuration"]').textContent, /Set to 0 to turn toasts off\./);
+});
+
+// Upstream 2e1f123d (#1032): "Don't re-add" and its days only apply when removals are Seerr decides or Never.
+test('the watchlist re-add rows follow the removal mode and the toggle, and stay that way through other dependency passes', async t => {
+  const h = await loadedPage(t);
+  const doc = h.document;
+  const mode = doc.getElementById('watchlistRemovalSync'), toggle = doc.getElementById('preventWatchlistReAddition'), days = doc.getElementById('watchlistMemoryRetentionDays');
+  const hidden = el => el.classList.contains('jea-dep-hidden') || el.style.display === 'none';
+  const state = () => ({
+    toggleRow: !hidden(toggle.closest('.checkboxContainer, .inputContainer, .selectContainer') || toggle.closest('label')),
+    daysRow: !hidden(days.closest('.inputContainer')),
+    daysDescription: !hidden(doc.querySelector('.je-setting-description[data-desc-for="watchlistMemoryRetentionDays"]')),
+  });
+  const set = (el, change) => { change(el); el.dispatchEvent(new h.window.Event('change', { bubbles: true })); };
+  assert.equal(mode.value, 'jellyfin', 'the default mode');
+  assert.deepEqual([...mode.options].map(o => o.value), ['jellyfin', 'seerr', 'both', 'off']);
+  assert.deepEqual(state(), { toggleRow: false, daysRow: false, daysDescription: false }, 'Jellyfin decides: nothing to re-add');
+  // Any other parent toggle reruns every dependency rule; the rows must not come back.
+  set(doc.getElementById('syncJellyseerrWatchlist'), el => { el.checked = !el.checked; });
+  assert.deepEqual(state(), { toggleRow: false, daysRow: false, daysDescription: false }, 'after an unrelated dependency pass');
+  for (const [value, shown] of [['seerr', true], ['both', false], ['off', true], ['jellyfin', false]]) {
+    set(mode, el => { el.value = value; });
+    assert.deepEqual(state(), { toggleRow: shown, daysRow: shown, daysDescription: shown }, value);
+  }
+  set(mode, el => { el.value = 'seerr'; });
+  set(toggle, el => { el.checked = false; });
+  assert.deepEqual(state(), { toggleRow: true, daysRow: false, daysDescription: false }, 'toggle off hides only the days');
+  set(toggle, el => { el.checked = true; });
+  assert.deepEqual(state(), { toggleRow: true, daysRow: true, daysDescription: true });
+});
+
+test('the removal mode is saved as chosen and loaded back', async t => {
+  const h = await loadedPage(t, { saved: { JellyseerrEnabled: true, JellyseerrUrls: 'http://seerr.test', JellyseerrApiKey: 'k', TMDB_API_KEY: 'stored', WatchlistRemovalSync: 'both' } });
+  assert.equal(h.document.getElementById('watchlistRemovalSync').value, 'both');
+  h.document.getElementById('watchlistRemovalSync').value = 'off';
+  h.submit();
+  await settle(h.window, 80);
+  assert.equal(h.calls.puts.length, 1);
+  assert.equal(h.calls.puts[0].WatchlistRemovalSync, 'off');
+});
+
+// Upstream 19cfe99a (#1036): the Custom Tabs copy snippet escapes quotes as well as angle brackets.
+test('the Custom Tabs copy snippets escape their quotes in the markup and still copy the plain HTML', async t => {
+  const h = await loadedPage(t);
+  const markup = [];
+  const walk = value => {
+    if (typeof value === 'string') { if (value.includes('je-copy-html-btn')) markup.push(value); return; }
+    if (value && typeof value === 'object') Object.values(value).forEach(walk);
+  };
+  walk(h.window.JEAdmin.sections);
+  const snippets = markup.flatMap(html => [...html.matchAll(/data-copy-text='([^']*)'/g)].map(m => m[1]));
+  assert.ok(snippets.length >= 5, `found ${snippets.length} snippets`);
+  for (const snippet of snippets) {
+    assert.match(snippet, /^&lt;div class=&quot;[a-z0-9 -]+&quot;&gt;&lt;\/div&gt;$/, snippet);
+  }
+  const buttons = [...h.document.querySelectorAll('.je-copy-html-btn')];
+  assert.equal(buttons.length, snippets.length);
+  for (const button of buttons) {
+    assert.match(button.dataset.copyText, /^<div class="[a-z0-9 -]+"><\/div>$/);
+    assert.equal(button.parentElement.querySelector('code').textContent, button.dataset.copyText);
+  }
+});

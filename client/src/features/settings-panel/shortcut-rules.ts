@@ -6,7 +6,7 @@ export const PLAYER_ACTIONS: ReadonlySet<string> = new Set([
     'BookmarkCurrentTime', 'CycleAspectRatio', 'ShowPlaybackInfo', 'SubtitleMenu',
     'CycleSubtitleTracks', 'CycleAudioTracks', 'ResetPlaybackSpeed', 'IncreasePlaybackSpeed',
     'DecreasePlaybackSpeed', 'OpenEpisodePreview', 'SkipIntroOutro', 'FrameStepBack',
-    'FrameStepForward', 'JumpToLastPosition'
+    'FrameStepForward', 'DecreaseSubtitleOffset', 'IncreaseSubtitleOffset', 'JumpToLastPosition'
 ]);
 
 /** Keys Jellyfin's built-in player handles natively (combo format matches JE.keyListener). */
@@ -18,7 +18,8 @@ export const JELLYFIN_PLAYER_KEYS: ReadonlySet<string> = new Set([
 /** Player actions shown in the panel's Player column, in display order. */
 export const PLAYER_COLUMN = ['CycleAspectRatio', 'ShowPlaybackInfo', 'SubtitleMenu', 'CycleSubtitleTracks', 'CycleAudioTracks',
     'IncreasePlaybackSpeed', 'DecreasePlaybackSpeed', 'ResetPlaybackSpeed', 'BookmarkCurrentTime', 'OpenEpisodePreview',
-    'SkipIntroOutro', 'FrameStepBack', 'FrameStepForward', 'JumpToLastPosition', 'JumpToPercentage'] as const;
+    'SkipIntroOutro', 'FrameStepBack', 'FrameStepForward', 'DecreaseSubtitleOffset', 'IncreaseSubtitleOffset', 'JumpToLastPosition',
+    'JumpToPercentage'] as const;
 
 /**
  * Why a combo cannot be bound to an action: a player action can't take a key

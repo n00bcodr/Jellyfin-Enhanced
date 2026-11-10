@@ -687,11 +687,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
             // streams and run no episode queries.
             var itemIds = _libraryManager.GetItemIds(new InternalItemsQuery
             {
-                IncludeItemTypes = TaggableTypes.Where(kind => !IsContainerKind(kind)).ToArray(),
+                IncludeItemTypes = TaggableTypes.Where(kind => !IsContainerKind(kind) && kind != BaseItemKind.BoxSet).ToArray(),
                 TopParentIds = IncludedLibraryIds(),
                 IsVirtualItem = false,
                 Recursive = true
             });
+            var collectionIds = CollectionIdsForFullBuild(); // built last: they read this build's series entries
             var containerIds = _libraryManager.GetItemIds(new InternalItemsQuery
             {
                 IncludeItemTypes = new[] { BaseItemKind.Series, BaseItemKind.Season },
@@ -699,7 +700,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
                 IsVirtualItem = false,
                 Recursive = true
             });
-            var totalCount = itemIds.Count + containerIds.Count;
+            var totalCount = itemIds.Count + containerIds.Count + collectionIds.Count;
 
             _logger.Info($"[TagCache] Found {totalCount} taggable items");
 
@@ -802,6 +803,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
                 return;
             }
 
+            _buildingCache = newCache;
+            try { if (!BuildPass(collectionIds)) { _logger.Info("[TagCache] Full build aborted (setting disabled or server shutting down); nothing published."); return; } }
+            finally { _buildingCache = null; }
+
             // Final gate before publishing (the loop check can't run when the
             // setting flips after the last page). The swap below happens while
             // this thread holds _rebuildLock and OnServerModeDisabled also runs
@@ -840,6 +845,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
             }
 
             Interlocked.Exchange(ref _lastReconciledUtcTicks, reconciliationStartedUtc.Ticks);
+            ForgetCollectionsMissingFrom(newCache);
             // Invalidate user access cache since items may have changed
             InvalidateUserAccess();
             progress?.Report(100);
@@ -1129,6 +1135,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
             progress?.Report(100);
             LogLanguageCacheUse(languageCacheAtStart);
             SaveToDisk();
+            QueueCollectionsAfterReconcile();
 
             _logger.Info($"[TagCache] Reconciliation complete: {changedIds.Count} changed items, {idsToRebuild.Count} entries checked");
         }
@@ -1282,7 +1289,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
                     if (!ServerModeEnabled)
                     {
                         Interlocked.Exchange(ref _firstPendingTicks, 0);
-                        _pending.Drain();
+                        KeepCollectionRebuilds(_pending.Drain());
                         return;
                     }
 
@@ -1320,6 +1327,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
                         var customTagsBefore = CaptureCustomTagsBefore(batch);
                         var changed = ApplyBatch(batch, RebuildWithBatchMemo(batch), RemoveEntry);
                         changed |= ApplyCustomTagFollowUps(batch, customTagsBefore);
+                        QueueCollectionsOfChangedMembers();
                         // Any library change may alter who can see an item (added,
                         // removed, moved, re-rated, re-tagged) even when its tag entry
                         // is unchanged: access sets computed before it are stale.
@@ -1329,6 +1337,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
                             TouchLastModified();
                             ScheduleDebouncedSave();
                         }
+                        else if (Interlocked.Exchange(ref _collectionMembersDirty, 0) == 1) ScheduleDebouncedSave(); // no delta, but what collections are built from changed
                     }
                 }
                 finally
@@ -1442,7 +1451,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
             if (!TaggableTypes.Contains(kind)) return false;
             // Through RemoveEntry: it advances the mutation epoch (shared response bytes)
             // and the version, the only way clients holding the entry learn it is gone.
-            if (IsInExcludedLibrary(item)) return RemoveEntry(id);
+            if (IsInExcludedLibrary(item)) return RemoveExcludedEntry(item, kind, id);
 
             // A season is queued alongside every episode add/update/removal. Repair
             // every cached sibling, including ones not otherwise in this batch.
@@ -1488,9 +1497,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
         {
             // AddOrUpdate tells a new key from a replaced value, even when a removal races the store.
             var added = false;
-            _cache.AddOrUpdate(key, _ => { added = true; return entry; }, (_, _) => entry);
+            TagCacheEntry? previous = null;
+            _cache.AddOrUpdate(key, _ => { added = true; previous = null; return entry; }, (_, old) => { previous = old; return entry; });
             if (added) Interlocked.Increment(ref _keySetEpoch);
             Interlocked.Increment(ref _mutationEpoch);
+            if (IsCollectionMemberType(entry.Type) && (previous == null || !SameLanguageFacts(previous, entry))) _collectionMemberChanges.TryAdd(key, false);
         }
 
         /// <summary>
@@ -1504,6 +1515,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
             Interlocked.Increment(ref _keySetEpoch);
             RecordTombstone(key);
             Interlocked.Increment(ref _mutationEpoch);
+            NoteRemovedEntry(key, removed);
             return true;
         }
 
@@ -1739,7 +1751,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
         {
             var key = id.ToString("N").ToLowerInvariant();
             // The removal reaches clients as a delta (TryRemoveEntry stamps it); the version stays.
-            return TryRemoveEntry(key, out _);
+            if (TryRemoveEntry(key, out _)) return true;
+            if (IsCollectionMember(id)) _collectionMemberChanges[key] = true; // no entry of its own, but a collection is built from it
+            return false;
         }
 
         /// <summary>
@@ -2368,7 +2382,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
             if (item == null || !TaggableTypes.Contains(item.GetBaseItemKind())) return null;
             QueueSourceRatingWarm(new[] { item });
             QueueLogoWarm(new[] { item });
-            return BuildEntryForItem(item);
+            // Nothing is stored, so nothing is recorded about what a collection was built from.
+            return BuildEntryForItem(item, recordCollection: false);
         }
 
         /// <summary>
@@ -2435,7 +2450,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
             _rebuildLock.Wait();
             try
             {
-                _pending.Drain();
+                KeepCollectionRebuilds(_pending.Drain());
                 Interlocked.Exchange(ref _firstPendingTicks, 0);
 
                 // _saveLock makes save-then-release atomic against the debounce
@@ -2613,6 +2628,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
                                 && e.PremiereDate > (container.LatestEpisodeAired ?? 0))
                             .Select(e => e.PremiereDate).Min();
                     }
+                    LoadCollectionMembers(data.CollectionMembers, data.CollectionMemberChanges);
                     PublishAwards();
                     RefreshDueStatusContainers();
                     // A snapshot written under other Custom tag rules is re-matched in the background.
@@ -2645,6 +2661,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
             var memo = new EpisodeScanMemo { Pending = due.ToHashSet() };
             var changed = false;
             foreach (var id in due) changed |= RebuildEntry(id, memo);
+            QueueCollectionsOfChangedMembers();
             if (!changed) return;
             // Changed entries reach clients as a delta (their LastUpdated); only removals and rebuild swaps change the version.
             Interlocked.Exchange(ref _lastModified, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
@@ -2683,6 +2700,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
                     var dir = Path.GetDirectoryName(CacheFilePath);
                     if (dir != null) Directory.CreateDirectory(dir);
 
+                    Interlocked.Exchange(ref _collectionMembersDirty, 0); // this save writes the member index as it stands now
                     var data = new TagCacheDiskFormat
                     {
                         SchemaVersion = CurrentCacheSchemaVersion,
@@ -2691,7 +2709,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
                         LastReconciledUtcTicks = Interlocked.Read(ref _lastReconciledUtcTicks),
                         CustomTagsFingerprint = _customTagsFingerprint,
                         Items = new Dictionary<string, TagCacheEntry>(_cache),
-                        Tombstones = new Dictionary<string, long>(_tombstones, StringComparer.Ordinal)
+                        Tombstones = new Dictionary<string, long>(_tombstones, StringComparer.Ordinal),
+                        CollectionMembers = CollectionMembersToSave(),
+                        CollectionMemberChanges = _collectionMemberChanges.IsEmpty ? null : new Dictionary<string, bool>(_collectionMemberChanges, StringComparer.Ordinal)
                     };
 
                     // Serialize straight to the temp file: building the whole
@@ -2887,10 +2907,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
                     var batch = _pending.Drain();
                     using (BeginInPlaceWrites())
                     {
-                        if (ApplyBatch(batch, RebuildWithBatchMemo(batch), RemoveEntry))
+                        var applied = ApplyBatch(batch, RebuildWithBatchMemo(batch), RemoveEntry);
+                        if (applied)
                         {
                             TouchLastModified();
                             _dirty = true;
+                        }
+                        else if (Interlocked.Exchange(ref _collectionMembersDirty, 0) == 1 || !_collectionMemberChanges.IsEmpty)
+                        {
+                            _dirty = true; // collections still to follow their members are saved now and queued after the next load
                         }
                     }
                 }
@@ -2923,7 +2948,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
         /// so every episode's streams are read once instead of once for the
         /// episode, once for its season and once for its series.
         /// </summary>
-        private TagCacheEntry? BuildEntryForItem(BaseItem item, EpisodeScanMemo? episodeScans = null)
+        private TagCacheEntry? BuildEntryForItem(BaseItem item, EpisodeScanMemo? episodeScans = null, bool recordCollection = true)
         {
             try
             {
@@ -3034,8 +3059,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
                 else if (kind == BaseItemKind.BoxSet)
                 {
                     // A BoxSet has no media streams of its own; derive its language
-                    // tags from the union of its manually-linked movie members instead.
-                    (entry.AudioLanguages, entry.SubtitleLanguages, entry.SdhSubtitleLanguages) = GetCollectionLanguages(item);
+                    // tags from the union of its manually-linked movie and series members.
+                    (entry.AudioLanguages, entry.SubtitleLanguages, entry.SdhSubtitleLanguages) = GetCollectionLanguages(item, recordCollection);
                 }
                 else
                 {
@@ -4017,72 +4042,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
             });
         }
 
-        /// <summary>
-        /// Union of audio languages, and of subtitle languages, across a BoxSet's
-        /// linked movie and series members.
-        /// LinkedChildren is a manual join (not a parent pointer), so this is
-        /// resolved live rather than tracked incrementally per member; membership
-        /// edits already re-enqueue the BoxSet itself (see TagCacheMonitor), and a
-        /// member's own file changes are picked up by the next reconciliation.
-        /// </summary>
-        private (string[] Audio, string[] Subtitles, string[] SdhSubtitles) GetCollectionLanguages(BaseItem collection)
-        {
-            try
-            {
-                if (collection is not Folder folder) return (Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>());
-
-                var languages = new HashSet<string>();
-                var subtitles = new HashSet<string>();
-                var sdh = new HashSet<string>();
-                foreach (var member in folder.GetLinkedChildren())
-                {
-                    var memberKind = member.GetBaseItemKind();
-                    if (memberKind == BaseItemKind.Movie)
-                    {
-                        var (memberStreams, _, memberLanguages, _, memberSubtitles) = ExtractMediaData(member);
-                        foreach (var lang in memberLanguages) languages.Add(lang);
-                        foreach (var lang in memberSubtitles) subtitles.Add(lang);
-                        foreach (var lang in SubtitleAccessibility.Languages(memberStreams)) sdh.Add(lang);
-                    }
-                    else if (memberKind == BaseItemKind.Series)
-                    {
-                        // Series entries are built after BoxSets in a full build, so
-                        // fall back to scanning the episodes when it isn't cached yet.
-                        if (_cache.TryGetValue(member.Id.ToString("N").ToLowerInvariant(), out var seriesEntry)
-                            && seriesEntry.AudioLanguages != null)
-                        {
-                            foreach (var lang in seriesEntry.AudioLanguages) languages.Add(lang);
-                            foreach (var lang in seriesEntry.SubtitleLanguages ?? Array.Empty<string>()) subtitles.Add(lang);
-                            foreach (var lang in seriesEntry.SdhSubtitleLanguages ?? Array.Empty<string>()) sdh.Add(lang);
-                            continue;
-                        }
-
-                        var episodes = _libraryManager.GetItemList(new InternalItemsQuery
-                        {
-                            ParentId = member.Id,
-                            IncludeItemTypes = new[] { BaseItemKind.Episode },
-                            IsVirtualItem = false,
-                            Recursive = true
-                        });
-                        foreach (var episode in episodes)
-                        {
-                            var (episodeStreams, _, episodeLanguages, _, episodeSubtitles) = ExtractMediaData(episode);
-                            foreach (var lang in SubtitleAccessibility.Languages(episodeStreams)) sdh.Add(lang);
-                            foreach (var lang in episodeLanguages ?? Array.Empty<string>()) languages.Add(lang);
-                            foreach (var lang in episodeSubtitles) subtitles.Add(lang);
-                        }
-                    }
-                }
-
-                return (languages.ToArray(), subtitles.ToArray(), sdh.ToArray());
-            }
-            catch (Exception ex)
-            {
-                _logger.Warning($"[TagCache] Failed to get collection languages for {collection.Id}: {ex.Message}");
-                return (Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>());
-            }
-        }
-
         private BaseItem? GetParentSeries(BaseItem item)
         {
             try
@@ -4119,6 +4078,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
             public Dictionary<string, TagCacheEntry> Items { get; set; } = new();
             // Removed keys and their removal stamps (see _tombstones); absent in older snapshots.
             public Dictionary<string, long>? Tombstones { get; set; }
+            // Each collection's members (see _collectionMembers); absent in older snapshots,
+            // whose collections are rebuilt once after loading.
+            public Dictionary<string, string[]>? CollectionMembers { get; set; }
+            // Members whose collections were not rebuilt yet (see _collectionMemberChanges).
+            public Dictionary<string, bool>? CollectionMemberChanges { get; set; }
         }
     }
 }

@@ -198,6 +198,7 @@
     items.setAttribute("is", "emby-itemscontainer");
     return {
       section,
+      scroller,
       items,
       finish(owner) {
         section.appendChild(scroller);
@@ -205,6 +206,28 @@
         return section;
       }
     };
+  }
+  function preventTileDragClicks(scroller) {
+    let press = null;
+    let dragged = false;
+    const moved = (event, from) => Math.hypot(event.clientX - from.x, event.clientY - from.y) > 8;
+    scroller.addEventListener("pointerdown", (event) => {
+      press = event.pointerType === "mouse" && event.button === 0 ? { id: event.pointerId, x: event.clientX, y: event.clientY } : null;
+      dragged = false;
+    }, true);
+    scroller.addEventListener("pointermove", (event) => {
+      if (press && event.pointerId === press.id && moved(event, press)) dragged = true;
+    }, true);
+    scroller.addEventListener("pointercancel", () => {
+      press = null;
+    }, true);
+    scroller.addEventListener("click", (event) => {
+      const suppress = event.detail > 0 && press !== null && (dragged || moved(event, press));
+      press = null;
+      if (!suppress) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }, true);
   }
   function plainHeading(section, title) {
     const heading = element("h2", "sectionTitle sectionTitle-cards focuscontainer-x je-pad-left je-pad-right", section);
@@ -245,6 +268,7 @@
     }
     function createTileRow(title, items, kind, owner) {
       const shell = createRowShell();
+      preventTileDragClicks(shell.scroller);
       plainHeading(shell.section, title);
       for (const item of items) {
         const image = createTile(shell.items, "je-tile-image");
@@ -268,6 +292,7 @@
     }
     function createGenreTileRow(title, genres, mediaType, owner) {
       const shell = createRowShell();
+      preventTileDragClicks(shell.scroller);
       plainHeading(shell.section, title);
       const usedBackdrops = /* @__PURE__ */ new Set();
       for (const genre of genres) {

@@ -5,7 +5,7 @@ import { shortcutEntries } from '../domain/shortcuts';
 import { asControl, asHtml, asInput, needControl, needHtml, needInput } from './dom';
 
 /** Dependencies this module calls; members are resolved lazily, after every module exists. */
-export type LoadDeps = Pick<PageModules, 'context' | 'arr' | 'autoMovie' | 'blockedUsers' | 'customTabs' | 'dirty' | 'displayCards' | 'gatedHelp' | 'maintenance' | 'misc' | 'plugins' | 'regions' | 'shortcuts' | 'spoiler'>;
+export type LoadDeps = Pick<PageModules, 'context' | 'arr' | 'autoMovie' | 'blockedUsers' | 'customTabs' | 'dependencies' | 'dirty' | 'displayCards' | 'gatedHelp' | 'maintenance' | 'misc' | 'plugins' | 'regions' | 'shortcuts' | 'spoiler'>;
 
 export function createLoad(m: LoadDeps) {
     const { ApiClient, Dashboard, JEAdmin, lifecycle, pluginId } = m.context;
@@ -356,21 +356,12 @@ export function createLoad(m: LoadDeps) {
                 m.spoiler.renderSpoilerAutoEnableLibraries(text(config.SpoilerAutoEnableLibraryIds));
 
 
-                // Set up event handler for watchlist prevention checkbox
-                function toggleWatchlistRetentionVisibility() {
-                    const preventionEnabled = needInput(document.querySelector('#preventWatchlistReAddition')).checked;
-                    const retentionContainer = asHtml(needHtml(document.querySelector('#watchlistMemoryRetentionDays')).closest('.inputContainer'));
-                    if (retentionContainer) {
-                        retentionContainer.style.display = preventionEnabled ? '' : 'none';
-                    }
-                }
-
-                // Set initial visibility
-                toggleWatchlistRetentionVisibility();
-
-                // Add event listener
+                // The two "don't re-add" rows follow the removal mode and the toggle (dependencies.ts);
+                // updateAllDependencies below sets their initial state.
                 wireOnce('watchlist-retention', () => {
-                    needHtml(document.querySelector('#preventWatchlistReAddition')).addEventListener('change', toggleWatchlistRetentionVisibility);
+                    for (const id of ['#preventWatchlistReAddition', '#watchlistRemovalSync']) {
+                        needHtml(document.querySelector(id)).addEventListener('change', m.dependencies.updateWatchlistMemoryVisibility);
+                    }
                 });
 
                 // Update TMDB-dependent settings after config is loaded

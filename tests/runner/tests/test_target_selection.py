@@ -45,6 +45,22 @@ class TargetSelectionTests(unittest.TestCase):
                 self.assertEqual(['backend-jf12', 'coverage-jf12'], [r['name'] for r in results])
                 self.assertIn('-p:JellyfinTarget=jf12', results[0]['command'])
 
+    def test_browser_project_is_passed_to_playwright_and_only_known_projects_are_accepted(self):
+        # Upstream b1919a25: CI runs the browser suite as one job per Playwright project.
+        runner = load('tests/run.py')
+        for selection, expected in ([], ['npm', 'run', 'test:browser']), (['--project', 'firefox'], ['npm', 'run', 'test:browser', '--', '--project', 'firefox']):
+            with self.subTest(selection=selection), tempfile.TemporaryDirectory() as temp:
+                (Path(temp) / 'node_modules').mkdir()
+                with patch.object(sys, 'argv', ['run.py', 'browser', '--artifacts', temp, *selection]), \
+                     patch.object(runner.shutil, 'which', return_value='/fake/tool'), patch.object(runner.subprocess, 'Popen') as process:
+                    process.return_value.stdout = []
+                    process.return_value.wait.return_value = 0
+                    self.assertEqual(0, runner.main())
+                self.assertEqual(expected, json.loads((Path(temp) / 'summary.json').read_text())[0]['command'])
+        result = subprocess.run([sys.executable, str(ROOT / 'tests/run.py'), 'browser', '--project', 'webkit'], capture_output=True, text=True)
+        self.assertEqual(2, result.returncode)
+        self.assertIn('invalid choice', result.stderr)
+
     def test_host_default_all_and_explicit_dispatch_only_jf12(self):
         runner = load('tests/host/run.py')
         for selection in ([], ['--target', 'all'], ['--target', 'jf12']):

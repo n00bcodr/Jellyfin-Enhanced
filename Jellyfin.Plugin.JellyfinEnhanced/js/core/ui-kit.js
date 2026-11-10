@@ -76,7 +76,9 @@
       return false;
     }
     function toast(html, duration) {
-      const ms = duration ?? (host.toastDuration() || 1500);
+      const configured = host.toastDuration();
+      if (configured === 0) return;
+      const ms = duration ?? configured ?? 1500;
       const themeVars = host.themeVariables();
       const toastBg = themeVars.secondaryBg || "linear-gradient(135deg, rgba(0,0,0,0.9), rgba(40,40,40,0.9))";
       const toastBorder = `1px solid ${themeVars.primaryAccent || "rgba(255,255,255,0.1)"}`;

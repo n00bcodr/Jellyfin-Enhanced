@@ -311,6 +311,8 @@ Navigate Jellyfin and control local video playback without opening menus. Admin 
 | **Skip Intro/Outro** | ++o++ | Skips the current segment. |
 | **Step Back One Frame** | ++comma++ | Pauses and seeks back one estimated frame. |
 | **Step Forward One Frame** | ++period++ | Pauses and seeks forward one estimated frame. |
+| **Decrease Subtitle Offset** | ++left-bracket++ | Shifts subtitles 0.1 s earlier (lowers the offset) and briefly shows Jellyfin's subtitle offset panel. |
+| **Increase Subtitle Offset** | ++right-bracket++ | Shifts subtitles 0.1 s later (raises the offset) and briefly shows Jellyfin's subtitle offset panel. |
 | **Jump to Last Position** | ++z++ | Returns once to the position saved before the last seek. |
 | **Jump to % of video** | ++0++–++9++ | Seeks to 0%, 10%, … 90%. Can be disabled but not rebound. |
 

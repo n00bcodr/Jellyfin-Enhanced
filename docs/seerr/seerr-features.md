@@ -639,11 +639,12 @@ Admin settings ([full reference](seerr-settings.md#add-requested-media-to-watchl
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| **Add requested media to Watchlist** | Off | Watches movie/series library additions and updates and adds matching requested titles for their requesters, including requests made outside JE. |
-| **Sync Seerr Watchlist → Jellyfin** | Off | Enables the incoming scheduled task. |
-| **Sync Jellyfin Watchlist → Seerr** | Off | Enables the outgoing scheduled task. |
-| **Prevent re-adding removed items** | On | Remembers processed incoming items so manual Jellyfin watchlist removal persists during future sync/monitoring. |
-| **Memory retention (days):** | 365 | Retains processed-item memory; input range 1–3650, used when prevention is enabled. |
+| **Requested media goes on the requester's watchlist** | Off | Puts a title requested through Seerr Search on the requester's Seerr watchlist right away, then watches movie/series library additions and updates and adds matching requested titles to their requesters' Jellyfin watchlists, including requests made outside JE. |
+| **Seerr → Jellyfin: add Seerr watchlist items to Jellyfin** | Off | Enables the incoming scheduled task. |
+| **Jellyfin → Seerr: add Jellyfin watchlist items to Seerr** | Off | Enables the outgoing scheduled task. |
+| **Don't re-add items a user removed from Jellyfin** | On | Remembers processed incoming items so manual Jellyfin watchlist removal persists during future sync/monitoring. |
+| **Remember removed items for (days)** | 365 | Retains processed-item memory; input range 1–3650, used when prevention is enabled. |
+| **When an item is removed from a watchlist** | Jellyfin decides | Chooses whose removals the removal sync copies; see [Watchlist Removal Sync](#watchlist-removal-sync). |
 
 ??? info "How it works"
 
@@ -653,9 +654,9 @@ Admin settings ([full reference](seerr-settings.md#add-requested-media-to-watchl
 
 Bring Seerr watchlist entries into Jellyfin once they match items in the Jellyfin library.
 
-**How to use:** Enable **Sync Seerr Watchlist → Jellyfin**. **Sync Watchlist from Seerr to Jellyfin** runs daily at 03:00 by default.
+**How to use:** Enable **Seerr → Jellyfin: add Seerr watchlist items to Jellyfin**. **Sync Watchlist from Seerr to Jellyfin** runs daily at 03:00 by default.
 
-Requests are included only when **Add requested media to Watchlist** is also on. The event monitor is separate from this scheduled sync.
+Requests are included only when **Requested media goes on the requester's watchlist** is also on. The event monitor is separate from this scheduled sync.
 
 ??? info "How it works"
 
@@ -665,17 +666,30 @@ Requests are included only when **Add requested media to Watchlist** is also on.
 
 Bring Jellyfin movie and series watchlist entries into Seerr.
 
-**How to use:** Enable **Sync Jellyfin Watchlist → Seerr**. **Sync Watchlist from Jellyfin to Seerr** runs daily at 03:30 by default.
+**How to use:** Enable **Jellyfin → Seerr: add Jellyfin watchlist items to Seerr**. **Sync Watchlist from Jellyfin to Seerr** runs daily at 03:30 by default.
 
 ??? info "How it works"
 
-    It uses the first configured URL, linked accounts, and TMDB-identified movie/series watchlist items. It skips entries already on Seerr's watchlist and excludes blocked users. Removals are not mirrored.
+    It uses the first configured URL, linked accounts, and TMDB-identified movie/series watchlist items. It skips entries already on Seerr's watchlist and excludes blocked users. It never removes anything; see Watchlist Removal Sync below.
+
+
+#### Watchlist Removal Sync
+
+Copy removals between the two watchlists. Adding and removing are separate choices.
+
+**How to use:** Pick an option under **Removing items**: **Jellyfin decides** (default) removes an item from Seerr when it leaves the Jellyfin watchlist; **Seerr decides** does the opposite; **Both stay in sync** copies a removal in either direction; **Never** copies none. **Sync Watchlist Removals between Jellyfin and Seerr** runs daily at 04:00 by default, after the two add syncs.
+
+Watching an item counts as a removal, because KefinTweaks drops watched items from the Jellyfin watchlist. Turn on at least one adding option too; with none on, the removal sync does nothing.
+
+??? info "How it works"
+
+    After each pass the plugin remembers, per user, the items that were on both watchlists. An item from that list that is now missing from one side was removed there; an item on only one side that was never on both is a pending addition and is never deleted. The first run only records what is on both lists. If Seerr or a user's list cannot be read, that user is skipped. Items missing from the Jellyfin library are not treated as removals. The add syncs skip an item that was removed on the side whose removals are followed, so they do not put it back.
 
 #### Retention and access limits
 
 Re-addition prevention remembers processed items for a limited time.
 
-**How to use:** Choose **Memory retention (days):** above to control how long JE remembers them.
+**How to use:** Choose **Remember removed items for (days)** above to control how long JE remembers them.
 
 ??? note "Details"
 

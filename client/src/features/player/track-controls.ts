@@ -316,8 +316,36 @@ export function installTrackControls(context: PlayerContext, cycleTrackMenu: (se
      */
     JE.cycleAudioTrack = () => cycleTrack('audio');
 
+    let offsetPanel: Element | null = null;
+    let offsetPanelTimer: number | null = null;
+    const hideOffsetPanel = () => {
+        lifetime.cancel(offsetPanelTimer);
+        offsetPanel?.classList.add('hide');
+        offsetPanel = offsetPanelTimer = null;
+    };
+
+    /**
+     * Nudges the subtitle offset through jellyfin-web's own subtitle sync slider (its
+     * updateOffset() applies the value) and shows that panel until two seconds pass
+     * without another nudge, so the new value can be read.
+     * @param deltaSeconds Seconds to add (negative = subtitles earlier).
+     */
+    JE.adjustSubtitleOffset = (deltaSeconds) => {
+        const slider = document.querySelector<HTMLInputElement & { updateOffset?: unknown }>('.subtitleSyncSlider');
+        const box = document.querySelector('.subtitleSyncContainer');
+        if (!slider || !box || typeof slider.updateOffset !== 'function') {
+            JE.toast(tWithFallback('toast_subtitle_offset_unavailable', 'Subtitle offset is not available'));
+            return;
+        }
+        slider.updateOffset(Math.round(((parseFloat(slider.value) || 0) + deltaSeconds) * 10) / 10);
+        hideOffsetPanel();
+        box.classList.remove('hide');
+        offsetPanel = box;
+        offsetPanelTimer = lifetime.timeout(hideOffsetPanel, 2000);
+    };
 
 lifetime.onReset(() => {
+ hideOffsetPanel();
  lastCommanded.subtitle = lastCommanded.audio = null;
  trackCycleChains.subtitle = Promise.resolve(); trackCycleChains.audio = Promise.resolve();
 });

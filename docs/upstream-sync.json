@@ -1,0 +1,508 @@
+{
+  "$comment": "What the rewrite has taken from upstream, one entry per upstream commit after `base`, oldest first. The source of truth; docs/upstream-sync.md is rendered from it. Maintained with scripts/upstream_sync.py; the procedure is docs/upstream-sync-procedure.md.",
+  "schema": 1,
+  "upstream": {
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced.git",
+    "branch": "main"
+  },
+  "base": "2e0f9251bfe833cb58866e9e245ba62be69a69ad",
+  "policy": {
+    "maxPendingDays": 14
+  },
+  "entries": [
+    {
+      "sha": "533614b80540f82c2b0b16aade6d810f577b50d0",
+      "date": "2026-11-07T18:12:53+00:00",
+      "subject": "feat(player): add keyboard shortcuts for subtitle offset",
+      "class": "feature",
+      "features": [
+        "player",
+        "chrome",
+        "settings-panel",
+        "admin",
+        "settings",
+        "platform"
+      ],
+      "issues": [
+        "#1012"
+      ],
+      "release": "12.15.0.0",
+      "size": {
+        "files": 41,
+        "insertions": 142,
+        "deletions": 2
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/configPage.html",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/events.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/player/playback.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/settingspanel/ui-panel-shortcut-editor.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/settingspanel/ui-panel-template.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/locales/ (33 files)",
+        "docs/enhanced/enhanced-features.md",
+        "docs/enhanced/enhanced-settings.md"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "a05926866042222facd4571fddb5f37677e5ad89"
+      ],
+      "notes": "Same keys, step and panel flash as upstream. Differences: the two-second hide timer belongs to the player lifetime, so leaving the player hides the panel and drops the timer (upstream leaves a bare setTimeout); a new test pins the admin shortcut grid to the server defaults.",
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p1-subtitle-offset.*"
+    },
+    {
+      "sha": "6daf211855528072876d441e58713066605f32fa",
+      "date": "2026-11-07T22:35:51+00:00",
+      "subject": "v12.15.0.0",
+      "class": "release",
+      "features": [],
+      "issues": [],
+      "release": "12.15.0.0",
+      "size": {
+        "files": 1,
+        "insertions": 2,
+        "deletions": 2
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.csproj"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "d636336454a207c4ad1ce2c932b9652b580af2d8"
+      ],
+      "notes": "AssemblyVersion and FileVersion 12.15.0.0, as upstream main. docs/advanced/api.md names the same version."
+    },
+    {
+      "sha": "2e20cb83a58dd662e17dcb6784a9da3c55ac2886",
+      "date": "2026-11-07T22:50:32+00:00",
+      "subject": "v12.15.0.0 - Jellyfin Enhanced (synced from jellyfin-plugins)",
+      "class": "release",
+      "features": [],
+      "issues": [],
+      "release": "12.15.0.0",
+      "size": {
+        "files": 1,
+        "insertions": 16,
+        "deletions": 0
+      },
+      "paths": [
+        "manifest.json"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "d636336454a207c4ad1ce2c932b9652b580af2d8"
+      ],
+      "with": "6daf211855528072876d441e58713066605f32fa",
+      "notes": "manifest.json is byte-identical to upstream’s at c22870b2. That includes the catalog entry for the Jellyfin 10.11 build of 12.15.0.0: it is release data about an artifact upstream published, not 10.11 code, and the catalog serves 10.11 servers from the same file. The rewrite builds for Jellyfin 12 only; nothing is built or published by this commit."
+    },
+    {
+      "sha": "6ece3f529f32cf00294f19597c0e0c9daa826eb1",
+      "date": "2026-11-08T17:16:22+00:00",
+      "subject": "fix(status-tags): only show New Episode on recent air date, not on recent add",
+      "class": "fix",
+      "features": [
+        "media-tags"
+      ],
+      "issues": [],
+      "release": null,
+      "size": {
+        "files": 2,
+        "insertions": 2,
+        "deletions": 2
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Resolution/StatusRules.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/tags/statustags.js"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "5e7a385912f5eca9aafe072ecf5f117b8cf37d82"
+      ],
+      "notes": "Same rule change on the web (statustags.ts) and native (StatusRules.cs) side. Added native tests (upstream changed the native rule without one) and corrected the New Episode row of docs/enhanced/tags.md, which upstream left saying \"aired or was added\" (filed as a found bug). The rule change alters the tags produced for the same data, so PosterTagSettings.ResolverVersion goes from 39 to 40 here (AGENTS.md, \"Cached output\"); upstream left it at 39 (filed as a found bug).",
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p2-new-episode.*"
+    },
+    {
+      "sha": "7a52d1e9e487cc6a8f80006cfda8342c575c0880",
+      "date": "2026-11-09T11:59:53+00:00",
+      "subject": "test(status-tags): update New Episode badge test for air-date-only rule",
+      "class": "test",
+      "features": [
+        "media-tags"
+      ],
+      "issues": [],
+      "release": null,
+      "size": {
+        "files": 1,
+        "insertions": 2,
+        "deletions": 1
+      },
+      "paths": [
+        "tests/frontend/features/features-status-tags-vocabulary.test.mjs"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "5e7a385912f5eca9aafe072ecf5f117b8cf37d82"
+      ],
+      "with": "6ece3f529f32cf00294f19597c0e0c9daa826eb1",
+      "notes": "The same test row change, in tests/frontend/features/media-tags/."
+    },
+    {
+      "sha": "ee1c92dc6d8e02890547d490fe979bb85a1ff5d7",
+      "date": "2026-11-09T20:49:30+08:00",
+      "subject": "fix(tags): redraw changed cards and keep collection language flags current (#1029)",
+      "class": "fix",
+      "features": [
+        "media-tags"
+      ],
+      "issues": [
+        "#1022",
+        "#1029"
+      ],
+      "release": null,
+      "size": {
+        "files": 8,
+        "insertions": 1562,
+        "deletions": 68
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/TagCacheService.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/core/tag-renderer-base.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/tags/tag-pipeline.js",
+        "docs/enhanced/tags.md",
+        "tests/backend/PosterTags/TagCacheCollectionLanguagesTests.cs",
+        "tests/browser/tag-metadata-refresh.spec.cjs",
+        "tests/docs/coverage-matrix.md",
+        "tests/frontend/core/core-tag-metadata-refresh.test.mjs"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "4dbcd596c3a80290a4607a403d17af22eb187e07"
+      ],
+      "notes": "Client: the same redraw of changed cards, in the rewrite’s pipeline modules (scan.ts, delta-sync.ts, queue.ts). Server: the same collection-member tracking, but TagCacheService.cs is capped and may not grow, so the index, its rules and GetCollectionLanguages live in the new partial TagCacheCollectionMembers.cs and the service keeps one-line call sites (4,124 to 4,088 lines; the allow-list entry is lowered to match). Upstream’s 11 node tests, 6 browser tests and 22 backend tests are translated unchanged in substance.",
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p7-tag-redraw.* and p7-collection-languages.*"
+    },
+    {
+      "sha": "af5f9678116a31b17bd86fe731131c54b92d9bd0",
+      "date": "2026-11-09T16:51:08+00:00",
+      "subject": "fix(toast): let a duration of 0 turn toasts off and make the preview match",
+      "class": "fix",
+      "features": [
+        "platform",
+        "settings",
+        "admin"
+      ],
+      "issues": [],
+      "release": null,
+      "size": {
+        "files": 5,
+        "insertions": 43,
+        "deletions": 6
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/admin/sections.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/configPage.html",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/core/ui-kit.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/config.js",
+        "tests/frontend/core/core-toast-duration.test.mjs"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "8e109a432a0a3e350c2b021e2a45cebd7054ac42"
+      ],
+      "notes": "Same rule in the three places the rewrite reads the setting (features/settings/state.ts, core/ui/runtime.ts through host/ui-host.ts, admin/config/page/timing.ts). Difference: a toast shown before the configuration exists still gets 1500 ms; upstream would schedule it with an undefined duration when JE.CONFIG lacks the value.",
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p3-toast-zero.*"
+    },
+    {
+      "sha": "aa8f4312cb0f75e3d4a35c57b0fd3831548d4e4f",
+      "date": "2026-11-09T17:19:20+00:00",
+      "subject": "test(parity): update New Episode status fixture for the air-date-only rule",
+      "class": "test",
+      "features": [
+        "media-tags"
+      ],
+      "issues": [],
+      "release": null,
+      "size": {
+        "files": 1,
+        "insertions": 2,
+        "deletions": 1
+      },
+      "paths": [
+        "tests/poster/parity/status-fixtures.mjs"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "5e7a385912f5eca9aafe072ecf5f117b8cf37d82"
+      ],
+      "with": "6ece3f529f32cf00294f19597c0e0c9daa826eb1",
+      "notes": "The same fixture change; the offline parity run passes with 241 Status fixtures and 0 web/native differences."
+    },
+    {
+      "sha": "800b768ca6674a061a2a54b67461bf1e839d5a19",
+      "date": "2026-11-09T19:09:59+00:00",
+      "subject": "chore(ci)(deps): bump the github-actions group with 6 updates (#1031)",
+      "class": "deps",
+      "features": [],
+      "issues": [
+        "#1031"
+      ],
+      "release": null,
+      "size": {
+        "files": 9,
+        "insertions": 20,
+        "deletions": 20
+      },
+      "paths": [
+        ".github/workflows/ (9 files)"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "2dc0a0a00dfa0b3a158e6a99318b2bd0ac52632c"
+      ],
+      "notes": "The same six action pins in the nine workflows upstream changed, plus actions/setup-dotnet in rewrite-validation.yml, which only the rewrite has and which pinned the old commit."
+    },
+    {
+      "sha": "2e1f123de0860af12e87780ae898cb1092f6f787",
+      "date": "2026-11-09T22:51:31+00:00",
+      "subject": "feat(watchlist): two-way removal sync between Jellyfin and Seerr (#1032)",
+      "class": "feature",
+      "features": [
+        "seerr",
+        "admin",
+        "settings",
+        "platform"
+      ],
+      "issues": [
+        "#1032"
+      ],
+      "release": null,
+      "size": {
+        "files": 24,
+        "insertions": 1054,
+        "deletions": 103
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfigurationManager.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/configPage.html",
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/jeAdmin.css",
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/admin/sections.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Helpers/Jellyseerr/SeerrWatchlistReader.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/PluginServiceRegistrator.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/JellyfinToSeerrWatchlistSyncTask.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/JellyseerrWatchlistSyncTask.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/WatchlistRemovalSyncTask.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/WatchlistSyncPlanner.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/api.js",
+        "docs/advanced/api.md",
+        "docs/advanced/config-flag-groups.json",
+        "docs/advanced/project-structure.md",
+        "docs/seerr/seerr-features.md",
+        "docs/seerr/seerr-settings.md",
+        "tests/backend/Api/ApiSeerrTests.cs",
+        "tests/backend/ScheduledTasks/TaskVisibilityTests.cs",
+        "tests/backend/ScheduledTasks/WatchlistRemovalSyncTests.cs",
+        "tests/docs/production-inventory.json",
+        "tests/frontend/requests/request-submission.test.mjs"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "aa5947ea9ab03cd067338eaed2abd1c43282f427"
+      ],
+      "notes": "Route POST jellyseerr/watchlist in JeSeerrController (Users partial) beside the GET, with the same [Authorize] and proxy checks; planner and Seerr watchlist reader in Features/Seerr/Services; the task in Features/Seerr/Tasks under the …ScheduledTasks namespace; registered in SeerrServiceRegistration. Differences from upstream: cancellation reaches every Seerr call of the removal task and is not logged as an error; the rule that hides the two re-add rows runs inside the admin page’s dependency pass; the admin description of the requested-media switch and the docs use the new names and say what the code does (two found bugs filed upstream-side). Contract additions (1 route, 1 action, 1 registration) are in the separate contract commit; tests/fixtures/admin-config-baseline.json gains the new control and its default, as docs/rewrite/admin-config.md prescribes for a schema change.",
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p8-watchlist.* and p8-watchlist-admin.* (real Seerr 3.5.1)"
+    },
+    {
+      "sha": "a2b4b2aba2177c52b6fb4a7faf90eb1b9a9e8c13",
+      "date": "2026-11-09T22:55:15+00:00",
+      "subject": "ci: skip browser tests on pull requests that do not touch web files",
+      "class": "ci",
+      "features": [],
+      "issues": [],
+      "release": null,
+      "size": {
+        "files": 1,
+        "insertions": 26,
+        "deletions": 0
+      },
+      "paths": [
+        ".github/workflows/regression.yml"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "ac22e0a6393ca2aa406b25168233724e936f4544"
+      ],
+      "notes": "The same browser-changes job and condition. The path filter also counts client/, css/ and scripts/client*, where this tree’s web files are built from; upstream’s filter names only the built folders."
+    },
+    {
+      "sha": "d3bd07d3b9d282f05588065882351ea280d00559",
+      "date": "2026-11-09T22:57:19+00:00",
+      "subject": "fix(spoiler-guard): strip Home Screen Sections rows (#1033)",
+      "class": "fix",
+      "features": [
+        "spoiler-guard"
+      ],
+      "issues": [
+        "#1033"
+      ],
+      "release": null,
+      "size": {
+        "files": 4,
+        "insertions": 22,
+        "deletions": 2
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/SpoilerGuard/SpoilerFieldStripFilter.cs",
+        "docs/spoiler-guard/spoiler-guard-features.md",
+        "tests/backend/Privacy/PrivacyFieldFilterTests.cs",
+        "tests/docs/coverage-matrix.md"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "f61aba6763b9375138e0c7bee4ef0155712c7f1e"
+      ],
+      "notes": "The same route-table row in Shared/SpoilerGuard/SpoilerFieldStripFilter.cs, upstream’s test, docs sentence and coverage-matrix note. Checked against the real Home Screen Sections 3.0.4.0 plugin on the lab, not only by action name.",
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p4-spoiler-hss.*"
+    },
+    {
+      "sha": "83510ea1332c9027536be52598e164e4ed9f59c5",
+      "date": "2026-11-09T22:59:55+00:00",
+      "subject": "fix(recommendations): don't open category tiles after dragging a row (#1030)",
+      "class": "fix",
+      "features": [
+        "seerr"
+      ],
+      "issues": [
+        "#1030"
+      ],
+      "release": null,
+      "size": {
+        "files": 3,
+        "insertions": 92,
+        "deletions": 1
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/recommendations/recommendations-render.js",
+        "tests/docs/coverage-matrix.md",
+        "tests/frontend/pages/pages-recommendations.test.mjs"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "f824bde56ea53f1071837d21612370849d89b88f"
+      ],
+      "notes": "The same 8px mouse-drag guard on the studio, network and genre tile rows (client/src/features/seerr/recommendations/recommendations-render.ts), with upstream’s three tests. Added a test that media rows are not guarded, since the rewrite builds all rows from one shell.",
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p5-recommendations-drag.*"
+    },
+    {
+      "sha": "c22870b2d666a243a3a1269a1fbf7e25c662b95b",
+      "date": "2026-11-09T23:07:11+00:00",
+      "subject": "fix(audio-language): show audio languages on movie page",
+      "class": "fix",
+      "features": [
+        "details-providers"
+      ],
+      "issues": [
+        "#1034"
+      ],
+      "release": null,
+      "size": {
+        "files": 2,
+        "insertions": 9,
+        "deletions": 1
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/itemdetails/features-details-media-info.js",
+        "tests/frontend/features/features-media-info.test.mjs"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "df9e087381a35af00c26049ddc1dfea58dcc5913"
+      ],
+      "notes": "The same fallback in client/src/features/details-providers/media-info.ts: a selected version whose /tag-data source entry carries no streams reads the top-level streams. Upstream’s test, plus one that a selected version never borrows another version’s streams.",
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p6-audio-language.*"
+    },
+    {
+      "sha": "19cfe99a152195482d0bd95598f490e155e9810c",
+      "date": "2026-11-10T08:50:56+00:00",
+      "subject": "ci: Fix/code scanning alerts (#1036)",
+      "class": "security",
+      "features": [
+        "admin",
+        "details-providers",
+        "player"
+      ],
+      "issues": [
+        "#1036"
+      ],
+      "release": null,
+      "size": {
+        "files": 8,
+        "insertions": 704,
+        "deletions": 16
+      },
+      "paths": [
+        ".github/codeql/codeql-config.yml",
+        ".github/docs/requirements.in",
+        ".github/docs/requirements.txt",
+        ".github/workflows/dependency-review.yml",
+        ".github/workflows/docs.yml",
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/admin/sections.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/elsewhere/reviews.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/player/pausescreen.js"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "1f60ffd29817568507bb423b3821c39ed2dbf78c"
+      ],
+      "notes": "The three code-scanning fixes in the rewrite’s files: the Custom Tabs snippet escaper also escapes quotes (admin/config/sections/pages.ts), review HTML is stripped until no tag is left (details-providers/review-domain.ts), and pause-screen image URLs encode ids and the image tag (player/pausescreen.ts). Upstream added no tests; three are added here and fail before the change. The CI part (CodeQL query filters, hash-pinned docs requirements, licence allow-list) applies as is. No lab comparison: none of the three changes what a user sees with ordinary data.",
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p9-code-scanning.tests-before.txt"
+    },
+    {
+      "sha": "b1919a258b327d2b2f6b541ed8434b523c100a30",
+      "date": "2026-11-10T08:52:05+00:00",
+      "subject": "ci(regression): run the browser suite as one parallel job per Playwright project",
+      "class": "ci",
+      "features": [],
+      "issues": [],
+      "release": null,
+      "size": {
+        "files": 2,
+        "insertions": 11,
+        "deletions": 4
+      },
+      "paths": [
+        ".github/workflows/regression.yml",
+        "tests/run.py"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "5b002a30848fef42d4b08ad5213d8caab864a135"
+      ],
+      "notes": "The same job matrix (one job per Playwright project, each installing only its browser) and `tests/run.py --project`. The rewrite’s runner keeps its jf12-only `--target`; a tooling test for the new option is added."
+    },
+    {
+      "sha": "0586df7979b3d1f400357ba6efd4b1c2f61735fa",
+      "date": "2026-11-10T09:10:32+00:00",
+      "subject": "docs(readme): add test badges and icons, recolor badge row",
+      "class": "docs",
+      "features": [],
+      "issues": [],
+      "release": null,
+      "size": {
+        "files": 1,
+        "insertions": 10,
+        "deletions": 3
+      },
+      "paths": [
+        "README.md"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "d25914be38373281eba145830d5fda0a68180201"
+      ],
+      "notes": "The same badge changes. The three test-count badges carry this tree’s counts (699 browser, 3.3k backend, 3.9k frontend) instead of upstream’s, and the 10.11 download badge is not here because the rewrite’s README has none."
+    }
+  ]
+}

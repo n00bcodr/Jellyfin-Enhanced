@@ -89,3 +89,38 @@ test('compiled obsolete native-menu completion cannot clear a newer account menu
  first.resolve(null);await settle();h.JE.cycleSubtitleTrack();await settle();assert.equal(opens,2);
  second.resolve(null);await settle();
 });
+
+// Upstream 533614b8: [ and ] nudge the subtitle offset through jellyfin-web's own subtitle sync slider.
+const SUBTITLE_SYNC = '<div class="videoPlayerContainer"><video></video></div><div class="subtitleSyncContainer hide"><input class="subtitleSyncSlider" value="0"></div>';
+function subtitleSync(t, html = SUBTITLE_SYNC) {
+ const toasts = []; const h = setup(t, { html, JE: { toast: text => toasts.push(text) } }); const c = clock(h);
+ const slider = h.document.querySelector('.subtitleSyncSlider'), box = h.document.querySelector('.subtitleSyncContainer'), applied = [];
+ if (slider) slider.updateOffset = value => { applied.push(value); slider.value = String(value); };
+ h.load('enhanced/player/playback.js');
+ return { ...h, c, slider, box, applied, toasts };
+}
+test('subtitle offset shortcut moves the host slider in 0.1 s steps and shows its panel for two idle seconds', t => {
+ const h = subtitleSync(t);
+ h.JE.adjustSubtitleOffset(0.1); h.JE.adjustSubtitleOffset(0.1); h.JE.adjustSubtitleOffset(0.1);
+ assert.deepEqual(h.applied, [0.1, 0.2, 0.3]); assert.equal(h.box.classList.contains('hide'), false);
+ h.c.advance(1999); h.JE.adjustSubtitleOffset(-0.1);
+ assert.deepEqual(h.applied, [0.1, 0.2, 0.3, 0.2]);
+ h.c.advance(1999); assert.equal(h.box.classList.contains('hide'), false);
+ h.c.advance(1); assert.equal(h.box.classList.contains('hide'), true);
+ h.slider.value = ''; h.JE.adjustSubtitleOffset(-0.1); assert.equal(h.applied.at(-1), -0.1);
+ assert.deepEqual(h.toasts, []);
+});
+test('subtitle offset shortcut says so when the host has no usable slider and changes nothing', t => {
+ for (const html of ['<div class="videoPlayerContainer"><video></video></div>', SUBTITLE_SYNC]) {
+  const h = subtitleSync(t, html); if (h.slider) h.slider.updateOffset = undefined;
+  h.JE.adjustSubtitleOffset(0.1);
+  assert.deepEqual(h.toasts, ['Subtitle offset is not available']); assert.deepEqual(h.applied, []);
+  if (h.box) assert.equal(h.box.classList.contains('hide'), true);
+  assert.equal(h.c.size(), 0);
+ }
+});
+test('leaving the player hides the subtitle offset panel the shortcut opened and drops its timer', t => {
+ const h = subtitleSync(t);
+ h.JE.adjustSubtitleOffset(0.1); h.navigate();
+ assert.equal(h.box.classList.contains('hide'), true); assert.equal(h.c.size(), 0);
+});

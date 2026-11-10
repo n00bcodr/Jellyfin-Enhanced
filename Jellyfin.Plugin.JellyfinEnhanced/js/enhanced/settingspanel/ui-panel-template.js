@@ -71,6 +71,8 @@
     "SkipIntroOutro",
     "FrameStepBack",
     "FrameStepForward",
+    "DecreaseSubtitleOffset",
+    "IncreaseSubtitleOffset",
     "JumpToLastPosition",
     "JumpToPercentage"
   ];

@@ -698,7 +698,7 @@
         }
         const mediaSources = sourceItem.MediaSources;
         const selectedSource = mediaSourceId && mediaSources ? mediaSources.find((source) => source.Id === mediaSourceId) : void 0;
-        const languages = selectedSource ? collectLanguages([selectedSource.MediaStreams]) : collectLanguages([sourceItem.MediaStreams, ...(mediaSources ?? []).map((source) => source.MediaStreams)]);
+        const languages = selectedSource ? collectLanguages([selectedSource.MediaStreams ?? sourceItem.MediaStreams]) : collectLanguages([sourceItem.MediaStreams, ...(mediaSources ?? []).map((source) => source.MediaStreams)]);
         if (languages.length > 0) {
           await renderLanguagesInFrame(languages);
           if (!isCurrent()) return;

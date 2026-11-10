@@ -575,6 +575,7 @@ Feature gates still apply when a task runs. A task is hidden from the dashboard 
 | `Features/Seerr/Tasks/JellyfinToSeerrWatchlistSyncTask.cs` | **Sync Watchlist from Jellyfin to Seerr** | Daily at 03:30 |
 | `Features/Seerr/Tasks/JellyseerrUserImportTask.cs` | **Import Jellyfin Users to Seerr** | Every six hours |
 | `Features/Seerr/Tasks/JellyseerrWatchlistSyncTask.cs` | **Sync Watchlist from Seerr to Jellyfin** | Daily at 03:00 |
+| `Features/Seerr/Tasks/WatchlistRemovalSyncTask.cs` | **Sync Watchlist Removals between Jellyfin and Seerr** | Daily at 04:00 |
 | `Features/DetailsProviders/Tasks/MdblistRatingsFetchTask.cs` | **Fetch Ratings from MDBList** | None |
 | `Features/DetailsProviders/Tasks/MdblistRatingsSyncTask.cs` | **Sync Ratings from MDBList to Jellyfin** | None |
 | `Features/Platform/Tasks/RefreshCdnAssetsTask.cs` | **Refresh CDN Assets** | Application startup and every 24 hours |

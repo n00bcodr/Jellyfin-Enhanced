@@ -353,7 +353,7 @@ export function createDependencies(m: DependenciesDeps) {
             { parent: 'catchUpEnabled', label: 'Enable Catch Up', children: ['catchUpLogEnabled', 'catchUpUseNativeTab', 'catchUpUsePluginPages', 'catchUpUseCustomTabs', 'catchUpAutoCreateCustomTab'] },
             { parent: 'autoMovieRequestEnabled', label: 'Enable Automatic Movie Requests', children: ['autoMovieRequestTriggerOnStart', 'autoMovieRequestTriggerOnMinutesWatched', 'autoMovieRequestMinutesWatched', 'autoMovieRequestCheckReleaseDate', 'autoMovieRequestQualityMode', 'autoMovieRequestFallbackOn4k'] },
             { parent: 'autoSeasonRequestEnabled', label: 'Enable Automatic Season Requests', children: ['autoSeasonRequestRequireAllWatched', 'autoSeasonRequestThresholdValue'] },
-            { parent: 'preventWatchlistReAddition', label: 'Prevent re-adding removed items', children: ['watchlistMemoryRetentionDays'] },
+            { parent: 'preventWatchlistReAddition', label: 'Don\'t re-add items a user removed from Jellyfin', children: ['watchlistMemoryRetentionDays'] },
             { parent: 'triggerSeerrScanOnItemAdded', label: 'Trigger Seerr scan on item added', children: ['seerrScanDebounceSeconds'] },
             { parent: 'bookmarksEnabled', label: 'Enable Bookmarks', children: ['bookmarksUsePluginPages', 'bookmarksUseNativeTab', 'bookmarksUseCustomTabs'] },
             { parent: 'hiddenContentEnabled', label: 'Enable Hidden Content', children: ['hiddenContentUsePluginPages', 'hiddenContentUseNativeTab', 'hiddenContentUseCustomTabs'] },
@@ -371,6 +371,28 @@ export function createDependencies(m: DependenciesDeps) {
             container.classList.toggle('jea-dep-hidden', hide);
             var d = asHtml(document.querySelector('.je-setting-description[data-desc-for="' + childId + '"]'));
             if (d) d.classList.toggle('jea-dep-hidden', hide);
+        }
+
+        /**
+         * "Don't re-add removed items" and its retention days only matter when removals are set to "Seerr decides"
+         * or "Never". With "Jellyfin decides" or "Both", a removal in Jellyfin also removes the item from Seerr, so
+         * there is nothing left to re-add and both rows are hidden. Runs after the parent pass, which would otherwise
+         * show the days row and its description again whenever the toggle is on.
+         */
+        function updateWatchlistMemoryVisibility() : void {
+            var mode = asControl(document.querySelector('#watchlistRemovalSync'));
+            var toggle = asInput(document.querySelector('#preventWatchlistReAddition'));
+            var days = asHtml(document.querySelector('#watchlistMemoryRetentionDays'));
+            if (!mode || !toggle || !days) return;
+            var applies = mode.value === 'seerr' || mode.value === 'off';
+            var toggleRow = toggle.closest('.checkboxContainer, .inputContainer, .selectContainer') || toggle.closest('label');
+            var daysRow = asHtml(days.closest('.inputContainer'));
+            if (toggleRow) jeaSetDepHidden(toggleRow, 'preventWatchlistReAddition', !applies);
+            var showDays = applies && toggle.checked;
+            if (daysRow) {
+                daysRow.style.display = showDays ? '' : 'none';
+                jeaSetDepHidden(daysRow, 'watchlistMemoryRetentionDays', !showDays);
+            }
         }
 
         function updateParentDep(dep: ParentDep) : void {
@@ -437,5 +459,6 @@ export function createDependencies(m: DependenciesDeps) {
         updateParentDep,
         updateSearchExcludeLibraryWarning,
         updateSectionDep,
+        updateWatchlistMemoryVisibility,
     };
 }

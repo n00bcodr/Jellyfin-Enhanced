@@ -27,6 +27,7 @@ export interface EventsBridge {
     cycleSubtitleTrack?(): void; cycleAudioTrack?(): void;
     resetPlaybackSpeed?(): void; adjustPlaybackSpeed?(direction: 'increase' | 'decrease'): void;
     skipIntroOutro?(): void; frameStep?(direction: 'back' | 'forward'): void;
+    adjustSubtitleOffset?(deltaSeconds: number): void;
     jumpToLastPosition?(): void; jumpToPercentage?(percent: number): void;
     addOsdSettingsButton?(): void; initializeAutoSkipObserver?(): void; applySavedStylesWhenReady?(): void;
     attachSeekTracker?(video: HTMLVideoElement): void; stopAutoSkip?(): void;
@@ -132,6 +133,8 @@ export function createEvents(ctx: EventsContext) {
             ['SkipIntroOutro', () => JE.skipIntroOutro?.()],
             ['FrameStepBack', () => JE.frameStep?.('back')],
             ['FrameStepForward', () => JE.frameStep?.('forward')],
+            ['DecreaseSubtitleOffset', () => JE.adjustSubtitleOffset?.(-0.1)],
+            ['IncreaseSubtitleOffset', () => JE.adjustSubtitleOffset?.(0.1)],
             ['JumpToLastPosition', () => JE.jumpToLastPosition?.()]
         ];
     }

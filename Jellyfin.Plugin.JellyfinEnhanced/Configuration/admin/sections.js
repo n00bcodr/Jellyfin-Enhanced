@@ -772,7 +772,7 @@
             min: 0,
             step: 1,
             label: "Toast Notification Duration (ms)",
-            desc: "How long pop-up toast messages (e.g. &ldquo;Shuffle enabled&rdquo;, &ldquo;Bookmark saved&rdquo;) stay on-screen before fading out. Default: 3000 ms (3 seconds)."
+            desc: "How long pop-up toast messages (e.g. &ldquo;Shuffle enabled&rdquo;, &ldquo;Bookmark saved&rdquo;) stay on-screen before fading out. Default: 3000 ms (3 seconds). Set to <strong>0</strong> to turn toasts off. Use 1000 or more so they can be read; the preview uses the value you typed, before saving."
           },
           { type: "button", id: "jeTestToast", label: "Preview toast" }
         ]
@@ -788,7 +788,7 @@
     const PP_NOTE = "<strong>Note:</strong> Plugin Pages 3.0 or newer applies this without a Jellyfin restart. Older versions need one after enabling this option for the first time.";
     const PP_BADGE = '<span class="je-installed-badge" data-plugin="pluginpages"><i class="material-icons" aria-hidden="true">check_circle</i>Plugin Pages detected</span>';
     const CT_BADGE = '<span class="je-installed-badge" data-plugin="customtabs"><i class="material-icons" aria-hidden="true">check_circle</i>Custom Tabs detected</span>';
-    const escAttr = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const escAttr = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
     function placement(o) {
       const code = `<div class="${o.cls}"></div>`;
       const gate = `${o.p}UseCustomTabs,${o.en}`;
@@ -1806,46 +1806,68 @@
         title: "Watchlist",
         icon: "bookmark_added",
         items: [
-          {
-            id: "addRequestedMediaToWatchlist",
-            prop: "AddRequestedMediaToWatchlist",
-            type: "toggle",
-            label: "Add requested media to Watchlist",
-            desc: `When enabled, any media requested through Seerr Search via Jellyfin Enhanced will automatically be added to the requesting user's Watchlist.<br/><strong>Note:</strong> Requires <a class="je-bold-link" href="https://github.com/ranaldsgift/KefinTweaks" target="_blank">KefinTweaks</a> to be installed to actually view the watchlisted items. <span class="je-installed-badge" data-plugin="kefintweaks"><i class="material-icons" aria-hidden="true">check_circle</i>KefinTweaks detected</span>`
-          },
-          {
-            id: "syncJellyseerrWatchlist",
-            prop: "SyncJellyseerrWatchlist",
-            type: "toggle",
-            label: "Sync Seerr Watchlist → Jellyfin",
-            desc: `When enabled, items from each user's Seerr watchlist will be automatically synced to their Jellyfin watchlist.<br/>Configure how often the sync should run in Jellyfin Dashboard &gt; Scheduled Tasks &gt; "Sync Watchlist from Seerr to Jellyfin".<br/><strong>Note:</strong> Requires <a class="je-bold-link" href="https://github.com/ranaldsgift/KefinTweaks" target="_blank">KefinTweaks</a> to actually render the watchlist UI. <span class="je-installed-badge" data-plugin="kefintweaks"><i class="material-icons" aria-hidden="true">check_circle</i>KefinTweaks detected</span>`
-          },
-          {
-            id: "syncJellyfinWatchlistToSeerr",
-            prop: "SyncJellyfinWatchlistToSeerr",
-            type: "toggle",
-            label: "Sync Jellyfin Watchlist → Seerr",
-            desc: `When enabled, items from a user's Jellyfin watchlist (from <a class="je-bold-link" href="https://github.com/ranaldsgift/KefinTweaks" target="_blank">KefinTweaks</a>) will be automatically synced to their Seerr watchlist.<br/>Configure how often the sync should run in Jellyfin Dashboard &gt; Scheduled Tasks &gt; "Sync Watchlist from Jellyfin to Seerr". <span class="je-installed-badge" data-plugin="kefintweaks"><i class="material-icons" aria-hidden="true">check_circle</i>KefinTweaks detected</span>`
-          },
-          {
-            id: "preventWatchlistReAddition",
-            prop: "PreventWatchlistReAddition",
-            type: "toggle",
-            default: true,
-            label: "Prevent re-adding removed items",
-            desc: "When enabled, items will only be added to a user's watchlist once. If a user manually removes an item from their watchlist, it won't be automatically re-added during future sync runs."
-          },
-          // Clamped to 1..3650 on save and shown only while the toggle above is on (handler in configPage.html).
-          {
-            id: "watchlistMemoryRetentionDays",
-            manual: true,
-            type: "number",
-            min: 1,
-            max: 3650,
-            step: 1,
-            label: "Memory retention (days)",
-            desc: `How long to remember that an item was processed before allowing it to be re-added.<br/>After this period, manually removed items (if unwatched) will be automatically re-added to watchlist if they're still in Seerr requests or Seerr watchlist.<br/><strong>Examples:</strong> 30 days = items can be re-added after 1 month; 365 days = remember for 1 year (recommended); 3650 days = remember for 10 years (nearly permanent).<br/>Only applies when "Prevent re-adding removed items" is enabled.`
-          }
+          { type: "note", html: 'A <strong>Jellyfin watchlist</strong> is the list kept by KefinTweaks (items a user has "liked"). Each user also has a <strong>Seerr watchlist</strong>. These settings decide how the two lists follow each other. <strong>Adding</strong> and <strong>removing</strong> are chosen separately. Each sync runs from Jellyfin Dashboard &gt; Scheduled Tasks.<br/><strong>Note:</strong> Requires <a class="je-bold-link" href="https://github.com/ranaldsgift/KefinTweaks" target="_blank">KefinTweaks</a> to actually show the Jellyfin watchlist. <span class="je-installed-badge" data-plugin="kefintweaks"><i class="material-icons" aria-hidden="true">check_circle</i>KefinTweaks detected</span>' },
+          { type: "group", title: "Adding items", open: true, items: [
+            { type: "note", html: "Choose which direction new items travel. Turn on both to have a new item added on either side appear on the other." },
+            {
+              id: "addRequestedMediaToWatchlist",
+              prop: "AddRequestedMediaToWatchlist",
+              type: "toggle",
+              label: "Requested media goes on the requester's watchlist",
+              desc: "Something a user requests through Seerr Search here goes on that user's Seerr watchlist as soon as the request is made, and on their Jellyfin watchlist when it arrives in your library. This is independent of the two adding options below. Changing it needs a Jellyfin restart."
+            },
+            {
+              id: "syncJellyseerrWatchlist",
+              prop: "SyncJellyseerrWatchlist",
+              type: "toggle",
+              label: "Seerr → Jellyfin: add Seerr watchlist items to Jellyfin",
+              desc: 'Items a user adds to their Seerr watchlist are added to their Jellyfin watchlist (only if the item is in your library).<br/>Runs in Scheduled Tasks &gt; "Sync Watchlist from Seerr to Jellyfin".'
+            },
+            {
+              id: "syncJellyfinWatchlistToSeerr",
+              prop: "SyncJellyfinWatchlistToSeerr",
+              type: "toggle",
+              label: "Jellyfin → Seerr: add Jellyfin watchlist items to Seerr",
+              desc: 'Items a user adds to their Jellyfin watchlist are added to their Seerr watchlist.<br/>Runs in Scheduled Tasks &gt; "Sync Watchlist from Jellyfin to Seerr".'
+            },
+            {
+              id: "preventWatchlistReAddition",
+              prop: "PreventWatchlistReAddition",
+              type: "toggle",
+              default: true,
+              label: "Don't re-add items a user removed from Jellyfin",
+              desc: "An item from Seerr is put on a user's Jellyfin watchlist only once. If they remove it, the Seerr → Jellyfin sync will not put it back."
+            },
+            // Clamped to 1..3650 on save; shown only while the toggle above is on and the removal mode below leaves
+            // something to re-add (updateWatchlistMemoryVisibility in page/dependencies.ts).
+            {
+              id: "watchlistMemoryRetentionDays",
+              manual: true,
+              type: "number",
+              min: 1,
+              max: 3650,
+              step: 1,
+              label: "Remember removed items for (days)",
+              desc: "After this many days an item the user removed may be added again, if it is still on their Seerr watchlist or requests. 365 is recommended; 3650 is nearly permanent."
+            }
+          ] },
+          { type: "group", title: "Removing items", open: true, items: [
+            { type: "note", html: "Decide whose removals count. Removing an item, or <strong>watching it</strong> (KefinTweaks drops watched items from the Jellyfin watchlist), is a removal. Only items that were on <strong>both</strong> lists are ever removed, so something added on one side and not yet synced is never deleted." },
+            {
+              id: "watchlistRemovalSync",
+              prop: "WatchlistRemovalSync",
+              type: "select",
+              default: "jellyfin",
+              label: "When an item is removed from a watchlist",
+              options: [
+                ["jellyfin", "Jellyfin decides: removed from Jellyfin → also removed from Seerr"],
+                ["seerr", "Seerr decides: removed from Seerr → also removed from Jellyfin"],
+                ["both", "Both stay in sync: a removal on either side is copied to the other"],
+                ["off", "Never remove anything automatically"]
+              ],
+              desc: `<strong>Jellyfin decides</strong> (recommended): removing or watching an item in Jellyfin removes it from Seerr. Removing it only in Seerr changes nothing in Jellyfin.<br/><strong>Seerr decides</strong>: the opposite. Removing it only in Jellyfin changes nothing in Seerr.<br/><strong>Both stay in sync</strong>: whichever side an item is removed from, the other follows.<br/><strong>Never</strong>: no removals are copied.<br/>Runs daily in Scheduled Tasks &gt; "Sync Watchlist Removals between Jellyfin and Seerr", after the two add syncs. The first run only records what is on both lists and removes nothing. Does nothing unless at least one of the adding options above is on.<br/>With <strong>Jellyfin decides</strong> or <strong>Both</strong>, an item removed in Jellyfin is also removed from Seerr, so it can't come back and the "Don't re-add" options above are hidden. They appear for <strong>Seerr decides</strong> and <strong>Never</strong>.`
+            }
+          ] }
         ]
       },
       "seerr-users": {
@@ -2491,6 +2513,7 @@
    *  { id: 'syncJellyfinWatchlistToSeerr', type: 'toggle' }
    *  { id: 'preventWatchlistReAddition', type: 'toggle' }
    *  { id: 'watchlistMemoryRetentionDays', type: 'number' }
+   *  { id: 'watchlistRemovalSync', type: 'select' }
    *  { id: 'jellyseerrAutoImportUsers', type: 'toggle' }
    *  { id: 'btnImportJellyseerrUsers', type: 'button' }
    *  { id: 'btnPermissionAudit', type: 'button' }

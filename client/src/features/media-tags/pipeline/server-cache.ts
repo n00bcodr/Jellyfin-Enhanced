@@ -610,7 +610,7 @@ export function createServerCache(s: PipelineState, JE: TagRuntimeBridge, deps: 
      * the logos it looks up and republishes once the first user turns the
      * Logos group on. Bounded by SERVER_CACHE_WAIT_DELAYS; a later call or
      * stopWaitingForServerCache() ends an earlier wait, and so does a user
-     * switch. Nothing is redrawn here: the caller decides.
+     * switch. Accepted deltas refresh the affected cards already on the page.
      * @param ready - Checked after each delta.
      * @param [options] - Milliseconds before each delta (tests).
      * @returns True once `ready` holds; false when the server

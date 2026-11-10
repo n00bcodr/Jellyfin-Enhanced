@@ -256,6 +256,17 @@ test('review HTML becomes markup instead of showing as raw tags, and translation
   h.document.querySelector('.je-review-translate').click();await nextTurn();
   assert.equal(h.document.querySelector('.tmdb-review-card').dataset.translatedContent,"DE:I enjoyed 'The Mule'. A [real dude](https://x.test/a)!\nDE:Done now");
 });
+// Upstream 19cfe99a (#1036): strip tags until stable, so removing one tag cannot assemble another.
+test('a review tag assembled from the pieces of another is stripped too, and never shows as text',async t=>{
+  const html="Fine <<i>img src=x onerror=alert(1)> film, <<b>script>alert(2) end";
+  const {browser}=fakeTranslator();const h=await setup(t,{config:{ReviewTranslationEnabled:true},tmdb:[{author:'Tm',content:html}],lang:'de',browser});await nextTurn();
+  const text=h.document.querySelector('.tmdb-review-text');
+  assert.ok(!text.textContent.includes('<'),text.textContent);assert.ok(!text.textContent.includes('onerror'));
+  assert.equal(text.querySelector('img,script'),null);
+  assert.match(text.textContent,/Fine\s+film, alert\(2\) end/);
+  h.document.querySelector('.je-review-translate').click();await nextTurn();
+  assert.ok(!h.document.querySelector('.tmdb-review-card').dataset.translatedContent.includes('<'));
+});
 test('translated review keeps its links where the label survives translation',async t=>{
   const {browser}=fakeTranslator({prefix:''});
   const html='A <a href="https://x.test/a">real dude</a> and <a href="https://x.test/b">Gone</a>.';

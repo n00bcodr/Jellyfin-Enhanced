@@ -696,10 +696,17 @@
             console.debug(`${LOG} Watchlist auto-add is disabled (AddRequestedMediaToWatchlist: ${String(config.AddRequestedMediaToWatchlist)}, JellyseerrEnabled: ${String(config.JellyseerrEnabled)})`);
             return false;
           }
-          console.debug(`${LOG} Request tracked - WatchlistMonitor will automatically add TMDB ${tmdbId} (${mediaType}) to watchlist when it appears in library`);
+          const id = parseInt(String(tmdbId), 10);
+          if (!(id > 0) || mediaType !== "movie" && mediaType !== "tv") return false;
+          try {
+            await post("/watchlist", { tmdbId: id, mediaType });
+          } catch (error) {
+            if (errorStatus(error) === 409) return true;
+            throw error;
+          }
           return true;
         } catch (error) {
-          console.error(`${LOG} Error queuing item for watchlist:`, error);
+          console.error(`${LOG} Error adding the request to the Seerr watchlist:`, error);
           return false;
         }
       },

@@ -303,27 +303,31 @@ See [Watchlist Sync](seerr-features.md#watchlist-sync) for schedules, limits, an
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| **Add requested media to Watchlist** | Off | Adds requested movies/series to the requester's Jellyfin watchlist when library additions or updates match them, including requests made outside JE. |
-| **Sync Seerr Watchlist → Jellyfin** | Off | Enables incoming scheduled watchlist sync. That task also includes requests when the requested-media switch is on. |
-| **Sync Jellyfin Watchlist → Seerr** | Off | Enables outgoing scheduled watchlist sync for linked accounts and TMDB-identified movies/series. |
-| **Prevent re-adding removed items** | On | Remembers processed items so removing one from Jellyfin's watchlist does not cause it to be added again during incoming sync/monitoring. |
-| **Memory retention (days):** | 365 | Keeps processed-item memory for this many days; input range 1–3650. Applies when re-addition prevention is on. |
+| **Requested media goes on the requester's watchlist** | Off | Puts a title requested through Seerr Search on the requester's Seerr watchlist as soon as the request is made, and adds requested movies/series to the requester's Jellyfin watchlist when library additions or updates match them, including requests made outside JE. |
+| **Seerr → Jellyfin: add Seerr watchlist items to Jellyfin** | Off | Enables incoming scheduled watchlist sync. That task also includes requests when the requested-media switch is on. |
+| **Jellyfin → Seerr: add Jellyfin watchlist items to Seerr** | Off | Enables outgoing scheduled watchlist sync for linked accounts and TMDB-identified movies/series. |
+| **Don't re-add items a user removed from Jellyfin** | On | Remembers processed items so removing one from Jellyfin's watchlist does not cause it to be added again during incoming sync/monitoring. Shown when removals are set to **Seerr decides** or **Never**. |
+| **Remember removed items for (days)** | 365 | Keeps processed-item memory for this many days; input range 1–3650. Applies when re-addition prevention is on. |
+| **When an item is removed from a watchlist** | Jellyfin decides | Chooses whose removals are copied to the other watchlist: **Jellyfin decides**, **Seerr decides**, **Both stay in sync** or **Never**. See [Watchlist Removals](#watchlist-removals). |
 
 ??? note "Details"
 
-    The [KefinTweaks plugin](https://github.com/ranaldsgift/KefinTweaks) provides the Jellyfin watchlist interface. Sync switches are checked when their scheduled tasks run. Neither direction mirrors deletions.
+    The [KefinTweaks plugin](https://github.com/ranaldsgift/KefinTweaks) provides the Jellyfin watchlist interface. Sync switches are checked when their scheduled tasks run. The two add syncs never remove anything; removals are handled by **Sync Watchlist Removals** (see [Watchlist Removal Sync](seerr-features.md#watchlist-removal-sync)).
 
 ### Sync Seerr Watchlist to Jellyfin
 
 Bring Seerr watchlist entries into Jellyfin with a scheduled task. It runs daily at 03:00 by default.
 
-**How to use:** Enable **Sync Seerr Watchlist → Jellyfin**, then adjust or run **Sync Watchlist from Seerr to Jellyfin** under **Dashboard** → **Scheduled Tasks**. See [Watchlist Sync](seerr-features.md#watchlist-sync).
+**How to use:** Enable **Seerr → Jellyfin: add Seerr watchlist items to Jellyfin**, then adjust or run **Sync Watchlist from Seerr to Jellyfin** under **Dashboard** → **Scheduled Tasks**. See [Watchlist Sync](seerr-features.md#watchlist-sync).
 
 ### Sync Jellyfin Watchlist to Seerr
 
 Bring Jellyfin watchlist entries into Seerr with a scheduled task. It runs daily at 03:30 by default.
 
-**How to use:** Enable **Sync Jellyfin Watchlist → Seerr**, then adjust or run **Sync Watchlist from Jellyfin to Seerr** under **Dashboard** → **Scheduled Tasks**.
+**How to use:** Enable **Jellyfin → Seerr: add Jellyfin watchlist items to Seerr**, then adjust or run **Sync Watchlist from Jellyfin to Seerr** under **Dashboard** → **Scheduled Tasks**.
+
+### Watchlist Removals
+Choose whose removals are copied to the other watchlist: **Jellyfin decides** (default), **Seerr decides**, **Both stay in sync**, or **Never**. Runs as **Sync Watchlist Removals between Jellyfin and Seerr**, daily at 04:00 by default. See [Watchlist Removal Sync](seerr-features.md#watchlist-removal-sync).
 
 ### Only Allow Requesting One Season at a Time
 - Removes **Select All** from the season modal and lets users tick only one season per request

@@ -109,6 +109,7 @@ GET /JellyfinEnhanced/jellyseerr/user
 GET /JellyfinEnhanced/jellyseerr/user-status
 GET /JellyfinEnhanced/jellyseerr/validate
 GET /JellyfinEnhanced/jellyseerr/watchlist
+POST /JellyfinEnhanced/jellyseerr/watchlist
 GET /JellyfinEnhanced/jellyseerr/{type}/{serverId}
 GET /JellyfinEnhanced/js/{**path}
 GET /JellyfinEnhanced/locales

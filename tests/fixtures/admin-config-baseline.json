@@ -460,7 +460,8 @@
   "validateSonarrMappingsBtn",
   "watchProgressDefaultMode",
   "watchProgressTimeFormat",
-  "watchlistMemoryRetentionDays"
+  "watchlistMemoryRetentionDays",
+  "watchlistRemovalSync"
  ],
  "sections": [
   "ui-preferences",
@@ -837,7 +838,8 @@
   "validateSeerrMappingsBtn",
   "watchProgressDefaultMode",
   "watchProgressTimeFormat",
-  "watchlistMemoryRetentionDays"
+  "watchlistMemoryRetentionDays",
+  "watchlistRemovalSync"
  ],
  "schemaIdsNeverAnnounced": [
   "activityFeedAutoCreateCustomTab",
@@ -1044,6 +1046,7 @@
   "SyncJellyseerrWatchlist": false,
   "SyncJellyfinWatchlistToSeerr": false,
   "PreventWatchlistReAddition": true,
+  "WatchlistRemovalSync": "jellyfin",
   "JellyseerrAutoImportUsers": false,
   "JellyseerrDisableCache": false,
   "JellyseerrResponseCacheTtlMinutes": 10,

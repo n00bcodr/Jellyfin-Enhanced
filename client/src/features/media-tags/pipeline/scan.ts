@@ -230,7 +230,8 @@ export function createScan(s: PipelineState, JE: TagRuntimeBridge, deps: Pipelin
                     // Superseded while waiting: release the cards and scan again.
                     // The newer scan took its snapshot while these were still
                     // marked processed, so it won't pick them up by itself.
-                    for (const card of chunk) s.processedCards.delete(card.el);
+                    // Cards since invalidated by reuse or metadata have a new owner.
+                    for (const card of chunk) if (stillShows(card)) s.processedCards.delete(card.el);
                     scheduleScan();
                     return;
                 }
@@ -270,8 +271,8 @@ export function createScan(s: PipelineState, JE: TagRuntimeBridge, deps: Pipelin
 
 
     /**
-     * Whether a scanned or queued card still shows the item it was scanned
-     * for (it has not been reused for another item since).
+     * Whether a scanned or queued card still belongs to the item and metadata
+     * it was scanned for (neither reuse nor a cache refresh invalidated it).
      * */
     function stillShows(card: {el: HTMLElement, reuse: number}): boolean {
         return (s.cardReuse.get(card.el) || 0) === card.reuse;
@@ -345,6 +346,35 @@ export function createScan(s: PipelineState, JE: TagRuntimeBridge, deps: Pipelin
 
 
     /**
+     * Metadata updates invalidate both cached facts and the cards already drawn
+     * from them. Releasing only affected cards keeps unrelated overlays intact;
+     * advancing their reuse stamp also rejects an older batch still in flight.
+     * A card whose item left the cache is released like an updated one: the
+     * batch lookup, which enforces access, draws whatever the server still has
+     * for it (an item in a library excluded from the tag cache keeps its tags).
+     * @param updatedIds - null means the server cache was replaced.
+     * @param hiddenIds - Items the user can no longer see: cleared, never looked up.
+     */
+    function refreshVisibleCards(updatedIds: readonly string[] | null = null, hiddenIds: readonly string[] = []): void {
+        const changed = updatedIds ? new Set(updatedIds) : null;
+        const hidden = new Set(hiddenIds);
+        let released = false;
+        for (const el of document.querySelectorAll<HTMLElement>(CARD_IMAGE_SELECTOR)) {
+            const itemId = getItemId(el);
+            if (!itemId || (changed && !changed.has(itemId))) continue;
+            s.cardReuse.set(el, (s.cardReuse.get(el) || 0) + 1);
+            JE.core.tagLayout?.clearCard(el.closest<HTMLElement>('.cardScalable') || el);
+            if (hidden.has(itemId)) s.processedCards.add(el);
+            else {
+                s.processedCards.delete(el);
+                released = true;
+            }
+        }
+        if (released) scheduleScan();
+    }
+
+
+    /**
      * Extract the Jellyfin item ID from a card element.
      * @param el - Card image container element.
      * @returns The item ID or null if not found.
@@ -371,5 +401,5 @@ export function createScan(s: PipelineState, JE: TagRuntimeBridge, deps: Pipelin
         return parent?.getAttribute('data-type') || null;
     }
 
-    return { idleYield, scheduleScan, runScan, resolveRenderTarget, stillShows, releaseReusedCards };
+    return { idleYield, scheduleScan, runScan, resolveRenderTarget, stillShows, releaseReusedCards, refreshVisibleCards };
 }

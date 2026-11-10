@@ -1,1 +1,1 @@
-Passed!  - Failed:     0, Passed:  3238, Skipped:     0, Total:  3238, Duration: 1 m 15 s - JE.Tests.dll (net10.0)
+Passed!  - Failed:     0, Passed:  3295, Skipped:     0, Total:  3295, Duration: 3 m 27 s - JE.Tests.dll (net10.0)

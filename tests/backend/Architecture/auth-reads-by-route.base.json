@@ -175,6 +175,7 @@
     "POST JellyfinEnhanced/jellyseerr/request/tv/{tmdbId}/seasons": {"IsAdminUser":5,"User":1,"UserHelper.GetCurrentUserId":1},
     "POST JellyfinEnhanced/jellyseerr/sync-watchlist": {"IsAdminUser":1},
     "POST JellyfinEnhanced/jellyseerr/trigger-recently-added-scan": {"IsAdminUser":1},
+    "POST JellyfinEnhanced/jellyseerr/watchlist": {"IsAdminUser":5,"User":1,"UserHelper.GetCurrentUserId":1},
     "POST JellyfinEnhanced/next-up/hide/{itemId}": {"User":1,"UserHelper.GetCurrentUserId":1},
     "POST JellyfinEnhanced/reset-all-users-settings": {"IsAdminUser":1},
     "POST JellyfinEnhanced/reviews/admin/{userIdN}/{mediaType}/{tmdbId}": {"IsAdminUser":1},

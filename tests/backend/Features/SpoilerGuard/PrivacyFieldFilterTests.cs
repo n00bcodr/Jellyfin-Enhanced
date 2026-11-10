@@ -103,6 +103,18 @@ public class PrivacyFieldFilterTests
         Assert.Equal("Secret plot", other.Overview);
     }
 
+    // Upstream d3bd07d3: Home Screen Sections serves the web home rows from its own endpoint.
+    [Fact]
+    public async Task HomeScreenSectionsRowsStripGuardedUnwatchedEpisodes()
+    {
+        using var f = new Fixture();
+        var hidden = f.Episode(); var watched = f.Episode(true);
+        var query = new QueryResult<BaseItemDto> { Items = [hidden, watched], TotalRecordCount = 2 };
+        Assert.Same(query, await f.Invoke(query, "HomeScreen", "GetSectionContent"));
+        Assert.Equal("Season 2, Episode 3", hidden.Name); Assert.NotEqual("Secret plot", hidden.Overview); Assert.Null(hidden.Path);
+        Assert.Equal("Secret ending", watched.Name); Assert.Equal("Secret plot", watched.Overview);
+    }
+
     [Fact]
     public async Task SubtitleDeliveryRemainsUsableWhileTitleBearingPathsAreScrubbed()
     {

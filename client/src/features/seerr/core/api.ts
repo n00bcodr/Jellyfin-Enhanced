@@ -521,11 +521,19 @@ export function installApi(host: SeerrCoreHost): void {
                     console.debug(`${LOG} Watchlist auto-add is disabled (AddRequestedMediaToWatchlist: ${String(config.AddRequestedMediaToWatchlist)}, JellyseerrEnabled: ${String(config.JellyseerrEnabled)})`);
                     return false;
                 }
-                // The server's WatchlistMonitor adds the item once it appears in the library.
-                console.debug(`${LOG} Request tracked - WatchlistMonitor will automatically add TMDB ${tmdbId} (${mediaType}) to watchlist when it appears in library`);
+                const id = parseInt(String(tmdbId), 10);
+                if (!(id > 0) || (mediaType !== 'movie' && mediaType !== 'tv')) return false;
+                // The Seerr watchlist now; the server's WatchlistMonitor fills the Jellyfin one when the title reaches the library.
+                try {
+                    await post('/watchlist', { tmdbId: id, mediaType });
+                } catch (error) {
+                    // 409: Seerr already has it on the user's watchlist.
+                    if (errorStatus(error) === 409) return true;
+                    throw error;
+                }
                 return true;
             } catch (error) {
-                console.error(`${LOG} Error queuing item for watchlist:`, error);
+                console.error(`${LOG} Error adding the request to the Seerr watchlist:`, error);
                 return false;
             }
         },

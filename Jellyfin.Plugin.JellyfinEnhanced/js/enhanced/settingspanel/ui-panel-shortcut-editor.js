@@ -53,6 +53,8 @@
     "SkipIntroOutro",
     "FrameStepBack",
     "FrameStepForward",
+    "DecreaseSubtitleOffset",
+    "IncreaseSubtitleOffset",
     "JumpToLastPosition"
   ]);
   var JELLYFIN_PLAYER_KEYS = /* @__PURE__ */ new Set([

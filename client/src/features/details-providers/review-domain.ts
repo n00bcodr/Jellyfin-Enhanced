@@ -10,13 +10,19 @@ import { field, isRecord, list, num, str, text } from './wire';
  * the markdown parseMarkdown understands and any other tag is dropped.
  */
 export function htmlToMarkdown(value: string): string {
-    return String(value)
+    let out = String(value)
         .replace(/<a\s[^>]*?href=["'](https?:\/\/[^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi, '[$2]($1)')
         .replace(/<(strong|b)>([\s\S]*?)<\/\1>/gi, '**$2**')
         .replace(/<(em|i)>([\s\S]*?)<\/\1>/gi, '*$2*')
         .replace(/<br\s*\/?>/gi, '\n')
-        .replace(/<\/p>\s*<p[^>]*>/gi, '\n\n')
-        .replace(/<\/?[a-z][^>]*>/gi, '');
+        .replace(/<\/p>\s*<p[^>]*>/gi, '\n\n');
+    // Strip until stable so removing one tag can't assemble another (e.g. "<<b>script>").
+    let previous: string;
+    do {
+        previous = out;
+        out = out.replace(/<\/?[a-z][^>]*>/gi, '');
+    } while (out !== previous);
+    return out;
 }
 
 /** Review text as plain prose for translation: links keep only their text. */

@@ -239,6 +239,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 new Shortcut { Name = "SkipIntroOutro", Key = "O", Label = "Skip Intro/Outro", Category = "Player" },
                 new Shortcut { Name = "FrameStepBack", Key = ",", Label = "Step Back One Frame", Category = "Player" },
                 new Shortcut { Name = "FrameStepForward", Key = ".", Label = "Step Forward One Frame", Category = "Player" },
+                new Shortcut { Name = "DecreaseSubtitleOffset", Key = "[", Label = "Decrease Subtitle Offset", Category = "Player" },
+                new Shortcut { Name = "IncreaseSubtitleOffset", Key = "]", Label = "Increase Subtitle Offset", Category = "Player" },
                 new Shortcut { Name = "JumpToLastPosition", Key = "Z", Label = "Jump to Last Position", Category = "Player" },
                 new Shortcut { Name = "JumpToPercentage", Key = "0-9", Label = "Jump to % of video", Category = "Player" }
             };
@@ -347,6 +349,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             SyncJellyseerrWatchlist = false;
             SyncJellyfinWatchlistToSeerr = false;
             PreventWatchlistReAddition = true;
+            WatchlistRemovalSync = "jellyfin";
             WatchlistMemoryRetentionDays = 365;
 
             // Bookmarks Settings
@@ -1122,6 +1125,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool SyncJellyseerrWatchlist { get; set; }
         public bool SyncJellyfinWatchlistToSeerr { get; set; }
         public bool PreventWatchlistReAddition { get; set; }
+        // Which side's removals are mirrored to the other: "off", "jellyfin", "seerr" or "both".
+        public string WatchlistRemovalSync { get; set; }
         public int WatchlistMemoryRetentionDays { get; set; }
 
         // User Import Settings

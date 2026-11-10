@@ -1112,6 +1112,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             }
         }
 
+        /// Gets the last-synced watchlist state used by the removal sync. A missing or unreadable
+        /// file reads as empty, which the removal sync treats as a first run (nothing is removed).
+        public WatchlistSyncState GetWatchlistSyncState(Guid userId)
+        {
+            return GetUserConfiguration<WatchlistSyncState>(userId.ToString(), "watchlist-sync-state.json");
+        }
+
+        /// Saves the last-synced watchlist state for a user.
+        public void SaveWatchlistSyncState(Guid userId, WatchlistSyncState state)
+        {
+            SaveUserConfiguration(userId.ToString(), "watchlist-sync-state.json", state);
+        }
+
         /// Cleans up old processed watchlist items (older than specified days).
         public void CleanupOldProcessedWatchlistItems(Guid userId, int daysToKeep = 365)
         {

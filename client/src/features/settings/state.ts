@@ -2,7 +2,8 @@ import type { SettingsBridge } from './host';
 export function installState(JE: SettingsBridge): void {
     JE.CONFIG = {
         // Use getters so values always reflect the latest pluginConfig even if assigned later
-        get TOAST_DURATION() { return (JE.pluginConfig && JE.pluginConfig.ToastDuration) || 1500; },
+        // 0 is a real value (toasts off), so only a missing or invalid setting falls back to 1500.
+        get TOAST_DURATION() { const value = JE.pluginConfig?.ToastDuration; return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 1500; },
         get HELP_PANEL_AUTOCLOSE_DELAY() { return (JE.pluginConfig && JE.pluginConfig.HelpPanelAutocloseDelay) || 15000; }
     };
 

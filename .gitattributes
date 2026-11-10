@@ -10,4 +10,5 @@ client/src/features/media-tags/types/quality/compact-quality.ts linguist-generat
 client/src/features/media-tags/types/genre/genre-table.ts linguist-generated=true
 client/src/admin/config/per-user-props.ts linguist-generated=true
 client/generated-manifest.json linguist-generated=true
+docs/upstream-sync.md linguist-generated=true
 Jellyfin.Plugin.JellyfinEnhanced/js/**/*.js.map linguist-generated=true

@@ -61,10 +61,13 @@ export function createUi(host: UiHost) {
      * NOTE: renders via innerHTML — escape user-controlled content with
      * JE.core.ui.escapeHtml before passing it in.
      * @param html The (already localized/escaped) content to display.
-     * @param [duration] How long to show the toast, in ms.
+     * @param [duration] How long to show the toast, in ms (default: the Toast Notification Duration setting; 0 there turns toasts off).
      */
     function toast(html: string, duration?: number) {
-        const ms = duration ?? (host.toastDuration() || 1500);
+        const configured = host.toastDuration();
+        // A duration of 0 in the plugin settings turns toasts off, including ones that pass their own duration.
+        if (configured === 0) return;
+        const ms = duration ?? configured ?? 1500;
 
         // Use the theme system to get appropriate colors
         const themeVars = host.themeVariables();

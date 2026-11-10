@@ -87,6 +87,7 @@ export function createGatedHelp(m: GatedHelpDeps) {
             m.dependencies.CUSTOM_TABS_V12_HINTS.forEach(m.dependencies.updateCustomTabsV12Hint);
             m.dependencies.updateSearchExcludeLibraryWarning();
             m.dependencies.PARENT_DEPS.forEach(m.dependencies.updateParentDep);
+            m.dependencies.updateWatchlistMemoryVisibility();
             m.actions.updateClearTagCachesQuickBtnVisibility();
             // `updateStatusDashboard` and the legacy `renderChecklist` both
             // now delegate to `renderServiceStatusDashboard`. Calling both

@@ -193,6 +193,7 @@ import { defineAllSections } from './sections';
  *  { id: 'syncJellyfinWatchlistToSeerr', type: 'toggle' }
  *  { id: 'preventWatchlistReAddition', type: 'toggle' }
  *  { id: 'watchlistMemoryRetentionDays', type: 'number' }
+ *  { id: 'watchlistRemovalSync', type: 'select' }
  *  { id: 'jellyseerrAutoImportUsers', type: 'toggle' }
  *  { id: 'btnImportJellyseerrUsers', type: 'button' }
  *  { id: 'btnPermissionAudit', type: 'button' }

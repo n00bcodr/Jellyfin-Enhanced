@@ -129,7 +129,7 @@ public static class StatusRules
                     && Holds(final.Episode) && Ended(facts!.Status)) return Badge("series_finale");
                 if (showMilestones && aired && facts?.LastAired is { } lastEpisode && lastRecently
                     && episodeSeason == lastEpisode.Season && Holds(lastEpisode.Episode) && LastEndsSeason(facts, data.EpisodeIndex?.IsLast == true)) return Badge("season_finale");
-                if (showNew && (AiredWithin(data.PremiereDate, justAddedMs) || addedRecently)) return Badge("new_episode");
+                if (showNew && AiredWithin(data.PremiereDate, justAddedMs)) return Badge("new_episode");
                 break;
             case "BoxSet":
             case "Video":

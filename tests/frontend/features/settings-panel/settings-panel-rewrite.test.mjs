@@ -214,6 +214,27 @@ test('a crafted subtitle colour never breaks out of the panel preview style attr
   assert.equal(tpl.content.getElementById('customSubtitleTextColorPicker').value, '#ffffff');
 });
 
+// Upstream 533614b8: the two subtitle offset shortcuts are listed in the panel's Player column.
+test('the panel lists the subtitle offset shortcuts in the Player column with their keys', t => {
+  const Shortcuts = [{ Name: 'FrameStepForward', Key: '.', Label: 'Step Forward One Frame', Category: 'Player' },
+    { Name: 'DecreaseSubtitleOffset', Key: '[', Label: 'Decrease Subtitle Offset', Category: 'Player' },
+    { Name: 'IncreaseSubtitleOffset', Key: ']', Label: 'Increase Subtitle Offset', Category: 'Player' },
+    { Name: 'JumpToLastPosition', Key: 'Z', Label: 'Jump to Last Position', Category: 'Player' }];
+  const h = createHarness({ JE: { pluginConfig: { HelpPanelAutocloseDelay: 60000, Shortcuts }, userConfig: { settings: {}, shortcuts: { Shortcuts: [] } }, currentSettings: {},
+    state: { activeShortcuts: Object.fromEntries(Shortcuts.map(s => [s.Name, s.Key])) }, pauseScreenInstance: {}, t: k => k, toast() {} } });
+  t.after(() => h.close());
+  for (const file of ['core/ui-kit.js', 'tags/rating-sources.js', 'enhanced/config.js', 'enhanced/icons.js', 'enhanced/helpers.js', 'enhanced/player/subtitles.js']) h.load(file);
+  h.JE.currentSettings = h.JE.loadSettings();
+  h.JE.themer = { getThemeVariables: () => ({}) };
+  for (const file of ['ui-panel-settings.js', 'ui-panel-template.js']) h.load(`enhanced/settingspanel/${file}`);
+  const tpl = h.document.createElement('template');
+  tpl.innerHTML = h.JE.internals.enhancedUi.buildPanelHtml({});
+  const rows = [...tpl.content.querySelectorAll('.shortcut-key')].map(key => [key.dataset.action, key.textContent, key.parentElement.parentElement.lastElementChild.textContent.trim()]);
+  const at = rows.findIndex(row => row[0] === 'FrameStepForward');
+  assert.deepEqual(rows.slice(at, at + 4), [['FrameStepForward', '.', 'Step Forward One Frame'], ['DecreaseSubtitleOffset', '[', 'Decrease Subtitle Offset'],
+    ['IncreaseSubtitleOffset', ']', 'Increase Subtitle Offset'], ['JumpToLastPosition', 'Z', 'Jump to Last Position']]);
+});
+
 /** The subtitle preset grids the template renders, with the real preset lists' shape. */
 function presetHarness(t, settings) {
   const applied = [];

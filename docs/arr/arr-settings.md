@@ -266,7 +266,7 @@ Choose how Calendar looks and which releases it shows. These are admin (server) 
 ??? info "Highlighting and access limits"
     Watchlist highlighting uses Jellyfin's like (Likes) flag, not the favorite (heart) flag. Library filtering checks matched-item access and infers unmatched-title access from Calendar root folders. Unknown roots remain visible.
 
-    Under **Seerr**, **Add requested media to Watchlist** and **Sync Seerr Watchlist → Jellyfin** set the like flag for matching library items; see [Seerr settings](../seerr/seerr-settings.md).
+    Under **Seerr**, **Requested media goes on the requester's watchlist** and **Seerr → Jellyfin: add Seerr watchlist items to Jellyfin** set the like flag for matching library items; see [Seerr settings](../seerr/seerr-settings.md).
 
     Requested-only display requires Seerr data for the linked viewer and matches TMDB ID plus media type. It excludes Shoko events and can be empty when request data is unavailable. These options only change what you see in Calendar; they do not restrict access to Calendar data from the server. Library filtering is best-effort for future titles; unmatched Shoko events have no root folder to check. Broader Calendar visibility does not grant playback access.
 

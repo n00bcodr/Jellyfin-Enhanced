@@ -482,6 +482,10 @@
       "category": "Features"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Features/MediaTags/Services/TagCache/TagCacheCollectionMembers.cs",
+      "category": "Features"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Features/MediaTags/Services/TagCache/TagCacheCustomTags.cs",
       "category": "Features"
     },
@@ -666,11 +670,19 @@
       "category": "Features"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Features/Seerr/Services/SeerrWatchlistReader.cs",
+      "category": "Features"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Features/Seerr/Services/TmdbCompanyTvDiscover.cs",
       "category": "Features"
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Features/Seerr/Services/WatchlistMonitor.cs",
+      "category": "Features"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Features/Seerr/Services/WatchlistSyncPlanner.cs",
       "category": "Features"
     },
     {
@@ -683,6 +695,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Features/Seerr/Tasks/JellyseerrWatchlistSyncTask.cs",
+      "category": "Features"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Features/Seerr/Tasks/WatchlistRemovalSyncTask.cs",
       "category": "Features"
     },
     {
@@ -3734,6 +3750,15 @@
     },
     {
       "verb": "POST",
+      "path": "/JellyfinEnhanced/jellyseerr/watchlist",
+      "method": "AddJellyseerrWatchlist",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Features/Seerr/JeSeerrController.Users.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "POST",
       "path": "/JellyfinEnhanced/jellyseerr/sync-watchlist",
       "method": "SyncJellyseerrWatchlist",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Features/Seerr/JeSeerrController.Users.cs",
@@ -6493,6 +6518,14 @@
       "type": "bool",
       "initializer": null,
       "constructor_assignment": "true",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "WatchlistRemovalSync",
+      "type": "string",
+      "initializer": null,
+      "constructor_assignment": "\"jellyfin\"",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
     },
     {
@@ -9616,6 +9649,22 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
+      "class": "WatchlistSyncState",
+      "name": "Synced",
+      "type": "List<string>",
+      "initializer": "new List<string>()",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "WatchlistSyncState",
+      "name": "UpdatedAt",
+      "type": "System.DateTime?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
       "class": "HiddenContentItem",
       "name": "ItemId",
       "type": "string",
@@ -9987,6 +10036,10 @@
     },
     {
       "literal": "reviews.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfigurationManager.cs"
+    },
+    {
+      "literal": "watchlist-sync-state.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfigurationManager.cs"
     },
     {
@@ -10430,6 +10483,11 @@
       "key": "JellyfinEnhancedJellyseerrWatchlistSync"
     },
     {
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Features/Seerr/Tasks/WatchlistRemovalSyncTask.cs",
+      "class": "WatchlistRemovalSyncTask",
+      "key": "JellyfinEnhancedWatchlistRemovalSync"
+    },
+    {
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Features/SpoilerGuard/Tasks/SpoilerApplyExistingTitlesTask.cs",
       "class": "SpoilerApplyExistingTitlesTask",
       "key": "JellyfinEnhancedSpoilerApplyExistingTitles"
@@ -10538,11 +10596,11 @@
   ],
   "counts": {
     "build_targets": 1,
-    "files": 539,
-    "routes": 202,
-    "configuration_properties": 741,
-    "storage_references": 95,
-    "scheduled_tasks": 15,
+    "files": 543,
+    "routes": 203,
+    "configuration_properties": 744,
+    "storage_references": 96,
+    "scheduled_tasks": 16,
     "locales": 33
   }
 }

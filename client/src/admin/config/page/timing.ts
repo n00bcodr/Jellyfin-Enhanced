@@ -145,12 +145,16 @@ export function createTiming(m: TimingDeps) {
                         toastTimers.delete(el);
                         el.remove();
                     });
-                    var ms = readMs(toastInput, 3000);
+                    // Same rule as the real toast: 0 means toasts are off, any other value is used as typed.
+                    var rawToastMs = parseInt(toastInput ? toastInput.value : '', 10);
+                    var toastMs = Number.isFinite(rawToastMs) && rawToastMs >= 0 ? Math.min(rawToastMs, 120000) : 3000;
+                    var toastOff = toastMs === 0;
+                    var ms = toastOff ? 3000 : toastMs;
                     var toast = document.createElement('div');
                     toast.className = 'je-preview-toast';
                     toast.setAttribute('role', 'status');
                     toast.setAttribute('aria-live', 'polite');
-                    toast.textContent = 'Example toast, disappears in ' + fmtSeconds(ms);
+                    toast.textContent = toastOff ? 'Toasts are turned off (0 ms). Nothing will pop up.' : 'Example toast, disappears in ' + fmtSeconds(ms);
                     document.body.appendChild(toast);
                     // Mirror real JE.toast(): slide in from the right after a tick,
                     // stay for `ms`, then slide back out by removing the .je-shown class.

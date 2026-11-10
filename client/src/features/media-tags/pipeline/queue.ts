@@ -49,11 +49,11 @@ export function createQueue(s: PipelineState, JE: TagRuntimeBridge, deps: Pipeli
             while (s.requestQueue.length > 0) {
                 if (myGeneration !== s.batchGeneration) break; // navigation happened
                 const batch = s.requestQueue.splice(0, SERVER_BATCH_LIMIT)
-                    // Drop cards removed from the DOM since they were queued (e.g. a
+                    // Drop cards invalidated or removed from the DOM since they were queued (e.g. a
                     // page like search re-renders its whole result set on every
                     // keystroke, on the same generation). Skipping them here avoids
                     // fetching and rendering tag data nobody will ever see.
-                    .filter((entry) => entry.el.isConnected);
+                    .filter((entry) => entry.el.isConnected && deps.stillShows(entry));
                 if (batch.length === 0) continue;
                 s.activeBatch = batch;
                 // The transport can finish in the background, but a retired

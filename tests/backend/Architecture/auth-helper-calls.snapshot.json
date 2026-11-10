@@ -1,6 +1,7 @@
 {
   "AckSpoilerBlurCorruption": {"IsAdminUser":1,"User":1,"UserHelper.GetCurrentUserId":1},
   "ActOnRequest": {"IsAdminUser":2,"User":1,"UserHelper.GetCurrentUserId":1},
+  "AddJellyseerrWatchlist": {"IsAdminUser":5,"User":1,"UserHelper.GetCurrentUserId":1},
   "AddUserBookmark": {"AuthorizeUserConfigAccess":1},
   "AdminDeleteReview": {"IsAdminUser":1},
   "AdminHideForUser": {"IsAdminUser":1},

@@ -97,3 +97,28 @@ test('administrator disabling shortcuts leaves panel key available but player bi
   assert.deepEqual(h.actions, ['panel']);
   h.key.focus(); h.press(h.key, 'z'); assert.equal(h.saves.length, 0);
 });
+
+// Upstream 533614b8: [ and ] are player shortcuts that nudge the subtitle offset by 0.1 s.
+test('[ and ] nudge the subtitle offset through the player, only on the video page', t => {
+  const h = setup(t); const nudges = []; let onVideo = true;
+  h.JE.adjustSubtitleOffset = delta => nudges.push(delta); h.JE.isVideoPage = () => onVideo;
+  Object.assign(h.JE.state.activeShortcuts, { DecreaseSubtitleOffset: '[', IncreaseSubtitleOffset: ']' });
+  h.JE.initializeEnhancedScript();
+  assert.equal(h.press(h.document.body, ']').defaultPrevented, true);
+  assert.equal(h.press(h.document.body, '[').defaultPrevented, true);
+  assert.deepEqual(nudges, [0.1, -0.1]);
+  onVideo = false;
+  assert.equal(h.press(h.document.body, ']').defaultPrevented, false);
+  assert.deepEqual(nudges, [0.1, -0.1]);
+});
+
+for (const action of ['DecreaseSubtitleOffset', 'IncreaseSubtitleOffset']) {
+  test(`${action} is a player action: it cannot take a key Jellyfin's player uses, and can be rebound`, t => {
+    const h = setup(t);
+    h.key.dataset.action = action; h.JE.state.activeShortcuts[action] = action.startsWith('Dec') ? '[' : ']';
+    h.key.focus(); h.press(h.key, 'k');
+    assert.equal(h.saves.length, 0); assert.ok(h.key.classList.contains('shake-error'));
+    h.key.focus(); h.press(h.key, 'q');
+    assert.equal(h.JE.state.activeShortcuts[action], 'Q'); assert.equal(h.saves.length, 1);
+  });
+}

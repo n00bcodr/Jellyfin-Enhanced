@@ -717,26 +717,26 @@ JE.initializePauseScreen = function() {
         getLogoUrls(item: Item, domain: string, itemId: string) {
           const urls = [];
           if (item.ImageTags?.Logo) {
-            urls.push(`${domain}/Items/${itemId}/Images/Logo?tag=${item.ImageTags.Logo}`);
+            urls.push(`${domain}/Items/${encodeURIComponent(itemId)}/Images/Logo?tag=${encodeURIComponent(item.ImageTags.Logo)}`);
           }
-          if (item.ParentId) urls.push(`${domain}/Items/${item.ParentId}/Images/Logo`);
-          if (item.SeriesId) urls.push(`${domain}/Items/${item.SeriesId}/Images/Logo`);
+          if (item.ParentId) urls.push(`${domain}/Items/${encodeURIComponent(item.ParentId)}/Images/Logo`);
+          if (item.SeriesId) urls.push(`${domain}/Items/${encodeURIComponent(item.SeriesId)}/Images/Logo`);
           return urls;
         }
 
         getDiscUrls(item: Item, domain: string, itemId: string) {
-          const urls = [`${domain}/Items/${itemId}/Images/Disc`];
-          if (item.ParentId) urls.push(`${domain}/Items/${item.ParentId}/Images/Disc`);
-          if (item.SeriesId) urls.push(`${domain}/Items/${item.SeriesId}/Images/Disc`);
+          const urls = [`${domain}/Items/${encodeURIComponent(itemId)}/Images/Disc`];
+          if (item.ParentId) urls.push(`${domain}/Items/${encodeURIComponent(item.ParentId)}/Images/Disc`);
+          if (item.SeriesId) urls.push(`${domain}/Items/${encodeURIComponent(item.SeriesId)}/Images/Disc`);
           return urls;
         }
 
         getBackdropUrls(item: Item, domain: string, itemId: string) {
           const urls = [
-            `${domain}/Items/${itemId}/Images/Backdrop`,
+            `${domain}/Items/${encodeURIComponent(itemId)}/Images/Backdrop`,
           ];
-          if (item.ParentId) urls.push(`${domain}/Items/${item.ParentId}/Images/Backdrop`);
-          if (item.SeriesId) urls.push(`${domain}/Items/${item.SeriesId}/Images/Backdrop`);
+          if (item.ParentId) urls.push(`${domain}/Items/${encodeURIComponent(item.ParentId)}/Images/Backdrop`);
+          if (item.SeriesId) urls.push(`${domain}/Items/${encodeURIComponent(item.SeriesId)}/Images/Backdrop`);
           return urls;
         }
 

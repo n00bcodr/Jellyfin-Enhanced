@@ -150,6 +150,8 @@
         ["SkipIntroOutro", () => JE.skipIntroOutro?.()],
         ["FrameStepBack", () => JE.frameStep?.("back")],
         ["FrameStepForward", () => JE.frameStep?.("forward")],
+        ["DecreaseSubtitleOffset", () => JE.adjustSubtitleOffset?.(-0.1)],
+        ["IncreaseSubtitleOffset", () => JE.adjustSubtitleOffset?.(0.1)],
         ["JumpToLastPosition", () => JE.jumpToLastPosition?.()]
       ];
     }

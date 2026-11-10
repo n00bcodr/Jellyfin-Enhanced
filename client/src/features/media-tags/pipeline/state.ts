@@ -106,7 +106,7 @@ export interface PipelineState {
     cancelBatchWait: (() => void) | null;
     activeBatch: QueuedCard[]; // entries whose request is currently in flight
     requestQueue: QueuedCard[]; // { el, renderTarget, itemId, itemType, cardId, awaiting, reuse }
-    readonly cardReuse: WeakMap<Element, number>; // card image → times its card was reused for another item (see releaseReusedCards)
+    readonly cardReuse: WeakMap<Element, number>; // card image → invalidations from reuse or updated metadata (see releaseReusedCards, refreshVisibleCards)
     // The server's effective data-affecting strip policy for /tag-data answers
     // ("none": nothing; SpoilerTagDataStripper.TagStripRevision): the page-load
     // bootstrap's value, then that of the latest batch answer (batches run one
@@ -220,6 +220,7 @@ export interface PipelineFns {
     persistDelta: (entries: EntryPairs, base: SnapshotBase, timestamp: number, servedAt: number, removed?: readonly string[]) => void;
     queuePersist: (work: () => Promise<void>) => void;
     refreshServerCache: () => Promise<void>;
+    refreshVisibleCards: (updatedIds?: readonly string[] | null, hiddenIds?: readonly string[]) => void;
     refreshServerCacheCore: () => Promise<void>;
     registerRenderer: (name: string, config: PipelineRendererConfig) => void;
     releaseReusedCards: (mutations: MutationRecord[]) => void;

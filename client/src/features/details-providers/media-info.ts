@@ -609,8 +609,10 @@ async function displayAudioLanguages(itemId: string, container: HTMLElement, med
             const selectedSource = mediaSourceId && mediaSources
                 ? mediaSources.find(source => source.Id === mediaSourceId)
                 : undefined;
+            // For a selected version /tag-data lists each MediaSource by Id only and puts
+            // that version's streams on the top level.
             const languages = selectedSource
-                ? collectLanguages([selectedSource.MediaStreams])
+                ? collectLanguages([selectedSource.MediaStreams ?? sourceItem.MediaStreams])
                 : collectLanguages([sourceItem.MediaStreams, ...(mediaSources ?? []).map(source => source.MediaStreams)]);
 
             if (languages.length > 0) {

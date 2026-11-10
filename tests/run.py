@@ -17,6 +17,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("suite", choices=["fast", "tooling", "backend", "frontend", "browser", "visual", "host", "poster", "mutation", "history", "all"], nargs="?", default="fast")
     parser.add_argument("--target", choices=["jf12", "all"], default="all")
+    parser.add_argument("--project", choices=["chromium", "mobile-chromium", "firefox"], help="Run only this Playwright project (browser/visual suites), e.g. to shard CI")
     parser.add_argument("--artifacts", type=Path, default=ROOT / "artifacts" / "regression")
     args = parser.parse_args()
     suites = {"fast": ["tooling", "backend", "frontend"], "all": ["tooling", "backend", "frontend", "browser", "poster", "host", "mutation", "history"]}.get(args.suite, [args.suite])
@@ -93,7 +94,7 @@ def main():
         elif suite == "frontend":
             execute("frontend", ["npm", "run", "test:frontend:coverage"])
         elif suite in ["browser", "visual"]:
-            execute(suite, ["npm", "run", "test:" + suite])
+            execute(suite, ["npm", "run", "test:" + suite] + (["--", "--project", args.project] if args.project else []))
         elif suite == "host":
             execute("host", [sys.executable, "tests/host/run.py", "--target", args.target, "--browser", "--artifacts", artifacts / "host"])
         elif suite == "poster":
