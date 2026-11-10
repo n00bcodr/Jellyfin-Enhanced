@@ -368,10 +368,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // v10 is the Media Tags redesign's cache: Status facts (dates, schedule, milestones, scenes, leaving),
         // source ratings, awards, logos, custom tag matches, library ids, subtitle languages, naming labels,
         // per-version quality facts and the series quality summaries.
-        // v23 gives a BoxSet its newest member's added date (LatestEpisodeAdded / LatestEpisodeId) for "Just Added".
-        // (It skips 11-22: development builds of the redesign wrote snapshots with those numbers.)
+        // v52 gives a BoxSet its newest member's added date (LatestEpisodeAdded / LatestEpisodeId) for "Just Added".
+        // (It skips 11-51: development builds of the redesign wrote snapshots with those numbers.)
         // A schema mismatch discards the stale cache so it can be rebuilt.
-        internal const int CurrentCacheSchemaVersion = 23;
+        internal const int CurrentCacheSchemaVersion = 52;
 
         // Page size for hydrating library items during full builds and
         // reconciliation. Fetching the whole library with one GetItemList call
@@ -4412,16 +4412,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var members = new List<Guid>();
                 var entryless = new Dictionary<Guid, string>();
                 (long Added, string Id)? newest = null;
-                foreach (var member in folder.GetLinkedChildren())
+                var linked = folder.GetLinkedChildren();
+                // A folder-based box set holds its members as real children, not links.
+                foreach (var member in linked.Concat(FolderChildren(folder)))
                 {
-                    // Every member of a kind the cache holds, in an included library: one that gets an entry
-                    // of its own, whether or not that entry is built yet (the per-user filter reads it later).
-                    if (TaggableTypes.Contains(member.GetBaseItemKind()) && !IsInExcludedLibrary(member)
+                    if (IsDatedCollectionMember(member) && !IsInExcludedLibrary(member)
                         && ToUnixMilliseconds(member.DateCreated) is { } added && (newest == null || added > newest.Value.Added))
                     {
                         newest = (added, member.Id.ToString("N").ToLowerInvariant());
                     }
+                }
 
+                foreach (var member in linked)
+                {
                     if (member.GetBaseItemKind() is not (BaseItemKind.Movie or BaseItemKind.Series)) continue;
                     members.Add(member.Id);
                     var (memberAudio, memberSubtitles, memberSdh, hasEntry) = MemberLanguages(member);
@@ -4453,6 +4456,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 _logger.Warning($"[TagCache] Failed to get collection languages for {collection.Id}: {ex.Message}");
                 return (Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>(), null);
+            }
+        }
+
+        /// <summary>
+        /// Whether a collection member's added date can stand for the collection's "Just Added": a kind the
+        /// cache holds, so it gets an entry of its own (built already or not; the per-user filter reads it
+        /// later). Never another collection: its own date is reset when a tool creates it again.
+        /// </summary>
+        /// <param name="member">A linked or real child of a BoxSet.</param>
+        internal static bool IsDatedCollectionMember(BaseItem member) =>
+            member.GetBaseItemKind() is var kind && kind != BaseItemKind.BoxSet && TaggableTypes.Contains(kind);
+
+        /// <summary>A folder's real (not linked) children, or none when they cannot be read.</summary>
+        private IEnumerable<BaseItem> FolderChildren(Folder folder)
+        {
+            try
+            {
+                return folder.Children?.ToArray() ?? Array.Empty<BaseItem>();
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"[TagCache] Failed to read the children of collection {folder.Id}: {ex.Message}");
+                return Array.Empty<BaseItem>();
             }
         }
 

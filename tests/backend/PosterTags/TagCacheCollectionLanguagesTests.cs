@@ -36,6 +36,13 @@ public class TagCacheCollectionLanguagesTests
         public override List<MediaSourceInfo> GetMediaSources(bool enablePathSubstitution) => Sources;
     }
 
+    /// <summary>A folder-based box set: Jellyfin loads its members from disk as real children.</summary>
+    private sealed class BoxSet : MediaBrowser.Controller.Entities.Movies.BoxSet
+    {
+        public List<BaseItem> RealChildren { get; set; } = [];
+        public override IEnumerable<BaseItem> Children => RealChildren;
+    }
+
     private sealed class Episode : MediaBrowser.Controller.Entities.TV.Episode
     {
         public List<MediaSourceInfo> Sources { get; set; } = [];
@@ -222,14 +229,24 @@ public class TagCacheCollectionLanguagesTests
         var oldClip = new Video { Id = Guid.NewGuid(), Name = "Old clip", DateCreated = now.AddYears(-2) };
         // Not a kind the cache holds: its date never counts (no user's access set could vouch for it).
         var album = new MediaBrowser.Controller.Entities.Audio.MusicAlbum { Id = Guid.NewGuid(), Name = "Album", DateCreated = now.AddHours(-1) };
-        var box = new BoxSet { Id = Guid.NewGuid(), Name = "Clips", DateCreated = now.AddYears(-1), LinkedChildren = [new LinkedChild { ItemId = clip.Id }, new LinkedChild { ItemId = oldClip.Id }, new LinkedChild { ItemId = album.Id }] };
-        library.Items.AddRange(new BaseItem[] { clip, oldClip, album, box });
+        // A collection inside the collection, recreated by last night's scan: its own date says nothing either.
+        var inner = new BoxSet { Id = Guid.NewGuid(), Name = "Inner", DateCreated = now.AddHours(-2), LinkedChildren = [new LinkedChild { ItemId = oldClip.Id }] };
+        var box = new BoxSet { Id = Guid.NewGuid(), Name = "Clips", DateCreated = now.AddYears(-1), LinkedChildren = [new LinkedChild { ItemId = clip.Id }, new LinkedChild { ItemId = oldClip.Id }, new LinkedChild { ItemId = album.Id }, new LinkedChild { ItemId = inner.Id }] };
+        var outer = new BoxSet { Id = Guid.NewGuid(), Name = "Outer", DateCreated = now.AddYears(-1), LinkedChildren = [new LinkedChild { ItemId = inner.Id }, new LinkedChild { ItemId = oldClip.Id }] };
+        // A folder-based box set: its members are real children, not links.
+        var inFolder = new Video { Id = Guid.NewGuid(), Name = "In folder", DateCreated = now.AddDays(-2) };
+        var folderBox = new BoxSet { Id = Guid.NewGuid(), Name = "Folder box", DateCreated = now.AddYears(-1), RealChildren = [inFolder] };
+        library.Items.AddRange(new BaseItem[] { clip, oldClip, album, inner, box, outer, folderBox, inFolder });
 
         WithCache(library, cache =>
         {
             Assert.True(cache.TryGetEntry(box.Id, out var built));
             Assert.Equal(TagCacheService.ToUnixMilliseconds(clip.DateCreated), built.LatestEpisodeAdded);
             Assert.Equal(clip.Id.ToString("N"), built.LatestEpisodeId);
+            Assert.True(cache.TryGetEntry(outer.Id, out var nested));
+            Assert.Equal(oldClip.Id.ToString("N"), nested.LatestEpisodeId);
+            Assert.True(cache.TryGetEntry(folderBox.Id, out var folderBuilt));
+            Assert.Equal(inFolder.Id.ToString("N"), folderBuilt.LatestEpisodeId);
         });
     }
 

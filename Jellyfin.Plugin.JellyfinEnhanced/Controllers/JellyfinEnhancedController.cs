@@ -9828,7 +9828,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     {
                         foreach (var member in ((Folder)tagCollection).GetChildren(user, true))
                         {
-                            if (!Services.TagCacheService.TaggableTypes.Contains(member.GetBaseItemKind())) continue;
+                            if (!Services.TagCacheService.IsDatedCollectionMember(member)) continue;
                             if (Services.TagCacheService.ToUnixMilliseconds(member.DateCreated) is { } added && (newestMember == null || added > newestMember)) newestMember = added;
                         }
                     }

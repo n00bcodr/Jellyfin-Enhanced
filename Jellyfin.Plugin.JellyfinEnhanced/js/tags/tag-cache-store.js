@@ -57,7 +57,7 @@
     // The server's tag-cache entry schema (TagCacheService
     // CurrentCacheSchemaVersion) the stored entries were written with; a copy
     // from another schema is never restored.
-    const ENTRY_SCHEMA = 23;
+    const ENTRY_SCHEMA = 52;
 
     /** @type {Promise<IDBDatabase>|null} */
     let dbPromise = null;

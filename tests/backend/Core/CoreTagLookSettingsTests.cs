@@ -247,6 +247,7 @@ public class CoreTagLookSettingsTests
     [InlineData(10)]
     [InlineData(11)]
     [InlineData(20)]
+    [InlineData(23)]
     [InlineData(51)] // a development build's snapshot
     public void OlderSnapshotsAreDiscardedForRebuild(int oldSchema)
     {
