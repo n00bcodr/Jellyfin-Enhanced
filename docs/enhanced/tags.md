@@ -896,7 +896,7 @@ First match wins, with one badge per card. When switched on, **Leaving soon** co
 | **#N Today / #N This Week** | Movie, series | TMDB daily trending rank, or Seerr weekly trending fallback; requires the item's TMDB ID |
 | **Coming Soon** | Movie, series | Jellyfin `PremiereDate` is in the future, including virtual items returned through fallback |
 | **New Movie / New Series** | Movie / series | Jellyfin premiere date falls within the new-release window and has passed |
-| **New Episode** | Series, season, episode | A container's latest non-virtual episode was added within the just-added window and the container predates that window. An episode itself aired or was added within that window |
+| **New Episode** | Series, season, episode | A container's latest non-virtual episode was added within the just-added window and the container predates that window, unless you have watched all of it (its played check shows on the poster). An episode itself aired or was added within that window |
 | **Just Added** | All supported types | Jellyfin `DateCreated`, the date used by **Date Added** sorting, falls within the just-added window. A collection uses the newest `DateCreated` among its members instead of its own date, and shows no badge when you cannot see that member: Jellyfin can create automatic collections again during a library scan, which would mark every one of them as just added |
 | **New Season** | Series | The newest regular season's episode 1 aired within the new-release window; season number must exceed 1 |
 | **Season Premiere** | Season, episode | The season's episode 1 aired within the new-release window; an episode card must itself be episode 1 of a regular season and have aired within the just-added window |

@@ -747,9 +747,10 @@
      * Pick the one badge a card shows (first match wins), or null.
      * @param {StatusData} data - Card snapshot, refreshed from shared facts when available.
      * @param {string|null} itemId - The card's own item id (never its parent id).
+     * @param {Element|null} [el] - The card, whose played check says the viewer has watched it all.
      * @returns {{kind: string, key: string, label: string, compact?: string, rank?: number}|null}
      */
-    function pickBadge(data, itemId) {
+    function pickBadge(data, itemId, el) {
         const current = JE.tagPipeline?.peekItemFacts?.(normId(itemId));
         if (current) {
             // Shared caller-filtered facts are authoritative, including removed fields.
@@ -787,8 +788,10 @@
         // "New Episode" on a container: an episode arrived recently in a
         // container that was itself already there before the window (else it
         // is just added).
+        // Not for a viewer who has watched everything in it: Jellyfin shows that as the card's played check.
+        const watchedAll = !!(el?.closest('.card') || el)?.querySelector('.playedIndicator');
         const newEpisode = isWithin(data.latest, now, justAddedMs)
-            && data.created !== null && now - data.created > justAddedMs;
+            && data.created !== null && now - data.created > justAddedMs && !watchedAll;
         // TMDB's next/last episode, as day numbers and days from today.
         const nextDay = airDay(facts?.next?.date);
         const lastDay = airDay(facts?.last?.date);
@@ -1050,7 +1053,7 @@
         activateStatus(ctx);
         ensureTrending(ctx);
         const readsSeries = wantsSeriesFacts(data);
-        const badge = pickBadge(data, itemId);
+        const badge = pickBadge(data, itemId, el);
         // All date badges can change when a local day passes.
         const previous = liveCards.get(el);
         if (!readsSeries || (previous && (previous.id !== normId(itemId) || previous.domId !== cardIdentity(el)))) {
@@ -1243,7 +1246,7 @@
                 forgetSeriesCard(/** @type {HTMLElement} */ (el));
                 return;
             }
-            const badge = pickBadge(card.data, card.id);
+            const badge = pickBadge(card.data, card.id, el);
             const key = badgeKey(badge);
             if (key === card.shown) return;
             card.shown = key;

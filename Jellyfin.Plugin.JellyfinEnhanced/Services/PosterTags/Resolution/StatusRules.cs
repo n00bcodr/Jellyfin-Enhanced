@@ -11,7 +11,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution;
 
 /// <summary>Live, caller-filtered inputs for the pure status decision. No remote data is persisted in the tag cache.</summary>
 /// <param name="WeeklyRank">The rank came from Seerr's weekly list ("#N This Week"), not TMDB's daily one.</param>
-public sealed record PosterStatusContext(DateTimeOffset Now, SeriesSchedule? Schedule = null, int? Rank = null, TagCacheEntry? Series = null, bool WeeklyRank = false);
+public sealed record PosterStatusContext(DateTimeOffset Now, SeriesSchedule? Schedule = null, int? Rank = null, TagCacheEntry? Series = null, bool WeeklyRank = false, bool WatchedAll = false);
 
 /// <summary>
 /// The statustags.js first-match decision, with the same embedded vocabulary, thresholds and translated labels.
@@ -74,7 +74,8 @@ public static class StatusRules
         var comingSoon = PremiereDay(data.PremiereDate) > today;
         // A collection is recreated by library scans (a fresh DateCreated every time), so its newest member's date stands in.
         var addedRecently = Within(data.Type == "BoxSet" ? data.LatestEpisodeAdded : data.DateCreated, now, justAddedMs);
-        var newEpisode = Within(data.LatestEpisodeAdded, now, justAddedMs) && data.DateCreated is { } created && now - created > justAddedMs;
+        // Not for a viewer who has watched all of it (the web checks the card's played check).
+        var newEpisode = Within(data.LatestEpisodeAdded, now, justAddedMs) && data.DateCreated is { } created && now - created > justAddedMs && !context.WatchedAll;
         var nextDay = AirDate(facts?.NextAired?.Date);
         var lastDay = AirDate(facts?.LastAired?.Date);
         var daysToNext = nextDay?.DayNumber - today.DayNumber;

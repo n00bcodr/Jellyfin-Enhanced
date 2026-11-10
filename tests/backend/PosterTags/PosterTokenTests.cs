@@ -145,7 +145,7 @@ public class PosterTokenTests : IDisposable
     [InlineData("")]
     [InlineData("abcdef")]
     [InlineData("0000000000000000000000G")]
-    [InlineData("40000000000000000000000")]
+    [InlineData("80000000000000000000000")]
     [InlineData("000000000000000000000000")]
     public void Invalid_token_shapes_are_rejected(string? token) => Assert.False(PosterTagVariantToken.TryParse(token, out _));
 

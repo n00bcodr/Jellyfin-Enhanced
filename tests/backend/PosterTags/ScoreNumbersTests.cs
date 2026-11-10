@@ -184,6 +184,15 @@ public class StatusCompletionProofTests
         Assert.NotEqual("series_finale", Badge(series, new SeriesSchedule("Ended", null, null)));
     }
 
+    [Fact]
+    public void NewEpisodeIsHiddenOnceTheViewerHasWatchedAllOfIt()
+    {
+        var series = new TagCacheEntry { Type = "Series", DateCreated = Now.AddYears(-1).ToUnixTimeMilliseconds(), LatestEpisodeAdded = Now.AddDays(-1).ToUnixTimeMilliseconds() };
+        var settings = PosterTagSettings.FromUserSettings(new() { StatusTagsEnabled = true, NativePosterTimeZone = "UTC" }, new PluginConfiguration { StatusTagsEnabled = true }, null);
+        Assert.Equal("new_episode", StatusRules.Resolve(series, settings, new(Now))?.Key);
+        Assert.NotEqual("new_episode", StatusRules.Resolve(series, settings, new(Now, WatchedAll: true))?.Key);
+    }
+
     [Theory]
     [InlineData(3, "binge_ready")]
     [InlineData(60, "series_finale")]
