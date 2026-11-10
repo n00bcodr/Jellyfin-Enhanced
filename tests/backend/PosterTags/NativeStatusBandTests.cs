@@ -48,7 +48,8 @@ public class NativeStatusBandTests
     public void A_collection_shows_a_status_badge_unless_the_admin_turns_collections_off()
     {
         var created = new DateTimeOffset(2026, 10, 30, 12, 0, 0, TimeSpan.Zero);
-        var collection = new TagCacheEntry { Type = "BoxSet", DateCreated = created.AddDays(-1).ToUnixTimeMilliseconds() };
+        // A collection is badged by its newest member's added date, never its own.
+        var collection = new TagCacheEntry { Type = "BoxSet", DateCreated = created.AddYears(-1).ToUnixTimeMilliseconds(), LatestEpisodeAdded = created.AddDays(-1).ToUnixTimeMilliseconds() };
         var movie = new TagCacheEntry { Type = "Movie", DateCreated = created.AddDays(-1).ToUnixTimeMilliseconds() };
         var context = new PosterStatusContext(created);
         var on = Settings("{statusTagsEnabled:true}");
@@ -63,7 +64,7 @@ public class NativeStatusBandTests
     [Fact]
     public void Status_urls_retire_each_five_minutes_even_when_settings_snapshot_is_cached()
     {
-        Assert.Equal("39", PosterTagSettings.ResolverVersion);
+        Assert.Equal("40", PosterTagSettings.ResolverVersion);
         var on = Settings("{statusTagsEnabled:true}");
         var off = Settings("{qualityTagsEnabled:true}");
         Assert.NotEqual(on.DigestAt(Now), on.DigestAt(Now.AddMinutes(5)));

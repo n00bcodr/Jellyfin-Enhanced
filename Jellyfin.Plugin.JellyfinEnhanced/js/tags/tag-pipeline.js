@@ -81,7 +81,7 @@
     // downloaded in full, so new entry fields never wait for a server rebuild
     // that happens to change the cache version. Current schema: Awards, Logos and Custom matches.
     // Use the store identity in the bundle; standalone fallback has the same entry schema.
-    const STORED_ENTRY_SCHEMA = JE.tagCacheStore?.ENTRY_SCHEMA ?? 10;
+    const STORED_ENTRY_SCHEMA = JE.tagCacheStore?.ENTRY_SCHEMA ?? 52;
     const MEMORY_SOFT_CAP = 20000;
     // A full load comes in pages of this many entries (GET tag-cache?limit=&after=): no response, parse or
     // string holds the whole library. A server without paging answers the first request in full.
@@ -1592,7 +1592,8 @@
         const epoch = JE.session?.getEpoch?.();
         const response = await ApiClient.ajax({
             type: 'POST',
-            url: ApiClient.getUrl(`/JellyfinEnhanced/tag-data/${userId}`),
+            // With the episode and collection-member dates: the Status renderer draws (and keeps) this answer.
+            url: ApiClient.getUrl(`/JellyfinEnhanced/tag-data/${userId}`, { latestEpisode: true }),
             data: JSON.stringify([itemId]),
             contentType: 'application/json',
             dataType: 'json'

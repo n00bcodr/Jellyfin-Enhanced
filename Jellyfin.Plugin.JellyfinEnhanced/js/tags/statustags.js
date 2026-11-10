@@ -26,7 +26,8 @@
 //           → Just Added
 //   Episode Season Premiere → Series Finale / Season Finale → New Episode
 //           → Just Added
-//   BoxSet, Video: Just Added
+//   BoxSet: Just Added (its newest member's added date)
+//   Video: Just Added
 // Library facts come from the server tag cache (DateCreated, PremiereDate,
 // LatestEpisodeAdded/Aired/Index, SeasonPremiere, SeasonAddedSpan, Status;
 // Unix ms) or the /tag-data batch fallback. Two live sources come on top:
@@ -58,7 +59,8 @@
     // the persistent cache only answers for this long before a re-fetch.
     const CACHE_FRESH_MS = 60 * 60 * 1000;
     // Shape of the fallback cache entries; older entries count as misses.
-    const CACHE_ENTRY_VERSION = 5;
+    // v6: a collection's entry carries its newest member's added date.
+    const CACHE_ENTRY_VERSION = 6;
     const TRENDING_TTL_MS = 30 * 60 * 1000;
     // A failed or empty trending fetch is retried sooner than a good list expires.
     const TRENDING_RETRY_MS = 5 * 60 * 1000;
@@ -186,7 +188,7 @@
      * @property {string|null} tmdb - The item's TMDB id (trending).
      * @property {number|null} created - DateCreated (ms).
      * @property {number|null} premiere - PremiereDate (ms; Movie/Series/Episode).
-     * @property {number|null} latest - Series/Season: newest episode DateCreated (ms).
+     * @property {number|null} latest - Series/Season: newest episode DateCreated (ms); BoxSet: newest member DateCreated (ms).
      * @property {string|null} status - Series: Jellyfin status (Continuing/Ended/Unreleased).
      * @property {number|null} latestAired - Series/Season: newest episode air date (ms).
      * @property {{s: number, e: number, isLast: boolean}|null} latestIndex - Its season/episode numbers.
@@ -753,7 +755,7 @@
             // Shared caller-filtered facts are authoritative, including removed fields.
             Object.assign(data, readFacts(current), { latest: toMs(current.LatestEpisodeAdded) });
         }
-        // An admin switch: a collection's date is when a tool created it, so it can look just added again and again.
+        // An admin switch: no status badge on collections at all.
         if (data.type === 'BoxSet' && JE.pluginConfig?.StatusTagsOnCollections === false) return null;
         const now = Date.now();
         const today = localDay(now);
@@ -778,7 +780,9 @@
         const airedWithin = (ms, windowMs) => { const day = premiereDay(ms); return day !== null && day <= today && (today - day) * DAY_MS <= windowMs; };
         const isNewRelease = airedWithin(data.premiere, newReleaseMs);
         const comingSoon = data.premiere !== null && premiereDay(data.premiere) > today;
-        const addedRecently = isWithin(data.created, now, justAddedMs);
+        // A collection is recreated by library scans (a fresh DateCreated every time), so its
+        // newest member's added date stands in; without that fact it shows no badge.
+        const addedRecently = isWithin(data.type === 'BoxSet' ? data.latest : data.created, now, justAddedMs);
         // "New Episode" on a container: an episode arrived recently in a
         // container that was itself already there before the window (else it
         // is just added).
