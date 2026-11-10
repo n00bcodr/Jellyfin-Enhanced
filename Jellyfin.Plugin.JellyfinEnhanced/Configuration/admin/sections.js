@@ -1180,6 +1180,14 @@ JEAdmin.define({
 
 /* ===== Services: linked copies of cards that live in their feature tabs ===== */
 JEAdmin.define({
+    // Maintainerr's address and key are fields of the Media Tags tab (Status badges > Leaving soon); this card only explains and links.
+    'svc-maintainerr': {
+        title: 'Maintainerr', iconImg: 'selfhst/svg/maintainerr.svg',
+        items: [
+            { type: 'note', html: 'Maintainerr is only used to show <strong>how many days are left</strong> before an item leaves, on the <strong>Leaving soon</strong> media tag. Nothing else in Jellyfin Enhanced talks to it.' },
+            { type: 'custom', html: '<a class="jea-btn jea-btn-primary" href="#/configurationpage?name=Jellyfin%20Enhanced&amp;jeSection=media-tags&amp;tab=badges"><i class="material-icons" aria-hidden="true">sell</i><span>Set up Leaving soon</span></a>' }
+        ]
+    },
     'svc-tmdb': { mirrorOf: 'elsewhere-tmdb' },
     'svc-anilist': { mirrorOf: 'reviews-anilist' },
     'svc-mdblist': { mirrorOf: 'mdblist' },
