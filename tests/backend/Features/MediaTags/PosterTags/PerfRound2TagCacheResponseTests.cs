@@ -925,6 +925,60 @@ public class PerfRound2TagCacheResponseTests
         Assert.DoesNotContain("SeasonAddedSpan\":{", JsonSerializer.Serialize(plain.Value));
     }
 
+    /// <summary>A box set whose members are whatever the test says each user may see (Jellyfin filters them through the user). Named as its kind: Jellyfin reads an item's kind from its type name.</summary>
+    private sealed class BoxSet : MediaBrowser.Controller.Entities.Movies.BoxSet
+    {
+        public Dictionary<Guid, BaseItem[]> Seen { get; } = [];
+        public bool Unreadable { get; set; }
+        public override IReadOnlyList<BaseItem> GetChildren(User user, bool includeLinkedChildren, InternalItemsQuery? query)
+            => Unreadable ? throw new InvalidOperationException("unreadable") : Seen.TryGetValue(user.Id, out var members) ? members : [];
+    }
+
+    /// <summary>
+    /// Upstream 324b5c92. The fallback gives a collection its newest member's added date ("Just Added" reads it, never
+    /// the collection's own date), from the members the asking user can see, and only when the Status renderer asks.
+    /// </summary>
+    [Fact]
+    public void TagDataFallbackGivesACollectionTheNewestMemberTheUserCanSee()
+    {
+        using var endpoint = new Endpoint();
+        long Ms(DateTime date) => new DateTimeOffset(date, TimeSpan.Zero).ToUnixTimeMilliseconds();
+        var old = new MediaBrowser.Controller.Entities.Movies.Movie { Id = Guid.NewGuid(), Name = "Old", DateCreated = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc) };
+        var arrival = new MediaBrowser.Controller.Entities.Movies.Movie { Id = Guid.NewGuid(), Name = "Arrival", DateCreated = new DateTime(2026, 10, 29, 0, 0, 0, DateTimeKind.Utc) };
+        // Kinds that never supply the date: one the tags do not cover, and a collection inside the collection.
+        var album = new MediaBrowser.Controller.Entities.Audio.MusicAlbum { Id = Guid.NewGuid(), Name = "Album", DateCreated = new DateTime(2026, 10, 30, 0, 0, 0, DateTimeKind.Utc) };
+        var inner = new MediaBrowser.Controller.Entities.Movies.BoxSet { Id = Guid.NewGuid(), Name = "Inner", DateCreated = new DateTime(2026, 10, 30, 0, 0, 0, DateTimeKind.Utc) };
+        // Recreated by last night's scan: the collection's own date is the newest of all.
+        var box = new BoxSet { Id = Guid.NewGuid(), Name = "Box", DateCreated = new DateTime(2026, 10, 30, 6, 0, 0, DateTimeKind.Utc) };
+        box.Seen[endpoint.Alice.Id] = [old, arrival, album, inner];
+        box.Seen[endpoint.Bob.Id] = [old, album, inner];
+        var empty = new BoxSet { Id = Guid.NewGuid(), Name = "Empty", DateCreated = new DateTime(2026, 10, 30, 6, 0, 0, DateTimeKind.Utc) };
+        endpoint.Library.Setup(x => x.GetItemById<BaseItem>(box.Id, It.IsAny<User>())).Returns(box);
+        endpoint.Library.Setup(x => x.GetItemById<BaseItem>(empty.Id, It.IsAny<User>())).Returns(empty);
+        endpoint.Library.Setup(x => x.GetItemList(It.IsAny<InternalItemsQuery>())).Returns([]);
+        JsonElement[] Ask(User user, bool latestEpisode)
+        {
+            endpoint.SignIn(user);
+            var ok = Assert.IsType<OkObjectResult>(ApiAssetTests.SiblingOf<JeMediaTagsController>(endpoint.Controller).GetTagData(Guid.Empty, [box.Id.ToString(), empty.Id.ToString()], latestEpisode: latestEpisode));
+            return [.. JsonDocument.Parse(JsonSerializer.Serialize(ok.Value)).RootElement.GetProperty("Items").EnumerateArray()];
+        }
+
+        var alice = Ask(endpoint.Alice, true);
+        Assert.Equal("BoxSet", alice[0].GetProperty("Type").GetString());
+        Assert.Equal(Ms(arrival.DateCreated), alice[0].GetProperty("LatestEpisodeAdded").GetInt64());
+        Assert.Equal(Ms(box.DateCreated), alice[0].GetProperty("DateCreated").GetInt64()); // its own date is still sent, as before
+        Assert.Equal(JsonValueKind.Null, alice[1].GetProperty("LatestEpisodeAdded").ValueKind); // no member, no date
+        // Bob cannot see the arrival: his answer is the older member, not the hidden one.
+        Assert.Equal(Ms(old.DateCreated), Ask(endpoint.Bob, true)[0].GetProperty("LatestEpisodeAdded").GetInt64());
+        // Without the flag the members are not read.
+        Assert.Equal(JsonValueKind.Null, Ask(endpoint.Alice, false)[0].GetProperty("LatestEpisodeAdded").ValueKind);
+        // One unreadable collection does not fail the batch: it has no date, and the other item is still answered.
+        box.Unreadable = true;
+        var afterFailure = Ask(endpoint.Alice, true);
+        Assert.Equal(2, afterFailure.Length);
+        Assert.Equal(JsonValueKind.Null, afterFailure[0].GetProperty("LatestEpisodeAdded").ValueKind);
+    }
+
     /// <summary>The representative-episode scan (by sort name), which these tests leave empty.</summary>
     private static bool RepresentativeScan(InternalItemsQuery q) => q.OrderBy.Any(o => o.OrderBy == ItemSortBy.SortName);
 

@@ -1983,6 +1983,9 @@
           "StatusTagsNewReleaseDays": {
             "type": "integer"
           },
+          "StatusTagsOnCollections": {
+            "type": "boolean"
+          },
           "StatusTagsPosition": {
             "type": "string"
           },
@@ -2401,6 +2404,7 @@
           "StatusTagsMilestones",
           "StatusTagsNewRelease",
           "StatusTagsNewReleaseDays",
+          "StatusTagsOnCollections",
           "StatusTagsPosition",
           "StatusTagsScenes",
           "StatusTagsSchedule",

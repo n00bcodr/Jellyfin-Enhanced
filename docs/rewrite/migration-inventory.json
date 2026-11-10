@@ -1723,7 +1723,7 @@
       "source": "client/src/admin/config/startup-entry.ts",
       "template": "client/html/admin-config/configPage.html",
       "manifest": "client/html-entries/admin-config.json",
-      "sha256": "2cbd607328643a45fa142b676780ae13562df334b41e45d72e2ae1b0d159761b"
+      "sha256": "39574f81b7cedbfdb06f8e875d712439c4570c8a85a0241b1823271a3be02c32"
     },
     {
       "path": "Configuration/configPage.html",
@@ -1733,7 +1733,7 @@
       "source": "client/src/admin/config/page-entry.ts",
       "template": "client/html/admin-config/configPage.html",
       "manifest": "client/html-entries/admin-config.json",
-      "sha256": "c1f27c10c86aea6c0b859ab0b000cf289c98628d79a9022bec254c7da21da70b"
+      "sha256": "a28b69a9e28235f9bf8c4355cd049f5abb10828c0ffdc7291c26a9708dda93b0"
     },
     {
       "path": "Configuration/mediaTagsPage.html",

@@ -1,11 +1,12 @@
+import { mediaTagsSurface } from '../../../host/admin-config-host';
 import type { PageModules } from './modules';
 import { asHtml, needControl, needHtml, needInput, plainLabel } from './dom';
 
 /** Dependencies this module calls; members are resolved lazily, after every module exists. */
-export type SearchDeps = Pick<PageModules, 'context' | 'links' | 'tabs'>;
+export type SearchDeps = Pick<PageModules, 'context' | 'links' | 'mediaTagsTab' | 'tabs'>;
 
 export function createSearch(m: SearchDeps) {
-    const { form } = m.context;
+    const { form, lifecycle } = m.context;
 
             // === Settings Search ===
             const searchInput = needInput(document.getElementById('settingsSearchInput'));
@@ -238,6 +239,8 @@ export function createSearch(m: SearchDeps) {
                 m.tabs.activateTab(savedTab);
                 searchCount.style.display = 'none';
                 searchClear.style.display = 'none';
+                const mtBox = asHtml(document.getElementById('jeMtSearchResults'));
+                if (mtBox) mtBox.hidden = true;
             }
 
             /**
@@ -332,6 +335,80 @@ export function createSearch(m: SearchDeps) {
                 }
                 searchCount.style.display = 'block';
                 searchClear.style.display = 'block';
+                searchMediaTags(query);
+            }
+
+            /**
+             * The Media Tags tab is drawn on demand outside this form, so the loop above never sees it: search its
+             * sections' declared titles, labels and descriptions instead, and list the matches under the form.
+             * @param {string} query - Lowercase search term.
+             */
+            function searchMediaTags(query: string) : void {
+                const box = asHtml(document.getElementById('jeMtSearchResults'));
+                if (!box) return;
+                // Drawn already: its declarations are there to read. Mounting it again would read the whole
+                // configuration (and reload the tab) for every query typed.
+                const drawn = mediaTagsSurface()?.adminTags?.current?.();
+                void (drawn ? Promise.resolve(drawn) : m.mediaTagsTab.jeMountMediaTags()).then(function (ctx) {
+                    // A newer query replaced this one, or the view is gone.
+                    if (lifecycle.disposed || searchInput.value.toLowerCase().trim() !== query) return;
+                    const at = mediaTagsSurface()?.adminTags;
+                    const sections = at?.sections;
+                    if (!ctx || !at || !sections) { box.hidden = true; return; }
+                    const t = function (text: string | undefined, params?: Readonly<Record<string, unknown>>) : string {
+                        try { return String(at.fmt ? at.fmt(text ?? '', params) : text ?? ''); } catch (e) { return String(text ?? ''); }
+                    };
+                    const tabName = new Map(m.mediaTagsTab.JE_MT_SECTIONS);
+                    const hits: Array<{ tab: string; group: string | null; where: string; label: string; id: string }> = [];
+                    sections.forEach(function (sec) {
+                        const secTitle = t(sec.title);
+                        const where = (tabName.get(sec.tab) ?? sec.tab) + (secTitle ? ' \u203a ' + secTitle : '');
+                        const sectionHit = (secTitle + ' ' + t(sec.hint)).toLowerCase().includes(query);
+                        (sec.fields ?? []).forEach(function (f) {
+                            if (!f.label) return;
+                            const label = t(f.label);
+                            const desc = f.desc ? t(f.desc, f.descParams) : '';
+                            if (sectionHit || (label + ' ' + desc + ' ' + f.id).toLowerCase().includes(query)) {
+                                hits.push({ tab: sec.tab, group: sec.group?.id ?? null, where: where, label: label, id: f.id });
+                            }
+                        });
+                    });
+                    box.textContent = '';
+                    if (!hits.length) { box.hidden = true; return; }
+                    const head = document.createElement('div');
+                    head.className = 'je-search-tab-label';
+                    head.textContent = 'Media Tags';
+                    box.appendChild(head);
+                    hits.slice(0, 40).forEach(function (h) {
+                        const b = document.createElement('button');
+                        b.type = 'button';
+                        b.className = 'je-mt-search-hit';
+                        const title = document.createElement('strong');
+                        title.textContent = h.label;
+                        const sub = document.createElement('span');
+                        sub.textContent = h.where;
+                        b.appendChild(title);
+                        b.appendChild(sub);
+                        b.addEventListener('click', function () {
+                            clearTimeout(searchDebounce);
+                            searchInput.value = '';
+                            performSearch('');
+                            void m.mediaTagsTab.jeOpenMediaTags(h.tab, h.group, false).then(function () {
+                                lifecycle.timeout(function () {
+                                    // Found by its data, not by a selector built from the id.
+                                    const row = Array.from(document.querySelectorAll<HTMLElement>('#media-tags [data-field-row]')).find(r => r.dataset.fieldRow === h.id);
+                                    if (!row) return;
+                                    row.scrollIntoView({ block: 'center' });
+                                    const ctl = row.querySelector<HTMLElement>('input, select, textarea');
+                                    if (ctl) ctl.focus({ preventScroll: true });
+                                }, 150);
+                            });
+                        });
+                        box.appendChild(b);
+                    });
+                    box.hidden = false;
+                    if (searchCount.textContent === 'No results') searchCount.textContent = hits.length + ' in Media Tags';
+                });
             }
 
     /** Runs this module's start-up work, in the page's original order. */

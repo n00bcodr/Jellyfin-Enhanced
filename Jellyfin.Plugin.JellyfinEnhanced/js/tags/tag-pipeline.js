@@ -46,7 +46,7 @@
   var logPrefix = "🪼 Jellyfin Enhanced [TagPipeline]:";
   var MEMORY_SOFT_CAP = 2e4;
   function createPipelineState(JE) {
-    const STORED_ENTRY_SCHEMA = JE.tagCacheStore?.ENTRY_SCHEMA ?? 10;
+    const STORED_ENTRY_SCHEMA = JE.tagCacheStore?.ENTRY_SCHEMA ?? 52;
     let prefetchedStripRevision;
     try {
       prefetchedStripRevision = JE.takePrefetched?.("TagStripRevision");
@@ -565,7 +565,8 @@
       const epoch = JE.session?.getEpoch?.();
       const response = export10(await deps.apiClient().ajax({
         type: "POST",
-        url: deps.apiClient().getUrl(`/JellyfinEnhanced/tag-data/${userId}`),
+        // With the episode and collection-member dates: the Status renderer draws (and keeps) this answer.
+        url: deps.apiClient().getUrl(`/JellyfinEnhanced/tag-data/${userId}`, { latestEpisode: true }),
         data: JSON.stringify([itemId]),
         contentType: "application/json",
         dataType: "json"

@@ -64,7 +64,7 @@ export function createTagCacheStore() {
     // The server's tag-cache entry schema (TagCacheService
     // CurrentCacheSchemaVersion) the stored entries were written with; a copy
     // from another schema is never restored.
-    const ENTRY_SCHEMA = 10;
+    const ENTRY_SCHEMA = 52;
     let dbPromise: Promise<IDBDatabase>|null = null;
     let unavailable = false;
 

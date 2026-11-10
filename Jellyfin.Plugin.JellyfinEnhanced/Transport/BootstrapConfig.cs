@@ -158,6 +158,7 @@ public sealed class BootstrapPublicConfig
     public required bool StatusTagsLeaving { get; init; }
     public required bool StatusTagsDirectPlay { get; init; }
     public required bool LeavingSoonAvailable { get; init; }
+    public required bool StatusTagsOnCollections { get; init; }
     public required int StatusTagsJustAddedDays { get; init; }
     public required int StatusTagsNewReleaseDays { get; init; }
     public required string TagLayout { get; init; }

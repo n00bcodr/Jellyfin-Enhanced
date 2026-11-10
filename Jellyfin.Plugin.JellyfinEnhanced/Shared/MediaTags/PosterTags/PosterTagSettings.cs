@@ -42,7 +42,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags.PosterTags
         /// Version of the resolution rules, part of <see cref="Digest"/>. Bump it when a change to
         /// the resolver changes the tags produced for the same settings and data.
         /// </summary>
-        public const string ResolverVersion = "40";
+        public const string ResolverVersion = "41";
 
         private static readonly JsonSerializerSettings LenientRead = new() { NullValueHandling = NullValueHandling.Ignore };
 
@@ -131,6 +131,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags.PosterTags
         public bool StatusScenes { get; private init; }
         /// <summary>Leaving soon family: the user's switch, while a Leaving soon source is set.</summary>
         public bool StatusLeaving { get; private init; }
+        /// <summary>Admin switch: whether a collection (box set) can carry a status badge.</summary>
+        public bool StatusOnCollections { get; private init; } = true;
         public int StatusJustAddedDays { get; private init; }
         public int StatusNewReleaseDays { get; private init; }
         public bool StatusRemoteEnabled { get; private init; }
@@ -562,6 +564,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags.PosterTags
                 StatusSeriesStatus = user.StatusTagsSeriesStatus,
                 StatusScenes = user.StatusTagsScenes,
                 StatusLeaving = user.StatusTagsLeaving && LeavingSoonSources.Configured(config),
+                StatusOnCollections = config.StatusTagsOnCollections,
                 StatusJustAddedDays = Math.Clamp(config.StatusTagsJustAddedDays, StatusRules.Thresholds.MinWindowDays, StatusRules.Thresholds.MaxWindowDays),
                 StatusNewReleaseDays = Math.Clamp(config.StatusTagsNewReleaseDays, StatusRules.Thresholds.MinWindowDays, StatusRules.Thresholds.MaxWindowDays),
                 StatusRemoteEnabled = config.StatusTagsEnabled && !string.IsNullOrWhiteSpace(config.TMDB_API_KEY),
@@ -1332,6 +1335,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags.PosterTags
                 values["status.remote"] = Bool(StatusRemoteEnabled);
                 // Only when on, so every existing variant keeps its token.
                 if (StatusLeaving) values["status.leaving"] = Bool(StatusLeaving);
+                // Only when off, for the same reason.
+                if (!StatusOnCollections) values["status.collections"] = Bool(false);
                 values["status.locale"] = StatusCulture.Name;
                 values["status.timeZone"] = StatusTimeZone.Id;
             }

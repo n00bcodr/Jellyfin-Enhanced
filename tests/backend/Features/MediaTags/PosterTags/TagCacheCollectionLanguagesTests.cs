@@ -3,6 +3,8 @@ using System.Text.Json.Nodes;
 using Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services;
 using Jellyfin.Plugin.JellyfinEnhanced.Shared.Media;
 using Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags;
+using Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags.PosterTags;
+using Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags.PosterTags.Resolution;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
@@ -32,6 +34,13 @@ public class TagCacheCollectionLanguagesTests
     {
         public List<MediaSourceInfo> Sources { get; set; } = [];
         public override List<MediaSourceInfo> GetMediaSources(bool enablePathSubstitution) => Sources;
+    }
+
+    /// <summary>A folder-based box set: Jellyfin loads its members from disk as real children.</summary>
+    private sealed class BoxSet : MediaBrowser.Controller.Entities.Movies.BoxSet
+    {
+        public List<BaseItem> RealChildren { get; set; } = [];
+        public override IEnumerable<BaseItem> Children => RealChildren;
     }
 
     private sealed class Episode : MediaBrowser.Controller.Entities.TV.Episode
@@ -138,6 +147,106 @@ public class TagCacheCollectionLanguagesTests
             cache.EnqueueUpdate(dubbed.Id);
             FlushTwice(cache);
             Assert.Equal(new[] { "eng", "ger", "jpn" }, Audio(cache, box));
+        });
+    }
+
+    /// <summary>
+    /// "Just Added" on a collection reads its newest member's added date, never the collection's own:
+    /// Jellyfin creates automatic TMDB collections again on a library scan, which resets that date.
+    /// </summary>
+    [Fact]
+    public void ACollectionIsJustAddedByItsNewestMemberNotItsOwnDate()
+    {
+        var now = new DateTime(2026, 10, 30, 12, 0, 0, DateTimeKind.Utc);
+        var library = new Library();
+        var old = new Movie { Id = Guid.NewGuid(), Name = "Old", DateCreated = now.AddYears(-3), Sources = Tracks("eng") };
+        var older = new Movie { Id = Guid.NewGuid(), Name = "Older", DateCreated = now.AddYears(-5), Sources = Tracks("eng") };
+        // Recreated by last night's scan: its own date is new, its members are not.
+        var box = new BoxSet { Id = Guid.NewGuid(), Name = "Box", DateCreated = now.AddHours(-6), LinkedChildren = [new LinkedChild { ItemId = old.Id }, new LinkedChild { ItemId = older.Id }] };
+        var empty = new BoxSet { Id = Guid.NewGuid(), Name = "Empty", DateCreated = now.AddHours(-6) };
+        library.Items.AddRange(new BaseItem[] { old, older, box, empty });
+        var settings = PosterTagSettings.FromUserSettings(new Jellyfin.Plugin.JellyfinEnhanced.Configuration.JellyfinEnhancedUserSettings { StatusTagsEnabled = true },
+            new Jellyfin.Plugin.JellyfinEnhanced.Configuration.PluginConfiguration { StatusTagsEnabled = true });
+        var context = new PosterStatusContext(new DateTimeOffset(now));
+        string? Badge(TagCacheService cache, BaseItem item) => cache.TryGetEntry(item.Id, out var entry) ? StatusRules.Resolve(entry, settings, context)?.Key : throw new InvalidOperationException("no entry");
+
+        WithCache(library, cache =>
+        {
+            Assert.True(cache.TryGetEntry(box.Id, out var built));
+            Assert.Equal(TagCacheService.ToUnixMilliseconds(old.DateCreated), built.LatestEpisodeAdded);
+            Assert.Equal(old.Id.ToString("N"), built.LatestEpisodeId);
+            Assert.Null(Badge(cache, box));
+            Assert.True(cache.TryGetEntry(empty.Id, out var noMembers));
+            Assert.Null(noMembers.LatestEpisodeAdded);
+            Assert.Null(noMembers.LatestEpisodeId);
+            Assert.Null(Badge(cache, empty));
+
+            // A film arrives and joins the collection: Jellyfin reports the movie and the collection.
+            var arrival = new Movie { Id = Guid.NewGuid(), Name = "Arrival", DateCreated = now.AddDays(-1), Sources = Tracks("eng") };
+            library.Items.Add(arrival);
+            box.LinkedChildren = [.. box.LinkedChildren, new LinkedChild { ItemId = arrival.Id }];
+            // Cache off, or before the first build: a native poster's on-demand entry already reads the new member.
+            Assert.Equal(TagCacheService.ToUnixMilliseconds(arrival.DateCreated), cache.BuildEntryOnDemand(box)!.LatestEpisodeAdded);
+            // The collection first, before its member has an entry of its own.
+            cache.EnqueueUpdate(box.Id);
+            Flush(cache);
+            cache.EnqueueUpdate(arrival.Id);
+            FlushTwice(cache);
+            Assert.True(cache.TryGetEntry(box.Id, out var joined));
+            Assert.Equal(TagCacheService.ToUnixMilliseconds(arrival.DateCreated), joined.LatestEpisodeAdded);
+            Assert.Equal(arrival.Id.ToString("N"), joined.LatestEpisodeId);
+            Assert.Equal("just_added", Badge(cache, box));
+
+            // Its Date Added is edited back two years; Jellyfin reports the movie only.
+            arrival.DateCreated = now.AddYears(-2);
+            cache.EnqueueUpdate(arrival.Id);
+            FlushTwice(cache);
+            Assert.True(cache.TryGetEntry(box.Id, out var edited));
+            Assert.Equal(TagCacheService.ToUnixMilliseconds(arrival.DateCreated), edited.LatestEpisodeAdded);
+            Assert.Null(Badge(cache, box));
+            arrival.DateCreated = now.AddDays(-1);
+            cache.EnqueueUpdate(arrival.Id);
+            FlushTwice(cache);
+            Assert.Equal("just_added", Badge(cache, box));
+
+            // Deleted again: the collection goes back to its older members.
+            library.Items.Remove(arrival);
+            cache.EnqueueRemoval(arrival.Id);
+            FlushTwice(cache);
+            Assert.True(cache.TryGetEntry(box.Id, out var left));
+            Assert.Equal(old.Id.ToString("N"), left.LatestEpisodeId);
+            Assert.Null(Badge(cache, box));
+        });
+    }
+
+    /// <summary>A collection of home videos or episodes (not only movies and series) is still badged by a member added recently.</summary>
+    [Fact]
+    public void ACollectionOfOtherTaggedKindsIsJustAddedByItsNewestMember()
+    {
+        var now = new DateTime(2026, 10, 30, 12, 0, 0, DateTimeKind.Utc);
+        var library = new Library();
+        var clip = new Video { Id = Guid.NewGuid(), Name = "Clip", DateCreated = now.AddDays(-1) };
+        var oldClip = new Video { Id = Guid.NewGuid(), Name = "Old clip", DateCreated = now.AddYears(-2) };
+        // Not a kind the cache holds: its date never counts (no user's access set could vouch for it).
+        var album = new MediaBrowser.Controller.Entities.Audio.MusicAlbum { Id = Guid.NewGuid(), Name = "Album", DateCreated = now.AddHours(-1) };
+        // A collection inside the collection, recreated by last night's scan: its own date says nothing either.
+        var inner = new BoxSet { Id = Guid.NewGuid(), Name = "Inner", DateCreated = now.AddHours(-2), LinkedChildren = [new LinkedChild { ItemId = oldClip.Id }] };
+        var box = new BoxSet { Id = Guid.NewGuid(), Name = "Clips", DateCreated = now.AddYears(-1), LinkedChildren = [new LinkedChild { ItemId = clip.Id }, new LinkedChild { ItemId = oldClip.Id }, new LinkedChild { ItemId = album.Id }, new LinkedChild { ItemId = inner.Id }] };
+        var outer = new BoxSet { Id = Guid.NewGuid(), Name = "Outer", DateCreated = now.AddYears(-1), LinkedChildren = [new LinkedChild { ItemId = inner.Id }, new LinkedChild { ItemId = oldClip.Id }] };
+        // A folder-based box set: its members are real children, not links.
+        var inFolder = new Video { Id = Guid.NewGuid(), Name = "In folder", DateCreated = now.AddDays(-2) };
+        var folderBox = new BoxSet { Id = Guid.NewGuid(), Name = "Folder box", DateCreated = now.AddYears(-1), RealChildren = [inFolder] };
+        library.Items.AddRange(new BaseItem[] { clip, oldClip, album, inner, box, outer, folderBox, inFolder });
+
+        WithCache(library, cache =>
+        {
+            Assert.True(cache.TryGetEntry(box.Id, out var built));
+            Assert.Equal(TagCacheService.ToUnixMilliseconds(clip.DateCreated), built.LatestEpisodeAdded);
+            Assert.Equal(clip.Id.ToString("N"), built.LatestEpisodeId);
+            Assert.True(cache.TryGetEntry(outer.Id, out var nested));
+            Assert.Equal(oldClip.Id.ToString("N"), nested.LatestEpisodeId);
+            Assert.True(cache.TryGetEntry(folderBox.Id, out var folderBuilt));
+            Assert.Equal(inFolder.Id.ToString("N"), folderBuilt.LatestEpisodeId);
         });
     }
 

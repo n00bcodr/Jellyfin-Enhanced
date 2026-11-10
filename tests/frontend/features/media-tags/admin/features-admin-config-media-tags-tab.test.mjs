@@ -23,12 +23,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 /**
  * Boot the configuration page with the Media Tags tab available.
  * @param {import('node:test').TestContext} t
- * @param {{url?: string, config?: object, patch?: Function, put?: Function, lazy?: boolean, session?: Object<string, string>}} [options]
+ * @param {{url?: string, config?: object, patch?: Function, put?: Function, lazy?: boolean, session?: Object<string, string>, whatsNew?: object}} [options]
  *   patch(body, server): the field patch's answer (default: the plugin's). put(body, server): the PUT's.
  *   lazy: the tab's scripts load only when the page asks for them, as in production (default: already loaded).
  *   session: sessionStorage entries the browser kept (the tab shown last).
+ *   whatsNew: what GET whats-new answers (default: nothing new).
  */
-function boot(t, { url = PAGE_URL, config: extra = {}, patch, put, lazy = false, session = {} } = {}) {
+function boot(t, { url = PAGE_URL, config: extra = {}, patch, put, lazy = false, session = {}, whatsNew } = {}) {
   const server = clone({ ...DEFAULTS, ...BASE, ...extra });
   const calls = [];
   const markup = html.slice(html.indexOf('<div class="page'), html.lastIndexOf('</body>'));
@@ -65,6 +66,7 @@ function boot(t, { url = PAGE_URL, config: extra = {}, patch, put, lazy = false,
         if (path.endsWith('/tag-styles/catalog')) return catalog;
         if (path.endsWith('/Localization/Cultures')) return [{ TwoLetterISOLanguageName: 'en', DisplayName: 'English' }];
         if (path.endsWith('/tag-styles')) return {};
+        if (whatsNew && path.endsWith('/JellyfinEnhanced/whats-new')) return clone(whatsNew);
         // Lists (plugins, users, libraries) come back empty; everything else as an empty object.
         return request.type === 'GET' || !request.type ? [] : {};
       },
@@ -367,6 +369,171 @@ test('searching and clearing the search leaves the Media Tags tab as it was', as
   assert.equal(h.tab.style.display, '', 'no display left over from the search');
   assert.equal(h.tab.querySelector(':scope > .je-search-tab-label'), null, 'no leftover tab label');
   assert.ok(h.tab.classList.contains('active'));
+});
+
+// Upstream 23281542. The tab is drawn on demand outside the form, so the form's search never saw its settings.
+test('the settings search lists matching Media Tags settings under the form, and a hit opens the setting on its tab', async (t) => {
+  const h = boot(t, { config: { StatusTagsOnCollections: true } });
+  const { document } = h;
+  await h.settle();
+  const box = document.getElementById('jeMtSearchResults');
+  assert.ok(box, 'the list has its place on the page');
+  assert.equal(box.hidden, true, 'hidden until a search finds something');
+  assert.equal(box.closest('form'), null, 'outside the form, like the tab');
+  assert.equal(box.nextElementSibling, h.tab, 'just above the tab, below the form');
+  const input = document.getElementById('settingsSearchInput');
+  const count = document.getElementById('settingsSearchCount');
+  const hits = () => Array.from(box.querySelectorAll('.je-mt-search-hit'), (b) => [b.querySelector('strong').textContent, b.querySelector('span').textContent]);
+  const search = async (value, done = () => !box.hidden) => {
+    input.value = value;
+    input.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+    await sleep(200);
+    for (let i = 0; i < 200 && !done(); i++) await sleep(5);
+    await h.settle();
+  };
+
+  let reads = 0;
+  const readConfiguration = h.window.ApiClient.getPluginConfiguration;
+  h.window.ApiClient.getPluginConfiguration = async (...args) => { reads++; return readConfiguration(...args); };
+  // A label only the Media Tags tab has: the form finds nothing, the list says where the setting lives.
+  await search('badges on collections');
+  assert.equal(h.tab.classList.contains('active'), false, 'the tab is read for the search, not opened');
+  assert.equal(reads, 1, 'the first search draws the tab, which reads the settings once');
+  assert.equal(box.querySelector('.je-search-tab-label').textContent, 'Media Tags');
+  assert.deepEqual(hits(), [['Show status badges on collections', 'Status badges › Collections']]);
+  assert.equal(count.textContent, '1 in Media Tags', 'not "No results" when only Media Tags matches');
+  // A description, a control id, and a section's title (which brings every setting of the section).
+  await search('keep status badges off');
+  assert.deepEqual(hits(), [['Show status badges on collections', 'Status badges › Collections']]);
+  await search('statustagsjustaddeddays');
+  assert.deepEqual(hits(), [['Just added', 'Status badges › Time windows']]);
+  await search('time windows');
+  assert.deepEqual(hits(), [['Just added', 'Status badges › Time windows'], ['New release', 'Status badges › Time windows']]);
+  // Never more than 40 rows, and every row is a button with text only.
+  await search('tag');
+  assert.equal(box.querySelectorAll('.je-mt-search-hit').length, 40);
+  assert.equal(box.querySelector('.je-mt-search-hit').type, 'button');
+  // Nothing on the tab matches: the list goes away.
+  await search('zzzz-no-such-setting', () => box.hidden);
+  assert.equal(box.hidden, true);
+  assert.deepEqual(hits(), []);
+  assert.equal(count.textContent, 'No results');
+  assert.equal(reads, 1, 'later searches read the drawn tab\'s declarations: the configuration is not asked for again per query');
+
+  // A hit in a group: the search is cleared and the tab opens at the group, on the setting.
+  await search('letterboxd top 250 list');
+  assert.deepEqual(hits().map((hit) => hit[1]), ['Groups › Awards']);
+  box.querySelector('.je-mt-search-hit').click();
+  await h.until(() => h.root.querySelector('.je-ta-grow[data-group="awards"][data-open="true"]'), 'Groups › Awards opened');
+  assert.equal(input.value, '');
+  assert.equal(h.form.classList.contains('je-search-mode'), false);
+  assert.equal(box.hidden, true);
+  assert.ok(h.tab.classList.contains('active'));
+  assert.equal(h.root.dataset.tab, 'groups');
+  await h.until(() => document.activeElement && document.activeElement.id === 'awardsTagsLetterboxdList', 'the setting has the focus');
+
+  // Leaving the search (Escape) hides the list.
+  await search('badges on collections');
+  assert.equal(box.hidden, false);
+  input.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  await h.settle();
+  assert.equal(box.hidden, true);
+});
+
+test('the stylesheet keeps the hidden Media Tags result list hidden and draws its rows', () => {
+  const css = readFileSync(join(config, 'jeAdmin.css'), 'utf8');
+  // The list is a flex column, which would show it despite the hidden attribute without the second rule.
+  assert.match(css, /\.je-mt-search-results\s*\{[^}]*display:\s*flex/);
+  assert.match(css, /\.je-mt-search-results\[hidden\]\s*\{\s*display:\s*none;?\s*\}/);
+  assert.match(css, /\.je-mt-search-hit\s*\{/);
+});
+
+test('a search answered after a newer one, or after the view is gone, draws nothing', async (t) => {
+  const h = boot(t, { lazy: true });
+  const { document } = h;
+  await h.settle();
+  const box = document.getElementById('jeMtSearchResults');
+  const input = document.getElementById('settingsSearchInput');
+  const type = async (value) => { input.value = value; input.dispatchEvent(new h.window.Event('input', { bubbles: true })); await sleep(200); };
+  // The tab is still loading when the second query replaces the first: only the second is drawn.
+  await type('time windows');
+  await type('badges on collections');
+  await h.until(() => !box.hidden, 'the list drew');
+  assert.deepEqual(Array.from(box.querySelectorAll('strong'), (el) => el.textContent), ['Show status badges on collections']);
+
+  const gone = boot(t, { lazy: true });
+  await gone.settle();
+  const goneBox = gone.document.getElementById('jeMtSearchResults');
+  const goneInput = gone.document.getElementById('settingsSearchInput');
+  goneInput.value = 'time windows';
+  goneInput.dispatchEvent(new gone.window.Event('input', { bubbles: true }));
+  await sleep(160);
+  gone.page.dispatchEvent(new gone.window.Event('viewdestroy'));
+  await sleep(400);
+  await gone.settle(40);
+  assert.equal(goneBox.hidden, true);
+  assert.equal(goneBox.childElementCount, 0);
+});
+
+test('a new setting on the Media Tags tab gets its New badge on its row, keeps it when the tab redraws, and loses it on Dismiss', async (t) => {
+  const whatsNew = {
+    pluginVersion: '12.16.0.0',
+    newSettings: { statusTagsOnCollections: '12.16.0.0', showFileSizes: '12.16.0.0' },
+    mediaTags: { statusTagsOnCollections: { page: 'JellyfinEnhanced', tab: 'badges', group: null } },
+  };
+  const h = boot(t, { config: { StatusTagsOnCollections: true }, whatsNew });
+  const { document } = h;
+  h.page.dispatchEvent(new h.window.Event('pageshow'));
+  await h.until(() => document.getElementById('je-whats-new-banner'), 'What\'s New answered');
+  const frame = () => new Promise((r) => h.window.requestAnimationFrame(() => r()));
+  const badges = () => Array.from(h.tab.querySelectorAll('.je-new-badge'), (b) => [b.closest('[data-field-row]')?.dataset.fieldRow ?? null, b.textContent.replace('auto_awesome', '')]);
+  assert.deepEqual(badges(), [], 'the tab is not drawn yet');
+
+  // The tab opens after What's New answered: its row is badged as it is drawn.
+  h.tabButton('media-tags').click();
+  await h.until();
+  h.root.querySelector('#jeTaTab-badges').click();
+  await frame(); await frame(); await h.settle();
+  assert.deepEqual(badges(), [['statusTagsOnCollections', 'New in v12.16.0.0']]);
+  const host = h.tab.querySelector('[data-field-row="statusTagsOnCollections"] .je-ta-switch-name');
+  assert.equal(host.querySelector(':scope > .je-new-badge').className, 'je-new-badge', 'on the setting\'s name, the same badge the form uses');
+  // A redraw that drops the badge puts it back, once.
+  host.querySelector('.je-new-badge').remove();
+  await frame(); await frame();
+  assert.deepEqual(badges(), [['statusTagsOnCollections', 'New in v12.16.0.0']]);
+  h.change(document.getElementById('statusTagsJustAddedDays'), '9');
+  await h.settle(); await frame(); await frame();
+  assert.equal(badges().length, 1, 'never a second badge on the same row');
+  assert.ok(document.querySelector('#JellyfinEnhancedForm .je-new-badge'), 'the form\'s own setting is badged as before');
+
+  // Dismiss acknowledges everything: the tab's badges go with the form's, and a later redraw does not bring them back.
+  document.querySelector('#je-whats-new-banner .je-whats-new-close').click();
+  await h.settle(); await frame(); await frame();
+  assert.equal(document.querySelectorAll('.je-new-badge').length, 0);
+  h.change(document.getElementById('statusTagsJustAddedDays'), '10');
+  await h.settle(); await frame(); await frame();
+  assert.equal(document.querySelectorAll('.je-new-badge').length, 0, 'still none after the tab changed');
+});
+
+test('the Media Tags badge watcher ends with the view', async (t) => {
+  const whatsNew = { pluginVersion: '12.16.0.0', newSettings: { statusTagsOnCollections: '12.16.0.0' }, mediaTags: { statusTagsOnCollections: { page: 'JellyfinEnhanced', tab: 'badges', group: null } } };
+  const observers = [];
+  const h = boot(t, { config: { StatusTagsOnCollections: true }, whatsNew });
+  const Real = h.window.MutationObserver;
+  h.window.MutationObserver = class extends Real {
+    constructor(callback) { super(callback); this.live = false; observers.push(this); }
+    observe(target, options) { if (target === h.tab) this.live = true; return super.observe(target, options); }
+    disconnect() { this.live = false; return super.disconnect(); }
+  };
+  h.page.dispatchEvent(new h.window.Event('pageshow'));
+  await h.until(() => h.document.getElementById('je-whats-new-banner'), 'What\'s New answered');
+  assert.equal(observers.filter((o) => o.live).length, 1, 'one watcher on the tab');
+  // Asked again (the page is shown again): still one.
+  h.page.dispatchEvent(new h.window.Event('pageshow'));
+  await h.settle(60);
+  assert.equal(observers.filter((o) => o.live).length, 1);
+  h.page.dispatchEvent(new h.window.Event('viewdestroy'));
+  assert.equal(observers.filter((o) => o.live).length, 0, 'released with the view');
 });
 
 test('an address naming a Media Tags section, with Media Tags the tab restored from the session, opens it while the tab loads, without an error', async (t) => {

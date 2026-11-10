@@ -24,7 +24,7 @@ define({
         title: 'Maintainerr', iconImg: 'selfhst/svg/maintainerr.svg',
         items: [
             { type: 'note', html: 'Maintainerr is only used to show <strong>how many days are left</strong> before an item leaves, on the <strong>Leaving soon</strong> media tag. Nothing else in Jellyfin Enhanced talks to it.' },
-            { type: 'custom', html: '<a class="jea-btn jea-btn-primary" href="#/configurationpage?name=Jellyfin%20Enhanced&amp;jeSection=media-tags&amp;tab=badges"><i class="material-icons" aria-hidden="true">sell</i><span>Set up Leaving soon</span></a>' }
+            { type: 'custom', html: '<a class="jea-btn jea-btn-primary" style="text-decoration:none" href="#/configurationpage?name=Jellyfin%20Enhanced&amp;jeSection=media-tags&amp;tab=badges"><i class="material-icons" aria-hidden="true">new_releases</i><span>Set up Leaving soon</span></a>' }
         ]
     },
     'svc-tmdb': { mirrorOf: 'elsewhere-tmdb' },

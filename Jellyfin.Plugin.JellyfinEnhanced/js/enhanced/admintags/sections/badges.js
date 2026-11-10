@@ -63,6 +63,10 @@
       fields: FAMILY_FIELDS,
   registerSection({
       tab: 'badges',
+      title: 'Collections',
+          { id: 'statusTagsOnCollections', key: 'StatusTagsOnCollections', type: 'switch', label: 'Show status badges on collections' },
+  registerSection({
+      tab: 'badges',
       title: 'Time windows',
           { id: 'statusTagsJustAddedDays', key: 'StatusTagsJustAddedDays', type: 'number', label: 'Just added' },
           { id: 'statusTagsNewReleaseDays', key: 'StatusTagsNewReleaseDays', type: 'number', label: 'New release' },
@@ -184,6 +188,16 @@
         const off = find(body, "[data-badges-off]");
         if (off) off.hidden = ctx.config.StatusTagsEnabled === true;
       }
+    });
+    A.registerSection({
+      id: "badges-collections",
+      tab: "badges",
+      order: 15,
+      title: "Collections",
+      hint: "This applies to everyone.",
+      fields: [
+        { id: "statusTagsOnCollections", key: "StatusTagsOnCollections", type: "switch", label: "Show status badges on collections", desc: "A collection shows Just Added when something in it was added recently. Turn this off to keep status badges off collections." }
+      ]
     });
     A.registerSection({
       id: "badges-windows",

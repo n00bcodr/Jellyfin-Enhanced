@@ -1980,6 +1980,9 @@ export const bootstrapSchema = {
         "StatusTagsNewReleaseDays": {
           "type": "integer"
         },
+        "StatusTagsOnCollections": {
+          "type": "boolean"
+        },
         "StatusTagsPosition": {
           "type": "string"
         },
@@ -2398,6 +2401,7 @@ export const bootstrapSchema = {
         "StatusTagsMilestones",
         "StatusTagsNewRelease",
         "StatusTagsNewReleaseDays",
+        "StatusTagsOnCollections",
         "StatusTagsPosition",
         "StatusTagsScenes",
         "StatusTagsSchedule",

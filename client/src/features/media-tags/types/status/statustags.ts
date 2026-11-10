@@ -1,6 +1,6 @@
 import { apiClient, hasApiClient, type TagRuntimeBridge } from '../../host';
 import { finite, isRecord, own, record, stringList, text, type JsonRecord } from '../../pipeline/dto';
-import { fromItem, fromServerEntry, normId, readFacts, readLeaving, toInt, toMs, type EpisodeFacts, type LeavingFacts, type MediaInputs, type StatusData } from './status-facts';
+import { addedDate, fromItem, fromServerEntry, normId, readFacts, readLeaving, toInt, toMs, type EpisodeFacts, type LeavingFacts, type MediaInputs, type StatusData } from './status-facts';
 import type { RefreshInfo, TagCtx, TagSpec } from '../../pipeline/contract';
 
 interface BadgeDefinition { kind: string; style: string; label: string; compact?: string }
@@ -47,7 +47,7 @@ interface SeriesCard extends LiveCard { data: StatusData & { seriesId: string } 
 //           → Just Added
 //   Episode Season Premiere → Series Finale / Season Finale → New Episode
 //           → Just Added
-//   BoxSet, Video: Just Added
+//   BoxSet: Just Added (its newest member's added date); Video: Just Added
 // Library facts come from the server tag cache (DateCreated, PremiereDate,
 // LatestEpisodeAdded/Aired/Index, SeasonPremiere, SeasonAddedSpan, Status;
 // Unix ms) or the /tag-data batch fallback. Two live sources come on top:
@@ -78,8 +78,8 @@ export function createStatusTags(JE: TagRuntimeBridge) {
     // A cached entry's dates (a series' latest episode above all) can move, so
     // the persistent cache only answers for this long before a re-fetch.
     const CACHE_FRESH_MS = 60 * 60 * 1000;
-    // Shape of the fallback cache entries; older entries count as misses.
-    const CACHE_ENTRY_VERSION = 6;
+    // Shape of the fallback cache entries; older entries count as misses (7: a collection's newest member's added date).
+    const CACHE_ENTRY_VERSION = 7;
     const TRENDING_TTL_MS = 30 * 60 * 1000;
     // A failed or empty trending fetch is retried sooner than a good list expires.
     const TRENDING_RETRY_MS = 5 * 60 * 1000;
@@ -495,10 +495,10 @@ export function createStatusTags(JE: TagRuntimeBridge) {
     function pickBadge(data: StatusData, itemId: string | null | undefined): StatusBadge | null {
         const normalizedId = normId(itemId);
         const current = normalizedId ? JE.tagPipeline?.peekItemFacts?.(normalizedId) : null;
-        if (current) {
-            // Shared caller-filtered facts are authoritative, including removed fields.
-            Object.assign(data, readFacts(current), { latest: toMs(current.LatestEpisodeAdded) });
-        }
+        // Shared caller-filtered facts are authoritative, including removed fields.
+        if (current) Object.assign(data, readFacts(current), { latest: toMs(current.LatestEpisodeAdded) });
+        // An admin switch: no status badge on collections at all.
+        if (data.type === 'BoxSet' && JE.pluginConfig?.StatusTagsOnCollections === false) return null;
         const now = Date.now();
         const today = localDay(now);
         const justAddedMs = windowMs('StatusTagsJustAddedDays', vocabulary.thresholds.justAddedDays);
@@ -523,7 +523,7 @@ export function createStatusTags(JE: TagRuntimeBridge) {
         const isNewRelease = airedWithin(data.premiere, newReleaseMs);
         const releaseDay = premiereDay(data.premiere);
         const comingSoon = releaseDay !== null && releaseDay > today;
-        const addedRecently = isWithin(data.created, now, justAddedMs);
+        const addedRecently = isWithin(addedDate(data), now, justAddedMs);
         // "New Episode" on a container: an episode arrived recently in a
         // container that was itself already there before the window (else it
         // is just added).

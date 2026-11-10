@@ -1,5 +1,5 @@
 {
-  "_source": "What Shared/MediaTags/MediaTagsPageFields.cs, Features/Admin/Services/WhatsNewService.cs and scripts/generate_config_flag_groups.py read from the section modules at 2e0f9251bfe833cb58866e9e245ba62be69a69ad (the hand-written JavaScript), through tests/frontend/helpers/admin-tags-declarations.mjs. The generated modules must read the same.",
+  "_source": "What Shared/MediaTags/MediaTagsPageFields.cs, Features/Admin/Services/WhatsNewService.cs and scripts/generate_config_flag_groups.py read from the section modules at 0e141dfae70366c87e1ccd7eedd4b368887f5d3b (the hand-written JavaScript), through tests/frontend/helpers/admin-tags-declarations.mjs. The generated modules must read the same.",
   "allowed": [
     "AgeRatingTagsEnabled",
     "AgeRatingTagsPosition",
@@ -94,6 +94,7 @@
     "StatusTagsMilestones",
     "StatusTagsNewRelease",
     "StatusTagsNewReleaseDays",
+    "StatusTagsOnCollections",
     "StatusTagsPosition",
     "StatusTagsScenes",
     "StatusTagsSchedule",
@@ -145,6 +146,7 @@
     "statusTagsScenes",
     "statusTagsLeaving",
     "statusTagsDirectPlay",
+    "statusTagsOnCollections",
     "statusTagsJustAddedDays",
     "statusTagsNewReleaseDays",
     "leavingSoonMaintainerrUrl",
@@ -365,6 +367,13 @@
       ],
       [
         "statusTagsDirectPlay",
+        {
+          "tab": "badges",
+          "group": null
+        }
+      ],
+      [
+        "statusTagsOnCollections",
         {
           "tab": "badges",
           "group": null
@@ -1094,6 +1103,11 @@
         "StatusTagsDirectPlay",
         "<tab>",
         "Direct-play warning"
+      ],
+      [
+        "StatusTagsOnCollections",
+        "Collections",
+        "Show status badges on collections"
       ],
       [
         "StatusTagsJustAddedDays",

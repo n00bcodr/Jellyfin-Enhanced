@@ -43,6 +43,25 @@ test('Status badges: family switches and windows (clamped to 1-365)', async t =>
   assert.equal(h.$('#statusTagsJustAddedDays').value, '365');
 });
 
+test('Status badges › Collections: one switch between the families and the windows, on until the administrator turns it off for everyone', async t => {
+  const h = setup(t, { config: { StatusTagsOnCollections: true } });
+  const cards = [...h.$$('#jeTaPanel-badges [data-section]')].map((s) => s.dataset.section);
+  assert.deepEqual(cards.slice(0, 3), ['badges-families', 'badges-collections', 'badges-windows']);
+  const card = h.$('[data-section="badges-collections"]');
+  assert.equal(card.querySelector('.je-ta-card-title').textContent.trim(), 'Collections');
+  assert.equal(card.querySelector('.je-ta-hint').textContent.trim(), 'This applies to everyone.');
+  const box = h.$('#statusTagsOnCollections');
+  assert.equal(box.type, 'checkbox');
+  assert.equal(box.checked, true);
+  const row = h.$('[data-field-row="statusTagsOnCollections"]');
+  assert.match(row.textContent, /Show status badges on collections/);
+  assert.match(row.textContent, /Turn this off to keep status badges off collections\./);
+  h.change(box, false);
+  await h.save();
+  assert.equal(h.server.StatusTagsOnCollections, false);
+  assert.deepEqual(h.patches.at(-1), { Changes: { StatusTagsOnCollections: false }, Expected: { StatusTagsOnCollections: true } });
+});
+
 test('Status badges › Leaving soon: source fields save, the key shows like the TMDB key, and Refresh saves first then asks the server', async t => {
   const status = { Configured: true, Maintainerr: true, Collections: 1, CollectionsFound: 1, Items: 4, Dated: 3, LastSuccess: Date.UTC(2026, 9, 30, 9), NextRefresh: Date.UTC(2026, 9, 30, 15), LastError: null };
   const h = setup(t, { config: { LeavingSoonCollections: 'Leaving Soon', LeavingSoonMaintainerrApiKey: 'stored-key-canary' }, routes: { '/admin/leaving-soon': () => status } });

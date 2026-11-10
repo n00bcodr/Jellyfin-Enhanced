@@ -129,7 +129,7 @@ export interface PipelineState {
  * @param JE - The tag runtime bridge.
  */
 export function createPipelineState(JE: TagRuntimeBridge): PipelineState {
-    const STORED_ENTRY_SCHEMA = JE.tagCacheStore?.ENTRY_SCHEMA ?? 10;
+    const STORED_ENTRY_SCHEMA = JE.tagCacheStore?.ENTRY_SCHEMA ?? 52;
     let prefetchedStripRevision: unknown;
     try { prefetchedStripRevision = JE.takePrefetched?.('TagStripRevision'); } catch { /* Unknown until an authoritative answer. */ }
     return {

@@ -544,6 +544,117 @@
       ],
       "notes": "The C# hunks apply at the rewrite’s paths (Shared/MediaTags/PluginConfigurationPatch.cs and MediaTagsPortable.cs, Features/Platform/Services/CdnAssetService.cs) and the stylesheet as is (js/enhanced/admintags/admin-tags.css is hand-written here too). Re-implemented in TypeScript: the `wide` and `mask` field options (features/media-tags/admin/types.ts and fields.ts), the five field declarations (sections/awards.ts, badges.ts, language.ts), and the Maintainerr card (admin/config/sections/about.ts, with its placeholder in client/html/admin-config/configPage.html). Differences from upstream: docs/enhanced/tags.md carries the same paragraph as the two advanced pages and upstream left it describing a write-only password field, so it is corrected here as well (found bug filed); three tests are added for what upstream left untested (the wide boxes and the stylesheet rules, the Services card, the logo in the CDN prefetch list); tests/fixtures/admin-config-baseline.json gains the `svc-maintainerr` section, as docs/rewrite/admin-config.md prescribes for a schema change. The card has no setting of its own, so the What’s New index is unchanged. No route, authorization or registration changes.",
       "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p18-maintainerr-key.*"
+    },
+    {
+      "sha": "0e141dfae70366c87e1ccd7eedd4b368887f5d3b",
+      "date": "2026-11-10T15:14:20+00:00",
+      "subject": "feat(status-tags): add an admin switch for status badges on collections",
+      "class": "feature",
+      "features": [
+        "media-tags",
+        "platform"
+      ],
+      "issues": [],
+      "release": null,
+      "size": {
+        "files": 13,
+        "insertions": 76,
+        "deletions": 2
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/PosterTagSettings.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Resolution/StatusRules.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/sections/badges.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/tags/statustags.js",
+        "docs/advanced/api.md",
+        "docs/advanced/config-flag-groups.json",
+        "docs/enhanced/tags.md",
+        "tests/backend/PosterTags/NativeStatusBandTests.cs",
+        "tests/docs/production-inventory.json",
+        "tests/fixtures/admin-tags-page-fields.json",
+        "tests/frontend/features/features-status-tags-vocabulary.test.mjs"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "2dfd3530567d363c7e1637c575ed973af24a8e2b"
+      ],
+      "notes": "The C# hunks apply at the rewrite’s paths (Configuration/PluginConfiguration.cs as is; Shared/MediaTags/PosterTags/PosterTagSettings.cs and Resolution/StatusRules.cs). Upstream adds the flag to the public configuration inside its single controller; here it is a required member of BootstrapPublicConfig (Transport/BootstrapConfig.cs) filled in Features/Platform/JePlatformController.Bootstrap.cs, so public-config and the bootstrap response both carry it and contracts/bootstrap.schema.json and client/src/contracts are regenerated. Re-implemented in TypeScript: the Collections card (features/media-tags/admin/sections/badges.ts, with its line in the module’s lexical index, which is what the save allowlist, What’s New and the docs generator read) and the check in the web resolver (features/media-tags/types/status/statustags.ts). That file is frozen at its recorded size (1,454 lines), so the two added lines take the place of a three-line block written as one line; nothing else in it changes. Tests: upstream’s three files apply at the moved paths; two are added for the rewrite’s own paths (the card on the admin page and what turning it off saves; the flag in the public configuration); admin-tags-rewrite.declarations.json, the record of what the server reads from upstream’s hand-written section modules, is regenerated from those modules at 0e141dfa (it was taken at 2e0f9251) and gains exactly this field. docs/advanced/config-flag-groups.json and tests/docs/production-inventory.json are regenerated, not patched. PosterTagSettings.ResolverVersion is not bumped, as upstream: the switch is part of the settings digest only when off, so the same settings and data still give the same tags. No route, authorization or registration changes.",
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p19-collections-switch.*"
+    },
+    {
+      "sha": "324b5c92ddac41370f1931acccc747e7e0941a9e",
+      "date": "2026-11-10T17:08:45+00:00",
+      "subject": "fix(status-tags): base a collection's Just Added on its newest member",
+      "class": "fix",
+      "features": [
+        "media-tags"
+      ],
+      "issues": [],
+      "release": null,
+      "size": {
+        "files": 22,
+        "insertions": 276,
+        "deletions": 44
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Model/TagCacheEntry.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/PosterTagSettings.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Resolution/StatusRules.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/TagCacheService.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/sections/badges.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/tags/statustags.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/tags/tag-cache-store.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/tags/tag-pipeline.js",
+        "docs/advanced/api.md",
+        "docs/enhanced/tags.md",
+        "tests/backend/Core/CoreTagItemLooksTests.cs",
+        "tests/backend/Core/CoreTagLookSettingsTests.cs",
+        "tests/backend/PosterTags/NativeStatusBandTests.cs",
+        "tests/backend/PosterTags/PosterTokenTests.cs",
+        "tests/backend/PosterTags/QualityDisplayTests.cs",
+        "tests/backend/PosterTags/StatusTagsCacheFactsTests.cs",
+        "tests/backend/PosterTags/TagCacheCollectionLanguagesTests.cs",
+        "tests/frontend/core/core-tag-pipeline.test.mjs",
+        "tests/frontend/features/features-status-tags-vocabulary.test.mjs",
+        "tests/poster/parity/status-fixtures.mjs"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "b05533b33c1d4c5c372b08a15aa3b02668b05040"
+      ],
+      "notes": "The C# hunks apply at the rewrite’s paths (Shared/MediaTags/TagCacheEntry.cs, Shared/MediaTags/PosterTags/Resolution/StatusRules.cs, the comment in Configuration/PluginConfiguration.cs), and the collection branch of the /tag-data fallback is the same code in Features/MediaTags/JeMediaTagsController.TagCache.cs. TagCacheService.cs is capped at its recorded size, so the member-date code lives in the partial TagCacheCollectionMembers.cs, where GetCollectionLanguages has been since ee1c92dc: it returns the newest member, with IsDatedCollectionMember and FolderChildren beside it, and a new SetCollectionFacts holds the three assignments upstream writes inline, so the service keeps a one-line call site and its 4,088 lines. Version numbers: the cache schema is 52 as upstream (the disk snapshot and the browser’s stored copy are the same data in both trees); PosterTagSettings.ResolverVersion goes 40 to 41 where upstream goes 39 to 40, because this tree already spent 40 on the New Episode rule (6ece3f52), which upstream changed without a bump; the web fallback’s entry version goes 6 to 7 where upstream goes 5 to 6, because this tree was already at 6. Re-implemented in TypeScript: the rule (addedDate in features/media-tags/types/status/status-facts.ts, read by statustags.ts, which is frozen at its recorded size and changes only lines in place), the stored-copy schema (pipeline/tag-cache-store.ts, pipeline/state.ts), the single-item fetch asking for the dates (pipeline/look-facts.ts) and the switch’s description (admin/sections/badges.ts). Tests: upstream’s ten files apply at the moved paths, the resolver assertions reading 41; two are added for what upstream left untested (the fallback’s date counts only members the asking user can see, skips kinds the tags do not cover and nested collections, and one unreadable collection does not fail the batch; the single-item fetch asks with latestEpisode=true); the rewrite’s own fallback-shape test moves with the bumped number (7 is current, 6 and 5 are misses). In docs/enhanced/tags.md upstream’s Just Added row is taken and the New Episode row beside it stays as this tree has it. The web and native rules agree on all 243 Status fixtures. Carried over from upstream, filed as a found bug: only movie and series members are indexed per collection, so a Date Added edit on a member of another kind (a home video, an episode) reaches the collection only when the collection is next rebuilt. No route, authorization or registration changes.",
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p20-collection-newest-member.*"
+    },
+    {
+      "sha": "232815422e3143b3930d30ad57de2bd243f60c7f",
+      "date": "2026-11-10T17:37:05+00:00",
+      "subject": "fix(config): search and New badges for the Media Tags tab, tidy the Maintainerr card link",
+      "class": "fix",
+      "features": [
+        "admin"
+      ],
+      "issues": [],
+      "release": null,
+      "size": {
+        "files": 3,
+        "insertions": 115,
+        "deletions": 1
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/admin/sections.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/configPage.html",
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/jeAdmin.css"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "87c0ac034b3e615bf47d608113aaf905ac0bcf19"
+      ],
+      "notes": "Upstream edits the hand-written page script and section list; here the same behaviour is re-implemented in the page’s TypeScript modules: the search over the Media Tags sections’ declared titles, hints, labels, descriptions and ids, with its result list (client/src/admin/config/page/search.ts, the list’s element in client/html/admin-config/configPage.html), the New badges on the tab’s rows (page/whats-new.ts), the tab module handing over its section names (page/media-tags-tab.ts), the two members of JE.adminTags the search reads (host/admin-config-host.ts) and the card’s link (sections/about.ts). The stylesheet hunk applies as is (Configuration/jeAdmin.css is hand-written here too). Differences from upstream: (1) the watcher on the tab and the timers belong to the view’s lifecycle and end with it, and a search answered after the view is gone draws nothing; upstream never disconnects its MutationObserver; (2) Dismiss removes the Media Tags badges with the form’s and they stay away, where upstream’s Dismiss puts them straight back (it re-runs the badge pass without forgetting the list) until the page is reloaded: filed as a found bug; (3) the watcher is created only when What’s New lists something; (4) a row is found by its data-field-row value, not by a selector built from the id; (5) once the tab is drawn the search reads its declarations as they are, where upstream mounts the tab again for every query, which reads the whole plugin configuration and reloads the tab each time (ten reads while the word “collections” is typed, one here): filed as a found bug. Upstream’s commit has no tests: six are added (the search on the real page with the real tab and how often it reads the configuration, late answers, the badges and Dismiss, the watcher’s lifetime, the stylesheet rules, the card’s link), and tests/fixtures/admin-config-baseline.json gains the new element id jeMtSearchResults in renderedIds, as docs/rewrite/admin-config.md prescribes for an intended page change. No new setting, so the What’s New index is unchanged. No route, authorization or registration changes.",
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p21-media-tags-search.*"
     }
   ]
 }

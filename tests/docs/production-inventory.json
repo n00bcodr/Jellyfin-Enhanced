@@ -5618,6 +5618,14 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "StatusTagsOnCollections",
+      "type": "bool",
+      "initializer": "true",
+      "constructor_assignment": "true",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "StatusTagsJustAddedDays",
       "type": "int",
       "initializer": "7",
@@ -10598,7 +10606,7 @@
     "build_targets": 1,
     "files": 543,
     "routes": 203,
-    "configuration_properties": 744,
+    "configuration_properties": 745,
     "storage_references": 96,
     "scheduled_tasks": 16,
     "locales": 33

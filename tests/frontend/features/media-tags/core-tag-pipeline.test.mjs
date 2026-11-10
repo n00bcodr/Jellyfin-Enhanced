@@ -85,6 +85,19 @@ test('individual fallback drops facts immediately when the user changed during /
  assert.equal(fetched,true,'old facts were never remembered');
 });
 
+test('one item\'s look facts are asked for with the episode and collection-member dates, which the Status renderer draws and keeps', async t => {
+ // Upstream 324b5c92: a collection's Just Added reads LatestEpisodeAdded, which /tag-data only resolves when asked.
+ const h=setup(t);
+ h.window.ApiClient.getUrl=(path,params)=>`http://jellyfin.test${path}${params?`?${new URLSearchParams(params)}`:''}`;
+ const facts=h.JE.tagPipeline.itemLookFacts('aabb');
+ assert.equal(h.calls.length,1);
+ const url=new URL(h.calls[0].url);
+ assert.match(url.pathname,/\/JellyfinEnhanced\/tag-data\//);
+ assert.equal(url.searchParams.get('latestEpisode'),'true');
+ h.response.resolve({Items:[{Id:'aabb',Type:'BoxSet',LatestEpisodeAdded:5}]});
+ assert.equal((await facts).LatestEpisodeAdded,5);
+});
+
 for (const inFlight of [false, true]) test(`navigation retries cards whose work was cancelled (in-flight=${inFlight})`, async t => {
  const h=setup(t);let navigate;
  h.JE.currentSettings.qualityTagsEnabled=true;
@@ -197,7 +210,7 @@ async function loadWithStoredCopy(t, meta) {
   return { calls, cleared };
 }
 
-for (const schema of [undefined, 9, 20, 21, 22, 11, 12, 13, 14, 15, 16, 17, 18, 19]) test(`a stored tag cache copy from an older entry schema (${schema ?? 'missing'}) is dropped and downloaded in full`, async t => {
+for (const schema of [undefined, 9, 10, 20, 21, 22, 23, 51, 11, 12, 13, 14, 15, 16, 17, 18, 19]) test(`a stored tag cache copy from an older entry schema (${schema ?? 'missing'}) is dropped and downloaded in full`, async t => {
   const { calls, cleared } = await loadWithStoredCopy(t, schema === undefined ? {} : { schema });
   assert.deepEqual(cleared, ['server-a:user-a'], 'the copy without the current schema is cleared');
   assert.ok(calls.length > 0 && calls.every(url => !url.includes('since=')), 'a full download, never a delta on top of it');

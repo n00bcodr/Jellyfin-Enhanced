@@ -18,11 +18,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
     // from it. TagCacheService.cs keeps only the call sites.
     public partial class TagCacheService
     {
-        // Keys of Movie and Series entries whose language facts changed (false), or which
-        // were removed (true), since the collections linking to them were last queued (see
-        // QueueCollectionsOfChangedMembers). A BoxSet's languages are its members'
-        // (GetCollectionLanguages), and Jellyfin raises no event for the BoxSet when
-        // only a member's file changes.
+        // Keys of Movie and Series entries whose language facts or added date changed (false), or
+        // which were removed (true), since the collections linking to them were last queued (see
+        // QueueCollectionsOfChangedMembers). A BoxSet's languages are its members', and so is its
+        // "Just Added" date (GetCollectionLanguages), and Jellyfin raises no event for the BoxSet
+        // when only a member's file or date changes.
         private readonly ConcurrentDictionary<string, bool> _collectionMemberChanges = new(StringComparer.Ordinal);
 
         // The Movie and Series members each collection's languages were last built from
@@ -385,20 +385,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
         /// the BoxSet itself (see TagCacheMonitor); a member whose languages change or
         /// which is removed queues the collections built from it (see
         /// QueueCollectionsOfChangedMembers and <see cref="_collectionMembers"/>, which
-        /// this records).
+        /// this records). <c>NewestMember</c> is the most recently added member of any kind the
+        /// cache holds, outside the excluded libraries (its DateCreated in Unix ms and its key), or
+        /// null. A movie or series whose added date changes queues the collection the same way.
         /// </summary>
-        private (string[] Audio, string[] Subtitles, string[] SdhSubtitles) GetCollectionLanguages(BaseItem collection, bool record = true)
+        private (string[] Audio, string[] Subtitles, string[] SdhSubtitles, (long Added, string Id)? NewestMember) GetCollectionLanguages(BaseItem collection, bool record = true)
         {
             try
             {
-                if (collection is not Folder folder) return (Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>());
+                if (collection is not Folder folder) return (Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>(), null);
 
                 var languages = new HashSet<string>();
                 var subtitles = new HashSet<string>();
                 var sdh = new HashSet<string>();
                 var members = new List<Guid>();
                 var entryless = new Dictionary<Guid, string>();
-                foreach (var member in folder.GetLinkedChildren())
+                (long Added, string Id)? newest = null;
+                var linked = folder.GetLinkedChildren();
+                // A folder-based box set holds its members as real children, not links.
+                foreach (var member in linked.Concat(FolderChildren(folder)))
+                {
+                    if (IsDatedCollectionMember(member) && !IsInExcludedLibrary(member)
+                        && ToUnixMilliseconds(member.DateCreated) is { } added && (newest == null || added > newest.Value.Added))
+                    {
+                        newest = (added, member.Id.ToString("N").ToLowerInvariant());
+                    }
+                }
+
+                foreach (var member in linked)
                 {
                     if (member.GetBaseItemKind() is not (BaseItemKind.Movie or BaseItemKind.Series)) continue;
                     members.Add(member.Id);
@@ -411,7 +425,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
 
                 // Only a build whose entry the cache stores records what it read: an on-demand
                 // build (a native poster) racing a load or a rebuild must not stand for it.
-                if (!record) return (languages.ToArray(), subtitles.ToArray(), sdh.ToArray());
+                if (!record) return (languages.ToArray(), subtitles.ToArray(), sdh.ToArray(), newest);
                 var collectionKey = collection.Id.ToString("N").ToLowerInvariant();
                 _collectionEntrylessLanguages[collectionKey] = entryless;
                 if (SetCollectionMembers(collectionKey, members.ToArray()))
@@ -425,12 +439,48 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
                     Interlocked.Exchange(ref _collectionMembersDirty, 1);
                 }
 
-                return (languages.ToArray(), subtitles.ToArray(), sdh.ToArray());
+                return (languages.ToArray(), subtitles.ToArray(), sdh.ToArray(), newest);
             }
             catch (Exception ex)
             {
                 _logger.Warning($"[TagCache] Failed to get collection languages for {collection.Id}: {ex.Message}");
-                return (Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>());
+                return (Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>(), null);
+            }
+        }
+
+        /// <summary>
+        /// Fill a BoxSet's entry from its members. A BoxSet has no media streams of its own: its language tags are
+        /// the union of its manually-linked movie and series members'. "Just Added" on a collection follows its
+        /// newest member (LatestEpisodeAdded / LatestEpisodeId), never its own DateCreated: Jellyfin's automatic
+        /// TMDB collections can be created again by a library scan.
+        /// </summary>
+        private void SetCollectionFacts(TagCacheEntry entry, BaseItem collection, bool record)
+        {
+            (entry.AudioLanguages, entry.SubtitleLanguages, entry.SdhSubtitleLanguages, var newestMember) = GetCollectionLanguages(collection, record);
+            entry.LatestEpisodeAdded = newestMember?.Added;
+            entry.LatestEpisodeId = newestMember?.Id;
+        }
+
+        /// <summary>
+        /// Whether a collection member's added date can stand for the collection's "Just Added": a kind the
+        /// cache holds, so it gets an entry of its own (built already or not; the per-user filter reads it
+        /// later). Never another collection: its own date is reset when a tool creates it again.
+        /// </summary>
+        /// <param name="member">A linked or real child of a BoxSet.</param>
+        internal static bool IsDatedCollectionMember(BaseItem member) =>
+            member.GetBaseItemKind() is var kind && kind != BaseItemKind.BoxSet && TaggableTypes.Contains(kind);
+
+        /// <summary>A folder's real (not linked) children, or none when they cannot be read.</summary>
+        private IEnumerable<BaseItem> FolderChildren(Folder folder)
+        {
+            try
+            {
+                return folder.Children?.ToArray() ?? Array.Empty<BaseItem>();
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"[TagCache] Failed to read the children of collection {folder.Id}: {ex.Message}");
+                return Array.Empty<BaseItem>();
             }
         }
 

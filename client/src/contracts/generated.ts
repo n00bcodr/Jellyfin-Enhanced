@@ -345,6 +345,7 @@ export interface BootstrapPublicConfig {
   "StatusTagsMilestones": boolean;
   "StatusTagsNewRelease": boolean;
   "StatusTagsNewReleaseDays": number;
+  "StatusTagsOnCollections": boolean;
   "StatusTagsPosition": string;
   "StatusTagsScenes": boolean;
   "StatusTagsSchedule": boolean;

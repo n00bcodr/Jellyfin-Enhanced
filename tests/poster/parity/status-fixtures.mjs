@@ -20,7 +20,9 @@ add('mid-credits', movie({ Scenes: { PostCredits: false, MidCredits: true } }), 
 add('scenes-after-added', movie({ DateCreated: ago(1), Scenes: { PostCredits: true } }), 'just_added', 'Just Added', { settings: { StatusTagsScenes: true } });
 add('scenes-movie-only', show({ Scenes: { PostCredits: true } }), null, null, { settings: { StatusTagsScenes: true } });
 add('added-video', { Type: 'Video', DateCreated: ago(1) }, 'just_added', 'Just Added');
-add('added-collection', { Type: 'BoxSet', DateCreated: ago(1) }, 'just_added', 'Just Added');
+add('added-collection', { Type: 'BoxSet', DateCreated: old, LatestEpisodeAdded: ago(1) }, 'just_added', 'Just Added');
+add('recreated-collection', { Type: 'BoxSet', DateCreated: ago(1), LatestEpisodeAdded: old }, null, null);
+add('collection-own-date-only', { Type: 'BoxSet', DateCreated: ago(1) }, null, null);
 add('new-movie', movie({ PremiereDate: ago(2), DateCreated: ago(1) }), 'new_movie', 'New Movie');
 add('new-series', show({ PremiereDate: ago(2) }), 'new_series', 'New Series');
 add('new-episode', episode({ PremiereDate: ago(2), DateCreated: old }), 'new_episode', 'New Episode');

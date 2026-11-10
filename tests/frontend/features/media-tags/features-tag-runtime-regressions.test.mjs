@@ -89,10 +89,13 @@ test('TAG-RUNTIME-003: a status entry stored in an older shape is a miss, so it 
   const entry = version => ({ older: { v: 1, stripRevision: 'none', timestamp: Date.now(),
     payload: { v: version, t: 'Movie', timestamp: Date.now(), c: OLD, p: OLD } } });
   const plugin = { TagCacheServerMode: false };
-  const current = statusPage(t, { plugin, stored: entry(6) });
+  const current = statusPage(t, { plugin, stored: entry(7) });
   assert.equal(current.renderer().renderFromCache(current.hosts[0], 'older'), true, 'the current shape is a hit');
-  const previous = statusPage(t, { plugin, stored: entry(5) });
-  assert.equal(previous.renderer().renderFromCache(previous.hosts[0], 'older'), false, 'version 5 is read as unknown');
+  // 6 lacks a collection's newest member's added date (upstream 324b5c92); 5 lacks the direct-play facts too.
+  for (const version of [6, 5]) {
+    const previous = statusPage(t, { plugin, stored: entry(version) });
+    assert.equal(previous.renderer().renderFromCache(previous.hosts[0], 'older'), false, `version ${version} is read as unknown`);
+  }
 });
 
 test('TAG-RUNTIME-003: a cached redraw keeps the version the user picked', async t => {

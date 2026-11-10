@@ -222,6 +222,7 @@ export function createMediaTagsTab(m: MediaTagsTabDeps) {
     return {
         wire,
         JE_MT_TAB,
+        JE_MT_SECTIONS,
         jeHoldMediaTags,
         jeRunHeldWrite,
         jeWriteOrigin,

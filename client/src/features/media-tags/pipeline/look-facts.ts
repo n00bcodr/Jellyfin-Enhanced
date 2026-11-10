@@ -134,7 +134,8 @@ export function createLookFacts(s: PipelineState, JE: TagRuntimeBridge, deps: Pi
         const epoch = JE.session?.getEpoch?.();
         const response = record(await deps.apiClient().ajax({
             type: 'POST',
-            url: deps.apiClient().getUrl(`/JellyfinEnhanced/tag-data/${userId}`),
+            // With the episode and collection-member dates: the Status renderer draws (and keeps) this answer.
+            url: deps.apiClient().getUrl(`/JellyfinEnhanced/tag-data/${userId}`, { latestEpisode: true }),
             data: JSON.stringify([itemId]),
             contentType: 'application/json',
             dataType: 'json'

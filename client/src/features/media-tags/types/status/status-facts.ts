@@ -35,7 +35,7 @@ export interface StatusData extends EpisodeFacts {
     created: number | null;
     /** PremiereDate (ms; Movie/Series/Episode). */
     premiere: number | null;
-    /** Series/Season: newest episode DateCreated (ms). */
+    /** Series/Season: newest episode DateCreated (ms); BoxSet: newest member DateCreated (ms). */
     latest: number | null;
     season: number | null;
     episode: number | null;
@@ -121,6 +121,14 @@ export function readFacts(src: JsonRecord): EpisodeFacts {
         addedSpan: first !== null && last !== null && count !== null
             ? { first, last, count, coveredThrough: toInt(span.CoveredThrough) } : null,
     };
+}
+
+/**
+ * The date "Just Added" reads. A collection is recreated by library scans (a fresh DateCreated every time), so its
+ * newest member's added date stands in; without that fact it shows no badge.
+ * */
+export function addedDate(data: StatusData): number | null {
+    return data.type === 'BoxSet' ? data.latest : data.created;
 }
 
 /**

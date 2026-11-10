@@ -29,7 +29,7 @@
     const COLOUR_STORE = "posterColours";
     const DIRECT_PLAY_STORE = "directPlay";
     const KEY_SEP = "|";
-    const ENTRY_SCHEMA = 10;
+    const ENTRY_SCHEMA = 52;
     let dbPromise = null;
     let unavailable = false;
     function available() {

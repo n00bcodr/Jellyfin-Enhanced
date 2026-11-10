@@ -145,6 +145,22 @@ public class ApiConfigurationTests
         Assert.Equal(enabled, document.RootElement.GetProperty("SpoilerBlurTrickplay").GetBoolean());
     }
 
+    /// <summary>The web client's Status resolver reads the administrator's collections switch from the public configuration.</summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void PublicConfigCarriesTheSwitchForStatusBadgesOnCollections(bool enabled)
+    {
+        using var fixture = new ApiPluginFixture();
+        Assert.True(fixture.Plugin.Configuration.StatusTagsOnCollections); // on unless an administrator turns it off
+        fixture.Plugin.Configuration.StatusTagsOnCollections = enabled;
+        var maintenance = new MaintenanceModeService(Mock.Of<IUserManager>(), Mock.Of<ISessionManager>(), fixture.Core.Paths.Object, fixture.Core.Logger);
+        var controller = ApiAssetTests.Controller(fixture.Core, maintenance);
+        controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Role, "User")], "test"));
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(Assert.IsType<JsonResult>(controller.GetPublicConfig()).Value));
+        Assert.Equal(enabled, document.RootElement.GetProperty("StatusTagsOnCollections").GetBoolean());
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData(false)]

@@ -191,8 +191,12 @@ const ROWS = [
   ['episode: future air date is not a premiere', episode({ EpisodeNumber: 1, PremiereDate: NOW + 2 * DAY }), {}, null, null],
   ['series: future season premiere is not a new season', show({ SeasonPremiere: { Season: 2, Aired: NOW + 2 * DAY } }), {}, null, null],
   ['series: Jellyfin continuing is authoritative', show({ Status: 'Continuing' }), { statusTagsSeriesStatus: true }, facts({ status: 'Ended' }), ['returning', 'Returning']],
-  // Others: Just Added only
-  ['boxset: just added', { Type: 'BoxSet', DateCreated: ago(1) }, {}, null, ['added', 'Just Added']],
+  // Others: Just Added only. A collection reads its newest member's added date: Jellyfin
+  // creates automatic collections again on a library scan, which resets their own date.
+  ['boxset: just added by its newest member', { Type: 'BoxSet', DateCreated: OLD, LatestEpisodeAdded: ago(1) }, {}, null, ['added', 'Just Added']],
+  ['boxset: recreated by a scan, members all old', { Type: 'BoxSet', DateCreated: ago(1), LatestEpisodeAdded: OLD }, {}, null, null],
+  ['boxset: its own date alone is no badge', { Type: 'BoxSet', DateCreated: ago(1) }, {}, null, null],
+  ['video: just added by its own date', { Type: 'Video', DateCreated: ago(1) }, {}, null, ['added', 'Just Added']],
   ['boxset: no release badges', { Type: 'BoxSet', DateCreated: OLD, PremiereDate: ago(1) }, {}, null, null],
 ];
 
@@ -209,6 +213,26 @@ for (const [name, entry, settings, seriesFacts, expected] of ROWS) {
     if (expected) assert.ok(h.chip().classList.contains('status-tag'));
   });
 }
+
+for (const [name, plugin, expected] of [
+  ['the admin switch is on', { StatusTagsOnCollections: true }, ['added', 'Just Added']],
+  ['the setting is missing (an older server)', {}, ['added', 'Just Added']],
+  ['the admin turns status badges off for collections', { StatusTagsOnCollections: false }, null],
+]) {
+  test(`a collection whose newest member was added just now: ${name}`, async t => {
+    const h = setup(t, { plugin });
+    h.show({ Type: 'BoxSet', DateCreated: OLD, LatestEpisodeAdded: ago(1) }, h.hosts[0], 'item1');
+    await h.flush();
+    assert.deepEqual(h.chip() ? [h.key(), h.badge()] : null, expected);
+  });
+}
+
+test('turning collections off leaves a movie added just now with its badge', async t => {
+  const h = setup(t, { plugin: { StatusTagsOnCollections: false } });
+  h.show(movie({ DateCreated: ago(1) }), h.hosts[0], 'item1');
+  await h.flush();
+  assert.deepEqual([h.key(), h.badge()], ['added', 'Just Added']);
+});
 
 test('chips carry their kind as a modifier class and their compact label', async t => {
   const h = setup(t, { series: { [SERIES]: facts({ nextAired: { date: '2026-10-30', season: 1, episode: 2 } }) } });

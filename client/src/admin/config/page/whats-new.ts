@@ -9,7 +9,7 @@ import type { WhatsNewEntry, WhatsNewSetting } from './types';
 export type WhatsNewDeps = Pick<PageModules, 'context' | 'mediaTagsTab' | 'serviceStatus' | 'tabs'>;
 
 export function createWhatsNew(m: WhatsNewDeps) {
-    const { ApiClient } = m.context;
+    const { ApiClient, lifecycle } = m.context;
 
         /**
          * Build the Integration Health checklist inside #je-checklist.
@@ -121,6 +121,7 @@ export function createWhatsNew(m: WhatsNewDeps) {
 
                 renderWhatsNewBanner((perSetting.length ? groupWhatsNewByFieldset(perSetting) : []).concat(movedEntries), pluginVersion, singleVersion);
                 renderWhatsNewBadges(perSetting);
+                jeWatchMediaTagsBadges(new Map(Object.keys(newSettings).map(function(id) { return [id, shown(newSettings[id])]; })));
             }).catch(function(err) {
                 console.warn('[JE] whats-new check failed:', err);
             });
@@ -184,6 +185,8 @@ export function createWhatsNew(m: WhatsNewDeps) {
             ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('/JellyfinEnhanced/whats-new/dismiss') })
                 .catch(function(err) { console.warn('[JE] whats-new dismiss failed:', err); });
             renderWhatsNewBanner([], '', null);
+            // Acknowledged: the Media Tags tab's badges go with the form's, and a later redraw does not bring them back.
+            _jeMtNewSettings = new Map();
             renderWhatsNewBadges([]);
         }
 
@@ -268,6 +271,45 @@ export function createWhatsNew(m: WhatsNewDeps) {
             if (overview) overview.insertBefore(banner, overview.firstChild);
         }
 
+        /** New settings (id -> the version they arrived in); the ones drawn on the Media Tags tab are badged from it. */
+        var _jeMtNewSettings: ReadonlyMap<string, string> = new Map();
+
+        var _jeMtBadgeObserver: MutationObserver | null = null;
+
+        /** Badges the new settings whose controls are drawn on the Media Tags tab (re-run when the tab redraws a section or opens a group). */
+        function jeBadgeMediaTags() : void {
+            var tab = asHtml(document.getElementById('media-tags'));
+            if (!tab || _jeMtNewSettings.size === 0) return;
+            var badged = new Set<string>();
+            tab.querySelectorAll<HTMLElement>('[data-field-row]').forEach(function(row) {
+                var id = row.dataset.fieldRow ?? '';
+                var version = _jeMtNewSettings.get(id);
+                // The first row of a setting, as a lookup by id would find it.
+                if (version === undefined || badged.has(id)) return;
+                badged.add(id);
+                var host = row.querySelector('[data-je-label], .je-ta-switch-name');
+                if (!host || host.querySelector(':scope > .je-new-badge')) return;
+                jeAppendNewBadge(host, version);
+            });
+        }
+
+        function jeWatchMediaTagsBadges(newSettings: ReadonlyMap<string, string>) : void {
+            _jeMtNewSettings = newSettings;
+            var tab = asHtml(document.getElementById('media-tags'));
+            if (!tab) return;
+            // Watched only once there is something to badge; the view's lifecycle disconnects it.
+            if (!_jeMtBadgeObserver && newSettings.size > 0) {
+                var queued = false;
+                _jeMtBadgeObserver = lifecycle.track(new MutationObserver(function() {
+                    if (queued) return;
+                    queued = true;
+                    lifecycle.frame(function() { queued = false; jeBadgeMediaTags(); });
+                }));
+                _jeMtBadgeObserver.observe(tab, { childList: true, subtree: true });
+            }
+            jeBadgeMediaTags();
+        }
+
         function jeAppendNewBadge(container: Element, version: string) : void {
             if (!container) return;
             var badge = document.createElement('span');
@@ -284,6 +326,7 @@ export function createWhatsNew(m: WhatsNewDeps) {
         /** When a whole fieldset (or expander) is new, badge just its legend (or summary) instead of every control inside it. Each badge uses its own setting's first-detected version. */
         function renderWhatsNewBadges(perSetting: readonly WhatsNewSetting[]) : void {
             document.querySelectorAll<HTMLElement>('.je-new-badge').forEach(function(b) { b.remove(); });
+            jeBadgeMediaTags();
             var newIdSet = new Set(perSetting.map(function(f) { return f.id; }));
             var versionById = new Map(perSetting.map(function(f) { return [f.id, f.version]; }));
 

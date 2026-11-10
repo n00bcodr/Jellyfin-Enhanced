@@ -70,7 +70,7 @@ test('the facade, module order and section order are the hand-written tab\'s', (
   assert.deepEqual(plain(A.sections.map((s) => `${s.tab}/${s.id}`)), ['overview/overview', 'layout/layout-look', 'layout/layout-groups', 'layout/layout-shapes',
     'layout/layout-display', 'groups/group-quality', 'groups/group-genre', 'groups/group-language', 'groups/group-rating', 'groups/group-age-rating',
     'groups/group-status', 'groups/group-awards', 'groups/group-people', 'groups/group-logos', 'groups/group-custom', 'rules/rules', 'rules/item-looks',
-    'rules/rules-locks', 'colours/colours', 'badges/badges-families', 'badges/badges-windows', 'badges/badges-tmdb', 'badges/badges-leaving',
+    'rules/rules-locks', 'colours/colours', 'badges/badges-families', 'badges/badges-collections', 'badges/badges-windows', 'badges/badges-tmdb', 'badges/badges-leaving',
     'server/server-cache', 'server/server-native', 'server/server-portable', 'server/server-presets']);
   // A section module loaded on its own (no tab core) does nothing, as before.
   const lone = createHarness({ JE: {} });

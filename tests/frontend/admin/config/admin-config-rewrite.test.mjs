@@ -781,6 +781,9 @@ test('the Services tab has a Maintainerr card that says what it is for and links
   assert.match(card.querySelector('.jea-note').textContent, /^Maintainerr is only used to show how many days are left before an item leaves, on the Leaving soon media tag\./);
   const link = card.querySelector('a.jea-btn');
   assert.equal(link.getAttribute('href'), '#/configurationpage?name=Jellyfin%20Enhanced&jeSection=media-tags&tab=badges');
-  assert.equal(link.textContent.replace('sell', '').trim(), 'Set up Leaving soon');
+  // Upstream 23281542: the Status badges icon, and a button that is not underlined like a text link.
+  assert.equal(link.querySelector('i.material-icons').textContent, 'new_releases');
+  assert.equal(link.style.textDecoration, 'none');
+  assert.equal(link.textContent.replace('new_releases', '').trim(), 'Set up Leaving soon');
   assert.equal(card.querySelectorAll('input, select, textarea, button').length, 0, 'nothing here is a setting: the fields live on the Media Tags tab');
 });

@@ -872,6 +872,7 @@ Status Tags show one translucent badge per card: what is new, trending, airing n
 | **Direct-play warning** | Off | Shows **Transcode** or **Won't direct play** on movies and episodes this browser cannot play as they are ([web only](#direct-play-warning)) |
 | Admin: **New release window (days)** | 30 | Premiere dates, new seasons, season premieres and recent TMDB finales; range 1–365 |
 | Admin: **Just added window (days)** | 7 | Item/episode added dates, an episode's own air date and season binge drops; range 1–365 |
+| Admin: **Show status badges on collections** | On | Whether a collection can carry a status badge at all. A collection shows **Just Added** when one of its members was added recently; turn this off to keep badges off collections |
 
 ### Badges and priority
 
@@ -891,7 +892,7 @@ First match wins, with one badge per card. When switched on, **Leaving soon** co
 | **Coming Soon** | Movie, series | Jellyfin `PremiereDate` is in the future, including virtual items returned through fallback |
 | **New Movie / New Series** | Movie / series | Jellyfin premiere date falls within the new-release window and has passed |
 | **New Episode** | Series, season, episode | A container's latest non-virtual episode was added within the just-added window and the container predates that window. An episode itself aired within that window; one that was only added recently shows **Just Added** |
-| **Just Added** | All supported types | Jellyfin `DateCreated`, the date used by **Date Added** sorting, falls within the just-added window |
+| **Just Added** | All supported types | Jellyfin `DateCreated`, the date used by **Date Added** sorting, falls within the just-added window. A collection uses the newest `DateCreated` among its members instead of its own date, and shows no badge when you cannot see that member: Jellyfin can create automatic collections again during a library scan, which would mark every one of them as just added |
 | **New Season** | Series | The newest regular season's episode 1 aired within the new-release window; season number must exceed 1 |
 | **Season Premiere** | Season, episode | The season's episode 1 aired within the new-release window; an episode card must itself be episode 1 of a regular season and have aired within the just-added window |
 | **Season Finale** | Season, episode | The latest aired TMDB episode matches the library episode and is within the new-release window. TMDB `episode_type=finale` confirms it; if absent, the local episode must be last in its season and TMDB must have no next episode, or one in a later season |

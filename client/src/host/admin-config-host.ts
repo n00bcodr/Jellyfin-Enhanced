@@ -67,10 +67,23 @@ export interface CustomPluginLink { name: string; icon: string }
 
 /** JE.adminTags as the page uses it: the tab's own module owns everything else. */
 export interface MediaTagsContext { openTab(section: string, options: { group: string | null; focus: boolean }): void }
+/** A Media Tags section as its module declares it (drawn or not): what the settings search reads. */
+export interface AdminTagsSectionSurface {
+    readonly tab: string;
+    readonly title?: string;
+    readonly hint?: string;
+    readonly group?: { readonly id: string };
+    readonly fields?: ReadonlyArray<{ readonly id: string; readonly label?: string; readonly desc?: string; readonly descParams?: Readonly<Record<string, unknown>> }>;
+}
 export interface AdminTagsSurface {
     mountTab?(tab: HTMLElement, version: string): Promise<MediaTagsContext | null>;
     /** Runs work in the tab's save queue; the scope it hands over expires on a session change or on completion. */
     holdSaves?<T>(work: (scope: WriteScope) => Promise<T>): Promise<T>;
+    /** The tab as it is drawn now, or null. */
+    current?(): MediaTagsContext | null;
+    readonly sections?: readonly AdminTagsSectionSurface[];
+    /** The tab's text formatter (its English text with parameters filled in). */
+    fmt?(text: string, params?: Readonly<Record<string, unknown>>): string;
 }
 export interface MediaTagsHostSurface {
     t?: unknown;
