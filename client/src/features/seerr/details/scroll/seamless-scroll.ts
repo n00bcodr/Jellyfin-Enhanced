@@ -129,15 +129,34 @@ export function createDeduplicator() {
     };
 }
 
-function inlineThrottle(callback: () => void, wait: number): () => void {
-    let lastCall = 0;
-    return () => {
-        const now = Date.now();
-        if (now - lastCall >= wait) {
-            lastCall = now;
-            callback();
+/**
+ * At most one call per `wait` ms, and never the last one dropped: a call inside the window runs once when the window
+ * ends. A scroll burst's final event (the viewer, or a test, stopping at the bottom right after a fill) must still
+ * reach the fill loop; a leading-only throttle dropped it, and with the page then at rest at the bottom no further
+ * scroll event or intersection change came, so the feed stopped loading.
+ */
+function trailingThrottle(callback: () => void, wait: number): { (): void; cancel(): void } {
+    let lastCall = Number.NEGATIVE_INFINITY;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const run = () => {
+        timer = null;
+        lastCall = Date.now();
+        callback();
+    };
+    const throttled = () => {
+        const elapsed = Date.now() - lastCall;
+        if (elapsed >= wait) {
+            if (timer !== null) clearTimeout(timer);
+            run();
+        } else if (timer === null) {
+            timer = setTimeout(run, wait - elapsed);
         }
     };
+    throttled.cancel = () => {
+        if (timer !== null) clearTimeout(timer);
+        timer = null;
+    };
+    return throttled;
 }
 
 const ACTION_ROW_CSS = {
@@ -426,8 +445,7 @@ export function createScrollEngine(JE: SeerrDetailsBridge) {
         state.activeScrollObserver = observer;
         observer.observe(horizontal ? section : sentinel);
 
-        const throttle = JE.helpers?.throttle ?? inlineThrottle;
-        const onUserScroll = throttle(() => {
+        const onUserScroll = trailingThrottle(() => {
             if (!sentinel.isConnected) {
                 // Removed without cleanup (e.g. the user navigated away). Self-heal so this
                 // listener doesn't keep firing requests from other pages.
@@ -492,6 +510,7 @@ export function createScrollEngine(JE: SeerrDetailsBridge) {
             if (destroyed) return;
             destroyed = true;
             listeners.splice(0).forEach(off => off());
+            onUserScroll.cancel();
             cancelBackoff?.();
             if (pollTimer !== null) {
                 clearInterval(pollTimer);

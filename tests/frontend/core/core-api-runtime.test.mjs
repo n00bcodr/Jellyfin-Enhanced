@@ -169,6 +169,9 @@ test('retry limit and network-after-HTTP failures are bounded', async t => {
 
 test('retry budget aborts a transport that never settles', async t => {
     const wire = transport(), h = setup(t, wire); h.manager.CONFIG.retry.timeoutBudgetMs = 5;
+    // The API's clock stands still, so only the budget's own timer can end the attempt. On the wall clock a
+    // descheduled process can spend the 5 ms before the first attempt, which then fails as "Time budget exceeded".
+    h.window.performance.now = () => 0;
     await assert.rejects(h.api.fetch('/hang'), { name: 'AbortError' });
     assert.equal(wire.calls.length, 1); assert.equal(wire.calls[0].options.signal.aborted, true); finish(wire.calls[0]);
 });
@@ -282,7 +285,10 @@ test('legacy dedup promotion reaches the shared scheduler admission object', asy
 });
 
 test('retry jitter and clamping use the configured bounded exponential schedule', async t => {
-    let calls = 0; const h = setup(t, { fetch: async () => ++calls < 4 ? jsonResponse({}, 503) : jsonResponse({ ok: true }) });
+    // Jellyfin's page API is present, so navigation hooks it at once instead of polling for it every 100 ms: the
+    // poll's timer would join the spied delays whenever the retries take over 100 ms of wall time.
+    let calls = 0; const h = setup(t, { fetch: async () => ++calls < 4 ? jsonResponse({}, 503) : jsonResponse({ ok: true }),
+        globals: { Emby: { Page: {} } } });
     const timers = [], original = h.window.setTimeout.bind(h.window);
     h.window.setTimeout = (callback, ms) => { timers.push(ms); return original(callback, ms); };
     h.window.Math.random = () => 0;

@@ -85,8 +85,10 @@ function setup(t, { settings = {}, plugin = {}, series = {}, cards = 2, layout =
     chip: (host = hosts[0]) => host.querySelector('.status-tag'),
     badge: (host = hosts[0]) => host.querySelector('.status-tag')?.textContent ?? null,
     key: (host = hosts[0]) => host.querySelector('.status-tag')?.dataset.jeStatus ?? null,
-    /** Let the batched series request (30 ms) go out and its answer land. */
-    flush: () => new Promise(resolve => setTimeout(resolve, 60))
+    /** Let the batched series request (30 ms) go out and its answer land. The 60 ms start only once the pending
+     *  microtasks (the card's intersection callback, which queues the request) have run: started before them, a process
+     *  descheduled for 30 ms in between reaches the end of the 60 ms first. */
+    flush: async () => { await new Promise(resolve => setImmediate(resolve)); await new Promise(resolve => setTimeout(resolve, 60)); }
   });
 }
 

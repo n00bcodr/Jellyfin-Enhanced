@@ -109,15 +109,28 @@
       }
     };
   }
-  function inlineThrottle(callback, wait) {
-    let lastCall = 0;
-    return () => {
-      const now = Date.now();
-      if (now - lastCall >= wait) {
-        lastCall = now;
-        callback();
+  function trailingThrottle(callback, wait) {
+    let lastCall = Number.NEGATIVE_INFINITY;
+    let timer = null;
+    const run = () => {
+      timer = null;
+      lastCall = Date.now();
+      callback();
+    };
+    const throttled = () => {
+      const elapsed = Date.now() - lastCall;
+      if (elapsed >= wait) {
+        if (timer !== null) clearTimeout(timer);
+        run();
+      } else if (timer === null) {
+        timer = setTimeout(run, wait - elapsed);
       }
     };
+    throttled.cancel = () => {
+      if (timer !== null) clearTimeout(timer);
+      timer = null;
+    };
+    return throttled;
   }
   var ACTION_ROW_CSS = {
     horizontal: "display: inline-flex; justify-content: center; align-items: center; vertical-align: middle; padding: 1em 1.5em; box-sizing: border-box;",
@@ -366,8 +379,7 @@
       }, { rootMargin: `${Math.round(verticalBufferPx())}px` });
       state.activeScrollObserver = observer;
       observer.observe(horizontal ? section : sentinel);
-      const throttle = JE2.helpers?.throttle ?? inlineThrottle;
-      const onUserScroll = throttle(() => {
+      const onUserScroll = trailingThrottle(() => {
         if (!sentinel.isConnected) {
           teardown();
           return;
@@ -417,6 +429,7 @@
         if (destroyed) return;
         destroyed = true;
         listeners.splice(0).forEach((off) => off());
+        onUserScroll.cancel();
         cancelBackoff?.();
         if (pollTimer !== null) {
           clearInterval(pollTimer);

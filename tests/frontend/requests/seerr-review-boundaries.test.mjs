@@ -3,7 +3,12 @@ import assert from 'node:assert/strict';
 import { createHarness, deferred, plain } from '../helpers/harness.mjs';
 const flush = () => new Promise(resolve => setImmediate(resolve));
 const settle = async () => { await flush(); await flush(); };
-const wait = (h, ms = 30) => new Promise(resolve => h.window.setTimeout(resolve, ms));
+// jsdom runs history.back() as chained zero-delay tasks (traverse, then fire popstate), and a popstate handler can
+// start another. A starved event loop runs a fixed wait's timer between two links of that chain. So a wait first runs
+// every zero-delay task already queued and those they queue (Node runs equal-delay timers in order), then waits the
+// fixed time, then drains again. It never waits less than before.
+const drain = async h => { for (let i = 0; i < 20; i++) await new Promise(resolve => h.window.setTimeout(resolve, 0)); };
+const wait = async (h, ms = 30) => { await drain(h); await new Promise(resolve => h.window.setTimeout(resolve, ms)); await drain(h); };
 function setup(t, files = [], options = {}) {
     let user = 'a', epoch = 0;
     const resets = [], posts = [], dialogs = [], advanced = [];

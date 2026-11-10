@@ -4,7 +4,12 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHarness, plain } from '../helpers/harness.mjs';
 const settle = async () => { await new Promise(r => setImmediate(r)); await new Promise(r => setImmediate(r)); };
-const wait = (h, ms = 40) => new Promise(r => h.window.setTimeout(r, ms));
+// jsdom runs history.back() as chained zero-delay tasks (traverse, then fire popstate), and a popstate handler can
+// start another. A starved event loop runs a fixed wait's timer between two links of that chain. So a wait first runs
+// every zero-delay task already queued and those they queue (Node runs equal-delay timers in order), then waits the
+// fixed time, then drains again. It never waits less than before.
+const drain = async h => { for (let i = 0; i < 20; i++) await new Promise(resolve => h.window.setTimeout(resolve, 0)); };
+const wait = async (h, ms = 40) => { await drain(h); await new Promise(resolve => h.window.setTimeout(resolve, ms)); await drain(h); };
 function load(h, file) {
     if (process.env.SEERR_R2_JS) h.window.eval(readFileSync(join(process.env.SEERR_R2_JS, 'jellyseerr', file), 'utf8'));
     else h.load('jellyseerr/' + file);

@@ -1,6 +1,6 @@
 import { readdirSync } from 'node:fs';
 import { availableParallelism } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const repositoryRoot = fileURLToPath(new URL('../../../', import.meta.url));
@@ -17,6 +17,19 @@ export function discoverTests(directory = frontendRoot) {
   const files = walk(directory).sort();
   if (!files.length) throw new Error(`No frontend tests discovered under ${directory}`);
   return files;
+}
+
+/**
+ * The files split into the listed ones (repository-relative, e.g. the files a change can reach) and the rest, each in
+ * discovery order. Together they are exactly `files`, each once; a listed file not in `files` is ignored. (Passing
+ * the listed files first in one `node --test` command would not do: it sorts the files it is given.)
+ */
+export function splitFirst(files, listed) {
+  const wanted = new Set(listed.map(file => resolve(repositoryRoot, file)));
+  const first = files.filter(file => wanted.has(file)), rest = files.filter(file => !wanted.has(file));
+  if (first.length + rest.length !== files.length || new Set([...first, ...rest]).size !== new Set(files).size)
+    throw new Error('splitFirst changed the set of test files');
+  return { first, rest };
 }
 
 /**
@@ -37,5 +50,9 @@ export const testArguments = ['--test-timeout=300000', `--test-concurrency=${tes
 
 /** Dates and locale-formatted text must not depend on the machine running the tests. */
 export function testEnvironment(extra = {}) {
-  return { ...process.env, TZ: 'UTC', LANG: 'en_US.UTF-8', LC_ALL: 'en_US.UTF-8', ...extra };
+  // Each of the ~180 test processes loads jsdom, the harness and esbuild's JS API afresh. NODE_COMPILE_CACHE lets
+  // Node reuse V8's compiled code for those modules between processes and runs (keyed by each file's content and the
+  // V8 version, so an edited module is compiled again). JE_NODE_COMPILE_CACHE=0 turns it off.
+  const cache = process.env.JE_NODE_COMPILE_CACHE === '0' ? {} : { NODE_COMPILE_CACHE: process.env.NODE_COMPILE_CACHE || join(repositoryRoot, 'node_modules/.cache/node-compile-cache') };
+  return { ...process.env, ...cache, TZ: 'UTC', LANG: 'en_US.UTF-8', LC_ALL: 'en_US.UTF-8', ...extra };
 }

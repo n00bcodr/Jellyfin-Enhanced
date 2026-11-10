@@ -459,8 +459,10 @@ public class ApiSeerrProxyOutcomeTests
                     if (reply.Mode == "drop") { client.Client.Close(); return; }
                     var declared = reply.Mode == "truncate" ? body.Length + 64 : body.Length;
                     var head = $"HTTP/1.1 {reply.Status} X\r\nContent-Type: application/json\r\nContent-Length: {declared}\r\nConnection: {(reply.KeepAlive ? "keep-alive" : "close")}\r\n\r\n";
-                    await stream.WriteAsync(Encoding.ASCII.GetBytes(head), _stop.Token);
-                    await stream.WriteAsync(body, _stop.Token);
+                    // Head and body in one write, as a server sends a small reply. With two writes the body can land
+                    // after the client has read the head; the CSRF probe disposes its reply unread, so the client then
+                    // drains the body in the background and the next request finds no idle connection to reuse.
+                    await stream.WriteAsync(Encoding.ASCII.GetBytes(head).Concat(body).ToArray(), _stop.Token);
                     await stream.FlushAsync(_stop.Token);
                     if (reply.Mode == "truncate" || !reply.KeepAlive) { client.Client.Close(); return; }
                 }

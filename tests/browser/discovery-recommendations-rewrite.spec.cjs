@@ -35,9 +35,19 @@ function answer(url) {
   if (p.includes('/discover/')) return pageOf(url, 3000, 'movie');
   return null;
 }
+// While `holding` is set, feed pages after the first are not answered yet (`release` answers them): a test can then
+// see a feed that has re-read only its first page, however fast the engine would go on filling its read-ahead buffer.
+const feed = { holding: false, held: [] };
+async function release() {
+  feed.holding = false;
+  for (const route of feed.held.splice(0)) await route.fulfill({ contentType: 'application/json', body: JSON.stringify(answer(new URL(route.request().url()))) }).catch(() => {});
+}
 async function boot(page) {
+  feed.holding = false;
+  feed.held.length = 0;
   await page.route('http://discovery.fixture/**', route => {
     const url = new URL(route.request().url());
+    if (feed.holding && url.pathname.includes('/discover/') && url.searchParams.get('page') !== '1') { feed.held.push(route); return; }
     if (url.pathname.startsWith('/JellyfinEnhanced/')) return route.fulfill({ contentType: 'application/json', body: JSON.stringify(answer(url)) });
     return route.fulfill({ contentType: 'text/html', body: shell });
   });
@@ -91,12 +101,15 @@ test('generated discovery and recommendations page, filter, sort, paginate, clos
   await page.locator(`${section} .jellyseerr-filter-btn[data-mode="movies"]`).click();
   await expect(page.locator(`${section} [data-media-type="tv"]`).first()).toBeHidden();
   const sortRequest = page.waitForRequest(request => request.url().includes('sortBy=first_air_date.desc'));
+  // Hold the pages after the first, so the re-read first page can be seen before the engine fills its buffer further.
+  feed.holding = true;
   await page.locator(`${section} .jellyseerr-sort-select`).selectOption('release_date.desc');
   await sortRequest;
   // Reloaded from page 1: both types are on the page, with the filter still hiding the series.
   await expect.poll(() => page.locator(`${section} .card`).count()).toBe(40);
   await expect(page.locator(`${section} [data-media-type="tv"]`).first()).toBeHidden();
   await expect(page.locator(`${section} .card`).first()).toHaveAttribute('data-id', '1000');
+  await release();
 
   // Standalone page: leaving the list removes its section; rows and tiles render.
   await page.evaluate(() => { window.JellyfinEnhanced.recommendationsPage.showPage(); });

@@ -14,9 +14,10 @@
     "contracts:generate": "dotnet run --project tools/ClientContracts/ClientContracts.csproj --configuration Release -- .",
     "contracts:check": "dotnet run --project tools/ClientContracts/ClientContracts.csproj --configuration Release -- . --check",
     "client:typecheck": "node scripts/client-build.mjs --typecheck",
+    "client:typecheck:fast": "node scripts/typecheck-fast.mjs",
     "client:build": "node scripts/client-build.mjs",
     "client:check": "node scripts/client-build.mjs --check",
-    "test:client-build": "node --test --test-concurrency=1 tests/client-build/*.test.mjs",
+    "test:client-build": "node --test tests/client-build/*.test.mjs",
     "verify:rewrite": "node scripts/client-verify.mjs",
     "verify:restructure": "scripts/restructure-gates.sh all && scripts/restructure-gates.sh browser",
     "inventory:rewrite": "node scripts/rewrite-inventory.mjs",
@@ -32,5 +33,8 @@
     "istanbul-reports": "3.2.0",
     "jsdom": "26.1.0",
     "typescript": "6.0.3"
+  },
+  "optionalDependencies": {
+    "tsc-rs": "0.8.0"
   }
 }

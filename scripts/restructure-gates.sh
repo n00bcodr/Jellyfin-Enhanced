@@ -2,9 +2,9 @@
 # Gates for the v12 restructure (artifacts/restructure-plan/PLAN.md "Gates", backend.md §4 "Commands",
 # frontend.md §3 gate G). Each gate runs in a `set -e` subshell; the script exits non-zero on the first failure.
 #
-#   scripts/restructure-gates.sh be              backend B, G, T, F + INV + TOOL (T and the frontend suite run at once)
+#   scripts/restructure-gates.sh be              backend B, G, T, F + INV + TOOL, as four concurrent lanes (run_lanes)
 #   scripts/restructure-gates.sh fe              frontend gate G (includes INV and TOOL)
-#   scripts/restructure-gates.sh all             be, then fe without a second frontend-suite run (merge points)
+#   scripts/restructure-gates.sh all             be's lanes plus fe's regeneration, each check once (merge points)
 #   scripts/restructure-gates.sh browser         npm run test:browser, failures ratcheted vs baselines/browser-failures.txt
 #   scripts/restructure-gates.sh r <pattern>     no stale references: fails if `git grep -nE <pattern>` matches outside artifacts/
 #   scripts/restructure-gates.sh h               poster harness builds + gen-resolution-data --check
@@ -15,28 +15,49 @@
 #   scripts/restructure-gates.sh bundle-hash <f> prints `<stable sha256> <comment-stripped sha256>` of a bundle file
 #   scripts/restructure-gates.sh size            served bundle raw and gzip -9 bytes vs client/bundle-budget.json (ratchet)
 #   scripts/restructure-gates.sh image           the HOST image tag in baselines/jf12-digest.txt still has the recorded RepoDigest
-#   scripts/restructure-gates.sh quick [feature…] inner loop, not a merge gate: typecheck, client build, inventory, the
-#                                                features' node tests + architecture + guards (new failures only), and
-#                                                their dotnet tests + Architecture when a .cs file changed. Features
-#                                                default to those the diff from $JE_BASE_REF (else
-#                                                restructure/integration) touches.
+#   scripts/restructure-gates.sh quick [feature…] THE inner loop, not a merge gate: typecheck, client build, inventory,
+#                                                the features' node tests + architecture + guards (new failures only),
+#                                                their dotnet tests + Architecture when a .cs file changed, and, when an
+#                                                affected map is recorded, also the node test files and (chromium) specs
+#                                                whose traced inputs the change touches. Features default to those the
+#                                                diff from $JE_BASE_REF (else restructure/integration) touches.
+#   scripts/restructure-gates.sh affected record records the affected map for HEAD (tests/runner/affected.py; needs
+#                                                strace, ~5 min); `affected` alone is an alias of `quick`
 #
 # Pre-existing test failures are ratcheted, not fixed: a dotnet or node test run passes when every failing test is
 # listed in baselines/{dotnet,npm}-failures.txt and the total and passed counts are >= baselines/{dotnet,npm}-tests.txt.
 # The browser suite passes when every failing test is listed in baselines/browser-failures.txt.
 #
-# Run dotnet gates one worktree at a time on the 16 GB worker (PLAN.md "Worktrees and parallelism"). Inside `be` one
-# dotnet build or test runs at a time; the node frontend suite runs beside T. JE_TEST_CONCURRENCY (node test files at
-# once; default max(4, cores - 1)) and JE_BROWSER_WORKERS (Playwright workers; `browser` uses 6 unless set) tune them.
+# Run dotnet gates one worktree at a time on the 16 GB worker (PLAN.md "Worktrees and parallelism"). Inside be and all
+# the lanes run at once: dotnet (B, one test build, G, T as several test hosts), frontend, contracts (its own tool build
+# and a fixture copy) and checks; at most the dotnet lane's build or test hosts and the contracts lane's tool run overlap
+# (peak about 6 GB). Tuning: JE_TEST_CONCURRENCY (node test files at once; default max(4, cores - 1)),
+# JE_DOTNET_SINGLETON_SHARDS (T's singleton test hosts; default 3, 0 = one process), JE_GATE_WIDE_NICE (priority of the
+# frontend and checks lanes; default 5), JE_GATE_FAIL_FAST=1 (stop the other lanes at the first failure),
+# JE_BROWSER_WORKERS (Playwright workers; default the cores up to 10, less those busy now, at least 6),
+# JE_BROWSER_LONG / JE_BROWSER_LONG_WORKERS (spec files run as a second Playwright run; default
+# tag-row-subpixel.spec.cjs with 1 worker, 2 from 12).
+# scripts/gate-timing.py times any gate: wall, CPU and parallelism per step, test file and class.
 set -euo pipefail
 
+SELF=$(readlink -f "${BASH_SOURCE[0]}")
 ROOT=$(git rev-parse --show-toplevel)
 cd "$ROOT"
 BASELINES=artifacts/restructure-plan/baselines
 PLUGIN=Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.csproj
 TESTS=tests/backend/JE.Tests.csproj
 
-step() { printf '\n== %s\n' "$*" >&2; }
+step() {
+  printf '\n== %s\n' "$*" >&2
+  # scripts/gate-timing.py: one `<epoch seconds> <subshell pid> <label>` line per step, so the harness can attribute
+  # each process to the step whose subshell started it. Unset (the default), nothing is written.
+  if [ -n "${JE_GATE_TRACE:-}" ]; then printf '%s\t%s\t%s\n' "$(date +%s.%N)" "$BASHPID" "$*" >> "$JE_GATE_TRACE"; fi
+}
+
+# scripts/gate-timing.py: keep a copy of a test report (TRX, node results, Playwright JSON) as $JE_GATE_KEEP/<name>.
+# A free TCP port on 127.0.0.1 (the fixture server binds it next).
+free_port() { python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])'; }
+keep_report() { if [ -n "${JE_GATE_KEEP:-}" ] && [ -s "$1" ]; then mkdir -p "$JE_GATE_KEEP"; cp "$1" "$JE_GATE_KEEP/$2"; fi; }
 
 no_snapshot_updates() {
   if [ -n "${JE_UPDATE_SNAPSHOTS:-}" ]; then
@@ -90,17 +111,37 @@ ratchet() {
 # npm test == npm run test:frontend == node tests/frontend/run.mjs (package.json), so one ratcheted runner serves
 # both FE G (`npm test`) and BE F (`npm run test:frontend`). Counts come from the spec reporter's `ℹ tests|pass N` lines.
 frontend_tests() {
-  local dir rc=0
+  local dir rc=0 first='' early=''
   dir=$(mktemp -d)
-  node tests/frontend/run.mjs --test-reporter=spec --test-reporter-destination=stdout \
-    --test-reporter="$ROOT/scripts/restructure-gates-reporter.mjs" --test-reporter-destination="$dir/results" \
-    | tee "$dir/out" || rc=$?
+  # Run the files the affected map says this change can reach (none when there is no map or the change is global) as a
+  # first part, then the rest: a broken change then fails in the first seconds. Every file runs once; the two parts'
+  # results and counts are added up. (`node --test` sorts the files it is given, so one command cannot set the order.)
+  if [ -s node_modules/.cache/je-affected/map.json ]; then
+    python3 tests/runner/affected.py select --json 2>/dev/null \
+      | python3 -c 'import json, sys; s = json.load(sys.stdin); print("\n".join([] if s["all"] else s["suites"].get("frontend", [])))' \
+      > "$dir/first" 2>/dev/null || true
+    if [ -s "$dir/first" ]; then echo "frontend tests: the $(wc -l < "$dir/first") file(s) the change can reach run first" >&2; first="$dir/first"; fi
+  fi
+  # In the lanes, every failing test is also written to a lane log the moment it fails, for the failure watcher.
+  if [ -n "${JE_LANE_LOG_DIR:-}" ]; then early="$JE_LANE_LOG_DIR/frontend-early.log"; fi
+  local part parts=all
+  [ -z "$first" ] || parts='first rest'
+  for part in $parts; do
+    JE_TESTS_FIRST=$first JE_TESTS_PART=${first:+$part} JE_EARLY_FAILURES=$early node tests/frontend/run.mjs \
+      --test-reporter=spec --test-reporter-destination=stdout \
+      --test-reporter="$ROOT/scripts/restructure-gates-reporter.mjs" --test-reporter-destination="$dir/results-$part" \
+      | tee "$dir/out-$part" || rc=$?
+  done
+  cat "$dir"/results-* > "$dir/results" 2>/dev/null || true
+  cat "$dir"/out-* > "$dir/out"
   [ -s "$dir/results" ] || { echo "frontend tests: no results written (node exit $rc)" >&2; rm -rf "$dir"; return 1; }
+  keep_report "$dir/results" frontend-results.txt
   rc=0
   ratchet "npm test" "$BASELINES/npm-failures.txt" \
     "$(awk '$1=="ℹ" && $2=="tests" {print $3}' "$BASELINES/npm-tests.txt")" \
     "$(awk '$1=="ℹ" && $2=="pass" {print $3}' "$BASELINES/npm-tests.txt")" \
-    "$dir/results" "$(awk '$1=="ℹ" && $2=="tests" {print $3}' "$dir/out")" "$(awk '$1=="ℹ" && $2=="pass" {print $3}' "$dir/out")" || rc=$?
+    "$dir/results" "$(awk '$1=="ℹ" && $2=="tests" {n++; s+=$3} END {if (n) print s}' "$dir/out")" \
+    "$(awk '$1=="ℹ" && $2=="pass" {n++; s+=$3} END {if (n) print s}' "$dir/out")" || rc=$?
   rm -rf "$dir"
   return "$rc"
 }
@@ -175,6 +216,15 @@ gate_tool() (
   python3 tests/run.py tooling
   step "TOOL: no AI attribution in commit messages since the base"
   attribution_check
+  # The inner loop's fast pre-check (tsc-rs) must keep agreeing with TypeScript 6, the gates' authority: the clean tree
+  # plus 4 mutation sites drawn by the commit (each commit tries others), verdict and file:line compared (~15 s).
+  if node scripts/typecheck-fast.mjs --available; then
+    step "TOOL: tsc-rs agrees with TypeScript 6 (clean tree + 4 seeded mutations; scripts/typecheck-agreement.mjs --gate)"
+    node scripts/typecheck-agreement.mjs --gate --sample 4 --seed "$(git rev-parse HEAD)" --jobs 2 \
+      --checker "tsc6=node $ROOT/node_modules/typescript/bin/tsc" --checker "tsc-rs=$ROOT/node_modules/.bin/tsc-rs" > /dev/null
+  else
+    step "TOOL: tsc-rs agreement skipped: tsc-rs is not installed here (an optional dependency)"
+  fi
   step "TOOL: mutation/history path check vs $BASELINES/mutation-check.txt"
   local out new
   out=$(mutation_check)
@@ -193,24 +243,66 @@ be_build_and_g() (
   new=$(build_warnings <"$log" | LC_ALL=C comm -23 - "$BASELINES/build-warnings.txt")
   rm -f "$log"
   if [ -n "$new" ]; then echo "B: build warnings not in $BASELINES/build-warnings.txt (code file):" >&2; printf '  %s\n' "$new" >&2; false; fi
+  # One build serves G and T: the plugin was just built (B, same configuration), so the test project builds against
+  # its output without building it again (BuildProjectReferences=false), and both test runs use --no-build.
+  step "B: build the test project once against B's plugin build (G and T run --no-build)"
+  dotnet build "$TESTS" -c Release --no-restore -p:JellyfinTarget=jf12 -p:BuildProjectReferences=false -tl:off
   if [ -d tests/backend/Architecture ]; then
     step "G: Architecture gates"
-    dotnet test "$TESTS" -c Release --no-restore -p:JellyfinTarget=jf12 --filter "FullyQualifiedName~Architecture"
+    dotnet test "$TESTS" -c Release --no-restore --no-build -p:JellyfinTarget=jf12 --filter "FullyQualifiedName~Architecture"
   else
     step "G: skipped (tests/backend/Architecture does not exist yet; added by backend S0)"
   fi
 )
 
 # T, plus the verify:rewrite backend part (coverage floors on T's results).
+# T runs as several test-host processes at once (tests/runner/dotnet_shards.py): JE_DOTNET_SINGLETON_SHARDS (default 3)
+# processes split the `Plugin singleton` classes, each running them alone and one at a time as xUnit does in one process,
+# and one process runs every other test with xUnit's parallel collections. Results and coverage are merged (exactly:
+# coverlet JSON, hits summed per line and branch). JE_DOTNET_SINGLETON_SHARDS=0 runs the whole suite in one process.
 be_t() (
   set -e
-  local res rc=0
-  step "T: full backend suite (failure ratchet vs $BASELINES/dotnet-failures.txt, dotnet-tests.txt)"
+  local res rc=0 plan name filter shards=${JE_DOTNET_SINGLETON_SHARDS:-3}
+  local -a names=() pids=()
   res=$(mktemp -d)
-  dotnet test "$TESTS" -c Release --no-restore -p:JellyfinTarget=jf12 \
-    --logger "trx;LogFileName=je.trx" --results-directory "$res" --collect:"XPlat Code Coverage" || rc=$?
-  [ -s "$res/je.trx" ] || { echo "T: no TRX written (dotnet test exit $rc)" >&2; false; }
-  trx_results "$res/je.trx" > "$res/results"
+  if [ "$shards" = 0 ]; then
+    plan='{"all":""}'
+  else
+    plan=$(python3 tests/runner/dotnet_shards.py plan --shards "$shards")
+  fi
+  mapfile -t names < <(jq -r 'keys[]' <<<"$plan")
+  step "T: full backend suite in ${#names[@]} test host(s): ${names[*]} (failure ratchet vs $BASELINES/dotnet-failures.txt, dotnet-tests.txt)"
+  # Coverlet instruments the plugin (and test) assembly in place in the output directory and restores it after the
+  # run, so concurrent test hosts must not share that directory: each host runs from its own copy (hard links, except
+  # the assemblies coverlet rewrites, which are real copies), inside bin/ so the tests' upward search for the
+  # repository root still works. `dotnet test` still runs the project (-p:OutDir points it at the copy), so the
+  # collector and settings the project's package targets supply are the same as in one process.
+  local out=tests/backend/bin/Release/net10.0 shards_dir=tests/backend/bin/Release/shards f
+  rm -rf "$shards_dir"
+  for name in "${names[@]}"; do
+    filter=$(jq -r --arg n "$name" '.[$n]' <<<"$plan")
+    mkdir -p "$shards_dir"
+    cp -al "$out" "$shards_dir/$name"
+    for f in "$out"/*.pdb; do
+      cp --remove-destination "$f" "$shards_dir/$name/"
+      cp --remove-destination "${f%.pdb}.dll" "$shards_dir/$name/"
+    done
+    # shellcheck disable=SC2086
+    dotnet test "$TESTS" -c Release --no-restore --no-build -p:JellyfinTarget=jf12 -p:OutDir="$ROOT/$shards_dir/$name/" ${filter:+--filter "$filter"} \
+      --logger "trx;LogFileName=$name.trx" --results-directory "$res/$name" --collect:"XPlat Code Coverage" \
+      -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=json,cobertura >"$res/$name.log" 2>&1 &
+    pids+=($!)
+    if [ -n "${JE_LANE_LOG_DIR:-}" ]; then ln -sf "$res/$name.log" "$JE_LANE_LOG_DIR/dotnet-T-$name.log"; fi
+  done
+  for name in "${!pids[@]}"; do wait "${pids[$name]}" || rc=$?; done
+  for name in "${names[@]}"; do
+    echo "-- T host $name:" >&2
+    grep -E '^(Passed|Failed)!|^\s+Failed |error' "$res/$name.log" >&2 || tail -n 20 "$res/$name.log" >&2
+    [ -s "$res/$name/$name.trx" ] || { echo "T: $name wrote no TRX (dotnet test exit $rc); its log:" >&2; tail -n 80 "$res/$name.log" >&2; false; }
+    keep_report "$res/$name/$name.trx" "T-$name.trx"
+  done
+  rm -rf "$shards_dir"
+  python3 tests/runner/dotnet_shards.py merge "$res" "${names[@]}" > "$res/results"
   ratchet "T (dotnet test)" "$BASELINES/dotnet-failures.txt" \
     "$(grep -oE 'Total: *[0-9]+' "$BASELINES/dotnet-tests.txt" | grep -oE '[0-9]+')" \
     "$(grep -oE 'Passed: *[0-9]+' "$BASELINES/dotnet-tests.txt" | grep -oE '[0-9]+')" \
@@ -218,72 +310,143 @@ be_t() (
   # `npm run verify:rewrite` (scripts/client-verify.mjs) = contracts:check, client:check, inventory:rewrite:check,
   # test:client-build, test:contract-boundary, test:frontend, then `tests/run.py backend` (dotnet test + coverage floors).
   # It stops at the first pre-existing failure, so F runs those parts here instead: test:frontend ratcheted, the dotnet
-  # run reused from T, and its coverage floors checked on T's results.
+  # run reused from T, and its coverage floors checked on T's results (merged over T's hosts).
   step "F: verify:rewrite backend part: coverage floors on T's results (tests/runner/coverage.py)"
-  python3 tests/runner/coverage.py "$res"
+  python3 tests/runner/coverage.py "$res/merged"
+  keep_report "$res/merged/coverage-summary.json" coverage-summary.json
   rm -rf "$res"
 )
 
 # T and the ratcheted frontend suite at the same time, each in its own subshell with its own log. The frontend suite
 # runs no dotnet, so dotnet still builds and tests one process at a time. Both tails are printed; either failing fails.
-be_t_and_frontend() (
+# Lanes. be and all run four lanes at once, each in its own subshell with its own log:
+#   dotnet     B (plugin build, warning ratchet) -> test-project build -> G -> T (+ coverage floors on T's results)
+#   frontend   the ratcheted frontend suite (node only; needs no dotnet build)
+#   contracts  contracts:check -> test:contract-boundary (own tool project and fixture copy, no shared build output)
+#   checks     test:client-build -> client:check -> inventory:rewrite:check -> INV -> TOOL [-> all: fe's part]
+# Each lane stops at its own first failure (set -e). A lane's result is printed the moment it ends, so the first
+# failure shows when it happens; then every lane's summary and tail (whole tail on failure). Any failed lane fails the
+# gate. JE_GATE_FAIL_FAST=1 also stops the other lanes at the first failure (default: they run to the end).
+lane_dotnet() ( set -e; be_build_and_g; be_t )
+lane_frontend() ( set -e; step "F: frontend suite (ratcheted)"; frontend_tests )
+lane_contracts() (
   set -e
-  local dir tpid fpid trc=0 frc=0
-  dir=$(mktemp -d)
-  step "T and F's frontend suite, concurrently (separate logs; tails below)"
-  ( be_t ) >"$dir/t.log" 2>&1 &
-  tpid=$!
-  ( step "F: frontend suite (ratcheted)"; frontend_tests ) >"$dir/frontend.log" 2>&1 &
-  fpid=$!
-  wait "$tpid" || trc=$?
-  wait "$fpid" || frc=$?
-  step "T log: summary and tail (exit $trc)"
-  grep -E '^(Passed|Failed)!|^T \(dotnet test\)|^  JE\.|"passed"' "$dir/t.log" >&2 || true
-  if [ "$trc" = 0 ]; then tail -n 4 "$dir/t.log" >&2; else tail -n 150 "$dir/t.log" >&2; fi
-  step "F frontend suite log: summary and tail (exit $frc)"
-  grep -E '^ℹ (tests|pass|fail|duration_ms) ' "$dir/frontend.log" >&2 || true
-  if [ "$frc" = 0 ]; then tail -n 4 "$dir/frontend.log" >&2; else tail -n 250 "$dir/frontend.log" >&2; fi
-  rm -rf "$dir"
-  [ "$trc" = 0 ] && [ "$frc" = 0 ]
-)
-
-# The rest of F: client-build tests, contracts, path readers.
-be_f_rest() (
-  set -e
-  step "F: client-build tests + contracts + path readers"
-  npm run test:client-build
+  step "F: contracts"
   npm run contracts:check
   npm run test:contract-boundary
+)
+lane_checks() (
+  set -e
+  step "F: client-build tests + path readers"
+  npm run test:client-build
   npm run client:check
   npm run inventory:rewrite:check
+  gate_inv
+  gate_tool
+  if [ "${1:-}" = with-fe ]; then fe_checks in-all; fi
+)
+
+# run_lanes <name>=<command> ...: runs each command (a function, with its arguments) as a lane.
+run_lanes() (
+  set +e
+  local dir t0 spec name pid rc failed=0 done_pid
+  local -A lane_pid lane_rc lane_end
+  dir=$(mktemp -d)
+  t0=$(date +%s)
+  # Lanes that start their own processes' logs (T's test hosts) put them here, so the watcher below sees them too.
+  export JE_LANE_LOG_DIR=$dir
+  step "lanes, concurrently: ${*%%=*} (separate logs; each result as it ends, then the tails)"
+  for spec in "$@"; do
+    name=${spec%%=*}
+    # Lanes that are one long chain (dotnet, contracts) bound the run; lanes that are many parallel files (frontend,
+    # checks) have slack. Under contention the chains should get the CPU first, so the wide lanes run at a lower
+    # priority (JE_GATE_WIDE_NICE, default 5; 0 = all equal). Only the order in which the CPU is shared changes.
+    # shellcheck disable=SC2086  # the command and its arguments are single words
+    ( case $name in frontend|checks) renice -n "${JE_GATE_WIDE_NICE:-5}" -p "$BASHPID" >/dev/null ;; esac; ${spec#*=} ) >"$dir/$name.log" 2>&1 &
+    lane_pid[$name]=$!
+  done
+  # The first failing line of any lane, as soon as it is written (a failing test, a type or build error), so a broken
+  # change is reported long before its lane, let alone the gate, ends. Reporting only: every lane still runs.
+  (
+    seen=''
+    while :; do
+      for f in "$dir"/*.log; do
+        case " $seen " in *" $f "*) continue ;; esac
+        line=$(grep -m1 -E '^[[:space:]]*(✖|✘) |^[[:space:]]+Failed [A-Za-z]|error (TS|CS|MSB|NETSDK)[0-9]+|^Client build failed|failing test\(s\) not in|^not ok ' "$f" 2>/dev/null) || continue
+        echo "FAILURE seen after $(( $(date +%s) - t0 )) s in lane $(basename "$f" .log) (the lane keeps running): ${line:0:300}" >&2
+        seen="$seen $f"
+      done
+      sleep 1
+    done
+  ) &
+  local watcher=$!
+  local remaining=$#
+  while [ "$remaining" -gt 0 ]; do
+    wait -n -p done_pid
+    rc=$?
+    for name in "${!lane_pid[@]}"; do
+      if [ "${lane_pid[$name]}" = "$done_pid" ]; then
+        remaining=$((remaining - 1))
+        lane_rc[$name]=$rc
+        lane_end[$name]=$(( $(date +%s) - t0 ))
+        if [ "$rc" = 0 ]; then
+          echo "lane $name: passed after ${lane_end[$name]} s" >&2
+        else
+          failed=1
+          echo "lane $name: FAILED (exit $rc) after ${lane_end[$name]} s; its last lines:" >&2
+          tail -n 25 "$dir/$name.log" | sed 's/^/  | /' >&2
+          if [ "${JE_GATE_FAIL_FAST:-}" = 1 ]; then
+            echo "JE_GATE_FAIL_FAST=1: stopping the other lanes" >&2
+            for pid in "${lane_pid[@]}"; do pkill -TERM -P "$pid" 2>/dev/null; kill -TERM "$pid" 2>/dev/null; done
+          fi
+        fi
+      fi
+    done
+  done
+  kill "$watcher" 2>/dev/null; wait "$watcher" 2>/dev/null
+  for spec in "$@"; do
+    name=${spec%%=*}
+    step "lane $name: summary and tail (exit ${lane_rc[$name]}, ${lane_end[$name]} s)"
+    grep -E '^(Passed|Failed)!|^T \(dotnet test\)|^npm test:|^ℹ (tests|pass|fail|duration_ms) |"passed"|^B: build warnings|^lane |^restructure-gates' "$dir/$name.log" >&2 || true
+    if [ "${lane_rc[$name]}" = 0 ]; then tail -n 4 "$dir/$name.log" >&2; else tail -n 250 "$dir/$name.log" >&2; fi
+  done
+  rm -rf "$dir"
+  [ "$failed" = 0 ]
 )
 
 gate_be() (
   set -e
-  be_build_and_g
-  be_t_and_frontend
-  be_f_rest
-  gate_inv
-  gate_tool
+  run_lanes dotnet=lane_dotnet frontend=lane_frontend contracts=lane_contracts checks=lane_checks
 )
 
 gate_fe() ( set -e; fe_checks with-frontend-suite )
 
-# $1 = with-frontend-suite | without-frontend-suite (`all`, where be already ran it).
+# $1 = with-frontend-suite (`fe`) | in-all (`all`, after be). In `all`, be has already run on this same tree (gate_all
+# fails if fe's regeneration changes it) the frontend suite, test:client-build, client:check, inventory:rewrite:check,
+# INV and TOOL, so fe runs only what be does not: the regeneration itself (client:build, which type-checks exactly as
+# client:typecheck does before building, and inventory:rewrite), the bootstrap manifest test and the output keys.
 fe_checks() (
   set -e
-  step "FE G: typecheck, build, inventory"
-  npm run client:typecheck
-  npm run client:build
-  npm run inventory:rewrite
-  npm run client:check
-  npm run inventory:rewrite:check
-  gate_inv
-  gate_tool
-  step "FE G: client-build tests, bootstrap manifest, npm test (ratcheted)"
-  npm run test:client-build
-  node --test tests/frontend/bootstrap/bootstrap-manifest.test.mjs
-  if [ "$1" = with-frontend-suite ]; then frontend_tests; else step "FE G: npm test already ran in be"; fi
+  if [ "$1" = in-all ]; then
+    step "FE G: build (includes the typecheck), inventory; be ran the checks, INV, TOOL and client-build tests on this tree"
+    npm run client:build
+    npm run inventory:rewrite
+    step "FE G: bootstrap manifest"
+    node --test tests/frontend/bootstrap/bootstrap-manifest.test.mjs
+  else
+    step "FE G: typecheck, build, inventory"
+    npm run client:typecheck
+    npm run client:build
+    npm run inventory:rewrite
+    npm run client:check
+    npm run inventory:rewrite:check
+    gate_inv
+    gate_tool
+    step "FE G: client-build tests, bootstrap manifest, npm test (ratcheted)"
+    npm run test:client-build
+    node --test tests/frontend/bootstrap/bootstrap-manifest.test.mjs
+    frontend_tests
+  fi
   step "FE G: component-scripts.json and client/entries output keys vs restructure-base"
   git diff --exit-code restructure-base -- Jellyfin.Plugin.JellyfinEnhanced/js/component-scripts.json
   local f
@@ -292,17 +455,18 @@ fe_checks() (
   done
 )
 
-# Merge points: be, then fe without running the frontend suite a second time. fe regenerates (client:build,
-# inventory:rewrite); be's frontend-suite run covers fe's tree only if that leaves the working tree as it was.
+# Merge points: be's lanes, with fe's part (which regenerates: client:build, inventory:rewrite) at the end of the checks
+# lane, so nothing is repeated. Everything be ran covers fe's tree only if the regeneration leaves the working tree as it
+# was: the tree is compared at the start and at the end of the whole run.
 gate_all() (
   set -e
   local before after
-  gate_be
+  no_snapshot_updates
   before=$(tree_state)
-  fe_checks without-frontend-suite
+  run_lanes dotnet=lane_dotnet frontend=lane_frontend contracts=lane_contracts "checks=lane_checks with-fe"
   after=$(tree_state)
   if [ "$before" != "$after" ]; then
-    echo "all: fe's regeneration changed the working tree after be ran, so be's results do not cover it:" >&2
+    echo "all: the working tree changed during the run (fe's regeneration, or a step that writes outside ignored paths), so the results do not cover one tree:" >&2
     git status --short >&2
     false
   fi
@@ -332,15 +496,55 @@ PY
 
 # BROWSER (PLAN.md): npm run test:browser with a failure ratchet. New failures fail by name; a listed test that passes
 # is a note (remove it from the list). Never add a line to baselines/browser-failures.txt.
+# Workers: JE_BROWSER_WORKERS, default below. Playwright queues tests project by
+# project and file by file, so a test that alone takes half a minute and sits late in the queue ends the run on its
+# own. The spec files in JE_BROWSER_LONG (default tag-row-subpixel.spec.cjs; empty = one run) therefore run as a second
+# Playwright run at the same time, with JE_BROWSER_LONG_WORKERS (default 1, 2 from 12 workers) of the workers and its own port; the
+# results of both runs are ratcheted together. Every spec runs exactly once either way.
 gate_browser() (
   set -e
-  local dir rc=0 new gone
-  export JE_BROWSER_WORKERS=${JE_BROWSER_WORKERS:-6}
+  local dir rc=0 rc2=0 new gone cores long=${JE_BROWSER_LONG-tag-row-subpixel.spec.cjs} pid
+  cores=$(nproc)
+  # Workers: the cores, at most 10, less the cores other processes keep busy right now (sampled over 1 s, not the
+  # lagging load average), at least 6. The long tests wait on frames, so on 10 real cores 10 workers beat 6 by a
+  # third; but on the 16-thread second worker (4 performance + 8 efficiency cores, power-limited) 16 workers pushed
+  # Firefox tests past their 15 s timeout, and a machine shared with other work gets the same.
+  local busy cap
+  busy=$(python3 -c '
+import time
+def snap():
+    v = list(map(int, open("/proc/stat").readline().split()[1:9]))
+    return sum(v) - v[3] - v[4], sum(v)
+b0, t0 = snap(); time.sleep(1); b1, t1 = snap()
+import os; print(round((b1 - b0) / max(1, t1 - t0) * os.cpu_count()))' 2>/dev/null || echo 0)
+  cap=$(( cores < 10 ? cores : 10 ))
+  export JE_BROWSER_WORKERS=${JE_BROWSER_WORKERS:-$(( cap - busy > 6 ? cap - busy : 6 ))}
   dir=$(mktemp -d)
-  step "BROWSER: npm run test:browser ($JE_BROWSER_WORKERS workers), failures vs $BASELINES/browser-failures.txt"
-  PLAYWRIGHT_JSON_OUTPUT_NAME="$dir/results.json" npm run test:browser -- --reporter=list,json || rc=$?
-  [ -s "$dir/results.json" ] || { echo "BROWSER: no JSON report written (exit $rc)" >&2; rm -rf "$dir"; false; }
-  browser_results "$dir/results.json" > "$dir/results"
+  if [ -z "$long" ]; then
+    step "BROWSER: npm run test:browser ($JE_BROWSER_WORKERS workers), failures vs $BASELINES/browser-failures.txt"
+    PLAYWRIGHT_JSON_OUTPUT_NAME="$dir/results.json" npm run test:browser -- --reporter=list,json || rc=$?
+    [ -s "$dir/results.json" ] || { echo "BROWSER: no JSON report written (exit $rc)" >&2; rm -rf "$dir"; false; }
+    keep_report "$dir/results.json" browser-results.json
+    browser_results "$dir/results.json" > "$dir/results"
+  else
+    # The long spec's 3 tests take ~100 test-seconds: 1 worker matches the rest's ~100 s below 12 workers; from 12, 2.
+    local lw=${JE_BROWSER_LONG_WORKERS:-$(( JE_BROWSER_WORKERS >= 12 ? 2 : 1 ))} port2
+    port2=$(free_port)
+    step "BROWSER: npm run test:browser as two runs at once: $long ($lw workers, port $port2) and the rest ($(( JE_BROWSER_WORKERS - lw )) workers), failures vs $BASELINES/browser-failures.txt"
+    JE_BROWSER_PART=long JE_BROWSER_LONG=$long JE_BROWSER_PORT=$port2 JE_BROWSER_WORKERS=$lw PLAYWRIGHT_JSON_OUTPUT_NAME="$dir/long.json" \
+      npm run test:browser -- --reporter=list,json >"$dir/long.log" 2>&1 &
+    pid=$!
+    JE_BROWSER_PART=rest JE_BROWSER_LONG=$long JE_BROWSER_WORKERS=$(( JE_BROWSER_WORKERS - lw )) PLAYWRIGHT_JSON_OUTPUT_NAME="$dir/rest.json" \
+      npm run test:browser -- --reporter=list,json || rc=$?
+    wait "$pid" || rc2=$?
+    step "BROWSER: the long run ($long), exit $rc2"
+    cat "$dir/long.log" >&2
+    [ -s "$dir/rest.json" ] && [ -s "$dir/long.json" ] || { echo "BROWSER: a JSON report is missing (exits $rc, $rc2)" >&2; rm -rf "$dir"; false; }
+    keep_report "$dir/rest.json" browser-results.json
+    keep_report "$dir/long.json" browser-results-long.json
+    { browser_results "$dir/rest.json"; browser_results "$dir/long.json"; } > "$dir/results"
+    if [ -n "$(cut -d' ' -f2- "$dir/results" | sort | uniq -d)" ]; then echo "BROWSER: a test ran in both runs" >&2; rm -rf "$dir"; false; fi
+  fi
   new=$(sed -n 's/^FAIL //p' "$dir/results" | LC_ALL=C sort -u | LC_ALL=C comm -23 - "$BASELINES/browser-failures.txt")
   gone=$(sed -n 's/^FAIL //p' "$dir/results" | LC_ALL=C sort -u | LC_ALL=C comm -13 - "$BASELINES/browser-failures.txt")
   echo "BROWSER: $(wc -l < "$dir/results") tests, passed $(grep -c '^PASS ' "$dir/results" || true), failed $(grep -c '^FAIL ' "$dir/results" || true) (baseline list $(wc -l < "$BASELINES/browser-failures.txt")), skipped $(grep -c '^SKIP ' "$dir/results" || true)" >&2
@@ -445,9 +649,9 @@ import json, pathlib, sys
 mode, args = sys.argv[1], sys.argv[2:]
 features = json.load(open('docs/feature-map.json'))['features']
 root = json.load(open('docs/feature-map.json'))['backendRoot']
-if mode == 'features':                      # changed paths on stdin -> feature names
+if mode == 'features':                      # changed paths (arguments) -> feature names
     hit = []
-    for p in sys.stdin.read().split():
+    for p in args:
         if p.endswith(('.md', '.js', '.js.map')) or p.startswith(('docs/', 'artifacts/')) or p in (
                 'client/generated-manifest.json', 'tests/docs/production-inventory.json'):
             continue
@@ -488,14 +692,35 @@ gate_quick() (
   local base changed feats dir rc=0 new
   base=$(change_base)
   changed=$( { git diff --name-only "$base"; git ls-files --others --exclude-standard; } | sort -u)
-  if [ $# -gt 0 ]; then feats="$*"; else feats=$(printf '%s\n' "$changed" | quick_map features); fi
+  # (The paths go as arguments: quick_map's program is python's stdin, so a pipe into it would never be read.)
+  # shellcheck disable=SC2086  # one path per word
+  if [ $# -gt 0 ]; then feats="$*"; else feats=$(quick_map features $changed); fi
   step "QUICK: features ${feats:-(none; architecture and guards only)}"
+  npm run --silent client:typecheck:fast      # tsc-rs, ~0.2 s, fails fast; TypeScript 6 checks next and decides
   npm run client:typecheck
   npm run client:build
   npm run inventory:rewrite
   dir=$(mktemp -d)
   # shellcheck disable=SC2086  # feature names are single words
   quick_map tests $feats > "$dir/files"
+  # A recorded affected map adds the files whose traced inputs the change touches (a union: never fewer files than the
+  # feature map gives) and the Playwright specs; the contract-boundary test (it reads almost every source) is left
+  # to the gates. Without a map, or for a change the map calls global, the feature map alone decides.
+  : > "$dir/specs"
+  if [ -s node_modules/.cache/je-affected/map.json ]; then
+    python3 tests/runner/affected.py select --json 2>/dev/null | python3 -c '
+import json, sys
+s = json.load(sys.stdin)
+if s["all"]:
+    print("QUICK: the affected map selects everything (" + s["all"] + "); the feature map decides", file=sys.stderr)
+    sys.exit(0)
+node = s["suites"].get("frontend", []) + s["suites"].get("client-build", [])
+open(sys.argv[1], "a").write("".join(f + "\n" for f in node))
+open(sys.argv[2], "w").write("".join(f + "\n" for f in s["suites"].get("browser", [])))
+print(f"QUICK: the affected map adds {len(node)} node test file(s) and {len(s[\"suites\"].get(\"browser\", []))} spec(s)", file=sys.stderr)
+' "$dir/files" "$dir/specs" || echo "QUICK: the affected map could not be read; the feature map decides" >&2
+    LC_ALL=C sort -u -o "$dir/files" "$dir/files"
+  fi
   step "QUICK: $(wc -l < "$dir/files") node test files (failures ratcheted by name vs $BASELINES/npm-failures.txt)"
   # shellcheck disable=SC2046
   env TZ=UTC LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 node --test --test-timeout=300000 \
@@ -507,6 +732,12 @@ gate_quick() (
   new=$(sed -n 's/^FAIL //p' "$dir/results" | LC_ALL=C sort -u | LC_ALL=C comm -23 - "$BASELINES/npm-failures.txt")
   echo "QUICK: node $(grep -c '^PASS ' "$dir/results" || true) passed, $(grep -c '^FAIL ' "$dir/results" || true) failed" >&2
   if [ -n "$new" ]; then echo "QUICK: failing test(s) not in $BASELINES/npm-failures.txt:" >&2; printf '  %s\n' "$new" >&2; rc=1; fi
+  if [ -s "$dir/specs" ]; then
+    step "QUICK: $(wc -l < "$dir/specs") Playwright spec(s) the change can reach (chromium; failures vs $BASELINES/browser-failures.txt)"
+    # shellcheck disable=SC2046
+    JE_BROWSER_PORT="${JE_BROWSER_PORT:-$(free_port)}" node node_modules/.bin/playwright test --config tests/browser/playwright.config.cjs \
+      --project=chromium --reporter=line $(cat "$dir/specs") || rc=1
+  fi
   rm -rf "$dir"
   if printf '%s\n' "$changed" | grep -q '\.cs$'; then
     step "QUICK: dotnet tests for ${feats:-Architecture}"
@@ -514,6 +745,20 @@ gate_quick() (
     dotnet test "$TESTS" -c Release --no-restore -p:JellyfinTarget=jf12 --filter "$(quick_map filter $feats)" || rc=1
   fi
   return "$rc"
+)
+
+# affected record: (re)build the affected map for HEAD (every test file run once under strace; ~5 min on 10 cores), which
+# `quick` and the frontend lane of the gates then use. Do it on a clean base commit. `affected` alone runs `quick`.
+gate_affected() (
+  set -e
+  no_snapshot_updates
+  if [ "${1:-}" = record ]; then
+    step "AFFECTED: recording the map for $(git rev-parse --short HEAD) (every test file once, traced)"
+    python3 tests/runner/affected.py record
+    return
+  fi
+  echo "affected: the inner loop is \`quick\`, which uses the affected map when one is recorded; running quick" >&2
+  gate_quick
 )
 
 # baselines/jf12-digest.txt: `<tag> <RepoDigest>`; HOST runs `je up <name> <port> --image <tag>`.
@@ -529,10 +774,39 @@ gate_image() (
   echo "image: $tag = $digest" >&2
 )
 
-usage() { sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+usage() { sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 
 [ $# -ge 1 ] || usage
 cmd=$1; shift
+# One heavy gate at a time per machine. `all` keeps ~8.5 of 10 cores busy and needs up to ~6 GB, `browser` runs a
+# worker per core; started side by side on a 10-core, 15 GB machine they fail on timeouts (RESULTS.md §8 of
+# artifacts/restructure-plan/test-speed). So a heavy gate started while another runs (in any checkout, e.g. a caller
+# that starts `all` and `browser` together) waits for it, then runs: the two finish in sequence instead of failing.
+# The slot is its own lock file, never JE12_GATE_LOCK, so callers that hold the gate lock cannot deadlock on it.
+# JE_GATE_HEAVY_LOCK moves it; JE_GATE_SIDE_BY_SIDE=1 skips the wait.
+case "$cmd" in
+  be|fe|all|browser)
+    if [ -z "${JE_GATE_HEAVY_HELD:-}" ] && [ "${JE_GATE_SIDE_BY_SIDE:-}" != 1 ]; then
+      heavy_lock=${JE_GATE_HEAVY_LOCK:-${TMPDIR:-/tmp}/je-restructure-gates-heavy.lock}
+      export JE_GATE_HEAVY_HELD=1
+      flock -n "$heavy_lock" true 2>/dev/null || echo "restructure-gates: another heavy gate is running on this machine; $cmd waits for it ($heavy_lock)" >&2
+      exec flock --close "$heavy_lock" bash "$SELF" "$cmd" "$@"
+    fi ;;
+esac
+# One gate run checks the same tree's types several times (the plugin build's VerifyJellyfinEnhancedClient target,
+# client:check, client:build, the contract-boundary fixture): a passing check is cached for the rest of the run only
+# (scripts/client-build.mjs typecheckCache). Each run gets a fresh directory, so a gate never reuses a result from
+# before it started, whatever the caller's environment says.
+case "$cmd" in
+  be|fe|all)
+    JE_TYPECHECK_CACHE_DIR=$(mktemp -d)
+    export JE_TYPECHECK_CACHE_DIR
+    trap 'rm -rf "$JE_TYPECHECK_CACHE_DIR"' EXIT
+    ;;
+  # The inner loop keeps its cache between runs (the merge gates never read it), so its typecheck and build share one check.
+  quick|affected) export JE_TYPECHECK_CACHE_DIR="$ROOT/node_modules/.cache/je-typecheck" ;;
+  *) unset JE_TYPECHECK_CACHE_DIR ;;
+esac
 case "$cmd" in
   be|fe|all|browser|h|inv|tool|size) [ $# -eq 0 ] || usage; "gate_$cmd" ;;
   r) [ $# -eq 1 ] && [ -n "$1" ] || usage; gate_r "$1" ;;
@@ -540,6 +814,7 @@ case "$cmd" in
   bundle-hash) [ $# -eq 1 ] && [ -n "$1" ] || usage; gate_bundle_hash "$1"; exit 0 ;;
   image) [ $# -eq 0 ] || usage; gate_image ;;
   quick) gate_quick "$@" ;;
+  affected) [ $# -le 1 ] || usage; gate_affected "$@" ;;
   *) usage ;;
 esac
 echo "restructure-gates: $cmd passed" >&2

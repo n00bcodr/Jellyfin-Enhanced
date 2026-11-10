@@ -225,6 +225,9 @@ test('the bundle waits for idle time and slices yield once the idle period is sp
     let idleLeft = 100;
     const idle = (callback, options) => { idleCalls.push({ callback, options }); return idleCalls.length; };
     const h = boot(t, { idle, modules: [() => { ran.push(1); idleLeft = 0; h.load('core/navigation.js'); }, () => { ran.push(2); h.load('core/session.js'); }, () => { ran.push(3); h.load('enhanced/config.js'); }] });
+    // The loader's clock stands still, so only the idle period ends a slice. On the wall clock a loaded machine can
+    // spend the 10 ms run budget inside one module; the slice then waits for an idle callback this test never gives.
+    h.window.performance.now = () => 0;
     const release = () => idleCalls.shift().callback({ didTimeout: false, timeRemaining: () => idleLeft });
     await until(() => idleCalls.length === 1, 'the idle wait before the bundle');
     assert.equal(h.scripts.some(script => script.src.includes('/bundle.js')), false, 'nothing is fetched before idle');
