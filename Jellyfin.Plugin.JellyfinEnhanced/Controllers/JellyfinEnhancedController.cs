@@ -9818,16 +9818,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var factsNow = DateTime.UtcNow;
             (long? LatestAdded, Services.StatusTagsEpisodeFacts? Facts) TagDataEpisodeFacts(BaseItem tagItem)
             {
-                // A collection: its newest movie or series member this user can see ("Just Added" reads
-                // it instead of the collection's own DateCreated, which a library scan can reset).
+                // A collection: its newest member this user can see ("Just Added" reads it instead of
+                // the collection's own DateCreated, which a library scan can reset).
                 if (latestEpisode && tagItem is MediaBrowser.Controller.Entities.Movies.BoxSet tagCollection)
                 {
                     if (episodeFactsMemo.TryGetValue(tagItem.Id, out var collectionMemo)) return collectionMemo;
                     long? newestMember = null;
-                    foreach (var member in ((Folder)tagCollection).GetChildren(user, true))
+                    try
                     {
-                        if (member is not (MediaBrowser.Controller.Entities.Movies.Movie or MediaBrowser.Controller.Entities.TV.Series)) continue;
-                        if (Services.TagCacheService.ToUnixMilliseconds(member.DateCreated) is { } added && (newestMember == null || added > newestMember)) newestMember = added;
+                        foreach (var member in ((Folder)tagCollection).GetChildren(user, true))
+                        {
+                            if (!Services.TagCacheService.TaggableTypes.Contains(member.GetBaseItemKind())) continue;
+                            if (Services.TagCacheService.ToUnixMilliseconds(member.DateCreated) is { } added && (newestMember == null || added > newestMember)) newestMember = added;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        // One unreadable collection must not fail the batch: it just shows no badge.
+                        _logger.Warning($"[TagData] Failed to read the members of collection {tagItem.Id}: {ex.Message}");
+                        newestMember = null;
                     }
 
                     return episodeFactsMemo[tagItem.Id] = (newestMember, null);

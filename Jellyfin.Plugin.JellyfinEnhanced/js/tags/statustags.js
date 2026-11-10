@@ -26,7 +26,7 @@
 //           → Just Added
 //   Episode Season Premiere → Series Finale / Season Finale → New Episode
 //           → Just Added
-//   BoxSet: Just Added (its newest movie or series member's added date)
+//   BoxSet: Just Added (its newest member's added date)
 //   Video: Just Added
 // Library facts come from the server tag cache (DateCreated, PremiereDate,
 // LatestEpisodeAdded/Aired/Index, SeasonPremiere, SeasonAddedSpan, Status;

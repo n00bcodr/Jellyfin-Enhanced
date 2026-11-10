@@ -368,9 +368,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // v10 is the Media Tags redesign's cache: Status facts (dates, schedule, milestones, scenes, leaving),
         // source ratings, awards, logos, custom tag matches, library ids, subtitle languages, naming labels,
         // per-version quality facts and the series quality summaries.
-        // v11 gives a BoxSet its newest member's added date (LatestEpisodeAdded / LatestEpisodeId) for "Just Added".
+        // v23 gives a BoxSet its newest member's added date (LatestEpisodeAdded / LatestEpisodeId) for "Just Added".
+        // (It skips 11-22: development builds of the redesign wrote snapshots with those numbers.)
         // A schema mismatch discards the stale cache so it can be rebuilt.
-        internal const int CurrentCacheSchemaVersion = 11;
+        internal const int CurrentCacheSchemaVersion = 23;
 
         // Page size for hydrating library items during full builds and
         // reconciliation. Fetching the whole library with one GetItemList call
@@ -1604,7 +1605,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             _cache.AddOrUpdate(key, _ => { added = true; previous = null; return entry; }, (_, old) => { previous = old; return entry; });
             if (added) Interlocked.Increment(ref _keySetEpoch);
             Interlocked.Increment(ref _mutationEpoch);
-            if (IsCollectionMemberType(entry.Type) && (previous == null || !SameLanguageFacts(previous, entry))) _collectionMemberChanges.TryAdd(key, false);
+            // Its collections read its languages and its added date (their "Just Added").
+            if (IsCollectionMemberType(entry.Type) && (previous == null || !SameLanguageFacts(previous, entry) || previous.DateCreated != entry.DateCreated)) _collectionMemberChanges.TryAdd(key, false);
         }
 
         /// <summary>
@@ -4394,9 +4396,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// the BoxSet itself (see TagCacheMonitor); a member whose languages change or
         /// which is removed queues the collections built from it (see
         /// QueueCollectionsOfChangedMembers and <see cref="_collectionMembers"/>, which
-        /// this records). <c>NewestMember</c> is the most recently added of those members that
-        /// has a cache entry of its own (its DateCreated in Unix ms and its key), or null: a
-        /// member gaining or losing its entry queues the collection the same way.
+        /// this records). <c>NewestMember</c> is the most recently added member of any kind the
+        /// cache holds, outside the excluded libraries (its DateCreated in Unix ms and its key), or
+        /// null. A movie or series whose added date changes queues the collection the same way.
         /// </summary>
         private (string[] Audio, string[] Subtitles, string[] SdhSubtitles, (long Added, string Id)? NewestMember) GetCollectionLanguages(BaseItem collection, bool record = true)
         {
@@ -4412,14 +4414,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 (long Added, string Id)? newest = null;
                 foreach (var member in folder.GetLinkedChildren())
                 {
-                    if (member.GetBaseItemKind() is not (BaseItemKind.Movie or BaseItemKind.Series)) continue;
-                    members.Add(member.Id);
-                    var (memberAudio, memberSubtitles, memberSdh, hasEntry) = MemberLanguages(member);
-                    if (hasEntry && ToUnixMilliseconds(member.DateCreated) is { } added && (newest == null || added > newest.Value.Added))
+                    // Every member of a kind the cache holds, in an included library: one that gets an entry
+                    // of its own, whether or not that entry is built yet (the per-user filter reads it later).
+                    if (TaggableTypes.Contains(member.GetBaseItemKind()) && !IsInExcludedLibrary(member)
+                        && ToUnixMilliseconds(member.DateCreated) is { } added && (newest == null || added > newest.Value.Added))
                     {
                         newest = (added, member.Id.ToString("N").ToLowerInvariant());
                     }
 
+                    if (member.GetBaseItemKind() is not (BaseItemKind.Movie or BaseItemKind.Series)) continue;
+                    members.Add(member.Id);
+                    var (memberAudio, memberSubtitles, memberSdh, hasEntry) = MemberLanguages(member);
                     languages.UnionWith(memberAudio);
                     subtitles.UnionWith(memberSubtitles);
                     sdh.UnionWith(memberSdh);

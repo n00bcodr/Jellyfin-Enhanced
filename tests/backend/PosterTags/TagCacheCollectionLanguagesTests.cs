@@ -178,7 +178,9 @@ public class TagCacheCollectionLanguagesTests
             var arrival = new Movie { Id = Guid.NewGuid(), Name = "Arrival", DateCreated = now.AddDays(-1), Sources = Tracks("eng") };
             library.Items.Add(arrival);
             box.LinkedChildren = [.. box.LinkedChildren, new LinkedChild { ItemId = arrival.Id }];
-            // The collection first: the member without an entry yet does not count, and its entry queues the collection again.
+            // Cache off, or before the first build: a native poster's on-demand entry already reads the new member.
+            Assert.Equal(TagCacheService.ToUnixMilliseconds(arrival.DateCreated), cache.BuildEntryOnDemand(box)!.LatestEpisodeAdded);
+            // The collection first, before its member has an entry of its own.
             cache.EnqueueUpdate(box.Id);
             Flush(cache);
             cache.EnqueueUpdate(arrival.Id);
@@ -188,6 +190,18 @@ public class TagCacheCollectionLanguagesTests
             Assert.Equal(arrival.Id.ToString("N"), joined.LatestEpisodeId);
             Assert.Equal("just_added", Badge(cache, box));
 
+            // Its Date Added is edited back two years; Jellyfin reports the movie only.
+            arrival.DateCreated = now.AddYears(-2);
+            cache.EnqueueUpdate(arrival.Id);
+            FlushTwice(cache);
+            Assert.True(cache.TryGetEntry(box.Id, out var edited));
+            Assert.Equal(TagCacheService.ToUnixMilliseconds(arrival.DateCreated), edited.LatestEpisodeAdded);
+            Assert.Null(Badge(cache, box));
+            arrival.DateCreated = now.AddDays(-1);
+            cache.EnqueueUpdate(arrival.Id);
+            FlushTwice(cache);
+            Assert.Equal("just_added", Badge(cache, box));
+
             // Deleted again: the collection goes back to its older members.
             library.Items.Remove(arrival);
             cache.EnqueueRemoval(arrival.Id);
@@ -195,6 +209,27 @@ public class TagCacheCollectionLanguagesTests
             Assert.True(cache.TryGetEntry(box.Id, out var left));
             Assert.Equal(old.Id.ToString("N"), left.LatestEpisodeId);
             Assert.Null(Badge(cache, box));
+        });
+    }
+
+    /// <summary>A collection of home videos or episodes (not only movies and series) is still badged by a member added recently.</summary>
+    [Fact]
+    public void ACollectionOfOtherTaggedKindsIsJustAddedByItsNewestMember()
+    {
+        var now = new DateTime(2026, 10, 30, 12, 0, 0, DateTimeKind.Utc);
+        var library = new Library();
+        var clip = new Video { Id = Guid.NewGuid(), Name = "Clip", DateCreated = now.AddDays(-1) };
+        var oldClip = new Video { Id = Guid.NewGuid(), Name = "Old clip", DateCreated = now.AddYears(-2) };
+        // Not a kind the cache holds: its date never counts (no user's access set could vouch for it).
+        var album = new MediaBrowser.Controller.Entities.Audio.MusicAlbum { Id = Guid.NewGuid(), Name = "Album", DateCreated = now.AddHours(-1) };
+        var box = new BoxSet { Id = Guid.NewGuid(), Name = "Clips", DateCreated = now.AddYears(-1), LinkedChildren = [new LinkedChild { ItemId = clip.Id }, new LinkedChild { ItemId = oldClip.Id }, new LinkedChild { ItemId = album.Id }] };
+        library.Items.AddRange(new BaseItem[] { clip, oldClip, album, box });
+
+        WithCache(library, cache =>
+        {
+            Assert.True(cache.TryGetEntry(box.Id, out var built));
+            Assert.Equal(TagCacheService.ToUnixMilliseconds(clip.DateCreated), built.LatestEpisodeAdded);
+            Assert.Equal(clip.Id.ToString("N"), built.LatestEpisodeId);
         });
     }
 

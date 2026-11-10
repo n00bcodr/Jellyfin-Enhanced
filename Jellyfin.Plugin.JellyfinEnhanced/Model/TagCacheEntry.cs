@@ -84,7 +84,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
         /// Series/Season: the newest <see cref="DateCreated"/> among its
         /// non-virtual episodes, in Unix milliseconds UTC, for the Status Tags
         /// "New Episode" badge. BoxSet: the newest <see cref="DateCreated"/> among
-        /// its movie and series members, for its "Just Added" badge (a collection's
+        /// its members, for its "Just Added" badge (a collection's
         /// own date is reset whenever Jellyfin creates it again). Null for every
         /// other type or a container without episodes or members.
         /// </summary>
