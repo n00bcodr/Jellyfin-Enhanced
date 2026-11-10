@@ -826,6 +826,7 @@
     "status_tag_season_finale": "시즌 피날레",
     "status_tag_series_finale": "시리즈 피날레",
     "status_tag_complete_season": "시즌 완결",
+    "status_tag_binge_ready": "몰아보기 가능",
     "status_tag_airing_today": "오늘 방영",
     "status_tag_airs_date": "{date} 방영",
     "status_tag_returns_date": "{date} 복귀",

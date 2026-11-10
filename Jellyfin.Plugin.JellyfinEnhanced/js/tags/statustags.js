@@ -772,6 +772,7 @@
 
         // Match the series aggregate: specials never identify a final regular episode.
         const finalRegular = finalRegularEpisode(data, facts);
+        const BINGE_DROP_DAYS = 3;
         const finalDay = airDay(finalRegular?.date);
         const finalAiredRecently = finalDay !== null && finalDay <= today && (today - finalDay) * DAY_MS <= newReleaseMs;
         // A premiere date is a calendar day (Jellyfin stores it at midnight UTC): it is compared with
@@ -812,7 +813,9 @@
                 // The finale of an ended show, aired recently and in the library.
                 if (showMilestones && finalRegular && TMDB_ENDED.has(facts.status || '') && finalAiredRecently
                     && data.latestIndex && data.latestIndex.s === finalRegular.season && data.latestIndex.e === finalRegular.episode) {
-                    return makeBadge('milestone', 'series_finale');
+                    // A show released in one drop (premiere and finale days apart) is binge ready, not finishing a run.
+                    const first = premiereDay(data.premiere);
+                    return makeBadge('milestone', first !== null && finalDay - first <= BINGE_DROP_DAYS ? 'binge_ready' : 'series_finale');
                 }
                 const sp = data.seasonPremiere;
                 if (showMilestones && sp && sp.s > 1 && airedWithin(sp.aired, newReleaseMs)) return makeBadge('milestone', 'new_season');

@@ -98,7 +98,9 @@ public static class StatusRules
                 if (showSchedule && daysToNext == 0) return Badge("airing_today");
                 if (showMilestones && final != null && Ended(facts!.Status) && finalRecently
                     && data.LatestEpisodeIndex is { } index && index.Season == final.Season && index.Episode == final.Episode)
-                    return Badge("series_finale");
+                    // A show released in one drop (premiere and finale days apart) is binge ready, not finishing a run.
+                    return Badge(PremiereDay(data.PremiereDate) is { } first && AirDate(final.Date) is { } finalDate
+                        && finalDate.DayNumber - first.DayNumber <= 3 ? "binge_ready" : "series_finale");
                 if (showMilestones && data.SeasonPremiere is { Season: > 1 } sp && AiredWithin(sp.Aired, newReleaseMs)) return Badge("new_season");
                 if (showSchedule && daysToNext is >= 1 && daysToNext <= Thresholds.AirsWithinDays)
                     return Badge("airs_date", FormatAirDay(nextDay!.Value, daysToNext.Value, settings));

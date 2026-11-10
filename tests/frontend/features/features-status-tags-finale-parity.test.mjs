@@ -334,3 +334,10 @@ test('a parent response completing after the old fixed wait still updates an epi
   assert.equal(h.key(EPISODE), 'series_finale');
   assert.equal(h.calls.filter(c => c.url.includes('/tag-data/') && JSON.parse(c.data).includes(SERIES)).length, 1);
 });
+
+test('an ended show released in one drop is binge ready, a weekly one has a series finale', async t => {
+  const drop = await setup(t, (() => { const show = { ...aggregate, PremiereDate: NOW - 3 * DAY }; return { cards: [show], parent: show }; })());
+  assert.equal(drop.key(SERIES), 'binge_ready');
+  const weekly = await setup(t, (() => { const show = { ...aggregate, PremiereDate: NOW - 60 * DAY }; return { cards: [show], parent: show }; })());
+  assert.equal(weekly.key(SERIES), 'series_finale');
+});

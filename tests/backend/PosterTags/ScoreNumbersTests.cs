@@ -183,6 +183,16 @@ public class StatusCompletionProofTests
         Assert.Equal(finale, Badge(series, ended) == "series_finale");
         Assert.NotEqual("series_finale", Badge(series, new SeriesSchedule("Ended", null, null)));
     }
+
+    [Theory]
+    [InlineData(3, "binge_ready")]
+    [InlineData(60, "series_finale")]
+    public void AnEndedShowReleasedInOneDropIsBingeReady(int premiereDaysAgo, string expected)
+    {
+        var series = new TagCacheEntry { Type = "Series", DateCreated = Now.AddYears(-1).ToUnixTimeMilliseconds(), PremiereDate = Now.AddDays(-premiereDaysAgo).ToUnixTimeMilliseconds(),
+            LatestEpisodeIndex = new() { Season = 1, Episode = 10 }, LatestEpisodeAired = Now.AddDays(-2).ToUnixTimeMilliseconds() };
+        Assert.Equal(expected, Badge(series, new SeriesSchedule("Ended", null, null, SeasonEpisodes: new Dictionary<int, int> { [1] = 10 })));
+    }
 }
 
 /// <summary>Combined episode files and library finale dates keep their real episode range and calendar day.</summary>

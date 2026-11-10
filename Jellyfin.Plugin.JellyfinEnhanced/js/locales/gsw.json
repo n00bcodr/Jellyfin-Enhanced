@@ -826,6 +826,7 @@
     "status_tag_season_finale": "Staffel-Finale",
     "status_tag_series_finale": "Serie-Finale",
     "status_tag_complete_season": "Komplette Staffle",
+    "status_tag_binge_ready": "Zum Durestarte bereit",
     "status_tag_airing_today": "Hüt im TV",
     "status_tag_airs_date": "Lauft am {date}",
     "status_tag_returns_date": "Chunnt zrugg am {date}",
