@@ -303,6 +303,8 @@ export function createQualityTags(JE: TagRuntimeBridge) {
             badge.classList.add('other-quality');
         }
         badge.dataset.quality = (technical ? category : edition ? displayLabel : normalizedLabel) ?? '';
+        // Its kind for the per-kind opacity and size (layout/kind-looks.ts): the quality category.
+        if (category) badge.dataset.jeTagKind = category;
         if (edition) {
             badge.dataset.jeEdition = 'true';
             badge.dataset.jeCompact = compactEditionLabel(displayLabel);

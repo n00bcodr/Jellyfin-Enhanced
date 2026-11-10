@@ -167,6 +167,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // How close corners-layout chips sit to the card edge (default 6px, tight 3px,
         // flush 0px); null follows the admin's default (normalized documents only).
         public string? TagEdgeSpacing { get; set; }
+        /// <summary>Own opacity and size per tag kind (see TagKindLook); null follows the administrator's (normalized documents only).</summary>
+        public List<TagKindLook>? TagKindLooks { get; set; }
         // Tag Styles preset this user picked (TagStyleKeys.Presets); null follows the
         // admin's preset. Only honoured while TagStylesAllowUserPreset is on.
         public string? TagStylePreset { get; set; }

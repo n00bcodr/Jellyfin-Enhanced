@@ -41,7 +41,7 @@ internal static class SettingsDocumentPatch
             var element = type.IsArray ? type.GetElementType()! : type.GetGenericArguments().Single();
             if (JsonSerializerOptions.Default.GetTypeInfo(element).Kind != JsonTypeInfoKind.Object) return patch.DeepClone();
             // A new structured list needs a deliberate identity policy; silently zipping by index loses or moves data.
-            if (element != typeof(TagLookRule) && element != typeof(TagLayoutGroupSlot) && element != typeof(TagLookCondition))
+            if (element != typeof(TagLookRule) && element != typeof(TagLayoutGroupSlot) && element != typeof(TagLookCondition) && element != typeof(TagKindLook))
                 throw new InvalidDataException($"Settings list {element.Name} requires an explicit identity policy.");
             var candidates = ListOrigins(stored as JArray, element, slotLayout);
             var result = new JArray();
@@ -134,6 +134,8 @@ internal static class SettingsDocumentPatch
         if (value is not JObject item) return null;
         if (element == typeof(TagLookRule)) return Text(item, nameof(TagLookRule.Id))?.Trim();
         if (element == typeof(TagLayoutGroupSlot)) return TagLayoutRules.NormalizeGroup(Text(item, nameof(TagLayoutGroupSlot.Group)));
+        // One entry per tag kind (TagLayoutRules.NormalizeKindLooks keeps the first): the kind is its identity.
+        if (element == typeof(TagKindLook)) return Text(item, nameof(TagKindLook.Kind))?.Trim();
         var condition = TagLookValidation.NormalizeCondition(new TagLookCondition
         {
             Field = Text(item, nameof(TagLookCondition.Field)) ?? string.Empty,

@@ -9,6 +9,8 @@ import type { EnhancedUi, PanelBridge } from '../../settings-panel/public-api';
 export type { CustomTagRule, PanelApiClient, PanelBridge, PanelTagLayout, PluginConfig, Settings } from '../../settings-panel/public-api';
 
 export { apiClient, currentUserKey, optionalApiClient, panelHost } from '../../shared/panel-host';
+// The per-kind opacity and size card on the hub's Layout tab (its own module draws and binds it in the hub's placeholder).
+export { bindKindLooksHub } from './ui-panel-tag-kinds';
 
 /** The shared panel registry (`JE.internals.enhancedUi`), created on first use like the legacy modules. */
 export function registry(JE: Pick<PanelBridge, 'internals'>): EnhancedUi {

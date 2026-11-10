@@ -21,6 +21,105 @@
     return typeof facade.registerSection === "function" && typeof facade.fmt === "function" && Array.isArray(facade.sections);
   }
 
+  // client/src/features/media-tags/settings/ui-panel-tag-kinds.ts
+  var FIELDS = ["opacity", "scale"];
+  var FIELD_ATTR = "data-je-kind-field";
+  function inputHtml(L, field, value, label, esc, attr) {
+    const { min, max, step } = L.KIND_LOOK_LIMITS[field];
+    return `<span class="je-kind-looks-value"><input type="number" inputmode="numeric" min="${Number(min)}" max="${Number(max)}" step="${Number(step)}" value="${Math.round(value)}" ${attr}="${field}" aria-label="${esc(label)}"><span aria-hidden="true">%</span></span>`;
+  }
+  function kindLooksTableHtml(L, text, esc, shown) {
+    const rows = L.TAG_KINDS.map((kind) => {
+      const name = text.name(kind);
+      const values = shown(kind.id);
+      return `<tr data-je-kind="${esc(kind.id)}"><th scope="row">${esc(name)}</th>${FIELDS.map((field) => `<td>${inputHtml(L, field, values[field], text.field(name, field), esc, FIELD_ATTR)}</td>`).join("")}
+            <td><button type="button" class="je-kind-looks-reset" data-je-kind-act="reset" aria-label="${esc(text.reset(name))}" title="${esc(text.reset(name))}"><span class="material-icons" aria-hidden="true">restart_alt</span></button></td></tr>`;
+    }).join("");
+    const all = FIELDS.map((field) => `<td>${inputHtml(L, field, L.KIND_LOOK_LIMITS[field].fallback, text.field(text.all, field), esc, "data-je-kind-all")}</td>`).join("");
+    return `<table class="je-kind-looks-table" data-je-kind-looks>
+        <caption class="je-kind-looks-caption">${esc(text.caption)}</caption>
+        <thead><tr><th scope="col">${esc(text.kind)}</th><th scope="col">${esc(text.opacity)}</th><th scope="col">${esc(text.size)}</th><td></td></tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr><th scope="row">${esc(text.all)}</th>${all}<td></td></tr>
+        <tr><td colspan="4"><span class="je-kind-looks-actions"><button type="button" data-je-kind-act="apply">${esc(text.apply)}</button><button type="button" data-je-kind-act="reset-all">${esc(text.resetAll)}</button></span></td></tr></tfoot>
+    </table>`;
+  }
+  var KIND_LOOKS_CSS = `
+    .je-kind-looks-table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
+    .je-kind-looks-caption { caption-side: top; text-align: start; padding-bottom: 6px; opacity: 0.8; }
+    .je-kind-looks-table th, .je-kind-looks-table td { padding: 3px 4px; text-align: start; vertical-align: middle; font-weight: normal; }
+    .je-kind-looks-table thead th { font-weight: 600; opacity: 0.85; }
+    .je-kind-looks-table tbody tr + tr { border-top: 1px solid rgba(255, 255, 255, 0.06); }
+    .je-kind-looks-table tfoot tr:first-child { border-top: 1px solid rgba(255, 255, 255, 0.18); }
+    .je-kind-looks-table tfoot th { font-weight: 600; }
+    .je-kind-looks-value { display: inline-flex; align-items: center; gap: 2px; white-space: nowrap; }
+    .je-kind-looks-value input { width: 4.2em; padding: 2px 4px; box-sizing: border-box; font: inherit; color: inherit; background: rgba(0, 0, 0, 0.25); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 4px; }
+    .je-kind-looks-reset { background: none; border: 0; color: inherit; cursor: pointer; opacity: 0.7; padding: 2px; line-height: 1; }
+    .je-kind-looks-reset:hover, .je-kind-looks-reset:focus-visible { opacity: 1; }
+    .je-kind-looks-reset .material-icons { font-size: 18px; }
+    .je-kind-looks-actions { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 6px; }
+    .je-kind-looks-actions button { font: inherit; color: inherit; cursor: pointer; padding: 4px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.25); background: rgba(255, 255, 255, 0.06); }
+`;
+  function valueOf(L, input, field) {
+    const n = input.valueAsNumber;
+    if (!Number.isFinite(n)) return void 0;
+    const { min, max } = L.KIND_LOOK_LIMITS[field];
+    return Math.min(max, Math.max(min, Math.round(n)));
+  }
+  var isField = (value) => value === "opacity" || value === "scale";
+  function bindKindLooksTable(root, L, update) {
+    const tableOf = (el) => el?.closest("[data-je-kind-looks]") ?? null;
+    const edit = (e) => {
+      const input = e.target;
+      if (!(input instanceof HTMLInputElement) || !tableOf(input)) return;
+      const field = input.getAttribute(FIELD_ATTR);
+      const kind = input.closest("tr")?.getAttribute("data-je-kind");
+      if (!isField(field) || !kind) return;
+      const value = valueOf(L, input, field);
+      if (value === void 0) return;
+      const final = e.type === "change";
+      if (final && String(value) !== input.value) input.value = String(value);
+      update((own2) => ({ ...own2, [kind]: { ...own2[kind], [field]: value } }), final);
+    };
+    const click = (e) => {
+      const button = e.target instanceof Element ? e.target.closest("button[data-je-kind-act]") : null;
+      const table = tableOf(button);
+      if (!button || !table) return;
+      const act = button.getAttribute("data-je-kind-act");
+      if (act === "reset") {
+        const kind = button.closest("tr")?.getAttribute("data-je-kind");
+        if (kind) update((own2) => Object.fromEntries(Object.entries(own2).filter(([id]) => id !== kind)), true);
+      } else if (act === "reset-all") {
+        update(() => ({}), true);
+      } else if (act === "apply") {
+        const all = {};
+        for (const field of FIELDS) {
+          const input = table.querySelector(`input[data-je-kind-all="${field}"]`);
+          const value = input instanceof HTMLInputElement ? valueOf(L, input, field) : void 0;
+          if (value !== void 0) all[field] = value;
+        }
+        update(() => Object.fromEntries(L.TAG_KINDS.map((kind) => [kind.id, { ...all }])), true);
+      }
+    };
+    root.addEventListener("input", edit);
+    root.addEventListener("change", edit);
+    root.addEventListener("click", click);
+    return () => {
+      root.removeEventListener("input", edit);
+      root.removeEventListener("change", edit);
+      root.removeEventListener("click", click);
+    };
+  }
+  function syncKindLooksTable(root, shown) {
+    root.querySelectorAll("[data-je-kind-looks] tr[data-je-kind]").forEach((row) => {
+      const values = shown(row.getAttribute("data-je-kind") || "");
+      row.querySelectorAll(`input[${FIELD_ATTR}]`).forEach((input) => {
+        const field = input.getAttribute(FIELD_ATTR);
+        if (input instanceof HTMLInputElement && isField(field) && input !== document.activeElement) input.value = String(values[field]);
+      });
+    });
+  }
+
   // client/src/features/media-tags/admin/dom.ts
   function isDisabled(el) {
     return el instanceof HTMLButtonElement || el instanceof HTMLInputElement || el instanceof HTMLSelectElement || el instanceof HTMLTextAreaElement ? el.disabled : false;
@@ -87,6 +186,7 @@
           { id: 'tagScale', key: 'TagScale', type: 'pills', label: 'Tag size' },
           { id: 'tagGap', key: 'TagGap', type: 'pills', label: 'Gap' },
           { id: 'tagEdgeSpacing', key: 'TagEdgeSpacing', type: 'pills', label: 'Edge spacing' },
+          { id: 'tagKindLooks', key: 'TagKindLooks', type: 'custom', label: 'Size and opacity per tag' },
       tab: 'layout',
       title: 'Group placement',
       writes: ['TagLayouts', 'TagGroupOrder', 'TagGroupCaps'],
@@ -186,6 +286,26 @@
       const cap = state.caps[g];
       return cap !== void 0 && Number.isFinite(cap) ? cap : L().DEFAULT_CAPS[g];
     }
+    function kindText() {
+      const readable = (id) => id.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/^./, (c) => c.toUpperCase());
+      return {
+        caption: A.fmt("Make one kind of tag bigger, smaller or more transparent without changing the others. 100% is the usual look; Tag size above still applies to every tag. Users can set their own."),
+        kind: A.fmt("Tag"),
+        opacity: A.fmt("Opacity"),
+        size: A.fmt("Size"),
+        all: A.fmt("All tags"),
+        apply: A.fmt("Apply to all"),
+        resetAll: A.fmt("Reset all"),
+        name: (kind) => A.fmt((kind.group === "quality" ? word(A.WORDS.kind, kind.id) : word(A.WORDS.group, kind.group === "ageRating" ? "age_rating" : kind.group)) ?? readable(kind.id)),
+        field: (name, field) => A.fmt(field === "opacity" ? "{kind} opacity (%)" : "{kind} size (%)", { kind: name }),
+        reset: (name) => A.fmt("Reset {kind}", { kind: name })
+      };
+    }
+    function kindShown(ctx) {
+      const looks = L().readKindLooks(ctx.config.TagKindLooks);
+      const { opacity, scale } = L().KIND_LOOK_LIMITS;
+      return (kind) => ({ opacity: looks[kind]?.opacity ?? opacity.fallback, scale: looks[kind]?.scale ?? scale.fallback });
+    }
     const openGroups = /* @__PURE__ */ new WeakMap();
     const groupSettingsLink = (ctx, g, name) => `<a class="je-ta-link je-ta-crosslink" href="#" data-je-goto="groups:${g}"><span class="je-ta-link-text">${ctx.esc(A.fmt("{group} settings (Groups)", { group: name }))}</span><span class="material-icons" aria-hidden="true">arrow_forward</span></a>`;
     function rowHtml(ctx, state, g, index, count) {
@@ -246,7 +366,9 @@
         // Size, gap and edge as the hub shows them: a row of choices with its help line.
         { id: "tagScale", key: "TagScale", type: "pills", label: "Tag size", desc: "Scale tag text, icons and padding on web and native posters.", options: [["smaller", "=85%"], ["default", "=100%"], ["larger", "=115%"], ["largest", "=130%"]] },
         { id: "tagGap", key: "TagGap", type: "pills", label: "Gap", desc: "Adjust spacing between tags in stacks, rows, bands and captions.", options: [["tight", "=Tight"], ["default", "=Default"], ["roomy", "=Roomy"]] },
-        { id: "tagEdgeSpacing", key: "TagEdgeSpacing", type: "pills", label: "Edge spacing", desc: "How close the Corners layout puts tags to the poster edge. Flush tags touch the edge and follow the poster's rounded corners.", options: [["default", "=Default"], ["tight", "=Tight"], ["flush", "=Flush"]] }
+        { id: "tagEdgeSpacing", key: "TagEdgeSpacing", type: "pills", label: "Edge spacing", desc: "How close the Corners layout puts tags to the poster edge. Flush tags touch the edge and follow the poster's rounded corners.", options: [["default", "=Default"], ["tight", "=Tight"], ["flush", "=Flush"]] },
+        // Per kind of tag, under the sizes above (drawn by render: a table, not one control).
+        { id: "tagKindLooks", key: "TagKindLooks", type: "custom", label: "Size and opacity per tag" }
       ],
       render(ctx, body) {
         const card = body.closest(".je-ta-card");
@@ -260,8 +382,22 @@
           const input = e.target;
           if (input instanceof HTMLInputElement && input.name === "jeTaLayout") ctx.set("TagLayout", input.value);
         });
+        JE.core.ui.injectCss("je-kind-looks", KIND_LOOKS_CSS);
+        const kinds = document.createElement("div");
+        kinds.className = "je-ta-field je-ta-field--block";
+        kinds.dataset.fieldRow = "tagKindLooks";
+        kinds.dataset.jeSettingId = "tagKindLooks";
+        kinds.innerHTML = `<span class="je-ta-switch-text"><span class="je-ta-switch-name" id="tagKindLooksLabel" data-je-label>${ctx.tx("Size and opacity per tag")}</span></span>${kindLooksTableHtml(L(), kindText(), (s) => ctx.esc(s), kindShown(ctx))}`;
+        body.append(kinds);
+        bindKindLooksTable(kinds, L(), (change, final) => {
+          if (!final) return;
+          const next = L().kindLooksToWire(change(L().readKindLooks(ctx.config.TagKindLooks)));
+          ctx.set("TagKindLooks", next.length ? next.map((e) => ({ Kind: e.kind, ...e.opacity === void 0 ? {} : { Opacity: e.opacity }, ...e.scale === void 0 ? {} : { Scale: e.scale } })) : null);
+          syncKindLooksTable(kinds, kindShown(ctx));
+        });
       },
-      refresh(ctx) {
+      refresh(ctx, body) {
+        if (body) syncKindLooksTable(body, kindShown(ctx));
         const layout = readState(ctx.config).layout;
         allAs(ctx.root, 'input[name="jeTaLayout"]', HTMLInputElement).forEach((r) => {
           r.checked = r.value === layout;

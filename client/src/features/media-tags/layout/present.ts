@@ -1,3 +1,4 @@
+import { KIND_LOOKS_ATTR, qualityKindOf } from './kind-looks';
 import { compactQualityLabel, revealSettings } from './layout-fitting';
 import { DEFAULT_ORDER, ENABLED_SETTING, type Group, type LayoutSettings, normalizeGroup, SLOT_TO_POSITION } from './layout-rules';
 import type { CardController, LayoutHost } from './layout-runtime-types';
@@ -46,6 +47,15 @@ export function createPresent(s: LayoutState, JE: LayoutHost, deps: LayoutFns) {
     function buildChips(group: Group, master: HTMLElement, conf: LayoutSettings, host?: HTMLElement) {
         const node = (cloneElement(master));
         node.dataset.jeGroup = group;
+        // Each quality chip names its category for the per-kind looks (one lookup, only for a chip without one).
+        if (group === 'quality') {
+            for (const chip of childrenOf(node)) {
+                if (!chip.dataset.jeTagKind) {
+                    const kind = qualityKindOf(chip);
+                    if (kind) chip.dataset.jeTagKind = kind;
+                }
+            }
+        }
         // Event handler properties are not cloned: a flag whose country is
         // missing from the flag set still removes itself.
         for (const img of node.querySelectorAll<HTMLImageElement>('img'))
@@ -411,6 +421,7 @@ export function createPresent(s: LayoutState, JE: LayoutHost, deps: LayoutFns) {
         ctrl.lookKey = '';
         ctrl.host.style.removeProperty('--je-tag-scale');
         ctrl.host.style.removeProperty('--je-tag-gap');
+        ctrl.host.removeAttribute(KIND_LOOKS_ATTR);
         delete ctrl.host.dataset.jeLayout;
         delete ctrl.host.dataset.jeLegacy;
         delete ctrl.host.dataset.jeLocked;

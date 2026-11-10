@@ -333,6 +333,20 @@
       minimal: "Minimal: status, quality dots and score, the rest on hover"
     },
     shape: { landscape: "Episode thumbnails", list: "List rows" },
+    // The quality categories as tag kinds (Size and opacity per tag); the other kinds are the groups above.
+    kind: {
+      resolution: "Resolution (4K, 1080p, ...)",
+      source: "Source (REMUX, BluRay, WEB, HDTV, DVD, …)",
+      dynamicRange: "HDR (HDR10+, Dolby Vision)",
+      specialFormat: "Special format (IMAX, 3D)",
+      videoCodec: "Video format (HEVC, H264, AV1, ...)",
+      audio: "Sound (Atmos, DTS, 5.1, 7.1, ...)",
+      edition: "Edition (Director’s Cut, Extended, …)",
+      runtime: "Runtime",
+      aspectRatio: "Aspect ratio",
+      frameRate: "Frame rate",
+      versions: "Versions (2 versions, 3 versions …)"
+    },
     shapeRecommended: {
       landscape: "Recommended: bands, compact (status and age on top, quality and rating below)",
       list: "Recommended: corners, compact (quality, status and rating, up to 2 each)"
@@ -1609,6 +1623,7 @@
     "TagScale",
     "TagGap",
     "TagEdgeSpacing",
+    "TagKindLooks",
     "TagLayouts",
     "TagGroupOrder",
     "TagGroupCaps",

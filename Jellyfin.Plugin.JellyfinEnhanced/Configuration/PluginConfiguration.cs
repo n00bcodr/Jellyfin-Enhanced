@@ -206,6 +206,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             TagScale = "default";
             TagGap = "default";
             TagEdgeSpacing = "default";
+            TagKindLooks = null;
             TagLookRules = null;
             TagLookItemOverrides = null;
             TagShapeOverrides = null;
@@ -970,6 +971,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <summary>Starting corners-layout edge spacing (default 6px, tight 3px, flush 0px).</summary>
         [AnalyticsInclude]
         public string TagEdgeSpacing { get; set; } = "default";
+        /// <summary>Starting opacity and size per tag kind (see TagKindLook); null keeps every kind as it was.</summary>
+        public List<TagKindLook>? TagKindLooks { get; set; }
         /// <summary>Starting tag look rules for new users (first match wins); null = none.</summary>
         public List<TagLookRule>? TagLookRules { get; set; }
         /// <summary>

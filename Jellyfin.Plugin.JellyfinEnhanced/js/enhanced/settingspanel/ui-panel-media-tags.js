@@ -20,6 +20,168 @@
     return optionalApiClient()?.getCurrentUserId?.() || "";
   }
 
+  // client/src/features/media-tags/settings/ui-panel-tag-kinds.ts
+  var FIELDS = ["opacity", "scale"];
+  var FIELD_ATTR = "data-je-kind-field";
+  function inputHtml(L, field2, value, label, esc, attr) {
+    const { min, max, step } = L.KIND_LOOK_LIMITS[field2];
+    return `<span class="je-kind-looks-value"><input type="number" inputmode="numeric" min="${Number(min)}" max="${Number(max)}" step="${Number(step)}" value="${Math.round(value)}" ${attr}="${field2}" aria-label="${esc(label)}"><span aria-hidden="true">%</span></span>`;
+  }
+  function kindLooksTableHtml(L, text, esc, shown) {
+    const rows = L.TAG_KINDS.map((kind) => {
+      const name = text.name(kind);
+      const values = shown(kind.id);
+      return `<tr data-je-kind="${esc(kind.id)}"><th scope="row">${esc(name)}</th>${FIELDS.map((field2) => `<td>${inputHtml(L, field2, values[field2], text.field(name, field2), esc, FIELD_ATTR)}</td>`).join("")}
+            <td><button type="button" class="je-kind-looks-reset" data-je-kind-act="reset" aria-label="${esc(text.reset(name))}" title="${esc(text.reset(name))}"><span class="material-icons" aria-hidden="true">restart_alt</span></button></td></tr>`;
+    }).join("");
+    const all = FIELDS.map((field2) => `<td>${inputHtml(L, field2, L.KIND_LOOK_LIMITS[field2].fallback, text.field(text.all, field2), esc, "data-je-kind-all")}</td>`).join("");
+    return `<table class="je-kind-looks-table" data-je-kind-looks>
+        <caption class="je-kind-looks-caption">${esc(text.caption)}</caption>
+        <thead><tr><th scope="col">${esc(text.kind)}</th><th scope="col">${esc(text.opacity)}</th><th scope="col">${esc(text.size)}</th><td></td></tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr><th scope="row">${esc(text.all)}</th>${all}<td></td></tr>
+        <tr><td colspan="4"><span class="je-kind-looks-actions"><button type="button" data-je-kind-act="apply">${esc(text.apply)}</button><button type="button" data-je-kind-act="reset-all">${esc(text.resetAll)}</button></span></td></tr></tfoot>
+    </table>`;
+  }
+  var KIND_LOOKS_CSS = `
+    .je-kind-looks-table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
+    .je-kind-looks-caption { caption-side: top; text-align: start; padding-bottom: 6px; opacity: 0.8; }
+    .je-kind-looks-table th, .je-kind-looks-table td { padding: 3px 4px; text-align: start; vertical-align: middle; font-weight: normal; }
+    .je-kind-looks-table thead th { font-weight: 600; opacity: 0.85; }
+    .je-kind-looks-table tbody tr + tr { border-top: 1px solid rgba(255, 255, 255, 0.06); }
+    .je-kind-looks-table tfoot tr:first-child { border-top: 1px solid rgba(255, 255, 255, 0.18); }
+    .je-kind-looks-table tfoot th { font-weight: 600; }
+    .je-kind-looks-value { display: inline-flex; align-items: center; gap: 2px; white-space: nowrap; }
+    .je-kind-looks-value input { width: 4.2em; padding: 2px 4px; box-sizing: border-box; font: inherit; color: inherit; background: rgba(0, 0, 0, 0.25); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 4px; }
+    .je-kind-looks-reset { background: none; border: 0; color: inherit; cursor: pointer; opacity: 0.7; padding: 2px; line-height: 1; }
+    .je-kind-looks-reset:hover, .je-kind-looks-reset:focus-visible { opacity: 1; }
+    .je-kind-looks-reset .material-icons { font-size: 18px; }
+    .je-kind-looks-actions { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 6px; }
+    .je-kind-looks-actions button { font: inherit; color: inherit; cursor: pointer; padding: 4px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.25); background: rgba(255, 255, 255, 0.06); }
+`;
+  function valueOf(L, input, field2) {
+    const n = input.valueAsNumber;
+    if (!Number.isFinite(n)) return void 0;
+    const { min, max } = L.KIND_LOOK_LIMITS[field2];
+    return Math.min(max, Math.max(min, Math.round(n)));
+  }
+  var isField = (value) => value === "opacity" || value === "scale";
+  function bindKindLooksTable(root, L, update) {
+    const tableOf = (el) => el?.closest("[data-je-kind-looks]") ?? null;
+    const edit = (e) => {
+      const input = e.target;
+      if (!(input instanceof HTMLInputElement) || !tableOf(input)) return;
+      const field2 = input.getAttribute(FIELD_ATTR);
+      const kind = input.closest("tr")?.getAttribute("data-je-kind");
+      if (!isField(field2) || !kind) return;
+      const value = valueOf(L, input, field2);
+      if (value === void 0) return;
+      const final = e.type === "change";
+      if (final && String(value) !== input.value) input.value = String(value);
+      update((own) => ({ ...own, [kind]: { ...own[kind], [field2]: value } }), final);
+    };
+    const click = (e) => {
+      const button = e.target instanceof Element ? e.target.closest("button[data-je-kind-act]") : null;
+      const table = tableOf(button);
+      if (!button || !table) return;
+      const act = button.getAttribute("data-je-kind-act");
+      if (act === "reset") {
+        const kind = button.closest("tr")?.getAttribute("data-je-kind");
+        if (kind) update((own) => Object.fromEntries(Object.entries(own).filter(([id]) => id !== kind)), true);
+      } else if (act === "reset-all") {
+        update(() => ({}), true);
+      } else if (act === "apply") {
+        const all = {};
+        for (const field2 of FIELDS) {
+          const input = table.querySelector(`input[data-je-kind-all="${field2}"]`);
+          const value = input instanceof HTMLInputElement ? valueOf(L, input, field2) : void 0;
+          if (value !== void 0) all[field2] = value;
+        }
+        update(() => Object.fromEntries(L.TAG_KINDS.map((kind) => [kind.id, { ...all }])), true);
+      }
+    };
+    root.addEventListener("input", edit);
+    root.addEventListener("change", edit);
+    root.addEventListener("click", click);
+    return () => {
+      root.removeEventListener("input", edit);
+      root.removeEventListener("change", edit);
+      root.removeEventListener("click", click);
+    };
+  }
+  function syncKindLooksTable(root, shown) {
+    root.querySelectorAll("[data-je-kind-looks] tr[data-je-kind]").forEach((row) => {
+      const values = shown(row.getAttribute("data-je-kind") || "");
+      row.querySelectorAll(`input[${FIELD_ATTR}]`).forEach((input) => {
+        const field2 = input.getAttribute(FIELD_ATTR);
+        if (input instanceof HTMLInputElement && isField(field2) && input !== document.activeElement) input.value = String(values[field2]);
+      });
+    });
+  }
+  function hubLayout(JE) {
+    const L = JE.core?.tagLayout;
+    if (!L) throw new TypeError("core/tag-layout.js must load before the Media Tags hub");
+    return L;
+  }
+  function hubText(JE) {
+    const L = hubLayout(JE);
+    const say = (key, params) => JE.t(key, params);
+    const readable = (id) => id.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/^./, (c) => c.toUpperCase());
+    return {
+      caption: say("tag_kind_looks_desc"),
+      kind: say("tag_kind_looks_kind"),
+      opacity: say("tag_kind_looks_opacity"),
+      size: say("tag_kind_looks_size"),
+      all: say("tag_kind_looks_all"),
+      apply: say("tag_kind_looks_apply_all"),
+      resetAll: say("tag_kind_looks_reset_all"),
+      name(kind) {
+        const key = kind.setting ? `panel_settings_ui_quality_tags_${kind.setting.replace(/^show|Tag$/g, "").replace(/([a-z])([A-Z])/g, "$1_$2").toLowerCase()}` : L.VOCABULARY_KEYS.group[kind.group === "ageRating" ? "age_rating" : kind.group];
+        const name = key ? say(key) : "";
+        return name && name !== key ? name : readable(kind.id);
+      },
+      field: (name, field2) => say(field2 === "opacity" ? "tag_kind_looks_opacity_for" : "tag_kind_looks_size_for", { kind: name }),
+      reset: (name) => say("tag_kind_looks_reset", { kind: name })
+    };
+  }
+  function hubShown(JE) {
+    const L = hubLayout(JE);
+    L.invalidateSettings();
+    const looks = L.normalizeSettings().kindLooks;
+    return (kind) => looks[kind] ?? { opacity: L.KIND_LOOK_LIMITS.opacity.fallback, scale: L.KIND_LOOK_LIMITS.scale.fallback };
+  }
+  function kindLooksHubHtml(JE) {
+    const L = hubLayout(JE);
+    const esc = (s) => JE.escapeHtml(s);
+    JE.core?.ui?.injectCss?.("je-kind-looks", KIND_LOOKS_CSS);
+    return `<section class="je-mth-card je-mth-kind-looks" aria-labelledby="jeMthKindLooksTitle">
+        <h4 class="je-mth-card-title" id="jeMthKindLooksTitle">${esc(JE.t("tag_kind_looks_title"))}</h4>
+        ${kindLooksTableHtml(L, hubText(JE), esc, hubShown(JE))}
+    </section>`;
+  }
+  function bindKindLooksHub(hub, JE) {
+    const L = hubLayout(JE);
+    const mount = hub.querySelector("[data-je-kind-looks-mount]");
+    if (mount) mount.innerHTML = kindLooksHubHtml(JE);
+    const sync = () => syncKindLooksTable(hub, hubShown(JE));
+    const off = bindKindLooksTable(hub, L, (change, final) => {
+      L.promoteLegacySettings(JE.currentSettings);
+      JE.currentSettings.tagKindLooks = L.kindLooksToWire(change(L.readKindLooks(JE.currentSettings.tagKindLooks)));
+      JE.currentSettings.tagLayoutSettingsVersion = 1;
+      L.invalidateSettings();
+      void JE.reinitializeTagLayout?.();
+      if (final) {
+        JE.saveUserSettings("settings.json", JE.currentSettings);
+        sync();
+      }
+    });
+    document.addEventListener("je:tag-layout-changed", sync);
+    return () => {
+      off();
+      document.removeEventListener("je:tag-layout-changed", sync);
+    };
+  }
+
   // client/src/features/media-tags/settings/host.ts
   function registry(JE) {
     JE.internals = JE.internals || {};
@@ -291,7 +453,7 @@
                     <div class="je-mth-pills" id="jeTagEdgeChoice" role="radiogroup" aria-labelledby="jeMthEdgeLabel" aria-describedby="jeMthEdgeDesc">${edge}</div>
                 </div>
             </section>
-            <div class="je-mth-shapes">${shapesHtml()}</div>
+            <div data-je-kind-looks-mount></div><div class="je-mth-shapes">${shapesHtml()}</div>
             <p class="je-mth-hint je-mth-shapes-note">${tx("tag_shapes_limitations")}</p>
             <section class="je-mth-card" aria-labelledby="jeMthSwitchesTitle">
                 <h4 class="je-mth-card-title" id="jeMthSwitchesTitle">${tx("panel_media_tags_switches_title")}</h4>
@@ -707,7 +869,7 @@
       let preview = null;
       let io = null;
       let presetsLoaded = false;
-      const cleanups = [];
+      const cleanups = [bindKindLooksHub(hub, JE)];
       const announce = (message) => {
         live.textContent = "";
         setTimeout(() => {

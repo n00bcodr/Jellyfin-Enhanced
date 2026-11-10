@@ -23,6 +23,7 @@ registerSection({
         { id: 'tagScale', key: 'TagScale', type: 'pills', label: 'Tag size' },
         { id: 'tagGap', key: 'TagGap', type: 'pills', label: 'Gap' },
         { id: 'tagEdgeSpacing', key: 'TagEdgeSpacing', type: 'pills', label: 'Edge spacing' },
+        { id: 'tagKindLooks', key: 'TagKindLooks', type: 'custom', label: 'Size and opacity per tag' },
     tab: 'layout',
     title: 'Group placement',
     writes: ['TagLayouts', 'TagGroupOrder', 'TagGroupCaps'],
@@ -50,6 +51,7 @@ registerSection({
 import type { JsonValue } from '../../../../contracts/generated';
 import { settingsUi, type AdminTagLayout } from '../host';
 import type { Group, Layout, Shape } from '../../layout/layout-rules';
+import { bindKindLooksTable, KIND_LOOKS_CSS, type KindLooksText, kindLooksTableHtml, syncKindLooksTable } from '../../settings/ui-panel-tag-kinds';
 import { allAs, closest, find, findAs, focus, isDisabled } from '../dom';
 import { word } from '../format';
 import type { PageContext, SectionDef } from '../types';
@@ -156,6 +158,25 @@ installSection((A, JE) => {
         return cap !== undefined && Number.isFinite(cap) ? cap : L().DEFAULT_CAPS[g];
     }
 
+    /** The page's words for the per-kind table (English, like the rest of the tab). */
+    function kindText(): KindLooksText {
+        const readable = (id: string) => id.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, (c) => c.toUpperCase());
+        return {
+            caption: A.fmt('Make one kind of tag bigger, smaller or more transparent without changing the others. 100% is the usual look; Tag size above still applies to every tag. Users can set their own.'),
+            kind: A.fmt('Tag'), opacity: A.fmt('Opacity'), size: A.fmt('Size'), all: A.fmt('All tags'), apply: A.fmt('Apply to all'), resetAll: A.fmt('Reset all'),
+            name: (kind) => A.fmt((kind.group === 'quality' ? word(A.WORDS.kind, kind.id) : word(A.WORDS.group, kind.group === 'ageRating' ? 'age_rating' : kind.group)) ?? readable(kind.id)),
+            field: (name, field) => A.fmt(field === 'opacity' ? '{kind} opacity (%)' : '{kind} size (%)', { kind: name }),
+            reset: (name) => A.fmt('Reset {kind}', { kind: name }),
+        };
+    }
+
+    /** A kind's values as the configuration sets them (100 where it sets nothing). */
+    function kindShown(ctx: PageContext): (kind: string) => { opacity: number; scale: number } {
+        const looks = L().readKindLooks(ctx.config.TagKindLooks);
+        const { opacity, scale } = L().KIND_LOOK_LIMITS;
+        return (kind) => ({ opacity: looks[kind]?.opacity ?? opacity.fallback, scale: looks[kind]?.scale ?? scale.fallback });
+    }
+
     /** Per page view: the group row whose controls are open. */
     const openGroups = new WeakMap<PageContext, string | null>();
 
@@ -227,6 +248,8 @@ installSection((A, JE) => {
             { id: 'tagScale', key: 'TagScale', type: 'pills', label: 'Tag size', desc: 'Scale tag text, icons and padding on web and native posters.', options: [['smaller', '=85%'], ['default', '=100%'], ['larger', '=115%'], ['largest', '=130%']] },
             { id: 'tagGap', key: 'TagGap', type: 'pills', label: 'Gap', desc: 'Adjust spacing between tags in stacks, rows, bands and captions.', options: [['tight', '=Tight'], ['default', '=Default'], ['roomy', '=Roomy']] },
             { id: 'tagEdgeSpacing', key: 'TagEdgeSpacing', type: 'pills', label: 'Edge spacing', desc: 'How close the Corners layout puts tags to the poster edge. Flush tags touch the edge and follow the poster\'s rounded corners.', options: [['default', '=Default'], ['tight', '=Tight'], ['flush', '=Flush']] },
+            // Per kind of tag, under the sizes above (drawn by render: a table, not one control).
+            { id: 'tagKindLooks', key: 'TagKindLooks', type: 'custom', label: 'Size and opacity per tag' },
         ],
         render(ctx, body) {
             const card = body.closest('.je-ta-card');
@@ -240,8 +263,24 @@ installSection((A, JE) => {
                 const input = e.target;
                 if (input instanceof HTMLInputElement && input.name === 'jeTaLayout') ctx.set('TagLayout', input.value);
             });
+            // Size and opacity per tag kind: the defaults new users and users who never set their own start from.
+            JE.core.ui.injectCss('je-kind-looks', KIND_LOOKS_CSS);
+            const kinds = document.createElement('div');
+            kinds.className = 'je-ta-field je-ta-field--block';
+            kinds.dataset.fieldRow = 'tagKindLooks';
+            kinds.dataset.jeSettingId = 'tagKindLooks';
+            kinds.innerHTML = `<span class="je-ta-switch-text"><span class="je-ta-switch-name" id="tagKindLooksLabel" data-je-label>${ctx.tx('Size and opacity per tag')}</span></span>${kindLooksTableHtml(L(), kindText(), (s) => ctx.esc(s), kindShown(ctx))}`;
+            body.append(kinds);
+            bindKindLooksTable(kinds, L(), (change, final) => {
+                // Typing waits for the field to be left: each stored change is one save the page can undo.
+                if (!final) return;
+                const next = L().kindLooksToWire(change(L().readKindLooks(ctx.config.TagKindLooks)));
+                ctx.set('TagKindLooks', next.length ? next.map((e) => ({ Kind: e.kind, ...(e.opacity === undefined ? {} : { Opacity: e.opacity }), ...(e.scale === undefined ? {} : { Scale: e.scale }) })) : null);
+                syncKindLooksTable(kinds, kindShown(ctx));
+            });
         },
-        refresh(ctx) {
+        refresh(ctx, body) {
+            if (body) syncKindLooksTable(body, kindShown(ctx));
             const layout = readState(ctx.config).layout;
             allAs(ctx.root, 'input[name="jeTaLayout"]', HTMLInputElement).forEach((r) => { r.checked = r.value === layout; });
             const desc = ctx.root.querySelector('#tagLayoutDesc');

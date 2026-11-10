@@ -358,6 +358,7 @@ export interface BootstrapPublicConfig {
   "TagGroupCaps": TagGroupCaps | null;
   "TagGroupOrder": Array<string> | null;
   "TagGroupScopes": TagGroupScopes | null;
+  "TagKindLooks": Array<TagKindLook> | null;
   "TagLabelDensity": string;
   "TagLayout": string;
   "TagLayouts": TagLayoutProfiles | null;
@@ -507,6 +508,7 @@ export interface BootstrapSettings {
   "TagGroupCaps": TagGroupCaps | null;
   "TagGroupOrder": Array<string> | null;
   "TagGroupScopes": TagGroupScopes | null;
+  "TagKindLooks": Array<TagKindLook> | null;
   "TagLabelDensity": string;
   "TagLayout": string;
   "TagLayoutLocks": Record<string, TagLayoutLock> | null;
@@ -690,6 +692,7 @@ export interface JellyfinEnhancedUserSettings {
   "TagGroupCaps": TagGroupCaps | null;
   "TagGroupOrder": Array<string> | null;
   "TagGroupScopes": TagGroupScopes | null;
+  "TagKindLooks": Array<TagKindLook> | null;
   "TagLabelDensity": string;
   "TagLayout": string;
   "TagLayoutLocks": Record<string, TagLayoutLock> | null;
@@ -792,6 +795,12 @@ export interface TagGroupScopes {
   "Quality": TagScopeSet | null;
   "Rating": TagScopeSet | null;
   "Status": TagScopeSet | null;
+}
+
+export interface TagKindLook {
+  "Kind": string;
+  "Opacity": number | null;
+  "Scale": number | null;
 }
 
 export interface TagLayoutGroupSlot {

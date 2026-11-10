@@ -384,6 +384,7 @@ const EXPLICIT = {
   TagGroupScopes: { Genre: { Episodes: false } },
   TagScale: 'larger', TagGap: 'roomy', TagEdgeSpacing: 'tight', TagStylePreset: 'poster',
   TagShapeOverrides: { Landscape: { Layout: 'bands', Density: 'compact' } },
+  TagKindLooks: [{ Kind: 'resolution', Opacity: 50, Scale: 150 }],
 };
 
 /** Administrator values the inherited fields resolve to (none the built-in fallback). */

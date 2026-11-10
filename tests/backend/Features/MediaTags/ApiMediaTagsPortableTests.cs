@@ -79,6 +79,7 @@ public class ApiMediaTagsPortableTests
         TagScale = "larger",
         TagGap = "roomy",
         TagEdgeSpacing = "tight",
+        TagKindLooks = new List<TagKindLook> { new() { Kind = "resolution", Scale = 150 }, new() { Kind = "language", Opacity = 50, Scale = 80 } },
         TagShapeOverrides = new TagShapeOverrides { Landscape = new TagShapeLook { Layout = "minimal", Density = "compact" } },
         TagStylePreset = "glass",
         TagGroupScopes = new TagGroupScopes { Genre = new TagScopeSet { Episodes = false }, Logos = new TagScopeSet { NextUp = false } },
@@ -98,7 +99,7 @@ public class ApiMediaTagsPortableTests
         Assert.Equal(1, (int)exported["v"]!);
         Assert.Equal("je-media-tags-user", (string?)exported["kind"]);
         var settings = exported["settings"]!.AsObject();
-        Assert.Equal(89, MediaTagsPortable.UserFields.Count);
+        Assert.Equal(90, MediaTagsPortable.UserFields.Count);
         Assert.Equal(MediaTagsPortable.UserFields, settings.Select(p => p.Key));
 
         // The same document again changes nothing and skips nothing.

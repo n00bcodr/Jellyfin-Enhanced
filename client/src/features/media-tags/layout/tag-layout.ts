@@ -2,6 +2,7 @@ import { createCardContext } from './card-context';
 import { createFitApply } from './fit-apply';
 import { createFitMeasure } from './fit-measure';
 import { createGroups } from './groups';
+import { KIND_LOOK_LIMITS, kindLooksCss, kindLooksToWire, readKindLooks, TAG_KINDS } from './kind-looks';
 import { chipsThatFit, compactQualityLabel, preserveLegacySizing, rowBudget, rowsHeight } from './layout-fitting';
 import { DEFAULT_CAPS, DEFAULT_ORDER, DEFAULT_PROFILES, EDGE_SPACINGS, LAYOUT_SLOTS, MAX_CAP, normalizeGroup, POSITION_SETTINGS, POSITION_TO_SLOT, readEdge, readGap, readScale, readShapeOverrides, RECOMMENDED_SHAPES, SHAPES, shapesToWire, SLOT_TO_POSITION, TAG_GAPS, TAG_SCALES } from './layout-rules';
 import type { LayoutHost } from './layout-runtime-types';
@@ -186,6 +187,11 @@ export function createTagLayout(JE: LayoutHost) {
         preserveLegacySizing,
         TAG_SCALES,
         TAG_GAPS,
+        TAG_KINDS,
+        KIND_LOOK_LIMITS,
+        readKindLooks,
+        kindLooksToWire,
+        kindLooksCss,
         readScale,
         readGap,
         EDGE_SPACINGS: { ...EDGE_SPACINGS },

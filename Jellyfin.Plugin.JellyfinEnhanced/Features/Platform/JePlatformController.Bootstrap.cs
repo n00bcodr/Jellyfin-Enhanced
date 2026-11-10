@@ -357,6 +357,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Platform
                 TagScale = TagLayoutRules.NormalizeScale(config.TagScale),
                 TagGap = TagLayoutRules.NormalizeGap(config.TagGap),
                 TagEdgeSpacing = TagLayoutRules.NormalizeEdgeSpacing(config.TagEdgeSpacing) ?? "default",
+                TagKindLooks = TagLayoutRules.NormalizeKindLooks(config.TagKindLooks),
                 // Tag look rules starting default (normalized; null = none)
                 TagLookRules = TagLookValidation.NormalizeRules(config.TagLookRules),
                 // Server-wide per-item looks (normalized; null = none): ids and looks only,

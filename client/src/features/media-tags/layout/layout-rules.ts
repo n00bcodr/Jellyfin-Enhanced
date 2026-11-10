@@ -1,3 +1,4 @@
+import type { KindLooks } from './kind-looks';
 export type Group = 'status' | 'quality' | 'rating' | 'ageRating' | 'language' | 'genre' | 'awards' | 'logos' | 'custom';
 export type Layout = 'corners' | 'bands' | 'caption' | 'summary' | 'minimal';
 export type Shape = 'landscape' | 'list';
@@ -29,6 +30,8 @@ export interface LayoutSettings {
     locked: boolean;
     shapes: ShapeOverrides;
     edge: string;
+    /** Per-kind opacity and size that differ from today's look (kind-looks.ts); {} draws as before. */
+    kindLooks: KindLooks;
     lookKey: string;
 }
 export interface LayoutDocument {
@@ -46,6 +49,7 @@ export interface LayoutDocument {
     TagEdgeSpacing?: unknown;
     TagGap?: unknown;
     TagGroupCaps?: unknown;
+    TagKindLooks?: unknown;
     TagLayouts?: unknown;
     TagLookItemOverrides?: unknown;
     TagLookRules?: unknown;
@@ -73,6 +77,7 @@ export interface LayoutDocument {
     tagGap?: unknown;
     tagGroupCaps?: unknown;
     tagGroupOrder?: unknown;
+    tagKindLooks?: unknown;
     tagLabelDensity?: unknown;
     tagLayout?: unknown;
     tagLayoutLocks?: unknown;
@@ -293,7 +298,7 @@ export function positionSlot(settings: LayoutDocument, plugin: LayoutDocument, g
 export function isLegacySettings(settings: LayoutDocument = {}) {
     return !(Number(settings.tagLayoutSettingsVersion) >= 1);
 }
-export function normalizeSettings(s: LayoutDocument = {}, p: LayoutDocument = {}) {
+export function normalizeSettings(s: LayoutDocument = {}, p: LayoutDocument = {}, kindLooksOf: (s: LayoutDocument, p: LayoutDocument, legacy: boolean) => KindLooks = () => ({})) {
     const legacy = isLegacySettings(s);
     const layout = legacy ? 'corners' : normalizeLayout(s.tagLayout);
     const densityRaw = legacy ? 'full' : String(s.tagLabelDensity || '').toLowerCase();
@@ -348,7 +353,7 @@ export function normalizeSettings(s: LayoutDocument = {}, p: LayoutDocument = {}
     // Edge spacing: the document's own, else the administrator's; a
     // legacy document keeps the inset it always had.
     const edge = legacy ? 'default' : (readEdge(s.tagEdgeSpacing) || readEdge(pick(p, 'tagEdgeSpacing')) || 'default');
-    const conf: LayoutSettings = { layout, legacy, density, tagScale, tagGap, order, orderChosen, caps: { ...DEFAULT_CAPS, ...caps }, profiles, slots: profiles[layout], indicatorGap, reserveCaption, locked: false, shapes, edge, lookKey: '' };
+    const conf: LayoutSettings = { layout, legacy, density, tagScale, tagGap, order, orderChosen, caps: { ...DEFAULT_CAPS, ...caps }, profiles, slots: profiles[layout], indicatorGap, reserveCaption, locked: false, shapes, edge, kindLooks: kindLooksOf(s, p, legacy), lookKey: '' };
     conf.lookKey = lookKeyOf(conf);
     return conf;
 }
@@ -375,8 +380,10 @@ export function promoteLegacySettings(s: LayoutDocument | undefined) {
     return true;
 }
 export function lookKeyOf(conf: LayoutSettings) {
+    // Kind looks join the key only when some kind differs, so every other key stays as it was.
+    const kinds = Object.entries(conf.kindLooks || {}).map(([kind, look]) => `${kind}:${look.opacity}:${look.scale}`).join(',');
     return [conf.layout, conf.density, conf.tagScale, conf.tagGap, conf.locked ? 'L' : '', DEFAULT_ORDER.map((g) => conf.slots[g] || '').join(','),
-        DEFAULT_ORDER.map((g) => conf.caps[g]).join(','), conf.edge === 'default' ? '' : conf.edge].join('|');
+        DEFAULT_ORDER.map((g) => conf.caps[g]).join(','), conf.edge === 'default' ? '' : conf.edge, ...(kinds ? [kinds] : [])].join('|');
 }
 export function validSlots(layout: Layout, slots: Slots | null | undefined) {
     const out: Slots = {};

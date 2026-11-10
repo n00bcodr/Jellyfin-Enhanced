@@ -82,7 +82,7 @@ export interface CustomTagsApi { currentRules(): { rules: Map<string, CustomTagR
 
 export type PanelTagLayout = Pick<TagLayout,
     | 'DEFAULT_ORDER' | 'VOCABULARY_KEYS' | 'LAYOUT_SLOTS' | 'SLOT_TO_POSITION' | 'POSITION_SETTINGS' | 'SHAPES'
-    | 'TAG_SCALES' | 'TAG_GAPS' | 'singleChipGroup' | 'normalizeGroup' | 'promoteLegacySettings' | 'readScale'
+    | 'TAG_SCALES' | 'TAG_GAPS' | 'TAG_KINDS' | 'KIND_LOOK_LIMITS' | 'readKindLooks' | 'kindLooksToWire' | 'singleChipGroup' | 'normalizeGroup' | 'promoteLegacySettings' | 'readScale'
     | 'readGap' | 'readEdge' | 'invalidateSettings' | 'normalizeSettings' | 'removeGroupEverywhere' | 'sizeLabel'
     | 'fitReveal' | 'isGroup' | 'CONTAINER_CLASS' | 'ensureHost' | 'setCardContext' | 'commitGroup' | 'removeGroup'
     | 'refreshPresentation' | 'resolveLayout' | 'lookSource' | 'describe' | 'clearCard' | 'readShapeOverrides'

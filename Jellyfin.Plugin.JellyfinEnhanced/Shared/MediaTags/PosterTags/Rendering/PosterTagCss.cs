@@ -57,10 +57,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags.PosterTags.Rendering
         public float OverflowLineHeight => Lu(OverflowFontSize * 1.15f);
 
         public PosterTagCss(float cardWidth, string tagScale = "default", string tagGap = "default")
+            : this(cardWidth, TagLayoutRules.ScaleFactor(tagScale), TagLayoutRules.GapFactor(tagGap))
+        {
+        }
+
+        private PosterTagCss(float cardWidth, float scale, float gap)
         {
             CardWidth = cardWidth;
-            Scale = TagLayoutRules.ScaleFactor(tagScale);
-            Gap = TagLayoutRules.GapFactor(tagGap);
+            Scale = scale;
+            Gap = gap;
             StackGap = CornerStackGap * Scale * Gap;
             IndicatorOffset = TopRightIndicatorOffset * Scale;
             float cqw = cardWidth / 100f;
@@ -89,6 +94,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags.PosterTags.Rendering
             LogoHeight = Clamp(18f, 13f * cqw, 28f) * Scale;
             LogoFontSize = Clamp(9f, 6.4f * cqw, 12f) * Scale;
         }
+
+        /// <summary>These metrics with the size multiplied by <paramref name="factor"/> (a tag kind's own size); spacing unchanged.</summary>
+        public PosterTagCss WithScale(float factor) => new PosterTagCss(CardWidth, Scale * factor, Gap);
 
         public float CardWidth { get; }
         public float Scale { get; }

@@ -5762,6 +5762,14 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "TagKindLooks",
+      "type": "List<TagKindLook>?",
+      "initializer": null,
+      "constructor_assignment": "null",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "TagLookRules",
       "type": "List<TagLookRule>?",
       "initializer": null,
@@ -7913,6 +7921,30 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLayoutSettings.cs"
     },
     {
+      "class": "TagKindLook",
+      "name": "Kind",
+      "type": "string",
+      "initializer": "string.Empty",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLayoutSettings.cs"
+    },
+    {
+      "class": "TagKindLook",
+      "name": "Opacity",
+      "type": "int?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLayoutSettings.cs"
+    },
+    {
+      "class": "TagKindLook",
+      "name": "Scale",
+      "type": "int?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLayoutSettings.cs"
+    },
+    {
       "class": "TagLookCondition",
       "name": "Field",
       "type": "string",
@@ -9076,6 +9108,14 @@
       "class": "JellyfinEnhancedUserSettings",
       "name": "TagEdgeSpacing",
       "type": "string?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "TagKindLooks",
+      "type": "List<TagKindLook>?",
       "initializer": null,
       "constructor_assignment": null,
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
@@ -10606,7 +10646,7 @@
     "build_targets": 1,
     "files": 543,
     "routes": 203,
-    "configuration_properties": 745,
+    "configuration_properties": 750,
     "storage_references": 96,
     "scheduled_tasks": 16,
     "locales": 33

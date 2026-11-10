@@ -144,6 +144,9 @@ export function loadSettings(JE: SettingsBridge): SettingsDocument {
         // back to the plugin default (that would pin the admin's current choice).
         mergedSettings.tagStylePreset = typeof userSettings.tagStylePreset === 'string' && userSettings.tagStylePreset ? userSettings.tagStylePreset : null;
         mergedSettings.tagGroupOrder = Array.isArray(userSettings.tagGroupOrder) ? userSettings.tagGroupOrder : null;
+        // Per-kind opacity and size (null = follow the admin's, normalized documents only); core/tag-layout.js
+        // validates and clamps every value when it reads them.
+        mergedSettings.tagKindLooks = Array.isArray(userSettings.tagKindLooks) ? userSettings.tagKindLooks : null;
         // Tag look rules (null = inherit the admin's default rules) and per-item
         // locks; core/tag-look.js normalises both when it reads them.
         mergedSettings.tagLookRules = Array.isArray(userSettings.tagLookRules) ? userSettings.tagLookRules : null;

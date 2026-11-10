@@ -138,6 +138,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags.PosterTags
 
         /// <summary>Validated chip spacing applied to stacks and centre rows.</summary>
         public string TagGap { get; init; } = "default";
+
+        /// <summary>
+        /// Opacity and size per tag kind that differ from today's look (<c>PosterTagSettings.KindLooks</c>): a chip of
+        /// such a kind is measured and drawn at that size and opacity; spacing follows <see cref="TagScale"/> and
+        /// <see cref="TagGap"/>. Null or empty draws every chip as before.
+        /// </summary>
+        public IReadOnlyDictionary<string, Jellyfin.Plugin.JellyfinEnhanced.Configuration.TagKindLookValue>? KindLooks { get; init; }
         /// <summary>
         /// Distance (CSS px) of every anchor's chips from the card edges: the corners layout's edge spacing
         /// (6 by default, 3 tight, 0 flush; see <c>TagLayoutRules.EdgeSpacings</c>).

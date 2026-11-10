@@ -458,7 +458,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.PosterTags.Renderi
                     return;
                 }
 
-                var key = new PosterTagTileKey(item.Kind, item.Text, item.Style + "|flush=" + (int)item.FlushEdges, s, plan.CardWidth, box.Width, box.Height, phaseX, phaseY, crop, item.Tag is QualityTag q ? q.Category + (q.DisplayText == null ? string.Empty : "|" + q.Label) : string.Empty, plan.Css.Scale, plan.Css.Gap);
+                var key = new PosterTagTileKey(item.Kind, item.Text, item.Style + "|flush=" + (int)item.FlushEdges, s, plan.CardWidth, box.Width, box.Height, phaseX, phaseY, crop, item.Tag is QualityTag q ? q.Category + (q.DisplayText == null ? string.Empty : "|" + q.Label) : string.Empty, item.Css.Scale, item.Css.Gap);
                 var state = (Engine: this, Plan: plan, Item: item, Box: box, Margin: margin, PhaseX: phaseX / 16f, PhaseY: phaseY / 16f, Crop: crop);
                 using var lease = Tiles.Rent(key, state, static st => st.Engine.RenderTile(st.Plan, st.Item, st.Box, st.Margin, st.PhaseX, st.PhaseY, st.Crop));
                 if (lease.Image is not { } tile)
@@ -472,7 +472,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.PosterTags.Renderi
                     canvas.ClipRect(c, SKClipOperation.Intersect, false);
                 }
 
-                canvas.DrawImage(tile, box.Left - margin + crop.Left, box.Top - margin + crop.Top);
+                if (item.Opacity < 1f)
+                {
+                    // A kind's own opacity (PosterTagLayout.KindLooks): the whole chip, shadow included, like CSS opacity.
+                    using var faded = new SKPaint { Color = SKColors.Black.WithAlpha((byte)MathF.Round(Math.Clamp(item.Opacity, 0f, 1f) * 255f)) };
+                    canvas.DrawImage(tile, box.Left - margin + crop.Left, box.Top - margin + crop.Top, SKSamplingOptions.Default, faded);
+                }
+                else
+                {
+                    canvas.DrawImage(tile, box.Left - margin + crop.Left, box.Top - margin + crop.Top);
+                }
+
                 if (clip is not null)
                 {
                     canvas.Restore();
@@ -553,10 +563,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.PosterTags.Renderi
                 using var shape = new SKRoundRect(local, PosterTagCss.OverflowRadius);
                 PaintBox(canvas, shape, new SKColor(0, 0, 0, CssColor.AlphaByte(0.72f)),
                     new SKColor(255, 255, 255, CssColor.AlphaByte(0.22f)), border, default, item.FlushEdges);
-                float x = 1 + PosterTagCss.Lu(plan.Css.OverflowPaddingH);
-                float top = 1 + PosterTagCss.Lu(plan.Css.OverflowPaddingV);
+                float x = 1 + PosterTagCss.Lu(item.Css.OverflowPaddingH);
+                float top = 1 + PosterTagCss.Lu(item.Css.OverflowPaddingV);
                 // The anonymous flex text box floors its leading before align-items: center.
-                float baseline = MathF.Floor(Assets.TextMetrics.BaselineOffset(plan.Css.OverflowFontSize, plan.Css.OverflowLineHeight));
+                float baseline = MathF.Floor(Assets.TextMetrics.BaselineOffset(item.Css.OverflowFontSize, item.Css.OverflowLineHeight));
                 DrawText(canvas, item.TextLayout!, x, top + baseline,
                     SKColors.White, null, space);
             }
@@ -568,16 +578,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.PosterTags.Renderi
                 using var shape = new SKRoundRect(local, Math.Clamp(plan.CardWidth * 0.03f, 4, 6));
                 PaintBox(canvas, shape, colors.Background ?? new SKColor(15, 15, 15, CssColor.AlphaByte(0.72f)),
                     colors.Border ?? new SKColor(255, 255, 255, CssColor.AlphaByte(0.18f)), border, ChipShadow, item.FlushEdges);
-                float x = 1 + PosterTagCss.Lu(Math.Clamp(plan.CardWidth * 0.05f, 5, 10) * plan.Css.Scale);
-                float fontSize = plan.Css.ChipFontSize;
-                float top = 1 + PosterTagCss.Lu(plan.Css.ChipPaddingV);
+                float x = 1 + PosterTagCss.Lu(Math.Clamp(plan.CardWidth * 0.05f, 5, 10) * item.Css.Scale);
+                float fontSize = item.Css.ChipFontSize;
+                float top = 1 + PosterTagCss.Lu(item.Css.ChipPaddingV);
                 DrawText(canvas, item.TextLayout!, x, top + Assets.TextMetrics.BaselineOffset(fontSize, PosterTagCss.Lu(fontSize * 1.15f)),
                     colors.Text ?? (item.Tag is StatusTag { StyleKey: "trending" } ? new SKColor(255, 209, 102) : SKColors.White), null, space);
             }
 
             private void PaintQuality(SKCanvas canvas, PosterTagPlan plan, PlannedItem item, SKRect local, float border, TileSpace space)
             {
-                var css = plan.Css;
+                var css = item.Css;
                 var (background, text) = item.Tag is QualityTag { Category: "runtime" or "aspectRatio" or "frameRate" }
                     ? (new SKColor(55, 71, 79, 242), SKColors.White)
                     : item.Tag is QualityTag { Category: "edition" }
@@ -605,7 +615,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.PosterTags.Renderi
 
             private void PaintGenre(SKCanvas canvas, PosterTagPlan plan, PlannedItem item, SKRect local, float border, TileSpace space)
             {
-                var css = plan.Css;
+                var css = item.Css;
                 var o = item.Style.Length > 0 ? TagColors.Decode(item.Style) : default;
                 var glyph = o.Text ?? GenreGlyph;
                 using var rrect = new SKRoundRect(local, local.Width / 2f, local.Height / 2f);
@@ -635,7 +645,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.PosterTags.Renderi
 
             private void PaintRating(SKCanvas canvas, PosterTagPlan plan, PlannedItem item, SKRect local, float border, TileSpace space)
             {
-                var css = plan.Css;
+                var css = item.Css;
                 var tag = (RatingTag)item.Tag;
                 var background = tag.Source == PosterRatingSource.Community ? CommunityBackground : CriticBackground;
                 var textColor = tag.Source switch
@@ -712,7 +722,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.PosterTags.Renderi
             private void PaintAward(SKCanvas canvas, PosterTagPlan plan, PlannedItem item, SKRect local, float border, TileSpace space)
             {
                 var tag = (AwardTag)item.Tag;
-                var css = plan.Css;
+                var css = item.Css;
                 var background = new SKColor(15, 15, 15, 217);
                 var text = SKColors.White;
                 SKColor? ring = null;
@@ -737,7 +747,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.PosterTags.Renderi
 
             private void PaintAge(SKCanvas canvas, PosterTagPlan plan, PlannedItem item, SKRect local, float border, TileSpace space)
             {
-                var css = plan.Css;
+                var css = item.Css;
                 var nl = item.Style.IndexOf('\n');
                 var styleKey = nl >= 0 ? item.Style[..nl] : item.Style;
                 var style = Assets.AgeRatingStyles.TryGetValue(styleKey, out var found) ? found : AgeRatingStyle.Default;
@@ -761,7 +771,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.PosterTags.Renderi
             /// <summary>A Custom tag chip (customtags.js): optional icon, then the label, in the label's Tag Styles colours.</summary>
             private void PaintCustom(SKCanvas canvas, PosterTagPlan plan, PlannedItem item, SKRect local, float border, TileSpace space)
             {
-                var css = plan.Css;
+                var css = item.Css;
                 var nl = item.Style.IndexOf('\n');
                 var iconName = nl >= 0 ? item.Style[..nl] : item.Style;
                 var o = nl >= 0 ? TagColors.Decode(item.Style[(nl + 1)..]) : default;
@@ -794,16 +804,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.PosterTags.Renderi
                 var colors = parts.Length == 3 ? TagColors.Decode(parts[2]) : default;
                 using var opacity = new SKPaint { Color = new SKColor(0, 0, 0, tag.Partial ? CssColor.AlphaByte(0.55f) : (byte)255) };
                 canvas.SaveLayer(opacity);
-                using var shape = new SKRoundRect(local, plan.Css.QualityRadius);
+                using var shape = new SKRoundRect(local, item.Css.QualityRadius);
                 PaintBox(canvas, shape, colors.Background ?? new SKColor(15, 15, 15, CssColor.AlphaByte(0.72f)), colors.Border ?? QualityBorder, border, QualityShadow, item.FlushEdges);
-                var fontSize = plan.Css.QualityFontSize;
-                float top = 1f + PosterTagCss.Lu(plan.Css.QualityPaddingV);
-                float contentHeight = local.Height - 2f - (2 * PosterTagCss.Lu(plan.Css.QualityPaddingV));
+                var fontSize = item.Css.QualityFontSize;
+                float top = 1f + PosterTagCss.Lu(item.Css.QualityPaddingV);
+                float contentHeight = local.Height - 2f - (2 * PosterTagCss.Lu(item.Css.QualityPaddingV));
                 float textHeight = PosterTagCss.Lu(1.2f * fontSize);
-                DrawText(canvas, item.TextLayout!, 1f + PosterTagCss.Lu(plan.Css.LanguagePaddingH(tag)), top + PosterTagCss.Lu((contentHeight - textHeight) / 2f) + Assets.TextMetrics.BaselineOffset(fontSize, textHeight), colors.Text ?? SKColors.White, null, space);
+                DrawText(canvas, item.TextLayout!, 1f + PosterTagCss.Lu(item.Css.LanguagePaddingH(tag)), top + PosterTagCss.Lu((contentHeight - textHeight) / 2f) + Assets.TextMetrics.BaselineOffset(fontSize, textHeight), colors.Text ?? SKColors.White, null, space);
                 if (item.IconWidth > 0 && Assets.GetFlag(parts[0]) is { } image)
                 {
-                    var target = SKRect.Create(local.Width - item.IconWidth - 1f - PosterTagCss.Lu(plan.Css.LanguagePaddingH(tag)), top + PosterTagCss.Lu((contentHeight - item.IconHeight) / 2f), item.IconWidth, item.IconHeight);
+                    var target = SKRect.Create(local.Width - item.IconWidth - 1f - PosterTagCss.Lu(item.Css.LanguagePaddingH(tag)), top + PosterTagCss.Lu((contentHeight - item.IconHeight) / 2f), item.IconWidth, item.IconHeight);
                     canvas.DrawImage(image, target, new SKSamplingOptions(SKFilterMode.Linear));
                 }
                 canvas.Restore();
@@ -829,19 +839,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.PosterTags.Renderi
 
                 if (label == "text")
                 {
-                    float fontSize = plan.Css.LogoFontSize;
+                    float fontSize = item.Css.LogoFontSize;
                     float lineHeight = PosterTagCss.Lu(fontSize);
-                    float contentTop = 1f + PosterTagCss.LogoPaddingV * plan.Css.Scale;
-                    float contentHeight = item.Height - 2f - (2 * PosterTagCss.LogoPaddingV * plan.Css.Scale);
+                    float contentTop = 1f + PosterTagCss.LogoPaddingV * item.Css.Scale;
+                    float contentHeight = item.Height - 2f - (2 * PosterTagCss.LogoPaddingV * item.Css.Scale);
                     float top = contentTop + PosterTagCss.Lu((contentHeight - lineHeight) / 2f);
-                    DrawText(canvas, item.TextLayout!, 1f + PosterTagCss.LogoPaddingH * plan.Css.Scale, top + Assets.TextMetrics.BaselineOffset(fontSize, lineHeight), text, TextShadowColor, space);
+                    DrawText(canvas, item.TextLayout!, 1f + PosterTagCss.LogoPaddingH * item.Css.Scale, top + Assets.TextMetrics.BaselineOffset(fontSize, lineHeight), text, TextShadowColor, space);
                     return;
                 }
 
                 if (tag.Logo is null || Assets.GetLogo(tag.Logo) is not { } image) return;
                 bool provider = label == "provider";
-                float padV = (provider ? PosterTagCss.LogoProviderPadding : PosterTagCss.LogoPaddingV) * plan.Css.Scale;
-                float padH = (provider ? PosterTagCss.LogoProviderPadding : PosterTagCss.LogoPaddingH) * plan.Css.Scale;
+                float padV = (provider ? PosterTagCss.LogoProviderPadding : PosterTagCss.LogoPaddingV) * item.Css.Scale;
+                float padH = (provider ? PosterTagCss.LogoProviderPadding : PosterTagCss.LogoPaddingH) * item.Css.Scale;
                 var box = SKRect.Create(1f + padH, 1f + padV, item.IconWidth, item.IconHeight);
                 // object-fit: contain inside the image box, centred.
                 float fit = Math.Min(box.Width / image.Width, box.Height / image.Height);

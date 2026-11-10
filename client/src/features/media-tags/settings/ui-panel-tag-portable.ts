@@ -42,7 +42,7 @@ const FIELD_LABELS: Readonly<Record<string, string>> = {
     TagLabelDensity: 'panel_settings_ui_tag_density',
     TagScale: 'tag_scale_label',
     TagGap: 'tag_gap_label',
-    TagEdgeSpacing: 'panel_settings_ui_tag_edge',
+    TagEdgeSpacing: 'panel_settings_ui_tag_edge', TagKindLooks: 'tag_kind_looks_title',
     TagStylePreset: 'panel_settings_ui_tag_style_preset',
 };
 /** Group switches, by the group's vocabulary key. */

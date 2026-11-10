@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 {
@@ -91,6 +92,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
     }
 
     /// <summary>
+    /// One tag kind's own opacity and size, in percent of today's look (100 = unchanged). A kind is a quality
+    /// category (resolution, source, dynamicRange, specialFormat, videoCodec, audio, edition, runtime, aspectRatio,
+    /// frameRate, versions) or another card tag group (status, rating, ageRating, language, genre, awards, logos,
+    /// custom); the web client lists them (core/tag-layout.js TAG_KINDS). A null value follows the administrator's
+    /// (personal document), then 100. The kind is a string value, not a dictionary key, so the client's camel/Pascal
+    /// key conversion never touches it.
+    /// </summary>
+    public class TagKindLook
+    {
+        /// <summary>Kind id, e.g. "resolution" or "language".</summary>
+        public string Kind { get; set; } = string.Empty;
+
+        /// <summary>Opacity in percent (<see cref="TagLayoutRules.MinKindOpacity"/>..100); null follows the default.</summary>
+        public int? Opacity { get; set; }
+
+        /// <summary>Size in percent of today's (<see cref="TagLayoutRules.MinKindScale"/>..<see cref="TagLayoutRules.MaxKindScale"/>); null follows the default.</summary>
+        public int? Scale { get; set; }
+    }
+
+    /// <summary>A kind's effective opacity and size in percent.</summary>
+    public readonly record struct TagKindLookValue(int Opacity, int Scale);
+
+    /// <summary>
     /// Validation and normalization of the poster tag layout settings shared by
     /// the per-user document and the administrator defaults. Unknown layouts,
     /// densities, groups and slots are normalized away rather than rejected so a
@@ -103,6 +127,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
         /// <summary>Largest per-group cap accepted.</summary>
         public const int MaxCap = 10;
+
+        /// <summary>Per-kind opacity range in percent (a tag is never made invisible).</summary>
+        public const int MinKindOpacity = 10;
+        public const int MaxKindOpacity = 100;
+
+        /// <summary>Per-kind size range in percent of today's size.</summary>
+        public const int MinKindScale = 50;
+        public const int MaxKindScale = 200;
+
+        /// <summary>Most kind entries kept: far more than there are kinds, so a list stays bounded.</summary>
+        public const int MaxKindLooks = 64;
+
+        // A kind id: a word as the web client spells its groups and quality categories. Anything else never reaches
+        // a stylesheet or a cache key.
+        private static readonly Regex KindIdRegex = new Regex("^[a-z][A-Za-z0-9]{0,31}$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
         /// <summary>Group ids in the default priority order.</summary>
         public static readonly IReadOnlyList<string> DefaultGroupOrder = new[] { "status", "quality", "rating", "ageRating", "language", "genre", "awards", "logos", "custom" };
@@ -279,6 +318,56 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 : result;
         }
 
+        /// <summary>
+        /// Kind looks with well-formed kinds only (the first entry of a kind wins, at most <see cref="MaxKindLooks"/>),
+        /// values clamped to their ranges, and entries that set nothing left out; null when nothing is left.
+        /// </summary>
+        public static List<TagKindLook>? NormalizeKindLooks(IEnumerable<TagKindLook?>? looks)
+        {
+            if (looks == null) return null;
+            var result = new List<TagKindLook>();
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var look in looks)
+            {
+                var kind = look?.Kind?.Trim();
+                if (look == null || kind == null || !KindIdRegex.IsMatch(kind) || !seen.Add(kind)) continue;
+                if (look.Opacity == null && look.Scale == null) continue;
+                result.Add(new TagKindLook
+                {
+                    Kind = kind,
+                    Opacity = look.Opacity.HasValue ? Math.Clamp(look.Opacity.Value, MinKindOpacity, MaxKindOpacity) : null,
+                    Scale = look.Scale.HasValue ? Math.Clamp(look.Scale.Value, MinKindScale, MaxKindScale) : null,
+                });
+                if (result.Count == MaxKindLooks) break;
+            }
+
+            return result.Count == 0 ? null : result;
+        }
+
+        /// <summary>
+        /// The kind looks a user's tags are drawn with: per kind and per value the user's own, else the
+        /// administrator's, else 100. Only kinds that differ from today's look are listed; a document saved before
+        /// layouts keeps the look it always had (like its size and spacing).
+        /// </summary>
+        public static IReadOnlyDictionary<string, TagKindLookValue> EffectiveKindLooks(JellyfinEnhancedUserSettings user, PluginConfiguration config)
+        {
+            ArgumentNullException.ThrowIfNull(user);
+            ArgumentNullException.ThrowIfNull(config);
+            var result = new SortedDictionary<string, TagKindLookValue>(StringComparer.Ordinal);
+            if (IsLegacy(user)) return result;
+            var own = (NormalizeKindLooks(user.TagKindLooks) ?? new List<TagKindLook>()).ToDictionary(l => l.Kind, StringComparer.Ordinal);
+            var admin = (NormalizeKindLooks(config.TagKindLooks) ?? new List<TagKindLook>()).ToDictionary(l => l.Kind, StringComparer.Ordinal);
+            foreach (var kind in own.Keys.Union(admin.Keys, StringComparer.Ordinal))
+            {
+                own.TryGetValue(kind, out var mine);
+                admin.TryGetValue(kind, out var theirs);
+                var value = new TagKindLookValue(mine?.Opacity ?? theirs?.Opacity ?? 100, mine?.Scale ?? theirs?.Scale ?? 100);
+                if (value != new TagKindLookValue(100, 100)) result[kind] = value;
+            }
+
+            return result;
+        }
+
         /// <summary>Scope ids in display order (also the web tag-scopes keys).</summary>
         public static readonly IReadOnlyList<string> ScopeIds = new[] { "movies", "series", "seasons", "episodes", "continueWatching", "nextUp" };
 
@@ -373,6 +462,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             settings.TagGroupCaps = NormalizeCaps(settings.TagGroupCaps);
             settings.TagGroupScopes = NormalizeScopes(settings.TagGroupScopes);
             settings.TagEdgeSpacing = NormalizeEdgeSpacing(settings.TagEdgeSpacing);
+            settings.TagKindLooks = NormalizeKindLooks(settings.TagKindLooks);
         }
 
         /// <summary>
@@ -392,6 +482,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             settings.TagGroupOrder = NormalizeOrder(config.TagGroupOrder);
             settings.TagGroupCaps = NormalizeCaps(config.TagGroupCaps);
             settings.TagEdgeSpacing = NormalizeEdgeSpacing(config.TagEdgeSpacing) ?? "default";
+            settings.TagKindLooks = NormalizeKindLooks(config.TagKindLooks);
             settings.TagLayoutSettingsVersion = CurrentVersion;
         }
     }

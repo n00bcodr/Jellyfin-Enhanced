@@ -275,6 +275,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags
                     if (caps == null || SameCaps(caps, normalized as TagGroupCaps)) return true;
                     error = $"caps must be between 0 and {TagLayoutRules.MaxCap}";
                     return false;
+                case "TagKindLooks":
+                    var looks = (List<TagKindLook>?)value;
+                    // No looks: the stored configuration reads a cleared list back as an empty one.
+                    if (looks is { Count: 0 }) return true;
+                    normalized = TagLayoutRules.NormalizeKindLooks(looks);
+                    if (looks == null || SameKindLooks(looks, normalized as List<TagKindLook>)) return true;
+                    error = $"each kind once, with opacity between {TagLayoutRules.MinKindOpacity} and {TagLayoutRules.MaxKindOpacity} and size between {TagLayoutRules.MinKindScale} and {TagLayoutRules.MaxKindScale}";
+                    return false;
                 case "TagLayouts":
                     normalized = TagLayoutRules.NormalizeProfiles((TagLayoutProfiles?)value);
                     return true;
@@ -349,6 +357,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags
             => a.Quality == b?.Quality && a.Genre == b?.Genre && a.Language == b?.Language
                 && a.Rating == b?.Rating && a.AgeRating == b?.AgeRating && a.Status == b?.Status
                 && a.Awards == b?.Awards && a.Logos == b?.Logos && a.Custom == b?.Custom;
+
+        // Normalising only respells (a kind's surrounding spaces): every entry kept, in order, with the same values.
+        private static bool SameKindLooks(List<TagKindLook> a, List<TagKindLook>? b)
+            => b != null && a.Count == b.Count && a.Zip(b).All(p => p.First != null && p.First.Kind?.Trim() == p.Second.Kind
+                && p.First.Opacity == p.Second.Opacity && p.First.Scale == p.Second.Scale);
 
         private static IEnumerable<string> ReadSectionModules()
         {

@@ -170,6 +170,7 @@ public sealed class BootstrapPublicConfig
     public required string TagScale { get; init; }
     public required string TagGap { get; init; }
     public required string TagEdgeSpacing { get; init; }
+    public required List<TagKindLook>? TagKindLooks { get; init; }
     public required List<TagLookRule>? TagLookRules { get; init; }
     public required List<TagLookItemOverride>? TagLookItemOverrides { get; init; }
     public required TagShapeOverrides? TagShapeOverrides { get; init; }

@@ -37,7 +37,7 @@ export type Words = Readonly<Record<string, string>>;
 /** The word tables of the page. */
 export interface WordTables {
     reason: Words; type: Words; layout: Words; preset: Words; group: Words; slot: Words; field: Words; density: Words;
-    layoutName: Words; shape: Words; shapeRecommended: Words; styleTarget: Words; colourTarget: Words;
+    layoutName: Words; shape: Words; shapeRecommended: Words; styleTarget: Words; colourTarget: Words; kind: Words;
 }
 
 /** The names the page shows for layouts, groups, positions, presets and the like, in English. */
@@ -74,6 +74,12 @@ export const WORDS: WordTables = {
         minimal: 'Minimal: status, quality dots and score, the rest on hover',
     },
     shape: { landscape: 'Episode thumbnails', list: 'List rows' },
+    // The quality categories as tag kinds (Size and opacity per tag); the other kinds are the groups above.
+    kind: {
+        resolution: 'Resolution (4K, 1080p, ...)', source: 'Source (REMUX, BluRay, WEB, HDTV, DVD, …)', dynamicRange: 'HDR (HDR10+, Dolby Vision)',
+        specialFormat: 'Special format (IMAX, 3D)', videoCodec: 'Video format (HEVC, H264, AV1, ...)', audio: 'Sound (Atmos, DTS, 5.1, 7.1, ...)',
+        edition: 'Edition (Director’s Cut, Extended, …)', runtime: 'Runtime', aspectRatio: 'Aspect ratio', frameRate: 'Frame rate', versions: 'Versions (2 versions, 3 versions …)',
+    },
     shapeRecommended: {
         landscape: 'Recommended: bands, compact (status and age on top, quality and rating below)',
         list: 'Recommended: corners, compact (quality, status and rating, up to 2 each)',

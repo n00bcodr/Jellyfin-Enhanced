@@ -22,7 +22,7 @@ export { settingsUi } from '../host';
 export type AdminTagLayout = Pick<TagLayout,
     | 'GROUPS' | 'DEFAULT_ORDER' | 'LAYOUT_SLOTS' | 'MAX_CAP' | 'DEFAULT_CAPS' | 'DEFAULT_PROFILES' | 'RECOMMENDED_SHAPES'
     | 'POSITION_SETTINGS' | 'POSITION_TO_SLOT' | 'SLOT_TO_POSITION' | 'normalizeGroup' | 'normalizeSettings' | 'singleChipGroup'
-    | 'readShapeOverrides'>;
+    | 'readShapeOverrides' | 'TAG_KINDS' | 'KIND_LOOK_LIMITS' | 'readKindLooks' | 'kindLooksToWire'>;
 /** The look rules members the tab reads (core/tag-look.js). */
 export type AdminTagLook = Pick<TagLook,
     'MAX_CONDITIONS' | 'newRuleId' | 'normalizeItemOverrides' | 'itemOverridesToWire' | 'itemOverrideMutation' | 'itemOverridesWith' | 'restoreItemOverrides'>;

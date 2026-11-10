@@ -6,6 +6,7 @@ using Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.PosterTags.Resolution;
 using Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags.PosterTags.Resolution;
 using Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.PosterTags;
 using Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags.PosterTags;
+using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags.PosterTags.Rendering;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.PosterTags.Rendering
@@ -139,6 +140,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.PosterTags.Renderi
         public bool Hidden { get; set; }
 
         public FlushEdges FlushEdges { get; set; }
+
+        /// <summary>The metrics the item is measured and drawn with: the card's, scaled by its kind's own size.</summary>
+        public PosterTagCss Css { get; set; }
+
+        /// <summary>Its kind's opacity (1 = opaque, today's look).</summary>
+        public float Opacity { get; set; } = 1f;
     }
 
     /// <summary>
@@ -180,7 +187,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.PosterTags.Renderi
             var groups = new List<PlannedGroup>();
             foreach (var g in layout.Groups)
             {
-                var planned = PlanGroup(g, css, cardHeight, layout.Styles ?? TagStyleSet.Empty, layout.EdgeInset);
+                var planned = PlanGroup(g, css, cardHeight, layout.Styles ?? TagStyleSet.Empty, layout.EdgeInset, layout.KindLooks);
                 if (planned is not null)
                 {
                     groups.Add(planned);
@@ -198,29 +205,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.PosterTags.Renderi
             return new PosterTagPlan(imageWidth, imageHeight, css, groups);
         }
 
-        private PlannedGroup? PlanGroup(PosterTagGroupLayout group, PosterTagCss css, float cardHeight, TagStyleSet styles, float inset)
+        private PlannedGroup? PlanGroup(PosterTagGroupLayout group, PosterTagCss css, float cardHeight, TagStyleSet styles, float inset, IReadOnlyDictionary<string, TagKindLookValue>? kindLooks)
         {
             var items = new List<PlannedItem>();
             // Right-corner chips are right-aligned, so an overflowing one shows the end of its text.
             bool keepEnd = group.Corner is PosterTagCorner.TopRight or PosterTagCorner.BottomRight;
             foreach (var tag in group.Tags)
             {
+                // A kind's own size scales the chip's metrics (the web's --je-tag-scale on the chip); the "+N" chip keeps the card's.
+                var look = tag is OverflowTag || kindLooks is null || !kindLooks.TryGetValue(PosterTagSettings.KindOf(tag, group.Group), out var own) ? (TagKindLookValue?)null : own;
+                var chipCss = look is { Scale: not 100 } scaled ? css.WithScale(scaled.Scale / 100f) : css;
                 var item = tag switch
                 {
                     OverflowTag more => MeasureOverflow(more.Count, css),
-                    QualityTag q when group.Group == PosterTagGroup.Quality => MeasureQuality(q, css, keepEnd, styles),
-                    GenreTag g when group.Group == PosterTagGroup.Genre => MeasureGenre(g, css, styles),
-                    RatingTag r when group.Group == PosterTagGroup.Rating => MeasureRating(r, css, keepEnd, styles),
-                    AwardTag a when group.Group == PosterTagGroup.Awards => MeasureAward(a, css, keepEnd, styles),
-                    AgeRatingTag a when group.Group == PosterTagGroup.AgeRating => MeasureAge(a, css, keepEnd, styles),
-                    StatusTag status when group.Group == PosterTagGroup.Status => MeasureStatus(status, css, styles),
-                    LanguageTag l when group.Group == PosterTagGroup.Language => MeasureFlag(l, css, styles),
-                    LogoTag l when group.Group == PosterTagGroup.Logos => MeasureLogo(l, css, styles),
-                    CustomTag c when group.Group == PosterTagGroup.Custom => MeasureCustom(c, css, keepEnd, styles),
+                    QualityTag q when group.Group == PosterTagGroup.Quality => MeasureQuality(q, chipCss, keepEnd, styles),
+                    GenreTag g when group.Group == PosterTagGroup.Genre => MeasureGenre(g, chipCss, styles),
+                    RatingTag r when group.Group == PosterTagGroup.Rating => MeasureRating(r, chipCss, keepEnd, styles),
+                    AwardTag a when group.Group == PosterTagGroup.Awards => MeasureAward(a, chipCss, keepEnd, styles),
+                    AgeRatingTag a when group.Group == PosterTagGroup.AgeRating => MeasureAge(a, chipCss, keepEnd, styles),
+                    StatusTag status when group.Group == PosterTagGroup.Status => MeasureStatus(status, chipCss, styles),
+                    LanguageTag l when group.Group == PosterTagGroup.Language => MeasureFlag(l, chipCss, styles),
+                    LogoTag l when group.Group == PosterTagGroup.Logos => MeasureLogo(l, chipCss, styles),
+                    CustomTag c when group.Group == PosterTagGroup.Custom => MeasureCustom(c, chipCss, keepEnd, styles),
                     _ => null,
                 };
                 if (item is not null)
                 {
+                    item.Css = chipCss;
+                    item.Opacity = (look?.Opacity ?? 100) / 100f;
                     items.Add(item);
                 }
             }
@@ -439,7 +451,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.PosterTags.Renderi
             float width = PosterTagCss.LuCeil(layout.Width) + 2 * PosterTagCss.Lu(css.OverflowPaddingH) + 2;
             float height = css.OverflowLineHeight + 2 * PosterTagCss.Lu(css.OverflowPaddingV) + 2;
             // Its own tile kind separates these overflow metrics/colours from every Status tile.
-            return new PlannedItem(PosterTagTileKind.Overflow, new OverflowTag(count), text, string.Empty, width, height) { TextLayout = layout };
+            return new PlannedItem(PosterTagTileKind.Overflow, new OverflowTag(count), text, string.Empty, width, height) { TextLayout = layout, Css = css };
         }
 
         /// <summary>Localized status chips use the same dimensions and label-specific Tag Styles as the web.</summary>

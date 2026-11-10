@@ -1058,6 +1058,7 @@
         badge.classList.add("other-quality");
       }
       badge.dataset.quality = (technical ? category : edition ? displayLabel : normalizedLabel) ?? "";
+      if (category) badge.dataset.jeTagKind = category;
       if (edition) {
         badge.dataset.jeEdition = "true";
         badge.dataset.jeCompact = compactEditionLabel(displayLabel);

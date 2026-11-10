@@ -20,7 +20,7 @@
  * finds each control here through the provider this module registers.
  */
 import type { Group, Layout, Shape, ShapeLook } from '../layout/layout-rules';
-import { apiClient, currentUserKey, optionalApiClient, panelHost, registry, type PanelBridge, type PanelTagLayout } from './host';
+import { apiClient, bindKindLooksHub, currentUserKey, optionalApiClient, panelHost, registry, type PanelBridge, type PanelTagLayout } from './host';
 import type { MediaTagsHubApi } from '../public-api';
 import type { PanelContext, SearchHit } from '../../settings-panel/public-api';
 import { closestTarget, controlValue, focusElement, isDisabled, queryElement, queryElements, targetElement } from '../../shared/dom';
@@ -347,7 +347,7 @@ export function installUiPanelMediaTags(JE: Deps): void {
                     <div class="je-mth-pills" id="jeTagEdgeChoice" role="radiogroup" aria-labelledby="jeMthEdgeLabel" aria-describedby="jeMthEdgeDesc">${edge}</div>
                 </div>
             </section>
-            <div class="je-mth-shapes">${shapesHtml()}</div>
+            <div data-je-kind-looks-mount></div><div class="je-mth-shapes">${shapesHtml()}</div>
             <p class="je-mth-hint je-mth-shapes-note">${tx('tag_shapes_limitations')}</p>
             <section class="je-mth-card" aria-labelledby="jeMthSwitchesTitle">
                 <h4 class="je-mth-card-title" id="jeMthSwitchesTitle">${tx('panel_media_tags_switches_title')}</h4>
@@ -785,7 +785,7 @@ export function installUiPanelMediaTags(JE: Deps): void {
         let preview: TagPreview | null = null;
         let io: IntersectionObserver | null = null;
         let presetsLoaded = false;
-        const cleanups: Array<() => void> = [];
+        const cleanups: Array<() => void> = [bindKindLooksHub(hub, JE)];
 
         /** Said by screen readers (polite). */
         const announce = (message: string) => {

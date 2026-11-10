@@ -151,6 +151,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags.PosterTags
         /// </summary>
         public string EdgeSpacing { get; private init; } = "default";
 
+        /// <summary>
+        /// Per-kind opacity and size that differ from today's look (<see cref="TagLayoutRules.EffectiveKindLooks"/>):
+        /// a quality chip's kind is its category, any other chip's its group. Empty draws every poster as before.
+        /// </summary>
+        public IReadOnlyDictionary<string, TagKindLookValue> KindLooks { get; private init; } = new Dictionary<string, TagKindLookValue>();
+
         /// <summary>The inset (CSS px) <see cref="EdgeSpacing"/> puts between chips and the card edges.</summary>
         public float EdgeInset => TagLayoutRules.EdgeInset(EdgeSpacing);
 
@@ -532,7 +538,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags.PosterTags
         }
 
         /// <summary>The settings for a user document; <paramref name="itemLooks"/> keeps its per-item looks for <see cref="ForItem(string, string?)"/>.</summary>
-        private static PosterTagSettings Build(JellyfinEnhancedUserSettings user, PluginConfiguration config, string? jellyfinAudioLanguagePreference, bool itemLooks, bool? legacyAudioFacts = null)
+        private static PosterTagSettings Build(JellyfinEnhancedUserSettings user, PluginConfiguration config, string? jellyfinAudioLanguagePreference, bool itemLooks, bool? legacyAudioFacts = null, IReadOnlyDictionary<string, TagKindLookValue>? kindLooks = null)
         {
 
             var preferredChoice = user.QualityTagsPreferredAudioLanguage ?? string.Empty;
@@ -667,6 +673,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags.PosterTags
                 EdgeSpacing = TagLayoutRules.IsLegacy(user)
                     ? "default"
                     : TagLayoutRules.NormalizeEdgeSpacing(user.TagEdgeSpacing) ?? TagLayoutRules.NormalizeEdgeSpacing(config.TagEdgeSpacing) ?? "default",
+                KindLooks = kindLooks ?? TagLayoutRules.EffectiveKindLooks(user, config),
                 Styles = config.TagStylesEnabled && config.TagStyleTarget is "native" or "both"
                     ? TagStyleSet.Parse(config.TagStyleOverrides, config.TagStylePreset).ForUser(user.TagStylePreset, config.TagStylesAllowUserPreset)
                     : TagStyleSet.Empty,
@@ -719,7 +726,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags.PosterTags
             var user = _user;
             var config = _config;
             var audio = _audioPreference;
-            return _itemVariants.GetOrAdd(key, _ => Build(WithLook(user, look), config, audio, itemLooks: false, legacyAudioFacts: LegacyAudioFacts));
+            // An item's look never changes the kind looks (as on the web, where a look keeps the settings' own).
+            var kinds = KindLooks;
+            return _itemVariants.GetOrAdd(key, _ => Build(WithLook(user, look), config, audio, itemLooks: false, legacyAudioFacts: LegacyAudioFacts, kindLooks: kinds));
         }
 
         /// <summary>
@@ -979,7 +988,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags.PosterTags
         }
 
         /// <summary>The layout group id (TagLayoutRules) of a native group.</summary>
-        private static string LayoutGroupId(PosterTagGroup group) => group switch
+        /// <summary>
+        /// A chip's tag kind for <see cref="KindLooks"/>, spelled like the web's (core/tag-layout.js TAG_KINDS): a quality
+        /// chip's category (the sound category is "audio" there), any other chip's group.
+        /// </summary>
+        internal static string KindOf(PosterTag tag, PosterTagGroup group) => tag is QualityTag quality
+            ? (quality.Category == QualityTagRules.AudioInfo ? "audio" : quality.Category)
+            : LayoutGroupId(group);
+
+        internal static string LayoutGroupId(PosterTagGroup group) => group switch
         {
             PosterTagGroup.Quality => "quality",
             PosterTagGroup.Genre => "genre",
@@ -1210,6 +1227,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags.PosterTags
             {
                 values["tag.scale"] = TagScale;
                 values["tag.gap"] = TagGap;
+                // Only when a kind differs, so every existing token stays as it was.
+                if (KindLooks.Count > 0) values["tag.kinds"] = string.Join(",", KindLooks.OrderBy(k => k.Key, StringComparer.Ordinal).Select(k => $"{k.Key}:{Int(k.Value.Opacity)}:{Int(k.Value.Scale)}"));
             }
 
             // A group set to "off" draws nothing, so (like a disabled group) its other values stay out.

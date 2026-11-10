@@ -802,6 +802,40 @@
         ],
         "additionalProperties": false
       },
+      "TagKindLook": {
+        "type": "object",
+        "properties": {
+          "Kind": {
+            "type": "string"
+          },
+          "Opacity": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "Scale": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "Kind",
+          "Opacity",
+          "Scale"
+        ],
+        "additionalProperties": false
+      },
       "TagLayoutGroupSlot": {
         "type": "object",
         "properties": {
@@ -2076,6 +2110,19 @@
               }
             ]
           },
+          "TagKindLooks": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/TagKindLook"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "TagLabelDensity": {
             "type": "string"
           },
@@ -2447,6 +2494,7 @@
           "TagGroupCaps",
           "TagGroupOrder",
           "TagGroupScopes",
+          "TagKindLooks",
           "TagLabelDensity",
           "TagLayout",
           "TagLayouts",
@@ -3444,6 +3492,19 @@
               }
             ]
           },
+          "TagKindLooks": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/TagKindLook"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "TagLabelDensity": {
             "type": "string"
           },
@@ -3677,6 +3738,7 @@
           "TagGroupCaps",
           "TagGroupOrder",
           "TagGroupScopes",
+          "TagKindLooks",
           "TagLabelDensity",
           "TagLayout",
           "TagLayoutLocks",
@@ -4440,6 +4502,19 @@
               }
             ]
           },
+          "TagKindLooks": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/TagKindLook"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "TagLabelDensity": {
             "type": "string"
           },
@@ -4672,6 +4747,7 @@
           "TagGroupCaps",
           "TagGroupOrder",
           "TagGroupScopes",
+          "TagKindLooks",
           "TagLabelDensity",
           "TagLayout",
           "TagLayoutLocks",
@@ -5171,6 +5247,7 @@
     mergedSettings.tagEdgeSpacing = typeof userSettings.tagEdgeSpacing === "string" && userSettings.tagEdgeSpacing ? userSettings.tagEdgeSpacing : null;
     mergedSettings.tagStylePreset = typeof userSettings.tagStylePreset === "string" && userSettings.tagStylePreset ? userSettings.tagStylePreset : null;
     mergedSettings.tagGroupOrder = Array.isArray(userSettings.tagGroupOrder) ? userSettings.tagGroupOrder : null;
+    mergedSettings.tagKindLooks = Array.isArray(userSettings.tagKindLooks) ? userSettings.tagKindLooks : null;
     mergedSettings.tagLookRules = Array.isArray(userSettings.tagLookRules) ? userSettings.tagLookRules : null;
     mergedSettings.tagLayoutLocks = userSettings.tagLayoutLocks && typeof userSettings.tagLayoutLocks === "object" && !Array.isArray(userSettings.tagLayoutLocks) ? userSettings.tagLayoutLocks : null;
     mergedSettings.tagScale = userSettings.tagScale ?? null;

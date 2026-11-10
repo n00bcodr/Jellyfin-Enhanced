@@ -282,7 +282,7 @@
   function isLegacySettings(settings = {}) {
     return !(Number(settings.tagLayoutSettingsVersion) >= 1);
   }
-  function normalizeSettings(s = {}, p = {}) {
+  function normalizeSettings(s = {}, p = {}, kindLooksOf2 = () => ({})) {
     const legacy = isLegacySettings(s);
     const layout2 = legacy ? "corners" : normalizeLayout(s.tagLayout);
     const densityRaw = legacy ? "full" : String(s.tagLabelDensity || "").toLowerCase();
@@ -326,7 +326,7 @@
     const tagScale = legacy ? "default" : readScale(s.tagScale) || (s.tagScale != null ? "default" : readScale(pick(p, "tagScale"))) || "default";
     const tagGap = legacy ? "default" : readGap(s.tagGap) || (s.tagGap != null ? "default" : readGap(pick(p, "tagGap"))) || "default";
     const edge = legacy ? "default" : readEdge(s.tagEdgeSpacing) || readEdge(pick(p, "tagEdgeSpacing")) || "default";
-    const conf = { layout: layout2, legacy, density, tagScale, tagGap, order, orderChosen, caps: { ...DEFAULT_CAPS, ...caps }, profiles, slots: profiles[layout2], indicatorGap, reserveCaption, locked: false, shapes, edge, lookKey: "" };
+    const conf = { layout: layout2, legacy, density, tagScale, tagGap, order, orderChosen, caps: { ...DEFAULT_CAPS, ...caps }, profiles, slots: profiles[layout2], indicatorGap, reserveCaption, locked: false, shapes, edge, kindLooks: kindLooksOf2(s, p, legacy), lookKey: "" };
     conf.lookKey = lookKeyOf(conf);
     return conf;
   }
@@ -350,6 +350,7 @@
     return true;
   }
   function lookKeyOf(conf) {
+    const kinds = Object.entries(conf.kindLooks || {}).map(([kind, look]) => `${kind}:${look.opacity}:${look.scale}`).join(",");
     return [
       conf.layout,
       conf.density,
@@ -358,7 +359,8 @@
       conf.locked ? "L" : "",
       DEFAULT_ORDER.map((g) => conf.slots[g] || "").join(","),
       DEFAULT_ORDER.map((g) => conf.caps[g]).join(","),
-      conf.edge === "default" ? "" : conf.edge
+      conf.edge === "default" ? "" : conf.edge,
+      ...kinds ? [kinds] : []
     ].join("|");
   }
   function validSlots(layout2, slots) {
@@ -1950,6 +1952,118 @@ ${scoped} {${original}}`;
     return { commitGroup, removeGroup, hasGroup, getGroup, refreshPresentation, describe, clearCard, forget, removeGroupEverywhere, clearAll, prepareCard, reinitialize };
   }
 
+  // client/src/features/media-tags/types/quality/quality-data.ts
+  var resolutionOrder = ["8K", "4K", "1440p", "1080p", "1080i", "720p", "576p", "576i", "480p", "480i", "LOW-RES", "SD"];
+  var sourceOrder = ["REMUX", "BluRay", "WEB", "HD DVD", "DVD", "VHS", "HDTV", "SDTV", "Physical", "CAM", "TS", "TC", "SCR"];
+  var editionOrder = [];
+  var dynamicRangeOrder = ["Dolby Vision", "HDR10+", "HDR10", "HLG", "HDR", "SDR"];
+  var specialFormatOrder = ["IMAX", "3D"];
+  var codecOrder = ["VVC", "AV1", "HEVC", "H265", "VP9", "H264", "VP8", "XVID", "DIVX", "VC-1", "WMV", "MPEG2", "MPEG4", "MJPEG", "THEORA", "ProRes"];
+  var audioOrder = ["TRUEHD ATMOS", "DTS-X", "ATMOS", "DD+ ATMOS", "TRUEHD", "DTS-HD MA", "PCM", "FLAC", "DTS-HD HRA", "DTS-HD", "Dolby Digital+", "DTS", "Dolby Digital", "7.1", "6.1", "5.1"];
+  var CATEGORIES = [
+    { key: "resolution", items: resolutionOrder, settingKey: "showResolutionTag", pluginKey: "ShowResolutionTag", orderUserKey: "resolutionTagOrder", orderPluginKey: "ResolutionTagOrder", defaultOrder: 1 },
+    { key: "source", items: sourceOrder, settingKey: "showSourceTag", pluginKey: "ShowSourceTag", orderUserKey: "sourceTagOrder", orderPluginKey: "SourceTagOrder", defaultOrder: 2 },
+    { key: "dynamicRange", items: dynamicRangeOrder, settingKey: "showDynamicRangeTag", pluginKey: "ShowDynamicRangeTag", orderUserKey: "dynamicRangeTagOrder", orderPluginKey: "DynamicRangeTagOrder", defaultOrder: 3 },
+    { key: "specialFormat", items: specialFormatOrder, settingKey: "showSpecialFormatTag", pluginKey: "ShowSpecialFormatTag", orderUserKey: "specialFormatTagOrder", orderPluginKey: "SpecialFormatTagOrder", defaultOrder: 4 },
+    { key: "videoCodec", items: codecOrder, settingKey: "showVideoCodecTag", pluginKey: "ShowVideoCodecTag", orderUserKey: "videoCodecTagOrder", orderPluginKey: "VideoCodecTagOrder", defaultOrder: 5 },
+    { key: "audio", items: audioOrder, settingKey: "showAudioInfoTag", pluginKey: "ShowAudioInfoTag", orderUserKey: "audioInfoTagOrder", orderPluginKey: "AudioInfoTagOrder", defaultOrder: 6 },
+    { key: "edition", items: editionOrder, settingKey: "showEditionTag", pluginKey: "ShowEditionTag", orderUserKey: "editionTagOrder", orderPluginKey: "EditionTagOrder", defaultOrder: 7 },
+    { key: "runtime", items: [], settingKey: "showRuntimeTag", pluginKey: "ShowRuntimeTag", orderUserKey: "runtimeTagOrder", orderPluginKey: "RuntimeTagOrder", defaultOrder: 8, fallback: false },
+    { key: "aspectRatio", items: [], settingKey: "showAspectRatioTag", pluginKey: "ShowAspectRatioTag", orderUserKey: "aspectRatioTagOrder", orderPluginKey: "AspectRatioTagOrder", defaultOrder: 9, fallback: false },
+    { key: "frameRate", items: [], settingKey: "showFrameRateTag", pluginKey: "ShowFrameRateTag", orderUserKey: "frameRateTagOrder", orderPluginKey: "FrameRateTagOrder", defaultOrder: 10, fallback: false },
+    { key: "versions", items: [], settingKey: "showVersionsTag", pluginKey: "ShowVersionsTag", orderUserKey: "versionsTagOrder", orderPluginKey: "VersionsTagOrder", defaultOrder: 11, fallback: false }
+  ];
+  var TAG_TO_CATEGORY = /* @__PURE__ */ new Map();
+  for (const cat of CATEGORIES) {
+    for (const item of cat.items) TAG_TO_CATEGORY.set(item, cat.key);
+  }
+  var CATEGORY_BY_KEY = new Map(CATEGORIES.map((c) => [c.key, c]));
+
+  // client/src/features/media-tags/layout/kind-looks.ts
+  var TAG_KINDS = DEFAULT_ORDER.flatMap((group) => group === "quality" ? CATEGORIES.map((category) => ({ id: category.key, group, setting: category.settingKey })) : [{ id: group, group }]);
+  var KIND_IDS = new Set(TAG_KINDS.map((kind) => kind.id));
+  var KIND_LOOK_LIMITS = {
+    opacity: { min: 10, max: 100, step: 5, fallback: 100 },
+    scale: { min: 50, max: 200, step: 5, fallback: 100 }
+  };
+  var FIELDS = ["opacity", "scale"];
+  function readKindValue(value, field) {
+    if (typeof value !== "number" || !Number.isFinite(value)) return void 0;
+    const { min, max } = KIND_LOOK_LIMITS[field];
+    return Math.min(max, Math.max(min, Math.round(value)));
+  }
+  function readKindLooks(raw) {
+    const out = /* @__PURE__ */ Object.create(null);
+    if (!Array.isArray(raw)) return out;
+    for (const entry of raw) {
+      const kind = pick(entry, "kind");
+      if (typeof kind !== "string" || !KIND_IDS.has(kind) || hasOwn(out, kind)) continue;
+      const look = {};
+      for (const field of FIELDS) {
+        const value = readKindValue(pick(entry, field), field);
+        if (value !== void 0) look[field] = value;
+      }
+      if (Object.keys(look).length) out[kind] = look;
+    }
+    return out;
+  }
+  function effectiveKindLooks(own, admin) {
+    const out = {};
+    for (const { id } of TAG_KINDS) {
+      const opacity = own[id]?.opacity ?? admin[id]?.opacity ?? KIND_LOOK_LIMITS.opacity.fallback;
+      const scale = own[id]?.scale ?? admin[id]?.scale ?? KIND_LOOK_LIMITS.scale.fallback;
+      if (opacity !== KIND_LOOK_LIMITS.opacity.fallback || scale !== KIND_LOOK_LIMITS.scale.fallback) out[id] = { opacity, scale };
+    }
+    return out;
+  }
+  function kindLooksOf(settings, plugin, legacy) {
+    return legacy ? {} : effectiveKindLooks(readKindLooks(pick(settings, "tagKindLooks")), readKindLooks(pick(plugin, "tagKindLooks")));
+  }
+  function pinKindLooks(doc, plugin) {
+    const admin = readKindLooks(pick(plugin, "tagKindLooks"));
+    const list = Array.isArray(doc.tagKindLooks) ? doc.tagKindLooks.slice() : [];
+    const own = readKindLooks(list);
+    const pins = TAG_KINDS.filter(({ id }) => hasOwn(admin, id) && !hasOwn(own, id)).map(({ id }) => ({ kind: id, opacity: KIND_LOOK_LIMITS.opacity.fallback, scale: KIND_LOOK_LIMITS.scale.fallback }));
+    if (!pins.length) return false;
+    doc.tagKindLooks = [...list, ...pins];
+    return true;
+  }
+  function kindLooksToWire(looks) {
+    const out = [];
+    for (const { id } of TAG_KINDS) {
+      if (!hasOwn(looks, id)) continue;
+      const entry = { kind: id };
+      for (const field of FIELDS) {
+        const value = readKindValue(looks[id]?.[field], field);
+        if (value !== void 0) entry[field] = value;
+      }
+      if (entry.opacity !== void 0 || entry.scale !== void 0) out.push(entry);
+    }
+    return out;
+  }
+  function qualityKindOf(chip) {
+    return chip.dataset.jeTagKind || chip.dataset.jeQualityCategory || TAG_TO_CATEGORY.get(chip.dataset.quality || "") || "";
+  }
+  var KIND_LOOKS_ATTR = "data-je-kind-looks";
+  function kindLooksCss(looks, id) {
+    const n = Number(id);
+    if (!Number.isSafeInteger(n) || n < 0 || String(n) !== String(id)) throw new TypeError("kind looks: the id must be a number");
+    const hosts = [`.je-tag-host[${KIND_LOOKS_ATTR}="${n}"] > .je-tag-slot`, `.je-tag-caption[${KIND_LOOKS_ATTR}="${n}"]`];
+    const rules = [];
+    for (const { id: kind, group } of TAG_KINDS) {
+      const look = hasOwn(looks, kind) ? looks[kind] : void 0;
+      if (!look) continue;
+      const opacity = readKindValue(look.opacity, "opacity") ?? KIND_LOOK_LIMITS.opacity.fallback;
+      const scale = readKindValue(look.scale, "scale") ?? KIND_LOOK_LIMITS.scale.fallback;
+      const body = [opacity !== 100 ? `filter: opacity(${opacity / 100});` : "", scale !== 100 ? `--je-tag-scale: calc(var(--je-tag-base-scale, 1) * ${scale / 100});` : ""].filter(Boolean).join(" ");
+      if (!body) continue;
+      const chip = group === "quality" ? `[data-je-group="quality"] > [data-je-tag-kind="${kind}"]` : `[data-je-group="${group}"] > *`;
+      rules.push(`${hosts.map((host) => `${host} > ${chip}`).join(", ")} { ${body} }`);
+    }
+    if (!rules.length) return "";
+    return [`:is(.je-tag-host, .je-tag-caption)[${KIND_LOOKS_ATTR}="${n}"] { --je-tag-base-scale: var(--je-tag-scale, 1); }`, ...rules].join("\n");
+  }
+
   // client/src/features/media-tags/layout/looks.ts
   function createLooks(s, JE, deps) {
     function requireLook() {
@@ -1958,12 +2072,13 @@ ${scoped} {${original}}`;
         throw new Error("Tag looks must load before resolving item rules");
       return look;
     }
-    const normalizeSettings2 = (settings, plugin) => normalizeSettings(settings ?? JE.currentSettings, plugin ?? JE.pluginConfig);
+    const normalizeSettings2 = (settings, plugin) => normalizeSettings(settings ?? JE.currentSettings, plugin ?? JE.pluginConfig, kindLooksOf);
     const isLegacySettings2 = (settings) => isLegacySettings(settings ?? JE.currentSettings);
     const singleChipGroup2 = (group, config = JE.pluginConfig) => singleChipGroup(group, config);
     const promoteLegacySettings2 = (settings) => {
       const source = settings ?? JE.currentSettings;
       const changed = promoteLegacySettings(source);
+      if (changed && source) pinKindLooks(source, JE.pluginConfig);
       if (changed && source === JE.currentSettings) invalidateSettings();
       return changed;
     };
@@ -1980,6 +2095,35 @@ ${scoped} {${original}}`;
     function applySize(element, conf) {
       element.style.setProperty("--je-tag-scale", String(TAG_SCALES[conf.tagScale] ?? 1));
       element.style.setProperty("--je-tag-gap", String(TAG_GAPS[conf.tagGap] ?? 1));
+      const id = kindLooksId(conf.kindLooks);
+      if (id) element.setAttribute(KIND_LOOKS_ATTR, id);
+      else if (element.hasAttribute(KIND_LOOKS_ATTR)) element.removeAttribute(KIND_LOOKS_ATTR);
+    }
+    const KIND_LOOKS_STYLE = "je-tag-kind-looks";
+    const MAX_KIND_LOOK_SETS = 32;
+    const kindLookIdOf = /* @__PURE__ */ new WeakMap();
+    const kindLookSets = /* @__PURE__ */ new Map();
+    let kindLookSeq = 0;
+    function kindLooksId(looks) {
+      if (!looks) return "";
+      const known = kindLookIdOf.get(looks);
+      if (known !== void 0) return known;
+      const key = Object.entries(looks).map(([kind, look]) => `${kind}:${look.opacity}:${look.scale}`).join(",");
+      let set = key ? kindLookSets.get(key) : void 0;
+      if (key) {
+        const added = !set;
+        if (set) kindLookSets.delete(key);
+        else set = { id: ++kindLookSeq, looks };
+        kindLookSets.set(key, set);
+        for (const old of kindLookSets.keys()) {
+          if (kindLookSets.size <= MAX_KIND_LOOK_SETS) break;
+          kindLookSets.delete(old);
+        }
+        if (added) JE.core.ui?.injectCss(KIND_LOOKS_STYLE, [...kindLookSets.values()].map((entry) => kindLooksCss(entry.looks, entry.id)).join("\n"));
+      }
+      const id = set ? String(set.id) : "";
+      kindLookIdOf.set(looks, id);
+      return id;
     }
     function settingsSource() {
       const s2 = JE.currentSettings;
@@ -2060,6 +2204,14 @@ ${scoped} {${original}}`;
     function buildChips(group, master, conf, host) {
       const node = cloneElement(master);
       node.dataset.jeGroup = group;
+      if (group === "quality") {
+        for (const chip of childrenOf(node)) {
+          if (!chip.dataset.jeTagKind) {
+            const kind = qualityKindOf(chip);
+            if (kind) chip.dataset.jeTagKind = kind;
+          }
+        }
+      }
       for (const img of node.querySelectorAll("img"))
         img.onerror = () => img.remove();
       applyDensityAndCap(group, node, conf);
@@ -2396,6 +2548,7 @@ ${scoped} {${original}}`;
       ctrl.lookKey = "";
       ctrl.host.style.removeProperty("--je-tag-scale");
       ctrl.host.style.removeProperty("--je-tag-gap");
+      ctrl.host.removeAttribute(KIND_LOOKS_ATTR);
       delete ctrl.host.dataset.jeLayout;
       delete ctrl.host.dataset.jeLegacy;
       delete ctrl.host.dataset.jeLocked;
@@ -2605,6 +2758,11 @@ ${scoped} {${original}}`;
       preserveLegacySizing,
       TAG_SCALES,
       TAG_GAPS,
+      TAG_KINDS,
+      KIND_LOOK_LIMITS,
+      readKindLooks,
+      kindLooksToWire,
+      kindLooksCss,
       readScale,
       readGap,
       EDGE_SPACINGS: { ...EDGE_SPACINGS },

@@ -99,7 +99,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags
             "QualityTagsPosition", "GenreTagsPosition", "LanguageTagsPosition", "RatingTagsPosition",
             "AgeRatingTagsPosition", "StatusTagsPosition", "AwardsTagsPosition", "LogoTagsPosition", "CustomTagsPosition",
             "TagLayout", "TagLayoutSettingsVersion", "TagLayouts", "TagGroupOrder", "TagGroupCaps", "TagGroupScopes", "TagLabelDensity",
-            "TagScale", "TagGap", "TagEdgeSpacing", "TagShapeOverrides",
+            "TagScale", "TagGap", "TagEdgeSpacing", "TagKindLooks", "TagShapeOverrides",
             "TagStylePreset",
         };
 
