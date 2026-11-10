@@ -2,6 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {createHarness} from '../../helpers/harness.mjs';
+import {installJellyfinRouter} from '../../helpers/jellyfin-router.mjs';
 const owned=JSON.parse(readFileSync('Jellyfin.Plugin.JellyfinEnhanced/js/component-scripts.json')).filter(p=>/^(enhanced\/hiddencontent\/|enhanced\/homeremoval\/)/.test(p));
 function setup(t,{items={},settings={},ajax=async()=>({success:true}),html='',globals={}}={}){
  const frames=[];
@@ -273,4 +274,11 @@ for(const method of ['ordinary','scoped'])for(const [label,early,late] of [
  const h=setup(t,{items:{[compact]:{itemId:compact,hiddenAt:late},[dashed]:{itemId:dashed,hiddenAt:early}}});
  if(method==='ordinary')h.api.hideItem({itemId:compact});else h.api.markScopedHidden(compact,'nextup');
  assert.equal(h.internal.getHiddenData().items[compact].hiddenAt,early);
+});
+test('in-app navigation to Hidden Content keeps it over the router\'s Page not found page by hash or router, and leaving still hides it',async t=>{
+ const h=setup(t);const router=installJellyfinRouter(h);h.JE.initializeHiddenContentPage();
+ await router.go('#/hidden-content');assert.deepEqual(router.seen(),{visible:['je-hidden-content-page'],title:'Hidden Content'});
+ await router.go('#/home');assert.deepEqual(router.seen(),{visible:['indexPage'],title:'Home'});
+ await router.push('#/hidden-content');assert.deepEqual(router.seen(),{visible:['je-hidden-content-page'],title:'Hidden Content'});
+ await router.push('#/home');assert.deepEqual(router.seen(),{visible:['indexPage'],title:'Home'});
 });

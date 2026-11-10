@@ -212,9 +212,9 @@
     }
     function handleViewShow(e) {
       const targetPage = e.target instanceof Element ? e.target : null;
-      if (state.pageVisible && targetPage && targetPage.id !== "je-calendar-page") {
-        hidePage();
-      }
+      if (!targetPage || targetPage.id === "je-calendar-page") return;
+      if (state.pageVisible) hidePage();
+      queueMicrotask(handleNavigation);
     }
     function handleNavClick(e) {
       const target = e.target;

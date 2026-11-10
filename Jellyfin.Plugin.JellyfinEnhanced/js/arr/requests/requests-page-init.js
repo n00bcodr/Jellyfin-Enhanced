@@ -246,9 +246,9 @@
       startLocationWatcher();
       life.listen(document, "viewshow", (e) => {
         const targetPage = e.target;
-        if (state.pageVisible && targetPage instanceof Element && targetPage.id !== "je-downloads-page") {
-          hidePage();
-        }
+        if (!(targetPage instanceof Element) || targetPage.id === "je-downloads-page") return;
+        if (state.pageVisible) hidePage();
+        queueMicrotask(handleNavigation);
       });
       life.listen(
         document,

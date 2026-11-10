@@ -178,9 +178,9 @@
     }
     function handleViewShow(e) {
       const targetPage = e.target;
-      if (pageState.pageVisible && targetPage instanceof Element && targetPage.id !== "je-bookmarks-standalone-page") {
-        hidePage();
-      }
+      if (!(targetPage instanceof Element) || targetPage.id === "je-bookmarks-standalone-page") return;
+      if (pageState.pageVisible) hidePage();
+      queueMicrotask(handleNavigation);
     }
     function handleNavClick(e) {
       if (!(e.target instanceof Element)) return;

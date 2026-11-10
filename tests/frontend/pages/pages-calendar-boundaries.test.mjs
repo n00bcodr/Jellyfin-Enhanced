@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHarness,deferred,plain} from '../helpers/harness.mjs';
+import {installJellyfinRouter} from '../helpers/jellyfin-router.mjs';
 const entries=['styles','data','render-events','render-views','actions','init'];
 function setup(t, api=async()=>({events:[]})) {
  let epoch=0,server='one';const resets=new Map(),lives=new Map();
@@ -97,4 +98,11 @@ test('interrupted preference migration preserves legacy data for retry',t=>{
  const h=setup(t);const storage=h.window.localStorage;storage.setItem('je.calendar.collapseEpisodes:u','false');const prototype=Object.getPrototypeOf(storage),original=prototype.setItem;prototype.setItem=()=>{throw new Error('quota');};
  h.P.loadSettings();assert.equal(storage.getItem('je.calendar.collapseEpisodes:u'),'false');prototype.setItem=original;
  h.P.loadSettings();assert.equal(h.P.state.settings.collapseEpisodes,false);assert.equal(storage.getItem('je.calendar.collapseEpisodes:u'),null);assert.equal(storage.getItem('je.calendar.collapseEpisodes:u:server:one'),'false');
+});
+test('in-app navigation to the calendar keeps it over the router\'s Page not found page by hash or router, and leaving still hides it',async t=>{
+ const h=setup(t);const router=installJellyfinRouter(h);h.JE.calendarPage.initialize();
+ await router.go('#/calendar');assert.deepEqual(router.seen(),{visible:['je-calendar-page'],title:'Calendar'});
+ await router.go('#/home');assert.deepEqual(router.seen(),{visible:['indexPage'],title:'Home'});
+ await router.push('#/calendar');assert.deepEqual(router.seen(),{visible:['je-calendar-page'],title:'Calendar'});
+ await router.push('#/home');assert.deepEqual(router.seen(),{visible:['indexPage'],title:'Home'});
 });

@@ -449,7 +449,7 @@ import { hiddenContentContext, host, registry, type HiddenHost } from './host';
       })).then(res => {const items=record(res).Items;if(!Array.isArray(items))throw new Error('Invalid item list');return items.map(decodeLibraryItem);}).catch(searchFailed('library'));
       const seerrApi = featureCtx.peer('jellyseerrAPI');
       const seerrP = (seerrApi && seerrApi.search)
-        ? seerrApi.search(term).then(decodeSeerrSearch).then(res => res.results).catch(searchFailed('Seerr'))
+        ? seerrApi.search(term, 1, { throwOnError: true }).then(decodeSeerrSearch).then(res => res.results).catch(searchFailed('Seerr'))
         : Promise.resolve([]);
 
       const [libResult, seerrResult] = await Promise.all([libP, seerrP]);

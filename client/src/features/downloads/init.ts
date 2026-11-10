@@ -341,13 +341,10 @@ export function install(deps: Dependencies) {
     // Listen for Jellyfin's viewshow events - hide our page when other pages show
     life.listen(document,"viewshow", (e) => {
       const targetPage = e.target;
-      if (
-        state.pageVisible &&
-        targetPage instanceof Element &&
-        targetPage.id !== "je-downloads-page"
-      ) {
-        hidePage();
-      }
+      if (!(targetPage instanceof Element) || targetPage.id === "je-downloads-page") return;
+      if (state.pageVisible) hidePage();
+      // Jellyfin's router answers an in-app visit to our route with "Page not found"; once that has shown, show ours over it as a full load does.
+      queueMicrotask(handleNavigation);
     });
 
     // Listen for clicks on header navigation buttons (Home, Favorites, etc.)

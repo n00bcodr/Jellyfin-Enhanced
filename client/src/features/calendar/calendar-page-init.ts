@@ -232,9 +232,10 @@ import { calendarHost } from './host';
    */
   function handleViewShow(e: Event) {
     const targetPage = e.target instanceof Element ? e.target : null;
-    if (state.pageVisible && targetPage && targetPage.id !== "je-calendar-page") {
-      hidePage();
-    }
+    if (!targetPage || targetPage.id === "je-calendar-page") return;
+    if (state.pageVisible) hidePage();
+    // Jellyfin's router answers an in-app visit to our route with "Page not found"; once that has shown, show ours over it as a full load does.
+    queueMicrotask(handleNavigation);
   }
 
   /**

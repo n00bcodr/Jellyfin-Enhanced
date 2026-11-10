@@ -229,9 +229,10 @@ function install(JE: BookmarkHost) {
    */
   function handleViewShow(e: Event) {
     const targetPage = e.target;
-    if (pageState.pageVisible && targetPage instanceof Element && targetPage.id !== 'je-bookmarks-standalone-page') {
-      hidePage();
-    }
+    if (!(targetPage instanceof Element) || targetPage.id === 'je-bookmarks-standalone-page') return;
+    if (pageState.pageVisible) hidePage();
+    // Jellyfin's router answers an in-app visit to our route with "Page not found"; once that has shown, show ours over it as a full load does.
+    queueMicrotask(handleNavigation);
   }
 
   /**

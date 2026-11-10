@@ -48,7 +48,7 @@ export interface HiddenHost {
  detectCardSurface(el:Element|null):HomeSurface|null;
  initializeHiddenContent?: () => void;
  homeRemoval?: HomeRemovalFacade;
- jellyseerrAPI?: {search(term:string):Promise<unknown>;fetchMovieDetails(id:number):Promise<unknown>;fetchTvShowDetails(id:number):Promise<unknown>};
+ jellyseerrAPI?: {search(term:string,page?:number,options?:{throwOnError?:boolean}):Promise<unknown>;fetchMovieDetails(id:number):Promise<unknown>;fetchTvShowDetails(id:number):Promise<unknown>};
  jellyseerrMoreInfo?: {open(id:number,type:string):void};
  userConfig: { hiddenContent?: unknown };
  session?: {checkNow?(reason?:string):unknown; getEpoch():number; isCurrent(epoch:number):boolean; onUserChange(name:string,fn:()=>void):()=>void; userScopedKey(base:string):string};

@@ -36,6 +36,7 @@
     if (deps.P.runtime) return deps.P.runtime;
     const { JE, P, host } = deps;
     let generation = 0, disposed = false;
+    let workRoute = host.location.pathname + host.location.hash;
     const lanes = /* @__PURE__ */ new Map();
     const removers = [];
     const identityLease = () => {
@@ -53,7 +54,7 @@
       captureIdentity: identityLease,
       capture(lane) {
         const version = generation, identity = identityLease();
-        const route = host.location.pathname + host.location.hash;
+        const route = workRoute = host.location.pathname + host.location.hash;
         const container = P.state?._customTabContainer || document.getElementById("je-downloads-container");
         const serial = lane ? (lanes.get(lane) || 0) + 1 : 0;
         if (lane) lanes.set(lane, serial);
@@ -84,9 +85,12 @@
       }
     };
     P.runtime = owner;
-    owner.listen(host, "hashchange", () => owner.invalidate());
-    owner.listen(host, "popstate", () => owner.invalidate());
-    owner.listen(host, "je:navigate", () => owner.invalidate());
+    const navigated = () => {
+      if (host.location.pathname + host.location.hash !== workRoute) owner.invalidate();
+    };
+    owner.listen(host, "hashchange", navigated);
+    owner.listen(host, "popstate", navigated);
+    owner.listen(host, "je:navigate", navigated);
     owner.listen(document, "viewhide", (event) => {
       if (event.target instanceof Element && (event.target.id === "je-downloads-page" || event.target.contains(P.state?._customTabContainer || document.getElementById("je-downloads-container")))) owner.invalidate();
     });

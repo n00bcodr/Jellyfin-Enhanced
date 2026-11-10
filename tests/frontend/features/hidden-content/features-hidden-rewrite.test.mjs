@@ -140,7 +140,7 @@ test('local undo queued during a scoped write survives its later acknowledgement
 });
 // BUG-011: the admin add-items search reports a failed search instead of "No matching titles".
 async function adminSearch(h,{library,seerr}){
- h.JE.core.api.fetch=library;h.JE.jellyseerrAPI={search:seerr};
+ h.JE.core.api.fetch=library;if(seerr)h.JE.jellyseerrAPI={search:seerr};
  Object.assign(h.page.state,{selectedAdminUserId:'a',adminUserName:'A',adminItems:[]});
  h.page.openAdminAddModal();
  const overlay=h.document.querySelector('.je-hidden-admin-add-overlay'),input=overlay.querySelector('.je-hidden-management-search');
@@ -159,6 +159,15 @@ test('admin add-items search shows an error, not "no matches", when the searches
 test('admin add-items search keeps library results and notes that Seerr results are unavailable when only Seerr fails',async t=>{
  const h=setup(t);
  const grid=await adminSearch(h,{library:async()=>({Items:[{Id:'lib1',Name:'Alpha',Type:'Movie',ProviderIds:{Tmdb:'5'}}]}),seerr:async()=>{throw Error('offline');}});
+ assert.equal(grid.querySelectorAll('.je-hidden-item-card').length,1);
+ assert.match(grid.textContent,/hidden_content_admin_add_seerr_failed/);
+});
+test('admin add-items search through the real Seerr API notes that Seerr results are unavailable when its search request fails',async t=>{
+ const h=setup(t);for(const file of ['seerr-status.js','api.js'])h.load(`jellyseerr/${file}`);
+ h.allowConsoleError(/Search failed/);// the pre-fix Seerr API logs the failure it then swallows
+ const library={Items:[{Id:'lib1',Name:'Alpha',Type:'Movie',ProviderIds:{Tmdb:'5'}}]};
+ const fetch=url=>url.includes('/JellyfinEnhanced/jellyseerr/search')?Promise.reject(Object.assign(new Error('HTTP 502'),{status:502})):Promise.resolve(library);
+ const grid=await adminSearch(h,{library:fetch});
  assert.equal(grid.querySelectorAll('.je-hidden-item-card').length,1);
  assert.match(grid.textContent,/hidden_content_admin_add_seerr_failed/);
 });

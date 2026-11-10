@@ -431,7 +431,7 @@
           return items.map(export3);
         }).catch(searchFailed("library"));
         const seerrApi = featureCtx.peer("jellyseerrAPI");
-        const seerrP = seerrApi && seerrApi.search ? seerrApi.search(term).then(export5).then((res) => res.results).catch(searchFailed("Seerr")) : Promise.resolve([]);
+        const seerrP = seerrApi && seerrApi.search ? seerrApi.search(term, 1, { throwOnError: true }).then(export5).then((res) => res.results).catch(searchFailed("Seerr")) : Promise.resolve([]);
         const [libResult, seerrResult] = await Promise.all([libP, seerrP]);
         if (token !== searchToken || !selection.current() || !overlay.isConnected) return;
         const libItems = libResult ?? [], seerrItems = seerrResult ?? [];

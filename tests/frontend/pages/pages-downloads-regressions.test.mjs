@@ -45,3 +45,21 @@ test('DL-R1-003 empty refreshed selection rejects stale visible approval while a
  assert.equal(h.calls.filter(([,o])=>o?.method==='POST').length,0);
  queue.resolve({items:[]});await loading;
 });
+// Opening the page in-app (Jellyfin's router pushes the route, or Back pops it) must not cancel the load it starts.
+test('in-app navigation to the page renders the loaded queue instead of loading placeholders',async t=>{
+ const queue={items:[{id:'9001',source:'Sonarr',instanceName:'Sonarr',title:'Mock Signals',subtitle:'S01E02 - Episode 2',tvdbId:90101,seasonNumber:1,episodeNumber:2,status:'downloading',progress:75,totalSize:4294967296,sizeRemaining:1073741824,timeRemaining:'00:12:00'}],errors:[]};
+ const h=setup(t,{realHelpers:true,api:async p=>p==='/arr/queue'?queue:p.startsWith('/arr/history')?{items:[],totalPages:0,visible:true}:{requests:[],totalPages:1,canApproveRequests:false}});
+ h.JE.core.ui.skeletonGridHtml=n=>'<div class="je-skeleton-block"></div>'.repeat(n);
+ h.document.getElementById('je-downloads-container').remove();
+ h.document.body.insertAdjacentHTML('beforeend','<div class="mainAnimatedPages"><div id="indexPage" class="page mainAnimatedPage"></div></div>');
+ h.window.history.replaceState({},'','#/home');h.JE.initializeDownloadsPage();
+ const settled=async()=>{for(let i=0;i<5;i++)await new Promise(resolve=>setImmediate(resolve));};
+ const shown=()=>{const page=h.document.getElementById('je-downloads-page');return {hidden:page.classList.contains('hide'),placeholders:page.querySelectorAll('.je-skeleton-block').length,cards:page.querySelectorAll('.je-download-card').length};};
+ h.window.history.pushState({},'','#/downloads');await settled();
+ assert.deepEqual(shown(),{hidden:false,placeholders:0,cards:1});
+ h.window.history.pushState({},'','#/home');await settled();
+ h.window.history.back();
+ for(let i=0;i<100 && h.window.location.hash!=='#/downloads';i++)await new Promise(resolve=>setTimeout(resolve,10));
+ await settled();assert.equal(h.window.location.hash,'#/downloads');
+ assert.deepEqual(shown(),{hidden:false,placeholders:0,cards:1});
+});

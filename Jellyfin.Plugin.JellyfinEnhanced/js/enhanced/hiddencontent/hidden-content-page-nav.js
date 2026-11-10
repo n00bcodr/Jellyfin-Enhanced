@@ -202,9 +202,9 @@
     }
     function handleViewShow(e) {
       const targetPage = e.target;
-      if (state.pageVisible && targetPage instanceof Element && targetPage.id !== "je-hidden-content-page") {
-        hidePage();
-      }
+      if (!(targetPage instanceof Element) || targetPage.id === "je-hidden-content-page") return;
+      if (state.pageVisible) hidePage();
+      queueMicrotask(handleNavigation);
     }
     function handleNavClick(e) {
       if (!state.pageVisible) return;
