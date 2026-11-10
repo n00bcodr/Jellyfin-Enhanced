@@ -753,6 +753,8 @@
             // Shared caller-filtered facts are authoritative, including removed fields.
             Object.assign(data, readFacts(current), { latest: toMs(current.LatestEpisodeAdded) });
         }
+        // An admin switch: a collection's date is when a tool created it, so it can look just added again and again.
+        if (data.type === 'BoxSet' && JE.pluginConfig?.StatusTagsOnCollections === false) return null;
         const now = Date.now();
         const today = localDay(now);
         const justAddedMs = windowMs('StatusTagsJustAddedDays', vocabulary.thresholds.justAddedDays);

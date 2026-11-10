@@ -872,6 +872,7 @@ Status Tags show one translucent badge per card: what is new, trending, airing n
 | **Direct-play warning** | Off | Shows **Transcode** or **Won't direct play** on movies and episodes this browser cannot play as they are ([web only](#direct-play-warning)) |
 | Admin: **New release window (days)** | 30 | Premiere dates, new seasons, season premieres and recent TMDB finales; range 1–365 |
 | Admin: **Just added window (days)** | 7 | Item/episode added dates, an episode's own air date and season binge drops; range 1–365 |
+| Admin: **Show status badges on collections** | On | Whether a collection can carry a status badge at all. A collection's date is when a tool created it, and tools that recreate collections (for example on every library scan) make them show **Just Added** again and again; turn this off to keep badges off collections |
 
 ### Badges and priority
 

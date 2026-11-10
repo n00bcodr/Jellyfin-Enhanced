@@ -4037,6 +4037,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.StatusTagsLeaving,
                 config.StatusTagsDirectPlay,
                 LeavingSoonAvailable = Services.LeavingSoonService.Configured(config),
+                config.StatusTagsOnCollections,
                 config.StatusTagsJustAddedDays,
                 config.StatusTagsNewReleaseDays,
                 // Poster tag layout starting defaults (normalized; null = built-in)

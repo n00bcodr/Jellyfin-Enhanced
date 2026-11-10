@@ -210,6 +210,26 @@ for (const [name, entry, settings, seriesFacts, expected] of ROWS) {
   });
 }
 
+for (const [name, plugin, expected] of [
+  ['the admin switch is on', { StatusTagsOnCollections: true }, ['added', 'Just Added']],
+  ['the setting is missing (an older server)', {}, ['added', 'Just Added']],
+  ['the admin turns status badges off for collections', { StatusTagsOnCollections: false }, null],
+]) {
+  test(`a collection created just now: ${name}`, async t => {
+    const h = setup(t, { plugin });
+    h.show({ Type: 'BoxSet', DateCreated: ago(1) }, h.hosts[0], 'item1');
+    await h.flush();
+    assert.deepEqual(h.chip() ? [h.key(), h.badge()] : null, expected);
+  });
+}
+
+test('turning collections off leaves a movie added just now with its badge', async t => {
+  const h = setup(t, { plugin: { StatusTagsOnCollections: false } });
+  h.show(movie({ DateCreated: ago(1) }), h.hosts[0], 'item1');
+  await h.flush();
+  assert.deepEqual([h.key(), h.badge()], ['added', 'Just Added']);
+});
+
 test('chips carry their kind as a modifier class and their compact label', async t => {
   const h = setup(t, { series: { [SERIES]: facts({ nextAired: { date: '2026-10-30', season: 1, episode: 2 } }) } });
   h.show(show(), h.hosts[0], SERIES);

@@ -191,6 +191,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             StatusTagsMilestones = true;
             StatusTagsSeriesStatus = false;
             StatusTagsScenes = false;
+            StatusTagsOnCollections = true;
             StatusTagsJustAddedDays = 7;
             StatusTagsNewReleaseDays = 30;
             StatusTagsLeaving = false;
@@ -925,6 +926,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <summary>Default for the lowest-priority series status badge (Returning, Ended, Cancelled).</summary>
         public bool StatusTagsSeriesStatus { get; set; } = false;
         public bool StatusTagsScenes { get; set; } = false;
+        /// <summary>Admin-only: whether collections (box sets) can carry status badges. A collection's date is when a tool created it, which collection managers repeat, so a collection can look "just added" again and again.</summary>
+        public bool StatusTagsOnCollections { get; set; } = true;
         /// <summary>Admin-only: days an item counts as "Just Added" (or a series/season's latest episode as "New Episode"). 1-365.</summary>
         public int StatusTagsJustAddedDays { get; set; } = 7;
         /// <summary>Admin-only: days after its premiere date a Movie/Series counts as "New Movie"/"New Series". 1-365.</summary>

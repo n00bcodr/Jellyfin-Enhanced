@@ -517,6 +517,7 @@ The table below gives the `UserSettings` **model defaults** used when properties
 | `StatusTagsSchedule`, `StatusTagsMilestones` | Boolean | `true` |
 | `StatusTagsSeriesStatus` | Boolean | `false` |
 | `StatusTagsLeaving`, `StatusTagsDirectPlay` | Boolean (Leaving soon; web direct-play warning) | `false` |
+| `StatusTagsOnCollections` | Boolean (admin only: whether a collection can carry a status badge; off keeps badges off collections that a tool recreates often) | `true` |
 | `TagLayout` | String: `corners`, `bands`, `caption`, `summary` or `minimal` | `"corners"` |
 | `TagLayoutSettingsVersion` | Integer; `0` = saved before layouts (keeps corners, positions, arrival order and the original limits), `1` = layout settings apply | `0` (new users: `1`) |
 | `TagLayouts` | Nullable object `{Corners,Bands,Caption,Summary,Minimal}`, each `{Groups:[{Group,Slot}]}` | `null` |
@@ -1504,7 +1505,7 @@ Neither configuration endpoint exposes provider API keys. `TmdbEnabled` and `Mdb
     | `ShowAwards`, `DoesTheDogDieEnabled`, `MdblistEnabled`, `MdblistRatingsEnabled`, `MdblistRatingsShowOnItemDetails`, `MdblistRatingsShowPercentSymbol`, `ShowReleaseDates`, `ShowUserRatingOnPosters`, `ShowUserRatingDash` | Boolean |
     | `PauseScreenEnabled`, `ShowPlaybackRatingBadge`, `NativePosterTagsEnabled`, `TagStyleWebActive`, `QualityTagsEnabled`, `ShowResolutionTag`, `ShowSourceTag`, `ShowEditionTag`, `ShowLowQualitySourceTag`, `ShowDynamicRangeTag` | Boolean |
     | `ShowSpecialFormatTag`, `ShowVideoCodecTag`, `ShowAudioInfoTag`, `GenreTagsEnabled`, `LanguageTagsEnabled`, `RatingTagsEnabled`, `AgeRatingTagsEnabled`, `PeopleTagsEnabled` | Boolean |
-    | `StatusTagsEnabled`, `StatusTagsJustAdded`, `StatusTagsNewRelease`, `StatusTagsTrending`, `StatusTagsSchedule`, `StatusTagsMilestones`, `StatusTagsSeriesStatus`, `StatusTagsLeaving`, `StatusTagsDirectPlay`, `LeavingSoonAvailable`, `TagStylesAllowUserPreset`, `CustomTagsEnabled` | Boolean |
+    | `StatusTagsEnabled`, `StatusTagsJustAdded`, `StatusTagsNewRelease`, `StatusTagsTrending`, `StatusTagsSchedule`, `StatusTagsMilestones`, `StatusTagsSeriesStatus`, `StatusTagsLeaving`, `StatusTagsDirectPlay`, `StatusTagsOnCollections`, `LeavingSoonAvailable`, `TagStylesAllowUserPreset`, `CustomTagsEnabled` | Boolean |
     | `DisableAllShortcuts`, `DisableCustomSubtitleStyles`, `LanguageTagsPriorityStrict`, `LanguageTagsMergeRegions`, `QualityTagsAudioLanguageFromUser`, `RatingTagsOnMovies`, `RatingTagsOnSeries`, `RatingTagsOnSeasons`, `RatingTagsOnEpisodes` | Boolean |
     | `RatingTagsOnContinueWatching`, `RatingTagsOnNextUp`, `RatingTagsShowCommunity`, `RatingTagsShowCritic`, `ShowRatingInPlayer`, `DisableTagsOnSearchPage`, `TagsHideOnHover`, `TagCacheServerMode`, `EnableTagsLocalStorageFallback`, `JellyseerrEnabled` | Boolean |
     | `JellyseerrShowSearchResults`, `JellyseerrSearchExcludeLibraryItems`, `JellyseerrShowReportButton`, `JellyseerrShowIssueIndicator`, `JellyseerrEnable4KRequests`, `JellyseerrEnable4KTvRequests`, `ShowCollectionsInSearch`, `JellyseerrShowAdvanced` | Boolean |
