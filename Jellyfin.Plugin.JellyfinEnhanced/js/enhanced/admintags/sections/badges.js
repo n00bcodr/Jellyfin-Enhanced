@@ -140,7 +140,7 @@
         title: 'Collections',
         hint: 'This applies to everyone.',
         fields: [
-            { id: 'statusTagsOnCollections', key: 'StatusTagsOnCollections', type: 'switch', label: 'Show status badges on collections', desc: 'A collection\'s date is when a tool created it, and some tools recreate collections often, which makes them show Just Added again and again. Turn this off to keep status badges off collections.' },
+            { id: 'statusTagsOnCollections', key: 'StatusTagsOnCollections', type: 'switch', label: 'Show status badges on collections', desc: 'A collection shows Just Added when something in it was added recently. Turn this off to keep status badges off collections.' },
         ],
     });
 

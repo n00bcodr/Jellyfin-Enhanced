@@ -219,9 +219,9 @@ for (const [name, plugin, expected] of [
   ['the setting is missing (an older server)', {}, ['added', 'Just Added']],
   ['the admin turns status badges off for collections', { StatusTagsOnCollections: false }, null],
 ]) {
-  test(`a collection created just now: ${name}`, async t => {
+  test(`a collection whose newest member was added just now: ${name}`, async t => {
     const h = setup(t, { plugin });
-    h.show({ Type: 'BoxSet', DateCreated: ago(1) }, h.hosts[0], 'item1');
+    h.show({ Type: 'BoxSet', DateCreated: OLD, LatestEpisodeAdded: ago(1) }, h.hosts[0], 'item1');
     await h.flush();
     assert.deepEqual(h.chip() ? [h.key(), h.badge()] : null, expected);
   });

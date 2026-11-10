@@ -754,7 +754,7 @@
             // Shared caller-filtered facts are authoritative, including removed fields.
             Object.assign(data, readFacts(current), { latest: toMs(current.LatestEpisodeAdded) });
         }
-        // An admin switch: a collection's date is when a tool created it, so it can look just added again and again.
+        // An admin switch: no status badge on collections at all.
         if (data.type === 'BoxSet' && JE.pluginConfig?.StatusTagsOnCollections === false) return null;
         const now = Date.now();
         const today = localDay(now);

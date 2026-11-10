@@ -517,7 +517,7 @@ The table below gives the `UserSettings` **model defaults** used when properties
 | `StatusTagsSchedule`, `StatusTagsMilestones` | Boolean | `true` |
 | `StatusTagsSeriesStatus` | Boolean | `false` |
 | `StatusTagsLeaving`, `StatusTagsDirectPlay` | Boolean (Leaving soon; web direct-play warning) | `false` |
-| `StatusTagsOnCollections` | Boolean (admin only: whether a collection can carry a status badge; off keeps badges off collections that a tool recreates often) | `true` |
+| `StatusTagsOnCollections` | Boolean (admin only: whether a collection can carry a status badge) | `true` |
 | `TagLayout` | String: `corners`, `bands`, `caption`, `summary` or `minimal` | `"corners"` |
 | `TagLayoutSettingsVersion` | Integer; `0` = saved before layouts (keeps corners, positions, arrival order and the original limits), `1` = layout settings apply | `0` (new users: `1`) |
 | `TagLayouts` | Nullable object `{Corners,Bands,Caption,Summary,Minimal}`, each `{Groups:[{Group,Slot}]}` | `null` |
