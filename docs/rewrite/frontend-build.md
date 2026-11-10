@@ -105,6 +105,27 @@ The bundle is sent pre-compressed (brotli, else gzip, by `Accept-Encoding`, with
 `If-None-Match` gets a 304. Brotli starts at quality 9 and is replaced in the
 background by quality 11.
 
+Each module in the bundle is a parenthesized function, `(function () {…}),`: every
+one of them runs exactly once at boot, and V8 compiles a parenthesized function
+expression together with its script, on the thread that streams it in, instead of
+lazily on the main thread at its first call (`BundleServingTests` checks the
+wrapper). `bundle.js.map` is built when it is first requested, not with the script:
+only a browser with developer tools open asks for it.
+
+### Embedded assets are packed
+
+The readable scripts, their source maps, the twins and the locales are 23.8 MB of
+text. The plugin build packs them (`scripts/pack-embedded.mjs`, run by the
+`PackEmbeddedClientAssets` target over the project's `JePackedAsset` items: brotli,
+6.2 MB) and embeds each under its resource name plus `.jez`. Code reads every
+embedded resource through `Infrastructure/Assets/PackedResources` by its plain
+name, packed or not, and nothing else asks the assembly for one (a test refuses
+it): a direct read of a packed resource finds nothing and looks like a missing
+file. The admin section scripts and the data files that other features find by
+enumerating resource names stay unpacked. `client/assembly-budget.json` is the
+budget for what the DLL embeds (`PackedResourcesTests`), a ratchet like the
+bundle's.
+
 Feature hosts build their context with `featureContext` from `host/context.ts`,
 which delegates to the one implementation `core/ui-kit.js` publishes on
 `JE.core.featureContext` (non-enumerable) as its first statement, instead of each

@@ -36,3 +36,14 @@ function formatClock(sec: number) {
           return h > 0 ? `${h}:${m}:${s}` : `${Number(m)}:${s}`;
         }
 
+/**
+ * Whether a player-lifetime reset leaves `video`'s playback in place. jellyfin-web creates the <video> first and only
+ * then changes the route to the player, so that navigation (which resets every player lifetime, lifetime.ts) belongs
+ * to the playback the pause screen is already following: what it holds for that video is still about the item now
+ * playing. Forgetting the video there made the next body mutation take it for a new one, clear the caches and request
+ * the item and every image probe a second time. False for every other reset: leaving the player, no video, or a video
+ * that is no longer in the page.
+ */
+export function continuesPlayback(JE: Pick<PlayerBridge, 'isVideoPage'>, video: HTMLVideoElement | null): boolean {
+    return !!video?.isConnected && !!JE.isVideoPage?.();
+}

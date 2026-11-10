@@ -157,12 +157,13 @@ export const ENABLED_SETTING: Record<Group, keyof LayoutDocument> = {
     custom: 'customTagsEnabled',
 };
 export const SLOT_TO_POSITION: Record<string, string> = withoutPrototype({ tl: 'top-left', tr: 'top-right', bl: 'bottom-left', br: 'bottom-right', tc: 'top-center', bc: 'bottom-center', ml: 'center-left', mr: 'center-right', c: 'center' });
+/** An own enumerable property read in place: the value a copy made with Object.entries would hold under `key`. */
+const ownValue = (object: object, key: string): unknown => Object.prototype.propertyIsEnumerable.call(object, key) ? Reflect.get(object, key) : undefined;
 export function pick(obj: unknown, key: string): unknown {
     if (!obj || typeof obj !== 'object')
         return undefined;
-    const record: Record<string, unknown> = Object.fromEntries(Object.entries(obj));
     const pascal = key.charAt(0).toUpperCase() + key.slice(1);
-    return (hasOwn(record, key) ? record[key] : undefined) ?? (hasOwn(record, pascal) ? record[pascal] : undefined) ?? undefined;
+    return ownValue(obj, key) ?? ownValue(obj, pascal) ?? undefined;
 }
 export function normalizeGroup(name: unknown): Group | null {
     if (typeof name !== 'string')

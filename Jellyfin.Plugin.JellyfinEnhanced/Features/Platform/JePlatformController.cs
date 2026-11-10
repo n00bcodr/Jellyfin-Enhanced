@@ -360,7 +360,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Platform
                 return NotFound("No matching view found");
             }
 
-            Stream? stream = JellyfinEnhanced.Instance.GetType().Assembly.GetManifestResourceStream(view.EmbeddedResourcePath);
+            Stream? stream = Infrastructure.Assets.PackedResources.Open(JellyfinEnhanced.Instance.GetType().Assembly, view.EmbeddedResourcePath);
 
             if (stream == null)
             {

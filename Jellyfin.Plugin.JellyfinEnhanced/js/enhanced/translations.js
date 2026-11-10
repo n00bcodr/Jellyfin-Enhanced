@@ -2,14 +2,15 @@
 "use strict";
 (() => {
   // client/src/features/shared/locale-domain.ts
-  function decodeTranslations(value) {
-    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid locale dictionary");
-    const result = {};
+  function isTranslations(value) {
     for (const [key, text] of Object.entries(value)) {
       if (typeof text !== "string") throw new Error(`Invalid translation: ${key}`);
-      Object.defineProperty(result, key, { value: text, enumerable: true, writable: true, configurable: true });
     }
-    return result;
+    return true;
+  }
+  function decodeTranslations(value) {
+    if (!value || typeof value !== "object" || Array.isArray(value) || !isTranslations(value)) throw new Error("Invalid locale dictionary");
+    return value;
   }
 
   // client/src/features/shared/translations.ts

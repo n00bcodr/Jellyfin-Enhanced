@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using System.Reflection;
 using Microsoft.AspNetCore.Authorization;
+using Jellyfin.Plugin.JellyfinEnhanced.Infrastructure.Assets;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Platform
 {
@@ -23,13 +24,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Platform
             const string prefix = "Jellyfin.Plugin.JellyfinEnhanced.Configuration.";
             var asm = Assembly.GetExecutingAssembly();
             var names = new[] { prefix + engineFile }
-                .Concat(asm.GetManifestResourceNames()
+                .Concat(PackedResources.Names(asm)
                     .Where(n => n.StartsWith(prefix + "admin.", StringComparison.Ordinal) && n.EndsWith(ext, StringComparison.Ordinal))
                     .OrderBy(n => n, StringComparer.Ordinal));
             var sb = new System.Text.StringBuilder();
             foreach (var name in names)
             {
-                using var stream = asm.GetManifestResourceStream(name);
+                using var stream = PackedResources.Open(asm, name);
                 if (stream == null) continue;
                 using var reader = new StreamReader(stream);
                 sb.Append(reader.ReadToEnd()).Append('\n');
@@ -100,8 +101,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Platform
         {
             var prefix = "Jellyfin.Plugin.JellyfinEnhanced.js.locales.";
             var suffix = ".json";
-            var locales = Assembly.GetExecutingAssembly()
-                .GetManifestResourceNames()
+            var locales = PackedResources.Names(Assembly.GetExecutingAssembly())
                 .Where(n => n.StartsWith(prefix, StringComparison.Ordinal) && n.EndsWith(suffix, StringComparison.Ordinal))
                 .Select(n => n.Substring(prefix.Length, n.Length - prefix.Length - suffix.Length))
                 .Where(code => code != "en") // Exclude base English (en-GB and en-US are the usable variants)
@@ -181,7 +181,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Platform
                 return NotFound();
             }
 
-            var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream($"Jellyfin.Plugin.JellyfinEnhanced.js.fonts.{sanitized}");
+            var stream = PackedResources.Open(Assembly.GetExecutingAssembly(), $"Jellyfin.Plugin.JellyfinEnhanced.js.fonts.{sanitized}");
             if (stream == null)
             {
                 return NotFound();
@@ -196,7 +196,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Platform
         {
             var sanitizedLang = Path.GetFileName(lang); // Basic sanitization
             var resourcePath = $"Jellyfin.Plugin.JellyfinEnhanced.js.locales.{sanitizedLang}.json";
-            var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(resourcePath);
+            var stream = PackedResources.Open(Assembly.GetExecutingAssembly(), resourcePath);
 
             if (stream == null && sanitizedLang.Contains('-'))
             {
@@ -206,7 +206,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Platform
                 // languages. Without this fallback the user gets English instead of German.
                 var baseLang = sanitizedLang.Split('-')[0];
                 var fallbackPath = $"Jellyfin.Plugin.JellyfinEnhanced.js.locales.{baseLang}.json";
-                stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(fallbackPath);
+                stream = PackedResources.Open(Assembly.GetExecutingAssembly(), fallbackPath);
                 if (stream != null)
                 {
                     _logger.Info($"Locale file not found for {sanitizedLang}, falling back to base language {baseLang}");
@@ -224,7 +224,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Platform
 
         private ActionResult GetScriptResource(string resourcePath)
         {
-            var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream($"Jellyfin.Plugin.JellyfinEnhanced.{resourcePath.Replace('/', '.')}");
+            var stream = PackedResources.Open(Assembly.GetExecutingAssembly(), $"Jellyfin.Plugin.JellyfinEnhanced.{resourcePath.Replace('/', '.')}");
             if (stream == null) return NotFound();
 
             // Pick a content type that matches the requested file. Defaults to JS for the

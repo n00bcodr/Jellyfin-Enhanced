@@ -64,7 +64,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags.PosterTags.Resolutio
 
         private static Table Read()
         {
-            using var stream = typeof(ScoreNumbers).Assembly.GetManifestResourceStream("Jellyfin.Plugin.JellyfinEnhanced.js.tags.score-numbers.json");
+            using var stream = Infrastructure.Assets.PackedResources.Open(typeof(ScoreNumbers).Assembly, "Jellyfin.Plugin.JellyfinEnhanced.js.tags.score-numbers.json");
             return stream == null
                 ? new Table(new Dictionary<string, NumberFormat>(), new Dictionary<string, string>())
                 : JsonSerializer.Deserialize<Table>(stream, new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;

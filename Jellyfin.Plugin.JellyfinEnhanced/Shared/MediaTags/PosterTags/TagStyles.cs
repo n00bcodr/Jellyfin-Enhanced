@@ -801,7 +801,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags.PosterTags
 
         private static JsonDocument Read(string name)
         {
-            using var stream = typeof(TagStyleCatalog).Assembly.GetManifestResourceStream(Features.MediaTags.PosterTags.Rendering.PosterTagAssets.ResourcePrefix + name)
+            using var stream = Infrastructure.Assets.PackedResources.Open(typeof(TagStyleCatalog).Assembly, Features.MediaTags.PosterTags.Rendering.PosterTagAssets.ResourcePrefix + name)
                 ?? throw new InvalidDataException($"Missing resource {name}");
             return JsonDocument.Parse(stream);
         }

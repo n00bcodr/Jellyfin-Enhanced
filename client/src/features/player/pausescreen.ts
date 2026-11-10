@@ -1,4 +1,4 @@
-import { renderPauseProgress } from './pause-view';
+import { continuesPlayback, renderPauseProgress } from './pause-view';
 import { createPlayerLifetime } from './lifetime';
 import { pauseStyles } from './pause-styles';
 import { playerHost } from './host';
@@ -72,7 +72,7 @@ JE.initializePauseScreen = function() {
           // serving the PREVIOUS user's token after an SPA user switch. The
           // re-read is deferred a tick because the reset fires before the host
           // finishes writing the new credentials to localStorage.
-          this.releaseReset = lifetime.onReset(() => { if (!this.destroyed) this.clearState(); });
+          this.releaseReset = lifetime.onReset(() => { if (!this.destroyed && !continuesPlayback(JE, this.currentVideo)) this.clearState(); });
           this.releaseUser = JE.session?.onUserChange('pause-screen', () => {
             if (this.destroyed) return;
             this.clearState();

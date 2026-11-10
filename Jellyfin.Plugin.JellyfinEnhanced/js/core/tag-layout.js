@@ -144,12 +144,12 @@
     custom: "customTagsEnabled"
   };
   var SLOT_TO_POSITION = withoutPrototype({ tl: "top-left", tr: "top-right", bl: "bottom-left", br: "bottom-right", tc: "top-center", bc: "bottom-center", ml: "center-left", mr: "center-right", c: "center" });
+  var ownValue = (object, key) => Object.prototype.propertyIsEnumerable.call(object, key) ? Reflect.get(object, key) : void 0;
   function pick(obj, key) {
     if (!obj || typeof obj !== "object")
       return void 0;
-    const record = Object.fromEntries(Object.entries(obj));
     const pascal = key.charAt(0).toUpperCase() + key.slice(1);
-    return (hasOwn(record, key) ? record[key] : void 0) ?? (hasOwn(record, pascal) ? record[pascal] : void 0) ?? void 0;
+    return ownValue(obj, key) ?? ownValue(obj, pascal) ?? void 0;
   }
   function normalizeGroup(name) {
     if (typeof name !== "string")
@@ -438,7 +438,11 @@
     return context instanceof HTMLElement ? context : context && "host" in context ? context.host : null;
   }
   function childrenOf(element) {
-    return Array.from(element.children).filter((child) => child instanceof HTMLElement);
+    const children = [];
+    for (let child = element.firstElementChild; child; child = child.nextElementSibling) {
+      if (child instanceof HTMLElement) children.push(child);
+    }
+    return children;
   }
   function cloneElement(element) {
     const clone = element.cloneNode(true);

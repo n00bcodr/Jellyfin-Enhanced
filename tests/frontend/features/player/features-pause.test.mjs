@@ -109,3 +109,42 @@ test('pause screen image URLs encode the item ids and the image tag, and leave o
  const plain={ImageTags:{Logo:'0123abcd'},SeriesId:'f137a2dd21bbc1b99aa5c0f6bf02a805'};
  assert.deepEqual([...p.getLogoUrls(plain,'http://local','0ff8461bed0a2658ec63487586efdbd3')],['http://local/Items/0ff8461bed0a2658ec63487586efdbd3/Images/Logo?tag=0123abcd','http://local/Items/f137a2dd21bbc1b99aa5c0f6bf02a805/Images/Logo']);
 });
+
+// jellyfin-web starts a playback in this order: the <video> is created while the details route is still current,
+// then the route changes to the player. That navigation resets the player lifetimes (features/player/lifetime.ts).
+// `requests` is what reaches the network: the item, then one HEAD probe per candidate image.
+function starting(t){
+ const x=playing(t);const requests=[];const P='c'.repeat(32),S='d'.repeat(32);
+ x.h.JE.isVideoPage=()=>x.h.window.location.hash.startsWith('#/video');
+ delete x.p.fetchWithRetry;delete x.p.firstAvailableBlobURL;
+ x.h.window.fetch=async(url,options={})=>{
+  const path=new URL(url).pathname;requests.push(`${options.method||'GET'} ${path}`);
+  if(options.method==='HEAD')return new Response(null,{status:404});
+  return new Response(JSON.stringify({Id:A,Overview:'overview A',ParentId:P,SeriesId:S}),{status:200,headers:{'Content-Type':'application/json'}});
+ };
+ const navigate=async hash=>{x.h.window.location.hash=hash;await flush();};
+ return {...x,requests,navigate,item:`GET /Items/${A}`,probes:()=>requests.filter(r=>r.startsWith('HEAD '))};
+}
+test('starting a playback requests the item and probes each image once, although the route changes after the video appears',async t=>{
+ const x=starting(t);
+ x.p.checkForVideoChanges();await flush();
+ assert.deepEqual(x.requests.filter(r=>r===x.item),[x.item]);
+ const probed=x.probes();
+ assert.equal(probed.length,8,'Logo of the parent and series; Disc and Backdrop of the item, parent and series');
+ assert.equal(new Set(probed).size,8);
+ await x.navigate('#/video');
+ x.p.checkForVideoChanges();await flush();
+ assert.equal(x.p.currentVideo,x.video);assert.equal(x.p.readyItemId,A);
+ assert.deepEqual(x.requests.filter(r=>r===x.item),[x.item],'the item is requested once per playback start');
+ assert.deepEqual(x.probes(),probed,'no image is probed a second time');
+ await x.pause();
+ assert.equal(x.overlay(),'false');assert.equal(x.plot(),'overview A');
+});
+test('leaving the player route drops the playback at once, while its video is still in the page',async t=>{
+ const x=starting(t);
+ await x.navigate('#/video');x.p.checkForVideoChanges();await flush();
+ assert.equal(x.p.currentVideo,x.video);assert.equal(x.plot(),'overview A');
+ await x.navigate('#/home');
+ assert.equal(x.video.isConnected,true);
+ assert.equal(x.p.currentVideo,null);assert.equal(x.p.currentItemId,null);assert.equal(x.plot(),'');assert.equal(x.overlay(),'true');
+});

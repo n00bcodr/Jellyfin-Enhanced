@@ -1,0 +1,20 @@
+{
+  "description": "Budget for what the plugin assembly, Jellyfin.Plugin.JellyfinEnhanced.dll, embeds (client assets, pages, tag assets). embeddedBytes: the summed length of its manifest resources as embedded (a packed one at its packed length). The DLL is these plus about 3.1 MB of code. The budget counts the resources, not the DLL file, because gate T runs with coverage and the file on disk is then the instrumented copy (0.65 MB longer); the resources are the same bytes either way. Checked by tests/backend/Api/PackedResourcesTests.cs (gate T). It is a ratchet: lowering the limit needs no reason; a history entry that raises it must give one. `limits` is always the last history entry's.",
+  "limits": {
+    "embeddedBytes": 11430000
+  },
+  "history": [
+    {
+      "date": "2026-11-10",
+      "change": "perf-runtime: client text assets embedded packed (scripts/pack-embedded.mjs); measured on restructure/integration 09ec6381 with this change",
+      "measured": {
+        "embeddedBytes": 11257660,
+        "dllBytes": 14396928
+      },
+      "limits": {
+        "embeddedBytes": 11430000
+      },
+      "reason": "First budget: the Release build with the scripts, source maps, minified twins and locales packed (23.8 MB of text as 6.2 MB), plus 1.5% headroom. Unpacked (measured on 2917a115) the assembly embedded 28,690,075 bytes and the DLL was 31,700,992 bytes, packed 11,172,368 and 14,271,488; the release this replaces (upstream 2e0f9251) embeds 11,701,908 bytes in a DLL of 14,956,032, so the limit stays below that."
+    }
+  ]
+}

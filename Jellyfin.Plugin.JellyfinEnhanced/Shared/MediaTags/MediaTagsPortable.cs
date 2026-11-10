@@ -680,11 +680,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags
         {
             var assembly = typeof(MediaTagsPortable).Assembly;
             var result = new List<JsonObject>();
-            foreach (var name in assembly.GetManifestResourceNames()
+            foreach (var name in Infrastructure.Assets.PackedResources.Names(assembly)
                 .Where(n => n.StartsWith(BuiltInPrefix, StringComparison.Ordinal) && n.EndsWith(".json", StringComparison.Ordinal))
                 .OrderBy(n => n, StringComparer.Ordinal))
             {
-                using var stream = assembly.GetManifestResourceStream(name);
+                using var stream = Infrastructure.Assets.PackedResources.Open(assembly, name);
                 if (stream == null) continue;
                 using var reader = new StreamReader(stream);
                 using var document = JsonDocument.Parse(reader.ReadToEnd());

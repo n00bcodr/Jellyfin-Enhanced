@@ -304,7 +304,7 @@ public static class StatusRules
 
     private static T? Read<T>(string resource)
     {
-        using var stream = typeof(StatusRules).Assembly.GetManifestResourceStream("Jellyfin.Plugin.JellyfinEnhanced.js." + resource + ".json");
+        using var stream = Infrastructure.Assets.PackedResources.Open(typeof(StatusRules).Assembly, "Jellyfin.Plugin.JellyfinEnhanced.js." + resource + ".json");
         return stream == null ? default : JsonSerializer.Deserialize<T>(stream, JsonOptions);
     }
 }

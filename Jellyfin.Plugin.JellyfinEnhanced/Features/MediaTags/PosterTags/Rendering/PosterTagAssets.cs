@@ -107,7 +107,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.PosterTags.Renderi
 
                 var flagCodes = new HashSet<string>(StringComparer.Ordinal);
                 const string flagPrefix = ResourcePrefix + "flags.";
-                foreach (var name in ResourceAssembly.GetManifestResourceNames())
+                foreach (var name in Infrastructure.Assets.PackedResources.Names(ResourceAssembly))
                 {
                     if (name.StartsWith(flagPrefix, StringComparison.Ordinal) && name.EndsWith(".webp", StringComparison.Ordinal))
                     {
@@ -282,7 +282,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.PosterTags.Renderi
 
         private static SKImage? DecodeBundledLogo(string resource)
         {
-            using var stream = ResourceAssembly.GetManifestResourceStream("Jellyfin.Plugin.JellyfinEnhanced.Assets.Cdn." + resource);
+            using var stream = Infrastructure.Assets.PackedResources.Open(ResourceAssembly, "Jellyfin.Plugin.JellyfinEnhanced.Assets.Cdn." + resource);
             if (stream is null) return null;
             using var data = SKData.Create(stream);
             using var codec = SKCodec.Create(data);
@@ -310,7 +310,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.PosterTags.Renderi
 
         private static Stream OpenResource(string name)
         {
-            return ResourceAssembly.GetManifestResourceStream(ResourcePrefix + name)
+            return Infrastructure.Assets.PackedResources.Open(ResourceAssembly, ResourcePrefix + name)
                 ?? throw new FileNotFoundException($"Embedded poster tag asset missing: {ResourcePrefix}{name}");
         }
 

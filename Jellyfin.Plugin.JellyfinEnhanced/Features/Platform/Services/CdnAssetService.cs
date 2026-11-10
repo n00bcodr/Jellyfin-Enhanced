@@ -301,7 +301,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Platform.Services
                     return null;
                 }
 
-                using var stream = typeof(CdnAssetService).Assembly.GetManifestResourceStream(resource);
+                using var stream = Infrastructure.Assets.PackedResources.Open(typeof(CdnAssetService).Assembly, resource);
                 if (stream == null)
                 {
                     return null;

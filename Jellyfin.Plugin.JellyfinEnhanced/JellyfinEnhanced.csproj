@@ -73,6 +73,13 @@
 
 
 
+  <!-- The client assets that are embedded packed (see PackEmbeddedClientAssets below). The admin section scripts
+       stay as they are: WhatsNewService and MediaTagsPageFields find them by enumerating resource names. -->
+  <ItemGroup>
+    <JePackedAsset Include="js\**\*.map;min\**\*.js;min\**\*.map;js\locales\*.json" />
+    <JePackedAsset Include="js\**\*.js" Exclude="js\enhanced\admintags\sections\**" />
+  </ItemGroup>
+
   <ItemGroup>
     <None Remove="PluginPages\CalendarPage.html"/>
     <EmbeddedResource Include="PluginPages\CalendarPage.html"/>
@@ -104,11 +111,37 @@
     <None Remove="Configuration\whats-new-seed.json"/>
     <EmbeddedResource Include="Configuration\whats-new-seed.json"/>
     <None Remove="plugin.js"/>
-    <EmbeddedResource Include="js\**" />
+    <EmbeddedResource Include="js\**" Exclude="@(JePackedAsset)" />
     <!-- Minified twins of the component scripts (scripts/client-build.mjs), read only by the served bundle
          (Features/Platform/Services/ClientScriptBundle.cs); never served per file. -->
-    <EmbeddedResource Include="min\**" />
+    <EmbeddedResource Include="min\**" Exclude="@(JePackedAsset)" />
   </ItemGroup>
+
+  <!-- The bulky text under js\** and min\** (JePackedAsset: the readable scripts, their source maps, the minified
+       twins and the locales, 23.8 MB) is embedded packed. PackEmbeddedClientAssets runs scripts/pack-embedded.mjs
+       over those files and embeds each result under the file's resource name plus ".jez";
+       Infrastructure/Assets/PackedResources.cs reads both kinds by the plain name. Unpacked they made the DLL
+       31.7 MB, twice the release this replaces. The packed files are added with CreateItem, not an EmbeddedResource
+       element: the client build's check that every typed HTML page is embedded (scripts/client/html-entries.mjs)
+       refuses any computed EmbeddedResource item, which it cannot evaluate; these sit under obj and cannot be a page. -->
+  <Target Name="PackEmbeddedClientAssets" BeforeTargets="AssignTargetPaths" Condition="'$(DesignTimeBuild)' != 'true'">
+    <PropertyGroup>
+      <_JePackedDirectory>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)', 'je-packed'))</_JePackedDirectory>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(_JePackedDirectory)files.txt" Lines="@(JePackedAsset)" Overwrite="true" WriteOnlyWhenDifferent="true" />
+    <Exec Command="node &quot;$(MSBuildProjectDirectory)/../scripts/pack-embedded.mjs&quot; &quot;$(MSBuildProjectDirectory)&quot; &quot;$(_JePackedDirectory)packed&quot; &quot;$(_JePackedDirectory)files.txt&quot;" />
+    <ItemGroup>
+      <_JePackedFile Include="$(_JePackedDirectory)packed/%(JePackedAsset.Identity).jez">
+        <LogicalName>Jellyfin.Plugin.JellyfinEnhanced.$([System.String]::Copy('%(JePackedAsset.Identity)').Replace('\','.').Replace('/','.')).jez</LogicalName>
+        <WithCulture>false</WithCulture>
+        <Type>Non-Resx</Type>
+      </_JePackedFile>
+      <FileWrites Include="@(_JePackedFile);$(_JePackedDirectory)packed/index.json;$(_JePackedDirectory)files.txt" />
+    </ItemGroup>
+    <CreateItem Include="@(_JePackedFile)">
+      <Output TaskParameter="Include" ItemName="EmbeddedResource" />
+    </CreateItem>
+  </Target>
 
 
   <Target Name="ValidateJellyfinTarget">

@@ -754,6 +754,10 @@
       "category": "Features"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Infrastructure/Assets/PackedResources.cs",
+      "category": "Infrastructure"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Infrastructure/Auth/UserHelper.cs",
       "category": "Infrastructure"
     },
@@ -10644,7 +10648,7 @@
   ],
   "counts": {
     "build_targets": 1,
-    "files": 543,
+    "files": 544,
     "routes": 203,
     "configuration_properties": 750,
     "storage_references": 96,

@@ -289,14 +289,28 @@ export async function buildClient({ root = repositoryRoot, check = false, typech
   const artifacts = new Map();
   const componentScripts = readComponentScripts(root);
   const shared = await prepareSharedModules(ts, esbuild, root, entries, componentScripts);
-  for (const entry of entries) {
-    const result = await bundle(esbuild, root, {
-      entryPoints: [entry.source],
-      outfile: `${pluginDirectory}/${entry.output}`,
-      charset: 'utf8',
-      sourcemap: 'linked',
-      ...shared.options(entry.output),
-    }, shared.generated);
+  // Every bundle is started at once (esbuild builds them on all cores) and then taken in the order the sequential
+  // loops used, so the artifacts, the ledger's key order and which failure is reported first are unchanged.
+  const started = builds => { for (const build of builds) build.catch(() => {}); return builds; };
+  const readable = started(entries.map(entry => bundle(esbuild, root, {
+    entryPoints: [entry.source],
+    outfile: `${pluginDirectory}/${entry.output}`,
+    charset: 'utf8',
+    sourcemap: 'linked',
+    ...shared.options(entry.output),
+  }, shared.generated)));
+  const twinEntries = entries.filter(entry => componentScripts.includes(entry.output));
+  const twins = started(twinEntries.map(entry => bundle(esbuild, root, {
+    entryPoints: [entry.source],
+    outfile: `${pluginDirectory}/${entry.output}`,
+    charset: 'utf8',
+    minify: true,
+    sourcemap: 'external',
+    sourcesContent: false,
+    ...shared.options(entry.output),
+  }, shared.generated)));
+  for (const [index, entry] of entries.entries()) {
+    const result = await readable[index];
     shared.record(entry.output, result);
     for (const output of result.outputFiles) {
       const path = relative(root, output.path).split(sep).join('/');
@@ -310,16 +324,8 @@ export async function buildClient({ root = repositoryRoot, check = false, typech
   // gets a minified twin under min/ that only the bundle reads; js/** stays readable for tests, the per-file
   // loader and debugging (canopy K1). Same source, same wrapper, plus `minify`; built at the readable output's own
   // path so the external map's `sources` match the readable map's (the server copies sourcesContent from that map).
-  for (const entry of entries.filter(entry => componentScripts.includes(entry.output))) {
-    const result = await bundle(esbuild, root, {
-      entryPoints: [entry.source],
-      outfile: `${pluginDirectory}/${entry.output}`,
-      charset: 'utf8',
-      minify: true,
-      sourcemap: 'external',
-      sourcesContent: false,
-      ...shared.options(entry.output),
-    }, shared.generated);
+  for (const [index, entry] of twinEntries.entries()) {
+    const result = await twins[index];
     for (const output of result.outputFiles) {
       const path = relative(root, output.path).split(sep).join('/');
       const readable = `${pluginDirectory}/${entry.output}`;

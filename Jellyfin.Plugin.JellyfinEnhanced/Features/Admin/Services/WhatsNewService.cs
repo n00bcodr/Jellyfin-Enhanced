@@ -226,7 +226,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Admin.Services
         private List<string> ExtractSettingIds()
         {
             var assembly = GetType().Assembly;
-            using var stream = assembly.GetManifestResourceStream(EmbeddedConfigPageResource);
+            using var stream = Infrastructure.Assets.PackedResources.Open(assembly, EmbeddedConfigPageResource);
             if (stream == null)
             {
                 _logger.Warning($"[WhatsNew] Embedded resource not found: {EmbeddedConfigPageResource}");
@@ -246,10 +246,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Admin.Services
             // page, but dedupe defensively rather than let a duplicate skew
             // the diff.
             var schemaIds = new List<string>();
-            foreach (var name in assembly.GetManifestResourceNames()
+            foreach (var name in Infrastructure.Assets.PackedResources.Names(assembly)
                 .Where(n => n.StartsWith(EmbeddedAdminSectionPrefix, StringComparison.Ordinal) && n.EndsWith(".js", StringComparison.Ordinal)))
             {
-                using var schema = assembly.GetManifestResourceStream(name);
+                using var schema = Infrastructure.Assets.PackedResources.Open(assembly, name);
                 if (schema == null) continue;
                 using var schemaReader = new StreamReader(schema);
                 schemaIds.AddRange(SchemaIdRegex.Matches(schemaReader.ReadToEnd())
@@ -327,11 +327,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Admin.Services
         private IEnumerable<string> ReadSectionModules()
         {
             var assembly = GetType().Assembly;
-            foreach (var name in assembly.GetManifestResourceNames()
+            foreach (var name in Infrastructure.Assets.PackedResources.Names(assembly)
                 .Where(n => n.StartsWith(MediaTagsSectionPrefix, StringComparison.Ordinal) && n.EndsWith(".js", StringComparison.Ordinal))
                 .OrderBy(n => n, StringComparer.Ordinal))
             {
-                using var stream = assembly.GetManifestResourceStream(name);
+                using var stream = Infrastructure.Assets.PackedResources.Open(assembly, name);
                 if (stream == null) continue;
                 using var reader = new StreamReader(stream);
                 yield return reader.ReadToEnd();
@@ -344,7 +344,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Admin.Services
             try
             {
                 var assembly = GetType().Assembly;
-                using var stream = assembly.GetManifestResourceStream(EmbeddedSeedResource);
+                using var stream = Infrastructure.Assets.PackedResources.Open(assembly, EmbeddedSeedResource);
                 if (stream == null)
                 {
                     _logger.Warning($"[WhatsNew] Embedded seed resource not found: {EmbeddedSeedResource}");

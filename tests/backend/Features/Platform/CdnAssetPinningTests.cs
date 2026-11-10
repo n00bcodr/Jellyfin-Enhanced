@@ -13,7 +13,7 @@ public class CdnAssetPinningTests
 {
     private static string Embedded(string code)
     {
-        using var stream = typeof(CdnAssetService).Assembly.GetManifestResourceStream($"Jellyfin.Plugin.JellyfinEnhanced.js.locales.{code}.json")!;
+        using var stream = Jellyfin.Plugin.JellyfinEnhanced.Infrastructure.Assets.PackedResources.Open(typeof(CdnAssetService).Assembly, $"Jellyfin.Plugin.JellyfinEnhanced.js.locales.{code}.json")!;
         using var reader = new StreamReader(stream);
         return reader.ReadToEnd();
     }

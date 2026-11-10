@@ -33,6 +33,9 @@
     const h = Math.floor(sec / 3600);
     return h > 0 ? `${h}:${m}:${s}` : `${Number(m)}:${s}`;
   }
+  function continuesPlayback(JE2, video) {
+    return !!video?.isConnected && !!JE2.isVideoPage?.();
+  }
 
   // client/src/host/context.ts
   function sharedModule(id) {
@@ -387,7 +390,7 @@
         this.userId = credentials.userId;
         this.token = credentials.token;
         this.releaseReset = lifetime.onReset(() => {
-          if (!this.destroyed) this.clearState();
+          if (!this.destroyed && !continuesPlayback(JE, this.currentVideo)) this.clearState();
         });
         this.releaseUser = JE.session?.onUserChange("pause-screen", () => {
           if (this.destroyed) return;

@@ -366,10 +366,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags
         private static IEnumerable<string> ReadSectionModules()
         {
             var assembly = typeof(MediaTagsPageFields).Assembly;
-            foreach (var name in assembly.GetManifestResourceNames()
+            foreach (var name in Infrastructure.Assets.PackedResources.Names(assembly)
                 .Where(n => n.StartsWith(SectionPrefix, StringComparison.Ordinal) && n.EndsWith(".js", StringComparison.Ordinal)))
             {
-                using var stream = assembly.GetManifestResourceStream(name);
+                using var stream = Infrastructure.Assets.PackedResources.Open(assembly, name);
                 if (stream == null) continue;
                 using var reader = new StreamReader(stream);
                 yield return reader.ReadToEnd();

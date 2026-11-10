@@ -88,6 +88,55 @@ public class BundleServingTests
         Assert.NotEqual(tag, identity.Headers.ETag!.Tag);
     }
 
+    // perf-runtime: bundle.js.map (about 11 MB, built by parsing two embedded maps per module) is built when it is first
+    // requested. Serving bundle.js must not build it: the first page load after every server start waited for that
+    // build (385 ms against upstream's 71 ms for the first bundle.js), and every server then kept the map in memory
+    // although only a browser with developer tools open ever asks for it.
+    [Fact]
+    public async Task ServingTheScriptDoesNotBuildTheSourceMap()
+    {
+        using var fixture = new ApiPluginFixture();
+        using var server = BundleServer.Create(fixture);
+        using var client = server.CreateClient();
+        // Drop whatever an earlier test cached under the plugin's key, so the first request below builds the bundle.
+        ClientScriptBundle.GetServedBundle("drop-the-cached-bundle", rebuild: true, fixture.Core.Logger);
+        foreach (var accept in new[] { "gzip, deflate, br, zstd", "gzip", null })
+        {
+            using var script = await Get(client, "/JellyfinEnhanced/bundle.js", accept);
+            Assert.Equal(HttpStatusCode.OK, script.StatusCode);
+        }
+
+        var key = Jellyfin.Plugin.JellyfinEnhanced.JellyfinEnhanced.Instance!.ScriptCacheKey;
+        var bundle = ClientScriptBundle.GetServedBundle(key, rebuild: false, fixture.Core.Logger);
+        Assert.False(bundle.Map.IsValueCreated, "GET /JellyfinEnhanced/bundle.js built the source map.");
+        using var map = await Get(client, "/JellyfinEnhanced/bundle.js.map", "gzip");
+        Assert.Equal(HttpStatusCode.OK, map.StatusCode);
+        Assert.True(bundle.Map.IsValueCreated);
+        Assert.Same(bundle, ClientScriptBundle.GetServedBundle(key, rebuild: false, fixture.Core.Logger));
+        Assert.Same(bundle.SourceMap, bundle.SourceMap);
+    }
+
+    // perf-runtime: every module function runs exactly once, at boot. Parenthesized, V8 compiles it with the script
+    // (off the main thread while the script streams in); bare, it was compiled lazily on the main thread at its call,
+    // which the CPU profile showed as about 7 ms of every page load.
+    [Fact]
+    public void EveryModuleFunctionIsParenthesizedSoItIsCompiledWithTheScript()
+    {
+        using var fixture = new CoreFixture();
+        var lines = Encoding.UTF8.GetString(ClientScriptBundle.BuildUncached("wrapper-check", fixture.Logger).Script).Split('\n');
+        var opened = 0;
+        for (var i = 0; i < lines.Length; i++)
+        {
+            if (!lines[i].StartsWith("/* ---- js/", StringComparison.Ordinal)) continue;
+            Assert.Equal("(function () {", lines[i + 1]);
+            opened++;
+        }
+
+        Assert.Equal(ClientScriptBundle.GetComponentScripts().Count, opened);
+        Assert.Equal(opened, lines.Count(line => line == "}),"));
+        Assert.DoesNotContain("function () {", lines);
+    }
+
     [Fact]
     public async Task BrotliIsUpgradedInTheBackgroundToASmallerBodyWithANewValidator()
     {

@@ -44,3 +44,34 @@ test('unavailable translation sources resolve to an empty dictionary without poi
   const h=setup(t,async()=>{throw new Error('offline');});h.expectConsoleError(/Failed to load translations from any source/);assert.deepEqual(plain(await h.JE.loadTranslations()),{});
   assert.equal(h.window.localStorage.length,0);
 });
+// The locale decoder checks a dictionary without copying it (perf-runtime); what it accepts and rejects is unchanged.
+test('a cached locale holding a non-string value is discarded and fetched again',async t=>{
+  let calls=0;const h=setup(t,async()=>{calls++;return jsonResponse({ok:'fresh'});});const store=h.window.localStorage;
+  store.setItem('JE_translation_en_test-v1',JSON.stringify({ok:'cached',broken:{nested:true}}));store.setItem('JE_translation_ts_en_test-v1',String(Date.now()));
+  assert.deepEqual(plain(await h.JE.loadTranslations()),{ok:'fresh'});assert.equal(calls,1);
+  assert.equal(store.getItem('JE_translation_en_test-v1'),JSON.stringify({ok:'fresh'}));
+});
+test('a served locale holding a non-string value is not used or cached',async t=>{
+  const h=setup(t,async url=>url.includes('/cdn/')?jsonResponse({},404):jsonResponse({ok:'OK',count:3}));
+  h.expectConsoleError(/Failed to load translations from any source/);
+  assert.deepEqual(plain(await h.JE.loadTranslations()),{});assert.equal(h.window.localStorage.length,0);
+});
+test('a locale key named __proto__ stays an ordinary entry and changes no prototype',async t=>{
+  const h=setup(t,async()=>new Response('{"__proto__":"text","ok":"OK"}',{status:200,headers:{'Content-Type':'application/json'}}));
+  const tr=await h.JE.loadTranslations();
+  assert.equal(tr.ok,'OK');assert.equal(Object.getOwnPropertyDescriptor(tr,'__proto__')?.value,'text');
+  assert.deepEqual(Object.keys(tr),['__proto__','ok']);assert.equal(h.window.Object.prototype.ok,undefined);
+  assert.equal(JSON.parse(h.window.localStorage.getItem('JE_translation_en_test-v1')).ok,'OK');
+});
+// Guard: the first decoder copied every key with Object.defineProperty, about 4 ms of main thread per page load
+// (two locales of ~1,400 keys, cold code). The count of property definitions must not grow with the dictionary.
+test('loading a locale does not define its keys one property at a time',async t=>{
+  const keys=1500;const big=Object.fromEntries(Array.from({length:keys},(_,i)=>[`key_${i}`,`text ${i}`]));
+  const h=setup(t,async()=>jsonResponse(big));
+  const real=h.window.Object.defineProperty;let defined=0;
+  h.window.Object.defineProperty=function(...args){defined++;return real.apply(this,args);};
+  t.after(()=>{h.window.Object.defineProperty=real;});
+  assert.equal(Object.keys(await h.JE.loadTranslations()).length,keys);   // fetched
+  assert.equal(Object.keys(await h.JE.loadTranslations()).length,keys);   // from the cache
+  assert.ok(defined<keys/10,`${defined} Object.defineProperty calls while loading a ${keys}-key locale twice`);
+});

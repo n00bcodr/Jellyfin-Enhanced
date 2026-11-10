@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Jellyfin.Plugin.JellyfinEnhanced.Features.Platform.Services;
 using Jellyfin.Plugin.JellyfinEnhanced.Features.Platform;
+using Jellyfin.Plugin.JellyfinEnhanced.Infrastructure.Assets;
 
 namespace JE.Tests;
 
@@ -172,13 +173,13 @@ public class ApiAssetTests
             // canopy K1: the bundle serves each module's minified twin (min/js/<path>) when there is one.
             var assembly = typeof(Jellyfin.Plugin.JellyfinEnhanced.JellyfinEnhanced).Assembly;
             var resource = paths[i].Replace('/', '.');
-            var prefix = assembly.GetManifestResourceInfo("Jellyfin.Plugin.JellyfinEnhanced.min.js." + resource) != null
+            var prefix = PackedResources.Exists(assembly, "Jellyfin.Plugin.JellyfinEnhanced.min.js." + resource)
                 ? "Jellyfin.Plugin.JellyfinEnhanced.min.js." : "Jellyfin.Plugin.JellyfinEnhanced.js.";
-            using var original = assembly.GetManifestResourceStream(prefix + resource)!;
+            using var original = PackedResources.Open(assembly, prefix + resource)!;
             using var reader = new StreamReader(original);
             var source = reader.ReadToEnd();
             Assert.Equal(source, string.Join('\n', lines.Skip(line)).Substring(0, source.Length));
-            using var embeddedMap = assembly.GetManifestResourceStream(prefix + resource + ".map");
+            using var embeddedMap = PackedResources.Open(assembly, prefix + resource + ".map");
             if (embeddedMap != null)
             {
                 typedSections++;
@@ -186,7 +187,7 @@ public class ApiAssetTests
                 foreach (var property in new[] { "mappings", "names" })
                     Assert.True(JsonElement.DeepEquals(typedMap.RootElement.GetProperty(property), sourceMap.GetProperty(property)), $"Embedded source-map {property} changed.");
                 // A twin map has no sourcesContent; the bundle copies each source's text from the readable map.
-                using var readableMap = JsonDocument.Parse(assembly.GetManifestResourceStream("Jellyfin.Plugin.JellyfinEnhanced.js." + resource + ".map")!);
+                using var readableMap = JsonDocument.Parse(PackedResources.Open(assembly, "Jellyfin.Plugin.JellyfinEnhanced.js." + resource + ".map")!);
                 var readableSources = readableMap.RootElement.GetProperty("sources").EnumerateArray().Select(e => e.GetString()).ToList();
                 var typedSources = typedMap.RootElement.GetProperty("sources").EnumerateArray().Select(e => e.GetString()).ToArray();
                 var contents = sourceMap.GetProperty("sourcesContent").EnumerateArray().ToArray();

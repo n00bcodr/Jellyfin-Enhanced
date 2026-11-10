@@ -101,7 +101,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags.PosterTags.Resolutio
 
         private static Table Load()
         {
-            using var stream = typeof(GenreIcons).Assembly.GetManifestResourceStream("Jellyfin.Plugin.JellyfinEnhanced.js.tags.genre-icons.json")
+            using var stream = Infrastructure.Assets.PackedResources.Open(typeof(GenreIcons).Assembly, "Jellyfin.Plugin.JellyfinEnhanced.js.tags.genre-icons.json")
                 ?? throw new InvalidDataException("Missing resource js/tags/genre-icons.json");
             using var doc = JsonDocument.Parse(stream);
             var root = doc.RootElement;

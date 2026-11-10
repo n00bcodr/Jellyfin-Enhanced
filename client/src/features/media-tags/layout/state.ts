@@ -46,7 +46,11 @@ export type CardContext = CardController | HTMLElement | {
     SeriesId?: unknown;
 } | null | undefined;
 export function contextElement(context: CardContext): HTMLElement | null { return context instanceof HTMLElement ? context : context && 'host' in context ? context.host : null; }
-export function childrenOf(element: Element): HTMLElement[] { return Array.from(element.children).filter((child): child is HTMLElement => child instanceof HTMLElement); }
+export function childrenOf(element: Element): HTMLElement[] {
+    const children: HTMLElement[] = [];
+    for (let child = element.firstElementChild; child; child = child.nextElementSibling) { if (child instanceof HTMLElement) children.push(child); }
+    return children;
+}
 export function cloneElement(element: HTMLElement): HTMLElement { const clone = element.cloneNode(true); if (!(clone instanceof HTMLElement))
     throw new Error('Expected an HTML tag'); return clone; }
 
