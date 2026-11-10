@@ -98,6 +98,15 @@ test('Activity malformed streams display an error; authorization denial alone re
 test('colored Activity icons retain multilingual matching and initialize/stop without duplicate watchers',async t=>{
  let subscriptions=0,teardowns=0;const h=createHarness({html:'<a href="#/dashboard/activity"><div class="MuiTypography-body1">User has successfully authenticated</div><div class="MuiAvatar-root"><svg></svg></div></a>',JE:{helpers:{onBodyMutation:()=>{subscriptions++;return {unsubscribe(){subscriptions--;}};}},core:{lifecycle:{register:()=>({track(){},teardown(){teardowns++;}})},navigation:{onNavigate:()=>()=>{}}}}});t.after(()=>h.close());h.load('extras/colored-activity-icons.js');h.JE.initializeActivityIcons();assert.equal(h.document.querySelector('.material-icons').textContent,'key');h.JE.initializeActivityIcons();assert.equal(subscriptions,1);h.JE.stopActivityIconsMonitoring();assert.equal(subscriptions,0);assert.equal(teardowns,2);
 });
+test('a created user gets a real Material icon in each of the fourteen languages',async t=>{
+ const created=['User alice has been created',"S'ha creat l'usuari alice",'Użytkownik alice został utworzony','Benutzer alice wurde erstellt',"L'utilisateur alice a été créé",'El usuario alice ha sido creado',"L'utente alice è stato creato",'ユーザー alice が作成されました','Пользователь alice был создан','O usuário alice foi criado','Gebruiker alice is aangemaakt','사용자 alice 생성됨','Användaren alice har skapats','alice kullanıcısı oluşturuldu'];
+ const h=createHarness({html:created.map(text=>`<a href="#/dashboard/activity"><div class="MuiTypography-body1">${text}</div><div class="MuiAvatar-root"><svg></svg></div></a>`).join(''),JE:{helpers:{onBodyMutation:()=>({unsubscribe(){}})},core:{lifecycle:{register:()=>({track(){},teardown(){}})},navigation:{onNavigate:()=>()=>{}}}}});t.after(()=>h.close());h.load('extras/colored-activity-icons.js');h.JE.initializeActivityIcons();
+ const avatars=[...h.document.querySelectorAll('.MuiAvatar-root')];
+ // "plus" is not a Material Icons name: the font has no glyph for it, so the avatar was drawn empty.
+ assert.deepEqual(avatars.map(avatar=>avatar.querySelector('.material-icons')?.textContent),created.map(()=>'person_add'));
+ assert.deepEqual([...new Set(avatars.map(avatar=>avatar.getAttribute('data-jellyfin-enhanced-activity-icon')))],['#2ed62eff']);
+ h.JE.stopActivityIconsMonitoring();
+});
 test('Catch Up rejects an old response even after returning to the original account',async t=>{
  const pending=deferred();let waiting=true;const h=setup(t,{jf:async()=>waiting?pending.promise:{Items:[movie('current')]}});h.JE.catchUpPage.renderPage(h.host);h.change();h.change('alice');waiting=false;await h.render();pending.resolve({Items:[movie('obsolete')]});await tick();assert.equal(h.top().Id,'current');
 });

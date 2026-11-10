@@ -44,7 +44,10 @@ public sealed class LeavingSoonTests : IDisposable
 
     public void Dispose() => _core.Dispose();
 
-    /// <summary>A loopback HTTP server that answers like Maintainerr's <c>GET /api/collections</c>.</summary>
+    /// <summary>
+    /// A loopback HTTP server that answers like Maintainerr: <c>GET /api/collections</c> through
+    /// <see cref="Answer"/>, and the paged member route through <see cref="Page"/>.
+    /// </summary>
     private sealed class MaintainerrFixture : IDisposable
     {
         private readonly HttpListener _listener = new();
@@ -52,6 +55,16 @@ public sealed class LeavingSoonTests : IDisposable
         public string Url { get; }
         public List<(string Path, string? Key)> Seen { get; } = new();
         public Func<HttpListenerResponse, Task> Answer { get; set; } = r => Json(r, "[]");
+
+        /// <summary>
+        /// <c>GET /api/collections/media/{id}/content/{page}?size={size}</c>: the collection id, the page (from 1),
+        /// the page size (Maintainerr's own 25 when the request names none) and the response. Unless a test sets it
+        /// the route is not there, and the answer is the 404 Maintainerr gives for a route it does not have.
+        /// </summary>
+        public Func<int, int, int, HttpListenerResponse, Task> Page { get; set; } = (_, _, _, r) => Json(r, "{\"message\":\"Cannot GET\",\"error\":\"Not Found\",\"statusCode\":404}", 404);
+
+        /// <summary>The requests for a page of members, as path and query, in order.</summary>
+        public List<string> Paged { get; } = new();
 
         public MaintainerrFixture(string basePath = "")
         {
@@ -69,15 +82,26 @@ public sealed class LeavingSoonTests : IDisposable
                     HttpListenerContext context;
                     try { context = await _listener.GetContextAsync(); }
                     catch { return; }
-                    lock (Seen) Seen.Add((context.Request.Url!.AbsolutePath, context.Request.Headers["X-Api-Key"]));
-                    try { await Answer(context.Response); }
+                    var paged = System.Text.RegularExpressions.Regex.Match(context.Request.Url!.AbsolutePath, "/api/collections/media/([0-9]+)/content/([0-9]+)$");
+                    lock (Seen)
+                    {
+                        Seen.Add((context.Request.Url!.AbsolutePath, context.Request.Headers["X-Api-Key"]));
+                        if (paged.Success) Paged.Add(context.Request.Url!.PathAndQuery);
+                    }
+
+                    try
+                    {
+                        if (paged.Success) await Page(int.Parse(paged.Groups[1].Value), int.Parse(paged.Groups[2].Value), int.TryParse(context.Request.QueryString["size"], out var size) ? size : 25, context.Response);
+                        else await Answer(context.Response);
+                    }
                     catch { /* the client gave up (timeout tests) */ }
                     finally { try { context.Response.Close(); } catch { } }
                 }
             });
         }
 
-        public int Requests { get { lock (Seen) return Seen.Count; } }
+        /// <summary>How often the collections were asked for (once per refresh attempt); the pages that follow are in <see cref="Paged"/>.</summary>
+        public int Requests { get { lock (Seen) return Seen.Count - Paged.Count; } }
 
         public static async Task Json(HttpListenerResponse response, string body, int status = 200)
         {
@@ -125,6 +149,38 @@ public sealed class LeavingSoonTests : IDisposable
 
     /// <summary>One collection member as Maintainerr lists it.</summary>
     private sealed record Media(string? Id, string? Tmdb, string? Added);
+
+    /// <summary>One collection of the list, with its id and the few members the list embeds.</summary>
+    private static Dictionary<string, object?> Collection(object? id, bool active, int? days, IEnumerable<Media> embedded)
+    {
+        var collection = new Dictionary<string, object?>
+        {
+            ["title"] = "Leaving Soon", ["isActive"] = active, ["deleteAfterDays"] = days, ["type"] = "movie",
+            ["media"] = embedded.Select(m => new Dictionary<string, object?> { ["mediaServerId"] = m.Id, ["tmdbId"] = m.Tmdb, ["addDate"] = m.Added }).ToArray(),
+        };
+        if (id != null) collection["id"] = id;
+        return collection;
+    }
+
+    /// <summary>
+    /// One page of a collection's members as Maintainerr answers it: <c>totalSize</c> counts every row, and
+    /// <c>items</c> has the page's rows with the media server's metadata beside each, without the rows whose
+    /// metadata Maintainerr could not read (<paramref name="lost"/>).
+    /// </summary>
+    private static string PageOf(IReadOnlyList<Media> members, int page, int size, Func<Media, bool>? lost = null, bool total = true)
+    {
+        var answer = new Dictionary<string, object?>
+        {
+            ["items"] = members.Skip((page - 1) * size).Take(size).Where(m => lost?.Invoke(m) != true).Select(m => new Dictionary<string, object?>
+            {
+                ["mediaServerId"] = m.Id, ["tmdbId"] = m.Tmdb, ["addDate"] = m.Added, ["mediaData"] = new Dictionary<string, object?> { ["title"] = "A title" },
+            }).ToArray(),
+        };
+        if (total) answer["totalSize"] = members.Count;
+        return JsonSerializer.Serialize(answer);
+    }
+
+    private static Media[] Members(int count) => Enumerable.Range(0, count).Select(_ => new Media(Guid.NewGuid().ToString(), null, "2026-10-25T10:00:00Z")).ToArray();
 
     private LeavingSoonService Service(ILibraryManager? library = null, DateTimeOffset? now = null)
     {
@@ -197,7 +253,8 @@ public sealed class LeavingSoonTests : IDisposable
         var service = Service();
         var config = Config(server.Url + "/", key: "secret-key-123");
         Assert.True(await service.RefreshAsync(config, false, CancellationToken.None));
-        Assert.Equal(("/maintainerr/api/collections", "secret-key-123"), Assert.Single(server.Seen));
+        // The members are then asked for page by page, under the same base path and with the same key.
+        Assert.Equal(new[] { ("/maintainerr/api/collections", (string?)"secret-key-123"), ("/maintainerr/api/collections/media/1/content/1", "secret-key-123") }, server.Seen);
         Assert.Equal(new TagLeaving { DeleteAt = Added.AddDays(10).ToUnixTimeMilliseconds() }, service.Get(item, config));
         var disk = File.ReadAllText(Path.Combine(_core.Root, "leaving-soon.json"));
         Assert.DoesNotContain("secret-key-123", disk);
@@ -212,6 +269,153 @@ public sealed class LeavingSoonTests : IDisposable
         // Another source's facts never answer for this one.
         Assert.Null(reloaded.Get(item, config));
         Assert.NotNull(reloaded.Get(item, keyless));
+    }
+
+    [Fact]
+    public async Task Every_member_of_a_collection_is_read_page_by_page_not_only_the_few_the_list_embeds()
+    {
+        using var server = new MaintainerrFixture("/maintainerr");
+        var big = Members(1100); // three pages of 500
+        var open = Members(3);   // answered without totalSize
+        var paused = Members(2);
+        var plain = Members(2);
+        var named = Members(1);
+        server.Answer = r => MaintainerrFixture.Json(r, JsonSerializer.Serialize(new[]
+        {
+            Collection(7, true, 30, big.Take(2)),
+            Collection(8, false, 30, paused),      // inactive: skipped, so never asked for
+            Collection(9, true, null, open.Take(1)),
+            Collection(null, true, 5, plain),      // no id to ask with: its embedded list is all there is
+            Collection("x-11", true, 5, named),    // an id that is not a number: the same
+        }));
+        // Maintainerr leaves a row out of a page when it cannot read that row's metadata from the media server.
+        var lost = new HashSet<Media> { big[600], big[601] };
+        server.Page = (id, page, size, r) => id switch
+        {
+            7 => MaintainerrFixture.Json(r, PageOf(big, page, size, lost.Contains)),
+            9 => MaintainerrFixture.Json(r, PageOf(open, page, size, total: false)),
+            _ => MaintainerrFixture.Json(r, "{\"totalSize\":0,\"items\":[]}"),
+        };
+        var service = Service();
+        var config = Config(server.Url, key: "paged-secret-key");
+        Assert.True(await service.RefreshAsync(config, false, CancellationToken.None));
+
+        var status = service.Status(config);
+        Assert.Null(status.LastError);
+        Assert.Equal(1098 + 3 + 2 + 1, status.Items);
+        var leaves = new TagLeaving { DeleteAt = Added.AddDays(30).ToUnixTimeMilliseconds() };
+        foreach (var index in new[] { 0, 1, 2, 499, 500, 599, 602, 999, 1000, 1099 }) Assert.Equal(leaves, service.Get(Guid.Parse(big[index].Id!), config));
+        foreach (var gone in lost) Assert.Null(service.Get(Guid.Parse(gone.Id!), config));
+        foreach (var member in open) Assert.Equal(new TagLeaving(), service.Get(Guid.Parse(member.Id!), config));
+        foreach (var member in paused) Assert.Null(service.Get(Guid.Parse(member.Id!), config));
+        foreach (var member in plain.Concat(named)) Assert.Equal(new TagLeaving { DeleteAt = Added.AddDays(5).ToUnixTimeMilliseconds() }, service.Get(Guid.Parse(member.Id!), config));
+
+        // A short page is not the last one (498 rows of 500): the count says when to stop, and without a count an
+        // empty page does. Every request carries the key and stays under the configured base path.
+        Assert.Equal(
+            new[]
+            {
+                "/maintainerr/api/collections/media/7/content/1?size=500", "/maintainerr/api/collections/media/7/content/2?size=500", "/maintainerr/api/collections/media/7/content/3?size=500",
+                "/maintainerr/api/collections/media/9/content/1?size=500", "/maintainerr/api/collections/media/9/content/2?size=500",
+            },
+            server.Paged);
+        Assert.Equal(1, server.Requests);
+        Assert.All(server.Seen, s => Assert.Equal("paged-secret-key", s.Key));
+        Assert.DoesNotContain("paged-secret-key", File.ReadAllText(Path.Combine(_core.Root, "leaving-soon.json")));
+    }
+
+    [Fact]
+    public async Task The_pages_add_to_the_embedded_members_and_a_maintainerr_without_the_route_keeps_the_embedded_ones()
+    {
+        using var server = new MaintainerrFixture();
+        var members = Members(4);
+        server.Answer = r => MaintainerrFixture.Json(r, JsonSerializer.Serialize(new[] { Collection(7, true, 10, members.Take(2)), Collection(8, true, 10, members.Skip(3)) }));
+        var service = Service();
+        var config = Config(server.Url);
+
+        // The route is not there (404 for the first page): what the list embeds, and no failure.
+        Assert.True(await service.RefreshAsync(config, true, CancellationToken.None));
+        Assert.Null(service.Status(config).LastError);
+        Assert.Equal(3, service.Status(config).Items);
+        Assert.Equal(new[] { "/api/collections/media/7/content/1?size=500", "/api/collections/media/8/content/1?size=500" }, server.Paged);
+
+        // The pages leave out one embedded row (its metadata is gone), repeat the other and name a third member:
+        // all three are leaving. Pages without a single row leave the other collection's embedded member alone.
+        server.Page = (id, page, size, r) => MaintainerrFixture.Json(r, id == 7 ? PageOf(members.Take(3).ToArray(), page, size, lost: m => m == members[0]) : "{\"totalSize\":1,\"items\":[]}");
+        Assert.True(await service.RefreshAsync(config, true, CancellationToken.None));
+        Assert.Null(service.Status(config).LastError);
+        Assert.Equal((4, 4), (service.Status(config).Items, service.Status(config).Dated));
+        foreach (var member in members) Assert.Equal(new TagLeaving { DeleteAt = Added.AddDays(10).ToUnixTimeMilliseconds() }, service.Get(Guid.Parse(member.Id!), config));
+    }
+
+    [Fact]
+    public async Task A_page_that_fails_or_is_not_a_page_is_a_failed_refresh_that_keeps_the_last_good_answer()
+    {
+        using var server = new MaintainerrFixture();
+        using var receiver = new MaintainerrFixture();
+        var members = Members(600);
+        server.Answer = r => MaintainerrFixture.Json(r, JsonSerializer.Serialize(new[] { Collection(7, true, 10, members.Take(2)) }));
+        Func<int, int, HttpListenerResponse, Task> good = (page, size, r) => MaintainerrFixture.Json(r, PageOf(members, page, size));
+        var answer = good;
+        server.Page = (_, page, size, r) => answer(page, size, r);
+        var service = Service();
+        var config = Config(server.Url, key: "page-secret-key");
+        Assert.True(await service.RefreshAsync(config, true, CancellationToken.None));
+        Assert.Equal(600, service.Status(config).Items);
+        var lastSuccess = service.Status(config).LastSuccess;
+        var onPageTwo = Guid.Parse(members[550].Id!);
+
+        // The second page fails, is missing although the first was there, redirects, is not a page or is slow; or
+        // the first page is refused. None of them may shorten the list to the two members the list embeds.
+        Func<int, HttpListenerResponse, Task> Second(Func<HttpListenerResponse, Task> broken) => (page, r) => page == 2 ? broken(r) : good(page, 500, r);
+        var failures = new (string Error, Func<int, HttpListenerResponse, Task> Page)[]
+        {
+            ("HTTP 500", Second(r => MaintainerrFixture.Json(r, "{\"message\":\"boom\"}", 500))),
+            ("HTTP 404", Second(r => MaintainerrFixture.Json(r, "{\"statusCode\":404}", 404))),
+            ("redirected (redirects are not followed)", Second(r => { r.StatusCode = 302; r.RedirectLocation = receiver.Url + "/receive"; return Task.CompletedTask; })),
+            ("not a Maintainerr collections answer", Second(r => MaintainerrFixture.Json(r, "[]"))),
+            ("not a Maintainerr collections answer", Second(r => MaintainerrFixture.Json(r, "{\"totalSize\":600}"))),
+            ("not a Maintainerr collections answer", Second(r => MaintainerrFixture.Json(r, "{\"totalSize\":600,\"items\":{}}"))),
+            ("not a Maintainerr collections answer", Second(r => MaintainerrFixture.Json(r, string.Empty))),
+            ("not a Maintainerr collections answer", Second(r => MaintainerrFixture.Json(r, "<html>login</html>"))),
+            ("HTTP 401", (_, r) => MaintainerrFixture.Json(r, "{\"message\":\"Unauthorized\"}", 401)),
+            ("HTTP 500", (_, r) => MaintainerrFixture.Json(r, "{\"message\":\"boom\"}", 500)),
+            ("not a Maintainerr collections answer", (_, r) => MaintainerrFixture.Json(r, "[]")),
+            ("timed out", Second(async r => { await Task.Delay(2000); await MaintainerrFixture.Json(r, PageOf(members, 2, 500)); })),
+        };
+        foreach (var failure in failures)
+        {
+            answer = (page, _, r) => failure.Page(page, r);
+            service.Timeout = failure.Error == "timed out" ? TimeSpan.FromMilliseconds(400) : TimeSpan.FromSeconds(20);
+            Assert.False(await service.RefreshAsync(config, true, CancellationToken.None));
+            var s = service.Status(config);
+            Assert.Equal(failure.Error, s.LastError);
+            Assert.Equal((600, 600), (s.Items, s.Dated));
+            Assert.Equal(lastSuccess, s.LastSuccess);
+            Assert.NotNull(service.Get(onPageTwo, config));
+        }
+
+        // (The fixture answers one request at a time, so the next ones wait for the slow page to finish.)
+        service.Timeout = TimeSpan.FromSeconds(20);
+        Assert.Equal(0, receiver.Requests);
+        Assert.DoesNotContain("page-secret-key", File.ReadAllText(_core.Logger.CurrentLogFilePath));
+
+        // A total that is not a number does not end the paging early, and is no failure: an empty page ends it.
+        answer = (page, size, r) => MaintainerrFixture.Json(r, PageOf(members, page, size).Replace("\"totalSize\":600", "\"totalSize\":\"600\""));
+        server.Paged.Clear();
+        await service.RefreshAsync(config, true, CancellationToken.None);
+        Assert.Null(service.Status(config).LastError);
+        Assert.Equal(600, service.Status(config).Items);
+        Assert.Equal(3, server.Paged.Count);
+
+        // A refresh cancelled between pages records nothing.
+        var attempt = service.Status(config).LastAttempt;
+        var slow = Second(async r => { await Task.Delay(2000); await MaintainerrFixture.Json(r, "[]"); });
+        answer = (page, _, r) => slow(page, r);
+        using var cancel = new CancellationTokenSource(TimeSpan.FromMilliseconds(150));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => service.RefreshAsync(config, true, cancel.Token));
+        Assert.Equal(attempt, service.Status(config).LastAttempt);
+        Assert.Equal(600, service.Status(config).Items);
     }
 
     [Fact]
@@ -341,7 +545,7 @@ public sealed class LeavingSoonTests : IDisposable
 
         Assert.Equal(0, receiver.Requests);
         Assert.Equal(4, server.Requests);
-        Assert.All(server.Seen, s => Assert.Equal("/api/collections", s.Path));
+        Assert.All(server.Seen, s => Assert.StartsWith("/api/collections", s.Path));
         var log = File.ReadAllText(_core.Logger.CurrentLogFilePath);
         Assert.Single(System.Text.RegularExpressions.Regex.Matches(log, "redirect to host 'localhost'"));
         Assert.Contains("redirect to host '169.254.169.254'", log);

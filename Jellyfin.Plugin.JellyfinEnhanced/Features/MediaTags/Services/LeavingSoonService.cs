@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text;
@@ -23,8 +24,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
 {
     /// <summary>
     /// Leaving soon facts (Status group): which library items Maintainerr will delete and
-    /// when, from its REST API (<c>GET /api/collections</c>, <c>addDate + deleteAfterDays</c>
-    /// per item), and which items are in the administrator's leaving collections (existing
+    /// when, from its REST API (<c>GET /api/collections</c>, then every member of each active
+    /// collection page by page, <c>addDate + deleteAfterDays</c> per item), and which items
+    /// are in the administrator's leaving collections (existing
     /// Jellyfin collections by name, no date). A collection fact keeps which collections
     /// produced it (<see cref="TagLeaving.Collections"/>) and is only served to a user who
     /// can access one of them (<see cref="Visible"/>), as collection-matched custom badges
@@ -353,10 +355,65 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
             _ => "request failed",
         };
 
+        /// <summary>How many members one page of a collection is asked for.</summary>
+        private const int PageSize = 500;
+        /// <summary>Most pages read per collection (20,000 members).</summary>
+        private const int MaxMemberPages = 40;
+
         private async Task<Dictionary<string, long?>> FetchMaintainerrAsync(PluginConfiguration config, CancellationToken token)
         {
             var baseUrl = config.LeavingSoonMaintainerrUrl.Trim().TrimEnd('/');
-            var url = baseUrl + "/api/collections";
+            using var document = await GetJsonAsync(config, baseUrl + "/api/collections", token).ConfigureAwait(false);
+
+            // /api/collections embeds only a few members per collection; the paged route has all of them.
+            var pages = new Dictionary<int, List<JsonDocument>>();
+            try
+            {
+                foreach (var id in PagedCollections(document.RootElement))
+                {
+                    if (pages.ContainsKey(id)) continue;
+                    var fetched = new List<JsonDocument>();
+                    pages[id] = fetched;
+                    for (var page = 1; page <= MaxMemberPages; page++)
+                    {
+                        JsonDocument doc;
+                        try
+                        {
+                            doc = await GetJsonAsync(config, baseUrl + "/api/collections/media/" + id.ToString(CultureInfo.InvariantCulture) + "/content/" + page.ToString(CultureInfo.InvariantCulture) + "?size=" + PageSize.ToString(CultureInfo.InvariantCulture), token).ConfigureAwait(false);
+                        }
+                        catch (HttpRequestException ex) when (page == 1 && ex.StatusCode == HttpStatusCode.NotFound)
+                        {
+                            // A Maintainerr without the paged route: the embedded list is all there is for this collection.
+                            break;
+                        }
+
+                        fetched.Add(doc);
+                        // Any other failure, and an answer that is not a page, fails the refresh, which keeps the
+                        // previous answer: carrying on with the members read so far would untag the others.
+                        var root = doc.RootElement;
+                        if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array) throw new JsonException("Not a page of collection members");
+                        // Rows whose media-server metadata is gone are dropped from a page, so a short page is not the last one: stop on totalSize or an empty page.
+                        if (items.GetArrayLength() == 0) break;
+                        if (root.TryGetProperty("totalSize", out var total) && total.ValueKind == JsonValueKind.Number && total.TryGetInt64(out var totalSize) && (long)page * PageSize >= totalSize) break;
+                    }
+                }
+
+                var parsed = ParseCollections(document.RootElement, Now(), id =>
+                    pages.TryGetValue(id, out var docs) ? docs.SelectMany(d => d.RootElement.GetProperty("items").EnumerateArray()).ToList() : null);
+                return ToItems(parsed, TmdbLookup);
+            }
+            finally
+            {
+                foreach (var d in pages.Values.SelectMany(x => x)) d.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// One guarded GET of a Maintainerr address, as JSON: the address guard, the key header, the timeout,
+        /// no redirect followed and at most <see cref="MaxResponseBytes"/> read. Anything else throws.
+        /// </summary>
+        private async Task<JsonDocument> GetJsonAsync(PluginConfiguration config, string url, CancellationToken token)
+        {
             if (!await Shared.Arr.ArrUrlGuard.IsAllowedUrlAsync(url, token).ConfigureAwait(false)) throw new UnauthorizedAccessException();
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
             timeout.CancelAfter(Timeout);
@@ -387,9 +444,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
                 buffer.Write(chunk, 0, read);
             }
 
-            using var document = JsonDocument.Parse(buffer.ToArray());
-            var parsed = ParseCollections(document.RootElement, Now());
-            return ToItems(parsed, TmdbLookup);
+            return JsonDocument.Parse(buffer.ToArray());
         }
 
         /// <summary>A computed delete time too far from now to be real (and possibly beyond what a renderer can show).</summary>
@@ -432,21 +487,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
         /// with members but none usable, is refused with <see cref="JsonException"/> (so the
         /// last good answer stays), as is any other shape. A delete time more than
         /// <see cref="MaxDateDistanceMs"/> from <paramref name="now"/> refuses the answer with
-        /// <see cref="DateRangeException"/>.
+        /// <see cref="DateRangeException"/>. <paramref name="fullMedia"/> gives the members the
+        /// paged route listed for a collection id (null when it was not asked); they are read
+        /// like the embedded ones and add to them.
         /// </summary>
-        internal static IReadOnlyList<MaintainerrMember> ParseCollections(JsonElement root, DateTimeOffset? now = null)
+        internal static IReadOnlyList<MaintainerrMember> ParseCollections(JsonElement root, DateTimeOffset? now = null, Func<int, IReadOnlyList<JsonElement>?>? fullMedia = null)
         {
             var nowMs = (now ?? DateTimeOffset.UtcNow).ToUnixTimeMilliseconds();
-            var collections = root;
-            if (root.ValueKind == JsonValueKind.Object)
-            {
-                collections = default;
-                foreach (var name in new[] { "data", "items", "collections", "results" })
-                {
-                    if (root.TryGetProperty(name, out var inner) && inner.ValueKind == JsonValueKind.Array) { collections = inner; break; }
-                }
-            }
-
+            var collections = CollectionList(root);
             if (collections.ValueKind != JsonValueKind.Array) throw new JsonException("Expected a list of collections");
             var members = new List<MaintainerrMember>();
             int entries = 0, recognised = 0, listed = 0;
@@ -464,8 +512,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
                     if (collection.TryGetProperty(name, out var m) && m.ValueKind == JsonValueKind.Array) { media = m; break; }
                 }
 
-                if (media.ValueKind != JsonValueKind.Array) continue;
-                foreach (var item in media.EnumerateArray())
+                IEnumerable<JsonElement> mediaItems = media.ValueKind == JsonValueKind.Array ? media.EnumerateArray() : Enumerable.Empty<JsonElement>();
+                // The pages add to the embedded list: a row a page left out (its media-server metadata is gone) is still a member.
+                if (fullMedia != null && TryCollectionId(collection, out var collectionId) && fullMedia(collectionId) is { } full) mediaItems = mediaItems.Concat(full);
+                foreach (var item in mediaItems)
                 {
                     listed++;
                     if (item.ValueKind != JsonValueKind.Object) continue;
@@ -499,6 +549,37 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
             if (entries > 0 && recognised == 0) throw new JsonException("No Maintainerr collection in the answer");
             if (listed > 0 && members.Count == 0) throw new JsonException("No usable collection member in the answer");
             return members;
+        }
+
+        /// <summary>The answer's list of collections: the root array, or the one an object wraps in <c>data</c>, <c>items</c>, <c>collections</c> or <c>results</c> (else not an array).</summary>
+        private static JsonElement CollectionList(JsonElement root)
+        {
+            if (root.ValueKind != JsonValueKind.Object) return root;
+            foreach (var name in new[] { "data", "items", "collections", "results" })
+            {
+                if (root.TryGetProperty(name, out var inner) && inner.ValueKind == JsonValueKind.Array) return inner;
+            }
+
+            return default;
+        }
+
+        /// <summary>A collection's id for the paged route: a whole number (any other id has no pages to ask for).</summary>
+        private static bool TryCollectionId(JsonElement collection, out int id)
+        {
+            id = 0;
+            return collection.TryGetProperty("id", out var value) && value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out id);
+        }
+
+        /// <summary>The ids to ask the paged route with: the list's active collections that have one.</summary>
+        private static IEnumerable<int> PagedCollections(JsonElement root)
+        {
+            var collections = CollectionList(root);
+            if (collections.ValueKind != JsonValueKind.Array) yield break;
+            foreach (var collection in collections.EnumerateArray())
+            {
+                if (!IsCollection(collection) || (collection.TryGetProperty("isActive", out var active) && active.ValueKind == JsonValueKind.False)) continue;
+                if (TryCollectionId(collection, out var id)) yield return id;
+            }
         }
 
         /// <summary>A Maintainerr collection: an object with its media list, its active flag or its delete delay.</summary>

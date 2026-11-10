@@ -841,6 +841,58 @@
       ],
       "notes": "Native: the C# files moved, they were not rewritten, so upstream’s hunks apply at Features/MediaTags/PosterTags/{NativePosterTagStamper,PosterTagComposer,PosterTagImageFilter,PosterTagVariantToken}.cs and Shared/MediaTags/PosterTags/Resolution/StatusRules.cs, and its hunks to PosterTokenTests.cs and ScoreNumbersTests.cs at tests/backend/Features/MediaTags/PosterTags/. Web: upstream edits js/tags/statustags.js; here the played-check read is a function beside the other Status facts (watchedAll in types/status/status-facts.ts) that statustags.ts calls, with the card handed to pickBadge from its two callers, because statustags.ts is frozen at its recorded size (1,454 lines): its changed lines replace lines and the comment above the rule is rewritten in two lines instead of three to make room for the parameter’s doc line. Differences from upstream: (1) docs/enhanced/tags.md: upstream’s added clause is put into this tree’s New Episode row, whose second sentence already differs from upstream’s (an episode that was only added recently shows Just Added here). (2) Upstream’s web test is applied by hand at tests/frontend/features/media-tags/features-status-tags-finale-parity.test.mjs (the file ends differently here), and its helper takes the id of one card to mark as played as well as true. (3) Tests added to upstream’s three: a fully watched season and “only the card’s own played check counts” on the web; the WatchedAll bit round-tripping in the token like the other two; the stamper setting it only on the own poster of an item whose DTO says Played (never on a series image an episode card borrows, never without user data); and one through the image filter and composer showing that a viewer who has watched all of a series and one who has not each get their own composed poster, in either order. The access question (per-viewer state in a cached picture): the bit travels in the viewer’s own image address (the token is bound to user and item), and the composed-poster cache key carries the badge that was drawn, so the two pictures are separate entries; no check is loosened. No version constant is bumped, as upstream: the rule only changes for a token that carries the new bit, which no earlier address has, and tokens with the bit are refused by older builds’ parser as an unknown format. The native side has no lab check (the lab’s clients are web; it is covered by the tests above); the web side is checked against upstream’s build. No setting, route, authorization or registration changes; the tag-cache schema is unchanged.",
       "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p27-new-episode-watched.*"
+    },
+    {
+      "sha": "20291fc4b2140997b31c0e03bd0154f7d5048bd7",
+      "date": "2026-11-10T20:21:32+00:00",
+      "subject": "fix(activity): use a real Material icon for User created",
+      "class": "fix",
+      "features": [
+        "activity"
+      ],
+      "issues": [],
+      "release": null,
+      "size": {
+        "files": 1,
+        "insertions": 14,
+        "deletions": 14
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/js/extras/colored-activity-icons.js"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "27898826da9f1902e2f01f7421a6ef97a730ea96"
+      ],
+      "notes": "Upstream edits the hand-written js/extras/colored-activity-icons.js; here the same fourteen lines change in the TypeScript that file is built from (client/src/features/activity/colored-activity-icons.ts: the “User created” rule of each of the map’s fourteen languages names person_add instead of plus) and the built files are regenerated. No difference from upstream. Upstream’s commit has no tests: one is added (tests/frontend/pages/pages-social-rewrite.test.mjs: a “User … has been created” entry in each of the fourteen languages, through the script’s real entry initializeActivityIcons, gets person_add and the rule’s colour). The map’s other fourteen icon names are Material Icons names and each draws a glyph in the lab’s web client. No setting, route, authorization or registration changes; nothing stored or cached changes.",
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p28-user-created-icon.*"
+    },
+    {
+      "sha": "53ebf043c189878ecf04bdf1a39edacf0a3bdaa0",
+      "date": "2026-11-10T21:43:52+00:00",
+      "subject": "fix(leaving-soon): page through every Maintainerr collection member",
+      "class": "fix",
+      "features": [
+        "media-tags"
+      ],
+      "issues": [
+        "#1040"
+      ],
+      "release": null,
+      "size": {
+        "files": 1,
+        "insertions": 66,
+        "deletions": 7
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/LeavingSoonService.cs"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "cf86e1646f768d5e3a29cf30754db84b88abadd9"
+      ],
+      "notes": "The C# file moved, it was not rewritten: upstream’s hunks to Services/LeavingSoonService.cs apply at Features/MediaTags/Services/LeavingSoonService.cs (the guard is Shared.Arr.ArrUrlGuard here) and are then changed. Kept from upstream: GetJsonAsync (one guarded GET: address guard, key header, 30-second timeout, no redirect followed, 16 MiB), the request GET /api/collections/media/{id}/content/{page}?size=500 for each active collection with a numeric id, at most 40 pages, the stop rule (page × 500 reaches totalSize, or a page without rows; a short page is not the last) and ParseCollections’ third parameter. Differences from upstream: (1) a failed page fails the refresh. Upstream catches every failure of a collection’s paging except a cancellation and falls back to the few embedded members without recording a failure, so one failed page takes the badge off the rest (on upstream’s build on the lab, 971 members: the second page of one collection answers HTTP 500 once and the status reads 353 items, no failure). Here only a 404 for a collection’s first page (a Maintainerr without the route) falls back to its embedded members; any other failure is the refresh’s failure, which keeps the previous answer and retries with the existing delays (the same run on the port: 971 items kept, last failure “HTTP 500”). (2) An answer of the paged route that is not an object with an items array is refused (“not a Maintainerr collections answer”); upstream reads it as a collection without members. (3) The paged members add to the embedded ones, they do not replace them: Maintainerr leaves a row out of a page when it cannot read that row’s metadata, so a member the list itself names stays one (on upstream’s build a page answered as {totalSize: 351, items: []} takes the badge off all 351 movies, the two the list embeds included; here those two keep it). (4) An id that is not a number: upstream calls TryGetInt32 on it, which throws for a string, so a list with such a collection fails the whole refresh (“request failed”) where the code before read its embedded members; here that collection is read from its embedded members and not asked for pages. totalSize has the same guard. (5) Only entries the parser recognises as collections are asked for pages, each id once, and the list’s unwrapping (data/items/collections/results) is one function for the parser and the paging, where upstream repeats it. (6) docs/enhanced/tags.md and docs/advanced/api.md describe the paged requests and their failure rule; upstream’s commit changes no docs. (7) Tests. Upstream’s commit has none and leaves its own LeavingSoonTests failing (9 of 47 at 53ebf043, run here: its fixture answers the collections list on every path, which the new code reads as a collection without members). Here the fixture gets the paged route (404 unless a test sets it) and three tests are added, all through RefreshAsync against the fixture server: 1,100 members over three pages with a short page, a collection answered without totalSize, an inactive one never asked for, ids that are missing or not numbers, the key and base path on every request; the pages adding to the embedded members, and the 404 fallback; twelve ways a page can fail or not be one, each keeping the last good answer with its reason and reaching no other host, a totalSize that is not a number, and a cancellation between pages. Two existing expectations change because a refresh now asks for pages too (the key test lists both requests; the redirect test’s “every request went to /api/collections” becomes a prefix check), and the fixture’s Requests counts the list requests, so the refresh-count assertions stand as they were. Kept from upstream as it is: members beyond 20,000 per collection are not read; a row that a page leaves out and the list does not embed is not a member; when a page comes back without rows, the members the list does not embed lose their badge until the next refresh. The access question: the new requests go only to the administrator’s configured Maintainerr origin, through the same guard, with the same key header, never following a redirect; nothing a user can read changes shape. No setting, route, authorization or registration changes; the snapshot layout and the tag-cache schema are unchanged.",
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p29-*"
     }
   ]
 }
