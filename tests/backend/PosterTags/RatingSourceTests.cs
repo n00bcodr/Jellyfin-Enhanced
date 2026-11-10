@@ -21,6 +21,25 @@ namespace JE.Tests;
 public class RatingSourceTests
 {
     [Fact]
+    public void AnimeAndCriticSourcesMapFromMdblistInTheirNativeUnits()
+    {
+        MdblistRatingSource R(string id, double score) => new() { Source = id, Score = score };
+        var entry = new MdblistCacheEntry
+        {
+            Found = true,
+            Ratings = [R("myanimelist", 84), R("anilist", 82), R("metacriticuser", 79), R("rogerebert", 87.5), R("master", 78)],
+        };
+        var ratings = TagSourceRatings.FromMdblist(entry)!;
+        Assert.Equal(8.4, ratings.Get("myAnimeList")!.Value, 3);
+        Assert.Equal(82, ratings.Get("aniList")!.Value, 3);
+        Assert.Equal(7.9, ratings.Get("metacriticUser")!.Value, 3);
+        Assert.Equal(3.5, ratings.Get("rogerEbert")!.Value, 3);
+        Assert.Equal(78, ratings.Get("mdblist")!.Value, 3);
+        foreach (var id in new[] { "myAnimeList", "aniList", "metacriticUser", "rogerEbert", "mdblist" })
+            Assert.Contains(id, RatingSourceSettings.SourceIds);
+    }
+
+    [Fact]
     public void MapsNormalizedAndRawNativeValuesWithoutInventingMissingScores()
     {
         var entry = new MdblistCacheEntry { Found = true, Ratings = [

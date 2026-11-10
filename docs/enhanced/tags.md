@@ -739,7 +739,7 @@ Admin settings below are under **Display**; the row's default is in **UI Prefere
 
 ## Rating Tags
 
-Rating Tags show an ordered selection of Community, Critic, IMDb, TMDb, Rotten Tomatoes critic and audience, Metacritic, Letterboxd and Trakt scores. Each named source has a bundled logo. Choose which item types and home rows show them. The scores come from the server tag cache, which the **Fetch Ratings from MDBList** task refreshes after each run, so a source appears once that task has covered a title.
+Rating Tags show an ordered selection of Community, Critic, IMDb, TMDb, Rotten Tomatoes critic and audience, Metacritic, Metacritic user, Letterboxd, Trakt, MyAnimeList, AniList, Roger Ebert and MDBList scores. Each named source has a bundled logo. MyAnimeList and AniList only have scores for anime, and Roger Ebert's only for films he reviewed, so on other titles those chips simply do not appear. Choose which item types and home rows show them. The scores come from the server tag cache, which the **Fetch Ratings from MDBList** task refreshes after each run, so a source appears once that task has covered a title.
 
 ![Numeric community, critic and average user rating chips](../images/tags/rating-tags.webp)
 
@@ -785,6 +785,11 @@ Named sources use the server's existing MDBList service when its API key is conf
 | Metacritic | 74 | /100 |
 | Letterboxd | 4.1 | /5 |
 | Trakt | 85% | /100 |
+| Metacritic user | 7.9 | /10 |
+| MyAnimeList | 8.4 | /10 |
+| AniList | 82% | /100 |
+| Roger Ebert | 3.5 | /4 |
+| MDBList | 78% | /100 |
 
 Scores are written the way your language writes numbers: `8,1` in German or French, Arabic-Indic or Persian digits where the locale uses them (the language Jellyfin Enhanced's text follows; native posters use the language saved with your web settings, the same one their dates use). Units stay as they are (`%`, no space). Existing users retain their old Community/Critic include choices and order until they edit sources. New users take the administrator's defaults. Named sources have individual labels in **Tag Styles** and `data-je-rating-source` hooks for custom CSS.
 
