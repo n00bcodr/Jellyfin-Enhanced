@@ -43,6 +43,11 @@ public class ApiCdnRefreshTests
         Assert.Equal(calls, transport.Calls);
     }
 
+    // Upstream 189a0a26: the Services tab's Maintainerr card draws this logo through the CDN route.
+    [Fact]
+    public void TheMaintainerrCardLogoIsKeptWarmWithTheOtherServiceLogos()
+        => Assert.Contains(("selfhst", "svg/maintainerr.svg"), CdnAssetService.KnownAssets);
+
     [Fact]
     public async Task RefreshPropagatesCallerCancellationWithoutReportingSuccess()
     {

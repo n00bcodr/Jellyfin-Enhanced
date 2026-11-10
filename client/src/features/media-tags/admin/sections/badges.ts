@@ -225,8 +225,8 @@ installSection((A, JE) => {
         title: 'Leaving soon',
         hint: 'Where the Leaving soon badge comes from: Maintainerr\'s collections (with the day each item goes), or existing Jellyfin collections by name (no date).',
         fields: [
-            { id: 'leavingSoonMaintainerrUrl', key: 'LeavingSoonMaintainerrUrl', type: 'text', placeholder: 'http://maintainerr:6246', pattern: 'https?://[^\\s?#]+', label: 'Maintainerr URL', desc: 'The address this server reaches Maintainerr at. Empty uses only the collection names.' },
-            { id: 'leavingSoonMaintainerrApiKey', key: 'LeavingSoonMaintainerrApiKey', type: 'text', secret: true, label: 'Maintainerr API key', desc: 'Optional. Kept on the server like the other keys and never sent to users.' },
+            { id: 'leavingSoonMaintainerrUrl', key: 'LeavingSoonMaintainerrUrl', type: 'text', wide: true, placeholder: 'http://maintainerr:6246', pattern: 'https?://[^\\s?#]+', label: 'Maintainerr URL', desc: 'The address this server reaches Maintainerr at. Empty uses only the collection names.' },
+            { id: 'leavingSoonMaintainerrApiKey', key: 'LeavingSoonMaintainerrApiKey', type: 'text', wide: true, mask: true, label: 'Maintainerr API key', desc: 'Optional. Only needed if Maintainerr has an API key set.' },
             { id: 'leavingSoonCollections', key: 'LeavingSoonCollections', type: 'textarea', rows: 3, placeholder: 'Leaving Soon', label: 'Leaving collections', desc: 'Existing collection names, one per line, whose items count as leaving soon (for setups without the API). Up to 20.' },
             { id: 'leavingSoonRefreshHours', key: 'LeavingSoonRefreshHours', type: 'number', min: 1, max: 168, fallback: 6, unit: 'hours', label: 'Refresh every', desc: 'How often the server reads the source again (1–168 hours). A failed request is retried sooner.', read: (v) => Number(v) || 6 },
         ],

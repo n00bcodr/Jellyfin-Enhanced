@@ -503,6 +503,47 @@
         "d25914be38373281eba145830d5fda0a68180201"
       ],
       "notes": "The same badge changes. The three test-count badges carry this tree’s counts (699 browser, 3.3k backend, 3.9k frontend) instead of upstream’s, and the 10.11 download badge is not here because the rewrite’s README has none."
+    },
+    {
+      "sha": "189a0a26d2e9e84afab63bdd48f07b08183a6148",
+      "date": "2026-11-10T15:14:15+00:00",
+      "subject": "feat(leaving-soon): show the Maintainerr key like the TMDB key, add a Maintainerr card and wider URL fields",
+      "class": "feature",
+      "features": [
+        "media-tags",
+        "admin",
+        "platform"
+      ],
+      "issues": [],
+      "release": null,
+      "size": {
+        "files": 15,
+        "insertions": 60,
+        "deletions": 34
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/admin/sections.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/configPage.html",
+        "Jellyfin.Plugin.JellyfinEnhanced/Helpers/MediaTagsPortable.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Helpers/PluginConfigurationPatch.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/CdnAssetService.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/admin-tags.css",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/admin-tags.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/sections/awards.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/sections/badges.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/sections/language.js",
+        "docs/advanced/admin-media-tags.md",
+        "docs/advanced/api.md",
+        "tests/backend/Api/ApiMediaTagsPageTests.cs",
+        "tests/frontend/features/features-admin-tags-page-colours-status.test.mjs",
+        "tests/frontend/helpers/admin-tags-page.mjs"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "47c7e3cd886c86dfecd52b633e91f2cce87de053"
+      ],
+      "notes": "The C# hunks apply at the rewrite’s paths (Shared/MediaTags/PluginConfigurationPatch.cs and MediaTagsPortable.cs, Features/Platform/Services/CdnAssetService.cs) and the stylesheet as is (js/enhanced/admintags/admin-tags.css is hand-written here too). Re-implemented in TypeScript: the `wide` and `mask` field options (features/media-tags/admin/types.ts and fields.ts), the five field declarations (sections/awards.ts, badges.ts, language.ts), and the Maintainerr card (admin/config/sections/about.ts, with its placeholder in client/html/admin-config/configPage.html). Differences from upstream: docs/enhanced/tags.md carries the same paragraph as the two advanced pages and upstream left it describing a write-only password field, so it is corrected here as well (found bug filed); three tests are added for what upstream left untested (the wide boxes and the stylesheet rules, the Services card, the logo in the CDN prefetch list); tests/fixtures/admin-config-baseline.json gains the `svc-maintainerr` section, as docs/rewrite/admin-config.md prescribes for a schema change. The card has no setting of its own, so the What’s New index is unchanged. No route, authorization or registration changes.",
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p18-maintainerr-key.*"
     }
   ]
 }

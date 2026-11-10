@@ -49,8 +49,8 @@ installSection((A) => {
             { id: 'awardsTagsOscar', key: 'AwardsTagsOscar', type: 'switch', label: 'Oscar winners' },
             { id: 'awardsTagsEmmy', key: 'AwardsTagsEmmy', type: 'switch', label: 'Emmy winners' },
             { id: 'awardsTagsLetterboxd', key: 'AwardsTagsLetterboxd', type: 'switch', label: 'Letterboxd Top 250' },
-            { id: 'awardsTagsImdbList', key: 'AwardsTagsImdbList', type: 'text', pattern: '(?:[1-9][0-9]{0,17}|[a-zA-Z0-9_\\-]{1,80}/[a-zA-Z0-9_\\-]{1,160})', label: 'IMDb Top 250 list (MDBList id or owner/slug)', desc: 'An MDBList list, not an IMDb link. Find one at mdblist.com/lists; its items must be in rank order, number 1 first.' },
-            { id: 'awardsTagsLetterboxdList', key: 'AwardsTagsLetterboxdList', type: 'text', pattern: '(?:[1-9][0-9]{0,17}|[a-zA-Z0-9_\\-]{1,80}/[a-zA-Z0-9_\\-]{1,160})', label: 'Letterboxd Top 250 list (MDBList id or owner/slug)', desc: 'An MDBList list, not a Letterboxd link, in rank order.' },
+            { id: 'awardsTagsImdbList', key: 'AwardsTagsImdbList', type: 'text', wide: true, pattern: '(?:[1-9][0-9]{0,17}|[a-zA-Z0-9_\\-]{1,80}/[a-zA-Z0-9_\\-]{1,160})', label: 'IMDb Top 250 list (MDBList id or owner/slug)', desc: 'An MDBList list, not an IMDb link. Find one at mdblist.com/lists; its items must be in rank order, number 1 first.' },
+            { id: 'awardsTagsLetterboxdList', key: 'AwardsTagsLetterboxdList', type: 'text', wide: true, pattern: '(?:[1-9][0-9]{0,17}|[a-zA-Z0-9_\\-]{1,80}/[a-zA-Z0-9_\\-]{1,160})', label: 'Letterboxd Top 250 list (MDBList id or owner/slug)', desc: 'An MDBList list, not a Letterboxd link, in rank order.' },
             { id: 'awardsTagsRefreshHours', key: 'AwardsTagsRefreshHours', type: 'number', label: 'Refresh cadence (hours)', min: 1, max: 168, fallback: 24 },
         ],
         // What the group depends on, and whether it has been fetched yet (nothing shows until the first refresh has run).

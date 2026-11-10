@@ -770,3 +770,17 @@ test('the Custom Tabs copy snippets escape their quotes in the markup and still 
     assert.equal(button.parentElement.querySelector('code').textContent, button.dataset.copyText);
   }
 });
+
+// Upstream 189a0a26: Maintainerr's address and key are fields of the Media Tags tab, so its Services card only explains and links.
+test('the Services tab has a Maintainerr card that says what it is for and links to the Leaving soon fields', async t => {
+  const h = await loadedPage(t);
+  const cards = [...h.document.querySelectorAll('#services fieldset.jea-section')];
+  assert.deepEqual(cards.map(c => c.querySelector('legend').textContent.trim()), ['TMDB', 'AniList', 'MDBList Ratings', 'Content Warnings (DoesTheDogDie)', 'Maintainerr']);
+  const card = cards.at(-1);
+  assert.equal(card.querySelector('legend img').getAttribute('data-je-cdn'), 'selfhst/svg/maintainerr.svg');
+  assert.match(card.querySelector('.jea-note').textContent, /^Maintainerr is only used to show how many days are left before an item leaves, on the Leaving soon media tag\./);
+  const link = card.querySelector('a.jea-btn');
+  assert.equal(link.getAttribute('href'), '#/configurationpage?name=Jellyfin%20Enhanced&jeSection=media-tags&tab=badges');
+  assert.equal(link.textContent.replace('sell', '').trim(), 'Set up Leaving soon');
+  assert.equal(card.querySelectorAll('input, select, textarea, button').length, 0, 'nothing here is a setting: the fields live on the Media Tags tab');
+});

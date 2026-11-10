@@ -4,7 +4,7 @@
 
 What the rewrite has taken from [upstream](https://github.com/n00bcodr/Jellyfin-Enhanced) (`main`) since it branched at `2e0f9251bf`. The source of truth is [`upstream-sync.json`](upstream-sync.json); the procedure is [upstream-sync-procedure.md](upstream-sync-procedure.md).
 
-17 upstream commits: 17 ported.
+18 upstream commits: 18 ported.
 
 | # | Upstream | Date | Class | Features | Subject | Status | Rewrite commit | Note |
 |---|---|---|---|---|---|---|---|---|
@@ -25,3 +25,4 @@ What the rewrite has taken from [upstream](https://github.com/n00bcodr/Jellyfin-
 | 15 | [`19cfe99a`](https://github.com/n00bcodr/Jellyfin-Enhanced/commit/19cfe99a152195482d0bd95598f490e155e9810c) | 2026-11-10 | security | admin, details-providers, player | ci: Fix/code scanning alerts (#1036) | ported | `1f60ffd2` | artifacts/restructure-plan/step-logs/upstream-sync-evidence/p9-code-scanning.tests-before.txt |
 | 16 | [`b1919a25`](https://github.com/n00bcodr/Jellyfin-Enhanced/commit/b1919a258b327d2b2f6b541ed8434b523c100a30) | 2026-11-10 | ci |  | ci(regression): run the browser suite as one parallel job per Playwright project | ported | `5b002a30` | The same job matrix (one job per Playwright project, each installing only its browser) and `tests/run.py --project`. The rewrite’s runner keeps its jf12-only `--target`; a tooling test for the new option is added. |
 | 17 | [`0586df79`](https://github.com/n00bcodr/Jellyfin-Enhanced/commit/0586df7979b3d1f400357ba6efd4b1c2f61735fa) | 2026-11-10 | docs |  | docs(readme): add test badges and icons, recolor badge row | ported | `d25914be` | The same badge changes. The three test-count badges carry this tree’s counts (699 browser, 3.3k backend, 3.9k frontend) instead of upstream’s, and the 10.11 download badge is not here because the rewrite’s README has none. |
+| 18 | [`189a0a26`](https://github.com/n00bcodr/Jellyfin-Enhanced/commit/189a0a26d2e9e84afab63bdd48f07b08183a6148) | 2026-11-10 | feature | media-tags, admin, platform | feat(leaving-soon): show the Maintainerr key like the TMDB key, add a Maintainerr card and wider URL fields | ported | `47c7e3cd` | artifacts/restructure-plan/step-logs/upstream-sync-evidence/p18-maintainerr-key.* |

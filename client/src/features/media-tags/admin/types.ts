@@ -41,6 +41,10 @@ export interface FieldDef {
     rows?: number | undefined;
     /** Never shown or sent as Expected (an API key). */
     secret?: boolean | undefined;
+    /** A text field for a long value (a URL, a key, a list): the box keeps its full width. */
+    wide?: boolean | undefined;
+    /** A text field for a key: dots until hovered or focused, without type="password" (browsers would offer to save it). */
+    mask?: boolean | undefined;
     master?: boolean | undefined;
     /** The section draws it with fieldHtml; the page still binds it. */
     place?: 'section' | undefined;

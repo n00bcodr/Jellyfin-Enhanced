@@ -120,20 +120,20 @@ public class ApiMediaTagsPageTests
     };
 
     [Fact]
-    public void MaintainerrKeyIsWriteOnlyInPagePatchIncludingStaleExpectedValues()
+    public void MaintainerrKeyIsShownAndConflictCheckedLikeTheTmdbKey()
     {
         using var f = new ApiPluginFixture();
         var (controller, _) = PatchController(f);
-        f.Plugin.Configuration.LeavingSoonMaintainerrApiKey = "old-key-canary";
+        f.Plugin.Configuration.LeavingSoonMaintainerrApiKey = "old-key";
         var result = Assert.IsType<OkObjectResult>(controller.PatchConfiguration(Patch(
-            new { LeavingSoonMaintainerrApiKey = "new-key-canary" }, new { LeavingSoonMaintainerrApiKey = "" })));
-        Assert.Equal("new-key-canary", f.Plugin.Configuration.LeavingSoonMaintainerrApiKey);
-        Assert.Equal("{\"values\":{\"LeavingSoonMaintainerrApiKey\":\"\"}}", StjSerializer.Serialize(result.Value));
-        var conflict = Assert.IsType<ConflictObjectResult>(controller.PatchConfiguration(Patch(
-            new { LeavingSoonMaintainerrApiKey = "next-key-canary", TagGap = "roomy" },
-            new { LeavingSoonMaintainerrApiKey = "", TagGap = "tight" })));
-        Assert.DoesNotContain("key-canary", StjSerializer.Serialize(conflict.Value));
-        Assert.Equal("new-key-canary", f.Plugin.Configuration.LeavingSoonMaintainerrApiKey);
+            new { LeavingSoonMaintainerrApiKey = "new-key" }, new { LeavingSoonMaintainerrApiKey = "old-key" })));
+        Assert.Equal("new-key", f.Plugin.Configuration.LeavingSoonMaintainerrApiKey);
+        Assert.Equal("{\"values\":{\"LeavingSoonMaintainerrApiKey\":\"new-key\"}}", StjSerializer.Serialize(result.Value));
+        // Another administrator changed it meanwhile: a stale save conflicts and leaves the stored key alone.
+        Assert.IsType<ConflictObjectResult>(controller.PatchConfiguration(Patch(
+            new { LeavingSoonMaintainerrApiKey = "next-key", TagGap = "roomy" },
+            new { LeavingSoonMaintainerrApiKey = "old-key", TagGap = "tight" })));
+        Assert.Equal("new-key", f.Plugin.Configuration.LeavingSoonMaintainerrApiKey);
     }
 
     [Fact]

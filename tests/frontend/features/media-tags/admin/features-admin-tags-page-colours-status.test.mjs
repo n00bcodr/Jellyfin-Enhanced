@@ -43,17 +43,18 @@ test('Status badges: family switches and windows (clamped to 1-365)', async t =>
   assert.equal(h.$('#statusTagsJustAddedDays').value, '365');
 });
 
-test('Status badges › Leaving soon: source fields save, the key is a password field, and Refresh saves first then asks the server', async t => {
+test('Status badges › Leaving soon: source fields save, the key shows like the TMDB key, and Refresh saves first then asks the server', async t => {
   const status = { Configured: true, Maintainerr: true, Collections: 1, CollectionsFound: 1, Items: 4, Dated: 3, LastSuccess: Date.UTC(2026, 9, 30, 9), NextRefresh: Date.UTC(2026, 9, 30, 15), LastError: null };
   const h = setup(t, { config: { LeavingSoonCollections: 'Leaving Soon', LeavingSoonMaintainerrApiKey: 'stored-key-canary' }, routes: { '/admin/leaving-soon': () => status } });
   await h.settle(); await h.settle();
   assert.equal(h.$('[data-leaving-state]').textContent, 'Up to date');
   assert.match(h.$('[data-leaving-detail]').textContent, /^4 items leaving \(3 with a date\) · .* · 1 of 1 collections found$/);
   const key = h.$('#leavingSoonMaintainerrApiKey');
-  assert.equal(key.type, 'password');
-  assert.equal(key.value, '');
-  assert.ok(!h.document.body.innerHTML.includes('stored-key-canary'));
-  assert.equal(key.getAttribute('autocomplete'), 'new-password');
+  assert.equal(key.type, 'text', 'a plain field, like the TMDB key');
+  assert.ok(key.classList.contains('je-ta-masked'), 'shown as dots until hovered or focused, like the TMDB key');
+  assert.equal(key.getAttribute('autocomplete'), 'off');
+  assert.equal(key.getAttribute('class'), 'je-ta-masked', 'one class attribute');
+  assert.equal(key.value, 'stored-key-canary', 'the stored key is shown');
   h.change(h.$('#leavingSoonMaintainerrUrl'), ' http://maintainerr:6246 ');
   h.change(key, 'abc123');
   h.change(h.$('#leavingSoonCollections'), 'Leaving Soon\nGone Next Week');
@@ -69,10 +70,9 @@ test('Status badges › Leaving soon: source fields save, the key is a password 
   assert.equal(h.server.LeavingSoonRefreshHours, 168);
   assert.equal(h.server.StatusTagsLeaving, true);
   assert.equal(h.server.StatusTagsDirectPlay, true);
-  assert.equal(key.value, '');
-  assert.ok(!('LeavingSoonMaintainerrApiKey' in h.patches.find(p => p.Changes.LeavingSoonMaintainerrApiKey).Expected));
-  h.ctx.reload({ ...h.server, LeavingSoonMaintainerrApiKey: 'another-stored-canary' });
-  assert.equal(key.value, '');
+  assert.equal(key.value, 'abc123', 'what was typed stays in the box after the save');
+  h.ctx.reload({ ...h.server, LeavingSoonMaintainerrApiKey: 'another-stored-key' });
+  assert.equal(key.value, 'another-stored-key', 'a reload shows what the server stored');
   assert.deepEqual(h.posts.filter((p) => p.includes('leaving-soon')), ['/JellyfinEnhanced/admin/leaving-soon/refresh']);
   // Without a source the button is off.
   h.change(h.$('#leavingSoonMaintainerrUrl'), '');
@@ -80,6 +80,23 @@ test('Status badges › Leaving soon: source fields save, the key is a password 
   await h.save();
   assert.equal(h.$('#leavingSoonRefreshBtn').disabled, true);
   assert.equal(h.$('[data-leaving-state]').textContent, 'No source set');
+});
+
+// Upstream 189a0a26: long values keep a wide box, and a key is dots until hovered or focused without being a password field.
+test('boxes for long values (URLs, keys, lists) are wide, short ones are not, and the stylesheet draws both the width and the mask', async t => {
+  const h = setup(t);
+  await h.settle(); await h.settle();
+  const control = (id) => h.$('#' + id).parentElement.getAttribute('class');
+  for (const id of ['leavingSoonMaintainerrUrl', 'leavingSoonMaintainerrApiKey', 'awardsTagsImdbList', 'awardsTagsLetterboxdList', 'languageTagsPriority']) {
+    assert.equal(control(id), 'je-ta-field-control je-ta-field-control--wide', id);
+  }
+  for (const id of ['leavingSoonRefreshHours', 'awardsTagsRefreshHours']) assert.equal(control(id), 'je-ta-field-control', id);
+  assert.equal(h.$('#leavingSoonMaintainerrUrl').hasAttribute('class'), false, 'only a key is masked');
+  const css = readFileSync(resolve(jsRoot, 'enhanced/admintags/admin-tags.css'), 'utf8');
+  assert.match(css, /\.je-ta-field-control--wide \{ flex: 0 1 28em; \}/);
+  assert.match(css, /\.je-ta-field-control--wide input \{ width: 100%; \}/);
+  assert.match(css, /\.je-ta-masked \{ -webkit-text-security: disc; text-security: disc; \}/);
+  assert.match(css, /\.je-ta-masked:is\(:hover, :focus\) \{ -webkit-text-security: none; text-security: none; \}/);
 });
 
 test('Status badges › Leaving soon: Refresh asks nothing while the source edit is refused, and works once it is settled', async t => {

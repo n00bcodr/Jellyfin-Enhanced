@@ -232,6 +232,12 @@ body.je-hide-descriptions .je-tag-admin .je-ta-intro { display: none; }
 .je-ta-field { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; padding: 12px 0; min-height: 44px; }
 .je-ta-field > .je-ta-switch-text { flex: 1 1 220px; }
 .je-ta-field-control { flex: 0 1 auto; display: flex; align-items: center; gap: 8px; min-width: 0; max-width: 100%; }
+/* Long values (URLs, keys, lists): keep the box at its full width instead of letting the description squeeze it. */
+/* A key: dots until hovered or focused (no type="password", which makes browsers offer to save it). */
+.je-ta-masked { -webkit-text-security: disc; text-security: disc; }
+.je-ta-masked:is(:hover, :focus) { -webkit-text-security: none; text-security: none; }
+.je-ta-field-control--wide { flex: 0 1 28em; }
+.je-ta-field-control--wide input { width: 100%; }
 .je-ta-field--block { display: block; }
 .je-ta-field--block .je-ta-field-control { margin-top: 8px; display: block; }
 .je-tag-admin select, .je-tag-admin input[type="text"], .je-tag-admin input[type="password"], .je-tag-admin input[type="number"], .je-tag-admin textarea {
