@@ -320,7 +320,11 @@ export function createFitMeasure(s: LayoutState, JE: LayoutHost, deps: LayoutFns
         const cornerReserve = width(['tl', 'tr']);
         let topReserve = cornerReserve;
         let overlayBottom = 0;
-        for (const overlay of scalable?.querySelectorAll<HTMLElement>('.cardIndicators > *, .countIndicator, .playedIndicator') || []) {
+        // A flush status chip (Leaving soon, Just added) sits over the count and watched badges, at the top edge,
+        // instead of working around them (see the z-index rule in tag-layout-styles.ts).
+        const statusRow = flush && centres.find((el) => el.dataset.jeSlot === 'tc');
+        const overBadges = !!statusRow && !!slotChips(statusRow)[0]?.classList?.contains('status-tag');
+        for (const overlay of overBadges ? [] : scalable?.querySelectorAll<HTMLElement>('.cardIndicators > *, .countIndicator, .playedIndicator') || []) {
             // Jellyfin sometimes wraps a tiny indicator in a full-width box.
             // Its leaf supplies the actual obstruction, rather than that box.
             if (flush && overlay.querySelector<HTMLElement>('.countIndicator, .playedIndicator'))

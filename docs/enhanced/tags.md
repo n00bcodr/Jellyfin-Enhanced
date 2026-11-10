@@ -739,7 +739,7 @@ Admin settings below are under **Display**; the row's default is in **UI Prefere
 
 ## Rating Tags
 
-Rating Tags show an ordered selection of Community, Critic, IMDb, TMDb, Rotten Tomatoes critic and audience, Metacritic, Letterboxd and Trakt scores. Each named source has a bundled logo. Choose which item types and home rows show them. The scores come from the server tag cache, which the **Fetch Ratings from MDBList** task refreshes after each run, so a source appears once that task has covered a title.
+Rating Tags show an ordered selection of Community, Critic, IMDb, TMDb, Rotten Tomatoes critic and audience, Metacritic, Metacritic user, Letterboxd, Trakt, MyAnimeList, AniList, Roger Ebert and MDBList scores. Each named source has a bundled logo. MyAnimeList and AniList only have scores for anime, and Roger Ebert's only for films he reviewed, so on other titles those chips simply do not appear. Choose which item types and home rows show them. The scores come from the server tag cache, which the **Fetch Ratings from MDBList** task refreshes after each run, so a source appears once that task has covered a title.
 
 ![Numeric community, critic and average user rating chips](../images/tags/rating-tags.webp)
 
@@ -785,6 +785,11 @@ Named sources use the server's existing MDBList service when its API key is conf
 | Metacritic | 74 | /100 |
 | Letterboxd | 4.1 | /5 |
 | Trakt | 85% | /100 |
+| Metacritic user | 7.9 | /10 |
+| MyAnimeList | 8.4 | /10 |
+| AniList | 82% | /100 |
+| Roger Ebert | 3.5 | /4 |
+| MDBList | 78% | /100 |
 
 Scores are written the way your language writes numbers: `8,1` in German or French, Arabic-Indic or Persian digits where the locale uses them (the language Jellyfin Enhanced's text follows; native posters use the language saved with your web settings, the same one their dates use). Units stay as they are (`%`, no space). Existing users retain their old Community/Critic include choices and order until they edit sources. New users take the administrator's defaults. Named sources have individual labels in **Tag Styles** and `data-je-rating-source` hooks for custom CSS.
 
@@ -881,7 +886,7 @@ First match wins, with one badge per card. When switched on, **Leaving soon** co
 | Card | Badge order |
 |---|---|
 | Movie | Trending → Coming Soon → New Movie → Just Added → Post-credits / Mid-credits |
-| Series | Trending → Airing Today → Series Finale → New Season → Airs {date} → Returns {date} → New Episode → Coming Soon → New Series → Just Added → Returning / Ended / Cancelled |
+| Series | Trending → Airing Today → Series Finale / Binge Ready → New Season → Airs {date} → Returns {date} → New Episode → Coming Soon → New Series → Just Added → Returning / Ended / Cancelled |
 | Season | Complete Season → Season Premiere → Season Finale → New Episode → Just Added |
 | Episode | Season Premiere → Series Finale / Season Finale → New Episode → Just Added |
 | Collection, video | Just Added |
@@ -891,12 +896,13 @@ First match wins, with one badge per card. When switched on, **Leaving soon** co
 | **#N Today / #N This Week** | Movie, series | TMDB daily trending rank, or Seerr weekly trending fallback; requires the item's TMDB ID |
 | **Coming Soon** | Movie, series | Jellyfin `PremiereDate` is in the future, including virtual items returned through fallback |
 | **New Movie / New Series** | Movie / series | Jellyfin premiere date falls within the new-release window and has passed |
-| **New Episode** | Series, season, episode | A container's latest non-virtual episode was added within the just-added window and the container predates that window. An episode itself aired within that window; one that was only added recently shows **Just Added** |
+| **New Episode** | Series, season, episode | A container's latest non-virtual episode was added within the just-added window and the container predates that window, unless you have watched all of it (its played check shows on the poster). An episode itself aired within that window; one that was only added recently shows **Just Added** |
 | **Just Added** | All supported types | Jellyfin `DateCreated`, the date used by **Date Added** sorting, falls within the just-added window. A collection uses the newest `DateCreated` among its members instead of its own date, and shows no badge when you cannot see that member: Jellyfin can create automatic collections again during a library scan, which would mark every one of them as just added |
 | **New Season** | Series | The newest regular season's episode 1 aired within the new-release window; season number must exceed 1 |
 | **Season Premiere** | Season, episode | The season's episode 1 aired within the new-release window; an episode card must itself be episode 1 of a regular season and have aired within the just-added window |
 | **Season Finale** | Season, episode | The latest aired TMDB episode matches the library episode and is within the new-release window. TMDB `episode_type=finale` confirms it; if absent, the local episode must be last in its season and TMDB must have no next episode, or one in a later season |
 | **Series Finale** | Series, episode | TMDB status is Ended or Canceled, and the last aired regular episode matches the visible library episode (a combined file such as S01E09-E10 matches when it holds that episode) and falls within the new-release window. Both cache and batch paths resolve the same regular episode: TMDB's latest regular episode first (so a library holding only S1E3 of an ended ten-episode season shows no finale), then TMDB season enrichment. The library's latest episode (caller-filtered series aggregate or a fetched local aggregate) only stands in when TMDB's per-season episode counts show it is the last episode of the last season, and keeps its air date's calendar day; season 0 never supplies a series finale |
+| **Binge Ready** | Series | The same conditions as Series Finale, for a show whose premiere and final episode aired within 3 days of each other (a one-drop release). It replaces Series Finale on such shows and, like it, lasts for the new-release window. |
 | **Complete Season** | Season | The whole season is in the library and arrived within the just-added window: TMDB lists the season's episode count, every episode of it has aired (none scheduled in it, and the latest aired episode is its last or a later season's), and the library covers every episode number from 1 to that count (a multi-episode file covers its range and counts as its last episode for finales; a duplicate or an extra number never fills a gap), all added within the window. Without TMDB facts, with an episode still to air or any episode missing, no completion is claimed and the season shows its next badge instead. A season with more than 100 episodes is not checked episode by episode, so it never claims completion |
 | **Airing Today** | Series | TMDB's next episode air date is today in the user's local calendar |
 | **Airs {date}** | Series | TMDB's next episode airs in the next seven days |

@@ -191,6 +191,7 @@
     "status_tag_season_finale": "Season Finale",
     "status_tag_series_finale": "Series Finale",
     "status_tag_complete_season": "Complete Season",
+    "status_tag_binge_ready": "Binge Ready",
     "status_tag_airing_today": "Airing Today",
     "status_tag_airs_date": "Airs {date}",
     "status_tag_returns_date": "Returns {date}",

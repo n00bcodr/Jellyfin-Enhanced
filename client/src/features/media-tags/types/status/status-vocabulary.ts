@@ -67,6 +67,12 @@ export const statusVocabulary = {
             "label": "status_tag_series_finale",
             "compact": "status_tag_compact_finale"
         },
+        "binge_ready": {
+            "kind": "milestone",
+            "style": "binge_ready",
+            "label": "status_tag_binge_ready",
+            "compact": "status_tag_compact_complete"
+        },
         "complete_season": {
             "kind": "milestone",
             "style": "complete_season",

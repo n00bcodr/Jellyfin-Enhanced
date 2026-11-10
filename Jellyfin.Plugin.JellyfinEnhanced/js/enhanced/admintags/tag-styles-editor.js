@@ -184,9 +184,9 @@
     custom: "One target per label of the Custom tag rules above (labels shared by several rules share their colours). The icon takes the text colour."
   };
   var LOGO_SAMPLES = { provider: T("Stream"), company: T("Studio"), text: "HBO" };
-  var RATING_SAMPLES = { community: ["star", "8.1"], critic: [null, "85%"], userReview: ["favorite", "9"], imdb: [null, "8.1"], tmdb: [null, "81%"], rtCritic: [null, "92%"], rtAudience: [null, "88%"], metacritic: [null, "74"], letterboxd: [null, "4.1"], trakt: [null, "85%"] };
+  var RATING_SAMPLES = { community: ["star", "8.1"], critic: [null, "85%"], userReview: ["favorite", "9"], imdb: [null, "8.1"], tmdb: [null, "81%"], rtCritic: [null, "92%"], rtAudience: [null, "88%"], metacritic: [null, "74"], letterboxd: [null, "4.1"], trakt: [null, "85%"], myAnimeList: [null, "8.4"], aniList: [null, "82%"], metacriticUser: [null, "7.9"], rogerEbert: [null, "3.5"], mdblist: [null, "78%"] };
   var STATUS_SAMPLES = { added: T("Just Added"), newMovie: T("New Movie"), newSeries: T("New Series"), newEpisode: T("New Episode"), trending: T("#{rank} Today", { rank: 3 }) };
-  var RATING_IDS = ["community", "critic", "imdb", "tmdb", "rtCritic", "rtAudience", "metacritic", "letterboxd", "trakt"];
+  var RATING_IDS = ["community", "critic", "imdb", "tmdb", "rtCritic", "rtAudience", "metacritic", "letterboxd", "trakt", "myAnimeList", "aniList", "metacriticUser", "rogerEbert", "mdblist"];
   var ALL = "*";
   var LEGACY_GENRE = "genre:genre";
   var TILE_GROUPS = ["genre"];

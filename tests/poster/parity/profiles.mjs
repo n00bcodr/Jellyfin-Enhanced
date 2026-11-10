@@ -197,6 +197,10 @@ const synthetic = {
     rs01: movie({ Ratings: { imdb: 8.1, tmdb: 81, rtCritic: 92, rtAudience: 88, metacritic: 74, letterboxd: 4.1, trakt: 85 } }),
     rs02: movie({ Ratings: { imdb: 0, tmdb: null, rtAudience: 49, letterboxd: 2.5 } }),
     rs03: { Type: 'Season', SeriesTmdbId: '2000', SeasonNumber: 2, Ratings: { imdb: 8.1, rtCritic: 92 } },
+    // The five further MDBList sources (out of 10, 100, 10, 4 and 100): plain scores, then scores past the
+    // scale, a zero, a missing one and a half that rounds.
+    rs04: movie({ Ratings: { myAnimeList: 8.4, aniList: 82, metacriticUser: 7.9, rogerEbert: 3.5, mdblist: 78 } }),
+    rs05: movie({ Ratings: { myAnimeList: 12, aniList: null, metacriticUser: 0, rogerEbert: 5, mdblist: 49.5 } }),
     // Logos: an image logo, two logos, a long name (initialism), one word cut short,
     // an unknown kind, a malformed logo path and an empty name.
     lg01: movie({ Logos: [{ kind: 'provider', name: 'Streamflix', logo: '/synthLogo01.png' }] }),
@@ -424,6 +428,8 @@ synth('naming-admin-defaults', { QualityTagsEnabled: true }, { ShowEditionTag: f
 synth('naming-user-overrides', { QualityTagsEnabled: true, ShowEditionTag: true, ShowLowQualitySourceTag: false, EditionTagOrder: 7 }, { ShowEditionTag: false, ShowLowQualitySourceTag: true, EditionTagOrder: 1 });
 synth('rating-sources-all', { RatingTagsEnabled: true, RatingTagsSources: ['trakt', 'imdb', 'tmdb', 'rtCritic', 'rtAudience', 'metacritic', 'letterboxd'] });
 synth('rating-sources-minimum-cap', { RatingTagsEnabled: true, RatingTagsSources: ['metacritic', 'letterboxd', 'imdb', 'tmdb', 'rtCritic'], RatingTagsMinScore: 8, RatingTagsColorByScore: true, TagGroupCaps: { Rating: 2 }, TagLayoutSettingsVersion: 1 });
+synth('rating-sources-further', { RatingTagsEnabled: true, RatingTagsSources: ['mdblist', 'rogerEbert', 'metacriticUser', 'aniList', 'myAnimeList', 'imdb'], TagGroupCaps: { Rating: 6 }, TagLayoutSettingsVersion: 1 });
+synth('rating-sources-further-minimum', { RatingTagsEnabled: true, RatingTagsSources: ['myAnimeList', 'aniList', 'metacriticUser', 'rogerEbert', 'mdblist'], RatingTagsMinScore: 8, RatingTagsColorByScore: true, TagGroupCaps: { Rating: 5 }, TagLayoutSettingsVersion: 1 });
 synth('rating-sources-empty', { RatingTagsEnabled: true, RatingTagsSources: [] });
 synth('rating-sources-unknown', { RatingTagsEnabled: true, RatingTagsSources: ['invalid', 'imdb', 'imdb', 'trakt'] });
 for (const [i, row] of JSON.parse(readFileSync(new URL('../../fixtures/first-chip-text-fit.json', import.meta.url), 'utf8')).entries()) {

@@ -139,7 +139,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.PosterTags
                 var seriesIdN = dto.Type is BaseItemKind.Episode or BaseItemKind.Season && dto.SeriesId is { } sid && sid != Guid.Empty
                     ? sid.ToString("N")
                     : null;
-                var stamped = StampField(dto, primary, dto.Id, dto.Type.ToString(), seriesIdN, topRight, session);
+                // Only the item's own poster knows the viewer has watched all of it.
+                var stamped = StampField(dto, primary, dto.Id, dto.Type.ToString(), seriesIdN, topRight, session, dto.UserData?.Played == true);
                 if (!ReferenceEquals(stamped, primary)) dto.ImageTags[ImageType.Primary] = stamped;
             }
 
@@ -166,7 +167,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.PosterTags
             hint.PrimaryImageTag = StampField(null, hint.PrimaryImageTag, ownerId, hint.Type.ToString(), owner.SeriesIdN, false, session);
         }
 
-        private string StampField(BaseItemDto? dto, string tag, Guid ownerId, string ownerType, string? ownerSeriesIdN, bool topRight, NativePosterTagStampSession session)
+        private string StampField(BaseItemDto? dto, string tag, Guid ownerId, string ownerType, string? ownerSeriesIdN, bool topRight, NativePosterTagStampSession session, bool watchedAll = false)
         {
             // Idempotent: a filter re-entry must not re-mint.
             if (ImageTagDecoration.GetVariant(tag) != null) return tag;
@@ -176,6 +177,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.PosterTags
             if (!settings.AnyGroupEnabled) return tag;
 
             var flags = topRight ? PosterTagVariantFlags.TopRightOffset : PosterTagVariantFlags.None;
+            if (watchedAll) flags |= PosterTagVariantFlags.WatchedAll;
             // Same "guarded kind" rule the tag strip uses (SpoilerTagDataStripper).
             if (session.SpoilerState != null && _stripper.IsGuarded(session.SpoilerState, ownerId, ownerType, ownerSeriesIdN))
             {

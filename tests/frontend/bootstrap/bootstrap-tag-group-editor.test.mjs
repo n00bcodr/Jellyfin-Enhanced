@@ -450,6 +450,16 @@ test('rating source order, minimum and colour persist through the real hub and p
   assert.ok(h.preview().querySelector('[data-je-rating-source="letterboxd"] svg'));
 });
 
+test('the five further MDBList sources can be chosen in the hub, and the preview draws each with a sample score', async t => {
+  const h = setup(t, { stored: { ratingTagsEnabled: true, ratingTagsSources: ['imdb'], tagLayoutSettingsVersion: 1 } });
+  const box = h.row('rating');
+  const added = ['myAnimeList', 'aniList', 'metacriticUser', 'rogerEbert', 'mdblist'];
+  for (const id of added) await h.change(box.querySelector('[data-rating-source="' + id + '"]'), true);
+  assert.deepEqual(h.saved().ratingTagsSources, ['imdb', ...added]);
+  const drawn = Object.fromEntries([...h.preview().querySelectorAll('.rating-tag')].map(el => [el.dataset.jeRatingSource, el.querySelector('.rating-text').textContent]));
+  assert.deepEqual(drawn, { imdb: '8.1', myAnimeList: '8.4', aniList: '82%', metacriticUser: '7.9', rogerEbert: '3.5', mdblist: '78%' });
+});
+
 test('quality row exposes all aggregation policies, inherits the admin default, and persists changes', async t => {
   const h = setup(t, { plugin: { SeriesQualityAggregation: 'latest' } });
   let refreshed = 0; h.JE.reinitializeQualityTags = () => refreshed++;

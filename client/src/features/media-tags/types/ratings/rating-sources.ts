@@ -45,7 +45,7 @@ export function settings(user: RatingSettings = {}, admin: RatingConfig = {}): R
     };
 }
 export function maximum(id: RatingSourceId): number {
-    return id === 'community' || id === 'imdb' ? 10 : id === 'letterboxd' ? 5 : 100;
+    return id === 'community' || id === 'imdb' || id === 'myAnimeList' || id === 'metacriticUser' ? 10 : id === 'letterboxd' ? 5 : id === 'rogerEbert' ? 4 : 100;
 }
 export function scoreColor(score: number): string {
     if (score < 5)

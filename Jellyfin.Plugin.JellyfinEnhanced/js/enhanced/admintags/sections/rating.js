@@ -69,7 +69,7 @@
           { id: 'ratingTagsColorByScore', key: 'RatingTagsColorByScore', type: 'switch', label: 'Colour by score' },
           { id: 'showRatingInPlayer', key: 'ShowRatingInPlayer', type: 'switch', label: 'Show the rating in the video player' },
   */
-  var SOURCES = ["community", "critic", "imdb", "tmdb", "rtCritic", "rtAudience", "metacritic", "letterboxd", "trakt"];
+  var SOURCES = ["community", "critic", "imdb", "tmdb", "rtCritic", "rtAudience", "metacritic", "letterboxd", "trakt", "myAnimeList", "aniList", "metacriticUser", "rogerEbert", "mdblist"];
   var sourceOf = (value) => SOURCES.find((id) => id === value);
   function selectedSources(c) {
     const stored = c.RatingTagsSources;

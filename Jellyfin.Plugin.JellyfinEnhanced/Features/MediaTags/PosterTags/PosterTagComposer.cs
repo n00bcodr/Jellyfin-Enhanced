@@ -105,14 +105,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.PosterTags
             bool useCache,
             CancellationToken cancellationToken,
             PosterTagDataSnapshot? snapshot = null,
-            DateTimeOffset? statusInstant = null)
+            DateTimeOffset? statusInstant = null,
+            bool watchedAll = false)
         {
             var data = await _data.GetRenderDataAsync(httpContext, item, user, snapshot, cancellationToken, settings.Shows(PosterTagGroup.Status)).ConfigureAwait(false);
             if (data == null) return new PosterTagComposeResult(PosterTagComposeStatus.NoData, null, string.Empty, false);
 
             var instant = statusInstant ?? DateTimeOffset.UtcNow;
             var status = settings.Shows(PosterTagGroup.Status)
-                ? await _status.Value.GetAsync(httpContext, item, user, data.Entry, settings, cancellationToken, instant).ConfigureAwait(false) : null;
+                ? (await _status.Value.GetAsync(httpContext, item, user, data.Entry, settings, cancellationToken, instant).ConfigureAwait(false)) with { WatchedAll = watchedAll } : null;
             // Include remote facts, the filtered parent and the badge the status resolves to (what the pixels show),
             // not the status inputs or the five-minute URL bucket: the URL still retires every bucket, but a poster
             // whose badge did not change is drawn once.

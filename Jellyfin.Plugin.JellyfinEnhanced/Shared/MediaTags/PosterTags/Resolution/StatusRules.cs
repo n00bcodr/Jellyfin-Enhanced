@@ -12,7 +12,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags.PosterTags.Resolutio
 
 /// <summary>Live, caller-filtered inputs for the pure status decision. No remote data is persisted in the tag cache.</summary>
 /// <param name="WeeklyRank">The rank came from Seerr's weekly list ("#N This Week"), not TMDB's daily one.</param>
-public sealed record PosterStatusContext(DateTimeOffset Now, SeriesSchedule? Schedule = null, int? Rank = null, TagCacheEntry? Series = null, bool WeeklyRank = false);
+public sealed record PosterStatusContext(DateTimeOffset Now, SeriesSchedule? Schedule = null, int? Rank = null, TagCacheEntry? Series = null, bool WeeklyRank = false, bool WatchedAll = false);
 
 /// <summary>
 /// The statustags.js first-match decision, with the same embedded vocabulary, thresholds and translated labels.
@@ -75,7 +75,8 @@ public static class StatusRules
         var comingSoon = PremiereDay(data.PremiereDate) > today;
         // A collection is recreated by library scans (a fresh DateCreated every time), so its newest member's date stands in.
         var addedRecently = Within(data.Type == "BoxSet" ? data.LatestEpisodeAdded : data.DateCreated, now, justAddedMs);
-        var newEpisode = Within(data.LatestEpisodeAdded, now, justAddedMs) && data.DateCreated is { } created && now - created > justAddedMs;
+        // Not for a viewer who has watched all of it (the web checks the card's played check).
+        var newEpisode = Within(data.LatestEpisodeAdded, now, justAddedMs) && data.DateCreated is { } created && now - created > justAddedMs && !context.WatchedAll;
         var nextDay = AirDate(facts?.NextAired?.Date);
         var lastDay = AirDate(facts?.LastAired?.Date);
         var daysToNext = nextDay?.DayNumber - today.DayNumber;
@@ -99,7 +100,9 @@ public static class StatusRules
                 if (showSchedule && daysToNext == 0) return Badge("airing_today");
                 if (showMilestones && final != null && Ended(facts!.Status) && finalRecently
                     && data.LatestEpisodeIndex is { } index && index.Season == final.Season && index.Episode == final.Episode)
-                    return Badge("series_finale");
+                    // A show released in one drop (premiere and finale days apart) is binge ready, not finishing a run.
+                    return Badge(PremiereDay(data.PremiereDate) is { } first && AirDate(final.Date) is { } finalDate
+                        && finalDate.DayNumber - first.DayNumber <= 3 ? "binge_ready" : "series_finale");
                 if (showMilestones && data.SeasonPremiere is { Season: > 1 } sp && AiredWithin(sp.Aired, newReleaseMs)) return Badge("new_season");
                 if (showSchedule && daysToNext is >= 1 && daysToNext <= Thresholds.AirsWithinDays)
                     return Badge("airs_date", FormatAirDay(nextDay!.Value, daysToNext.Value, settings));

@@ -821,6 +821,42 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.SpoilerGuard
         private static readonly System.Text.RegularExpressions.Regex _htmlTagRe
             = new System.Text.RegularExpressions.Regex("<[^>]+>", System.Text.RegularExpressions.RegexOptions.Compiled);
 
+        /// <summary>
+        /// A file path that names nothing the guarded item's page does not already show:
+        /// <c>/{Series} S01E02.{ext}</c> (or just the container for items without a series).
+        /// Keeps clients that read the file name from <c>Path</c> (Download, "Download all") working.
+        /// </summary>
+        /// <param name="item">The guarded item.</param>
+        /// <returns>The neutral path.</returns>
+        internal static string NeutralPath(BaseItemDto item)
+        {
+            static string Clean(string? value) => string.IsNullOrWhiteSpace(value)
+                ? string.Empty
+                : value.Replace('/', ' ').Replace((char)92, ' ').Trim();
+
+            var parts = new List<string>();
+            var series = Clean(item.SeriesName);
+            if (series.Length > 0) parts.Add(series);
+            if (item.ParentIndexNumber.HasValue && item.IndexNumber.HasValue)
+            {
+                parts.Add($"S{item.ParentIndexNumber.Value:00}E{item.IndexNumber.Value:00}");
+            }
+            else if (item.IndexNumber.HasValue)
+            {
+                parts.Add($"E{item.IndexNumber.Value:00}");
+            }
+
+            var name = parts.Count > 0 ? string.Join(' ', parts) : "Item";
+            // Container can be ffprobe's whole format list ("mov,mp4,m4a,3gp,3g2,mj2" for an .mp4 file): the
+            // extension is the name in that list the file itself uses, else the first. Only a name from the
+            // list is ever used, never text of the path.
+            var containers = Clean(item.Container).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            var own = System.IO.Path.GetExtension(item.Path ?? string.Empty).TrimStart('.');
+            var ext = (Array.Find(containers, c => string.Equals(c, own, StringComparison.OrdinalIgnoreCase))
+                ?? (containers.Length > 0 ? containers[0] : string.Empty)).TrimStart('.');
+            return ext.Length > 0 ? $"/{name}.{ext}" : $"/{name}";
+        }
+
         // Server-side sanitizer for the admin-supplied placeholder. The
         // configPage JS already strips tags + brackets on save, but an
         // admin who edited the XML config on disk would bypass that. Cap
@@ -1269,7 +1305,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.SpoilerGuard
                 || stripOverview)
             {
                 // Top-level title-bearing string fields.
-                if (!string.IsNullOrEmpty(item.Path)) item.Path = null;
+                // Path is replaced, not removed: jellyfin-web builds the Download filename from
+                // it (item.Path.replace(...)) and throws when it is missing (#1039).
+                if (!string.IsNullOrEmpty(item.Path)) item.Path = NeutralPath(item);
                 item.EpisodeTitle = null;
                 item.ForcedSortName = null;
                 item.CustomRating = null;

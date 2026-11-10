@@ -28,6 +28,54 @@ namespace JE.Tests.Features.MediaTags;
 public class RatingSourceTests
 {
     [Fact]
+    public void AnimeAndCriticSourcesMapFromMdblistInTheirNativeUnits()
+    {
+        MdblistRatingSource R(string id, double score) => new() { Source = id, Score = score };
+        var entry = new MdblistCacheEntry
+        {
+            Found = true,
+            Ratings = [R("myanimelist", 84), R("anilist", 82), R("metacriticuser", 79), R("rogerebert", 87.5), R("master", 78)],
+        };
+        var ratings = TagSourceRatings.FromMdblist(entry)!;
+        Assert.Equal(8.4, ratings.Get("myAnimeList")!.Value, 3);
+        Assert.Equal(82, ratings.Get("aniList")!.Value, 3);
+        Assert.Equal(7.9, ratings.Get("metacriticUser")!.Value, 3);
+        Assert.Equal(3.5, ratings.Get("rogerEbert")!.Value, 3);
+        Assert.Equal(78, ratings.Get("mdblist")!.Value, 3);
+        foreach (var id in new[] { "myAnimeList", "aniList", "metacriticUser", "rogerEbert", "mdblist" })
+            Assert.Contains(id, RatingSourceSettings.SourceIds);
+    }
+
+    // The native resolver and renderer take the same five: their own scales and texts (as the web chips), the
+    // minimum on the scale of ten, a label for Tag Styles, and the bundled logo each tile draws.
+    [Fact]
+    public void NativePostersResolveTheAnimeAndCriticSourcesOnTheirOwnScalesWithALogoEach()
+    {
+        string[] added = ["myAnimeList", "aniList", "metacriticUser", "rogerEbert", "mdblist"];
+        var entry = new TagCacheEntry { Type = "Movie", Ratings = new() { MyAnimeList = 8.4, AniList = 82, MetacriticUser = 7.9, RogerEbert = 3.5, Mdblist = 78 } };
+        PosterTagSettings Settings(double minimum) => PosterTagSettings.FromSettingsJson(JsonSerializer.Serialize(new JellyfinEnhancedUserSettings
+            { RatingTagsEnabled = true, RatingTagsSources = added, RatingTagsMinScore = minimum, TagLayoutSettingsVersion = 1, TagGroupCaps = new() { Rating = 5 } }), new PluginConfiguration());
+        RatingTag[] Tags(TagCacheEntry from, double minimum) => Assert.Single(PosterTagResolver.Resolve(from, Settings(minimum), new("Movie", false, null, null, null), false)!.Groups).Tags.Cast<RatingTag>().ToArray();
+
+        var all = Tags(entry, 0);
+        Assert.Equal(added, all.Select(tag => tag.SourceId));
+        Assert.Equal(new[] { "8.4", "82%", "7.9", "3.5", "78%" }, all.Select(tag => tag.Text));
+        Assert.All(all, tag => Assert.True(tag.IsSource));
+        // 8.4, 8.2, 7.9, 8.75 (3.5 of 4) and 7.8 out of ten.
+        Assert.Equal(new[] { "myAnimeList", "aniList", "rogerEbert" }, Tags(entry, 8).Select(tag => tag.SourceId));
+        // A score past its scale is held at the scale's top, not shown as it came.
+        var over = new TagCacheEntry { Type = "Movie", Ratings = new() { MyAnimeList = 12, RogerEbert = 5, MetacriticUser = 11 } };
+        Assert.Equal(new[] { "10.0", "10.0", "4.0" }, Tags(over, 0).Select(tag => tag.Text));
+
+        using var assets = PosterTagAssets.Load();
+        foreach (var id in added)
+        {
+            Assert.NotNull(assets.GetSourceLogo(id, true));
+            Assert.Contains(TagStyleKeys.RatingLabels, label => label.Key == id);
+        }
+    }
+
+    [Fact]
     public void MapsNormalizedAndRawNativeValuesWithoutInventingMissingScores()
     {
         var entry = new MdblistCacheEntry { Found = true, Ratings = [

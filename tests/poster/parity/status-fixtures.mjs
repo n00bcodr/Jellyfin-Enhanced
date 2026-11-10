@@ -56,6 +56,12 @@ add('season-finale', season({ LatestEpisodeIndex: { Season: 2, Episode: 5, IsLas
 add('episode-finale', episode(), 'season_finale', 'Season Finale', { schedule: schedule(ep('2026-10-29')) });
 add('series-finale', show({ LatestEpisodeIndex: { Season: 2, Episode: 5 } }), 'series_finale', 'Series Finale', { schedule: schedule(ep('2026-10-29'), null, 'Ended') });
 add('episode-series-finale', episode(), 'series_finale', 'Series Finale', { schedule: schedule(ep('2026-10-29'), null, 'Ended') });
+// Binge Ready: an ended show whose premiere and final episode aired at most three days apart. It takes Series
+// Finale's place on the series card (ahead of New Series); a weekly show and an episode card keep the finale.
+add('binge-ready', show({ PremiereDate: Date.UTC(2026, 9, 29), LatestEpisodeIndex: { Season: 2, Episode: 5 } }), 'binge_ready', 'Binge Ready', { schedule: schedule(ep('2026-10-29'), null, 'Ended') });
+add('binge-ready-three-days-apart', show({ PremiereDate: Date.UTC(2026, 9, 26), LatestEpisodeIndex: { Season: 2, Episode: 5 } }), 'binge_ready', 'Binge Ready', { schedule: schedule(ep('2026-10-29'), null, 'Ended') });
+add('binge-ready-four-days-apart-is-a-finale', show({ PremiereDate: Date.UTC(2026, 9, 25), LatestEpisodeIndex: { Season: 2, Episode: 5 } }), 'series_finale', 'Series Finale', { schedule: schedule(ep('2026-10-29'), null, 'Ended') });
+add('binge-ready-needs-milestones', show({ PremiereDate: Date.UTC(2026, 9, 29), LatestEpisodeIndex: { Season: 2, Episode: 5 } }), 'new_series', 'New Series', { schedule: schedule(ep('2026-10-29'), null, 'Ended'), settings: { StatusTagsMilestones: false } });
 // A combined file (S02E04-E05) holds the final episode on its own card; its premiere identity stays E04.
 add('combined-file-series-finale', episode({ EpisodeNumber: 4, EpisodeIndex: { Season: 2, Episode: 4, EpisodeEnd: 5, IsLast: true } }), 'series_finale', 'Series Finale', { schedule: schedule(ep('2026-10-29'), null, 'Ended') });
 add('combined-file-season-finale', episode({ EpisodeNumber: 4, EpisodeIndex: { Season: 2, Episode: 4, EpisodeEnd: 5, IsLast: true } }), 'season_finale', 'Season Finale', { schedule: schedule(ep('2026-10-29')) });

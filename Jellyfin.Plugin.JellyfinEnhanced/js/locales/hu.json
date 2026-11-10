@@ -826,6 +826,7 @@
     "status_tag_season_finale": "Évadfinálé",
     "status_tag_series_finale": "Sorozatfinálé",
     "status_tag_complete_season": "Teljes évad",
+    "status_tag_binge_ready": "Mehet a maraton",
     "status_tag_airing_today": "Ma adják",
     "status_tag_airs_date": "Adás: {date}",
     "status_tag_returns_date": "Visszatér: {date}",

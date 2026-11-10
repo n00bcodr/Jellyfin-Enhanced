@@ -1444,7 +1444,9 @@ ${scoped} {${original}}`;
       const cornerReserve = width(["tl", "tr"]);
       let topReserve = cornerReserve;
       let overlayBottom = 0;
-      for (const overlay of scalable?.querySelectorAll(".cardIndicators > *, .countIndicator, .playedIndicator") || []) {
+      const statusRow = flush && centres.find((el) => el.dataset.jeSlot === "tc");
+      const overBadges = !!statusRow && !!slotChips(statusRow)[0]?.classList?.contains("status-tag");
+      for (const overlay of overBadges ? [] : scalable?.querySelectorAll(".cardIndicators > *, .countIndicator, .playedIndicator") || []) {
         if (flush && overlay.querySelector(".countIndicator, .playedIndicator"))
           continue;
         const b = overlay.getBoundingClientRect();

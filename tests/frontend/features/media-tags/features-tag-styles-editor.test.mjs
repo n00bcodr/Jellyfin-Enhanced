@@ -56,7 +56,8 @@ const catalog = {
 };
 
 // New source labels use the server's native-unit sample formats.
-for (const [key, name] of [['imdb','IMDb'], ['tmdb','TMDb'], ['rtCritic','RT critic'], ['rtAudience','RT audience'], ['metacritic','Metacritic'], ['letterboxd','Letterboxd'], ['trakt','Trakt']]) {
+for (const [key, name] of [['imdb','IMDb'], ['tmdb','TMDb'], ['rtCritic','RT critic'], ['rtAudience','RT audience'], ['metacritic','Metacritic'], ['letterboxd','Letterboxd'], ['trakt','Trakt'],
+  ['myAnimeList','MyAnimeList'], ['aniList','AniList'], ['metacriticUser','Metacritic user'], ['rogerEbert','Roger Ebert'], ['mdblist','MDBList']]) {
   catalog.groups.rating.push({ key, name });
   for (const preset of catalog.presets) catalog.palettes[preset]['rating:' + key] = pal('rgba(0, 0, 0, 0.8)', 'rgba(0, 0, 0, 0)', 'rgba(255, 255, 255, 1)');
 }
@@ -345,7 +346,10 @@ test('all source labels use their own logo with the bundle and readable names wi
     if (bundled) { h.JE.t = key => key; h.load('tags/rating-sources.js'); }
     h.click('#tagStyleTabs [data-group="rating"]');
     const chips = h.$$('#tagStyleTargets .rating-tag--source');
-    assert.equal(chips.length, 7);
+    assert.equal(chips.length, 12);
+    // The five further MDBList sources show a sample in their own unit.
+    assert.deepEqual(chips.slice(-5).map(chip => [chip.dataset.jeRatingSource, chip.querySelector('.rating-text').textContent]),
+      [['myAnimeList', '8.4'], ['aniList', '82%'], ['metacriticUser', '7.9'], ['rogerEbert', '3.5'], ['mdblist', '78%']]);
     for (const chip of chips) {
       assert.ok(chip.dataset.jeRatingSource);
       assert.equal(!!chip.querySelector('svg'), bundled);

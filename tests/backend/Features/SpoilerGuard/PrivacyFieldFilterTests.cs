@@ -79,7 +79,7 @@ public class PrivacyFieldFilterTests
         var enumerations = 0;
         var lazy = Enumerable.Range(0, 2).Select(_ => { enumerations++; return f.Episode(); });
         var result = Assert.IsAssignableFrom<IEnumerable<BaseItemDto>>(await f.Invoke(lazy, "UserLibrary", "GetLatestMedia"));
-        Assert.All(result, item => { Assert.Equal("Season 2, Episode 3", item.Name); Assert.NotEqual("Secret plot", item.Overview); Assert.Null(item.Path); });
+        Assert.All(result, item => { Assert.Equal("Season 2, Episode 3", item.Name); Assert.NotEqual("Secret plot", item.Overview); Assert.Equal("/S02E03", item.Path); });
         Assert.All(result, item => Assert.Empty(item.Tags));
         Assert.Equal(2, enumerations);
     }
@@ -111,8 +111,46 @@ public class PrivacyFieldFilterTests
         var hidden = f.Episode(); var watched = f.Episode(true);
         var query = new QueryResult<BaseItemDto> { Items = [hidden, watched], TotalRecordCount = 2 };
         Assert.Same(query, await f.Invoke(query, "HomeScreen", "GetSectionContent"));
-        Assert.Equal("Season 2, Episode 3", hidden.Name); Assert.NotEqual("Secret plot", hidden.Overview); Assert.Null(hidden.Path);
+        Assert.Equal("Season 2, Episode 3", hidden.Name); Assert.NotEqual("Secret plot", hidden.Overview); Assert.Equal("/S02E03", hidden.Path);
         Assert.Equal("Secret ending", watched.Name); Assert.Equal("Secret plot", watched.Overview);
+    }
+
+    [Fact]
+    public void GuardedEpisodeKeepsANeutralPathSoWebDownloadDoesNotThrow()
+    {
+        var dto = new BaseItemDto { SeriesName = "Show/Name", ParentIndexNumber = 1, IndexNumber = 2, Container = "mkv", Path = "/media/Show/The Secret Ending.mkv" };
+        var path = SpoilerFieldStripFilter.NeutralPath(dto);
+        Assert.Equal("/Show Name S01E02.mkv", path);
+        Assert.DoesNotContain("Secret", path);
+        Assert.Equal("/Item", SpoilerFieldStripFilter.NeutralPath(new BaseItemDto()));
+    }
+
+    // What web does with it: Download on the item's page (the single-item route) and "Download all" (the
+    // episode list) both build the file name with item.Path.replace(/^.*[\\/]/, '').
+    [Theory]
+    [InlineData("UserLibrary", "GetItem", "mkv", "/media/Show/Show - S02E03 - Secret ending.mkv", "Show S02E03.mkv")]
+    [InlineData("TvShows", "GetEpisodes", "mkv", "/media/Show/Show - S02E03 - Secret ending.mkv", "Show S02E03.mkv")]
+    // Container is ffprobe's whole format list for some files: the name is the one the file itself uses.
+    [InlineData("UserLibrary", "GetItem", "mov,mp4,m4a,3gp,3g2,mj2", "/media/Show/Show - S02E03 - Secret ending.mp4", "Show S02E03.mp4")]
+    [InlineData("TvShows", "GetEpisodes", "mkv,webm", "/media/Show/Show - S02E03 - Secret ending.WEBM", "Show S02E03.webm")]
+    // Never the path's own text: an "extension" the container list does not name is not taken.
+    [InlineData("UserLibrary", "GetItem", "mov,mp4,m4a,3gp,3g2,mj2", "/media/Show/Show.S02E03.Secret.Ending", "Show S02E03.mov")]
+    [InlineData("UserLibrary", "GetItem", null, "/media/Show/Show.S02E03.Secret.Ending", "Show S02E03")]
+    public async Task AGuardedEpisodeLeavesTheFilterWithAFileNameWebCanDownloadUnder(string controller, string action, string? container, string path, string fileName)
+    {
+        using var f = new Fixture();
+        var dto = f.Episode();
+        dto.SeriesName = "Show"; dto.Container = container; dto.Path = path;
+        object value = action == "GetEpisodes" ? new QueryResult<BaseItemDto> { Items = [dto], TotalRecordCount = 1 } : dto;
+        await f.Invoke(value, controller, action);
+        Assert.NotNull(dto.Path);
+        Assert.Equal(fileName, System.Text.RegularExpressions.Regex.Replace(dto.Path, @"^.*[\\/]", string.Empty));
+        Assert.DoesNotContain("Secret", dto.Path, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Ending", dto.Path, StringComparison.OrdinalIgnoreCase);
+        // A second pass over the same DTO (nested results are filtered again) changes nothing.
+        var once = dto.Path;
+        await f.Invoke(value, controller, action);
+        Assert.Equal(once, dto.Path);
     }
 
     [Fact]
@@ -202,7 +240,7 @@ public class PrivacyFieldFilterTests
         var dto = WithAuxiliaryFields(new BaseItemDto { Id = id, Type = Enum.Parse<BaseItemKind>(kind), Name = "Title", Overview = "Plot", UserData = new UserItemDataDto { Key = "test" } });
         await f.Invoke(dto, controller, action);
         Assert.Equal(Links().Select(l => l.Url), dto.ExternalUrls.Select(l => l.Url));
-        Assert.Null(dto.RemoteTrailers); Assert.Null(dto.Path);
+        Assert.Null(dto.RemoteTrailers); Assert.NotNull(dto.Path); Assert.DoesNotContain("Secret", dto.Path);
         Assert.Null(Assert.Single(dto.People).Role);
         Assert.Equal("Title", dto.Name);
     }
@@ -225,7 +263,7 @@ public class PrivacyFieldFilterTests
             dto.UserData!.UnplayedItemCount = 8;
         }
         await f.Invoke(dto, "UserLibrary", isExtra ? "GetLocalTrailers" : "GetItem");
-        Assert.Null(dto.ExternalUrls); Assert.Null(dto.RemoteTrailers); Assert.Null(dto.Path);
+        Assert.Null(dto.ExternalUrls); Assert.Null(dto.RemoteTrailers); Assert.NotNull(dto.Path); Assert.DoesNotContain("Secret", dto.Path);
         Assert.Null(Assert.Single(dto.People).Role);
     }
 

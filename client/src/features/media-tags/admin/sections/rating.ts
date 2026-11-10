@@ -31,7 +31,7 @@ import type { Config } from '../values';
 import { installSection } from './install';
 
 /** Every poster rating source, in the built-in order. */
-const SOURCES: readonly RatingSourceId[] = ['community', 'critic', 'imdb', 'tmdb', 'rtCritic', 'rtAudience', 'metacritic', 'letterboxd', 'trakt'];
+const SOURCES: readonly RatingSourceId[] = ['community', 'critic', 'imdb', 'tmdb', 'rtCritic', 'rtAudience', 'metacritic', 'letterboxd', 'trakt', 'myAnimeList', 'aniList', 'metacriticUser', 'rogerEbert', 'mdblist'];
 const sourceOf = (value: unknown): RatingSourceId | undefined => SOURCES.find((id) => id === value);
 
 /**

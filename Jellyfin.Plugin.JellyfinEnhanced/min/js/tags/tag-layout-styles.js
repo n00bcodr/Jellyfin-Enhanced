@@ -247,6 +247,8 @@
             }
             ${v()}
             ${h}[data-je-slot="tc"] { top: var(--je-anchor-top, 0px); align-items: flex-start; overflow: visible; }
+            /* A flush status chip rides above the count and watched badges. */
+            .je-tag-host[data-je-layout="corners"][data-je-edge="flush"]:has(> [data-je-slot="tc"] .status-tag) { z-index: 3; }
             ${h}[data-je-slot="bc"] { bottom: var(--je-anchor-bottom, 0px); align-items: flex-end; overflow: visible; }
 
             /* Genre names float toward the inside of the card. */

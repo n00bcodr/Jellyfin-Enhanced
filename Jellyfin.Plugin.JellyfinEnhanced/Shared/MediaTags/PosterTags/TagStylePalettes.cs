@@ -55,7 +55,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags.PosterTags
         public static readonly IReadOnlyList<string> Presets = new[] { DefaultPreset, "glass", "outline", "dark", "light", "mono", PosterPreset };
 
         /// <summary>The rating chip labels.</summary>
-        public static readonly IReadOnlyList<(string Key, string Name)> RatingLabels = new[] { ("community", "Community"), ("critic", "Critic"), ("userReview", "User review"), ("imdb", "IMDb"), ("tmdb", "TMDb"), ("rtCritic", "RT critic"), ("rtAudience", "RT audience"), ("metacritic", "Metacritic"), ("letterboxd", "Letterboxd"), ("trakt", "Trakt") };
+        public static readonly IReadOnlyList<(string Key, string Name)> RatingLabels = new[] { ("community", "Community"), ("critic", "Critic"), ("userReview", "User review"), ("imdb", "IMDb"), ("tmdb", "TMDb"), ("rtCritic", "RT critic"), ("rtAudience", "RT audience"), ("metacritic", "Metacritic"), ("letterboxd", "Letterboxd"), ("trakt", "Trakt"), ("myAnimeList", "MyAnimeList"), ("aniList", "AniList"), ("metacriticUser", "Metacritic user"), ("rogerEbert", "Roger Ebert"), ("mdblist", "MDBList") };
 
         public static readonly IReadOnlyList<(string Key, string Name)> AwardLabels = new[] { ("imdbTop250", "IMDb Top 250"), ("certifiedFresh", "Certified Fresh"), ("oscar", "Oscar Winner"), ("emmy", "Emmy Winner"), ("letterboxdTop250", "Letterboxd Top 250") };
 

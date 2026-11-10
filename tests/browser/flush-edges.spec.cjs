@@ -64,6 +64,54 @@ test('Flush top centre moves below indicators only when its first chip cannot fi
   expect(wide.edges&2).toBe(0);
 });
 
+/** A top-centre row on a card with a count badge: the status chip alone, or behind a quality chip. */
+async function topCentreStatus(page, edge, groups) {
+  return page.evaluate(async ({ edge, groups }) => {
+    const JE=JellyfinEnhanced,L=JE.core.tagLayout,host=document.querySelector('.je-tag-host'),surface=host.parentElement;
+    for(const group of ['quality','status']) L.removeGroup(host,group);
+    surface.querySelectorAll('.cardIndicators,.itemProgressBar').forEach(e=>e.remove());
+    const box=document.createElement('div');box.className='cardIndicators';box.innerHTML='<div style="position:absolute;width:100%"><div class="countIndicator">2</div></div>';surface.append(box);
+    Object.assign(JE.currentSettings,{tagEdgeSpacing:edge,tagLayouts:{corners:{groups:groups.map(group=>({group,slot:'tc'}))}}});
+    L.invalidateSettings();
+    for(const name of groups){
+      const group=document.createElement('div');group.className=name==='status'?'status-overlay-container':'quality-overlay-container';
+      group.innerHTML=name==='status'?'<span class="status-tag" style="display:block;width:170px;height:20px">Leaving soon</span>':'<span class="quality-overlay-label resolution" data-quality="4K">4K</span>';
+      L.commitGroup(host,name,group);
+    }
+    await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));L.flushFit();
+    const chip=host.querySelector('.status-tag'),b=chip.getBoundingClientRect(),h=host.getBoundingClientRect(),badge=surface.querySelector('.countIndicator').getBoundingClientRect();
+    return {top:b.top-h.top,hidden:chip.hasAttribute('data-je-overflow'),zIndex:getComputedStyle(host).zIndex,
+      overBadge:b.right>badge.left&&b.bottom>badge.top&&b.top<badge.bottom};
+  }, {edge,groups});
+}
+
+test('a Flush status tag too wide for the gap stays at the top edge, over the count badge', async ({ page }) => {
+  await setup(page);
+  // 170px of a 180px card: wider than the gap the 30px count badge leaves.
+  const flush=await topCentreStatus(page,'flush',['status']);
+  expect(flush.top).toBeCloseTo(0,2);
+  expect(flush.hidden).toBe(false);
+  expect(flush.overBadge).toBe(true);
+  expect(flush.zIndex).toBe('3');
+});
+
+test('only a Flush row led by a status tag rides over the count badge', async ({ page }) => {
+  await setup(page);
+  // Any other wide first chip still moves below the badge.
+  const wide=await place(page,{slot:'tc',indicator:true,progress:0},'WWWWWWWWWW');
+  expect(wide.top).toBeGreaterThan(30);
+  expect(await page.evaluate(()=>getComputedStyle(document.querySelector('.je-tag-host')).zIndex)).not.toBe('3');
+  // A status tag behind another chip does not lead the row: the row keeps working around the badge.
+  const behind=await topCentreStatus(page,'flush',['quality','status']);
+  expect(behind.overBadge).toBe(false);
+  // Other edge spacings keep their place under the badge layer.
+  for(const edge of ['default','tight']){
+    const spaced=await topCentreStatus(page,edge,['status']);
+    expect(spaced.zIndex,edge).not.toBe('3');
+    expect(spaced.top,edge).toBeGreaterThan(0);
+  }
+});
+
 test('Flush mixed-height centre rows align chips on the touching edge', async ({page}) => {
   await setup(page);
   for (const slot of ['tc', 'bc']) {

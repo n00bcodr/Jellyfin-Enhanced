@@ -141,6 +141,66 @@ public class NativeStatusFreshnessTests
         Assert.Equal(renders, composites.MemoryCount);
     }
 
+    // Upstream 8d91169c: "watched all of it" is one viewer's state. It reaches the composer through that viewer's own
+    // image address, and the composed-poster cache keeps the two pictures apart (its key carries the badge drawn).
+    [Fact]
+    public async Task A_viewer_who_watched_all_of_a_series_and_one_who_did_not_each_get_their_own_poster()
+    {
+        using var f = new ApiPluginFixture();
+        var config = f.Plugin.Configuration;
+        config.NativePosterTagsEnabled = config.StatusTagsEnabled = true;
+        config.StatusTagsTrending = false;
+        var now = DateTimeOffset.Parse("2026-10-30T12:01:00Z");
+        var clock = new Clock { Now = now };
+        var settings = PosterTagSettings.FromSettingsJson("{statusTagsEnabled:true,nativePosterTimeZone:'UTC'}", config);
+        var item = new MediaBrowser.Controller.Entities.TV.Series { Id = Guid.NewGuid() };
+        // In the library for a year, with an episode added an hour ago: New Episode.
+        var entry = new TagCacheEntry { Type = "Series", DateCreated = now.AddYears(-1).ToUnixTimeMilliseconds(), LatestEpisodeAdded = now.AddHours(-1).ToUnixTimeMilliseconds() };
+        Assert.Equal("new_episode", StatusRules.Resolve(entry, settings, new(now))?.Key);
+        Assert.Null(StatusRules.Resolve(entry, settings, new(now, WatchedAll: true)));
+        var library = new Mock<ILibraryManager>();
+        using var cache = new TagCacheService(library.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger, new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger));
+        using var data = new PosterTagDataProvider(cache, library.Object, null!, null!, null!, f.Core.Logger);
+        var composites = CompositeImageCache.Create(null, 1024 * 1024 * 16, 0, 1, TimeSpan.FromSeconds(1), _ => { });
+        using var renderer = new PosterTagRenderer();
+        using var services = new ServiceCollection().AddSingleton(renderer).AddSingleton(new PosterTagStatusProvider(null!, data, library.Object)).BuildServiceProvider();
+        var composer = new PosterTagComposer(data, composites, services);
+        var filter = new PosterTagImageFilter(null!, null!, null!, data, composer, null!, null!, library.Object, null!, f.Core.Logger, clock);
+        var snapshot = new PosterTagDataSnapshot(entry, PosterTagReviewSummary.None, "abcdef");
+        var tokenService = PosterTagVariantToken.CreateForPath(Path.Combine(f.Core.Root, "native-key"), _ => { });
+        using var bitmap = new SKBitmap(360, 540);
+        bitmap.Erase(SKColors.DarkSlateBlue);
+        using var encoded = bitmap.Encode(SKEncodedImageFormat.Jpeg, 100);
+        var plain = encoded.ToArray();
+
+        async Task<byte[]> Poster(User viewer, PosterTagVariantFlags flags)
+        {
+            var token = tokenService.Mint(viewer.Id, item.Id, settings.DigestAt(now), PosterTagComposer.PixelVersion, flags, "abcdef");
+            Assert.True(tokenService.Verify(token, viewer.Id, item.Id, settings.DigestAt(now), PosterTagComposer.PixelVersion, out var variant));
+            Assert.Equal(flags, variant.Flags);
+            var plan = new PosterTagImageFilter.Plan(item, viewer, settings, variant, "base-jet" + token, snapshot, true, false, now);
+            var http = new DefaultHttpContext();
+            http.Request.Method = "GET";
+            http.Response.StatusCode = 200;
+            var original = new FileContentResult(plain.ToArray(), "image/jpeg");
+            var response = new ActionExecutedContext(new ActionContext(http, new RouteData(), new ActionDescriptor()), [], new object()) { Result = original };
+            await filter.PostProcessAsync(response, plan, default);
+            return response.Result is FileContentResult file ? file.FileContents : [];
+        }
+
+        var behind = new User("behind", "default", "default") { Id = Guid.NewGuid() };
+        var finished = new User("finished", "default", "default") { Id = Guid.NewGuid() };
+        var withBadge = await Poster(behind, PosterTagVariantFlags.None);
+        var withoutBadge = await Poster(finished, PosterTagVariantFlags.WatchedAll);
+        Assert.NotEqual(plain, withBadge);
+        Assert.NotEqual(withBadge, withoutBadge);
+        // Whoever asks second gets their own picture, in either order.
+        Assert.Equal(withBadge, await Poster(behind, PosterTagVariantFlags.None));
+        Assert.Equal(withoutBadge, await Poster(finished, PosterTagVariantFlags.WatchedAll));
+        // The same viewer, once finished, loses the badge too (their next address carries the bit).
+        Assert.Equal(withoutBadge, await Poster(behind, PosterTagVariantFlags.WatchedAll));
+    }
+
     [Fact]
     public void Subsecond_and_crossed_bucket_responses_have_no_freshness()
     {

@@ -826,6 +826,7 @@
     "status_tag_season_finale": "Finał sezonu",
     "status_tag_series_finale": "Finał serialu",
     "status_tag_complete_season": "Kompletny sezon",
+    "status_tag_binge_ready": "Gotowe do maratonu",
     "status_tag_airing_today": "Emisja dziś",
     "status_tag_airs_date": "Emisja {date}",
     "status_tag_returns_date": "Powrót {date}",

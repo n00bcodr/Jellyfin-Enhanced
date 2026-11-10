@@ -655,6 +655,192 @@
       ],
       "notes": "Upstream edits the hand-written page script and section list; here the same behaviour is re-implemented in the page’s TypeScript modules: the search over the Media Tags sections’ declared titles, hints, labels, descriptions and ids, with its result list (client/src/admin/config/page/search.ts, the list’s element in client/html/admin-config/configPage.html), the New badges on the tab’s rows (page/whats-new.ts), the tab module handing over its section names (page/media-tags-tab.ts), the two members of JE.adminTags the search reads (host/admin-config-host.ts) and the card’s link (sections/about.ts). The stylesheet hunk applies as is (Configuration/jeAdmin.css is hand-written here too). Differences from upstream: (1) the watcher on the tab and the timers belong to the view’s lifecycle and end with it, and a search answered after the view is gone draws nothing; upstream never disconnects its MutationObserver; (2) Dismiss removes the Media Tags badges with the form’s and they stay away, where upstream’s Dismiss puts them straight back (it re-runs the badge pass without forgetting the list) until the page is reloaded: filed as a found bug; (3) the watcher is created only when What’s New lists something; (4) a row is found by its data-field-row value, not by a selector built from the id; (5) once the tab is drawn the search reads its declarations as they are, where upstream mounts the tab again for every query, which reads the whole plugin configuration and reloads the tab each time (ten reads while the word “collections” is typed, one here): filed as a found bug. Upstream’s commit has no tests: six are added (the search on the real page with the real tab and how often it reads the configuration, late answers, the badges and Dismiss, the watcher’s lifetime, the stylesheet rules, the card’s link), and tests/fixtures/admin-config-baseline.json gains the new element id jeMtSearchResults in renderedIds, as docs/rewrite/admin-config.md prescribes for an intended page change. No new setting, so the What’s New index is unchanged. No route, authorization or registration changes.",
       "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p21-media-tags-search.*"
+    },
+    {
+      "sha": "83b557ccf29ce809053fe9c884fafe654c4d90e9",
+      "date": "2026-11-10T18:07:45+00:00",
+      "subject": "fix(tags): keep a flush status tag at the top edge, over the count and watched badges",
+      "class": "fix",
+      "features": [
+        "media-tags"
+      ],
+      "issues": [],
+      "release": null,
+      "size": {
+        "files": 2,
+        "insertions": 7,
+        "deletions": 1
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/js/core/tag-layout.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/tags/tag-layout-styles.js"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "b43feec859f1a3de8abb8436f36a484c7c76f0e5"
+      ],
+      "notes": "Upstream edits the hand-written js/core/tag-layout.js and js/tags/tag-layout-styles.js; here the same two changes are made in the TypeScript those files are built from: the anchor measurement skips the count and watched badges when a Flush top-centre row is led by a status tag (client/src/features/media-tags/layout/fit-measure.ts) and the tag layer of such a card gets z-index 3 (layout/tag-layout-styles.ts). No difference from upstream in behaviour, including what it leaves as it is: the measurement looks only at the row’s first chip while the stylesheet rule matches a status tag anywhere in the row, so a row led by another chip still works around the badges but its layer is raised too. Upstream’s commit has no tests: two browser tests are added to tests/browser/flush-edges.spec.cjs (the wide status tag stays at the top edge over the badge with the layer at z-index 3; a wide chip of another group, a status tag behind another chip, and the Default and Tight spacings keep what they did). No setting, route, authorization or registration changes; no cached output changes (layout only).",
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p22-flush-status-top.*"
+    },
+    {
+      "sha": "bcd6574a221e042bbd7124c9833356f50cfe87d5",
+      "date": "2026-11-10T18:51:41+00:00",
+      "subject": "fix(spoiler-guard): keep a neutral Path on guarded items so Download works",
+      "class": "fix",
+      "features": [
+        "spoiler-guard"
+      ],
+      "issues": [
+        "#1039"
+      ],
+      "release": null,
+      "size": {
+        "files": 3,
+        "insertions": 48,
+        "deletions": 6
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/SpoilerGuard/SpoilerFieldStripFilter.cs",
+        "docs/spoiler-guard/spoiler-guard-settings.md",
+        "tests/backend/Privacy/PrivacyFieldFilterTests.cs"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "1dfec42ddec43bbfe4278c92d76afdc92c6ab978"
+      ],
+      "notes": "The C# file moved, it was not rewritten: upstream’s hunks to Services/SpoilerGuard/SpoilerFieldStripFilter.cs apply at Shared/SpoilerGuard/SpoilerFieldStripFilter.cs, its test hunks at tests/backend/Features/SpoilerGuard/PrivacyFieldFilterTests.cs, and the docs hunk as is. Differences from upstream: (1) the neutral path’s extension. Upstream appends the item’s Container as it is, and for some files that is ffprobe’s whole format list (33 of the lab’s 3,000 episodes: every .mp4 has “mov,mp4,m4a,3gp,3g2,mj2”), so the file name jellyfin-web builds for Download is “Oswald S01E03.mov,mp4,m4a,3gp,3g2,mj2” (seen on upstream’s build on the lab). Here the extension is the name in that list the file itself uses (“mp4”), else the list’s first name; only a name from the list is ever used, never text of the real path, so a path such as “Show.S02E03.Secret.Ending” gives nothing away. For a one-name Container the result is upstream’s. Filed as a found bug against upstream. (2) NeutralPath sits above the comment block that documents ShouldStrip, where upstream’s hunk puts it between that comment and ShouldStrip. (3) One test theory is added to upstream’s (six cases through the filter’s real entry, on the single-item route and the episode list: an .mkv, the .mp4 list, a list name in another case, a path whose last dot is part of the title, no container, and a second pass over the same DTO changing nothing). Kept from upstream as it is: a guarded movie’s neutral path is “/Item.<ext>” and a season’s “/<Series> E02”; neither is read by Download all, which reads the episodes’. The access question: Path was removed and is now a made-up value built from the series name, the season and episode numbers and a container name, all of which the guarded DTO already carries; no spoiler check is loosened. No setting, route, authorization or registration changes.",
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p23-neutral-path.*"
+    },
+    {
+      "sha": "5756777576d25a64824600e50bfefcd3040ce664",
+      "date": "2026-11-10T19:06:06+00:00",
+      "subject": "feat(rating-tags): add MyAnimeList, AniList, Metacritic user, Roger Ebert and MDBList sources",
+      "class": "feature",
+      "features": [
+        "media-tags"
+      ],
+      "issues": [],
+      "release": null,
+      "size": {
+        "files": 16,
+        "insertions": 62,
+        "deletions": 22
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Assets/PosterTags/manifest.json",
+        "Jellyfin.Plugin.JellyfinEnhanced/Assets/PosterTags/rating-source-icons.json",
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/RatingSourceSettings.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Model/TagSourceRatings.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/PosterTagModel.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/TagStylePalettes.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Rendering/PosterTagAssets.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Rendering/PosterTagRenderer.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Resolution/RatingRules.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/sections/rating.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/tag-styles-editor.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/settingspanel/ui-panel-tag-preview.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/tags/rating-sources.js",
+        "docs/enhanced/tags.md",
+        "tests/backend/PosterTags/RatingSourceTests.cs",
+        "tests/inventory/test_poster_assets.py"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "3d9ff8153d31db436bdb8e3b012c29cbacff8d65"
+      ],
+      "notes": "Server: the C# files moved, they were not rewritten, so upstream’s hunks apply at Shared/MediaTags/TagSourceRatings.cs, Shared/MediaTags/PosterTags/{PosterTagModel,TagStylePalettes}.cs, Features/MediaTags/PosterTags/Rendering/{PosterTagAssets,PosterTagRenderer}.cs, Features/MediaTags/PosterTags/Resolution/RatingRules.cs and Configuration/RatingSourceSettings.cs; its two test hunks apply at tests/backend/Features/MediaTags/PosterTags/RatingSourceTests.cs and tests/inventory/test_poster_assets.py; docs/enhanced/tags.md as is. Client: upstream edits four hand-written scripts; here the same five ids, names, colours, logo markup, logo files, scales and sample scores go into the TypeScript those scripts are built from (types/ratings/rating-data.ts and rating-sources.ts, admin/sections/rating.ts, admin/tag-styles-editor.ts, settings/ui-panel-tag-preview.ts). The logo markup is taken from upstream’s table byte for byte. Differences from upstream: (1) Assets/PosterTags/rating-source-icons.json and its manifest records are regenerated by this tree’s scripts/build_poster_assets.py functions from rating-data.ts, not copied: the JSON comes out byte-identical to upstream’s (3,045 bytes, sha256 65aceea5…) and the output record is the same; the manifest’s input record for js/tags/rating-sources.js is this tree’s built file’s hash, and upstream’s second input key spelled with Windows backslashes (“Jellyfin.Plugin.JellyfinEnhanced\\js\\tags\\rating-sources.js”, left by a regeneration on Windows, with the forward-slash key still holding the old hash) is not carried over. (2) tag-styles-editor.ts has a list of its own of the ids it draws with the source’s chip (RATING_IDS, a typed narrowing upstream does not need); it gains the five too. (3) docs/advanced/api.md names the five new keys of the Ratings object; upstream’s page still lists seven. (4) Tests added to upstream’s one: a native-resolver test (texts on each scale, the minimum on the scale of ten, clamping, a bundled logo and a Tag Styles label each), two web chip tests, the admin picker, the user hub with its preview, the Tag Styles samples (that test’s label catalog and its count move from 7 to 12 source labels), and two fixtures with two profiles in the web-against-native parity harness (tests/poster/parity/profiles.mjs). No version constant is bumped, as upstream: the same settings and data still give the same tags (ResolverVersion), no existing tile’s pixels change (CompositionVersion), and a tag-cache entry gains only optional score fields that the existing refresh fills from MDBList’s cache as a delta after the next ratings task or settings change (CurrentCacheSchemaVersion); until then the new chips are absent, never wrong. No new setting (the source lists are existing settings that accept five more values), so the What’s New index is unchanged. No route, authorization or registration changes.",
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p24-rating-sources.*"
+    },
+    {
+      "sha": "910d1da4460a8bebf9203df34ba8494ae5ad4ecb",
+      "date": "2026-11-10T19:24:44+00:00",
+      "subject": "feat(status-tags): show Binge ready instead of Series Finale on a show released in one drop",
+      "class": "feature",
+      "features": [
+        "media-tags"
+      ],
+      "issues": [],
+      "release": null,
+      "size": {
+        "files": 40,
+        "insertions": 66,
+        "deletions": 4
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Resolution/StatusRules.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/locales/ (33 files)",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/tags/status-vocabulary.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/tags/status-vocabulary.json",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/tags/statustags.js",
+        "docs/enhanced/tags.md",
+        "tests/backend/PosterTags/ScoreNumbersTests.cs",
+        "tests/frontend/features/features-status-tags-finale-parity.test.mjs"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "369d35e9270ff2136a1534050b44d2174e80e83b"
+      ],
+      "notes": "Native rule, vocabulary, strings and docs apply as they are: upstream’s hunks to Services/PosterTags/Resolution/StatusRules.cs at Shared/MediaTags/PosterTags/Resolution/StatusRules.cs, js/tags/status-vocabulary.json and the 33 locale files (hand-written here too), docs/enhanced/tags.md, and its two test hunks at the moved paths. Web rule: upstream edits js/tags/statustags.js; here the rule is a function beside the other Status facts (releasedInOneDrop and BINGE_DROP_DAYS in types/status/status-facts.ts) that statustags.ts calls in place of the literal, because statustags.ts is frozen at its recorded size (1,454 lines, size-baseline.json): the changed lines replace lines, none is added. The typed vocabulary (types/status/status-vocabulary.ts) is regenerated by scripts/generate_status_vocabulary.py --table-only. Differences from upstream: (1) ResolverVersion goes from 41 to 42, with the four tests that pin the number; upstream leaves its version alone although the same settings and data now give another tag, so its native posters keep “Series Finale” on a one-drop show until something else changes their address. Filed as a found bug. (2) docs/advanced/api.md names the new style label status:binge_ready in its list of Tag Styles labels; upstream’s list does not. (3) Tests added to upstream’s two: the three-day limit, a show without a premiere date and the final episode’s own card (which stays Series Finale) on the web, the same limit natively, and four fixtures in the web-against-native Status parity harness. Kept from upstream as it is: the rule has no lower bound, so a premiere dated after the final episode also counts as one drop; the compact label is the Complete Season one. The style-count test that the new style breaks (21 status styles, now 22) is upstream’s next commit, 88c46aeb, taken in the same rewrite commit. No setting, route, authorization or registration changes; the tag-cache schema is unchanged (no entry field added).",
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p25-binge-ready.*"
+    },
+    {
+      "sha": "88c46aeb9a93b2a0c3669ee648733fb9806e13b8",
+      "date": "2026-11-10T20:13:20+00:00",
+      "subject": "test(status-tags): count Binge Ready among the status styles",
+      "class": "test",
+      "features": [
+        "media-tags"
+      ],
+      "issues": [],
+      "release": null,
+      "size": {
+        "files": 1,
+        "insertions": 2,
+        "deletions": 2
+      },
+      "paths": [
+        "tests/backend/PosterTags/TagStyleTests.cs"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "369d35e9270ff2136a1534050b44d2174e80e83b"
+      ],
+      "with": "910d1da4460a8bebf9203df34ba8494ae5ad4ecb",
+      "notes": "Upstream’s follow-up to 910d1da4: the Binge Ready style makes the Status catalogue 22 styles, not 21. Its one hunk applies at tests/backend/Features/MediaTags/PosterTags/TagStyleTests.cs and is part of the rewrite commit of 910d1da4, where the test would otherwise fail (seen: Expected 21, Actual 22). No difference from upstream."
+    },
+    {
+      "sha": "8d91169c90e8f79777bcb2be7bfa2b4514cdd515",
+      "date": "2026-11-10T20:15:48+00:00",
+      "subject": "feat(status-tags): hide New Episode on a series or season the viewer has watched in full",
+      "class": "feature",
+      "features": [
+        "media-tags"
+      ],
+      "issues": [],
+      "release": null,
+      "size": {
+        "files": 10,
+        "insertions": 45,
+        "deletions": 17
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/NativePosterTagStamper.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/PosterTagComposer.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/PosterTagImageFilter.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/PosterTagVariantToken.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Resolution/StatusRules.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/tags/statustags.js",
+        "docs/enhanced/tags.md",
+        "tests/backend/PosterTags/PosterTokenTests.cs",
+        "tests/backend/PosterTags/ScoreNumbersTests.cs",
+        "tests/frontend/features/features-status-tags-finale-parity.test.mjs"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "fd21daff504d55527af8aa634cb1390a5c7b1437"
+      ],
+      "notes": "Native: the C# files moved, they were not rewritten, so upstream’s hunks apply at Features/MediaTags/PosterTags/{NativePosterTagStamper,PosterTagComposer,PosterTagImageFilter,PosterTagVariantToken}.cs and Shared/MediaTags/PosterTags/Resolution/StatusRules.cs, and its hunks to PosterTokenTests.cs and ScoreNumbersTests.cs at tests/backend/Features/MediaTags/PosterTags/. Web: upstream edits js/tags/statustags.js; here the played-check read is a function beside the other Status facts (watchedAll in types/status/status-facts.ts) that statustags.ts calls, with the card handed to pickBadge from its two callers, because statustags.ts is frozen at its recorded size (1,454 lines): its changed lines replace lines and the comment above the rule is rewritten in two lines instead of three to make room for the parameter’s doc line. Differences from upstream: (1) docs/enhanced/tags.md: upstream’s added clause is put into this tree’s New Episode row, whose second sentence already differs from upstream’s (an episode that was only added recently shows Just Added here). (2) Upstream’s web test is applied by hand at tests/frontend/features/media-tags/features-status-tags-finale-parity.test.mjs (the file ends differently here), and its helper takes the id of one card to mark as played as well as true. (3) Tests added to upstream’s three: a fully watched season and “only the card’s own played check counts” on the web; the WatchedAll bit round-tripping in the token like the other two; the stamper setting it only on the own poster of an item whose DTO says Played (never on a series image an episode card borrows, never without user data); and one through the image filter and composer showing that a viewer who has watched all of a series and one who has not each get their own composed poster, in either order. The access question (per-viewer state in a cached picture): the bit travels in the viewer’s own image address (the token is bound to user and item), and the composed-poster cache key carries the badge that was drawn, so the two pictures are separate entries; no check is loosened. No version constant is bumped, as upstream: the rule only changes for a token that carries the new bit, which no earlier address has, and tokens with the bit are refused by older builds’ parser as an unknown format. The native side has no lab check (the lab’s clients are web; it is covered by the tests above); the web side is checked against upstream’s build. No setting, route, authorization or registration changes; the tag-cache schema is unchanged.",
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p27-new-episode-watched.*"
     }
   ]
 }

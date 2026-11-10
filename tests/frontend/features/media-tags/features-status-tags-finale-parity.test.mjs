@@ -13,10 +13,10 @@ const finale = { Id: EPISODE, Type: 'Episode', SeriesId: SERIES, SeriesTmdbId: '
   IndexNumber: 10, SeasonNumber: 1, EpisodeNumber: 10, PremiereDate: NOW - 2 * DAY, DateCreated: NOW - DAY };
 // TMDB names no regular finale (its last aired is a special), but its counts show S1E10 ends the show.
 const schedule = { status: 'Ended', lastAired: { date: '2026-10-29', season: 0, episode: 8 }, seasonEpisodes: { 1: 10 } };
-const card = (id, type) => `<div class="card" data-id="${id}" data-type="${type}"><div class="cardScalable"><div class="cardImageContainer"></div><div class="cardOverlayContainer"></div></div></div>`;
+const card = (id, type, played) => `<div class="card" data-id="${id}" data-type="${type}"><div class="cardScalable">${played ? '<div class="cardIndicators"><div class="playedIndicator"></div></div>' : ''}<div class="cardImageContainer"></div><div class="cardOverlayContainer"></div></div></div>`;
 
 /** Real pipeline + renderer, with only the HTTP boundaries replaced by caller-filtered fixtures. */
-async function setup(t, { cache = false, cards = [aggregate, finale], parent = aggregate, parents = [], facts = schedule, parentResponse = null, scanCost = 0, batchDelay = 0 } = {}) {
+async function setup(t, { cache = false, cards = [aggregate, finale], parent = aggregate, parents = [], facts = schedule, parentResponse = null, scanCost = 0, batchDelay = 0, played = false } = {}) {
   const changes = new Map(), calls = [], idle = [], timers = new Map();
   let clock = 0, timerId = 0;
   /** Drive idle slices and their debounce timers in order, independent of CPU load. */
@@ -43,7 +43,7 @@ async function setup(t, { cache = false, cards = [aggregate, finale], parent = a
   for (const item of parents) items.set(item.Id, item);
   let epoch = 0;
   const h = createHarness({
-    html: cards.map(item => card(item.Id, item.Type)).join(''),
+    html: cards.map(item => card(item.Id, item.Type, played === true || played === item.Id)).join(''),
     globals: {
       setTimeout: (fn, ms = 0, ...args) => { const id = ++timerId; timers.set(id, { at: clock + ms, run: () => fn(...args) }); return id; },
       clearTimeout: id => timers.delete(id),
@@ -333,4 +333,46 @@ test('a parent response completing after the old fixed wait still updates an epi
   await h.flush(100);
   assert.equal(h.key(EPISODE), 'series_finale');
   assert.equal(h.calls.filter(c => c.url.includes('/tag-data/') && JSON.parse(c.data).includes(SERIES)).length, 1);
+});
+
+test('an ended show released in one drop is binge ready, a weekly one has a series finale', async t => {
+  const drop = await setup(t, (() => { const show = { ...aggregate, PremiereDate: NOW - 3 * DAY }; return { cards: [show], parent: show }; })());
+  assert.equal(drop.key(SERIES), 'binge_ready');
+  const weekly = await setup(t, (() => { const show = { ...aggregate, PremiereDate: NOW - 60 * DAY }; return { cards: [show], parent: show }; })());
+  assert.equal(weekly.key(SERIES), 'series_finale');
+});
+
+test('New Episode is not shown on a series the viewer has watched in full', async t => {
+  const show = { ...aggregate, DateCreated: OLD, LatestEpisodeAdded: NOW - DAY, LatestEpisodeAired: NOW - DAY };
+  const open = await setup(t, { cards: [show], parent: show, facts: { status: 'Returning Series' } });
+  assert.equal(open.key(SERIES), 'newEpisode');
+  const done = await setup(t, { cards: [show], parent: show, facts: { status: 'Returning Series' }, played: true });
+  assert.notEqual(done.key(SERIES), 'newEpisode');
+});
+
+// The played check belongs to the card: a season is treated the same way, and another card's check says nothing.
+test('a fully watched season hides New Episode too, and only the card\'s own played check counts', async t => {
+  const season = { Id: SEASON, Type: 'Season', SeriesId: SERIES, SeriesTmdbId: '100', IndexNumber: 1, SeasonNumber: 1, DateCreated: OLD, LatestEpisodeAdded: NOW - DAY };
+  const open = await setup(t, { cards: [season], facts: { status: 'Returning Series' } });
+  assert.equal(open.key(SEASON), 'newEpisode');
+  const done = await setup(t, { cards: [season], facts: { status: 'Returning Series' }, played: true });
+  assert.notEqual(done.key(SEASON), 'newEpisode');
+  // Two cards, only the season's is checked: the series card keeps its badge.
+  const show = { ...aggregate, DateCreated: OLD, LatestEpisodeAdded: NOW - DAY, LatestEpisodeAired: NOW - DAY };
+  const mixed = await setup(t, { cards: [show, season], parent: show, facts: { status: 'Returning Series' }, played: SEASON });
+  assert.equal(mixed.key(SERIES), 'newEpisode');
+  assert.notEqual(mixed.key(SEASON), 'newEpisode');
+});
+
+test('Binge Ready is the series card only, up to the three-day limit, and needs a premiere date', async t => {
+  // The final episode aired two days ago: a premiere five days ago is three days before it, six is four.
+  const show = days => ({ ...aggregate, PremiereDate: NOW - days * DAY });
+  const edge = await setup(t, { cards: [show(5), finale], parent: show(5) });
+  assert.equal(edge.key(SERIES), 'binge_ready');
+  assert.equal(edge.document.querySelector(`[data-id="${SERIES}"] .status-tag`).textContent.trim(), 'Binge Ready');
+  assert.equal(edge.key(EPISODE), 'series_finale', 'the final episode\'s own card is still the finale');
+  const past = await setup(t, { cards: [show(6)], parent: show(6) });
+  assert.equal(past.key(SERIES), 'series_finale');
+  const undated = await setup(t, { cards: [aggregate], parent: aggregate });
+  assert.equal(undated.key(SERIES), 'series_finale', 'nothing says it was one drop');
 });

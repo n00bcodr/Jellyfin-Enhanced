@@ -124,6 +124,23 @@ export function readFacts(src: JsonRecord): EpisodeFacts {
 }
 
 /**
+ * Whether the viewer has watched everything in a card's item: Jellyfin shows that as the card's played check.
+ * @param el - The card, or an element inside it.
+ */
+export function watchedAll(el: Element | null | undefined): boolean {
+    return !!(el?.closest('.card') || el)?.querySelector('.playedIndicator');
+}
+/** A show released in one drop: its premiere and its final episode aired at most this many days apart. */
+export const BINGE_DROP_DAYS = 3;
+/**
+ * Whether an ended show was released in one drop (day numbers of its premiere and of its final regular episode):
+ * such a show is "Binge Ready" where a weekly one has a "Series Finale".
+ */
+export function releasedInOneDrop(premiereDay: number | null, finalDay: number | null): boolean {
+    return premiereDay !== null && finalDay !== null && finalDay - premiereDay <= BINGE_DROP_DAYS;
+}
+
+/**
  * The date "Just Added" reads. A collection is recreated by library scans (a fresh DateCreated every time), so its
  * newest member's added date stands in; without that fact it shows no badge.
  * */

@@ -6,7 +6,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
     /// <summary>Validation shared by stored preferences, public defaults and native posters.</summary>
     public static class RatingSourceSettings
     {
-        public static readonly string[] SourceIds = { "community", "critic", "imdb", "tmdb", "rtCritic", "rtAudience", "metacritic", "letterboxd", "trakt" };
+        public static readonly string[] SourceIds = { "community", "critic", "imdb", "tmdb", "rtCritic", "rtAudience", "metacritic", "letterboxd", "trakt", "myAnimeList", "aniList", "metacriticUser", "rogerEbert", "mdblist" };
 
         /// <summary>Keep known, distinct source ids in the requested order. Null retains legacy includes.</summary>
         public static string[]? NormalizeSources(string[]? sources) => sources?.Where(SourceIds.Contains).Distinct(StringComparer.Ordinal).ToArray();

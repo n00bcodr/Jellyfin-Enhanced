@@ -171,4 +171,58 @@ public class NativeLookRulesTests
         });
         Assert.Null(stamper.Begin(http, user.Id));
     }
+
+    // Upstream 8d91169c: a native poster learns that its viewer has watched all of the item from the DTO's own played
+    // state, through one bit of the variant token. The bit is this viewer's (the token is bound to the user and the
+    // item), it is only on the item's own poster, and a series image borrowed by an episode card never carries it.
+    [Fact]
+    public void OnlyTheOwnPosterOfAnItemItsViewerHasFinishedCarriesTheWatchedAllBit()
+    {
+        using var f = new ApiPluginFixture();
+        f.Plugin.Configuration.NativePosterTagsEnabled = true;
+        f.Plugin.Configuration.NativePosterTagsWebClientNames = "";
+        var user = new User("viewer", "default", "default") { Id = Guid.NewGuid() };
+        var users = new Mock<IUserManager>();
+        users.Setup(u => u.GetUserById(user.Id)).Returns(user);
+        var series = new Series { Id = Guid.NewGuid(), Name = "Series" };
+        var episode = new Episode { Id = Guid.NewGuid(), Name = "Episode", SeriesId = series.Id };
+        var library = new Mock<ILibraryManager>();
+        library.Setup(l => l.GetItemById(series.Id)).Returns(series);
+        library.Setup(l => l.GetItemById(episode.Id)).Returns(episode);
+        f.Core.Manager.SaveUserConfiguration(user.Id.ToString("N"), "settings.json", new JellyfinEnhancedUserSettings { StatusTagsEnabled = true, TagLayoutSettingsVersion = 1, TagLayout = "corners" });
+        var userCache = new PosterTagUserCache(users.Object);
+        using var provider = new PosterTagSettingsProvider(f.Core.Manager, userCache);
+        using var cache = new TagCacheService(library.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger, new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger));
+        using var data = new PosterTagDataProvider(cache, library.Object, null!, null!, null!, f.Core.Logger);
+        var tokens = PosterTagVariantToken.CreateForPath(Path.Combine(f.Core.Root, "native-key"), _ => { });
+        var stamper = new NativePosterTagStamper(new NativeClientPolicy(), provider, tokens, data, new SpoilerIdentityService(users.Object, f.Core.Logger), null!, null!, userCache, library.Object);
+        var http = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity([new Claim("Jellyfin-Client", "Jellyfin for Android TV")], "test")) };
+        var session = stamper.Begin(http, user.Id);
+        Assert.NotNull(session);
+
+        static PosterTagVariantFlags Flags(string tag)
+        {
+            Assert.True(PosterTagVariantToken.TryParse(ImageTagDecoration.GetVariant(tag), out var variant), tag);
+            return variant.Flags;
+        }
+        PosterTagVariantFlags Own(bool? played, int? unplayed = null)
+        {
+            var dto = new BaseItemDto { Id = series.Id, Type = BaseItemKind.Series, ImageTags = new() { [ImageType.Primary] = "base" },
+                UserData = played is { } value ? new UserItemDataDto { Key = "k", Played = value, UnplayedItemCount = unplayed } : null };
+            stamper.StampItem(dto, session!);
+            return Flags(dto.ImageTags[ImageType.Primary]);
+        }
+
+        Assert.Equal(PosterTagVariantFlags.TopRightOffset | PosterTagVariantFlags.WatchedAll, Own(true));
+        Assert.Equal(PosterTagVariantFlags.TopRightOffset, Own(false, 3));
+        Assert.Equal(PosterTagVariantFlags.None, Own(false));
+        Assert.Equal(PosterTagVariantFlags.None, Own(null));
+
+        // A watched episode's card: its own image says so, the series image it also carries does not.
+        var card = new BaseItemDto { Id = episode.Id, Type = BaseItemKind.Episode, SeriesId = series.Id, ImageTags = new() { [ImageType.Primary] = "base" },
+            SeriesPrimaryImageTag = "series-base", UserData = new UserItemDataDto { Key = "k", Played = true } };
+        stamper.StampItem(card, session!);
+        Assert.True(Flags(card.ImageTags[ImageType.Primary]).HasFlag(PosterTagVariantFlags.WatchedAll));
+        Assert.False(Flags(card.SeriesPrimaryImageTag).HasFlag(PosterTagVariantFlags.WatchedAll));
+    }
 }

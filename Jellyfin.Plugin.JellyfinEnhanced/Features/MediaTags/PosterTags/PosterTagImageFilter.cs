@@ -338,7 +338,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.PosterTags
                 quality,
                 useCache: true,
                 http.RequestAborted,
-                plan.Snapshot, plan.Instant).ConfigureAwait(false);
+                plan.Snapshot, plan.Instant,
+                (plan.Variant.Flags & PosterTagVariantFlags.WatchedAll) != 0).ConfigureAwait(false);
 
             if (plan.Settings.Shows(PosterTagGroup.Status) && StatusMaxAge(plan.Instant, _time.GetUtcNow()) == 0)
             {
