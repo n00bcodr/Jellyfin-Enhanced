@@ -334,3 +334,6 @@ scripts/deploy*
 /coverage/
 /playwright-report/
 /test-results/
+
+# Personal agent-tool settings stay out of the repository
+.claude/

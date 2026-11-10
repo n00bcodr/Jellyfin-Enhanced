@@ -45,7 +45,7 @@ Guidance for AI coding agents working in this repository. Human contributors: se
 - **Routes and auth.** Routes stay under `[Route("JellyfinEnhanced")]`. A route, verb or authorization change is a contract change. It shows up in the route/auth snapshot and needs the maintainer, not a regenerated snapshot. Until there is a sanctioned procedure, a task that needs a new route leaves the Architecture snapshot tests (the failure message lists the `+`/`-` lines) and the INV route list failing: check that the diff adds only your route, and report it for review.
 - **Cached output.** Some constants version stored or cached results. Bump the one whose comment covers your change, in the same commit: `PosterTagSettings.ResolverVersion` (`Shared/MediaTags/PosterTags/PosterTagSettings.cs`, tags produced for the same settings and data), `PosterTagComposer.CompositionVersion` (composite pixels) and `TagCacheService.CurrentCacheSchemaVersion` (what a tag-cache entry holds). Find the others with `git grep -n -iE '(Schema|Resolver|Renderer|Composition)Version'`.
 
-- **No AI attribution in commits.** `.claude/settings.json` turns off Claude Code's, and the `tool` gate fails on a `Co-Authored-By` or `Generated with` line naming an AI tool since the base.
+- **No AI attribution in commits.** No `Co-Authored-By` or `Generated with` line naming an AI tool; the `tool` gate fails on one in any commit since the base. Turn your tool's own attribution off in your personal settings, not in this repository.
 
 ## How to verify
 
