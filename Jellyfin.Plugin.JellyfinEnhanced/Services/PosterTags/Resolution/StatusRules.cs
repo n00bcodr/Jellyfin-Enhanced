@@ -72,7 +72,8 @@ public static class StatusRules
         bool AiredWithin(long? ms, long windowMs) => PremiereDay(ms) is { } day && day <= today && (long)(today.DayNumber - day.DayNumber) * Thresholds.DayMs <= windowMs;
         var newRelease = AiredWithin(data.PremiereDate, newReleaseMs);
         var comingSoon = PremiereDay(data.PremiereDate) > today;
-        var addedRecently = Within(data.DateCreated, now, justAddedMs);
+        // A collection is recreated by library scans (a fresh DateCreated every time), so its newest member's date stands in.
+        var addedRecently = Within(data.Type == "BoxSet" ? data.LatestEpisodeAdded : data.DateCreated, now, justAddedMs);
         var newEpisode = Within(data.LatestEpisodeAdded, now, justAddedMs) && data.DateCreated is { } created && now - created > justAddedMs;
         var nextDay = AirDate(facts?.NextAired?.Date);
         var lastDay = AirDate(facts?.LastAired?.Date);

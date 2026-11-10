@@ -368,8 +368,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // v10 is the Media Tags redesign's cache: Status facts (dates, schedule, milestones, scenes, leaving),
         // source ratings, awards, logos, custom tag matches, library ids, subtitle languages, naming labels,
         // per-version quality facts and the series quality summaries.
+        // v11 gives a BoxSet its newest member's added date (LatestEpisodeAdded / LatestEpisodeId) for "Just Added".
         // A schema mismatch discards the stale cache so it can be rebuilt.
-        internal const int CurrentCacheSchemaVersion = 10;
+        internal const int CurrentCacheSchemaVersion = 11;
 
         // Page size for hydrating library items during full builds and
         // reconciliation. Fetching the whole library with one GetItemList call
@@ -2256,7 +2257,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         /// <summary>
-        /// A Series/Season entry as one user may see it: its LatestEpisodeAdded
+        /// A Series/Season entry (or a BoxSet, whose "episode" is its newest
+        /// member) as one user may see it: its LatestEpisodeAdded
         /// is built over every episode, so when the episode it came from is not
         /// in the user's access set the date is dropped (a clone, the shared
         /// entry is untouched) rather than recomputed from the episodes they can
@@ -3398,7 +3400,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     // A BoxSet has no media streams of its own; derive its language
                     // tags from the union of its manually-linked movie and series members.
-                    (entry.AudioLanguages, entry.SubtitleLanguages, entry.SdhSubtitleLanguages) = GetCollectionLanguages(item, recordCollection);
+                    (entry.AudioLanguages, entry.SubtitleLanguages, entry.SdhSubtitleLanguages, var newestMember) = GetCollectionLanguages(item, recordCollection);
+                    // "Just Added" on a collection follows its newest member, never its own DateCreated:
+                    // Jellyfin's automatic TMDB collections can be created again by a library scan.
+                    entry.LatestEpisodeAdded = newestMember?.Added;
+                    entry.LatestEpisodeId = newestMember?.Id;
                 }
                 else
                 {
@@ -4388,24 +4394,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// the BoxSet itself (see TagCacheMonitor); a member whose languages change or
         /// which is removed queues the collections built from it (see
         /// QueueCollectionsOfChangedMembers and <see cref="_collectionMembers"/>, which
-        /// this records).
+        /// this records). <c>NewestMember</c> is the most recently added of those members that
+        /// has a cache entry of its own (its DateCreated in Unix ms and its key), or null: a
+        /// member gaining or losing its entry queues the collection the same way.
         /// </summary>
-        private (string[] Audio, string[] Subtitles, string[] SdhSubtitles) GetCollectionLanguages(BaseItem collection, bool record = true)
+        private (string[] Audio, string[] Subtitles, string[] SdhSubtitles, (long Added, string Id)? NewestMember) GetCollectionLanguages(BaseItem collection, bool record = true)
         {
             try
             {
-                if (collection is not Folder folder) return (Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>());
+                if (collection is not Folder folder) return (Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>(), null);
 
                 var languages = new HashSet<string>();
                 var subtitles = new HashSet<string>();
                 var sdh = new HashSet<string>();
                 var members = new List<Guid>();
                 var entryless = new Dictionary<Guid, string>();
+                (long Added, string Id)? newest = null;
                 foreach (var member in folder.GetLinkedChildren())
                 {
                     if (member.GetBaseItemKind() is not (BaseItemKind.Movie or BaseItemKind.Series)) continue;
                     members.Add(member.Id);
                     var (memberAudio, memberSubtitles, memberSdh, hasEntry) = MemberLanguages(member);
+                    if (hasEntry && ToUnixMilliseconds(member.DateCreated) is { } added && (newest == null || added > newest.Value.Added))
+                    {
+                        newest = (added, member.Id.ToString("N").ToLowerInvariant());
+                    }
+
                     languages.UnionWith(memberAudio);
                     subtitles.UnionWith(memberSubtitles);
                     sdh.UnionWith(memberSdh);
@@ -4414,7 +4428,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                 // Only a build whose entry the cache stores records what it read: an on-demand
                 // build (a native poster) racing a load or a rebuild must not stand for it.
-                if (!record) return (languages.ToArray(), subtitles.ToArray(), sdh.ToArray());
+                if (!record) return (languages.ToArray(), subtitles.ToArray(), sdh.ToArray(), newest);
                 var collectionKey = collection.Id.ToString("N").ToLowerInvariant();
                 _collectionEntrylessLanguages[collectionKey] = entryless;
                 if (SetCollectionMembers(collectionKey, members.ToArray()))
@@ -4428,12 +4442,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     Interlocked.Exchange(ref _collectionMembersDirty, 1);
                 }
 
-                return (languages.ToArray(), subtitles.ToArray(), sdh.ToArray());
+                return (languages.ToArray(), subtitles.ToArray(), sdh.ToArray(), newest);
             }
             catch (Exception ex)
             {
                 _logger.Warning($"[TagCache] Failed to get collection languages for {collection.Id}: {ex.Message}");
-                return (Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>());
+                return (Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>(), null);
             }
         }
 

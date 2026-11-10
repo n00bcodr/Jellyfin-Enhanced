@@ -9818,6 +9818,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var factsNow = DateTime.UtcNow;
             (long? LatestAdded, Services.StatusTagsEpisodeFacts? Facts) TagDataEpisodeFacts(BaseItem tagItem)
             {
+                // A collection: its newest movie or series member this user can see ("Just Added" reads
+                // it instead of the collection's own DateCreated, which a library scan can reset).
+                if (latestEpisode && tagItem is MediaBrowser.Controller.Entities.Movies.BoxSet tagCollection)
+                {
+                    if (episodeFactsMemo.TryGetValue(tagItem.Id, out var collectionMemo)) return collectionMemo;
+                    long? newestMember = null;
+                    foreach (var member in ((Folder)tagCollection).GetChildren(user, true))
+                    {
+                        if (member is not (MediaBrowser.Controller.Entities.Movies.Movie or MediaBrowser.Controller.Entities.TV.Series)) continue;
+                        if (Services.TagCacheService.ToUnixMilliseconds(member.DateCreated) is { } added && (newestMember == null || added > newestMember)) newestMember = added;
+                    }
+
+                    return episodeFactsMemo[tagItem.Id] = (newestMember, null);
+                }
+
                 if (!latestEpisode || tagItem is not (MediaBrowser.Controller.Entities.TV.Series or MediaBrowser.Controller.Entities.TV.Season))
                 {
                     return (null, null);

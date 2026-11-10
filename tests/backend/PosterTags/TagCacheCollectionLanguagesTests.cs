@@ -3,6 +3,8 @@ using System.Text.Json.Nodes;
 using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
 using Jellyfin.Plugin.JellyfinEnhanced.Model;
 using Jellyfin.Plugin.JellyfinEnhanced.Services;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
@@ -138,6 +140,61 @@ public class TagCacheCollectionLanguagesTests
             cache.EnqueueUpdate(dubbed.Id);
             FlushTwice(cache);
             Assert.Equal(new[] { "eng", "ger", "jpn" }, Audio(cache, box));
+        });
+    }
+
+    /// <summary>
+    /// "Just Added" on a collection reads its newest member's added date, never the collection's own:
+    /// Jellyfin creates automatic TMDB collections again on a library scan, which resets that date.
+    /// </summary>
+    [Fact]
+    public void ACollectionIsJustAddedByItsNewestMemberNotItsOwnDate()
+    {
+        var now = new DateTime(2026, 10, 30, 12, 0, 0, DateTimeKind.Utc);
+        var library = new Library();
+        var old = new Movie { Id = Guid.NewGuid(), Name = "Old", DateCreated = now.AddYears(-3), Sources = Tracks("eng") };
+        var older = new Movie { Id = Guid.NewGuid(), Name = "Older", DateCreated = now.AddYears(-5), Sources = Tracks("eng") };
+        // Recreated by last night's scan: its own date is new, its members are not.
+        var box = new BoxSet { Id = Guid.NewGuid(), Name = "Box", DateCreated = now.AddHours(-6), LinkedChildren = [new LinkedChild { ItemId = old.Id }, new LinkedChild { ItemId = older.Id }] };
+        var empty = new BoxSet { Id = Guid.NewGuid(), Name = "Empty", DateCreated = now.AddHours(-6) };
+        library.Items.AddRange(new BaseItem[] { old, older, box, empty });
+        var settings = PosterTagSettings.FromUserSettings(new Jellyfin.Plugin.JellyfinEnhanced.Configuration.JellyfinEnhancedUserSettings { StatusTagsEnabled = true },
+            new Jellyfin.Plugin.JellyfinEnhanced.Configuration.PluginConfiguration { StatusTagsEnabled = true });
+        var context = new PosterStatusContext(new DateTimeOffset(now));
+        string? Badge(TagCacheService cache, BaseItem item) => cache.TryGetEntry(item.Id, out var entry) ? StatusRules.Resolve(entry, settings, context)?.Key : throw new InvalidOperationException("no entry");
+
+        WithCache(library, cache =>
+        {
+            Assert.True(cache.TryGetEntry(box.Id, out var built));
+            Assert.Equal(TagCacheService.ToUnixMilliseconds(old.DateCreated), built.LatestEpisodeAdded);
+            Assert.Equal(old.Id.ToString("N"), built.LatestEpisodeId);
+            Assert.Null(Badge(cache, box));
+            Assert.True(cache.TryGetEntry(empty.Id, out var noMembers));
+            Assert.Null(noMembers.LatestEpisodeAdded);
+            Assert.Null(noMembers.LatestEpisodeId);
+            Assert.Null(Badge(cache, empty));
+
+            // A film arrives and joins the collection: Jellyfin reports the movie and the collection.
+            var arrival = new Movie { Id = Guid.NewGuid(), Name = "Arrival", DateCreated = now.AddDays(-1), Sources = Tracks("eng") };
+            library.Items.Add(arrival);
+            box.LinkedChildren = [.. box.LinkedChildren, new LinkedChild { ItemId = arrival.Id }];
+            // The collection first: the member without an entry yet does not count, and its entry queues the collection again.
+            cache.EnqueueUpdate(box.Id);
+            Flush(cache);
+            cache.EnqueueUpdate(arrival.Id);
+            FlushTwice(cache);
+            Assert.True(cache.TryGetEntry(box.Id, out var joined));
+            Assert.Equal(TagCacheService.ToUnixMilliseconds(arrival.DateCreated), joined.LatestEpisodeAdded);
+            Assert.Equal(arrival.Id.ToString("N"), joined.LatestEpisodeId);
+            Assert.Equal("just_added", Badge(cache, box));
+
+            // Deleted again: the collection goes back to its older members.
+            library.Items.Remove(arrival);
+            cache.EnqueueRemoval(arrival.Id);
+            FlushTwice(cache);
+            Assert.True(cache.TryGetEntry(box.Id, out var left));
+            Assert.Equal(old.Id.ToString("N"), left.LatestEpisodeId);
+            Assert.Null(Badge(cache, box));
         });
     }
 

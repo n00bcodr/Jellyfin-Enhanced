@@ -81,14 +81,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
         /// </summary>
         public long? PremiereDate { get; set; }
         /// <summary>
-        /// Series/Season only: the newest <see cref="DateCreated"/> among its
+        /// Series/Season: the newest <see cref="DateCreated"/> among its
         /// non-virtual episodes, in Unix milliseconds UTC, for the Status Tags
-        /// "New Episode" badge. Null for every other type or a container without
-        /// episodes.
+        /// "New Episode" badge. BoxSet: the newest <see cref="DateCreated"/> among
+        /// its movie and series members, for its "Just Added" badge (a collection's
+        /// own date is reset whenever Jellyfin creates it again). Null for every
+        /// other type or a container without episodes or members.
         /// </summary>
         public long? LatestEpisodeAdded { get; set; }
         /// <summary>
-        /// Series/Season only: the episode (N format, lowercase) that supplied
+        /// The episode, or the BoxSet member, (N format, lowercase) that supplied
         /// <see cref="LatestEpisodeAdded"/>. Server-side: the per-user filter drops
         /// the date when the user can't see that episode, and the tag-cache
         /// response leaves it out.

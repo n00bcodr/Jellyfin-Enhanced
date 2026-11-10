@@ -191,8 +191,12 @@ const ROWS = [
   ['episode: future air date is not a premiere', episode({ EpisodeNumber: 1, PremiereDate: NOW + 2 * DAY }), {}, null, null],
   ['series: future season premiere is not a new season', show({ SeasonPremiere: { Season: 2, Aired: NOW + 2 * DAY } }), {}, null, null],
   ['series: Jellyfin continuing is authoritative', show({ Status: 'Continuing' }), { statusTagsSeriesStatus: true }, facts({ status: 'Ended' }), ['returning', 'Returning']],
-  // Others: Just Added only
-  ['boxset: just added', { Type: 'BoxSet', DateCreated: ago(1) }, {}, null, ['added', 'Just Added']],
+  // Others: Just Added only. A collection reads its newest member's added date: Jellyfin
+  // creates automatic collections again on a library scan, which resets their own date.
+  ['boxset: just added by its newest member', { Type: 'BoxSet', DateCreated: OLD, LatestEpisodeAdded: ago(1) }, {}, null, ['added', 'Just Added']],
+  ['boxset: recreated by a scan, members all old', { Type: 'BoxSet', DateCreated: ago(1), LatestEpisodeAdded: OLD }, {}, null, null],
+  ['boxset: its own date alone is no badge', { Type: 'BoxSet', DateCreated: ago(1) }, {}, null, null],
+  ['video: just added by its own date', { Type: 'Video', DateCreated: ago(1) }, {}, null, ['added', 'Just Added']],
   ['boxset: no release badges', { Type: 'BoxSet', DateCreated: OLD, PremiereDate: ago(1) }, {}, null, null],
 ];
 

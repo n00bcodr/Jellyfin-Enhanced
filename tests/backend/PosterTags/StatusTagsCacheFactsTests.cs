@@ -321,6 +321,43 @@ public class StatusTagsCacheFactsTests
         }
     }
 
+    /// <summary>A collection's "Just Added" date comes from its newest member, so a user who cannot see that member gets no date (and no badge).</summary>
+    [Fact]
+    public void ACollectionsNewestMemberDateIsDroppedForUsersWhoCannotSeeThatMember()
+    {
+        using var f = new ApiPluginFixture();
+        f.Plugin.Configuration.TagCacheServerMode = true;
+        var alice = new User("alice", "default", "default") { Id = Guid.NewGuid() };
+        var bob = new User("bob", "default", "default") { Id = Guid.NewGuid() };
+        var (box, old, restricted) = (Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+        var (boxKey, oldKey, restrictedKey) = (box.ToString("N"), old.ToString("N"), restricted.ToString("N"));
+        var library = new Mock<ILibraryManager>();
+        library.Setup(x => x.GetItemIds(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery query) =>
+            query.User == alice ? new[] { box, old, restricted } : new[] { box, old });
+        Directory.CreateDirectory(f.Core.ConfigRoot);
+        File.WriteAllText(Path.Combine(f.Core.ConfigRoot, "tag-cache.json"), JsonSerializer.Serialize(new
+        {
+            SchemaVersion = TagCacheService.CurrentCacheSchemaVersion, Version = 7, LastModified = 200, LastReconciledUtcTicks = new DateTime(2026, 1, 1).Ticks,
+            Items = new Dictionary<string, TagCacheEntry>
+            {
+                [boxKey] = new() { Type = "BoxSet", DateCreated = 600, LatestEpisodeAdded = 500, LatestEpisodeId = restrictedKey, LastUpdated = 100 },
+                [oldKey] = new() { Type = "Movie", DateCreated = 100, LastUpdated = 100 },
+                [restrictedKey] = new() { Type = "Movie", DateCreated = 500, LastUpdated = 100 },
+            },
+        }));
+        using var cache = new TagCacheService(library.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger, new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger));
+        cache.LoadFromDisk();
+
+        Assert.Equal(500, cache.GetCacheForUser(alice, out _, out _)[boxKey].LatestEpisodeAdded);
+        var bobEntry = cache.GetCacheForUser(bob, out _, out _)[boxKey];
+        Assert.Null(bobEntry.LatestEpisodeAdded);
+        Assert.Null(bobEntry.LatestEpisodeId);
+        Assert.True(cache.TryGetEntry(box, out var shared));
+        Assert.Null(cache.FilterStatusForUser(shared, bob).LatestEpisodeAdded); // native posters filter the same way
+        Assert.Equal(500, cache.FilterStatusForUser(shared, alice).LatestEpisodeAdded);
+        Assert.Equal(500, shared.LatestEpisodeAdded); // the shared entry is untouched
+    }
+
     [Fact]
     public void FactsAreDroppedTogetherForUsersWhoCannotSeeAnEpisodeTheyCameFrom()
     {
