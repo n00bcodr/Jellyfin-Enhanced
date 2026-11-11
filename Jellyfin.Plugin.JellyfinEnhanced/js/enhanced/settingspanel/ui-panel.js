@@ -417,6 +417,7 @@
         e.stopPropagation();
         resetAutoCloseTimer();
       });
+      for (const type of ["keydown", "focusin", "touchstart"]) help.addEventListener(type, resetAutoCloseTimer, { capture: true, passive: true });
       const searchProviders = [];
       const createToast = (featureKey, isEnabled) => {
         const feature = JE.t(featureKey);

@@ -1,10 +1,17 @@
+using System.Collections.Concurrent;
+using System.Text.Json;
+using Jellyfin.Data;
 using Jellyfin.Data.Enums;
+using Jellyfin.Database.Implementations.Enums;
 using Jellyfin.Database.Implementations;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.Infrastructure.Extensions;
 using Jellyfin.Plugin.JellyfinEnhanced.Infrastructure.Auth;
 using Jellyfin.Plugin.JellyfinEnhanced.Infrastructure.Http;
 using Jellyfin.Plugin.JellyfinEnhanced.Shared.Arr;
+using Jellyfin.Plugin.JellyfinEnhanced.Shared.Library;
+using Jellyfin.Plugin.JellyfinEnhanced.Shared.Parental;
+using Jellyfin.Plugin.JellyfinEnhanced.Shared.Seerr;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Persistence;
@@ -24,6 +31,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Calendar
         private readonly IItemRepository _itemRepository;
         private readonly IDbContextFactory<JellyfinDbContext> _dbContextFactory;
         private readonly ArrInstanceClient _arrInstanceClient;
+        private readonly IHttpClientFactory _httpClientFactory;
+        private readonly SeerrParentalFilter _parentalFilter;
+        private readonly SeerrUserLookup _seerrUserLookup;
 
         public JeCalendarController(
             IHttpClientFactory httpClientFactory,
@@ -34,9 +44,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Calendar
             UserConfigurationManager userConfigurationManager,
             IItemRepository itemRepository,
             IDbContextFactory<JellyfinDbContext> dbContextFactory,
-            Shared.SpoilerGuard.SpoilerSeerrRedactor spoilerSeerrRedactor)
+            Shared.SpoilerGuard.SpoilerSeerrRedactor spoilerSeerrRedactor,
+            SeerrParentalFilter parentalFilter)
             : base(userManager, logger, userConfigurationManager)
         {
+            _httpClientFactory = httpClientFactory;
+            _parentalFilter = parentalFilter;
+            _seerrUserLookup = new SeerrUserLookup(httpClientFactory, logger, new UserDisplayResolver(userManager));
             _userDataManager = userDataManager;
             _libraryManager = libraryManager;
             _itemRepository = itemRepository;
@@ -91,6 +105,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Calendar
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null)
                 return StatusCode(500, "Plugin configuration not available");
+
+            // The caller, read once for every check below. An administrator (same rule as IsAdminUser)
+            // gets the answer the settings below never narrowed for them.
+            var caller = User;
+            var calendarUserId = UserHelper.GetCurrentUserId(caller);
+            var calendarUser = calendarUserId.HasValue ? _userManager.GetUserById(calendarUserId.Value) : null;
+            var callerIsAdmin = caller.IsInRole("Administrator") || calendarUser?.HasPermission(PermissionKind.IsAdministrator) == true;
+            if (!config.CalendarPageEnabled && !callerIsAdmin)
+                return NotFound();
 
             var events = new List<ArrItem>();
 
@@ -280,10 +303,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Calendar
             Dictionary<string, bool>? rootFolderAccessMap = null;
             if (config.CalendarFilterByLibraryAccess)
             {
-                var calendarUserId = UserHelper.GetCurrentUserId(User);
                 if (calendarUserId.HasValue)
                 {
-                    var calendarUserForFilter = _userManager.GetUserById(calendarUserId.Value);
+                    var calendarUserForFilter = calendarUser;
                     if (calendarUserForFilter != null)
                     {
                         var uniqueItemIds = events
@@ -311,8 +333,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Calendar
                 }
             }
 
+            // An event with neither a library item nor a root folder known from this answer is unknown:
+            // shown only to a caller who sees every library (or an administrator), so a date window
+            // holding only not-yet-downloaded titles cannot reveal a restricted folder's.
+            var unknownIsAccessible = callerIsAdmin || calendarUser?.HasPermission(PermissionKind.EnableAllFolders) == true;
+
             // Returns true when the filter is off, or when we have positive evidence the user can
-            // access this event. "No information" defaults to true (same as the final filter).
+            // access this event. "No information" follows unknownIsAccessible (same as the final filter).
             bool IsAccessible(ArrItem evt)
             {
                 if (accessibleIds == null) return true;
@@ -322,7 +349,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Calendar
                     && rootFolderAccessMap != null
                     && rootFolderAccessMap.TryGetValue(evt.RootFolderPath, out var a))
                     return a;
-                return true;
+                return unknownIsAccessible;
             }
 
             // Deduplicate events across instances. Tie-break priority:
@@ -431,12 +458,108 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Calendar
                         && rootFolderAccessMap != null
                         && rootFolderAccessMap.TryGetValue(e.RootFolderPath, out var hasAccess))
                         return hasAccess;
-                    return true;
+                    return unknownIsAccessible;
                 }).ToList();
+            }
+
+            if (!callerIsAdmin)
+            {
+                static (string MediaType, int TmdbId)? TitleKey(ArrItem e)
+                    => e.TmdbId is int id ? (e.Type == "Series" ? "tv" : "movie", id) : null;
+
+                // "Force Only Requested Items": the caller's own Seerr requests only. Unknown is not
+                // "none requested": a failed lookup shows nothing and says so.
+                if (config.CalendarForceOnlyRequested)
+                {
+                    var requested = await GetRequestedTitlesAsync(config, calendarUserId?.ToString(), ct);
+                    if (requested == null)
+                        errors.Add(new { instanceName = "Seerr", source = "Seerr", reason = "your requests could not be loaded" });
+                    events = events.Where(e => TitleKey(e) is { } key && requested?.Contains(key) == true).ToList();
+                }
+
+                // The caller's parental limit, as the Seerr routes apply it, for every title Jellyfin has
+                // not already checked for this caller through the library filter. Unchecked is hidden.
+                var callerIdText = calendarUserId?.ToString();
+                if (_parentalFilter.TryGetRestrictedPolicy(callerIdText, out _))
+                {
+                    bool CheckedByLibrary(ArrItem e) => accessibleIds != null && e.ItemId.HasValue;
+                    var titles = events.Where(e => !CheckedByLibrary(e)).Select(TitleKey).OfType<(string MediaType, int TmdbId)>().Distinct().ToList();
+                    var allowed = new ConcurrentDictionary<(string MediaType, int TmdbId), bool>();
+                    using var budget = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    budget.CancelAfter(TimeSpan.FromSeconds(12));
+                    try
+                    {
+                        await Parallel.ForEachAsync(titles, new ParallelOptions { MaxDegreeOfParallelism = 8, CancellationToken = budget.Token }, async (title, token) =>
+                            allowed[title] = !await _parentalFilter.IsBlockedAsync(title.MediaType, title.TmdbId, callerIdText, token));
+                    }
+                    catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                    {
+                        // Over budget: titles not checked yet stay hidden.
+                    }
+
+                    events = events.Where(e => CheckedByLibrary(e) || (TitleKey(e) is { } key && allowed.TryGetValue(key, out var ok) && ok)).ToList();
+                }
             }
 
             RedactCalendarEvents(events);
             return Ok(new { events, errors });
+        }
+
+        /// <summary>
+        /// The titles the caller requested in Seerr, as ("movie"|"tv", TMDB id): none when Seerr is
+        /// off (as the page treats it), null when they could not be read (Seerr unreachable or
+        /// failing, caller not linked to a Seerr user).
+        /// </summary>
+        private async Task<HashSet<(string MediaType, int TmdbId)>?> GetRequestedTitlesAsync(Configuration.PluginConfiguration config, string? jellyfinUserId, CancellationToken ct)
+        {
+            if (!config.JellyseerrEnabled || string.IsNullOrWhiteSpace(config.JellyseerrUrls) || string.IsNullOrWhiteSpace(config.JellyseerrApiKey))
+                return new HashSet<(string MediaType, int TmdbId)>();
+            if (string.IsNullOrEmpty(jellyfinUserId))
+                return null;
+            var seerrUserId = await _seerrUserLookup.GetJellyseerrUserId(jellyfinUserId);
+            if (string.IsNullOrEmpty(seerrUserId))
+                return null;
+
+            var client = SeerrHttpHelper.CreateClient(_httpClientFactory);
+            client.Timeout = TimeSpan.FromSeconds(15);
+            foreach (var url in config.JellyseerrUrls.Split(new[] { '\r', '\n', ',' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                var baseUrl = url.Trim().TrimEnd('/');
+                try
+                {
+                    var titles = new HashSet<(string MediaType, int TmdbId)>();
+                    const int pageSize = 200;
+                    for (var skip = 0; ; skip += pageSize)
+                    {
+                        var requestUri = $"{baseUrl}/api/v1/request?take={pageSize}&skip={skip}&requestedBy={Uri.EscapeDataString(seerrUserId)}";
+                        using var request = SeerrHttpHelper.BuildRequest(HttpMethod.Get, requestUri, config.JellyseerrApiKey);
+                        using var response = await client.SendAsync(request, ct);
+                        var (json, error) = await SeerrHttpHelper.ReadResponseAsync(response, requestUri, ct);
+                        if (json == null)
+                            throw new HttpRequestException(error?.Message ?? "no answer");
+                        using var doc = JsonDocument.Parse(json);
+                        var results = doc.RootElement.GetProperty("results");
+                        foreach (var row in results.EnumerateArray())
+                        {
+                            var type = row.TryGetProperty("type", out var t) && t.ValueKind == JsonValueKind.String ? t.GetString() : null;
+                            if ((type is "movie" or "tv") && row.TryGetProperty("media", out var media) && media.ValueKind == JsonValueKind.Object
+                                && media.TryGetProperty("tmdbId", out var idEl) && idEl.ValueKind == JsonValueKind.Number && idEl.TryGetInt32(out var tmdbId))
+                                titles.Add((type, tmdbId));
+                        }
+                        if (results.GetArrayLength() < pageSize)
+                            return titles;
+                    }
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _logger.Warning($"Calendar: could not read Seerr requests from {baseUrl}: {ex.Message}");
+                }
+            }
+            return null;
         }
 
         private Task<(List<ArrItem> Items, string? Error)> FetchSonarrCalendar(
@@ -790,6 +913,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Calendar
             }
 
             var itemIds = _itemRepository.GetItemIdsByProviders(providers, includeItemTypes);
+            if (!IsAdminUser())
+            {
+                // Only an item the caller may see, as Jellyfin's own item routes decide; administrators as before.
+                var userId = UserHelper.GetCurrentUserId(User);
+                var user = userId.HasValue ? _userManager.GetUserById(userId.Value) : null;
+                itemIds = itemIds.Where(id => user != null && _libraryManager.GetItemById<BaseItem>(id, user) != null).Take(1).ToList();
+            }
 
             if (itemIds.Count == 0)
                 return BadRequest("No provider ids supplied or no items found");

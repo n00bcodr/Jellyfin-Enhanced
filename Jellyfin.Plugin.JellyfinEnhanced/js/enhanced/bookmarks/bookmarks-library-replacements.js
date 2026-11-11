@@ -48,11 +48,13 @@
       if (!apiClient) return null;
       const userId = apiClient.getCurrentUserId();
       try {
-        const itemTypes = mediaType === "tv" ? "Series,Episode" : mediaType === "movie" ? "Movie" : null;
+        const episode = mediaType === "tv" && seasonNumber != null && episodeNumber != null;
+        const itemTypes = episode ? "Episode" : mediaType === "tv" ? "Series,Episode" : mediaType === "movie" ? "Movie" : null;
+        const position = episode ? `&ParentIndexNumber=${seasonNumber}&IndexNumber=${episodeNumber}` : "";
         const items = [];
         const seen = /* @__PURE__ */ new Set();
         for (let start = 0; ; start += 500) {
-          const url = `Users/${encodeURIComponent(userId || "")}/Items?Recursive=true${itemTypes ? `&IncludeItemTypes=${itemTypes}` : ""}&Fields=ProviderIds&SortBy=DateCreated&SortOrder=Descending&Limit=500&StartIndex=${start}`;
+          const url = `Items?userId=${encodeURIComponent(userId || "")}&Recursive=true${itemTypes ? `&IncludeItemTypes=${itemTypes}` : ""}${position}&Fields=ProviderIds&SortBy=DateCreated&SortOrder=Descending&Limit=500&StartIndex=${start}`;
           const response = await JE.core.api.fetch(apiClient.getUrl(url));
           if (!isCurrent()) return null;
           const batch = export7(response);

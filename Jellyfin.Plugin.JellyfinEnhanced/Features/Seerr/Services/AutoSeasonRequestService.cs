@@ -21,6 +21,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Seerr.Services
         private readonly IUserManager _userManager;
         private readonly IUserDataManager _userDataManager;
         private readonly ILibraryManager _libraryManager;
+        private readonly Shared.Parental.SeerrParentalFilter _parentalFilter;
 
         // In-memory cache of recently requested seasons to avoid duplicates (keyed by tmdbId_seasonNumber, global across all users)
         private readonly Dictionary<string, DateTime> _requestedSeasons = new();
@@ -36,13 +37,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Seerr.Services
             Logger logger,
             IUserManager userManager,
             IUserDataManager userDataManager,
-            ILibraryManager libraryManager)
+            ILibraryManager libraryManager,
+            Shared.Parental.SeerrParentalFilter parentalFilter)
         {
             _httpClientFactory = httpClientFactory;
             _logger = logger;
             _userManager = userManager;
             _userDataManager = userDataManager;
             _libraryManager = libraryManager;
+            _parentalFilter = parentalFilter;
         }
 
         private static string[] GetConfiguredUrls(string? urls)
@@ -283,6 +286,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Seerr.Services
 
             // Threshold met - prepare to request next season
             var nextSeasonNumber = currentSeasonNumber + 1;
+
+            // The watcher's parental limit refuses this request as it refuses their manual one (fails closed).
+            if (int.TryParse(tmdbId, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var seriesTmdbId)
+                && await _parentalFilter.IsBlockedAsync("tv", seriesTmdbId, user.Id.ToString("N")).ConfigureAwait(false))
+            {
+                _logger.Info($"[Auto-Season-Request] Not requesting '{series.Name}' S{nextSeasonNumber} for {user.Username}: outside their parental limit");
+                return;
+            }
 
             // Check in-memory cache first (fast path to avoid redundant API calls)
             // Uses a sentinel pattern: write the entry before async work so concurrent

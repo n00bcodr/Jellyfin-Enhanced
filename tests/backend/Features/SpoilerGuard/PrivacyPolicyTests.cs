@@ -15,7 +15,8 @@ public class PrivacyPolicyTests
     [InlineData(18, 9, true, null, 0, true)]
     [InlineData(12, 0, false, 12, 0, true)]
     [InlineData(13, 0, false, 12, 0, false)]
-    [InlineData(6, 1, false, 12, 0, false)]
+    [InlineData(6, 1, false, 12, 0, true)]
+    [InlineData(12, 1, false, 12, 0, false)]
     [InlineData(12, null, false, 12, 0, true)]
     [InlineData(12, 99, false, 12, null, true)]
     public void RatingCeilingsAndUnratedPolicy(int? score, int? sub, bool blockUnrated, int? max, int? maxSub, bool allowed)

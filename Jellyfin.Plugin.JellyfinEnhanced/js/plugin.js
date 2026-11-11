@@ -453,6 +453,7 @@
     const userConfig = emptyUserConfig();
     for (const name of DOCUMENT_NAMES) {
       const value = documents[name];
+      if (value === null && (name === "hiddenContent" || name === "shortcuts")) userConfig[name] = null;
       if (!isRecord(value)) continue;
       const converted = CAMEL_CASED.has(name) ? toCamelCase(value) : value;
       if (name === "settings") userConfig.settings = requireObject(converted) ?? {};
@@ -729,6 +730,8 @@
   // client/src/bootstrap/loader/boot.ts
   var INIT_POLL_INTERVAL_MS = 50;
   var MAX_MISMATCH_RETRIES = 600;
+  var CONFIG_RETRY_MS = 1e3;
+  var CONFIG_RETRY_MAX_MS = 6e4;
   function hasServerIdMismatch() {
     try {
       const api = optionalClient();
@@ -758,7 +761,7 @@
     const api = client();
     const configPromise = api.ajax({ type: "GET", url: api.getUrl("/JellyfinEnhanced/public-config"), dataType: "json" }).catch((error) => {
       console.error("🪼 Jellyfin Enhanced: Failed to fetch public config", error);
-      return {};
+      return null;
     });
     const versionPromise = api.ajax({ type: "GET", url: api.getUrl("/JellyfinEnhanced/version"), dataType: "text" }).catch((error) => {
       console.error("🪼 Jellyfin Enhanced: Failed to fetch version", error);
@@ -834,6 +837,7 @@
   function createInitializer(dependencies2) {
     const { JE, identity, contracts, config } = dependencies2;
     let mismatchRetryCount = 0;
+    let configRetryCount = 0;
     const retry = () => {
       setTimeout(() => {
         void initialize();
@@ -884,7 +888,13 @@
             retry();
             return;
           }
-          JE.pluginConfig = isRecord(publicConfig) ? publicConfig : {};
+          if (!isRecord(publicConfig)) {
+            setTimeout(() => {
+              void initialize();
+            }, Math.min(CONFIG_RETRY_MAX_MS, CONFIG_RETRY_MS * 2 ** configRetryCount++));
+            return;
+          }
+          JE.pluginConfig = publicConfig;
           JE.pluginVersion = typeof version === "string" && version ? version : "unknown";
         }
         JE.translations = translations || {};

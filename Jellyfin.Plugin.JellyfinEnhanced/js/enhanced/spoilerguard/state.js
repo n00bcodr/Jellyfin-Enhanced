@@ -166,6 +166,7 @@
   var loaded = false;
   var loadOk = false;
   var statePromise = null;
+  var retryDelay = 0;
   function invalidateGuardedResponses() {
     const manager = JE.core.api.manager;
     ["jellyseerr", "tmdb", "mdblist-ratings"].forEach((pattern) => manager?.clearCacheMatching?.(pattern));
@@ -200,6 +201,7 @@
       userPrefs = value.Prefs || {};
       loaded = true;
       loadOk = true;
+      retryDelay = 0;
       try {
         ctx.peer("tagPipeline")?.clearProcessed?.();
         ctx.peer("tagPipeline")?.scheduleScan?.();
@@ -211,6 +213,11 @@
       console.error(`${logPrefix} state load failed; downstream consumers will fail closed:`, err);
       loaded = true;
       loadOk = false;
+      statePromise = null;
+      retryDelay = Math.min(retryDelay * 2 || 5e3, 3e5);
+      owner.later(() => {
+        if (!statePromise) void internal.loadState();
+      }, retryDelay);
       try {
         ctx.peer("tagPipeline")?.clearProcessed?.();
         ctx.peer("tagPipeline")?.scheduleScan?.();
@@ -403,6 +410,7 @@
   };
   function resetState() {
     statePromise = null;
+    retryDelay = 0;
     loaded = false;
     loadOk = false;
     enabledSeries.clear();

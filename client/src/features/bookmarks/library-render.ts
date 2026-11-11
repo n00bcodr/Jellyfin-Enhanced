@@ -130,6 +130,16 @@ function install(JE: BookmarkHost) {
   async function renderBookmarksLibrary(container: HTMLElement) {
     const isCurrent = lifetime.current();
     console.log(`${logPrefix} Rendering bookmarks library...`);
+    if (JE.userConfig?.bookmarkRevision === null) {
+      // The loader could not read the stored bookmarks: say so rather than showing an empty library.
+      const failed = document.createElement('div'), icon = document.createElement('div'), title = document.createElement('div');
+      failed.className = 'je-bookmarks-empty';
+      icon.className = 'je-bookmarks-empty-icon material-icons'; icon.setAttribute('aria-hidden', 'true'); icon.textContent = 'error_outline';
+      title.className = 'je-bookmarks-empty-title'; title.textContent = JE.t('bookmarks_library_load_failed');
+      failed.append(icon, title);
+      container.replaceChildren(failed);
+      return;
+    }
 
     const bookmarks = displayBookmarks(JE.userConfig?.bookmark?.bookmarks);
     const bookmarkEntries = Object.entries(bookmarks);

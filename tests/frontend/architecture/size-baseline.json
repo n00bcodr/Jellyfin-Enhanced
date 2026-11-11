@@ -5,7 +5,7 @@
   "client/src/features/details-providers/reviews.ts": 1006,
   "client/src/features/media-tags/admin/page.ts": 867,
   "client/src/features/media-tags/admin/tag-styles-editor.ts": 1119,
-  "client/src/features/media-tags/editor/tag-item-editor.ts": 1053,
+  "client/src/features/media-tags/editor/tag-item-editor.ts": 893,
   "client/src/features/media-tags/pipeline/tag-renderer-base.ts": 899,
   "client/src/features/media-tags/settings/ui-panel-media-tags.ts": 1235,
   "client/src/features/media-tags/settings/ui-panel-tag-editor.ts": 1133,

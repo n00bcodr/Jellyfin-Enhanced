@@ -41,6 +41,58 @@ public class ApiDownloadsTests
         Assert.False(string.IsNullOrEmpty(rows[0].GetProperty("date").GetString()));
     }
 
+    // A failed instance is reported with the history, as with the queue, instead of reading as "no history".
+    [Fact]
+    public async Task HistoryNamesTheInstanceThatFailed()
+    {
+        using var f = GuardedSeerr(out _);
+        f.Plugin.Plugin.Configuration.DownloadsShowHistory = true;
+        f.Reply = _ => IntegrationTransport.Response("{}", 500);
+        f.SetUser(f.UserId, admin: true);
+        var body = JsonSerializer.SerializeToElement(Assert.IsType<OkObjectResult>(await f.Downloads().GetDownloadHistory()).Value);
+        Assert.Empty(body.GetProperty("items").EnumerateArray());
+        Assert.Equal("Sonarr", Assert.Single(body.GetProperty("errors").EnumerateArray()).GetProperty("instanceName").GetString());
+    }
+
+    // A non-administrator's rows are filtered by their Seerr requests: when that lookup fails, the
+    // queue and history fail too, while "no requests" stays an empty list.
+    [Fact]
+    public async Task NonAdminQueueAndHistoryFailWhenTheSeerrRequestLookupFails()
+    {
+        using var f = GuardedSeerr(out _);
+        f.Plugin.Plugin.Configuration.DownloadsShowHistory = true;
+        var seerrDown = true;
+        f.Reply = request => request.RequestUri!.AbsolutePath == "/api/v1/request"
+            ? (seerrDown ? IntegrationTransport.Response("{}", 500) : IntegrationTransport.Response("{\"results\":[]}"))
+            : IntegrationTransport.Response("{\"records\":[]}");
+        f.SetUser(f.UserId);
+        Assert.Equal(502, Assert.IsType<ObjectResult>(await f.Downloads().GetDownloadQueue()).StatusCode);
+        Assert.Equal(502, Assert.IsType<ObjectResult>(await f.Downloads().GetDownloadHistory()).StatusCode);
+        seerrDown = false;
+        Assert.Empty(Rows(await f.Downloads().GetDownloadQueue(), "items").EnumerateArray());
+        Assert.Empty(Rows(await f.Downloads().GetDownloadHistory(), "items").EnumerateArray());
+    }
+
+    // The page polls arr/queue and arr/history together: a non-administrator's Seerr request list is
+    // read once for both (and for the next poll inside the poll interval), and per Seerr user.
+    [Fact]
+    public async Task NonAdminQueueAndHistoryShareOneSeerrRequestRead()
+    {
+        using var f = GuardedSeerr(out _);
+        f.Plugin.Plugin.Configuration.DownloadsShowHistory = true;
+        f.Plugin.Plugin.Configuration.DownloadsPollIntervalSeconds = 300;
+        f.Reply = request => request.RequestUri!.AbsolutePath == "/api/v1/request"
+            ? IntegrationTransport.Response("{\"results\":[{\"requestedBy\":{\"id\":27},\"media\":{\"tmdbId\":1433,\"mediaType\":\"tv\"}}]}")
+            : IntegrationTransport.Response("{\"records\":[]}");
+        f.SetUser(f.UserId);
+        await Task.WhenAll(f.Downloads().GetDownloadQueue(), f.Downloads().GetDownloadHistory());
+        await f.Downloads().GetDownloadQueue();
+        Assert.Single(f.Calls, c => c.Path.StartsWith("/api/v1/request?"));
+        f.SetUser(f.OtherUserId);
+        await f.Downloads().GetDownloadQueue();
+        Assert.Equal(2, f.Calls.Count(c => c.Path.StartsWith("/api/v1/request?")));
+    }
+
     [Fact]
     public async Task RequestRowsHideGuardedDatesWhileComingSoonStillWorks()
     {

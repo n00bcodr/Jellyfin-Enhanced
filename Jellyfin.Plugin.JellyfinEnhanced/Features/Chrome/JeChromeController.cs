@@ -15,6 +15,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Chrome
     {
         private readonly ISessionManager _sessionManager;
         private readonly ActiveSessionsService _activeSessionsService;
+        private readonly Shared.SpoilerGuard.SpoilerSeerrRedactor _spoilerSeerrRedactor;
 
         private static readonly HashSet<string> BrandingFileNames = new(new[]
         {
@@ -29,11 +30,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Chrome
             Logger logger,
             IUserManager userManager,
             UserConfigurationManager userConfigurationManager,
-            ISessionManager sessionManager)
+            ISessionManager sessionManager,
+            Shared.SpoilerGuard.SpoilerSeerrRedactor spoilerSeerrRedactor)
             : base(userManager, logger, userConfigurationManager)
         {
             _sessionManager = sessionManager;
             _activeSessionsService = new ActiveSessionsService(sessionManager);
+            _spoilerSeerrRedactor = spoilerSeerrRedactor;
         }
 
         private bool TryResolveBrandingFilePath(string requestedFileName, out string normalizedFileName, out string filePath)
@@ -237,7 +240,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Chrome
 
             try
             {
-                return Ok(_activeSessionsService.BuildActiveSessionList(IsAdminUser()));
+                // The caller's Spoiler Guard, as Jellyfin's own session list applies it.
+                return Ok(_activeSessionsService.BuildActiveSessionList(IsAdminUser(), _spoilerSeerrRedactor.LoadRowsForRequest(HttpContext)));
             }
             catch (Exception ex)
             {

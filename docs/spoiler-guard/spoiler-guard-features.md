@@ -160,7 +160,7 @@ With **Blur images** selected, unplayed episodes lose their original artwork and
 | JE Reviews panel | Hides reviews on guarded series, their season/episode pages, and guarded movies, including movies guarded through a collection. |
 | More Info and Seerr cards | Follow the same settings for protected titles, on every page that shows them. See below. |
 | Release date chips | Follow **Hide air date**. |
-| Calendar and Downloads | Episode titles follow **Replace episode titles**, until you play the episode. Calendar dates stay. |
+| Calendar, Downloads and Active Streams | Episode titles follow **Replace episode titles**, until you play the episode. Calendar dates stay. |
 | Requests page | Dates follow **Hide air date**. |
 | MDBList ratings row | Follows **Hide ratings**. |
 
@@ -360,9 +360,11 @@ Native apps and external players can benefit from server protection when they us
 
 ??? info "Supported responses and client limits"
 
-    The server filters supported image and item-metadata responses. It covers common item lists/details, episode and season lists, Next Up, upcoming/resume/latest items, search hints, suggestions/similar items, playlists, movie recommendations, Home Screen Sections rows, image information, playback information, item images, and trickplay images on recognized routes and response shapes.
+    The server filters supported image and item-metadata responses. It covers common item lists/details, episode and season lists, Next Up, upcoming/resume/latest items, search hints, suggestions/similar items, playlists, movie recommendations, Home Screen Sections rows, the session list (`GET /Sessions`: what each device is playing or viewing), the extra files of a multi-part episode, image information, playback information, item images, and trickplay images on recognized routes and response shapes.
 
     JE's toggle buttons, preferences, confirmation, automatic page-image refresh, and Reviews-panel suppression require the injected web interface. That interface suppresses its Reviews panel according to your preferences. Other clients using JE's Reviews API need their own suppression behavior: the API does not filter reviews according to the viewer's Spoiler Guard state.
+
+    Jellyfin also pushes the session list over its web socket (`Sessions` messages), which a plugin cannot filter: a client that shows what another device is playing from those messages, such as jellyfin-web's remote-control bar and the dashboard's device list, can show the real title and description of a protected episode playing there.
 
     Spoiler Guard does not rewrite metadata embedded in media files or information obtained outside supported APIs. Raw-path consumers can be affected by metadata stripping. Client caching and unsupported responses can change what you see. This page does not establish a versioned test matrix for individual apps.
 

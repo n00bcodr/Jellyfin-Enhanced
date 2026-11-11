@@ -22,6 +22,9 @@ export function normalizeId(id: unknown): string {
  return typeof id === 'string' || typeof id === 'number' || typeof id === 'bigint' ? String(id).replace(/-/g,'').toLowerCase() : '';
 }
 const itemStrings = ['itemId','name','type','posterPath','seriesId','seriesName','hiddenAt','hideScope'] as const;
+// Seerr cards used to store titles HTML-escaped; such names read back as the title they escaped.
+const ESCAPED: Readonly<Record<string, string>> = {'&amp;':'&','&lt;':'<','&gt;':'>','&quot;':'"','&#039;':"'",'&#39;':"'"};
+const unescapeName = (name: string) => name.replace(/&(?:amp|lt|gt|quot|#0?39);/g, e => ESCAPED[e] ?? e);
 function field(source: Record<string, unknown>, name: string): unknown {
  return Object.prototype.hasOwnProperty.call(source,name) ? source[name] : source[name[0]?.toUpperCase() + name.slice(1)];
 }
@@ -31,7 +34,7 @@ export function decodeItem(value: unknown): HiddenItem {
  for(const key of [...itemStrings,'tmdbId','seasonNumber','episodeNumber']) delete item[key];
  for (const key of itemStrings) {
   const v = field(raw,key);
-  if (v !== undefined && v !== null) { if (typeof v !== 'string') throw new Error(`Invalid ${key}`); item[key]=v; }
+  if (v !== undefined && v !== null) { if (typeof v !== 'string') throw new Error(`Invalid ${key}`); item[key]=key==='name' ? unescapeName(v) : v; }
  }
  const tmdb = field(raw,'tmdbId');
  if (tmdb !== undefined && tmdb !== null) {
@@ -121,6 +124,19 @@ export function sameValue(left:unknown,right:unknown):boolean {
  if(Array.isArray(left)||Array.isArray(right))return Array.isArray(left)&&Array.isArray(right)&&left.length===right.length&&left.every((v,i)=>sameValue(v,right[i]));
  const a=record(left),b=record(right),keys=Object.keys(a);
  return keys.length===Object.keys(b).length&&keys.every(k=>Object.prototype.hasOwnProperty.call(b,k)&&sameValue(a[k],b[k]));
+}
+/** `onto` with each top-level field, item and setting that differs between `base` and `edited` taken from `edited`. */
+export function withChanges(base:HiddenDocument,edited:HiddenDocument,onto:HiddenDocument):HiddenDocument {
+ const apply=<T>(from:Record<string,T>,to:Record<string,T>,target:Record<string,T>):Record<string,T> => {
+  const out={...target};
+  for(const key of new Set([...Object.keys(from),...Object.keys(to)])) {
+   const value=to[key];
+   if(sameValue(from[key],value))continue;
+   if(value===undefined)delete out[key];else out[key]=value;
+  }
+  return out;
+ };
+ return {...apply(base,edited,onto),items:apply(base.items,edited.items,onto.items),settings:apply(base.settings,edited.settings,onto.settings)};
 }
 /** Ask the same parser which decimal fraction supplies the clock, ignoring comments/date fields. */
 function parsedFraction(stamp:string,time:number):string {

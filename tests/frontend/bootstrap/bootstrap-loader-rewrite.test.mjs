@@ -169,7 +169,9 @@ test('a fallback private config answered for the previous session is dropped', a
 });
 
 test('a logout during component loading keeps none of that user\'s data', async t => {
-    const h = boot(t, { data: payload({ PublicConfig: { TagLookItemOverrides: [] }, UserSettings: { Settings: { QualityTagsEnabled: true } } }), hostUser: session => ({ Id: session.userId, Policy: { IsAdministrator: true } }),
+    const data = payload({ PublicConfig: { TagLookItemOverrides: [] }, UserSettings: { Settings: { QualityTagsEnabled: true } } });
+    const h = boot(t, { ajax: async path => path.endsWith('/bootstrap') ? data : path.endsWith('/public-config') ? {} : Promise.reject(new Error(`Unexpected endpoint ${path}`)),
+        hostUser: session => ({ Id: session.userId, Policy: { IsAdministrator: true } }),
         modules: [() => { h.load('core/navigation.js'); }, () => { h.load('core/session.js'); }, () => { h.load('enhanced/config.js'); }, () => { h.session.userId = null; }] });
     await until(() => h.JE.initialized);
     assert.deepEqual(plain(h.JE.userConfig.settings), {});
@@ -185,6 +187,20 @@ test('a server change during component loading reloads for the live session', as
     await until(() => h.JE.initialized);
     assert.equal(bootstraps, 2);
     assert.equal(h.JE.currentSettings.qualityTagsEnabled, true);
+});
+
+test('with no configuration from either request the boot waits and asks again instead of running on an empty one', async t => {
+    let down = true;
+    const h = boot(t, { fast: true, expectedConsoleErrors: ['Failed to fetch public config'], ajax: async (path, request, session) => {
+        if (path.endsWith('/bootstrap') || (down && path.endsWith('/public-config'))) throw new Error('502 Bad Gateway');
+        return fallbackEndpoints(path, request, session);
+    } });
+    const configAsks = () => h.calls.filter(path => path.endsWith('/public-config')).length;
+    await until(() => configAsks() >= 3 || h.JE.initialized, 'a second attempt');
+    assert.equal(h.JE.initialized, undefined, 'no feature starts on an unknown configuration');
+    down = false;
+    await until(() => h.JE.initialized);
+    assert.equal(h.JE.pluginConfig.fromFallback, true);
 });
 
 test('stale credentials stop the retry loop and release the splash screen', async t => {

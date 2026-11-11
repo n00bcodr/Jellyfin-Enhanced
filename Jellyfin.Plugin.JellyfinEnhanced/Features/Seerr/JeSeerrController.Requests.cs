@@ -278,7 +278,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Seerr
         [Authorize]
         public Task<IActionResult> GetJellyseerrRequests([FromQuery] int take = 500, [FromQuery] int skip = 0, [FromQuery] string filter = "all")
         {
-            return ProxyJellyseerrRequest($"/api/v1/request?take={take}&skip={skip}&filter={filter}", HttpMethod.Get);
+            return ProxyJellyseerrRequest($"/api/v1/request?take={take}&skip={skip}&filter={Uri.EscapeDataString(filter ?? string.Empty)}", HttpMethod.Get);
         }
 
         // Returns the user's Seerr quota with a nextResetAt added per side.

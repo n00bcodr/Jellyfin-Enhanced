@@ -324,3 +324,25 @@ for (const legacy of [false, true]) test(`cancellation after headers reaches the
         body.resolve('{}');
     }
 });
+
+test('without AbortSignal.any requests still run, cancel through every signal and leave no listener behind', async t => {
+    // Chrome before 116, Firefox before 124 and Safari before 17.4 have no AbortSignal.any.
+    const wire = transport(), h = createHarness(wire); t.after(() => h.close());
+    delete h.window.AbortSignal.any;
+    for (const file of ['navigation', 'session', 'api-client']) h.load(`core/${file}.js`);
+    const api = h.JE.core.api;
+    const done = api.fetch('/plain');
+    assert.equal(wire.calls.length, 1); finish(wire.calls[0], { ok: true }); assert.equal((await done).ok, true);
+    const caller = new h.window.AbortController(), listening = new Set();
+    const add = caller.signal.addEventListener.bind(caller.signal), remove = caller.signal.removeEventListener.bind(caller.signal);
+    caller.signal.addEventListener = (type, listener, options) => { listening.add(listener); add(type, listener, options); };
+    caller.signal.removeEventListener = (type, listener, options) => { listening.delete(listener); remove(type, listener, options); };
+    // A deadline aborts the request while the caller's own signal stays open: the composed signals let go of it.
+    await assert.rejects(api.fetch('/slow', { signal: caller.signal, timeoutMs: 5 }), { name: 'AbortError' });
+    assert.equal(wire.calls[1].options.signal.aborted, true);
+    assert.equal(listening.size, 0);
+    const cancelled = api.fetch('/cancelled', { method: 'POST', signal: caller.signal });
+    const rejected = assert.rejects(cancelled, { name: 'AbortError' }); caller.abort(new Error('caller left')); await rejected;
+    assert.equal(wire.calls[2].options.signal.aborted, true);
+    assert.equal(wire.calls[2].options.signal.reason?.message, 'caller left');
+});

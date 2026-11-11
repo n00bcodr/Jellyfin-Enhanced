@@ -1,8 +1,8 @@
-import type { BookmarkOperation, BookmarkSaveReceipt, JsonValue } from '../../contracts/generated';
+import type { BookmarkDocumentResponse, BookmarkOperation, BookmarkSaveReceipt, JsonValue } from '../../contracts/generated';
 import { bootstrapSchema } from '../../contracts/schema';
 import { validateSchema } from '../../contracts/validate';
 import { featureContext, type FeatureContext } from '../../host/context';
-import type { BookmarkApi,Item,Library,Owner } from './types';
+import type { BookmarkApi,BookmarkDocument,BookmarkMap,Item,Library,Owner } from './types';
 interface Ajax { type: string; url: string; dataType?: string; contentType?: string; data?: string }
 export interface BookmarkHost {
  pluginConfig?: { BookmarksEnabled?: boolean; BookmarksUsePluginPages?: boolean; BookmarksUseCustomTabs?: boolean; BookmarksUseNativeTab?: boolean };
@@ -117,6 +117,32 @@ export function bookmarkOperation(Kind: string, Id?: string, fields?: Record<str
 function isReceipt(value: unknown): value is BookmarkSaveReceipt {
  return validateSchema(value, bootstrapSchema.$defs.BookmarkSaveReceipt, bootstrapSchema.$defs);
 }
+function isDocument(value: unknown): value is BookmarkDocumentResponse {
+ return validateSchema(value, bootstrapSchema.$defs.BookmarkDocumentResponse, bootstrapSchema.$defs);
+}
+/** The stored document as the page holds it, mapped as the loader's bookmarkSnapshotView maps it: record ids verbatim. */
+function documentView(text: string): BookmarkDocument {
+ const BOOKMARK_FIELDS = new Set(['ItemId', 'TmdbId', 'TvdbId', 'MediaType', 'Name', 'Timestamp', 'Label', 'CreatedAt', 'UpdatedAt', 'SyncedFrom', 'SeasonNumber', 'EpisodeNumber', 'Progress']);
+ const parsed: unknown = JSON.parse(text);
+ const fields = record(parsed) ? parsed : {};
+ const records = Object.entries(fields).find(([key]) => key.toLowerCase() === 'bookmarks')?.[1] ?? {};
+ if (!record(records)) throw new Error('Invalid bookmark records');
+ const bookmarks = Object.fromEntries(Object.entries(records).map(([id, value]) => [id, record(value)
+  ? Object.fromEntries(Object.entries(value).map(([key, child]) => [BOOKMARK_FIELDS.has(key) ? key.charAt(0).toLowerCase() + key.slice(1) : key, child]))
+  : value])) as BookmarkMap;
+ return { ...fields, bookmarks };
+}
+/** The re-read document with this save's records taken from the page's copy, which already holds the change. */
+function rebase(owner: Owner, stored: BookmarkDocument, Operations: BookmarkOperation[]): void {
+ const local = owner.bookmark?.bookmarks ?? {};
+ const bookmarks = Operations.some(op => op.Kind === 'delete-all') ? {} : stored.bookmarks;
+ for (const op of Operations) for (const id of [op.Id, op.SourceId]) {
+  if (!id) continue;
+  const mine = local[id];
+  if (mine) bookmarks[id] = mine; else delete bookmarks[id];
+ }
+ owner.bookmark = { ...stored, bookmarks };
+}
 export async function persistBookmarks(JE: BookmarkHost, getApi: () => BookmarkApiClient, owner: Owner, Operations: BookmarkOperation[]): Promise<void> {
  const api = getApi(), userId = api.getCurrentUserId(), token = api.accessToken?.(), baseUrl = api.getUrl('/'), current = lease(JE);
  if (!current() || JE.userConfig !== owner || !userId) throw new Error('Bookmark owner changed before saving');
@@ -126,20 +152,33 @@ export async function persistBookmarks(JE: BookmarkHost, getApi: () => BookmarkA
   JE.toast('Bookmarks were not loaded safely. Reload before saving again.', 5000);
   throw new Error('Loaded bookmark revision required. Reload before saving again.');
  }
- try {
-  const response = await api.ajax({type: 'POST', url: api.getUrl(`/JellyfinEnhanced/user-settings/${userId}/bookmark-document`),
-   contentType: 'application/json', dataType: 'json', data: JSON.stringify({Revision: owner.bookmarkRevision, Operations})});
+ const same = () => current() && getApi() === api && api.getCurrentUserId() === userId && api.accessToken?.() === token && api.getUrl('/') === baseUrl;
+ const url = api.getUrl(`/JellyfinEnhanced/user-settings/${userId}/bookmark-document`);
+ const save = async (Revision: string): Promise<string> => {
+  const response = await api.ajax({type: 'POST', url, contentType: 'application/json', dataType: 'json', data: JSON.stringify({Revision, Operations})});
   if (!isReceipt(response) || !response.Revision) throw new Error('Invalid bookmark save receipt. Reload before saving again.');
-  // Finish the captured owner's queue even after navigation, never bind to a new owner.
-  owner.bookmarkRevision = response.Revision;
- } catch (error) {
-  if (current() && getApi() === api && api.getCurrentUserId() === userId && api.accessToken?.() === token && api.getUrl('/') === baseUrl) {
-   const conflict = record(error) && (error.status === 409 || error.statusCode === 409);
-   if (conflict) window.setTimeout(() => {
-    if (current() && getApi() === api && api.getCurrentUserId() === userId && api.accessToken?.() === token && api.getUrl('/') === baseUrl)
-     JE.toast('Bookmarks changed in another tab or on the server. Reload before saving again.', 5000);
-   }, 0);
+  return response.Revision;
+ };
+ let conflicted = false;
+ try {
+  let revision: string;
+  try { revision = await save(owner.bookmarkRevision); }
+  catch (error) {
+   // Another tab or device saved since this page read the document: read it again and send this change once more.
+   conflicted = record(error) && (error.status === 409 || error.statusCode === 409);
+   if (!conflicted || !same()) throw error;
+   const stored: unknown = await api.ajax({type: 'GET', url: api.getUrl(`/JellyfinEnhanced/user-settings/${userId}/bookmark-document?_=${Date.now()}`), dataType: 'json'});
+   if (!isDocument(stored)) throw new Error('Invalid bookmark document');
+   const document = documentView(stored.Document);
+   revision = await save(stored.Revision);
+   rebase(owner, document, Operations);
   }
+  // Finish the captured owner's queue even after navigation, never bind to a new owner.
+  owner.bookmarkRevision = revision;
+ } catch (error) {
+  if (conflicted && same()) window.setTimeout(() => {
+   if (same()) JE.toast('Bookmarks changed in another tab or on the server. Reload before saving again.', 5000);
+  }, 0);
   throw error;
  }
 }

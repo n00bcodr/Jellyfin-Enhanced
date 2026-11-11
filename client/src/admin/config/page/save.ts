@@ -9,18 +9,25 @@ import type { AdminConfig } from '../domain/config';
 import type { CustomTabsSyncResult } from './types';
 
 /** Dependencies this module calls; members are resolved lazily, after every module exists. */
-export type SaveDeps = Pick<PageModules, 'context' | 'arr' | 'blockedUsers' | 'customTabs' | 'dirty' | 'displayCards' | 'gatedHelp' | 'mediaTagsTab' | 'shortcuts' | 'spoiler' | 'load'>;
+export type SaveDeps = Pick<PageModules, 'context' | 'arr' | 'blockedUsers' | 'customTabs' | 'dirty' | 'displayCards' | 'gatedHelp' | 'maintenance' | 'mediaTagsTab' | 'shortcuts' | 'spoiler' | 'load'>;
 
 export function createSave(m: SaveDeps) {
     const { ApiClient, Dashboard, JEAdmin, lifecycle, pluginId } = m.context;
 
             const resetAllUserSettingsBtn = asHtml(document.querySelector('#resetAllUserSettingsBtn'));
 
+        /** The form's own values in each configuration buildConfigFromForm returned, before the merge. */
+        const formValues = new WeakMap<AdminConfig, AdminConfig>();
+        /** Whether maintenance mode was on in the configuration the last build read, before the form's value. */
+        let maintenanceWasOn = false;
+
         async function buildConfigFromForm(scope: WriteScope) : Promise<AdminConfig> {
             if (!m.load.configLoaded) throw new Error('the saved settings have not been read');
             scope.throwIfStale();
             const config = await ApiClient.getPluginConfiguration(pluginId);
             scope.throwIfStale();
+            const stored = { ...config };
+            maintenanceWasOn = config.MaintenanceModeEnabled === true;
             const finalShortcuts = [...m.shortcuts.defaultShortcuts];
             m.shortcuts.shortcutOverrides.forEach(override => {
                 const index = finalShortcuts.findIndex(s => s.Name === override.Name);
@@ -56,9 +63,11 @@ export function createSave(m: SaveDeps) {
             const mmRemote   = needInput(document.getElementById('mmAction_remote')).checked;
             config.MaintenanceModeAction = maintenanceAction(mmAccounts, mmRemote);
             const mmUsersMode = (asControl(document.querySelector('input[name="maintenanceModeUsers"]:checked')) || {}).value || 'all';
+            // Until the user list has loaded there are no boxes to read, and "[]" would mean every non-admin
+            // user: the fresh read above then keeps the stored selection.
             if (mmUsersMode === 'all') {
                 config.MaintenanceModeAffectedUsers = 'all';
-            } else {
+            } else if (m.maintenance.usersLoaded) {
                 const checked = Array.from(document.querySelectorAll<HTMLInputElement>('.je-mm-user-cb:checked')).map(cb => cb.value);
                 config.MaintenanceModeAffectedUsers = JSON.stringify(checked);
             }
@@ -103,11 +112,21 @@ export function createSave(m: SaveDeps) {
             const onMinutes = needInput(document.querySelector('#autoMovieRequestTriggerOnMinutesWatched')).checked;
             config.AutoMovieRequestTriggerType = autoMovieTrigger(onStart, onMinutes);
             config.AutoMovieRequestMinutesWatched = clampedInt(needControl(document.querySelector('#autoMovieRequestMinutesWatched')).value, 20, 1, 180);
-            var serverVal = parseInt(needControl(document.querySelector('#autoMovieRequestServer')).value);
-            config.AutoMovieRequestCustomServerId = (!isNaN(serverVal) && serverVal >= 0) ? serverVal : -1;
-            var profileVal = parseInt(needControl(document.querySelector('#autoMovieRequestProfile')).value);
-            config.AutoMovieRequestCustomProfileId = (!isNaN(profileVal) && profileVal > 0) ? profileVal : 0;
-            config.AutoMovieRequestCustomRootFolder = needControl(document.querySelector('#autoMovieRequestRootFolder')).value || '';
+            // These selects hold a placeholder until Seerr's list for them is in (Seerr down or slow, or the mode
+            // not "Custom"): the fresh read above then keeps the stored values. The stored profile and folder
+            // belong to the stored server, so for another server the selects' values are saved.
+            const serverSelect = needControl(document.querySelector('#autoMovieRequestServer'));
+            const profileSelect = needControl(document.querySelector('#autoMovieRequestProfile'));
+            if (serverSelect.dataset.jeLoaded) {
+                const storedServerId = config.AutoMovieRequestCustomServerId;
+                var serverVal = parseInt(serverSelect.value);
+                config.AutoMovieRequestCustomServerId = (!isNaN(serverVal) && serverVal >= 0) ? serverVal : -1;
+                if (profileSelect.dataset.jeLoaded || config.AutoMovieRequestCustomServerId !== storedServerId) {
+                    var profileVal = parseInt(profileSelect.value);
+                    config.AutoMovieRequestCustomProfileId = (!isNaN(profileVal) && profileVal > 0) ? profileVal : 0;
+                    config.AutoMovieRequestCustomRootFolder = needControl(document.querySelector('#autoMovieRequestRootFolder')).value || '';
+                }
+            }
             m.blockedUsers.syncBlockedUsersToHiddenInput();
             config.JellyseerrImportBlockedUsers = needControl(document.querySelector('#jellyseerrImportBlockedUsers')).value || '';
             const retentionDays = parseInt(needControl(document.querySelector('#watchlistMemoryRetentionDays')).value);
@@ -252,7 +271,21 @@ export function createSave(m: SaveDeps) {
                 config[entry.ownedKey] = m.displayCards._jeCustomTabOwnedCache[entry.ownedKey] === true;
             });
 
+            // Another tab or administrator may have saved since this form was filled. A setting the form still
+            // holds as it was filled keeps the value just read, so only what was changed here is written over it.
+            formValues.set(config, { ...config });
+            const base = m.load.formBase;
+            Object.keys(config).forEach(function(key) {
+                if (JSON.stringify(config[key]) === JSON.stringify(base[key])) config[key] = stored[key];
+            });
             return config;
+        }
+
+        /** Writes a configuration from buildConfigFromForm; the form's values in it are then what the form was saved from. */
+        async function writeFormConfig(config: AdminConfig) : Promise<unknown> {
+            const result = await ApiClient.updatePluginConfiguration(pluginId, config);
+            m.load.formBase = formValues.get(config) ?? m.load.formBase;
+            return result;
         }
 
         /**
@@ -379,8 +412,9 @@ export function createSave(m: SaveDeps) {
 
             try {
                 const config = await buildConfigFromForm(scope);
+                const wasOn = maintenanceWasOn;
                 scope.throwIfStale();
-                const result = await ApiClient.updatePluginConfiguration(pluginId, config);
+                const result = await writeFormConfig(config);
                 scope.throwIfStale();
                 // After JE config is persisted, sync any managed Custom Tabs entries.
                 // We surface non-OK results to the admin via Dashboard.alert so a
@@ -407,24 +441,28 @@ export function createSave(m: SaveDeps) {
                             })
                         });
                         // Broadcast a native Jellyfin message to all active sessions
-                        // (reaches non-web clients like TV apps too — works regardless of Active Streams setting)
+                        // (reaches non-web clients like TV apps too — works regardless of Active Streams setting).
+                        // Only when this save turns maintenance on: Enable above is re-sent on every save, and a
+                        // window already running was announced when it started.
                         const mmMsg = text(config.MaintenanceModeNotificationMessage).trim()
                             || text(config.MaintenanceModeMessage).trim()
                             || 'Server maintenance is starting. Please finish up and try again later.';
                         scope.throwIfStale();
-                        try {
-                            await ApiClient.ajax({
-                                type: 'POST',
-                                url: ApiClient.getUrl('/JellyfinEnhanced/MaintenanceMode/Broadcast'),
-                                contentType: 'application/json',
-                                data: JSON.stringify({
-                                    header: 'Server Maintenance',
-                                    text: mmMsg,
-                                    timeoutMs: 30000
-                                })
-                            });
-                        } catch (bcErr) {
-                            console.warn('[JE] Maintenance broadcast failed (no active sessions?):', bcErr);
+                        if (!wasOn) {
+                            try {
+                                await ApiClient.ajax({
+                                    type: 'POST',
+                                    url: ApiClient.getUrl('/JellyfinEnhanced/MaintenanceMode/Broadcast'),
+                                    contentType: 'application/json',
+                                    data: JSON.stringify({
+                                        header: 'Server Maintenance',
+                                        text: mmMsg,
+                                        timeoutMs: 30000
+                                    })
+                                });
+                            } catch (bcErr) {
+                                console.warn('[JE] Maintenance broadcast failed (no active sessions?):', bcErr);
+                            }
                         }
                     } else {
                         // With the daily schedule on, "manual off" must leave a scheduled window running;
@@ -489,7 +527,7 @@ export function createSave(m: SaveDeps) {
                     // First, save the current configuration
                     const config = await buildConfigFromForm(scope);
                     scope.throwIfStale();
-                    await ApiClient.updatePluginConfiguration(pluginId, config);
+                    await writeFormConfig(config);
                     scope.throwIfStale();
                     m.dirty.jeMarkSaved();
 
@@ -540,7 +578,7 @@ export function createSave(m: SaveDeps) {
             try {
                 const config = await buildConfigFromForm(scope);
                 scope.throwIfStale();
-                await ApiClient.updatePluginConfiguration(pluginId, config);
+                await writeFormConfig(config);
                 scope.throwIfStale();
                 m.dirty.jeMarkSaved();
                 await runCustomTabsSync(config, scope);

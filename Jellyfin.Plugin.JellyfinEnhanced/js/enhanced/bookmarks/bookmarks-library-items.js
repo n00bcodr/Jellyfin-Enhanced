@@ -125,7 +125,7 @@
             <div class="je-bookmark-item-placeholder"><span class="material-icons" style="font-size: 48px; opacity: 0.3;">image_not_supported</span></div>
           `}
           <div class="je-bookmark-item-info">
-            <a href="/web/#/details?id=${encodeURIComponent(group.details.itemId || "")}" class="je-bookmark-item-title">${titleDisplay}</a>
+            <a href="#/details?id=${encodeURIComponent(group.details.itemId || "")}" class="je-bookmark-item-title">${titleDisplay}</a>
             <div class="je-bookmark-item-meta">
               ${JE.t("bookmark_count").replace("{count}", String(group.bookmarks.length))}
               ${orphaned ? ` • <span style="color: #ff9800;">${JE.t("bookmark_orphaned")}</span>` : ""}

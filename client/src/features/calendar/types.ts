@@ -31,7 +31,7 @@ export interface CalendarInternal {
  filterEvents(events: CalendarEvent[]): CalendarEvent[]; groupEventsByDate(events: CalendarEvent[]): Record<string, CalendarEvent[]>;
  searchFromProviders(event: CalendarEvent, options?: {preferSeries?: boolean}): Promise<string | null>;
  getRangeForView(date: Date, mode: string): {start: Date; end: Date}; getDaysInMonth(date: Date): number; getFirstDayOfMonth(date: Date): number;
- isTodayDate(date: Date): boolean; formatRangeLabel(): string; formatHourLabel(hour: number): string;
+ isTodayDate(date: Date): boolean; formatRangeLabel(): string; formatHourLabel(hour: number): string; locale(): string | undefined;
  renderEvent(event: CalendarEvent): string; renderAgendaEvent(event: CalendarEvent): string; renderCardItems(events: CalendarEvent[]): string;
  collapseEpisodes(events: CalendarEvent[]): CalendarEvent[]; eventHasTime(event: CalendarEvent): boolean; compareEventsWithinDay(a: CalendarEvent,b: CalendarEvent): number;
  updateDisplayModeButtons(): void; toggleSidebarCollapsed(): void; renderPage(target?: HTMLElement): void; syncPageModeClasses(): void; createPageContainer(): HTMLElement;

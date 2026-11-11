@@ -80,7 +80,7 @@ define({
         items: [
             { id: 'arrTagsSyncEnabled', prop: 'ArrTagsSyncEnabled', type: 'toggle', main: true, label: 'Enable Tags Sync',
               desc: 'Fetches all tags from Radarr and Sonarr instances defined above and adds them as Jellyfin tags.<br/><strong>Note:</strong> Run the sync task from Dashboard &gt; Scheduled Tasks &gt; "Sync Tags from *arr to Jellyfin" and configure how often it should run.' },
-            { id: 'arrTagsPrefix', prop: 'ArrTagsPrefix', type: 'text', default: 'Requested by: ', label: 'Tag Prefix', placeholder: 'JE Arr Tag: ',
+            { id: 'arrTagsPrefix', prop: 'ArrTagsPrefix', type: 'text', default: 'JE Arr Tag: ', label: 'Tag Prefix', placeholder: 'JE Arr Tag: ',
               desc: 'Prefix to add before each tag (e.g., "JE Arr Tag: " will result in "JE Arr Tag: 1 - Jellyfish")' },
             { id: 'arrTagsClearOldTags', prop: 'ArrTagsClearOldTags', type: 'toggle', default: true, label: 'Clear old tags before sync',
               desc: 'When enabled, removes all existing tags starting with the prefix before adding new ones. This keeps tags in sync with your *arr applications.' },

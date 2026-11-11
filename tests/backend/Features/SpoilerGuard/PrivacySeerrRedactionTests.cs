@@ -67,7 +67,7 @@ public class PrivacySeerrRedactionTests
             User.Id = UserId;
             Users.Setup(u => u.GetUserById(UserId)).Returns(User);
             var identities = new RequestIdentityService(Mock.Of<ISessionManager>(), Users.Object,
-                new SpoilerIdentityService(Users.Object, Plugin.Core.Logger), Plugin.Core.Logger);
+                new SpoilerIdentityService(Users.Object, Plugin.Core.Logger, Plugin.Core.Paths.Object), Plugin.Core.Logger);
             var resolver = new SpoilerUserResolver(Plugin.Core.Manager, Library.Object, Plugin.Core.Logger, identities);
             Next = new SpoilerNextUnwatchedService(Library.Object, Users.Object, Data.Object, Plugin.Core.Logger);
             Redactor = new SpoilerSeerrRedactor(resolver, Library.Object, Users.Object, Data.Object, Next);
@@ -1086,7 +1086,7 @@ public class PrivacySeerrRedactionTests
         f.Library.Setup(l => l.GetItemById(id)).Throws(new InvalidOperationException("offline"));
         f.State.Collections[id.ToString("N")] = new(); f.Save();
         var identities = new RequestIdentityService(Mock.Of<ISessionManager>(), f.Users.Object,
-            new SpoilerIdentityService(f.Users.Object, f.Plugin.Core.Logger), f.Plugin.Core.Logger);
+            new SpoilerIdentityService(f.Users.Object, f.Plugin.Core.Logger, f.Plugin.Core.Paths.Object), f.Plugin.Core.Logger);
         var resolver = new SpoilerUserResolver(f.Plugin.Core.Manager, f.Library.Object, f.Plugin.Core.Logger, identities);
         Assert.False(resolver.TryGetMovieScope(f.State, Guid.NewGuid(), out _));
     }

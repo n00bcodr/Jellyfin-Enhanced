@@ -23,18 +23,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.DetailsProviders
         private static readonly System.Text.RegularExpressions.Regex _tmdbIdRegex =
             new System.Text.RegularExpressions.Regex(@"^\d+$", System.Text.RegularExpressions.RegexOptions.Compiled);
 
-        // Extended key for season/episode reviews: {tmdbId}:s{n} or {tmdbId}:s{n}e{n}
+        // Extended key for season/episode reviews: {tmdbId}:s{n} or {tmdbId}:s{n}e{n}. Each number is a
+        // 32-bit id (at most 10 digits), and \z, unlike $, does not accept a trailing newline.
         private static readonly System.Text.RegularExpressions.Regex _tmdbIdExtendedRegex =
-            new System.Text.RegularExpressions.Regex(@"^\d+(:s\d+(:e\d+)?)?$", System.Text.RegularExpressions.RegexOptions.Compiled);
+            new System.Text.RegularExpressions.Regex(@"^\d{1,10}(:s\d{1,10}(:e\d{1,10})?)?\z", System.Text.RegularExpressions.RegexOptions.Compiled);
 
         private static bool IsValidTmdbKey(string tmdbId) =>
             !string.IsNullOrWhiteSpace(tmdbId) && _tmdbIdExtendedRegex.IsMatch(tmdbId);
+
+        // While user reviews are switched off no user posts, reads or removes one; the admin
+        // routes stay, so text posted earlier can still be found and removed.
+        private static bool UserReviewsOff => JellyfinEnhanced.Instance?.Configuration?.ShowUserReviews != true;
 
         [HttpGet("reviews/{mediaType}/{tmdbId}")]
         [Authorize]
         [Produces("application/json")]
         public IActionResult GetItemReviews(string mediaType, string tmdbId)
         {
+            if (UserReviewsOff) return NotFound();
+
             if (mediaType != "movie" && mediaType != "tv")
                 return BadRequest(new { message = "MediaType must be 'movie' or 'tv'." });
 
@@ -105,6 +112,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.DetailsProviders
         [Produces("application/json")]
         public IActionResult GetReviewRatings([FromQuery] string? keys)
         {
+            if (UserReviewsOff) return NotFound();
+
             // Insertion-ordered so the response lists keys in request order.
             var requested = new Dictionary<string, (double Sum, int Count)>(StringComparer.Ordinal);
             var order = new List<string>();
@@ -146,6 +155,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.DetailsProviders
         [Produces("application/json")]
         public IActionResult UpsertReview(string mediaType, string tmdbId, [FromBody] ReviewPayload payload)
         {
+            if (UserReviewsOff) return NotFound();
+
             if (mediaType != "movie" && mediaType != "tv")
                 return BadRequest(new { success = false, message = "MediaType must be 'movie' or 'tv'." });
 
@@ -178,6 +189,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.DetailsProviders
                 _logger.Info($"Saved review for {mediaType}:{tmdbId} by user {_userDisplayResolver.ResolveUserDisplay(userIdN)}.");
                 MirrorReviewRatingToUserData(userIdN, mediaType, tmdbId, previousRating, payload.Rating);
                 return Ok(new { success = true });
+            }
+            catch (ReviewLimitException ex)
+            {
+                return BadRequest(new { success = false, message = ex.Message });
             }
             catch (Exception ex)
             {
@@ -226,6 +241,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.DetailsProviders
                 MirrorReviewRatingToUserData(userIdN, mediaType, tmdbId, previousRating, payload.Rating);
                 return Ok(new { success = true });
             }
+            catch (ReviewLimitException ex)
+            {
+                return BadRequest(new { success = false, message = ex.Message });
+            }
             catch (Exception ex)
             {
                 _logger.Error($"Admin failed to save review for user {_userDisplayResolver.ResolveUserDisplay(userIdN)}: {ex.Message}");
@@ -238,6 +257,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.DetailsProviders
         [Produces("application/json")]
         public IActionResult DeleteReview(string mediaType, string tmdbId)
         {
+            if (UserReviewsOff) return NotFound();
+
             if (mediaType != "movie" && mediaType != "tv")
                 return BadRequest(new { success = false, message = "MediaType must be 'movie' or 'tv'." });
 

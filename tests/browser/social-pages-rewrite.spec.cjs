@@ -6,7 +6,7 @@ async function setup(page) {
  await page.goto('http://social.fixture/');
  await page.evaluate(()=>{
   let epoch=0;const callbacks=new Map();window.calls=[];window.toasts=[];window.fail=false;
-  const item=id=>({Id:id,Name:id,Type:'Movie',ImageTags:{Primary:'poster'}});
+  const item=id=>({Id:id,Name:id,Type:'Movie',ImageTags:{Primary:'poster'},UserData:{Played:false,PlayCount:0,PlaybackPositionTicks:0}});
   window.JellyfinEnhanced={internals:{},pluginConfig:{CatchUpEnabled:true,ActivityFeedEnabled:true,ActivityFeedShowWatched:true,ActivityFeedShowReviewed:true},session:{getEpoch:()=>epoch,isCurrent:e=>e===epoch,onUserChange:(k,f)=>callbacks.set(k,f)},t:()=>'',toast:m=>window.toasts.push(m),core:{ui:{skeletonGridHtml:()=>''},api:{jf:async(path,opts)=>{window.calls.push(path);if(path==='/Users/Me')return {Policy:{IsAdministrator:false}};if(opts?.method){if(window.fail)throw Error('fixture offline');return {};}if(path.includes('/Seasons?'))return {Items:[1,2,3].map(n=>({Id:`s${n}`,Name:`Season ${n}`,IndexNumber:n,ChildCount:4}))};return {Items:path.includes('IncludeItemTypes=Series')?[{...item('Series'),Type:'Series'}]:[item('First'),item('Second'),item('Third')]};},plugin:async(path)=>{window.calls.push(path);if(path==='/catchup/event')return {};if(window.fail)throw Error('fixture offline');return {items:Array.from({length:path.includes('100')?100:50},(_,n)=>({ActivityType:n%2?'Reviewed':'Watched',UserId:'u',UserName:'Viewer',Timestamp:n,Item:{Id:String(n),Name:`Movie ${n}`}}))};}}}};
   window.changeAccount=()=>{epoch++;callbacks.forEach(fn=>fn());};
   window.ApiClient={getCurrentUserId:()=> 'user',getUrl:p=>{if(!p)throw Error('Url name cannot be empty');return 'http://social.fixture'+p;},getImageUrl:()=>''};

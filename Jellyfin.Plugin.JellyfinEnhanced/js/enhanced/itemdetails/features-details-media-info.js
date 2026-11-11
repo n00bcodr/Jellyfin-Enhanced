@@ -347,7 +347,6 @@
         console.error("🪼 Jellyfin Enhanced: Error fetching watch progress for ID %s:", itemId, error);
         if (!isEpochCurrent(requestEpoch)) return;
         renderUnavailable();
-        watchProgressCache.set(itemId, { progress: 0, totalPlaybackTicks: 0, totalRuntimeTicks: 0, ts: now });
       }
     };
     void performFetch();
@@ -409,7 +408,6 @@
         if (!isCurrent()) return;
         console.error("🪼 Jellyfin Enhanced: Error fetching item size for ID %s:", itemId, error);
         renderUnavailable();
-        fileSizeCache.set(cacheKey, { size: null, unavailable: true, ts: now });
       }
     };
     void performFetch();
@@ -439,29 +437,25 @@
       const enriched = await fetchTagDataItem(userId, firstEpisodeId);
       if (enriched) return enriched;
     }
-    try {
-      const client = export0();
-      const response = await client.ajax({
-        type: "GET",
-        url: client.getUrl("/Items", {
-          ParentId: parentId,
-          IncludeItemTypes: "Episode",
-          IsVirtualItem: false,
-          Recursive: true,
-          SortBy: "PremiereDate",
-          SortOrder: "Ascending",
-          Limit: 1,
-          Fields: "MediaStreams,MediaSources",
-          userId: userId ?? ""
-        }),
-        dataType: "json"
-      });
-      const episode = export12(export82(export52(response, "Items"))[0]);
-      if (!episode?.Id) return episode;
-      return await fetchTagDataItem(userId, episode.Id) || episode;
-    } catch {
-      return null;
-    }
+    const client = export0();
+    const response = await client.ajax({
+      type: "GET",
+      url: client.getUrl("/Items", {
+        ParentId: parentId,
+        IncludeItemTypes: "Episode",
+        IsVirtualItem: false,
+        Recursive: true,
+        SortBy: "PremiereDate",
+        SortOrder: "Ascending",
+        Limit: 1,
+        Fields: "MediaStreams,MediaSources",
+        userId: userId ?? ""
+      }),
+      dataType: "json"
+    });
+    const episode = export12(export82(export52(response, "Items"))[0]);
+    if (!episode?.Id) return episode;
+    return await fetchTagDataItem(userId, episode.Id) || episode;
   }
   var languageTagNameCache = /* @__PURE__ */ new Map();
   async function loadLanguageTagMap(itemId, languages) {
@@ -712,8 +706,6 @@
         if (!isCurrent()) return;
         console.error("🪼 Jellyfin Enhanced: Error fetching audio languages for %s:", itemId, error);
         await renderUnavailableInFrame();
-        if (!isCurrent()) return;
-        cacheUnavailable();
       }
     };
     void performFetch();

@@ -24,7 +24,8 @@ export const TRANSLATIONS = new Set(['t', 'tx', 'tt', 'T', 'tWithFallback', 'tra
  * Trusted producers (Canopy's TRUSTED_PRODUCER_CALLS / TRUSTED_TABLE_NAMES, checked against JE's code):
  *  - icon (JE.icon, features/shared/icons.ts): a lookup into the plugin's frozen EMOJI/LUCIDE/MUI tables;
  *  - getThemeVariables (JE.themer, features/shared/themer.ts): colours and blur from the plugin's theme tables
- *    and the root element's computed style (admin-controlled server CSS), never item or user text.
+ *    and the root element's computed style, which a theme's hosted stylesheet sets: themer.ts passes only plain
+ *    CSS values (no quote, `<`, `&` or `;`). The logo is a URL and is escaped where it is used. Never item or user text.
  */
 export const PRODUCERS = new Set(['icon', 'getThemeVariables']);
 /** Plugin-owned markup tables: features/shared/icons.ts `icons` and the seerr `icons()` (internals.icons ?? ICONS). */

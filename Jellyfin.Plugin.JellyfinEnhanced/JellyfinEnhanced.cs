@@ -197,6 +197,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
 
         private string IndexHtmlPath => Path.Combine(_applicationPaths.WebPath, "index.html");
 
+        /// <summary>The folder of the web client Jellyfin hosts.</summary>
+        internal string? WebPath => _applicationPaths.WebPath;
+
         public static string BrandingDirectory
         {
             get

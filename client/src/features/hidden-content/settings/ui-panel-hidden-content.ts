@@ -101,7 +101,10 @@ export function installUiPanelHiddenContent(JE: Deps): void {
             manageBtn.addEventListener('click', () => {
                 // Both the page and fallback modal take over from this dialog.
                 ctx.closePanel();
-                if (JE.pluginConfig?.HiddenContentEnabled && JE.hiddenContentPage) {
+                // Placed as a tab or Plugin Page, the page never opens over the current view: manage here instead.
+                const config = JE.pluginConfig;
+                const placed = config?.HiddenContentUseNativeTab || config?.HiddenContentUseCustomTabs || config?.HiddenContentUsePluginPages;
+                if (config?.HiddenContentEnabled && JE.hiddenContentPage && !placed) {
                     JE.hiddenContentPage.showPage();
                 } else {
                     hidden.showManagementPanel();

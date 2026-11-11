@@ -159,12 +159,14 @@
     document.querySelectorAll(".mediaInfoItem-releaseDate").forEach((chip) => chip.remove());
   });
   JE.session?.onUserChange("release-dates", resetReleaseOwner);
+  var TmdbFailure = class extends Error {
+  };
   function tmdbGet(path) {
     const client = export0();
     const url = client.getUrl(`/JellyfinEnhanced/tmdb${path}`);
-    return fetch(url, { headers: { Authorization: `MediaBrowser Token="${client.accessToken()}"`, "X-Emby-Token": client.accessToken() } }).then((response) => response.ok ? response.json() : Promise.reject(`API Error: ${response.status}`)).catch((error) => {
+    return fetch(url, { headers: { Authorization: `MediaBrowser Token="${client.accessToken()}"`, "X-Emby-Token": client.accessToken() } }).then((response) => response.ok ? response.json() : response.status === 404 ? Promise.resolve(null) : Promise.reject(`API Error: ${response.status}`)).catch((error) => {
       console.error(`🪼 Jellyfin Enhanced: Release Date: TMDB request failed for ${path}`, error);
-      return null;
+      throw new TmdbFailure(String(error));
     });
   }
   async function resolveReleaseInfo(item, userId) {
@@ -179,14 +181,7 @@
       return tmdbId ? seriesReleaseInfo(await tmdbGet(`/tv/${export2(tmdbId)}`)) : [];
     }
     if (mediaType === "Season" || mediaType === "Episode") {
-      let seriesTmdbId;
-      if (item.SeriesId) {
-        try {
-          const series = await export7(JE.helpers, item.SeriesId, true, userId);
-          seriesTmdbId = series?.ProviderIds.Tmdb;
-        } catch {
-        }
-      }
+      const seriesTmdbId = item.SeriesId ? (await export7(JE.helpers, item.SeriesId, true, userId))?.ProviderIds.Tmdb : void 0;
       if (!seriesTmdbId) return [];
       const show = export2(seriesTmdbId);
       if (mediaType === "Season") {
@@ -253,8 +248,7 @@
         if (entry && releaseLookups.get(itemId) === entry) releaseLookups.delete(itemId);
         placeholder.remove();
         if (cutShort || !owner() || revision !== guardRevision || JE.session && !JE.session.isCurrent(epoch)) return;
-        console.error(`🪼 Jellyfin Enhanced: Release Date: Error fetching release info for ${itemId}:`, error);
-        releaseDateCache.set(itemId, { infos: [], ts: now });
+        if (!(error instanceof TmdbFailure)) console.error(`🪼 Jellyfin Enhanced: Release Date: Error fetching release info for ${itemId}:`, error);
       }
     };
     void performFetch();

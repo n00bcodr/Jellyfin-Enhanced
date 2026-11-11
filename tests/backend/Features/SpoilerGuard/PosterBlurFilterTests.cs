@@ -64,7 +64,7 @@ public class PosterBlurFilterTests
             var state=new UserSpoilerBlur(); if(guarded) { state.Movies[Movie.Id.ToString("N")]=new(); state.Series[Episode.SeriesId.ToString("N")]=new(); }
             Plugin.Core.Manager.SaveUserConfiguration(UserId.ToString("N"),"spoilerblur.json",state);
             Sessions.SetupGet(s=>s.Sessions).Returns(Array.Empty<SessionInfo>());
-            var markers=new SpoilerIdentityService(Users.Object,Plugin.Core.Logger);
+            var markers=new SpoilerIdentityService(Users.Object,Plugin.Core.Logger,Plugin.Core.Paths.Object);
             var identity=new RequestIdentityService(Sessions.Object,Users.Object,markers,Plugin.Core.Logger);
             var resolver=new SpoilerUserResolver(Plugin.Core.Manager,Library.Object,Plugin.Core.Logger,identity);
             next=new SpoilerNextUnwatchedService(Library.Object,Users.Object,UserData.Object,Plugin.Core.Logger);
@@ -323,6 +323,85 @@ public class PosterBlurFilterTests
         var bytes=PosterBlurTests.Source();var original=new FileContentResult(bytes,"image/jpeg");
         var(executed,http)=await f.RunTrickplay(original,f.Episode.Id,ip);
         if(protect) Protected(bytes,executed,http); else { Assert.Same(original,executed.Result);Private(http); }
+    }
+
+    // Over the decode budget: a flat placeholder in both modes, never the original and never a blur of it.
+    [Theory]
+    [InlineData("blur")][InlineData("hide")]
+    public async Task Images_over_the_decode_budget_get_a_placeholder_in_both_modes(string mode)
+    {
+        using var f=new Fixture();f.Plugin.Plugin.Configuration.SpoilerBlurMode=mode;
+        var(executed,http)=await f.Run(new FileContentResult(PosterBlurTests.OverBudget(),"image/png"));
+        var result=Assert.IsType<FileContentResult>(executed.Result);using var image=SKBitmap.Decode(result.FileContents);
+        for(int y=0;y<image.Height;y+=97) for(int x=0;x<image.Width;x+=97) Assert.InRange(image.GetPixel(x,y).Red,(byte)14,(byte)18);
+        Private(http);
+    }
+    // Jellyfin serves the item's current image whatever `tag` says (the tag only sets cache headers),
+    // so a new tag is a cache hit; a changed image is not.
+    [Fact]
+    public async Task A_made_up_tag_is_served_from_the_cache_and_a_changed_image_is_not()
+    {
+        using var f=new Fixture();
+        f.Movie.ImageInfos=[new ItemImageInfo{Path="/art/poster.jpg",Type=MediaBrowser.Model.Entities.ImageType.Primary,DateModified=new DateTime(2026,1,1,0,0,0,DateTimeKind.Utc)}];
+        var(first,_)=await f.Run(new FileContentResult(PosterBlurTests.Source(),"image/png"),query:"?tag=real");
+        var cached=Assert.IsType<FileContentResult>(first.Result).FileContents;
+        foreach(var tag in new[]{"made-up-1","made-up-2"})
+        {
+            var(again,_)=await f.Run(new FileContentResult(PosterBlurTests.Source(),"image/png"),query:"?tag="+tag);
+            Assert.Same(cached,Assert.IsType<FileContentResult>(again.Result).FileContents);
+        }
+        f.Movie.ImageInfos[0].DateModified=new DateTime(2026,2,1,0,0,0,DateTimeKind.Utc);
+        var(changed,_)=await f.Run(new FileContentResult(PosterBlurTests.Source(),"image/png"),query:"?tag=real");
+        Assert.NotSame(cached,Assert.IsType<FileContentResult>(changed.Result).FileContents);
+    }
+    private sealed class EndlessStream(long length) : Stream
+    {
+        public long Served;
+        public override bool CanRead=>true; public override bool CanSeek=>false; public override bool CanWrite=>false;
+        public override long Length=>throw new NotSupportedException(); public override long Position{get=>Served;set=>throw new NotSupportedException();}
+        public override int Read(byte[] buffer,int offset,int count)=>Read(buffer.AsSpan(offset,count));
+        public override int Read(Span<byte> buffer){var n=(int)Math.Min(buffer.Length,length-Served);buffer[..n].Clear();Served+=n;return n;}
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer,CancellationToken token=default)=>ValueTask.FromResult(Read(buffer.Span));
+        public override Task<int> ReadAsync(byte[] buffer,int offset,int count,CancellationToken token)=>Task.FromResult(Read(buffer,offset,count));
+        public override void Flush(){} public override long Seek(long offset,SeekOrigin origin)=>throw new NotSupportedException();
+        public override void SetLength(long value)=>throw new NotSupportedException(); public override void Write(byte[] buffer,int offset,int count)=>throw new NotSupportedException();
+    }
+    [Fact]
+    public async Task A_source_over_the_byte_cap_is_not_read_to_its_end_and_gets_a_placeholder()
+    {
+        using var f=new Fixture();var stream=new EndlessStream(ImageBlurService.MaxSourceBytes+16*1024*1024);
+        var(executed,http)=await f.Run(new FileStreamResult(stream,"image/png"));
+        Assert.True(stream.Served<=ImageBlurService.MaxSourceBytes+1024*1024,$"read {stream.Served} bytes");
+        var result=Assert.IsType<FileContentResult>(executed.Result);using var image=SKBitmap.Decode(result.FileContents);Assert.NotNull(image);Private(http);
+    }
+    private sealed class Gauge
+    {
+        public int Active,Max;
+        public readonly TaskCompletionSource Open=new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public void Enter(){var now=Interlocked.Increment(ref Active);int seen;while((seen=Volatile.Read(ref Max))<now&&Interlocked.CompareExchange(ref Max,now,seen)!=seen){}}
+        public void Exit()=>Interlocked.Decrement(ref Active);
+    }
+    // Counts the requests reading their image at once; each waits for the gauge to open.
+    private sealed class HeldStream(byte[] bytes,Gauge gauge) : MemoryStream(bytes)
+    {
+        private bool entered;
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer,CancellationToken token=default)
+        {
+            if(!entered){entered=true;gauge.Enter();await gauge.Open.Task;}
+            var read=await base.ReadAsync(buffer,token);if(read==0) gauge.Exit();return read;
+        }
+    }
+    [Fact]
+    public async Task Only_a_few_protected_images_are_read_and_decoded_at_once()
+    {
+        using var f=new Fixture();var gauge=new Gauge();
+        var runs=Enumerable.Range(0,6).Select(_=>Task.Run(()=>f.Run(new FileStreamResult(new HeldStream(PosterBlurTests.Source(),gauge),"image/png")))).ToArray();
+        // Give every request the time to reach its read before any may finish.
+        for(int i=0;i<100&&Volatile.Read(ref gauge.Active)<runs.Length;i++) await Task.Delay(10);
+        gauge.Open.SetResult();
+        var results=await Task.WhenAll(runs);
+        Assert.All(results,r=>Assert.IsType<FileContentResult>(r.Executed.Result));
+        Assert.InRange(gauge.Max,1,ImageBlurService.MaxConcurrentDecodes);
     }
 
     [Fact]

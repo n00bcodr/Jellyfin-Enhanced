@@ -35,13 +35,16 @@ function install(JE: BookmarkHost) {
       // Search using Jellyfin's provider ID filtering. Movies/TV can be scoped
       // to their known item types; other media (music videos, etc.) search
       // across all types since the original Jellyfin type isn't preserved.
-      const itemTypes = mediaType === 'tv' ? 'Series,Episode' : mediaType === 'movie' ? 'Movie' : null;
+      // An episode's replacement has its season and episode numbers: the server lists only those.
+      const episode = mediaType === 'tv' && seasonNumber != null && episodeNumber != null;
+      const itemTypes = episode ? 'Episode' : mediaType === 'tv' ? 'Series,Episode' : mediaType === 'movie' ? 'Movie' : null;
+      const position = episode ? `&ParentIndexNumber=${seasonNumber}&IndexNumber=${episodeNumber}` : '';
 
-      // Existing Jellyfin route, paged to avoid silently missing older replacements.
+      // Existing Jellyfin route (its legacy Users/{id}/Items twin drops IndexNumber), paged to avoid silently missing older replacements.
       const items: Item[] = [];
       const seen = new Set<string>();
       for (let start = 0; ; start += 500) {
-        const url = `Users/${encodeURIComponent(userId || '')}/Items?Recursive=true${itemTypes ? `&IncludeItemTypes=${itemTypes}` : ''}&Fields=ProviderIds&SortBy=DateCreated&SortOrder=Descending&Limit=500&StartIndex=${start}`;
+        const url = `Items?userId=${encodeURIComponent(userId || '')}&Recursive=true${itemTypes ? `&IncludeItemTypes=${itemTypes}` : ''}${position}&Fields=ProviderIds&SortBy=DateCreated&SortOrder=Descending&Limit=500&StartIndex=${start}`;
         const response = await JE.core.api.fetch(apiClient.getUrl(url));
         if (!isCurrent()) return null;
         const batch = readItems(response);

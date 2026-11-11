@@ -164,7 +164,7 @@
       modalElement.setAttribute("aria-modal", "true");
       modalElement.setAttribute("tabindex", "-1");
       let backdropImage;
-      if (backdropUrl) backdropImage = `url('${escapeHtml(backdropUrl)}')`;
+      if (backdropUrl) backdropImage = `url('${backdropUrl.replace(/['"\\\s]/g, (c) => c === "'" ? "%27" : encodeURIComponent(c))}')`;
       else if (backdropPath && export20(backdropPath)) backdropImage = `url('https://image.tmdb.org/t/p/w1280${escapeHtml(backdropPath)}')`;
       else backdropImage = "linear-gradient(45deg, #3b82f6, #8b5cf6)";
       const contentEl = document2.createElement("div");
@@ -333,9 +333,9 @@
           return;
         }
         window2.clearInterval(interval);
-        serverSelect.innerHTML = '<option value="">Select Server...</option>';
-        qualitySelect.innerHTML = '<option value="">Select Quality...</option>';
-        folderSelect.innerHTML = '<option value="">Select Folder...</option>';
+        serverSelect.innerHTML = `<option value="">${JE.t("jellyseerr_server_placeholder")}</option>`;
+        qualitySelect.innerHTML = `<option value="">${JE.t("jellyseerr_quality_placeholder")}</option>`;
+        folderSelect.innerHTML = `<option value="">${JE.t("jellyseerr_folder_placeholder")}</option>`;
         const sorted = [...data.servers].sort((a, b) => (a.name || "").localeCompare(b.name || ""));
         for (const server of sorted) {
           const option = document2.createElement("option");
@@ -346,8 +346,8 @@
         }
         const updateServerDependentOptions = () => {
           const selected = data.servers.find((server) => String(server.id) === serverSelect.value);
-          qualitySelect.innerHTML = '<option value="">Select Quality...</option>';
-          folderSelect.innerHTML = '<option value="">Select Folder...</option>';
+          qualitySelect.innerHTML = `<option value="">${JE.t("jellyseerr_quality_placeholder")}</option>`;
+          folderSelect.innerHTML = `<option value="">${JE.t("jellyseerr_folder_placeholder")}</option>`;
           if (!selected) return;
           for (const profile of selected.qualityProfiles) {
             const option = document2.createElement("option");

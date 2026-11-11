@@ -221,14 +221,14 @@ import type { CalendarEvent, CalendarState, InstanceError } from './types';
       const data = calendarResponse(await JE.core.api.plugin(`/arr/calendar?${query.toString()}`));
       if (!current()) return null;
       state.events = data.events;
-      state.error = data.errors.length ? "Some calendar sources failed. Check instance errors." : null;
+      state.error = data.errors.length ? JE.t("calendar_sources_failed") : null;
       // Surface per-instance errors from the backend envelope so a misconfigured or
       // unreachable arr instance doesn't silently leave the calendar looking fine.
       surfaceCalendarErrors(data.errors);
       return data;
     } catch (error) {
       (error instanceof TypeError ? console.warn : console.error)(`${logPrefix} Failed to fetch calendar events:`, error);
-      if (current()) { state.events = []; state.error = "Calendar could not be loaded. Please retry."; }
+      if (current()) { state.events = []; state.error = JE.t("calendar_load_failed"); }
       return null;
     }
   }
@@ -260,10 +260,9 @@ import type { CalendarEvent, CalendarState, InstanceError } from './types';
       if (_toastedCalendarErrors.has(key)) return;
       _toastedCalendarErrors.add(key);
       if (typeof JE?.toast === "function") {
-        JE.toast(
-          "⚠ " + esc(err.source || "Arr") + " calendar instance \"" +
-          esc(err.instanceName || "unknown") + "\" failed: " + esc(err.reason)
-        );
+        JE.toast(JE.t("calendar_instance_failed", {
+          source: esc(err.source || "Arr"), name: esc(err.instanceName || "unknown"), reason: esc(err.reason),
+        }));
       }
       console.warn(`${logPrefix} ${err.source || "Arr"} instance "${err.instanceName}" error: ${err.reason}`);
     });
@@ -516,9 +515,9 @@ import type { CalendarEvent, CalendarState, InstanceError } from './types';
           if (typeof itemId !== "string") throw new Error("Invalid provider lookup response");
           return itemId;
         } catch (error) {
-          // An HTTP error (e.g. 404) means "not found" — fall through to the
+          // "Not found" (the route answers 400 when nothing matches) falls through to the
           // next provider lookup, matching the pre-core `!response.ok` path.
-          if (record(error) && error.status === 404) return null;
+          if (record(error) && (error.status === 400 || error.status === 404)) return null;
           throw error;
         }
       };

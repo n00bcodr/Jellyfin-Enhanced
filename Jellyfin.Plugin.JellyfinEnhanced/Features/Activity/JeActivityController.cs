@@ -14,17 +14,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Activity
     {
         private readonly ILibraryManager _libraryManager;
         private readonly IItemRepository _itemRepository;
+        private readonly Shared.SpoilerGuard.SpoilerSeerrRedactor _spoilerSeerrRedactor;
 
         public JeActivityController(
             Logger logger,
             IUserManager userManager,
             ILibraryManager libraryManager,
             UserConfigurationManager userConfigurationManager,
-            IItemRepository itemRepository)
+            IItemRepository itemRepository,
+            Shared.SpoilerGuard.SpoilerSeerrRedactor spoilerSeerrRedactor)
             : base(userManager, logger, userConfigurationManager)
         {
             _libraryManager = libraryManager;
             _itemRepository = itemRepository;
+            _spoilerSeerrRedactor = spoilerSeerrRedactor;
         }
 
         // ─── Activity Feed (recently watched / favorited / reviewed) ─────────────
@@ -48,12 +51,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Activity
                 ? _userConfigurationManager.GetAllActivity().Entries.Values.AsEnumerable()
                 : Enumerable.Empty<ActivityEntry>();
             cancellationToken.ThrowIfCancellationRequested();
-            var reviews = config.ActivityFeedShowReviewed
+            var reviews = config.ActivityFeedShowReviewed && config.ShowUserReviews
                 ? _userConfigurationManager.GetAllReviews().Reviews.Values.AsEnumerable()
                 : Enumerable.Empty<UserReview>();
 
             var builder = new Services.ActivityFeedBuilder(_libraryManager, _userManager, _itemRepository, _logger);
-            var items = builder.Build(activity, reviews, viewer, IsAdminUser(), config, limit, cancellationToken);
+            var guards = _spoilerSeerrRedactor.LoadRows(viewerUserId.Value.ToString(), HttpContext);
+            var items = builder.Build(activity, reviews, viewer, IsAdminUser(), config, limit, cancellationToken, guards);
             return Ok(new { items });
         }
     }

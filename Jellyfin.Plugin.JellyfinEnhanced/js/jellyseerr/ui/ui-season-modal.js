@@ -219,9 +219,9 @@
                 <input type="checkbox" class="jellyseerr-season-checkbox" data-season-number="${escapeHtml(seasonNumber)}" ${disabled ? "disabled" : ""} style="${!partialRequestsEnabled ? "cursor: not-allowed;" : ""}">
                 <div class="jellyseerr-season-info">
                     <div class="jellyseerr-season-name">${escapeHtml(seasonDisplayName(season, JE.t))}</div>
-                    <div class="jellyseerr-season-meta">${escapeHtml((season.airDate || season.jeYear || "").substring(0, 4))}<span class="jellyseerr-meta-eps"> &middot; ${escapeHtml(episodes)} ep</span></div>
+                    <div class="jellyseerr-season-meta">${escapeHtml((season.airDate || season.jeYear || "").substring(0, 4))}<span class="jellyseerr-meta-eps"> &middot; ${escapeHtml(JE.t("jellyseerr_season_episode_count", { count: episodes }))}</span></div>
                 </div>
-                <div class="jellyseerr-season-episodes">${escapeHtml(episodes)} ep</div>
+                <div class="jellyseerr-season-episodes">${escapeHtml(JE.t("jellyseerr_season_episode_count", { count: episodes }))}</div>
                 <div class="jellyseerr-season-status jellyseerr-season-status-${escapeHtml(cssClass)}">${escapeHtml(JE.t(labelKey))}</div>
             `;
         if (existing instanceof HTMLInputElement) {
@@ -234,7 +234,7 @@
           const size = seasonDownloads.reduce((sum, d) => sum + (d.size || 0), 0);
           const sizeLeft = seasonDownloads.reduce((sum, d) => sum + (d.sizeLeft || 0), 0);
           if (size > 0) {
-            const progress = internals.createInlineProgress?.({ size, sizeLeft, status: `${seasonDownloads.length} episode(s) downloading` });
+            const progress = internals.createInlineProgress?.({ size, sizeLeft, status: JE.t("jellyseerr_season_episodes_downloading", { count: seasonDownloads.length }) });
             if (progress) seasonItem.appendChild(progress);
           }
         }

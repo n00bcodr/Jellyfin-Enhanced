@@ -15,6 +15,10 @@ export function createLayoutStyles(JE: TagRuntimeBridge) {
     const SLOT = '.je-tag-host > .je-tag-slot';
     const host = (layout: string) => `.je-tag-host[data-je-layout="${layout}"] > .je-tag-slot`;
     const INDICATORS = '.cardScalable:has(.countIndicator, .playedIndicator) > .je-tag-host';
+    /** A browser without :has() (Chrome before 105, Firefox before 121) drops a whole selector list holding one:
+        the INDICATORS rules are restated for every card there, so top-right tags always leave the indicator room. */
+    const NO_HAS = '@supports not selector(:has(*))';
+    const ANY_CARD = '.cardScalable > .je-tag-host';
     const LEGACY_INDICATOR_OFFSET = 'clamp(20px, 3vw, 30px)';
     const INDICATOR_OFFSET = 'calc(clamp(20px, 3vw, 30px) * var(--je-tag-scale, 1))';
     const CORNER = `${SLOT}:is([data-je-slot="tl"], [data-je-slot="tr"], [data-je-slot="bl"], [data-je-slot="br"])`;
@@ -235,6 +239,12 @@ export function createLayoutStyles(JE: TagRuntimeBridge) {
             .cardIndicators ~ .je-tag-host[data-je-indicator-gap] > .je-tag-slot[data-je-slot="tr"] {
                 top: calc(6px + ${INDICATOR_OFFSET});
             }
+            ${NO_HAS} {
+                ${ANY_CARD}[data-je-indicator-gap] > .je-tag-slot[data-je-slot="tr"],
+                .cardIndicators ~ .je-tag-host[data-je-indicator-gap] > .je-tag-slot[data-je-slot="tr"] {
+                    top: calc(6px + ${INDICATOR_OFFSET});
+                }
+            }
             /* Settings saved before layouts (data-je-legacy) keep the original
                web geometry: only a container set to exactly top-right clears the
                indicator, each one sitting at least the offset down or right below
@@ -250,6 +260,12 @@ export function createLayoutStyles(JE: TagRuntimeBridge) {
             .cardIndicators ~ .je-tag-host[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > [data-je-indicator-gap] {
                 margin-top: max(0px, ${LEGACY_INDICATOR_OFFSET} - var(--je-indicator-before, 0px));
             }
+            ${NO_HAS} {
+                ${ANY_CARD}[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > [data-je-indicator-gap],
+                .cardIndicators ~ .je-tag-host[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > [data-je-indicator-gap] {
+                    margin-top: max(0px, ${LEGACY_INDICATOR_OFFSET} - var(--je-indicator-before, 0px));
+                }
+            }
             /* ... and on phones the rating, age rating and status containers sit
                4px from the card edges instead of 6px. */
             @media (max-width: 480px) {
@@ -262,6 +278,12 @@ export function createLayoutStyles(JE: TagRuntimeBridge) {
                 ${INDICATORS}[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > ${LEGACY_MOBILE_GROUPS}[data-je-indicator-gap],
                 .cardIndicators ~ .je-tag-host[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > ${LEGACY_MOBILE_GROUPS}[data-je-indicator-gap] {
                     margin-top: max(0px, ${LEGACY_INDICATOR_OFFSET} - 2px - var(--je-indicator-before, 0px));
+                }
+                ${NO_HAS} {
+                    ${ANY_CARD}[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > ${LEGACY_MOBILE_GROUPS}[data-je-indicator-gap],
+                    .cardIndicators ~ .je-tag-host[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > ${LEGACY_MOBILE_GROUPS}[data-je-indicator-gap] {
+                        margin-top: max(0px, ${LEGACY_INDICATOR_OFFSET} - 2px - var(--je-indicator-before, 0px));
+                    }
                 }
             }
 
@@ -300,6 +322,12 @@ export function createLayoutStyles(JE: TagRuntimeBridge) {
             ${INDICATORS}[data-je-indicator-gap][data-je-edge] > .je-tag-slot[data-je-slot="tr"],
             .cardIndicators ~ .je-tag-host[data-je-indicator-gap][data-je-edge] > .je-tag-slot[data-je-slot="tr"] {
                 top: calc(var(--je-edge) + ${INDICATOR_OFFSET});
+            }
+            ${NO_HAS} {
+                ${ANY_CARD}[data-je-indicator-gap][data-je-edge] > .je-tag-slot[data-je-slot="tr"],
+                .cardIndicators ~ .je-tag-host[data-je-indicator-gap][data-je-edge] > .je-tag-slot[data-je-slot="tr"] {
+                    top: calc(var(--je-edge) + ${INDICATOR_OFFSET});
+                }
             }
             ${buildFlushStyles()}
             ${FLUSH}[data-je-slot="tc"] { top: var(--je-anchor-top, 0px); align-items: flex-start; overflow: visible; }
@@ -351,6 +379,11 @@ export function createLayoutStyles(JE: TagRuntimeBridge) {
             }
             ${INDICATORS}[data-je-layout="bands"] > .je-tag-slot[data-je-slot="top"] {
                 padding-right: calc(10px + ${INDICATOR_OFFSET});
+            }
+            ${NO_HAS} {
+                ${ANY_CARD}[data-je-layout="bands"] > .je-tag-slot[data-je-slot="top"] {
+                    padding-right: calc(10px + ${INDICATOR_OFFSET});
+                }
             }
             /* At most two rows; the fitting pass hides the rest behind "+N", and
                cards under 160px wide get compact labels. */

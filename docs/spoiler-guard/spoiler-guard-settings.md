@@ -171,7 +171,7 @@ This adds newly created shows and movies to users' protection lists. New items a
 
     - Only newly created titles count. Existing-title rescans and metadata refreshes do not re-arm a title a user removed. Adding a new library can arm its newly created titles. Use [apply-existing](#guarding-titles-already-in-the-library) for older items.
     - The batch rechecks the saved type/library scope. Turning off the master or this mode before processing drops the queued batch.
-    - Users with library permissions are included, even disabled accounts. Parental-rating and tag restrictions are not applied by this bulk check. Users created after an addition do not receive its entries retroactively.
+    - Users with library permissions are included, even disabled accounts. A title a user's parental rating or tag restrictions hide is not armed for that user. Users created after an addition do not receive its entries retroactively.
     - Played titles are not skipped. Their stored entries can become active if the titles are later marked unplayed. Existing direct entries are preserved. There is no per-user switch to opt out of this automatic mode.
 
 ### Auto-enable scope (content type and libraries)
@@ -220,7 +220,7 @@ Use **Apply to existing titles now…** for a one-time pass over existing shows 
 
     Both this action and Dashboard → scheduled tasks → **Spoiler Guard: apply to existing titles** use these rules:
 
-    - **Scope and users:** Saved content-type/library scope; users with library permissions, including disabled accounts. The bulk check does not apply parental-rating or tag restrictions.
+    - **Scope and users:** Saved content-type/library scope; users with library permissions, including disabled accounts. A title a user's parental rating or tag restrictions hide is not armed for that user.
     - **Already guarded:** Direct Series/Movie entries are skipped. A movie protected only through collection membership can gain a direct entry.
     - **Fully watched:** Played movies are skipped. Series are skipped only when they have at least one on-disk episode and all on-disk episodes, including specials, are played. A series with no episodes is not considered fully watched.
     - **Partially watched:** Included by default. The optional skip-started check uses Jellyfin's `IsResumable` state, plus played episodes for series. Its query parameter defaults to `skipStarted=false`.
@@ -477,9 +477,9 @@ Spoiler Guard stores each account's title lists and preferences in a file. Back 
 2. Restore a known-good file or reconfigure your title list and preferences.
 3. Reload any web session whose state failed to load.
 
-!!! warning "Unreadable state can stop protection"
+!!! warning "Unreadable state"
 
-    Some reads return empty defaults when state is unreadable. An empty health response does not prove every store is readable. There is no in-UI health banner.
+    While the file cannot be read, image and metadata filtering keep the last state read since the server started. With none, they guard every series and movie in the library until the file reads, so titles you never guarded can look protected for a while. Some other reads return empty defaults. An empty health response does not prove every store is readable. There is no in-UI health banner.
 
 ??? note "Storage and corruption handling"
 
@@ -493,7 +493,7 @@ Spoiler Guard stores each account's title lists and preferences in a file. Back 
 
     Strict Spoiler Guard operations can quarantine an unreadable store as `spoilerblur.json.corrupt-<timestamp>-<suffix>` and return an error. Relevant interactive endpoints record corruption and return HTTP 503 asking you to reconfigure. A quarantine move does not immediately write a replacement defaults file. If moving fails, deletion can be attempted instead.
 
-    Image/metadata filtering and the raw inspection GET use lenient reads that can return empty defaults without quarantine or a health event. Bulk operations can log failures without recording health events.
+    Image/metadata filtering reads without quarantine or a health event, as the warning above describes. The raw inspection GET uses a lenient read that can return empty defaults. Bulk operations can log failures without recording health events.
 
 ??? note "Inspecting and acknowledging health events"
 

@@ -234,7 +234,7 @@ Copy Sonarr/Radarr tags into Jellyfin metadata and show them as clickable links.
     **Clear old tags before sync** also removes tags on unmatched items or failed/empty source results. Use commas or semicolons for **Sync to Jellyfin Filter**, even though the form says one per line.
 
 ??? info "Prefix and matching details"
-    Settings replace a blank **Tag Prefix** with `Requested by: `. When the prefix is blank, displayed tag links use `JE Arr Tag: `; sync uses `Requested by: ` only if the stored prefix is unset, rather than empty. Avoid blank prefixes. Changing the prefix leaves previously prefixed metadata in place.
+    Settings save a blank **Tag Prefix** as the default, `JE Arr Tag: `. When the stored prefix is blank or unset, sync and displayed tag links both use `JE Arr Tag: `. Avoid blank prefixes. Changing the prefix leaves previously prefixed metadata in place.
 
     Filters ignore capitalization in tag names, but displayed links require matching prefix capitalization. Movies match by TMDB, series by IMDb. See [ARR Tags](arr-features.md#arr-tags) for cleanup limits, working filter examples, and styling.
 
@@ -259,7 +259,7 @@ Choose how Calendar looks and which releases it shows. These are admin (server) 
 | **Time Format** | **5pm/5:30pm** | Chooses 12-hour or **17:00/17:30** 24-hour format; times use the browser timezone. |
 | **Highlight Favorites/Watchlist** | Off | Adds watchlist indicators and a **Watchlist** filter. |
 | **Highlight Watched Series** | Off | Marks the event's matched played/started episode; movie events also use played/started state. |
-| **Filter by Library Access** | On | Filters releases by your library access, with best-effort checks for future titles. |
+| **Filter by Library Access** | On | Filters releases by your library access. A future title whose root folder cannot be tied to an accessible library is hidden from accounts limited to some libraries. |
 | **Show Requested Only (Default)** | Off | Initially selects **Requests**; viewers can change filters. |
 | **Force Only Requested Items** | Off | Always limits the displayed Calendar to your requested titles and hides the **Requests** chip. |
 

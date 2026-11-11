@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {setImmediate as tick} from 'node:timers/promises';
 import {createHarness,deferred} from '../helpers/harness.mjs';
 async function navigate(h,hash){const changed=new Promise(resolve=>{const listener=e=>{if(new URL(e.newURL).hash===hash){h.window.removeEventListener('hashchange',listener);resolve();}};h.window.addEventListener('hashchange',listener);});h.window.location.hash=hash;await changed;await tick();}
-const movie=id=>({Id:id,Name:id,Type:'Movie',ImageTags:{Primary:'poster'}});
+const movie=id=>({Id:id,Name:id,Type:'Movie',ImageTags:{Primary:'poster'},UserData:{Played:false,PlayCount:0,PlaybackPositionTicks:0}});
 function setup(t,{jf,plugin,admin=false}={}) {
  let epoch=0,user='alice',server='http://one.test';const callbacks=new Map(),calls=[],toasts=[];
  const h=createHarness({html:'<main></main>',JE:{pluginConfig:{CatchUpEnabled:true,ActivityFeedEnabled:true,ActivityFeedShowWatched:true,ActivityFeedShowReviewed:true},internals:{},t:()=>'',toast:m=>toasts.push(m),session:{getEpoch:()=>epoch,isCurrent:e=>e===epoch,onUserChange:(k,f)=>callbacks.set(k,f)},core:{api:{jf:async(path,options)=>{calls.push({path,options});return path==='/Users/Me'?{Policy:{IsAdministrator:admin}}:jf?jf(path,options):{Items:[movie('a'),movie('b'),movie('c')]};},plugin:async(path,options)=>{calls.push({path,options});return plugin?plugin(path,options):{items:[]};}},ui:{skeletonGridHtml:()=>''}}},apiClient:{getCurrentUserId:()=>user,getUrl:path=>{if(!path)throw Error('Url name cannot be empty');return server+path;},getImageUrl:()=>''}});
@@ -28,7 +28,7 @@ test('Catch Up failed action reconciles and does not create a successful undo',a
 });
 test('Catch Up pending action cannot be duplicated or undone before acknowledgement',async t=>{
  const pending=deferred();const h=setup(t,{jf:async(path,options)=>options?.method?pending.promise:{Items:[movie('a'),movie('b')]}});await h.render();
- h.button('r').click();h.button('r').click();h.button('z').click();assert.equal(h.calls.filter(c=>c.options?.method).length,1);assert.equal(h.top().Id,'a');
+ h.button('r').click();h.button('r').click();h.button('z').click();await tick();h.button('r').click();h.button('z').click();assert.equal(h.calls.filter(c=>c.options?.method).length,1);assert.equal(h.top().Id,'a');
  pending.resolve({});await tick();assert.equal(h.top().Id,'b');assert.equal(h.S.state.undoStack.length,1);
 });
 test('Catch Up repeated mounts own one keyboard listener and singleton state',async t=>{
@@ -80,8 +80,27 @@ test('Catch Up admin filters reject out-of-order replies and normal users have n
  const normal=setup(t);await normal.render();assert.equal(normal.document.querySelector('.je-catchup-activity'),null);
 });
 test('Catch Up partial season failure waits for every sent write before reloading',async t=>{
- const late=deferred();let loads=0;const h=setup(t,{jf:async(path,options)=>{if(options?.method){if(path.endsWith('s1'))throw Error('denied');return late.promise;}if(path.includes('/Seasons?'))return {Items:[1,2,3].map(n=>({Id:`s${n}`,Name:`Season ${n}`,IndexNumber:n}))};loads++;return {Items:[{...movie('series'),Type:'Series'}]};}});
+ const late=deferred();let loads=0;const h=setup(t,{jf:async(path,options)=>{if(options?.method){if(path.endsWith('s1'))throw Error('denied');return late.promise;}if(path.includes('/Seasons?'))return {Items:[1,2,3].map(n=>({Id:`s${n}`,Name:`Season ${n}`,IndexNumber:n}))};if(path.includes('ParentId='))return {Items:[]};loads++;return {Items:[{...movie('series'),Type:'Series'}]};}});
  await h.render();h.document.querySelector('[data-mode="Series"]').click();await tick();h.button('r').click();await tick();h.document.querySelectorAll('.je-catchup-grid button')[1].click();const before=loads;h.document.querySelector('.je-catchup-modal .primary').click();await tick();assert.equal(loads,before);late.resolve({});await tick();assert.ok(loads>before);assert.equal(h.S.state.undoStack.length,0);
+});
+test('Catch Up rewind of a watched show restores only the episodes the swipe changed',async t=>{
+ const user=(Played,PlayCount,PlaybackPositionTicks,LastPlayedDate)=>({Played,PlayCount,PlaybackPositionTicks,...(LastPlayedDate?{LastPlayedDate}:{})});
+ const episodes={s1:[{Id:'e1',UserData:user(true,2,0,'2026-01-02T03:04:05.1234567Z')},{Id:'e2',UserData:user(false,0,5000,'2026-02-03T04:05:06Z')},{Id:'e3',UserData:user(false,0,0)}]};
+ const h=setup(t,{jf:async(path,options)=>options?.method?{}:path.includes('/Seasons?')?{Items:[1,2].map(n=>({Id:`s${n}`,Name:`Season ${n}`,IndexNumber:n,ChildCount:3,UserData:{UnplayedItemCount:2}}))}:path.includes('ParentId=s1')?{Items:episodes.s1}:{Items:[{...movie('series'),Type:'Series'}]}});
+ await h.render();h.document.querySelector('[data-mode="Series"]').click();await tick();h.button('r').click();await tick();h.document.querySelectorAll('.je-catchup-grid button')[0].click();h.document.querySelector('.je-catchup-modal .primary').click();await tick();await tick();
+ const writes=()=>h.calls.filter(c=>c.options?.method&&c.path.startsWith('/Users/')).map(c=>[c.options.method,c.path,c.options.body&&{...c.options.body}]);
+ assert.deepEqual(writes(),[['POST','/Users/alice/PlayedItems/s1',undefined]]);
+ h.button('z').click();await tick();await tick();
+ // e1 was watched before the swipe and is left alone; the season itself is never marked unwatched.
+ assert.deepEqual(writes().slice(1).sort(),[['DELETE','/Users/alice/PlayedItems/e3',undefined],['POST','/Users/alice/Items/e2/UserData',{Played:false,PlayCount:0,PlaybackPositionTicks:5000,LastPlayedDate:'2026-02-03T04:05:06Z'}]]);
+ assert.equal(h.top().Id,'series');assert.equal(h.S.state.undoStack.length,0);
+});
+test('Catch Up rewind of a watched film puts its resume point back',async t=>{
+ const film={...movie('a'),UserData:{Played:false,PlayCount:0,PlaybackPositionTicks:9000,LastPlayedDate:'2026-03-04T05:06:07Z'}};
+ const h=setup(t,{jf:async(path,options)=>options?.method?{}:path.includes('Ids=a')?{Items:[film]}:{Items:[film,movie('b')]}});
+ await h.render();h.button('r').click();await tick();await tick();assert.equal(h.top().Id,'b');h.button('z').click();await tick();await tick();
+ assert.deepEqual(h.calls.filter(c=>c.options?.method&&c.path.startsWith('/Users/')).map(c=>[c.options.method,c.path,c.options.body&&{...c.options.body}]),[['POST','/Users/alice/PlayedItems/a',undefined],['POST','/Users/alice/Items/a/UserData',{Played:false,PlayCount:0,PlaybackPositionTicks:9000,LastPlayedDate:'2026-03-04T05:06:07Z'}]]);
+ assert.equal(h.top().Id,'a');
 });
 test('Catch Up failed undo reconciles without falsely restoring the old card',async t=>{
  let watched=false;const h=setup(t,{jf:async(path,options)=>{if(options?.method==='DELETE')throw Error('undo denied');if(options?.method==='POST'){watched=true;return {};}return {Items:watched?[movie('b')]:[movie('a'),movie('b')]};}});

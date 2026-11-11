@@ -97,8 +97,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Settings
                 return authorizationResult;
             }
 
-            var userConfig = _userConfigurationManager.GetUserConfiguration<UserShortcuts>(authorizedUserId, "shortcuts.json");
-            return Ok(userConfig);
+            // The client saves the whole list: an unreadable one is reported, never answered as empty.
+            try
+            {
+                return Ok(_userConfigurationManager.GetUserConfigurationStrict<UserShortcuts>(authorizedUserId, "shortcuts.json", quarantineCorrupt: false));
+            }
+            catch (Exception)
+            {
+                // The strict read has logged why.
+                return StatusCode(500, new { success = false, message = "Shortcuts could not be read. The stored list has been preserved." });
+            }
         }
 
         [HttpPost("user-settings/{userId}/settings.json")]

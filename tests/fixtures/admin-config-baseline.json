@@ -1068,7 +1068,7 @@
   "ShowArrLinksAsText": false,
   "ArrLinksShowStatusSingle": false,
   "ArrTagsSyncEnabled": false,
-  "ArrTagsPrefix": "Requested by: ",
+  "ArrTagsPrefix": "JE Arr Tag: ",
   "ArrTagsClearOldTags": true,
   "ArrTagsShowAsLinks": true,
   "ArrTagsSyncFilter": "",

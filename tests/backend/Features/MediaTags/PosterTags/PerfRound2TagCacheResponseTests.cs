@@ -372,6 +372,26 @@ public class PerfRound2TagCacheResponseTests
         Assert.DoesNotContain(endpoint.Second.ToString("N"), delta.Body);
     }
 
+    [Fact]
+    public async Task AnUnreadableSpoilerStateKeepsTheGuardAndTheFileWhereItIs()
+    {
+        using var endpoint = new Endpoint();
+        endpoint.AliceAccess = [endpoint.First, endpoint.Episode];
+        endpoint.GuardSeries();
+        Assert.DoesNotContain("Episode secret", (await endpoint.Read(endpoint.Alice)).Body);
+
+        // Alice's file can no longer be read (cut short by a full disk, a share that dropped).
+        var path = Path.Combine(endpoint.Fixture.Core.ConfigRoot, endpoint.Alice.Id.ToString("N"), SpoilerBlurImageFilter.SpoilerBlurFileName);
+        File.WriteAllText(path, "{\"Series\":{");
+        SpoilerUserResolver.InvalidateUser(endpoint.Alice.Id.ToString("N"));
+        var unreadable = await endpoint.Read(endpoint.Alice);
+        Assert.Equal(200, unreadable.Status);
+        Assert.DoesNotContain("Episode secret", unreadable.Body);
+        // A read never moves the file aside: it is still there, as it was.
+        Assert.Equal("{\"Series\":{", File.ReadAllText(path));
+        Assert.Empty(Directory.GetFiles(Path.GetDirectoryName(path)!, "*.corrupt-*"));
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData(300L)]

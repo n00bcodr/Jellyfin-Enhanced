@@ -21,7 +21,9 @@ export function installUiPanelShortcutEditor(JE: Deps, featureCtx = settingsPane
         const { help, pluginShortcuts, primaryAccentColor, kbdBackground } = ctx;
 
         // --- Shortcut Key Binding Logic ---
-        if (JE.pluginConfig.DisableAllShortcuts) return;
+        // Overrides that failed to load are unknown: a rebind would be saved over all of them.
+        const shortcuts = JE.userConfig.shortcuts;
+        if (JE.pluginConfig.DisableAllShortcuts || !shortcuts) return;
         const displayKey = (key: string | undefined) => key || JE.t('panel_shortcuts_disabled') || 'Disabled';
         const keyElementFor = (action: string) => queryElement(help, `.shortcut-key[data-action="${action}"]`);
         const addIndicator = (labelWrapper: Element) => {
@@ -42,7 +44,7 @@ export function installUiPanelShortcutEditor(JE: Deps, featureCtx = settingsPane
         };
 
         const setShortcutDisabled = (action: string, disabled: boolean) => {
-            const userShortcuts = JE.userConfig.shortcuts.Shortcuts;
+            const userShortcuts = shortcuts.Shortcuts;
             const shortcutIndex = userShortcuts.findIndex(s => s.Name === action);
             const existing = userShortcuts[shortcutIndex];
 
@@ -62,7 +64,7 @@ export function installUiPanelShortcutEditor(JE: Deps, featureCtx = settingsPane
                 JE.state.activeShortcuts[action] = defaultKey;
             }
 
-            JE.saveUserSettings('shortcuts.json', JE.userConfig.shortcuts);
+            JE.saveUserSettings('shortcuts.json', shortcuts);
 
             const keyElement = keyElementFor(action);
             if (keyElement && document.activeElement !== keyElement) {
@@ -139,13 +141,13 @@ export function installUiPanelShortcutEditor(JE: Deps, featureCtx = settingsPane
                 }
 
                 // Update or add the shortcut override
-                const userShortcut = JE.userConfig.shortcuts.Shortcuts.find(s => s.Name === action);
+                const userShortcut = shortcuts.Shortcuts.find(s => s.Name === action);
                 if (userShortcut) {
                     userShortcut.Key = combo;
                 } else {
-                    JE.userConfig.shortcuts.Shortcuts.push(overrideFor(action, combo, pluginShortcuts));
+                    shortcuts.Shortcuts.push(overrideFor(action, combo, pluginShortcuts));
                 }
-                JE.saveUserSettings('shortcuts.json', JE.userConfig.shortcuts);
+                JE.saveUserSettings('shortcuts.json', shortcuts);
 
                 // Update active shortcuts
                 JE.state.activeShortcuts[action] = combo;

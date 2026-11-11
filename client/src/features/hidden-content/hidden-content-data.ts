@@ -1,7 +1,7 @@
 import { getApi, lease, invalidatePolicy } from './host';
 import { installOnce, onDispose, selectionLease, enqueueWrite, pendingWrites } from './host';
 import type { HiddenDataSurface } from './host';
-import { decodeDocument, settingsFor, normalizeId, widestScope, sameValue, earliestHiddenAt, aliasMetadata, mergeHomeScope as mergeCwScope, type HiddenDocument, type HiddenItem, type Settings } from './model';
+import { decodeDocument, settingsFor, normalizeId, widestScope, sameValue, earliestHiddenAt, aliasMetadata, withChanges, mergeHomeScope as mergeCwScope, type HiddenDocument, type HiddenItem, type Settings } from './model';
 import { host, registry, type HiddenHost } from './host';
 /**
  * @file Hidden Content — data store, lookup sets, and the public data API.
@@ -28,6 +28,8 @@ import { host, registry, type HiddenHost } from './host';
     const hiddenIdSet = new Set<string>();
     const hiddenTmdbIdSet = new Set<string>();
     let hiddenData: HiddenDocument | null = null;
+    // The stored list as this session last read or wrote it: what it changed since then is its own.
+    let storedCopy: HiddenDocument = {items:{},settings:{}};
     let loadValid = true;
     let dataOwner:ReturnType<typeof lease>|null=null;
     let editSequence=0;
@@ -175,7 +177,7 @@ import { host, registry, type HiddenHost } from './host';
             JE.userConfig = JE.userConfig || {};
             JE.userConfig.hiddenContent = camelCased || { items: {}, settings: {} };
             noteItemChanges(hiddenData?.items??{},camelCased.items);
-            hiddenData = camelCased; dataOwner=requestToken;
+            hiddenData = camelCased; storedCopy = camelCased; dataOwner=requestToken;
             rebuildSets();
             emitChange();
             refreshNativeCardVisibility();
@@ -193,10 +195,13 @@ import { host, registry, type HiddenHost } from './host';
 
     // Local-cache mirror of a server-side hide write — preserves existing metadata + merges scopes via mergeCwScope.
     // Looks up under hyphenated AND N-format keys (server canonical is hyphenated; some callers pass N-format from data-id).
-    function markScopedHidden(itemId: string, scope?: string) {
+    // The server wrote the entry, so it is recorded as stored first: a save never sends it as this session's change, and
+    // removes it when this session has unhidden the item since the write was sent (then only `storedOnly` is recorded).
+    function markScopedHidden(itemId: string, scope?: string, storedOnly = false) {
         if (!itemId) return;
+        if (!storedOnly) markScopedHidden(itemId, scope, true);
         const _scope = (scope || 'continuewatching').toLowerCase();
-        const data = getHiddenData();
+        const local = getHiddenData(), data = storedOnly ? storedCopy : local;
         const items = (data.items) || {};
         const noHyphen = itemId.replace(/-/g, '');
         const hyphenated = noHyphen.length === 32
@@ -231,6 +236,7 @@ import { host, registry, type HiddenHost } from './host';
         const nextItems = { ...items, [itemId]: merged };
         if (hyphenated !== itemId) delete nextItems[hyphenated];
         if (noHyphen !== itemId) delete nextItems[noHyphen];
+        if (storedOnly) { storedCopy = { ...data, items: nextItems }; return; }
         noteItemChanges(data.items,nextItems,[],true);
         hiddenData = { ...data, items: nextItems };
         JE.userConfig = JE.userConfig || {};
@@ -485,8 +491,26 @@ import { host, registry, type HiddenHost } from './host';
         policyRevision++; intentReset++; itemIntents.clear();
         try {
             const next = JE.userConfig?.hiddenContent == null ? { items: {}, settings: {} } : decodeDocument(JE.userConfig.hiddenContent);
-            hiddenData = next; dataOwner=lease(JE); itemEdits.clear(); loadValid = true; rebuildSets();
+            // A list that failed to load (null) is unknown, not empty: nothing shows as hidden and edits are refused.
+            hiddenData = next; storedCopy = next; dataOwner=lease(JE); itemEdits.clear(); loadValid = JE.userConfig?.hiddenContent != null; rebuildSets();
         } catch (error) { hiddenData ??= {items:{},settings:{}}; loadValid = false; console.warn("Invalid hidden-content policy", error); }
+    }
+
+    /**
+     * A save writes the whole list, so it starts from `stored`, the list as just read (another device, an
+     * administrator or the server may have changed it), and applies only what this session changed. `saved()`,
+     * called once that is written, takes the result as this session's list, keeping edits made meanwhile.
+     */
+    function rebaseOnto(stored: HiddenDocument) {
+        assertWritable();
+        const owner=dataOwner, sent=getHiddenData(), merged=withChanges(storedCopy, sent, stored);
+        return { merged, saved() {
+            if (dataOwner !== owner) return;
+            const local=getHiddenData(), next=withChanges(sent, local, merged), changed=!sameValue(local, next);
+            if (changed) noteItemChanges(local.items, next.items);
+            storedCopy = merged; hiddenData = next; JE.userConfig.hiddenContent = next;
+            if (changed) { rebuildSets(); emitChange(); refreshNativeCardVisibility(); }
+        } };
     }
 
     // Hidden-content data is per-user. Clear the local mirror the moment the
@@ -495,7 +519,7 @@ import { host, registry, type HiddenHost } from './host';
     // from the incoming user's config once the re-bootstrap has loaded it.
     JE.session?.onUserChange('hidden-content-data', () => {
         policyRevision++; intentReset++; itemIntents.clear();
-        hiddenData = { items: {}, settings: {} };
+        hiddenData = { items: {}, settings: {} }; storedCopy = hiddenData;
         loadValid = false; dataOwner=null; itemEdits.clear();
         hiddenIdSet.clear();
         hiddenTmdbIdSet.clear();
@@ -533,6 +557,7 @@ import { host, registry, type HiddenHost } from './host';
         filterRequestItems,
         unhideAll,
         resetFromUserConfig,
+        rebaseOnto,
     });
 
 })(host.JellyfinEnhanced);

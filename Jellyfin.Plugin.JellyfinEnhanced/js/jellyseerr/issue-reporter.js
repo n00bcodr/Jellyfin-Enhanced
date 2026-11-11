@@ -553,7 +553,11 @@
     handle.show();
     void loadExistingIssues(handle.modalElement, tmdbId, mediaType, open);
     if (mediaType === "tv") {
-      buildTvControls(handle.modalElement, item, open).catch((error) => console.debug(`${logPrefix} Error building tv controls:`, error));
+      const submit = handle.modalElement.querySelector(".jellyseerr-modal-button-primary");
+      if (submit) submit.disabled = true;
+      buildTvControls(handle.modalElement, item, open).catch((error) => console.debug(`${logPrefix} Error building tv controls:`, error)).finally(() => {
+        if (submit) submit.disabled = false;
+      });
     }
   }
   function createReportButton(container, tmdbId, itemName, mediaType, backdropUrl = null, item = null) {
@@ -774,6 +778,12 @@
     }
   }
   var initialized = false;
+  var STATUS_RETRY_MS = 6e4;
+  var lastStatusCheck = 0;
+  var retryOnView = () => {
+    if (initialized || Date.now() - lastStatusCheck < STATUS_RETRY_MS) return;
+    void initialize();
+  };
   async function initialize() {
     if (!JE.pluginConfig?.JellyseerrEnabled || !JE.pluginConfig?.JellyseerrShowReportButton) {
       console.debug(`${logPrefix} Jellyseerr integration or report-button feature disabled, skipping initialization`);
@@ -782,19 +792,23 @@
     if (initialized) return;
     JE.jellyseerrUI?.addMainStyles?.();
     console.log(`${logPrefix} Initializing... (verifying Jellyseerr status)`);
+    lastStatusCheck = Date.now();
     try {
       const client = apiClient();
       const status = JE.takePrefetched?.("SeerrStatus") || await client.ajax({ type: "GET", url: client.getUrl("/JellyfinEnhanced/jellyseerr/status"), dataType: "json" });
       if (!record(status)?.active) {
-        console.debug(`${logPrefix} Jellyseerr status check returned inactive, skipping reporter init`);
+        console.debug(`${logPrefix} Jellyseerr status check returned inactive, asking again on a later page view`);
+        document.addEventListener("viewshow", retryOnView);
         return;
       }
     } catch (error) {
-      console.warn(`${logPrefix} Failed to verify Jellyseerr status, skipping reporter init:`, error);
+      console.warn(`${logPrefix} Failed to verify Jellyseerr status, asking again on a later page view:`, error);
+      document.addEventListener("viewshow", retryOnView);
       return;
     }
     if (initialized) return;
     initialized = true;
+    document.removeEventListener("viewshow", retryOnView);
     const handleViewShow = () => {
       setTimeout(() => {
         void issueReporter.tryAddButton();

@@ -87,12 +87,14 @@ public class IntegrationArrTests
         if (sonarr)
         {
             var result = await new SonarrService(transport, env.Logger).GetSeriesTagsByTvdbId("http://127.0.0.1/base/", "test-key");
+            Assert.NotNull(result);
             Assert.Equal(new[] { "family", "日本語" }, Assert.Single(result).Value);
             Assert.True(result.ContainsKey("tt1"));
         }
         else
         {
             var result = await new RadarrService(transport, env.Logger).GetMovieTagsByTmdbId("http://127.0.0.1/base/", "test-key");
+            Assert.NotNull(result);
             Assert.Equal(new[] { "family", "日本語" }, Assert.Single(result).Value);
             Assert.True(result.ContainsKey(1));
         }
@@ -112,8 +114,8 @@ public class IntegrationArrTests
     {
         using var env = new IntegrationEnvironment();
         using var transport = new IntegrationTransport((_, _) => throw new InvalidOperationException("No requests allowed"));
-        Assert.Empty(await new RadarrService(transport, env.Logger).GetMovieTagsByTmdbId(url, "key"));
-        Assert.Empty(await new SonarrService(transport, env.Logger).GetSeriesTagsByTvdbId(url, "key"));
+        Assert.Null(await new RadarrService(transport, env.Logger).GetMovieTagsByTmdbId(url, "key"));
+        Assert.Null(await new SonarrService(transport, env.Logger).GetSeriesTagsByTvdbId(url, "key"));
         Assert.Equal(0, transport.Calls);
     }
 
@@ -133,8 +135,8 @@ public class IntegrationArrTests
             "status" => Task.FromResult(IntegrationTransport.Response("[]", 503)),
             _ => Task.FromResult(IntegrationTransport.Response("{"))
         });
-        Assert.Empty(await new RadarrService(transport, env.Logger).GetMovieTagsByTmdbId("http://127.0.0.1", "key"));
-        Assert.Empty(await new SonarrService(transport, env.Logger).GetSeriesTagsByTvdbId("http://127.0.0.1", "key"));
+        Assert.Null(await new RadarrService(transport, env.Logger).GetMovieTagsByTmdbId("http://127.0.0.1", "key"));
+        Assert.Null(await new SonarrService(transport, env.Logger).GetSeriesTagsByTvdbId("http://127.0.0.1", "key"));
         Assert.Equal(2, transport.Calls);
     }
 

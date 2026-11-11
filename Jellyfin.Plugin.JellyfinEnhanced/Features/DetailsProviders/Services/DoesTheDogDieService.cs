@@ -22,6 +22,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.DetailsProviders.Services
     {
         private const string ApiBase = "https://www.doesthedogdie.com/api/v3";
         private const int CurrentSchemaVersion = 1;
+        // Titles kept in memory and in ddd-cache.json.
+        internal const int MaxCacheEntries = 10000;
         // Stop looking up new titles when this few requests are left this month.
         private const int MonthlyReserve = 100;
 
@@ -83,6 +85,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.DetailsProviders.Services
 
                 var fetched = await FetchTitleAsync(mediaType, tmdbId, ct).ConfigureAwait(false);
                 _cache[key] = fetched;
+                // Expired entries go at once; past the cap, the oldest.
+                foreach (var entry in _cache.Where(e => IsExpired(e.Value)).ToList()) _cache.TryRemove(entry);
+                foreach (var entry in _cache.OrderBy(e => e.Value.FetchedAtUnixMs).Take(_cache.Count - MaxCacheEntries).ToList()) _cache.TryRemove(entry);
                 ScheduleSave();
                 return fetched;
             }

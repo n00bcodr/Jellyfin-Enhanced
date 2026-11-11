@@ -40,6 +40,8 @@
     const isTodayDate = P.isTodayDate;
     const formatRangeLabel = P.formatRangeLabel;
     const formatHourLabel = P.formatHourLabel;
+    const locale = P.locale;
+    const weekdayName = (index) => new Date(2026, 1, 1 + index).toLocaleDateString(locale(), { weekday: "short" });
     const renderEvent = P.renderEvent;
     const renderAgendaEvent = P.renderAgendaEvent;
     const renderCardItems = P.renderCardItems;
@@ -94,7 +96,7 @@
       let html = '<div class="je-calendar-month">';
       html += '<div class="je-calendar-weekdays">';
       orderedDaysOfWeek.forEach((day) => {
-        html += `<div class="je-calendar-weekday">${day.substring(0, 3)}</div>`;
+        html += `<div class="je-calendar-weekday">${weekdayName(daysOfWeek.indexOf(day))}</div>`;
       });
       html += "</div>";
       html += '<div class="je-calendar-month-grid">';
@@ -111,7 +113,7 @@
         dayEvents = collapseEpisodes(dayEvents);
         const dayDate = new Date(year, anchor.getMonth(), day);
         const todayClass = isTodayDate(dayDate) ? " je-calendar-today" : "";
-        const weekdayLabel = (daysOfWeek[dayDate.getDay()] || "").substring(0, 3);
+        const weekdayLabel = weekdayName(dayDate.getDay());
         html += `
         <div class="je-calendar-day${todayClass}">
           <div class="je-calendar-day-header">
@@ -153,7 +155,7 @@
         <div class="je-calendar-day${todayClass}">
           <div class="je-calendar-day-header">
             <span class="je-calendar-day-number">${day.getDate()}</span>
-            <span class="je-calendar-day-name">${(daysOfWeek[day.getDay()] || "").substring(0, 3)}</span>
+            <span class="je-calendar-day-name">${weekdayName(day.getDay())}</span>
           </div>
           <div class="${state.settings.displayMode === "cards" ? "je-calendar-day-cards" : "je-calendar-events-list"}">
             ${state.settings.displayMode === "cards" ? renderCardItems(dayEvents) : dayEvents.map((event) => renderEvent(event)).join("")}
@@ -177,8 +179,8 @@
       dates.forEach((dateKey2) => {
         const [year = "0", month = "1", day = "1"] = dateKey2.split("-");
         const dateObj = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-        const weekday = dateObj.toLocaleDateString(void 0, { weekday: "short" });
-        const monthDay = dateObj.toLocaleDateString(void 0, { month: "short", day: "numeric" });
+        const weekday = dateObj.toLocaleDateString(locale(), { weekday: "short" });
+        const monthDay = dateObj.toLocaleDateString(locale(), { month: "short", day: "numeric" });
         let dayEvents = groupedEvents[dateKey2] || [];
         dayEvents.sort(compareEventsWithinDay);
         dayEvents = collapseEpisodes(dayEvents);
@@ -263,7 +265,7 @@
       return html;
     }
     function renderCalendar() {
-      if (state.error && !state.events.length || state.requestError && (state.settings.forceOnlyRequested || state.activeFilters.has("Requests"))) return `<div class="je-calendar-error" role="alert">${JE.escapeHtml(state.error || state.requestError || "")}<button onclick="window.JellyfinEnhanced.calendarPage.refresh()">Retry</button></div>`;
+      if (state.error && !state.events.length || state.requestError && (state.settings.forceOnlyRequested || state.activeFilters.has("Requests"))) return `<div class="je-calendar-error" role="alert">${JE.escapeHtml(state.error || state.requestError || "")}<button onclick="window.JellyfinEnhanced.calendarPage.refresh()">${JE.t("calendar_retry")}</button></div>`;
       if (state.viewMode === "week") return renderWeekView();
       if (state.viewMode === "agenda") return renderAgendaView();
       if (state.viewMode === "day") return renderDayView();
@@ -301,10 +303,10 @@
       const filterControls = `
       <div class="je-calendar-filter-controls">
         <div class="je-calendar-filter-toggle ${hasTwoFilters ? "" : "is-disabled"}" role="group" aria-label="Filter mode">
-          <button type="button" class="je-calendar-filter-btn ${state.filterMatchMode === "any" ? "active" : ""}" data-filter-mode="any" ${hasTwoFilters ? "" : 'disabled aria-disabled="true"'}>OR</button>
-          <button type="button" class="je-calendar-filter-btn ${state.filterMatchMode === "all" ? "active" : ""}" data-filter-mode="all" ${hasTwoFilters ? "" : 'disabled aria-disabled="true"'}>AND</button>
+          <button type="button" class="je-calendar-filter-btn ${state.filterMatchMode === "any" ? "active" : ""}" data-filter-mode="any" ${hasTwoFilters ? "" : 'disabled aria-disabled="true"'}>${JE.t("calendar_filter_any")}</button>
+          <button type="button" class="je-calendar-filter-btn ${state.filterMatchMode === "all" ? "active" : ""}" data-filter-mode="all" ${hasTwoFilters ? "" : 'disabled aria-disabled="true"'}>${JE.t("calendar_filter_all")}</button>
         </div>
-        <button type="button" class="je-calendar-filter-invert ${state.filterInvert ? "active" : ""} ${hasActiveFilters ? "" : "is-disabled"}" data-filter-invert="true" ${hasActiveFilters ? "" : 'disabled aria-disabled="true"'}>NOT</button>
+        <button type="button" class="je-calendar-filter-invert ${state.filterInvert ? "active" : ""} ${hasActiveFilters ? "" : "is-disabled"}" data-filter-invert="true" ${hasActiveFilters ? "" : 'disabled aria-disabled="true"'}>${JE.t("calendar_filter_not")}</button>
       </div>`;
       const animeLegend = JE.pluginConfig?.ShokoConfigured ? `<div class="je-calendar-legend-item ${getItemClass("Anime")}" onclick="window.JellyfinEnhanced.calendarPage.toggleFilter('Anime'); event.stopPropagation();">
           <span class="je-msym-rounded" style="color: ${STATUS_COLORS.Anime}; font-size: 18px;">animation</span>

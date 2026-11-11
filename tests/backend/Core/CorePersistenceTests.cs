@@ -48,6 +48,24 @@ public class CorePersistenceTests
         Assert.False(f.Manager.GetUserConfiguration<JellyfinEnhancedUserSettings>(User, "settings.json").AutoPauseEnabled);
     }
 
+    [Fact]
+    public void StrictReadThatCannotOpenTheFileLeavesItInPlace()
+    {
+        using var f = new CoreFixture();
+        const string stored = "{\"DisplayLanguage\":\"fr\"}";
+        var path = f.Write(User, stored);
+        // Another process holding the file exclusively (a backup or antivirus tool): the read
+        // fails for a reason that says nothing about the content.
+        using (new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            Assert.ThrowsAny<IOException>(() => f.Manager.GetUserConfigurationStrict<JellyfinEnhancedUserSettings>(User, "settings.json"));
+            Assert.ThrowsAny<IOException>(() => f.Manager.RmwUserConfiguration<JellyfinEnhancedUserSettings>(User, "settings.json", s => { s.DisplayLanguage = "de"; return 1; }));
+        }
+        Assert.Empty(Directory.GetFiles(Path.GetDirectoryName(path)!, "*.corrupt-*"));
+        Assert.Equal(stored, File.ReadAllText(path));
+        Assert.Equal("fr", f.Manager.GetUserConfigurationStrict<JellyfinEnhancedUserSettings>(User, "settings.json").DisplayLanguage);
+    }
+
     [Theory]
     [InlineData("../escape.json")][InlineData("/tmp/escape.json")][InlineData("a/b")][InlineData("a\\b")][InlineData("..")][InlineData("")]
     public void InvalidFilenamesCannotReadOrWriteOutsideUserDirectory(string name)

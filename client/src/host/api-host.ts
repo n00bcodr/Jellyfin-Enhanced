@@ -18,6 +18,23 @@ interface Snapshot {
     client: ApiClientHost | undefined; user: string; token: string; server: string; base: string;
 }
 const text = (value: unknown): string => typeof value === 'string' ? value : '';
+/**
+ * AbortSignal.any, composed by hand where the browser lacks it (Chrome before 116, Firefox
+ * before 124, Safari before 17.4): aborts with the first input's reason and then lets go of
+ * every input. Jellyfin's web client polyfills ES built-ins, not this DOM method.
+ */
+function anySignal(signals: AbortSignal[]): AbortSignal {
+    if (typeof AbortSignal.any === 'function') return AbortSignal.any(signals);
+    const controller = new AbortController();
+    const aborted = signals.find(signal => signal.aborted);
+    if (aborted) { controller.abort(aborted.reason); return controller.signal; }
+    function onAbort(event: Event): void {
+        for (const signal of signals) signal.removeEventListener('abort', onAbort);
+        controller.abort(event.target instanceof AbortSignal ? event.target.reason : undefined);
+    }
+    for (const signal of signals) signal.addEventListener('abort', onAbort);
+    return controller.signal;
+}
 /** Narrow host boundary; only the named Jellyfin methods are consumed here. */
 export function installApi(): void {
     const host: Window & ApiWindow = window;
@@ -72,7 +89,7 @@ export function installApi(): void {
     const api = createApi({ acquireLease, onIdentityChange: callback => { handlers.add(callback); },
         onNavigate: callback => { je.core?.navigation?.onNavigate(() => { synchronize(); callback(); }); },
         fetch: (url, options) => window.fetch(url, options), controller: () => new AbortController(),
-        combineSignals: signals => AbortSignal.any(signals),
+        combineSignals: anySignal,
         now: () => performance.now(), wallNow: () => Date.now(), random: () => Math.random(),
         setTimer: (callback, ms) => window.setTimeout(callback, ms), clearTimer: timer => window.clearTimeout(timer),
         clone: value => structuredClone(value), debug: (...values) => console.debug(...values)

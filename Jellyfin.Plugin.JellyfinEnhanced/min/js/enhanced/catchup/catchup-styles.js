@@ -24,8 +24,8 @@
 .je-catchup-tabs button:hover { color:var(--sw-text); }
 .je-catchup-tabs button.on { color:var(--sw-text); border-bottom-color:var(--sw-accent); font-weight:600; }
 
-.je-catchup-stage { position:relative; width:100%; max-width:420px; height:calc(100dvh - 22rem); min-height:380px; }
-.je-catchup-card { position:absolute; top:50%; left:50%; translate:-50% -50%; width:min(100%, calc((100dvh - 22rem - 100px) / 1.5)); max-height:100%; border-radius:8px; overflow:hidden;
+.je-catchup-stage { position:relative; width:100%; max-width:420px; height:calc(100vh - 22rem); height:calc(100dvh - 22rem); min-height:380px; }
+.je-catchup-card { position:absolute; top:50%; left:50%; translate:-50% -50%; width:min(100%, calc((100vh - 22rem - 100px) / 1.5)); width:min(100%, calc((100dvh - 22rem - 100px) / 1.5)); max-height:100%; border-radius:8px; overflow:hidden;
   background:var(--sw-panel-bg); border:1px solid var(--sw-line); box-shadow:0 6px 20px rgba(0,0,0,0.45);
   touch-action:none; user-select:none; will-change:transform; display:flex; flex-direction:column; }
 .je-catchup-card.leaving { pointer-events:none; }
@@ -75,7 +75,7 @@
 .je-catchup-activity.open { display:flex; position:fixed; inset:0; z-index:10000; background:rgba(0,0,0,0.6); padding:12px; align-items:center; justify-content:center; }
 .je-catchup-activity .panel { width:100%; max-width:860px; max-height:100%; display:flex; flex-direction:column; border-radius:8px; overflow:hidden; background:var(--sw-panel-bg); border:1px solid var(--sw-line); }
 @media (min-width:1100px) {
-  .je-catchup.docked .je-catchup-activity.open { position:sticky; top:20px; inset:auto; z-index:1; width:400px; flex:none; padding:0; background:none; display:flex; align-items:stretch; max-height:calc(100dvh - 8rem); }
+  .je-catchup.docked .je-catchup-activity.open { position:sticky; top:20px; inset:auto; z-index:1; width:400px; flex:none; padding:0; background:none; display:flex; align-items:stretch; max-height:calc(100vh - 8rem); max-height:calc(100dvh - 8rem); }
   .je-catchup.docked .je-catchup-activity .panel { max-width:none; background:var(--sw-surface); }
   .je-catchup.docked .arow { grid-template-columns:56px 1fr; }
   .je-catchup.docked .arow .u { grid-column:2; } .je-catchup.docked .arow .a { grid-column:1; grid-row:2; } .je-catchup.docked .arow .i { grid-column:2; grid-row:2; }

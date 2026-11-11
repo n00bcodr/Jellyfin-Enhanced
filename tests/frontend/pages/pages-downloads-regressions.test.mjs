@@ -63,3 +63,48 @@ test('in-app navigation to the page renders the loaded queue instead of loading 
  await settled();assert.equal(h.window.location.hash,'#/downloads');
  assert.deepEqual(shown(),{hidden:false,placeholders:0,cards:1});
 });
+test('an issue reporter avatar is downloaded with the session through the avatar proxy and shown',async t=>{
+ // Jellyfin's ApiClient.getUrl returns an absolute address with the query appended.
+ const h=setup(t,{realHelpers:true});const downloads=[];
+ h.window.ApiClient.getUrl=(path,query)=>'http://jellyfin.test'+path+(query?'?'+new h.window.URLSearchParams(query):'');
+ h.window.fetch=async(url,options)=>{downloads.push({url,token:options?.headers?.['X-MediaBrowser-Token']});return new Response('image');};
+ h.window.URL.createObjectURL=()=>'blob:reporter';
+ h.P.state.issues=[{id:9,status:1,issueType:1,createdBy:{displayName:'Reporter',avatar:'/avatar/abc'}}];h.P.renderPage();
+ for(let i=0;i<10;i++)await new Promise(resolve=>setImmediate(resolve));
+ const avatar=h.document.querySelector('.je-issue-card img.je-request-avatar');
+ assert.ok(avatar);assert.equal(avatar.getAttribute('src'),'blob:reporter');assert.notEqual(avatar.style.display,'none');
+ assert.deepEqual(downloads,[{url:'http://jellyfin.test/JellyfinEnhanced/proxy/avatar?path=%2Favatar%2Fabc',token:'test-token'}]);
+});
+const pending=(id,title)=>({id,title,type:'movie',requestStatus:1,mediaStatus:'Pending'});
+function polled(t,lists){
+ let round=0;
+ const h=setup(t,{api:async p=>p==='/arr/queue'?{items:[{title:'Queued film',status:'downloading',type:'movie'}]}:p.startsWith('/arr/requests')?{requests:lists[Math.min(round,lists.length-1)],canApproveRequests:true,totalPages:1}:{items:[],requests:[]}});
+ const container=h.document.getElementById('je-downloads-container');let rebuilds=0;
+ new h.window.MutationObserver(records=>{if(records.some(r=>r.target===container&&r.addedNodes.length))rebuilds++;}).observe(container,{childList:true});
+ return {...h,container,rebuilds:()=>rebuilds,async poll(){await h.P.loadAllData();round++;await new Promise(r=>setImmediate(r));}};
+}
+test('a poll redraws the Requests page once, and only when its data changed',async t=>{
+ const h=polled(t,[[pending(501,'First')],[pending(501,'First')],[pending(503,'New'),pending(501,'First')]]);
+ await h.poll();const first=h.rebuilds();assert.ok(first>=1);
+ await h.poll();assert.equal(h.rebuilds(),first,'unchanged data: the page is left as it is');
+ await h.poll();assert.equal(h.rebuilds(),first+1,'changed data: one rebuild');
+ assert.deepEqual([...h.container.querySelectorAll('.je-request-approve-btn')].map(b=>b.dataset.requestId),['503','501']);
+});
+test('a poll that redraws the page keeps the search box focused with its text and caret',async t=>{
+ const h=polled(t,[[pending(501,'First')],[pending(503,'New'),pending(501,'First')]]);
+ await h.poll();h.P.state.downloadsSearchVisible=true;h.P.renderPage();
+ const input=h.container.querySelector('.je-downloads-search-input');input.focus();input.value='que';h.P.state.downloadsSearchQuery='que';input.setSelectionRange(2,2);
+ await h.poll();
+ const now=h.document.activeElement;
+ assert.ok(now?.classList.contains('je-downloads-search-input'),'focus stays in the search box');
+ assert.equal(now.value,'que');assert.equal(now.selectionStart,2);
+});
+test('a poll does not move the list under an Approve or Decline button the user is on; a later one draws it',async t=>{
+ const h=polled(t,[[pending(501,'First'),pending(502,'Second')],[pending(503,'New'),pending(501,'First'),pending(502,'Second')]]);
+ await h.poll();const aimed=h.container.querySelector('.je-request-approve-btn[data-request-id="501"]');aimed.focus();
+ await h.poll();
+ assert.equal(h.container.querySelector('.je-request-approve-btn[data-request-id="501"]'),aimed,'the button the user is on is still there');
+ assert.deepEqual([...h.container.querySelectorAll('.je-request-approve-btn')].map(b=>b.dataset.requestId),['501','502']);
+ aimed.blur();await h.poll();
+ assert.deepEqual([...h.container.querySelectorAll('.je-request-approve-btn')].map(b=>b.dataset.requestId),['503','501','502']);
+});

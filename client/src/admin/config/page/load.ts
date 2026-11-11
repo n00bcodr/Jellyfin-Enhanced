@@ -3,9 +3,10 @@ import type { PageModules } from './modules';
 import { failureDescription } from '../domain/http';
 import { shortcutEntries } from '../domain/shortcuts';
 import { asControl, asHtml, asInput, needControl, needHtml, needInput } from './dom';
+import type { AdminConfig } from '../domain/config';
 
 /** Dependencies this module calls; members are resolved lazily, after every module exists. */
-export type LoadDeps = Pick<PageModules, 'context' | 'arr' | 'autoMovie' | 'blockedUsers' | 'customTabs' | 'dependencies' | 'dirty' | 'displayCards' | 'gatedHelp' | 'maintenance' | 'misc' | 'plugins' | 'regions' | 'shortcuts' | 'spoiler'>;
+export type LoadDeps = Pick<PageModules, 'context' | 'arr' | 'autoMovie' | 'blockedUsers' | 'customTabs' | 'dependencies' | 'dirty' | 'displayCards' | 'gatedHelp' | 'locales' | 'maintenance' | 'misc' | 'plugins' | 'regions' | 'shortcuts' | 'spoiler'>;
 
 export function createLoad(m: LoadDeps) {
     const { ApiClient, Dashboard, JEAdmin, lifecycle, pluginId } = m.context;
@@ -14,6 +15,8 @@ export function createLoad(m: LoadDeps) {
     /** False from the moment a load starts until the form shows the saved settings: a save then would write the empty form over them. */
     let configLoaded = true;
     let everLoaded = false;
+    /** The settings the form was filled from; after a save, the form's own values as written (save.ts). */
+    let formBase: AdminConfig = {};
     let analyticsConfigured = false;
     const wired = new Set<string>();
     /** Handlers on the page's own controls: the page reloads its settings every time it is shown. */
@@ -32,6 +35,7 @@ export function createLoad(m: LoadDeps) {
                 // A newer load owns the form; a dropped view has no form to fill.
                 if (sequence !== loadSequence) return;
                 if (lifecycle.disposed) { Dashboard.hideLoadingMsg(); return; }
+                formBase = { ...config };
                 m.customTabs.CUSTOM_TAB_MANAGED_ENTRIES.forEach(function(entry) {
                     m.displayCards._jeCustomTabOwnedCache[entry.ownedKey] = config[entry.ownedKey] === true;
                 });
@@ -136,7 +140,7 @@ export function createLoad(m: LoadDeps) {
 
                 // Load multi-instance Sonarr/Radarr
                 m.arr.loadArrInstances(config);
-                needControl(document.querySelector('#DefaultLanguage')).value = shown(config.DefaultLanguage || '');
+                m.locales.showDefaultLanguage(text(config.DefaultLanguage));
                 // Tie icon display settings
                 if (config.MetadataIconsEnabled) {
                     // Force icon display where applicable
@@ -395,5 +399,7 @@ export function createLoad(m: LoadDeps) {
         wire,
         loadConfig,
         get configLoaded() { return configLoaded; },
+        get formBase() { return formBase; },
+        set formBase(values: AdminConfig) { formBase = values; },
     };
 }

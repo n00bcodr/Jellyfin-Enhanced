@@ -202,10 +202,6 @@
     "X1 adjustPlaybackSpeed": 1,
     "X1 jumpToPercentage": 1
   },
-  "client/src/features/player/segment-controls.ts": {
-    "X1 installSegmentControls.clickSkipButton": 1,
-    "X1 installSegmentControls.skipIntroOutro": 1
-  },
   "client/src/features/seerr/core/modal.ts": {
     "X1 installModal.create": 1
   },
@@ -260,8 +256,8 @@
     "X1 installUiPanelSettings.wireSettingsListeners.addSettingToggleListener": 1
   },
   "client/src/features/settings-panel/ui-panel-template.ts": {
-    "X1 installUiPanelTemplate.buildPanelHtml": 133,
-    "X1 installUiPanelTemplate.buildPanelHtml.generatePresetHTML": 7
+    "X1 installUiPanelTemplate.buildPanelHtml": 130,
+    "X1 installUiPanelTemplate.buildPanelHtml.generatePresetHTML": 6
   },
   "client/src/features/settings-panel/ui-panel.ts": {
     "X1 installUiPanel.showEnhancedPanel": 1

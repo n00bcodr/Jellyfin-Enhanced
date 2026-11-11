@@ -12,7 +12,7 @@ import { host, registry, type HiddenHost } from './host';
     'use strict';
     const internal = registry(JE, 'hiddenContent');
 
-    const { getHiddenData, assertWritable } = internal;
+    const { getHiddenData, assertWritable, rebaseOnto } = internal;
     function decodeAdded(value: unknown): number {
         const added=record(value).added;
         if (typeof added!=='number' || !Number.isInteger(added) || added<0) throw new Error('Invalid hidden-content mutation response');
@@ -162,18 +162,26 @@ import { host, registry, type HiddenHost } from './host';
     // Direct bypass of JE.saveUserSettings (which swallows errors) so callers can react to failure.
     // Returns the JSON snapshot that was sent so the caller can compare it to current state and decide
     // whether the success acknowledgement still represents the latest local intent.
+    // The list is read again first: this session's changes are written onto it, never the copy loaded with the page.
     function directSaveHiddenContent() {
         return enqueueWrite(JE,async(api)=>{
         assertWritable();
         const userId = api.getCurrentUserId();
         if (!userId) throw new Error('no current user');
-        const snapshot = JSON.stringify(getHiddenData());
+        const stored = decodeDocument(await api.ajax({
+            type: 'GET',
+            url: api.getUrl(`/JellyfinEnhanced/user-settings/${userId}/hidden-content.json?_=${Date.now()}`),
+            dataType: 'json'
+        }));
+        const { merged, saved } = rebaseOnto(stored);
+        const snapshot = JSON.stringify(merged);
         await api.ajax({
             type: 'POST',
             url: api.getUrl(`/JellyfinEnhanced/user-settings/${userId}/hidden-content.json`),
             data: snapshot,
             contentType: 'application/json'
         });
+        saved();
         return snapshot;
         });
     }

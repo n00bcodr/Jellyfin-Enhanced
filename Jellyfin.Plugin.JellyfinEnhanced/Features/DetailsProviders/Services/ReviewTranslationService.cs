@@ -26,6 +26,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.DetailsProviders.Services
         /// </summary>
         public const int MaxChunkLength = 2000;
 
+        /// <summary>
+        /// What one account (or, without one, one client address) may have translated per <see cref="ClientWindow"/>. Every signed-in account may use the
+        /// route and the administrator's key pays for it, so one caller cannot spend it all or get it blocked.
+        /// </summary>
+        public const int ClientRequestsPerWindow = 60;
+
+        /// <inheritdoc cref="ClientRequestsPerWindow"/>
+        public const int ClientCharactersPerWindow = 100_000;
+
+        /// <inheritdoc cref="ClientRequestsPerWindow"/>
+        public static readonly TimeSpan ClientWindow = TimeSpan.FromMinutes(10);
+
         private const int MaxCacheEntries = 200;
         private static readonly TimeSpan CacheTtl = TimeSpan.FromHours(1);
         private static readonly TimeSpan LanguagesTtl = TimeSpan.FromHours(1);
@@ -34,6 +46,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.DetailsProviders.Services
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly Logger _logger;
         private readonly ConcurrentDictionary<string, (DateTime ExpiresUtc, string Text)> _cache = new();
+        private readonly Dictionary<string, (DateTime Start, int Requests, int Characters)> _clientUse = new();
         private (string Url, DateTime ExpiresUtc, IReadOnlyList<string> Codes)? _languages;
 
         public ReviewTranslationService(IHttpClientFactory httpClientFactory, Logger logger)
@@ -70,6 +83,40 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.DetailsProviders.Services
 
             _languages = (baseUrl, DateTime.UtcNow + LanguagesTtl, codes);
             return codes;
+        }
+
+        /// <summary>
+        /// Counts one translation of <paramref name="characters"/> characters for <paramref name="client"/>. False,
+        /// with the wait until its window ends, when that would go over <see cref="ClientRequestsPerWindow"/> or
+        /// <see cref="ClientCharactersPerWindow"/>.
+        /// </summary>
+        public bool TryUseClientBudget(string client, int characters, out TimeSpan retryAfter)
+        {
+            var now = DateTime.UtcNow;
+            lock (_clientUse)
+            {
+                if (_clientUse.Count > 1000)
+                {
+                    foreach (var ended in _clientUse.Where(e => now - e.Value.Start >= ClientWindow).Select(e => e.Key).ToList())
+                    {
+                        _clientUse.Remove(ended);
+                    }
+                }
+
+                if (!_clientUse.TryGetValue(client, out var used) || now - used.Start >= ClientWindow)
+                {
+                    used = (now, 0, 0);
+                }
+
+                retryAfter = used.Start + ClientWindow - now;
+                if (used.Requests >= ClientRequestsPerWindow || used.Characters + characters > ClientCharactersPerWindow)
+                {
+                    return false;
+                }
+
+                _clientUse[client] = (used.Start, used.Requests + 1, used.Characters + characters);
+                return true;
+            }
         }
 
         /// <summary>Translates English text into the target language, paragraph by paragraph.</summary>

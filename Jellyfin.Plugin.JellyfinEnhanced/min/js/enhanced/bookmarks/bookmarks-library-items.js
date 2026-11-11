@@ -14,7 +14,7 @@
             <div class="je-bookmark-item-placeholder"><span class="material-icons" style="font-size: 48px; opacity: 0.3;">image_not_supported</span></div>
           `}
           <div class="je-bookmark-item-info">
-            <a href="/web/#/details?id=${encodeURIComponent(n.details.itemId||"")}" class="je-bookmark-item-title">${Q}</a>
+            <a href="#/details?id=${encodeURIComponent(n.details.itemId||"")}" class="je-bookmark-item-title">${Q}</a>
             <div class="je-bookmark-item-meta">
               ${e.t("bookmark_count").replace("{count}",String(n.bookmarks.length))}
               ${p?` • <span style="color: #ff9800;">${e.t("bookmark_orphaned")}</span>`:""}

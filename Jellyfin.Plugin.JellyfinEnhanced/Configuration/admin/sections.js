@@ -792,7 +792,7 @@
     function placement(o) {
       const code = `<div class="${o.cls}"></div>`;
       const gate = `${o.p}UseCustomTabs,${o.en}`;
-      const guide = `<details class="jea-howto"><summary>Custom Tabs setup guide ${CT_BADGE}</summary><p class="fieldDescription">Display the ${o.noun} in a Custom Tabs tab instead of the sidebar link.</p><p class="fieldDescription je-needs-customtabs">You need the <a class="sectionTitle" href="${CT}" target="_blank">Custom Tabs</a> plugin.</p><ol class="fieldDescription"><li class="je-needs-customtabs">Install the <strong>Custom Tabs</strong> plugin and all its prerequisites.</li><li>Navigate to Dashboard &gt; Plugins &gt; Custom Tabs and add a new tab.</li><li>Add "Display Text" according to your preference (e.g., "${o.text}").</li><li>Copy the code below and paste it into the 'HTML Content' field.</li></ol><div class="je-copy-code-wrapper"><button class="je-copy-html-btn jea-btn" data-copy-text='${escAttr(code)}' type="button"><i class="material-icons je-copy-icon">content_copy</i><span class="copy-btn-text je-copy-btn-text">Copy</span></button><pre class="je-code-pre"><code>${escAttr(code)}</code></pre></div><div class="fieldDescription">Already have Custom Tabs installed? <a class="sectionTitle je-custom-tabs-link" href="/web/#/configurationpage?name=Custom%20Tabs">Click here to configure it.</a></div></details>`;
+      const guide = `<details class="jea-howto"><summary>Custom Tabs setup guide ${CT_BADGE}</summary><p class="fieldDescription">Display the ${o.noun} in a Custom Tabs tab instead of the sidebar link.</p><p class="fieldDescription je-needs-customtabs">You need the <a class="sectionTitle" href="${CT}" target="_blank">Custom Tabs</a> plugin.</p><ol class="fieldDescription"><li class="je-needs-customtabs">Install the <strong>Custom Tabs</strong> plugin and all its prerequisites.</li><li>Navigate to Dashboard &gt; Plugins &gt; Custom Tabs and add a new tab.</li><li>Add "Display Text" according to your preference (e.g., "${o.text}").</li><li>Copy the code below and paste it into the 'HTML Content' field.</li></ol><div class="je-copy-code-wrapper"><button class="je-copy-html-btn jea-btn" data-copy-text='${escAttr(code)}' type="button"><i class="material-icons je-copy-icon">content_copy</i><span class="copy-btn-text je-copy-btn-text">Copy</span></button><pre class="je-code-pre"><code>${escAttr(code)}</code></pre></div><div class="fieldDescription">Already have Custom Tabs installed? <a class="sectionTitle je-custom-tabs-link" href="#/configurationpage?name=Custom%20Tabs">Click here to configure it.</a></div></details>`;
       return {
         type: "group",
         title: "Where it appears",
@@ -2073,7 +2073,7 @@
             id: "arrTagsPrefix",
             prop: "ArrTagsPrefix",
             type: "text",
-            default: "Requested by: ",
+            default: "JE Arr Tag: ",
             label: "Tag Prefix",
             placeholder: "JE Arr Tag: ",
             desc: 'Prefix to add before each tag (e.g., "JE Arr Tag: " will result in "JE Arr Tag: 1 - Jellyfish")'

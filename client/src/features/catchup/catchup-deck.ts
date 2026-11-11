@@ -102,10 +102,10 @@ import { errorMessage, currentLease } from '../shared/wire';
     // Keep the card pending until the server acknowledges the mutation. A failed or
     // partially accepted multi-season request is reconciled by reloading server state.
     try {
-      await act.run(item,opts);
+      const prior=await act.run(item,opts);
       if(!current()){if(identity() && ui?.root.isConnected)await start();return;}
       S.logSwipe(item,dir,opts,true);
-      state.undoStack.push({item,dir,opts});
+      state.undoStack.push({item,dir,opts,prior});
       const [x,y]=FLY[dir]; flash(el,dir.charAt(0));
       el.style.transition='transform .3s ease-in, opacity .3s';
       el.style.transform=`translate(${x*innerWidth}px, ${y*innerHeight}px) rotate(${x*25}deg)`;
@@ -123,7 +123,7 @@ import { errorMessage, currentLease } from '../shared/wire';
     const last=state.undoStack[state.undoStack.length-1]; if(!last)return;
     busy=true;
     try {
-      await ACTIONS[last.dir].undo(last.item,last.opts);
+      await ACTIONS[last.dir].undo(last.item,last.opts,last.prior);
       if(!current()){if(identity() && ui?.root.isConnected)await start();return;}
       state.undoStack.pop();
       S.logEvent({type:'swipe',action:'undo',undoOf:ACT_NAME[last.dir],itemId:last.item.Id,ok:true});

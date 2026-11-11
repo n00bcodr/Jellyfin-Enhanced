@@ -147,6 +147,29 @@
   function isReceipt(value) {
     return export02(value, export0.$defs.BookmarkSaveReceipt, export0.$defs);
   }
+  function isDocument(value) {
+    return export02(value, export0.$defs.BookmarkDocumentResponse, export0.$defs);
+  }
+  function documentView(text) {
+    const BOOKMARK_FIELDS = /* @__PURE__ */ new Set(["ItemId", "TmdbId", "TvdbId", "MediaType", "Name", "Timestamp", "Label", "CreatedAt", "UpdatedAt", "SyncedFrom", "SeasonNumber", "EpisodeNumber", "Progress"]);
+    const parsed = JSON.parse(text);
+    const fields = record(parsed) ? parsed : {};
+    const records = Object.entries(fields).find(([key]) => key.toLowerCase() === "bookmarks")?.[1] ?? {};
+    if (!record(records)) throw new Error("Invalid bookmark records");
+    const bookmarks = Object.fromEntries(Object.entries(records).map(([id, value]) => [id, record(value) ? Object.fromEntries(Object.entries(value).map(([key, child]) => [BOOKMARK_FIELDS.has(key) ? key.charAt(0).toLowerCase() + key.slice(1) : key, child])) : value]));
+    return { ...fields, bookmarks };
+  }
+  function rebase(owner, stored, Operations) {
+    const local = owner.bookmark?.bookmarks ?? {};
+    const bookmarks = Operations.some((op) => op.Kind === "delete-all") ? {} : stored.bookmarks;
+    for (const op of Operations) for (const id of [op.Id, op.SourceId]) {
+      if (!id) continue;
+      const mine = local[id];
+      if (mine) bookmarks[id] = mine;
+      else delete bookmarks[id];
+    }
+    owner.bookmark = { ...stored, bookmarks };
+  }
   async function persistBookmarks(JE, getApi2, owner, Operations) {
     const api = getApi2(), userId = api.getCurrentUserId(), token = api.accessToken?.(), baseUrl = api.getUrl("/"), current = lease(JE);
     if (!current() || JE.userConfig !== owner || !userId) throw new Error("Bookmark owner changed before saving");
@@ -156,24 +179,32 @@
       JE.toast("Bookmarks were not loaded safely. Reload before saving again.", 5e3);
       throw new Error("Loaded bookmark revision required. Reload before saving again.");
     }
-    try {
-      const response = await api.ajax({
-        type: "POST",
-        url: api.getUrl(`/JellyfinEnhanced/user-settings/${userId}/bookmark-document`),
-        contentType: "application/json",
-        dataType: "json",
-        data: JSON.stringify({ Revision: owner.bookmarkRevision, Operations })
-      });
+    const same = () => current() && getApi2() === api && api.getCurrentUserId() === userId && api.accessToken?.() === token && api.getUrl("/") === baseUrl;
+    const url = api.getUrl(`/JellyfinEnhanced/user-settings/${userId}/bookmark-document`);
+    const save = async (Revision) => {
+      const response = await api.ajax({ type: "POST", url, contentType: "application/json", dataType: "json", data: JSON.stringify({ Revision, Operations }) });
       if (!isReceipt(response) || !response.Revision) throw new Error("Invalid bookmark save receipt. Reload before saving again.");
-      owner.bookmarkRevision = response.Revision;
-    } catch (error) {
-      if (current() && getApi2() === api && api.getCurrentUserId() === userId && api.accessToken?.() === token && api.getUrl("/") === baseUrl) {
-        const conflict = record(error) && (error.status === 409 || error.statusCode === 409);
-        if (conflict) window.setTimeout(() => {
-          if (current() && getApi2() === api && api.getCurrentUserId() === userId && api.accessToken?.() === token && api.getUrl("/") === baseUrl)
-            JE.toast("Bookmarks changed in another tab or on the server. Reload before saving again.", 5e3);
-        }, 0);
+      return response.Revision;
+    };
+    let conflicted = false;
+    try {
+      let revision;
+      try {
+        revision = await save(owner.bookmarkRevision);
+      } catch (error) {
+        conflicted = record(error) && (error.status === 409 || error.statusCode === 409);
+        if (!conflicted || !same()) throw error;
+        const stored = await api.ajax({ type: "GET", url: api.getUrl(`/JellyfinEnhanced/user-settings/${userId}/bookmark-document?_=${Date.now()}`), dataType: "json" });
+        if (!isDocument(stored)) throw new Error("Invalid bookmark document");
+        const document2 = documentView(stored.Document);
+        revision = await save(stored.Revision);
+        rebase(owner, document2, Operations);
       }
+      owner.bookmarkRevision = revision;
+    } catch (error) {
+      if (conflicted && same()) window.setTimeout(() => {
+        if (same()) JE.toast("Bookmarks changed in another tab or on the server. Reload before saving again.", 5e3);
+      }, 0);
       throw error;
     }
   }
@@ -1317,9 +1348,11 @@
         if (labelInput) labelInput.focus();
         modal.style.opacity = "1";
       }, 10);
-      required(modal, ".je-bookmark-btn-submit").addEventListener("click", async () => {
+      const submit = required(modal, ".je-bookmark-btn-submit");
+      submit.addEventListener("click", async () => {
         if (!isCurrent()) return;
         const labelInput = required(modal, "#bookmark-label").value.trim();
+        submit.disabled = true;
         try {
           if (isEdit && existingBookmark) {
             if (!await updateBookmark(existingBookmark.id, { label: labelInput })) {
@@ -1336,6 +1369,8 @@
           closeDialog();
         } catch (e) {
           if (isCurrent()) JE.toast(JE.t("toast_bookmark_save_failed"), 3e3);
+        } finally {
+          submit.disabled = false;
         }
       });
       modal.querySelectorAll(".je-bookmark-btn-jump").forEach((btn) => {

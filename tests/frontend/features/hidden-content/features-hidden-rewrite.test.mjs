@@ -5,9 +5,21 @@ import {createHarness,deferred} from '../../helpers/harness.mjs';
 const entries=JSON.parse(readFileSync(new URL('../../../../Jellyfin.Plugin.JellyfinEnhanced/js/component-scripts.json',import.meta.url)));
 const owned=entries.filter(p=>typeof p==='string' && /^(enhanced\/hiddencontent\/|enhanced\/homeremoval\/)/.test(p));
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
-function setup(t,{items={},settings={},ajax=async()=>({success:true}),html=''}={}){
+// The server side. Every save reads the stored list before writing it: `serve` answers that read with the list this fake
+// server holds (the page's list, then each list written and each Continue Watching / Next Up hide accepted) and hands
+// every other request, the ones the tests watch, to `ajax`. A test that answers the reads itself passes `reads:true`.
+function serve(held,ajax){
+ return async r=>{
+  if(r.type==='GET'&&r.url.includes('/hidden-content.json'))return structuredClone(held);
+  const answer=await ajax(r),scoped=/\/(continue-watching|next-up)\/hide\/([^/?]+)/.exec(r.url);
+  if(r.type==='POST'&&r.url.includes('/hidden-content.json'))held=JSON.parse(r.data);
+  else if(scoped&&answer?.success===true)held={...held,items:{...held.items,[scoped[2]]:{...held.items[scoped[2]],itemId:scoped[2],hideScope:scoped[1].replace('-','')}}};
+  return answer;
+ };
+}
+function setup(t,{items={},settings={},ajax=async()=>({success:true}),reads=false,html=''}={}){
  let epoch=0,uid='user-a'; const resets=new Map(),frames=[];
- const h=createHarness({html,apiClient:{ajax,getCurrentUserId:()=>uid,getDisplayPreferences:async()=>({CustomPrefs:{}})},globals:{requestAnimationFrame:fn=>frames.push(fn)},JE:{
+ const h=createHarness({html,apiClient:{ajax:reads?ajax:serve(structuredClone({items,settings}),ajax),getCurrentUserId:()=>uid,getDisplayPreferences:async()=>({CustomPrefs:{}})},globals:{requestAnimationFrame:fn=>frames.push(fn)},JE:{
   userConfig:{hiddenContent:{items,settings}},pluginConfig:{HiddenContentEnabled:true},currentSettings:{removeContinueWatchingEnabled:true},state:{removeContext:null},
   session:{getEpoch:()=>epoch,isCurrent:e=>e===epoch,onUserChange:(name,fn)=>{resets.set(name,fn);return ()=>resets.delete(name);},userScopedKey:key=>key+':'+uid},
   t:key=>key,toast:()=>{},helpers:{isAdmin:()=>true,addCSS:()=>{},debounce:fn=>fn,onViewPage:()=>{},onBodyMutation:()=>{},onSidebarRebuilt:()=>{},isActiveTabContainer:()=>true,observeTabContainers:()=>{}},
@@ -28,7 +40,7 @@ test('all 18 shipped entries install in production order and duplicate loads kee
  assert.equal(h.api.getHiddenData(),data);assert.equal(h.page.state,state);assert.equal(h.api.getHiddenCount(),1);
 });
 test('malformed refresh never replaces existing policy or future fields',async t=>{
- const h=setup(t,{items:{a:{itemId:'a',future:{value:2}}},ajax:async()=>({items:[]})});
+ const h=setup(t,{items:{a:{itemId:'a',future:{value:2}}},reads:true,ajax:async()=>({items:[]})});
  assert.equal(await h.api.refresh(),false);assert.equal(h.api.isHidden('a'),true);assert.equal(h.api.getHiddenData().items.a.future.value,2);
 });
 test('invalid bootstrap policy blocks writes until a validated reload',async t=>{
@@ -36,8 +48,27 @@ test('invalid bootstrap policy blocks writes until a validated reload',async t=>
  assert.equal(h.api.isLoadOk(),false);assert.throws(()=>h.api.hideItem({itemId:'b'}),/unavailable/);
  assert.throws(()=>h.api.updateSettings({enabled:false}),/unavailable/);assert.throws(()=>h.api.unhideAll(),/unavailable/);
 });
+test('a hidden list that failed to load is unknown: edits are refused and nothing is written over the stored list',async t=>{
+ const writes=[];const h=setup(t,{ajax:async request=>{writes.push(request);return {};}});
+ h.JE.userConfig.hiddenContent=null;h.ready();
+ assert.equal(h.api.isLoadOk(),false);
+ assert.throws(()=>h.api.hideItem({itemId:'b',name:'B'}),/unavailable/);
+ assert.throws(()=>h.api.updateSettings({enabled:false}),/unavailable/);
+ await h.api.flushPendingSave();assert.deepEqual(writes,[]);
+});
+test('a save writes this session\'s changes onto the stored list as it is now, not over it with the copy loaded with the page',async t=>{
+ // Loaded with a Continue Watching hide and a global hide. Since then another device hid `a`, an administrator
+ // unhid `x`, playback made the server drop the Continue Watching hide, and a switch changed elsewhere.
+ let server={Items:{a:{ItemId:'a',Name:'A'}},Settings:{FilterSearch:true}};const posts=[];
+ const h=setup(t,{items:{cw:{itemId:'cw',hideScope:'continuewatching'},x:{itemId:'x'}},reads:true,ajax:async r=>{if(r.type==='POST'){posts.push(JSON.parse(r.data));server=posts.at(-1);return {success:true};}return structuredClone(server);}});
+ h.api.hideItem({itemId:'b',name:'B'});h.api.updateSettings({filterCalendar:false});await h.api.flushPendingSave();
+ assert.equal(posts.length,1);
+ assert.deepEqual(Object.keys(posts[0].items).sort(),['a','b']);
+ assert.equal(posts[0].settings.filterSearch,true);assert.equal(posts[0].settings.filterCalendar,false);
+ assert.equal(h.api.isHidden('a'),true);assert.equal(h.api.isHidden('x'),false);assert.equal(h.api.isHiddenOnSurface('cw','continuewatching'),false);
+});
 test('Pascal document fields decode without altering extension data or map keys',async t=>{
- const h=setup(t,{ajax:async()=>({Items:{'AA-BB':{ItemId:'AA-BB',Name:'Title',FutureField:{ExactCase:1}}},Settings:{FilterSearch:true,FutureSetting:'keep'},FutureDocument:{ExactCase:2}})});
+ const h=setup(t,{reads:true,ajax:async()=>({Items:{'AA-BB':{ItemId:'AA-BB',Name:'Title',FutureField:{ExactCase:1}}},Settings:{FilterSearch:true,FutureSetting:'keep'},FutureDocument:{ExactCase:2}})});
  assert.equal(await h.api.refresh(),true);assert.equal(h.api.isHidden('aabb'),true);
  const data=h.api.getHiddenData();assert.equal(data.items['AA-BB'].FutureField.ExactCase,1);assert.equal(data.FutureDocument.ExactCase,2);assert.equal(data.settings.FutureSetting,'keep');assert.equal(h.api.getSettings().filterSearch,true);
 });
@@ -50,7 +81,7 @@ test('calendar title fallback excludes home-only hides',t=>{
  const h=setup(t,{items:{x:{itemId:'x',name:'Only Next Up',hideScope:'nextup'}}});assert.equal(h.api.filterCalendarEvents([{title:'Only Next Up'}]).length,1);
 });
 test('refresh started before a local mutation cannot erase the newer intent',async t=>{
- const pending=deferred();const h=setup(t,{ajax:()=>pending.promise});
+ const pending=deferred();const h=setup(t,{reads:true,ajax:()=>pending.promise});
  const refresh=h.api.refresh();h.api.hideItem({itemId:'new'});pending.resolve({items:{},settings:{}});
  assert.equal(await refresh,false);assert.equal(h.api.isHidden('new'),true);
 });
@@ -103,7 +134,7 @@ test('scoped write flush awaiting another write rejects account switch before se
  h.api.hideItem({itemId:'a'});const save=h.api.flushPendingSave();await tick();const scoped=h.home.removeFromHomeSurface('b','nextup');h.switchUser();pending.resolve({});await save;assert.equal(await scoped,false);assert.equal(requests,1);
 });
 test('hide and undo preserve unrelated stored extensions in the shipped assets',async t=>{
- let sent;const h=setup(t,{ajax:async request=>{sent=JSON.parse(request.data);return {};}});
+ let sent;const h=setup(t,{reads:true,ajax:async request=>{if(request.type==='GET')return {items:{},settings:{},extension:{v:1}};sent=JSON.parse(request.data);return {};}});
  h.api.getHiddenData().extension={v:1};h.api.hideItem({itemId:'a',name:'A'});h.document.querySelector('.je-undo-btn').click();await h.api.flushPendingSave();assert.deepEqual(sent.items,{});assert.equal(sent.extension.v,1);
 });
 test('malformed scoped mutation acknowledgement does not mark an item hidden',async t=>{
@@ -182,4 +213,12 @@ test('admin add-items search does not offer a title Seerr links to the library a
  const grid=await adminSearch(h,{library:fetch});
  assert.match(grid.textContent,/hidden_content_admin_add_failed/);
  assert.deepEqual([...grid.querySelectorAll('.je-hidden-item-name')].map(n=>n.textContent),['Star vs. the Forces of Evil']);
+});
+// Seerr cards used to store their titles HTML-escaped; such stored entries read back as the plain title.
+test('a stored HTML-escaped title reads back as the plain title without rewriting the stored entry',t=>{
+ const stored={x:{itemId:'',tmdbId:61923,type:'Series',name:'Tom &amp; Jerry&#039;s Lab Day'}};
+ const h=setup(t,{items:stored});
+ assert.equal(h.api.getAllHiddenItems()[0].name,"Tom & Jerry's Lab Day");
+ assert.equal(h.api.filterCalendarEvents([{title:"Tom & Jerry's Lab Day"}]).length,0);
+ assert.equal(stored.x.name,'Tom &amp; Jerry&#039;s Lab Day');
 });

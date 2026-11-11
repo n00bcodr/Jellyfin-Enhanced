@@ -20,6 +20,8 @@ const owner = own(JE, 'state', false);
     let loaded = false;
     let loadOk = false;
     let statePromise: Promise<void> | null = null;
+    // Delay before the next load after a failure: 5 s, doubling, at most 5 min.
+    let retryDelay = 0;
 
     function invalidateGuardedResponses() {
         const manager = JE.core.api.manager;
@@ -62,6 +64,7 @@ const owner = own(JE, 'state', false);
                 userPrefs = value.Prefs || {};
                 loaded = true;
                 loadOk = true;
+                retryDelay = 0;
                 // If tag renderers already ran fail-closed while this request was
                 // in flight, give them one authoritative pass now.
                 try {
@@ -76,10 +79,15 @@ const owner = own(JE, 'state', false);
                 console.error(`${logPrefix} state load failed; downstream consumers will fail closed:`, err);
                 loaded = true;
                 loadOk = false;
+                // The state stays unknown (consumers keep failing closed) until a
+                // later load succeeds: ask again after a growing delay.
+                statePromise = null;
+                retryDelay = Math.min(retryDelay * 2 || 5000, 300000);
+                owner.later(() => { if (!statePromise) void internal.loadState(); }, retryDelay);
                 // Tag renderers held back on cards while this was in flight
                 // (e.g. user-review chips, see ratingtags.js): with the state
                 // settled — failed, so ratings stay suppressed — give them
-                // their final pass too.
+                // their pass now; a later successful load rescans again.
                 try {
                     ctx.peer('tagPipeline')?.clearProcessed?.();
                     ctx.peer('tagPipeline')?.scheduleScan?.();
@@ -274,6 +282,7 @@ const owner = own(JE, 'state', false);
     // user's state instead of serving the previous user's.
     function resetState() {
         statePromise = null;
+        retryDelay = 0;
         loaded = false;
         loadOk = false;
         enabledSeries.clear();

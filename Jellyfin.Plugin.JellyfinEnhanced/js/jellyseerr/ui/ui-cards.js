@@ -596,7 +596,7 @@
       }
       seerr.peer("hiddenContent")?.confirmAndHide?.({
         itemId: state.jellyfinMediaId || "",
-        name: escapeHtml(item.title || item.name),
+        name: item.title || item.name || "",
         type: item.mediaType === "tv" ? "Series" : "Movie",
         tmdbId: item.id,
         posterPath: item.posterPath || ""

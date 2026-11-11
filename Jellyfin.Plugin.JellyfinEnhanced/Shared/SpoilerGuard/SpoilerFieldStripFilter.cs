@@ -32,7 +32,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.SpoilerGuard
     // from a particular endpoint's response shape, we skip stripping for
     // that item (fail-safe, matches the action-filter rule pattern in
     // HiddenContentResponseFilter).
-    public sealed class SpoilerFieldStripFilter : IAsyncActionFilter
+    public sealed partial class SpoilerFieldStripFilter : IAsyncActionFilter
     {
         // Action-name table built from live observation on Jellyfin 10.11.x:
         // - /Items                        → Items.GetItems
@@ -116,6 +116,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.SpoilerGuard
                 // Matching on controller/action name alone means no
                 // dependency on that plugin: without it, this never matches.
                 { ("HomeScreen",  "GetSectionContent"),      true },
+                // GET /Videos/{id}/AdditionalParts: the other files of a
+                // multi-part video, named after their files.
+                { ("Videos",      "GetAdditionalPart"),      true },
+                // GET /Sessions: what each session is playing or viewing, as
+                // full item DTOs (remote control, the dashboard's devices).
+                { ("Session",     "GetSessions"),            true },
             };
 
         // Per-category reveal mask for the advanced Spoiler Guard mode. Each
@@ -266,6 +272,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.SpoilerGuard
                     if (qr.Items != null)
                     {
                         foreach (var item in qr.Items) StripItem(item, userState, cfg, userId);
+                        StripAdditionalParts(qr.Items, userState, cfg, userId, context);
                     }
                     break;
                 case IEnumerable<BaseItemDto> seq:
@@ -310,6 +317,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.SpoilerGuard
                 case MediaBrowser.Model.MediaInfo.PlaybackInfoResponse pbi:
                     StripPlaybackInfo(pbi, userState, cfg, userId, context);
                     break;
+                // Session.GetSessions builds a new SessionInfoDto per call, but
+                // its NowPlayingItem / NowViewingItem are the session's own
+                // DTOs, which every other reader gets too (other users'
+                // requests, the Sessions web socket): a guarded one is
+                // replaced by a stripped copy, never stripped in place.
+                case IEnumerable<SessionInfoDto> sessionSeq:
+                    var sessions = sessionSeq as List<SessionInfoDto> ?? sessionSeq.ToList();
+                    foreach (var session in sessions)
+                    {
+                        if (session == null) continue;
+                        session.NowPlayingItem = StrippedSessionItem(session.NowPlayingItem, userState, cfg, userId);
+                        session.NowViewingItem = StrippedSessionItem(session.NowViewingItem, userState, cfg, userId);
+                    }
+                    if (!ReferenceEquals(sessions, sessionSeq)) objectResult.Value = sessions;
+                    break;
                 default:
                     // Route was in the allowlist (so we *believed* it
                     // returned a spoilable DTO shape) but the runtime
@@ -328,6 +350,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.SpoilerGuard
                         $"Spoiler Guard field strip: route {ctrl}.{act} returned shape {objectResult.Value.GetType().FullName} — no case arm matched, strip silently skipped. Likely a Jellyfin upgrade. Add a case arm in StripIfApplicable to cover this shape.");
                     break;
             }
+        }
+
+        // A copy of a session's item, stripped as StripItem strips any item
+        // DTO; the item itself when it is not in the user's Spoiler Guard
+        // scope, so everyone else's session list is left as Jellyfin built it.
+        private BaseItemDto? StrippedSessionItem(BaseItemDto? item, UserSpoilerBlur userState, PluginConfiguration cfg, Guid userId)
+        {
+            if (item == null) return null;
+            var guarded = item.Type == Jellyfin.Data.Enums.BaseItemKind.Movie
+                ? _resolver.IsMovieInSpoilerScope(userState, item.Id)
+                : userState.Series.ContainsKey((item.Type == Jellyfin.Data.Enums.BaseItemKind.Series ? item.Id : item.SeriesId ?? Guid.Empty).ToString("N"));
+            if (!guarded) return item;
+            var copy = System.Text.Json.JsonSerializer.Deserialize<BaseItemDto>(System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(item))!;
+            StripItem(copy, userState, cfg, userId);
+            return copy;
         }
 
         // Extractor for /Items/{id}/Images. ImageInfo doesn't carry

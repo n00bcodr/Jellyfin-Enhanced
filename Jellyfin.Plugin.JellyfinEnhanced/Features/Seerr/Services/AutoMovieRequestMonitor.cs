@@ -23,6 +23,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Seerr.Services
         // Track which user+item combinations have already been checked to avoid duplicate checks
         private readonly Dictionary<string, DateTime> _checkedSessions = new();
         private readonly object _sessionLock = new();
+        private readonly object _subscriptionLock = new();
+        private bool _subscribed;
 
         public AutoMovieRequestMonitor(
             ISessionManager sessionManager,
@@ -38,27 +40,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Seerr.Services
             _logger = logger;
         }
 
-        // Initialize and start monitoring playback events.
+        // Initialize and start monitoring playback events. Always subscribes, once: the handler
+        // checks the settings per event, so switching the feature on or off in the admin page takes
+        // effect without a restart (as SeerrScanTriggerService does).
         public void Initialize()
         {
-            // Check if auto-movie-request is enabled
-            var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null)
+            lock (_subscriptionLock)
             {
-                _logger.Warning("[Auto-Movie-Request] Configuration is null - skipping auto-movie-request monitoring initialization");
-                return;
+                if (_subscribed) return;
+                // Playback progress events (to detect when user starts watching)
+                _sessionManager.PlaybackProgress += OnPlaybackProgress;
+                _subscribed = true;
             }
-
-            if (!config.AutoMovieRequestEnabled || !config.JellyseerrEnabled)
-            {
-                _logger.Info("[Auto-Movie-Request] Auto-Movie-Request monitoring is disabled in configuration - not subscribing to playback events");
-                return;
-            }
-
-            // _logger.Info("[Auto-Movie-Request] Initializing playback event monitoring");
-
-            // Subscribe to playback progress events (to detect when user starts watching)
-            _sessionManager.PlaybackProgress += OnPlaybackProgress;
 
             _logger.Info("[Auto-Movie-Request] Successfully subscribed to playback events");
         }
@@ -160,7 +153,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Seerr.Services
         {
             _logger.Info("[Auto-Movie-Request] Unsubscribing from playback events");
 
-            _sessionManager.PlaybackProgress -= OnPlaybackProgress;
+            lock (_subscriptionLock)
+            {
+                _sessionManager.PlaybackProgress -= OnPlaybackProgress;
+                _subscribed = false;
+            }
 
             GC.SuppressFinalize(this);
         }

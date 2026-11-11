@@ -362,11 +362,11 @@
       button.className = "jellyseerr-4k-popup-item";
       const display4k = export11(item.mediaInfo ? item.mediaInfo.status4k : 1, false);
       if (display4k === export0.AVAILABLE) {
-        button.innerHTML = `<span>4K Available</span>${icons().available}`;
+        button.innerHTML = `<span>${JE.t("jellyseerr_btn_available_4k")}</span>${icons().available}`;
         button.disabled = true;
         button.classList.add("jellyseerr-4k-available", "chip-available");
       } else if (display4k === export0.PENDING || display4k === export0.REQUESTED || display4k === export0.PROCESSING) {
-        button.innerHTML = `<span>4K Requested</span>${icons().pending}`;
+        button.innerHTML = `<span>${JE.t("jellyseerr_btn_requested_4k")}</span>${icons().pending}`;
         button.disabled = true;
         button.classList.add(display4k === export0.PROCESSING ? "chip-processing" : "chip-pending");
       } else if (display4k === export0.BLOCKED) {

@@ -46,6 +46,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.DetailsProviders.Services
         private static readonly TimeSpan SaveDebounce = TimeSpan.FromSeconds(10);
         private static readonly TimeSpan SaveMaxWait = TimeSpan.FromMinutes(2);
         private const int CurrentSchemaVersion = 2;
+        // Titles kept in memory and in mdblist-ratings.json. Well above a library's movies and series:
+        // the library-wide fetch, the ratings sync and the rating tags all read this cache.
+        internal const int MaxCacheEntries = 50000;
 
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly IApplicationPaths _applicationPaths;
@@ -78,6 +81,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.DetailsProviders.Services
         private long _quotaSpent;
         private long _accountStatusQueries;
         private long _accountStatusPublishedQuery;
+
+        /// <summary>
+        /// Lookups that spend quota one account may start per <see cref="UserLookupWindow"/> through the
+        /// item-details route. Every signed-in account may use it and the administrator's MDBList quota pays,
+        /// so one caller cannot use up the day's quota; answers already cached cost nothing.
+        /// </summary>
+        public const int UserLookupsPerWindow = 100;
+
+        /// <inheritdoc cref="UserLookupsPerWindow"/>
+        public static readonly TimeSpan UserLookupWindow = TimeSpan.FromHours(24);
+
+        private readonly Dictionary<string, (DateTime Start, int Lookups)> _userLookups = new();
 
         public MdblistService(IHttpClientFactory httpClientFactory, IApplicationPaths applicationPaths, Logger logger)
         {
@@ -122,6 +137,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.DetailsProviders.Services
                 cancellationToken.ThrowIfCancellationRequested();
                 fetched = KeepLastGood(cached, fetched);
                 _cache[key] = fetched;
+                // Expired entries without ratings go at once; past the cap, the oldest. Expired ratings
+                // stay: a failed refresh keeps them (KeepLastGood) and rating tags show them meanwhile.
+                foreach (var entry in _cache.Where(e => !e.Value.Found && IsExpired(e.Value)).ToList()) _cache.TryRemove(entry);
+                foreach (var entry in _cache.OrderBy(e => e.Value.FetchedAtUnixMs).Take(_cache.Count - MaxCacheEntries).ToList()) _cache.TryRemove(entry);
                 ScheduleDebouncedSave();
                 return fetched;
             }
@@ -181,6 +200,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.DetailsProviders.Services
             if (entry.RetryAfterUnixMs is { } retryAfter) return retryAfter;
             var ttl = entry.Found ? PositiveTtl : entry.Confirmed ? NegativeTtl : RetryTtl;
             return entry.FetchedAtUnixMs + (long)ttl.TotalMilliseconds;
+        }
+
+        /// <summary>Counts one quota-spending lookup for <paramref name="user"/>; false when its share for the
+        /// current <see cref="UserLookupWindow"/> is used up.</summary>
+        public bool TryUseUserLookup(string user)
+        {
+            var now = DateTime.UtcNow;
+            lock (_userLookups)
+            {
+                if (!_userLookups.TryGetValue(user, out var used) || now - used.Start >= UserLookupWindow)
+                {
+                    used = (now, 0);
+                }
+
+                if (used.Lookups >= UserLookupsPerWindow)
+                {
+                    return false;
+                }
+
+                _userLookups[user] = (used.Start, used.Lookups + 1);
+                return true;
+            }
         }
 
         /// <summary>True when this title has no cached entry yet, or its cached entry

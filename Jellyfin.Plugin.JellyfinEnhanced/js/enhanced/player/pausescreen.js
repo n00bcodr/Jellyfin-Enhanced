@@ -333,6 +333,7 @@
   // client/src/features/player/pausescreen.ts
   var { JE, ApiClient, ctx } = export02();
   var lifetime = export0(JE, "pause-screen");
+  var MAX_KEPT_IMAGES = 6;
   JE.initializePauseScreen = function() {
     if (!JE.currentSettings.pauseScreenEnabled) {
       JE.pauseScreenInstance?.destroy();
@@ -844,9 +845,10 @@
           this.overlayDetails.appendChild(span);
         }
         this.overlayPlot.textContent = item.Overview || JE.t("pausescreen_no_description");
-        const logoUrls = this.getLogoUrls(item, domain, itemId);
-        const discUrls = this.getDiscUrls(item, domain, itemId);
-        const backdropUrls = this.getBackdropUrls(item, domain, itemId);
+        const fit = (urls) => urls.map((url) => `${url}${url.includes("?") ? "&" : "?"}maxWidth=${Math.round((window.screen.width || 1920) * (window.devicePixelRatio || 1))}`);
+        const logoUrls = fit(this.getLogoUrls(item, domain, itemId));
+        const discUrls = fit(this.getDiscUrls(item, domain, itemId));
+        const backdropUrls = fit(this.getBackdropUrls(item, domain, itemId));
         const [logoURL, discURL, backdropURL] = await Promise.all([
           this.firstAvailableBlobURL(logoUrls),
           this.firstAvailableBlobURL(discUrls),
@@ -875,7 +877,7 @@
       setProgress(current, duration) {
         renderPauseProgress(this.progressBar, this.progressMeta, current, duration, (key, params) => JE.t(key, params));
       }
-      // ------- Image helpers (blob cache) -------
+      // ------- Image helpers (blob cache, the most recently used kept) -------
       async firstAvailableBlobURL(urls) {
         const generation = this.generation;
         for (const url of urls) {
@@ -920,7 +922,12 @@
       async toBlobURL(url, timeoutMs = 5e3) {
         const generation = this.generation;
         if (this.destroyed) return null;
-        if (this.imgBlobCache.has(url)) return this.imgBlobCache.get(url);
+        const kept = this.imgBlobCache.get(url);
+        if (kept) {
+          this.imgBlobCache.delete(url);
+          this.imgBlobCache.set(url, kept);
+          return kept;
+        }
         const ctl = new AbortController();
         this.imageRequests.add(ctl);
         const t = window.setTimeout(() => ctl.abort(), timeoutMs);
@@ -935,6 +942,10 @@
           if (this.destroyed || generation !== this.generation) return null;
           const obj = URL.createObjectURL(blob);
           this.imgBlobCache.set(url, obj);
+          for (const [key, old] of this.imgBlobCache) if (this.imgBlobCache.size > MAX_KEPT_IMAGES) {
+            URL.revokeObjectURL(old);
+            this.imgBlobCache.delete(key);
+          }
           return obj;
         } catch {
           return null;

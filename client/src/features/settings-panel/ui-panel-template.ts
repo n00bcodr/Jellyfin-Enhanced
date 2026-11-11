@@ -74,7 +74,7 @@ export function installUiPanelTemplate(JE: Deps, featureCtx = settingsPanelConte
                     previewStyle = `color: #fff; font-size: 1.5em; background-color: #8a8a8a; padding: 0 8px; border-radius: 4px; text-shadow: ${JE.getSubtitleTextShadow('transparent', index)};`;
                 }
                 return `
-                    <div class="preset-box ${type}-preset" data-preset-index="${index}" title="${escapeHtml(preset.name)}" style="display: flex; justify-content: center; align-items: center; padding: 8px; border: 2px solid transparent; border-radius: 8px; cursor: pointer; transition: all 0.2s; background: ${presetBoxBackground}; min-height: 30px;" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='${presetBoxBackground}'">
+                    <div class="preset-box ${type}-preset" data-preset-index="${index}" title="${escapeHtml(preset.name)}" style="display: flex; justify-content: center; align-items: center; padding: 8px; border: 2px solid transparent; border-radius: 8px; cursor: pointer; transition: all 0.2s; background: ${presetBoxBackground}; min-height: 30px;">
                         <span style="display: inline-block; ${type === 'style' ? `width: 40px; height: 25px; border-radius: 4px; line-height: 25px;` : ''} ${previewStyle} text-align: center; font-weight: bold;">${escapeHtml(preset.previewText)}</span>
                     </div>`;
             }).join('');
@@ -96,7 +96,7 @@ export function installUiPanelTemplate(JE: Deps, featureCtx = settingsPanelConte
         const subtitleFontFamily = isSafeFontFamily(posPreviewFontFamilyPreset.family) ? posPreviewFontFamilyPreset.family : 'inherit';
         const previewTextShadow = JE.getSubtitleTextShadow(subtitleBgColor || '#00000000');
 
-        const userShortcuts = new Set((JE.userConfig.shortcuts.Shortcuts || []).map(s => s.Name));
+        const userShortcuts = new Set((JE.userConfig.shortcuts?.Shortcuts || []).map(s => s.Name));
         const pluginShortcuts = pluginShortcutList(JE.pluginConfig.Shortcuts);
 
         return `
@@ -109,6 +109,7 @@ export function installUiPanelTemplate(JE: Deps, featureCtx = settingsPanelConte
                 #jellyfin-enhanced-panel .je-panel-nav-items { display: flex; flex-direction: column; gap: 3px; }
                 #jellyfin-enhanced-panel .je-panel-search { width: 100%; box-sizing: border-box; padding: 9px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.12); background: rgba(0,0,0,0.25); color: #fff; font-family: inherit; font-size: 13px; outline: none; }
                 #jellyfin-enhanced-panel .je-panel-search:focus { border-color: ${primaryAccentColor}; }
+                #jellyfin-enhanced-panel .preset-box:hover { background: rgba(255,255,255,0.3) !important; }
                 #jellyfin-enhanced-panel:focus { outline: none; }
                 #jellyfin-enhanced-panel .je-panel-search-results { list-style: none; margin: 0; padding: 4px; display: flex; flex-direction: column; gap: 2px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.12); background: rgba(0,0,0,0.3); max-height: 50%; overflow-y: auto; flex-shrink: 0; }
                 #jellyfin-enhanced-panel .je-panel-search-results[hidden] { display: none; }
@@ -130,9 +131,9 @@ export function installUiPanelTemplate(JE: Deps, featureCtx = settingsPanelConte
                     #jellyfin-enhanced-panel .je-panel-dock { position: relative; display: flex; flex: 0 0 auto; gap: 8px; padding: 8px 12px; background: ${panelBgColor}; z-index: 3; }
                     #jellyfin-enhanced-panel .je-panel-dock select { width: 40%; min-width: 0; border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; background: rgb(24,24,24); color: #fff; font: inherit; font-size: 13px; }
                     #jellyfin-enhanced-panel .je-panel-dock .je-panel-search { flex: 1; min-width: 0; width: 0; }
-                    #jellyfin-enhanced-panel .je-panel-dock .je-panel-search-results { position: absolute; top: 100%; left: 12px; right: 12px; max-height: 45dvh; background: rgb(24,24,24); }
+                    #jellyfin-enhanced-panel .je-panel-dock .je-panel-search-results { position: absolute; top: 100%; left: 12px; right: 12px; max-height: 45vh; max-height: 45dvh; background: rgb(24,24,24); }
 
-                    #jellyfin-enhanced-panel { top: 0 !important; left: 0 !important; transform: none !important; width: 100vw !important; max-width: 100vw !important; height: 100dvh !important; max-height: 100dvh !important; border-radius: 0 !important; border: none !important; box-sizing: border-box !important; }
+                    #jellyfin-enhanced-panel { top: 0 !important; left: 0 !important; transform: none !important; width: 100vw !important; max-width: 100vw !important; height: 100vh !important; height: 100dvh !important; max-height: 100vh !important; max-height: 100dvh !important; border-radius: 0 !important; border: none !important; box-sizing: border-box !important; }
                     #jellyfin-enhanced-panel .je-panel-body { display: block; position: relative; overflow: clip; }
                     #jellyfin-enhanced-panel .je-panel-nav { position: absolute; inset: 0; border-right: none; z-index: 1; }
                     /* The closed pane is parked off-screen by the transform alone —
@@ -557,8 +558,8 @@ export function installUiPanelTemplate(JE: Deps, featureCtx = settingsPanelConte
                                 </div>
                             </div>
                             <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
-                                <button id="releaseNotesBtn" style="font-family:inherit; background:${releaseNotesBg}; color:${releaseNotesTextColor}; border:${checkUpdatesBorder}; padding:8px 14px; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; transition:all 0.2s; display:flex; align-items:center; gap:6px;" onmouseover="this.style.background='${primaryAccentColor}'" onmouseout="this.style.background='${releaseNotesBg}'">${JE.t('panel_footer_release_notes')}</button>
-                                <a href="https://github.com/${GITHUB_REPO}/" target="_blank" style="color:${primaryAccentColor}; text-decoration:none; display:flex; align-items:center; gap:6px; font-size:13px; padding:8px 12px; border-radius:8px; background:${githubButtonBg}; transition:background 0.2s;" onmouseover="this.style.background='rgba(102, 179, 255, 0.2)'" onmouseout="this.style.background='${githubButtonBg}'"><svg height="13" viewBox="0 0 24 24" width="13" fill="currentColor"><path d="M12 1C5.923 1 1 5.923 1 12c0 4.867 3.149 8.979 7.521 10.436.55.096.756-.233.756-.522 0-.262-.013-1.128-.013-2.049-2.764.509-3.479-.674-3.699-1.292-.124-.317-.66-1.293-1.127-1.554-.385-.207-.936-.715-.014-.729.866-.014 1.485.797 1.691 1.128.99 1.663 2.571 1.196 3.204.907.096-.715.385-1.196.701-1.471-2.448-.275-5.005-1.224-5.005-5.432 0-1.196.426-2.186 1.128-2.956-.111-.275-.496-1.402.11-2.915 0 0 .921-.288 3.024 1.128a10.193 10.193 0 0 1 2.75-.371c.936 0 1.871.123 2.75.371 2.104-1.43 3.025-1.128 3.025-1.128.605 1.513.221 2.64.111 2.915.701.77 1.127 1.747 1.127 2.956 0 4.222-2.571 5.157-5.019 5.432.399.344.743 1.004.743 2.035 0 1.471-.014 2.654-.014 3.025 0 .289.206.632.756.522C19.851 20.979 23 16.854 23 12c0-6.077-4.922-11-11-11Z"></path></svg> ${JE.t('panel_footer_contribute')}</a>
+                                <button id="releaseNotesBtn" style="font-family:inherit; background:${releaseNotesBg}; color:${releaseNotesTextColor}; border:${checkUpdatesBorder}; padding:8px 14px; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; transition:all 0.2s; display:flex; align-items:center; gap:6px;">${JE.t('panel_footer_release_notes')}</button>
+                                <a href="https://github.com/${GITHUB_REPO}/" target="_blank" style="color:${primaryAccentColor}; text-decoration:none; display:flex; align-items:center; gap:6px; font-size:13px; padding:8px 12px; border-radius:8px; background:${githubButtonBg}; transition:background 0.2s;" onmouseover="this.style.background='rgba(102, 179, 255, 0.2)'" onmouseout="this.style.background='rgba(102, 179, 255, 0.1)'"><svg height="13" viewBox="0 0 24 24" width="13" fill="currentColor"><path d="M12 1C5.923 1 1 5.923 1 12c0 4.867 3.149 8.979 7.521 10.436.55.096.756-.233.756-.522 0-.262-.013-1.128-.013-2.049-2.764.509-3.479-.674-3.699-1.292-.124-.317-.66-1.293-1.127-1.554-.385-.207-.936-.715-.014-.729.866-.014 1.485.797 1.691 1.128.99 1.663 2.571 1.196 3.204.907.096-.715.385-1.196.701-1.471-2.448-.275-5.005-1.224-5.005-5.432 0-1.196.426-2.186 1.128-2.956-.111-.275-.496-1.402.11-2.915 0 0 .921-.288 3.024 1.128a10.193 10.193 0 0 1 2.75-.371c.936 0 1.871.123 2.75.371 2.104-1.43 3.025-1.128 3.025-1.128.605 1.513.221 2.64.111 2.915.701.77 1.127 1.747 1.127 2.956 0 4.222-2.571 5.157-5.019 5.432.399.344.743 1.004.743 2.035 0 1.471-.014 2.654-.014 3.025 0 .289.206.632.756.522C19.851 20.979 23 16.854 23 12c0-6.077-4.922-11-11-11Z"></path></svg> ${JE.t('panel_footer_contribute')}</a>
                             </div>
                             ${logoUrl ? `<img src="${escapeHtml(logoUrl)}" class="footer-logo" alt="Theme Logo" style="height: 40px; align-self: flex-start;">` : ''}
                         </div>

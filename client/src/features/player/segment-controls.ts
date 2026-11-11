@@ -95,7 +95,7 @@ export function installSegmentControls(context: PlayerContext) {
         } else if (buttonText.includes('Skip Outro')) {
             JE.toast(JE.t('toast_skipped_outro'));
         } else {
-            JE.toast(`${JE.icons.wrapEmoji('⏭️')} Skipped`);
+            JE.toast(JE.t('toast_skipped'));
         }
         return true;
     }
@@ -141,7 +141,7 @@ export function installSegmentControls(context: PlayerContext) {
                     } else if (seg.Type === 'Outro') {
                         JE.toast(JE.t('toast_skipped_outro'));
                     } else {
-                        JE.toast(`${JE.icons.wrapEmoji('⏭️')} Skipped`);
+                        JE.toast(JE.t('toast_skipped'));
                     }
                     return;
                 }

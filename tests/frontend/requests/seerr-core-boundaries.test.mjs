@@ -349,9 +349,20 @@ test('advanced options from any caller are validated before they reach the selec
   modal.populateAdvancedOptions(created.modalElement, { servers: [{ id: 1, name: 'A', isDefault: true, qualityProfiles: 'bad', rootFolders: [{ path: '/m', freeSpace: 2048 }, { path: 7 }] }, { id: 'x' }] }, 'movie');
   await new Promise(resolve => h.window.setTimeout(resolve, 150));
   const options = id => [...created.modalElement.querySelectorAll(`#${id} option`)].map(o => o.textContent);
-  assert.deepEqual(options('movie-server'), ['Select Server...', 'A']);
-  assert.deepEqual(options('movie-quality'), ['Select Quality...']);
-  assert.deepEqual(options('movie-folder'), ['Select Folder...', '/m (2 KB)']);
+  assert.deepEqual(options('movie-server'), ['jellyseerr_server_placeholder', 'A']);
+  assert.deepEqual(options('movie-quality'), ['jellyseerr_quality_placeholder']);
+  assert.deepEqual(options('movie-folder'), ['jellyseerr_folder_placeholder', '/m (2 KB)']);
   modal.populateAdvancedOptions(created.modalElement, {}, 'movie"],x');
   modal.populateAdvancedOptions(created.modalElement, undefined, 'movie');
+});
+
+test('the 4K popover states come from the translations', t => {
+  const h = setup(t, { files: UI });
+  const label = status4k => {
+    const group = h.document.createElement('div'); h.document.body.append(group);
+    h.JE.internals.jellyseerrUi.show4KPopup(group, { id: 5, mediaType: 'movie', mediaInfo: { status: 1, status4k } });
+    return h.document.querySelector('.jellyseerr-4k-popup .jellyseerr-4k-popup-item span').textContent;
+  };
+  assert.equal(label(5), 'jellyseerr_btn_available_4k');
+  assert.equal(label(2), 'jellyseerr_btn_requested_4k');
 });

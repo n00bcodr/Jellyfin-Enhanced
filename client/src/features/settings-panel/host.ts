@@ -22,7 +22,8 @@ export interface ShortcutsDocument { Shortcuts: Shortcut[] }
 export interface UserConfig {
     settings?: SettingsDocument;
     settingsRevision?: string | null;
-    shortcuts: ShortcutsDocument;
+    /** Null when the stored overrides could not be loaded. */
+    shortcuts: ShortcutsDocument | null;
 }
 
 export interface SubtitlePreset { name: string; previewText: string; textColor: string; bgColor: string }

@@ -929,7 +929,7 @@ Use local GUID routes for Jellyfin metadata, the generic TMDB route for external
 | GET | `tmdb/search/keyword` | Seerr-linked | Required nonblank `query` → Seerr keyword-search response. |
 | GET | `tmdb/genres/movie` | Seerr-linked | Upstream Seerr movie genre list. |
 | GET | `tmdb/genres/tv` | Seerr-linked | Upstream Seerr TV genre list. |
-| GET | `tmdb/validate` | Administrator | Supplied query `apiKey` → `{"ok":true}`. |
+| GET | `tmdb/validate` | Administrator | The key in the `X-Arr-ApiKey` header (or, as before, the query `apiKey`) → `{"ok":true}`. |
 | GET | `tmdb/{**apiPath}` | Authenticated | TMDB `/3/` resource path and query → upstream TMDB JSON/status. |
 | GET | `watch-providers` | Authenticated | Query `items`, optional `region` → regional flat-rate provider map. |
 | GET | `logo/{size}/{file}` | Anonymous | `size` `w45` or `w92`, `file` a logo file name the server has seen in a Logos lookup, spelled exactly as TMDB spells it (case-sensitive) → the image from the server's cache; `404` otherwise. |
@@ -1674,13 +1674,13 @@ Read upcoming events from configured sources, then use user-data to retrieve fav
 | GET | `arr/calendar` | Authenticated | Optional query `start`, `end` → `{events,errors}`. |
 | POST | `arr/calendar/user-data` | Existing caller | `{Events:[<event reference>]}` → `{results:[{id,isFavorite,isWatched}]}`. |
 
-GET defaults to today's UTC date through 90 days ahead. Parseable dates override each endpoint; invalid dates retain defaults, reversed ranges swap, ranges over 365 days cap at 365. Missing configuration returns `500`. Enabled Sonarr/Radarr and configured Shoko contribute events; per-source errors contain `instanceName`, `source`, `reason`.
+While the Calendar page is off, GET answers `404` to everyone but administrators. It defaults to today's UTC date through 90 days ahead. Parseable dates override each endpoint; invalid dates retain defaults, reversed ranges swap, ranges over 365 days cap at 365. Missing configuration returns `500`. Enabled Sonarr/Radarr and configured Shoko contribute events; per-source errors contain `instanceName`, `source`, `reason`.
 
 Calendar events contain `id`, `source`, `type`, `title`, `subtitle`, `releaseDate`, `releaseType`, `hasFile`, `monitored`, `posterUrl`, `backdropUrl`, `imdbId`, Jellyfin `itemId`, `itemEpisodeId`, `overview`, `tvdbId`, `seasonNumber`, `episodeNumber`, `episodeTvdbId`, `episodeImdbId`, upstream `seriesId`, `tmdbId`, `shokoSeriesId`, `shokoEpisodeId`, `instanceName`, `alsoInInstances`. Nullable fields can be absent.
 
 Duplicate entries across instances are combined, preferring accessible/file-backed entries and recording other instance names.
 
-Internal root-folder access information is not serialized in calendar events. If item/root-folder access cannot be determined, an event can pass the access filter. Requested-only display preferences operate in the client.
+Internal root-folder access information is not serialized in calendar events. When neither an event's library item nor its root folder's access can be determined, it passes the access filter only for a caller who can see every library. For a caller with a parental limit, titles the access filter has not checked against the library are checked like Seerr titles and dropped when that check fails. With **Force Only Requested Items** on, only the caller's own Seerr requests are returned; if they cannot be read, no events are returned and `errors` has a `Seerr` entry. None of these narrow an administrator's answer. **Show Requested Only (Default)** remains a client-side default filter.
 
 ```bash
 curl -H "Authorization: MediaBrowser Token=\"$TOKEN\"" \

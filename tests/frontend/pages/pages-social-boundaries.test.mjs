@@ -4,7 +4,7 @@ import {setImmediate as tick} from 'node:timers/promises';
 import {readFileSync} from 'node:fs';
 import {createHarness,deferred} from '../helpers/harness.mjs';
 const order=JSON.parse(readFileSync('Jellyfin.Plugin.JellyfinEnhanced/js/component-scripts.json','utf8'));
-const movie=id=>({Id:id,Name:id,Type:'Movie',ImageTags:{Primary:'p'}});
+const movie=id=>({Id:id,Name:id,Type:'Movie',ImageTags:{Primary:'p'},UserData:{Played:false,PlayCount:0,PlaybackPositionTicks:0}});
 const row=n=>({ActivityType:'Watched',UserId:'alice',UserName:'Private Alice',Timestamp:n,Item:{Id:String(n),Name:`Private movie ${n}`}});
 function setup(t,{jf,plugin}={}) {
  let epoch=0;const callbacks=new Map(),calls=[];

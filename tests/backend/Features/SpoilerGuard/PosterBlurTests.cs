@@ -10,6 +10,12 @@ public class PosterBlurTests
         for(int y=0;y<height;y++) for(int x=0;x<width;x++) bitmap.SetPixel(x,y, ((x/4+y/4)%2==0)^inverse ? SKColors.White : SKColors.Black);
         using var image=SKImage.FromBitmap(bitmap); using var encoded=image.Encode(SKEncodedImageFormat.Png,100); return encoded.ToArray();
     }
+    // A picture cheap to store whose header declares more pixels than the decode budget.
+    internal static byte[] OverBudget()
+    {
+        using var bitmap=new SKBitmap(new SKImageInfo(6100,6000,SKColorType.Gray8,SKAlphaType.Opaque)); bitmap.Erase(new SKColor(128,128,128));
+        using var image=SKImage.FromBitmap(bitmap); using var encoded=image.Encode(SKEncodedImageFormat.Png,100); return encoded.ToArray();
+    }
     internal static double Contrast(SKBitmap image) { var pixels=image.Pixels; var mean=pixels.Average(p=>(double)p.Red); return pixels.Average(p=>Math.Abs(p.Red-mean)); }
     [Theory]
     [InlineData(1f)][InlineData(15f)][InlineData(100f)]
@@ -48,6 +54,15 @@ public class PosterBlurTests
         using var resized=SKBitmap.Decode(service.ResizeToMatch(Source(),reference,null)); Assert.Equal(expectedWidth,resized.Width); Assert.Equal(expectedHeight,resized.Height);
         using var blurred=SKBitmap.Decode(service.Blur(reference,10,null)); Assert.Equal(expectedWidth,blurred.Width); Assert.Equal(expectedHeight,blurred.Height);
         using var stock=SKBitmap.Decode(service.StockCard(reference,null)); Assert.Equal(expectedWidth,stock.Width); Assert.Equal(expectedHeight,stock.Height);
+    }
+    [Fact]
+    public void Images_over_the_pixel_budget_are_not_decoded_and_stock_cards_read_only_their_header()
+    {
+        using var f=new CoreFixture(); var service=new ImageBlurService(f.Logger); var huge=OverBudget();
+        Assert.True(6100L*6000>ImageBlurService.MaxSourcePixels);
+        Assert.Null(service.Blur(huge,40,null));
+        Assert.Null(service.ResizeToMatch(huge,Source(),null));
+        using var stock=SKBitmap.Decode(service.StockCard(huge,null)); Assert.Equal(1920,stock.Width); Assert.Equal(1888,stock.Height);
     }
     [Fact]
     public async Task Cached_concurrent_outputs_remain_identical_and_distinct_keys_are_isolated()

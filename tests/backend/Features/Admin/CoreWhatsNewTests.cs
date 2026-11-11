@@ -48,6 +48,39 @@ public class CoreWhatsNewTests
         Assert.Contains(missing, JsonConvert.DeserializeObject<ConfigSchemaSnapshot>(File.ReadAllText(path))!.SettingIds);
     }
 
+    [Fact]
+    public void StateFilesAreReplacedInsteadOfRewrittenInPlace()
+    {
+        using var f = new ApiPluginFixture();
+        var service = new WhatsNewService(f.Core.Paths.Object, f.Core.Logger);
+        service.Dismiss();
+        var snapshotPath = Path.Combine(f.Core.ConfigRoot, "config-schema-snapshot.json");
+        var statePath = Path.Combine(f.Core.ConfigRoot, "whats-new.json");
+        var baseline = JsonConvert.DeserializeObject<ConfigSchemaSnapshot>(File.ReadAllText(snapshotPath))!;
+        baseline.SettingIds.RemoveAt(0);
+        baseline.PluginVersion = "1.0.0.0";
+        File.WriteAllText(snapshotPath, JsonConvert.SerializeObject(baseline));
+        File.WriteAllText(statePath, JsonConvert.SerializeObject(new WhatsNewState { PluginVersion = "1.0.0.0" }));
+        // Each file as a reader opened it before the write. Rewriting a file in place truncates
+        // these bytes first, which is what a crash or a full disk leaves behind; a replacement keeps them.
+        static byte[] Rest(FileStream held) { using var seen = new MemoryStream(); held.CopyTo(seen); return seen.ToArray(); }
+        var stateBefore = File.ReadAllBytes(statePath);
+        using (var held = new FileStream(statePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+        {
+            service.CheckForNewSettings();
+            Assert.Equal(stateBefore, Rest(held));
+        }
+        Assert.Equal(f.Plugin.Version.ToString(), service.GetState()!.PluginVersion);
+        var snapshotBefore = File.ReadAllBytes(snapshotPath);
+        using (var held = new FileStream(snapshotPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+        {
+            service.Dismiss();
+            Assert.Equal(snapshotBefore, Rest(held));
+        }
+        Assert.Equal(f.Plugin.Version.ToString(), JsonConvert.DeserializeObject<ConfigSchemaSnapshot>(File.ReadAllText(snapshotPath))!.PluginVersion);
+        Assert.Equal(["config-schema-snapshot.json"], Directory.GetFiles(f.Core.ConfigRoot, "*.json*").Select(Path.GetFileName));
+    }
+
     [Theory]
     [InlineData("")][InlineData("null")][InlineData("not json")]
     public void CorruptNotificationStateDoesNotPreventStartup(string content)

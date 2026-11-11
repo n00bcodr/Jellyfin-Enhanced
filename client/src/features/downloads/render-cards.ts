@@ -2,7 +2,7 @@ import type { Dependencies, Item, Issue, SeasonGroup, Links, LinkEntry } from ".
 import { readLinks, response, safeUrl, serviceUrl } from "./validation";
 import { runtime } from './runtime';
 export function install(deps: Dependencies) {
-  const {JE, P, host, ctx, getApi} = deps;
+  const {JE, P, host, ctx} = deps;
   const life = runtime(deps);
   if(life.installed.has('render-cards'))return;
   life.installed.add('render-cards');
@@ -228,8 +228,9 @@ export function install(deps: Dependencies) {
   function getIssueAvatarUrl(issue: Issue) {
     const avatar = issue?.createdBy?.avatar;
     if (!avatar) return "";
+    // Relative, like the request cards': hydrateAvatarImages downloads only this form with the session.
     if (avatar.startsWith("/")) {
-      return getApi().getUrl("/JellyfinEnhanced/proxy/avatar", { path: avatar });
+      return `/JellyfinEnhanced/proxy/avatar?path=${encodeURIComponent(avatar)}`;
     }
     return avatar;
   }

@@ -314,6 +314,26 @@ test('series schedules are fetched in one batch per 50 visible series, then not 
   assert.deepEqual(h.seriesCalls.at(-1), [ids[0]], 'expired: asked again');
 });
 
+test('a focus and a page of series cards each scan the page once, however many series the session has seen', async t => {
+  const ids = Array.from({ length: 60 }, (_, i) => `${String(i).padStart(2, '0')}${'c'.repeat(30)}`);
+  const h = setup(t, { cards: 60, series: Object.fromEntries(ids.map(id => [id, facts({ nextAired: { date: '2026-10-31', season: 1, episode: 2 } })])) });
+  let scans = 0;
+  const querySelectorAll = h.document.querySelectorAll.bind(h.document);
+  h.document.querySelectorAll = selector => { if (selector === '[data-je-status-live]') scans++; return querySelectorAll(selector); };
+  ids.forEach((id, i) => h.show(show({ TmdbId: String(i + 1) }), h.hosts[i], id));
+  await h.flush();
+  assert.deepEqual(h.seriesCalls.map(batch => batch.length), [50, 10]);
+  assert.ok(scans <= 4, `drawing 60 series cards scanned the page ${scans} times`);
+
+  // Back to the tab after the answers expired: every series is asked about again, from one scan.
+  h.window.Date.now = () => NOW + 61 * 60 * 1000;
+  scans = 0;
+  h.window.dispatchEvent(new h.window.Event('focus'));
+  assert.ok(scans <= 2, `one focus scanned the page ${scans} times`);
+  await h.flush();
+  assert.deepEqual(h.seriesCalls.slice(2).map(batch => batch.length), [50, 10]);
+});
+
 test('seasons and episodes ask for their series once; a series without a TMDB id is never asked about', async t => {
   const h = setup(t, { cards: 3 });
   h.show(season({ LatestEpisodeIndex: { Season: 2, Episode: 1 } }), h.hosts[0], 's1');

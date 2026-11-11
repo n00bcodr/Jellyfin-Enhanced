@@ -60,6 +60,28 @@
     }
     return "Default";
   }
+  var BLOCK_START = "/* Jellyfin Enhanced theme selector: start */";
+  var BLOCK_END = "/* Jellyfin Enhanced theme selector: end */";
+  function splitCustomCss(baseUrl, stored) {
+    const start = stored.indexOf(BLOCK_START);
+    const end = start < 0 ? -1 : stored.indexOf(BLOCK_END, start);
+    if (end >= 0) {
+      return {
+        theme: themeNameFor(baseUrl, stored.slice(start + BLOCK_START.length, end).trim()),
+        rest: stored.slice(0, start) + stored.slice(end + BLOCK_END.length).replace(/^\n/, "")
+      };
+    }
+    const newline = stored.indexOf("\n");
+    const theme = themeNameFor(baseUrl, (newline < 0 ? stored : stored.slice(0, newline)).trim());
+    return { theme, rest: theme === "Default" ? stored : newline < 0 ? "" : stored.slice(newline + 1) };
+  }
+  function withTheme(rest, value) {
+    if (!value || !rest) return value || rest;
+    return `${BLOCK_START}
+${value}
+${BLOCK_END}
+${rest}`;
+  }
   function utcDay(date) {
     return date.toISOString().split("T")[0] ?? "";
   }
@@ -115,14 +137,10 @@
       }
     }
     function setTheme(userId, filename, name = "Default") {
-      const value = themeImport(baseUrl, filename);
-      if (value) {
-        write(userId, "customCss", value);
-        console.log(`${LOG} Theme set to: ${name}`);
-      } else {
-        remove(userId, "customCss");
-        console.log(`${LOG} Theme cleared (default)`);
-      }
+      const value = withTheme(splitCustomCss(baseUrl, read(userId, "customCss", "") ?? "").rest, themeImport(baseUrl, filename));
+      if (value) write(userId, "customCss", value);
+      else remove(userId, "customCss");
+      console.log(filename ? `${LOG} Theme set to: ${name}` : `${LOG} Theme cleared (default)`);
     }
     function notify(message) {
       const host = window;
@@ -243,7 +261,7 @@
       select.id = "theme-selector-select";
       select.setAttribute("aria-label", "Select theme");
       select.removeAttribute("label");
-      const selected = themeNameFor(baseUrl, read(userId, "customCss", "") ?? "");
+      const selected = splitCustomCss(baseUrl, read(userId, "customCss", "") ?? "").theme;
       for (const name of Object.keys(THEMES)) {
         const option = document.createElement("option");
         option.value = name;

@@ -5,6 +5,7 @@ using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Database.Implementations.Enums;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.Infrastructure.Extensions;
+using Jellyfin.Plugin.JellyfinEnhanced.Shared.SpoilerGuard;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
@@ -23,7 +24,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.SpoilerGuard.Services
     //                  new media tends to be imported)
     //   * access     — the user's library-access policy (EnableAllFolders or
     //                  the EnabledFolders allow-list), checked in memory
-    //                  rather than with an N x U GetItemById probe
+    //                  rather than with an N x U GetItemById probe, and the
+    //                  user's parental rating and tag rules, from ONE id
+    //                  query per user (SpoilerTitleVisibility)
     //   * writes     — ONE locked read-modify-write of spoilerblur.json per
     //                  user per batch, never touching an existing entry
     internal static class SpoilerAutoEnableArmer
@@ -102,19 +105,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.SpoilerGuard.Services
             };
         }
 
-        /// <summary>The candidates sitting in a library <paramref name="user"/> has access to.</summary>
-        public static List<Candidate> VisibleTo(User user, IReadOnlyList<Candidate> candidates)
+        /// <summary>
+        /// The candidates sitting in a library <paramref name="user"/> has access to that Jellyfin also lets them see:
+        /// an entry names its title, so one the user's parental rating or tags hide is never written to their file.
+        /// </summary>
+        public static List<Candidate> VisibleTo(ILibraryManager libraryManager, User user, IReadOnlyList<Candidate> candidates)
         {
-            if (user.HasPermission(PermissionKind.EnableAllFolders)) return new List<Candidate>(candidates);
-
-            var enabledFolders = new HashSet<Guid>(user.GetPreferenceValues<Guid>(PreferenceKind.EnabledFolders));
             var visible = new List<Candidate>();
-            if (enabledFolders.Count == 0) return visible;
-            foreach (var c in candidates)
+            if (user.HasPermission(PermissionKind.EnableAllFolders))
             {
-                if (SpoilerAutoEnableFilter.AllowsLibrary(enabledFolders, c.LibraryIds)) visible.Add(c);
+                visible.AddRange(candidates);
             }
-            return visible;
+            else
+            {
+                var enabledFolders = new HashSet<Guid>(user.GetPreferenceValues<Guid>(PreferenceKind.EnabledFolders));
+                if (enabledFolders.Count == 0) return visible;
+                foreach (var c in candidates)
+                {
+                    if (SpoilerAutoEnableFilter.AllowsLibrary(enabledFolders, c.LibraryIds)) visible.Add(c);
+                }
+            }
+
+            var allowed = visible.Count == 0 ? null : SpoilerTitleVisibility.VisibleTitleIds(libraryManager, user);
+            return allowed == null ? visible : visible.FindAll(c => allowed.Contains(c.Id));
         }
 
         /// <summary>

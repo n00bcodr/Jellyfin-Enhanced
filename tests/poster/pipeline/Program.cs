@@ -155,7 +155,9 @@ void Tokens()
         }
     }
     Check("verify: every single-char MAC tamper rejected", true);
-    Check("parse: unknown flag bits rejected", !PosterTagVariantToken.TryParse("4" + token[1..], out _) && !PosterTagVariantToken.TryParse("8" + token[1..], out _));
+    // Flags 1, 2 and 4 are TopRightOffset, SpoilerScoped and WatchedAll; 8 is the one unknown bit of the digit.
+    Check("parse: unknown flag bits rejected", !PosterTagVariantToken.TryParse("8" + token[1..], out _) && !PosterTagVariantToken.TryParse("c" + token[1..], out _));
+    Check("parse: every known flag accepted", PosterTagVariantToken.TryParse("7" + token[1..], out var allKnown) && allKnown.Flags == (PosterTagVariantFlags.TopRightOffset | PosterTagVariantFlags.SpoilerScoped | PosterTagVariantFlags.WatchedAll));
     Check("parse: wrong length / uppercase rejected", !PosterTagVariantToken.TryParse(token[..22], out _) && !PosterTagVariantToken.TryParse(token.ToUpperInvariant(), out _) && !PosterTagVariantToken.TryParse(null, out _));
     var weak = tokens.Mint(user, item, digest, version, PosterTagVariantFlags.None, PosterTagVariantToken.WeakDataHash);
     Check("weak token parses as weak", PosterTagVariantToken.TryParse(weak, out var weakParsed) && weakParsed.IsWeak);

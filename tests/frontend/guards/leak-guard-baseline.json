@@ -232,9 +232,6 @@
   "client/src/features/seerr/details/hss-discovery-entry.ts": {
     "L2-global-listener (module) click": 1
   },
-  "client/src/features/seerr/details/issues/issue-reporter-entry.ts": {
-    "L2-global-listener initialize viewshow": 1
-  },
   "client/src/features/seerr/recommendations/recommendations-init.ts": {
     "L2-global-listener init viewshow": 1
   },

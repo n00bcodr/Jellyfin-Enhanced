@@ -3,7 +3,8 @@ import {currentLease, array, string} from '../shared/wire';
 import type {CatchHost} from './host';
 import type {SocialApi, RequestOptions} from '../activity/public-api';
 import type {CatchRuntime, State, Item, Image, Gesture, Options} from './types';
-import {readItems} from './model';
+import {readItems, readPlayStates} from './model';
+import type {PlayState} from './model';
 
 /** The core entry alone owns the mutable runtime. Other bundles consume its facade. */
 export function createCatchUp(JE: CatchHost, api: () => SocialApi, navigate: (id: string) => void): CatchRuntime {
@@ -46,15 +47,36 @@ export function createCatchUp(JE: CatchHost, api: () => SocialApi, navigate: (id
  }
  const playedUrl=(id:string)=>`/Users/${userId()}/PlayedItems/${id}`;
  const ratingUrl=(id:string)=>`/Users/${userId()}/Items/${id}/Rating`;
- async function mark(ids: string[], method: string) {
-  const results=await Promise.allSettled(ids.map(id=>jf(playedUrl(id),{method})));
+ async function settle(work: Promise<unknown>[]) {
+  const results=await Promise.allSettled(work);
   const failed=results.find(result=>result.status==='rejected');
   if(failed?.status==='rejected')throw failed.reason;
  }
+ // Marking a show or season watched marks every episode in it, and marking it unwatched again would also wipe the
+ // episodes watched before the swipe. So the swipe first records each episode's (or the film's) play state, and Rewind
+ // puts back only what the swipe changed: an episode that was already watched, with no resume point, is left alone.
+ async function watch(item: Item, ids: string[]): Promise<PlayState[]> {
+  const same=currentLease(JE.session, api);
+  const scope=(id:string)=>item.Type==='Series' ? `ParentId=${id}&Recursive=true` : `Ids=${id}`;
+  const prior=(await Promise.all(ids.map(id=>jf(`/Users/${userId()}/Items?${scope(id)}&Filters=IsNotFolder&EnableImages=false`)))).flatMap(readPlayStates);
+  if(!same())throw Error('The account changed');
+  await settle(ids.map(id=>jf(playedUrl(id),{method:'POST'})));
+  return prior;
+ }
+ function restore(prior: PlayState[] = []) {
+  const same=currentLease(JE.session, api);
+  return settle(prior.filter(p=>!(p.Played && p.PlayCount>0 && !p.PlaybackPositionTicks && p.LastPlayedDate)).map(async p=>{
+   // Only Jellyfin's unplayed call can clear a play date, so it goes first when there was none.
+   if(!p.LastPlayedDate)await jf(playedUrl(p.Id),{method:'DELETE'});
+   if(!p.Played && !p.PlayCount && !p.PlaybackPositionTicks && !p.LastPlayedDate)return;
+   if(!same())throw Error('The account changed');
+   await jf(`/Users/${userId()}/Items/${p.Id}/UserData`,{method:'POST',body:{Played:p.Played,PlayCount:p.PlayCount,PlaybackPositionTicks:p.PlaybackPositionTicks,LastPlayedDate:p.LastPlayedDate}});
+  }));
+ }
  const ACTIONS: CatchRuntime['ACTIONS']={
-  right:{name:'watched', run:(i,o)=>mark(o?.seasons || [i.Id],'POST'),undo:(i,o)=>mark(o?.seasons || [i.Id],'DELETE')},
+  right:{name:'watched', run:(i,o)=>watch(i,o?.seasons || [i.Id]),undo:(_i,_o,prior)=>restore(prior)},
   left:{name:'dismiss',run:async i=>{state.dismissed.add(i.SeriesId||i.Id);saveDismissed();},undo:async i=>{state.dismissed.delete(i.SeriesId||i.Id);saveDismissed();}},
-  up:{name:'watchlist',run:i=>jf(`${ratingUrl(i.SeriesId||i.Id)}?likes=true`,{method:'POST'}),undo:i=>jf(ratingUrl(i.SeriesId||i.Id),{method:'DELETE'})}
+  up:{name:'watchlist',run:async i=>{await jf(`${ratingUrl(i.SeriesId||i.Id)}?likes=true`,{method:'POST'});},undo:i=>jf(ratingUrl(i.SeriesId||i.Id),{method:'DELETE'})}
  };
  const ACT_NAME:Record<Gesture,string>={right:'watched',left:'dismiss',up:'watchlist',down:'open'};
  const logEvent=(event:unknown)=>{JE.core.api.plugin('/catchup/event',{method:'POST',body:event,skipRetry:true}).catch(()=>{});};

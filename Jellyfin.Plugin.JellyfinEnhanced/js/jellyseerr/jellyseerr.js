@@ -867,7 +867,7 @@
         if (action !== "request4k" || !tmdbId) return;
         const popup = item.closest(".jellyseerr-4k-popup");
         item.disabled = true;
-        item.innerHTML = '<span>Requesting...</span><span class="jellyseerr-button-spinner"></span>';
+        item.innerHTML = `<span>${JE.t("jellyseerr_btn_requesting")}</span><span class="jellyseerr-button-spinner"></span>`;
         const card = event.target instanceof Element ? event.target.closest(".jellyseerr-card") : null;
         const resultItem = export26(card?.querySelector(".jellyseerr-request-button")?.dataset.searchResultItem);
         const title = titleFor(card, resultItem, mediaType === "tv" ? "this show" : "this movie");
@@ -899,7 +899,7 @@
           if (ui.isQuotaError?.(error)) await ui.showQuotaErrorDialog?.(error, "movie");
           else JE.toast?.(escapeHtml(failureText(error, "Failed to request 4K version", "User not found")), 4e3);
           item.disabled = false;
-          item.innerHTML = "<span>Request in 4K</span>";
+          item.innerHTML = `<span>${JE.t("jellyseerr_btn_request_4k")}</span>`;
         }
       }
       async function onRequestButton(button) {

@@ -5,8 +5,13 @@ using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
+using MediaBrowser.Controller.Configuration;
+using MediaBrowser.Model.Configuration;
+using MediaBrowser.Model.Entities;
+using MediaBrowser.Model.Globalization;
 using Moq;
 using Jellyfin.Plugin.JellyfinEnhanced.Features.Seerr.Services;
+using Jellyfin.Plugin.JellyfinEnhanced.Shared.Parental;
 
 namespace JE.Tests.Features.Seerr;
 
@@ -56,7 +61,7 @@ public class TaskAutoRequestTests
                 default: throw new InvalidOperationException("Unexpected URL " + request.RequestUri);
             }
         });
-        var service = new AutoMovieRequestService(transport, f.Core.Logger, users.Object, null!);
+        var service = new AutoMovieRequestService(transport, f.Core.Logger, users.Object, null!, Parental(transport, users.Object, f.Core.Logger));
         await service.CheckMovieForCollectionRequestAsync(movie, user.Id);
         await service.CheckMovieForCollectionRequestAsync(movie, user.Id);
         Assert.Equal(expectedPosts, posts.Count);
@@ -101,9 +106,35 @@ public class TaskAutoRequestTests
         Assert.Equal(1, await NextCollectionMovieRequests(today, CultureInfo.CurrentCulture));
     }
 
+    [Theory]
+    [InlineData("R", 0)]
+    [InlineData("PG", 1)]
+    public async Task NextCollectionMovieIsRequestedOnlyWithinTheWatchersParentalLimit(string certification, int expectedPosts)
+    {
+        // A watcher limited to PG-13 starts the first film; the sequel's own rating decides, as for a manual request.
+        Assert.Equal(expectedPosts, await NextCollectionMovieRequests("2001-01-01", CultureInfo.InvariantCulture, certification));
+    }
+
+    /// <summary>The shared parental filter over the test's transport; US certifications score as in Jellyfin.</summary>
+    private static SeerrParentalFilter Parental(IntegrationTransport transport, IUserManager users, Jellyfin.Plugin.JellyfinEnhanced.Logger logger)
+    {
+        var localization = new Mock<ILocalizationManager>();
+        localization.Setup(l => l.GetRatingScore(It.IsAny<string>(), It.IsAny<string?>())).Returns((string rating, string? _) => rating switch
+        {
+            "PG" or "TV-PG" => new ParentalRatingScore(10, null),
+            "PG-13" or "TV-14" => new ParentalRatingScore(13, null),
+            "R" or "TV-MA" => new ParentalRatingScore(17, null),
+            _ => null,
+        });
+        var server = new Mock<IServerConfigurationManager>();
+        server.Setup(s => s.Configuration).Returns(new ServerConfiguration { MetadataCountryCode = "US" });
+        return new SeerrParentalFilter(transport, users, localization.Object, server.Object, logger);
+    }
+
     // Runs the collection check for an available first movie whose sequel has the given release date,
-    // under the given culture, and returns how many requests reached Seerr.
-    private static async Task<int> NextCollectionMovieRequests(string releaseDate, CultureInfo culture)
+    // under the given culture, and returns how many requests reached Seerr. With a certification, the
+    // watcher has a PG-13 limit and that is the sequel's US rating.
+    private static async Task<int> NextCollectionMovieRequests(string releaseDate, CultureInfo culture, string? certification = null)
     {
         using var f = new ApiPluginFixture();
         var config = f.Plugin.Configuration;
@@ -117,7 +148,7 @@ public class TaskAutoRequestTests
         config.AutoMovieRequestCustomServerId = 0;
         config.AutoMovieRequestCustomProfileId = 7;
         config.AutoMovieRequestCustomRootFolder = "/movies";
-        var user = new User("viewer", "default", "default") { Id = Guid.NewGuid() };
+        var user = new User("viewer", "default", "default") { Id = Guid.NewGuid(), MaxParentalRatingScore = certification == null ? null : 13 };
         var users = new Mock<IUserManager>();
         users.Setup(u => u.GetUserById(user.Id)).Returns(user);
         var movie = new Movie { Id = Guid.NewGuid(), ProviderIds = new() { ["Tmdb"] = "123" } };
@@ -127,6 +158,8 @@ public class TaskAutoRequestTests
             switch (request.RequestUri!.AbsolutePath)
             {
                 case "/3/movie/123": return Task.FromResult(IntegrationTransport.Response("{\"belongs_to_collection\":{\"id\":9,\"name\":\"Saga\"}}"));
+                case "/3/movie/124/release_dates" when certification != null:
+                    return Task.FromResult(IntegrationTransport.Response(JsonSerializer.Serialize(new { id = 124, results = new[] { new { iso_3166_1 = "US", release_dates = new[] { new { certification, type = 3 } } } } })));
                 case "/api/v1/collection/9": return Task.FromResult(IntegrationTransport.Response(JsonSerializer.Serialize(new { parts = new[] { new { id = 123, title = "First", releaseDate = "2000-01-01", mediaInfo = new { status = 5 } }, new { id = 124, title = "Second", releaseDate, mediaInfo = new { status = 1 } } } })));
                 case "/api/v1/service/radarr": return Task.FromResult(IntegrationTransport.Response("[{\"id\":0,\"name\":\"Radarr\",\"is4k\":false,\"isDefault\":true}]"));
                 case "/api/v1/user": return Task.FromResult(IntegrationTransport.Response(JsonSerializer.Serialize(new { results = new[] { new { id = 22, jellyfinUserId = user.Id.ToString("N") } } })));
@@ -140,7 +173,7 @@ public class TaskAutoRequestTests
         try
         {
             CultureInfo.CurrentCulture = culture;
-            await new AutoMovieRequestService(transport, f.Core.Logger, users.Object, null!).CheckMovieForCollectionRequestAsync(movie, user.Id);
+            await new AutoMovieRequestService(transport, f.Core.Logger, users.Object, null!, Parental(transport, users.Object, f.Core.Logger)).CheckMovieForCollectionRequestAsync(movie, user.Id);
         }
         finally { CultureInfo.CurrentCulture = old; }
         return posts;
@@ -207,7 +240,7 @@ public class TaskAutoRequestTests
                 default: throw new InvalidOperationException("Unexpected URL " + request.RequestUri);
             }
         });
-        var service = new AutoMovieRequestService(transport, f.Core.Logger, users.Object, null!);
+        var service = new AutoMovieRequestService(transport, f.Core.Logger, users.Object, null!, Parental(transport, users.Object, f.Core.Logger));
         await service.CheckMovieForCollectionRequestAsync(movie, user.Id);
         // A second request within the cache window reuses a server list it read successfully.
         service.ClearRequestCache();
@@ -252,7 +285,7 @@ public class TaskAutoRequestTests
                     default: throw new InvalidOperationException("Unexpected URL " + request.RequestUri);
                 }
             });
-            await new AutoMovieRequestService(transport, f.Core.Logger, users.Object, null!).CheckMovieForCollectionRequestAsync(movie, user.Id);
+            await new AutoMovieRequestService(transport, f.Core.Logger, users.Object, null!, Parental(transport, users.Object, f.Core.Logger)).CheckMovieForCollectionRequestAsync(movie, user.Id);
             Assert.Equal(fallback
                 ? "{\"mediaType\":\"movie\",\"mediaId\":124}"
                 : "{\"mediaType\":\"movie\",\"mediaId\":124,\"serverId\":1,\"profileId\":9,\"rootFolder\":\"/uhd\",\"is4k\":true}", body);
@@ -318,7 +351,7 @@ public class TaskAutoRequestTests
                 default: throw new InvalidOperationException("Unexpected URL " + request.RequestUri);
             }
         });
-        var service = new AutoMovieRequestService(transport, f.Core.Logger, users.Object, null!);
+        var service = new AutoMovieRequestService(transport, f.Core.Logger, users.Object, null!, Parental(transport, users.Object, f.Core.Logger));
         await service.CheckMovieForCollectionRequestAsync(movie, user.Id);
         if (blocked)
         {
@@ -373,7 +406,7 @@ public class TaskAutoRequestTests
                 default: throw new InvalidOperationException("Unexpected URL " + request.RequestUri);
             }
         });
-        var service = new AutoMovieRequestService(transport, f.Core.Logger, users.Object, null!);
+        var service = new AutoMovieRequestService(transport, f.Core.Logger, users.Object, null!, Parental(transport, users.Object, f.Core.Logger));
         async Task Play()
         {
             service.ClearRequestCache();
@@ -422,9 +455,9 @@ public class TaskAutoRequestTests
         users.Setup(u => u.GetUserById(user.Id)).Returns(user);
         using var transport = new IntegrationTransport((_, _) => Task.FromResult(IntegrationTransport.Response("{}", 404)));
         var movie = new Movie { Id = Guid.NewGuid(), ProviderIds = new() { ["Tmdb"] = "123" } };
-        await new AutoMovieRequestService(transport, f.Core.Logger, users.Object, null!).CheckMovieForCollectionRequestAsync(movie, user.Id);
+        await new AutoMovieRequestService(transport, f.Core.Logger, users.Object, null!, Parental(transport, users.Object, f.Core.Logger)).CheckMovieForCollectionRequestAsync(movie, user.Id);
         var movieCalls = transport.Calls;
-        await new AutoSeasonRequestService(transport, f.Core.Logger, users.Object, null!, null!).CheckEpisodeCompletionAsync(new Episode(), user.Id);
+        await new AutoSeasonRequestService(transport, f.Core.Logger, users.Object, null!, null!, Parental(transport, users.Object, f.Core.Logger)).CheckEpisodeCompletionAsync(new Episode(), user.Id);
         var enabled = feature && seerr;
         // The enabled control proves this setup reaches the user lookup and the TMDB request.
         users.Verify(u => u.GetUserById(user.Id), enabled ? Times.Exactly(2) : Times.Never());
@@ -440,7 +473,10 @@ public class TaskAutoRequestTests
     [InlineData(8, 10, 1, false, 0, true, false)]
     [InlineData(8, 10, 1, false, 1, true, true)]
     [InlineData(8, 10, 1, false, 2, false, false, true)]
-    public async Task SeasonThresholdAvailabilityAndExistingRequestsControlAutomaticRequest(int episodeNumber, int nextEpisodeCount, int nextStatus, bool existingRequest, int expectedPosts, bool requireWatched = false, bool priorPlayed = false, bool failFirst = false)
+    // A watcher limited to PG-13: the series' own rating decides, as for a manual request.
+    [InlineData(8, 10, 1, false, 0, false, false, false, "TV-MA")]
+    [InlineData(8, 10, 1, false, 1, false, false, false, "TV-PG")]
+    public async Task SeasonThresholdAvailabilityAndExistingRequestsControlAutomaticRequest(int episodeNumber, int nextEpisodeCount, int nextStatus, bool existingRequest, int expectedPosts, bool requireWatched = false, bool priorPlayed = false, bool failFirst = false, string? rating = null)
     {
         using var f = new ApiPluginFixture();
         var config = f.Plugin.Configuration;
@@ -450,7 +486,7 @@ public class TaskAutoRequestTests
         config.JellyseerrApiKey = "test";
         config.AutoSeasonRequestThresholdValue = 2;
         config.AutoSeasonRequestRequireAllWatched = requireWatched;
-        var user = new User("viewer", "default", "default") { Id = Guid.NewGuid() };
+        var user = new User("viewer", "default", "default") { Id = Guid.NewGuid(), MaxParentalRatingScore = rating == null ? null : 13 };
         var users = new Mock<IUserManager>();
         users.Setup(u => u.GetUserById(user.Id)).Returns(user);
         var series = new Series { Id = Guid.NewGuid(), ProviderIds = new() { ["Tmdb"] = "42" } };
@@ -473,7 +509,8 @@ public class TaskAutoRequestTests
                     {
                         numberOfSeasons = 2,
                         seasons = new[] { new { seasonNumber = 1, episodeCount = 10, status = 5 }, new { seasonNumber = 2, episodeCount = nextEpisodeCount, status = nextStatus } },
-                        mediaInfo = new { requests = existingRequest ? new[] { new { seasons = new[] { new { seasonNumber = 2 } } } } : Array.Empty<object>() }
+                        mediaInfo = new { requests = existingRequest ? new[] { new { seasons = new[] { new { seasonNumber = 2 } } } } : Array.Empty<object>() },
+                        contentRatings = new { results = rating == null ? Array.Empty<object>() : new object[] { new { iso_3166_1 = "US", rating } } },
                     }));
                 if (request.RequestUri.AbsolutePath == "/api/v1/user")
                     return IntegrationTransport.Response(JsonSerializer.Serialize(new { results = new[] { new { id = 22, jellyfinUserId = user.Id.ToString() } } }));
@@ -484,7 +521,7 @@ public class TaskAutoRequestTests
                 }
                 throw new InvalidOperationException("Unexpected URL " + request.RequestUri);
             });
-            var service = new AutoSeasonRequestService(transport, f.Core.Logger, users.Object, data.Object, library.Object);
+            var service = new AutoSeasonRequestService(transport, f.Core.Logger, users.Object, data.Object, library.Object, Parental(transport, users.Object, f.Core.Logger));
             await service.CheckEpisodeCompletionAsync(episode, user.Id);
             await service.CheckEpisodeCompletionAsync(episode, user.Id);
             Assert.Equal(expectedPosts, posts.Count);

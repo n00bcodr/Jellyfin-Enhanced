@@ -10,7 +10,11 @@ export function createMaintenance(m: MaintenanceDeps) {
 
         // ── Maintenance mode: user checklist ─────────────────────────────────────
 
+        /** True while the boxes show the stored selection; until the list answers, a save keeps the stored value. */
+        let usersLoaded = false;
+
         function loadMaintenanceUsers() : void {
+            usersLoaded = false;
             ApiClient.ajax({
                 type: 'GET',
                 url: ApiClient.getUrl('/JellyfinEnhanced/MaintenanceMode/Users'),
@@ -91,7 +95,9 @@ export function createMaintenance(m: MaintenanceDeps) {
                 });
 
                 inner.appendChild(grid);
+                usersLoaded = true;
             }).catch(function() {
+                usersLoaded = false;
                 const inner = asHtml(document.getElementById('je-mm-users-inner'));
                 if (!inner) return;
                 inner.innerHTML = '';
@@ -161,6 +167,7 @@ export function createMaintenance(m: MaintenanceDeps) {
     return {
         wire,
         loadMaintenanceUsers,
+        get usersLoaded() { return usersLoaded; },
         refreshMaintenanceServerTime,
         updateMaintenanceScheduleWarning,
     };

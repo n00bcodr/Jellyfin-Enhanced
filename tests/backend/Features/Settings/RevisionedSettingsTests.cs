@@ -60,6 +60,101 @@ public class RevisionedSettingsTests
         Assert.Throws<InvalidDataException>(() => service.Read(User, () => new(), false));
         Assert.Equal("[]", File.ReadAllText(Path.Combine(f.ConfigRoot, User, "settings.json")));
     }
+    // The bytes JE 11.9.0.0 wrote after an upgrade from 11.8: its web client posted null for the six new quality
+    // switches and their orders, and UserConfigurationManager.SaveUserConfiguration serialised the bound UserSettings
+    // with Newtonsoft (indented, no BOM, no final newline). 11.10 made the switches bool.
+    private const string SettingsWrittenBy119 = """
+{
+  "AutoPauseEnabled": false,
+  "AutoResumeEnabled": true,
+  "AutoPipEnabled": false,
+  "LongPress2xEnabled": true,
+  "PauseScreenEnabled": true,
+  "PauseScreenDelaySeconds": 12,
+  "AutoSkipIntro": true,
+  "AutoSkipOutro": false,
+  "DisableCustomSubtitleStyles": false,
+  "SelectedStylePresetIndex": 4,
+  "SelectedFontSizePresetIndex": 3,
+  "SelectedFontFamilyPresetIndex": 1,
+  "CustomSubtitleTextColor": "#FFFF00FF",
+  "CustomSubtitleBgColor": "#00000000",
+  "UsingCustomColors": true,
+  "SubtitleVerticalPosition": 70,
+  "SubtitleHorizontalPosition": 50,
+  "RandomButtonEnabled": true,
+  "RandomUnwatchedOnly": true,
+  "RandomIncludeMovies": true,
+  "RandomIncludeShows": false,
+  "ShowWatchProgress": true,
+  "WatchProgressMode": "time",
+  "WatchProgressTimeFormat": "hours",
+  "ShowFileSizes": false,
+  "ShowAudioLanguages": true,
+  "QualityTagsEnabled": true,
+  "ShowResolutionTag": null,
+  "ShowSourceTag": null,
+  "ShowDynamicRangeTag": null,
+  "ShowSpecialFormatTag": null,
+  "ShowVideoCodecTag": null,
+  "ShowAudioInfoTag": null,
+  "ResolutionTagOrder": null,
+  "SourceTagOrder": null,
+  "DynamicRangeTagOrder": null,
+  "SpecialFormatTagOrder": null,
+  "VideoCodecTagOrder": null,
+  "AudioInfoTagOrder": null,
+  "GenreTagsEnabled": true,
+  "LanguageTagsEnabled": false,
+  "RatingTagsEnabled": true,
+  "PeopleTagsEnabled": false,
+  "TagsHideOnHover": false,
+  "QualityTagsPosition": "top-right",
+  "GenreTagsPosition": "top-right",
+  "LanguageTagsPosition": "bottom-left",
+  "RatingTagsPosition": "bottom-right",
+  "ShowRatingInPlayer": false,
+  "RemoveContinueWatchingEnabled": false,
+  "LastOpenedTab": "settings",
+  "ReviewsExpandedByDefault": true,
+  "DisplayLanguage": "de",
+  "CalendarDisplayMode": "list",
+  "CalendarDefaultViewMode": "agenda"
+}
+""";
+
+    [Fact]
+    public void SettingsWrittenBy119WithNullQualitySwitchesLoadWithTheUsersValuesAndSave()
+    {
+        using var fixture = new ApiPluginFixture();
+        var user = Guid.NewGuid();
+        var id = user.ToString("N");
+        var path = fixture.Core.Write(id, SettingsWrittenBy119);
+        var maintenance = new MaintenanceModeService(Moq.Mock.Of<MediaBrowser.Controller.Library.IUserManager>(), Moq.Mock.Of<MediaBrowser.Controller.Session.ISessionManager>(), fixture.Core.Paths.Object, fixture.Core.Logger);
+        var controller = (JeSettingsController)ApiAssetTests.Controller(typeof(JeSettingsController), fixture.Core, maintenance, fixture.Core.Manager);
+        controller.HttpContext.User = global::JE.Tests.Features.SpoilerGuard.PrivacyPolicyTests.Principal(user, false);
+
+        var read = controller.GetRevisionedSettings(id);
+        Assert.Equal(SettingsWrittenBy119, File.ReadAllText(path));
+        var loaded = Assert.IsType<RevisionedSettingsResponse>(Assert.IsType<Microsoft.AspNetCore.Mvc.JsonResult>(read).Value);
+        var s = loaded.Settings;
+        Assert.Equal((4, 3, 1, 12, 70), (s.SelectedStylePresetIndex, s.SelectedFontSizePresetIndex, s.SelectedFontFamilyPresetIndex, s.PauseScreenDelaySeconds, s.SubtitleVerticalPosition));
+        Assert.Equal(("#FFFF00FF", "time", "top-right", "settings", "de"), (s.CustomSubtitleTextColor, s.WatchProgressMode, s.QualityTagsPosition, s.LastOpenedTab, s.DisplayLanguage));
+        Assert.True(s.AutoResumeEnabled && s.AutoSkipIntro && s.UsingCustomColors && s.LongPress2xEnabled && s.QualityTagsEnabled && s.GenreTagsEnabled && s.ReviewsExpandedByDefault);
+        Assert.False(s.AutoPauseEnabled || s.ShowRatingInPlayer || s.RandomIncludeShows);
+        // A stored null reads as the switch's default since 11.10 (shown), and a null order stays unset.
+        Assert.True(s.ShowResolutionTag && s.ShowSourceTag && s.ShowDynamicRangeTag && s.ShowSpecialFormatTag && s.ShowVideoCodecTag && s.ShowAudioInfoTag);
+        Assert.Null(s.ResolutionTagOrder);
+
+        s.AutoSkipOutro = true;
+        var saved = controller.SaveRevisionedSettings(id, new RevisionedSettingsRequest { Revision = loaded.Revision, Settings = s });
+        var receipt = Assert.IsType<SettingsSaveReceipt>(Assert.IsType<Microsoft.AspNetCore.Mvc.JsonResult>(saved).Value);
+        var again = Assert.IsType<RevisionedSettingsResponse>(Assert.IsType<Microsoft.AspNetCore.Mvc.JsonResult>(controller.GetRevisionedSettings(id)).Value);
+        Assert.Equal(receipt.Revision, again.Revision);
+        Assert.True(again.Settings.AutoSkipOutro && again.Settings.AutoSkipIntro);
+        Assert.Equal((4, 12, "de"), (again.Settings.SelectedStylePresetIndex, again.Settings.PauseScreenDelaySeconds, again.Settings.DisplayLanguage));
+    }
+
     [Fact]
     public async Task GuardedRoutesEnforceUserScopeAndReturnConflictWithoutChangingBytes()
     {

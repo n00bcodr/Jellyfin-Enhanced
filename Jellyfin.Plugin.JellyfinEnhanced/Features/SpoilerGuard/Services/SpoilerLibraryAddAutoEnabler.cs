@@ -47,10 +47,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.SpoilerGuard.Services
     // Library access is checked via the user's policy (EnableAllFolders or
     // the EnabledFolders allow-list) rather than a per-(user, item)
     // GetItemById visibility probe: that keeps a 5k-item scan at N + U
-    // in-memory checks instead of N × U database reads. Parental-rating or
-    // tag blocks are not consulted; such an entry is harmless (the images
-    // are never served to that user anyway) and can be removed from the
-    // Spoiler Guard management list like any other.
+    // in-memory checks instead of N × U database reads. Parental-rating and
+    // tag rules come from one id query per user per flush: an entry names
+    // its title, so a title those rules hide is never written to the file.
     public sealed class SpoilerLibraryAddAutoEnabler : IHostedService, IDisposable
     {
         // How long after the FIRST queued event a flush runs. Long enough for
@@ -216,7 +215,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.SpoilerGuard.Services
 
             foreach (var user in users)
             {
-                var visible = SpoilerAutoEnableArmer.VisibleTo(user, candidates);
+                var visible = SpoilerAutoEnableArmer.VisibleTo(_libraryManager, user, candidates);
                 if (visible.Count == 0) continue;
 
                 var userKey = user.Id.ToString("N");

@@ -3,9 +3,6 @@
   "client/src/admin/config/page/arr.ts": {
     "R9-fail-empty createArr.wireSeerrArrImport": 1
   },
-  "client/src/bootstrap/loader/boot.ts": {
-    "R9-fail-empty loadPluginData": 1
-  },
   "client/src/features/calendar/calendar-page-data.ts": {
     "R9-fail-empty fetchUserData": 1
   },

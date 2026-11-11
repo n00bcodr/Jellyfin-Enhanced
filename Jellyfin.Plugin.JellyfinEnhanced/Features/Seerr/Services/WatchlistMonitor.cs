@@ -58,24 +58,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Seerr.Services
             return TimeSpan.FromSeconds(30);
         }
 
-        // Initialize and start monitoring library events.
+        // Initialize and start monitoring library events. Always subscribes, once: each event checks
+        // the settings, so switching the feature on or off in the admin page takes effect without a
+        // restart (as SeerrScanTriggerService does).
         public void Initialize()
         {
-            // Only initialize if the watchlist feature is enabled in plugin configuration.
-            var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null)
-            {
-                _logger.Warning("[Watchlist] Configuration is null - skipping watchlist monitoring initialization");
-                return;
-            }
-
-            if (!config.AddRequestedMediaToWatchlist || !config.JellyseerrEnabled)
-            {
-                _logger.Info("[Watchlist] Watchlist monitoring is disabled in configuration - not subscribing to library events");
-                return;
-            }
-
-            // _logger.Info("[Watchlist] Initializing library event monitoring");
             lock (_subscriptionLock)
             {
                 if (_subscribed) return;
@@ -100,6 +87,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Seerr.Services
         {
             var kind = e.Item?.GetBaseItemKind();
             if (kind != BaseItemKind.Movie && kind != BaseItemKind.Series) return;
+            if (JellyfinEnhanced.Instance?.Configuration is not { AddRequestedMediaToWatchlist: true, JellyseerrEnabled: true }) return;
             _ = Task.Run(() => ProcessItemForWatchlist(e, eventType));
         }
 

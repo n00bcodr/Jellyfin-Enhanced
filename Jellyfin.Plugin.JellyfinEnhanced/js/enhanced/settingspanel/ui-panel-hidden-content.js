@@ -100,7 +100,9 @@
       if (manageBtn) {
         manageBtn.addEventListener("click", () => {
           ctx.closePanel();
-          if (JE.pluginConfig?.HiddenContentEnabled && JE.hiddenContentPage) {
+          const config = JE.pluginConfig;
+          const placed = config?.HiddenContentUseNativeTab || config?.HiddenContentUseCustomTabs || config?.HiddenContentUsePluginPages;
+          if (config?.HiddenContentEnabled && JE.hiddenContentPage && !placed) {
             JE.hiddenContentPage.showPage();
           } else {
             hidden.showManagementPanel();

@@ -133,6 +133,9 @@
         if (variableKey === "logo" && value) {
           return value.replace(/url\(['"]?(.*?)['"]?\)/i, "$1");
         }
+        if (value && !/^[\w\s#%.,()/+-]*$/.test(value)) {
+          return fallbackValue || "";
+        }
         if (value && /^\d+,\s*\d+,\s*\d+$/.test(value)) {
           return `rgb(${value})`;
         }

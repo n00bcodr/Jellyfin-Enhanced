@@ -51,7 +51,8 @@ export function createRegions(m: RegionsDeps) {
                         const [code, name] = line.split('\t');
                         if (code && name) regionsMap[code] = name;
                     });
-                    renderRegionOptions(regionsMap, selectedCode);
+                    // What the select shows now: the stored code, or what the admin picked while the list loaded.
+                    renderRegionOptions(regionsMap, asControl(document.querySelector('#DEFAULT_REGION'))?.value || selectedCode);
                 })
                 .catch(() => {
                     // Already rendered with JE_FALLBACK_REGIONS above.

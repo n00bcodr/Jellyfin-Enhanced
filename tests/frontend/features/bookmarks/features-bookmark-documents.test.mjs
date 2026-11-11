@@ -10,7 +10,7 @@ function setup(t, ajax, records={A:{itemId:'old',timestamp:5,label:'before'}}) {
  t.after(()=>h.close());h.load('enhanced/bookmarks/bookmarks.js');
  return {...h,calls,toasts};
 }
-test('queued operations use only successful receipts, conflict rollback retains revision and never fetches to retry',async t=>{
+test('queued operations use only successful receipts; a conflict whose document cannot be read again rolls back and keeps the revision',async t=>{
  const first=deferred();let count=0;
  const h=setup(t,()=>++count===1?first.promise:Promise.reject({status:409}));
  h.expectConsoleError(/Failed to update bookmark/);h.expectConsoleError(/Failed to delete bookmark/);
@@ -19,8 +19,8 @@ test('queued operations use only successful receipts, conflict rollback retains 
  first.resolve({Revision:'loaded:2'});assert.equal(await a,true);assert.equal(await b,false);
  assert.equal(h.JE.userConfig.bookmark.bookmarks.A.label,'saved');assert.equal(h.JE.userConfig.bookmarkRevision,'loaded:2');
  assert.equal(await h.JE.bookmarks.delete('A'),false);await tick();
- assert.equal(h.calls.length,3);assert.ok(h.calls.every(c=>c.type==='POST'&&c.url.endsWith('/bookmark-document')));
- assert.deepEqual(h.calls.map(c=>JSON.parse(c.data).Revision),['loaded:1','loaded:2','loaded:2']);
+ const posts=h.calls.filter(c=>c.type==='POST');assert.equal(posts.length,3);assert.ok(posts.every(c=>c.url.endsWith('/bookmark-document')));
+ assert.deepEqual(posts.map(c=>JSON.parse(c.data).Revision),['loaded:1','loaded:2','loaded:2']);
  assert.ok(h.toasts.some(m=>/another tab.*Reload/.test(m)));
 });
 test('copy and replace send stored provenance and metadata, never source extensions or a whole document',async t=>{
@@ -70,4 +70,24 @@ test('undefined partial edit fields are omitted consistently from memory and the
  assert.equal(await h.JE.bookmarks.update('A',{label:undefined,timestamp:7}),true);
  assert.equal(h.JE.userConfig.bookmark.bookmarks.A.label,'before');
  assert.deepEqual(JSON.parse(h.calls[0].data).Operations[0].Fields,{timestamp:7});
+});
+test('a save after another device changed the document reads it again, sends the same change once more and shows both',async t=>{
+ const stored={Bookmarks:{A:{ItemId:'old',Timestamp:5,Label:'before'},P:{ItemId:'phone',Timestamp:9,Label:'from phone',SeasonNumber:1}},Extension:{kept:true}};
+ let posts=0;
+ const h=setup(t,async request=>{
+  if(request.type==='GET'){assert.match(request.url,/\/JellyfinEnhanced\/user-settings\/user-a\/bookmark-document/);return {Document:JSON.stringify(stored),Revision:'phone:7'};}
+  return ++posts===1?Promise.reject({status:409}):{Revision:'phone:8'};
+ });
+ assert.equal(await h.JE.bookmarks.update('A',{label:'saved'}),true);
+ assert.deepEqual(h.calls.map(c=>c.type),['POST','GET','POST']);
+ assert.deepEqual(h.calls.filter(c=>c.type==='POST').map(c=>JSON.parse(c.data).Revision),['loaded:1','phone:7']);
+ assert.deepEqual(JSON.parse(h.calls[2].data).Operations,JSON.parse(h.calls[0].data).Operations);
+ assert.equal(h.JE.userConfig.bookmarkRevision,'phone:8');
+ const bookmarks=plain(h.JE.userConfig.bookmark.bookmarks);
+ assert.equal(bookmarks.A.label,'saved');assert.equal(bookmarks.P.itemId,'phone');assert.equal(bookmarks.P.seasonNumber,1);
+ assert.deepEqual(plain(h.JE.userConfig.bookmark.Extension),{kept:true});
+ assert.deepEqual(h.toasts,[]);
+ // The next save goes on from the new revision without another read.
+ assert.equal(await h.JE.bookmarks.delete('P'),true);
+ assert.deepEqual(h.calls.map(c=>c.type),['POST','GET','POST','POST']);assert.equal(JSON.parse(h.calls[3].data).Revision,'phone:8');
 });

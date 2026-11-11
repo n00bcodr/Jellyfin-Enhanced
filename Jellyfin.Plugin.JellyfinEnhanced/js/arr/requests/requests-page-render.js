@@ -63,7 +63,7 @@
         if (state.isLoading && state.requests.length === 0) {
           html += JE.core.ui.skeletonGridHtml(6);
         } else if (state.requestsError) {
-          html += `<div class="je-empty-state">Unable to load requests</div>`;
+          html += `<div class="je-empty-state">${JE.t?.("requests_requests_load_failed") || "Unable to load requests"}</div>`;
         } else if (state.requests.length === 0) {
           html += `
                     <div class="je-empty-state">
@@ -163,7 +163,7 @@
         if (state.isLoading && state.history.length === 0) {
           html += JE.core.ui.skeletonGridHtml(6);
         } else if (state.historyError) {
-          html += `<div class="je-empty-state">Unable to load history</div>`;
+          html += `<div class="je-empty-state">${JE.t?.("requests_history_load_failed") || "Unable to load history"}</div>`;
         } else if (state.history.length === 0) {
           const labelNoHistory = JE.t && JE.t("requests_no_history_found") || "No history found";
           html += `
@@ -191,6 +191,7 @@
       }
       return html;
     }
+    let shown = null;
     function renderPage(targetContainer) {
       let container;
       if (targetContainer) {
@@ -219,7 +220,7 @@
         if (state.isLoading && state.downloads.length === 0) {
           html += JE.core.ui.skeletonGridHtml(6);
         } else if (state.downloadsError) {
-          html += `<div class="je-empty-state">Unable to load downloads</div>`;
+          html += `<div class="je-empty-state">${JE.t?.("requests_downloads_load_failed") || "Unable to load downloads"}</div>`;
         } else if (state.downloads.length === 0) {
           const labelNoActiveDownloads = JE.t && JE.t("requests_no_active_downloads") || "No active downloads";
           html += `
@@ -286,10 +287,19 @@
       html += buildRequestsSection();
       html += buildIssuesSection();
       html += buildHistorySection();
+      if (shown && shown.container === container && shown.html === html && shown.first && container.firstChild === shown.first) return;
+      const active = document.activeElement;
+      const caret = active instanceof HTMLInputElement && active.classList.contains("je-downloads-search-input") && container.contains(active) ? [active.selectionStart, active.selectionEnd] : null;
       clearAvatarObjectUrlCache();
       container.innerHTML = html;
+      shown = { container, html, first: container.firstChild };
       hydrateAvatarImages(container);
       hydrateExternalLinks(container);
+      const search = caret ? container.querySelector(".je-downloads-search-input") : null;
+      if (search && caret) {
+        search.focus();
+        search.setSelectionRange(caret[0], caret[1]);
+      }
       const refreshBtn = container.querySelector(".je-refresh-btn");
       if (refreshBtn) {
         refreshBtn.addEventListener("click", (e) => {
@@ -335,14 +345,7 @@
           }
           state.searchDebounceTimer = setTimeout(() => {
             if (!lease.current()) return;
-            const currentInput = document.querySelector(".je-downloads-search-input");
-            const cursorPosition = currentInput ? currentInput.selectionStart : 0;
             renderPage();
-            const newInput = document.querySelector(".je-downloads-search-input");
-            if (newInput) {
-              newInput.focus();
-              newInput.setSelectionRange(cursorPosition, cursorPosition);
-            }
           }, 300);
         });
       }

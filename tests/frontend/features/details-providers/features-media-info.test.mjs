@@ -66,7 +66,7 @@ test('a prefetch is only made when an enabled chip would request',async t=>{
  p.api.prefetchItemStats('item','other',{watchProgress:true,fileSize:true},{});assert.equal(p.calls.length,2,'that source has no cached size');
  let fail=true;const f=setup(t,async()=>{if(fail)throw new Error('offline');return stats(1,1);});f.expectConsoleError(/Error fetching watch progress/);f.expectConsoleError(/Error fetching item size/);
  f.api.displayWatchProgress('item',f.container);f.api.displayItemSize('item',f.container);await f.settle();fail=false;
- f.api.prefetchItemStats('item',null,{watchProgress:true,fileSize:true},{});assert.equal(f.calls.length,1,'both chips cached the failure for an hour: no prefetch');
+ f.api.prefetchItemStats('item',null,{watchProgress:true,fileSize:true},{});assert.equal(f.calls.length,2,'a failure is not cached: the next visit prefetches again');
 });
 test('a prefetch that failed before the chips is never shown: they request again',async t=>{
  let n=0;const h=setup(t,async()=>{if(++n===1)throw new Error('busy');return stats(30,2048);});const visit={};
@@ -113,4 +113,22 @@ test('a prefetch the chips took over lets go of its visit, which holds the view 
  // Its visit ending changes nothing: the answer stays for the next chip, as before.
  h.api.discardItemStatsPrefetch(visit);h.container.replaceChildren();h.api.displayItemSize('item',h.container,null);await h.settle();
  assert.equal(h.calls.length,1);assert.match(h.container.textContent,/1 GB/);
+});
+test('a failed lookup is not cached as a result: the next visit asks again and shows the answer',async t=>{
+ let fail=true;const h=setup(t,async()=>{if(fail)throw new Error('server restarting');return stats(50,1073741824);});
+ h.expectConsoleError(/Error fetching watch progress/);h.expectConsoleError(/Error fetching item size/);
+ h.api.displayWatchProgress('item',h.container);h.api.displayItemSize('item',h.container);await h.settle();assert.equal(h.calls.length,1);
+ fail=false;h.container.replaceChildren();h.api.displayWatchProgress('item',h.container);h.api.displayItemSize('item',h.container);await h.settle();
+ assert.equal(h.calls.length,2);assert.match(h.container.textContent,/50%/);assert.match(h.container.textContent,/1.*GB/);
+ // Audio languages: the item could not be read at all, then it could.
+ h.JE.cdn={flagSvg:code=>`/flags/${code}.svg`};h.load('core/media-language.js');let down=true;h.expectConsoleError(/Error fetching audio languages/);
+ h.window.ApiClient.ajax=async()=>{if(down)throw new Error('offline');return {Items:[{Type:'Movie',MediaStreams:[{Type:'Audio',Language:'fr'}]}]};};h.window.ApiClient.getItem=async()=>{throw new Error('offline');};
+ h.container.replaceChildren();h.api.displayAudioLanguages('item',h.container);await h.settle();assert.equal(h.container.querySelectorAll('.audio-language-item').length,0);
+ down=false;h.container.replaceChildren();h.api.displayAudioLanguages('item',h.container);await h.settle();
+ assert.deepEqual(Array.from(h.container.querySelectorAll('.audio-language-item'),e=>e.dataset.lang),['fr']);
+ // A series whose first episode could not be read is not "no languages" either.
+ let episodeDown=true;h.window.ApiClient.ajax=async request=>{if(request.type==='POST'){const ids=JSON.parse(request.data);return {Items:[ids[0]==='show'?{Type:'Series',Id:'show'}:{Type:'Episode',Id:'ep',MediaStreams:[{Type:'Audio',Language:'de'}]}]};}if(episodeDown)throw new Error('offline');return {Items:[{Type:'Episode',Id:'ep'}]};};
+ h.container.replaceChildren();h.api.displayAudioLanguages('show',h.container);await h.settle();assert.equal(h.container.querySelectorAll('.audio-language-item').length,0);
+ episodeDown=false;h.container.replaceChildren();h.api.displayAudioLanguages('show',h.container);await h.settle();
+ assert.deepEqual(Array.from(h.container.querySelectorAll('.audio-language-item'),e=>e.dataset.lang),['de']);
 });

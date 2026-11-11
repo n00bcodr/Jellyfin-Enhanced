@@ -513,7 +513,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Platform.Services
         }
 
         /// <summary>Reads the response body, aborting if it grows past the size cap.</summary>
-        private static async Task<byte[]?> ReadCappedAsync(HttpResponseMessage response, long cap, CancellationToken cancellationToken)
+        internal static async Task<byte[]?> ReadCappedAsync(HttpResponseMessage response, long cap, CancellationToken cancellationToken)
         {
             await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
             using var buffer = new MemoryStream();

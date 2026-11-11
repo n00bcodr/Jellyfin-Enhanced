@@ -1,6 +1,8 @@
 using System.Collections.Generic;
 using System.Linq;
+using Jellyfin.Plugin.JellyfinEnhanced.Shared.SpoilerGuard;
 using MediaBrowser.Controller.Session;
+using MediaBrowser.Model.Dto;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.Sessions
 {
@@ -21,8 +23,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.Sessions
         /// <summary>
         /// The now-playing sessions as GET active-streams/sessions returns them
         /// (client IPs only for admins). Callers apply the access gate first.
+        /// <paramref name="spoilerGuards"/> is the caller's Spoiler Guard: an episode
+        /// title it hides is named as Jellyfin's own session list names it for them.
         /// </summary>
-        public List<object> BuildActiveSessionList(bool isAdmin)
+        public List<object> BuildActiveSessionList(bool isAdmin, SpoilerSeerrRedactor.GuardedRows? spoilerGuards = null)
         {
             var sessions = _sessionManager.Sessions
                 .Where(s => s.NowPlayingItem != null)
@@ -40,7 +44,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.Sessions
                     {
                         Id = s.NowPlayingItem.Id.ToString("N"),
                         Type = s.NowPlayingItem.Type.ToString(),
-                        s.NowPlayingItem.Name,
+                        Name = ShownName(s.NowPlayingItem, spoilerGuards),
                         s.NowPlayingItem.SeriesName,
                         s.NowPlayingItem.RunTimeTicks,
                         s.NowPlayingItem.ProductionYear,
@@ -81,6 +85,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.Sessions
                 });
 
             return sessions.ToList<object>();
+        }
+
+        private static string? ShownName(BaseItemDto item, SpoilerSeerrRedactor.GuardedRows? spoilerGuards)
+        {
+            if (spoilerGuards == null || item.Type != Jellyfin.Data.Enums.BaseItemKind.Episode
+                || !spoilerGuards.HidesEpisodeTitle(null, null, null, item.Id, null, item.SeriesId))
+            {
+                return item.Name;
+            }
+
+            return item.ParentIndexNumber is { } season && item.IndexNumber is { } number ? $"Season {season}, Episode {number}" : string.Empty;
         }
     }
 }

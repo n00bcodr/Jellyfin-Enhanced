@@ -174,6 +174,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
             var totalItemsAdded = 0;
             var totalItemsProcessed = 0;
             var failedUsers = 0;
+            // Library movies and series by TMDB id, each read once per pass, on first use.
+            var libraryByTmdbId = new Dictionary<BaseItemKind, Dictionary<string, BaseItem>>();
 
             foreach (var jellyfinUser in jellyfinUsers)
             {
@@ -202,8 +204,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                         continue;
                     }
 
-                    // Get watchlist from Jellyseerr
-                    var watchlistItems = await GetJellyseerrWatchlist(httpClient, jellyseerrUrl, jellyseerrUserId, config.JellyseerrApiKey) ?? new List<WatchlistItem>();
+                    // Every page of the Seerr watchlist; null when a page could not be read, so the list is unknown.
+                    var watchlistKeys = await SeerrWatchlistReader.ReadKeysAsync(httpClient, jellyseerrUrl, jellyseerrUserId, config.JellyseerrApiKey,
+                        m => _logger.Warning($"[Seerr→Jellyfin Watchlist Sync] {m}"), cancellationToken);
+                    if (watchlistKeys == null)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested(); // a cancelled run, not an unreadable list
+                        _logger.Warning($"[Seerr→Jellyfin Watchlist Sync] Could not read the Seerr watchlist of user {jellyfinUser.Username}; skipped until the next run");
+                        failedUsers++;
+                        processedUsers++;
+                        continue;
+                    }
+
+                    var watchlistItems = watchlistKeys
+                        .Select(key => new WatchlistItem { MediaType = key[..key.LastIndexOf(':')], TmdbId = int.Parse(key[(key.LastIndexOf(':') + 1)..], System.Globalization.CultureInfo.InvariantCulture) })
+                        .ToList();
 
                     var requestItems = new List<WatchlistItem>();
                     if (config.AddRequestedMediaToWatchlist)
@@ -245,7 +260,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                             continue;
                         }
 
-                        var result = await ProcessWatchlistItem(jellyfinUser, item);
+                        var result = await ProcessWatchlistItem(jellyfinUser, item, libraryByTmdbId);
                         var itemInfo = $"TMDB: {item.TmdbId}";
 
                         switch (result)
@@ -389,62 +404,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
             }
 
             return result;
-        }
-
-        private async Task<List<WatchlistItem>?> GetJellyseerrWatchlist(HttpClient httpClient, string jellyseerrUrl, string jellyseerrUserId, string apiKey)
-        {
-            try
-            {
-                var requestUri = $"{jellyseerrUrl.TrimEnd('/')}/api/v1/user/{jellyseerrUserId}/watchlist";
-                using var request = Jellyfin.Plugin.JellyfinEnhanced.Shared.Seerr.SeerrHttpHelper.BuildRequest(
-                    HttpMethod.Get, requestUri, apiKey, jellyseerrUserId);
-                using var response = await httpClient.SendAsync(request);
-                var (content, error) = await Jellyfin.Plugin.JellyfinEnhanced.Shared.Seerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
-
-                if (error == null && content != null)
-                {
-                    var watchlistResponse = JsonSerializer.Deserialize<JsonElement>(content);
-
-                    var items = new List<WatchlistItem>();
-
-                    if (watchlistResponse.TryGetProperty("results", out var resultsArray))
-                    {
-                        foreach (var item in resultsArray.EnumerateArray())
-                        {
-                            var watchlistItem = new WatchlistItem();
-
-                            if (item.TryGetProperty("tmdbId", out var tmdbId))
-                            {
-                                watchlistItem.TmdbId = tmdbId.GetInt32();
-                            }
-
-                            if (item.TryGetProperty("mediaType", out var mediaType))
-                            {
-                                watchlistItem.MediaType = mediaType.GetString() ?? "";
-                            }
-
-                            if (item.TryGetProperty("title", out var title))
-                            {
-                                watchlistItem.Title = title.GetString() ?? "";
-                            }
-
-                            items.Add(watchlistItem);
-                        }
-                    }
-
-                    return items;
-                }
-                else if (error != null)
-                {
-                    _logger.Debug($"[Seerr→Jellyfin Watchlist Sync] Watchlist fetch failed: code={error.Code} status={error.HttpStatus} cf-ray={error.CfRay}");
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.Error($"[Seerr→Jellyfin Watchlist Sync] Error getting Jellyseerr watchlist: {ex.Message}");
-            }
-
-            return null;
         }
 
         private async Task<List<WatchlistItem>?> GetJellyseerrRequests(HttpClient httpClient, string jellyseerrUrl, string jellyseerrUserId, string apiKey)
@@ -603,7 +562,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
             Skipped
         }
 
-        private Task<WatchlistItemResult> ProcessWatchlistItem(JUser user, WatchlistItem watchlistItem)
+        private Task<WatchlistItemResult> ProcessWatchlistItem(JUser user, WatchlistItem watchlistItem, Dictionary<BaseItemKind, Dictionary<string, BaseItem>> libraryByTmdbId)
         {
             try
             {
@@ -621,22 +580,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                 // Determine Jellyfin item type based on Jellyseerr media type
                 var itemType = watchlistItem.MediaType == "movie" ? BaseItemKind.Movie : BaseItemKind.Series;
 
-                // Find the item in Jellyfin library by TMDB ID
-                var items = _libraryManager.GetItemList(new InternalItemsQuery
+                // Find the item in Jellyfin library by TMDB ID (the first one listed, as before)
+                if (!libraryByTmdbId.TryGetValue(itemType, out var byTmdbId))
                 {
-                    IncludeItemTypes = new[] { itemType },
-                    HasTmdbId = true,
-                    Recursive = true
-                });
-
-                var item = items.FirstOrDefault(i =>
-                {
-                    if (i.ProviderIds != null && i.ProviderIds.TryGetValue("Tmdb", out var tmdbId))
+                    byTmdbId = new Dictionary<string, BaseItem>();
+                    foreach (var i in _libraryManager.GetItemList(new InternalItemsQuery
                     {
-                        return tmdbId == watchlistItem.TmdbId.ToString();
+                        IncludeItemTypes = new[] { itemType },
+                        HasTmdbId = true,
+                        Recursive = true
+                    }))
+                    {
+                        if (i.ProviderIds != null && i.ProviderIds.TryGetValue("Tmdb", out var tmdbId))
+                        {
+                            byTmdbId.TryAdd(tmdbId, i);
+                        }
                     }
-                    return false;
-                });
+
+                    libraryByTmdbId[itemType] = byTmdbId;
+                }
+
+                byTmdbId.TryGetValue(watchlistItem.TmdbId.ToString(), out var item);
 
                 if (item == null)
                 {

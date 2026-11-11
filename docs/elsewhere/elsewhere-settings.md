@@ -495,7 +495,7 @@ You can use authenticated JE routes to access provider data, preferences, and re
     | Method and route | Access and limits |
     | --- | --- |
     | `GET tmdb/{**apiPath}` | Authenticated TMDB proxy; missing configured key returns 503. Parental restrictions can refuse lookups. |
-    | `GET tmdb/validate?apiKey=…` | Admin-only test of the supplied key, including an unsaved key. |
+    | `GET tmdb/validate` | Admin-only test of the key in the `X-Arr-ApiKey` header (or the `apiKey` query parameter), including an unsaved key. |
     | `GET watch-providers?items=movie:603,tv:1399&region=US` | At most 100 distinct valid titles; `items` at most 2,048 characters. IDs are positive, one to nine digits. An explicit nonempty region must be two uppercase letters. Omitted/empty uses normalized admin country, falling back to US if invalid. |
     | `GET user-settings/{userId}/elsewhere.json` | Own preferences, or another user's preferences for an admin. |
     | `POST user-settings/{userId}/elsewhere.json` | Same access rules; saves personal preferences. |

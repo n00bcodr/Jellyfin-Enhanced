@@ -42,7 +42,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.HiddenContent
                 return authorizationResult;
             }
 
-            return Ok(_hiddenContentDocumentService.LoadUserHiddenContentDocument(authorizedUserId));
+            try
+            {
+                return Ok(_hiddenContentDocumentService.LoadUserHiddenContentDocument(authorizedUserId));
+            }
+            catch (Exception)
+            {
+                // The strict read has logged why.
+                return StatusCode(500, new { success = false, message = "Hidden content could not be read. The stored list has been preserved." });
+            }
         }
 
         [HttpPost("user-settings/{userId}/hidden-content.json")]

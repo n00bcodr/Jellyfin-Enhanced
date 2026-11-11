@@ -1,12 +1,12 @@
 import { mediaTagsSurface, publishTestedPluginLinks } from '../../../host/admin-config-host';
 import type { PageModules } from './modules';
-import { asObject, num, shown } from '../domain/config';
+import { asObject, num, shown, text } from '../domain/config';
 import type { CustomPluginLink } from '../../../host/admin-config-host';
 import { requestFailure } from '../domain/http';
 import { asControl, asHtml, needControl, needHtml } from './dom';
 
 /** Dependencies this module calls; members are resolved lazily, after every module exists. */
-export type MiscDeps = Pick<PageModules, 'context' | 'probes'>;
+export type MiscDeps = Pick<PageModules, 'context' | 'load' | 'probes'>;
 
 export function createMisc(m: MiscDeps) {
     const { ApiClient, Dashboard } = m.context;
@@ -58,7 +58,10 @@ export function createMisc(m: MiscDeps) {
             if (statusLine) statusLine.textContent = 'Checking...';
 
             try {
-                const url = ApiClient.getUrl('/JellyfinEnhanced/mdblist-ratings/account-status', apiKey ? { apiKey: apiKey } : {});
+                // The route checks the saved key when it gets none: only a typed key not saved yet goes in the
+                // address (the route takes the key from the query string alone), and the saved key stays out of logs.
+                const unsaved = apiKey && apiKey !== text(m.load.formBase.MdblistApiKey).trim();
+                const url = ApiClient.getUrl('/JellyfinEnhanced/mdblist-ratings/account-status', unsaved ? { apiKey: apiKey } : {});
                 const status = asObject(await ApiClient.ajax({ type: 'GET', url: url, dataType: 'json' }));
 
                 if (statusIndicator) {

@@ -24,10 +24,19 @@
   var owner = export0(JE, "identity", false);
   var logPrefix = "🪼 Jellyfin Enhanced [SpoilerGuard]:";
   var primed = false;
+  function writeIdentityCookie(userId) {
+    if (!userId) {
+      document.cookie = "je-spoiler-uid=; path=/; SameSite=Lax; Max-Age=0";
+      return;
+    }
+    const signedFor = /(?:^|;\s*)je-spoiler-uid=([^;.]*)\./.exec(document.cookie)?.[1];
+    const plain = (id) => decodeURIComponent(id).replace(/-/g, "").toLowerCase();
+    if (signedFor !== void 0 && plain(signedFor) === plain(userId)) return;
+    document.cookie = `je-spoiler-uid=${encodeURIComponent(userId)}; path=/; SameSite=Lax`;
+  }
   internal.setIdentityCookie = function() {
     try {
-      const userId = typeof ApiClient?.getCurrentUserId === "function" ? ApiClient.getCurrentUserId() : null;
-      document.cookie = userId ? `je-spoiler-uid=${encodeURIComponent(userId)}; path=/; SameSite=Lax` : "je-spoiler-uid=; path=/; SameSite=Lax; Max-Age=0";
+      writeIdentityCookie(typeof ApiClient?.getCurrentUserId === "function" ? ApiClient.getCurrentUserId() : null);
     } catch (e) {
       console.warn(`${logPrefix} identity cookie set failed:`, e);
     }
@@ -55,11 +64,7 @@
   internal.primeIdentityCookie();
   JE.session?.onUserChange("spoilerguard-identity", (change) => {
     try {
-      if (change.userId) {
-        document.cookie = `je-spoiler-uid=${encodeURIComponent(change.userId)}; path=/; SameSite=Lax`;
-      } else {
-        document.cookie = "je-spoiler-uid=; path=/; SameSite=Lax; Max-Age=0";
-      }
+      writeIdentityCookie(change.userId);
     } catch (e) {
       console.warn(`${logPrefix} identity cookie update on user switch failed:`, e);
     }

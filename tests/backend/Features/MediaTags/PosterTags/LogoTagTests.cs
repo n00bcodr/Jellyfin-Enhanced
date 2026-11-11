@@ -639,6 +639,54 @@ public class LogoTagTests
     }
 
     [Fact]
+    public void PastTheDecodedLogoCapTheOldestLogoMakesRoomAndEveryLogoIsStillDrawn()
+    {
+        var previous = PosterTagAssets.LogoSource;
+        try
+        {
+            PosterTagAssets.LogoSource = path => path.StartsWith("/logo-", StringComparison.Ordinal) ? Png : null;
+            using var renderer = new PosterTagRenderer();
+            string Style(string path) => Assert.Single(Assert.Single(renderer.Plan(360, 540, new PosterTagLayout(new List<PosterTagGroupLayout>
+            {
+                new(PosterTagGroup.Logos, PosterTagCorner.TopLeft, new PosterTag[] { new LogoTag("provider", "Streamflix", path) }),
+            }, false, false)).Groups).Items).Style;
+
+            for (var i = 0; i <= PosterTagAssets.MaxCachedLogos; i++)
+            {
+                Assert.StartsWith("provider|", Style($"/logo-{i}.png"));
+            }
+
+            Assert.StartsWith("provider|", Style("/logo-0.png"));
+        }
+        finally
+        {
+            PosterTagAssets.LogoSource = previous;
+        }
+    }
+
+    [Fact]
+    public void ACachedLogoThatCannotBeReadFailsTheRenderInsteadOfDrawingItsName()
+    {
+        var previous = PosterTagAssets.LogoSource;
+        try
+        {
+            // The disk cache lists the file (the poster's key says the logo is there), but reading it fails.
+            var reads = 0;
+            PosterTagAssets.LogoSource = path => path == "/flaky.png" && reads++ == 0 ? Png : null;
+            using var renderer = new PosterTagRenderer();
+            var layout = new PosterTagLayout(new List<PosterTagGroupLayout>
+            {
+                new(PosterTagGroup.Logos, PosterTagCorner.TopLeft, new PosterTag[] { new LogoTag("network", "Home Box Office", "/flaky.png") }),
+            }, false, false);
+            Assert.Throws<IOException>(() => renderer.Plan(360, 540, layout));
+        }
+        finally
+        {
+            PosterTagAssets.LogoSource = previous;
+        }
+    }
+
+    [Fact]
     public void TagStylesOfferTheLogoPillsOnWebAndNativePosters()
     {
         Assert.Contains(TagStyleKeys.Logos, TagStyleKeys.Groups);

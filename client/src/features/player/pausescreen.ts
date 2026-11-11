@@ -5,6 +5,7 @@ import { playerHost } from './host';
 import { decodeItem, decodeItems, decodeSessions, decodeSegments, type Item, type Stream, type PlayingSession, type MediaSegment, record } from './wire';
 const { JE, ApiClient, ctx } = playerHost();
 const lifetime = createPlayerLifetime(JE, 'pause-screen');
+const MAX_KEPT_IMAGES = 6; // two titles' artwork, so what the overlay shows is never released
 JE.initializePauseScreen = function() {
     // Only run if the feature is enabled in the user's settings
     if (!JE.currentSettings.pauseScreenEnabled) {
@@ -612,10 +613,10 @@ JE.initializePauseScreen = function() {
 
           this.overlayPlot.textContent = item.Overview || JE.t('pausescreen_no_description');
 
-          // Images: preload to blob URLs (cached)
-          const logoUrls = this.getLogoUrls(item, domain, itemId);
-          const discUrls = this.getDiscUrls(item, domain, itemId);
-          const backdropUrls = this.getBackdropUrls(item, domain, itemId);
+          const fit = (urls: string[]) => urls.map(url => `${url}${url.includes('?') ? '&' : '?'}maxWidth=${Math.round((window.screen.width || 1920) * (window.devicePixelRatio || 1))}`); // preloaded to blob URLs (cached), no wider than the screen
+          const logoUrls = fit(this.getLogoUrls(item, domain, itemId));
+          const discUrls = fit(this.getDiscUrls(item, domain, itemId));
+          const backdropUrls = fit(this.getBackdropUrls(item, domain, itemId));
 
           const [logoURL, discURL, backdropURL] = await Promise.all([
             this.firstAvailableBlobURL(logoUrls),
@@ -651,7 +652,7 @@ JE.initializePauseScreen = function() {
           renderPauseProgress(this.progressBar, this.progressMeta, current, duration, (key, params) => JE.t(key, params));
         }
 
-        // ------- Image helpers (blob cache) -------
+        // ------- Image helpers (blob cache, the most recently used kept) -------
         async firstAvailableBlobURL(urls: string[]) {
           const generation = this.generation;
           for (const url of urls) {
@@ -693,7 +694,8 @@ JE.initializePauseScreen = function() {
         async toBlobURL(url: string, timeoutMs = 5000) {
           const generation = this.generation;
           if (this.destroyed) return null;
-          if (this.imgBlobCache.has(url)) return this.imgBlobCache.get(url);
+          const kept = this.imgBlobCache.get(url);
+          if (kept) { this.imgBlobCache.delete(url); this.imgBlobCache.set(url, kept); return kept; }
           const ctl = new AbortController();
           this.imageRequests.add(ctl);
           const t = window.setTimeout(() => ctl.abort(), timeoutMs);
@@ -708,6 +710,7 @@ JE.initializePauseScreen = function() {
             if (this.destroyed || generation !== this.generation) return null;
             const obj = URL.createObjectURL(blob);
             this.imgBlobCache.set(url, obj);
+            for (const [key, old] of this.imgBlobCache) if (this.imgBlobCache.size > MAX_KEPT_IMAGES) { URL.revokeObjectURL(old); this.imgBlobCache.delete(key); }
             return obj;
           } catch {
             return null;

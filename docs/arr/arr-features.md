@@ -145,10 +145,10 @@ These are admin (server) settings:
     Radarr matches movies by TMDB ID; Sonarr tag sync matches series by IMDb ID. Sync updates movies and series in your library, excluding virtual placeholders, combines tags from enabled instances, and avoids duplicates regardless of letter case. Bazarr and Shoko do not supply tags.
 
 !!! warning "Cleanup can remove tags without replacements"
-    **Clear old tags before sync** also affects unmatched items and runs where upstream tag results are empty or failed. Check connectivity before running cleanup. Turning cleanup off preserves stale tags; changing **Tag Prefix** leaves tags bearing the previous prefix in place.
+    **Clear old tags before sync** also affects unmatched items, and items whose service answered with no tags. When a Radarr or Sonarr instance cannot be read (unreachable, an error, an unreadable answer), its items (movies for Radarr, series for Sonarr) keep their tags for that run. Turning cleanup off preserves stale tags; changing **Tag Prefix** leaves tags bearing the previous prefix in place.
 
 ??? note "Prefix behavior"
-    Keep **Tag Prefix** nonempty and its spelling/case consistent. The factory default is `JE Arr Tag: `, but settings replace a blank value with `Requested by: `. When the prefix is blank, displayed tag links use `JE Arr Tag: `; sync uses `Requested by: ` only if the stored prefix is unset, rather than empty. Links require matching prefix capitalization; cleanup ignores capitalization.
+    Keep **Tag Prefix** nonempty and its spelling/case consistent. The factory default is `JE Arr Tag: `, and settings save a blank value as that default. When the stored prefix is blank or unset, sync and displayed tag links both use `JE Arr Tag: `. Links require matching prefix capitalization; cleanup ignores capitalization.
 
 ### Tag Filtering
 
@@ -313,7 +313,7 @@ These are admin (server) settings; users cannot override them as personal defaul
 | **Time Format** | **5pm/5:30pm** | Selects 12-hour or **17:00/17:30** 24-hour formatting. |
 | **Highlight Favorites/Watchlist** | Off | Adds watchlist indicators and a **Watchlist** filter. |
 | **Highlight Watched Series** | Off | Adds watched indicators and a **Watched** filter for the matched played/started episode or movie. |
-| **Filter by Library Access** | On | Filters releases by your library access; access checks for titles not yet in Jellyfin may be incomplete. |
+| **Filter by Library Access** | On | Filters releases by your library access. A title not yet in Jellyfin is shown to an account limited to some libraries only when its Sonarr/Radarr root folder is known to be one the account can open. |
 | **Show Requested Only (Default)** | Off | Initially selects **Requests**; you can change filters. |
 | **Force Only Requested Items** | Off | Always limits the displayed Calendar to your requested titles and hides the **Requests** chip. |
 

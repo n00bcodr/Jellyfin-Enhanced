@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.Parental
@@ -8,10 +9,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.Parental
     /// Extracts the content-rating certification from a Seerr movie/TV detail
     /// payload (<c>/api/v1/movie/{id}</c> or <c>/api/v1/tv/{id}</c>) or from TMDB's
     /// dedicated <c>/movie/{id}/release_dates</c> and <c>/tv/{id}/content_ratings</c>
-    /// responses. Only certifications from the requested country are used for
-    /// enforcement. A missing local certification stays unrated so the user's
-    /// block-unrated policy applies; a permissive foreign rating must not bypass it.
-    /// The ISO is returned alongside the certification for country-specific scoring.
+    /// responses, picked the way Jellyfin's TMDB providers fill an item's rating:
+    /// the requested country's certification, else the US one, and for a series
+    /// else the first listed. A title with none stays unrated, so the user's
+    /// block-unrated policy applies as it does in the library.
     ///
     /// Adapted from Jellyfin-Canopy (GPL-3.0), Helpers/Seerr/SeerrCertificationExtractor.cs.
     /// </summary>
@@ -40,7 +41,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.Parental
                 : ExtractTv(detail, normalizedRegion);
         }
 
-        // For movies: releases.results[].release_dates[].certification
+        // For movies: releases.results[].release_dates[].certification; the
+        // country's, else the US one (Jellyfin's TmdbMovieProvider).
         private static CertificationResult ExtractMovie(JsonElement detail, string region)
         {
             if (!TryGetResultsArray(detail, "releases", out var results))
@@ -48,7 +50,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.Parental
                 return default;
             }
 
-            foreach (var entry in RegionEntries(results, region))
+            foreach (var entry in RegionEntries(results, region).Concat(RegionEntries(results, "US")))
             {
                 var result = MovieCertFromEntry(entry);
                 if (!string.IsNullOrWhiteSpace(result.Certification))
@@ -105,7 +107,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.Parental
                 : new CertificationResult(cert, ReadString(regionRelease, "iso_3166_1"));
         }
 
-        // For TV: contentRatings.results[].rating
+        // For TV: contentRatings.results[].rating; the country's, else the US one,
+        // else the first listed (Jellyfin's TmdbSeriesProvider).
         private static CertificationResult ExtractTv(JsonElement detail, string region)
         {
             if (!TryGetResultsArray(detail, "contentRatings", out var results))
@@ -113,7 +116,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.Parental
                 return default;
             }
 
-            foreach (var entry in RegionEntries(results, region))
+            foreach (var entry in RegionEntries(results, region).Concat(RegionEntries(results, "US")).Concat(results.EnumerateArray().Take(1)))
             {
                 var rating = ReadString(entry, "rating");
                 if (!string.IsNullOrWhiteSpace(rating))

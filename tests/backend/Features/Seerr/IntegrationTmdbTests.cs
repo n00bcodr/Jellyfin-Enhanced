@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Security.Claims;
 using System.Text.Json;
 using Jellyfin.Plugin.JellyfinEnhanced.Features.Seerr;
 using MediaBrowser.Controller.Entities;
@@ -178,6 +179,8 @@ public class IntegrationTmdbTests
         library.Setup(l => l.GetItemById(fromTmdb.Id)).Returns(fromTmdb);
         library.Setup(l => l.GetItemById(fromJellyfin.Id)).Returns(fromJellyfin);
         var controller = (JeSeerrController)ApiAssetTests.Controller(typeof(JeSeerrController), f.Core, library.Object, cache);
+        // person/{id} answers only for an item its caller may see; an administrator may see any.
+        controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Role, "Administrator")], "test"));
         JsonElement tmdb, jellyfin;
         var old = CultureInfo.CurrentCulture;
         try

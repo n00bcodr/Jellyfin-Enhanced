@@ -73,3 +73,15 @@ for (const transition of ['query','account','unchanged']) test('SEERR-CORE-16: d
  h.searchCalls.length=0;callbacks[0]();await flush();
  assert.equal(h.searchCalls.length,transition==='unchanged'?1:0);
 });
+
+test('the 4K request item says Requesting and, after a failure, Request in 4K from the translations',async t=>{
+ const h=await setup(t);let fail;h.JE.jellyseerrAPI.shouldShowAdvanced=()=>false;
+ h.JE.jellyseerrAPI.requestMedia=()=>new Promise((_,reject)=>{fail=reject;});
+ const popup=h.document.createElement('div');popup.className='jellyseerr-4k-popup';
+ popup.innerHTML='<button class="jellyseerr-4k-popup-item" data-action="request4k" data-tmdb-id="42" data-media-type="movie">4K</button>';
+ h.document.body.append(popup);const item=popup.querySelector('button');item.click();await flush();
+ assert.equal(item.textContent,'jellyseerr_btn_requesting');
+ fail(new Error('down'));await flush();await flush();
+ assert.equal(item.textContent,'jellyseerr_btn_request_4k');
+});
+

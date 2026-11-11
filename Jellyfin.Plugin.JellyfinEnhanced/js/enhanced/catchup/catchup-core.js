@@ -47,6 +47,11 @@
   function optionalNumber(value) {
     return value == null ? void 0 : number(value);
   }
+  function optionalBoolean(value) {
+    if (value == null) return void 0;
+    if (typeof value !== "boolean") throw Error("Invalid response boolean");
+    return value;
+  }
   function array(value, decode) {
     if (!Array.isArray(value)) throw Error("Invalid response array");
     return value.map(decode);
@@ -74,6 +79,12 @@
   }
   function readItems(value) {
     return array(object(value).Items, readItem);
+  }
+  function readPlayStates(value) {
+    return array(object(value).Items, (value2) => {
+      const v = object(value2), u = object(v.UserData);
+      return { Id: string(v.Id), Played: optionalBoolean(u.Played) === true, PlayCount: number(u.PlayCount), PlaybackPositionTicks: number(u.PlaybackPositionTicks), LastPlayedDate: optionalString(u.LastPlayedDate) };
+    });
   }
 
   // client/src/features/catchup/catchup-core.ts
@@ -163,13 +174,30 @@
     }
     const playedUrl = (id) => `/Users/${userId()}/PlayedItems/${id}`;
     const ratingUrl = (id) => `/Users/${userId()}/Items/${id}/Rating`;
-    async function mark(ids, method) {
-      const results = await Promise.allSettled(ids.map((id) => jf(playedUrl(id), { method })));
+    async function settle(work) {
+      const results = await Promise.allSettled(work);
       const failed = results.find((result) => result.status === "rejected");
       if (failed?.status === "rejected") throw failed.reason;
     }
+    async function watch(item, ids) {
+      const same = currentLease(JE2.session, api);
+      const scope = (id) => item.Type === "Series" ? `ParentId=${id}&Recursive=true` : `Ids=${id}`;
+      const prior = (await Promise.all(ids.map((id) => jf(`/Users/${userId()}/Items?${scope(id)}&Filters=IsNotFolder&EnableImages=false`)))).flatMap(readPlayStates);
+      if (!same()) throw Error("The account changed");
+      await settle(ids.map((id) => jf(playedUrl(id), { method: "POST" })));
+      return prior;
+    }
+    function restore(prior = []) {
+      const same = currentLease(JE2.session, api);
+      return settle(prior.filter((p) => !(p.Played && p.PlayCount > 0 && !p.PlaybackPositionTicks && p.LastPlayedDate)).map(async (p) => {
+        if (!p.LastPlayedDate) await jf(playedUrl(p.Id), { method: "DELETE" });
+        if (!p.Played && !p.PlayCount && !p.PlaybackPositionTicks && !p.LastPlayedDate) return;
+        if (!same()) throw Error("The account changed");
+        await jf(`/Users/${userId()}/Items/${p.Id}/UserData`, { method: "POST", body: { Played: p.Played, PlayCount: p.PlayCount, PlaybackPositionTicks: p.PlaybackPositionTicks, LastPlayedDate: p.LastPlayedDate } });
+      }));
+    }
     const ACTIONS = {
-      right: { name: "watched", run: (i, o) => mark(o?.seasons || [i.Id], "POST"), undo: (i, o) => mark(o?.seasons || [i.Id], "DELETE") },
+      right: { name: "watched", run: (i, o) => watch(i, o?.seasons || [i.Id]), undo: (_i, _o, prior) => restore(prior) },
       left: { name: "dismiss", run: async (i) => {
         state.dismissed.add(i.SeriesId || i.Id);
         saveDismissed();
@@ -177,7 +205,9 @@
         state.dismissed.delete(i.SeriesId || i.Id);
         saveDismissed();
       } },
-      up: { name: "watchlist", run: (i) => jf(`${ratingUrl(i.SeriesId || i.Id)}?likes=true`, { method: "POST" }), undo: (i) => jf(ratingUrl(i.SeriesId || i.Id), { method: "DELETE" }) }
+      up: { name: "watchlist", run: async (i) => {
+        await jf(`${ratingUrl(i.SeriesId || i.Id)}?likes=true`, { method: "POST" });
+      }, undo: (i) => jf(ratingUrl(i.SeriesId || i.Id), { method: "DELETE" }) }
     };
     const ACT_NAME = { right: "watched", left: "dismiss", up: "watchlist", down: "open" };
     const logEvent = (event) => {

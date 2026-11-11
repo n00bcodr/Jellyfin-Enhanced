@@ -4,8 +4,10 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.IO.Compression;
+using System.Linq;
 using System.Reflection;
 using System.Text.Json;
+using System.Threading;
 using SkiaSharp;
 using Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services;
 using Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags.PosterTags.Rendering;
@@ -34,10 +36,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.PosterTags.Renderi
             ["myAnimeList"] = "myanimelist.png", ["aniList"] = "anilist.png", ["metacriticUser"] = "metacritic_audience.png",
             ["rogerEbert"] = "rogerebert.png", ["mdblist"] = "master.png",
         };
-        private readonly ConcurrentDictionary<string, SKImage> _logos = new(StringComparer.Ordinal);
+        private readonly ConcurrentDictionary<string, CachedLogo> _logos = new(StringComparer.Ordinal);
+        private long _logoUses;
 
-        /// <summary>Decoded logos kept at most; past it further logos draw as name chips.</summary>
+        /// <summary>Decoded logos kept at most; past it the least recently drawn one makes room.</summary>
         internal const int MaxCachedLogos = 512;
+
+        /// <summary>A decoded logo and when it was last drawn (a use count, not a clock).</summary>
+        private sealed class CachedLogo(SKImage image, long lastUse)
+        {
+            public SKImage Image { get; } = image;
+            public long LastUse = lastUse;
+        }
 
         /// <summary>
         /// Where logo image bytes come from: the logo proxy's disk cache (never the network). Tests
@@ -203,19 +213,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.PosterTags.Renderi
             ObjectDisposedException.ThrowIf(_disposed, this);
             // A decoded logo whose file the disk cache evicted draws as the name chip, as the
             // poster's data key (HasLogo) says, until the file is cached again.
-            if (_logos.TryGetValue(logoPath, out var cached)) return HasLogo(logoPath) ? cached : null;
-            if (_logos.Count >= MaxCachedLogos) return null;
+            if (_logos.TryGetValue(logoPath, out var cached))
+            {
+                if (!HasLogo(logoPath)) return null;
+                Volatile.Write(ref cached.LastUse, Interlocked.Increment(ref _logoUses));
+                return cached.Image;
+            }
+
+            // A file the disk cache holds that cannot be read now fails the render (failed renders are not
+            // cached): the poster's data key says the logo is there, so a name chip drawn under it would stay.
+            var listed = HasLogo(logoPath);
             byte[]? bytes;
             try
             {
                 bytes = LogoSource(logoPath);
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            catch (Exception ex) when (!listed && (ex is IOException or UnauthorizedAccessException))
             {
                 return null;
             }
 
-            if (bytes is null || bytes.Length == 0) return null;
+            if (bytes is null || bytes.Length == 0)
+            {
+                return listed ? throw new IOException("A cached logo image could not be read: " + logoPath) : null;
+            }
             var image = SKImage.FromEncodedData(bytes);
             if (image is null || image.Width <= 0 || image.Height <= 0)
             {
@@ -223,17 +244,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.PosterTags.Renderi
                 return null;
             }
 
-            var retained = false;
-            try
+            // Past the cap the least recently drawn logo makes room. It is not disposed: a render may still be
+            // drawing it, and the garbage collector frees it.
+            if (_logos.Count >= MaxCachedLogos && _logos.MinBy(e => Volatile.Read(ref e.Value.LastUse)) is { Key: not null } oldest)
             {
-                retained = _logos.TryAdd(logoPath, image);
-                return retained ? image : _logos.TryGetValue(logoPath, out var winner) ? winner : null;
+                _logos.TryRemove(oldest);
             }
-            finally
-            {
-                // The cache owns successful additions; all other paths release the decode.
-                if (!retained) image.Dispose();
-            }
+
+            var entry = new CachedLogo(image, Interlocked.Increment(ref _logoUses));
+            var winner = _logos.GetOrAdd(logoPath, entry);
+            // The cache owns the added decode; a concurrent caller's decode won, so this one is released.
+            if (!ReferenceEquals(winner, entry)) image.Dispose();
+            return winner.Image;
         }
 
         public void Dispose()
@@ -246,7 +268,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.PosterTags.Renderi
             _disposed = true;
             foreach (var logo in _logos.Values)
             {
-                logo.Dispose();
+                logo.Image.Dispose();
             }
 
             _logos.Clear();

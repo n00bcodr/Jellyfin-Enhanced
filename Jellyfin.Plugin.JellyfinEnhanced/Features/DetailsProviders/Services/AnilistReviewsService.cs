@@ -19,6 +19,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.DetailsProviders.Services
     {
         private const string Endpoint = "https://graphql.anilist.co";
         private const int MaxReviews = 10;
+        // Titles kept in memory (each holds up to MaxReviews review bodies).
+        internal const int MaxCacheEntries = 200;
         private static readonly TimeSpan FoundTtl = TimeSpan.FromHours(12);
         private static readonly TimeSpan MissTtl = TimeSpan.FromHours(2);
         private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(15);
@@ -68,7 +70,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.DetailsProviders.Services
                 result = Parse(doc.RootElement);
             }
 
-            _cache[anilistId] = (DateTime.UtcNow + (result.Reviews.Count > 0 ? FoundTtl : MissTtl), result);
+            var now = DateTime.UtcNow;
+            _cache[anilistId] = (now + (result.Reviews.Count > 0 ? FoundTtl : MissTtl), result);
+            // Expired entries go at once; past the cap, the entry that expires first.
+            foreach (var entry in _cache.Where(e => e.Value.ExpiresUtc <= now).ToList()) _cache.TryRemove(entry);
+            foreach (var entry in _cache.OrderBy(e => e.Value.ExpiresUtc).Take(_cache.Count - MaxCacheEntries).ToList()) _cache.TryRemove(entry);
             return result;
         }
 

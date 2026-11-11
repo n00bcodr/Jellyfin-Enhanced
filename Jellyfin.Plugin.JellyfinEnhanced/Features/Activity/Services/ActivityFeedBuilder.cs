@@ -2,6 +2,7 @@ using Jellyfin.Data;
 using Jellyfin.Database.Implementations.Enums;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.Infrastructure.Extensions;
+using Jellyfin.Plugin.JellyfinEnhanced.Shared.SpoilerGuard;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Persistence;
@@ -42,6 +43,7 @@ internal sealed class ActivityFeedBuilder(
     /// <summary>
     /// Merges lightweight records in stable timestamp order, checking access in
     /// bounded pages and continuing past filtered/deleted records until limit is met.
+    /// <paramref name="spoilerGuards"/> is the viewer's Spoiler Guard, as the other rows JE builds apply it.
     /// </summary>
     public List<ActivityFeedItem> Build(
         IEnumerable<ActivityEntry> activity,
@@ -50,7 +52,8 @@ internal sealed class ActivityFeedBuilder(
         bool viewerIsAdmin,
         PluginConfiguration config,
         int limit,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        SpoilerSeerrRedactor.GuardedRows? spoilerGuards = null)
     {
         limit = Math.Clamp(limit, 1, 200);
         var candidates = new List<Candidate>();
@@ -198,11 +201,14 @@ internal sealed class ActivityFeedBuilder(
                 if (results.Count == limit) continue;
                 try
                 {
+                    // Reviews of a guarded title stay out, as the details page hides its Reviews panel.
+                    if (candidate.TmdbId != null && spoilerGuards != null && GetItem(shownId) is { } reviewed
+                        && spoilerGuards.ForTitle(reviewed is not MediaBrowser.Controller.Entities.Movies.Movie, candidate.TmdbId, null, shownId.ToString("N"))?.HideReviews == true) continue;
                     if (!summaries.TryGetValue(shownId, out var summary))
                     {
                         var item = GetItem(shownId);
                         if (item == null) continue;
-                        summaries[shownId] = summary = BuildSummary(item, GetItem);
+                        summaries[shownId] = summary = BuildSummary(item, GetItem, spoilerGuards);
                     }
                     candidate.Row.UserName = author?.Username ?? candidate.Row.UserId;
                     candidate.Row.UserHasPrimaryImage = author?.ProfileImage != null;
@@ -400,15 +406,22 @@ internal sealed class ActivityFeedBuilder(
         return config.HideReviewsFromDisabledUsers && author.HasPermission(PermissionKind.IsDisabled);
     }
 
-    /// <summary>Hydrates only emitted cards; episode series lookups share the request's item cache.</summary>
-    private static object BuildSummary(BaseItem item, Func<Guid, BaseItem?> getItem)
+    /// <summary>
+    /// Hydrates only emitted cards; episode series lookups share the request's item cache. An episode title
+    /// Spoiler Guard hides from the viewer becomes the name Jellyfin's own item responses give it.
+    /// </summary>
+    private static object BuildSummary(BaseItem item, Func<Guid, BaseItem?> getItem, SpoilerSeerrRedactor.GuardedRows? spoilerGuards)
     {
         var episode = item as MediaBrowser.Controller.Entities.TV.Episode;
         var series = episode != null && episode.SeriesId != Guid.Empty ? getItem(episode.SeriesId) : null;
+        var hideTitle = episode != null && spoilerGuards != null && spoilerGuards.HidesEpisodeTitle(
+            series?.GetProviderId(MetadataProvider.Tmdb), series?.GetProviderId(MetadataProvider.Tvdb), series?.GetProviderId("Shoko Series"),
+            episode.Id, episode.GetProviderId(MetadataProvider.Tvdb), episode.SeriesId);
         return new
         {
             Id = item.Id.ToString("N"),
-            Name = item.Name,
+            Name = !hideTitle ? item.Name
+                : episode!.ParentIndexNumber is { } season && episode.IndexNumber is { } number ? $"Season {season}, Episode {number}" : string.Empty,
             Type = item.GetBaseItemKind().ToString(),
             ProductionYear = item.ProductionYear,
             SeriesName = episode?.SeriesName,

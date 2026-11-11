@@ -30,7 +30,7 @@ export function definePages(define: DefineSections): void {
             + `<div class="je-copy-code-wrapper"><button class="je-copy-html-btn jea-btn" data-copy-text='${escAttr(code)}' type="button">`
             + `<i class="material-icons je-copy-icon">content_copy</i><span class="copy-btn-text je-copy-btn-text">Copy</span></button>`
             + `<pre class="je-code-pre"><code>${escAttr(code)}</code></pre></div>`
-            + `<div class="fieldDescription">Already have Custom Tabs installed? <a class="sectionTitle je-custom-tabs-link" href="/web/#/configurationpage?name=Custom%20Tabs">Click here to configure it.</a></div>`
+            + `<div class="fieldDescription">Already have Custom Tabs installed? <a class="sectionTitle je-custom-tabs-link" href="#/configurationpage?name=Custom%20Tabs">Click here to configure it.</a></div>`
             + `</details>`;
         // Placement toggles are rendered here but loaded and saved by configPage.html (Custom Tabs sync, plugin detection, v12 hints).
         return {

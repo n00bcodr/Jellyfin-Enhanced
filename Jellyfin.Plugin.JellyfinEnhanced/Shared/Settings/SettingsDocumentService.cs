@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -36,12 +37,19 @@ public sealed class SettingsDocumentService(UserConfigurationManager store)
         return saved;
     }
 
+    private static readonly HashSet<string> NonNullableValueFields = typeof(BootstrapSettings).GetProperties()
+        .Where(p => p.PropertyType.IsValueType && Nullable.GetUnderlyingType(p.PropertyType) == null)
+        .Select(p => p.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
     private static RevisionedSettingsResponse Project(UserConfigurationDocument snapshot, bool isAdmin)
     {
         if (snapshot.Document is not JObject document) throw new InvalidDataException("Settings must be an object.");
         var node = System.Text.Json.Nodes.JsonNode.Parse(document.ToString())!.AsObject();
         foreach (var key in node.Select(p => p.Key).Where(k => string.Equals(k, "IsAdmin", StringComparison.OrdinalIgnoreCase)).ToArray()) node.Remove(key);
         node["IsAdmin"] = isAdmin;
+        // JE 11.9 stored null in switches that are now bool. Read such a null as the property's
+        // default, as the reader this replaced did; the stored document itself is not changed.
+        foreach (var key in node.Where(p => p.Value is null && NonNullableValueFields.Contains(p.Key)).Select(p => p.Key).ToArray()) node.Remove(key);
         var settings = node.Deserialize<BootstrapSettings>(new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
             ?? throw new InvalidDataException("Invalid settings document.");
         // Expose stable repaired rule IDs before clients reorder/edit them. The raw snapshot

@@ -102,8 +102,8 @@ export function createRatingTags(ctx: MediaTagsContext) {
      * shouldSuppressRatingTag). Such cards get NOTHING yet — not even the
      * user-review chip, whose overlay would make the card look finished — so
      * the rescan Spoiler Guard runs once its state loads renders them
-     * properly. After a FAILED load nothing rescans, so suppression is final
-     * then and the chip goes on as before.
+     * properly. After a FAILED load suppression stays (with the chip) until
+     * a retried load succeeds and rescans.
      * */
     function isSuppressionPending(): boolean {
         try {

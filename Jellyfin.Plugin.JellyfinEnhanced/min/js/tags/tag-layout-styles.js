@@ -1,9 +1,9 @@
 (() => {
-"use strict";(()=>{function y(s){let i=window.JellyfinEnhanced?.core?.sharedModules?.[s];if(!i)throw new Error(`${s} is not in JE.core.sharedModules: load its provider first (client/shared-modules.json)`);return i}function $(s,i){return s[i]}var z=y("features/media-tags/host");var k=$(z,"tagRuntimeHost");function C(s){let i=":is(:is(.card, .listItem):is(:hover, :focus-within), .je-tag-reveal)",u="body.je-tags-hide-on-hover .card:hover",m=':is(.je-mtp, .je-tie-side)[data-je-hide-on-hover="true"] .je-tag-reveal',e=".je-tag-host > .je-tag-slot",t=n=>`.je-tag-host[data-je-layout="${n}"] > .je-tag-slot`,g=".cardScalable:has(.countIndicator, .playedIndicator) > .je-tag-host",b="clamp(20px, 3vw, 30px)",j="calc(clamp(20px, 3vw, 30px) * var(--je-tag-scale, 1))",w=`${e}:is([data-je-slot="tl"], [data-je-slot="tr"], [data-je-slot="bl"], [data-je-slot="br"])`,x=':is([data-je-group="rating"], [data-je-group="ageRating"], [data-je-group="status"])',l=n=>`.je-tag-host[data-je-legacy] > .je-tag-slot[data-je-slot="${n}"] > ${x}`,r='.je-tag-host[data-je-layout="corners"][data-je-edge] > .je-tag-slot',h='.je-tag-host[data-je-layout="corners"][data-je-edge="flush"] > .je-tag-slot',d=":is(.quality-overlay-label, .rating-tag, .age-rating-tag, .status-tag, .awards-tag, .je-logo-chip, .custom-tag, .language-chip)",f=`:is(${d}, .genre-tag)`,o=":is(.awards-link, .language-link)",c=`:is(${e}[data-je-slot="poster"], ${e}[data-je-slot="corner"], .je-tag-host[data-je-layout="minimal"] > .je-tag-slot[data-je-slot="top"])`,p=`:is([data-je-group] > ${f}, [data-je-group] > ${o} > ${d}, .je-tag-more)`;function v(n=""){let a=n?`${n} ${h}`:h;return`
+"use strict";(()=>{function k(s){let i=window.JellyfinEnhanced?.core?.sharedModules?.[s];if(!i)throw new Error(`${s} is not in JE.core.sharedModules: load its provider first (client/shared-modules.json)`);return i}function C(s,i){return s[i]}var S=k("features/media-tags/host");var O=C(S,"tagRuntimeHost");function z(s){let i=":is(:is(.card, .listItem):is(:hover, :focus-within), .je-tag-reveal)",w="body.je-tags-hide-on-hover .card:hover",v=':is(.je-mtp, .je-tie-side)[data-je-hide-on-hover="true"] .je-tag-reveal',e=".je-tag-host > .je-tag-slot",t=n=>`.je-tag-host[data-je-layout="${n}"] > .je-tag-slot`,p=".cardScalable:has(.countIndicator, .playedIndicator) > .je-tag-host",h="@supports not selector(:has(*))",j=".cardScalable > .je-tag-host",u="clamp(20px, 3vw, 30px)",g="calc(clamp(20px, 3vw, 30px) * var(--je-tag-scale, 1))",y=`${e}:is([data-je-slot="tl"], [data-je-slot="tr"], [data-je-slot="bl"], [data-je-slot="br"])`,x=':is([data-je-group="rating"], [data-je-group="ageRating"], [data-je-group="status"])',l=n=>`.je-tag-host[data-je-legacy] > .je-tag-slot[data-je-slot="${n}"] > ${x}`,r='.je-tag-host[data-je-layout="corners"][data-je-edge] > .je-tag-slot',m='.je-tag-host[data-je-layout="corners"][data-je-edge="flush"] > .je-tag-slot',d=":is(.quality-overlay-label, .rating-tag, .age-rating-tag, .status-tag, .awards-tag, .je-logo-chip, .custom-tag, .language-chip)",b=`:is(${d}, .genre-tag)`,o=":is(.awards-link, .language-link)",c=`:is(${e}[data-je-slot="poster"], ${e}[data-je-slot="corner"], .je-tag-host[data-je-layout="minimal"] > .je-tag-slot[data-je-slot="top"])`,f=`:is([data-je-group] > ${b}, [data-je-group] > ${o} > ${d}, .je-tag-more)`;function $(n=""){let a=n?`${n} ${m}`:m;return`
             /* Flush removes the visible edge seam while preserving the chip's
                border-box metrics. Clip only the touching sides of its shadow;
                the inward sides keep the group's original border and shadow. */
-            ${a} ${p} {
+            ${a} ${f} {
                 --je-flush-clip-top: -12px; --je-flush-clip-right: -12px;
                 --je-flush-clip-bottom: -12px; --je-flush-clip-left: -12px;
                 clip-path: inset(var(--je-flush-clip-top) var(--je-flush-clip-right) var(--je-flush-clip-bottom) var(--je-flush-clip-left));
@@ -13,28 +13,28 @@
                 --je-flush-clip-top: -100vw; --je-flush-clip-right: -100vw;
                 --je-flush-clip-bottom: -100vw; --je-flush-clip-left: -100vw;
             }
-            ${a}:is([data-je-slot="tl"], [data-je-slot="bl"], [data-je-slot="ml"]) ${p} {
+            ${a}:is([data-je-slot="tl"], [data-je-slot="bl"], [data-je-slot="ml"]) ${f} {
                 border-left-color: transparent !important; --je-flush-clip-left: 0px;
                 --je-flush-ring-left: 0px; --je-flush-ring-content: ''; --je-tag-ring-outline: transparent;
                 border-top-left-radius: 0; border-bottom-left-radius: 0;
             }
-            ${a}:is([data-je-slot="tr"], [data-je-slot="br"], [data-je-slot="mr"]) ${p} {
+            ${a}:is([data-je-slot="tr"], [data-je-slot="br"], [data-je-slot="mr"]) ${f} {
                 border-right-color: transparent !important; --je-flush-clip-right: 0px;
                 --je-flush-ring-right: 0px; --je-flush-ring-content: ''; --je-tag-ring-outline: transparent;
                 border-top-right-radius: 0; border-bottom-right-radius: 0;
             }
-            ${a}:is([data-je-slot="tl"], [data-je-slot="tr"]):not(.cardScalable:has(.countIndicator, .playedIndicator) > .je-tag-host[data-je-indicator-gap] > [data-je-slot="tr"], .cardIndicators ~ .je-tag-host[data-je-indicator-gap] > [data-je-slot="tr"]) > [data-je-group]:first-child > ${f}:first-child,
+            ${a}:is([data-je-slot="tl"], [data-je-slot="tr"]):not(.cardScalable:has(.countIndicator, .playedIndicator) > .je-tag-host[data-je-indicator-gap] > [data-je-slot="tr"], .cardIndicators ~ .je-tag-host[data-je-indicator-gap] > [data-je-slot="tr"]) > [data-je-group]:first-child > ${b}:first-child,
             ${a}:is([data-je-slot="tl"], [data-je-slot="tr"]):not(.cardScalable:has(.countIndicator, .playedIndicator) > .je-tag-host[data-je-indicator-gap] > [data-je-slot="tr"], .cardIndicators ~ .je-tag-host[data-je-indicator-gap] > [data-je-slot="tr"]) > [data-je-group]:first-child > ${o}:first-child > ${d},
-            ${a}[data-je-slot="tc"] ${p}[data-je-flush-top],
+            ${a}[data-je-slot="tc"] ${f}[data-je-flush-top],
             ${a}[data-je-slot="tc"] ${o}[data-je-flush-top] > ${d},
             ${a}:is([data-je-slot="tl"], [data-je-slot="tr"]) > .je-tag-more:only-child {
                 border-top-color: transparent !important; --je-flush-clip-top: 0px;
                 --je-flush-ring-top: 0px; --je-flush-ring-content: ''; --je-tag-ring-outline: transparent;
                 border-top-left-radius: 0; border-top-right-radius: 0;
             }
-            ${a}:is([data-je-slot="bl"], [data-je-slot="br"]) > [data-je-group]:first-child > ${f}:last-child,
+            ${a}:is([data-je-slot="bl"], [data-je-slot="br"]) > [data-je-group]:first-child > ${b}:last-child,
             ${a}:is([data-je-slot="bl"], [data-je-slot="br"]) > [data-je-group]:first-child > ${o}:last-child > ${d},
-            ${a}[data-je-slot="bc"] ${p}[data-je-flush-bottom],
+            ${a}[data-je-slot="bc"] ${f}[data-je-flush-bottom],
             ${a}[data-je-slot="bc"] ${o}[data-je-flush-bottom] > ${d},
             ${a}:is([data-je-slot="bl"], [data-je-slot="br"]) > .je-tag-more:only-child {
                 border-bottom-color: transparent !important; --je-flush-clip-bottom: 0px;
@@ -52,7 +52,7 @@
                 border: 1px solid var(--je-tag-ring-color, transparent);
                 border-width: var(--je-flush-ring-top, 1px) var(--je-flush-ring-right, 1px) var(--je-flush-ring-bottom, 1px) var(--je-flush-ring-left, 1px);
             }
-        `}function O(){let n=`
+        `}function I(){let n=`
             /* Positions are physical, as on native posters: "Top left" is top left on a right-to-left page too.
                The host lays out left to right; each chip's text keeps its own direction (first strong letter). */
             .je-tag-host { direction: ltr; }
@@ -91,11 +91,11 @@
             ${e} > :is(.quality-overlay-container, .rating-overlay-container, .age-rating-overlay-container, .status-overlay-container, .logo-overlay-container) {
                 max-width: 100%;
             }
-            ${w} > :is(.quality-overlay-container, .language-overlay-container, .genre-overlay-container) {
+            ${y} > :is(.quality-overlay-container, .language-overlay-container, .genre-overlay-container) {
                 max-height: calc(90% + 10.8px);
             }
             @media (max-width: 480px) {
-                ${w} > :is(.quality-overlay-container, .genre-overlay-container) { max-height: calc(85% + 10.2px); }
+                ${y} > :is(.quality-overlay-container, .genre-overlay-container) { max-height: calc(85% + 10.2px); }
             }
             /* Centre anchors only: leave the original four corner rules untouched.
                Measured reserves keep rows between corner stacks and columns
@@ -175,9 +175,15 @@
 
             /* Jellyfin's played / unplayed-count indicator sits top-right; a card
                with a group set to top-right moves that stack below it. */
-            ${g}[data-je-indicator-gap] > .je-tag-slot[data-je-slot="tr"],
+            ${p}[data-je-indicator-gap] > .je-tag-slot[data-je-slot="tr"],
             .cardIndicators ~ .je-tag-host[data-je-indicator-gap] > .je-tag-slot[data-je-slot="tr"] {
-                top: calc(6px + ${j});
+                top: calc(6px + ${g});
+            }
+            ${h} {
+                ${j}[data-je-indicator-gap] > .je-tag-slot[data-je-slot="tr"],
+                .cardIndicators ~ .je-tag-host[data-je-indicator-gap] > .je-tag-slot[data-je-slot="tr"] {
+                    top: calc(6px + ${g});
+                }
             }
             /* Settings saved before layouts (data-je-legacy) keep the original
                web geometry: only a container set to exactly top-right clears the
@@ -190,9 +196,15 @@
             .je-tag-host[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > [data-je-indicator-gap]:not(:first-child) {
                 --je-indicator-before: 9999px;
             }
-            ${g}[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > [data-je-indicator-gap],
+            ${p}[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > [data-je-indicator-gap],
             .cardIndicators ~ .je-tag-host[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > [data-je-indicator-gap] {
-                margin-top: max(0px, ${b} - var(--je-indicator-before, 0px));
+                margin-top: max(0px, ${u} - var(--je-indicator-before, 0px));
+            }
+            ${h} {
+                ${j}[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > [data-je-indicator-gap],
+                .cardIndicators ~ .je-tag-host[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > [data-je-indicator-gap] {
+                    margin-top: max(0px, ${u} - var(--je-indicator-before, 0px));
+                }
             }
             /* ... and on phones the rating, age rating and status containers sit
                4px from the card edges instead of 6px. */
@@ -203,9 +215,15 @@
                 ${l("br")} { margin-right: -2px; }
                 ${l("tl")}:first-child, ${l("tr")}:first-child { margin-top: -2px; }
                 ${l("bl")}:first-child, ${l("br")}:first-child { margin-bottom: -2px; }
-                ${g}[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > ${x}[data-je-indicator-gap],
+                ${p}[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > ${x}[data-je-indicator-gap],
                 .cardIndicators ~ .je-tag-host[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > ${x}[data-je-indicator-gap] {
-                    margin-top: max(0px, ${b} - 2px - var(--je-indicator-before, 0px));
+                    margin-top: max(0px, ${u} - 2px - var(--je-indicator-before, 0px));
+                }
+                ${h} {
+                    ${j}[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > ${x}[data-je-indicator-gap],
+                    .cardIndicators ~ .je-tag-host[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > ${x}[data-je-indicator-gap] {
+                        margin-top: max(0px, ${u} - 2px - var(--je-indicator-before, 0px));
+                    }
                 }
             }
 
@@ -241,15 +259,21 @@
             }
             ${r}[data-je-slot="ml"] { left: var(--je-edge); }
             ${r}[data-je-slot="mr"] { right: var(--je-edge); }
-            ${g}[data-je-indicator-gap][data-je-edge] > .je-tag-slot[data-je-slot="tr"],
+            ${p}[data-je-indicator-gap][data-je-edge] > .je-tag-slot[data-je-slot="tr"],
             .cardIndicators ~ .je-tag-host[data-je-indicator-gap][data-je-edge] > .je-tag-slot[data-je-slot="tr"] {
-                top: calc(var(--je-edge) + ${j});
+                top: calc(var(--je-edge) + ${g});
             }
-            ${v()}
-            ${h}[data-je-slot="tc"] { top: var(--je-anchor-top, 0px); align-items: flex-start; overflow: visible; }
+            ${h} {
+                ${j}[data-je-indicator-gap][data-je-edge] > .je-tag-slot[data-je-slot="tr"],
+                .cardIndicators ~ .je-tag-host[data-je-indicator-gap][data-je-edge] > .je-tag-slot[data-je-slot="tr"] {
+                    top: calc(var(--je-edge) + ${g});
+                }
+            }
+            ${$()}
+            ${m}[data-je-slot="tc"] { top: var(--je-anchor-top, 0px); align-items: flex-start; overflow: visible; }
             /* A flush status chip rides above the count and watched badges. */
             .je-tag-host[data-je-layout="corners"][data-je-edge="flush"]:has(> [data-je-slot="tc"] .status-tag) { z-index: 3; }
-            ${h}[data-je-slot="bc"] { bottom: var(--je-anchor-bottom, 0px); align-items: flex-end; overflow: visible; }
+            ${m}[data-je-slot="bc"] { bottom: var(--je-anchor-bottom, 0px); align-items: flex-end; overflow: visible; }
 
             /* Genre names float toward the inside of the card. */
             .je-tag-slot:is([data-je-slot="tl"], [data-je-slot="bl"], [data-je-slot="ml"], [data-je-slot="poster"], [data-je-slot="top"]) .genre-tag .genre-text {
@@ -293,8 +317,13 @@
                 justify-content: flex-start;
                 margin-right: auto;
             }
-            ${g}[data-je-layout="bands"] > .je-tag-slot[data-je-slot="top"] {
-                padding-right: calc(10px + ${j});
+            ${p}[data-je-layout="bands"] > .je-tag-slot[data-je-slot="top"] {
+                padding-right: calc(10px + ${g});
+            }
+            ${h} {
+                ${j}[data-je-layout="bands"] > .je-tag-slot[data-je-slot="top"] {
+                    padding-right: calc(10px + ${g});
+                }
             }
             /* At most two rows; the fitting pass hides the rest behind "+N", and
                cards under 160px wide get compact labels. */
@@ -576,15 +605,15 @@
             html .je-tag-host > .je-tag-slot[data-je-slot="corner"] .rating-star-icon { font-size: calc(11px * var(--je-tag-scale, 1)) !important; }
 
             /* Hide Tags on Hover: everything but the summary / minimal reveal. */
-            ${u} .je-tag-host > .je-tag-slot:not([data-je-slot="hover"]),
-            ${u} .je-tag-host:not([data-je-layout="summary"], [data-je-layout="minimal"]) > .je-tag-more-tip,
-            ${m} .je-tag-host > .je-tag-slot:not([data-je-slot="hover"]),
-            ${m} .je-tag-host:not([data-je-layout="summary"], [data-je-layout="minimal"]) > .je-tag-more-tip {
+            ${w} .je-tag-host > .je-tag-slot:not([data-je-slot="hover"]),
+            ${w} .je-tag-host:not([data-je-layout="summary"], [data-je-layout="minimal"]) > .je-tag-more-tip,
+            ${v} .je-tag-host > .je-tag-slot:not([data-je-slot="hover"]),
+            ${v} .je-tag-host:not([data-je-layout="summary"], [data-je-layout="minimal"]) > .je-tag-more-tip {
                 opacity: 0 !important;
             }
 
             @media (prefers-reduced-motion: reduce) {
                 ${e}, .je-tag-host > .je-tag-more-tip { transition: none; }
             }
-        `;return s.core.tagLayout?.preserveLegacySizing?.(n)||n}s.core?.tagLayout&&(s.core.tagLayout.buildStyles=O,s.core.tagLayout.buildFlushStyles=v)}C(k());})();
+        `;return s.core.tagLayout?.preserveLegacySizing?.(n)||n}s.core?.tagLayout&&(s.core.tagLayout.buildStyles=I,s.core.tagLayout.buildFlushStyles=$)}z(O());})();
 })();

@@ -123,6 +123,17 @@ public class ApiSeerrTests
         Assert.Single(f.Calls, c => c.Path.StartsWith("/api/v1/user?"));
     }
 
+    [Theory]
+    [InlineData("pending", "filter=pending")]
+    [InlineData("all&requestedBy=1&sort=modified", "filter=all%26requestedBy%3D1%26sort%3Dmodified")]
+    public async Task RequestListFilterReachesSeerrAsOneValue(string filter, string expected)
+    {
+        using var f = new SeerrFixture { Reply = _ => IntegrationTransport.Response("{\"results\":[]}") };
+        await f.Controller.GetJellyseerrRequests(filter: filter);
+        var call = Assert.Single(f.Calls, c => c.Path.StartsWith("/api/v1/request?"));
+        Assert.Equal("/api/v1/request?take=500&skip=0&" + expected, call.Path);
+    }
+
     // Seerr 3.5 and Jellyseerr 2.7 let only their admins read override rules (GET /api/v1/overrideRule is
     // isAuthenticated(Permission.ADMIN)), and apply the rules themselves when a request is created. The proxy
     // acts as the linked Seerr user, so for anyone else Seerr answered 403 and the client logged an error.
@@ -360,7 +371,7 @@ public class ApiSeerrTests
         var f = new SeerrFixture((fixture, users) =>
         {
             var identities = new RequestIdentityService(Mock.Of<MediaBrowser.Controller.Session.ISessionManager>(), users,
-                new SpoilerIdentityService(users, fixture.Plugin.Core.Logger), fixture.Plugin.Core.Logger);
+                new SpoilerIdentityService(users, fixture.Plugin.Core.Logger, fixture.Plugin.Core.Paths.Object), fixture.Plugin.Core.Logger);
             var resolver = new SpoilerUserResolver(fixture.Plugin.Core.Manager, library.Object, fixture.Plugin.Core.Logger, identities);
             return [resolver, new JE.Tests.Features.Calendar.IntegrationCalendarTests.CalendarDatabase(), new SpoilerSeerrRedactor(resolver, library.Object, users, Mock.Of<IUserDataManager>(), new SpoilerNextUnwatchedService(library.Object, users, Mock.Of<IUserDataManager>(), fixture.Plugin.Core.Logger)), new TmdbResponseCache(new IntegrationTransport((_, _) => Task.FromResult(IntegrationTransport.Response(TmdbBody))), TimeProvider.System)];
         });
@@ -456,6 +467,7 @@ public class ApiSeerrTests
     {
         using var f = GuardedSeerr(out _);
         f.Plugin.Plugin.Configuration.CalendarFilterByLibraryAccess = false;
+        f.Plugin.Plugin.Configuration.CalendarPageEnabled = true;
         f.Reply = _ => IntegrationTransport.Response("[{\"id\":1,\"seriesId\":3,\"seasonNumber\":2,\"episodeNumber\":5,\"title\":\"Secret title\",\"overview\":\"Secret plot\",\"airDateUtc\":\"2026-11-10T00:00:00Z\",\"series\":{\"title\":\"Show\",\"tvdbId\":71663}},"
             + "{\"id\":2,\"seriesId\":4,\"seasonNumber\":1,\"episodeNumber\":1,\"title\":\"Open title\",\"airDateUtc\":\"2026-11-10T00:00:00Z\",\"series\":{\"title\":\"Other\",\"tvdbId\":7}}]");
         var calendar = f.Calendar();

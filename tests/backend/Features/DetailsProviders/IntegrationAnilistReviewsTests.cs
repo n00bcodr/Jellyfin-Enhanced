@@ -37,6 +37,27 @@ public class IntegrationAnilistReviewsTests
     }
 
     [Fact]
+    public async Task CacheIsCappedAndDropsTheEntryThatExpiresFirst()
+    {
+        using var env = new IntegrationEnvironment();
+        using var transport = new IntegrationTransport((request, _) => Task.FromResult(
+            request.Content!.ReadAsStringAsync().Result.Contains("\"v\":1}") ? IntegrationTransport.Response("{}", 404) : IntegrationTransport.Response(Media())));
+        var service = new AnilistReviewsService(transport, env.Logger);
+        // id 1 is a miss (2 h), so it expires before every found entry (12 h) and goes first.
+        for (var id = 1; id <= AnilistReviewsService.MaxCacheEntries + 1; id++)
+        {
+            await service.GetReviewsAsync(id, default);
+        }
+
+        Assert.Equal(AnilistReviewsService.MaxCacheEntries + 1, transport.Calls);
+        await service.GetReviewsAsync(AnilistReviewsService.MaxCacheEntries + 1, default);
+        await service.GetReviewsAsync(2, default);
+        Assert.Equal(AnilistReviewsService.MaxCacheEntries + 1, transport.Calls);
+        await service.GetReviewsAsync(1, default);
+        Assert.Equal(AnilistReviewsService.MaxCacheEntries + 2, transport.Calls);
+    }
+
+    [Fact]
     public async Task NotFoundIsAnEmptyResultAndServerErrorsThrow()
     {
         using var env = new IntegrationEnvironment();

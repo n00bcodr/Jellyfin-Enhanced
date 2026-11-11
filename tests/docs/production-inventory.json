@@ -594,6 +594,10 @@
       "category": "Features"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Features/Platform/Services/SplashImage.cs",
+      "category": "Features"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Features/Platform/Services/StartupService.cs",
       "category": "Features"
     },
@@ -791,6 +795,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Infrastructure/Identity/UserTopologyEvents.cs",
+      "category": "Infrastructure"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Infrastructure/Persistence/PluginSecretFile.cs",
       "category": "Infrastructure"
     },
     {
@@ -1130,6 +1138,10 @@
       "category": "Shared"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Shared/SpoilerGuard/SpoilerFieldStripFilter.AdditionalParts.cs",
+      "category": "Shared"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Shared/SpoilerGuard/SpoilerFieldStripFilter.cs",
       "category": "Shared"
     },
@@ -1155,6 +1167,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Shared/SpoilerGuard/SpoilerTagDataStripper.cs",
+      "category": "Shared"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Shared/SpoilerGuard/SpoilerTitleVisibility.cs",
       "category": "Shared"
     },
     {
@@ -10648,7 +10664,7 @@
   ],
   "counts": {
     "build_targets": 1,
-    "files": 544,
+    "files": 548,
     "routes": 203,
     "configuration_properties": 750,
     "storage_references": 96,

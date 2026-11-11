@@ -37,6 +37,7 @@
     const state = P.state;
     const STATUS_COLORS = P.STATUS_COLORS;
     const escapeHtml = JE.escapeHtml;
+    const locale = () => JE.core.mediaLanguage?.uiLocale?.() || void 0;
     const SONARR_ICON_URL = JE.cdn.selfhst("svg/sonarr.svg");
     const RADARR_ICON_URL = JE.cdn.selfhst("svg/radarr-light-hybrid-light.svg");
     const SHOKO_ICON_URL = JE.cdn.selfhst("svg/shoko-server.svg");
@@ -124,17 +125,17 @@
       if (Number.isNaN(date.getTime())) return null;
       if (date.getHours() === 0 && date.getMinutes() === 0) return null;
       const hour12 = state.settings.timeFormat === "5pm/5:30pm";
-      return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12 });
+      return date.toLocaleTimeString(locale(), { hour: "numeric", minute: "2-digit", hour12 });
     }
     function formatRangeLabel() {
       if (!state.rangeStart || !state.rangeEnd) {
-        return new Date(state.currentDate).toLocaleDateString(void 0, { month: "long", year: "numeric" });
+        return new Date(state.currentDate).toLocaleDateString(locale(), { month: "long", year: "numeric" });
       }
       if (state.viewMode === "month") {
-        return new Date(state.currentDate).toLocaleDateString(void 0, { month: "long", year: "numeric" });
+        return new Date(state.currentDate).toLocaleDateString(locale(), { month: "long", year: "numeric" });
       }
-      const startLabel = state.rangeStart.toLocaleDateString(void 0, { month: "short", day: "numeric" });
-      const endLabel = state.rangeEnd.toLocaleDateString(void 0, { month: "short", day: "numeric" });
+      const startLabel = state.rangeStart.toLocaleDateString(locale(), { month: "short", day: "numeric" });
+      const endLabel = state.rangeEnd.toLocaleDateString(locale(), { month: "short", day: "numeric" });
       if (state.viewMode === "week") {
         return `${startLabel} - ${endLabel}`;
       }
@@ -154,12 +155,12 @@
       if (diffDays === 0) return JE.t?.("calendar_today");
       if (diffDays === -1) return JE.t?.("calendar_yesterday");
       if (diffDays === 1) return JE.t?.("calendar_tomorrow");
-      return targetStart.toLocaleDateString(void 0, { month: "short", day: "numeric" });
+      return targetStart.toLocaleDateString(locale(), { month: "short", day: "numeric" });
     }
     function formatHourLabel(hour) {
       const hour12 = state.settings.timeFormat === "5pm/5:30pm";
       const base = new Date(2e3, 0, 1, hour, 0, 0, 0);
-      return base.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12 });
+      return base.toLocaleTimeString(locale(), { hour: "numeric", minute: "2-digit", hour12 });
     }
     function buildEventTooltip(event) {
       let tooltip = event.title;
@@ -478,6 +479,7 @@
     P.isTodayDate = isTodayDate;
     P.formatRangeLabel = formatRangeLabel;
     P.formatHourLabel = formatHourLabel;
+    P.locale = locale;
     P.renderEvent = renderEvent;
     P.renderAgendaEvent = renderAgendaEvent;
     P.renderCardItems = renderCardItems;

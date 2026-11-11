@@ -16,11 +16,16 @@ const DOCUMENT_NAMES = Object.keys(USER_CONFIG_DOCUMENTS) as DocumentName[];
 const CAMEL_CASED: ReadonlySet<DocumentName> = new Set(['settings', 'bookmark', 'hiddenContent']);
 const BOOKMARK_FIELDS = new Set(['ItemId', 'TmdbId', 'TvdbId', 'MediaType', 'Name', 'Timestamp', 'Label', 'CreatedAt', 'UpdatedAt', 'SyncedFrom', 'SeasonNumber', 'EpisodeNumber', 'Progress']);
 
-/** A missing or failed document keeps its default; three are converted to camelCase. */
+/**
+ * A missing or failed document keeps its default; three are converted to camelCase. A failed
+ * hidden list or shortcut list stays null: both are saved whole, so an empty stand-in would let
+ * the next edit replace the stored one.
+ */
 export function buildUserConfig(documents: Partial<Record<DocumentName, unknown>>): UserConfigView {
     const userConfig: UserConfigView = emptyUserConfig();
     for (const name of DOCUMENT_NAMES) {
         const value = documents[name];
+        if (value === null && (name === 'hiddenContent' || name === 'shortcuts')) userConfig[name] = null;
         if (!isRecord(value)) continue;
         const converted = CAMEL_CASED.has(name) ? toCamelCase(value) : value;
         if (name === 'settings') userConfig.settings = requireObject(converted) ?? {};

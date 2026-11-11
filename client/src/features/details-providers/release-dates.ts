@@ -63,14 +63,18 @@ window.addEventListener('je:spoiler-state-changed', () => {
 // Prefetches no chip has taken over are aborted with their visit's.
 JE.session?.onUserChange('release-dates', resetReleaseOwner);
 
+/** A TMDB request that failed, already logged: unknown, so never kept as "no dates". */
+class TmdbFailure extends Error {}
+/** TMDB data, null when TMDB has no such title; rejects with a TmdbFailure when the request failed. */
 function tmdbGet(path: string): Promise<unknown> {
     const client = api();
     const url = client.getUrl(`/JellyfinEnhanced/tmdb${path}`);
     return fetch(url, { headers: { Authorization: `MediaBrowser Token="${client.accessToken()}"`, 'X-Emby-Token': client.accessToken() } })
-        .then((response): Promise<unknown> => response.ok ? response.json() : Promise.reject(`API Error: ${response.status}`))
+        .then((response): Promise<unknown> => response.ok ? response.json()
+            : response.status === 404 ? Promise.resolve(null) : Promise.reject(`API Error: ${response.status}`))
         .catch((error: unknown) => {
             console.error(`🪼 Jellyfin Enhanced: Release Date: TMDB request failed for ${path}`, error);
-            return null;
+            throw new TmdbFailure(String(error));
         });
 }
 
@@ -88,13 +92,8 @@ async function resolveReleaseInfo(item: DetailsItem | null, userId: string | nul
     if (mediaType === 'Season' || mediaType === 'Episode') {
         // The show's TMDB id lives on the parent Series; the shared item cache
         // hands every module on the page the same fetch.
-        let seriesTmdbId: string | undefined;
-        if (item.SeriesId) {
-            try {
-                const series = await lookupDetailsItem(JE.helpers, item.SeriesId, true, userId);
-                seriesTmdbId = series?.ProviderIds.Tmdb;
-            } catch { /* fall through to empty below */ }
-        }
+        // A series that could not be read rejects: unknown is not "no dates".
+        const seriesTmdbId = item.SeriesId ? (await lookupDetailsItem(JE.helpers, item.SeriesId, true, userId))?.ProviderIds.Tmdb : undefined;
         if (!seriesTmdbId) return [];
         const show = pathSegment(seriesTmdbId);
         if (mediaType === 'Season') {
@@ -140,9 +139,8 @@ async function displayReleaseDate(itemId: string, container: HTMLElement): Promi
 
     const performFetch = async () => {
         let entry: ReleaseLookup | undefined;
-        // A taken-over prefetch that fails after a user switch is neither
-        // retried as the previous user nor cached as "no dates" for the next.
-        // Only failures still owned by this session/guard revision may populate the negative cache.
+        // A taken-over prefetch that fails after a user switch is not
+        // retried as the previous user; no failure is cached as "no dates".
         const epoch = JE.session ? JE.session.getEpoch() : 0;
         const revision = guardRevision;
         let cutShort = false;
@@ -181,8 +179,8 @@ async function displayReleaseDate(itemId: string, container: HTMLElement): Promi
             if (entry && releaseLookups.get(itemId) === entry) releaseLookups.delete(itemId);
             placeholder.remove();
             if (cutShort || !owner() || revision !== guardRevision || (JE.session && !JE.session.isCurrent(epoch))) return;
-            console.error(`🪼 Jellyfin Enhanced: Release Date: Error fetching release info for ${itemId}:`, error);
-            releaseDateCache.set(itemId, { infos: [], ts: now });
+            // Not cached: the next visit asks again.
+            if (!(error instanceof TmdbFailure)) console.error(`🪼 Jellyfin Enhanced: Release Date: Error fetching release info for ${itemId}:`, error);
         }
     };
     void performFetch();

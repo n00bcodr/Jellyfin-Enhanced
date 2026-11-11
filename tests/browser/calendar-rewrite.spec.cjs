@@ -26,8 +26,8 @@ test('generated calendar switches views, expands episodes, retries errors, rejec
  await page.locator('.je-calendar-group-toggle').click();await expect(page.locator('.je-calendar-agenda-event')).toHaveCount(2);
  await page.getByRole('button',{name:'calendar_day',exact:true}).click();await expect(page.locator('.je-calendar-day-hours')).toBeVisible();
  await page.locator('.je-calendar-mode-btn[data-mode=cards]').click();await expect(page.locator('.je-calendar-card')).toHaveCount(2);
- await page.evaluate(()=>{window.fail=true;return window.JellyfinEnhanced.calendarPage.refresh();});await expect(page.getByRole('alert')).toContainText('could not be loaded');
- await page.evaluate(()=>window.fail=false);await page.getByRole('button',{name:'Retry',exact:true}).click();await expect(page.locator('.je-calendar-card')).toHaveCount(2);
+ await page.evaluate(()=>{window.fail=true;return window.JellyfinEnhanced.calendarPage.refresh();});await expect(page.getByRole('alert')).toContainText('calendar_load_failed');
+ await page.evaluate(()=>window.fail=false);await page.getByRole('button',{name:'calendar_retry',exact:true}).click();await expect(page.locator('.je-calendar-card')).toHaveCount(2);
  await page.locator('.je-calendar-card').first().click();await expect.poll(()=>page.evaluate(()=>typeof window.pendingLookup)).toBe('function');
  await page.evaluate(()=>{window.changeUser();window.pendingLookup('old-private-item');});await expect(page).toHaveURL(/#\/calendar$/);await expect(page.locator('.je-calendar-card')).toHaveCount(0);
  await page.evaluate(()=>{const JE=window.JellyfinEnhanced;const target=document.createElement('div');target.id='custom-mount';document.body.appendChild(target);JE.calendarPage.renderForCustomTab(target);});

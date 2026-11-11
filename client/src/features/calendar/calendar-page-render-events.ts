@@ -14,6 +14,8 @@ import type { CalendarEvent, UrlMapping } from './types';
   const STATUS_COLORS = P.STATUS_COLORS;
 
   const escapeHtml = JE.escapeHtml;
+  /** The language chosen in Jellyfin Enhanced, for dates and times (the browser's when none is known). */
+  const locale = () => JE.core.mediaLanguage?.uiLocale?.() || undefined;
 
   const SONARR_ICON_URL = JE.cdn.selfhst('svg/sonarr.svg');
   const RADARR_ICON_URL = JE.cdn.selfhst('svg/radarr-light-hybrid-light.svg');
@@ -129,21 +131,21 @@ import type { CalendarEvent, UrlMapping } from './types';
     if (date.getHours() === 0 && date.getMinutes() === 0) return null;
 
     const hour12 = state.settings.timeFormat === "5pm/5:30pm";
-    return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12 });
+    return date.toLocaleTimeString(locale(), { hour: "numeric", minute: "2-digit", hour12 });
   }
 
   // Format date range label for header
   function formatRangeLabel() {
     if (!state.rangeStart || !state.rangeEnd) {
-      return new Date(state.currentDate).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+      return new Date(state.currentDate).toLocaleDateString(locale(), { month: "long", year: "numeric" });
     }
 
     if (state.viewMode === "month") {
-      return new Date(state.currentDate).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+      return new Date(state.currentDate).toLocaleDateString(locale(), { month: "long", year: "numeric" });
     }
 
-    const startLabel = state.rangeStart.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-    const endLabel = state.rangeEnd.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    const startLabel = state.rangeStart.toLocaleDateString(locale(), { month: "short", day: "numeric" });
+    const endLabel = state.rangeEnd.toLocaleDateString(locale(), { month: "short", day: "numeric" });
 
     if (state.viewMode === "week") {
       return `${startLabel} - ${endLabel}`;
@@ -168,13 +170,13 @@ import type { CalendarEvent, UrlMapping } from './types';
     if (diffDays === 0) return JE.t?.("calendar_today");
     if (diffDays === -1) return JE.t?.("calendar_yesterday");
     if (diffDays === 1) return JE.t?.("calendar_tomorrow");
-    return targetStart.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    return targetStart.toLocaleDateString(locale(), { month: "short", day: "numeric" });
   }
 
   function formatHourLabel(hour: number) {
     const hour12 = state.settings.timeFormat === "5pm/5:30pm";
     const base = new Date(2000, 0, 1, hour, 0, 0, 0);
-    return base.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12 });
+    return base.toLocaleTimeString(locale(), { hour: "numeric", minute: "2-digit", hour12 });
   }
 
   /**
@@ -560,6 +562,7 @@ import type { CalendarEvent, UrlMapping } from './types';
   P.isTodayDate = isTodayDate;
   P.formatRangeLabel = formatRangeLabel;
   P.formatHourLabel = formatHourLabel;
+  P.locale = locale;
   P.renderEvent = renderEvent;
   P.renderAgendaEvent = renderAgendaEvent;
   P.renderCardItems = renderCardItems;

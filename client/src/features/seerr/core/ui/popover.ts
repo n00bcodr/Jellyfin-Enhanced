@@ -137,11 +137,11 @@ export function installPopover(host: SeerrCoreHost): void {
         button.className = 'jellyseerr-4k-popup-item';
         const display4k = resolveDisplayStatus(item.mediaInfo ? item.mediaInfo.status4k : 1, false);
         if (display4k === DISPLAY.AVAILABLE) {
-            button.innerHTML = `<span>4K Available</span>${icons().available}`;
+            button.innerHTML = `<span>${JE.t('jellyseerr_btn_available_4k')}</span>${icons().available}`;
             button.disabled = true;
             button.classList.add('jellyseerr-4k-available', 'chip-available');
         } else if (display4k === DISPLAY.PENDING || display4k === DISPLAY.REQUESTED || display4k === DISPLAY.PROCESSING) {
-            button.innerHTML = `<span>4K Requested</span>${icons().pending}`;
+            button.innerHTML = `<span>${JE.t('jellyseerr_btn_requested_4k')}</span>${icons().pending}`;
             button.disabled = true;
             button.classList.add(display4k === DISPLAY.PROCESSING ? 'chip-processing' : 'chip-pending');
         } else if (display4k === DISPLAY.BLOCKED) {

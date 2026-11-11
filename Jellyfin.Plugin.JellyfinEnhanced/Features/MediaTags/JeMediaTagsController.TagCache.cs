@@ -973,54 +973,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags
             return Ok(new { Items = results, StripRevision = Jellyfin.Plugin.JellyfinEnhanced.Shared.SpoilerGuard.SpoilerTagDataStripper.TagStripRevision(spoilerPolicy) });
         }
 
-        private UserSpoilerBlur? LoadSpoilerStateForTagStrip(Guid userId)
-        {
-            var userKey = userId.ToString("N");
-            var fileName = Jellyfin.Plugin.JellyfinEnhanced.Features.SpoilerGuard.Services.SpoilerBlurImageFilter.SpoilerBlurFileName;
-            if (!_userConfigurationManager.UserConfigurationExists(userKey, fileName))
-            {
-                return null;
-            }
-            try
-            {
-                return _userConfigurationManager.GetUserConfigurationStrict<UserSpoilerBlur>(userKey, fileName);
-            }
-            catch (InvalidDataException ex)
-            {
-                _spoilerResolver.WarnRateLimited(
-                    "tagstrip-corrupt:" + userKey,
-                    $"Spoiler Guard tag-strip: spoilerblur.json corrupt for {_userDisplayResolver.ResolveUserDisplay(userKey)} (backed up): {ex.Message}");
-                Jellyfin.Plugin.JellyfinEnhanced.Shared.SpoilerGuard.SpoilerUserResolver.RecordCorruption(userKey, _userDisplayResolver.ResolveUserDisplay(userKey), ex.Message);
-                return null;
-            }
-            catch (Newtonsoft.Json.JsonException ex)
-            {
-                _spoilerResolver.WarnRateLimited(
-                    "tagstrip-corrupt:" + userKey,
-                    $"Spoiler Guard tag-strip: spoilerblur.json corrupt for {_userDisplayResolver.ResolveUserDisplay(userKey)} (backed up): {ex.Message}");
-                Jellyfin.Plugin.JellyfinEnhanced.Shared.SpoilerGuard.SpoilerUserResolver.RecordCorruption(userKey, _userDisplayResolver.ResolveUserDisplay(userKey), ex.Message);
-                return null;
-            }
-            catch (IOException ex)
-            {
-                _spoilerResolver.WarnRateLimited(
-                    "tagstrip-io:" + ex.GetType().FullName,
-                    $"Spoiler Guard tag-strip: IO error reading state for {_userDisplayResolver.ResolveUserDisplay(userKey)}: {ex.Message}");
-                return null;
-            }
-            catch (Exception ex)
-            {
-                // The specific catches above handle InvalidData/Json/IOException.
-                // Others (UnauthorizedAccess from a chmod-mangled config dir, Security,
-                // PathTooLong, DirectoryNotFound) would otherwise escape and 500 the whole
-                // tag-cache/tag-data request, breaking every client's tag rail on every poll.
-                // Catch-all returns null (skip strip) with rate-limited warn so a real
-                // failure mode stays observable without taking down the unrelated surface.
-                _spoilerResolver.WarnRateLimited(
-                    "tagstrip-unexpected:" + ex.GetType().FullName,
-                    $"Spoiler Guard tag-strip: unexpected {ex.GetType().Name} reading state for {_userDisplayResolver.ResolveUserDisplay(userKey)}: {ex.Message}");
-                return null;
-            }
-        }
+        // The state every Spoiler Guard filter reads (the bootstrap's tag data too): an unreadable file keeps the
+        // last state read and is never moved aside by this read.
+        private UserSpoilerBlur LoadSpoilerStateForTagStrip(Guid userId) => _spoilerResolver.LoadUserState(HttpContext, userId);
     }
 }

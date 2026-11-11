@@ -52,6 +52,33 @@ test('spoiler load failure settles fail-closed and disabled feature makes no req
   await h.state.whenLoaded();
   assert.equal(h.calls.length,1);
 });
+test('a failed spoiler state load stays fail-closed and is retried later, with a growing delay, until it loads', async t => {
+  let fail = true;
+  const h = setup(t, async () => { if (fail) throw new Error('offline'); return stateFixture({Series:{'AA-BB':{}}}); });
+  const timers = [];
+  h.window.setTimeout = (fn, ms) => { timers.push({fn, ms}); return timers.length; };
+  h.expectConsoleError(/state load failed/);
+  await h.state.whenLoaded();
+  assert.equal(h.state.isLoadOk(), false);
+  assert.equal(h.calls.length, 1);
+  assert.equal(timers.length, 1, 'one retry is scheduled, not run at once');
+  const first = timers.shift();
+  assert.ok(first.ms >= 1000, `retry waits (${first.ms} ms)`);
+  first.fn();
+  await h.state.loadState();
+  assert.equal(h.calls.length, 2);
+  assert.equal(h.state.isLoadOk(), false, 'still unknown, still fail-closed');
+  assert.equal(timers.length, 1);
+  const second = timers.shift();
+  assert.ok(second.ms > first.ms, `the delay grows (${first.ms} then ${second.ms} ms)`);
+  fail = false;
+  second.fn();
+  await h.state.loadState();
+  assert.equal(h.calls.length, 3);
+  assert.equal(h.state.isLoadOk(), true);
+  assert.equal(h.state.isEnabledFor('aabb'), true);
+  assert.equal(timers.length, 0, 'no retry after a successful load');
+});
 test('old-user spoiler load cannot populate the new session', async t => {
   let resolve;
   const h = setup(t, () => new Promise(r => {resolve=r;}));
@@ -113,6 +140,16 @@ test('spoiler identity cookie follows login, switch and logout',t=>{
   assert.match(h.window.document.cookie,/je-spoiler-uid=first/);
   h.switchUser('second'); assert.match(h.window.document.cookie,/je-spoiler-uid=second/);
   h.switchUser(null); assert.equal(h.window.document.cookie,'');
+});
+test('spoiler identity cookie the server signed for this user is kept, and one for another user is replaced',t=>{
+  // The server answers an unsigned cookie with its signed value ("<id>.<signature>"); writing the bare id over it
+  // again would leave the browser with a value the server no longer trusts.
+  const h=setup(t);
+  h.window.document.cookie='je-spoiler-uid=0123456789abcdef0123456789abcdef.signed; path=/';
+  h.window.ApiClient={getCurrentUserId:()=> '01234567-89ab-cdef-0123-456789abcdef'};
+  h.load('enhanced/spoilerguard/identity.js');
+  assert.equal(h.window.document.cookie,'je-spoiler-uid=0123456789abcdef0123456789abcdef.signed');
+  h.switchUser('fedcba9876543210fedcba9876543210'); assert.equal(h.window.document.cookie,'je-spoiler-uid=fedcba9876543210fedcba9876543210');
 });
 test('Spoiler Guard exposes policy inputs for UI but no independent browser cache stamp', async t => {
   const h = setup(t, async () => stateFixture({ Series: { aabb: {} }, Prefs: {} }));

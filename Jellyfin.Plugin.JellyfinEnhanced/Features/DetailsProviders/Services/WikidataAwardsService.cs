@@ -59,6 +59,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.DetailsProviders.Services
         private static readonly TimeSpan SaveDebounce = TimeSpan.FromSeconds(10);
         private static readonly TimeSpan SaveMaxWait = TimeSpan.FromMinutes(2);
         private const int CurrentSchemaVersion = 1;
+        // Titles kept in memory and in awards.json. Well above a library's movies and series, as for the
+        // MDBList cache: the awards tag refresh reads every library title through this cache.
+        internal const int MaxCacheEntries = 50000;
 
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly SemaphoreSlim _upstreamGate = new(1, 1);
@@ -124,14 +127,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.DetailsProviders.Services
                 }
                 finally { _upstreamGate.Release(); }
                 _cache[key] = fetched;
+                // Expired entries go at once; past the cap, the oldest.
+                foreach (var entry in _cache.Where(e => IsExpired(e.Value)).ToList()) _cache.TryRemove(entry);
+                foreach (var entry in _cache.OrderBy(e => e.Value.FetchedAtUnixMs).Take(_cache.Count - MaxCacheEntries).ToList()) _cache.TryRemove(entry);
                 ScheduleDebouncedSave();
                 return fetched;
             }
             finally
             {
                 gate.Release();
-                // Retain title gates: a waiter can already hold the reference when
-                // CurrentCount reaches one; removing it would allow duplicate fetches.
+                // Drop an idle title gate. A caller still holding it re-checks the
+                // cache once inside, so at worst a fetch that was cancelled repeats.
+                if (gate.CurrentCount == 1) _inFlight.TryRemove(new KeyValuePair<string, SemaphoreSlim>(key, gate));
             }
         }
 

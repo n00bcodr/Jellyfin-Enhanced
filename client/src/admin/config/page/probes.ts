@@ -89,8 +89,8 @@ export function createProbes(m: ProbesDeps) {
             statusIndicator.style.color = 'var(--primary-accent-color, #00a4dc)';
 
             try {
-                const validationUrl = ApiClient.getUrl(`/JellyfinEnhanced/tmdb/validate`, { apiKey: apiKey });
-                await ApiClient.ajax({ type: 'GET', url: validationUrl });
+                // The key goes in a header, out of the logged request line.
+                await ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/JellyfinEnhanced/tmdb/validate'), headers: { 'X-Arr-ApiKey': apiKey } });
 
                 statusIndicator.textContent = 'check_circle';
                 statusIndicator.style.color = '#52b54b';

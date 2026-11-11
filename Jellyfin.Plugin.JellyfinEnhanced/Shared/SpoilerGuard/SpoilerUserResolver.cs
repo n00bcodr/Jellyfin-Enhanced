@@ -4,6 +4,8 @@ using System.Collections.Generic;
 using System.Linq;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.Infrastructure.Identity;
+using Jellyfin.Data.Enums;
+using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Session;
 using Jellyfin.Plugin.JellyfinEnhanced.Features.SpoilerGuard.Services;
@@ -37,6 +39,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.SpoilerGuard
         private static readonly TimeSpan UserStateCacheTtl = TimeSpan.FromSeconds(30);
         private static readonly ConcurrentDictionary<string, (UserSpoilerBlur State, DateTime CachedAt)> _userStateCache
             = new(StringComparer.OrdinalIgnoreCase);
+
+        // The last state read from each user's file, kept past the cache above: it stays in force while the
+        // file cannot be read, so an unreadable file never reads as "nothing guarded".
+        private static readonly ConcurrentDictionary<string, UserSpoilerBlur> _lastReadState = new(StringComparer.OrdinalIgnoreCase);
 
         // F6: memoized result of the O(opted-collections × members) collection
         // walk in FindOptedInCollectionForMovie (runs 2-3× per movie image/DTO).
@@ -259,33 +265,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.SpoilerGuard
                 return entry.State;
             }
 
-            // 3. Miss — read from disk.
+            // 3. Miss — read from disk. Missing is an empty state; a file that cannot be read (I/O error,
+            //    damaged content) keeps the last state read for this user and is left as it is, or, with
+            //    nothing read since the start, guards every series and movie until it reads.
             UserSpoilerBlur state;
             try
             {
-                state = _userConfigManager.GetUserConfiguration<UserSpoilerBlur>(
+                state = _userConfigManager.GetUserConfigurationStrict<UserSpoilerBlur>(
                     userIdN,
-                    SpoilerBlurImageFilter.SpoilerBlurFileName);
+                    SpoilerBlurImageFilter.SpoilerBlurFileName,
+                    quarantineCorrupt: false);
+                _lastReadState[userIdN] = state;
             }
             catch (Exception ex)
             {
-                // GetUserConfiguration is the LENIENT path — it already
-                // swallows IOException + JsonException + parse failures
-                // internally and returns `new T()` (it logs at Error level
-                // via the config manager's own _logger, so the corruption
-                // fact is observable, just not under our namespace). This
-                // outer catch-all only fires for exceptions that escape the
-                // lenient path (e.g. ResolveUserFile throwing on a bad
-                // userId). Rate-limited so a flood of bad requests doesn't
-                // spam logs. Do NOT populate the cross-request cache with a
-                // spurious empty on this rare escape — only the per-request
-                // layer, so a retry re-reads.
+                var known = _lastReadState.TryGetValue(userIdN, out var last);
                 WarnRateLimited(
                     "userstate-load:" + ex.GetType().FullName,
-                    $"Spoiler Guard resolver: failed to read user state for {userId} — passing through unblurred. {ex.Message}");
-                state = new UserSpoilerBlur();
-                httpContext.Items[cacheKey] = state;
-                return state;
+                    $"Spoiler Guard resolver: could not read the state of {userId}; {(known ? "keeping the last state read" : "guarding every series and movie until it reads")}. {ex.Message}");
+                state = last ?? EverythingGuarded();
             }
 
             _userStateCache[userIdN] = (state, now);
@@ -300,6 +298,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.SpoilerGuard
                 }
             }
             httpContext.Items[cacheKey] = state;
+            return state;
+        }
+
+        // What a user could guard, all of it: the answer for a state that exists but is unknown, never
+        // written anywhere. It lives in the cache above, so the file is tried again within its TTL.
+        private UserSpoilerBlur EverythingGuarded()
+        {
+            var state = new UserSpoilerBlur();
+            IEnumerable<Guid> Ids(BaseItemKind kind) => _libraryManager.GetItemIds(new InternalItemsQuery
+            {
+                IncludeItemTypes = new[] { kind },
+                IsVirtualItem = false,
+                Recursive = true,
+            });
+            try
+            {
+                foreach (var id in Ids(BaseItemKind.Series)) state.Series[id.ToString("N")] = new SpoilerBlurSeriesEntry { SeriesId = id.ToString("N") };
+                foreach (var id in Ids(BaseItemKind.Movie)) state.Movies[id.ToString("N")] = new SpoilerBlurMovieEntry { MovieId = id.ToString("N") };
+            }
+            catch (Exception ex)
+            {
+                WarnRateLimited("userstate-everything:" + ex.GetType().FullName, $"Spoiler Guard resolver: could not list the library to guard it. {ex.Message}");
+            }
+
             return state;
         }
 

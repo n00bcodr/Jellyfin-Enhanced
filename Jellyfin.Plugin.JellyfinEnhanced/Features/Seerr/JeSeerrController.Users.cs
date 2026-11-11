@@ -327,7 +327,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Seerr
 
         [HttpGet("tmdb/validate")]
         [Authorize]
-        public async Task<IActionResult> ValidateTmdb([FromQuery] string apiKey)
+        public async Task<IActionResult> ValidateTmdb([FromQuery] string? apiKey)
         {
             // Admin-only: validates an arbitrary API key against TMDB. Any
             // authenticated user could otherwise use this as a free oracle
@@ -337,6 +337,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Seerr
             if (!IsAdminUser())
             {
                 return Forbid();
+            }
+
+            // The key may also come in the X-Arr-ApiKey header, as on the sibling validate routes, which keeps
+            // it out of the request line that Jellyfin and any proxy log.
+            if (string.IsNullOrWhiteSpace(apiKey))
+            {
+                apiKey = Request.Headers["X-Arr-ApiKey"].ToString();
             }
 
             if (string.IsNullOrWhiteSpace(apiKey))

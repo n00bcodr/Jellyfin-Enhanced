@@ -29,6 +29,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.SpoilerGuard.Services
         // a 4K backdrop here.
         private const int MaxDecodeEdgePx = 1920;
 
+        // Limits on one source image, checked before any of it is decoded. A source over them gets
+        // a placeholder, never its own bytes. 6000x6000 covers the largest artwork providers hand
+        // out (4000x6000 posters, 3840x2160 backdrops); one such decode is ~144 MB.
+        internal const long MaxSourceBytes = 50L * 1024 * 1024;
+        internal const long MaxSourcePixels = 6000L * 6000;
+        // Protected images read, decoded and re-encoded at once (SpoilerBlurImageFilter).
+        internal const int MaxConcurrentDecodes = 2;
+
         // Sigma range exposed to admins. 1 = barely blurred, 100 = solid
         // blob. Default 40 hides scene content while keeping silhouettes
         // and dominant colours visible for cartoon-style children's shows.
@@ -71,7 +79,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.SpoilerGuard.Services
         // Output matches Jellyfin's default dark-theme --card-bg-color so
         // the placeholder blends with the card chrome the way an empty
         // "missing episode" card does rather than reading as a distinct
-        // grey block. Only probes the input for dimensions — never blurs it.
+        // grey block. Only reads the input's header for its size — never decodes it.
         public byte[]? StockCard(byte[] input, string? cacheKey)
         {
             if (!string.IsNullOrEmpty(cacheKey)
@@ -85,20 +93,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.SpoilerGuard.Services
             int height = 900;
             try
             {
-                if (input != null && input.Length > 0)
+                if (input != null && input.Length > 0 && TryReadSize(input, out var probeW, out var probeH))
                 {
-                    using var probe = SKBitmap.Decode(input);
-                    if (probe != null && probe.Width > 0 && probe.Height > 0)
+                    width = probeW;
+                    height = probeH;
+                    var longEdge = Math.Max(width, height);
+                    if (longEdge > MaxDecodeEdgePx)
                     {
-                        width = probe.Width;
-                        height = probe.Height;
-                        var longEdge = Math.Max(width, height);
-                        if (longEdge > MaxDecodeEdgePx)
-                        {
-                            var ratio = (float)MaxDecodeEdgePx / longEdge;
-                            width = Math.Max(1, (int)(width * ratio));
-                            height = Math.Max(1, (int)(height * ratio));
-                        }
+                        var ratio = (float)MaxDecodeEdgePx / longEdge;
+                        width = Math.Max(1, (int)(width * ratio));
+                        height = Math.Max(1, (int)(height * ratio));
                     }
                 }
             }
@@ -155,14 +159,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.SpoilerGuard.Services
             int targetW = 600, targetH = 900;
             try
             {
-                if (referenceBytes != null && referenceBytes.Length > 0)
+                if (referenceBytes != null && referenceBytes.Length > 0 && TryReadSize(referenceBytes, out var refW, out var refH))
                 {
-                    using var probe = SKBitmap.Decode(referenceBytes);
-                    if (probe != null && probe.Width > 0 && probe.Height > 0)
-                    {
-                        targetW = probe.Width;
-                        targetH = probe.Height;
-                    }
+                    targetW = refW;
+                    targetH = refH;
                 }
             }
             catch (Exception ex)
@@ -175,6 +175,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.SpoilerGuard.Services
             byte[]? output;
             try
             {
+                if (!WithinDecodeBudget(source)) return null;
                 using var srcBitmap = SKBitmap.Decode(source);
                 if (srcBitmap == null) return null;
 
@@ -262,6 +263,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.SpoilerGuard.Services
 
         private byte[]? BlurInternal(byte[] input, float sigma)
         {
+            if (!WithinDecodeBudget(input)) return null;
             using var bitmap = SKBitmap.Decode(input);
             if (bitmap == null) return null;
 
@@ -319,6 +321,38 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.SpoilerGuard.Services
             {
                 resized?.Dispose();
             }
+        }
+
+        // Reads the width and height from the image header only (nothing is decoded).
+        private static bool TryReadSize(byte[] bytes, out int width, out int height)
+        {
+            width = height = 0;
+            using var data = SKData.CreateCopy(bytes);
+            using var codec = SKCodec.Create(data);
+            if (codec == null) return false;
+            width = codec.Info.Width;
+            height = codec.Info.Height;
+            return width > 0 && height > 0;
+        }
+
+        // False for bytes over MaxSourceBytes, or whose header declares more than MaxSourcePixels:
+        // those are never decoded (a "tiny file, enormous picture" would otherwise take gigabytes).
+        private bool WithinDecodeBudget(byte[] bytes)
+        {
+            if (bytes.LongLength > MaxSourceBytes || !TryReadSize(bytes, out var width, out var height)) return false;
+            if ((long)width * height <= MaxSourcePixels) return true;
+            _logger.Debug($"Spoiler Guard: a {width}x{height} image is over the decode budget, so it is not decoded.");
+            return false;
+        }
+
+        // A cached result, so a caller can skip reading its source.
+        public bool TryGetCached(string cacheKey, out byte[] bytes)
+        {
+            bytes = Array.Empty<byte>();
+            if (!_cache.TryGetValue(cacheKey, out var cached)) return false;
+            Interlocked.Exchange(ref cached.LastAccessTicks, DateTime.UtcNow.Ticks);
+            bytes = cached.Bytes;
+            return true;
         }
 
         private void StoreInCache(string key, byte[] bytes)

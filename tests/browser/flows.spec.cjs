@@ -164,10 +164,10 @@ for (const is4k of [false, true]) {
     await expect(page.locator('#movie-server')).toHaveValue(is4k ? '2' : '1');
     await expect(page.locator('#movie-quality')).toHaveValue(is4k ? '20' : '10');
     await expect(page.locator('#movie-folder')).toHaveValue(is4k ? '/4k' : '/movies');
-    await expect(page.locator('#movie-server option')).toHaveText(['Select Server...', 'Alpha regular', 'Zulu 4K']);
+    await expect(page.locator('#movie-server option')).toHaveText(['jellyseerr_server_placeholder', 'Alpha regular', 'Zulu 4K']);
     await page.locator('#movie-server').selectOption(is4k ? '1' : '2');
-    await expect(page.locator('#movie-quality option')).toHaveText(['Select Quality...', is4k ? 'HD' : 'Ultra HD']);
-    await expect(page.locator('#movie-folder option')).toHaveText(['Select Folder...', is4k ? '/movies (0 Bytes)' : '/4k (1 GB)']);
+    await expect(page.locator('#movie-quality option')).toHaveText(['jellyseerr_quality_placeholder', is4k ? 'HD' : 'Ultra HD']);
+    await expect(page.locator('#movie-folder option')).toHaveText(['jellyseerr_folder_placeholder', is4k ? '/movies (0 Bytes)' : '/4k (1 GB)']);
     await page.locator('#movie-server').selectOption('');
     await expect(page.locator('#movie-quality option')).toHaveCount(1);
     await expect(page.locator('#movie-folder option')).toHaveCount(1);
@@ -194,7 +194,7 @@ test.describe('TV layout remote navigation', () => {
     await select.focus();
     await page.keyboard.press('Enter');
     const options = page.locator('.jellyseerr-tv-picker-option');
-    await expect(options).toHaveText(['Select Quality...', 'HD', 'Remux']);
+    await expect(options).toHaveText(['jellyseerr_quality_placeholder', 'HD', 'Remux']);
     await expect(options.nth(1)).toBeFocused();
 
     await page.keyboard.press('Escape');

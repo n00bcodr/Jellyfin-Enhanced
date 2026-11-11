@@ -148,3 +148,18 @@ test('leaving the player route drops the playback at once, while its video is st
  assert.equal(x.video.isConnected,true);
  assert.equal(x.p.currentVideo,null);assert.equal(x.p.currentItemId,null);assert.equal(x.plot(),'');assert.equal(x.overlay(),'true');
 });
+test('the pause screen asks for artwork no wider than the screen and keeps only the newest images',async t=>{
+ const x=playing(t);delete x.p.firstAvailableBlobURL;
+ Object.defineProperty(x.h.window.screen,'width',{configurable:true,get:()=>1280});
+ Object.defineProperty(x.h.window,'devicePixelRatio',{configurable:true,get:()=>1.5});
+ const gets=[],revoked=new Set();let made=0;
+ x.h.window.URL.createObjectURL=()=>`blob:${++made}`;x.h.window.URL.revokeObjectURL=url=>revoked.add(url);
+ x.h.window.fetch=async(url,options={})=>{if(options.method!=='HEAD')gets.push(url);return new Response(options.method==='HEAD'?null:'image',{status:200});};
+ for(const id of ['1','2','3','4'].map(n=>n.repeat(32)))await x.p.displayItemInfo({ImageTags:{Logo:'tag'}},'http://jellyfin.test',id);
+ assert.equal(gets.length,12,'a logo, a disc and a backdrop for each of four titles');
+ for(const url of gets)assert.equal(new URL(url).searchParams.get('maxWidth'),'1920',url);
+ const live=Array.from({length:made},(_,i)=>`blob:${i+1}`).filter(url=>!revoked.has(url));
+ assert.ok(live.length<=6,`${live.length} images kept`);
+ const shown=[x.p.overlayLogo.getAttribute('src'),x.p.overlayDisc.getAttribute('src'),/url\("(.*)"\)/.exec(x.p.overlayBackdrop.style.backgroundImage)?.[1]];
+ assert.deepEqual(shown.filter(url=>live.includes(url)).length,3,'what the overlay shows is never released');
+});

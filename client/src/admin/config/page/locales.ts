@@ -1,7 +1,7 @@
 import type { PageModules } from './modules';
 import { asObjects, stringList, text } from '../domain/config';
 import type { JsonObject } from '../domain/config';
-import { asHtml } from './dom';
+import { asSelect } from './dom';
 
 /** Dependencies this module calls; members are resolved lazily, after every module exists. */
 export type LocalesDeps = Pick<PageModules, 'context'>;
@@ -12,11 +12,22 @@ export function createLocales(m: LocalesDeps) {
         // Jellyfin's culture list feeds both the UI language and the sound-tag audio language dropdowns.
         const culturesPromise = ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/Localization/Cultures'), dataType: 'json' });
 
+        /**
+         * Selects `code` in the default language list, holding it as a bare option while the named list is not in
+         * (late, or failed) so a save keeps it instead of "System Default".
+         */
+        function showDefaultLanguage(code: string) : void {
+            const select = asSelect(document.getElementById('DefaultLanguage'));
+            if (!select) return;
+            if (code && !Array.from(select.options).some(o => o.value === code)) select.add(new Option(code, code));
+            select.value = code;
+        }
+
     /** Runs this module's start-up work, in the page's original order. */
     function wire(): void {
         // Populate language options dynamically
         (async () => {
-            const defaultLanguageSelect = document.getElementById('DefaultLanguage');
+            const defaultLanguageSelect = asSelect(document.getElementById('DefaultLanguage'));
             if (!defaultLanguageSelect) return;
 
             const CUSTOM_DISPLAY_NAMES: Readonly<Record<string, string>> = {
@@ -57,12 +68,17 @@ export function createLocales(m: LocalesDeps) {
                 });
 
                 options.sort((a, b) => a.displayName.localeCompare(b.displayName));
+                // Replaces a stored code held bare until now (showDefaultLanguage), and selects it again.
+                const shownCode = defaultLanguageSelect.value;
+                const systemDefault = defaultLanguageSelect.options[0];
+                defaultLanguageSelect.replaceChildren(...(systemDefault ? [systemDefault] : []));
                 options.forEach(({ code, displayName }) => {
                     const option = document.createElement('option');
                     option.value = code;
                     option.textContent = displayName;
                     defaultLanguageSelect.appendChild(option);
                 });
+                showDefaultLanguage(shownCode);
             } catch (err) {
                 console.warn('Jellyfin Enhanced: Failed to load language options:', err);
             }
@@ -71,6 +87,6 @@ export function createLocales(m: LocalesDeps) {
 
     return {
         wire,
-
+        showDefaultLanguage,
     };
 }

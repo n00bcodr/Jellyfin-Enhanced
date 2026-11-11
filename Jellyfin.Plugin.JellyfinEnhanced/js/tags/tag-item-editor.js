@@ -27,6 +27,184 @@
   var shared3 = /* @__PURE__ */ sharedModule("features/media-tags/layout/layout-rules");
   var export23 = /* @__PURE__ */ sharedExport(shared3, "normalizeLayout");
 
+  // client/src/features/media-tags/editor/tag-item-editor.css
+  var tag_item_editor_default = `.je-tie-backdrop { position: fixed; inset: 0; z-index: 100000; display: flex; align-items: flex-start; justify-content: center; padding: 24px 12px; box-sizing: border-box; background: rgba(0,0,0,0.6); overflow-y: auto; }
+.je-tie { width: min(880px, 100%); box-sizing: border-box; margin: auto 0; border-radius: 10px; border: 1px solid rgba(255,255,255,0.18); background: #1d2026; color: #fff; box-shadow: 0 10px 40px rgba(0,0,0,0.5); font-size: 14px; text-align: left; }
+.je-tie:focus { outline: none; }
+.je-tie-head { display: flex; align-items: center; gap: 12px; padding: 12px 14px 8px 16px; border-bottom: 1px solid rgba(255,255,255,0.08); }
+.je-tie-title { flex: 1 1 auto; min-width: 0; margin: 0; font-size: 17px; font-weight: 600; overflow-wrap: anywhere; }
+.je-tie-chip { display: inline-block; margin-left: 6px; padding: 1px 5px; border: 1px solid #ffb74d; border-radius: 4px; color: #ffb74d; font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; vertical-align: middle; }
+.je-tie-close { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; flex: 0 0 auto; border: 0; border-radius: 6px; background: transparent; color: #fff; cursor: pointer; }
+.je-tie-close:hover { background: rgba(255,255,255,0.08); }
+.je-tie-jump { display: none; }
+.je-tie-body { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 16px; padding: 14px 16px; }
+.je-tie-side { position: sticky; top: 0; align-self: start; }
+.je-tie-card { position: relative; width: 100%; }
+.je-tie-card:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.je-tie-view { margin-top: 8px; }
+.je-tie-view button { font: inherit; color: inherit; }
+/* Resting / Hover: one joined control, as on the hub's and the admin page's previews. */
+.je-tie-view.je-tie-pills { display: inline-flex; flex-wrap: nowrap; gap: 0; border: 1px solid rgba(255,255,255,0.22); border-radius: 999px; overflow: hidden; }
+.je-tie-view .je-tie-pill { min-height: 32px; padding: 0 14px; border: 0; border-radius: 0; background: transparent; font-size: 13px; font-weight: 400; }
+.je-tie-view .je-tie-pill[aria-pressed="true"] { background: rgba(255,255,255,0.16); color: #fff; font-weight: 600; }
+.je-tie-view .je-tie-pill:disabled { opacity: 0.45; cursor: default; }
+.je-tie-view .je-tie-pill:focus-visible { outline-offset: -3px; }
+.je-tie-card .cardBox { margin: 0; }
+.je-tie-scalable { position: relative; width: 100%; aspect-ratio: 2 / 3; border-radius: 6px; overflow: hidden; contain: paint; background: #2b303a center / cover no-repeat; }
+.je-tie-card[data-je-shape="landscape"] .je-tie-scalable { aspect-ratio: 16 / 9; }
+.je-tie-card .je-tag-host { position: absolute; inset: 0; pointer-events: none; container-type: inline-size; }
+.je-tie-card-title { font-size: 12px; padding: 4px 2px 0; color: rgba(255,255,255,0.9); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.je-tie-source { margin: 10px 0 0; font-size: 13px; line-height: 1.45; color: rgba(255,255,255,0.7); }
+.je-tie-source strong { color: #fff; font-weight: 600; }
+.je-tie-note { margin: 6px 0 0; font-size: 13px; color: #ffd699; }
+.je-tie-main { min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+.je-tie-box { margin: 0; padding: 12px 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.03); min-width: 0; }
+.je-tie-box > legend, .je-tie-h { padding: 0; margin: 0 0 8px; font-size: 14px; font-weight: 600; }
+/* A legend sits on the fieldset's border by default: float it into the box like the section headings. */
+.je-tie-box > legend { float: left; width: 100%; }
+.je-tie-box > legend + * { clear: both; }
+.je-tie-hint { margin: 2px 0 0; font-size: 13px; line-height: 1.45; color: rgba(255,255,255,0.68); }
+.je-tie input[type="radio"] { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; pointer-events: none; }
+.je-tie-tiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.je-tie-tile, .je-tie-pill { position: relative; display: inline-flex; align-items: center; justify-content: center; min-height: 36px; padding: 4px 12px; box-sizing: border-box; border-radius: 999px; border: 1px solid rgba(255,255,255,0.46); background: transparent; cursor: pointer; font-size: 13px; font-weight: 400; text-align: center; }
+.je-tie-tile { flex-direction: column; gap: 6px; padding: 10px 4px 8px; border-radius: 8px; border-color: rgba(255,255,255,0.46); background: rgba(0,0,0,0.2); font-weight: 600; }
+.je-tie-tile:hover, .je-tie-pill:hover { background: rgba(255,255,255,0.06); }
+.je-tie-pill:has(input:checked) { border-color: #0077a3; background: #0077a3; color: #fff; font-weight: 600; }
+.je-tie-tile:has(input:checked) { border: 2px solid #00a4dc; padding: 9px 3px 7px; background: rgba(0,164,220,0.14); }
+/* Without :has() (Chrome before 105, Firefox before 121) the chosen label carries je-tie-checked instead. */
+@supports not selector(:has(*)) {
+    .je-tie-pill.je-tie-checked { border-color: #0077a3; background: #0077a3; color: #fff; font-weight: 600; }
+    .je-tie-tile.je-tie-checked { border: 2px solid #00a4dc; padding: 9px 3px 7px; background: rgba(0,164,220,0.14); }
+}
+/* The hub's layout pictures (ui-panel-media-tags.js, admin-tags.css). */
+.je-tie-art { position: relative; width: 22px; height: 32px; border-radius: 3px; background: #4a5160; }
+.je-tie-art i { position: absolute; display: none; height: 4px; border-radius: 1px; }
+.je-tie-art[data-layout="corners"] i { display: block; width: 7px; }
+.je-tie-art[data-layout="corners"] i:nth-child(1) { left: 2px; top: 2px; background: #42a5f5; }
+.je-tie-art[data-layout="corners"] i:nth-child(2) { right: 2px; top: 2px; background: #ef5350; }
+.je-tie-art[data-layout="corners"] i:nth-child(3) { left: 2px; bottom: 2px; background: #ab47bc; }
+.je-tie-art[data-layout="corners"] i:nth-child(4) { right: 2px; bottom: 2px; background: #ffca28; }
+.je-tie-art[data-layout="bands"] { width: 26px; height: 26px; margin: 3px 0; }
+.je-tie-art[data-layout="bands"] i:nth-child(-n+4) { display: block; width: 6px; }
+.je-tie-art[data-layout="bands"] i:nth-child(1) { left: 2px; top: -6px; background: #ef5350; }
+.je-tie-art[data-layout="bands"] i:nth-child(2) { left: 9px; top: -6px; background: #42a5f5; }
+.je-tie-art[data-layout="bands"] i:nth-child(3) { left: 2px; bottom: -6px; background: #ffca28; }
+.je-tie-art[data-layout="bands"] i:nth-child(4) { left: 9px; bottom: -6px; background: #66bb6a; }
+.je-tie-art[data-layout="caption"] { height: 26px; margin-bottom: 6px; }
+.je-tie-art[data-layout="caption"] i:nth-child(1) { display: block; right: 2px; top: 2px; width: 7px; background: #ef5350; }
+.je-tie-art[data-layout="caption"] i:nth-child(2) { display: block; left: 0; bottom: -7px; width: 7px; background: #42a5f5; }
+.je-tie-art[data-layout="caption"] i:nth-child(3) { display: block; left: 8px; bottom: -7px; width: 7px; background: #ffca28; }
+.je-tie-art[data-layout="caption"] i:nth-child(4) { display: block; left: 16px; bottom: -7px; width: 6px; background: #66bb6a; }
+.je-tie-art[data-layout="summary"] i:nth-child(1) { display: block; left: 3px; right: 3px; bottom: 3px; height: 5px; border-radius: 3px; background: #111; box-shadow: inset 0 0 0 1px #ffca28; }
+.je-tie-art[data-layout="minimal"] i:nth-child(1) { display: block; right: 2px; top: 2px; width: 7px; background: #ef5350; }
+.je-tie-art[data-layout="minimal"] i:nth-child(2) { display: block; left: 3px; bottom: 3px; width: 4px; height: 4px; border-radius: 50%; background: #42a5f5; }
+.je-tie-art[data-layout="minimal"] i:nth-child(3) { display: block; left: 9px; bottom: 3px; width: 4px; height: 4px; border-radius: 50%; background: #66bb6a; }
+.je-tie-tile:has(input:focus-visible), .je-tie-pill:has(input:focus-visible) { outline: 2px solid #fff; outline-offset: 2px; }
+@supports not selector(:has(*)) {
+    .je-tie-tile:focus-within, .je-tie-pill:focus-within { outline: 2px solid #fff; outline-offset: 2px; }
+}
+.je-tie-pills { display: flex; flex-wrap: wrap; gap: 6px; }
+.je-tie-scope { display: flex; flex-direction: column; gap: 6px; }
+.je-tie-scope .je-tie-pill { justify-content: flex-start; text-align: left; }
+.je-tie-groups-hint { margin: -2px 0 10px; }
+.je-tie-under { margin-top: 8px; }
+.je-tie-hidden { margin-top: 12px; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; }
+.je-tie-hidden-toggle { display: flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 12px 0 8px; list-style: none; cursor: pointer; font-size: 14px; font-weight: 600; border-radius: 8px; }
+.je-tie-hidden-toggle::-webkit-details-marker { display: none; }
+.je-tie-hidden-toggle:hover { background: rgba(255,255,255,0.05); }
+.je-tie-hidden-toggle:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.je-tie-hidden-toggle .material-icons { font-size: 20px; transition: transform 0.2s ease; }
+.je-tie-hidden[open] > .je-tie-hidden-toggle .material-icons { transform: rotate(180deg); }
+.je-tie-hidden > .je-tie-hint { margin: 0 12px 10px; }
+.je-tie-hidden > .je-tie-groups { padding: 0 8px 8px; }
+.je-tie-groups { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.je-tie-group { display: grid; grid-template-columns: minmax(120px, 160px) minmax(0, 1fr) auto; align-items: center; gap: 8px 12px; min-height: 56px; box-sizing: border-box; padding: 8px 10px 8px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); background: rgba(0,0,0,0.16); }
+.je-tie-group[data-open="1"] { border-color: rgba(255,255,255,0.2); background: rgba(255,255,255,0.03); }
+.je-tie-gsum { min-width: 0; font-size: 13px; color: rgba(255,255,255,0.72); }
+.je-tie-group[data-on="0"] .je-tie-gsum { color: rgba(255,255,255,0.5); }
+.je-tie-gopen { display: inline-flex; align-items: center; gap: 2px; min-height: 36px; padding: 0 8px 0 12px; font: inherit; font-size: 13px; font-weight: 600; color: #fff; background: transparent; border: 1px solid rgba(255,255,255,0.46); border-radius: 6px; cursor: pointer; }
+.je-tie-gopen:hover { background: rgba(255,255,255,0.06); }
+.je-tie-gopen:disabled { opacity: 0.4; cursor: default; }
+.je-tie-gopen .material-icons { font-size: 20px; transition: transform 0.2s ease; }
+.je-tie-gopen[aria-expanded="true"] .material-icons { transform: rotate(180deg); }
+.je-tie-detail { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 16px; padding: 10px 0 2px; border-top: 1px solid rgba(255,255,255,0.08); }
+.je-tie-detail[hidden] { display: none; }
+.je-tie-detail .je-tie-where { flex: 1 1 280px; }
+.je-tie-group[data-on="0"] .je-tie-where, .je-tie-group[data-on="0"] .je-tie-cap { opacity: 0.4; }
+.je-tie-gname { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.je-tie-gname small { padding-left: 26px; font-size: 12px; color: rgba(255,255,255,0.62); font-weight: 400; }
+.je-tie-switch { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; font-weight: 600; min-height: 36px; }
+.je-tie-switch input { width: 18px; height: 18px; margin: 0; flex: 0 0 auto; accent-color: #00a4dc; cursor: pointer; }
+.je-tie-where .je-tie-pill { min-height: 30px; padding: 2px 8px; font-size: 12px; }
+/* Corners positions by name in a 3 × 3 grid, as on the hub and the admin page. */
+.je-tie-anchors { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; max-width: 420px; }
+.je-tie-anchor { position: relative; display: flex; align-items: center; justify-content: center; min-height: 36px; padding: 2px 6px; box-sizing: border-box; border-radius: 8px; border: 1px solid rgba(255,255,255,0.46); background: transparent; cursor: pointer; font-size: 13px; line-height: 1.2; text-align: center; }
+.je-tie-anchor:hover { background: rgba(255,255,255,0.06); }
+.je-tie-anchor:has(input:checked) { border-color: #0077a3; background: #0077a3; color: #fff; font-weight: 600; }
+.je-tie-group[data-on="0"] :is(.je-tie-anchor, .je-tie-pill) { cursor: default; }
+.je-tie-anchor:has(input:focus-visible) { outline: 2px solid #fff; outline-offset: 1px; }
+@supports not selector(:has(*)) {
+    .je-tie-anchor.je-tie-checked { border-color: #0077a3; background: #0077a3; color: #fff; font-weight: 600; }
+    .je-tie-anchor:focus-within { outline: 2px solid #fff; outline-offset: 1px; }
+}
+.je-tie-cap { display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px; font-size: 13px; white-space: nowrap; }
+.je-tie-cap button, .je-tie-foot button, .je-tie-toast button { font: inherit; color: #fff; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.46); border-radius: 6px; min-height: 32px; cursor: pointer; font-weight: 600; }
+.je-tie-cap button { width: 36px; min-height: 36px; padding: 0; }
+.je-tie-cap button:disabled { opacity: 0.35; cursor: default; }
+.je-tie-cap output { min-width: 26px; text-align: center; font-weight: 600; }
+/* Size and spacing: one row each, label left and the whole choice readable on the right. */
+.je-tie-row3 { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+.je-tie-row3 label { display: grid; grid-template-columns: minmax(100px, 1fr) minmax(220px, 1.6fr); align-items: center; gap: 12px; font-size: 14px; font-weight: 600; min-width: 0; }
+.je-tie select { font: inherit; font-size: 13px; color: #fff; background: #12141a; border: 1px solid #80868f; border-radius: 6px; padding: 6px; min-height: 36px; min-width: 0; }
+.je-tie select option { background: #222; color: #fff; }
+/* Where Save keeps the look: first in the form, so the choice comes before the edits. */
+.je-tie-keeps { display: flex; flex-direction: column; gap: 8px; }
+.je-tie-keep { border-color: rgba(0,164,220,0.45); }
+.je-tie-keep[data-everyone] { border-color: rgba(255,183,77,0.5); }
+.je-tie-keep .je-tie-hint { padding-left: 26px; }
+.je-tie-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; padding: 10px 16px 14px; border-top: 1px solid rgba(255,255,255,0.08); }
+.je-tie-foot .je-tie-status { flex: 1 1 200px; margin: 0; font-size: 13px; color: #ffd699; }
+.je-tie-foot .je-tie-status:empty { display: none; }
+.je-tie-foot button { padding: 0 16px; min-height: 40px; }
+.je-tie-foot .je-tie-save { background: #0077a3; border-color: #0077a3; }
+.je-tie button:focus-visible, .je-tie select:focus-visible, .je-tie-switch input:focus-visible, .je-tie-toast button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.je-tie-toast { position: fixed; left: 50%; bottom: 24px; z-index: 100001; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; max-width: calc(100vw - 32px); box-sizing: border-box; padding: 10px 12px 10px 16px; border-radius: 8px; background: #2b2f38; color: #fff; box-shadow: 0 6px 24px rgba(0,0,0,0.5); font-size: 14px; }
+.je-tie-toast button { padding: 0 12px; color: #7fd3ff; }
+/* Desktop: title and actions stay in view; the form scrolls between them. */
+@media (min-width: 641px) {
+    .je-tie { display: flex; flex-direction: column; max-height: calc(100vh - 48px); max-height: calc(100dvh - 48px); overflow: hidden; }
+    .je-tie-head, .je-tie-foot { flex-shrink: 0; }
+    .je-tie-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+    .je-tie-foot { min-height: 64px; box-sizing: border-box; padding: 12px 16px; }
+    .je-tie-foot button { min-height: 44px; }
+}
+@media (max-width: 640px) {
+    .je-tie-backdrop { padding: 0; }
+    .je-tie-row3 label { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+    .je-tie-close { width: 44px; height: 44px; }
+    .je-tie { border-radius: 0; min-height: 100%; border: 0; }
+    .je-tie-body { grid-template-columns: minmax(0, 1fr); padding: 10px 12px; }
+    .je-tie-side { position: static; display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 4px 12px; align-items: start; }
+    .je-tie-card[data-je-shape="landscape"] { grid-column: 1 / -1; max-width: 260px; }
+    .je-tie-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .je-tie-anchors { max-width: none; }
+    .je-tie-cap button, .je-tie-pill, .je-tie-anchor { min-height: 44px; }
+    .je-tie-cap button { width: 44px; }
+    .je-tie-group { grid-template-columns: minmax(0, 1fr) auto; }
+    .je-tie-gsum { grid-column: 1; grid-row: 2; padding-left: 26px; }
+    .je-tie-gopen { grid-column: 2; grid-row: 1 / span 2; min-height: 44px; }
+    .je-tie-row3 { grid-template-columns: minmax(0, 1fr); }
+    .je-tie-foot { position: sticky; bottom: 0; background: #1d2026; }
+    .je-tie-head { position: sticky; top: 0; z-index: 3; background: #1d2026; }
+    /* Keyboard scrolling keeps focus clear of the sticky title and footer. */
+    .je-tie-backdrop { scroll-padding: 76px 0 84px; }
+    .je-tie-hint, .je-tie-gsum { font-size: 14px; line-height: 1.45; }
+    .je-tie-jump:not([hidden]) { display: inline-flex; align-items: center; gap: 8px; flex: 0 0 auto; min-height: 44px; padding: 0 12px 0 6px; border: 1px solid rgba(255,255,255,0.22); border-radius: 8px; background: transparent; color: #fff; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+    .je-tie-jump-thumb { width: 22px; height: 33px; border-radius: 3px; background: #2b303a center / cover no-repeat; }
+    .je-tie-foot button, .je-tie-gopen, .je-tie select, .je-tie-view .je-tie-pill { min-height: 44px; }
+}
+`;
+
   // client/src/features/media-tags/editor/tag-item-editor.ts
   function must(value) {
     if (!value) throw new Error("Item editor markup is incomplete");
@@ -53,171 +231,6 @@
       custom: { setting: "customTagsEnabled", nameKey: "common_custom" }
     };
     const ANCHORS = ["tl", "tc", "tr", "ml", "c", "mr", "bl", "bc", "br"];
-    const CSS = `
-        .je-tie-backdrop { position: fixed; inset: 0; z-index: 100000; display: flex; align-items: flex-start; justify-content: center; padding: 24px 12px; box-sizing: border-box; background: rgba(0,0,0,0.6); overflow-y: auto; }
-        .je-tie { width: min(880px, 100%); box-sizing: border-box; margin: auto 0; border-radius: 10px; border: 1px solid rgba(255,255,255,0.18); background: #1d2026; color: #fff; box-shadow: 0 10px 40px rgba(0,0,0,0.5); font-size: 14px; text-align: left; }
-        .je-tie:focus { outline: none; }
-        .je-tie-head { display: flex; align-items: center; gap: 12px; padding: 12px 14px 8px 16px; border-bottom: 1px solid rgba(255,255,255,0.08); }
-        .je-tie-title { flex: 1 1 auto; min-width: 0; margin: 0; font-size: 17px; font-weight: 600; overflow-wrap: anywhere; }
-        .je-tie-chip { display: inline-block; margin-left: 6px; padding: 1px 5px; border: 1px solid #ffb74d; border-radius: 4px; color: #ffb74d; font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; vertical-align: middle; }
-        .je-tie-close { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; flex: 0 0 auto; border: 0; border-radius: 6px; background: transparent; color: #fff; cursor: pointer; }
-        .je-tie-close:hover { background: rgba(255,255,255,0.08); }
-        .je-tie-jump { display: none; }
-        .je-tie-body { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 16px; padding: 14px 16px; }
-        .je-tie-side { position: sticky; top: 0; align-self: start; }
-        .je-tie-card { position: relative; width: 100%; }
-        .je-tie-card:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
-        .je-tie-view { margin-top: 8px; }
-        .je-tie-view button { font: inherit; color: inherit; }
-        /* Resting / Hover: one joined control, as on the hub's and the admin page's previews. */
-        .je-tie-view.je-tie-pills { display: inline-flex; flex-wrap: nowrap; gap: 0; border: 1px solid rgba(255,255,255,0.22); border-radius: 999px; overflow: hidden; }
-        .je-tie-view .je-tie-pill { min-height: 32px; padding: 0 14px; border: 0; border-radius: 0; background: transparent; font-size: 13px; font-weight: 400; }
-        .je-tie-view .je-tie-pill[aria-pressed="true"] { background: rgba(255,255,255,0.16); color: #fff; font-weight: 600; }
-        .je-tie-view .je-tie-pill:disabled { opacity: 0.45; cursor: default; }
-        .je-tie-view .je-tie-pill:focus-visible { outline-offset: -3px; }
-        .je-tie-card .cardBox { margin: 0; }
-        .je-tie-scalable { position: relative; width: 100%; aspect-ratio: 2 / 3; border-radius: 6px; overflow: hidden; contain: paint; background: #2b303a center / cover no-repeat; }
-        .je-tie-card[data-je-shape="landscape"] .je-tie-scalable { aspect-ratio: 16 / 9; }
-        .je-tie-card .je-tag-host { position: absolute; inset: 0; pointer-events: none; container-type: inline-size; }
-        .je-tie-card-title { font-size: 12px; padding: 4px 2px 0; color: rgba(255,255,255,0.9); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .je-tie-source { margin: 10px 0 0; font-size: 13px; line-height: 1.45; color: rgba(255,255,255,0.7); }
-        .je-tie-source strong { color: #fff; font-weight: 600; }
-        .je-tie-note { margin: 6px 0 0; font-size: 13px; color: #ffd699; }
-        .je-tie-main { min-width: 0; display: flex; flex-direction: column; gap: 12px; }
-        .je-tie-box { margin: 0; padding: 12px 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.03); min-width: 0; }
-        .je-tie-box > legend, .je-tie-h { padding: 0; margin: 0 0 8px; font-size: 14px; font-weight: 600; }
-        /* A legend sits on the fieldset's border by default: float it into the box like the section headings. */
-        .je-tie-box > legend { float: left; width: 100%; }
-        .je-tie-box > legend + * { clear: both; }
-        .je-tie-hint { margin: 2px 0 0; font-size: 13px; line-height: 1.45; color: rgba(255,255,255,0.68); }
-        .je-tie input[type="radio"] { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; pointer-events: none; }
-        .je-tie-tiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
-        .je-tie-tile, .je-tie-pill { position: relative; display: inline-flex; align-items: center; justify-content: center; min-height: 36px; padding: 4px 12px; box-sizing: border-box; border-radius: 999px; border: 1px solid rgba(255,255,255,0.46); background: transparent; cursor: pointer; font-size: 13px; font-weight: 400; text-align: center; }
-        .je-tie-tile { flex-direction: column; gap: 6px; padding: 10px 4px 8px; border-radius: 8px; border-color: rgba(255,255,255,0.46); background: rgba(0,0,0,0.2); font-weight: 600; }
-        .je-tie-tile:hover, .je-tie-pill:hover { background: rgba(255,255,255,0.06); }
-        .je-tie-pill:has(input:checked) { border-color: #0077a3; background: #0077a3; color: #fff; font-weight: 600; }
-        .je-tie-tile:has(input:checked) { border: 2px solid #00a4dc; padding: 9px 3px 7px; background: rgba(0,164,220,0.14); }
-        /* The hub's layout pictures (ui-panel-media-tags.js, admin-tags.css). */
-        .je-tie-art { position: relative; width: 22px; height: 32px; border-radius: 3px; background: #4a5160; }
-        .je-tie-art i { position: absolute; display: none; height: 4px; border-radius: 1px; }
-        .je-tie-art[data-layout="corners"] i { display: block; width: 7px; }
-        .je-tie-art[data-layout="corners"] i:nth-child(1) { left: 2px; top: 2px; background: #42a5f5; }
-        .je-tie-art[data-layout="corners"] i:nth-child(2) { right: 2px; top: 2px; background: #ef5350; }
-        .je-tie-art[data-layout="corners"] i:nth-child(3) { left: 2px; bottom: 2px; background: #ab47bc; }
-        .je-tie-art[data-layout="corners"] i:nth-child(4) { right: 2px; bottom: 2px; background: #ffca28; }
-        .je-tie-art[data-layout="bands"] { width: 26px; height: 26px; margin: 3px 0; }
-        .je-tie-art[data-layout="bands"] i:nth-child(-n+4) { display: block; width: 6px; }
-        .je-tie-art[data-layout="bands"] i:nth-child(1) { left: 2px; top: -6px; background: #ef5350; }
-        .je-tie-art[data-layout="bands"] i:nth-child(2) { left: 9px; top: -6px; background: #42a5f5; }
-        .je-tie-art[data-layout="bands"] i:nth-child(3) { left: 2px; bottom: -6px; background: #ffca28; }
-        .je-tie-art[data-layout="bands"] i:nth-child(4) { left: 9px; bottom: -6px; background: #66bb6a; }
-        .je-tie-art[data-layout="caption"] { height: 26px; margin-bottom: 6px; }
-        .je-tie-art[data-layout="caption"] i:nth-child(1) { display: block; right: 2px; top: 2px; width: 7px; background: #ef5350; }
-        .je-tie-art[data-layout="caption"] i:nth-child(2) { display: block; left: 0; bottom: -7px; width: 7px; background: #42a5f5; }
-        .je-tie-art[data-layout="caption"] i:nth-child(3) { display: block; left: 8px; bottom: -7px; width: 7px; background: #ffca28; }
-        .je-tie-art[data-layout="caption"] i:nth-child(4) { display: block; left: 16px; bottom: -7px; width: 6px; background: #66bb6a; }
-        .je-tie-art[data-layout="summary"] i:nth-child(1) { display: block; left: 3px; right: 3px; bottom: 3px; height: 5px; border-radius: 3px; background: #111; box-shadow: inset 0 0 0 1px #ffca28; }
-        .je-tie-art[data-layout="minimal"] i:nth-child(1) { display: block; right: 2px; top: 2px; width: 7px; background: #ef5350; }
-        .je-tie-art[data-layout="minimal"] i:nth-child(2) { display: block; left: 3px; bottom: 3px; width: 4px; height: 4px; border-radius: 50%; background: #42a5f5; }
-        .je-tie-art[data-layout="minimal"] i:nth-child(3) { display: block; left: 9px; bottom: 3px; width: 4px; height: 4px; border-radius: 50%; background: #66bb6a; }
-        .je-tie-tile:has(input:focus-visible), .je-tie-pill:has(input:focus-visible) { outline: 2px solid #fff; outline-offset: 2px; }
-        .je-tie-pills { display: flex; flex-wrap: wrap; gap: 6px; }
-        .je-tie-scope { display: flex; flex-direction: column; gap: 6px; }
-        .je-tie-scope .je-tie-pill { justify-content: flex-start; text-align: left; }
-        .je-tie-groups-hint { margin: -2px 0 10px; }
-        .je-tie-under { margin-top: 8px; }
-        .je-tie-hidden { margin-top: 12px; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; }
-        .je-tie-hidden-toggle { display: flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 12px 0 8px; list-style: none; cursor: pointer; font-size: 14px; font-weight: 600; border-radius: 8px; }
-        .je-tie-hidden-toggle::-webkit-details-marker { display: none; }
-        .je-tie-hidden-toggle:hover { background: rgba(255,255,255,0.05); }
-        .je-tie-hidden-toggle:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
-        .je-tie-hidden-toggle .material-icons { font-size: 20px; transition: transform 0.2s ease; }
-        .je-tie-hidden[open] > .je-tie-hidden-toggle .material-icons { transform: rotate(180deg); }
-        .je-tie-hidden > .je-tie-hint { margin: 0 12px 10px; }
-        .je-tie-hidden > .je-tie-groups { padding: 0 8px 8px; }
-        .je-tie-groups { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-        .je-tie-group { display: grid; grid-template-columns: minmax(120px, 160px) minmax(0, 1fr) auto; align-items: center; gap: 8px 12px; min-height: 56px; box-sizing: border-box; padding: 8px 10px 8px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); background: rgba(0,0,0,0.16); }
-        .je-tie-group[data-open="1"] { border-color: rgba(255,255,255,0.2); background: rgba(255,255,255,0.03); }
-        .je-tie-gsum { min-width: 0; font-size: 13px; color: rgba(255,255,255,0.72); }
-        .je-tie-group[data-on="0"] .je-tie-gsum { color: rgba(255,255,255,0.5); }
-        .je-tie-gopen { display: inline-flex; align-items: center; gap: 2px; min-height: 36px; padding: 0 8px 0 12px; font: inherit; font-size: 13px; font-weight: 600; color: #fff; background: transparent; border: 1px solid rgba(255,255,255,0.46); border-radius: 6px; cursor: pointer; }
-        .je-tie-gopen:hover { background: rgba(255,255,255,0.06); }
-        .je-tie-gopen:disabled { opacity: 0.4; cursor: default; }
-        .je-tie-gopen .material-icons { font-size: 20px; transition: transform 0.2s ease; }
-        .je-tie-gopen[aria-expanded="true"] .material-icons { transform: rotate(180deg); }
-        .je-tie-detail { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 16px; padding: 10px 0 2px; border-top: 1px solid rgba(255,255,255,0.08); }
-        .je-tie-detail[hidden] { display: none; }
-        .je-tie-detail .je-tie-where { flex: 1 1 280px; }
-        .je-tie-group[data-on="0"] .je-tie-where, .je-tie-group[data-on="0"] .je-tie-cap { opacity: 0.4; }
-        .je-tie-gname { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-        .je-tie-gname small { padding-left: 26px; font-size: 12px; color: rgba(255,255,255,0.62); font-weight: 400; }
-        .je-tie-switch { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; font-weight: 600; min-height: 36px; }
-        .je-tie-switch input { width: 18px; height: 18px; margin: 0; flex: 0 0 auto; accent-color: #00a4dc; cursor: pointer; }
-        .je-tie-where .je-tie-pill { min-height: 30px; padding: 2px 8px; font-size: 12px; }
-        /* Corners positions by name in a 3 × 3 grid, as on the hub and the admin page. */
-        .je-tie-anchors { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; max-width: 420px; }
-        .je-tie-anchor { position: relative; display: flex; align-items: center; justify-content: center; min-height: 36px; padding: 2px 6px; box-sizing: border-box; border-radius: 8px; border: 1px solid rgba(255,255,255,0.46); background: transparent; cursor: pointer; font-size: 13px; line-height: 1.2; text-align: center; }
-        .je-tie-anchor:hover { background: rgba(255,255,255,0.06); }
-        .je-tie-anchor:has(input:checked) { border-color: #0077a3; background: #0077a3; color: #fff; font-weight: 600; }
-        .je-tie-group[data-on="0"] :is(.je-tie-anchor, .je-tie-pill) { cursor: default; }
-        .je-tie-anchor:has(input:focus-visible) { outline: 2px solid #fff; outline-offset: 1px; }
-        .je-tie-cap { display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px; font-size: 13px; white-space: nowrap; }
-        .je-tie-cap button, .je-tie-foot button, .je-tie-toast button { font: inherit; color: #fff; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.46); border-radius: 6px; min-height: 32px; cursor: pointer; font-weight: 600; }
-        .je-tie-cap button { width: 36px; min-height: 36px; padding: 0; }
-        .je-tie-cap button:disabled { opacity: 0.35; cursor: default; }
-        .je-tie-cap output { min-width: 26px; text-align: center; font-weight: 600; }
-        /* Size and spacing: one row each, label left and the whole choice readable on the right. */
-        .je-tie-row3 { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
-        .je-tie-row3 label { display: grid; grid-template-columns: minmax(100px, 1fr) minmax(220px, 1.6fr); align-items: center; gap: 12px; font-size: 14px; font-weight: 600; min-width: 0; }
-        .je-tie select { font: inherit; font-size: 13px; color: #fff; background: #12141a; border: 1px solid #80868f; border-radius: 6px; padding: 6px; min-height: 36px; min-width: 0; }
-        .je-tie select option { background: #222; color: #fff; }
-        /* Where Save keeps the look: first in the form, so the choice comes before the edits. */
-        .je-tie-keeps { display: flex; flex-direction: column; gap: 8px; }
-        .je-tie-keep { border-color: rgba(0,164,220,0.45); }
-        .je-tie-keep[data-everyone] { border-color: rgba(255,183,77,0.5); }
-        .je-tie-keep .je-tie-hint { padding-left: 26px; }
-        .je-tie-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; padding: 10px 16px 14px; border-top: 1px solid rgba(255,255,255,0.08); }
-        .je-tie-foot .je-tie-status { flex: 1 1 200px; margin: 0; font-size: 13px; color: #ffd699; }
-        .je-tie-foot .je-tie-status:empty { display: none; }
-        .je-tie-foot button { padding: 0 16px; min-height: 40px; }
-        .je-tie-foot .je-tie-save { background: #0077a3; border-color: #0077a3; }
-        .je-tie button:focus-visible, .je-tie select:focus-visible, .je-tie-switch input:focus-visible, .je-tie-toast button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
-        .je-tie-toast { position: fixed; left: 50%; bottom: 24px; z-index: 100001; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; max-width: calc(100vw - 32px); box-sizing: border-box; padding: 10px 12px 10px 16px; border-radius: 8px; background: #2b2f38; color: #fff; box-shadow: 0 6px 24px rgba(0,0,0,0.5); font-size: 14px; }
-        .je-tie-toast button { padding: 0 12px; color: #7fd3ff; }
-        /* Desktop: title and actions stay in view; the form scrolls between them. */
-        @media (min-width: 641px) {
-            .je-tie { display: flex; flex-direction: column; max-height: calc(100dvh - 48px); overflow: hidden; }
-            .je-tie-head, .je-tie-foot { flex-shrink: 0; }
-            .je-tie-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
-            .je-tie-foot { min-height: 64px; box-sizing: border-box; padding: 12px 16px; }
-            .je-tie-foot button { min-height: 44px; }
-        }
-        @media (max-width: 640px) {
-            .je-tie-backdrop { padding: 0; }
-            .je-tie-row3 label { grid-template-columns: minmax(0, 1fr); gap: 6px; }
-            .je-tie-close { width: 44px; height: 44px; }
-            .je-tie { border-radius: 0; min-height: 100%; border: 0; }
-            .je-tie-body { grid-template-columns: minmax(0, 1fr); padding: 10px 12px; }
-            .je-tie-side { position: static; display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 4px 12px; align-items: start; }
-            .je-tie-card[data-je-shape="landscape"] { grid-column: 1 / -1; max-width: 260px; }
-            .je-tie-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-            .je-tie-anchors { max-width: none; }
-            .je-tie-cap button, .je-tie-pill, .je-tie-anchor { min-height: 44px; }
-            .je-tie-cap button { width: 44px; }
-            .je-tie-group { grid-template-columns: minmax(0, 1fr) auto; }
-            .je-tie-gsum { grid-column: 1; grid-row: 2; padding-left: 26px; }
-            .je-tie-gopen { grid-column: 2; grid-row: 1 / span 2; min-height: 44px; }
-            .je-tie-row3 { grid-template-columns: minmax(0, 1fr); }
-            .je-tie-foot { position: sticky; bottom: 0; background: #1d2026; }
-            .je-tie-head { position: sticky; top: 0; z-index: 3; background: #1d2026; }
-            /* Keyboard scrolling keeps focus clear of the sticky title and footer. */
-            .je-tie-backdrop { scroll-padding: 76px 0 84px; }
-            .je-tie-hint, .je-tie-gsum { font-size: 14px; line-height: 1.45; }
-            .je-tie-jump:not([hidden]) { display: inline-flex; align-items: center; gap: 8px; flex: 0 0 auto; min-height: 44px; padding: 0 12px 0 6px; border: 1px solid rgba(255,255,255,0.22); border-radius: 8px; background: transparent; color: #fff; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
-            .je-tie-jump-thumb { width: 22px; height: 33px; border-radius: 3px; background: #2b303a center / cover no-repeat; }
-            .je-tie-foot button, .je-tie-gopen, .je-tie select, .je-tie-view .je-tie-pill { min-height: 44px; }
-        }
-    `;
     let current = null;
     let sequence = 0;
     let openGeneration = 0;
@@ -390,7 +403,7 @@
         return abandon();
       }
       closeMounted();
-      JE.core.ui?.injectCss?.("je-tag-item-editor", CSS);
+      JE.core.ui?.injectCss?.("je-tag-item-editor", tag_item_editor_default);
       const type = String(item.Type);
       const name = String(item.Name || "");
       const seriesId = type === "Season" || type === "Episode" ? look.normalizeId(String(item.SeriesId || "")) : null;
@@ -583,6 +596,7 @@
         var _a, _b;
         return (_a = draft.slots)[_b = draft.layout] ?? (_a[_b] = {});
       };
+      const markChecked = () => dialog.querySelectorAll("label.je-tie-pill, label.je-tie-tile, label.je-tie-anchor").forEach((label) => label.classList.toggle("je-tie-checked", !!label.querySelector("input:checked")));
       const renderGroups = () => {
         const focused = document.activeElement;
         const focusKey = focused instanceof HTMLElement ? focused.dataset.tieKey || null : null;
@@ -622,6 +636,7 @@
         const hidden = order.filter((g) => export9(GROUPS, g) && tucked(g));
         const scopeNote = JE.core.tagSettingsMatrix?.offers("itemEditor", "quality", "scopes");
         groupsList.innerHTML = `<ul class="je-tie-groups">${shown.map(rowHtml).join("")}</ul>` + (typeof scopeNote === "string" ? `<p class="je-tie-hint" data-je-scope-na="itemEditor">${tx(scopeNote)}</p>` : "") + (hidden.length ? `<details class="je-tie-hidden" data-tie-hidden ${hiddenOpen ? "open" : ""}><summary class="je-tie-hidden-toggle"><span class="material-icons" aria-hidden="true">expand_more</span>${tx("tag_item_editor_hidden_groups", { n: hidden.length })}</summary><p class="je-tie-hint" id="${uid}HiddenHint">${tx("tag_item_editor_hidden_groups_hint")}</p><ul class="je-tie-groups">${hidden.map(rowHtml).join("")}</ul></details>` : "");
+        markChecked();
         if (!focusKey) return;
         const canFocus = (el) => !!el && !el.matches(":disabled") && !el.closest("[hidden]");
         let next = groupsList.querySelector(`[data-tie-key="${focusKey}"]`);
@@ -669,6 +684,7 @@
       dialog.addEventListener("change", (e) => {
         const input = e.target;
         if (!(input instanceof HTMLInputElement)) return;
+        if (input.type === "radio") markChecked();
         if (input.name === `${uid}Layout`) {
           draft.layout = export23(input.value);
           describeLayout();

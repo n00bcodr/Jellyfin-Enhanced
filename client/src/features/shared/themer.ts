@@ -149,6 +149,12 @@ export function createThemer(JE: ThemeBridge) {
                 return value.replace(/url\(['"]?(.*?)['"]?\)/i, '$1');
             }
 
+            // A theme's stylesheet sets these, and they go into HTML: a <style> element, style attributes and handlers.
+            // Only a plain value fits all of them (no quote, `<`, `&`, `\`, `;`, `:`, `!`, `*`, brace or bracket).
+            if (value && !/^[\w\s#%.,()/+-]*$/.test(value)) {
+                return fallbackValue || '';
+            }
+
             // Special handling for RGB values that need wrapping
             if (value && /^\d+,\s*\d+,\s*\d+$/.test(value)) {
                 return `rgb(${value})`;

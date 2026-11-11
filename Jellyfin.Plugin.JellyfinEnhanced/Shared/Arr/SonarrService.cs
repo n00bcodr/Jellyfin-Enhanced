@@ -47,7 +47,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.Arr
             _logger = logger;
         }
 
-        public async Task<Dictionary<string, List<string>>> GetSeriesTagsByTvdbId(string sonarrUrl, string apiKey, CancellationToken ct = default)
+        /// <returns>The tags by provider id, or null when Sonarr could not be read (refused URL, error status,
+        /// network error, timeout or unreadable body), so a caller can tell "no tags" from "unknown".</returns>
+        public async Task<Dictionary<string, List<string>>?> GetSeriesTagsByTvdbId(string sonarrUrl, string apiKey, CancellationToken ct = default)
         {
             var result = new Dictionary<string, List<string>>();
 
@@ -56,7 +58,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.Arr
             if (!Jellyfin.Plugin.JellyfinEnhanced.Shared.Arr.ArrUrlGuard.IsAllowedUrl(sonarrUrl))
             {
                 _logger.Error($"Refusing to fetch Sonarr tags — URL rejected by SSRF guard: {sonarrUrl}");
-                return result;
+                return null;
             }
 
             try
@@ -72,11 +74,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.Arr
                 if (!tagsResponse.IsSuccessStatusCode)
                 {
                     _logger.Error($"Failed to fetch Sonarr tags. Status: {tagsResponse.StatusCode}");
-                    return result;
+                    return null;
                 }
 
                 var tagsContent = await tagsResponse.Content.ReadAsStringAsync(ct);
-                var tags = JsonSerializer.Deserialize<List<SonarrTag>>(tagsContent) ?? new List<SonarrTag>();
+                var tags = JsonSerializer.Deserialize<List<SonarrTag>>(tagsContent) ?? throw new JsonException("null body");
                 var tagDictionary = tags.ToDictionary(t => t.Id, t => t.Label);
 
                 _logger.Info($"Found {tags.Count} tags in Sonarr");
@@ -89,11 +91,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.Arr
                 if (!seriesResponse.IsSuccessStatusCode)
                 {
                     _logger.Error($"Failed to fetch Sonarr series. Status: {seriesResponse.StatusCode}");
-                    return result;
+                    return null;
                 }
 
                 var seriesContent = await seriesResponse.Content.ReadAsStringAsync(ct);
-                var allSeries = JsonSerializer.Deserialize<List<SonarrSeries>>(seriesContent) ?? new List<SonarrSeries>();
+                var allSeries = JsonSerializer.Deserialize<List<SonarrSeries>>(seriesContent) ?? throw new JsonException("null body");
 
                 _logger.Info($"Found {allSeries.Count} series in Sonarr");
 
@@ -119,6 +121,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.Arr
                 }
 
                 _logger.Info($"Mapped tags for {result.Count} series");
+                return result;
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -141,7 +144,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.Arr
                 _logger.Error($"Unexpected error fetching Sonarr tags: {ex.Message}");
             }
 
-            return result;
+            return null;
         }
     }
 }

@@ -41,6 +41,27 @@ public class CoreSharedStoresTests
     }
 
     [Fact]
+    public void ReviewWritesReplaceTheStoreInsteadOfRewritingItInPlace()
+    {
+        using var f = new CoreFixture();
+        f.Manager.UpsertReview("a", "movie", "1", "first", 4, "2020");
+        var path = Path.Combine(f.ConfigRoot, "reviews.json");
+        var before = File.ReadAllBytes(path);
+        // The store as a reader opened it before the writes. Rewriting the file in place truncates
+        // these bytes first, which is what a crash or a full disk leaves behind; a replacement keeps them.
+        using (var held = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+        {
+            f.Manager.UpsertReview("b", "movie", "1", "second", 3, "2021");
+            Assert.True(f.Manager.DeleteReview("a", "movie", "1", out _));
+            using var seen = new MemoryStream();
+            held.CopyTo(seen);
+            Assert.Equal(before, seen.ToArray());
+        }
+        Assert.Equal(["b:movie:1"], f.Manager.GetAllReviews().Reviews.Keys);
+        Assert.Equal(["reviews.json"], Directory.GetFiles(f.ConfigRoot, "reviews.json*").Select(Path.GetFileName));
+    }
+
+    [Fact]
     public void ConcurrentReviewWritesPreserveEveryUser()
     {
         using var f = new CoreFixture();

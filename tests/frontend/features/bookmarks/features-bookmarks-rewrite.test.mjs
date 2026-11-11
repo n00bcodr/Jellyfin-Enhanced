@@ -77,6 +77,13 @@ test('replacement lookup cannot create an old-account dialog after logout',async
  h.change();resolve({Items:[{Id:'new',Name:'Private',ProviderIds:{Tmdb:'42'}}]});await pending;
  assert.equal(h.document.querySelector('.je-bm-library-modal-overlay'),null);assert.deepEqual(h.toasts,[]);
 });
+test('a bookmark document that failed to load is shown as a failure, not as no bookmarks',async t=>{
+ const h=setup(t);h.JE.userConfig.bookmarkRevision=null;
+ h.load('render','items');const container=h.document.createElement('div');h.document.body.append(container);
+ await h.JE.internals.bookmarksLibrary.renderBookmarksLibrary(container);
+ assert.equal(container.querySelector('.je-bookmarks-empty-title')?.textContent.trim(),'bookmarks_library_load_failed');
+ assert.equal(container.textContent.includes('bookmarks_library_empty_title'),false);
+});
 test('library search and tab changes operate on the generated controls',async t=>{
  const h=setup(t,{a:{itemId:'a',timestamp:4,mediaType:'movie',name:'Alpha'},b:{itemId:'b',timestamp:8,mediaType:'movie',name:'Beta'},c:{itemId:'c',timestamp:1,mediaType:'tv',name:'Series'}});
  h.load('render','items');const container=h.document.createElement('div');h.document.body.append(container);
@@ -144,6 +151,18 @@ test('replacement search pages beyond 500 records and never offers a series as a
  h.load('replacements');
  await h.JE.internals.bookmarksLibrary.findAndOfferReplacement({details:{itemId:'old',mediaType:'tv',tmdbId:'42',seasonNumber:1,episodeNumber:2},bookmarks:[]},h.document.createElement('button'));
  assert.equal(calls,2);assert.equal(h.document.querySelectorAll('.replacement-option').length,1);assert.match(h.document.querySelector('.replacement-option').textContent,/Correct episode/);
+});
+test('replacement search for an episode asks the server only for that season and episode number',async t=>{
+ const h=setup(t);const urls=[];
+ h.JE.core.api.fetch=async url=>{urls.push(url);return {Items:[{Id:'correct',Name:'Correct episode',Type:'Episode',ParentIndexNumber:3,IndexNumber:4,ProviderIds:{Tvdb:'77'}}]};};
+ h.load('replacements');
+ await h.JE.internals.bookmarksLibrary.findAndOfferReplacement({details:{itemId:'old',mediaType:'tv',tmdbId:'42',tvdbId:'77',seasonNumber:3,episodeNumber:4},bookmarks:[]},h.document.createElement('button'));
+ assert.equal(urls.length,1);
+ // Jellyfin's legacy Users/{id}/Items route drops IndexNumber; Items?userId= applies it.
+ const url=new URL(urls[0]),query=url.searchParams;
+ assert.deepEqual([url.pathname,query.get('userId')],['/Items','user-a']);
+ assert.deepEqual([query.get('IncludeItemTypes'),query.get('ParentIndexNumber'),query.get('IndexNumber')],['Episode','3','4']);
+ assert.equal(h.document.querySelectorAll('.replacement-option').length,1);
 });
 // BUG-016: jellyfin-web's legacy page events include a bubbling "pagehide" on the view element it hides (seen after a
 // details page). Only the document's own unload may dispose the bookmarks lifetimes; otherwise the library page is

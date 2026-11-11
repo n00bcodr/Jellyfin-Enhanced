@@ -588,6 +588,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
         /// </summary>
         public void BuildFullCache(IProgress<double>? progress, CancellationToken cancellationToken)
         {
+            WarmRemoteFacts(cancellationToken);
             _rebuildLock.Wait(cancellationToken);
             try
             {
@@ -671,10 +672,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
 
         private void BuildFullCacheBody(IProgress<double>? progress, CancellationToken cancellationToken, DateTime reconciliationStartedUtc)
         {
-            WarmSourceRatings(cancellationToken);
             NoteLogoBaseline();
-            WarmLogos(cancellationToken);
-            WarmScenes(cancellationToken);
             var customTagsFingerprint = PrepareCustomTagsForBuild();
             _logger.Info("[TagCache] Starting full cache build...");
             var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -881,6 +879,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
         /// </summary>
         public void ReconcileCache(IProgress<double>? progress, CancellationToken cancellationToken)
         {
+            WarmRemoteFacts(cancellationToken);
             _rebuildLock.Wait(cancellationToken);
             try
             {
@@ -915,10 +914,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
                 _logger.Info("[TagCache] No previous reconciliation marker; seeding marker and running delta reconciliation");
             }
 
-            WarmSourceRatings(cancellationToken);
             RefreshSourceRatings();
-            WarmLogos(cancellationToken);
-            WarmScenes(cancellationToken);
             RefreshLogos();
             RefreshScenes();
             var changedSinceUtc = new DateTime(previousTicks, DateTimeKind.Utc).Subtract(TimeSpan.FromMinutes(2));
@@ -1402,17 +1398,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
         }
 
         /// <summary>
-        /// Library ids to scan: every library except TagCacheExcludedLibraryIds.
-        /// Empty array (no exclusions configured) means no restriction.
+        /// TopParentIds to scan: the physical folders (an item's stored top parent, not the library id the setting
+        /// names) of every library except TagCacheExcludedLibraryIds. Empty array (no exclusions) means no restriction.
         /// </summary>
         private Guid[] IncludedLibraryIds()
         {
             var excluded = ExcludedLibraryIds();
             if (excluded.Count == 0) return Array.Empty<Guid>();
             var included = _libraryManager.GetVirtualFolders()
-                .Select(f => Guid.TryParse(f.ItemId, out var g) ? g : Guid.Empty)
-                .Where(g => g != Guid.Empty && !excluded.Contains(g))
-                .ToArray();
+                .Select(f => Guid.TryParse(f.ItemId, out var g) ? _libraryManager.GetItemById(g) as CollectionFolder : null)
+                .Where(f => f != null && !excluded.Contains(f.Id))
+                .SelectMany(f => f!.PhysicalFolderIds).ToArray();
             // Everything excluded: a sentinel id matches nothing (an empty array would match all).
             return included.Length > 0 ? included : new[] { Guid.NewGuid() };
         }

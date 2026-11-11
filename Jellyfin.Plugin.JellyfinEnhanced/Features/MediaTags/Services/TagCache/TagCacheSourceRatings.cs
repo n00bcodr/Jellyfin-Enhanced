@@ -302,6 +302,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
                 Math.Max(MdblistService.SafetyMargin, config.MdblistFetchReserve), null, cancellationToken).GetAwaiter().GetResult();
         }
 
+        /// <summary>
+        /// The remote lookups of a full build or reconcile (MDBList scores, logos, scene keywords), run before
+        /// either takes the rebuild lock: on a large library they take an hour or more. Only applying their
+        /// answers needs the lock, so item updates, the other tag refreshes and configuration saves never wait
+        /// behind the network.
+        /// </summary>
+        private void WarmRemoteFacts(CancellationToken cancellationToken)
+        {
+            WarmSourceRatings(cancellationToken);
+            WarmLogos(cancellationToken);
+            WarmScenes(cancellationToken);
+        }
+
         /// <summary>Publish changed source facts under the caller's rebuild lock, including the reader mutation scope.</summary>
         private void RefreshSourceRatings()
         {

@@ -91,6 +91,7 @@
   var export12 = /* @__PURE__ */ sharedExport(shared, "sameValue");
   var export13 = /* @__PURE__ */ sharedExport(shared, "settingsFor");
   var export14 = /* @__PURE__ */ sharedExport(shared, "widestScope");
+  var export15 = /* @__PURE__ */ sharedExport(shared, "withChanges");
 
   // client/src/features/hidden-content/hidden-content-data.ts
   (function(JE) {
@@ -104,6 +105,7 @@
     const hiddenIdSet = /* @__PURE__ */ new Set();
     const hiddenTmdbIdSet = /* @__PURE__ */ new Set();
     let hiddenData = null;
+    let storedCopy = { items: {}, settings: {} };
     let loadValid = true;
     let dataOwner = null;
     let editSequence = 0;
@@ -213,6 +215,7 @@
         JE.userConfig.hiddenContent = camelCased || { items: {}, settings: {} };
         noteItemChanges(hiddenData?.items ?? {}, camelCased.items);
         hiddenData = camelCased;
+        storedCopy = camelCased;
         dataOwner = requestToken;
         rebuildSets();
         emitChange();
@@ -223,10 +226,11 @@
         return false;
       }
     }
-    function markScopedHidden(itemId, scope) {
+    function markScopedHidden(itemId, scope, storedOnly = false) {
       if (!itemId) return;
+      if (!storedOnly) markScopedHidden(itemId, scope, true);
       const _scope = (scope || "continuewatching").toLowerCase();
-      const data = getHiddenData();
+      const local = getHiddenData(), data = storedOnly ? storedCopy : local;
       const items = data.items || {};
       const noHyphen = itemId.replace(/-/g, "");
       const hyphenated = noHyphen.length === 32 ? `${noHyphen.slice(0, 8)}-${noHyphen.slice(8, 12)}-${noHyphen.slice(12, 16)}-${noHyphen.slice(16, 20)}-${noHyphen.slice(20)}` : itemId;
@@ -253,6 +257,10 @@
       const nextItems = { ...items, [itemId]: merged };
       if (hyphenated !== itemId) delete nextItems[hyphenated];
       if (noHyphen !== itemId) delete nextItems[noHyphen];
+      if (storedOnly) {
+        storedCopy = { ...data, items: nextItems };
+        return;
+      }
       noteItemChanges(data.items, nextItems, [], true);
       hiddenData = { ...data, items: nextItems };
       JE.userConfig = JE.userConfig || {};
@@ -433,9 +441,10 @@
       try {
         const next = JE.userConfig?.hiddenContent == null ? { items: {}, settings: {} } : export1(JE.userConfig.hiddenContent);
         hiddenData = next;
+        storedCopy = next;
         dataOwner = lease(JE);
         itemEdits.clear();
-        loadValid = true;
+        loadValid = JE.userConfig?.hiddenContent != null;
         rebuildSets();
       } catch (error) {
         hiddenData ?? (hiddenData = { items: {}, settings: {} });
@@ -443,11 +452,29 @@
         console.warn("Invalid hidden-content policy", error);
       }
     }
+    function rebaseOnto(stored) {
+      assertWritable();
+      const owner = dataOwner, sent = getHiddenData(), merged = export15(storedCopy, sent, stored);
+      return { merged, saved() {
+        if (dataOwner !== owner) return;
+        const local = getHiddenData(), next = export15(sent, local, merged), changed = !export12(local, next);
+        if (changed) noteItemChanges(local.items, next.items);
+        storedCopy = merged;
+        hiddenData = next;
+        JE.userConfig.hiddenContent = next;
+        if (changed) {
+          rebuildSets();
+          emitChange();
+          refreshNativeCardVisibility();
+        }
+      } };
+    }
     JE.session?.onUserChange("hidden-content-data", () => {
       policyRevision++;
       intentReset++;
       itemIntents.clear();
       hiddenData = { items: {}, settings: {} };
+      storedCopy = hiddenData;
       loadValid = false;
       dataOwner = null;
       itemEdits.clear();
@@ -483,7 +510,8 @@
       filterCalendarEvents,
       filterRequestItems,
       unhideAll,
-      resetFromUserConfig
+      resetFromUserConfig,
+      rebaseOnto
     });
   })(host.JellyfinEnhanced);
 })();

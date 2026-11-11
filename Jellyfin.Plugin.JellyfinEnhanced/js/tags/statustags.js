@@ -672,11 +672,12 @@
     function eligibleSeriesCard(el, card) {
       return el.isConnected && intersectingCards.has(el) && !!card && isCurrentRecord(card) && card.domId === cardIdentity(el) && !el.closest(".je-hidden") && wantsSeriesFacts(card.data);
     }
-    function hasVisibleSeries(id) {
-      return [...document.querySelectorAll(LIVE_SELECTOR)].some((el) => {
+    function visibleSeries() {
+      let ids;
+      return (id) => (ids ?? (ids = new Set([...document.querySelectorAll(LIVE_SELECTOR)].flatMap((el) => {
         const card = liveCards.get(el);
-        return card?.data.seriesId === id && eligibleSeriesCard(el, card);
-      });
+        return eligibleSeriesCard(el, card) ? [card.data.seriesId] : [];
+      })))).has(id);
     }
     function isCurrentRecord(card) {
       if (card.rev < staleBelowRev) return false;
@@ -826,8 +827,8 @@
       seriesQueue.clear();
       let changed = false;
       for (let i = 0; i < ids.length; i += SERIES_BATCH) {
-        const batch = ids.slice(i, i + SERIES_BATCH).filter((id) => {
-          if (hasVisibleSeries(id)) return true;
+        const visible = visibleSeries(), batch = ids.slice(i, i + SERIES_BATCH).filter((id) => {
+          if (visible(id)) return true;
           const known = seriesInfo.get(id);
           if (known) known.loading = false;
           return false;
@@ -874,12 +875,13 @@
       if (seriesRetryTimer) clearTimeout(seriesRetryTimer);
       seriesRetryTimer = null;
       if (!statusActive || !JE.currentSettings?.statusTagsEnabled) return;
-      const due = [...seriesInfo].filter(([id, value]) => value.retry && !value.loading && hasVisibleSeries(id)).map(([, value]) => value.expires);
+      const visible = visibleSeries(), due = [...seriesInfo].filter(([id, value]) => value.retry && !value.loading && visible(id)).map(([, value]) => value.expires);
       if (!due.length) return;
       seriesRetryTimer = setTimeout(() => {
         seriesRetryTimer = null;
+        const visibleNow = visibleSeries();
         for (const [id, value] of seriesInfo) {
-          if (value.retry && Date.now() >= value.expires && hasVisibleSeries(id)) requestSeries(ctx, id);
+          if (value.retry && Date.now() >= value.expires && visibleNow(id)) requestSeries(ctx, id);
         }
       }, Math.max(0, Math.min(...due) - Date.now()));
     }
@@ -899,7 +901,7 @@
     function refreshCalendar(ctx) {
       if (!statusActive || !JE.currentSettings?.statusTagsEnabled) return;
       applyLivePass(ctx);
-      for (const [id] of seriesInfo) if (hasVisibleSeries(id)) requestSeries(ctx, id);
+      for (const id of [...seriesInfo.keys()].filter(visibleSeries())) requestSeries(ctx, id);
       armMidnight(ctx);
       armSeriesRetry(ctx);
     }

@@ -12,7 +12,7 @@ export interface HiddenDataSurface {
  isLoadOk():boolean;
  getSettings(): Settings;
  rebuildSets(): void; shouldFilterSurface(surface: string): boolean; emitChange(): void;
- refresh(): Promise<boolean>; markScopedHidden(id: string, scope?: string): void;
+ refresh(): Promise<boolean>; markScopedHidden(id: string, scope?: string, storedOnly?: boolean): void;
  isHidden(id: unknown): boolean; isHiddenByTmdbId(id: unknown): boolean;
  hideItem(item: HiddenItem): void; unhideItem(id: string): void; updateSettings(settings: Partial<Settings>): void;
  getAllHiddenItems(): ListedItem[]; getHiddenCount(): number;
@@ -20,6 +20,7 @@ export interface HiddenDataSurface {
  filterCalendarEvents<T extends {tmdbId?: unknown; itemId?: unknown; title?: string}>(items: T[]): T[];
  filterRequestItems<T extends {tmdbId?: unknown; id?: unknown; jellyfinMediaId?: unknown}>(items: T[]): T[];
  unhideAll(): void; resetFromUserConfig(): void;
+ rebaseOnto(stored: HiddenDocument): {merged: HiddenDocument; saved(): void};
  debouncedSave(): void; flushPendingSave(): Promise<void>;
  fetchHiddenContentUsers(): Promise<AdminUser[] | null>;
  fetchUserHiddenItemsForAdmin(userId: string): Promise<ListedItem[] | null>;
@@ -36,7 +37,7 @@ export interface HiddenDataSurface {
 }
 export interface HiddenHost {
  internals?: { hiddenContentRuntime?: Runtime; features?:Partial<HomeSurfaceApi>; hiddenContent?: Partial<HiddenDataSurface>; hiddenContentPage?: Partial<PageSurface> };
- hiddenContent: Omit<HiddenDataSurface,'hiddenIdSet'|'normalizeId'|'getHiddenData'|'rebuildSets'|'shouldFilterSurface'|'emitChange'|'resetFromUserConfig'|'debouncedSave'|'refreshNativeCardVisibility'|'restoreNativeCardsForIds'|'getCardSurface'|'getCardItemId'|'filterAllNativeCards'|'setupNativeObserver'|'injectCSS'|'assertWritable'|'captureItemIntent'>;
+ hiddenContent: Omit<HiddenDataSurface,'hiddenIdSet'|'normalizeId'|'getHiddenData'|'rebuildSets'|'shouldFilterSurface'|'emitChange'|'resetFromUserConfig'|'debouncedSave'|'refreshNativeCardVisibility'|'restoreNativeCardsForIds'|'getCardSurface'|'getCardItemId'|'filterAllNativeCards'|'setupNativeObserver'|'injectCSS'|'assertWritable'|'captureItemIntent'|'rebaseOnto'>;
  hiddenContentPage: Pick<PageSurface,'showPage'|'hidePage'|'renderForCustomTab'|'renderPage'|'injectStyles'> & {initialize():void};
  initializeHiddenContentPage?:()=>void;
  pluginConfig?:{HiddenContentEnabled?:boolean;HiddenContentAdmin?:boolean;HiddenContentUsePluginPages?:boolean;HiddenContentUseCustomTabs?:boolean;HiddenContentUseNativeTab?:boolean};

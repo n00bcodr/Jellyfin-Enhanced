@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.JellyfinEnhanced.Infrastructure.Auth;
+using Jellyfin.Plugin.JellyfinEnhanced.Infrastructure.Identity;
 using Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.PosterTags;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
@@ -86,6 +87,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.SpoilerGuard.Services
                 return next();
             }
 
+            if (spoilerGuard)
+            {
+                IssueIdentityCookie(context.HttpContext, userId.Value);
+            }
+
             // Native poster tags alone: web clients (and everyone while the
             // master switch is off) keep the synchronous fast path.
             var posterTags = _posterTags.IsCandidate(context.HttpContext);
@@ -95,6 +101,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.SpoilerGuard.Services
             }
 
             return StampAfterActionAsync(context, next, userId.Value, spoilerGuard, posterTags);
+        }
+
+        // The web client writes its bare user id into the je-spoiler-uid cookie, which the identity ladder no
+        // longer trusts (anyone can name a user id). A browser that sends anything but this user's signed value
+        // gets the signed one back; native clients send no cookie and get none.
+        private void IssueIdentityCookie(Microsoft.AspNetCore.Http.HttpContext http, Guid userId)
+        {
+            if (!http.Request.Cookies.TryGetValue(RequestIdentityService.SpoilerUidCookie, out var sent)
+                || (_identity.TryReadCookie(sent, out var named) && named == userId))
+            {
+                return;
+            }
+
+            try
+            {
+                http.Response.Cookies.Append(RequestIdentityService.SpoilerUidCookie, _identity.MintCookie(userId),
+                    new Microsoft.AspNetCore.Http.CookieOptions { Path = "/", SameSite = Microsoft.AspNetCore.Http.SameSiteMode.Lax, IsEssential = true });
+            }
+            catch (Exception ex)
+            {
+                _resolver.WarnRateLimited(
+                    "identitycookie:" + ex.GetType().FullName,
+                    $"Spoiler Guard identity cookie: could not be issued — this browser's images fall back to IP resolution. {ex.Message}");
+            }
         }
 
         private async Task StampAfterActionAsync(ActionExecutingContext context, ActionExecutionDelegate next, Guid userId, bool spoilerGuard, bool posterTags)

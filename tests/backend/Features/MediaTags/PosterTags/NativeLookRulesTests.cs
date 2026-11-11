@@ -144,7 +144,7 @@ public class NativeLookRulesTests
         using var cache = new TagCacheService(library.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger, new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger));
         using var data = new PosterTagDataProvider(cache, library.Object, null!, null!, null!, f.Core.Logger);
         var tokens = PosterTagVariantToken.CreateForPath(Path.Combine(f.Core.Root, "native-key"), _ => { });
-        var stamper = new NativePosterTagStamper(new NativeClientPolicy(), provider, tokens, data, new SpoilerIdentityService(users.Object, f.Core.Logger), null!, null!, userCache, library.Object);
+        var stamper = new NativePosterTagStamper(new NativeClientPolicy(), provider, tokens, data, new SpoilerIdentityService(users.Object, f.Core.Logger, f.Core.Paths.Object), null!, null!, userCache, library.Object);
         var settings = provider.Get(user.Id);
         Assert.False(settings.AnyGroupEnabled);
         Assert.True(settings.MayShowTags);
@@ -195,7 +195,7 @@ public class NativeLookRulesTests
         using var cache = new TagCacheService(library.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger, new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger));
         using var data = new PosterTagDataProvider(cache, library.Object, null!, null!, null!, f.Core.Logger);
         var tokens = PosterTagVariantToken.CreateForPath(Path.Combine(f.Core.Root, "native-key"), _ => { });
-        var stamper = new NativePosterTagStamper(new NativeClientPolicy(), provider, tokens, data, new SpoilerIdentityService(users.Object, f.Core.Logger), null!, null!, userCache, library.Object);
+        var stamper = new NativePosterTagStamper(new NativeClientPolicy(), provider, tokens, data, new SpoilerIdentityService(users.Object, f.Core.Logger, f.Core.Paths.Object), null!, null!, userCache, library.Object);
         var http = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity([new Claim("Jellyfin-Client", "Jellyfin for Android TV")], "test")) };
         var session = stamper.Begin(http, user.Id);
         Assert.NotNull(session);

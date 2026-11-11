@@ -240,6 +240,23 @@ test('a season page and an episode page preset and lock what they are about, and
   assert.equal(episode.document.querySelector('#issue-episode').disabled, true);
 });
 
+test('a report cannot be sent while the season and episode lists load, so it is never filed against all seasons', async t => {
+  const lists = deferred();
+  const reply = seasonsReply([1, 2]);
+  const h = setup(t, { ajax: async request => { await lists.promise; return reply(request); } });
+  withQuery(h.window.ApiClient);
+  h.R.showReportModal('1', 'Show', 'tv', null, { Id: 'e', Type: 'Episode', IndexNumber: 2, ParentIndexNumber: 1, SeriesId: 'series', ParentId: 's1' });
+  h.pickType('3');
+  h.submit();
+  await h.settle();
+  assert.equal(h.reports.length, 0, 'nothing is sent before the lists are in');
+  lists.resolve();
+  await h.settle();
+  h.submit();
+  await h.settle();
+  assert.deepEqual(plain(h.reports.map(report => report.slice(4))), [[1, 2]]);
+});
+
 test('an episode never reads its season as the series', async t => {
   const h = setup(t, { ajax: seasonsReply([1]) });
   withQuery(h.window.ApiClient);
@@ -273,6 +290,20 @@ test('the button goes before the More menu, and opens the dialog for that title 
   button.click();
   assert.equal(h.document.querySelector('.jellyseerr-season-subtitle').textContent, 'Film');
   assert.match(h.document.querySelector('.jellyseerr-season-header').style.backgroundImage, /Items\/m1\/Images\/Backdrop/);
+});
+
+test('the dialog header requests the small backdrop it asks for, and a quote in its address stays inside it', async t => {
+  const h = setup(t, { items: { m1: { ...MOVIE, BackdropImageTags: ["it's"] } } });
+  // Jellyfin's ApiClient.getUrl: each query value through encodeURIComponent, which leaves ' as it is.
+  h.window.ApiClient.getUrl = (path, params) => `http://jellyfin.test/${path}?${Object.entries(params).map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&')}`;
+  assert.equal(await h.R.tryAddButton(), true);
+  h.document.querySelector('.jellyseerr-report-issue-icon').click();
+  // What the browser requests: the url() of the header's background, as the style resolves it.
+  const image = h.document.querySelector('.jellyseerr-season-header').style.backgroundImage;
+  const requested = new URL(/^url\("(.*)"\)$/.exec(image)[1]);
+  assert.equal(requested.pathname, '/Items/m1/Images/Backdrop');
+  assert.equal(requested.searchParams.get('quality'), '40');
+  assert.equal(requested.searchParams.get('tag'), "it's");
 });
 
 test('overlapping checks for one page add one button; a page left behind adds none', async t => {
@@ -315,6 +346,7 @@ test('a season and an episode report against their series', async t => {
   const h = setup(t, { items: { m1: { Id: 'm1', Type: 'Episode', Name: 'Ep', ParentIndexNumber: 1, SeriesId: 'series' }, series: { Id: 'series', Type: 'Series', ProviderIds: { Tmdb: '77' } } } });
   await h.R.tryAddButton();
   h.document.querySelector('.jellyseerr-report-issue-icon').click();
+  await h.settle();
   h.pickType('1');
   h.submit();
   await h.settle();
@@ -421,6 +453,37 @@ test('initialize waits for Seerr, watches views once, and uses the bootstrap sta
   await inactive.R.initialize();
   inactive.document.dispatchEvent(new inactive.window.Event('viewshow'));
   assert.deepEqual(inactive.clock.pending(), []);
+});
+
+for (const failure of ['inactive', 'unanswered']) test(`Seerr ${failure} at start-up is asked again on a later page view, at most once a minute`, async t => {
+  const status = { active: false };
+  const h = setup(t, { status });
+  let now = 1_000_000;
+  h.window.Date.now = () => now;
+  const answer = h.window.ApiClient.ajax;
+  if (failure === 'unanswered') h.window.ApiClient.ajax = async request => {
+    if (!request.url.includes('/jellyseerr/status')) return answer(request);
+    h.ajaxCalls.push(request.url);
+    throw new Error('timeout');
+  };
+  const asked = () => h.ajaxCalls.filter(url => url.includes('/jellyseerr/status')).length;
+  await h.R.initialize();
+  assert.equal(asked(), 1);
+  now += 30_000;
+  h.document.dispatchEvent(new h.window.Event('viewshow'));
+  await h.settle();
+  assert.equal(asked(), 1, 'no second check within the minute');
+
+  status.active = true;
+  h.window.ApiClient.ajax = answer;
+  now += 31_000;
+  h.document.dispatchEvent(new h.window.Event('viewshow'));
+  await h.settle();
+  assert.equal(asked(), 2);
+  h.clock.run(500);
+  h.clock.run(100);
+  await h.settle();
+  assert.equal(h.document.querySelectorAll('.jellyseerr-report-issue-icon').length, 1);
 });
 
 test('with the feature off nothing runs', async t => {

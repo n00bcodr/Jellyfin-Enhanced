@@ -114,7 +114,8 @@ test('an episode prefetch looks up the series once and asks TMDB nothing, as bef
 test('a TMDB failure in the prefetch still removes the placeholder',async t=>{
  const h=setup(t,{fetch:async()=>jsonResponse({},503),JE:{core:{api:limiter()}}});h.expectConsoleError(/TMDB request failed/);
  h.api.prefetchReleaseDate('movie',movie,{});h.api.displayReleaseDate('movie',h.container);await h.settle();
- assert.equal(h.container.children.length,0);assert.equal(h.counts().fetchCalls,1);
+ // A failed prefetch is never shown: the chip asks once more, and that failure is not kept either.
+ assert.equal(h.container.children.length,0);assert.equal(h.counts().fetchCalls,2);
 });
 test('an expired answer is looked up again: a finished lookup is not kept for the next prefetch or chip',async t=>{
  const h=setup(t,{data:releases,JE:{core:{api:limiter()}}});const RealDate=h.window.Date;let now=RealDate.now();
@@ -150,4 +151,15 @@ test('the chip\'s own lookup failing after a user switch leaves the incoming ses
  switchUser();retry.reject(new Error('401 Unauthorized'));await h.settle();retryLookup=async()=>movie;
  h.api.displayReleaseDate('movie',h.container);await h.settle();
  assert.equal(h.container.querySelectorAll('.mediaInfoItem-releaseDate').length,2);assert.deepEqual(h.counts(),{itemCalls:2,fetchCalls:1},'stale failures leave no negative cache');
+});
+test('a failed TMDB or series lookup is not kept as "no dates": the next visit asks again and shows them',async t=>{
+ let fail=true;const h=setup(t,{fetch:async()=>fail?jsonResponse({},503):jsonResponse(releases)});h.expectConsoleError(/TMDB request failed/);
+ h.api.displayReleaseDate('movie',h.container);await h.settle();assert.equal(h.container.children.length,0);
+ fail=false;h.api.displayReleaseDate('movie',h.container);await h.settle();
+ assert.equal(h.counts().fetchCalls,2);assert.equal(h.container.querySelectorAll('.mediaInfoItem-releaseDate').length,2);
+ // An episode whose series could not be read is not "no dates" either.
+ let seriesDown=true;const episode=setup(t,{data:releases,getItem:async(_user,id)=>{if(id==='series'){if(seriesDown)throw new Error('offline');return {Type:'Series',ProviderIds:{Tmdb:'42'}};}return {Type:'Episode',SeriesId:'series',ParentIndexNumber:1,IndexNumber:2};}});
+ episode.expectConsoleError(/Error fetching release info/);
+ episode.api.displayReleaseDate('episode',episode.container);await episode.settle();assert.equal(episode.container.children.length,0);
+ seriesDown=false;episode.api.displayReleaseDate('episode',episode.container);await episode.settle();assert.equal(episode.counts().fetchCalls,1);
 });

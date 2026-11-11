@@ -166,6 +166,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.DetailsProviders
                 return BadRequest("The translation URL is not allowed.");
             }
 
+            // A bounded share per signed-in account: behind a proxy Jellyfin does not know, every account has the
+            // proxy's address. The client address (as Jellyfin resolves it) only when there is no account.
+            var budgetOwner = UserHelper.GetCurrentUserId(User)?.ToString("N") ?? HttpContext.Connection.RemoteIpAddress?.ToString() ?? string.Empty;
+            if (!_reviewTranslationService.TryUseClientBudget(budgetOwner, request.Text.Length, out var budgetWait))
+            {
+                var seconds = Math.Max(1, (int)Math.Ceiling(budgetWait.TotalSeconds));
+                Response.Headers["Retry-After"] = seconds.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                return StatusCode(429, new
+                {
+                    error = true,
+                    code = "translation_rate_limited",
+                    message = "Too many translations from this client. Try again later.",
+                    retryAfterSeconds = seconds,
+                });
+            }
+
             try
             {
                 var translated = await _reviewTranslationService.TranslateAsync(
@@ -221,7 +237,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.DetailsProviders
                 return BadRequest("mediaType must be 'movie', 'tv', or 'person'.");
             }
 
-            if (string.IsNullOrWhiteSpace(tmdbId) || !tmdbId.All(char.IsDigit))
+            // At most 10 digits: each id becomes a key in awards.json.
+            if (string.IsNullOrWhiteSpace(tmdbId) || tmdbId.Length > 10 || !tmdbId.All(char.IsDigit))
             {
                 return BadRequest("tmdbId must be a positive integer.");
             }
@@ -263,16 +280,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.DetailsProviders
                 return BadRequest("mediaType must be 'movie' or 'tv'.");
             }
 
-            if (string.IsNullOrWhiteSpace(tmdbId) || !tmdbId.All(char.IsDigit))
+            // At most 10 digits: each id becomes a key in mdblist-ratings.json.
+            if (string.IsNullOrWhiteSpace(tmdbId) || tmdbId.Length > 10 || !tmdbId.All(char.IsDigit))
             {
                 return BadRequest("tmdbId must be a positive integer.");
             }
 
             // Unconfirmed so neither the browser nor the client cache keeps this answer,
             // which only holds while the title is guarded.
-            if (_spoilerSeerrRedactor.HidesRatings(mediaType, tmdbId, UserHelper.GetCurrentUserId(User)?.ToString(), HttpContext))
+            var userId = UserHelper.GetCurrentUserId(User);
+            if (_spoilerSeerrRedactor.HidesRatings(mediaType, tmdbId, userId?.ToString(), HttpContext))
             {
                 return Ok(new { Found = false, Confirmed = false });
+            }
+
+            // A title not cached (or due a refresh) spends the administrator's quota: past the
+            // account's share, the answer on record, else "not known yet" (Confirmed false).
+            if (_mdblistService.NeedsFetch(mediaType, tmdbId) && !_mdblistService.TryUseUserLookup(userId?.ToString("N") ?? string.Empty))
+            {
+                return Ok(_mdblistService.GetCachedEntry(mediaType, tmdbId) ?? (object)new { Found = false, Confirmed = false });
             }
 
             try
@@ -308,7 +334,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.DetailsProviders
         {
             if (!DoesTheDogDieActive(out _)) return StatusCode(503, "DoesTheDogDie is not enabled.");
             if (mediaType != "movie" && mediaType != "tv") return BadRequest("mediaType must be 'movie' or 'tv'.");
-            if (string.IsNullOrWhiteSpace(tmdbId) || !tmdbId.All(char.IsDigit)) return BadRequest("tmdbId must be a positive integer.");
+            // At most 10 digits: each id becomes a key in ddd-cache.json.
+            if (string.IsNullOrWhiteSpace(tmdbId) || tmdbId.Length > 10 || !tmdbId.All(char.IsDigit)) return BadRequest("tmdbId must be a positive integer.");
 
             try
             {

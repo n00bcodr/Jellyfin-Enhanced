@@ -107,7 +107,7 @@
     if (!installOnce(JE, "hidden-content-save")) return;
     "use strict";
     const internal = registry(JE, "hiddenContent");
-    const { getHiddenData, assertWritable } = internal;
+    const { getHiddenData, assertWritable, rebaseOnto } = internal;
     function decodeAdded(value) {
       const added = export11(value).added;
       if (typeof added !== "number" || !Number.isInteger(added) || added < 0) throw new Error("Invalid hidden-content mutation response");
@@ -201,13 +201,20 @@
         assertWritable();
         const userId = api.getCurrentUserId();
         if (!userId) throw new Error("no current user");
-        const snapshot = JSON.stringify(getHiddenData());
+        const stored = export1(await api.ajax({
+          type: "GET",
+          url: api.getUrl(`/JellyfinEnhanced/user-settings/${userId}/hidden-content.json?_=${Date.now()}`),
+          dataType: "json"
+        }));
+        const { merged, saved } = rebaseOnto(stored);
+        const snapshot = JSON.stringify(merged);
         await api.ajax({
           type: "POST",
           url: api.getUrl(`/JellyfinEnhanced/user-settings/${userId}/hidden-content.json`),
           data: snapshot,
           contentType: "application/json"
         });
+        saved();
         return snapshot;
       });
     }

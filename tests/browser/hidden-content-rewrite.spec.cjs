@@ -7,12 +7,14 @@ async function setup(page){
  await page.route('http://hidden.fixture/**',route=>route.fulfill({contentType:'text/html',body:'<!doctype html><html><head></head><body><div class="section nextup"><h2>Next Up</h2><div class="card" data-id="episode"><div class="cardBox"><span class="cardText">Episode</span></div></div></div><div class="section"><h2>Library</h2><div class="card" data-id="episode"><div class="cardBox">Same episode</div></div></div><div id="management"></div></body></html>'}));
  await page.goto('http://hidden.fixture/');
  await page.evaluate(()=>{
-  let epoch=0;const handlers=new Map();window.saved=[];
+  let epoch=0;const handlers=new Map();window.saved=[];window.stored={items:{},settings:{showHideConfirmation:false}};
   window.ApiClient={getCurrentUserId:()=> 'current',getUrl:p=>p,getDisplayPreferences:async()=>({CustomPrefs:{}}),ajax:async request=>{
    if(request.url.includes('/admin/hidden-content-users'))return {users:[{userId:'a',userName:'Alice',count:1},{userId:'b',userName:'Bob',count:1}]};
    if(request.url.endsWith('/admin/hidden-content/a'))return {hiddenContent:{items:{a:{itemId:'a',name:'Alice secret',type:'Movie'}},settings:{}}};
    if(request.url.endsWith('/admin/hidden-content/b'))return {hiddenContent:{items:{b:{itemId:'b',name:'Bob secret',type:'Movie'}},settings:{}}};
-   if(request.type==='POST'){window.saved.push({url:request.url,data:request.data});return {success:true};}
+   // Every save reads the stored list first: the list the page loaded, then the last one written.
+   if(request.type==='GET'&&request.url.includes('/hidden-content.json'))return structuredClone(window.stored);
+   if(request.type==='POST'){window.saved.push({url:request.url,data:request.data});if(request.url.includes('/hidden-content.json'))window.stored=JSON.parse(request.data);return {success:true};}
    return {Items:[]};
   }};
   window.JellyfinEnhanced={internals:{},userConfig:{hiddenContent:{items:{},settings:{showHideConfirmation:false}}},pluginConfig:{HiddenContentEnabled:true},currentSettings:{removeContinueWatchingEnabled:true},state:{removeContext:null},

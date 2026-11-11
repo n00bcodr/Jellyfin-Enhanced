@@ -121,6 +121,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.SpoilerGuard
             bool CastAll,
             bool Poster,
             bool Backdrop,
+            bool Reviews,
             string Placeholder)
         {
             // The title-bearing block in ApplyStripping runs on the same condition.
@@ -180,7 +181,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.SpoilerGuard
         /// <param name="HideDates">Air and release dates.</param>
         /// <param name="HidePoster">The poster.</param>
         /// <param name="HideBackdrop">The backdrop.</param>
-        public sealed record RowPolicy(bool HideOverview, bool HideDates, bool HidePoster, bool HideBackdrop);
+        /// <param name="HideReviews">Users' reviews of the title, as the details page hides its Reviews panel.</param>
+        public sealed record RowPolicy(bool HideOverview, bool HideDates, bool HidePoster, bool HideBackdrop, bool HideReviews);
 
         /// <summary>
         /// One caller's guards, for the rows JE assembles itself. Resolved up front so
@@ -212,7 +214,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.SpoilerGuard
                 tokens.AddRange(RowTokens(null, null, jellyfinId4k));
                 if (_owner.MatchTokens(_scope, isSeries, tmdbId, tokens) == null) return null;
                 var policy = BuildPolicy(_scope, isSeries);
-                return new RowPolicy(policy.Overview, policy.Dates, policy.Poster, policy.Backdrop);
+                return new RowPolicy(policy.Overview, policy.Dates, policy.Poster, policy.Backdrop, policy.Reviews);
             }
 
             /// <summary>Whether an episode's title is hidden from this caller.</summary>
@@ -221,10 +223,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.SpoilerGuard
             /// <param name="shokoSeriesId">The Shoko series id, when known.</param>
             /// <param name="itemEpisodeId">The episode's library item, when known.</param>
             /// <param name="episodeTvdbId">The episode's own TVDB id, when known.</param>
+            /// <param name="seriesItemId">The series' library item, when known.</param>
             /// <returns>True when the title must not be shown.</returns>
-            public bool HidesEpisodeTitle(string? tmdbId, string? tvdbId, string? shokoSeriesId, Guid? itemEpisodeId, string? episodeTvdbId)
+            public bool HidesEpisodeTitle(string? tmdbId, string? tvdbId, string? shokoSeriesId, Guid? itemEpisodeId, string? episodeTvdbId, Guid? seriesItemId = null)
                 => BuildPolicy(_scope, true).ReplaceTitle
-                    && IsHidden(tmdbId, tvdbId, shokoSeriesId, itemEpisodeId, episodeTvdbId, reveal => reveal.Title);
+                    && IsHidden(tmdbId, tvdbId, shokoSeriesId, itemEpisodeId, episodeTvdbId, reveal => reveal.Title, seriesItemId);
 
             /// <summary>Whether an episode's description is hidden from this caller.</summary>
             /// <param name="tmdbId">The series' TMDB id, when known.</param>
@@ -237,9 +240,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.SpoilerGuard
                 => BuildPolicy(_scope, true).SeasonOverview
                     && IsHidden(tmdbId, tvdbId, shokoSeriesId, itemEpisodeId, episodeTvdbId, reveal => reveal.Overview);
 
-            private bool IsHidden(string? tmdbId, string? tvdbId, string? shokoSeriesId, Guid? itemEpisodeId, string? episodeTvdbId, Func<SpoilerFieldStripFilter.CategoryReveal, bool> revealed)
+            private bool IsHidden(string? tmdbId, string? tvdbId, string? shokoSeriesId, Guid? itemEpisodeId, string? episodeTvdbId, Func<SpoilerFieldStripFilter.CategoryReveal, bool> revealed, Guid? seriesItemId = null)
             {
-                var match = _owner.MatchTokens(_scope, true, tmdbId, RowTokens(tvdbId, shokoSeriesId, null));
+                var match = _owner.MatchTokens(_scope, true, tmdbId, RowTokens(tvdbId, shokoSeriesId, seriesItemId?.ToString("N")));
                 if (match == null) return false;
 
                 var progress = _progress.GetOrAdd(string.Join(',', match.ItemIds), _ => _owner.LoadProgress(_scope, match.ItemIds));
@@ -359,6 +362,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.SpoilerGuard
             var scope = LoadScope(jellyfinUserId, httpContext);
             return scope == null ? null : new GuardedRows(this, scope);
         }
+
+        /// <summary>
+        /// <see cref="LoadRows"/> for the caller the request identity ladder resolves (the token's
+        /// user on an authenticated request), as the field filter resolves it for Jellyfin's own
+        /// responses: for a route that does not read the caller itself.
+        /// </summary>
+        /// <param name="httpContext">The current request.</param>
+        /// <returns>The guards, or null when Spoiler Guard doesn't apply to this caller.</returns>
+        public GuardedRows? LoadRowsForRequest(HttpContext httpContext)
+            => LoadRows(_resolver.ResolveUserId(httpContext)?.ToString(), httpContext);
 
         // Null when Spoiler Guard can't apply to this caller, the path nearly every
         // request takes: no body parsing and no library lookups.
@@ -716,6 +729,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.SpoilerGuard
                 // Series art passes the image filter. Movie art follows these two settings.
                 Poster: !isSeries && !cfg.SpoilerKeepMoviePosters,
                 Backdrop: !isSeries && cfg.SpoilerBlurArtwork,
+                Reviews: SpoilerFieldStripFilter.ShouldStrip(cfg.SpoilerStripReviews, prefs?.HideReviews),
                 Placeholder: SpoilerFieldStripFilter.SanitizePlaceholder(cfg.SpoilerOverviewPlaceholder));
         }
 

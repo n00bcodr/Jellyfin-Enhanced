@@ -3,9 +3,11 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Text;
 using System.Text.RegularExpressions;
 using MediaBrowser.Common.Configuration;
 using Newtonsoft.Json;
+using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.Features.Admin.Models;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Admin.Services
@@ -380,7 +382,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Admin.Services
         {
             try
             {
-                File.WriteAllText(SnapshotFilePath, JsonConvert.SerializeObject(snapshot, Formatting.Indented));
+                // A temporary file moved into place: an interrupted write leaves the previous file whole.
+                UserConfigurationManager.WriteUserDocument(SnapshotFilePath, Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(snapshot, Formatting.Indented)));
             }
             catch (Exception ex)
             {
@@ -392,7 +395,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Admin.Services
         {
             try
             {
-                File.WriteAllText(WhatsNewFilePath, JsonConvert.SerializeObject(state, Formatting.Indented));
+                // A temporary file moved into place: an interrupted write leaves the previous file whole.
+                UserConfigurationManager.WriteUserDocument(WhatsNewFilePath, Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(state, Formatting.Indented)));
             }
             catch (Exception ex)
             {

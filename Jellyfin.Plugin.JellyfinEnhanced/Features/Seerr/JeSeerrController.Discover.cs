@@ -358,13 +358,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Seerr
             return ProxyJellyseerrRequest(AppendDiscoverFilters($"/api/v1/discover/tv/upcoming?page={page}"), HttpMethod.Get);
         }
 
+        /// <summary>
+        /// The item, when the caller may see it (library access and parental rules, as Jellyfin's own
+        /// item routes apply them); null otherwise, so a hidden item reads as a missing one.
+        /// Administrators get any item, as before.
+        /// </summary>
+        private BaseItem? GetItemForCaller(Guid id)
+        {
+            if (IsAdminUser()) return _libraryManager.GetItemById(id);
+            var userId = UserHelper.GetCurrentUserId(User);
+            var user = userId.HasValue ? _userManager.GetUserById(userId.Value) : null;
+            return user == null ? null : _libraryManager.GetItemById<BaseItem>(id, user);
+        }
+
         [HttpGet("studio/{studioId}")]
         [Authorize]
         public IActionResult GetStudioInfo(Guid studioId)
         {
             try
             {
-                var studio = _libraryManager.GetItemById(studioId);
+                var studio = GetItemForCaller(studioId);
                 if (studio == null)
                 {
                     return NotFound(new { message = "Studio not found" });
@@ -398,7 +411,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Seerr
         {
             try
             {
-                var boxset = _libraryManager.GetItemById(boxsetId);
+                var boxset = GetItemForCaller(boxsetId);
                 if (boxset == null || boxset.GetType().Name != "BoxSet")
                 {
                     return NotFound(new { message = "BoxSet not found" });
@@ -432,7 +445,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Seerr
         {
             try
             {
-                var person = _libraryManager.GetItemById(personId);
+                // Only an item the caller may see (a hidden item reads as a missing one); administrators as before.
+                var person = GetItemForCaller(personId);
                 if (person == null)
                 {
                     return NotFound(new { message = "Person not found" });
@@ -788,7 +802,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Seerr
         {
             try
             {
-                var genre = _libraryManager.GetItemById(genreId);
+                var genre = GetItemForCaller(genreId);
                 if (genre == null)
                 {
                     return NotFound(new { message = "Genre not found" });

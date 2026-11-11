@@ -576,7 +576,7 @@ Show your logo on a black full-screen loading overlay while Jellyfin starts. The
 | Setting | Default | What it does |
 |---|---|---|
 | **Enable Splash Screen Override** | Off | Enables JE's loading overlay. |
-| **Splash Screen Image URL** | `/web/assets/img/banner-light.png` | Supplies the logo from a browser-reachable URL or suitable same-origin path. |
+| **Splash Screen Image URL** | `/web/assets/img/banner-light.png` | Supplies the logo from a browser-reachable URL or suitable same-origin path. Left at the default, the splash shows the banner the hosted web client ships (on Jellyfin 12 a file named `banner-light.<hash>.png` in its folder). |
 
 ??? note "Details"
 

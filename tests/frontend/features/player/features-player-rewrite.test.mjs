@@ -124,3 +124,11 @@ test('leaving the player hides the subtitle offset panel the shortcut opened and
  h.JE.adjustSubtitleOffset(0.1); h.navigate();
  assert.equal(h.box.classList.contains('hide'), true); assert.equal(h.c.size(), 0);
 });
+test('a skip that is not an intro or outro shows the translated Skipped toast', t => {
+ const toasts=[]; const h=setup(t,{JE:{toast:m=>toasts.push(m)}}); h.load('enhanced/player/playback.js');
+ h.window.PointerEvent=h.window.MouseEvent; // jsdom has no PointerEvent
+ h.document.body.insertAdjacentHTML('beforeend','<button class="skip-button emby-button">Skip Recap</button>');
+ h.JE.skipIntroOutro();
+ assert.deepEqual(toasts,['toast_skipped']);
+});
+

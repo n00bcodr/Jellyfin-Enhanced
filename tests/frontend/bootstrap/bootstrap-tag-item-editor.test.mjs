@@ -873,3 +873,38 @@ for (const failing of ['personal', 'everyone']) test(`a save for you and for eve
     assert.deepEqual(h.patches.at(-1).Changes.TagLookItemOverrides.Set.map((o) => [o.ItemId, o.Layout]), [[MOVIE, 'summary']]);
   }
 });
+
+// Browsers without CSS :has() (Chrome before 105, Firefox before 121) cannot style a label by its checked radio: the
+// chosen option's label carries je-tie-checked, styled only where :has() is missing.
+test('the chosen option of every choice carries je-tie-checked, for browsers without :has()', async t => {
+  const h = setup(t, { settings: { tagLookRules: [kidsRule] } });
+  assert.equal(await h.open(MOVIE), true);
+  const marked = () => Array.from(h.document.querySelectorAll('.je-tie label.je-tie-checked')).map(label => label.querySelector('input').value).sort();
+  const chosen = () => Array.from(h.document.querySelectorAll('.je-tie label input[type="radio"]:checked')).map(input => input.value).sort();
+  assert.ok(chosen().includes('caption') && chosen().includes('compact'));
+  assert.deepEqual(marked(), chosen());
+
+  h.change(h.$('.je-tie input[value="bands"]'), true);
+  await h.settle();
+  assert.ok(marked().includes('bands') && !marked().includes('caption'));
+  assert.deepEqual(marked(), chosen(), 'the group rows drawn for the new layout are marked too');
+
+  h.change(h.$('.je-tie input[name$="Density"][value="full"]'), true);
+  await h.settle();
+  assert.deepEqual(marked(), chosen());
+
+  // The class is styled only inside the blocks a browser without :has() applies.
+  const css = Array.from(h.document.querySelectorAll('style')).map(style => style.textContent).join('\n').replace(/\/\*[\s\S]*?\*\//g, '');
+  const blocks = [];
+  let rest = css;
+  for (let at = rest.indexOf('@supports not selector(:has(*))'); at >= 0; at = rest.indexOf('@supports not selector(:has(*))')) {
+    let depth = 0, end = rest.indexOf('{', at);
+    do { depth += rest[end] === '{' ? 1 : rest[end] === '}' ? -1 : 0; end++; } while (depth > 0);
+    blocks.push(rest.slice(at, end));
+    rest = rest.slice(0, at) + rest.slice(end);
+  }
+  assert.match(blocks.join(), /\.je-tie-pill\.je-tie-checked[^}]*background: #0077a3/);
+  assert.match(blocks.join(), /\.je-tie-tile\.je-tie-checked/);
+  assert.match(blocks.join(), /\.je-tie-anchor\.je-tie-checked/);
+  assert.doesNotMatch(rest, /je-tie-checked/);
+});

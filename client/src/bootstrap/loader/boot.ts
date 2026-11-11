@@ -12,6 +12,9 @@ import { buildUserConfigFromBootstrap, fetchUserScopedConfig, seedDisplayLanguag
 
 const INIT_POLL_INTERVAL_MS = 50;
 const MAX_MISMATCH_RETRIES = 600; // ~30s at 50ms intervals.
+/** A configuration that could not be read is asked for again after 1 s, doubling to a minute. */
+const CONFIG_RETRY_MS = 1000;
+const CONFIG_RETRY_MAX_MS = 60_000;
 
 /** Whether the stored credentials belong to another server (stale from a previous one). */
 export function hasServerIdMismatch(): boolean {
@@ -42,12 +45,12 @@ async function loadTranslationsModule(JE: LoaderNamespace): Promise<void> {
     });
 }
 
-/** Fallback config and version; each failure degrades to its documented default. */
+/** Fallback config and version; a failed config is null (unknown), a failed version is 'unknown'. */
 function loadPluginData(): Promise<[unknown, unknown]> {
     const api = client();
     const configPromise = api.ajax({ type: 'GET', url: api.getUrl('/JellyfinEnhanced/public-config'), dataType: 'json' }).catch((error: unknown) => {
         console.error('🪼 Jellyfin Enhanced: Failed to fetch public config', error);
-        return {};
+        return null;
     });
     const versionPromise = api.ajax({ type: 'GET', url: api.getUrl('/JellyfinEnhanced/version'), dataType: 'text' }).catch((error: unknown) => {
         console.error('🪼 Jellyfin Enhanced: Failed to fetch version', error);
@@ -146,6 +149,7 @@ async function recoverSessionChangedDuringBoot(dependencies: BootDependencies): 
 export function createInitializer(dependencies: BootDependencies): () => Promise<void> {
     const { JE, identity, contracts, config } = dependencies;
     let mismatchRetryCount = 0;
+    let configRetryCount = 0;
     const retry = () => { setTimeout(() => { void initialize(); }, INIT_POLL_INTERVAL_MS); };
 
     async function initialize(): Promise<void> {
@@ -189,7 +193,12 @@ export function createInitializer(dependencies: BootDependencies): () => Promise
             } else {
                 const [publicConfig, version] = await loadPluginData();
                 if (!unchanged()) { retry(); return; }
-                JE.pluginConfig = isRecord(publicConfig) ? publicConfig : {};
+                // No configuration is not "every feature off": nothing starts until one arrives.
+                if (!isRecord(publicConfig)) {
+                    setTimeout(() => { void initialize(); }, Math.min(CONFIG_RETRY_MAX_MS, CONFIG_RETRY_MS * 2 ** configRetryCount++));
+                    return;
+                }
+                JE.pluginConfig = publicConfig;
                 JE.pluginVersion = typeof version === 'string' && version ? version : 'unknown';
             }
             JE.translations = translations || {};

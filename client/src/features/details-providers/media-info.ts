@@ -217,9 +217,8 @@ async function displayWatchProgress(itemId: string, container: HTMLElement, medi
         } catch (error) {
             console.error('🪼 Jellyfin Enhanced: Error fetching watch progress for ID %s:', itemId, error);
             if (!isEpochCurrent(requestEpoch)) return;
-            // Keep placeholder with 0 to prevent repeated calls
+            // The placeholder stays so this page does not ask again; a failure is not cached, the next visit does.
             renderUnavailable();
-            watchProgressCache.set(itemId, { progress: 0, totalPlaybackTicks: 0, totalRuntimeTicks: 0, ts: now });
         }
     };
     void performFetch();
@@ -285,7 +284,6 @@ async function displayItemSize(itemId: string, container: HTMLElement, mediaSour
             if (!isCurrent()) return;
             console.error('🪼 Jellyfin Enhanced: Error fetching item size for ID %s:', itemId, error);
             renderUnavailable();
-            fileSizeCache.set(cacheKey, { size: null, unavailable: true, ts: now });
         }
     };
     void performFetch();
@@ -322,23 +320,19 @@ async function fetchFirstEpisodeForLanguage(userId: string | null, parentId: str
         const enriched = await fetchTagDataItem(userId, firstEpisodeId);
         if (enriched) return enriched;
     }
-    // Native lookup is retained only as a compatibility fallback.
-    try {
-        const client = api();
-        const response = await client.ajax({
-            type: 'GET',
-            url: client.getUrl('/Items', {
-                ParentId: parentId, IncludeItemTypes: 'Episode', IsVirtualItem: false, Recursive: true,
-                SortBy: 'PremiereDate', SortOrder: 'Ascending', Limit: 1, Fields: 'MediaStreams,MediaSources', userId: userId ?? ''
-            }),
-            dataType: 'json'
-        });
-        const episode = decodeDetailsItem(list(field(response, 'Items'))[0]);
-        if (!episode?.Id) return episode;
-        return await fetchTagDataItem(userId, episode.Id) || episode;
-    } catch {
-        return null;
-    }
+    // Native lookup is retained only as a compatibility fallback. A failed one rejects: unknown is not "no episode".
+    const client = api();
+    const response = await client.ajax({
+        type: 'GET',
+        url: client.getUrl('/Items', {
+            ParentId: parentId, IncludeItemTypes: 'Episode', IsVirtualItem: false, Recursive: true,
+            SortBy: 'PremiereDate', SortOrder: 'Ascending', Limit: 1, Fields: 'MediaStreams,MediaSources', userId: userId ?? ''
+        }),
+        dataType: 'json'
+    });
+    const episode = decodeDetailsItem(list(field(response, 'Items'))[0]);
+    if (!episode?.Id) return episode;
+    return await fetchTagDataItem(userId, episode.Id) || episode;
 }
 
 // Language code -> { baseTag, variantTag }
@@ -628,8 +622,6 @@ async function displayAudioLanguages(itemId: string, container: HTMLElement, med
             if (!isCurrent()) return;
             console.error('🪼 Jellyfin Enhanced: Error fetching audio languages for %s:', itemId, error);
             await renderUnavailableInFrame();
-            if (!isCurrent()) return;
-            cacheUnavailable();
         }
     };
     void performFetch();

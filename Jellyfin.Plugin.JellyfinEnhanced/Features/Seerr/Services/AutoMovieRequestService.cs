@@ -21,6 +21,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Seerr.Services
         private readonly Logger _logger;
         private readonly IUserManager _userManager;
         private readonly ILibraryManager _libraryManager;
+        private readonly Shared.Parental.SeerrParentalFilter _parentalFilter;
 
         // Track which movies have already been requested to avoid duplicates (with timestamps for expiry)
         private readonly Dictionary<string, Dictionary<string, DateTime>> _requestedMovies = new();
@@ -39,12 +40,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Seerr.Services
             IHttpClientFactory httpClientFactory,
             Logger logger,
             IUserManager userManager,
-            ILibraryManager libraryManager)
+            ILibraryManager libraryManager,
+            Shared.Parental.SeerrParentalFilter parentalFilter)
         {
             _httpClientFactory = httpClientFactory;
             _logger = logger;
             _userManager = userManager;
             _libraryManager = libraryManager;
+            _parentalFilter = parentalFilter;
         }
 
         private static string[] GetConfiguredUrls(string? urls)
@@ -119,6 +122,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Seerr.Services
             if (nextMovieInfo == null)
             {
                 // _logger.Debug($"[Auto-Movie-Request] No next movie found or next movie is already available/requested");
+                return;
+            }
+
+            // The watcher's parental limit refuses this request as it refuses their manual one (fails closed).
+            if (await _parentalFilter.IsBlockedAsync("movie", nextMovieInfo.TmdbId, user.Id.ToString("N")).ConfigureAwait(false))
+            {
+                _logger.Info($"[Auto-Movie-Request] Not requesting '{nextMovieInfo.Title}' (TMDB {nextMovieInfo.TmdbId}) for {user.Username}: outside their parental limit");
                 return;
             }
 

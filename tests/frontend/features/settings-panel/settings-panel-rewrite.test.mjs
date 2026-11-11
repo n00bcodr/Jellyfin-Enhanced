@@ -40,6 +40,24 @@ function panelHarness(t, { revision = 'loaded-r1', isAdmin = false, hostAdmin, a
   return { ...h, ui, requests, posts, snapshot, panel: () => h.document.getElementById('jellyfin-enhanced-panel') };
 }
 
+test('the panel stays open while it is used by keyboard, TV remote or touch, and still closes once left alone', async t => {
+  const h = panelHarness(t, { ajax: request => request.type === 'GET' ? h.snapshot('loaded-r1') : null });
+  h.JE.pluginConfig.HelpPanelAutocloseDelay = 15000;
+  let now = 0, nextId = 1; const timers = new Map();
+  h.window.setTimeout = (fn, ms = 0) => { timers.set(nextId, { at: now + Number(ms), fn }); return nextId++; };
+  h.window.clearTimeout = id => { timers.delete(id); };
+  const advance = ms => { now += ms; for (const [id, timer] of [...timers].sort((a, b) => a[1].at - b[1].at)) if (timer.at <= now && timers.delete(id)) timer.fn(); };
+  await h.JE.showEnhancedPanel();
+  // No mouse event at all: the pointer never enters the panel.
+  const inside = h.panel().querySelector('.je-pane-title');
+  const uses = [() => inside.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })),
+    () => inside.dispatchEvent(new h.window.FocusEvent('focusin', { bubbles: true })),
+    () => inside.dispatchEvent(new h.window.Event('touchstart', { bubbles: true }))];
+  for (const use of uses) for (let i = 0; i < 3; i++) { advance(10000); assert.ok(h.panel(), `open ${now / 1000} s after opening, used every 10 s`); use(); }
+  advance(14999); assert.ok(h.panel());
+  advance(1); assert.equal(h.panel(), null, 'closed once nobody used it for the configured delay');
+});
+
 test('SETTINGS-PANEL-01: opening the panel loads the revisioned document and the next save uses its revision', async t => {
   let answer;
   const h = panelHarness(t, { ajax: request => request.type === 'GET' ? answer : { Revision: 'saved-r3' } });
@@ -231,6 +249,35 @@ test('a crafted subtitle colour never breaks out of the panel preview style attr
   assert.equal(tpl.content.getElementById('customSubtitleTextColorPicker').value, '#ffffff');
 });
 
+// A recognised theme's stylesheet (an @import of the author's hosted file) controls the variables the panel is drawn
+// with; a stylesheet must not be able to run script through them in the panel's <style>, style attributes or handlers.
+test('a theme variable that is not a plain CSS value never reaches the opened panel as markup or script', async t => {
+  const h = panelHarness(t, { ajax: request => request.type === 'GET' ? h.snapshot('loaded-r1') : null });
+  h.window.console.log = () => {};
+  for (const file of ['tags/rating-sources.js', 'enhanced/icons.js', 'enhanced/helpers.js', 'enhanced/player/subtitles.js']) h.load(file);
+  Object.assign(h.JE, { themer: undefined, cdn: { url: (repo, file) => `/cdn/${repo}/${file}` } });
+  h.load('enhanced/themer.js');
+  h.load('enhanced/settingspanel/ui-panel-settings.js');
+  // The real template; the controls' wiring is not what this checks.
+  for (const name of ['wireShortcutEditor', 'wireSettingsListeners', 'wireHiddenContentListeners', 'wireMiscSettingsControls', 'wireTagGroupEditor', 'wireLanguageControls']) h.ui[name] = () => {};
+  delete h.ui.buildPanelHtml;
+  h.load('enhanced/settingspanel/ui-panel-template.js');
+  const root = h.document.documentElement.style;
+  root.setProperty('--theme-updated-on', '2025-01-01'); // Jellyfish
+  root.setProperty('--primary-accent-color', '</style><img id="je-theme-probe" src="x" onerror="window.pwned=1">');
+  root.setProperty('--alt-accent-color', "red';window.pwned=2;'");
+  root.setProperty('--secondary-background-transparent', 'red" onfocus="window.pwned=3" data-x="');
+  root.setProperty('--text-color', 'rgba(1, 2, 3, 0.5)');
+  await h.JE.showEnhancedPanel();
+  const panel = h.panel();
+  assert.ok(panel, 'the panel opened with the real template');
+  assert.equal(panel.querySelector('#je-theme-probe'), null, 'nothing closed the panel <style> element');
+  const carriers = [...panel.querySelectorAll('*')].flatMap(el => [...el.attributes].filter(a => /pwned/.test(a.value)).map(a => `${el.tagName}[${a.name}]`));
+  assert.deepEqual(carriers, [], 'no attribute or handler holds the theme text');
+  assert.doesNotMatch([...panel.querySelectorAll('style')].map(s => s.textContent).join(''), /pwned|<img/);
+  assert.match(panel.querySelector('#releaseNotesBtn').getAttribute('style'), /color:\s*rgba\(1, 2, 3, 0\.5\)/, 'a plain colour is still used');
+});
+
 // Upstream 533614b8: the two subtitle offset shortcuts are listed in the panel's Player column.
 test('the panel lists the subtitle offset shortcuts in the Player column with their keys', t => {
   const Shortcuts = [{ Name: 'FrameStepForward', Key: '.', Label: 'Step Forward One Frame', Category: 'Player' },
@@ -300,6 +347,29 @@ test('SETTINGS-PANEL-03: in-range stored indexes keep their presets', async t =>
   assert.equal(h.writes.at(-1).selectedFontSizePresetIndex, 0);
 });
 
+test('the release notes panel and its failure toast are translated, with the date in the chosen language', async t => {
+  const toasts = [];
+  let fail = false;
+  const h = createHarness({
+    JE: { t: key => key, toast: message => toasts.push(message), icon: () => '', IconName: {}, escapeHtml: value => String(value ?? ''),
+      themer: { getThemeVariables: () => ({}) }, core: { mediaLanguage: { uiLocale: () => 'de' } } },
+    fetch: async () => fail ? jsonResponse({}, 500) : jsonResponse({ body: 'Notes', tag_name: 'v12.1', published_at: '2026-11-01T12:00:00Z', html_url: 'https://github.com/x' }),
+  });
+  t.after(() => h.close());
+  h.load('enhanced/settingspanel/ui-release-notes.js');
+  await h.JE.internals.enhancedUi.showReleaseNotesNotification();
+  const panel = h.document.getElementById('jellyfin-release-notes-notification');
+  assert.match(panel.textContent, /release_notes_latest/);
+  assert.match(panel.textContent, new RegExp(`v12\\.1 - ${new Date('2026-11-01T12:00:00Z').toLocaleDateString('de').replace(/\./g, '\\.')}`));
+  assert.equal(panel.querySelector('a[target="_blank"]').textContent, 'release_notes_view_full');
+  assert.equal([...panel.querySelectorAll('button')].at(-1).textContent, 'release_notes_close');
+  panel.remove();
+  fail = true;
+  h.expectConsoleError(/Failed to fetch release notes/);
+  await h.JE.internals.enhancedUi.showReleaseNotesNotification();
+  assert.match(toasts.at(-1), /release_notes_load_failed/);
+});
+
 test('release notes keep a GitHub link only when it is http(s), and escape release text', async t => {
   const h = createHarness({
     JE: { t: key => key, toast() {}, icon: () => '', IconName: {}, escapeHtml: value => String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'),
@@ -334,6 +404,31 @@ test('a rebound shortcut the plugin defaults lack is stored under its action nam
   key.focus();
   key.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Delete', bubbles: true, cancelable: true }));
   assert.deepEqual(writes.at(-1).Shortcuts, [{ Name: 'FrameStepBack', Key: '' }]);
+});
+
+test('shortcut overrides that failed to load are listed but cannot be rebound over the stored list', t => {
+  const writes = [];
+  const Shortcuts = [{ Name: 'FrameStepForward', Key: '.', Label: 'Step Forward One Frame', Category: 'Player' }];
+  const h = createHarness({ JE: { pluginConfig: { HelpPanelAutocloseDelay: 60000, Shortcuts }, userConfig: { settings: {}, shortcuts: null }, currentSettings: {},
+    state: { activeShortcuts: { FrameStepForward: '.' } }, pauseScreenInstance: {}, t: k => k, toast() {},
+    keyCombo: e => e.key.toUpperCase() } });
+  t.after(() => h.close());
+  for (const file of ['core/ui-kit.js', 'tags/rating-sources.js', 'enhanced/config.js', 'enhanced/icons.js', 'enhanced/helpers.js', 'enhanced/player/subtitles.js']) h.load(file);
+  h.JE.saveUserSettings = async (file, doc) => { writes.push([file, JSON.parse(JSON.stringify(doc))]); };
+  h.JE.currentSettings = h.JE.loadSettings();
+  h.JE.themer = { getThemeVariables: () => ({}) };
+  for (const file of ['ui-panel-settings.js', 'ui-panel-template.js', 'ui-panel-shortcut-editor.js']) h.load(`enhanced/settingspanel/${file}`);
+  const help = h.document.createElement('div');
+  help.innerHTML = h.JE.internals.enhancedUi.buildPanelHtml({});
+  h.document.body.append(help);
+  h.JE.internals.enhancedUi.wireShortcutEditor({ help, pluginShortcuts: Shortcuts, primaryAccentColor: '#0af', kbdBackground: '#222' });
+  const key = help.querySelector('.shortcut-key[data-action="FrameStepForward"]');
+  assert.equal(key.textContent, '.');
+  key.focus();
+  key.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'q', bubbles: true, cancelable: true }));
+  help.querySelector('.shortcut-toggle[data-action="FrameStepForward"]').click();
+  assert.deepEqual(writes, []);
+  assert.equal(h.JE.state.activeShortcuts.FrameStepForward, '.');
 });
 
 test('the shared panel registry keeps every member the admin page and item editor read', t => {

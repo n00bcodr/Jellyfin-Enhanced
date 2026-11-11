@@ -31,3 +31,21 @@ test('BUG-019: the hover overview follows mouseover and mouseout, with no mousee
   move('mouseout', poster, outside);
   assert.equal(card.querySelector('.jellyseerr-overview'), null);
 });
+
+// The hide button hands Hidden Content a plain title: it is shown as text and stored as given.
+test('hiding a Seerr card stores its plain title, not HTML-escaped text', t => {
+  const hidden = [];
+  const h = createHarness({ JE: {
+    t: key => key, escapeHtml: value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[c]),
+    jellyseerrAPI: { resolveJellyseerrBaseUrl: () => 'http://seerr:5055' },
+    cdn: { url: path => `/cdn/${path}`, selfhst: path => `/selfhst/${path}` },
+    hiddenContent: { getSettings: () => ({ enabled: true }), isHiddenByTmdbId: () => false, confirmAndHide: item => hidden.push(item) }
+  } });
+  t.after(() => h.close());
+  for (const file of ['core/ui-kit.js', 'jellyseerr/seerr-status.js', 'jellyseerr/ui/ui-icons.js', 'jellyseerr/ui/ui-badges.js', 'jellyseerr/ui/ui-cards.js']) h.load(file);
+  const card = h.JE.jellyseerrUI.createJellyseerrCard({ id: 61923, mediaType: 'tv', name: "Tom & Jerry's Lab Day" }, true, true);
+  h.document.body.append(card);
+  card.querySelector('.je-hide-btn').click();
+  assert.equal(hidden.length, 1);
+  assert.equal(hidden[0].name, "Tom & Jerry's Lab Day");
+});

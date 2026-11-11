@@ -32,7 +32,7 @@ test('overlapping refresh rejects old events and old completion rendering',async
  assert.equal(h.P.state.events[0].id,'new');assert.equal(h.P.state.isLoading,false);assert.match(h.document.body.textContent,/new/);assert.equal(h.document.querySelector('[data-event-id=old]'),null);
 });
 test('malformed responses show an error instead of a successful empty calendar',async t=>{
- const h=setup(t,async()=>({events:[{...event('bad'),hasFile:'true'}]}));await h.P.loadAllData();assert.equal(h.P.state.events.length,0);assert.match(h.document.querySelector('[role=alert]').textContent,/could not be loaded/);assert.equal(h.document.querySelector('.je-calendar-empty'),null);
+ const h=setup(t,async()=>({events:[{...event('bad'),hasFile:'true'}]}));await h.P.loadAllData();assert.equal(h.P.state.events.length,0);assert.match(h.document.querySelector('[role=alert]').textContent,/calendar_load_failed/);assert.equal(h.document.querySelector('.je-calendar-empty'),null);
 });
 test('failed requests remain retryable and never install a partial pagination result',async t=>{
  let calls=0,fail=true;const h=setup(t,async()=>{calls++;if(fail&&calls===2)throw Error('offline');return {requests:[{type:'tv',tmdbId:7}],totalPages:fail?2:1};});h.JE.pluginConfig.JellyseerrEnabled=true;
@@ -105,4 +105,19 @@ test('in-app navigation to the calendar keeps it over the router\'s Page not fou
  await router.go('#/home');assert.deepEqual(router.seen(),{visible:['indexPage'],title:'Home'});
  await router.push('#/calendar');assert.deepEqual(router.seen(),{visible:['je-calendar-page'],title:'Calendar'});
  await router.push('#/home');assert.deepEqual(router.seen(),{visible:['indexPage'],title:'Home'});
+});
+test('weekday names and dates follow the language chosen in Jellyfin Enhanced, and the controls are translated',async t=>{
+ // The browser runs in English; the user picked German in Jellyfin Enhanced.
+ const h=setup(t,async()=>({events:[event('one','2026-03-10')]}));h.JE.core.mediaLanguage={uiLocale:()=>'de'};
+ const de=(date,options)=>new Intl.DateTimeFormat('de',options).format(date);
+ await h.P.loadAllData();
+ Object.assign(h.P.state,{viewMode:'month',currentDate:new Date(2026,2,10)});h.P.state.settings.firstDayOfWeek='Monday';h.P.renderPage();
+ const weekdays=[...h.document.querySelectorAll('.je-calendar-weekday')].map(e=>e.textContent);
+ assert.deepEqual(weekdays,[2,3,4,5,6,7,8].map(d=>de(new Date(2026,1,d),{weekday:'short'})),'Monday first, in German');
+ assert.equal(h.P.formatRangeLabel(),de(new Date(2026,2,10),{month:'long',year:'numeric'}));
+ assert.deepEqual([...h.document.querySelectorAll('.je-calendar-filter-btn, .je-calendar-filter-invert')].map(b=>b.textContent.trim()),['calendar_filter_any','calendar_filter_all','calendar_filter_not']);
+ h.P.state.viewMode='agenda';h.P.renderPage();
+ assert.match(h.document.body.textContent,new RegExp(de(new Date(2026,2,10),{month:'short',day:'numeric'}).replace('.','\\.')));
+ h.P.state.error='calendar_load_failed';h.P.state.events=[];h.P.renderPage();
+ assert.equal(h.document.querySelector('[role=alert] button').textContent,'calendar_retry');
 });

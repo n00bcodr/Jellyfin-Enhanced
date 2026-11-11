@@ -388,6 +388,8 @@ export function installUiPanel(JE: Deps, featureCtx = settingsPanelContext(JE)):
         help.addEventListener('mouseleave', () => { isMouseInside = false; resetAutoCloseTimer(); });
         help.addEventListener('click', resetAutoCloseTimer);
         help.addEventListener('wheel', (e) => { e.stopPropagation(); resetAutoCloseTimer(); });
+        // Keyboard, TV-remote and touch use sends no mouse events: it restarts the timer too.
+        for (const type of ['keydown', 'focusin', 'touchstart'] as const) help.addEventListener(type, resetAutoCloseTimer, { capture: true, passive: true });
 
         /**
          * Settings search providers: each section that wants its controls

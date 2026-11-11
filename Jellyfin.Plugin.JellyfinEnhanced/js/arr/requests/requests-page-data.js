@@ -134,6 +134,7 @@
     const renderPage = (...args) => P.renderPage(...args);
     const logPrefix = "🪼 Jellyfin Enhanced: Requests Page:";
     let requestsOwner;
+    let loaded = false;
     const state = {
       downloads: [],
       requests: [],
@@ -165,6 +166,7 @@
     const unsubscribeSession = JE.session?.onUserChange("requests-page", () => {
       life.invalidate();
       requestsOwner = void 0;
+      loaded = false;
       _toastedDownloadsErrors.clear();
       state.downloads = [];
       state.requests = [];
@@ -444,7 +446,7 @@
         const data = response(await JE.core.api.plugin(`/arr/history?${query.toString()}`));
         if (!lease.current()) return null;
         state.history = readItems(data.items);
-        state.historyError = false;
+        state.historyError = state.history.length === 0 && Array.isArray(data.errors) && data.errors.length > 0;
         state.historyVisible = data.visible !== false;
         state.historyTotalPages = pages(data.totalPages);
         return data;
@@ -461,10 +463,12 @@
       const lease = life.capture("load");
       if (!lease.current()) return;
       state.isLoading = true;
-      renderPage();
+      if (!loaded) renderPage();
       await Promise.all([fetchDownloads(), fetchRequests(), fetchIssues(), fetchHistory()]);
       if (!lease.current()) return;
       state.isLoading = false;
+      loaded = true;
+      if (document.querySelector(".je-request-approve-btn:hover, .je-request-decline-btn:hover, .je-request-approve-btn:focus, .je-request-decline-btn:focus")) return;
       renderPage();
     }
     async function handleRequestAction(btn, action) {

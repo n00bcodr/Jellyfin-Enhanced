@@ -881,12 +881,11 @@ export function createStatusTags(JE: TagRuntimeBridge) {
             && !el.closest('.je-hidden') && wantsSeriesFacts(card.data);
     }
 
-    /** @param id @returns Whether any current visible card still needs this id. */
-    function hasVisibleSeries(id: string): boolean {
-        return [...document.querySelectorAll<HTMLElement>(LIVE_SELECTOR)].some(el => {
-            const card = liveCards.get(el);
-            return card?.data.seriesId === id && eligibleSeriesCard(el, card);
-        });
+    /** @returns Whether any current visible card still needs an id; one page scan, on first use, per pass. */
+    function visibleSeries(): (id: string) => boolean {
+        let ids: Set<string> | undefined;
+        return id => (ids ??= new Set([...document.querySelectorAll<HTMLElement>(LIVE_SELECTOR)]
+            .flatMap(el => { const card = liveCards.get(el); return eligibleSeriesCard(el, card) ? [card.data.seriesId] : []; }))).has(id);
     }
 
     /**
@@ -1123,8 +1122,8 @@ export function createStatusTags(JE: TagRuntimeBridge) {
         seriesQueue.clear();
         let changed = false;
         for (let i = 0; i < ids.length; i += SERIES_BATCH) {
-            const batch = ids.slice(i, i + SERIES_BATCH).filter(id => {
-                if (hasVisibleSeries(id)) return true;
+            const visible = visibleSeries(), batch = ids.slice(i, i + SERIES_BATCH).filter(id => {
+                if (visible(id)) return true;
                 const known = seriesInfo.get(id);
                 if (known) known.loading = false;
                 return false;
@@ -1178,13 +1177,14 @@ export function createStatusTags(JE: TagRuntimeBridge) {
         if (seriesRetryTimer) clearTimeout(seriesRetryTimer);
         seriesRetryTimer = null;
         if (!statusActive || !JE.currentSettings?.statusTagsEnabled) return;
-        const due = [...seriesInfo].filter(([id, value]) => value.retry && !value.loading && hasVisibleSeries(id))
+        const visible = visibleSeries(), due = [...seriesInfo].filter(([id, value]) => value.retry && !value.loading && visible(id))
             .map(([, value]) => value.expires);
         if (!due.length) return;
         seriesRetryTimer = setTimeout(() => {
             seriesRetryTimer = null;
+            const visibleNow = visibleSeries();
             for (const [id, value] of seriesInfo) {
-                if (value.retry && Date.now() >= value.expires && hasVisibleSeries(id)) requestSeries(ctx, id);
+                if (value.retry && Date.now() >= value.expires && visibleNow(id)) requestSeries(ctx, id);
             }
         }, Math.max(0, Math.min(...due) - Date.now()));
     }
@@ -1211,7 +1211,7 @@ export function createStatusTags(JE: TagRuntimeBridge) {
     function refreshCalendar(ctx: TagCtx): void {
         if (!statusActive || !JE.currentSettings?.statusTagsEnabled) return;
         applyLivePass(ctx);
-        for (const [id] of seriesInfo) if (hasVisibleSeries(id)) requestSeries(ctx, id);
+        for (const id of [...seriesInfo.keys()].filter(visibleSeries())) requestSeries(ctx, id);
         armMidnight(ctx);
         armSeriesRetry(ctx);
     }

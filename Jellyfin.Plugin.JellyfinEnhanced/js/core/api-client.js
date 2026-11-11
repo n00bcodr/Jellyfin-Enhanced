@@ -645,6 +645,21 @@
 
   // client/src/host/api-host.ts
   var text = (value) => typeof value === "string" ? value : "";
+  function anySignal(signals) {
+    if (typeof AbortSignal.any === "function") return AbortSignal.any(signals);
+    const controller = new AbortController();
+    const aborted = signals.find((signal) => signal.aborted);
+    if (aborted) {
+      controller.abort(aborted.reason);
+      return controller.signal;
+    }
+    function onAbort(event) {
+      for (const signal of signals) signal.removeEventListener("abort", onAbort);
+      controller.abort(event.target instanceof AbortSignal ? event.target.reason : void 0);
+    }
+    for (const signal of signals) signal.addEventListener("abort", onAbort);
+    return controller.signal;
+  }
   function installApi() {
     const host = window;
     const je = host.JellyfinEnhanced;
@@ -724,7 +739,7 @@
       },
       fetch: (url, options) => window.fetch(url, options),
       controller: () => new AbortController(),
-      combineSignals: (signals) => AbortSignal.any(signals),
+      combineSignals: anySignal,
       now: () => performance.now(),
       wallNow: () => Date.now(),
       random: () => Math.random(),

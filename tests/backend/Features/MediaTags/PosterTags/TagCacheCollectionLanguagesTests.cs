@@ -58,6 +58,11 @@ public class TagCacheCollectionLanguagesTests
         public readonly Mock<ILibraryManager> Mock = new();
         /// <summary>When false, a reconciliation sees no item saved since its marker.</summary>
         public bool ReportSavedItems = true;
+        /// <summary>
+        /// Each item's top parent (the physical folder under the root) when set; a query's TopParentIds then
+        /// match it exactly, as Jellyfin 12.4's item repository does for these kinds. Null ignores TopParentIds.
+        /// </summary>
+        public Dictionary<Guid, Guid>? TopParents;
 
         public Library()
         {
@@ -67,6 +72,7 @@ public class TagCacheCollectionLanguagesTests
                 IEnumerable<BaseItem> selected = Items;
                 if (q.ItemIds?.Length > 0) selected = selected.Where(i => q.ItemIds.Contains(i.Id));
                 else if (q.IncludeItemTypes?.Length > 0) selected = selected.Where(i => q.IncludeItemTypes.Contains(i.GetBaseItemKind()));
+                if (TopParents != null && q.TopParentIds?.Length > 0) selected = selected.Where(i => TopParents.TryGetValue(i.Id, out var top) && q.TopParentIds.Contains(top));
                 if (q.ParentId != Guid.Empty) selected = selected.Where(i => i.ParentId == q.ParentId || (i is MediaBrowser.Controller.Entities.TV.Episode e && e.SeriesId == q.ParentId));
                 return selected.Skip(q.StartIndex ?? 0).Take(q.Limit ?? int.MaxValue).ToArray();
             }
@@ -399,6 +405,43 @@ public class TagCacheCollectionLanguagesTests
             cache.EnqueueUpdate(hidden.Id);
             FlushTwice(cache);
             Assert.Equal(new[] { "eng", "por", "spa" }, Audio(cache, box));
+        });
+    }
+
+    [Fact]
+    public void ExcludingOneLibraryKeepsTheOthersInTheFullBuildAndTheReconcileSweep()
+    {
+        // The setting and GetVirtualFolders name a library by its collection folder; an item's stored
+        // top parent is the library's physical folder, a different id.
+        var library = new Library { TopParents = new() };
+        var movies = new CollectionFolder { Id = Guid.NewGuid(), Name = "Movies", PhysicalFolderIds = [Guid.NewGuid()] };
+        var excluded = new CollectionFolder { Id = Guid.NewGuid(), Name = "Excluded", PhysicalFolderIds = [Guid.NewGuid()] };
+        var shown = new Movie { Id = Guid.NewGuid(), Name = "Shown", Sources = Tracks("eng") };
+        var hidden = new Movie { Id = Guid.NewGuid(), Name = "Hidden", Sources = Tracks("spa") };
+        library.Items.AddRange(new BaseItem[] { movies, excluded, shown, hidden });
+        library.TopParents[shown.Id] = movies.PhysicalFolderIds[0];
+        library.TopParents[hidden.Id] = excluded.PhysicalFolderIds[0];
+        library.Mock.Setup(l => l.GetCollectionFolders(It.IsAny<BaseItem>())).Returns((BaseItem item) =>
+            new List<Folder> { item.Id == hidden.Id ? excluded : movies });
+        library.Mock.Setup(l => l.GetVirtualFolders()).Returns(new List<VirtualFolderInfo>
+        {
+            new() { ItemId = movies.Id.ToString("N"), Name = "Movies" },
+            new() { ItemId = excluded.Id.ToString("N"), Name = "Excluded" },
+        });
+
+        WithCache(library, cache =>
+        {
+            Assert.True(cache.TryGetEntry(shown.Id, out _));
+            Assert.True(cache.TryGetEntry(hidden.Id, out _));
+            Jellyfin.Plugin.JellyfinEnhanced.JellyfinEnhanced.Instance!.Configuration.TagCacheExcludeLibraries = true;
+            Jellyfin.Plugin.JellyfinEnhanced.JellyfinEnhanced.Instance.Configuration.TagCacheExcludedLibraryIds = excluded.Id.ToString();
+
+            cache.BuildFullCache(null, CancellationToken.None);
+            Assert.True(cache.TryGetEntry(shown.Id, out _), "the included library is still built");
+            Assert.False(cache.TryGetEntry(hidden.Id, out _), "the excluded library is not");
+
+            cache.ReconcileCache(null, CancellationToken.None);
+            Assert.True(cache.TryGetEntry(shown.Id, out _), "the reconcile does not sweep the included library");
         });
     }
 

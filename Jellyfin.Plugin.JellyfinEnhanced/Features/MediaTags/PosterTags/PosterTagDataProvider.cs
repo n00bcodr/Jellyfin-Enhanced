@@ -199,7 +199,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.PosterTags
         private static string LogoImageKey(TagCacheEntry entry)
         {
             if (entry.Logos is not { Length: > 0 } logos) return string.Empty;
-            var key = new StringBuilder("|l:");
+            // "l1": posters drawn while the renderer refused logos past its decode cap show a name chip under a
+            // key that says the logo is there; the new marker redraws every poster with logos once.
+            var key = new StringBuilder("|l1:");
             foreach (var logo in logos)
             {
                 key.Append(logo?.Logo is { } path && Rendering.PosterTagAssets.HasLogo(path) ? '1' : '0');

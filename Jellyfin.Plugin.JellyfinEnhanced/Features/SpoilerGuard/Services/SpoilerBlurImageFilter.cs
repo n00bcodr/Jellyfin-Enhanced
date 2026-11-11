@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
@@ -110,6 +111,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.SpoilerGuard.Services
         private readonly ImageBlurService _blurService;
         private readonly SpoilerNextUnwatchedService _nextUnwatched;
         private readonly Logger _logger;
+        // Bounds the protected images read, decoded and re-encoded at once; the rest wait their turn.
+        private readonly SemaphoreSlim _decodeSlots = new(ImageBlurService.MaxConcurrentDecodes, ImageBlurService.MaxConcurrentDecodes);
 
         public SpoilerBlurImageFilter(
             ILibraryManager libraryManager,
@@ -637,15 +640,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.SpoilerGuard.Services
             // and "hide" doesn't serve stale entries from the wrong mode.
             var spoilerMode = string.Equals(pluginConfig.SpoilerBlurMode, "hide", StringComparison.OrdinalIgnoreCase)
                 ? "hide" : "blur";
-            var cacheKey = BuildItemCacheKey(item, imageType, context, pluginConfig.SpoilerBlurIntensity)
+            TryGetImageIndex(context, out var imageIndex);
+            var cacheKey = BuildItemCacheKey(item, imageType, context, pluginConfig.SpoilerBlurIntensity, ImageVersion(item, imageType, imageIndex))
                 + ":" + spoilerMode;
 
             var executed = await next().ConfigureAwait(false);
             if (executed.Canceled || executed.Exception != null) return;
 
             var originalResult = executed.Result;
+            var holdsSlot = false;
             try
             {
+                await _decodeSlots.WaitAsync(executed.HttpContext.RequestAborted).ConfigureAwait(false);
+                holdsSlot = true;
                 if (spoilerMode == "hide")
                 {
                     await ReplaceWithStockCardAsync(executed, pluginConfig.SpoilerBlurIntensity, cacheKey, imageType, item, userState).ConfigureAwait(false);
@@ -654,6 +661,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.SpoilerGuard.Services
                 {
                     await ReplaceWithBlurredAsync(executed, pluginConfig.SpoilerBlurIntensity, cacheKey, imageType).ConfigureAwait(false);
                 }
+            }
+            catch (OperationCanceledException) when (!holdsSlot)
+            {
+                // The client left while waiting for a decode slot: nothing was read. Never the original.
+                executed.Result = new FileContentResult(_blurService.HardcodedFallbackJpeg, "image/jpeg");
             }
             catch (Exception ex)
             {
@@ -683,6 +695,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.SpoilerGuard.Services
             }
             finally
             {
+                if (holdsSlot) _decodeSlots.Release();
                 // MVC normally disposes FileStreamResult streams while executing the
                 // result. Replacing that result transfers ownership to this filter;
                 // otherwise every protected stream response leaks its file handle.
@@ -907,12 +920,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.SpoilerGuard.Services
             "width", "height", "quality", "format",
         };
 
-        private static string BuildItemCacheKey(BaseItem item, string imageType, ActionExecutingContext context, int sigma)
+        // The image a request resolves to, as path@date ("_" when unknown, e.g. a trickplay tile, whose
+        // width and index are keyed apart). Jellyfin serves the item's current image whatever `tag` the
+        // caller sends (the tag only sets its cache headers), so this, not the tag, tells images apart:
+        // a made-up tag cannot force a new decode, and replaced artwork is not served from the cache.
+        private string ImageVersion(BaseItem item, string imageType, int imageIndex)
         {
-            string? tag = null;
+            try
+            {
+                if (!Enum.TryParse<MediaBrowser.Model.Entities.ImageType>(imageType, out var type)) return "_";
+                if (type == MediaBrowser.Model.Entities.ImageType.Chapter)
+                {
+                    var chapter = _chapterManager.GetChapter(item.Id, imageIndex);
+                    if (chapter == null || string.IsNullOrEmpty(chapter.ImagePath)) return "_";
+                    return chapter.ImagePath + "@" + chapter.ImageDateModified.Ticks.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                }
+                var image = item.GetImageInfo(type, imageIndex);
+                return image == null ? "_" : image.Path + "@" + image.DateModified.Ticks.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            }
+            catch (Exception)
+            {
+                return "_";
+            }
+        }
+
+        private static string BuildItemCacheKey(BaseItem item, string imageType, ActionExecutingContext context, int sigma, string imageVersion)
+        {
             string? index = null;
             var query = context.HttpContext.Request.Query;
-            if (query.TryGetValue("tag", out var t)) tag = t.ToString();
             if (context.ActionArguments.TryGetValue("imageIndex", out var idx) && idx != null)
                 index = idx.ToString();
 
@@ -941,7 +976,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.SpoilerGuard.Services
                 }
             }
 
-            return $"{item.Id:N}|{imageType}|{index ?? "_"}|{tag ?? "_"}|{sigma}|{routeKey}{sizeKey}";
+            return $"{item.Id:N}|{imageType}|{index ?? "_"}|{imageVersion}|{sigma}|{routeKey}{sizeKey}";
         }
 
         // Per-(user, season) "any episode watched?" cache. Home-page rows can
@@ -1135,7 +1170,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.SpoilerGuard.Services
                 return;
             }
 
-            var (originalBytes, _) = await ExtractBytesAsync(executed.Result).ConfigureAwait(false);
+            var (originalBytes, _, tooLarge) = await ExtractBytesAsync(executed.Result).ConfigureAwait(false);
+            if (tooLarge)
+            {
+                ServeTooLargePlaceholder(executed);
+                return;
+            }
             if (originalBytes == null || originalBytes.Length == 0)
             {
                 MaybeWarnShapeMismatch(executed.Result);
@@ -1248,6 +1288,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.SpoilerGuard.Services
                 if (imgInfo == null || string.IsNullOrEmpty(imgInfo.Path)) return null;
                 if (!System.IO.File.Exists(imgInfo.Path)) return null;
 
+                // The resize cache key MUST include the chosen parent id +
+                // image type: for a collection-opted movie the parent is
+                // picked from the requesting user's Collections, so the same
+                // movie/size/mode key can resolve to DIFFERENT collection art
+                // for two users. Without this, user B (movie in Collection B)
+                // could be served user A's Collection A art from the cache.
+                var parentArtKey = cacheKey + ":" + parentId.ToString("N") + ":" + parentImageType;
+                // A cached resize needs no read of the parent's file; a file too large to read gets none.
+                if (_blurService.TryGetCached(parentArtKey, out var cachedArt)) return cachedArt;
+                if (new System.IO.FileInfo(imgInfo.Path).Length > ImageBlurService.MaxSourceBytes) return null;
+
                 // Cache via the same LRU as StockCard — same cacheKey
                 // shape so successive identical requests are free.
                 var fileBytes = System.IO.File.ReadAllBytes(imgInfo.Path);
@@ -1256,14 +1307,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.SpoilerGuard.Services
                 // Resize to roughly match the original dimensions so the
                 // card layout doesn't shift. Use the original's probe
                 // dimensions; cap at MaxDecodeEdgePx via ImageBlurService.
-                //
-                // The resize cache key MUST include the chosen parent id +
-                // image type: for a collection-opted movie the parent is
-                // picked from the requesting user's Collections, so the same
-                // movie/size/mode key can resolve to DIFFERENT collection art
-                // for two users. Without this, user B (movie in Collection B)
-                // could be served user A's Collection A art from the cache.
-                var parentArtKey = cacheKey + ":" + parentId.ToString("N") + ":" + parentImageType;
                 return _blurService.ResizeToMatch(fileBytes, originalBytes, parentArtKey);
             }
             catch (Exception ex)
@@ -1286,7 +1329,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.SpoilerGuard.Services
                 return;
             }
 
-            var (originalBytes, _) = await ExtractBytesAsync(executed.Result).ConfigureAwait(false);
+            var (originalBytes, _, tooLarge) = await ExtractBytesAsync(executed.Result).ConfigureAwait(false);
+            if (tooLarge)
+            {
+                ServeTooLargePlaceholder(executed);
+                return;
+            }
             if (originalBytes == null || originalBytes.Length == 0)
             {
                 MaybeWarnShapeMismatch(executed.Result);
@@ -1323,36 +1371,57 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.SpoilerGuard.Services
             ApplyNoStoreHeadersDirect(executed.HttpContext, imageType);
         }
 
-        private static async Task<(byte[]? Bytes, string? ContentType)> ExtractBytesAsync(IActionResult result)
+        // TooLarge: the source is over ImageBlurService.MaxSourceBytes and was not read to its end
+        // (Jellyfin 12.4 answers an image request without a size with the original file).
+        private static async Task<(byte[]? Bytes, string? ContentType, bool TooLarge)> ExtractBytesAsync(IActionResult result)
         {
             switch (result)
             {
                 case FileContentResult fcr:
-                    return (fcr.FileContents, fcr.ContentType);
+                    return fcr.FileContents.LongLength > ImageBlurService.MaxSourceBytes
+                        ? (null, fcr.ContentType, true)
+                        : (fcr.FileContents, fcr.ContentType, false);
 
                 case FileStreamResult fsr:
-                    if (fsr.FileStream == null) return (null, fsr.ContentType);
+                    if (fsr.FileStream == null) return (null, fsr.ContentType, false);
                     using (var ms = new MemoryStream())
                     {
-                        await fsr.FileStream.CopyToAsync(ms).ConfigureAwait(false);
-                        return (ms.ToArray(), fsr.ContentType);
+                        var buffer = new byte[81920];
+                        int read;
+                        while ((read = await fsr.FileStream.ReadAsync(buffer).ConfigureAwait(false)) > 0)
+                        {
+                            if (ms.Length + read > ImageBlurService.MaxSourceBytes) return (null, fsr.ContentType, true);
+                            ms.Write(buffer, 0, read);
+                        }
+                        return (ms.ToArray(), fsr.ContentType, false);
                     }
 
                 case PhysicalFileResult pfr:
-                    if (string.IsNullOrEmpty(pfr.FileName) || !File.Exists(pfr.FileName))
-                        return (null, pfr.ContentType);
-                    return (await File.ReadAllBytesAsync(pfr.FileName).ConfigureAwait(false), pfr.ContentType);
+                    return await ReadFileAsync(pfr.FileName, pfr.ContentType).ConfigureAwait(false);
 
                 case VirtualFileResult vfr:
-                    if (string.IsNullOrEmpty(vfr.FileName)) return (null, vfr.ContentType);
-                    var fp = vfr.FileName;
-                    return File.Exists(fp)
-                        ? (await File.ReadAllBytesAsync(fp).ConfigureAwait(false), vfr.ContentType)
-                        : (null, vfr.ContentType);
+                    return await ReadFileAsync(vfr.FileName, vfr.ContentType).ConfigureAwait(false);
 
                 default:
-                    return (null, null);
+                    return (null, null, false);
             }
+        }
+
+        private static async Task<(byte[]? Bytes, string? ContentType, bool TooLarge)> ReadFileAsync(string? path, string? contentType)
+        {
+            if (string.IsNullOrEmpty(path) || !File.Exists(path)) return (null, contentType, false);
+            if (new FileInfo(path).Length > ImageBlurService.MaxSourceBytes) return (null, contentType, true);
+            return (await File.ReadAllBytesAsync(path).ConfigureAwait(false), contentType, false);
+        }
+
+        // A source too large to read is neither decoded nor passed through: a placeholder goes out.
+        private void ServeTooLargePlaceholder(ActionExecutedContext executed)
+        {
+            _resolver.WarnRateLimited(
+                "image-too-large",
+                $"Spoiler Guard: a protected image is larger than {ImageBlurService.MaxSourceBytes / (1024 * 1024)} MiB, so a placeholder is served in its place.");
+            executed.Result = new FileContentResult(_blurService.HardcodedFallbackJpeg, "image/jpeg");
+            ApplyNoStoreToResponse(executed.HttpContext);
         }
 
         private void MaybeWarnShapeMismatch(IActionResult result)

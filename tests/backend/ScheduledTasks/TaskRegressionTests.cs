@@ -4,6 +4,7 @@ using Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Library;
+using MediaBrowser.Controller.Session;
 using MediaBrowser.Model.Tasks;
 using Moq;
 using Jellyfin.Plugin.JellyfinEnhanced.Features.Seerr.Services;
@@ -128,16 +129,86 @@ public class TaskRegressionTests
         data.Verify(d => d.GetUserData(blocked, It.IsAny<BaseItem>()), Times.Never);
     }
 
+    // Started with the option off, the monitor still listens (once), so switching the option on in the
+    // admin page works without a restart; disposal unsubscribes.
     [Fact]
-    public void DisabledWatchlistMonitorDoesNotSubscribeAndDisposalUnsubscribes()
+    public async Task WatchlistMonitorStartedWhileDisabledActsOnceTheOptionIsSwitchedOn()
     {
         using var f = new ApiPluginFixture();
-        f.Plugin.Configuration.AddRequestedMediaToWatchlist = false;
+        var config = f.Plugin.Configuration;
+        config.AddRequestedMediaToWatchlist = false;
+        config.JellyseerrEnabled = true;
+        config.JellyseerrUrls = "http://127.0.0.1/seerr";
+        config.JellyseerrApiKey = "test-key";
         var library = new Mock<ILibraryManager>();
-        using (var monitor = new WatchlistMonitor(library.Object, null!, null!, null!, f.Core.Manager, f.Core.Logger)) monitor.Initialize();
-        library.VerifyAdd(l => l.ItemAdded += It.IsAny<EventHandler<ItemChangeEventArgs>>(), Times.Never);
+        var asked = new TaskCompletionSource();
+        using var transport = new IntegrationTransport((_, _) => { asked.TrySetResult(); return Task.FromResult(IntegrationTransport.Response("{\"results\":[]}")); });
+        using (var monitor = new WatchlistMonitor(library.Object, Mock.Of<IUserManager>(), null!, transport, f.Core.Manager, f.Core.Logger))
+        {
+            monitor.Initialize();
+            monitor.Initialize();
+            config.AddRequestedMediaToWatchlist = true;
+            library.Raise(l => l.ItemAdded += null, library.Object, new ItemChangeEventArgs { Item = new Movie { Id = Guid.NewGuid(), Name = "Added", ProviderIds = new() { ["Tmdb"] = "123" } } });
+            await asked.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        }
+        library.VerifyAdd(l => l.ItemAdded += It.IsAny<EventHandler<ItemChangeEventArgs>>(), Times.Once);
+        library.VerifyAdd(l => l.ItemUpdated += It.IsAny<EventHandler<ItemChangeEventArgs>>(), Times.Once);
         library.VerifyRemove(l => l.ItemAdded -= It.IsAny<EventHandler<ItemChangeEventArgs>>(), Times.Once);
         library.VerifyRemove(l => l.ItemUpdated -= It.IsAny<EventHandler<ItemChangeEventArgs>>(), Times.Once);
+    }
+
+    // Auto season and auto movie requests started with their option off: switching it on reaches the
+    // request service on the next playback event, switching it off again stops that, and a second
+    // Initialize (a second start-up task run) does not subscribe twice.
+    [Theory]
+    [InlineData(false)][InlineData(true)]
+    public void AutoRequestMonitorsStartedWhileDisabledFollowTheOption(bool movie)
+    {
+        using var f = new ApiPluginFixture();
+        var config = f.Plugin.Configuration;
+        config.JellyseerrEnabled = true;
+        config.TMDB_API_KEY = "test-key";
+        config.AutoSeasonRequestEnabled = false;
+        config.AutoMovieRequestEnabled = false;
+        config.AutoMovieRequestTriggerType = "OnStart";
+        var sessions = new Mock<ISessionManager>();
+        var users = new Mock<IUserManager>();
+        IDisposable monitor;
+        if (movie)
+        {
+            var m = new AutoMovieRequestMonitor(sessions.Object, users.Object, null!, new AutoMovieRequestService(null!, f.Core.Logger, users.Object, null!, null!), f.Core.Logger);
+            m.Initialize(); m.Initialize(); monitor = m;
+        }
+        else
+        {
+            var m = new AutoSeasonRequestMonitor(sessions.Object, users.Object, null!, new AutoSeasonRequestService(null!, f.Core.Logger, users.Object, null!, null!, null!), f.Core.Logger);
+            m.Initialize(); m.Initialize(); monitor = m;
+        }
+        void Play(Guid userId)
+        {
+            BaseItem item = movie ? new Movie { Id = Guid.NewGuid(), RunTimeTicks = TimeSpan.FromMinutes(100).Ticks }
+                : new MediaBrowser.Controller.Entities.TV.Episode { Id = Guid.NewGuid(), RunTimeTicks = TimeSpan.FromMinutes(40).Ticks };
+            sessions.Raise(s => s.PlaybackProgress += null, new PlaybackProgressEventArgs
+            {
+                Item = item,
+                PlaybackPositionTicks = TimeSpan.FromMinutes(1).Ticks,
+                Session = new SessionInfo(sessions.Object, Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance) { UserId = userId }
+            });
+        }
+        void Switch(bool on) { if (movie) config.AutoMovieRequestEnabled = on; else config.AutoSeasonRequestEnabled = on; }
+        using (monitor)
+        {
+            var whileOn = Guid.NewGuid();
+            var whileOff = Guid.NewGuid();
+            Switch(true);
+            Play(whileOn);
+            Switch(false);
+            Play(whileOff);
+            users.Verify(u => u.GetUserById(whileOn), Times.Once);
+            users.Verify(u => u.GetUserById(whileOff), Times.Never);
+        }
+        sessions.VerifyAdd(s => s.PlaybackProgress += It.IsAny<EventHandler<PlaybackProgressEventArgs>>(), Times.Once);
+        if (!movie) sessions.VerifyAdd(s => s.PlaybackStopped += It.IsAny<EventHandler<PlaybackStopEventArgs>>(), Times.Once);
     }
     [Fact]
     public void ReinitializingWatchlistMonitorDoesNotLeakEventSubscriptions()

@@ -4,9 +4,21 @@ import {readFileSync} from 'node:fs';
 import {createHarness} from '../../helpers/harness.mjs';
 import {installJellyfinRouter} from '../../helpers/jellyfin-router.mjs';
 const owned=JSON.parse(readFileSync('Jellyfin.Plugin.JellyfinEnhanced/js/component-scripts.json')).filter(p=>/^(enhanced\/hiddencontent\/|enhanced\/homeremoval\/)/.test(p));
-function setup(t,{items={},settings={},ajax=async()=>({success:true}),html='',globals={}}={}){
+// The server side. Every save reads the stored list before writing it: `serve` answers that read with the list this fake
+// server holds (the page's list, then each list written and each Continue Watching / Next Up hide accepted) and hands
+// every other request, the ones the tests watch, to `ajax`. A test that answers the reads itself passes `reads:true`.
+function serve(held,ajax){
+ return async r=>{
+  if(r.type==='GET'&&r.url.includes('/hidden-content.json'))return structuredClone(held);
+  const answer=await ajax(r),scoped=/\/(continue-watching|next-up)\/hide\/([^/?]+)/.exec(r.url);
+  if(r.type==='POST'&&r.url.includes('/hidden-content.json'))held=JSON.parse(r.data);
+  else if(scoped&&answer?.success===true)held={...held,items:{...held.items,[scoped[2]]:{...held.items[scoped[2]],itemId:scoped[2],hideScope:scoped[1].replace('-','')}}};
+  return answer;
+ };
+}
+function setup(t,{items={},settings={},ajax=async()=>({success:true}),reads=false,html='',globals={}}={}){
  const frames=[];
- const h=createHarness({html,apiClient:{ajax,getDisplayPreferences:async()=>({CustomPrefs:{}})},globals:{requestAnimationFrame:fn=>frames.push(fn),...globals},JE:{
+ const h=createHarness({html,apiClient:{ajax:reads?ajax:serve(structuredClone({items,settings}),ajax),getDisplayPreferences:async()=>({CustomPrefs:{}})},globals:{requestAnimationFrame:fn=>frames.push(fn),...globals},JE:{
   userConfig:{hiddenContent:{items,settings}},pluginConfig:{HiddenContentEnabled:true},currentSettings:{removeContinueWatchingEnabled:true},state:{removeContext:null},t:k=>k,
   helpers:{isAdmin:()=>false,addCSS:()=>{},debounce:fn=>fn,onViewPage:()=>{},onBodyMutation:()=>{},onSidebarRebuilt:()=>{},isActiveTabContainer:()=>true,observeTabContainers:()=>{}},
   core:{api:{fetch:async()=>({Items:[]})},ui:{skeletonGridHtml:()=>''}}
@@ -19,7 +31,7 @@ function setup(t,{items={},settings={},ajax=async()=>({success:true}),html='',gl
 test('HC-R1-001 new-session hide must use the replacement ApiClient, never the prior server',async t=>{
  const oldWrites=[],newWrites=[];
  const h=setup(t,{ajax:async r=>{oldWrites.push(r);return {};}});
- h.window.ApiClient={...h.window.ApiClient,getCurrentUserId:()=> 'user-b',serverId:()=> 'server-b',getUrl:p=>'http://server-b'+p,ajax:async r=>{newWrites.push(r);return {};}};
+ h.window.ApiClient={...h.window.ApiClient,getCurrentUserId:()=> 'user-b',serverId:()=> 'server-b',getUrl:p=>'http://server-b'+p,ajax:serve({items:{b:{itemId:'b',name:'B private'}},settings:{}},async r=>{newWrites.push(r);return {};})};
  h.JE.session.checkNow('server-replaced');
  h.JE.userConfig={hiddenContent:{items:{b:{itemId:'b',name:'B private'}},settings:{}}};
  h.document.dispatchEvent(new h.window.Event('je:user-data-loaded'));
@@ -71,7 +83,7 @@ test('HC-R1-001 sent and queued writes remain bound to their original owners',as
  let complete;const pending=new Promise(resolve=>{complete=resolve;});const oldWrites=[],newWrites=[];
  const h=setup(t,{ajax:async r=>{oldWrites.push(r);return pending;}});
  h.api.hideItem({itemId:'old'});const oldSave=h.api.flushPendingSave();await new Promise(r=>setImmediate(r));
- h.window.ApiClient={...h.window.ApiClient,getCurrentUserId:()=> 'user-b',serverId:()=> 'server-b',getUrl:p=>'http://server-b'+p,ajax:async r=>{newWrites.push(r);return {};}};
+ h.window.ApiClient={...h.window.ApiClient,getCurrentUserId:()=> 'user-b',serverId:()=> 'server-b',getUrl:p=>'http://server-b'+p,ajax:serve({items:{},settings:{}},async r=>{newWrites.push(r);return {};})};
  h.JE.session.checkNow('test');h.JE.userConfig={hiddenContent:{items:{},settings:{}}};h.document.dispatchEvent(new h.window.Event('je:user-data-loaded'));
  h.api.hideItem({itemId:'new'});const newSave=h.api.flushPendingSave();complete({});await Promise.all([oldSave,newSave]);
  assert.equal(oldWrites.length,1);assert.deepEqual(Object.keys(JSON.parse(oldWrites[0].data).items),['old']);
@@ -84,7 +96,7 @@ test('HC-R1-002 later identical hide still supersedes an earlier Undo',t=>{
 });
 test('HC-R1-002 changed remote policy cannot revive an old Undo by reverting its contents',async t=>{
  let server={items:{},settings:{}};const undo=[];
- const h=setup(t,{ajax:async r=>{if(r.type==='POST'){server=JSON.parse(r.data);return {};}return structuredClone(server);}});
+ const h=setup(t,{reads:true,ajax:async r=>{if(r.type==='POST'){server=JSON.parse(r.data);return {};}return structuredClone(server);}});
  h.internal.showUndoToast=(_name,_key,fn)=>undo.push(fn);h.api.hideItem({itemId:'a',name:'A'});await h.api.flushPendingSave();
  const original=structuredClone(server);server.items.a.name='remote edit';await h.api.refresh();server=original;await h.api.refresh();undo[0]();
  assert.equal(h.api.isHidden('a'),true);
@@ -136,7 +148,7 @@ test('HC-R2-002 explicit new metadata overrides alias fallback, including null e
  assert.equal(h.internal.getHiddenData().items[compact].name,'');assert.equal(h.internal.getHiddenData().items[compact].seasonNumber,null);
 });
 for(const transition of ['undo','settings-revert','reset'])test(`HC-R2-003 refresh rejects intervening ${transition}`,async t=>{
- let finish;const h=setup(t,{settings:{enabled:true},ajax:r=>r.type==='GET'?new Promise(resolve=>finish=resolve):Promise.resolve({})});
+ let finish;const h=setup(t,{settings:{enabled:true},reads:true,ajax:r=>r.type==='GET'?new Promise(resolve=>finish=resolve):Promise.resolve({})});
  const refresh=h.api.refresh();
  if(transition==='undo'){h.api.hideItem({itemId:'a'});h.document.querySelector('.je-undo-btn').click();}
  if(transition==='settings-revert'){h.api.updateSettings({enabled:false});h.api.updateSettings({enabled:true});}
@@ -145,7 +157,7 @@ for(const transition of ['undo','settings-revert','reset'])test(`HC-R2-003 refre
  assert.equal(await refresh,false);assert.equal(h.api.isHidden('a'),false);
 });
 test('HC-R2-003 overlapping refreshes accept only the newest request',async t=>{
- const pending=[];const h=setup(t,{ajax:()=>new Promise(resolve=>pending.push(resolve))});
+ const pending=[];const h=setup(t,{reads:true,ajax:()=>new Promise(resolve=>pending.push(resolve))});
  const first=h.api.refresh(),second=h.api.refresh();
  pending[0]({items:{old:{itemId:'old'}},settings:{}});assert.equal(await first,false);
  pending[1]({items:{new:{itemId:'new'}},settings:{}});assert.equal(await second,true);
@@ -164,7 +176,8 @@ for(const method of ['ordinary','scoped'])for(const [label,later,earlier] of [
  const expected=label==='lowercase-t'?later:earlier;
  assert.ok(Number.isFinite(Date.parse(later))&&Number.isFinite(Date.parse(earlier)));
  let saved;const h=setup(t,{items:{[compact]:{itemId:compact,hiddenAt:later},[dashed]:{itemId:dashed,hiddenAt:earlier}},ajax:async r=>{saved=JSON.parse(r.data);return {};}});
- if(method==='ordinary'){h.api.hideItem({itemId:compact});await h.api.flushPendingSave();}else {h.api.markScopedHidden(compact,'nextup');h.api.updateSettings({enabled:true});await h.api.flushPendingSave();}
+ // A scoped hide is written by the server; the session's mirror of it is what a save no longer sends.
+ if(method==='ordinary'){h.api.hideItem({itemId:compact});await h.api.flushPendingSave();}else {h.api.markScopedHidden(compact,'nextup');saved=h.internal.getHiddenData();}
  assert.equal(saved.items[compact].hiddenAt,expected);
 });
 
@@ -246,7 +259,7 @@ for(const firstKind of ['scoped','document'])for(const change of ['user','server
  let first;if(firstKind==='scoped')first=h.JE.internals.features.removeFromHomeSurface('a','nextup');else {h.api.hideItem({itemId:'a'});first=h.api.flushPendingSave();}
  await tick();assert.equal(oldWrites.length,1);
  const oldApi=h.window.ApiClient;
- h.window.ApiClient={...oldApi,getCurrentUserId:()=>change==='user'?'user-b':oldApi.getCurrentUserId(),getUrl:p=>change==='server'?'http://server-b'+p:oldApi.getUrl(p),ajax:async r=>{newWrites.push(r);return {};}};
+ h.window.ApiClient={...oldApi,getCurrentUserId:()=>change==='user'?'user-b':oldApi.getCurrentUserId(),getUrl:p=>change==='server'?'http://server-b'+p:oldApi.getUrl(p),ajax:serve({items:{},settings:{}},async r=>{newWrites.push(r);return {};})};
  h.JE.session.checkNow('test');h.JE.userConfig={hiddenContent:{items:{},settings:{}}};h.document.dispatchEvent(new h.window.Event('je:user-data-loaded'));
  h.api.hideItem({itemId:'b'});const second=h.api.flushPendingSave();await tick();
  try {assert.equal(newWrites.length,1,'new destination must send before old response settles');assert.deepEqual(Object.keys(JSON.parse(newWrites[0].data).items),['b']);}
@@ -256,10 +269,10 @@ for(const firstKind of ['scoped','document'])for(const change of ['user','server
 test('HC-R4B-002 returning to the same document retains its pending write barrier',async t=>{
  let finish;const writes=[];const h=setup(t,{ajax:r=>{writes.push(r);return new Promise(resolve=>finish=resolve);}});
  const original=h.window.ApiClient;h.api.hideItem({itemId:'old-a'});const first=h.api.flushPendingSave();await tick();
- h.window.ApiClient={...original,getCurrentUserId:()=> 'user-b',ajax:async()=>({})};h.JE.session.checkNow('b');
+ h.window.ApiClient={...original,getCurrentUserId:()=> 'user-b',ajax:serve({items:{},settings:{}},async()=>({}))};h.JE.session.checkNow('b');
  h.JE.userConfig={hiddenContent:{items:{},settings:{}}};h.document.dispatchEvent(new h.window.Event('je:user-data-loaded'));
  h.api.hideItem({itemId:'b'});const b=h.api.flushPendingSave();await tick();
- h.window.ApiClient={...original,ajax:async r=>{writes.push(r);return {};}};h.JE.session.checkNow('a-again');
+ h.window.ApiClient={...original,ajax:serve({items:{},settings:{}},async r=>{writes.push(r);return {};})};h.JE.session.checkNow('a-again');
  h.JE.userConfig={hiddenContent:{items:{},settings:{}}};h.document.dispatchEvent(new h.window.Event('je:user-data-loaded'));
  h.api.hideItem({itemId:'new-a'});const second=h.api.flushPendingSave();await tick();assert.equal(writes.length,1);
  finish({});await Promise.all([first,b,second]);assert.equal(writes.length,2);assert.deepEqual(Object.keys(JSON.parse(writes[1].data).items),['new-a']);
@@ -278,8 +291,8 @@ for(const method of ['ordinary','scoped'])for(const [label,early,late] of [
 ])test(`HC-R4-001 timestamp ${method} ${label}`,async t=>{
  assert.equal(Date.parse(early),Date.parse(late));assert.ok(Number.isFinite(Date.parse(early)));
  let saved;const h=setup(t,{items:{[compact]:{itemId:compact,hiddenAt:late,hideScope:'nextup'},[dashed]:{itemId:dashed,hiddenAt:early,hideScope:'nextup'}},ajax:async r=>{saved=JSON.parse(r.data);return {};}});
- if(method==='ordinary')h.api.hideItem({itemId:compact});else {h.api.markScopedHidden(compact,'continuewatching');h.api.updateSettings({enabled:true});}
- await h.api.flushPendingSave();assert.equal(saved.items[compact].hiddenAt,early);
+ if(method==='ordinary'){h.api.hideItem({itemId:compact});await h.api.flushPendingSave();}else {h.api.markScopedHidden(compact,'continuewatching');saved=h.internal.getHiddenData();}
+ assert.equal(saved.items[compact].hiddenAt,early);
 });
 
 for(const method of ['ordinary','scoped'])for(const [label,early,late] of [
@@ -325,4 +338,16 @@ test('in-app navigation to Hidden Content keeps it over the router\'s Page not f
  await router.go('#/home');assert.deepEqual(router.seen(),{visible:['indexPage'],title:'Home'});
  await router.push('#/hidden-content');assert.deepEqual(router.seen(),{visible:['je-hidden-content-page'],title:'Hidden Content'});
  await router.push('#/home');assert.deepEqual(router.seen(),{visible:['indexPage'],title:'Home'});
+});
+for(const mode of ['HiddenContentUseNativeTab','HiddenContentUseCustomTabs','HiddenContentUsePluginPages'])test(`Manage Hidden Content opens the management panel when the page is placed with ${mode}`,async t=>{
+ // With Plugin Pages the page's own sidebar entry exists; the JE page then never shows itself.
+ const h=setup(t,{html:'<div class="mainDrawer-scrollContainer"><a is="emby-linkbutton" data-itemid="Jellyfin.Plugin.JellyfinEnhanced.HiddenContentPage"></a></div>'});
+ h.JE.pluginConfig[mode]=true;h.JE.initializeHiddenContentPage();
+ h.load('enhanced/settingspanel/ui-panel-hidden-content.js');
+ const button=h.document.createElement('button');button.id='manageHiddenContentBtn';h.document.body.append(button);
+ let closed=0;h.JE.internals.enhancedUi.wireHiddenContentListeners({closePanel:()=>closed++,resetAutoCloseTimer:()=>{}});
+ button.click();
+ assert.equal(closed,1);
+ assert.ok(h.document.querySelector('.je-hidden-management-overlay'),'the management panel opened');
+ assert.equal(h.document.getElementById('je-hidden-content-page'),null);
 });

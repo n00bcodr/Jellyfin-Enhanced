@@ -207,6 +207,53 @@ public class TaskSeerrSyncTests
     }
 
     [Theory]
+    [InlineData(false)][InlineData(true)]
+    public async Task ManualWatchlistSyncReadsEveryPageAndAnUnreadablePageIsAFailureNotTheEnd(bool secondPageFails)
+    {
+        using var f = new ApiPluginFixture();
+        var config = f.Plugin.Configuration;
+        config.JellyseerrEnabled = true;
+        config.SyncJellyseerrWatchlist = true;
+        config.JellyseerrUrls = "http://seerr.test";
+        config.JellyseerrApiKey = "test";
+        var admin = new User("admin", "default", "default") { Id = Guid.NewGuid() };
+        // 35 titles in the library and on the Seerr watchlist, which Seerr pages 20 at a time.
+        var movies = Enumerable.Range(1, 35).Select(i => new Movie { Id = Guid.NewGuid(), ProviderIds = new() { ["Tmdb"] = i.ToString() } }).ToArray();
+        var library = new Mock<ILibraryManager>();
+        library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns(movies);
+        var data = new Mock<IUserDataManager>();
+        data.Setup(d => d.GetUserData(It.IsAny<User>(), It.IsAny<BaseItem>())).Returns(() => new UserItemData { Key = "fixture", Likes = false });
+        var saved = new List<Guid>();
+        data.Setup(d => d.SaveUserData(It.IsAny<User>(), It.IsAny<BaseItem>(), It.IsAny<UserItemData>(), It.IsAny<MediaBrowser.Model.Entities.UserDataSaveReason>(), It.IsAny<CancellationToken>()))
+            .Callback((User _, BaseItem item, UserItemData _, MediaBrowser.Model.Entities.UserDataSaveReason _, CancellationToken _) => saved.Add(item.Id));
+        using var transport = new IntegrationTransport((request, _) =>
+        {
+            var uri = request.RequestUri!;
+            if (uri.AbsolutePath == "/api/v1/user")
+                return Task.FromResult(IntegrationTransport.Response(JsonSerializer.Serialize(new { results = new[] { new { id = 27, jellyfinUserId = admin.Id.ToString("N") } } })));
+            if (uri.AbsolutePath != "/api/v1/user/27/watchlist") return Task.FromResult(IntegrationTransport.Response("{\"results\":[]}"));
+            var page = uri.Query.Contains("page=2") ? 2 : 1;
+            if (page == 2 && secondPageFails) return Task.FromResult(IntegrationTransport.Response("{\"message\":\"busy\"}", 500));
+            var results = Enumerable.Range(1, 35).Skip((page - 1) * 20).Take(20).Select(i => new { tmdbId = i, mediaType = "movie" });
+            return Task.FromResult(IntegrationTransport.Response(JsonSerializer.Serialize(new { page, totalPages = 2, totalResults = 35, results })));
+        });
+        var controller = (JeSeerrController)ApiAssetTests.Controller(typeof(JeSeerrController), f.Core, Users(admin).Object, library.Object, data.Object, transport, f.Core.Manager);
+        controller.ControllerContext.HttpContext.User = global::JE.Tests.Features.SpoilerGuard.PrivacyPolicyTests.Principal(admin.Id, admin: true);
+
+        var result = Assert.IsType<OkObjectResult>(await controller.SyncJellyseerrWatchlist());
+
+        if (secondPageFails)
+        {
+            // An unreadable page leaves the list unknown: the user is reported as failed, not as having 20 titles.
+            Assert.Equal("{\"success\":true,\"itemsProcessed\":0,\"itemsAdded\":0,\"errors\":[\"Failed to sync watchlist for a user.\"]}", JsonSerializer.Serialize(result.Value));
+            Assert.Empty(saved);
+            return;
+        }
+        Assert.Equal("{\"success\":true,\"itemsProcessed\":35,\"itemsAdded\":35,\"errors\":null}", JsonSerializer.Serialize(result.Value));
+        Assert.Equal(movies.Select(m => m.Id).Order(), saved.Order());
+    }
+
+    [Theory]
     [InlineData("")]
     [InlineData("\n  \n")]
     public async Task ManualWatchlistSyncWithoutAUsableUrlIsABadRequest(string urls)
@@ -313,7 +360,8 @@ public class TaskSeerrSyncTests
                 return Task.FromResult(IntegrationTransport.Response(JsonSerializer.Serialize(new { results = new[] { new { id = 27, jellyfinUserId = user.Id.ToString("N") } } })));
             }
             var items = Enumerable.Range(first, perPass).Select(i => new { tmdbId = i, mediaType = "movie" });
-            return Task.FromResult(IntegrationTransport.Response(JsonSerializer.Serialize(new { results = items })));
+            // Seerr's answer: one page of totalPages (the watchlist is read page by page).
+            return Task.FromResult(IntegrationTransport.Response(JsonSerializer.Serialize(new { page = 1, totalPages = 1, totalResults = perPass, results = items })));
         });
         // The scheduled run and a manual sync, each seeing a different half of the watchlist.
         using var scheduledSeerr = Seerr(1);

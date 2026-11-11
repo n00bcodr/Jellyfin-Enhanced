@@ -92,7 +92,8 @@
     const internal = registry(JE);
     internal.wireShortcutEditor = function(ctx) {
       const { help, pluginShortcuts, primaryAccentColor, kbdBackground } = ctx;
-      if (JE.pluginConfig.DisableAllShortcuts) return;
+      const shortcuts = JE.userConfig.shortcuts;
+      if (JE.pluginConfig.DisableAllShortcuts || !shortcuts) return;
       const displayKey = (key) => key || JE.t("panel_shortcuts_disabled") || "Disabled";
       const keyElementFor = (action) => queryElement(help, `.shortcut-key[data-action="${action}"]`);
       const addIndicator = (labelWrapper) => {
@@ -111,7 +112,7 @@
         if (row instanceof HTMLElement) row.style.opacity = isDisabled ? "0.5" : "";
       };
       const setShortcutDisabled = (action, disabled) => {
-        const userShortcuts = JE.userConfig.shortcuts.Shortcuts;
+        const userShortcuts = shortcuts.Shortcuts;
         const shortcutIndex = userShortcuts.findIndex((s) => s.Name === action);
         const existing = userShortcuts[shortcutIndex];
         if (disabled) {
@@ -129,7 +130,7 @@
           }
           JE.state.activeShortcuts[action] = defaultKey;
         }
-        JE.saveUserSettings("shortcuts.json", JE.userConfig.shortcuts);
+        JE.saveUserSettings("shortcuts.json", shortcuts);
         const keyElement = keyElementFor(action);
         if (keyElement && document.activeElement !== keyElement) {
           keyElement.textContent = displayKey(JE.state.activeShortcuts[action]);
@@ -187,13 +188,13 @@
             }, 500);
             return;
           }
-          const userShortcut = JE.userConfig.shortcuts.Shortcuts.find((s) => s.Name === action);
+          const userShortcut = shortcuts.Shortcuts.find((s) => s.Name === action);
           if (userShortcut) {
             userShortcut.Key = combo;
           } else {
-            JE.userConfig.shortcuts.Shortcuts.push(overrideFor(action, combo, pluginShortcuts));
+            shortcuts.Shortcuts.push(overrideFor(action, combo, pluginShortcuts));
           }
-          JE.saveUserSettings("shortcuts.json", JE.userConfig.shortcuts);
+          JE.saveUserSettings("shortcuts.json", shortcuts);
           JE.state.activeShortcuts[action] = combo;
           keyElement.textContent = combo;
           if (labelWrapper && !labelWrapper.querySelector(".modified-indicator")) addIndicator(labelWrapper);

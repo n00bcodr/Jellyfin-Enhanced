@@ -15,6 +15,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.Seerr
         // upstream Seerr on every request. Entries expire after 1 hour.
         internal static readonly ConcurrentDictionary<string, (byte[] Content, string ContentType, string ETag, DateTime CachedAt)> _avatarCache = new();
         internal static readonly TimeSpan _avatarCacheDuration = TimeSpan.FromHours(1);
+        // Bounds: one avatar Seerr sends, and the whole cache (past them the oldest entries go first).
+        // Seerr answers the same avatar under many spellings of its path, so entries are not bounded by users.
+        internal const int MaxAvatarBytes = 10 * 1024 * 1024;
+        internal const int MaxAvatarCacheEntries = 500;
+        internal const long MaxAvatarCacheBytes = 64L * 1024 * 1024;
 
         // Cache for Seerr user ID lookups (JellyfinUserId -> SeerrUserId)
         internal static readonly Dictionary<string, (string JellyseerrUserId, DateTime CachedAt)> _userIdCache = new();
@@ -124,6 +129,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.Seerr
             // queue/history caches rather than waiting out their TTL.
             lock (_arrQueueCacheLock) { _arrQueueCache = null; }
             lock (_arrHistoryCacheLock) { _arrHistoryCache = null; }
+            lock (_downloadsAllowedRequestsCacheLock) { _downloadsAllowedRequestsCache.Clear(); }
         }
 
         // *arr download caches (Downloads), cleared by ClearAllSeerrCachesOnConfigChange.
@@ -133,7 +139,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.Seerr
         // user-specific is ever stored in these caches.
         internal static (List<object> Items, List<object> Errors, DateTime CachedAt)? _arrQueueCache;
         internal static readonly object _arrQueueCacheLock = new();
-        internal static (List<dynamic> Items, DateTime CachedAt)? _arrHistoryCache;
+        internal static (List<dynamic> Items, List<object> Errors, DateTime CachedAt)? _arrHistoryCache;
         internal static readonly object _arrHistoryCacheLock = new();
+
+        // Downloads: each Seerr user's requested titles (a failed read is not kept), the filter a
+        // non-administrator's queue and history rows go through; same TTL as the arr caches.
+        internal static readonly Dictionary<string, (Task<HashSet<(int TmdbId, string MediaType)>?> Allowed, DateTime CachedAt)> _downloadsAllowedRequestsCache = new();
+        internal static readonly object _downloadsAllowedRequestsCacheLock = new();
     }
 }

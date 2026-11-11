@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Net.Http;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
@@ -41,7 +42,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.Arr
                 if (firstSeen)
                     _logger.Error("SonarrInstances config is corrupt JSON — instance list is effectively empty. "
                         + "Endpoints will return no Sonarr data until the admin opens the config page and resets it. "
-                        + $"Raw value (first 200 chars): {(config.SonarrInstances ?? "").Substring(0, Math.Min(200, (config.SonarrInstances ?? "").Length))}");
+                        + DescribeCorruptValue(config.SonarrInstances));
             }
             if (config.IsRadarrInstancesCorrupt())
             {
@@ -51,7 +52,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.Arr
                 if (firstSeen)
                     _logger.Error("RadarrInstances config is corrupt JSON — instance list is effectively empty. "
                         + "Endpoints will return no Radarr data until the admin opens the config page and resets it. "
-                        + $"Raw value (first 200 chars): {(config.RadarrInstances ?? "").Substring(0, Math.Min(200, (config.RadarrInstances ?? "").Length))}");
+                        + DescribeCorruptValue(config.RadarrInstances));
+            }
+        }
+
+        // The stored list holds each instance's URL and API key: log its size and where the
+        // parser stopped, never its text.
+        private static string DescribeCorruptValue(string? raw)
+        {
+            raw ??= "";
+            try
+            {
+                JsonSerializer.Deserialize<List<ArrInstance>>(raw);
+                return $"Stored value: {raw.Length} characters.";
+            }
+            catch (JsonException ex)
+            {
+                return $"Stored value: {raw.Length} characters, not valid JSON at line {(ex.LineNumber ?? 0) + 1}, byte {(ex.BytePositionInLine ?? 0) + 1}.";
             }
         }
 

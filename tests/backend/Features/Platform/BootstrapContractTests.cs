@@ -1,4 +1,5 @@
 using System.Reflection;
+using Jellyfin.Data;
 using System.Security.Claims;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -22,10 +23,10 @@ namespace JE.Tests.Features.Platform;
 [Collection("Plugin singleton")]
 public class BootstrapContractTests
 {
-    private static JePlatformController Controller(ApiPluginFixture fixture, Guid user, bool admin, bool documents = true)
+    private static JePlatformController Controller(ApiPluginFixture fixture, Guid user, bool admin, bool documents = true, params object[] services)
     {
         var maintenance = new MaintenanceModeService(Mock.Of<IUserManager>(), Mock.Of<ISessionManager>(), fixture.Core.Paths.Object, fixture.Core.Logger);
-        var controller = ApiAssetTests.Controller(fixture.Core, maintenance, documents ? fixture.Core.Manager : new object());
+        var controller = ApiAssetTests.Controller(fixture.Core, new object[] { maintenance, documents ? fixture.Core.Manager : new object() }.Concat(services).ToArray());
         controller.HttpContext.User = global::JE.Tests.Features.SpoilerGuard.PrivacyPolicyTests.Principal(user, admin);
         return controller;
     }
@@ -76,6 +77,30 @@ public class BootstrapContractTests
         Assert.All(documents.EnumerateObject(), property => Assert.Equal(JsonValueKind.Null, property.Value.ValueKind));
         Assert.Null(body.PrivateConfig);
         await ValidateClientWire(body, false);
+    }
+
+    // Both are saved whole, so an empty stand-in for a stored file that cannot be read becomes the
+    // next save. The bootstrap and the fallback endpoints report the read as failed and keep the bytes.
+    [Fact]
+    public void UnreadableHiddenListAndShortcutsAreReportedAsFailedNotEmpty()
+    {
+        using var fixture = new ApiPluginFixture();
+        var user = Guid.NewGuid();
+        var directory = Path.Combine(fixture.Core.ConfigRoot, user.ToString("N"));
+        Directory.CreateDirectory(directory);
+        const string Stored = "{\"Items\":{\"kept\":";
+        var files = new[] { "hidden-content.json", "shortcuts.json" };
+        foreach (var file in files) File.WriteAllText(Path.Combine(directory, file), Stored);
+        var controller = Controller(fixture, user, false);
+
+        var body = Assert.IsType<BootstrapResponse>(Assert.IsType<JsonResult>(controller.GetBootstrap()).Value);
+        Assert.Null(body.UserSettings.HiddenContent);
+        Assert.Null(body.UserSettings.Shortcuts);
+        var hidden = ApiAssetTests.Sibling<Jellyfin.Plugin.JellyfinEnhanced.Features.HiddenContent.JeHiddenContentController>(controller, fixture.Core, fixture.Core.Manager, Mock.Of<IUserManager>());
+        Assert.Equal(500, Assert.IsAssignableFrom<ObjectResult>(hidden.GetUserHiddenContent(user.ToString("N"))).StatusCode);
+        var settings = ApiAssetTests.Sibling<JeSettingsController>(controller, fixture.Core, fixture.Core.Manager);
+        Assert.Equal(500, Assert.IsAssignableFrom<ObjectResult>(settings.GetUserSettingsShortcuts(user.ToString("N"))).StatusCode);
+        foreach (var file in files) Assert.Equal(Stored, File.ReadAllText(Path.Combine(directory, file)));
     }
 
     // This verifies the generated browser boundary against actual server serialization,
@@ -140,7 +165,11 @@ public class BootstrapContractTests
             fixture.Core.Manager.SaveUserConfiguration(user.ToString("N"), SpoilerBlurImageFilter.SpoilerBlurFileName, new { state.Series });
         else if (document == "full")
             fixture.Core.Manager.SaveUserConfiguration(user.ToString("N"), SpoilerBlurImageFilter.SpoilerBlurFileName, state);
-        var controller = Controller(fixture, user, false);
+        // A viewer with no library, rating or tag limits: every entry is sent.
+        var viewer = new Jellyfin.Database.Implementations.Entities.User("viewer", "default", "default") { Id = user };
+        viewer.SetPermission(Jellyfin.Database.Implementations.Enums.PermissionKind.EnableAllFolders, true);
+        var users = new Mock<IUserManager>(); users.Setup(x => x.GetUserById(user)).Returns(viewer);
+        var controller = Controller(fixture, user, false, true, users.Object, Mock.Of<ILibraryManager>());
         var endpoint = Assert.IsType<OkObjectResult>(ApiAssetTests.SiblingOf<JeSpoilerGuardController>(controller).GetSpoilerBlurSeries());
         var bootstrap = Assert.IsType<JsonResult>(controller.GetBootstrap());
         var root = new DirectoryInfo(AppContext.BaseDirectory);

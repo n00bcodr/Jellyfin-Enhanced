@@ -8,7 +8,7 @@ function setup(t, extra = {}) {
   const requests = [];
   const notices = [];
   const h = createHarness({JE: {
-    currentSettings: {}, pluginConfig: {},
+    currentSettings: {}, pluginConfig: {}, t: (key, params) => key + (params ? JSON.stringify(params) : ''),
     session: {userScopedKey: key => `${key}:user-${epoch}`, onUserChange: (_key, fn) => {change = fn;}, getEpoch: () => epoch, isCurrent: e => epoch === e},
     core: {api: {plugin: async (...args) => {requests.push(args); return {};}}},
     toast: text => notices.push(text), ...extra
@@ -147,6 +147,29 @@ test('calendar Shoko lookup tries episode then series after a missing match and 
   await h.P.searchFromProviders(event,{preferSeries:true});
   assert.equal(calls.length,1); assert.equal(calls[0].searchParams.get('types'),'Series');
   assert.equal(await h.P.searchFromProviders({}),null);
+});
+
+// items/by-providers answers 400 "No provider ids supplied or no items found" when nothing matches.
+test('calendar episode missing from the library falls back to its series on the server not-found answer', async t=>{
+  const calls=[]; const h=setup(t,{core:{api:{plugin:async path=>{
+    const url=new URL(path,'http://test'); calls.push(url);
+    if(url.searchParams.get('types')==='Episode') throw Object.assign(new Error('HTTP 400'),{name:'HttpError',status:400,responseText:'No provider ids supplied or no items found'});
+    return 'series-id';
+  }}}});
+  assert.equal(await h.P.searchFromProviders({type:'Series',episodeTvdbId:999999991,tvdbId:71663}),'series-id');
+  assert.deepEqual(calls.map(c=>c.searchParams.get('types')),['Episode','Series']);
+});
+
+test('calendar load failures and instance errors are shown from the translations', async t => {
+  let answer = () => { throw new Error('offline'); };
+  const h = setup(t, {t: (key, params) => key + (params ? JSON.stringify(params) : ''), core: {api: {plugin: async () => answer()}}});
+  h.expectConsoleError(/Failed to fetch calendar events/);
+  await h.P.fetchCalendarEvents(new Date('2026-11-01'), new Date('2026-11-30'));
+  assert.equal(h.P.state.error, 'calendar_load_failed');
+  answer = () => ({events: [], errors: [{source: 'Sonarr', instanceName: 'Main', reason: 'HTTP 500'}]});
+  await h.P.fetchCalendarEvents(new Date('2026-11-01'), new Date('2026-11-30'));
+  assert.equal(h.P.state.error, 'calendar_sources_failed');
+  assert.deepEqual(h.notices, ['calendar_instance_failed{"source":"Sonarr","name":"Main","reason":"HTTP 500"}']);
 });
 
 function rendering(t) {

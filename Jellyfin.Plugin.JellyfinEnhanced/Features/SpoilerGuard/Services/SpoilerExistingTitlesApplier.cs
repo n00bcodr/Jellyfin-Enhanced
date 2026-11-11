@@ -23,8 +23,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.SpoilerGuard.Services
     //   * scope    — the same saved SpoilerAutoEnableFilter settings (content
     //                types + library allow-list), whether or not the
     //                library-add toggle itself is on
-    //   * audience — every user with access to the title's library, disabled
-    //                accounts included, exactly like library add
+    //   * audience — every user who may see the title (library access,
+    //                parental rating, tags), disabled accounts included,
+    //                exactly like library add
     //   * per user, per title, skipped when the user
     //       - already has an entry (so a re-run changes nothing),
     //       - has fully watched it (movie played; every non-virtual episode
@@ -338,7 +339,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.SpoilerGuard.Services
                 IsDisabled = user.HasPermission(Jellyfin.Database.Implementations.Enums.PermissionKind.IsDisabled),
             };
 
-            var visible = SpoilerAutoEnableArmer.VisibleTo(user, candidates);
+            var visible = SpoilerAutoEnableArmer.VisibleTo(_libraryManager, user, candidates);
             result.VisibleTitles = visible.Count;
             if (visible.Count == 0) return result;
 

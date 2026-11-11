@@ -14,6 +14,8 @@ using Xunit;
 using Jellyfin.Plugin.JellyfinEnhanced.Features.SpoilerGuard.Services;
 using Jellyfin.Plugin.JellyfinEnhanced.Shared.SpoilerGuard;
 using Jellyfin.Plugin.JellyfinEnhanced.Features.SpoilerGuard.Events;
+using Jellyfin.Plugin.JellyfinEnhanced.Features.SpoilerGuard;
+using Microsoft.AspNetCore.Mvc;
 
 namespace JE.Tests.Features.SpoilerGuard;
 
@@ -51,9 +53,9 @@ public class PrivacyAutoEnableTests
         var candidate = SpoilerAutoEnableArmer.TryBuildCandidate(library.Object, movie, cfg, [folder], true)!;
         Assert.Equal(movie.Id, candidate.Id); Assert.Contains(folder, candidate.LibraryIds);
         var user = new User("test", "default", "default"); user.SetPermission(PermissionKind.EnableAllFolders, false);
-        Assert.Empty(SpoilerAutoEnableArmer.VisibleTo(user, [candidate]));
+        Assert.Empty(SpoilerAutoEnableArmer.VisibleTo(library.Object, user, [candidate]));
         user.SetPermission(PermissionKind.EnableAllFolders, true);
-        Assert.Same(candidate, Assert.Single(SpoilerAutoEnableArmer.VisibleTo(user, [candidate])));
+        Assert.Same(candidate, Assert.Single(SpoilerAutoEnableArmer.VisibleTo(library.Object, user, [candidate])));
     }
 
     [Theory]
@@ -78,6 +80,74 @@ public class PrivacyAutoEnableTests
         var saved = f.Core.Manager.GetUserConfiguration<UserSpoilerBlur>(user.Id.ToString("N"), SpoilerBlurImageFilter.SpoilerBlurFileName);
         Assert.Equal(expected ? 1 : 0, saved?.Series.Count ?? 0);
         if (expected) Assert.Equal("Series", saved!.Series[series.Id.ToString("N")].SeriesName);
+    }
+
+    // Jellyfin's id query is the judge of what a user may see; here it hides the rated film from the limited child,
+    // as a maximum parental rating does on a real server.
+    private sealed record ParentalSetup(Mock<ILibraryManager> Library, Mock<IUserManager> Users, User Admin, User Child, Movie Family, Movie Rated)
+    {
+        public static ParentalSetup Create()
+        {
+            var family = new Movie { Id = Guid.NewGuid(), Name = "Family film" }; var rated = new Movie { Id = Guid.NewGuid(), Name = "Rated film" };
+            var admin = new User("admin", "default", "default") { Id = Guid.NewGuid() }; var child = new User("child", "default", "default") { Id = Guid.NewGuid(), MaxParentalRatingScore = 10 };
+            foreach (var user in new[] { admin, child }) user.SetPermission(PermissionKind.EnableAllFolders, true);
+            var library = new Mock<ILibraryManager>();
+            library.Setup(x => x.GetItemList(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) => q.User == null ? new BaseItem[] { family, rated } : Array.Empty<BaseItem>());
+            library.Setup(x => x.GetItemById(It.IsAny<Guid>())).Returns((Guid id) => (BaseItem?)(id == family.Id ? family : id == rated.Id ? rated : null));
+            library.Setup(x => x.GetItemIds(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) =>
+                q.IsPlayed != null || q.IsResumable != null ? Array.Empty<Guid>() : q.MaxParentalRating != null ? new[] { family.Id } : new[] { family.Id, rated.Id });
+            var users = new Mock<IUserManager>(); users.Setup(x => x.GetUsers()).Returns(new[] { admin, child });
+            users.Setup(x => x.GetUserById(It.IsAny<Guid>())).Returns((Guid id) => id == admin.Id ? admin : id == child.Id ? child : null);
+            return new ParentalSetup(library, users, admin, child, family, rated);
+        }
+
+        public string[] Keys(params Movie[] movies) => movies.Select(m => m.Id.ToString("N")).OrderBy(k => k).ToArray();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task BulkAutoEnableNeverArmsATitleTheUsersParentalRatingHides(bool libraryAdd)
+    {
+        using var f = new JE.Tests.ApiPluginFixture(); var s = ParentalSetup.Create();
+        f.Plugin.Configuration.SpoilerBlurEnabled = true; f.Plugin.Configuration.SpoilerAutoEnableOnLibraryAdd = true;
+        if (libraryAdd)
+        {
+            var enabler = new SpoilerLibraryAddAutoEnabler(s.Library.Object, s.Users.Object, f.Core.Manager, f.Core.Logger);
+            await enabler.StartAsync(CancellationToken.None);
+            foreach (var movie in new[] { s.Family, s.Rated }) s.Library.Raise(x => x.ItemAdded += null, s.Library.Object, new ItemChangeEventArgs { Item = movie });
+            await enabler.StopAsync(CancellationToken.None); enabler.Dispose();
+        }
+        else new SpoilerExistingTitlesApplier(s.Library.Object, s.Users.Object, f.Core.Manager, f.Core.Logger).Run(new SpoilerExistingTitlesApplier.Options(), null, CancellationToken.None);
+        UserSpoilerBlur Saved(User user) => f.Core.Manager.GetUserConfiguration<UserSpoilerBlur>(user.Id.ToString("N"), SpoilerBlurImageFilter.SpoilerBlurFileName)!;
+        Assert.Equal(s.Keys(s.Family, s.Rated), Saved(s.Admin).Movies.Keys.OrderBy(k => k).ToArray());
+        Assert.Equal(s.Keys(s.Family), Saved(s.Child).Movies.Keys.OrderBy(k => k).ToArray());
+    }
+
+    [Fact]
+    public void AnEntryForATitleTheUserMayNotSeeIsNeverSentToThem()
+    {
+        using var f = new JE.Tests.ApiPluginFixture(); var s = ParentalSetup.Create(); f.Plugin.Configuration.SpoilerBlurEnabled = true;
+        var childKey = s.Child.Id.ToString("N");
+        var state = new UserSpoilerBlur();
+        foreach (var movie in new[] { s.Family, s.Rated }) state.Movies[movie.Id.ToString("N")] = new() { MovieId = movie.Id.ToString("N"), MovieName = movie.Name };
+        foreach (var user in new[] { s.Child, s.Admin }) f.Core.Manager.SaveUserConfiguration(user.Id.ToString("N"), SpoilerBlurImageFilter.SpoilerBlurFileName, state);
+        JeSpoilerGuardController Guard(User caller)
+        {
+            var guard = (JeSpoilerGuardController)JE.Tests.ApiAssetTests.Controller(typeof(JeSpoilerGuardController), f.Core, s.Library.Object, s.Users.Object, f.Core.Manager);
+            guard.HttpContext.User = PrivacyPolicyTests.Principal(caller.Id, caller == s.Admin); return guard;
+        }
+        string[] Sent(IActionResult result) => Assert.IsType<UserSpoilerBlur>(Assert.IsType<OkObjectResult>(result).Value).Movies.Keys.OrderBy(k => k).ToArray();
+        Assert.Equal(s.Keys(s.Family), Sent(Guard(s.Child).GetSpoilerBlurSeries()));
+        Assert.Equal(s.Keys(s.Family), Sent(Guard(s.Child).GetUserSpoilerBlur(childKey)));
+        var maintenance = new Jellyfin.Plugin.JellyfinEnhanced.Shared.Maintenance.MaintenanceModeService(s.Users.Object, Mock.Of<ISessionManager>(), f.Core.Paths.Object, f.Core.Logger);
+        var platform = JE.Tests.ApiAssetTests.Controller(f.Core, maintenance, f.Core.Manager, s.Library.Object, s.Users.Object);
+        platform.HttpContext.User = PrivacyPolicyTests.Principal(s.Child.Id);
+        var bootstrap = Assert.IsType<Jellyfin.Plugin.JellyfinEnhanced.Transport.BootstrapResponse>(Assert.IsType<JsonResult>(platform.GetBootstrap()).Value);
+        Assert.Equal(s.Keys(s.Family), bootstrap.Prefetched.SpoilerBlurSeries!.Movies.Keys.OrderBy(k => k).ToArray());
+        // A user who may see every title still gets their whole list; and the stored file is unchanged.
+        Assert.Equal(s.Keys(s.Family, s.Rated), Sent(Guard(s.Admin).GetSpoilerBlurSeries()));
+        Assert.Equal(s.Keys(s.Family, s.Rated), f.Core.Manager.GetUserConfiguration<UserSpoilerBlur>(childKey, SpoilerBlurImageFilter.SpoilerBlurFileName)!.Movies.Keys.OrderBy(k => k).ToArray());
     }
 
     private sealed record PendingSetup(JE.Tests.ApiPluginFixture Fixture, User Alice, User Bob, Series Series, string PendingKey, Mock<ILibraryManager> Library, SpoilerSeerrPendingPromoter Service) : IAsyncDisposable

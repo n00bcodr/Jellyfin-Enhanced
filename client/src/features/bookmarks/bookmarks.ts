@@ -597,11 +597,11 @@ function install(JE: BookmarkHost) {
       modal.style.opacity = '1';
     }, 10);
 
-    // Submit
-    required<HTMLButtonElement>(modal, '.je-bookmark-btn-submit').addEventListener('click', async () => {
+    const submit = required<HTMLButtonElement>(modal, '.je-bookmark-btn-submit');
+    submit.addEventListener('click', async () => {
       if (!isCurrent()) return;
       const labelInput = required<HTMLInputElement>(modal, '#bookmark-label').value.trim();
-
+      submit.disabled = true; // a second click while this save is pending would add a second bookmark
       try {
         if (isEdit && existingBookmark) {
           // A failed save is rolled back and reported as false.
@@ -622,7 +622,7 @@ function install(JE: BookmarkHost) {
         closeDialog();
       } catch (e) {
         if (isCurrent()) JE.toast(JE.t('toast_bookmark_save_failed'), 3000);
-      }
+      } finally { submit.disabled = false; }
     });
 
     // Jump to bookmark buttons

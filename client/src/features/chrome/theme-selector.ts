@@ -53,6 +53,29 @@ export function themeNameFor(baseUrl: string, stored: string): string {
     }
     return 'Default';
 }
+const BLOCK_START = '/* Jellyfin Enhanced theme selector: start */';
+const BLOCK_END = '/* Jellyfin Enhanced theme selector: end */';
+/**
+ * Split a stored customCss value into the selector's own theme and the user's own CSS, which it never
+ * changes. The selector's part is its marked block, or a first line that is one of its imports (the
+ * format it writes when there is no other CSS, and the only one older versions wrote).
+ */
+function splitCustomCss(baseUrl: string, stored: string): { theme: string; rest: string } {
+    const start = stored.indexOf(BLOCK_START);
+    const end = start < 0 ? -1 : stored.indexOf(BLOCK_END, start);
+    if (end >= 0) {
+        return { theme: themeNameFor(baseUrl, stored.slice(start + BLOCK_START.length, end).trim()),
+            rest: stored.slice(0, start) + stored.slice(end + BLOCK_END.length).replace(/^\n/, '') };
+    }
+    const newline = stored.indexOf('\n');
+    const theme = themeNameFor(baseUrl, (newline < 0 ? stored : stored.slice(0, newline)).trim());
+    return { theme, rest: theme === 'Default' ? stored : newline < 0 ? '' : stored.slice(newline + 1) };
+}
+/** A theme's import ahead of the user's own CSS (an @import must come first), marked as the selector's. */
+function withTheme(rest: string, value: string): string {
+    if (!value || !rest) return value || rest;
+    return `${BLOCK_START}\n${value}\n${BLOCK_END}\n${rest}`;
+}
 export function utcDay(date: Date): string {
     return date.toISOString().split('T')[0] ?? '';
 }
@@ -101,14 +124,10 @@ export function createThemeSelector(JE: ThemeSelectorBridge, readClient: () => T
     }
 
     function setTheme(userId: string, filename: string, name = 'Default'): void {
-        const value = themeImport(baseUrl, filename);
-        if (value) {
-            write(userId, 'customCss', value);
-            console.log(`${LOG} Theme set to: ${name}`);
-        } else {
-            remove(userId, 'customCss');
-            console.log(`${LOG} Theme cleared (default)`);
-        }
+        const value = withTheme(splitCustomCss(baseUrl, read(userId, 'customCss', '') ?? '').rest, themeImport(baseUrl, filename));
+        if (value) write(userId, 'customCss', value);
+        else remove(userId, 'customCss');
+        console.log(filename ? `${LOG} Theme set to: ${name}` : `${LOG} Theme cleared (default)`);
     }
 
     function notify(message: string): void {
@@ -236,7 +255,7 @@ export function createThemeSelector(JE: ThemeSelectorBridge, readClient: () => T
         select.id = 'theme-selector-select';
         select.setAttribute('aria-label', 'Select theme');
         select.removeAttribute('label');
-        const selected = themeNameFor(baseUrl, read(userId, 'customCss', '') ?? '');
+        const selected = splitCustomCss(baseUrl, read(userId, 'customCss', '') ?? '').theme;
         for (const name of Object.keys(THEMES)) {
             const option = document.createElement('option');
             option.value = name;

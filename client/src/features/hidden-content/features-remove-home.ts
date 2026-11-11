@@ -424,7 +424,8 @@ import { hiddenContentContext, homeRemovalFacade, host, registry, type HiddenHos
 
             // Local-cache mirror only — server already wrote the canonical entry; a refetch would risk a clobber.
             try {
-                if(!newerLocalIntent)JE.hiddenContent?.markScopedHidden?.(itemId, surface);
+                // A newer local intent keeps this session's list as it is; the entry is still recorded as stored.
+                JE.hiddenContent?.markScopedHidden?.(itemId, surface, newerLocalIntent);
             } catch (e) {
                 console.warn('🪼 Jellyfin Enhanced: markScopedHidden mirror failed', e);
             }

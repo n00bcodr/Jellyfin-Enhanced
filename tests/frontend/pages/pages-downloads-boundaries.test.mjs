@@ -38,6 +38,10 @@ test('detached and hidden buttons and stale selection never send a write',async 
 test('malformed queue response surfaces failure, not a successful empty state',async t=>{
  const h=setup(t,{api:async p=>p==='/arr/queue'?{items:[{progress:'bad'}]}:{}});h.expectConsoleError('Failed to fetch downloads');await h.P.loadAllData();assert.equal(h.P.state.downloadsError,true);assert.match(h.document.body.textContent,/Unable to load downloads/);
 });
+test('history that failed on every instance shows the failure, not "no history"',async t=>{
+ const h=setup(t,{api:async p=>p.startsWith('/arr/history')?{items:[],totalPages:0,visible:true,errors:[{instanceName:'Sonarr',source:'Sonarr',reason:'HTTP 500'}]}:p==='/arr/queue'?{items:[]}:{requests:[]}});
+ await h.P.loadAllData();assert.equal(h.P.state.historyError,true);assert.match(h.document.querySelector('.je-history-section').textContent,/Unable to load history/);
+});
 test('queue titles, ETA and search markup cannot create elements; progress remains bounded',t=>{
  const h=setup(t);h.P.state.downloads=[{title:'<img id="attack">',subtitle:'<svg onload="x">',timeRemaining:'<img id="eta">',progress:900,status:'Downloading'}];h.P.state.downloadsSearchVisible=true;h.P.state.downloadsSearchQuery='" autofocus onfocus="x';h.P.renderPage();
  assert.equal(h.document.querySelector('#attack,#eta,[onfocus]'),null);assert.equal(h.document.querySelector('.je-downloads-search-input').value,'" autofocus onfocus="x');
@@ -60,3 +64,12 @@ test('disposed feature rejects new refresh and request reads before sending netw
 test('server identity change rejects an in-flight response even before session notification',async t=>{
  const pending=deferred();const h=setup(t,{render:false,api:()=>pending.promise});const run=h.P.fetchRequests();h.window.ApiClient.serverAddress=()=> 'http://other-server';pending.resolve({requests:[{id:'old-server'}],canApproveRequests:true});await run;assert.equal(h.P.state.requests.length,0);assert.equal(h.P.state.canApproveRequests,false);
 });
+test('each section that failed to load says so from the translations',async t=>{
+ const h=setup(t,{api:async p=>{throw new Error('offline '+p);}});h.JE.t=key=>key;
+ h.expectConsoleError('Failed to fetch downloads');h.expectConsoleError('Failed to fetch requests');h.expectConsoleError('Failed to fetch history');
+ await h.P.loadAllData();
+ assert.match(h.document.querySelector('.je-active-downloads-section').textContent,/requests_downloads_load_failed/);
+ assert.match(h.document.querySelector('.je-requests-section').textContent,/requests_requests_load_failed/);
+ assert.match(h.document.querySelector('.je-history-section').textContent,/requests_history_load_failed/);
+});
+

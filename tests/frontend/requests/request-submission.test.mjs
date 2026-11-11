@@ -491,3 +491,11 @@ test('addToWatchlist rejects an invalid id or media type without calling Seerr',
   for (const [id, type] of [['abc', 'movie'], [0, 'movie'], [5, 'person'], [5, undefined]]) assert.equal(await h.api.addToWatchlist(id, type), false);
   assert.deepEqual(watchlistCalls(h), []);
 });
+
+test('season rows give the episode count in the translated form', async t => {
+  const h = await seasonModal(t, { tvDetails: { seasons: [{ seasonNumber: 1, episodeCount: 3, airDate: '2020-01-01' }], externalIds: { tvdbId: 1 } } });
+  const item = seasonCheckbox(h, 1).closest('.jellyseerr-season-item');
+  assert.match(item.querySelector('.jellyseerr-season-meta').textContent, /jellyseerr_season_episode_count\{"count":3\}/);
+  assert.equal(item.querySelector('.jellyseerr-season-episodes').textContent, 'jellyseerr_season_episode_count{"count":3}');
+});
+

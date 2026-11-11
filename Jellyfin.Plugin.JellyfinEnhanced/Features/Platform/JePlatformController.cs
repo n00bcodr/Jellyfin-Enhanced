@@ -31,6 +31,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Platform
         private readonly ArrInstanceClient _arrInstanceClient;
         private readonly ActiveSessionsService _activeSessionsService;
         private readonly HiddenContentDocumentService _hiddenContentDocumentService;
+        private readonly Shared.SpoilerGuard.SpoilerSeerrRedactor _spoilerSeerrRedactor;
 
         public JePlatformController(
             IHttpClientFactory httpClientFactory,
@@ -43,7 +44,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Platform
             Features.Platform.Services.CdnAssetService cdnAssetService,
             Shared.Analytics.UsageEventCounterService usageEventCounterService,
             Features.Platform.Services.AnalyticsReportingService analyticsReportingService,
-            IPluginManager pluginManager)
+            IPluginManager pluginManager,
+            Shared.SpoilerGuard.SpoilerSeerrRedactor spoilerSeerrRedactor)
             : base(userManager, logger, userConfigurationManager)
         {
             _httpClientFactory = httpClientFactory;
@@ -57,6 +59,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Platform
             _arrInstanceClient = new ArrInstanceClient(httpClientFactory, logger);
             _activeSessionsService = new ActiveSessionsService(sessionManager);
             _hiddenContentDocumentService = new HiddenContentDocumentService(userConfigurationManager, logger, _userDisplayResolver);
+            _spoilerSeerrRedactor = spoilerSeerrRedactor;
         }
 
         // [AllowAnonymous]: version is loaded by translations.js cache-buster pre-login.
@@ -274,7 +277,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Platform
                 // serve as an image.
                 avatarRequest.Headers.UserAgent.ParseAdd(Shared.Seerr.SeerrHttpHelper.UserAgent);
                 avatarRequest.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("image/*"));
-                var response = await client.SendAsync(avatarRequest);
+                using var response = await client.SendAsync(avatarRequest, System.Net.Http.HttpCompletionOption.ResponseHeadersRead);
                 if (!response.IsSuccessStatusCode)
                 {
                     return NotFound();
@@ -297,23 +300,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Platform
                     return NotFound();
                 }
 
-                var content = await response.Content.ReadAsByteArrayAsync();
+                var content = await Features.Platform.Services.CdnAssetService.ReadCappedAsync(response, MaxAvatarBytes, CancellationToken.None);
+                if (content == null)
+                {
+                    _logger.Debug($"ProxyAvatar rejected an avatar over {MaxAvatarBytes} bytes");
+                    return NotFound();
+                }
 
                 // Compute ETag from content hash for conditional request support.
                 var hash = SHA256.HashData(content);
                 var etag = $"\"{Convert.ToHexString(hash)}\"";
 
-                // Store in server-side cache and evict expired entries periodically
-                _avatarCache[cacheKey] = (content, contentType, etag, DateTime.UtcNow);
-                if (_avatarCache.Count > 50 || _avatarCache.Count % 10 == 0)
+                // Store in the server-side cache, then drop expired entries and, past the cache's bounds, the oldest.
+                var now = DateTime.UtcNow;
+                _avatarCache[cacheKey] = (content, contentType, etag, now);
+                var entries = _avatarCache.ToArray();
+                var count = entries.Length;
+                var bytes = entries.Sum(e => (long)e.Value.Content.Length);
+                foreach (var entry in entries.OrderBy(e => e.Value.CachedAt))
                 {
-                    foreach (var key in _avatarCache
-                        .Where(kv => DateTime.UtcNow - kv.Value.CachedAt > _avatarCacheDuration)
-                        .Select(kv => kv.Key)
-                        .ToList())
-                    {
-                        _avatarCache.TryRemove(key, out _);
-                    }
+                    if (count <= MaxAvatarCacheEntries && bytes <= MaxAvatarCacheBytes && now - entry.Value.CachedAt <= _avatarCacheDuration) break;
+                    if (_avatarCache.TryRemove(entry)) { count--; bytes -= entry.Value.Content.Length; }
                 }
 
                 // Serve 304 if client already has this version

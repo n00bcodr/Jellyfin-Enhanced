@@ -69,7 +69,7 @@
 
   // client/src/features/downloads/render-cards.ts
   function install(deps) {
-    const { JE, P, host, ctx, getApi } = deps;
+    const { JE, P, host, ctx } = deps;
     const life = export02(deps);
     if (life.installed.has("render-cards")) return;
     life.installed.add("render-cards");
@@ -244,7 +244,7 @@
       const avatar = issue?.createdBy?.avatar;
       if (!avatar) return "";
       if (avatar.startsWith("/")) {
-        return getApi().getUrl("/JellyfinEnhanced/proxy/avatar", { path: avatar });
+        return `/JellyfinEnhanced/proxy/avatar?path=${encodeURIComponent(avatar)}`;
       }
       return avatar;
     }
