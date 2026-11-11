@@ -19,7 +19,7 @@ test('contract generation recovers independently while real client/build/pack gu
     cpSync(join(root, relative), join(fixture, relative), { recursive: true,
       filter: source => !['bin', 'obj', 'node_modules'].includes(source.split('/').at(-1)) });
   };
-  for (const relative of ['tools/ClientContracts', 'scripts/client-build.mjs', 'scripts/client', 'scripts/tag-data.mjs', 'scripts/generate-client-contracts.sh',
+  for (const relative of ['tools/ClientContracts', 'scripts/client-build.mjs', 'scripts/typecheck-tool.mjs', 'scripts/client', 'scripts/tag-data.mjs', 'scripts/generate-client-contracts.sh',
     'Directory.Build.targets', 'package.json', 'package-lock.json', 'client', 'contracts',
     `${plugin}/JellyfinEnhanced.csproj`, `${plugin}/Transport`,
     `${plugin}/js/tags/status-vocabulary.json`, `${plugin}/js/tags/quality-compact.json`,

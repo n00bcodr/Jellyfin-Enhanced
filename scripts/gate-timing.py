@@ -402,7 +402,7 @@ def classify(argv, comm):
         if 'playwright' in a:
             return 'playwright'
         if 'client-build.mjs' in a:
-            return 'client-build (tsc/esbuild)'
+            return 'client-build (tsc-rs/esbuild)'
         if '--test' in a:
             return 'node --test runner'
         if 'npm-cli.js' in a or base == 'npm':

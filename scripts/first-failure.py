@@ -6,7 +6,7 @@
 Applies one deliberate fault to the clean checkout DIR (restored afterwards), runs the gate, timestamps every output
 line, and stops the gate at the first line that names a failing test, a type error or a build error (or when it
 exits). Prints the seconds to that line and the line. The faults:
-  typecheck  a number assigned to a string in client/src/host/context.ts (tsc error TS2322)
+  typecheck  a number assigned to a string in client/src/host/context.ts (type error TS2322)
   frontend   the status tags' series batch skips every non-empty batch (`batch.length !== 0`) in
              client/src/features/media-tags/types/status/statustags.ts, regenerated (client:build) before the gate
   dotnet     TagStyleKeys.Groups loses the Quality group (TagStylePalettes.cs; backend tests notice)

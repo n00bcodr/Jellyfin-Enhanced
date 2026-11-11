@@ -338,3 +338,83 @@ The main line moved 64 commits while this was measured (the upstream catch-up to
 
 **Where the gate results come from:** the landing report names the gates run on the final commit, the tool and version, and the machine.
 
+
+## 12. tsc-rs replaces TypeScript 6 as the type checker (2026-11-11)
+
+Decided by the maintainer after §7: tsc-rs checks every type, in the inner loop and in every gate. Five commits on top of
+`3a4c23ac`, so `git revert 3a4c23ac..<the docs commit>` undoes it in one go: tsc-rs 0.8.0 as a required, exactly pinned dev
+dependency with one resolver for its binary (`scripts/typecheck-tool.mjs`); the self-test (`scripts/typecheck-selftest.mjs`)
+in the `tool` gate; `scripts/client-build.mjs` checking with tsc-rs (and so `client:typecheck`, `client:check`,
+`client:build`, every plugin build through `Directory.Build.targets`, `quick`, `fe`, `all`, CI's `verify:rewrite`), with
+the type-check cache and the separate fast pre-check removed; the TypeScript 6 comparison script removed; the docs.
+
+**Before it landed** (TypeScript 6 still installed, on `3a4c23ac`):
+- The last TypeScript 6 comparison, all 121 mutations (22 kinds) and the clean tree: both checkers report nothing on the
+  clean tree; TypeScript 6 rejects 118 mutations and accepts 3; tsc-rs gives the same verdict and the same `file:line` for
+  all 121; error codes differ on 3 (TS2345 in TypeScript 6, TS2741 in tsc-rs as in TypeScript 7, by design), and every
+  repeated diagnostic matches in number too.
+- One planted error per strictness option `client/tsconfig.json` sets (`tests/typecheck/fixtures/`): each `strict` flag
+  (`noImplicitAny`, `strictNullChecks`, `strictFunctionTypes`, `strictBindCallApply`, `strictPropertyInitialization`,
+  `noImplicitThis`, `useUnknownInCatchVariables`, `strictBuiltinIteratorReturn`, strict-mode syntax),
+  `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `noImplicitOverride`, `noFallthroughCasesInSwitch`,
+  `verbatimModuleSyntax`, `isolatedModules`, `types: []`, `lib` and `target` ES2020, `moduleResolution: Bundler`, and two
+  `moduleDetection: force` files that must stay clean: tsc-rs reports exactly what TypeScript 6 reports for all 23 (same
+  codes, same lines). Nothing in the config or the sources is unsupported. One limit: `forceConsistentCasingInFileNames`
+  only bites on case-insensitive file systems; on Linux a wrong-case import is "module not found" (TS2307) in both.
+- The whole trees: the client (582 files) 0 and 0 diagnostics; the test tree has no tsconfig (it is plain JavaScript), so
+  both ran over its 320 `.mjs`/`.cjs`/`.js` files with `allowJs` and no type checking: 0 and 0 (both list the same 320
+  files and report a planted syntax error identically).
+
+**The safeguard that replaces the comparison:** `node scripts/typecheck-selftest.mjs` (the `tool` gate runs it) needs no
+other compiler. The clean tree must report nothing; the 23 fixtures must get exactly their recorded diagnostics; the 121
+planted errors, each with every diagnostic TypeScript 6 reported (147, with the three TS2741 alternatives named), are
+applied to the tree of the commit they were recorded at (`git archive`), so they never go stale (a shallow clone falls back
+to the 109 still found in the current tree and needs 100). Any missed or extra diagnostic fails: a checker that reports
+nothing fails it with 168 failures (a tooling test keeps it so). 12 s on the Lenovo, 61 s on the busy second worker.
+
+**Times** (the Lenovo, quiet, the gate lock held, the main line `3a4c23ac` against this series, 3 interleaved rounds,
+every run passed):
+
+| | TypeScript 6 checks | tsc-rs checks | change |
+|---|---:|---:|---:|
+| `npm run client:typecheck` | 3.9 s | 1.0 s | −2.9 s |
+| `npm run client:check` (every plugin build runs it) | 4.3 s | 1.6 s | −2.7 s |
+| `quick seerr` | 23.5 s (23.3–26.6) | 23.3 s (23.3–23.6) | within noise: the main line's `quick` already cached its checks between runs (its cold first run is the 26.6 s) |
+| `fe` | 166.9 s (165.9–167.0) | 157.3 s (157.2–157.7) | −9.6 s (−6%), real |
+| `all` | 120.9 s (120.7–121.3) | 112.0 s (111.9–113.3) | −8.9 s (−7%), real |
+
+**Counts:** client-build tests 230 → 223 (the type-check cache's 7 tests went with the cache); tooling 41 → 42 (the
+self-test's own test); npm and dotnet unchanged.
+
+**What still loads `typescript` (6.0.3), and why — never to report type errors:**
+- `scripts/client-build.mjs` and the modules it passes it to, as a **parser**: duplicate-key detection in
+  `client/entries/*.json` (`parseJsonText`), the source policy over `client/src` (explicit `any`, `@ts-ignore` and friends:
+  `createSourceFile`), typed HTML pages and their inline scripts (`scripts/client/html-entries.mjs`), and the shared
+  modules' state scan (`scripts/client/shared-modules.mjs`).
+- `tests/frontend/architecture/scan.mjs` (the architecture and guard tests): parsing, plus TypeScript 6 programs whose type
+  checker answers symbol and type questions for rules 3 and 4 (is a name global, what does an alias resolve to).
+- `tests/client-build/shared-modules.test.mjs`: a TypeScript 6 program for symbol resolution (who mutates a shared table).
+tsc-rs ships an unstable JavaScript API (`tsc-rs/unstable/sync`, an AST) that might one day replace these; not evaluated.
+
+**Platforms:** the `tsc-rs` package's optional platform packages are Linux x64 and arm64, macOS x64 and arm64, Windows x64
+and arm64. The Linux x64 binary is statically linked (no glibc requirement). Verified for real: the Lenovo (Linux x64,
+Node 26.13) and the second worker (Linux x64, Node 26.13: `npm ci`, the self-test, `client:check`, the client-build tests).
+GitHub's runners: every workflow runs on `ubuntu-latest` or `ubuntu-24.04` (x64) and installs with `npm ci` (once with
+`--ignore-scripts`, which the binary does not need), so they get `@tsc-rs/linux-x64` from the lockfile.
+
+**Known risks of depending on a new compiler:**
+- **Young, small project.** tsc-rs 0.8.0 is about two months old, maintained by one person, largely machine-written, and
+  says "This is an early release". A checker bug can hide an error. The self-test covers 22 mutation kinds and every
+  strictness option, not every rule of the language.
+- **TypeScript 7 semantics.** tsc-rs ports TypeScript 7 (it prints `Version 7.1.0-dev`); diagnostics TypeScript 7 changed
+  on purpose (TS2345 → TS2741) change here too, and future TypeScript 7 changes arrive with tsc-rs bumps.
+- **Upgrades.** Exact pins only; a bump lands after the self-test passes (`docs/rewrite/frontend-build.md`). Bumps that
+  change behaviour show up as self-test failures and need a decision, not a re-record.
+- **Offline installs.** A required dev dependency: an offline `npm ci` needs `tsc-rs` and the platform package in its npm
+  cache, or it fails with `ENOTCACHED` (the trial sandboxes' caches must be re-seeded once). A missing binary fails the
+  check with a message, never skips.
+- **Two TypeScripts in node_modules.** TypeScript 6 stays for parsing and the two analysis tests; its idea of the language
+  and tsc-rs's can drift apart over time (new syntax the parser does not know). The source policy and the analysis tests
+  would then fail, not pass silently.
+- **Way back.** One `git revert` of this series restores TypeScript 6 as the checker.
+

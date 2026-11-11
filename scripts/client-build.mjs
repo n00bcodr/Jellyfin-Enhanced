@@ -4,12 +4,15 @@ import { createRequire } from 'node:module';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { checkTagData } from './tag-data.mjs';
+import { runTscRs } from './typecheck-tool.mjs';
 
 export const repositoryRoot = fileURLToPath(new URL('../', import.meta.url));
 const pluginDirectory = 'Jellyfin.Plugin.JellyfinEnhanced';
 const ledgerPath = 'client/generated-manifest.json';
 /** Minified twins of the component scripts, read only by the served bundle (ClientScriptBundle.cs). */
 export const minDirectory = 'min';
+// TypeScript 6 is only a parser here (entry manifests, the source policy, typed HTML pages, shared modules); the type
+// check is tsc-rs's (scripts/typecheck-tool.mjs).
 const versions = { typescript: '6.0.3', esbuild: '0.28.2' };
 const require = createRequire(import.meta.url);
 
@@ -114,88 +117,32 @@ export function discoverEntries(root = repositoryRoot) {
   return entries.sort((a, b) => a.output < b.output ? -1 : a.output > b.output ? 1 : 0);
 }
 
-/** 'checked' or 'cached' for the last checkTypes call (buildClient reports it as `typecheck`). */
-let lastTypecheck = 'checked';
-
-/** Type-check all source, including modules not yet mapped to a production entry. */
-function checkTypes(ts, root, entries) {
-  lastTypecheck = 'checked';
+/**
+ * Type-check all source, including modules not yet mapped to a production entry, with the repository's type checker:
+ * tsc-rs (scripts/typecheck-tool.mjs; nothing here runs tsc). Its --showConfig gives the files client/tsconfig.json
+ * includes, so every entry can be required to be among them.
+ */
+function checkTypes(root, entries) {
   const configPath = safePath(root, 'client/tsconfig.json');
-  const config = ts.readConfigFile(configPath, ts.sys.readFile);
-  if (config.error) throw new Error(ts.flattenDiagnosticMessageText(config.error.messageText, '\n'));
-  const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, dirname(configPath));
-  // TS18003 is only allowed during the initial, genuinely source-less migration.
-  const errors = parsed.errors.filter(diagnostic => !(diagnostic.code === 18003 && entries.length === 0));
-  const files = new Set(parsed.fileNames.map(file => resolve(file)));
+  const shown = runTscRs(['--showConfig', '-p', configPath], root);
+  // TS18003 (no inputs) is only allowed during the initial, genuinely source-less migration.
+  if (shown.status !== 0 && /error TS18003/.test(shown.output) && entries.length === 0) return 0;
+  if (shown.status !== 0) throw new Error(`client/tsconfig.json: ${shown.output.trim()}`);
+  const files = new Set((JSON.parse(shown.stdout).files ?? []).map(file => resolve(dirname(configPath), file)));
   for (const entry of entries) {
     if (!files.has(resolve(root, entry.source))) throw new Error(`Entry is excluded from type checking: ${entry.source}`);
   }
-  if (errors.length) throw new Error(formatDiagnostics(ts, errors, root));
-  if (files.size) {
-    const cache = typecheckCache(ts, root, parsed);
-    lastTypecheck = 'cached';
-    if (cache?.hit()) return files.size;
-    lastTypecheck = 'checked';
-    const program = ts.createProgram(parsed.fileNames, { ...parsed.options, noEmit: true });
-    const diagnostics = ts.getPreEmitDiagnostics(program);
-    if (diagnostics.length && cache?.verifying) {
-      throw new Error(`Type-check cache audit: a cached pass is wrong for this tree (report it; set JE_TYPECHECK_CACHE_DIR= to bypass):\n${formatDiagnostics(ts, diagnostics, root)}`);
-    }
-    if (diagnostics.length) throw new Error(formatDiagnostics(ts, diagnostics, root));
-    cache?.store(program);
+  if (!files.size) return 0;
+  const result = runTscRs(['-p', configPath, '--pretty', 'false'], root);
+  if (result.status !== 0) {
+    const output = result.output.trim();
+    // A run that fails without one diagnostic did not check anything; never read it as a pass.
+    if (!/error TS\d+/.test(output)) throw new Error(`tsc-rs exited ${result.status} without a diagnostic:\n${output}`);
+    throw new Error(output);
   }
   return files.size;
 }
 
-/**
- * A cache of passing type checks, used only when JE_TYPECHECK_CACHE_DIR names a directory (the gates give each run a
- * fresh one, so a gate never trusts a result from before the run; `quick` keeps one in node_modules/.cache).
- * The key hashes: the TypeScript version, this file's own text, package-lock.json, the parsed compiler options (paths
- * made relative to the root), and every root file (client/src/**, by the tsconfig) with its content. A hit also needs
- * every other file the passing program loaded (TypeScript's lib .d.ts files, anything resolved outside the roots) to
- * hash as it did then. A new, removed or edited source file changes the root list or a hash, so it misses; only a pass
- * is stored, so a failing check always runs. JE_TYPECHECK_CACHE_VERIFY=1 runs the check anyway and fails loudly when a
- * hit would have hidden an error (an audit, the way t3code's --verify-hits re-runs cached tests).
- */
-function typecheckCache(ts, root, parsed) {
-  const dir = process.env.JE_TYPECHECK_CACHE_DIR;
-  if (!dir) return null;
-  const hash = data => createHash('sha256').update(data).digest('hex');
-  const local = file => { const r = relative(root, file); return r.startsWith('..') || r.startsWith(sep) ? file : r.split(sep).join('/'); };
-  const sorted = Object.fromEntries(Object.keys(parsed.options).sort().map(key => [key, parsed.options[key]]));
-  const options = JSON.stringify(sorted, (key, value) => typeof value === 'string' && value.startsWith(root) ? local(value) : value);
-  const roots = parsed.fileNames.map(file => [local(file), hash(readFileSync(file))]).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
-  const lock = existsSync(join(root, 'package-lock.json')) ? hash(readFileSync(join(root, 'package-lock.json'))) : 'none';
-  const key = hash(JSON.stringify({ format: 1, ts: ts.version, self: hash(readFileSync(fileURLToPath(import.meta.url))), lock, options, roots }));
-  const entry = join(dir, `${key}.json`);
-  const verify = process.env.JE_TYPECHECK_CACHE_VERIFY === '1';
-  return {
-    hit() {
-      if (!existsSync(entry)) return false;
-      let loaded;
-      try { loaded = JSON.parse(readFileSync(entry, 'utf8')).loaded; } catch { return false; }
-      for (const [file, digest] of loaded) {
-        const path = file.startsWith('/') ? file : join(root, file);
-        if (!existsSync(path) || hash(readFileSync(path)) !== digest) return false;
-      }
-      if (verify) { this.verifying = true; return false; }
-      return true;
-    },
-    store(program) {
-      const rootSet = new Set(roots.map(([file]) => file));
-      const loaded = program.getSourceFiles().map(file => file.fileName).filter(file => !rootSet.has(local(file)))
-        .map(file => [local(file), hash(readFileSync(file))]);
-      mkdirSync(dir, { recursive: true });
-      const tmp = `${entry}.${process.pid}.tmp`;
-      writeFileSync(tmp, JSON.stringify({ loaded }));
-      renameSync(tmp, entry);
-    },
-  };
-}
-
-function formatDiagnostics(ts, diagnostics, root) {
-  return ts.formatDiagnostics(diagnostics, { getCanonicalFileName: path => path, getCurrentDirectory: () => root, getNewLine: () => '\n' });
-}
 
 /** Enforce the narrow migration policy using TypeScript's own syntax/comment parser. */
 export function checkSourcePolicy(root = repositoryRoot) {
@@ -342,8 +289,8 @@ export async function buildClient({ root = repositoryRoot, check = false, typech
   checkTagData(root, entries);
   checkSourcePolicy(root);
   const htmlSources = pages.flatMap(page => Object.values(page.scripts).map(source => ({ source })));
-  const sourceCount = checkTypes(ts, root, [...entries, ...htmlSources]);
-  if (typecheckOnly) return { entries: entries.length, sources: sourceCount, html: pages.length, typecheck: lastTypecheck };
+  const sourceCount = checkTypes(root, [...entries, ...htmlSources]);
+  if (typecheckOnly) return { entries: entries.length, sources: sourceCount, html: pages.length };
   const artifacts = new Map();
   const componentScripts = readComponentScripts(root);
   const shared = await prepareSharedModules(ts, esbuild, root, entries, componentScripts);
@@ -457,7 +404,7 @@ export async function buildClient({ root = repositoryRoot, check = false, typech
       writeFileSync(absolute, bytes);
     }
   }
-  return { entries: entries.length, sources: sourceCount, html: pages.length, changed: stale.length, typecheck: lastTypecheck };
+  return { entries: entries.length, sources: sourceCount, html: pages.length, changed: stale.length };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

@@ -216,15 +216,10 @@ gate_tool() (
   python3 tests/run.py tooling
   step "TOOL: no AI attribution in commit messages since the base"
   attribution_check
-  # The inner loop's fast pre-check (tsc-rs) must keep agreeing with TypeScript 6, the gates' authority: the clean tree
-  # plus 4 mutation sites drawn by the commit (each commit tries others), verdict and file:line compared (~15 s).
-  if node scripts/typecheck-fast.mjs --available; then
-    step "TOOL: tsc-rs agrees with TypeScript 6 (clean tree + 4 seeded mutations; scripts/typecheck-agreement.mjs --gate)"
-    node scripts/typecheck-agreement.mjs --gate --sample 4 --seed "$(git rev-parse HEAD)" --jobs 2 \
-      --checker "tsc6=node $ROOT/node_modules/typescript/bin/tsc" --checker "tsc-rs=$ROOT/node_modules/.bin/tsc-rs" > /dev/null
-  else
-    step "TOOL: tsc-rs agreement skipped: tsc-rs is not installed here (an optional dependency)"
-  fi
+  # The type checker (tsc-rs) must still catch every planted type error and report nothing on clean code
+  # (scripts/typecheck-selftest.mjs: 121 planted errors on their recorded tree, a fixture per strictness option, ~12 s).
+  step "TOOL: the type checker's self-test (tsc-rs: planted errors, strictness fixtures, the clean tree)"
+  node scripts/typecheck-selftest.mjs
   step "TOOL: mutation/history path check vs $BASELINES/mutation-check.txt"
   local out new
   out=$(mutation_check)
@@ -696,7 +691,6 @@ gate_quick() (
   # shellcheck disable=SC2086  # one path per word
   if [ $# -gt 0 ]; then feats="$*"; else feats=$(quick_map features $changed); fi
   step "QUICK: features ${feats:-(none; architecture and guards only)}"
-  npm run --silent client:typecheck:fast      # tsc-rs, ~0.2 s, fails fast; TypeScript 6 checks next and decides
   npm run client:typecheck
   npm run client:build
   npm run inventory:rewrite
@@ -792,20 +786,6 @@ case "$cmd" in
       flock -n "$heavy_lock" true 2>/dev/null || echo "restructure-gates: another heavy gate is running on this machine; $cmd waits for it ($heavy_lock)" >&2
       exec flock --close "$heavy_lock" bash "$SELF" "$cmd" "$@"
     fi ;;
-esac
-# One gate run checks the same tree's types several times (the plugin build's VerifyJellyfinEnhancedClient target,
-# client:check, client:build, the contract-boundary fixture): a passing check is cached for the rest of the run only
-# (scripts/client-build.mjs typecheckCache). Each run gets a fresh directory, so a gate never reuses a result from
-# before it started, whatever the caller's environment says.
-case "$cmd" in
-  be|fe|all)
-    JE_TYPECHECK_CACHE_DIR=$(mktemp -d)
-    export JE_TYPECHECK_CACHE_DIR
-    trap 'rm -rf "$JE_TYPECHECK_CACHE_DIR"' EXIT
-    ;;
-  # The inner loop keeps its cache between runs (the merge gates never read it), so its typecheck and build share one check.
-  quick|affected) export JE_TYPECHECK_CACHE_DIR="$ROOT/node_modules/.cache/je-typecheck" ;;
-  *) unset JE_TYPECHECK_CACHE_DIR ;;
 esac
 case "$cmd" in
   be|fe|all|browser|h|inv|tool|size) [ $# -eq 0 ] || usage; "gate_$cmd" ;;

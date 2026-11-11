@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """Time TypeScript checkers on client/ the same way: interleaved, cold and warm, plus watch-mode re-checks.
 
-    scripts/typecheck-timing.py --checker tsc6='node node_modules/typescript/bin/tsc' --checker ts7='...' \
-        --checker tsrs='.../tsc-rs' [--runs 10] [--edits 10] [--out FILE.json] [--cpus 0-7]
+    scripts/typecheck-timing.py --checker tsrs=node_modules/@tsc-rs/linux-x64/lib/tsc --checker candidate='...' \
+        [--runs 10] [--edits 10] [--out FILE.json] [--cpus 0-7]
+
+A measuring tool for comparing type checkers by hand (for example a tsc-rs version bump against the pinned one, after
+scripts/typecheck-selftest.mjs passed for it). It runs only the commands it is given; no gate runs it.
 
 Each round runs every checker (in a rotating order) twice: cold, after evicting from the page cache (posix_fadvise
 DONTNEED, no root needed) every file under client/ and every file of the checker's own install (its --evict paths, or
@@ -14,7 +17,7 @@ adding a line with a type error to a real source file (`export const timingProbe
 removing it again (expect 0), so a report only counts when it shows the checker really checked the edit; a report with
 the wrong count is recorded as a mismatch. A checker whose watch mode never reports is recorded as such.
 --npm-step also times `npm run client:typecheck` (the repository's own step: tag data, source policy, then the
-TypeScript 6 API check) cold and warm in the same rotation.
+type check) cold and warm in the same rotation.
 """
 import argparse
 import json

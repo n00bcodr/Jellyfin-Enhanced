@@ -785,6 +785,8 @@ test('the builder takes no validation lock, so it runs inside verify:rewrite', a
   for (const file of ['scripts/client-build.mjs', 'scripts/client/html-entries.mjs']) {
     assert.doesNotMatch(readFileSync(join(repositoryRoot, file), 'utf8'), /flock|child_process|je-v12/);
   }
+  // The one process the builder starts is the type checker (scripts/typecheck-tool.mjs), which takes no lock either.
+  assert.doesNotMatch(readFileSync(join(repositoryRoot, 'scripts/typecheck-tool.mjs'), 'utf8'), /flock|je-v12/);
 });
 
 test('every production page embedded today has markup the policy admits', async t => {

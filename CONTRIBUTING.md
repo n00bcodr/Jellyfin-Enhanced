@@ -51,7 +51,7 @@ Adding a client module:
 
 ### Where things live
 
-Client code is TypeScript under `client/src/`. `npm run client:build` bundles it into the shipped scripts under `Jellyfin.Plugin.JellyfinEnhanced/js/`, using the manifests in `client/entries/` (see [its README](client/entries/README.md)). The backend has one folder per feature under `Jellyfin.Plugin.JellyfinEnhanced/Features/`. `Shared/` and `Infrastructure/` beside it are layers that several features use, not features. Each `client/src/features/<feature>/README.md` lists that feature's entry points, public API and tests.
+Client code is TypeScript under `client/src/`. `npm run client:build` type-checks it with tsc-rs and bundles it into the shipped scripts under `Jellyfin.Plugin.JellyfinEnhanced/js/`, using the manifests in `client/entries/` (see [its README](client/entries/README.md)). The backend has one folder per feature under `Jellyfin.Plugin.JellyfinEnhanced/Features/`. `Shared/` and `Infrastructure/` beside it are layers that several features use, not features. Each `client/src/features/<feature>/README.md` lists that feature's entry points, public API and tests.
 
 The canonical list is [`docs/feature-map.json`](docs/feature-map.json). `tests/frontend/architecture/feature-map.test.mjs` keeps this table equal to it, so change the map first and copy the rows it prints.
 

@@ -23,7 +23,7 @@ The baseline is upstream commit 2e0f9251bfe833cb58866e9e245ba62be69a69ad. On the
 
 Use `client/src/` for TypeScript. Preserve source-relative feature paths where practical. Each independent feature group owns a JSON file under `client/entries/` mapping its production output paths (relative to `Jellyfin.Plugin.JellyfinEnhanced/`) to its TypeScript entry sources (relative to repo root). Example: `{ "js/core/session.js": "client/src/core/session-entry.ts" }`.
 
-The build owner implements deterministic discovery of these manifests, collision checks, strict `tsc` validation, esbuild browser IIFE compilation, and a check mode that detects stale generated output. TypeScript imports may be bundled into each entry while existing server manifest paths remain stable during integration. Compiled outputs replace their old JS implementations; do not ship two competing owners. Keep maps/source manifests clear so debug and review refer to TS sources.
+The build owner implements deterministic discovery of these manifests, collision checks, strict type checking (tsc-rs; see [frontend-build.md](frontend-build.md)), esbuild browser IIFE compilation, and a check mode that detects stale generated output. TypeScript imports may be bundled into each entry while existing server manifest paths remain stable during integration. Compiled outputs replace their old JS implementations; do not ship two competing owners. Keep maps/source manifests clear so debug and review refer to TS sources.
 
 Each feature should define narrow interfaces at its adapter boundary, not a permissive global bag. Source modules should accept their dependencies explicitly. New pure logic should not access browser globals. Never weaken existing tests simply to pass a rewritten implementation.
 

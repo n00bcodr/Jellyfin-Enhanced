@@ -239,6 +239,7 @@ test('direct MSBuild blocks stale plugin resources and excludes unrelated projec
   const { spawnSync } = await import('node:child_process');
   const f = fixture(t);
   f.put('scripts/client-build.mjs', readFileSync(join(repositoryRoot, 'scripts/client-build.mjs')));
+  f.put('scripts/typecheck-tool.mjs', readFileSync(join(repositoryRoot, 'scripts/typecheck-tool.mjs')));
   f.put('scripts/tag-data.mjs', readFileSync(join(repositoryRoot, 'scripts/tag-data.mjs')));
   f.put('Directory.Build.targets', readFileSync(join(repositoryRoot, 'Directory.Build.targets')));
   symlinkSync(join(repositoryRoot, 'node_modules'), join(f.root, 'node_modules'), 'dir');

@@ -7,8 +7,9 @@ are replaced, and each feature owner must preserve behavior at that entry point.
 ## Prerequisites and commands
 
 Use Node >=22.12, npm, .NET SDK 10, Python 3 and `flock` (util-linux). Install
-locked JavaScript dependencies explicitly with `npm ci`. TypeScript **6.0.3** and
-esbuild **0.28.2** are pinned; the builder rejects missing or mismatched versions.
+locked JavaScript dependencies explicitly with `npm ci`. The type checker tsc-rs
+**0.8.0**, esbuild **0.28.2** and TypeScript **6.0.3** (here only a parser, see
+below) are pinned exactly; the builder rejects missing or mismatched versions.
 Neither the client builder nor the .NET build hook downloads npm dependencies.
 
 | Command | Purpose |
@@ -61,9 +62,34 @@ esbuild includes that wrapper in source-map offsets.
 Every bundled input must be TypeScript under `client/src`;
 untyped legacy scripts and external runtime dependencies cannot silently bypass
 strict checking. Existing globals must be represented by explicit typed adapters.
-TypeScript enforces `strict`, `noUncheckedIndexedAccess`,
+The type checker enforces `strict`, `noUncheckedIndexedAccess`,
 `exactOptionalPropertyTypes`, `noImplicitOverride`, isolated modules and type-only
 imports. Do not bypass errors with broad `any` or suppression comments.
+
+### The type checker: tsc-rs
+
+Every type check (`client:typecheck`, `client:check`, `client:build`, every
+plugin build through `Directory.Build.targets`, every gate) runs
+[tsc-rs](https://github.com/pingdotgg/ts-rust), a Rust port of the TypeScript 7
+compiler, through `scripts/typecheck-tool.mjs`; nothing runs `tsc`. It checks
+`client/` in about 0.2 s. A missing binary fails the check with a message saying
+what to install; it never skips. Its npm package ships binaries for Linux x64 and
+arm64 (the x64 one is statically linked, so any distribution), macOS x64 and
+arm64, and Windows x64 and arm64, as optional platform packages that `npm ci` picks from `package-lock.json` (an offline npm
+cache must contain `tsc-rs` and the platform package). TypeScript 6 stays a
+dependency only as a parser (entry manifests, the source policy, typed HTML pages,
+shared modules) and as the symbol engine of two tests (the architecture scan,
+the shared-modules mutation test); it never reports type errors here.
+
+**Upgrading tsc-rs** is an exact pin, never a range: change `tscRsVersion` in
+`scripts/typecheck-tool.mjs` and the `tsc-rs` version in `package.json` together,
+run `npm install`, then `node scripts/typecheck-selftest.mjs` (the `tool` gate runs
+it too). Land the bump only when it passes: it applies 121 planted type errors to
+the tree they were recorded on (`tests/typecheck/planted.json`, recorded from
+TypeScript 6.0.3), checks a fixture per strictness option in `client/tsconfig.json`
+(`tests/typecheck/fixtures/`) and the clean tree, and fails on any missed or extra
+diagnostic. A new strictness option in `client/tsconfig.json` gets a fixture there
+in the same change.
 
 Every build, check and typecheck also parses production `.ts` files under
 `client/src` with TypeScript's AST/comment parser. Explicit `any` type nodes and

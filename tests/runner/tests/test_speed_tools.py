@@ -234,5 +234,20 @@ class HeavyGateSlotTests(unittest.TestCase):
                 holder.wait()
 
 
+class TypecheckSelfTestTests(unittest.TestCase):
+    """The type checker's self-test fails when a checker misses the planted errors."""
+
+    def test_a_checker_that_reports_nothing_fails_the_self_test(self):
+        with tempfile.TemporaryDirectory() as d:
+            silent = Path(d) / 'silent-checker'
+            silent.write_text('#!/bin/sh\nexit 0\n')
+            silent.chmod(0o755)
+            r = subprocess.run(['node', 'scripts/typecheck-selftest.mjs', '--checker', str(silent)], cwd=ROOT,
+                               capture_output=True, text=True, timeout=300)
+            self.assertEqual(1, r.returncode)
+            self.assertIn('fixture strict-null-checks.ts: missed TS2322 at line 2', r.stdout)
+            self.assertIn('planted cases on the recorded commit', r.stdout)
+
+
 if __name__ == '__main__':
     unittest.main()
