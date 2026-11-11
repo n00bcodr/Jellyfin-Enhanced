@@ -424,7 +424,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                                 fetched.Add(doc);
                                 var root = doc.RootElement;
                                 // Rows whose media-server metadata is gone are dropped from a page, so a short page is not the last one: stop on totalSize or an empty page.
-                                if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array || items.GetArrayLength() == 0) break;
+                                if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array) throw new FormatException("Not a paged Maintainerr answer.");
+                                if (items.GetArrayLength() == 0) break;
                                 if (root.TryGetProperty("totalSize", out var total) && total.TryGetInt64(out var totalSize) && (long)page * PageSize >= totalSize) break;
                             }
                         }
