@@ -413,8 +413,7 @@
                 section.appendChild(titleElement);
             }
 
-            const itemsContainer = document.createElement('div');
-            itemsContainer.setAttribute('is', 'emby-itemscontainer');
+            const itemsContainer = document.createElement('div', 'emby-itemscontainer');
             itemsContainer.className = isDualFeed
                 ? 'vertical-wrap itemsContainer centered'
                 : 'itemsContainer padded-right vertical-wrap';

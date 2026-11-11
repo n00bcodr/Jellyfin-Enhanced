@@ -1264,10 +1264,9 @@
     const nativeSettingsButton = controlsContainer.querySelector('.btnVideoOsdSettings');
     if (!nativeSettingsButton) return;
 
-    const bookmarkBtn = document.createElement('button');
+    const bookmarkBtn = document.createElement('button', 'paper-icon-button-light');
     bookmarkBtn.id = 'jeBookmarkBtn';
-    bookmarkBtn.setAttribute('is', 'paper-icon-button-light');
-    bookmarkBtn.className = 'autoSize paper-icon-button-light';
+    bookmarkBtn.classList.add('autoSize', 'paper-icon-button-light');
     bookmarkBtn.title = JE.t('shortcut_BookmarkCurrentTime');
     bookmarkBtn.innerHTML = '<span class="largePaperIconButton material-icons" aria-hidden="true">bookmark_add</span>';
 

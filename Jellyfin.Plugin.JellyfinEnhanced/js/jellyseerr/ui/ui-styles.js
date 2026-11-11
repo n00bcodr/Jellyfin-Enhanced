@@ -361,6 +361,7 @@
             .jellyseerr-season-checkbox:checked { background: #4f46e5; }
             .jellyseerr-season-checkbox:checked::before { transform: translateX(18px); }
             .jellyseerr-season-checkbox:focus-visible { outline: 2px solid rgba(59, 130, 246, 0.8); outline-offset: 2px; }
+            .layout-tv .jellyseerr-season-checkbox:focus { outline: 2px solid rgba(59, 130, 246, 0.8); outline-offset: 2px; }
             .jellyseerr-season-checkbox:disabled { opacity: 0.4; cursor: not-allowed; }
             .jellyseerr-season-info { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
             .jellyseerr-season-name { font-weight: 600; color: #e2e8f0; font-size: 0.98rem; }
@@ -394,6 +395,7 @@
             .jellyseerr-collection-checkbox:checked { background: #4f46e5; }
             .jellyseerr-collection-checkbox:checked::before { transform: translateX(18px); }
             .jellyseerr-collection-checkbox:focus-visible { outline: 2px solid rgba(59, 130, 246, 0.8); outline-offset: 2px; }
+            .layout-tv .jellyseerr-collection-checkbox:focus { outline: 2px solid rgba(59, 130, 246, 0.8); outline-offset: 2px; }
             .jellyseerr-collection-checkbox:disabled { opacity: 0.4; cursor: not-allowed; }
             .jellyseerr-collection-movie-row { display: grid; grid-template-columns: 40px 46px 1fr auto; align-items: center; gap: 16px; padding: 16px 20px; background: rgba(30, 41, 59, 0.4); border: 1px solid rgba(51, 65, 85, 0.3); border-radius: 8px; transition: all 0.2s ease; }
             .jellyseerr-collection-movie-row:hover:not(:has(input:disabled)) { background: rgba(30, 41, 59, 0.7); border-color: rgba(59, 130, 246, 0.3); }
@@ -423,6 +425,7 @@
             .jellyseerr-tvdb-match-row:hover { background: rgba(30, 41, 59, 0.7); border-color: rgba(59, 130, 246, 0.3); }
             .jellyseerr-tvdb-match-row.selected { background: rgba(79, 70, 229, 0.28); border-color: rgba(129, 140, 248, 0.9); box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.35); }
             .jellyseerr-tvdb-match-row:focus-visible { outline: 2px solid rgba(59, 130, 246, 0.8); outline-offset: 2px; }
+            .layout-tv .jellyseerr-tvdb-match-row:focus { outline: 2px solid rgba(59, 130, 246, 0.8); outline-offset: 2px; }
             .jellyseerr-tvdb-match-row img { width: 100%; height: 69px; object-fit: cover; border-radius: 4px; background: rgba(15, 23, 42, 0.6); }
             .jellyseerr-tvdb-match-row .title { font-weight: 600; color: #e2e8f0; font-size: 0.95rem; }
             .jellyseerr-tvdb-match-row .meta { font-size: 0.8rem; color: #94a3b8; }

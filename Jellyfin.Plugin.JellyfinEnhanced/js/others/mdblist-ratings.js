@@ -19,13 +19,12 @@
 
         // Safe fallback for helpers.js load-order races (same pattern letterboxd-links.js uses).
         const extLink = JE.helpers?.createExternalLink || ((url, o = {}) => {
-            const a = document.createElement('a');
-            a.setAttribute('is', 'emby-linkbutton');
+            const a = document.createElement('a', 'emby-linkbutton');
             a.href = url;
             a.target = '_blank';
             a.rel = 'noopener noreferrer';
             if (o.title) a.title = o.title;
-            if (o.className) a.className = o.className;
+            if (o.className) a.className += ' ' + o.className;
             if (o.text) a.textContent = o.text;
             if (o.resetStyle) a.style.cssText = 'padding:0;background:none;border-radius:0;min-width:0;';
             if (typeof o.setup === 'function') o.setup(a);

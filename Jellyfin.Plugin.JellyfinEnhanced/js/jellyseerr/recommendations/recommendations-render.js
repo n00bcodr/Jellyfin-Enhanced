@@ -146,8 +146,7 @@
     section.className = 'verticalSection emby-scroller-container je-recommendations-section';
 
     if (viewAllKey) {
-      const headingLink = document.createElement('a');
-      headingLink.setAttribute('is', 'emby-linkbutton');
+      const headingLink = document.createElement('a', 'emby-linkbutton');
       // href is intentionally "#", not a real path: emby-linkbutton performs
       // its own internal SPA navigation using the href directly, independent
       // of preventDefault() in our click handler below - a real path here
@@ -180,14 +179,12 @@
       section.appendChild(heading);
     }
 
-    const scrollerContainer = document.createElement('div');
-    scrollerContainer.setAttribute('is', 'emby-scroller');
+    const scrollerContainer = document.createElement('div', 'emby-scroller');
     scrollerContainer.className = 'padded-top-focusscale padded-bottom-focusscale emby-scroller';
     scrollerContainer.dataset.horizontal = "true";
     scrollerContainer.dataset.centerfocus = "card";
 
-    const itemsContainer = document.createElement('div');
-    itemsContainer.setAttribute('is', 'emby-itemscontainer');
+    const itemsContainer = document.createElement('div', 'emby-itemscontainer');
     itemsContainer.className = 'focuscontainer-x itemsContainer scrollSlider je-pad-left je-pad-right';
 
     itemsContainer.appendChild(JE.discoveryFilter.createCardsFragment(results, { cardClass: 'overflowPortraitCard' }));
@@ -245,15 +242,13 @@
     heading.textContent = title;
     section.appendChild(heading);
 
-    const scrollerContainer = document.createElement('div');
-    scrollerContainer.setAttribute('is', 'emby-scroller');
+    const scrollerContainer = document.createElement('div', 'emby-scroller');
     scrollerContainer.className = 'padded-top-focusscale padded-bottom-focusscale emby-scroller';
     scrollerContainer.dataset.horizontal = "true";
     scrollerContainer.dataset.centerfocus = "card";
     preventTileDragClicks(scrollerContainer);
 
-    const itemsContainer = document.createElement('div');
-    itemsContainer.setAttribute('is', 'emby-itemscontainer');
+    const itemsContainer = document.createElement('div', 'emby-itemscontainer');
     itemsContainer.className = 'focuscontainer-x itemsContainer scrollSlider je-pad-left je-pad-right';
 
     items.forEach(item => {
@@ -356,15 +351,13 @@
     heading.textContent = title;
     section.appendChild(heading);
 
-    const scrollerContainer = document.createElement('div');
-    scrollerContainer.setAttribute('is', 'emby-scroller');
+    const scrollerContainer = document.createElement('div', 'emby-scroller');
     scrollerContainer.className = 'padded-top-focusscale padded-bottom-focusscale emby-scroller';
     scrollerContainer.dataset.horizontal = "true";
     scrollerContainer.dataset.centerfocus = "card";
     preventTileDragClicks(scrollerContainer);
 
-    const itemsContainer = document.createElement('div');
-    itemsContainer.setAttribute('is', 'emby-itemscontainer');
+    const itemsContainer = document.createElement('div', 'emby-itemscontainer');
     itemsContainer.className = 'focuscontainer-x itemsContainer scrollSlider je-pad-left je-pad-right';
 
     // Avoid picking the same backdrop for two tiles in this row.

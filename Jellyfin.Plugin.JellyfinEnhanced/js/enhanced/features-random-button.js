@@ -192,10 +192,9 @@
         const buttonContainer = document.createElement('div');
         buttonContainer.id = 'randomItemButtonContainer';
 
-        const randomButton = document.createElement('button');
+        const randomButton = document.createElement('button', 'paper-icon-button-light');
         randomButton.id = 'randomItemButton';
-        randomButton.setAttribute('is', 'paper-icon-button-light');
-        randomButton.className = 'headerButton headerButtonRight paper-icon-button-light';
+        randomButton.classList.add('headerButton', 'headerButtonRight', 'paper-icon-button-light');
         randomButton.title = JE.t('random_button_tooltip');
         const headerLabel = JE.t('header_random_item');
         randomButton.dataset.headerLabel = headerLabel === 'header_random_item' ? 'Random item' : headerLabel;

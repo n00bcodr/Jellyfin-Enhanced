@@ -50,14 +50,13 @@
 
         // Safe fallback for helpers.js Stage-3 load-order races.
         const extLink = JE.helpers?.createExternalLink || ((u, o) => {
-            const a = document.createElement('a');
-            a.setAttribute('is', 'emby-linkbutton');
+            const a = document.createElement('a', 'emby-linkbutton');
             a.href = u;
             a.target = '_blank';
             a.rel = 'noopener noreferrer';
             if (o?.text) a.textContent = o.text;
             if (o?.title) a.title = o.title;
-            if (o?.className) a.className = o.className;
+            if (o?.className) a.className += ' ' + o.className;
             return a;
         });
 
@@ -632,8 +631,7 @@
                 wrapper.style.setProperty('--arr-menu-muted',  'rgba(255,255,255,0.55)');
 
                 // Toggle button — <img> icon + ▾ arrow as a text node
-                const toggle = document.createElement('a');
-                toggle.setAttribute('is', 'emby-linkbutton');
+                const toggle = document.createElement('a', 'emby-linkbutton');
                 toggle.className = 'button-link emby-button arr-link';
                 toggle.href = '#';
                 toggle.title = `${label} (${items.length} instances)`;

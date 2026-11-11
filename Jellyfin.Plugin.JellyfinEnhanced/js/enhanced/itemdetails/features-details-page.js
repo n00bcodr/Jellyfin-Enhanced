@@ -76,8 +76,7 @@
         }
         if (!buttonContainer) return;
 
-        const button = document.createElement('button');
-        button.setAttribute('is', 'emby-button');
+        const button = document.createElement('button', 'emby-button');
         button.className = 'button-flat detailButton emby-button je-detail-hide-btn';
         button.type = 'button';
 
