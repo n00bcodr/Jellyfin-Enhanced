@@ -109,8 +109,14 @@ internal sealed class ActivityFeedBuilder(
         var items = new Dictionary<Guid, BaseItem?>();
         var summaries = new Dictionary<Guid, object>();
         var results = new List<ActivityFeedItem>(limit);
+        // One Watched/Favorited row per person and title: two versions of one title
+        // resolve to the same card, and the newest row stands.
+        var shownRows = new HashSet<(Guid Author, Guid Item, string Type)>();
 #if !JF12
         HashSet<Guid>? accessibleIds = null;
+        // 10.11 keeps its one library query: no version or by-name resolution there.
+        var shownAsOwner = new Dictionary<Guid, Guid>();
+        var byNameFavorites = new HashSet<Guid>();
 #endif
 
         JUser? GetAuthor(Guid id)
@@ -165,13 +171,18 @@ internal sealed class ActivityFeedBuilder(
             if (page.Count == 0) continue;
             cancellationToken.ThrowIfCancellationRequested();
 #if JF12
-            var query = new InternalItemsQuery(viewer) { Recursive = true };
-            // Setting ItemIds first makes Jellyfin skip default library scoping.
-            // Establish its supported user scope BEFORE narrowing to this page;
-            // InternalItemsQuery(viewer) also retains parental/tag restrictions.
-            libraryManager.ConfigureUserAccess(query, viewer);
-            query.ItemIds = page.Select(p => p.ItemId).Distinct().ToArray();
-            var permitted = new HashSet<Guid>(libraryManager.GetItemIds(query));
+            var pageIds = page.Select(p => p.ItemId).Distinct().ToArray();
+            var permitted = PermittedIds(viewer, pageIds);
+            // Jellyfin 12 hides alternate versions from every user query and gives by-name
+            // items no library, so entries stored against them never pass the query above,
+            // even for their author. Only those are resolved again, each with the rule
+            // Jellyfin itself applies to them; the stored id stays what was played or
+            // favorited (#1013).
+            var shownAsOwner = ResolveHiddenVersions(viewer, pageIds.Where(id => !permitted.Contains(id)).ToArray(), GetItem);
+            var byNameFavorites = PermittedIds(viewer, page
+                .Where(p => p.Candidate.Row.ActivityType == ActivityService.ActivityTypeFavorited
+                    && !permitted.Contains(p.ItemId) && !shownAsOwner.ContainsKey(p.ItemId))
+                .Select(p => p.ItemId).Distinct().ToArray(), query => query.IncludeItemTypes = ItemByNameKinds);
 #else
             // 10.11 has no ConfigureUserAccess API. Preserve its original safe
             // recursive user query, lazily once per request; a naked ItemIds query
@@ -182,15 +193,22 @@ internal sealed class ActivityFeedBuilder(
             foreach (var (candidate, itemId, author) in page)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                if (!permitted.Contains(itemId)) continue;
+                Guid shownId;
+                if (permitted.Contains(itemId)) shownId = itemId;
+                else if (shownAsOwner.TryGetValue(itemId, out var owner)) shownId = owner;
+                else if (candidate.Row.ActivityType == ActivityService.ActivityTypeFavorited && byNameFavorites.Contains(itemId)) shownId = itemId;
+                else continue;
                 try
                 {
-                    if (!summaries.TryGetValue(itemId, out var summary))
+                    if (!summaries.TryGetValue(shownId, out var summary))
                     {
-                        var item = GetItem(itemId);
+                        var item = GetItem(shownId);
                         if (item == null) continue;
-                        summaries[itemId] = summary = BuildSummary(item, GetItem);
+                        summaries[shownId] = summary = BuildSummary(item, GetItem);
                     }
+                    // Reviews keep one row each (per-season reviews share their series' card).
+                    if (candidate.TmdbId == null && !shownRows.Add((candidate.AuthorId, shownId, candidate.Row.ActivityType)))
+                        continue;
                     candidate.Row.UserName = author?.Username ?? candidate.Row.UserId;
                     candidate.Row.UserHasPrimaryImage = author?.ProfileImage != null;
                     candidate.Row.Item = summary;
@@ -205,6 +223,81 @@ internal sealed class ActivityFeedBuilder(
         }
         return results;
     }
+
+#if JF12
+    // Jellyfin's by-name kinds: items with no library of their own (its
+    // BaseItemRepository and SimilarItemsAccessFilter use the same list).
+    private static readonly Jellyfin.Data.Enums.BaseItemKind[] ItemByNameKinds =
+    [
+        Jellyfin.Data.Enums.BaseItemKind.Person,
+        Jellyfin.Data.Enums.BaseItemKind.Genre,
+        Jellyfin.Data.Enums.BaseItemKind.MusicGenre,
+        Jellyfin.Data.Enums.BaseItemKind.MusicArtist,
+        Jellyfin.Data.Enums.BaseItemKind.Studio
+    ];
+
+    /// <summary>
+    /// Returns the ids in <paramref name="ids"/> the viewer may reach. The query is scoped the
+    /// way Jellyfin scopes a user's own: ConfigureUserAccess first (library roots; the
+    /// constructor already carries parental and tag rules), then the ids, because setting
+    /// ItemIds first makes Jellyfin skip the library scope. <paramref name="widen"/> may switch
+    /// on one of Jellyfin's own access modes before the scope is set.
+    /// </summary>
+    private HashSet<Guid> PermittedIds(JUser viewer, Guid[] ids, Action<InternalItemsQuery>? widen = null)
+    {
+        var permitted = new HashSet<Guid>();
+        if (ids.Length == 0) return permitted;
+        // A user query collapses items sharing a presentation key to one id, and every version
+        // of a title shares its primary's key. Grouping runs after the access filters, so
+        // turning it off only stops reachable ids from being dropped.
+        var query = new InternalItemsQuery(viewer) { Recursive = true, GroupByPresentationUniqueKey = false };
+        widen?.Invoke(query);
+        libraryManager.ConfigureUserAccess(query, viewer);
+        query.ItemIds = ids;
+        var requested = new HashSet<Guid>(ids);
+        foreach (var id in libraryManager.GetItemIds(query))
+        {
+            if (requested.Contains(id)) permitted.Add(id);
+        }
+        return permitted;
+    }
+
+    /// <summary>
+    /// Maps each denied id that is a hidden version of a title the viewer may reach to the item
+    /// Jellyfin lists in its place: its primary version, or the owner of a local version or
+    /// part. The version must pass the user query with Jellyfin's IncludeOwnedItems switch,
+    /// which still applies library roots and parental and tag rules to the version itself
+    /// (Jellyfin's own by-name access filter counts versions this way), and the item shown on
+    /// the card must pass the ordinary query too. Anything else stays denied.
+    /// </summary>
+    private Dictionary<Guid, Guid> ResolveHiddenVersions(JUser viewer, Guid[] denied, Func<Guid, BaseItem?> getItem)
+    {
+        var owners = new Dictionary<Guid, Guid>();
+        var reachable = PermittedIds(viewer, denied, query => query.IncludeOwnedItems = true);
+        foreach (var id in denied)
+        {
+            if (!reachable.Contains(id)) continue;
+            try
+            {
+                if (getItem(id) is not Video video) continue;
+                var owner = video.PrimaryVersionId ?? video.OwnerId;
+                if (owner != Guid.Empty && owner != id) owners[id] = owner;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.Warning($"Skipping activity item {id:N}: {ex.Message}");
+            }
+        }
+        if (owners.Count == 0) return owners;
+
+        var shown = PermittedIds(viewer, owners.Values.Distinct().ToArray());
+        foreach (var id in owners.Where(o => !shown.Contains(o.Value)).Select(o => o.Key).ToList())
+        {
+            owners.Remove(id);
+        }
+        return owners;
+    }
+#endif
 
     /// <summary>Preserves admin/self exceptions and the configured missing-author fallback.</summary>
     private static bool ShouldHideAuthor(JUser? author, Guid viewerId, bool viewerIsAdmin, PluginConfiguration config)

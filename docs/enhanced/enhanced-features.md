@@ -647,6 +647,8 @@ The live section also requires admin **Extras → Active Streams → Active Stre
 
     Only the live section polls every 15 seconds while visible, skipping hidden browser tabs. Stored history/review/favorite entries respect viewer library access and the review-author filters, with admin/self author exceptions. Live sessions use the separate Active Streams permission policy and can include titles outside the viewer's library access.
 
+    A play or favorite of one version of a movie or episode shows as its title, once per person (the newest entry), to viewers who can open that title. On Jellyfin 12, favorited people, genres, studios and music artists or genres also appear, for viewers Jellyfin itself would show them to. On 10.11 those favorites stay hidden.
+
     A standard feed request returns up to 50 merged entries without UI pagination. Watched/favorite storage in `activity.json` is capped at 500 entries, one per user/item/type. Rewatches update time while preserving highest progress and completion. Unfavoriting removes its entry.
 
     Turning the feed off hides it and stops watched/favorite collection without deleting history. User Reviews continues independently, so reviews written while the feed is off can appear after re-enabling it.
