@@ -349,6 +349,48 @@ public sealed class LeavingSoonTests : IDisposable
     }
 
     [Fact]
+    public async Task A_first_page_answered_with_json_that_is_not_a_page_keeps_the_embedded_members_like_a_404()
+    {
+        using var server = new MaintainerrFixture("/maintainerr");
+        var members = Members(5);
+        var list = JsonSerializer.Serialize(new[] { Collection(7, true, 10, members.Take(2)), Collection(8, true, 10, members.Skip(4)) });
+        server.Answer = r => MaintainerrFixture.Json(r, list);
+        var service = Service();
+        var config = Config(server.Url, key: "list-secret-key");
+        var leaves = new TagLeaving { DeleteAt = Added.AddDays(10).ToUnixTimeMilliseconds() };
+
+        // Only the collection whose first page is no page is read from the list; the other is still read page by page.
+        server.Page = (id, page, size, r) => MaintainerrFixture.Json(r, id == 7 ? PageOf(members.Take(4).ToArray(), page, size) : "[]");
+        Assert.True(await service.RefreshAsync(config, true, CancellationToken.None));
+        Assert.Null(service.Status(config).LastError);
+        Assert.Equal((5, 5), (service.Status(config).Items, service.Status(config).Dated));
+        foreach (var member in members) Assert.Equal(leaves, service.Get(Guid.Parse(member.Id!), config));
+
+        // A source that answers the collections list on every address (upstream's own test server does), or
+        // anything else that is JSON but no page, has no paged route: each collection keeps the members the list
+        // embeds, without a failure, after one request for its first page. Every request carries the key.
+        var embedded = new[] { members[0], members[1], members[4] };
+        foreach (var answer in new[] { list, "[]", "{}", "{\"totalSize\":600}", "{\"totalSize\":600,\"items\":{}}", "null", "\"moved\"", "5" })
+        {
+            server.Page = (_, _, _, r) => MaintainerrFixture.Json(r, answer);
+            lock (server.Seen)
+            {
+                server.Seen.Clear();
+                server.Paged.Clear();
+            }
+
+            await service.RefreshAsync(config, true, CancellationToken.None);
+            var status = service.Status(config);
+            Assert.Null(status.LastError);
+            Assert.Equal((3, 3), (status.Items, status.Dated));
+            foreach (var member in embedded) Assert.Equal(leaves, service.Get(Guid.Parse(member.Id!), config));
+            Assert.Equal(new[] { "/maintainerr/api/collections/media/7/content/1?size=500", "/maintainerr/api/collections/media/8/content/1?size=500" }, server.Paged);
+            Assert.Equal("/maintainerr/api/collections", server.Seen[0].Path);
+            Assert.All(server.Seen, s => Assert.Equal("list-secret-key", s.Key));
+        }
+    }
+
+    [Fact]
     public async Task A_page_that_fails_or_is_not_a_page_is_a_failed_refresh_that_keeps_the_last_good_answer()
     {
         using var server = new MaintainerrFixture();
@@ -366,7 +408,8 @@ public sealed class LeavingSoonTests : IDisposable
         var onPageTwo = Guid.Parse(members[550].Id!);
 
         // The second page fails, is missing although the first was there, redirects, is not a page or is slow; or
-        // the first page is refused. None of them may shorten the list to the two members the list embeds.
+        // the first page is refused or is not JSON. None of them may shorten the list to the two members the list
+        // embeds. (A first page that is JSON but no page is a source without the route: the test above.)
         Func<int, HttpListenerResponse, Task> Second(Func<HttpListenerResponse, Task> broken) => (page, r) => page == 2 ? broken(r) : good(page, 500, r);
         var failures = new (string Error, Func<int, HttpListenerResponse, Task> Page)[]
         {
@@ -380,7 +423,8 @@ public sealed class LeavingSoonTests : IDisposable
             ("not a Maintainerr collections answer", Second(r => MaintainerrFixture.Json(r, "<html>login</html>"))),
             ("HTTP 401", (_, r) => MaintainerrFixture.Json(r, "{\"message\":\"Unauthorized\"}", 401)),
             ("HTTP 500", (_, r) => MaintainerrFixture.Json(r, "{\"message\":\"boom\"}", 500)),
-            ("not a Maintainerr collections answer", (_, r) => MaintainerrFixture.Json(r, "[]")),
+            ("not a Maintainerr collections answer", (_, r) => MaintainerrFixture.Json(r, string.Empty)),
+            ("not a Maintainerr collections answer", (_, r) => MaintainerrFixture.Json(r, "<html>login</html>")),
             ("timed out", Second(async r => { await Task.Delay(2000); await MaintainerrFixture.Json(r, PageOf(members, 2, 500)); })),
         };
         foreach (var failure in failures)

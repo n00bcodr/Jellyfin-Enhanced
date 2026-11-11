@@ -388,10 +388,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
                         }
 
                         fetched.Add(doc);
-                        // Any other failure, and an answer that is not a page, fails the refresh, which keeps the
-                        // previous answer: carrying on with the members read so far would untag the others.
                         var root = doc.RootElement;
-                        if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array) throw new JsonException("Not a page of collection members");
+                        if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array)
+                        {
+                            // Any other failure, and a later answer that is not a page, fails the refresh, which keeps
+                            // the previous answer: carrying on with the members read so far would untag the others.
+                            if (page > 1) throw new JsonException("Not a page of collection members");
+                            // A first answer that is JSON but no page: no paged route here either, as with the 404.
+                            fetched.Clear();
+                            doc.Dispose();
+                            break;
+                        }
+
                         // Rows whose media-server metadata is gone are dropped from a page, so a short page is not the last one: stop on totalSize or an empty page.
                         if (items.GetArrayLength() == 0) break;
                         if (root.TryGetProperty("totalSize", out var total) && total.ValueKind == JsonValueKind.Number && total.TryGetInt64(out var totalSize) && (long)page * PageSize >= totalSize) break;
