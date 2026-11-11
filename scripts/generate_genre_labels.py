@@ -24,7 +24,7 @@ def unique_pairs(pairs):
 
 def load():
     """Read and check the table: one glyph per label, every glyph a label, no name in two languages."""
-    data = json.loads(SOURCE.read_text(), object_pairs_hook=unique_pairs)
+    data = json.loads(SOURCE.read_text(encoding="utf-8"), object_pairs_hook=unique_pairs)
     names, labels, other = data['names'], data['labels'], data['other']['key']
     flat = {}
     for language, table in names.items():
@@ -84,7 +84,7 @@ def main():
     out.append('    };')
     out.append(f'    const genreOtherLabel = {json.dumps(data["other"]["key"])};')
     table = '\n'.join(out) + '\n' + END
-    old = WEB.read_text()
+    old = WEB.read_text(encoding="utf-8")
     if old.count(START) != 1 or old.count(END) != 1:
         raise SystemExit('Missing or duplicate web genre table markers')
     before, tail = old.split(START)
@@ -94,7 +94,7 @@ def main():
         if old != output:
             raise SystemExit('Genre table is stale: run scripts/generate_genre_labels.py')
     else:
-        WEB.write_text(output)
+        WEB.write_text(output, encoding="utf-8", newline="\n")
 
 
 if __name__ == '__main__':
