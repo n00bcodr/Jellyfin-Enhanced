@@ -110,8 +110,8 @@ internal sealed class ActivityFeedBuilder(
         var summaries = new Dictionary<Guid, object>();
         var results = new List<ActivityFeedItem>(limit);
         // One Watched/Favorited row per person and title: two versions of one title
-        // resolve to the same card, and the newest row stands.
-        var shownRows = new HashSet<(Guid Author, Guid Item, string Type)>();
+        // resolve to the same card (see the merge below).
+        var shownRows = new Dictionary<(Guid Author, Guid Item, string Type), ActivityFeedItem>();
 #if !JF12
         HashSet<Guid>? accessibleIds = null;
         // 10.11 keeps its one library query: no version or by-name resolution there.
@@ -179,10 +179,10 @@ internal sealed class ActivityFeedBuilder(
             // Jellyfin itself applies to them; the stored id stays what was played or
             // favorited (#1013).
             var shownAsOwner = ResolveHiddenVersions(viewer, pageIds.Where(id => !permitted.Contains(id)).ToArray(), GetItem);
-            var byNameFavorites = PermittedIds(viewer, page
+            var byNameFavorites = PermittedByNameIds(viewer, page
                 .Where(p => p.Candidate.Row.ActivityType == ActivityService.ActivityTypeFavorited
                     && !permitted.Contains(p.ItemId) && !shownAsOwner.ContainsKey(p.ItemId))
-                .Select(p => p.ItemId).Distinct().ToArray(), query => query.IncludeItemTypes = ItemByNameKinds);
+                .Select(p => p.ItemId).Distinct().ToArray(), GetItem);
 #else
             // 10.11 has no ConfigureUserAccess API. Preserve its original safe
             // recursive user query, lazily once per request; a naked ItemIds query
@@ -198,6 +198,18 @@ internal sealed class ActivityFeedBuilder(
                 else if (shownAsOwner.TryGetValue(itemId, out var owner)) shownId = owner;
                 else if (candidate.Row.ActivityType == ActivityService.ActivityTypeFavorited && byNameFavorites.Contains(itemId)) shownId = itemId;
                 else continue;
+                // Reviews keep one row each (per-season reviews share their series' card).
+                // Other rows for one person and title merge into the newest, which keeps
+                // the highest progress and any completion, as a rewatch of one item does.
+                var rowKey = (candidate.AuthorId, shownId, candidate.Row.ActivityType);
+                if (candidate.TmdbId == null && shownRows.TryGetValue(rowKey, out var newer))
+                {
+                    newer.Completed |= candidate.Row.Completed;
+                    newer.Progress = Math.Max(newer.Progress, candidate.Row.Progress);
+                    continue;
+                }
+                // Once the feed is full, the rest of this page only merges into shown rows.
+                if (results.Count == limit) continue;
                 try
                 {
                     if (!summaries.TryGetValue(shownId, out var summary))
@@ -206,14 +218,11 @@ internal sealed class ActivityFeedBuilder(
                         if (item == null) continue;
                         summaries[shownId] = summary = BuildSummary(item, GetItem);
                     }
-                    // Reviews keep one row each (per-season reviews share their series' card).
-                    if (candidate.TmdbId == null && !shownRows.Add((candidate.AuthorId, shownId, candidate.Row.ActivityType)))
-                        continue;
                     candidate.Row.UserName = author?.Username ?? candidate.Row.UserId;
                     candidate.Row.UserHasPrimaryImage = author?.ProfileImage != null;
                     candidate.Row.Item = summary;
                     results.Add(candidate.Row);
-                    if (results.Count == limit) break;
+                    if (candidate.TmdbId == null) shownRows[rowKey] = candidate.Row;
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
@@ -259,6 +268,34 @@ internal sealed class ActivityFeedBuilder(
         {
             if (requested.Contains(id)) permitted.Add(id);
         }
+        return permitted;
+    }
+
+    /// <summary>
+    /// Returns the favorited people, genres, studios and music artists or genres in
+    /// <paramref name="ids"/> the viewer may reach. Naming their kinds in IncludeItemTypes makes
+    /// Jellyfin apply its by-name rule instead of the library one: no restriction for users
+    /// without content restrictions, otherwise an item behind the name the user can reach (as
+    /// /Persons does). Jellyfin exempts those kinds by type, so only items that really have no
+    /// library are kept: a music artist can also be a folder in a music library
+    /// (MusicArtist.IsAccessedByName is ParentId.IsEmpty()), and that one stays under the
+    /// library rule the page query already applied.
+    /// </summary>
+    private HashSet<Guid> PermittedByNameIds(JUser viewer, Guid[] ids, Func<Guid, BaseItem?> getItem)
+    {
+        var permitted = PermittedIds(viewer, ids, query => query.IncludeItemTypes = ItemByNameKinds);
+        permitted.RemoveWhere(id =>
+        {
+            try
+            {
+                return getItem(id) is not { } item || !item.ParentId.Equals(Guid.Empty);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.Warning($"Skipping activity item {id:N}: {ex.Message}");
+                return true;
+            }
+        });
         return permitted;
     }
 

@@ -30,8 +30,9 @@ public class ActivityFeedHiddenItemsTests
     /// owned-item filter):
     /// - ConfigureUserAccess scopes a query only while its ItemIds is empty. An unscoped query
     ///   returns nothing here (the real one returns every item; the feed must scope either way).
-    /// - IncludeItemTypes filters by type. A by-name kind it names skips the library check, and
-    ///   for a user with content restrictions needs an item behind it the user can reach.
+    /// - IncludeItemTypes filters by type. A by-name kind it names skips the library check by
+    ///   type (even a music artist that is a folder in a library), and for a user with content
+    ///   restrictions needs an item behind its name the user can reach.
     /// - Any other item needs its library among the viewer's and must pass parental rules.
     /// - A version whose primary is in the same library, or an owned item that is not an extra,
     ///   comes back only with IncludeOwnedItems.
@@ -96,9 +97,8 @@ public class ActivityFeedHiddenItemsTests
                 if (!_items.TryGetValue(id, out var entry)) continue;
                 var kind = entry.Item.GetBaseItemKind();
                 if (query.IncludeItemTypes.Length > 0 && !query.IncludeItemTypes.Contains(kind)) continue;
-                if (ByNameKinds.Contains(kind))
+                if (ByNameKinds.Contains(kind) && query.IncludeItemTypes.Contains(kind))
                 {
-                    if (!query.IncludeItemTypes.Contains(kind)) continue;
 #if JF12
                     // Jellyfin reads the flag InternalItemsQuery(user) copies from the user.
                     if (query.UserHasContentRestrictions && !ReachableByName.Contains(id)) continue;
@@ -228,8 +228,9 @@ public class ActivityFeedHiddenItemsTests
         Assert.Empty(Builder(library, env, null, author).Build(entries, [], viewer, false, new PluginConfiguration(), 10));
         Assert.DoesNotContain(primary.Id, library.Lookups);
 
-        // A version that is not hidden (its primary is in another library) keeps the old
-        // path: shown as itself to a viewer of its own library, never as the other title.
+        // On 12.2+ a version whose primary is in another library is not hidden, so it keeps
+        // the old path: shown as itself to a viewer of its own library, never as the other
+        // title. (12.0 hides it too; there the version and owner checks above decide.)
         library.ParentalBlocked.Clear();
         var crossPrimary = library.Add(new Movie { Id = Guid.NewGuid(), Name = "Other library" }, kids);
         var crossVersion = library.Add(new Movie { Id = Guid.NewGuid(), Name = "Other library", PrimaryVersionId = crossPrimary.Id }, movies);
@@ -277,7 +278,32 @@ public class ActivityFeedHiddenItemsTests
     }
 
     [Fact]
-    public void TwoVersionsOfOneTitleMakeOneRowPerPersonAndTheNewestStands()
+    public void AMusicArtistFolderKeepsItsLibraryRuleEvenWhenItsNameIsReachable()
+    {
+        using var env = new CoreFixture();
+        var library = new FakeLibrary();
+        var musicA = Guid.NewGuid(); var musicB = Guid.NewGuid();
+        // An artist folder inside music library A (ParentId set), favorited by its author.
+        var folderArtist = library.Add(new MusicArtist { Id = Guid.NewGuid(), Name = "X", ParentId = musicA }, musicA);
+        var author = Viewer();
+        var entries = new[] { Entry(author, folderArtist.Id, "Favorited", "2026-11-02T00:00:00Z") };
+
+        // Only library B, where a track credits artist X: Jellyfin's by-name exemption would
+        // admit the folder by its type and name, but it belongs to library A.
+        var outsider = Viewer(allLibraries: false);
+        library.ViewerLibraries[outsider.Id] = [musicB];
+        library.ReachableByName.Add(folderArtist.Id);
+        Assert.Empty(Builder(library, env, null, author).Build(entries, [], outsider, false, new PluginConfiguration(), 10));
+
+        // A viewer of library A gets it through the ordinary library rule.
+        var insider = Viewer(allLibraries: false);
+        library.ViewerLibraries[insider.Id] = [musicA];
+        var rows = Builder(library, env, null, author).Build(entries, [], insider, false, new PluginConfiguration(), 10);
+        Assert.Equal(folderArtist.Id.ToString("N"), CardId(Assert.Single(rows)));
+    }
+
+    [Fact]
+    public void VersionsOfOneTitleMakeOneRowPerPersonWithTheNewestTimeAndHighestProgress()
     {
         using var env = new CoreFixture();
         var library = new FakeLibrary();
@@ -300,14 +326,17 @@ public class ActivityFeedHiddenItemsTests
         Assert.All(rows, row => Assert.Equal(primary.Id.ToString("N"), CardId(row)));
         var newest = rows[0];
         Assert.Equal(gio.Id.ToString("N"), newest.UserId);
-        Assert.False(newest.Completed); Assert.Equal(0.2, newest.Progress);
+        // Like a rewatch of one item: the newest time, the highest progress, any completion.
+        Assert.True(newest.Completed); Assert.Equal(1, newest.Progress);
+        Assert.False(rows[1].Completed); Assert.Equal(0.6, rows[1].Progress);
         Assert.Equal(DateTimeOffset.Parse("2026-11-03T00:00:00Z").ToUnixTimeMilliseconds(), newest.Timestamp);
         Assert.Equal(gloria.Id.ToString("N"), rows[1].UserId);
         Assert.Equal(DateTimeOffset.Parse("2026-11-02T00:00:00Z").ToUnixTimeMilliseconds(), rows[2].Timestamp);
 
-        // The limit cuts the deduplicated list, so a smaller page never shows another answer.
+        // The limit cuts the merged list: a shorter feed shows the same first row.
         var first = Assert.Single(Builder(library, env, null, gio, gloria).Build(entries, [], gio, false, new PluginConfiguration(), 1));
-        Assert.Equal((newest.ActivityType, newest.UserId, newest.Progress, newest.Timestamp), (first.ActivityType, first.UserId, first.Progress, first.Timestamp));
+        Assert.Equal((newest.ActivityType, newest.UserId, newest.Completed, newest.Progress, newest.Timestamp),
+            (first.ActivityType, first.UserId, first.Completed, first.Progress, first.Timestamp));
     }
 
     [Fact]
