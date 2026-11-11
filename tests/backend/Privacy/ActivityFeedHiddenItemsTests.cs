@@ -54,6 +54,8 @@ public class ActivityFeedHiddenItemsTests
         public HashSet<Guid> ReachableByName { get; } = new();
         public List<InternalItemsQuery> Queries { get; } = new();
         public List<Guid> Lookups { get; } = new();
+        /// <summary>When set, queries of this shape fail, as a database error would.</summary>
+        public Func<InternalItemsQuery, bool>? FailWhen { get; set; }
 
         public FakeLibrary()
         {
@@ -64,6 +66,7 @@ public class ActivityFeedHiddenItemsTests
             Manager.Setup(x => x.GetItemIds(It.IsAny<InternalItemsQuery>())).Returns<InternalItemsQuery>(query =>
             {
                 Queries.Add(query);
+                if (FailWhen?.Invoke(query) == true) throw new InvalidOperationException("database is locked");
                 return Evaluate(query);
             });
             Manager.Setup(x => x.GetItemById(It.IsAny<Guid>())).Returns<Guid>(id =>
@@ -337,6 +340,59 @@ public class ActivityFeedHiddenItemsTests
         var first = Assert.Single(Builder(library, env, null, gio, gloria).Build(entries, [], gio, false, new PluginConfiguration(), 1));
         Assert.Equal((newest.ActivityType, newest.UserId, newest.Completed, newest.Progress, newest.Timestamp),
             (first.ActivityType, first.UserId, first.Completed, first.Progress, first.Timestamp));
+    }
+
+    [Fact]
+    public void AnOlderVersionPlayMergesEvenWhenTheFeedFilledPagesEarlier()
+    {
+        using var env = new CoreFixture();
+        var library = new FakeLibrary();
+        var movies = Guid.NewGuid();
+        var primary = library.Add(new Movie { Id = Guid.NewGuid(), Name = "Big Buck Bunny" }, movies);
+        var hd = library.Add(new Movie { Id = Guid.NewGuid(), Name = "Big Buck Bunny", PrimaryVersionId = primary.Id }, movies);
+        var gio = Viewer(); var gloria = Viewer();
+        library.ViewerLibraries[gio.Id] = [movies];
+        // gio's newest play is a partial one of a version; 70 of gloria's plays follow, so the
+        // completed play of the title itself sits two pages (of 64) back.
+        var entries = new List<ActivityEntry> { Entry(gio, hd.Id, "Watched", "2026-11-10T00:00:00Z", progress: 0.2) };
+        for (var i = 0; i < 70; i++)
+        {
+            var other = library.Add(new Movie { Id = Guid.NewGuid(), Name = $"Filler {i}" }, movies);
+            entries.Add(Entry(gloria, other.Id, "Watched", $"2026-11-09T{i / 60:00}:{i % 60:00}:00Z", progress: 0.5));
+        }
+        entries.Add(Entry(gio, primary.Id, "Watched", "2026-11-01T00:00:00Z", completed: true, progress: 1));
+
+        foreach (var limit in new[] { 1, 5, 50 })
+        {
+            var rows = Builder(library, env, null, gio, gloria).Build(entries, [], gio, false, new PluginConfiguration(), limit);
+            Assert.Equal(limit, rows.Count);
+            var first = rows[0];
+            Assert.Equal((gio.Id.ToString("N"), primary.Id.ToString("N"), true, 1.0),
+                (first.UserId, CardId(first), first.Completed, first.Progress));
+            // Merging never adds a row: gio's title appears once.
+            Assert.Single(rows, r => r.UserId == gio.Id.ToString("N"));
+        }
+    }
+
+    [Fact]
+    public void AFailingVersionOrByNameLookupKeepsTheOrdinaryRows()
+    {
+        using var env = new CoreFixture();
+        var library = new FakeLibrary();
+        var movies = Guid.NewGuid();
+        var movie = library.Add(new Movie { Id = Guid.NewGuid(), Name = "Tears of Steel" }, movies);
+        var primary = library.Add(new Movie { Id = Guid.NewGuid(), Name = "Big Buck Bunny" }, movies);
+        var version = library.Add(new Movie { Id = Guid.NewGuid(), Name = "Big Buck Bunny", PrimaryVersionId = primary.Id }, movies);
+        var person = library.Add(new Person { Id = Guid.NewGuid(), Name = "A. C. Green" }, null);
+        var viewer = Viewer();
+        library.ViewerLibraries[viewer.Id] = [movies];
+        library.FailWhen = query => query.IncludeOwnedItems || query.IncludeItemTypes.Length > 0;
+        var rows = Builder(library, env, null, viewer).Build(
+            [Entry(viewer, version.Id, "Watched", "2026-11-04T00:00:00Z", progress: 0.5),
+             Entry(viewer, person.Id, "Favorited", "2026-11-03T00:00:00Z"),
+             Entry(viewer, movie.Id, "Watched", "2026-11-02T00:00:00Z", completed: true, progress: 1)], [], viewer, false, new PluginConfiguration(), 10);
+        // The optional rows stay hidden (fail closed); the feed itself still loads.
+        Assert.Equal(movie.Id.ToString("N"), CardId(Assert.Single(rows)));
     }
 
     [Fact]

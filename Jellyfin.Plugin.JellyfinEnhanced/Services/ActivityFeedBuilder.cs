@@ -230,6 +230,9 @@ internal sealed class ActivityFeedBuilder(
                 }
             }
         }
+#if JF12
+        MergeLaterVersionPlays(ordered[next..], shownRows, viewer, GetItem, cancellationToken);
+#endif
         return results;
     }
 
@@ -283,7 +286,17 @@ internal sealed class ActivityFeedBuilder(
     /// </summary>
     private HashSet<Guid> PermittedByNameIds(JUser viewer, Guid[] ids, Func<Guid, BaseItem?> getItem)
     {
-        var permitted = PermittedIds(viewer, ids, query => query.IncludeItemTypes = ItemByNameKinds);
+        HashSet<Guid> permitted;
+        try
+        {
+            permitted = PermittedIds(viewer, ids, query => query.IncludeItemTypes = ItemByNameKinds);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Optional rows: on failure they stay hidden and the rest of the feed still loads.
+            logger.Warning($"Skipping favorited people, genres and studios: {ex.Message}");
+            return [];
+        }
         permitted.RemoveWhere(id =>
         {
             try
@@ -309,30 +322,89 @@ internal sealed class ActivityFeedBuilder(
     /// </summary>
     private Dictionary<Guid, Guid> ResolveHiddenVersions(JUser viewer, Guid[] denied, Func<Guid, BaseItem?> getItem)
     {
-        var owners = new Dictionary<Guid, Guid>();
-        var reachable = PermittedIds(viewer, denied, query => query.IncludeOwnedItems = true);
-        foreach (var id in denied)
+        try
         {
-            if (!reachable.Contains(id)) continue;
+            var owners = new Dictionary<Guid, Guid>();
+            var reachable = PermittedIds(viewer, denied, query => query.IncludeOwnedItems = true);
+            foreach (var id in denied)
+            {
+                if (!reachable.Contains(id)) continue;
+                try
+                {
+                    if (getItem(id) is not Video video) continue;
+                    var owner = video.PrimaryVersionId ?? video.OwnerId;
+                    if (owner != Guid.Empty && owner != id) owners[id] = owner;
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    logger.Warning($"Skipping activity item {id:N}: {ex.Message}");
+                }
+            }
+            if (owners.Count == 0) return owners;
+
+            var shown = PermittedIds(viewer, owners.Values.Distinct().ToArray());
+            foreach (var id in owners.Where(o => !shown.Contains(o.Value)).Select(o => o.Key).ToList())
+            {
+                owners.Remove(id);
+            }
+            return owners;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Optional rows: on failure they stay hidden and the rest of the feed still loads.
+            logger.Warning($"Skipping activity for alternate versions: {ex.Message}");
+            return [];
+        }
+    }
+
+    /// <summary>
+    /// Merges watches the feed did not read (past the page that filled it) into the shown rows
+    /// they belong to, so a row's progress and completion never depend on the limit or on how
+    /// many rows the viewer may see. Only people whose shown watch is still partial can gain
+    /// anything; their later entries resolve through the same access queries as the feed's own
+    /// rows and can only update a shown row, never add one.
+    /// </summary>
+    private void MergeLaterVersionPlays(
+        Candidate[] later,
+        Dictionary<(Guid Author, Guid Item, string Type), ActivityFeedItem> shownRows,
+        JUser viewer,
+        Func<Guid, BaseItem?> getItem,
+        CancellationToken cancellationToken)
+    {
+        var partial = new HashSet<Guid>(shownRows
+            .Where(r => r.Key.Type == ActivityService.ActivityTypeWatched && !r.Value.Completed)
+            .Select(r => r.Key.Author));
+        if (partial.Count == 0) return;
+        var pending = later
+            .Where(c => c.TmdbId == null && c.Row.ActivityType == ActivityService.ActivityTypeWatched
+                && partial.Contains(c.AuthorId) && (c.Row.Completed || c.Row.Progress > 0))
+            .ToList();
+        for (var start = 0; start < pending.Count; start += CandidatePageSize)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var chunk = pending.GetRange(start, Math.Min(CandidatePageSize, pending.Count - start));
+            var ids = chunk.Select(c => c.ItemId).Distinct().ToArray();
+            HashSet<Guid> permitted;
             try
             {
-                if (getItem(id) is not Video video) continue;
-                var owner = video.PrimaryVersionId ?? video.OwnerId;
-                if (owner != Guid.Empty && owner != id) owners[id] = owner;
+                permitted = PermittedIds(viewer, ids);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                logger.Warning($"Skipping activity item {id:N}: {ex.Message}");
+                logger.Warning($"Skipping older activity merges: {ex.Message}");
+                return;
+            }
+            var owners = ResolveHiddenVersions(viewer, ids.Where(id => !permitted.Contains(id)).ToArray(), getItem);
+            foreach (var candidate in chunk)
+            {
+                var shownId = permitted.Contains(candidate.ItemId) ? candidate.ItemId
+                    : owners.TryGetValue(candidate.ItemId, out var owner) ? owner : Guid.Empty;
+                if (shownId == Guid.Empty
+                    || !shownRows.TryGetValue((candidate.AuthorId, shownId, candidate.Row.ActivityType), out var row)) continue;
+                row.Completed |= candidate.Row.Completed;
+                row.Progress = Math.Max(row.Progress, candidate.Row.Progress);
             }
         }
-        if (owners.Count == 0) return owners;
-
-        var shown = PermittedIds(viewer, owners.Values.Distinct().ToArray());
-        foreach (var id in owners.Where(o => !shown.Contains(o.Value)).Select(o => o.Key).ToList())
-        {
-            owners.Remove(id);
-        }
-        return owners;
     }
 #endif
 
