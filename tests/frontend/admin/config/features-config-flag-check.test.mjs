@@ -24,3 +24,11 @@ test('config flag --check compares bytes and fails on drift without writing', t 
   assert.notEqual(run().status, 0, 'a missing output must fail');
   assert.throws(() => readFileSync(output), { code: 'ENOENT' }, 'check never creates missing output');
 });
+
+// Python decodes a file in the machine's default encoding unless told otherwise (cp1252 on Windows), and the English
+// strings the generator reads are not all ASCII.
+test('config flag --check passes whatever the default text encoding is', () => {
+  const env = { ...process.env, PYTHONUTF8: '0', PYTHONCOERCECLOCALE: '0', LC_ALL: 'C', LANG: 'C' };
+  const run = spawnSync('python3', ['scripts/generate_config_flag_groups.py', '--check'], { encoding: 'utf8', env });
+  assert.equal(run.status, 0, run.stderr);
+});

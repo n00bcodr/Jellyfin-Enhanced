@@ -924,6 +924,34 @@
       ],
       "notes": "The C# file moved, it was not rewritten: upstream’s Services/ActivityFeedBuilder.cs is Features/Activity/Services/ActivityFeedBuilder.cs here, and before this commit the rewrite’s file was upstream’s with its Jellyfin 12 branches taken (checked: identical after removing the #if lines and the 10.11 branches). The port is upstream’s Jellyfin 12 code as it is: PermittedIds (the user-scoped query with GroupByPresentationUniqueKey off), ResolveHiddenVersions (a denied id that passes the same query with IncludeOwnedItems, shown as its primary version or owner when that item passes the ordinary query), PermittedByNameIds (favorites only; IncludeItemTypes names the five by-name kinds; an item with a ParentId stays under the library rule), one Watched and one Favorited row per person and title (the newest row, the highest progress, any completion), and MergeLaterVersionPlays for watches past the page that filled the feed. Differences from upstream: (1) Jellyfin 12 only. This tree has no 10.11 build, so upstream’s #if !JF12 lines (the 10.11 query and its two empty lookups) and its 10.11 test (OnJellyfin1011TheFeedKeepsItsOneLibraryQueryAndByNameFavoritesStayHidden) are left out; nothing else differs in the code. (2) Tests: upstream’s tests/backend/Privacy/ActivityFeedHiddenItemsTests.cs is tests/backend/Features/Activity/ActivityFeedHiddenItemsTests.cs here (namespace JE.Tests.Features.Activity, the builder’s namespace, no #if), its ten Jellyfin 12 tests unchanged; five of them fail on the tree before the port. (3) Docs: the two paragraphs (docs/advanced/api.md, docs/enhanced/enhanced-features.md) without “On Jellyfin 12” and the 10.11 sentence, since these pages describe a Jellyfin 12 plugin. (4) The entry’s guessed feature hidden-content was wrong (the word in the test file’s name): the change is in activity only. Kept from upstream as it is: a failing alternate-version or by-name lookup hides only those rows and logs a warning, the ordinary rows still load (those rows were always hidden before, and showing them without the access answer would be the worse fault); when a shown Watched row is partial, the unread watches of its author are run through the same access queries, 64 at a time (activity.json holds at most 500 entries). The access question: every new row passes a query scoped by Jellyfin for the viewer (library roots, parental and tag rules), for the version and for the title on the card, and by-name favorites pass Jellyfin’s own by-name rule; on the lab the rows each of five users gets (an administrator, two plain users, one with a parental limit, one with the Movies library only) are the same on upstream’s build and on the port, and the people, genres and studios each gets are the ones Jellyfin’s own item query returns to that user. activity.json is not changed: it keeps the id that was played or favorited. No setting, route, authorization or registration changes.",
       "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p30-*"
+    },
+    {
+      "sha": "a10b7eab04331b3385a17ea94510a5c982d44b5b",
+      "date": "2026-11-11T09:37:21+00:00",
+      "subject": "fix(tests): make generator scripts and coverage test work on Windows",
+      "class": "ci",
+      "features": [
+        "media-tags",
+        "admin"
+      ],
+      "issues": [],
+      "release": null,
+      "size": {
+        "files": 3,
+        "insertions": 6,
+        "deletions": 5
+      },
+      "paths": [
+        "scripts/generate_config_flag_groups.py",
+        "scripts/generate_genre_labels.py",
+        "tests/frontend/features/features-tag-translation-coverage.test.mjs"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "685b195805c970ccec4d9781a334f421a7118b85"
+      ],
+      "notes": "Developer tooling only: nothing the plugin ships or a server runs changes. Upstream’s five lines in the two generators apply as they are (git apply --3way): scripts/generate_config_flag_groups.py reads js/locales/en.json as UTF-8, and scripts/generate_genre_labels.py reads genre-icons.json and the web table as UTF-8 and writes the table as UTF-8 with \\n line ends, instead of the machine’s default encoding and line ends (cp1252 and \\r\\n on Windows). Upstream’s test hunk is applied by hand at tests/frontend/features/media-tags/features-tag-translation-coverage.test.mjs (the file is one folder deeper here): the js folder’s path comes from fileURLToPath, not URL.pathname (“/C:/…” on Windows, and “%20” for a space anywhere). Differences from upstream: (1) the table the genre generator writes is client/src/features/media-tags/types/genre/genre-table.ts here (client-build emits js/tags/genretags.js from it), where upstream writes js/tags/genretags.js; the changed lines are the same. (2) Tests: upstream’s commit adds none. Two are added, both failing on the tree before the port, and both run the real scripts with a default text encoding that is not UTF-8 (PYTHONUTF8=0 PYTHONCOERCECLOCALE=0 LC_ALL=C, which is ASCII on Linux and leaves Windows at its own default): the genre generator writes the published table byte for byte (tests/frontend/features/media-tags/features-tag-runtime-generators.test.mjs), and the config flag generator’s --check passes (tests/frontend/admin/config/features-config-flag-check.test.mjs). No Windows machine was used: the evidence script shows both faults on Linux before the port and neither after it (the generators with that environment; the coverage test in a checkout whose folder name has a space, where URL.pathname gives ENOENT on “…%20…”). (3) The guessed class was fix; this is repository housekeeping (ci), and the config flag generator belongs to the admin page as well as Media Tags. Kept from upstream as it is: scripts/generate_technical_ratios.py still reads and writes in the default encoding (it fails the same way with that environment; filed as NEW-20261111-174741, not fixed here). No lab check: no file under Jellyfin.Plugin.JellyfinEnhanced/ or client/ changes and both generators write the same bytes as before, so the plugin a lab would run is the same build. No setting, route, authorization or registration changes; nothing stored or cached changes.",
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p31-windows-tooling.*"
     }
   ]
 }

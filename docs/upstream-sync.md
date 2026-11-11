@@ -4,7 +4,7 @@
 
 What the rewrite has taken from [upstream](https://github.com/n00bcodr/Jellyfin-Enhanced) (`main`) since it branched at `2e0f9251bf`. The source of truth is [`upstream-sync.json`](upstream-sync.json); the procedure is [upstream-sync-procedure.md](upstream-sync-procedure.md).
 
-30 upstream commits: 30 ported.
+31 upstream commits: 31 ported.
 
 | # | Upstream | Date | Class | Features | Subject | Status | Rewrite commit | Note |
 |---|---|---|---|---|---|---|---|---|
@@ -38,3 +38,4 @@ What the rewrite has taken from [upstream](https://github.com/n00bcodr/Jellyfin-
 | 28 | [`20291fc4`](https://github.com/n00bcodr/Jellyfin-Enhanced/commit/20291fc4b2140997b31c0e03bd0154f7d5048bd7) | 2026-11-10 | fix | activity | fix(activity): use a real Material icon for User created | ported | `27898826` | artifacts/restructure-plan/step-logs/upstream-sync-evidence/p28-user-created-icon.* |
 | 29 | [`53ebf043`](https://github.com/n00bcodr/Jellyfin-Enhanced/commit/53ebf043c189878ecf04bdf1a39edacf0a3bdaa0) | 2026-11-10 | fix | media-tags | fix(leaving-soon): page through every Maintainerr collection member | ported | `cf86e164` | artifacts/restructure-plan/step-logs/upstream-sync-evidence/p29-* |
 | 30 | [`c693f0ed`](https://github.com/n00bcodr/Jellyfin-Enhanced/commit/c693f0eddbd2fc26df25ac53dbd197a8fbffb0f7) | 2026-11-11 | fix | activity | fix(activity): show plays and favorites of versions, people and genres (#1042) | ported | `6493469c` | artifacts/restructure-plan/step-logs/upstream-sync-evidence/p30-* |
+| 31 | [`a10b7eab`](https://github.com/n00bcodr/Jellyfin-Enhanced/commit/a10b7eab04331b3385a17ea94510a5c982d44b5b) | 2026-11-11 | ci | media-tags, admin | fix(tests): make generator scripts and coverage test work on Windows | ported | `685b1958` | artifacts/restructure-plan/step-logs/upstream-sync-evidence/p31-windows-tooling.* |

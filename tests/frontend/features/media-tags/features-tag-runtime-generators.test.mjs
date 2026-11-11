@@ -104,6 +104,18 @@ test('the generators leave the published typed tables unchanged', t => {
   }
 });
 
+// Python reads and writes text in the machine's default encoding unless told otherwise (cp1252 and \r\n on Windows):
+// the table names genres in many scripts, so the generator must say UTF-8 and \n itself.
+test('the genre generator reads and writes UTF-8 with \\n line ends whatever the default encoding is', t => {
+  const box = sandbox(t, Object.values(genre));
+  const published = readFileSync(resolve(root, genre.table));
+  assert.ok(published.some(byte => byte > 0x7f) && !published.includes(13), 'the table has non-ASCII names and no \\r');
+  const env = { ...process.env, PYTHONUTF8: '0', PYTHONCOERCECLOCALE: '0', LC_ALL: 'C', LANG: 'C' };
+  const written = spawnSync('python3', [box.path(genre.script)], { encoding: 'utf8', env });
+  assert.equal(written.status, 0, written.stderr);
+  assert.deepEqual(readFileSync(box.path(genre.table)), published, 'the same bytes as with a UTF-8 default');
+});
+
 test('the emitted genre tables are exactly what genre-icons.json describes', () => {
   const table = JSON.parse(read(genre.source));
   const source = read(genre.emitted);
