@@ -25,7 +25,7 @@ export type StoreView = (event: StoreEvent) => void;
 export interface SessionMark { generation: number; owner: string | null }
 
 export interface StoreDeps {
-    /** Opaque revision of the live account, server, client, credentials and root. */
+    /** Opaque revision of the live account, server, client, credentials and root; '' while they cannot be read. */
     identity(): string;
     /** Whether a field is a secret (never sent as Expected). */
     isSecret(key: string): boolean;
@@ -413,6 +413,8 @@ export function createSaveStore(deps: StoreDeps) {
                         throw error;
                     }
                     requireOwner();
+                    // Not an account change (which ends silently): the write is refused and its caller says so.
+                    if (!mark.owner) throw new Error('Nothing was saved: who is signed in could not be read');
                 },
             };
             try {

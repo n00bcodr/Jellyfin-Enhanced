@@ -303,6 +303,37 @@ test('the page\'s Save persists after the Media Tags tab has loaded, over Jellyf
   assert.equal(h.server.ShowFileSizes, wanted, 'the server kept the saved value');
 });
 
+// Any part of who is signed in that keeps throwing when read: on the same client, or on a client read anew each time.
+for (const [name, unreadable] of [
+  ['its server', (h) => { h.window.ApiClient.serverId = () => { throw new Error('server unreadable'); }; }],
+  ['its server, from a client read anew each time', (h) => {
+    const client = h.window.ApiClient;
+    Object.defineProperty(h.window, 'ApiClient', { configurable: true, get: () => Object.assign(Object.create(client), { serverId: () => { throw new Error('server unreadable'); } }) });
+  }],
+]) {
+  test(`an account that cannot be read (${name}): the tab reads nothing and says so, and Save says it did not save`, async (t) => {
+    const h = boot(t);
+    h.expectConsoleError(/the Media Tags tab failed to load/);
+    const alerts = [];
+    // The page's Dashboard.alert is its engine's (JEAdmin.alert).
+    h.window.JEAdmin.alert = async (a) => { alerts.push(a); };
+    let reads = 0;
+    const read = h.window.ApiClient.getPluginConfiguration;
+    // Past a handful of reads the answer never comes, so a read loop cannot spin forever.
+    h.window.ApiClient.getPluginConfiguration = async (...args) => (++reads > 5 ? new Promise(() => {}) : read(...args));
+    unreadable(h);
+    h.tabButton('media-tags').click();
+    await h.until(() => h.root.querySelector('.je-ta-load-error'), 'the tab says its settings could not be loaded');
+    await h.settle();
+    assert.equal(reads, 0, 'no configuration read for an account that cannot be read');
+    assert.equal(h.root.querySelector('.je-ta-tabs'), null, 'no settings drawn');
+    h.form.dispatchEvent(new h.window.Event('submit', { bubbles: true, cancelable: true }));
+    await h.until(() => alerts.length, 'Save reported its outcome');
+    assert.equal(alerts[0].title, 'Save failed');
+    assert.equal(h.calls.filter((c) => c.kind === 'put').length, 0, 'nothing written');
+  });
+}
+
 test('Apply all plugin settings and Apply the above save a pending Media Tags change first and never write one', async (t) => {
   const h = boot(t);
   h.tabButton('media-tags').click();

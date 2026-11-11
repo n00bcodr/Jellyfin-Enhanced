@@ -171,3 +171,15 @@ test('admin add-items search through the real Seerr API notes that Seerr results
  assert.equal(grid.querySelectorAll('.je-hidden-item-card').length,1);
  assert.match(grid.textContent,/hidden_content_admin_add_seerr_failed/);
 });
+// A Seerr card stores only a TMDB id, and the library hides by Jellyfin item id: a library title offered as a Seerr
+// card stays visible in the user's library after "Hide". With the library search failed nothing removed those cards.
+test('admin add-items search does not offer a title Seerr links to the library as a Seerr card when the library search fails',async t=>{
+ const h=setup(t);for(const file of ['seerr-status.js','api.js'])h.load(`jellyseerr/${file}`);
+ const seerrPage={page:1,totalPages:1,totalResults:2,results:[
+  {id:655,mediaType:'tv',name:'Star Trek: The Next Generation',firstAirDate:'1987-09-28',posterPath:'/tng.jpg',mediaInfo:{id:3,status:4,jellyfinMediaId:'646003098f4dc870953118d252d50fb6',jellyfinMediaId4k:null}},
+  {id:61923,mediaType:'tv',name:'Star vs. the Forces of Evil',firstAirDate:'2015-01-18',posterPath:'/svtfoe.jpg',mediaInfo:null}]};
+ const fetch=url=>url.includes('/JellyfinEnhanced/jellyseerr/search')?Promise.resolve(seerrPage):Promise.reject(Object.assign(new Error('HTTP 500'),{status:500}));
+ const grid=await adminSearch(h,{library:fetch});
+ assert.match(grid.textContent,/hidden_content_admin_add_failed/);
+ assert.deepEqual([...grid.querySelectorAll('.je-hidden-item-name')].map(n=>n.textContent),['Star vs. the Forces of Evil']);
+});

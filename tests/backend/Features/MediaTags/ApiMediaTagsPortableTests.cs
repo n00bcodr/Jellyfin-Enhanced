@@ -3,6 +3,7 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using System.Xml.Serialization;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.Features.Admin;
 using Jellyfin.Plugin.JellyfinEnhanced.Features.Admin.Models;
@@ -489,6 +490,37 @@ public class ApiMediaTagsPortableTests
         f.Plugin.Configuration.TagStyleOverrides = string.Empty;
         var refused = Body(ApiAssetTests.SiblingOf<JeMediaTagsController>(controller).PreviewAdminMediaTags(Json(unknown)));
         Assert.Equal("invalid", (string?)Assert.Single(refused["skipped"]!.AsArray())!["reason"]);
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    [InlineData(false, true)]
+    public void AnUneditedAdminExportPreviewsWithoutChanges(bool restartBeforeExport, bool restartBeforePreview)
+    {
+        using var f = new ApiPluginFixture();
+        var (controller, _, _) = Signed(f, admin: true);
+        // Every field as Jellyfin reads the stored XML back after a restart (a list saved as null comes back empty).
+        void Restart()
+        {
+            var serializer = new XmlSerializer(typeof(PluginConfiguration));
+            using var stream = new MemoryStream();
+            serializer.Serialize(stream, f.Plugin.Configuration);
+            stream.Position = 0;
+            var stored = (PluginConfiguration)serializer.Deserialize(stream)!;
+            foreach (var field in MediaTagsPortable.AdminFields(MediaTagsPageFields.Allowed))
+            {
+                var property = typeof(PluginConfiguration).GetProperty(field)!;
+                property.SetValue(f.Plugin.Configuration, property.GetValue(stored));
+            }
+        }
+
+        if (restartBeforeExport) Restart();
+        var exported = Body(ApiAssetTests.SiblingOf<JeMediaTagsController>(controller).ExportAdminMediaTags());
+        if (restartBeforePreview && !restartBeforeExport) Restart();
+        var preview = Body(ApiAssetTests.SiblingOf<JeMediaTagsController>(controller).PreviewAdminMediaTags(Json(exported)));
+        Assert.Empty(preview["skipped"]!.AsArray().Select(s => (string?)s!["field"]));
+        Assert.Empty(preview["changes"]!.AsArray().Select(c => c!.ToJsonString()));
     }
 
     [Fact]

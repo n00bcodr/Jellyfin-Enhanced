@@ -200,18 +200,21 @@
         stopOpeningNavigation = void 0;
         window.removeEventListener("hashchange", cancel);
         window.removeEventListener("popstate", cancel);
-        window.removeEventListener("pagehide", cancel);
+        window.removeEventListener("pagehide", cancelOnUnload);
         if (cancelOpening === cancel) cancelOpening = null;
       };
       const cancel = () => {
         cancelled = true;
         releaseOpening();
       };
+      const cancelOnUnload = (event) => {
+        if ((event.target === window || event.target === document) && !event.persisted) cancel();
+      };
       cancelOpening = cancel;
       stopOpeningNavigation = JE.core?.navigation?.onNavigate(cancel);
       window.addEventListener("hashchange", cancel);
       window.addEventListener("popstate", cancel);
-      window.addEventListener("pagehide", cancel);
+      window.addEventListener("pagehide", cancelOnUnload);
       const sameOpeningIdentity = () => !cancelled && apiClient() === client && client.getCurrentUserId() === currentUserId && client.getUrl("/") === openingUrl && client.accessToken?.() === openingToken && window.location.hash === openingHash && serverId() === openingServerId && JE.session?.getEpoch() === openingEpoch;
       try {
         if (currentUserId && !await refreshSettings(currentUserId, sameOpeningIdentity)) return;

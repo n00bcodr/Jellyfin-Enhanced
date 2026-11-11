@@ -172,6 +172,7 @@
       detectTheme(root);
       followToolbar(root);
       const mark = saves2.sessionMark();
+      if (!mark.owner) throw new Error("Who is signed in could not be read");
       const again = () => deps.signedIn() ? show(page) : null;
       const live = mount2.active;
       if (live && live.page === page && root.contains(live.ctx.root.firstElementChild)) {
@@ -1419,6 +1420,7 @@
               throw error;
             }
             requireOwner();
+            if (!mark.owner) throw new Error("Nothing was saved: who is signed in could not be read");
           }
         };
         try {
@@ -1696,7 +1698,6 @@
   var identityStillCurrent = () => false;
   var identityRevision = 0;
   var identityAccount = "|";
-  var identityFailedFor = null;
   function identity() {
     try {
       if (!identityStillCurrent()) {
@@ -1708,18 +1709,12 @@
         const token = client?.accessToken?.();
         const root = client?.getUrl("/");
         identityStillCurrent = () => optionalApiClient() === client && server() === serverId && client?.getCurrentUserId?.() === user && client?.accessToken?.() === token && client?.getUrl("/") === root;
-        identityFailedFor = null;
         identityRevision++;
       }
       return String(identityRevision);
     } catch {
       identityStillCurrent = () => false;
-      const client = optionalApiClient();
-      if (!identityFailedFor || identityFailedFor.client !== client) {
-        identityFailedFor = { client };
-        identityRevision++;
-      }
-      return String(identityRevision);
+      return "";
     }
   }
   var signedIn = () => {

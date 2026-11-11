@@ -125,15 +125,20 @@ export function installUiPanel(JE: Deps, featureCtx = settingsPanelContext(JE)):
             stopOpeningNavigation = undefined;
             window.removeEventListener('hashchange', cancel);
             window.removeEventListener('popstate', cancel);
-            window.removeEventListener('pagehide', cancel);
+            window.removeEventListener('pagehide', cancelOnUnload);
             if (cancelOpening === cancel) cancelOpening = null;
         };
         const cancel = () => { cancelled = true; releaseOpening(); };
+        // Only the document's own pagehide (its target is the document): jellyfin-web dispatches a bubbling one on the view
+        // it leaves after the address has changed, and a back/forward-cache hide (persisted) may be shown again.
+        const cancelOnUnload = (event: PageTransitionEvent) => {
+            if ((event.target === window || event.target === document) && !event.persisted) cancel();
+        };
         cancelOpening = cancel;
         stopOpeningNavigation = JE.core?.navigation?.onNavigate(cancel);
         window.addEventListener('hashchange', cancel);
         window.addEventListener('popstate', cancel);
-        window.addEventListener('pagehide', cancel);
+        window.addEventListener('pagehide', cancelOnUnload);
         /** Reject replies from an earlier session, even after an A → B → A switch. */
         const sameOpeningIdentity = () => !cancelled && apiClient() === client
             && client.getCurrentUserId() === currentUserId && client.getUrl('/') === openingUrl

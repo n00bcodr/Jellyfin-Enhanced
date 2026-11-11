@@ -158,7 +158,7 @@ export function createStatusTags(JE: TagRuntimeBridge) {
     /** Local day used by the last live pass. */
     let renderedDay: number|null = null;
     let calendarEventsRegistered = false;
-    /** False between teardown/user reset/pagehide and the next activation. */
+    /** False between teardown/user reset/the document's own pagehide (not the bubbling one jellyfin-web dispatches on each view it leaves, nor a bfcache hide) and the next activation. */
     let statusActive: boolean = false;
     /** One observer for all schedule-reading cards. */
     let seriesObserver: IntersectionObserver|null = null;
@@ -1428,7 +1428,7 @@ export function createStatusTags(JE: TagRuntimeBridge) {
                 if (!document.hidden && statusCtx) refreshCalendar(statusCtx);
             });
             window.addEventListener('focus', () => { if (statusCtx) refreshCalendar(statusCtx); });
-            window.addEventListener('pagehide', stopStatus);
+            window.addEventListener('pagehide', event => { if ((event.target === window || event.target === document) && !event.persisted) stopStatus(); });
             window.addEventListener('pageshow', () => reinitializeStatusTags());
         }
 

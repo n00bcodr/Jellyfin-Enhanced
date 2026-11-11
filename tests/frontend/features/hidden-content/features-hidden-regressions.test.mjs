@@ -207,6 +207,25 @@ for(const event of ['hashchange','popstate','viewhide'])test(`HC-R4B-001 same-ac
  else {h.window.history.replaceState({},'', '#/details?id=another');h.window.dispatchEvent(new h.window.Event(event));}
  assert.ok(h.document.querySelector('.je-undo-btn'));h.document.querySelector('.je-undo-btn').click();await h.api.flushPendingSave();assert.deepEqual(saved.items,{});
 });
+// jellyfin-web dispatches a bubbling legacy `pagehide` on the view it leaves at every in-app navigation (window sees it with
+// that view as its target). It is not the page going away: a save waiting to retry and Undo survive it; the document's own
+// pagehide still cancels the retry.
+test('in-app navigation (jellyfin-web\'s view pagehide) keeps a failed save\'s retry and Undo',async t=>{
+ const timers=new Map();let next=0,posts=0;
+ const h=setup(t,{ajax:async r=>{if(r.type!=='POST')return {};posts++;if(posts!==2)throw Object.assign(new Error('unavailable'),{status:503});return {};},
+  globals:{setTimeout:(fn,delay)=>{const id=++next;timers.set(id,{fn,delay});return id;},clearTimeout:id=>timers.delete(id)}});
+ h.window.console.warn=()=>{};
+ const due=delay=>[...timers].find(([,timer])=>timer.delay===delay);
+ const run=async delay=>{const [id,timer]=due(delay);timers.delete(id);await timer.fn();await tick();};
+ h.api.hideItem({itemId:'a'});await run(500);assert.equal(posts,1,'the save failed');assert.ok(due(1000),'its retry waits 1 s');
+ const view=h.document.body.appendChild(Object.assign(h.document.createElement('div'),{className:'page'}));
+ view.dispatchEvent(new h.window.CustomEvent('pagehide',{bubbles:true}));
+ assert.ok(h.document.querySelector('.je-undo-btn'),'Undo survives the view change');
+ assert.ok(due(1000),'the retry survives the view change');await run(1000);assert.equal(posts,2,'the retry saved');
+ h.api.hideItem({itemId:'b'});await run(500);assert.equal(posts,3);assert.ok(due(1000));
+ h.window.dispatchEvent(new h.window.PageTransitionEvent('pagehide',{persisted:false}));
+ assert.equal(due(1000),undefined,'the document\'s own pagehide cancels the retry');
+});
 test('HC-R4B-001 identity change dismisses Undo synchronously',t=>{
  const h=setup(t);h.api.hideItem({itemId:'a'});
  h.window.ApiClient={...h.window.ApiClient,getCurrentUserId:()=> 'user-b'};h.JE.session.checkNow('test');
@@ -274,6 +293,31 @@ for(const method of ['ordinary','scoped'])for(const [label,early,late] of [
  const h=setup(t,{items:{[compact]:{itemId:compact,hiddenAt:late},[dashed]:{itemId:dashed,hiddenAt:early}}});
  if(method==='ordinary')h.api.hideItem({itemId:compact});else h.api.markScopedHidden(compact,'nextup');
  assert.equal(h.internal.getHiddenData().items[compact].hiddenAt,early);
+});
+// Jellyfin 12.4 answers a hash navigation (address bar, Back, a #/ link) inside its own popstate listener, which runs before
+// JE's: it shows "Page not found" and JE shows Hidden Content over it at once. Only then do JE's popstate and hashchange
+// listeners hear that same navigation (lab trace on 1a68c68a). What the page drew for the visit must stay usable.
+// Chromium calls the window's own popstate/hashchange listeners in the order they were added, capture or not; jsdom (like
+// Firefox) calls capture ones first, where the page's capture-phase intercept stops the event. Both probed in the lab.
+const chromiumWindowOrder={
+ addEventListener(type,listener,options){const capture=type==='popstate'||type==='hashchange'?{capture:false}:{};this.EventTarget.prototype.addEventListener.call(this,type,listener,typeof options==='object'?{...options,...capture}:capture.capture===false?false:options);},
+ removeEventListener(type,listener,options){this.EventTarget.prototype.removeEventListener.call(this,type,listener,type==='popstate'||type==='hashchange'?false:options);},
+};
+test('after a hash visit the router answered first, the admin user filter appears and switches users',async t=>{
+ const h=setup(t,{globals:chromiumWindowOrder,ajax:async r=>r.url.includes('/admin/hidden-content-users')?{users:[{userId:'b',userName:'Bob',count:1}]}
+  :r.url.includes('/admin/hidden-content/b')?{hiddenContent:{items:{x:{itemId:'x',name:'Bob secret',type:'Movie'}},settings:{}}}:{success:true}});
+ h.JE.helpers.isAdmin=()=>true;
+ const router=installJellyfinRouter(h);h.JE.initializeHiddenContentPage();
+ const oldURL=h.window.location.href;
+ await router.push('#/hidden-content');
+ h.window.dispatchEvent(new h.window.PopStateEvent('popstate',{state:null}));
+ h.window.dispatchEvent(new h.window.HashChangeEvent('hashchange',{oldURL,newURL:h.window.location.href}));
+ await tick();
+ const filter=h.document.querySelector('.je-hidden-admin-user-filter');
+ assert.ok(filter,'the user filter is drawn');
+ filter.value='b';filter.dispatchEvent(new h.window.Event('change'));
+ await new Promise(resolve=>h.window.setTimeout(resolve,0));await tick();
+ assert.match(h.document.getElementById('je-hidden-content-container').textContent,/Bob secret/);
 });
 test('in-app navigation to Hidden Content keeps it over the router\'s Page not found page by hash or router, and leaving still hides it',async t=>{
  const h=setup(t);const router=installJellyfinRouter(h);h.JE.initializeHiddenContentPage();

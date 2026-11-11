@@ -120,12 +120,19 @@ function runtime(JE:HiddenHost):Runtime {
  if(internals.hiddenContentRuntime)return internals.hiddenContentRuntime;
  const state:Runtime={modules:new Set(),view:0,policy:0,queues:new Map(),cleanups:new Set(),identityCleanups:new Set()};
  internals.hiddenContentRuntime=state;
- const invalidate=()=>{state.view++;for(const cleanup of [...state.cleanups])cleanup();};
- window.addEventListener('hashchange',invalidate);
- window.addEventListener('popstate',invalidate);
+ // Count each address once. Jellyfin's router answers a hash navigation before Chromium calls these listeners (it hides
+ // the old view, counted below, and a JE page may show for the new address); the popstate and hashchange that follow are
+ // that same navigation and must not invalidate what was drawn for it.
+ let counted=location.href;
+ const invalidate=()=>{counted=location.href;state.view++;for(const cleanup of [...state.cleanups])cleanup();};
+ const navigated=()=>{if(location.href!==counted)invalidate();};
+ window.addEventListener('hashchange',navigated);
+ window.addEventListener('popstate',navigated);
  document.addEventListener('viewhide',invalidate);
  const invalidateIdentity=()=>{invalidate();for(const cleanup of [...state.identityCleanups])cleanup();};
- window.addEventListener('pagehide',invalidateIdentity);
+ // Page exit is the document's own pagehide (its target is the document): jellyfin-web dispatches a bubbling `pagehide` on
+ // each view it leaves, and a back/forward-cache hide (persisted) may be shown again.
+ window.addEventListener('pagehide',event=>{if((event.target===window||event.target===document)&&!event.persisted)invalidateIdentity();});
  JE.session?.onUserChange('hidden-content-runtime',invalidateIdentity);
  return state;
 }

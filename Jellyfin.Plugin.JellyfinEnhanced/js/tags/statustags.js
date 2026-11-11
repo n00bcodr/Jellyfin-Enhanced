@@ -1096,7 +1096,9 @@
         window.addEventListener("focus", () => {
           if (statusCtx) refreshCalendar(statusCtx);
         });
-        window.addEventListener("pagehide", stopStatus);
+        window.addEventListener("pagehide", (event) => {
+          if ((event.target === window || event.target === document) && !event.persisted) stopStatus();
+        });
         window.addEventListener("pageshow", () => reinitializeStatusTags());
       }
       console.log(`${logPrefix} Initialized successfully.`);

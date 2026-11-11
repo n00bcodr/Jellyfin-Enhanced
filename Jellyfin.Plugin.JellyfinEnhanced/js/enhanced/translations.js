@@ -23,6 +23,7 @@
         return null;
       }
     }
+    const isLanguageTag = (code) => !!code && /^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$/i.test(code);
     const CACHE_DURATION = 24 * 60 * 60 * 1e3;
     function normalizeLangCode(code) {
       if (!code) return code;
@@ -196,11 +197,11 @@
         if (userId) {
           const storageKey = `${userId}-language`;
           const storedLang = storageGet(storageKey);
-          if (storedLang) {
+          if (isLanguageTag(storedLang)) {
             lang = normalizeLangCode(storedLang);
           } else {
             const docLang = document.documentElement.lang;
-            if (docLang) {
+            if (isLanguageTag(docLang)) {
               lang = normalizeLangCode(docLang);
             }
           }

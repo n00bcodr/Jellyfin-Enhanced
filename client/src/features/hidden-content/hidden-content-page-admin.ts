@@ -469,6 +469,9 @@ import { hiddenContentContext, host, registry, type HiddenHost } from './host';
         if (r.mediaType !== 'movie' && r.mediaType !== 'tv') continue; // skip people
         const tmdb = String(r.id);
         if (seenTmdb.has(tmdb)) continue; // already shown from the library
+        // In the library even when the library search failed or did not list it: a Seerr card would hide
+        // only its TMDB id, and the library hides by item id, so the title would stay visible.
+        if (r.jellyfinMediaId) continue;
         seenTmdb.add(tmdb);
         normalized.push({ source: 'seerr', itemId: '', name: r.title || r.name || '',
           type: r.mediaType === 'tv' ? 'Series' : 'Movie', tmdbId: tmdb,

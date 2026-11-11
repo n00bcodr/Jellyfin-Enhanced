@@ -401,6 +401,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Seerr
                 }
             }
 
+            // Only Seerr admins may read the override rules (Permission.ADMIN in Seerr 3.x and
+            // Jellyseerr 2.x), and Seerr applies them itself when a request is created. The proxy
+            // acts as the linked Seerr user, so anyone else has none to read here, not Seerr's 403.
+            if (method == HttpMethod.Get && string.Equals(apiPath, "/api/v1/overrideRule", StringComparison.OrdinalIgnoreCase)
+                && seerrUser != null && !JellyseerrPermissionHelper.HasPermission(seerrUser.Permissions, JellyseerrPermission.ADMIN))
+            {
+                return Content("[]", "application/json");
+            }
+
             // Check server-side response cache for cacheable endpoints.
             // bifurcate cache key. Public discovery
             // endpoints return identical content for all users, so include the

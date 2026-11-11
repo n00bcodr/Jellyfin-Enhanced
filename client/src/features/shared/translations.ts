@@ -8,6 +8,8 @@ export function createTranslations(JE: TranslationsBridge, api: () => SharedClie
     // client never contacts a third-party host for translations.
     const remoteLocaleUrl = (code: string) => JE.cdn.url('locales', `${code}.json`);
     function storageGet(key: string): string | null { try { return localStorage.getItem(key); } catch { return null; } }
+    // Firefox with no configured locale reports navigator.language "undefined", which jellyfin-web copies to <html lang>.
+    const isLanguageTag = (code: string | null): code is string => !!code && /^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$/i.test(code);
     const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
 
     function normalizeLangCode(code: string) {
@@ -216,7 +218,7 @@ export function createTranslations(JE: TranslationsBridge, api: () => SharedClie
             if (userId) {
                 const storageKey = `${userId}-language`;
                 const storedLang = storageGet(storageKey);
-                if (storedLang) {
+                if (isLanguageTag(storedLang)) {
                     lang = normalizeLangCode(storedLang);
                 } else {
                     // Fall back to the HTML lang attribute set by Jellyfin's web client.
@@ -224,7 +226,7 @@ export function createTranslations(JE: TranslationsBridge, api: () => SharedClie
                     // key may not exist but Jellyfin has already resolved the user's
                     // preferred language from server-side settings.
                     const docLang = document.documentElement.lang;
-                    if (docLang) {
+                    if (isLanguageTag(docLang)) {
                         lang = normalizeLangCode(docLang);
                     }
                 }

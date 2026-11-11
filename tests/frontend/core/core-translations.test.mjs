@@ -75,3 +75,12 @@ test('loading a locale does not define its keys one property at a time',async t=
   assert.equal(Object.keys(await h.JE.loadTranslations()).length,keys);   // from the cache
   assert.ok(defined<keys/10,`${defined} Object.defineProperty calls while loading a ${keys}-key locale twice`);
 });
+// Firefox with no configured locale reports navigator.language as the string "undefined", and jellyfin-web copies it
+// into <html lang>. That is not a language: the loader asked for locales/undefined.json, then the CDN fallback, before English.
+test('a page language that is not a language tag ("undefined" in Firefox) loads English without asking for it',async t=>{
+  const calls=[];const h=setup(t,async url=>{calls.push(url);return url.endsWith('/en.json')?jsonResponse({ok:'OK'}):jsonResponse({},404);});
+  h.document.documentElement.lang='undefined';
+  assert.equal((await h.JE.loadTranslations()).ok,'OK');
+  assert.deepEqual(calls.filter(url=>/undefined/.test(url)),[],'no locale named "undefined" is requested');
+  assert.equal(h.JE.translationsLang,'en');
+});

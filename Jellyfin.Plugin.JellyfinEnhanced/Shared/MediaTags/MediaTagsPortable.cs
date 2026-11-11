@@ -120,6 +120,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags
 
         private static readonly Regex PresetIdRegex = new Regex("^[a-z0-9][a-z0-9-]{0,39}$", RegexOptions.Compiled);
 
+        // A colour the browser may put into CSS text: its own check (isSafeCssColor, features/shared/settings-values.ts)
+        // without the CSS.supports test, so nothing that ends a declaration or a rule or loads a URL.
+        private static readonly Regex CssColorRegex = new Regex(
+            @"^(?:#[0-9a-f]{3,4}|#[0-9a-f]{6}|#[0-9a-f]{8}|[a-z]+|(?:rgba?|hsla?)\([0-9\s.,%/+-]*\))\z",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
         // Reading: nested objects may be spelled in any case (the client camel-cases them); writing: as declared.
         private static readonly JsonSerializerOptions ReadOptions = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
         private static readonly JsonSerializerOptions WriteOptions = new JsonSerializerOptions();
@@ -213,7 +219,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags
 
         /// <summary>
         /// Normalises a whole user document as the settings save path does (layouts, caps, rating sources, language
-        /// display and priority, Tag Styles preset, rules and locks, card shapes).
+        /// display and priority, Tag Styles preset, rules and locks, card shapes, subtitle colours).
         /// </summary>
         /// <param name="settings">The document, normalised in place.</param>
         /// <param name="error">Why the document cannot be saved (only the language priority refuses), or null.</param>
@@ -248,6 +254,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags
             TagLookValidation.Normalize(settings);
             // Per-shape looks: unknown layouts and slots dropped, caps clamped.
             TagShapeRules.Normalize(settings);
+            // Subtitle colours go into CSS text: a malformed one is saved as the default the browser shows for it.
+            if (settings.CustomSubtitleTextColor?.Trim() is not { } text || !CssColorRegex.IsMatch(text)) settings.CustomSubtitleTextColor = "#FFFFFFFF";
+            if (settings.CustomSubtitleBgColor?.Trim() is not { } background || !CssColorRegex.IsMatch(background)) settings.CustomSubtitleBgColor = "#00000000";
             return true;
         }
 
@@ -543,6 +552,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags
                 var to = PluginConfigurationPatch.ToJson(normalized, property.PropertyType);
                 imported[field] = to?.DeepClone();
                 var from = PluginConfigurationPatch.ToJson(property.GetValue(config), property.PropertyType);
+                // Jellyfin's XML storage reads a list saved as null back as an empty one: for a list they are one value.
+                var list = property.PropertyType.IsGenericType && property.PropertyType.GetGenericTypeDefinition() == typeof(List<>);
+                if (list && (from is null or JsonArray { Count: 0 }) && (to is null or JsonArray { Count: 0 })) continue;
                 if (!JsonNode.DeepEquals(from, to)) changes.Add(new Change { Field = field, From = from, To = to });
             }
 

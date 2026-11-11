@@ -273,7 +273,9 @@ export function installApi(host: SeerrCoreHost): void {
         async search(query, page = 1, options = {}) {
             const { skipCache = false, signal, throwOnError = false } = options;
             try {
-                const language = encodeURIComponent((navigator.language || 'en').split('-')[0] || 'en');
+                // Firefox with no configured locale reports navigator.language as the string "undefined".
+                const browserLanguage = (navigator.language || '').split('-')[0] || '';
+                const language = /^[a-z]{2,3}$/i.test(browserLanguage) ? browserLanguage : 'en';
                 const fetchOptions: SeerrFetchOptions = { skipCache };
                 if (signal) fetchOptions.signal = signal;
                 const data = await get(`/search?query=${encodeURIComponent(query)}&page=${page}&language=${language}`, fetchOptions);

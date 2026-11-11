@@ -68,6 +68,18 @@ test('SEERR-CORE-08: malformed search results are dropped and a malformed page i
   await assert.rejects(h.api.search('q', 2, { skipCache: true, throwOnError: true }), { name: 'SeerrDecodeError' });
 });
 
+// Firefox with no configured locale reports navigator.language as the string "undefined"; Seerr then got language=undefined.
+test('the search language falls back to English when the browser language is not a language tag', async t => {
+  const h = setup(t, { get: async () => ({ page: 1, totalPages: 1, results: [] }) });
+  const searchLanguage = async (value, query) => {
+    Object.defineProperty(h.window.navigator, 'language', { value, configurable: true });
+    await h.api.search(query, 1, { skipCache: true });
+    return new URL(h.gets.at(-1), 'http://jellyfin.test').searchParams.get('language');
+  };
+  assert.equal(await searchLanguage('undefined', 'a'), 'en');
+  assert.equal(await searchLanguage('de-AT', 'b'), 'de', 'a real browser language is still sent');
+});
+
 test('SEERR-CORE-08: a malformed status, quota or settings answer is not trusted', async t => {
   let status = { active: 'yes', userFound: true };
   const answers = { '/user-status': () => status, '/quota': () => ({ movie: 'unlimited' }), '/settings/partial-requests': () => 'html' };

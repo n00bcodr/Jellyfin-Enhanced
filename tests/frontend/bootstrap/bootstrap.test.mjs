@@ -360,11 +360,11 @@ test('bookmark snapshot loading preserves uppercase record IDs and pairs content
 
 // BUG-008: the per-file fallback needs the component-script manifest. A failed manifest request is retried once
 // after a delay; if it fails again boot reports one clear error instead of "All component scripts loaded" + FATAL.
-function manifestFailure(t, failures, expectedConsoleErrors = []) {
+function manifestFailure(t, failures, expectedConsoleErrors = [], failure = () => new Error('manifest offline')) {
   let manifestRequests = 0;
   const h = setup(t, { bundle: 'error', expectedConsoleErrors, ajax: async path => {
     if (path.endsWith('/bootstrap')) return payload({ ComponentScripts: null });
-    if (path.endsWith('/component-scripts.json')) { if (++manifestRequests <= failures) throw new Error('manifest offline'); return modules; }
+    if (path.endsWith('/component-scripts.json')) { if (++manifestRequests <= failures) throw failure(); return modules; }
     throw new Error(`Unexpected endpoint ${path}`);
   } });
   const logs = [], delays = [];
@@ -394,4 +394,13 @@ test('a component-script manifest that keeps failing ends boot with one clear er
   assert.equal(h.logs.filter(line => /CRITICAL|FATAL/.test(line)).length, 1);
   assert.equal(h.logs.some(line => line.includes('All components initialized')), false);
   assert.equal(h.plugin.initialized, undefined);
+});
+
+// jellyfin-web's ApiClient.ajax rejects with the fetch Response itself; the boot error ended in "[object Response]".
+test('a manifest request that keeps answering an HTTP error names the status in the boot error', async t => {
+  const h = manifestFailure(t, Infinity, [/CRITICAL INITIALIZATION FAILURE.*component-script manifest/], () => new Response('Service Unavailable', { status: 503 }));
+  await until(() => h.logs.some(line => /CRITICAL/.test(line)));
+  const critical = h.logs.find(line => /CRITICAL/.test(line));
+  assert.match(critical, /component-script manifest: HTTP 503$/);
+  assert.doesNotMatch(critical, /\[object /);
 });

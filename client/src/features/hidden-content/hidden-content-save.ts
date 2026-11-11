@@ -261,8 +261,12 @@ import { host, registry, type HiddenHost } from './host';
 
     // Cancel pending retries on tab teardown so a stale snapshot can't overwrite server state after navigation.
     // Only pagehide — visibilitychange fires on backgrounded tabs the user may return to within the retry window.
+    // Only the document's own (its target is the document): jellyfin-web dispatches a bubbling `pagehide` on each view it
+    // leaves, and a back/forward-cache hide (persisted) may be shown again with the retry still due.
     try {
-        window.addEventListener('pagehide', cancelPendingRetry);
+        window.addEventListener('pagehide', event => {
+            if ((event.target === window || event.target === document) && !event.persisted) cancelPendingRetry();
+        });
     } catch (_) { /* non-browser env, harmless */ }
 
     // Invalidate every scheduled save/retry on a user switch (the generation

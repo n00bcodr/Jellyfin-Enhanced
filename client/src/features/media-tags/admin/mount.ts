@@ -141,6 +141,8 @@ export function createLifecycle(deps: LifecycleDeps) {
         followToolbar(root);
         // Another administrator (or server) since the last view: start from nothing.
         const mark = saves.sessionMark();
+        // Who is signed in cannot be read: no settings for no one (activate shows the load error, once).
+        if (!mark.owner) throw new Error('Who is signed in could not be read');
         const again = (): Promise<PageContext | null> | null => (deps.signedIn() ? show(page) : null);
         const live = mount.active;
         if (live && live.page === page && root.contains(live.ctx.root.firstElementChild)) {

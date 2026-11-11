@@ -644,3 +644,17 @@ test('pagehide drops late schedule answers and pageshow resumes with a fresh lif
   h.window.dispatchEvent(new h.window.Event('pageshow'));
   assert.equal(h.timers.size, 1, 'bfcache return rearms midnight');
 });
+
+// jellyfin-web dispatches a bubbling legacy `pagehide` on the view it leaves at every in-app navigation (window sees it
+// with that view as its target). Only the document's own unload stops Status Tags; a back/forward-cache hide keeps them.
+test('an in-app navigation (jellyfin-web\'s view pagehide) and a bfcache hide keep the midnight and retry timers', async t => {
+  const h = setup(t, { captureTimers: true, series: { [SERIES]: { retry: true } } });
+  h.show(show(), h.hosts[0], SERIES);
+  await h.flush();
+  assert.equal(h.timers.size, 2, 'midnight plus one schedule retry');
+  const view = h.document.body.appendChild(Object.assign(h.document.createElement('div'), { className: 'page' }));
+  view.dispatchEvent(new h.window.CustomEvent('pagehide', { bubbles: true }));
+  assert.equal(h.timers.size, 2, 'the view change leaves Status Tags running');
+  h.window.dispatchEvent(new h.window.PageTransitionEvent('pagehide', { persisted: true }));
+  assert.equal(h.timers.size, 2, 'a page kept for back/forward may be shown again');
+});

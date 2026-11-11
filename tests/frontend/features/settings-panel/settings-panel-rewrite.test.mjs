@@ -79,6 +79,23 @@ test('SETTINGS-PANEL-01: a local save finishing during the request keeps the new
   assert.equal(h.JE.userConfig.settingsRevision, 'local-r2');
 });
 
+// jellyfin-web dispatches a bubbling legacy `pagehide` on the view it leaves when it shows the next one, after the address
+// has changed (lab: 140-240 ms after its pushState), so a panel opened in between saw it. Only the document's own pagehide
+// is the page going away.
+for (const [name, hide, opens] of [
+  ["jellyfin-web's view pagehide (an in-app navigation)", h => h.document.body.appendChild(Object.assign(h.document.createElement('div'), { className: 'page' }))
+    .dispatchEvent(new h.window.CustomEvent('pagehide', { bubbles: true })), true],
+  ["the document's own pagehide", h => h.window.dispatchEvent(new h.window.PageTransitionEvent('pagehide', { persisted: false })), false],
+]) test(`an opening panel ${opens ? 'still opens after' : 'is cancelled by'} ${name}`, async t => {
+  const pending = deferred();
+  const h = panelHarness(t, { ajax: request => request.type === 'GET' ? pending.promise : null });
+  const opening = h.JE.showEnhancedPanel();
+  hide(h);
+  pending.resolve(h.snapshot('loaded-r1'));
+  await opening;
+  assert.equal(!!h.panel(), opens);
+});
+
 for (const [name, answer] of [
   ['an invalid transport', { Revision: 'r9', Settings: { AutoPauseEnabled: 'yes' } }],
   ['another caller authority', 'admin-mismatch'],

@@ -99,11 +99,15 @@ export function decodeLibraryItem(value:unknown):LibraryItem {
  if(r.ProviderIds!=null){const ids=record(r.ProviderIds);result.ProviderIds={}; for(const k of ['Tmdb','tmdb'] as const){const v=ids[k];if(v!=null){if(typeof v!=='string')throw new Error('Invalid provider ID');result.ProviderIds[k]=v;}}}
  return result;
 }
-export interface SeerrItem {id?:number;mediaType?:string;posterPath?:string;poster_path?:string;title?:string;name?:string;releaseDate?:string;firstAirDate?:string}
+export interface SeerrItem {id?:number;mediaType?:string;posterPath?:string;poster_path?:string;title?:string;name?:string;releaseDate?:string;firstAirDate?:string;jellyfinMediaId?:string}
 export function decodeSeerrItem(value:unknown):SeerrItem {
  const r=record(value), result:SeerrItem={};
  for(const k of ['mediaType','posterPath','poster_path','title','name','releaseDate','firstAirDate'] as const){const v=r[k];if(v!=null){if(typeof v!=='string')throw new Error(`Invalid Seerr ${k}`);result[k]=v;}}
  if(r.id!=null){if(typeof r.id!=='number'||!Number.isFinite(r.id))throw new Error('Invalid Seerr ID');result.id=r.id;}
+ // The Jellyfin item Seerr links the title to: set only for a title the library has.
+ const info=r.mediaInfo&&typeof r.mediaInfo==='object'&&!Array.isArray(r.mediaInfo)?record(r.mediaInfo):{};
+ const linked=[info.jellyfinMediaId,info.jellyfinMediaId4k].find((id):id is string=>typeof id==='string'&&id!=='');
+ if(linked)result.jellyfinMediaId=linked;
  return result;
 }
 export function decodeSeerrSearch(value:unknown):{results:SeerrItem[]} {

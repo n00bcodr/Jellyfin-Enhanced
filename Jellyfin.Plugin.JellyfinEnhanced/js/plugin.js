@@ -217,7 +217,9 @@
       }
       if (attempt < MANIFEST_ATTEMPTS) console.warn("🪼 Jellyfin Enhanced: Could not load the component-script manifest; retrying.", lastError);
     }
-    throw new Error(`Could not load the component-script manifest: ${lastError instanceof Error ? lastError.message : String(lastError)}`);
+    const status = typeof lastError === "object" && lastError !== null && "status" in lastError ? lastError.status : void 0;
+    const reason = lastError instanceof Error ? lastError.message : typeof status === "number" ? `HTTP ${status}` : String(lastError);
+    throw new Error(`Could not load the component-script manifest: ${reason}`);
   }
   function yieldToEventLoop() {
     return new Promise((resolve) => {
