@@ -375,6 +375,43 @@ public class ActivityFeedHiddenItemsTests
     }
 
     [Fact]
+    public void AnOlderPlayOfAHiddenVersionMergesOnlyWhenTheViewerCanReachIt()
+    {
+        using var env = new CoreFixture();
+        var library = new FakeLibrary();
+        var movies = Guid.NewGuid();
+        var primary = library.Add(new Movie { Id = Guid.NewGuid(), Name = "Big Buck Bunny" }, movies);
+        var hd = library.Add(new Movie { Id = Guid.NewGuid(), Name = "Big Buck Bunny", PrimaryVersionId = primary.Id, OwnerId = primary.Id }, movies);
+        var gio = Viewer(); var gloria = Viewer();
+        library.ViewerLibraries[gio.Id] = [movies];
+        // The newest play is a partial one of the title; the completed play of a hidden
+        // version sits past the pages the feed reads.
+        var entries = new List<ActivityEntry> { Entry(gio, primary.Id, "Watched", "2026-11-10T00:00:00Z", progress: 0.2) };
+        for (var i = 0; i < 70; i++)
+        {
+            var other = library.Add(new Movie { Id = Guid.NewGuid(), Name = $"Filler {i}" }, movies);
+            entries.Add(Entry(gloria, other.Id, "Watched", $"2026-11-09T{i / 60:00}:{i % 60:00}:00Z", progress: 0.5));
+        }
+        entries.Add(Entry(gio, hd.Id, "Watched", "2026-11-01T00:00:00Z", completed: true, progress: 1));
+
+        foreach (var limit in new[] { 1, 50 })
+        {
+            var first = Builder(library, env, null, gio, gloria).Build(entries, [], gio, false, new PluginConfiguration(), limit)[0];
+            Assert.Equal((primary.Id.ToString("N"), true, 1.0), (CardId(first), first.Completed, first.Progress));
+        }
+
+        // Parental rules block the version: its play must not reach the row, and it is never loaded.
+        library.ParentalBlocked.Add(hd.Id);
+        library.Lookups.Clear();
+        foreach (var limit in new[] { 1, 50 })
+        {
+            var first = Builder(library, env, null, gio, gloria).Build(entries, [], gio, false, new PluginConfiguration(), limit)[0];
+            Assert.Equal((primary.Id.ToString("N"), false, 0.2), (CardId(first), first.Completed, first.Progress));
+        }
+        Assert.DoesNotContain(hd.Id, library.Lookups);
+    }
+
+    [Fact]
     public void AFailingVersionOrByNameLookupKeepsTheOrdinaryRows()
     {
         using var env = new CoreFixture();
