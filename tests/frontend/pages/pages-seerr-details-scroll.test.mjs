@@ -71,7 +71,8 @@ test('three failures show the retry button, which resumes the same feed', async 
   await h.release();
   assert.equal(loads, h.P.CONFIG.retry.maxAttempts);
   const button = h.document.querySelector('.je-retry-row button');
-  assert.equal(button.textContent, 'Tap to retry');
+  assert.equal(button.textContent, 'Try again');
+  assert.equal(h.document.querySelector('.je-retry-row > span').textContent, 'Seerr did not answer.');
   failing = false;
   button.click();
   await h.settle();

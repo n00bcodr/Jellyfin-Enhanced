@@ -110,7 +110,7 @@
       if (signal.aborted || !isUserActive(status)) return null;
       const keywordId = await searchTmdbKeyword(tagName, signal);
       if (signal.aborted || !keywordId) return null;
-      return { tvId: keywordId, movieId: keywordId, title: translate(JE, "discovery_more_with_tag", { tag: tagName }) };
+      return { tvId: keywordId, movieId: keywordId, title: translate(JE, "discovery_more_with_tag", { tag: tagName }), name: tagName };
     }
     base.createDiscovery({
       key: "tag",

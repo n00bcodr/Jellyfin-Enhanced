@@ -1563,6 +1563,36 @@ export const bootstrapSchema = {
         "JellyseerrExcludeLibraryItems": {
           "type": "boolean"
         },
+        "JellyseerrFilterContentRating": {
+          "type": "boolean"
+        },
+        "JellyseerrFilterGenres": {
+          "type": "boolean"
+        },
+        "JellyseerrFilterKeywords": {
+          "type": "boolean"
+        },
+        "JellyseerrFilterLanguage": {
+          "type": "boolean"
+        },
+        "JellyseerrFilterRole": {
+          "type": "boolean"
+        },
+        "JellyseerrFilterRuntime": {
+          "type": "boolean"
+        },
+        "JellyseerrFilterScore": {
+          "type": "boolean"
+        },
+        "JellyseerrFilterStreaming": {
+          "type": "boolean"
+        },
+        "JellyseerrFilterVotes": {
+          "type": "boolean"
+        },
+        "JellyseerrFilterYear": {
+          "type": "boolean"
+        },
         "JellyseerrSearchExcludeLibraryItems": {
           "type": "boolean"
         },
@@ -2302,6 +2332,16 @@ export const bootstrapSchema = {
         "JellyseerrEnabled",
         "JellyseerrExcludeBlocklistedItems",
         "JellyseerrExcludeLibraryItems",
+        "JellyseerrFilterContentRating",
+        "JellyseerrFilterGenres",
+        "JellyseerrFilterKeywords",
+        "JellyseerrFilterLanguage",
+        "JellyseerrFilterRole",
+        "JellyseerrFilterRuntime",
+        "JellyseerrFilterScore",
+        "JellyseerrFilterStreaming",
+        "JellyseerrFilterVotes",
+        "JellyseerrFilterYear",
         "JellyseerrSearchExcludeLibraryItems",
         "JellyseerrShowAdvanced",
         "JellyseerrShowCollectionDiscovery",

@@ -23,9 +23,6 @@
   function isRecord(value) {
     return typeof value === "object" && value !== null && !Array.isArray(value);
   }
-  function isSeerrResult(value) {
-    return isRecord(value);
-  }
   function isAbortError(error) {
     return isRecord(error) && error.name === "AbortError";
   }
@@ -70,17 +67,27 @@
   function decodeCredits(value) {
     if (value === null || value === void 0) return [];
     if (!isRecord(value)) throw decodeError("credits");
-    const rows = [value.cast, value.crew].flatMap((list) => Array.isArray(list) ? list : []);
-    const seen = /* @__PURE__ */ new Set();
-    const results = [];
-    for (const row of rows) {
-      if (!isSeerrResult(row) || !row.id || !row.mediaType) continue;
-      const key = resultKey(row);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      results.push(row);
+    const said = (words) => typeof words === "string" ? words.trim() : "";
+    const merged = /* @__PURE__ */ new Map();
+    for (const [list, cast] of [[value.cast, true], [value.crew, false]]) {
+      for (const row of Array.isArray(list) ? list : []) {
+        if (!isRecord(row) || !row.id || !row.mediaType) continue;
+        const key = resultKey(row);
+        let entry = merged.get(key);
+        if (!entry) {
+          entry = { row, acted: false, characters: [], jobs: [], departments: [], crew: [] };
+          merged.set(key, entry);
+        }
+        if (cast) entry.acted = true;
+        const role = said(cast ? row.character : row.job);
+        const roles = cast ? entry.characters : entry.jobs;
+        const department = cast ? "" : said(row.department);
+        if (role && !cast && !roles.includes(role)) entry.crew.push([role, department]);
+        if (role && !roles.includes(role)) roles.push(role);
+        if (department && !entry.departments.includes(department)) entry.departments.push(department);
+      }
     }
-    return results;
+    return Array.from(merged.values(), ({ row, acted, characters, jobs, departments, crew }) => ({ ...row, jeCredit: { acted, characters, jobs, departments, crew } }));
   }
   function namedRows(value) {
     return rowsOf(value).filter((row) => isRecord(row) && typeof row.id === "number" && typeof row.name === "string");
@@ -176,7 +183,7 @@
       const items = await fetchPersonCredits(tmdbPersonId, signal);
       if (signal.aborted) return null;
       console.debug(`${logPrefix} Fetched ${items.length} credits for ${personInfo.name}`);
-      return { items, title: translate(JE, "discovery_more_from_person", { person: personInfo.name }) };
+      return { items, title: translate(JE, "discovery_more_from_person", { person: personInfo.name }), name: personInfo.name };
     }
     base.createDiscovery({
       key: "person",

@@ -1,0 +1,24 @@
+/* Where the open menu covers the list (a phone, a narrow window): a change that takes long shows in the menu's foot that it is still being fetched (the same circle, after the same moment). */
+/* (In the middle of the foot: beside "Done" it would read as Done's own, as if closing the menu had to wait.) */
+.jellyseerr-sort-menu .jellyseerr-menu-foot { position: relative; }
+.jellyseerr-menu-busy { display: none; position: absolute; inset-inline-start: max(50%, calc(var(--jellyseerr-clear-end, 0px) + 1.7em)); top: 50%; transform: translate(-50%, -50%); margin: 0; pointer-events: none; }
+html[dir="rtl"] .jellyseerr-menu-busy { transform: translate(50%, -50%); }
+.jellyseerr-menu-busy .mdl-spinner { display: block; width: 1.4em; height: 1.4em; }
+/* Where the menu stands over the list's own circle (data-over-list: a phone, a TV, a narrow window), its foot shows it instead. On a TV at the foot's end (where the rows' values end; "Clear filters" has the remote's ground). */
+html:has(.jellyseerr-discovery-section .itemsContainer[aria-busy="true"]) .jellyseerr-sort-menu[data-over-list] .jellyseerr-menu-busy { display: block; animation: jellyseerr-busy-in 0s linear .8s both; }
+html.layout-tv .jellyseerr-menu-busy, html.layout-tv[dir="rtl"] .jellyseerr-menu-busy { inset-inline: auto 1em; transform: translateY(-50%); }
+
+/* A list being replaced (a new order, a filter) stays on screen, dimmed, until the new one is in. (After a moment: a quick answer does not flicker.) */
+.jellyseerr-discovery-section .itemsContainer[aria-busy="true"] { opacity: .45; pointer-events: none; transition: opacity .15s linear .2s; }
+/* A change that takes long shows that it is still working: Jellyfin's own loading circle over the list, after
+   a moment, in sight wherever the section is read. It takes no room and no presses. */
+/* (Read mid-list it stands in the middle of the screen, as Jellyfin's own does; at the join it rests on the first row's posters, under their pills, so it is not read as one card's mark.) */
+.jellyseerr-busy { display: none; position: sticky; top: calc(50vh - 5.8em); z-index: 2; height: 0; justify-content: center; overflow: visible; pointer-events: none; }
+.jellyseerr-discovery-section:has(.itemsContainer[aria-busy="true"]) .jellyseerr-busy { display: flex; animation: jellyseerr-busy-in 0s linear .8s both; }
+/* A menu standing over any part of it shows the circle in its own foot instead (discovery-menu.js, data-over-list). */
+html:has(.jellyseerr-sort-menu[data-over-list]) .jellyseerr-discovery-section:has(.itemsContainer) .jellyseerr-busy { display: none; }
+@keyframes jellyseerr-busy-in { from { visibility: hidden; } to { visibility: visible; } }
+.jellyseerr-busy .mdl-spinner { flex: none; width: 2.6em; height: 2.6em; margin-top: 4.5em; }
+/* (So does the line that said nothing matched the filters before: it is as old as the list.) */
+.jellyseerr-discovery-section .itemsContainer[aria-busy="true"] ~ .jellyseerr-filters-none { opacity: .45; pointer-events: none; transition: opacity .15s linear .2s; }
+@media (prefers-reduced-motion: reduce) { .jellyseerr-discovery-section .itemsContainer[aria-busy="true"], .jellyseerr-discovery-section .itemsContainer[aria-busy="true"] ~ .jellyseerr-filters-none { transition: none; } }

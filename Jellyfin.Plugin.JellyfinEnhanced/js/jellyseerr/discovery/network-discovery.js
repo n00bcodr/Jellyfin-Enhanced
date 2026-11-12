@@ -205,7 +205,8 @@
         tvId: tvNetworkId || (tvByCompany ? companyId : null),
         movieId: companyId,
         tvSource: tvNetworkId ? "network" : "company",
-        title: translate(JE, "discovery_more_from_studio", { studio: studioInfo.name })
+        title: translate(JE, "discovery_more_from_studio", { studio: studioInfo.name }),
+        name: studioInfo.name
       };
     }
     base.createDiscovery({

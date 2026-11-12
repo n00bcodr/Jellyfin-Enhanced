@@ -1,14 +1,15 @@
 /** Pure discovery logic. Nothing here touches the document, the network or a global. */
 import type {
-    FeedIds, FeedPage, FilterMode, GenreListEntry, GenreSliderEntry, NamedTmdbInfo, SeerrResult
+    FeedIds, FeedPage, FilterMode, GenreListEntry, GenreSliderEntry, NamedTmdbInfo, SeerrResult, SortOption
 } from './types';
 
 export const FILTER_MODES = { MIXED: 'mixed', MOVIES: 'movies', TV: 'tv' } as const;
-export const SORT_OPTIONS = [
-    { value: '', label: 'Popular' },
-    { value: 'vote_average.desc', label: 'Top Rated' },
-    { value: 'release_date.desc', label: 'Newest' },
-    { value: 'release_date.asc', label: 'Oldest' }
+export const SORT_OPTIONS: readonly SortOption[] = [
+    { value: '', label: 'Popular', labelKey: 'discovery_sort_popular' },
+    { value: 'vote_average.desc', label: 'Top rated', labelKey: 'discovery_sort_top_rated' },
+    { value: 'vote_count.desc', label: 'Most votes', labelKey: 'discovery_sort_most_votes' },
+    { value: 'release_date.desc', label: 'Newest', labelKey: 'discovery_sort_newest' },
+    { value: 'release_date.asc', label: 'Oldest', labelKey: 'discovery_sort_oldest' }
 ];
 /** TMDB refuses discover pages beyond 500 (Seerr answers HTTP 500) even when it reports thousands. */
 export const TMDB_MAX_PAGE = 500;
@@ -72,6 +73,8 @@ export function tvSortValue(sort: string): string { return sort.replace('release
 const dateOf = (item: SeerrResult): string => text(item.releaseDate) || text(item.firstAirDate);
 // Spoiler Guard keeps a hidden score in jeSortRating, so a protected title doesn't sink.
 const ratingOf = (item: SeerrResult): number => Number(item.jeSortRating) || Number(item.voteAverage) || 0;
+// Spoiler Guard keeps a hidden vote count in jeSortVotes too, for the same reason.
+const votesOf = (item: SeerrResult): number => Number(item.jeSortVotes || item.voteCount) || 0;
 
 /** Client-side ordering; the empty sort keeps the API's order and the same array. */
 export function sortResults(results: SeerrResult[], sortBy: string): SeerrResult[] {
@@ -79,6 +82,8 @@ export function sortResults(results: SeerrResult[], sortBy: string): SeerrResult
     const sorted = [...results];
     if (sortBy === 'vote_average.desc') {
         sorted.sort((a, b) => ratingOf(b) - ratingOf(a));
+    } else if (sortBy === 'vote_count.desc') {
+        sorted.sort((a, b) => votesOf(b) - votesOf(a));
     } else if (sortBy === 'release_date.desc') {
         sorted.sort((a, b) => dateOf(b).localeCompare(dateOf(a)));
     } else if (sortBy === 'release_date.asc') {
@@ -237,21 +242,37 @@ export function isNullablePositiveInt(value: unknown): value is number | null {
 export function isUserActive(status: unknown): boolean { return isRecord(status) && !!status.active; }
 export function hasItemType(item: unknown, type: string): boolean { return isRecord(item) && item.Type === type; }
 
-/** Seerr credits, merged and deduplicated by media type and id. */
+/**
+ * Seerr credits, merged and deduplicated by media type and id. A title the person has several credits in
+ * (two parts, or a part and a job) is one result that keeps them all: the parts played from its cast rows,
+ * the jobs held from its crew rows, each once, in the order Seerr gave them, as `jeCredit` (see JeCredit).
+ */
 export function decodeCredits(value: unknown): SeerrResult[] {
     if (value === null || value === undefined) return [];
     if (!isRecord(value)) throw decodeError('credits');
-    const rows = [value.cast, value.crew].flatMap(list => Array.isArray(list) ? list : []);
-    const seen = new Set<string>();
-    const results: SeerrResult[] = [];
-    for (const row of rows) {
-        if (!isSeerrResult(row) || !row.id || !row.mediaType) continue;
-        const key = resultKey(row);
-        if (seen.has(key)) continue;
-        seen.add(key);
-        results.push(row);
+    const said = (words: unknown): string => typeof words === 'string' ? words.trim() : '';
+    interface Merged { row: Record<string, unknown>; acted: boolean; characters: string[]; jobs: string[]; departments: string[]; crew: Array<[string, string]> }
+    const merged = new Map<string, Merged>();
+    for (const [list, cast] of [[value.cast, true], [value.crew, false]] as const) {
+        for (const row of Array.isArray(list) ? list : []) {
+            if (!isRecord(row) || !row.id || !row.mediaType) continue;
+            const key = resultKey(row);
+            let entry = merged.get(key);
+            if (!entry) {
+                entry = { row, acted: false, characters: [], jobs: [], departments: [], crew: [] };
+                merged.set(key, entry);
+            }
+            if (cast) entry.acted = true;
+            const role = said(cast ? row.character : row.job);
+            const roles = cast ? entry.characters : entry.jobs;
+            const department = cast ? '' : said(row.department);
+            if (role && !cast && !roles.includes(role)) entry.crew.push([role, department]);
+            if (role && !roles.includes(role)) roles.push(role);
+            if (department && !entry.departments.includes(department)) entry.departments.push(department);
+        }
     }
-    return results;
+    return Array.from(merged.values(), ({ row, acted, characters, jobs, departments, crew }) =>
+        ({ ...row, jeCredit: { acted, characters, jobs, departments, crew } }));
 }
 export interface CollectionParts { readonly parts: SeerrResult[]; readonly missing: SeerrResult[] }
 /** A collection's movies and the ones not fully available, oldest first. */

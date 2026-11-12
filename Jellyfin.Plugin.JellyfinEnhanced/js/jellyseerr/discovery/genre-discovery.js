@@ -129,7 +129,8 @@
       return {
         tvId: ids.tv,
         movieId: ids.movie,
-        title: translate(JE, "discovery_more_with_genre", { genre: genreInfo.name })
+        title: translate(JE, "discovery_more_with_genre", { genre: genreInfo.name }),
+        name: genreInfo.name
       };
     }
     base.createDiscovery({

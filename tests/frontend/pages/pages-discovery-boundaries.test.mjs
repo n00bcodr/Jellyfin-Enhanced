@@ -23,7 +23,13 @@ async function until(condition, label = 'condition') {
   assert.ok(condition(), `${label} was not reached`);
 }
 const feed = (ids, mediaType, totalPages = 3) => ({ results: ids.map(id => ({ id, mediaType })), totalPages });
-const ids = root => [...root.querySelectorAll('.card')].map(card => card.dataset.id).filter(id => id !== 'host').map(Number);
+// (The empty cards that hold a section's place while its first page loads are no titles.)
+const ids = root => [...root.querySelectorAll('.card:not(.jellyseerr-card-placeholder)')].map(card => card.dataset.id).filter(id => id !== 'host').map(Number);
+/** Chooses a sort order the way a viewer does: the sort button, then the item in its menu. */
+function chooseSort(h, section, value) {
+  section.querySelector('.jellyseerr-sort-btn').click();
+  h.document.querySelector(`.jellyseerr-sort-menu .actionSheetMenuItem[data-id="${value}"]`).click();
+}
 
 function setup(t, { hash, html = LIST_PAGE, routes = [], config = {}, items = {}, status = { active: true }, expectedConsoleErrors, user = 'user-a' } = {}) {
   const who = { user, server: 'server-a' };
@@ -87,10 +93,10 @@ test('genre discovery interleaves both feeds, names the section and offers the f
   await until(() => cardsOf(h).length === 4, 'first page');
   const section = h.section('genre');
   assert.deepEqual(cardsOf(h), [1, 11, 2, 12]);
-  assert.equal(section.querySelector('.sectionTitle').textContent, 'More from the genre - "Comedy"');
+  assert.equal(section.querySelector('.sectionTitle').textContent, 'More in Comedy');
   assert.equal(section.parentElement.id, 'list', 'section sits beside the list section');
   assert.equal(section.querySelectorAll('.jellyseerr-filter-btn').length, 3);
-  assert.equal(section.querySelector('.jellyseerr-sort-select').value, '');
+  assert.equal(section.querySelector('.jellyseerr-sort-btn').textContent, 'Popular');
   assert.equal(h.armed.count, 1);
 });
 
@@ -174,9 +180,7 @@ test('sort change abandons the older load, re-reads page 1 and sorts series on f
   const old = h.armed.load({ deficitPx: 10, pageBudget: 2 });
   await until(() => h.calls.some(call => call.path.endsWith('tv/genre/35?page=2')), 'the older load');
   const { signal } = h.calls.find(call => call.path.endsWith('tv/genre/35?page=2'));
-  const select = h.section('genre').querySelector('.jellyseerr-sort-select');
-  select.value = 'release_date.desc';
-  select.dispatchEvent(new h.window.Event('change'));
+  chooseSort(h, h.section('genre'), 'release_date.desc');
   assert.equal(signal.aborted, true, 'its request ends with it');
   await until(() => cardsOf(h).length === 2, 'sorted first page');
   late.resolve(feed([91], 'tv', 9));
@@ -194,9 +198,7 @@ test('DISCOVERY-RECOMMENDATIONS-021: sorting under a filter keeps the other type
   await until(() => h.armed.load, 'engine');
   const section = h.section('genre');
   section.querySelector('[data-mode="movies"]').click();
-  const select = section.querySelector('.jellyseerr-sort-select');
-  select.value = 'release_date.desc';
-  select.dispatchEvent(new h.window.Event('change'));
+  chooseSort(h, section, 'release_date.desc');
   await until(() => cardsOf(h).includes(31), 'sorted first page');
   assert.ok(section.querySelector('.itemsContainer').classList.contains('filter-movies'), 'the filter still hides the series');
   section.querySelector('[data-mode="mixed"]').click();
@@ -343,11 +345,7 @@ test('person credits merge cast and crew once, sort client-side and rebuild for 
   await until(() => h.section('person'), 'person section');
   const section = h.section('person');
   assert.deepEqual(ids(section), [2, 1, 3], 'mixed interleaves series and movies');
-  const select = section.querySelector('.jellyseerr-sort-select');
-  const sortBy = value => {
-    select.value = value;
-    select.dispatchEvent(new h.window.Event('change'));
-  };
+  const sortBy = value => chooseSort(h, section, value);
   sortBy('release_date.desc');
   assert.deepEqual(ids(section), [2, 1, 3], 'series use their first air date');
   sortBy('vote_average.desc');
@@ -383,7 +381,7 @@ test('DISCOVERY-RECOMMENDATIONS-007: a tag holding a literal percent sign keeps 
   ] });
   h.load('jellyseerr/discovery/tag-discovery.js');
   await until(() => h.section('tag') && ids(h.section('tag')).length === 2, 'tag section');
-  assert.equal(h.section('tag').querySelector('.sectionTitle').textContent, 'More with the tag - "100% Wolf"');
+  assert.equal(h.section('tag').querySelector('.sectionTitle').textContent, 'More tagged "100% Wolf"');
 });
 
 test('DISCOVERY-RECOMMENDATIONS-010: a tag keyword resolved for one account is not reused for the next', async t => {
@@ -719,6 +717,7 @@ test('filter and sort primitives keep their published contract', t => {
   assert.equal(h.document.querySelectorAll('#jellyseerr-filter-styles').length, 1);
   const header = f.createSectionHeader('T', 'demo', true, () => {}, () => {});
   assert.equal(header.querySelector('.sectionTitle').textContent, 'T');
-  assert.deepEqual([...header.querySelectorAll('button')].map(button => button.textContent), ['All', 'Movie', 'Series']);
-  assert.deepEqual([...header.querySelectorAll('option')].map(option => option.textContent), ['Popular', 'Top Rated', 'Newest', 'Oldest']);
+  assert.deepEqual([...header.querySelectorAll('.jellyseerr-filter-btn')].map(button => button.textContent), ['All', 'Movies', 'Series']);
+  assert.equal(header.querySelector('.jellyseerr-sort-btn').textContent, 'Popular');
+  assert.deepEqual(plain(f.SORT_OPTIONS.map(option => option.label)), ['Popular', 'Top rated', 'Most votes', 'Newest', 'Oldest']);
 });

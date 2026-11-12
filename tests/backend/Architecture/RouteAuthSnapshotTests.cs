@@ -18,7 +18,7 @@ namespace JE.Tests.Architecture;
 public class RouteAuthSnapshotTests(ITestOutputHelper output)
 {
     public const string SnapshotFile = "route-auth.snapshot.json";
-    public const int ExpectedRoutes = 203;
+    public const int ExpectedRoutes = 206;
     public const int ExpectedAnonymous = 12;
 
     public sealed record RouteEntry(string Verb, string Route, bool RequiresAuth, string Auth, string Action, bool ApiBehavior, string[] Parameters);
@@ -90,7 +90,7 @@ public class RouteAuthSnapshotTests(ITestOutputHelper output)
         Arch.VerifySnapshot(SnapshotFile, Render(entries));
     }
 
-    // The snapshot itself must keep the step-1 shape (PLAN.md Definition of done; 203 routes since the upstream sync added POST jellyseerr/watchlist), 12 anonymous, no
+    // The snapshot itself must keep the step-1 shape (PLAN.md Definition of done; 203 routes since the upstream sync added POST jellyseerr/watchlist, 206 since it added the three GET jellyseerr/filters/* routes), 12 anonymous, no
     // policies or roles, [ApiController] everywhere, and no duplicate (verb, template).
     [Fact]
     public void SnapshotHasTheStepOneShape()

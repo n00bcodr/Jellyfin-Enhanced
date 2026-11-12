@@ -263,6 +263,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Seerr
             {
                 query += $"&sort_by={sortBy}";
             }
+            // The filters the Seerr-fed feeds take, under TMDB's names.
+            query += Features.Seerr.Services.DiscoverFilters.ToTmdbTvQuery(ReadQueryValue);
 
             try
             {
@@ -919,6 +921,50 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Seerr
         public Task<IActionResult> GetTmdbTvGenres()
         {
             return ProxyJellyseerrRequest("/api/v1/genres/tv", HttpMethod.Get);
+        }
+
+        // The lists the discovery filters offer, from Seerr (which reads them from
+        // TMDB). None of them carries a title.
+        /// <summary>The languages the discovery filters offer (Seerr's <c>/api/v1/languages</c>).</summary>
+        [HttpGet("jellyseerr/filters/languages")]
+        [Authorize]
+        public Task<IActionResult> GetSeerrFilterLanguages()
+        {
+            return ProxyJellyseerrRequest("/api/v1/languages", HttpMethod.Get);
+        }
+
+        /// <summary>The content ratings for movies or series (<paramref name="mediaType"/> is <c>movie</c> or <c>tv</c>).</summary>
+        [HttpGet("jellyseerr/filters/certifications/{mediaType}")]
+        [Authorize]
+        public Task<IActionResult> GetSeerrFilterCertifications(string mediaType)
+        {
+            if (mediaType != "movie" && mediaType != "tv")
+            {
+                return Task.FromResult<IActionResult>(BadRequest(new { error = true, code = "invalid_media_type", message = "mediaType must be movie or tv." }));
+            }
+            return ProxyJellyseerrRequest($"/api/v1/certifications/{mediaType}", HttpMethod.Get);
+        }
+
+        /// <summary>
+        /// The streaming services for movies or series in a region: <paramref name="watchRegion"/>,
+        /// or the admin's DEFAULT_REGION when none is sent.
+        /// </summary>
+        [HttpGet("jellyseerr/filters/watchproviders/{mediaType}")]
+        [Authorize]
+        public Task<IActionResult> GetSeerrFilterWatchProviders(string mediaType, [FromQuery] string? watchRegion = null)
+        {
+            if (mediaType != "movie" && mediaType != "tv")
+            {
+                return Task.FromResult<IActionResult>(BadRequest(new { error = true, code = "invalid_media_type", message = "mediaType must be movie or tv." }));
+            }
+            var region = string.IsNullOrEmpty(watchRegion)
+                ? Shared.Tmdb.WatchProvidersBatch.DefaultRegion(JellyfinEnhanced.Instance?.Configuration?.DEFAULT_REGION)
+                : watchRegion;
+            if (!Shared.Tmdb.WatchProvidersBatch.IsValidRegion(region))
+            {
+                return Task.FromResult<IActionResult>(BadRequest(new { error = true, code = "invalid_region", message = "watchRegion must be a two-letter region code." }));
+            }
+            return ProxyJellyseerrRequest($"/api/v1/watchproviders/{(mediaType == "movie" ? "movies" : "tv")}?watchRegion={region}", HttpMethod.Get);
         }
 
         [HttpGet("jellyseerr/discover/genreslider/movie")]

@@ -261,6 +261,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             JellyseerrShowRecommended = true;
             JellyseerrShowRequestMoreOnSeries = true;
             JellyseerrShowNetworkDiscovery = true;
+            JellyseerrFilterYear = true;
+            JellyseerrFilterScore = true;
+            JellyseerrFilterVotes = true;
+            JellyseerrFilterRuntime = true;
+            JellyseerrFilterGenres = true;
+            JellyseerrFilterLanguage = true;
+            JellyseerrFilterContentRating = true;
+            JellyseerrFilterStreaming = true;
+            JellyseerrFilterKeywords = true;
+            JellyseerrFilterRole = true;
             JellyseerrShowGenreDiscovery = true;
             JellyseerrShowTagDiscovery = true;
             JellyseerrShowPersonDiscovery = true;
@@ -1026,6 +1036,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool JellyseerrShowRecommended { get; set; }
         public bool JellyseerrShowRequestMoreOnSeries { get; set; }
         public bool JellyseerrShowNetworkDiscovery { get; set; }
+        public bool JellyseerrFilterYear { get; set; }
+        public bool JellyseerrFilterScore { get; set; }
+        public bool JellyseerrFilterVotes { get; set; }
+        public bool JellyseerrFilterRuntime { get; set; }
+        public bool JellyseerrFilterGenres { get; set; }
+        public bool JellyseerrFilterLanguage { get; set; }
+        public bool JellyseerrFilterContentRating { get; set; }
+        public bool JellyseerrFilterStreaming { get; set; }
+        public bool JellyseerrFilterKeywords { get; set; }
+        public bool JellyseerrFilterRole { get; set; }
         public bool JellyseerrShowGenreDiscovery { get; set; }
         public bool JellyseerrShowTagDiscovery { get; set; }
         public bool JellyseerrShowPersonDiscovery { get; set; }

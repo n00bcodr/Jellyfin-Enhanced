@@ -333,7 +333,8 @@ Find related movies and series beyond your library on Jellyfin genre, studio/net
 
 1. Enable the relevant discovery switch below.
 2. Open the corresponding page from your library.
-3. Where both media types are available, choose **All**, **Movie**, or **Series**. Use **Popular**, **Top Rated**, **Newest**, or **Oldest** where supported.
+3. Where both media types are available, choose **All**, **Movies**, or **Series**. Choose the order with the sort button beside them: **Popular**, **Top rated**, **Most votes**, **Newest**, or **Oldest**.
+4. To narrow the list further, press **Filters** (the filter icon) and set what you want. See [Filters, sort and roles](#filters-sort-and-roles).
 
 ![More from the genre "Crime" section with All, Movie and Series filters, below the library's Crime results](../images/seerr/discovery-genre.webp)
 
@@ -364,6 +365,37 @@ Tag discovery prefers an exact TMDB keyword match, otherwise the first keyword r
 Collection details show **Missing from** followed by the collection name and availability counts. Fully available movies are excluded and remaining parts are sorted by release date. This is a fixed set without the general discovery filter/sort controls. Use its cards to request missing movies. Collection parts remain subject to shared exclusions, Hidden Content, and [parental filtering](#parental-ratings).
 
 ![Missing from Harry Potter Collection section with seven requestable movies](../images/seerr/discovery-collection.webp)
+
+#### Filters, sort and roles
+
+The section's header holds its title, then one row: what the list shows, the **All** / **Movies** / **Series** tabs, the **Filters** button and the sort button, which names the current order. The sort button opens a menu with the current order ticked. **Most votes** puts the titles with the most TMDB votes first.
+
+**Filters** opens a menu of groups. Each group's row says what is set in it; open a group to set it. A change takes effect at once and the menu stays open until you close it, so you can set several. While the new list loads, the old one stays on screen, dimmed, and a loading circle appears if it takes a moment.
+
+| Filter | What you set |
+| --- | --- |
+| **Released** | A range: a year (`2015`), a month (`2015-06`) or a day (`2015-06-30`), for either end or both. |
+| **Score** | A range of TMDB user scores, from 0 to 10, with one decimal at most. |
+| **Votes** | A range for the number of TMDB user votes. |
+| **Runtime** | A range in whole minutes. |
+| **Genres** | Titles in all of the genres ticked. On a genre page, that genre is already applied. |
+| **Original language** | Titles originally in any of the languages ticked. |
+| **Content rating** | Titles with any of the ratings ticked, from the ratings used in the admin's **Default Region** (US ratings where TMDB has none for it). |
+| **Streaming services** | Titles on any of the services ticked, in the admin's **Default Region**. |
+| **Keywords** / **Without keywords** | Search TMDB keywords; titles must have all of the ones ticked under **Keywords** and none of the ones under **Without keywords**. |
+| **Role** | Person pages only: titles where the person did any of the roles ticked, **Acting** or a crew department such as **Directing** or **Writing**. |
+
+What is set shows on a line under the header, each with a button to remove it, and **Clear filters** removes them all. If nothing matches, the section says so and offers **Clear filters**. A section starts with no filters, on **All** and **Popular**, each time you open its page.
+
+On list pages (genre, studio/network and tag), Seerr applies the filters to its feeds. A person page already has the person's titles, so it filters them in the browser and offers only **Role**, **Released**, **Score**, **Votes**, **Genres** and **Original language**. There, a title with no date is outside every period, and one with no score or votes is under every minimum.
+
+On a person page, each card says what the person did in that title, on a line under its name: the part played (**as** the character) and the jobs held, each on its own line when the person did both. A line that does not fit the card drops whole parts or jobs from its end and says how many it left out (`Director, Writer +1`); hover the card for all of them. With **Role** set to a crew department, the jobs come first and the jobs in that department lead.
+
+!!! note "Spoiler Guard"
+
+    For a title protected by [Spoiler Guard](../spoiler-guard/spoiler-guard-features.md#what-spoiler-guard-protects), the part played is left out when titles or descriptions are hidden, and a hidden score or vote count still sorts the title under **Top rated** and **Most votes** without being shown. The **Score** and **Votes** filters treat a hidden score or vote count as missing.
+
+Admin settings under **Seerr** → **Discovery & UI Extras** → **Filters in the "More" sections** ([full reference](seerr-settings.md#discovery-filters)) turn each filter off for everyone. All are on by default.
 
 #### Configure
 

@@ -1,7 +1,17 @@
 // /js/jellyseerr/discovery/discovery-filter-utils.js
-// Shared utilities for the discovery sections, published as JE.discoveryFilter.
+// Shared utilities for the discovery sections, published as JE.discoveryFilter, and the sections' parts
+// every discovery entry reads at call time, published in upstream's load order before it:
+// JE.discoveryStyles, JE.discoveryBusy, JE.discoveryMenu, JE.discoveryRoles, JE.discoverySection and
+// JE.discoveryFilters (one copy each: their state lives only here).
 import { discoveryHost, type SeerrDiscoveryHost } from '../host-discovery';
+import { createDiscoveryBusy } from './busy';
 import { createCardRendering } from './card-rendering';
+import { injectDiscoveryStyles } from './discovery-styles';
+import { createFilterPanel } from './filter-panel';
+import { createDiscoveryMenu } from './menu';
+import { createDiscoveryRoles } from './roles';
+import { createSay } from './say';
+import { createDiscoverySection } from './section';
 import { applyFilterVisibility, createControls, injectFilterStyles } from './controls';
 import {
     filterByMediaType, FILTER_MODES, hasBothTypes, interleaveArrays, resultHasBothTypes, SORT_OPTIONS
@@ -39,6 +49,15 @@ function createDiscoveryFilter(JE: SeerrDiscoveryHost, client: ReturnType<typeof
 (function () {
     'use strict';
     const { JE, api } = discoveryHost();
+    const label = createSay(JE);
+    // (The scroll engine's retry row uses the sections' stylesheet outside the sections too.)
+    injectDiscoveryStyles();
+    JE.discoveryStyles = { inject: injectDiscoveryStyles };
+    JE.discoveryBusy = createDiscoveryBusy();
+    JE.discoveryMenu = createDiscoveryMenu(JE);
+    JE.discoveryRoles = createDiscoveryRoles(label);
+    JE.discoverySection = createDiscoverySection(JE);
+    JE.discoveryFilters = createFilterPanel(JE, label);
     injectFilterStyles();
     JE.discoveryFilter = createDiscoveryFilter(JE, api);
 })();

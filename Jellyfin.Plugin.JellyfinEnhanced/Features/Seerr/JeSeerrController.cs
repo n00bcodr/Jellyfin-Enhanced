@@ -69,32 +69,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Seerr
             return active;
         }
 
-        // Seerr's discover API accepts these params (verified live against
-        // Seerr 3.2.0). The correct names are `keywords`, `watchProviders`,
-        // `watchRegion` — no `with*` prefix; Seerr rejects `withCompanies`
-        // / `withNetworks` / `withOriginalLanguage` as `Unknown query parameter`.
-        // `studio` and `network` are accepted on /discover/movies and
-        // /discover/tv respectively (handled via path routes).
-        private static readonly string[] DiscoverFilterParams = {
-            "sortBy", "primaryReleaseDateGte", "primaryReleaseDateLte",
-            "firstAirDateGte", "firstAirDateLte",
-            "voteAverageGte", "voteAverageLte",
-            "withRuntimeGte", "withRuntimeLte",
-            "certification", "watchRegion", "language",
-            "keywords", "watchProviders"
-        };
-
+        /// <summary>Adds the request's discover filters to a Seerr path (see <see cref="Services.DiscoverFilters"/>).</summary>
         private string AppendDiscoverFilters(string basePath)
         {
-            var sb = new StringBuilder(basePath);
-            foreach (var param in DiscoverFilterParams)
-            {
-                if (Request.Query.TryGetValue(param, out var value) && !string.IsNullOrEmpty(value))
-                {
-                    sb.Append($"&{param}={Uri.EscapeDataString(value!)}");
-                }
-            }
-            return sb.ToString();
+            return Services.DiscoverFilters.AppendToSeerrPath(basePath, ReadQueryValue);
+        }
+
+        /// <summary>The request's query value for <paramref name="name"/>, or null when it has none.</summary>
+        private string? ReadQueryValue(string name)
+        {
+            return Request.Query.TryGetValue(name, out var value) ? value.ToString() : null;
         }
 
         private static bool IsCacheableApiPath(string apiPath, HttpMethod method)

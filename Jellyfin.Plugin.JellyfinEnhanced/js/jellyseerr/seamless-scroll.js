@@ -132,11 +132,6 @@
     };
     return throttled;
   }
-  var ACTION_ROW_CSS = {
-    horizontal: "display: inline-flex; justify-content: center; align-items: center; vertical-align: middle; padding: 1em 1.5em; box-sizing: border-box;",
-    vertical: "display: flex; justify-content: center; align-items: center; padding: 1.5em; width: 100%; box-sizing: border-box;",
-    button: "padding: 0.8em 1.5em; border-radius: 4px; background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.8); border: 1px solid rgba(255,255,255,0.2); cursor: pointer; font-size: 1em; display: inline-flex; align-items: center; justify-content: center;"
-  };
   function createScrollEngine(JE2) {
     function cleanupInfiniteScroll2(state) {
       if (state._teardown) {
@@ -190,27 +185,33 @@
           retryRow = null;
         }
       };
-      const showRetryRow = (label = "Tap to retry", icon = null) => {
+      const showRetryRow = (kind = "failed") => {
         if (retryRow || destroyed) return;
+        const text = (key, fallback) => {
+          const value = typeof JE2.t === "function" ? JE2.t(key) : "";
+          return value && value !== key ? value : fallback;
+        };
         const row = document.createElement("div");
-        row.className = "je-retry-row";
-        row.style.cssText = horizontal ? ACTION_ROW_CSS.horizontal : ACTION_ROW_CSS.vertical;
+        row.className = `je-retry-row jellyseerr-section-message${horizontal ? " jellyseerr-section-message-inline" : ""}`;
+        row.setAttribute("role", "status");
         const button = document.createElement("button");
         button.type = "button";
-        if (label) {
+        button.className = "raised emby-button jellyseerr-section-message-action";
+        if (kind === "failed") {
+          const message = document.createElement("span");
+          message.textContent = text("discovery_load_failed", "Seerr did not answer.");
+          row.appendChild(message);
+          button.textContent = text("discovery_retry", "Try again");
+        } else {
+          const label = text("discovery_look_further", "Look for more");
           button.title = label;
           button.setAttribute("aria-label", label);
-        }
-        if (icon) {
           const iconEl = document.createElement("span");
           iconEl.className = "material-icons";
-          iconEl.textContent = icon;
+          iconEl.textContent = "refresh";
           iconEl.setAttribute("aria-hidden", "true");
           button.appendChild(iconEl);
-        } else {
-          button.textContent = label;
         }
-        button.style.cssText = ACTION_ROW_CSS.button;
         button.addEventListener("click", () => {
           retryCount = 0;
           emptyPages = 0;
@@ -313,7 +314,7 @@
             if (emptyPages >= CONFIG.maxConsecutiveEmptyPages) {
               console.debug(`${logPrefix} ${emptyPages} consecutive pages rendered nothing; pausing until "Keep looking" is pressed`);
               paused = true;
-              showRetryRow(null, "refresh");
+              showRetryRow("further");
               break;
             }
             if (lastMeasuredAhead !== null && geometry.ahead <= lastMeasuredAhead + 1) {
@@ -321,7 +322,7 @@
               if (stuckFills >= CONFIG.maxStuckFills) {
                 console.warn(`${logPrefix} Buffer measurement hasn't grown after ${stuckFills} loads despite non-empty pages; pausing to avoid a runaway fetch loop`);
                 paused = true;
-                showRetryRow(null, "refresh");
+                showRetryRow("further");
                 break;
               }
             } else {

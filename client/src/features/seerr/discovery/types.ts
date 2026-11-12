@@ -18,7 +18,25 @@ export interface SeerrResult {
     readonly releaseDate?: unknown;
     readonly firstAirDate?: unknown;
     readonly voteAverage?: unknown;
+    readonly voteCount?: unknown;
     readonly jeSortRating?: unknown;
+    /** Spoiler Guard keeps a guarded title's vote count here, so Most votes keeps it in place. */
+    readonly jeSortVotes?: unknown;
+    readonly genreIds?: unknown;
+    readonly originalLanguage?: unknown;
+    /** On a person's titles: what the person did in this one (person discovery merges the credits). */
+    readonly jeCredit?: JeCredit;
+}
+/**
+ * What a person did in one title: the parts played (cast rows), the jobs held (crew rows), each once, in
+ * Seerr's order; `crew` pairs each job with its department (TMDB's names, "Directing").
+ */
+export interface JeCredit {
+    readonly acted: boolean;
+    readonly characters: readonly string[];
+    readonly jobs: readonly string[];
+    readonly departments: readonly string[];
+    readonly crew: ReadonlyArray<readonly [string, string]>;
 }
 
 /** A decoded feed page. `totalPages` stays absent when the response did not report one. */
@@ -74,11 +92,161 @@ export interface PageReadyOptions {
 
 export type FilterChange = (mode: FilterMode) => void;
 export type SortChange = (sort: string) => void;
+/** Which further filters a section can offer: a list page's feed (Seerr filters it) or a person's titles (filtered here). */
+export type FilterScope = 'feed' | 'person';
+export interface SortOption { readonly value: string; readonly label: string; readonly labelKey: string }
+/** The All / Movies / Series choice of a header's tabs, for the Filters menu where the tabs are out of sight. */
+export interface TypePicker {
+    groupOf(): MenuGroup;
+    choose(mode: string): void;
+    tabsShowing(): boolean;
+}
+
+// ---- The menus (menu.ts) -------------------------------------------------------------------------
+export interface MenuChoice { readonly id: string; readonly name: string; readonly selected: boolean }
+/** What a group's own body has of the menu: its row's words, and a new place after its size changed. */
+export interface GroupHandle {
+    say(value: string, set: boolean): void;
+    placed(): void;
+}
+export interface MenuGroup {
+    readonly id: string;
+    readonly name: string;
+    readonly choices?: readonly MenuChoice[] | undefined;
+    /** A body of the caller's own, built when the group is first opened (and again after "clear"). */
+    readonly build?: ((host: HTMLElement, handle: GroupHandle) => void) | undefined;
+    /** With a body of its own: what the group's row says, and whether that is narrowing the list. */
+    readonly value?: string | undefined;
+    readonly set?: boolean | undefined;
+    /** What its row says when nothing is set in it. */
+    readonly any?: string | undefined;
+    /** The menu opens with this group open (the one the viewer came for). */
+    readonly open?: boolean | undefined;
+}
+export interface MenuOptions {
+    readonly anchor: HTMLElement;
+    readonly title: string;
+    readonly choices?: readonly MenuChoice[] | undefined;
+    readonly groups?: readonly MenuGroup[] | undefined;
+    readonly clearLabel?: string | undefined;
+    readonly doneLabel?: string | undefined;
+    onPick(id: string, groupId?: string): void;
+    readonly onClear?: (() => void) | undefined;
+    readonly onClose?: (() => void) | undefined;
+}
+export interface MenuRow { readonly item: HTMLButtonElement; readonly text: HTMLElement; readonly body: HTMLElement }
+export interface DiscoveryMenuFacade {
+    openMenu(options: MenuOptions): () => void;
+    menuRow(name: string, iconName: string, iconHidden: boolean): MenuRow;
+    groupedMenuRoom(groupCount: number): number;
+}
+
+// ---- A list being replaced (busy.ts), the role line (roles.ts) -----------------------------------
+export interface DiscoveryBusyFacade {
+    circle(className: string): HTMLElement;
+    hold(control: Element | null | undefined): void;
+    release(list: HTMLElement | null | undefined): void;
+    mark(section: Element | null | undefined): void;
+    heldAt(section: HTMLElement, header: HTMLElement): number;
+    readonly HOLD_LIST_MS: number;
+}
+export interface DiscoveryRolesFacade {
+    decorateCard(card: HTMLElement | null | undefined, item: SeerrResult | null | undefined): void;
+    fitRoleLines(section: Element | null | undefined): void;
+    readonly ROLE_ASKED: string;
+}
+
+// ---- The section and its join (section.ts) -------------------------------------------------------
+export type SectionPage = 'detail' | 'list';
+export interface MessageRowOptions {
+    readonly message: string;
+    readonly actionLabel?: string | undefined;
+    readonly onAction?: (() => void) | undefined;
+}
+export interface DiscoverySectionFacade {
+    buildSection(options: { readonly key: string; readonly page: SectionPage; readonly header: HTMLElement }): HTMLElement;
+    placeSection(anchor: HTMLElement, section: HTMLElement, page: SectionPage): boolean;
+    attachJoin(section: HTMLElement, onListPage: boolean): void;
+    readonly PLACEHOLDER_CARDS: number;
+    buildPlaceholderCards(count: number, cardClass: string): DocumentFragment;
+    clearPlaceholders(container: ParentNode): void;
+    buildMessageRow(options: MessageRowOptions): HTMLElement;
+    buildRetrySection(key: string, message: string, actionLabel: string, onAction: () => void): HTMLElement;
+}
+
+// ---- The further filters (filters.ts, filter-panel.ts) -------------------------------------------
+/** One thing picked from a list: what it is to Seerr, and its name for the eye. */
+export interface Picked { readonly id: string; readonly name: string }
+/** What was typed as the lower and the upper bound; '' for none. */
+export type Range = readonly [string, string];
+export type RangeId = 'year' | 'score' | 'votes' | 'runtime';
+export type ListId = 'role' | 'genres' | 'language' | 'rating' | 'services' | 'keywords' | 'without';
+export type FilterId = RangeId | ListId;
+/**
+ * The further filters set in a section. A genre's id is `<movie id>/<tv id>`, a language's its two-letter
+ * code, a content rating's `<movie|tv>:<country>:<rating>`, a service's and a keyword's TMDB's id, a role
+ * `cast` or a crew department by TMDB's name.
+ */
+export type FilterSelection = { readonly [K in RangeId]?: Range | undefined } & { readonly [K in ListId]?: readonly Picked[] | undefined };
+export interface RatingList { readonly kind: FeedKind; readonly ratings: readonly Picked[] }
+export interface FilterData {
+    readonly region: string;
+    genres(): Promise<Picked[]>;
+    languages(locale: string): Promise<Picked[]>;
+    ratings(): Promise<RatingList[]>;
+    services(): Promise<Picked[]>;
+    searchKeywords(query: string, signal: AbortSignal): Promise<Picked[]>;
+}
+export interface FilterDataDependencies {
+    readonly region: string;
+    fetch(path: string, options?: ManagedFetchOptions): Promise<unknown>;
+    fetchGenres(kind: FeedKind): Promise<unknown>;
+}
+export type Say = (key: string, fallback: string, values?: Record<string, string | number>) => string;
+export interface FilterToken { readonly words: string; without(selection: FilterSelection): FilterSelection }
+export interface FilterMenuOptions {
+    readonly offered: readonly FilterId[];
+    readonly data: FilterData;
+    readonly locale: string;
+    readonly label: Say;
+    selection(): FilterSelection;
+    change(next: FilterSelection, focusAt?: number): void;
+    /** On a person's page: what that person did across the titles, the most credits first. */
+    readonly roles?: (() => Picked[]) | undefined;
+    /** On a genre's page: that genre's name (every title of the list is in it already). */
+    readonly ownGenre?: string | undefined;
+}
+export interface DiscoveryFiltersFacade {
+    readonly FILTER_SWITCHES: Readonly<Record<FilterId, string>>;
+    offeredFilters(scope: FilterScope, config: unknown): FilterId[];
+    activeFilterCount(selection: FilterSelection | null | undefined): number;
+    dayOf(text: string, last: boolean): string | null;
+    numberOf(id: RangeId, text: string): number | null;
+    isBound(id: RangeId, text: string, upper: boolean): boolean;
+    isReversed(id: RangeId, range: Range): boolean;
+    feedFilterQuery(selection: FilterSelection | null | undefined, kind: FeedKind, region: string): string;
+    keepByFilters(results: SeerrResult[], selection: FilterSelection | null | undefined): SeerrResult[];
+    rolesOf(results: readonly SeerrResult[], actingName: string, nameOf: (department: string) => string): Picked[];
+    createFilterData(dependencies: FilterDataDependencies): FilterData;
+    createFiltersControl(header: HTMLElement, moduleName: string, scope: FilterScope, onChange: () => void,
+        ownGenre?: string): HTMLButtonElement;
+    feedQuery(name: string, kind: FeedKind): string;
+    keep(name: string, results: SeerrResult[]): SeerrResult[];
+    active(name: string): boolean;
+    reset(name: string): void;
+    repaint(element: Element | null | undefined): void;
+    noteIfEmpty(moduleName: string, container: HTMLElement | null | undefined, hasMore: boolean): void;
+    roomUnderMenu(section: HTMLElement | null, header: HTMLElement, open: boolean): void;
+    filterMenuGroups(options: FilterMenuOptions): MenuGroup[];
+    filterTokens(options: { readonly offered: readonly FilterId[]; readonly label: Say; readonly locale: string;
+        readonly selection: FilterSelection }): FilterToken[];
+    selectionOf(name: string): FilterSelection;
+}
 
 /** Public `JE.discoveryFilter` surface; it is read at call time by every consumer. */
 export interface DiscoveryFilterFacade {
     MODES: { readonly MIXED: 'mixed'; readonly MOVIES: 'movies'; readonly TV: 'tv' };
-    SORT_OPTIONS: ReadonlyArray<{ readonly value: string; readonly label: string }>;
+    SORT_OPTIONS: readonly SortOption[];
     getFilterMode(moduleName: string): FilterMode;
     setFilterMode(moduleName: string, mode: string): void;
     resetFilterMode(moduleName: string): void;
@@ -90,10 +258,16 @@ export interface DiscoveryFilterFacade {
     filterByMediaType(results: SeerrResult[], mode: string): SeerrResult[];
     hasBothTypes(tvResults: readonly unknown[], movieResults: readonly unknown[]): boolean;
     resultHasBothTypes(results: readonly SeerrResult[]): boolean;
-    createFilterControl(moduleName: string, onFilterChange?: FilterChange): HTMLElement;
+    createFilterControl(moduleName: string, onFilterChange?: FilterChange, heldTitle?: string): HTMLElement;
+    addFilterControl(header: Element, moduleName: string, onFilterChange?: FilterChange): void;
+    typePickerOf(tabs: Element | null): TypePicker | undefined;
     createSortControl(moduleName: string, onSortChange?: SortChange): HTMLElement;
     createSectionHeader(title: string, moduleName: string, showFilter: boolean,
-        onFilterChange?: FilterChange, onSortChange?: SortChange): HTMLElement;
+        onFilterChange?: FilterChange, onSortChange?: SortChange, subject?: string, scope?: FilterScope): HTMLElement;
+    feedQuery(moduleName: string, kind: FeedKind): string;
+    keepByFilters(moduleName: string, results: SeerrResult[]): SeerrResult[];
+    hasMoreFilters(moduleName: string): boolean;
+    noteIfEmpty(moduleName: string, container: HTMLElement, hasMore: boolean): void;
     fetchWithManagedRequest(path: string, cachePrefix: string, options?: ManagedFetchOptions): Promise<unknown>;
     fetchTmdbGenreList(mediaType: FeedKind, options?: ManagedFetchOptions): Promise<GenreListEntry[]>;
     createSessionCache<T>(name: string, isValid: (value: unknown) => value is T): SessionCache<T>;
@@ -114,10 +288,12 @@ export interface ResolvedFeeds {
     readonly tvId: number | null;
     readonly movieId: number | null;
     readonly title: string;
+    /** The name the title is about, kept whole when the heading wraps. */
+    readonly name?: string | undefined;
     /** Network and studio feeds read the same id differently; see network discovery. */
     readonly tvSource?: 'network' | 'company';
 }
-export interface ResolvedItems { readonly items: SeerrResult[]; readonly title: string }
+export interface ResolvedItems { readonly items: SeerrResult[]; readonly title: string; readonly name?: string | undefined }
 export interface OneShotContext extends ResolveContext {
     readonly pageKey: string;
     waitForPageReady(signal?: AbortSignal): Promise<HTMLElement | null>;

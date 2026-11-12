@@ -201,6 +201,16 @@ public sealed class BootstrapPublicConfig
     public required bool JellyseerrShowRecommended { get; init; }
     public required bool JellyseerrShowRequestMoreOnSeries { get; init; }
     public required bool JellyseerrShowNetworkDiscovery { get; init; }
+    public required bool JellyseerrFilterYear { get; init; }
+    public required bool JellyseerrFilterScore { get; init; }
+    public required bool JellyseerrFilterVotes { get; init; }
+    public required bool JellyseerrFilterRuntime { get; init; }
+    public required bool JellyseerrFilterGenres { get; init; }
+    public required bool JellyseerrFilterLanguage { get; init; }
+    public required bool JellyseerrFilterContentRating { get; init; }
+    public required bool JellyseerrFilterStreaming { get; init; }
+    public required bool JellyseerrFilterKeywords { get; init; }
+    public required bool JellyseerrFilterRole { get; init; }
     public required bool JellyseerrShowGenreDiscovery { get; init; }
     public required bool JellyseerrShowTagDiscovery { get; init; }
     public required bool JellyseerrShowPersonDiscovery { get; init; }

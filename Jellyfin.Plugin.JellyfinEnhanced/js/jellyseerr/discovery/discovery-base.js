@@ -51,11 +51,14 @@
   var text = (value) => typeof value === "string" ? value : "";
   var dateOf = (item) => text(item.releaseDate) || text(item.firstAirDate);
   var ratingOf = (item) => Number(item.jeSortRating) || Number(item.voteAverage) || 0;
+  var votesOf = (item) => Number(item.jeSortVotes || item.voteCount) || 0;
   function sortResults(results, sortBy) {
     if (!sortBy) return results;
     const sorted = [...results];
     if (sortBy === "vote_average.desc") {
       sorted.sort((a, b) => ratingOf(b) - ratingOf(a));
+    } else if (sortBy === "vote_count.desc") {
+      sorted.sort((a, b) => votesOf(b) - votesOf(a));
     } else if (sortBy === "release_date.desc") {
       sorted.sort((a, b) => dateOf(b).localeCompare(dateOf(a)));
     } else if (sortBy === "release_date.asc") {
@@ -119,6 +122,83 @@
     return total > 0 ? { results, totalPages: total } : { results };
   }
 
+  // client/src/features/seerr/discovery/page-ready.ts
+  function listSignature(page) {
+    const container = page?.querySelector(".itemsContainer");
+    if (!container) return "";
+    const first = container.firstElementChild;
+    const label = first?.getAttribute("data-id") || first?.getAttribute("data-index") || first?.textContent?.trim().slice(0, 40) || "";
+    return `${container.childElementCount}|${label}`;
+  }
+
+  // client/src/features/seerr/discovery/say.ts
+  function createSay(JE) {
+    return (key, fallback, values) => {
+      const text2 = typeof JE.t === "function" ? JE.t(key, values) : "";
+      let said = text2 && text2 !== key ? text2 : fallback;
+      for (const [name, value] of Object.entries(values ?? {})) said = said.replace(`{${name}}`, () => String(value));
+      return said;
+    };
+  }
+
+  // client/src/features/seerr/discovery/section-chassis.ts
+  function createSectionChassis(JE, { key, page, personScope }) {
+    const label = createSay(JE);
+    function createSectionContainer(title, showFilter, onFilterChange, onSortChange, name) {
+      const header = filterOf(JE).createSectionHeader(
+        title,
+        key,
+        showFilter,
+        onFilterChange,
+        onSortChange,
+        name,
+        personScope ? "person" : "feed"
+      );
+      if (JE.discoverySection?.buildSection) return JE.discoverySection.buildSection({ key, page, header });
+      const section = document.createElement("div");
+      section.className = `verticalSection jellyseerr-${key}-discovery-section jellyseerr-discovery-section${page === "list" ? "" : " detailVerticalSection"}`;
+      section.setAttribute(`data-jellyseerr-${key}-discovery`, "true");
+      section.appendChild(header);
+      const itemsContainer = document.createElement("div");
+      itemsContainer.setAttribute("is", "emby-itemscontainer");
+      itemsContainer.className = "itemsContainer vertical-wrap";
+      section.appendChild(itemsContainer);
+      return section;
+    }
+    function placeInPage(anchor, section) {
+      if (JE.discoverySection?.placeSection) return JE.discoverySection.placeSection(anchor, section, page);
+      if (page === "detail") {
+        const view = anchor.closest(".itemDetailPage") ?? anchor;
+        (view.querySelector(".detailPagePrimaryContent .detailSection") ?? anchor).appendChild(section);
+        return true;
+      }
+      const own = anchor.closest(".verticalSection");
+      const wrapper = own ? own.parentElement : anchor.parentElement;
+      if (!wrapper) return false;
+      wrapper.appendChild(section);
+      return true;
+    }
+    function place(anchor, section) {
+      if (!placeInPage(anchor, section)) return false;
+      section.style.setProperty("--jellyseerr-sticky-top", `${Math.max(0, Math.round(JE.helpers?.getHeaderBottom?.() ?? 0))}px`);
+      return true;
+    }
+    function buildRetrySection(onAction) {
+      if (!JE.discoverySection?.buildRetrySection) return null;
+      return JE.discoverySection.buildRetrySection(
+        key,
+        label("discovery_load_failed", "Seerr did not answer."),
+        label("discovery_retry", "Try again"),
+        onAction
+      );
+    }
+    function placeholders(cardClass) {
+      const parts = JE.discoverySection;
+      return parts?.buildPlaceholderCards ? parts.buildPlaceholderCards(parts.PLACEHOLDER_CARDS, cardClass) : null;
+    }
+    return { createSectionContainer, placeInPage, place, buildRetrySection, placeholders };
+  }
+
   // client/src/features/seerr/discovery/controller.ts
   var MAX_PREFETCH_PER_FEED = 3;
   var KEEP_ATTACHED_MS = 6e3;
@@ -127,13 +207,6 @@
   var newCursor = () => ({ page: 1, hasMore: true, total: Infinity });
   function resetCursor(cursor) {
     Object.assign(cursor, newCursor());
-  }
-  function listSignature(page) {
-    const container = page?.querySelector(".itemsContainer");
-    if (!container) return "";
-    const first = container.firstElementChild;
-    const label = first?.getAttribute("data-id") || first?.getAttribute("data-index") || first?.textContent?.trim().slice(0, 40) || "";
-    return `${container.childElementCount}|${label}`;
   }
   function createDiscoveryController(spec, JE) {
     const { key } = spec;
@@ -144,6 +217,7 @@
     const cardClass = isDualFeed ? "portraitCard" : "overflowPortraitCard";
     const pageSize = spec.mode === "client-paged" && spec.pageSize || 40;
     const filter = () => filterOf(JE);
+    const chassis = createSectionChassis(JE, { key, page: isDualFeed ? "list" : "detail", personScope: isClientPaged });
     const processedPages = /* @__PURE__ */ new Set();
     let visibleAtNavigation = null;
     let visibleContentAtNavigation = "";
@@ -215,9 +289,7 @@
       try {
         throwIfAborted(signal);
         if (spec.mode !== "dual-feed" || !currentFeeds) throw abortError();
-        const sortBy = kind === "tv" ? filter().getTvSortMode(key) : filter().getSortMode(key);
-        let path = `${spec.buildDiscoverPath(kind, feedId, currentFeeds)}?page=${page}`;
-        if (sortBy) path += `&sortBy=${encodeURIComponent(sortBy)}`;
+        const path = `${spec.buildDiscoverPath(kind, feedId, currentFeeds)}?page=${page}${filter().feedQuery(key, kind)}`;
         const response = await managed(path, { signal });
         throwIfAborted(signal);
         return decodeFeedPage(response);
@@ -274,7 +346,7 @@
     }
     function pagedResults(mode) {
       const facade = filter();
-      const sorted = sortResults(cachedAllResults, facade.getSortMode(key));
+      const sorted = sortResults(facade.keepByFilters(key, cachedAllResults), facade.getSortMode(key));
       if (mode === "movies" || mode === "tv") return facade.filterByMediaType(sorted, mode);
       return facade.interleaveArrays(
         sorted.filter((item) => item.mediaType === "tv"),
@@ -283,7 +355,7 @@
     }
     function pagedResultsForMode(mode) {
       const results = pagedResults(mode);
-      return results.length === 0 && cachedAllResults.length > 0 ? cachedAllResults : results;
+      return results.length === 0 && cachedAllResults.length > 0 && !filter().hasMoreFilters(key) ? cachedAllResults : results;
     }
     const createCardsFragment = (results) => filter().createCardsFragment(results, { cardClass });
     function markShown(results) {
@@ -418,6 +490,7 @@
         lastBatchRendered = 0;
         itemsToAdd = unseenResults(itemsToAdd, shownResults);
         if (itemsContainer && itemsToAdd.length > 0) {
+          JE.discoverySection?.clearPlaceholders?.(itemsContainer);
           const rendering = filter().appendCards(itemsContainer, itemsToAdd, {
             cardClass,
             isCurrent: () => !signal?.aborted
@@ -457,20 +530,9 @@
     function cleanupScrollObserver() {
       filter().cleanupScrollObserver(scrollState);
     }
-    function createSectionContainer(title, showFilter) {
-      const section = document.createElement("div");
-      section.className = isDualFeed ? `verticalSection jellyseerr-${key}-discovery-section padded-left padded-right` : `verticalSection jellyseerr-${key}-discovery-section`;
-      section.setAttribute(`data-jellyseerr-${key}-discovery`, "true");
-      section.style.cssText = "margin-top:2em;padding-top:1em;border-top:1px solid rgba(255,255,255,0.1)";
-      section.appendChild(filter().createSectionHeader(title, key, showFilter, handleFilterChange, () => {
-        void handleSortChange();
-      }));
-      const itemsContainer = document.createElement("div");
-      itemsContainer.setAttribute("is", "emby-itemscontainer");
-      itemsContainer.className = isDualFeed ? "vertical-wrap itemsContainer centered" : "itemsContainer padded-right vertical-wrap";
-      section.appendChild(itemsContainer);
-      return section;
-    }
+    const createSectionContainer = (title, showFilter, name) => chassis.createSectionContainer(title, showFilter, handleFilterChange, () => {
+      void handleSortChange();
+    }, name);
     async function handleSortChange() {
       const itemsContainer = itemsContainerNow();
       if (isClientPaged) {
@@ -478,12 +540,17 @@
         restartChunks(itemsContainer, filter().getFilterMode(key));
         cleanupScrollObserver();
         if (hasMorePages) setupInfiniteScroll();
+        filter().noteIfEmpty(key, itemsContainer, hasMorePages);
         return;
       }
       const feeds = currentFeeds;
       if (!itemsContainer || !feeds || !feeds.tvId && !feeds.movieId) return;
-      JE.jellyseerrUI?.releasePosters?.(itemsContainer);
-      itemsContainer.replaceChildren();
+      const empty = () => {
+        JE.jellyseerrUI?.releasePosters?.(itemsContainer);
+        itemsContainer.replaceChildren();
+      };
+      itemsContainer.setAttribute("aria-busy", "true");
+      itemsContainer.inert = true;
       cleanupScrollObserver();
       loadGeneration++;
       resetPagination();
@@ -502,6 +569,7 @@
         owner = takeLoading();
         const results = await Promise.all(fetches);
         if (signal.aborted) return;
+        empty();
         const filterMode = filter().getFilterMode(key);
         commitPageOne(results);
         updateHasMorePages(filterMode);
@@ -515,9 +583,17 @@
         }
         filter().applyFilterVisibility(itemsContainer, filterMode);
         if (hasMorePages) setupInfiniteScroll();
+        filter().noteIfEmpty(key, itemsContainer, hasMorePages);
       } catch (error) {
-        if (!isAbortError(error)) console.error(`${logPrefix} Sort change error:`, error);
+        if (!isAbortError(error)) {
+          empty();
+          console.error(`${logPrefix} Sort change error:`, error);
+        }
       } finally {
+        if (currentAbortController === controller || !currentAbortController) {
+          itemsContainer.removeAttribute("aria-busy");
+          itemsContainer.inert = false;
+        }
         releaseLoading(owner);
         if (generation !== loadGeneration) scrollState.fill?.();
       }
@@ -529,6 +605,7 @@
         restartChunks(itemsContainer, newMode);
         cleanupScrollObserver();
         if (hasMorePages) setupInfiniteScroll();
+        filter().noteIfEmpty(key, itemsContainer, hasMorePages);
         return;
       }
       filter().applyFilterVisibility(itemsContainer, newMode);
@@ -550,18 +627,17 @@
     function ensureFilterControl(itemsContainer) {
       if (!isDualFeed) return;
       const header = itemsContainer.closest(sectionSelector)?.querySelector(".jellyseerr-discovery-header");
-      if (!header || header.querySelector(".jellyseerr-discovery-filter")) return;
-      if (!filter().hasBothTypes(cachedTvResults, cachedMovieResults)) return;
-      header.querySelector(".sectionTitle")?.after(filter().createFilterControl(key, handleFilterChange));
+      if (!header || !filter().hasBothTypes(cachedTvResults, cachedMovieResults)) return;
+      filter().addFilterControl(header, key, handleFilterChange);
     }
     function keepAttached(section, listPage, signal) {
       const handle = JE.helpers?.onBodyMutation?.(`jellyseerr-${key}-discovery-keepattached-${++keepAttachedSequence}`, () => {
         if (signal.aborted) return;
         const detached = !section.isConnected;
         if (!detached && !section.closest(".page.hide")) return;
-        const container = currentShownView()?.querySelector(".itemsContainer") ?? document.querySelector(".page:not(.hide) .itemsContainer") ?? document.querySelector(".libraryPage:not(.hide) .itemsContainer") ?? listPage;
-        const parent = container.closest(".verticalSection") ?? container.parentElement;
-        if (parent?.parentElement && !parent.parentElement.contains(section)) parent.parentElement.appendChild(section);
+        const own = ".itemsContainer:not(.jellyseerr-discovery-section *)";
+        const container = currentShownView()?.querySelector(own) ?? document.querySelector(`.page:not(.hide) ${own}`) ?? document.querySelector(`.libraryPage:not(.hide) ${own}`) ?? listPage;
+        if (!container.closest(".page, .libraryPage")?.contains(section)) chassis.placeInPage(container, section);
       });
       if (!handle) return;
       const stop = () => {
@@ -605,12 +681,12 @@
       let itemsContainer = null;
       if (listPage) {
         document.querySelector(sectionSelector)?.remove();
-        const built = createSectionContainer(resolved.title, false);
-        const parent = (listPage.closest(".verticalSection") ?? listPage.parentElement)?.parentElement;
-        if (parent) {
+        const built = createSectionContainer(resolved.title, false, resolved.name);
+        if (chassis.place(listPage, built)) {
           section = built;
           itemsContainer = built.querySelector(".itemsContainer");
-          parent.appendChild(built);
+          const held = chassis.placeholders(cardClass);
+          if (itemsContainer && held) itemsContainer.appendChild(held);
           keepAttached(built, listPage, signal);
         }
       }
@@ -623,6 +699,7 @@
       }
       if (signal.aborted) return;
       const anyFailed = commitPageOne(fetchResults);
+      if (itemsContainer && !anyFailed) JE.discoverySection?.clearPlaceholders?.(itemsContainer);
       filter().resetFilterMode(key);
       filter().resetSortMode(key);
       updateHasMorePages(filter().getFilterMode(key));
@@ -659,7 +736,7 @@
         return;
       }
       document.querySelector(sectionSelector)?.remove();
-      const section = createSectionContainer(resolved.title, hasBoth);
+      const section = createSectionContainer(resolved.title, hasBoth, resolved.name);
       const itemsContainer = section.querySelector(".itemsContainer");
       let consumed = 0;
       let fragment = document.createDocumentFragment();
@@ -677,7 +754,7 @@
       currentPagedResults = displayResults;
       renderedCount = consumed;
       hasMorePages = renderedCount < currentPagedResults.length;
-      detailSection.appendChild(section);
+      chassis.place(detailSection, section);
       console.debug(`${logPrefix} Section added with ${cardCount} cards`);
       if (hasMorePages) setupInfiniteScroll();
       markProcessed(pageKey);
@@ -686,19 +763,14 @@
       const detailSection = await waitForPageReady(signal);
       if (signal.aborted || !detailSection) return;
       document.querySelector(sectionSelector)?.remove();
-      const section = document.createElement("div");
-      section.className = `verticalSection jellyseerr-${key}-discovery-section je-retry-row`;
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "raised emby-button";
-      button.textContent = "⟳ Tap to retry";
-      button.addEventListener("click", () => {
-        if (signal.aborted || button.disabled) return;
-        button.disabled = true;
-        void render().finally(() => section.remove());
-      }, { signal });
-      section.appendChild(button);
-      detailSection.appendChild(section);
+      let retrying = false;
+      const section = chassis.buildRetrySection(() => {
+        if (signal.aborted || retrying) return;
+        retrying = true;
+        void render().finally(() => section?.remove());
+      });
+      if (!section) return;
+      chassis.placeInPage(detailSection, section);
       signal.addEventListener("abort", () => section.remove(), { once: true });
     }
     async function render() {

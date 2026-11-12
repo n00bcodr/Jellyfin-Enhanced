@@ -45,6 +45,8 @@ export function createCardRendering(JE: SeerrDiscoveryHost) {
         card.classList.remove('portraitCard', 'overflowPortraitCard');
         card.classList.add(cardClass);
         card.setAttribute('data-media-type', String(item.mediaType));
+        // On a person's titles: what the person did in this one, on a line of its own under the title.
+        JE.discoveryRoles?.decorateCard?.(card, item);
         const mediaId = mediaInfoOf(item)?.jellyfinMediaId;
         if (mediaId) {
             const id = String(mediaId);

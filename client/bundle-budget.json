@@ -1,8 +1,8 @@
 {
   "description": "Budget for the served component bundle, GET /JellyfinEnhanced/bundle.js (Features/Platform/Services/ClientScriptBundle.cs), as an identity (uncompressed) body. rawBytes: its length. gzipBytes: its length after gzip at level 9 (zlib level 9; `gzip -9 -n`, .NET CompressionLevel.SmallestSize). Checked by tests/backend/Api/BundleBudgetTests.cs (gate T) and `scripts/restructure-gates.sh size`. It is a ratchet: lowering a limit needs no reason; a history entry that raises either limit must give one. `limits` is always the last history entry's.",
   "limits": {
-    "rawBytes": 2494625,
-    "gzipBytes": 671156
+    "rawBytes": 2590744,
+    "gzipBytes": 699477
   },
   "history": [
     {
@@ -30,6 +30,19 @@
         "gzipBytes": 671156
       },
       "reason": "Lowered: 24 stateless modules that several component scripts inlined now ship once from their first user (client/shared-modules.json), plus 5% headroom. K1 measured 2,640,436 raw / 677,849 gzip-9 bytes."
+    },
+    {
+      "date": "2026-11-13",
+      "change": "upstream sync: port of upstream ec470d75 (#1044), branch sync/auto-20261113-0100",
+      "measured": {
+        "rawBytes": 2504800,
+        "gzipBytes": 677856
+      },
+      "limits": {
+        "rawBytes": 2590744,
+        "gzipBytes": 699477
+      },
+      "reason": "Raised by exactly what the port adds, so the headroom left before it stays as it was: upstream's discovery section join, Filters menu, role lines, busy state and their four stylesheets (40,644 bytes, shipped as written), bundled into discovery-filter-utils.js because component-scripts.json is pinned. Measured on the lab's served bundle: before the port (adfefdcf) 2,408,681 raw / 649,535 gzip-9, after it 2,504,800 / 677,856, so +96,119 / +28,321 on the previous limits 2,494,625 / 671,156. Leaving the stylesheets' comments out would have saved 11,966 raw and about 5,800 gzip-9, not enough for the gzip limit."
     }
   ]
 }

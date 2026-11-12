@@ -89,28 +89,42 @@
     }
   }
 
+  // client/src/features/seerr/discovery/say.ts
+  function createSay(JE) {
+    return (key, fallback, values) => {
+      const text2 = typeof JE.t === "function" ? JE.t(key, values) : "";
+      let said = text2 && text2 !== key ? text2 : fallback;
+      for (const [name, value] of Object.entries(values ?? {})) said = said.replace(`{${name}}`, () => String(value));
+      return said;
+    };
+  }
+
   // client/src/features/seerr/discovery/collection-discovery.ts
   var logPrefix = "🪼 Jellyfin Enhanced: Collection Discovery:";
   var SECTION_CLASS = "jellyseerr-collection-discovery-section";
-  function createSectionContainer(title) {
-    const section = document.createElement("div");
-    section.className = `verticalSection ${SECTION_CLASS}`;
-    section.setAttribute("data-jellyseerr-collection-discovery", "true");
-    section.style.cssText = "margin-top:2em;padding-top:1em;border-top:1px solid rgba(255,255,255,0.1)";
+  function createSectionContainer(JE, title, goTo) {
+    const header = document.createElement("div");
+    header.className = "jellyseerr-discovery-header";
+    header.setAttribute("data-jump-label", goTo);
     const heading = document.createElement("h2");
-    heading.className = "sectionTitle sectionTitle-cards padded-left";
+    heading.className = "sectionTitle sectionTitle-cards";
     heading.textContent = title;
-    heading.style.marginBottom = "0.5em";
-    section.appendChild(heading);
+    header.appendChild(heading);
+    if (JE.discoverySection?.buildSection) return JE.discoverySection.buildSection({ key: "collection", page: "detail", header });
+    const section = document.createElement("div");
+    section.className = `verticalSection ${SECTION_CLASS} jellyseerr-discovery-section detailVerticalSection`;
+    section.setAttribute("data-jellyseerr-collection-discovery", "true");
+    section.appendChild(header);
     const itemsContainer = document.createElement("div");
     itemsContainer.setAttribute("is", "emby-itemscontainer");
-    itemsContainer.className = "itemsContainer padded-right vertical-wrap";
+    itemsContainer.className = "itemsContainer vertical-wrap";
     section.appendChild(itemsContainer);
     return section;
   }
   function start(JE) {
     const base = baseOf(JE);
     const fetchManaged = managedFetch(JE, "collection");
+    const label = createSay(JE);
     const boxsetCache = /* @__PURE__ */ new Map();
     function getBoxSetInfo(boxsetId, signal) {
       const cached = boxsetCache.get(boxsetId);
@@ -154,7 +168,12 @@
       }
       document.querySelector(`.${SECTION_CLASS}`)?.remove();
       const available = parts.length - missing.length;
-      const section = createSectionContainer(`Missing from ${boxset.name} (${available}/${parts.length})`);
+      const title = label(
+        "discovery_missing_from_collection",
+        "Missing from {collection} ({available}/{total})",
+        { collection: boxset.name, available, total: parts.length }
+      );
+      const section = createSectionContainer(JE, title, label("discovery_go_to", "Go to {title}", { title }));
       const fragment = filterOf(JE).createCardsFragment(missing, { cardClass: "overflowPortraitCard" });
       const itemsContainer = section.querySelector(".itemsContainer");
       if (!itemsContainer || fragment.childNodes.length === 0) {
@@ -162,7 +181,8 @@
         return void 0;
       }
       itemsContainer.appendChild(fragment);
-      detailSection.appendChild(section);
+      if (JE.discoverySection?.placeSection) JE.discoverySection.placeSection(detailSection, section, "detail");
+      else detailSection.appendChild(section);
       console.debug(`${logPrefix} Section added with ${missing.length} missing movies from ${boxset.name}`);
       return true;
     }

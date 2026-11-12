@@ -9,6 +9,8 @@ import {
     abortError, clampPages, decodeFeedPage, estimateYield, isAbortError, pageRange, planPagesPerFeed, resultKey, sortResults,
     throwIfAborted, unseenResults, type YieldStats
 } from './domain';
+import { listSignature } from './page-ready';
+import { createSectionChassis } from './section-chassis';
 import type {
     DiscoveryController, DiscoverySpec, FeedKind, FeedPage, FilterMode, ManagedFetchOptions,
     ResolvedFeeds, ScrollHint, ScrollResult, ScrollState, SeerrResult
@@ -25,16 +27,6 @@ interface TypedPage { readonly kind: FeedKind; readonly data: FeedPage }
 const newCursor = (): FeedCursor => ({ page: 1, hasMore: true, total: Infinity });
 function resetCursor(cursor: FeedCursor): void { Object.assign(cursor, newCursor()); }
 
-/** Cheap signature of what a list shows; React may reuse child nodes, so compare content, not identity. */
-function listSignature(page: Element | null): string {
-    const container = page?.querySelector('.itemsContainer');
-    if (!container) return '';
-    const first = container.firstElementChild;
-    const label = first?.getAttribute('data-id') || first?.getAttribute('data-index') ||
-        first?.textContent?.trim().slice(0, 40) || '';
-    return `${container.childElementCount}|${label}`;
-}
-
 export function createDiscoveryController(spec: DiscoverySpec, JE: SeerrDiscoveryHost): DiscoveryController {
     const { key } = spec;
     const logPrefix = `🪼 Jellyfin Enhanced: ${spec.logLabel}:`;
@@ -44,6 +36,8 @@ export function createDiscoveryController(spec: DiscoverySpec, JE: SeerrDiscover
     const cardClass = isDualFeed ? 'portraitCard' : 'overflowPortraitCard';
     const pageSize = (spec.mode === 'client-paged' && spec.pageSize) || 40;
     const filter = () => filterOf(JE);
+    // The page's own card: a list page's grid uses portraitCard, a detail page's lists overflowPortraitCard.
+    const chassis = createSectionChassis(JE, { key, page: isDualFeed ? 'list' : 'detail', personScope: isClientPaged });
 
     // ---- Chassis state (all modes) -------------------------------------------
     const processedPages = new Set<string>();
@@ -132,9 +126,8 @@ export function createDiscoveryController(spec: DiscoverySpec, JE: SeerrDiscover
         try {
             throwIfAborted(signal);
             if (spec.mode !== 'dual-feed' || !currentFeeds) throw abortError();
-            const sortBy = kind === 'tv' ? filter().getTvSortMode(key) : filter().getSortMode(key);
-            let path = `${spec.buildDiscoverPath(kind, feedId, currentFeeds)}?page=${page}`;
-            if (sortBy) path += `&sortBy=${encodeURIComponent(sortBy)}`;
+            // The page, then what the section's controls ask for (the order, then the further filters).
+            const path = `${spec.buildDiscoverPath(kind, feedId, currentFeeds)}?page=${page}${filter().feedQuery(key, kind)}`;
             const response = await managed(path, { signal });
             throwIfAborted(signal);
             return decodeFeedPage(response);
@@ -200,16 +193,17 @@ export function createDiscoveryController(spec: DiscoverySpec, JE: SeerrDiscover
     // ---- client-paged ---------------------------------------------------------
     function pagedResults(mode: string): SeerrResult[] {
         const facade = filter();
-        const sorted = sortResults(cachedAllResults, facade.getSortMode(key));
+        // A person's titles are filtered here, by the section's further filters.
+        const sorted = sortResults(facade.keepByFilters(key, cachedAllResults), facade.getSortMode(key));
         if (mode === 'movies' || mode === 'tv') return facade.filterByMediaType(sorted, mode);
         // Mixed mode interleaves TV and movies for a balanced display.
         return facade.interleaveArrays(sorted.filter(item => item.mediaType === 'tv'),
             sorted.filter(item => item.mediaType === 'movie'));
     }
-    /** The result set for a mode, falling back to everything when the mode has nothing. */
+    /** The result set for a mode, falling back to everything when the mode has nothing (not where the further filters leave nothing: the section then says so). */
     function pagedResultsForMode(mode: string): SeerrResult[] {
         const results = pagedResults(mode);
-        return results.length === 0 && cachedAllResults.length > 0 ? cachedAllResults : results;
+        return results.length === 0 && cachedAllResults.length > 0 && !filter().hasMoreFilters(key) ? cachedAllResults : results;
     }
     const createCardsFragment = (results: SeerrResult[]) => filter().createCardsFragment(results, { cardClass });
     function markShown(results: readonly SeerrResult[]): void {
@@ -357,6 +351,7 @@ export function createDiscoveryController(spec: DiscoverySpec, JE: SeerrDiscover
             if (itemsContainer && itemsToAdd.length > 0) {
                 // Resolves (and the engine measures) only once every card is in; a sort change or
                 // navigation aborts the signal and drops the cards not in yet.
+                JE.discoverySection?.clearPlaceholders?.(itemsContainer);
                 const rendering = filter().appendCards(itemsContainer, itemsToAdd, {
                     cardClass, isCurrent: () => !signal?.aborted
                 });
@@ -401,20 +396,8 @@ export function createDiscoveryController(spec: DiscoverySpec, JE: SeerrDiscover
     }
     function cleanupScrollObserver(): void { filter().cleanupScrollObserver(scrollState); }
 
-    function createSectionContainer(title: string, showFilter: boolean): HTMLElement {
-        const section = document.createElement('div');
-        section.className = isDualFeed
-            ? `verticalSection jellyseerr-${key}-discovery-section padded-left padded-right`
-            : `verticalSection jellyseerr-${key}-discovery-section`;
-        section.setAttribute(`data-jellyseerr-${key}-discovery`, 'true');
-        section.style.cssText = 'margin-top:2em;padding-top:1em;border-top:1px solid rgba(255,255,255,0.1)';
-        section.appendChild(filter().createSectionHeader(title, key, showFilter, handleFilterChange, () => { void handleSortChange(); }));
-        const itemsContainer = document.createElement('div');
-        itemsContainer.setAttribute('is', 'emby-itemscontainer');
-        itemsContainer.className = isDualFeed ? 'vertical-wrap itemsContainer centered' : 'itemsContainer padded-right vertical-wrap';
-        section.appendChild(itemsContainer);
-        return section;
-    }
+    const createSectionContainer = (title: string, showFilter: boolean, name?: string): HTMLElement =>
+        chassis.createSectionContainer(title, showFilter, handleFilterChange, () => { void handleSortChange(); }, name);
 
     /** dual-feed re-fetches page 1 with the new sortBy; client-paged re-sorts its cached list. */
     async function handleSortChange(): Promise<void> {
@@ -424,12 +407,15 @@ export function createDiscoveryController(spec: DiscoverySpec, JE: SeerrDiscover
             restartChunks(itemsContainer, filter().getFilterMode(key));
             cleanupScrollObserver();
             if (hasMorePages) setupInfiniteScroll();
+            filter().noteIfEmpty(key, itemsContainer, hasMorePages);
             return;
         }
         const feeds = currentFeeds;
         if (!itemsContainer || !feeds || (!feeds.tvId && !feeds.movieId)) return;
-        JE.jellyseerrUI?.releasePosters?.(itemsContainer);
-        itemsContainer.replaceChildren();
+        const empty = () => { JE.jellyseerrUI?.releasePosters?.(itemsContainer); itemsContainer.replaceChildren(); };
+        // What is on screen stays (dimmed, taking no pointer or keys) until the new page is in.
+        itemsContainer.setAttribute('aria-busy', 'true');
+        itemsContainer.inert = true;
         cleanupScrollObserver();
 
         loadGeneration++;
@@ -454,6 +440,7 @@ export function createDiscoveryController(spec: DiscoverySpec, JE: SeerrDiscover
             const results = await Promise.all(fetches);
             // Superseded (another sort change, navigation): nothing here is ours.
             if (signal.aborted) return;
+            empty();
             // Read the filter at commit time; it may have changed meanwhile.
             const filterMode = filter().getFilterMode(key);
             commitPageOne(results);
@@ -468,9 +455,19 @@ export function createDiscoveryController(spec: DiscoverySpec, JE: SeerrDiscover
             }
             filter().applyFilterVisibility(itemsContainer, filterMode);
             if (hasMorePages) setupInfiniteScroll();
+            filter().noteIfEmpty(key, itemsContainer, hasMorePages);
         } catch (error) {
-            if (!isAbortError(error)) console.error(`${logPrefix} Sort change error:`, error);
+            if (!isAbortError(error)) {
+                // (The old cards are not left as if they were the new.)
+                empty();
+                console.error(`${logPrefix} Sort change error:`, error);
+            }
         } finally {
+            // (A later re-fetch keeps the mark.)
+            if (currentAbortController === controller || !currentAbortController) {
+                itemsContainer.removeAttribute('aria-busy');
+                itemsContainer.inert = false;
+            }
             releaseLoading(owner);
             // A filter change re-armed the engine while page 1 was in flight; wake it.
             if (generation !== loadGeneration) scrollState.fill?.();
@@ -483,6 +480,7 @@ export function createDiscoveryController(spec: DiscoverySpec, JE: SeerrDiscover
             restartChunks(itemsContainer, newMode);
             cleanupScrollObserver();
             if (hasMorePages) setupInfiniteScroll();
+            filter().noteIfEmpty(key, itemsContainer, hasMorePages);
             return;
         }
         filter().applyFilterVisibility(itemsContainer, newMode);
@@ -507,9 +505,8 @@ export function createDiscoveryController(spec: DiscoverySpec, JE: SeerrDiscover
     function ensureFilterControl(itemsContainer: HTMLElement): void {
         if (!isDualFeed) return;
         const header = itemsContainer.closest(sectionSelector)?.querySelector('.jellyseerr-discovery-header');
-        if (!header || header.querySelector('.jellyseerr-discovery-filter')) return;
-        if (!filter().hasBothTypes(cachedTvResults, cachedMovieResults)) return;
-        header.querySelector('.sectionTitle')?.after(filter().createFilterControl(key, handleFilterChange));
+        if (!header || !filter().hasBothTypes(cachedTvResults, cachedMovieResults)) return;
+        filter().addFilterControl(header, key, handleFilterChange);
     }
     /**
      * The list page may still be settling when the section goes in (as soon as the container
@@ -521,11 +518,12 @@ export function createDiscoveryController(spec: DiscoverySpec, JE: SeerrDiscover
             if (signal.aborted) return;
             const detached = !section.isConnected;
             if (!detached && !section.closest('.page.hide')) return;
-            const container = currentShownView()?.querySelector('.itemsContainer') ??
-                document.querySelector('.page:not(.hide) .itemsContainer') ??
-                document.querySelector('.libraryPage:not(.hide) .itemsContainer') ?? listPage;
-            const parent = container.closest('.verticalSection') ?? container.parentElement;
-            if (parent?.parentElement && !parent.parentElement.contains(section)) parent.parentElement.appendChild(section);
+            // (Not the section's own list: the page's.)
+            const own = '.itemsContainer:not(.jellyseerr-discovery-section *)';
+            const container = currentShownView()?.querySelector<HTMLElement>(own) ??
+                document.querySelector<HTMLElement>(`.page:not(.hide) ${own}`) ??
+                document.querySelector<HTMLElement>(`.libraryPage:not(.hide) ${own}`) ?? listPage;
+            if (!container.closest('.page, .libraryPage')?.contains(section)) chassis.placeInPage(container, section);
         });
         if (!handle) return;
         const stop = () => { clearTimeout(timer); signal.removeEventListener('abort', stop); handle.unsubscribe(); };
@@ -571,12 +569,13 @@ export function createDiscoveryController(spec: DiscoverySpec, JE: SeerrDiscover
         let itemsContainer: HTMLElement | null = null;
         if (listPage) {
             document.querySelector(sectionSelector)?.remove();
-            const built = createSectionContainer(resolved.title, false);
-            const parent = (listPage.closest('.verticalSection') ?? listPage.parentElement)?.parentElement;
-            if (parent) {
+            const built = createSectionContainer(resolved.title, false, resolved.name);
+            if (chassis.place(listPage, built)) {
                 section = built;
                 itemsContainer = built.querySelector<HTMLElement>('.itemsContainer');
-                parent.appendChild(built);
+                // The section's place is held from now on; the cards land in these boxes.
+                const held = chassis.placeholders(cardClass);
+                if (itemsContainer && held) itemsContainer.appendChild(held);
                 keepAttached(built, listPage, signal);
             }
         }
@@ -592,6 +591,8 @@ export function createDiscoveryController(spec: DiscoverySpec, JE: SeerrDiscover
         if (signal.aborted) return;
 
         const anyFailed = commitPageOne(fetchResults);
+        // A failed first page is retried by the scroll engine: the held places stay until it lands or gives up.
+        if (itemsContainer && !anyFailed) JE.discoverySection?.clearPlaceholders?.(itemsContainer);
         // Always start each section on defaults instead of persisting the previous choice.
         filter().resetFilterMode(key);
         filter().resetSortMode(key);
@@ -632,7 +633,7 @@ export function createDiscoveryController(spec: DiscoverySpec, JE: SeerrDiscover
             return;
         }
         document.querySelector(sectionSelector)?.remove();
-        const section = createSectionContainer(resolved.title, hasBoth);
+        const section = createSectionContainer(resolved.title, hasBoth, resolved.name);
         const itemsContainer = section.querySelector<HTMLElement>('.itemsContainer');
         // Seed the first chunk that yields a card: a run of owned or hidden titles at the top of a
         // filmography is not an empty filmography. The scroll engine loads the rest.
@@ -652,7 +653,7 @@ export function createDiscoveryController(spec: DiscoverySpec, JE: SeerrDiscover
         currentPagedResults = displayResults;
         renderedCount = consumed;
         hasMorePages = renderedCount < currentPagedResults.length;
-        detailSection.appendChild(section);
+        chassis.place(detailSection, section);
         console.debug(`${logPrefix} Section added with ${cardCount} cards`);
         if (hasMorePages) setupInfiniteScroll();
         markProcessed(pageKey);
@@ -662,20 +663,15 @@ export function createDiscoveryController(spec: DiscoverySpec, JE: SeerrDiscover
         const detailSection = await waitForPageReady(signal);
         if (signal.aborted || !detailSection) return;
         document.querySelector(sectionSelector)?.remove();
-        const section = document.createElement('div');
-        section.className = `verticalSection jellyseerr-${key}-discovery-section je-retry-row`;
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.className = 'raised emby-button';
-        button.textContent = '⟳ Tap to retry';
-        button.addEventListener('click', () => {
-            if (signal.aborted || button.disabled) return;
-            button.disabled = true;
+        let retrying = false;
+        const section = chassis.buildRetrySection(() => {
+            if (signal.aborted || retrying) return;
+            retrying = true;
             // render() starts a fresh controller and repeats the lookup; failures were not cached as empty.
-            void render().finally(() => section.remove());
-        }, { signal });
-        section.appendChild(button);
-        detailSection.appendChild(section);
+            void render().finally(() => section?.remove());
+        });
+        if (!section) return;
+        chassis.placeInPage(detailSection, section);
         signal.addEventListener('abort', () => section.remove(), { once: true });
     }
     async function render(): Promise<void> {

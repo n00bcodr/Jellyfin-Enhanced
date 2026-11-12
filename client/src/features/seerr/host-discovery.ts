@@ -1,5 +1,6 @@
 import type {
-    DiscoveryBaseFacade, DiscoveryConfigKey, DiscoveryFilterFacade, FeedKind, LoadMore, ScrollHint,
+    DiscoveryBaseFacade, DiscoveryBusyFacade, DiscoveryConfigKey, DiscoveryFilterFacade, DiscoveryFiltersFacade,
+    DiscoveryMenuFacade, DiscoveryRolesFacade, DiscoverySectionFacade, FeedKind, LoadMore, ScrollHint,
     ScrollOptions, ScrollState, SeerrResult
 } from './discovery/types';
 import type { RecommendationsFacade, RecommendationsStage } from './recommendations/types';
@@ -14,6 +15,8 @@ export interface DiscoveryConfig extends DiscoverySwitches {
     readonly RecommendationsUsePluginPages?: boolean;
     readonly RecommendationsUseCustomTabs?: boolean;
     readonly RecommendationsUseNativeTab?: boolean;
+    /** The admin's default region: the region whose streaming services and content ratings the filters offer. */
+    readonly DEFAULT_REGION?: string;
 }
 export interface DiscoveryLease { readonly signal: AbortSignal; isCurrent(): boolean }
 export interface DiscoverySession {
@@ -85,6 +88,13 @@ export interface SeerrDiscoveryHost {
     cdn?: { selfhst(file: string): string };
     nativeTabs?: { register(id: string, title: string, mount: (panel: HTMLElement) => void, icon: string): void };
     discoveryFilter?: DiscoveryFilterFacade;
+    /** The section's parts, published by discovery-filter-utils.js and read at call time by every entry. */
+    discoveryStyles?: { inject(): void };
+    discoveryBusy?: DiscoveryBusyFacade;
+    discoveryMenu?: DiscoveryMenuFacade;
+    discoveryRoles?: DiscoveryRolesFacade;
+    discoverySection?: DiscoverySectionFacade;
+    discoveryFilters?: DiscoveryFiltersFacade;
     discoveryBase?: DiscoveryBaseFacade;
     recommendationsPage?: RecommendationsFacade;
     internals?: { recommendationsPage?: RecommendationsStage };

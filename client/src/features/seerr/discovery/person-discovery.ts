@@ -65,7 +65,7 @@ function start(JE: SeerrDiscoveryHost): void {
         const items = await fetchPersonCredits(tmdbPersonId, signal);
         if (signal.aborted) return null;
         console.debug(`${logPrefix} Fetched ${items.length} credits for ${personInfo.name}`);
-        return { items, title: translate(JE, 'discovery_more_from_person', { person: personInfo.name }) };
+        return { items, title: translate(JE, 'discovery_more_from_person', { person: personInfo.name }), name: personInfo.name };
     }
     base.createDiscovery({
         key: 'person',

@@ -159,12 +159,6 @@ function trailingThrottle(callback: () => void, wait: number): { (): void; cance
     return throttled;
 }
 
-const ACTION_ROW_CSS = {
-    horizontal: 'display: inline-flex; justify-content: center; align-items: center; vertical-align: middle; padding: 1em 1.5em; box-sizing: border-box;',
-    vertical: 'display: flex; justify-content: center; align-items: center; padding: 1.5em; width: 100%; box-sizing: border-box;',
-    button: 'padding: 0.8em 1.5em; border-radius: 4px; background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.8); border: 1px solid rgba(255,255,255,0.2); cursor: pointer; font-size: 1em; display: inline-flex; align-items: center; justify-content: center;',
-};
-
 export function createScrollEngine(JE: SeerrDetailsBridge) {
     function cleanupInfiniteScroll(state: ScrollState): void {
         if (state._teardown) {
@@ -234,31 +228,38 @@ export function createScrollEngine(JE: SeerrDetailsBridge) {
         };
 
         /**
-         * An action row: retry after failures, or "keep looking" once the empty-page budget
-         * is spent. In a horizontal row it sits at the end of the track, where the viewer is.
-         * With no label the button is icon-only, which needs no translated string.
+         * An action row: 'failed' says Seerr did not answer, with a button to try again; 'further' (once the
+         * empty-page budget is spent) is an icon-only button to look for more. In a horizontal row it sits at
+         * the end of the track, where the viewer is. Jellyfin's own button, on a line that says what happened
+         * (styled with the Seerr sections).
          */
-        const showRetryRow = (label: string | null = 'Tap to retry', icon: string | null = null) => {
+        const showRetryRow = (kind: 'failed' | 'further' = 'failed') => {
             if (retryRow || destroyed) return;
+            const text = (key: string, fallback: string): string => {
+                const value = typeof JE.t === 'function' ? JE.t(key) : '';
+                return value && value !== key ? value : fallback;
+            };
             const row = document.createElement('div');
-            row.className = 'je-retry-row';
-            row.style.cssText = horizontal ? ACTION_ROW_CSS.horizontal : ACTION_ROW_CSS.vertical;
+            row.className = `je-retry-row jellyseerr-section-message${horizontal ? ' jellyseerr-section-message-inline' : ''}`;
+            row.setAttribute('role', 'status');
             const button = document.createElement('button');
             button.type = 'button';
-            if (label) {
+            button.className = 'raised emby-button jellyseerr-section-message-action';
+            if (kind === 'failed') {
+                const message = document.createElement('span');
+                message.textContent = text('discovery_load_failed', 'Seerr did not answer.');
+                row.appendChild(message);
+                button.textContent = text('discovery_retry', 'Try again');
+            } else {
+                const label = text('discovery_look_further', 'Look for more');
                 button.title = label;
                 button.setAttribute('aria-label', label);
-            }
-            if (icon) {
                 const iconEl = document.createElement('span');
                 iconEl.className = 'material-icons';
-                iconEl.textContent = icon;
+                iconEl.textContent = 'refresh';
                 iconEl.setAttribute('aria-hidden', 'true');
                 button.appendChild(iconEl);
-            } else {
-                button.textContent = label;
             }
-            button.style.cssText = ACTION_ROW_CSS.button;
             button.addEventListener('click', () => {
                 retryCount = 0;
                 emptyPages = 0;
@@ -376,7 +377,7 @@ export function createScrollEngine(JE: SeerrDetailsBridge) {
                     if (emptyPages >= CONFIG.maxConsecutiveEmptyPages) {
                         console.debug(`${logPrefix} ${emptyPages} consecutive pages rendered nothing; pausing until "Keep looking" is pressed`);
                         paused = true;
-                        showRetryRow(null, 'refresh');
+                        showRetryRow('further');
                         break;
                     }
                     if (lastMeasuredAhead !== null && geometry.ahead <= lastMeasuredAhead + 1) {
@@ -384,7 +385,7 @@ export function createScrollEngine(JE: SeerrDetailsBridge) {
                         if (stuckFills >= CONFIG.maxStuckFills) {
                             console.warn(`${logPrefix} Buffer measurement hasn't grown after ${stuckFills} loads despite non-empty pages; pausing to avoid a runaway fetch loop`);
                             paused = true;
-                            showRetryRow(null, 'refresh');
+                            showRetryRow('further');
                             break;
                         }
                     } else {

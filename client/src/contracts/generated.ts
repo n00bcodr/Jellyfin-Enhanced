@@ -199,6 +199,16 @@ export interface BootstrapPublicConfig {
   "JellyseerrEnabled": boolean;
   "JellyseerrExcludeBlocklistedItems": boolean;
   "JellyseerrExcludeLibraryItems": boolean;
+  "JellyseerrFilterContentRating": boolean;
+  "JellyseerrFilterGenres": boolean;
+  "JellyseerrFilterKeywords": boolean;
+  "JellyseerrFilterLanguage": boolean;
+  "JellyseerrFilterRole": boolean;
+  "JellyseerrFilterRuntime": boolean;
+  "JellyseerrFilterScore": boolean;
+  "JellyseerrFilterStreaming": boolean;
+  "JellyseerrFilterVotes": boolean;
+  "JellyseerrFilterYear": boolean;
   "JellyseerrSearchExcludeLibraryItems": boolean;
   "JellyseerrShowAdvanced": boolean;
   "JellyseerrShowCollectionDiscovery": boolean;

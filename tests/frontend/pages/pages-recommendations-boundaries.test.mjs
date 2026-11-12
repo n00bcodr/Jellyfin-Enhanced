@@ -522,6 +522,24 @@ test('a category never asks past TMDB page 500, whatever the feed reports', asyn
   assert.equal(h.calls.some(call => call.path.endsWith('page=501')), false);
 });
 
+// From upstream's tests/frontend/pages/pages-discovery.test.mjs (ec470d75): the category's sort is the discovery
+// sections' quiet button and menu, with Most votes, which keeps a Spoiler-Guarded title by its hidden count.
+test('the Recommendations category sorts through the same button and menu, "Most votes" included', async t => {
+  const h = setup(t, { routes: [[`${DISCOVER}/trending?page=1`, { totalPages: 1, results: [
+    { id: 1, mediaType: 'movie', voteCount: 5 }, { id: 2, mediaType: 'movie', voteCount: 50 }, { id: 3, mediaType: 'movie', jeSortVotes: 20 }
+  ] }]] });
+  const P = h.load();
+  await P.showCategoryPage('trending');
+  assert.deepEqual(h.categoryCards(), [1, 2, 3]);
+  const sort = h.document.querySelector('#je-recommendations-category-sort .jellyseerr-sort-btn');
+  assert.equal(sort.textContent, 'Popular');
+  sort.click();
+  h.document.querySelector('.jellyseerr-sort-menu .actionSheetMenuItem[data-id="vote_count.desc"]').click();
+  assert.equal(sort.textContent, 'Most votes');
+  await until(() => String(h.categoryCards()) === '2,3,1', 'sorted by votes');
+  P.hideCategoryPage();
+});
+
 test('DISCOVERY-RECOMMENDATIONS-004: a sort reload ends the previous sort\'s requests; late pages land nowhere', async t => {
   const pageTwo = deferred();
   const h = setup(t, { routes: [
@@ -533,9 +551,8 @@ test('DISCOVERY-RECOMMENDATIONS-004: a sort reload ends the previous sort\'s req
   const load = h.armed.load({ deficitPx: 10, pageBudget: 1 });
   await until(() => h.calls.some(call => call.path.endsWith('trending?page=2')), 'page 2');
   const { signal } = h.calls.find(call => call.path.endsWith('trending?page=2'));
-  const select = h.document.querySelector('#je-recommendations-category-sort select');
-  select.value = 'vote_average.desc';
-  select.dispatchEvent(new h.window.Event('change'));
+  h.document.querySelector('#je-recommendations-category-sort .jellyseerr-sort-btn').click();
+  h.document.querySelector('.jellyseerr-sort-menu .actionSheetMenuItem[data-id="vote_average.desc"]').click();
   assert.equal(signal.aborted, true);
   pageTwo.resolve(feed([99], 'movie'));
   assert.deepEqual(plain(await load), { pages: 0, rendered: 0 });

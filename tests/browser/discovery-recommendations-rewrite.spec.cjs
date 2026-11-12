@@ -103,7 +103,8 @@ test('generated discovery and recommendations page, filter, sort, paginate, clos
   const sortRequest = page.waitForRequest(request => request.url().includes('sortBy=first_air_date.desc'));
   // Hold the pages after the first, so the re-read first page can be seen before the engine fills its buffer further.
   feed.holding = true;
-  await page.locator(`${section} .jellyseerr-sort-select`).selectOption('release_date.desc');
+  await page.locator(`${section} .jellyseerr-sort-btn`).click();
+  await page.locator('.jellyseerr-sort-menu .actionSheetMenuItem[data-id="release_date.desc"]').click();
   await sortRequest;
   // Reloaded from page 1: both types are on the page, with the filter still hiding the series.
   await expect.poll(() => page.locator(`${section} .card`).count()).toBe(40);

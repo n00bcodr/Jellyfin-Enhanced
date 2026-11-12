@@ -86,3 +86,13 @@ export function createPageReady(JE: SeerrDiscoveryHost) {
         });
     };
 }
+
+/** Cheap signature of what a list shows; React may reuse child nodes, so compare content, not identity. */
+export function listSignature(page: Element | null): string {
+    const container = page?.querySelector('.itemsContainer');
+    if (!container) return '';
+    const first = container.firstElementChild;
+    const label = first?.getAttribute('data-id') || first?.getAttribute('data-index') ||
+        first?.textContent?.trim().slice(0, 40) || '';
+    return `${container.childElementCount}|${label}`;
+}

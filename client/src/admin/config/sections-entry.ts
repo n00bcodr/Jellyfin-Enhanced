@@ -176,6 +176,16 @@ import { defineAllSections } from './sections';
  *  { id: 'jellyseerrShowTagDiscovery', type: 'toggle' }
  *  { id: 'jellyseerrShowPersonDiscovery', type: 'toggle' }
  *  { id: 'jellyseerrShowCollectionDiscovery', type: 'toggle' }
+ *  { id: 'jellyseerrFilterYear', type: 'toggle' }
+ *  { id: 'jellyseerrFilterScore', type: 'toggle' }
+ *  { id: 'jellyseerrFilterVotes', type: 'toggle' }
+ *  { id: 'jellyseerrFilterRuntime', type: 'toggle' }
+ *  { id: 'jellyseerrFilterGenres', type: 'toggle' }
+ *  { id: 'jellyseerrFilterLanguage', type: 'toggle' }
+ *  { id: 'jellyseerrFilterContentRating', type: 'toggle' }
+ *  { id: 'jellyseerrFilterStreaming', type: 'toggle' }
+ *  { id: 'jellyseerrFilterKeywords', type: 'toggle' }
+ *  { id: 'jellyseerrFilterRole', type: 'toggle' }
  *  { id: 'autoSeasonRequestEnabled', type: 'toggle' }
  *  { id: 'autoSeasonRequestRequireAllWatched', type: 'toggle' }
  *  { id: 'autoSeasonRequestThresholdValue', type: 'number' }

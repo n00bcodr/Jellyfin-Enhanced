@@ -74,6 +74,9 @@ GET /JellyfinEnhanced/jellyseerr/discover/tv/keyword/{keywordId}
 GET /JellyfinEnhanced/jellyseerr/discover/tv/network/{networkId}
 GET /JellyfinEnhanced/jellyseerr/discover/tv/studio/{studioId}
 GET /JellyfinEnhanced/jellyseerr/discover/tv/upcoming
+GET /JellyfinEnhanced/jellyseerr/filters/certifications/{mediaType}
+GET /JellyfinEnhanced/jellyseerr/filters/languages
+GET /JellyfinEnhanced/jellyseerr/filters/watchproviders/{mediaType}
 POST /JellyfinEnhanced/jellyseerr/import-users
 GET /JellyfinEnhanced/jellyseerr/issue
 POST /JellyfinEnhanced/jellyseerr/issue

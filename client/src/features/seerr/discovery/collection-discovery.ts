@@ -3,24 +3,33 @@
 import { baseOf, discoveryHost, filterOf, type SeerrDiscoveryHost } from '../host-discovery';
 import { decodeCollection, decodeNamedInfo, isUserActive, positiveInt } from './domain';
 import { isItemType, managedFetch, tolerant } from './lookups';
+import { createSay } from './say';
 import type { NamedTmdbInfo, OneShotContext } from './types';
 
 const logPrefix = '🪼 Jellyfin Enhanced: Collection Discovery:';
 const SECTION_CLASS = 'jellyseerr-collection-discovery-section';
 
-function createSectionContainer(title: string): HTMLElement {
-    const section = document.createElement('div');
-    section.className = `verticalSection ${SECTION_CLASS}`;
-    section.setAttribute('data-jellyseerr-collection-discovery', 'true');
-    section.style.cssText = 'margin-top:2em;padding-top:1em;border-top:1px solid rgba(255,255,255,0.1)';
+/**
+ * The section for missing collection movies; `goTo` is the words of the line that goes to it when it starts
+ * below the first screen.
+ */
+function createSectionContainer(JE: SeerrDiscoveryHost, title: string, goTo: string): HTMLElement {
+    const header = document.createElement('div');
+    header.className = 'jellyseerr-discovery-header';
+    header.setAttribute('data-jump-label', goTo);
     const heading = document.createElement('h2');
-    heading.className = 'sectionTitle sectionTitle-cards padded-left';
+    heading.className = 'sectionTitle sectionTitle-cards';
     heading.textContent = title;
-    heading.style.marginBottom = '0.5em';
-    section.appendChild(heading);
+    header.appendChild(heading);
+    if (JE.discoverySection?.buildSection) return JE.discoverySection.buildSection({ key: 'collection', page: 'detail', header });
+    // (Without the section module: the same parts, with no join.)
+    const section = document.createElement('div');
+    section.className = `verticalSection ${SECTION_CLASS} jellyseerr-discovery-section detailVerticalSection`;
+    section.setAttribute('data-jellyseerr-collection-discovery', 'true');
+    section.appendChild(header);
     const itemsContainer = document.createElement('div');
     itemsContainer.setAttribute('is', 'emby-itemscontainer');
-    itemsContainer.className = 'itemsContainer padded-right vertical-wrap';
+    itemsContainer.className = 'itemsContainer vertical-wrap';
     section.appendChild(itemsContainer);
     return section;
 }
@@ -28,6 +37,7 @@ function createSectionContainer(title: string): HTMLElement {
 function start(JE: SeerrDiscoveryHost): void {
     const base = baseOf(JE);
     const fetchManaged = managedFetch(JE, 'collection');
+    const label = createSay(JE);
     const boxsetCache = new Map<string, NamedTmdbInfo>();
 
     function getBoxSetInfo(boxsetId: string, signal: AbortSignal): Promise<NamedTmdbInfo | null> {
@@ -74,7 +84,9 @@ function start(JE: SeerrDiscoveryHost): void {
         }
         document.querySelector(`.${SECTION_CLASS}`)?.remove();
         const available = parts.length - missing.length;
-        const section = createSectionContainer(`Missing from ${boxset.name} (${available}/${parts.length})`);
+        const title = label('discovery_missing_from_collection', 'Missing from {collection} ({available}/{total})',
+            { collection: boxset.name, available, total: parts.length });
+        const section = createSectionContainer(JE, title, label('discovery_go_to', 'Go to {title}', { title }));
         const fragment = filterOf(JE).createCardsFragment(missing, { cardClass: 'overflowPortraitCard' });
         const itemsContainer = section.querySelector('.itemsContainer');
         if (!itemsContainer || fragment.childNodes.length === 0) {
@@ -82,7 +94,8 @@ function start(JE: SeerrDiscoveryHost): void {
             return undefined;
         }
         itemsContainer.appendChild(fragment);
-        detailSection.appendChild(section);
+        if (JE.discoverySection?.placeSection) JE.discoverySection.placeSection(detailSection, section, 'detail');
+        else detailSection.appendChild(section);
         console.debug(`${logPrefix} Section added with ${missing.length} missing movies from ${boxset.name}`);
         return true;
     }

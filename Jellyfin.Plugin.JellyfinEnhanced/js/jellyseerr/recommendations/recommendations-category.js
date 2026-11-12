@@ -64,11 +64,14 @@
   var text = (value) => typeof value === "string" ? value : "";
   var dateOf = (item) => text(item.releaseDate) || text(item.firstAirDate);
   var ratingOf = (item) => Number(item.jeSortRating) || Number(item.voteAverage) || 0;
+  var votesOf = (item) => Number(item.jeSortVotes || item.voteCount) || 0;
   function sortResults(results, sortBy) {
     if (!sortBy) return results;
     const sorted = [...results];
     if (sortBy === "vote_average.desc") {
       sorted.sort((a, b) => ratingOf(b) - ratingOf(a));
+    } else if (sortBy === "vote_count.desc") {
+      sorted.sort((a, b) => votesOf(b) - votesOf(a));
     } else if (sortBy === "release_date.desc") {
       sorted.sort((a, b) => dateOf(b).localeCompare(dateOf(a)));
     } else if (sortBy === "release_date.asc") {

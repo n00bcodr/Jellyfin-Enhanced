@@ -1,0 +1,85 @@
+/* The Filters button: Jellyfin's filter icon alone, as wide to press as Jellyfin's own toolbar icons,
+   in the accent while anything in its menu is narrowing the list. */
+.jellyseerr-discovery-header .jellyseerr-filters-btn.emby-tab-button { margin-inline: 0; padding-inline: .3em; }
+.jellyseerr-filters-btn .material-icons { margin-inline-end: 0; }
+.jellyseerr-filters-btn::after { inset-inline: -.45em; }
+/* On: the accent, kept under the pointer and the keys, and a dot at the icon's corner (as Jellyfin marks
+   its own filter button), so it is not told by colour alone. */
+.jellyseerr-filters-btn .material-icons { position: relative; }
+.jellyseerr-filters-btn.emby-tab-button[data-on], .jellyseerr-filters-btn.emby-tab-button[data-on]:hover, .jellyseerr-filters-btn.emby-tab-button[data-on]:focus-visible, .layout-tv .jellyseerr-filters-btn.emby-tab-button[data-on]:focus { color: var(--jellyseerr-accent); }
+.jellyseerr-filters-btn[data-on] .material-icons::after { content: ''; position: absolute; inset-block-start: -.06em; inset-inline-end: -.24em; width: .36em; height: .36em; border-radius: 50%; background: currentColor; }
+.jellyseerr-filters-btn[data-type-only] { display: none; }
+.jellyseerr-filters-type { display: none; white-space: nowrap; font-weight: 400; }
+/* The button's name, for a screen reader (the icon says it to the eye): out of sight, never out of the page. */
+.jellyseerr-filters-name { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+/* What is set, in words, on a line under the header (it is not held with it): each piece with the way to
+   take it away. The page's quiet text, no boxes; a press area of 44px each. */
+.jellyseerr-filters-set { --jellyseerr-accent: var(--jf-palette-primary-main, #00a4dc); display: flex; flex-wrap: wrap; align-items: center; gap: .15em 1.2em; margin: .4em 0 .7em; color: var(--jf-palette-text-secondary, rgba(255,255,255,.7)); }
+.jellyseerr-filters-token { display: inline-flex; align-items: center; min-width: 0; max-width: 100%; }
+.jellyseerr-filters-token > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jellyseerr-filters-remove, .jellyseerr-filters-clear { position: relative; flex: none; margin: 0; border: 0; border-radius: .3em; background: none; color: inherit; font: inherit; cursor: pointer; }
+.jellyseerr-filters-remove { display: inline-flex; padding: .2em; margin-inline-start: .15em; }
+.jellyseerr-filters-remove .material-icons { font-size: 1.1em; line-height: 1; }
+/* ("Clear filters" is no heavier and no brighter than the filters it clears: it comes last and needs no pull.) */
+.jellyseerr-filters-clear { padding: .2em 0; }
+/* (Where the section says nothing matches, the way out is offered there.) */
+.jellyseerr-discovery-section:has(.jellyseerr-filters-none) .jellyseerr-filters-clear { display: none; }
+/* (On a TV the remote is on the whole piece, words and ×: its ground covers both.) */
+.layout-tv .jellyseerr-filters-remove:focus { outline: none; box-shadow: none; color: var(--jf-palette-text-primary, #fff); }
+.layout-tv .jellyseerr-filters-token:focus-within { color: var(--jf-palette-text-primary, #fff); }
+.jellyseerr-filters-remove::after, .jellyseerr-filters-clear::after { content: ''; position: absolute; inset: 50% -.55em auto; height: 44px; transform: translateY(-50%); }
+.jellyseerr-filters-clear::after { inset-inline: 0; }
+.jellyseerr-filters-remove:hover, .jellyseerr-filters-remove:focus-visible, .jellyseerr-filters-clear:hover, .jellyseerr-filters-clear:focus-visible { color: var(--jf-palette-text-primary, #fff); }
+.jellyseerr-filters-clear:hover { text-decoration: underline; text-underline-offset: .2em; }
+.jellyseerr-filters-remove:focus-visible, .jellyseerr-filters-clear:focus-visible { outline: none; box-shadow: 0 0 0 .14em var(--jellyseerr-accent); }
+/* A group's own body: two fields to type a range in; a whole list to tick, with a field to narrow
+   a long one; a search. The fields are the menu's own ground a shade lighter, ringed in the
+   theme's colour while typed in and in its error colour while what is typed cannot be used. */
+.jellyseerr-menu-range { display: flex; align-items: center; gap: .5em; padding: 4px 16px 8px 32px; }
+.jellyseerr-menu-input { box-sizing: border-box; flex: 1 1 0; width: 100%; min-width: 0; padding: 6px 10px; border: 1px solid var(--jf-palette-divider, rgba(255,255,255,.12)); border-radius: var(--jf-shape-borderRadius, 4px); background: var(--jf-palette-action-hover, rgba(255,255,255,.08)); color: inherit; font: inherit; }
+.jellyseerr-menu-input::placeholder { color: var(--jf-palette-text-secondary, rgba(255,255,255,.7)); opacity: 1; }
+.jellyseerr-menu-input:focus { outline: none; border-color: var(--jf-palette-primary-main, #00a4dc); box-shadow: 0 0 0 1px var(--jf-palette-primary-main, #00a4dc); }
+.jellyseerr-sort-menu { --jellyseerr-error: var(--jf-palette-error-light, #e57373); }
+@supports (color: color-mix(in oklab, red 60%, blue)) { .jellyseerr-sort-menu { --jellyseerr-error: color-mix(in oklab, var(--jf-palette-error-main, #f44336) 52%, var(--jf-palette-text-primary, #fff)); } }
+.jellyseerr-menu-input[aria-invalid="true"] { border-color: var(--jellyseerr-error); box-shadow: 0 0 0 1px var(--jellyseerr-error); }
+/* What cannot be used is also said in words, where the hint was. */
+.jellyseerr-menu-note[data-error] { color: var(--jellyseerr-error); }
+/* A list's search field stays in sight under its group's row while the list scrolls. */
+.jellyseerr-menu-searchbar { position: sticky; top: calc(var(--jellyseerr-menu-head, 36px) - 1px); z-index: 1; padding: 5px 16px 6px 32px; background-color: var(--jellyseerr-menu-ground); background-image: var(--jellyseerr-menu-shade); }
+.jellyseerr-menu-search { display: block; width: 100%; }
+/* A row to tick has a box, empty until it is ticked (then in the accent); one given by the page itself is dim and cannot be pressed. */
+.jellyseerr-sort-menu .jellyseerr-menu-tick .actionsheetMenuItemIcon { color: var(--jf-palette-text-secondary, rgba(255,255,255,.7)); }
+.jellyseerr-sort-menu .jellyseerr-menu-tick[aria-checked="true"] .actionsheetMenuItemIcon { color: var(--jellyseerr-accent); }
+html .jellyseerr-sort-menu .actionSheetMenuItem.jellyseerr-menu-tick[aria-disabled="true"] { color: var(--jf-palette-text-disabled, rgba(255,255,255,.5)); cursor: default; background: none !important; }
+.jellyseerr-sort-menu .jellyseerr-menu-tick[aria-disabled="true"] .actionsheetMenuItemIcon { color: inherit; }
+/* A long name in a list takes a second line: its end is often what tells two entries apart ("… Amazon Channel"). (Its box stays in the row's middle, as on any list of two-line items.) */
+html .jellyseerr-sort-menu .jellyseerr-menu-list .actionSheetItemText { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+/* The letters a search found in a name. */
+.jellyseerr-menu-found { font-weight: 700; }
+/* Under what is ticked or likeliest wanted at a long list's head, before the rest of it. */
+.jellyseerr-menu-list-rule { height: 1px; margin: 4px 16px 4px 32px; background: var(--jf-palette-divider, rgba(255,255,255,.12)); }
+.jellyseerr-menu-note, .jellyseerr-menu-label { color: var(--jf-palette-text-secondary, rgba(255,255,255,.7)); }
+.jellyseerr-menu-note { padding: 2px 16px 8px 32px; font-size: .86em; line-height: 1.4; }
+/* What a search has narrowed away is gone (a row's own display would otherwise keep it). */
+.jellyseerr-sort-menu .actionSheetMenuItem[hidden], .jellyseerr-menu-note[hidden], .jellyseerr-menu-label[hidden] { display: none !important; }
+.jellyseerr-menu-label { padding: 8px 16px 2px 32px; font-size: .86em; }
+.jellyseerr-menu-list:empty { display: none; }
+/* (A phone's browser zooms into a field whose type is under 16px.) */
+@media (max-width: 600px) { .jellyseerr-menu-input { font-size: max(1em, 16px); min-height: 44px; } }
+.jellyseerr-menu-group .listItemBody { display: flex; flex-direction: row; align-items: baseline; justify-content: space-between; gap: 1.5em; }
+.jellyseerr-menu-group .actionSheetItemText { flex: 0 1 auto; }
+.jellyseerr-menu-group-value { color: var(--jf-palette-text-secondary, rgba(255,255,255,.7)); white-space: nowrap; }
+.jellyseerr-menu-group[data-set] .jellyseerr-menu-group-value { color: var(--jellyseerr-accent); }
+.jellyseerr-menu-group .actionsheetMenuItemIcon { transition: transform .15s; }
+.jellyseerr-menu-group[aria-expanded="true"] .actionsheetMenuItemIcon { transform: rotate(180deg); }
+html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-group .actionsheetMenuItemIcon { margin-inline-start: .6em !important; }
+html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-choices .actionSheetMenuItem { padding-inline-start: 32px; }
+/* "Clear filters" is the menu's foot, always in reach; at full strength only while something is set. */
+html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-foot { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--jf-palette-divider, rgba(255,255,255,.12)); }
+html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-foot { display: flex; }
+html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-foot > .actionSheetMenuItem { width: auto; }
+html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 auto; }
+/* On a touch screen the menu can fill the screen: its foot then ends with the way out, said (nothing waits for it; what is set has taken effect). */
+.jellyseerr-sort-menu .jellyseerr-menu-done { display: none !important; flex: none; }
+.jellyseerr-sort-menu .jellyseerr-menu-done .actionsheetMenuItemIcon { display: none; }
+@media (pointer: coarse) { html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-done { display: flex !important; } }

@@ -12,6 +12,8 @@ Each entry is bundled separately, so state lives where only one copy can exist. 
 
 Public surfaces keep their baseline shape: every `JE.discoveryFilter` and `JE.discoveryBase` member, `JE.recommendationsPage`, and every `JE.internals.recommendationsPage` member. The catalogues, sort options and both stylesheets are byte-identical to the baseline; `artifacts/rewrite-discovery-recommendations/parity.json` records the comparison. The controller gains `dispose`, and the internals gain `disposeRender` and `sweepRenders`.
 
+The port of upstream ec470d75 (#1044, the section joins the page, with Jellyfin's controls, a Filters menu and role lines) changed this slice on purpose, as upstream did: the sort options (labels, and Most votes), the section header and its controls, the section's placement and retry row, a person's merged credits, and the translated title of a collection's section. Upstream ships the section's parts as seven scripts of their own before `discovery-filter-utils.js`; `js/component-scripts.json` is pinned, so here `discovery-filter-utils.ts` bundles them and publishes `JE.discoveryStyles`, `JE.discoveryBusy`, `JE.discoveryMenu`, `JE.discoveryRoles`, `JE.discoverySection` and `JE.discoveryFilters`, in upstream's load order, before `JE.discoveryFilter`. Every entry reads them at call time. The ledger entry (`docs/upstream-sync.json`) lists every difference from upstream.
+
 ## Retained behavior
 
 - **Discovery:** genre, tag, network/studio, person and collection sections, with their config gates (network stays opt-in).
@@ -22,7 +24,7 @@ Public surfaces keep their baseline shape: every `JE.discoveryFilter` and `JE.di
 - **Recommendations:** five media rows, genre tiles, studio and network tiles, and the "View All" category page with one or two feeds.
 - **Hosts:** standalone sidebar page, Plugin Pages through `renderForCustomTab`, Custom Tabs and native tabs.
 - **Content visibility:** the `discovery` Hidden Content surface, exclude-library and exclude-blocklisted settings, the Spoiler Guard sort score, and the missing-only collection rule are unchanged.
-- **Text:** locale keys are unchanged. Strings that were hard-coded in English in the baseline, such as `Sort:` and `Missing from …`, stay hard-coded.
+- **Text:** the discovery section's words are translated (the `discovery_*` keys upstream added with ec470d75), the collection section's `Missing from …` title included.
 
 ## Deliberate behavior changes
 

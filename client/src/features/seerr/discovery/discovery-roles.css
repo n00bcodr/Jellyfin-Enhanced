@@ -1,0 +1,6 @@
+/* On a person's titles: what the person did in each (the part played, the job held), one line under the title. */
+.jellyseerr-discovery-section .jellyseerr-role > bdi { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The part and the jobs are a line each. Where a title of the list has both, every card keeps two lines, so the rows stay level. */
+/* Asked for by a job and not for acting (the Role filter), the jobs come before the part. */
+.jellyseerr-discovery-section[data-jobs-first] .jellyseerr-role-both { display: flex; flex-direction: column-reverse; }
+.jellyseerr-discovery-section .itemsContainer:has(.jellyseerr-role-both) .jellyseerr-role { min-height: 2.7em; min-height: 2lh; }
