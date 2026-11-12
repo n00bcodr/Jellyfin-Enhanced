@@ -415,6 +415,64 @@
     }
   }
 
+  /**
+   * Asks for confirmation with Jellyfin's own dialog, falling back to window.confirm
+   * on clients that do not expose Dashboard.confirm.
+   * @param {string} text - The question.
+   * @param {string} title - The dialog title.
+   * @returns {Promise<boolean>} Whether the user confirmed.
+   */
+  function confirmRemoval(text, title) {
+    return new Promise(resolve => {
+      if (window.Dashboard && typeof window.Dashboard.confirm === 'function') {
+        try {
+          window.Dashboard.confirm(text, title, ok => resolve(!!ok));
+          return;
+        } catch (err) {
+          console.warn(`${logPrefix} Dashboard.confirm threw, falling back:`, err);
+        }
+      }
+      resolve(window.confirm(title ? `${title}\n\n${text}` : text));
+    });
+  }
+
+  /**
+   * Deletes a request in Seerr after the user confirms. The server checks that the caller
+   * made the request or may manage requests; the media itself is never deleted.
+   * @param {HTMLButtonElement} btn - The clicked remove button (carries data-request-id).
+   * @returns {Promise<void>}
+   */
+  async function handleRemoveRequest(btn) {
+    const requestId = btn.getAttribute('data-request-id');
+    if (!requestId || btn.disabled) return;
+
+    const title = btn.getAttribute('data-request-title') || '';
+    const dialogTitle = JE.t?.('requests_remove_request') || 'Remove request';
+    const question = (JE.t?.('requests_remove_request_confirm') || 'Remove the request for "{title}"? The media itself is not deleted.')
+      .replace('{title}', title);
+    if (!(await confirmRemoval(question, dialogTitle))) return;
+
+    btn.disabled = true;
+    const icon = btn.querySelector('.material-icons');
+    if (icon) icon.textContent = 'hourglass_empty';
+
+    try {
+      // skipRetry: never repeat a delete on its own.
+      await JE.core.api.plugin(`/arr/requests/${requestId}`, {
+        method: 'DELETE',
+        skipRetry: true,
+      });
+      JE.toast?.(JE.escapeHtml(JE.t?.('requests_remove_request_success') || 'Request removed'), 3000);
+      await fetchRequests();
+      renderPage();
+    } catch (err) {
+      console.error(`${logPrefix} Failed to remove request ${requestId}:`, err);
+      JE.toast?.(JE.escapeHtml(JE.t?.('requests_remove_request_failed') || 'Could not remove the request'), 4000);
+      btn.disabled = false;
+      if (icon) icon.textContent = 'delete';
+    }
+  }
+
   P.state = state;
   P.clearAvatarObjectUrlCache = JE.helpers.clearAvatarObjectUrlCache;
   P.hydrateAvatarImages = JE.helpers.hydrateAvatarImages;
@@ -425,4 +483,5 @@
   P.getIssueTmdbId = getIssueTmdbId;
   P.loadAllData = loadAllData;
   P.handleRequestAction = handleRequestAction;
+  P.handleRemoveRequest = handleRemoveRequest;
 })();

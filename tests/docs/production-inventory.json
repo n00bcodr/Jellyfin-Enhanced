@@ -395,6 +395,10 @@
       "category": "ScheduledTasks"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/AutoRequestRemovalTask.cs",
+      "category": "ScheduledTasks"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/BuildTagCacheTask.cs",
       "category": "ScheduledTasks"
     },
@@ -716,6 +720,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/RadarrService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/RequestRemovalPlanner.cs",
       "category": "Services"
     },
     {
@@ -3733,6 +3741,15 @@
       ]
     },
     {
+      "verb": "DELETE",
+      "path": "/JellyfinEnhanced/arr/requests/{requestId}",
+      "method": "RemoveRequest",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
       "verb": "GET",
       "path": "/JellyfinEnhanced/arr/calendar",
       "method": "GetCalendarEvents",
@@ -6312,6 +6329,14 @@
       "type": "bool",
       "initializer": null,
       "constructor_assignment": "true",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "AutoRequestRemovalEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "false",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
     },
     {
@@ -10218,6 +10243,11 @@
       "key": "JellyfinEnhancedAudioLanguageTagsSync"
     },
     {
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/AutoRequestRemovalTask.cs",
+      "class": "AutoRequestRemovalTask",
+      "key": "JellyfinEnhancedAutoRequestRemoval"
+    },
+    {
       "file": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/BuildTagCacheTask.cs",
       "class": "BuildTagCacheTask",
       "key": "JellyfinEnhancedBuildTagCache"
@@ -10386,11 +10416,11 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 479,
-    "routes": 202,
-    "configuration_properties": 755,
+    "files": 481,
+    "routes": 203,
+    "configuration_properties": 756,
     "storage_references": 87,
-    "scheduled_tasks": 16,
+    "scheduled_tasks": 17,
     "locales": 33
   }
 }

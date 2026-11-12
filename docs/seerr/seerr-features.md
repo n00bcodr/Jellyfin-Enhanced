@@ -610,7 +610,7 @@ Open the page to check your requests.
 
 #### Request browsing and management
 
-Browse your requests by status. If you have management permission, you can also approve or decline pending requests.
+Browse your requests by status and remove requests you no longer want. If you have management permission, you can also approve or decline pending requests.
 
 **How to use:**
 
@@ -618,6 +618,7 @@ Browse your requests by status. If you have management permission, you can also 
 2. Use the pagination arrows to browse more cards.
 3. Follow a card's link to Seerr or an available Jellyfin item.
 4. If authorized, press **Approve** or **Decline** on a pending request.
+5. Press **Remove request** (the bin icon) and confirm to delete a request from Seerr. The media itself is not deleted.
 
 ![Requests section on a phone with status filter tabs and request status badges](../images/arr/request-statuses.webp)
 
@@ -626,6 +627,8 @@ Browse your requests by status. If you have management permission, you can also 
     Page size adjusts to the viewport and fits whole card rows. There is no Declined filter tab; declined cards can appear in **All**. The Downloads search control does not search requests or issues.
 
     Linked ordinary users see their own requests. Linked Jellyfin administrators and Seerr accounts with `ADMIN`, `REQUEST_VIEW`, or `MANAGE_REQUESTS` can see all requests. Request cards show requester information and status. Authorized Jellyfin/Seerr administrators and `MANAGE_REQUESTS` users can press **Approve** or **Decline** on pending requests. Controls follow the raw pending request status even if some media is already available.
+
+    **Remove request** shows on your own requests in any status (pending, approved or completed), and on every request for Jellyfin administrators and Seerr `ADMIN`/`MANAGE_REQUESTS` users. JE checks who made the request and deletes it with the Seerr API key, so a requester can also remove an approved request, which Seerr alone only allows managers to do. Only the request record is deleted; files, Radarr/Sonarr entries and Seerr's availability stay as they are. To remove requests automatically once watched, see [Auto Request Removal](#auto-request-removal).
 
     **Coming Soon** uses future movie release or TV air dates and displays countdowns. **Processing** excludes Coming Soon and orphaned requests; the client additionally excludes **Partially Available** entries. Processing/Coming Soon read at most 500 upstream requests before local pagination.
 
@@ -886,3 +889,23 @@ Admin trigger settings ([complete trigger and destination reference](seerr-setti
     JE considers the entry immediately after the watched movie in Seerr's returned collection parts. It does not locally sort that array or search farther ahead if that next entry is already available/pending/processing or skipped by release checking.
 
     User/movie checks are throttled to about once per hour. **Original** copies Seerr request settings rather than the watched file's quality. Unusable original settings and an empty **Custom** configuration fall back to **Default**. The default **Use default instead of 4K fallback** behavior also falls back when original settings were 4K.
+
+#### Auto Request Removal:
+
+Delete a request from Seerr once the person who asked for it has watched it.
+
+**How to use:** Open **Seerr** → **Auto Request Removal** and enable **Remove Watched Requests**. The **Remove watched requests from Seerr** scheduled task does the removal once a day: a request goes on the first run after its requester has watched it.
+
+Admin settings ([full reference](seerr-settings.md#auto-request-removal)):
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| **Remove Watched Requests** | Off | Deletes approved or completed requests that their requester has watched. |
+
+??? info "How it works"
+
+    Only the request record is deleted. The media stays available in Seerr and in the Jellyfin library, and nothing is removed from Radarr/Sonarr. Pending, declined and failed requests are never removed.
+
+    Only the requester's own viewing counts. A movie counts once any library version is watched. A series request counts once every requested season is available in Seerr (for the request's quality, 4K or not), is present in the library, and every episode of it is watched.
+
+    The task reads the whole Seerr request list before deleting anything and stops without changes if any page fails. Requests from users on the **Blocked Users** list are skipped. Deletes use the Seerr API key, so no Seerr permission is needed from the requester.

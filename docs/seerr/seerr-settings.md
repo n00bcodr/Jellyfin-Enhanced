@@ -418,6 +418,18 @@ Request the next collection movie based on playback.
 
     The unset starting values are `-1` for **Radarr Server:** and `0` for **Quality Profile:**.
 
+### Auto Request Removal
+
+Delete a Seerr request once the user who made it has watched it.
+
+**How to use:** Open **Seerr** → **Auto Request Removal** and enable the feature. The **Remove watched requests from Seerr** scheduled task runs daily at 04:30 and removes each request on the first run after its requester has watched it; run it from **Dashboard** → **Scheduled Tasks** to apply it at once.
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| **Remove Watched Requests** | Off | `AutoRequestRemovalEnabled`; deletes approved or completed requests once their requester has watched them. Only the request is deleted, never the media. |
+
+See [Auto Request Removal](seerr-features.md#auto-request-removal) for how movies and series are judged watched.
+
 ## Recently Added Sync to Seerr
 
 Help Seerr discover availability after Jellyfin library additions by triggering its recently-added scan.

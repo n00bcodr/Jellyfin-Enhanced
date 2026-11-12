@@ -910,6 +910,15 @@ JEAdmin.define({
         ]
     },
 
+    'seerr-auto-request-removal': {
+        title: 'Auto Request Removal', icon: 'playlist_remove',
+        items: [
+            { id: 'autoRequestRemovalEnabled', prop: 'AutoRequestRemovalEnabled', type: 'toggle', main: true, label: 'Remove Watched Requests',
+              desc: 'Delete a Seerr request once the user who made it has watched it. Only the request is deleted; the media stays available in Seerr and in the library.' },
+            { type: 'note', html: 'Runs daily through the <strong>Remove watched requests from Seerr</strong> scheduled task (Dashboard &gt; Scheduled Tasks); a request is removed on the first run after its requester has watched it.<br/>Only the requester\'s own viewing counts. Movies count once any version is watched; series requests are removed once every episode of every requested season is watched and available.<br/>Pending, declined and failed requests are never removed.' }
+        ]
+    },
+
     'seerr-watchlist': {
         title: 'Watchlist', icon: 'bookmark_added',
         items: [
