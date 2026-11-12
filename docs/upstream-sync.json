@@ -1005,6 +1005,35 @@
       ],
       "notes": "Re-implemented in client/src/features/player/playback-info.ts. As upstream: the ShowPlaybackInfo shortcut first toggles jellyfin-web’s own stats panel through the “Playback Info” entry (data-id=\"stats\") of the OSD settings menu, while a style keeps .dialogContainer, .dialogBackdrop and .actionSheet invisible until 400 ms after the attempt; the plugin overlay is the fallback when the settings button or that entry is missing or the attempt throws (same warning). The next press toggles the native panel off the same way, or closes the plugin overlay if that is open. On the lab (Chromium) the port and upstream’s build show the same: the native panel with 16 rows after the first press, hidden after the second, no plugin overlay, nothing left behind; before the port the plugin overlay opened. Differences from upstream: (1) The menu is driven with the track menus’ helpers from native-track-menu.ts (createTrackMenu now returns them, and openOsdMenu takes its timeout, 1.5 s here as upstream’s budget): the new sheet is awaited with JE.core.dom.waitForElement instead of a requestAnimationFrame loop, and the button and the entry get a pointerdown before the click. jellyfin-web’s video OSD in Firefox drops a click whose target does not contain the target of the last keydown or pointerdown, so upstream’s plain .click() after the key press never opens the menu there: on the lab in Firefox upstream’s build shows the plugin overlay after its 1.5 s wait, the port the native panel. (2) A menu without the entry is closed the way dialogHelper accepts, pointerdown, mousedown and click on its .dialogContainer. Upstream clicks a .dialogBackdrop inside the container, but jellyfin-web 12.4 puts the backdrop before the container, so nothing is clicked: on the lab, with the entry removed as the sheet is built, upstream’s build leaves the settings menu open and visible beside the plugin overlay, and still after the overlay is closed again; the port closes it unseen and opens the overlay. (3) A second press while the menu is still opening is ignored. Upstream starts a second attempt: on the lab in Firefox, a second press during upstream’s 1.5 s wait left two plugin overlays, the first one no longer referenced and never removed. And when the player is left while the menu opens no overlay follows (the wait ends with the player’s lifetime and the press’s lease is checked). The hiding style is removed by a plain timer, not one of the player lifetime’s, so a navigation cannot cancel its removal. (4) docs/enhanced/enhanced-features.md says what the shortcut does now; upstream’s docs still say it toggles JE’s overlay. Differences 1 to 4 are filed as one found bug. Kept from upstream as it is: jellyfin-web logs “ActionSheet closed without resolving” as a page error when the fallback closes the menu, as it does when a person closes any sheet by clicking beside it; a menu that opens only after the 1.5 s wait is not closed (upstream the same). Tests: upstream’s commit adds none. tests/frontend/features/player/features-playback-info.test.mjs presses the key through enhanced/events.js into enhanced/player/playback.js with the real core/dom-observer.js, against a stand-in for jellyfin-web’s OSD menu modelled on what the lab showed (the backdrop beside the container, closing only for a mousedown and click on the container, Firefox’s click guard): native panel on and off with the menu hidden while open, Firefox, a menu without the entry, no settings button, a second press while the menu opens, leaving the player. Five fail before the port; the one without a settings button describes behaviour that does not change. No setting, string, route, authorization or registration changes; nothing stored or cached changes.",
       "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p33-*"
+    },
+    {
+      "sha": "dcceed784c8f429b1c12d4d5b7e21c8b89b477f9",
+      "date": "2026-11-13T00:30:35+08:00",
+      "subject": "fix(mdblist): keep rating scores a batch answer leaves out (#1047)",
+      "class": "fix",
+      "features": [
+        "details-providers",
+        "media-tags"
+      ],
+      "issues": [
+        "#1047"
+      ],
+      "release": null,
+      "size": {
+        "files": 5,
+        "insertions": 218,
+        "deletions": 11
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/MdblistService.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/TagCacheSourceRatings.cs",
+        "tests/backend/Integrations/MdblistBatchAnswerTests.cs",
+        "tests/backend/PosterTags/RatingSourceTests.cs",
+        "tests/backend/ScheduledTasks/TaskMetadataTests.cs"
+      ],
+      "status": "already-present",
+      "rewriteCommits": [],
+      "evidence": "The rewrite’s ad32d941 (fix(details-providers): rating scores a batch MDBList answer leaves out) is this change; it landed here first. Compared line by line (indentation aside): upstream’s hunks to Services/MdblistService.cs and Services/TagCacheSourceRatings.cs are the rewrite’s to Features/DetailsProviders/Services/MdblistService.cs and Features/MediaTags/Services/TagCache/TagCacheSourceRatings.cs (the batch keeps only items with a score, a body that is not a list is a failed batch, a title the answer leaves out or returns without scores gets its own lookup within the same reserve with quotaGateHeld, else a short retry keeping its last good scores; a details-page lookup that changes a title’s scores publishes them to the tag cache through PublishSourceRatings(tmdbId)). The one difference: MdblistService reaches the tag cache through the MediaTags public API (MediaTagsApi.TagCache.PublishSourceRatings, Features/MediaTags/PublicApi/MediaTagsApi.cs) instead of TagCacheService.Instance, as the backend feature boundary requires. Upstream’s tests are here with only usings, namespace and the controller type changed: tests/backend/Features/DetailsProviders/MdblistBatchAnswerTests.cs (3 tests), RatingSourceTests’ request count 2 → 3, and TaskMetadataTests’ batch stub that answers every requested title. On this tree (ad32d941): MdblistBatchAnswerTests, RatingSourceTests and TaskMetadataTests 80 passed, 0 failed; je12 test details-providers media-tags --dotnet passed (node 2137, dotnet 2046). No lab run: MDBList cannot be reached from a lab, so no changed MDBList path runs live there."
     }
   ]
 }
