@@ -22,7 +22,10 @@
  * write(value, config) to convert, onChange(value, config) returning more
  * fields to write, when(config) (disabled unless true), visible(config)
  * (hidden unless true), place: 'section' (the section draws it with
- * A.fieldHtml; the page still binds it) and break (start a new box).
+ * A.fieldHtml; the page still binds it), break (start a new box), wide
+ * (a text field for a long value, such as a URL, keeps its full width) and mask
+ * (a text field for a key: shown as dots until hovered or focused, like the
+ * main page's API keys, without type="password" so browsers do not offer to save it).
  * A section whose own editors write fields that are not declared above
  * names them in `writes: ['Field', …]` (one line).
  *
@@ -433,7 +436,7 @@
             case 'number':
             case 'text':
                 return `<div class="je-ta-field" data-field-row="${esc(f.id)}"><span class="je-ta-switch-text"><label class="je-ta-switch-name" for="${esc(f.id)}" data-je-label>${label}</label>${f.desc ? `<span class="je-ta-switch-desc" id="${descId}">${tx(f.desc, f.descParams)}</span>` : ''}</span>`
-                    + `<span class="je-ta-field-control"><input type="${f.secret ? 'password' : f.type}" id="${esc(f.id)}" ${data} value="${esc(value)}"${f.secret ? ' autocomplete="new-password" spellcheck="false"' : ''}${f.type === 'number' ? ` min="${f.min}" max="${f.max}" inputmode="numeric"` : ''}${f.pattern ? ` pattern="${esc(f.pattern)}"` : ''}${f.placeholder ? ` placeholder="${tx(f.placeholder)}"` : ''}${described}>${f.unit ? `<span class="je-ta-unit">${tx(f.unit)}</span>` : ''}</span></div>`;
+                    + `<span class="je-ta-field-control${f.wide ? ' je-ta-field-control--wide' : ''}"><input type="${f.secret ? 'password' : f.type}" id="${esc(f.id)}" ${data} value="${esc(value)}"${f.secret ? ' autocomplete="new-password" spellcheck="false"' : ''}${f.mask ? ' class="je-ta-masked" autocomplete="off" spellcheck="false"' : ''}${f.type === 'number' ? ` min="${f.min}" max="${f.max}" inputmode="numeric"` : ''}${f.pattern ? ` pattern="${esc(f.pattern)}"` : ''}${f.placeholder ? ` placeholder="${tx(f.placeholder)}"` : ''}${described}>${f.unit ? `<span class="je-ta-unit">${tx(f.unit)}</span>` : ''}</span></div>`;
             case 'textarea':
                 return `<div class="je-ta-field je-ta-field--block" data-field-row="${esc(f.id)}"><span class="je-ta-switch-text"><label class="je-ta-switch-name" for="${esc(f.id)}" data-je-label>${label}</label>${f.desc ? `<span class="je-ta-switch-desc" id="${descId}">${tx(f.desc, f.descParams)}</span>` : ''}</span>`
                     + `<span class="je-ta-field-control"><textarea id="${esc(f.id)}" ${data} rows="${f.rows || 4}" spellcheck="false"${f.pattern ? ` pattern="${esc(f.pattern)}"` : ''}${f.placeholder ? ` placeholder="${tx(f.placeholder)}"` : ''}${described}>${esc(value)}</textarea></span></div>`;

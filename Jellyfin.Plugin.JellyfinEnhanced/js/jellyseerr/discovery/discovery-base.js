@@ -77,14 +77,15 @@
      *   key. Default: `${key}-${id}-${location.hash}`.
      * @property {(ctx: {id: string, signal: AbortSignal}) => Promise<{tvId?: (number|null), movieId?: (number|null), title: string, [extra: string]: any}|null>} [resolveFeeds]
      *   dual-feed only: check user status and resolve TMDB feed ids + section
-     *   title. Return null (or no ids) to skip rendering. Any extra property
+     *   title (and `name`, the name the title is about, kept whole when the
+     *   heading wraps). Return null (or no ids) to skip rendering. Any extra property
      *   is kept on the feeds object handed to buildDiscoverPath, so a module
      *   can record how an id is to be read (e.g. network vs company).
      * @property {(kind: 'tv'|'movie', id: number, feeds: {tvId: (number|null), movieId: (number|null), [extra: string]: any}) => string} [buildDiscoverPath]
      *   dual-feed only: API path for a feed page, before ?page/&sortBy.
-     * @property {(ctx: {id: string, signal: AbortSignal}) => Promise<{items: Array<any>, title: string}|null>} [resolveItems]
+     * @property {(ctx: {id: string, signal: AbortSignal}) => Promise<{items: Array<any>, title: string, name?: string}|null>} [resolveItems]
      *   client-paged only: check user status and fetch the full (deduped)
-     *   result list + section title. Return null to skip rendering.
+     *   result list + section title (and the name it is about). Return null to skip rendering.
      * @property {(ctx: {id: string, pageKey: string, signal: AbortSignal, waitForPageReady: (signal?: AbortSignal) => Promise<HTMLElement|null>}) => Promise<boolean|undefined>} [renderOneShot]
      *   one-shot only: perform the full render. Return true to mark the page
      *   as processed (and end metrics).
@@ -103,7 +104,9 @@
         const sectionSelector = `.jellyseerr-${key}-discovery-section`;
         const isDualFeed = spec.mode === 'dual-feed';
         const isClientPaged = spec.mode === 'client-paged';
+        // The page's own card: a list page's grid uses portraitCard, a detail page's lists overflowPortraitCard.
         const cardClass = isDualFeed ? 'portraitCard' : 'overflowPortraitCard';
+        const pageKind = isDualFeed ? 'list' : 'detail';
         const PAGE_SIZE = spec.pageSize || 40;
 
         // ---- Chassis state (all modes) -------------------------------------
@@ -237,8 +240,19 @@
         }
 
         /**
-         * Fetches one discover feed page (dual-feed), appending page/sortBy
-         * query params exactly as the modules always did.
+         * A translated string, in English where the key has no translation.
+         * @param {string} key - Locale key
+         * @param {string} fallback - English text
+         * @returns {string}
+         */
+        function translate(key, fallback) {
+            const text = typeof JE.t === 'function' ? JE.t(key) : '';
+            return text && text !== key ? text : fallback;
+        }
+
+        /**
+         * Fetches one discover feed page (dual-feed): the page, then what the
+         * section's controls ask for (the order, then the further filters).
          * @param {'tv'|'movie'} kind
          * @param {number} feedId
          * @param {number} page
@@ -253,11 +267,8 @@
                 if (signal?.aborted) {
                     throw new DOMException('Aborted', 'AbortError');
                 }
-                const sortBy = kind === 'tv'
-                    ? (JE.discoveryFilter?.getTvSortMode(key) || '')
-                    : (JE.discoveryFilter?.getSortMode(key) || '');
-                let path = `${spec.buildDiscoverPath(kind, feedId, /** @type {NonNullable<typeof currentFeeds>} */ (currentFeeds))}?page=${page}`;
-                if (sortBy) path += `&sortBy=${encodeURIComponent(sortBy)}`;
+                const path = `${spec.buildDiscoverPath(kind, feedId, /** @type {NonNullable<typeof currentFeeds>} */ (currentFeeds))}?page=${page}`
+                    + (JE.discoveryFilter?.feedQuery?.(key, kind) ?? '');
                 const response = await fetchWithManagedRequest(path, { signal });
                 if (signal?.aborted) {
                     throw new DOMException('Aborted', 'AbortError');
@@ -324,6 +335,9 @@
             if (sortBy === 'vote_average.desc') {
                 // Spoiler Guard keeps a hidden score here, so a protected title doesn't sink.
                 sorted.sort((a, b) => (b.jeSortRating || b.voteAverage || 0) - (a.jeSortRating || a.voteAverage || 0));
+            } else if (sortBy === 'vote_count.desc') {
+                // Spoiler Guard keeps a hidden vote count here too, for the same reason.
+                sorted.sort((a, b) => (Number(b.jeSortVotes || b.voteCount) || 0) - (Number(a.jeSortVotes || a.voteCount) || 0));
             } else if (sortBy === 'release_date.desc') {
                 sorted.sort((a, b) => {
                     const dateA = a.releaseDate || a.firstAirDate || '';
@@ -349,7 +363,8 @@
             const filter = JE.discoveryFilter;
 
             if (isClientPaged) {
-                const sorted = applySortOrder(cachedAllResults);
+                // A person's titles are filtered here, by the section's further filters.
+                const sorted = applySortOrder(filter?.keepByFilters ? filter.keepByFilters(key, cachedAllResults) : cachedAllResults);
                 if (!filter) {
                     return sorted;
                 }
@@ -386,41 +401,75 @@
         }
 
         /**
-         * Creates the section container with optional filter and sort controls.
+         * Creates the section with its header (title, then a row with the
+         * filter and sort controls).
          * @param {string} title - Section heading text
          * @param {boolean} showFilter - Whether to show the All/Movies/Series filter
          * @param {Function} onFilterChange - Callback when filter changes: (newMode) => void
          * @param {Function} [onSortChange] - Callback when sort changes: () => void
+         * @param {string} [name] - The name the title is about: kept whole when the heading wraps
          * @returns {HTMLElement} The section element
          */
-        function createSectionContainer(title, showFilter, onFilterChange, onSortChange) {
-            const section = document.createElement('div');
-            section.className = isDualFeed
-                ? `verticalSection jellyseerr-${key}-discovery-section padded-left padded-right`
-                : `verticalSection jellyseerr-${key}-discovery-section`;
-            section.setAttribute(`data-jellyseerr-${key}-discovery`, 'true');
-            section.style.cssText = 'margin-top:2em;padding-top:1em;border-top:1px solid rgba(255,255,255,0.1)';
-
+        function createSectionContainer(title, showFilter, onFilterChange, onSortChange, name) {
+            /** @type {HTMLElement} */
+            let header;
             // Use shared header helper if available, otherwise create basic header
             if (JE.discoveryFilter?.createSectionHeader) {
-                const header = JE.discoveryFilter.createSectionHeader(title, key, showFilter, onFilterChange, onSortChange);
-                section.appendChild(header);
+                header = JE.discoveryFilter.createSectionHeader(title, key, showFilter, onFilterChange, onSortChange, name, isClientPaged ? 'person' : 'feed');
             } else {
+                header = document.createElement('div');
+                header.className = 'jellyseerr-discovery-header';
                 const titleElement = document.createElement('h2');
                 titleElement.className = 'sectionTitle sectionTitle-cards';
                 titleElement.textContent = title;
-                titleElement.style.marginBottom = '1em';
-                section.appendChild(titleElement);
+                header.appendChild(titleElement);
             }
-
+            if (JE.discoverySection?.buildSection) {
+                return JE.discoverySection.buildSection({ key, page: pageKind, header });
+            }
+            // (Without the section module: the same parts, with no join.)
+            const section = document.createElement('div');
+            section.className = `verticalSection jellyseerr-${key}-discovery-section jellyseerr-discovery-section${isDualFeed ? '' : ' detailVerticalSection'}`;
+            section.setAttribute(`data-jellyseerr-${key}-discovery`, 'true');
+            section.appendChild(header);
             const itemsContainer = document.createElement('div');
             itemsContainer.setAttribute('is', 'emby-itemscontainer');
-            itemsContainer.className = isDualFeed
-                ? 'vertical-wrap itemsContainer centered'
-                : 'itemsContainer padded-right vertical-wrap';
+            itemsContainer.className = 'itemsContainer vertical-wrap';
             section.appendChild(itemsContainer);
-
             return section;
+        }
+
+        /**
+         * Puts the section in its place on the page (see JE.discoverySection.placeSection).
+         * @param {HTMLElement} anchor - The page's list (list page) or detail content (detail page)
+         * @param {HTMLElement} section
+         * @returns {boolean} Whether the section was placed
+         */
+        function placeInPage(anchor, section) {
+            if (JE.discoverySection?.placeSection) return JE.discoverySection.placeSection(anchor, section, pageKind);
+            // (Without the section module: the same place, with no join.)
+            if (pageKind === 'detail') {
+                const view = anchor.closest('.itemDetailPage') ?? anchor;
+                (view.querySelector('.detailPagePrimaryContent .detailSection') ?? anchor).appendChild(section);
+                return true;
+            }
+            const own = anchor.closest('.verticalSection');
+            const wrapper = own ? own.parentElement : anchor.parentElement;
+            if (!wrapper) return false;
+            wrapper.appendChild(section);
+            return true;
+        }
+
+        /**
+         * Places the section; its header keeps to the top of the screen, just under Jellyfin's own, while it is read.
+         * @param {HTMLElement} anchor
+         * @param {HTMLElement} section
+         * @returns {boolean} Whether the section was placed
+         */
+        function place(anchor, section) {
+            if (!placeInPage(anchor, section)) return false;
+            section.style.setProperty('--jellyseerr-sticky-top', `${Math.max(0, Math.round(JE.helpers?.getHeaderBottom?.() ?? 0))}px`);
+            return true;
         }
 
         /**
@@ -451,7 +500,8 @@
          */
         function getPagedResultsForMode(mode) {
             let results = getFilteredResults(mode);
-            if (results.length === 0 && cachedAllResults.length > 0) {
+            // (Not where the further filters leave nothing: the section then says so.)
+            if (results.length === 0 && cachedAllResults.length > 0 && !JE.discoveryFilter?.hasMoreFilters?.(key)) {
                 results = cachedAllResults;
             }
             return results;
@@ -696,6 +746,7 @@
                     // resolves (and the engine measures) only once every card is
                     // in. A sort change or navigation aborts the signal and drops
                     // the cards not in yet.
+                    JE.discoverySection?.clearPlaceholders?.(itemsContainer);
                     const rendering = JE.discoveryFilter.appendCards(itemsContainer, itemsToAdd, {
                         cardClass,
                         isCurrent: () => !signal?.aborted
@@ -755,14 +806,19 @@
                 if (hasMorePages) {
                     setupInfiniteScroll();
                 }
+                JE.discoveryFilter?.noteIfEmpty?.(key, itemsContainer, hasMorePages);
                 return;
             }
 
             if (!itemsContainer || !currentFeeds || (!currentFeeds.tvId && !currentFeeds.movieId)) return;
 
-            // Clear existing cards and scroll observer
-            JE.jellyseerrUI?.releasePosters?.(itemsContainer);
-            while (itemsContainer.firstChild) itemsContainer.removeChild(itemsContainer.firstChild);
+            const empty = () => {
+                JE.jellyseerrUI?.releasePosters?.(itemsContainer);
+                while (itemsContainer.firstChild) itemsContainer.removeChild(itemsContainer.firstChild);
+            };
+            // What is on screen stays (dimmed, taking no pointer or keys) until the new page is in.
+            itemsContainer.setAttribute('aria-busy', 'true');
+            itemsContainer.inert = true;
             cleanupScrollObserver();
 
             // Reset pagination state for fresh fetch
@@ -790,8 +846,9 @@
 
             // Abort previous requests and create a fresh controller to prevent race conditions
             if (currentAbortController) currentAbortController.abort();
-            currentAbortController = new AbortController();
-            const signal = currentAbortController.signal;
+            const controller = new AbortController();
+            currentAbortController = controller;
+            const signal = controller.signal;
 
             // Build fetch promises for available media types
             const fetchPromises = [];
@@ -811,6 +868,7 @@
                 const results = await Promise.all(fetchPromises);
                 // Superseded (another sort change, navigation): nothing here is ours.
                 if (signal.aborted) return;
+                empty();
                 // Read the filter at commit time — it may have changed meanwhile.
                 const filterMode = JE.discoveryFilter?.getFilterMode(key) || 'mixed';
 
@@ -851,11 +909,19 @@
                 if (hasMorePages) {
                     setupInfiniteScroll();
                 }
+                JE.discoveryFilter?.noteIfEmpty?.(key, itemsContainer, hasMorePages);
             } catch (error) {
                 if (error.name !== 'AbortError') {
+                    // (The old cards are not left as if they were the new.)
+                    empty();
                     console.error(`${logPrefix} Sort change error:`, error);
                 }
             } finally {
+                // (A later re-fetch keeps the mark.)
+                if (currentAbortController === controller || !currentAbortController) {
+                    itemsContainer.removeAttribute('aria-busy');
+                    itemsContainer.inert = false;
+                }
                 releaseLoading(owner);
                 // A filter change re-armed the engine while page 1 was in flight; wake it.
                 if (generation !== loadGeneration && scrollState.fill) scrollState.fill();
@@ -879,6 +945,7 @@
                 if (hasMorePages) {
                     setupInfiniteScroll();
                 }
+                JE.discoveryFilter?.noteIfEmpty?.(key, itemsContainer, hasMorePages);
                 return;
             }
 
@@ -939,13 +1006,11 @@
          * @param {HTMLElement} itemsContainer
          */
         function ensureFilterControl(itemsContainer) {
-            if (!isDualFeed || !JE.discoveryFilter?.createFilterControl) return;
+            if (!isDualFeed || !JE.discoveryFilter?.addFilterControl) return;
             const section = itemsContainer.closest(sectionSelector);
             const header = section?.querySelector('.jellyseerr-discovery-header');
-            if (!header || header.querySelector('.jellyseerr-discovery-filter')) return;
-            if (!JE.discoveryFilter.hasBothTypes(cachedTvResults, cachedMovieResults)) return;
-            const title = header.querySelector('.sectionTitle');
-            if (title) title.after(JE.discoveryFilter.createFilterControl(key, handleFilterChange));
+            if (!header || !JE.discoveryFilter.hasBothTypes(cachedTvResults, cachedMovieResults)) return;
+            JE.discoveryFilter.addFilterControl(header, key, handleFilterChange);
         }
 
         /**
@@ -966,11 +1031,11 @@
                 const onHiddenPage = !detached && !!section.closest('.page.hide');
                 if (!detached && !onHiddenPage) return;
                 const view = currentShownView();
-                const container = view?.querySelector('.itemsContainer') ||
-                                  document.querySelector('.page:not(.hide) .itemsContainer') ||
-                                  document.querySelector('.libraryPage:not(.hide) .itemsContainer') || listPage;
-                const parent = container?.closest('.verticalSection') || container?.parentElement;
-                if (parent?.parentElement && !parent.parentElement.contains(section)) parent.parentElement.appendChild(section);
+                // (Not the section's own list: the page's.)
+                const container = view?.querySelector('.itemsContainer:not(.jellyseerr-discovery-section *)') ||
+                                  document.querySelector('.page:not(.hide) .itemsContainer:not(.jellyseerr-discovery-section *)') ||
+                                  document.querySelector('.libraryPage:not(.hide) .itemsContainer:not(.jellyseerr-discovery-section *)') || listPage;
+                if (!container.closest('.page, .libraryPage')?.contains(section)) placeInPage(container, section);
             });
             const timer = setTimeout(() => handle?.unsubscribe?.(), 6000);
             signal.addEventListener('abort', () => { clearTimeout(timer); handle?.unsubscribe?.(); }, { once: true });
@@ -1054,14 +1119,14 @@
             if (listPage) {
                 const existing = document.querySelector(sectionSelector);
                 if (existing) existing.remove();
-                section = createSectionContainer(resolved.title, false, handleFilterChange, handleSortChange);
-                itemsContainer = section.querySelector('.itemsContainer');
-                const parentContainer = listPage.closest('.verticalSection') || listPage.parentElement;
-                if (parentContainer?.parentElement) {
-                    parentContainer.parentElement.appendChild(section);
-                    keepAttached(section, listPage, signal);
-                } else {
-                    section = null;
+                const built = createSectionContainer(resolved.title, false, handleFilterChange, handleSortChange, resolved.name);
+                if (place(listPage, built)) {
+                    section = built;
+                    itemsContainer = built.querySelector('.itemsContainer');
+                    // The section's place is held from now on; the cards land in these boxes.
+                    const held = JE.discoverySection?.buildPlaceholderCards?.(JE.discoverySection.PLACEHOLDER_CARDS, cardClass);
+                    if (itemsContainer && held) itemsContainer.appendChild(held);
+                    keepAttached(built, listPage, signal);
                 }
             }
 
@@ -1095,6 +1160,8 @@
                     else { movieTotalPages = clampPages(r.data.totalPages); movieHasMorePages = 1 < movieTotalPages; }
                 }
             });
+            // A failed first page is retried by the scroll engine: the held places stay until it lands or gives up.
+            if (itemsContainer && !anyFailed) JE.discoverySection?.clearPlaceholders?.(itemsContainer);
 
             // Determine if we have both types (only show filter if BOTH have results)
 
@@ -1197,7 +1264,7 @@
             if (existing) existing.remove();
 
             // Create and insert section
-            const section = createSectionContainer(resolved.title, hasBoth, handleFilterChange, handleSortChange);
+            const section = createSectionContainer(resolved.title, hasBoth, handleFilterChange, handleSortChange, resolved.name);
             const itemsContainer = section.querySelector('.itemsContainer');
 
             // Seed first page and let seamless scroll load the rest.
@@ -1208,13 +1275,14 @@
                 return;
             }
 
+            const cardCount = fragment.childNodes.length;
             itemsContainer.appendChild(fragment);
             currentPagedResults = displayResults;
             renderedCount = initialItems.length;
             hasMorePages = renderedCount < currentPagedResults.length;
 
-            detailSection.appendChild(section);
-            console.debug(`${logPrefix} Section added with ${fragment.childNodes.length} cards`);
+            place(detailSection, section);
+            console.debug(`${logPrefix} Section added with ${cardCount} cards`);
 
             if (hasMorePages) {
                 setupInfiniteScroll();
@@ -1239,25 +1307,21 @@
             if (signal.aborted || !detailSection) return;
 
             document.querySelector(sectionSelector)?.remove();
-            const section = document.createElement('div');
-            section.className = `verticalSection jellyseerr-${key}-discovery-section je-retry-row`;
-            const button = document.createElement('button');
-            button.type = 'button';
-            button.className = 'raised emby-button';
-            button.textContent = '⟳ Tap to retry';
-            button.addEventListener('click', async () => {
-                if (signal.aborted || button.disabled) return;
-                button.disabled = true;
-                try {
-                    // render() creates a fresh controller and repeats the full
-                    // lookup; failed responses have not been cached as empty.
-                    await render();
-                } finally {
-                    section.remove();
-                }
-            }, { signal });
-            section.appendChild(button);
-            detailSection.appendChild(section);
+            if (!JE.discoverySection?.buildRetrySection) return;
+            let retrying = false;
+            const section = JE.discoverySection.buildRetrySection(key,
+                translate('discovery_load_failed', 'Seerr did not answer.'), translate('discovery_retry', 'Try again'), async () => {
+                    if (signal.aborted || retrying) return;
+                    retrying = true;
+                    try {
+                        // render() creates a fresh controller and repeats the full
+                        // lookup; failed responses have not been cached as empty.
+                        await render();
+                    } finally {
+                        section.remove();
+                    }
+                });
+            placeInPage(detailSection, section);
             signal.addEventListener('abort', () => section.remove(), { once: true });
         }
 

@@ -826,6 +826,7 @@
     "status_tag_season_finale": "Sæsonfinale",
     "status_tag_series_finale": "Seriefinale",
     "status_tag_complete_season": "Komplet sæson",
+    "status_tag_binge_ready": "Klar til binge",
     "status_tag_airing_today": "Sendes i dag",
     "status_tag_airs_date": "Sendes {date}",
     "status_tag_returns_date": "Vender tilbage {date}",

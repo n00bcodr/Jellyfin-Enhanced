@@ -152,6 +152,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             ("selfhst", "png/youtube.png"),
             ("selfhst", "svg/shoko-server.svg"),
             ("selfhst", "svg/tmdb.svg"),
+            ("selfhst", "svg/maintainerr.svg"),
             ("jellyfish", "logos/favicon.ico"),
             ("jellyfish", "colors/aurora.css"),
             ("jellyfish", "colors/banana.css"),

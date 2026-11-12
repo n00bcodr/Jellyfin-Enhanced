@@ -1341,8 +1341,44 @@
     /**
      * Toggles the playback-info overlay (no native menus involved).
      */
-    JE.togglePlaybackInfo = () => {
+    /**
+     * Toggles jellyfin-web's native stats overlay by clicking through the OSD
+     * settings sheet while it is invisible. Resolves false when the button or
+     * the "Playback info" entry is missing so the caller can fall back.
+     */
+    async function toggleNativePlaybackInfo() {
+        const btn = document.querySelector('button.btnVideoOsdSettings');
+        if (!btn) return false;
+        const style = document.createElement('style');
+        style.textContent = '.dialogContainer, .dialogBackdrop, .actionSheet { opacity:0 !important; transition:none !important; }';
+        document.head.appendChild(style);
+        try {
+            btn.click();
+            const t0 = Date.now();
+            let item = null;
+            while (!item && Date.now() - t0 < 1500) {
+                item = document.querySelector('.actionSheet button[data-id="stats"]');
+                if (!item) await new Promise(r => requestAnimationFrame(r));
+            }
+            if (!item) {
+                // Leave no invisible sheet behind.
+                document.querySelector('.actionSheet')?.closest('.dialogContainer')?.querySelector('.dialogBackdrop')?.click();
+                return false;
+            }
+            item.click();
+            return true;
+        } finally {
+            setTimeout(() => style.remove(), 400);
+        }
+    }
+
+    JE.togglePlaybackInfo = async () => {
         if (playbackInfoOverlay) { destroyPlaybackInfo(); return; }
+        try {
+            if (await toggleNativePlaybackInfo()) return;
+        } catch (err) {
+            console.warn('🪼 Jellyfin Enhanced: native playback info failed, using overlay', err);
+        }
         const video = getVideo();
         if (!video) {
             JE.toast(JE.t('toast_no_video_found'));

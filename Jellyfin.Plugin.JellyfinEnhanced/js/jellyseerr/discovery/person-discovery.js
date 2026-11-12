@@ -200,22 +200,49 @@
         const credits = await fetchPersonCredits(tmdbPersonId, signal);
         if (signal.aborted) return null;
 
-        const allResults = [...(credits.cast || []), ...(credits.crew || [])];
-        const dedupedResults = [];
-        const seenItems = new Set();
-        for (const item of allResults) {
-            const key = `${item?.mediaType}-${item?.id}`;
-            if (!item?.id || !item?.mediaType || seenItems.has(key)) continue;
-            seenItems.add(key);
-            dedupedResults.push(item);
-        }
+        const dedupedResults = mergeCredits(credits);
 
         console.debug(`${logPrefix} Fetched ${dedupedResults.length} credits for ${personInfo.name}`);
 
         return {
             items: dedupedResults,
-            title: JE.t('discovery_more_from_person', { person: personInfo.name })
+            title: JE.t('discovery_more_from_person', { person: personInfo.name }),
+            name: personInfo.name
         };
+    }
+
+    /**
+     * Seerr credits, merged and deduplicated by media type and id. A title the person has several
+     * credits in (two parts, or a part and a job) is one result that keeps them all: the parts played
+     * from its cast rows, the jobs held from its crew rows, each once, in the order Seerr gave them.
+     * Each result carries them as `jeCredit = {acted, characters, jobs, departments, crew}`, where `crew`
+     * is each job with the crew department it is in (`[job, department]`, in the order of `jobs`) and
+     * `departments` are TMDB's names ("Directing", "Writing").
+     * @param {object} credits - Seerr's combined credits ({cast, crew})
+     * @returns {object[]} One result per title
+     */
+    function mergeCredits(credits) {
+        const said = (text) => typeof text === 'string' ? text.trim() : '';
+        const merged = new Map();
+        for (const [list, cast] of [[credits?.cast, true], [credits?.crew, false]]) {
+            for (const row of Array.isArray(list) ? list : []) {
+                if (!row || typeof row !== 'object' || !row.id || !row.mediaType) continue;
+                const key = `${row.mediaType}-${row.id}`;
+                let entry = merged.get(key);
+                if (!entry) {
+                    entry = { row, acted: false, characters: [], jobs: [], departments: [], crew: [] };
+                    merged.set(key, entry);
+                }
+                if (cast) entry.acted = true;
+                const role = said(cast ? row.character : row.job);
+                const roles = cast ? entry.characters : entry.jobs;
+                const department = cast ? '' : said(row.department);
+                if (role && !cast && !roles.includes(role)) entry.crew.push([role, department]);
+                if (role && !roles.includes(role)) roles.push(role);
+                if (department && !entry.departments.includes(department)) entry.departments.push(department);
+            }
+        }
+        return Array.from(merged.values(), ({ row, acted, characters, jobs, departments, crew }) => ({ ...row, jeCredit: { acted, characters, jobs, departments, crew } }));
     }
 
     const discovery = JE.discoveryBase.createDiscovery({

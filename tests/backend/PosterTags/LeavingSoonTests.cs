@@ -192,7 +192,8 @@ public sealed class LeavingSoonTests : IDisposable
         var service = Service();
         var config = Config(server.Url + "/", key: "secret-key-123");
         Assert.True(await service.RefreshAsync(config, false, CancellationToken.None));
-        Assert.Equal(("/maintainerr/api/collections", "secret-key-123"), Assert.Single(server.Seen));
+        Assert.Equal("/maintainerr/api/collections", server.Seen[0].Path);
+        Assert.All(server.Seen, s => Assert.Equal("secret-key-123", s.Key));
         Assert.Equal(new TagLeaving { DeleteAt = Added.AddDays(10).ToUnixTimeMilliseconds() }, service.Get(item, config));
         var disk = File.ReadAllText(Path.Combine(_core.Root, "leaving-soon.json"));
         Assert.DoesNotContain("secret-key-123", disk);
@@ -223,15 +224,15 @@ public sealed class LeavingSoonTests : IDisposable
         service.Now = () => now;
         var config = Config(server.Url, key: "k-should-not-leak", hours: 6);
         await service.RefreshAsync(config, false, CancellationToken.None);
-        Assert.Equal(1, server.Requests);
+        Assert.Equal(2, server.Requests);
         // Card reads never ask; a run before the interval does nothing.
         for (var i = 0; i < 5; i++) Assert.NotNull(service.Get(item, config));
         now = now.AddHours(5);
         Assert.False(await service.RefreshAsync(config, false, CancellationToken.None));
-        Assert.Equal(1, server.Requests);
+        Assert.Equal(2, server.Requests);
         // A forced refresh (the admin page) asks at once.
         Assert.False(await service.RefreshAsync(config, true, CancellationToken.None));
-        Assert.Equal(2, server.Requests);
+        Assert.Equal(4, server.Requests);
 
         // Failures: the previous answer stays, the retry waits 15, 30, 60 minutes… at most the interval.
         status = 500;
@@ -335,8 +336,8 @@ public sealed class LeavingSoonTests : IDisposable
         }
 
         Assert.Equal(0, receiver.Requests);
-        Assert.Equal(4, server.Requests);
-        Assert.All(server.Seen, s => Assert.Equal("/api/collections", s.Path));
+        Assert.Equal(5, server.Requests);
+        Assert.All(server.Seen, s => Assert.StartsWith("/api/collections", s.Path));
         var log = File.ReadAllText(_core.Logger.CurrentLogFilePath);
         Assert.Single(System.Text.RegularExpressions.Regex.Matches(log, "redirect to host 'localhost'"));
         Assert.Contains("redirect to host '169.254.169.254'", log);

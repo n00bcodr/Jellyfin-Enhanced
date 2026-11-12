@@ -12,6 +12,67 @@ function setupTiles(t, fetch) {
   h.load('jellyseerr/recommendations/recommendations-catalog.js');h.load('jellyseerr/recommendations/recommendations-render.js');
   return h;
 }
+
+function setupCategoryRow(t, kind = 'movie') {
+  const h = setupTiles(t, async () => ({}));
+  const opened = [];
+  h.P.showCategoryPage = key => opened.push(key);
+  const items = [{id: 1, name: 'First'}, {id: 2, name: 'Second'}];
+  const row = kind === 'movie'
+    ? h.P.createGenreTileRow('Genres', items, kind)
+    : h.P.createTileRow('Studios', items, kind);
+  h.document.body.appendChild(row);
+  const tiles = row.querySelectorAll('.cardImageContainer');
+  const pointer = (type, target, options = {}) => target.dispatchEvent(Object.assign(
+    new h.window.Event(type, {bubbles: true}),
+    {pointerType: 'mouse', pointerId: 1, button: 0, clientX: 0, clientY: 0, ...options}
+  ));
+  const click = (target, options = {}) => target.dispatchEvent(new h.window.MouseEvent('click', {
+    bubbles: true, cancelable: true, detail: 1, clientX: 0, clientY: 0, ...options
+  }));
+  return {...h, opened, tiles, pointer, click};
+}
+
+test('category rows suppress clicks after mouse drags, including across tiles and back to the start', t => {
+  for (const kind of ['movie', 'studio', 'network']) {
+    const {opened, tiles, pointer, click} = setupCategoryRow(t, kind);
+    pointer('pointerdown', tiles[0]);
+    pointer('pointermove', tiles[1], {clientX: 40});
+    pointer('pointermove', tiles[1], {clientX: 0});
+    assert.equal(click(tiles[1]), false);
+    assert.deepEqual(opened, []);
+
+    pointer('pointerdown', tiles[0]);
+    assert.equal(click(tiles[0], {clientX: 40}), false);
+    assert.deepEqual(opened, []);
+  }
+});
+
+test('category rows preserve small mouse movements, subsequent clicks and keyboard activation', t => {
+  const {opened, tiles, pointer, click} = setupCategoryRow(t);
+  pointer('pointerdown', tiles[0]);
+  pointer('pointermove', tiles[0], {clientX: 4, clientY: 3});
+  click(tiles[0], {clientX: 4, clientY: 3});
+  pointer('pointerdown', tiles[0]);
+  pointer('pointermove', tiles[0], {clientX: 40});
+  click(tiles[0], {clientX: 40});
+  pointer('pointerdown', tiles[1]);
+  click(tiles[1]);
+  click(tiles[0], {detail: 0});
+  assert.deepEqual(opened, ['genre-movie-1', 'genre-movie-2', 'genre-movie-1']);
+});
+
+test('category rows leave touch clicks alone and discard cancelled mouse gestures', t => {
+  const {opened, tiles, pointer, click} = setupCategoryRow(t);
+  pointer('pointerdown', tiles[0], {pointerType: 'touch'});
+  pointer('pointermove', tiles[0], {pointerType: 'touch', clientX: 40});
+  click(tiles[0], {clientX: 40});
+  pointer('pointerdown', tiles[0]);
+  pointer('pointermove', tiles[0], {clientX: 40});
+  pointer('pointercancel', tiles[0]);
+  click(tiles[0]);
+  assert.deepEqual(opened, ['genre-movie-1', 'genre-movie-1']);
+});
 test('recommendations preserve successful categories when neighboring categories fail or are empty',async t=>{
   const calls=[]; const h=setup(t,async(path,scope,opts)=>{calls.push({path,scope,opts}); if(path.startsWith('/bad')) throw Error('offline'); return path.startsWith('/good')?{results:[{id:1}]}:{};});
   h.P.ROWS=[{path:'/good'},{path:'/bad'},{path:'/empty'}]; const controller=new AbortController();

@@ -26,7 +26,8 @@
 //           → Just Added
 //   Episode Season Premiere → Series Finale / Season Finale → New Episode
 //           → Just Added
-//   BoxSet, Video: Just Added
+//   BoxSet: Just Added (its newest member's added date)
+//   Video: Just Added
 // Library facts come from the server tag cache (DateCreated, PremiereDate,
 // LatestEpisodeAdded/Aired/Index, SeasonPremiere, SeasonAddedSpan, Status;
 // Unix ms) or the /tag-data batch fallback. Two live sources come on top:
@@ -58,7 +59,8 @@
     // the persistent cache only answers for this long before a re-fetch.
     const CACHE_FRESH_MS = 60 * 60 * 1000;
     // Shape of the fallback cache entries; older entries count as misses.
-    const CACHE_ENTRY_VERSION = 5;
+    // v6: a collection's entry carries its newest member's added date.
+    const CACHE_ENTRY_VERSION = 6;
     const TRENDING_TTL_MS = 30 * 60 * 1000;
     // A failed or empty trending fetch is retried sooner than a good list expires.
     const TRENDING_RETRY_MS = 5 * 60 * 1000;
@@ -186,7 +188,7 @@
      * @property {string|null} tmdb - The item's TMDB id (trending).
      * @property {number|null} created - DateCreated (ms).
      * @property {number|null} premiere - PremiereDate (ms; Movie/Series/Episode).
-     * @property {number|null} latest - Series/Season: newest episode DateCreated (ms).
+     * @property {number|null} latest - Series/Season: newest episode DateCreated (ms); BoxSet: newest member DateCreated (ms).
      * @property {string|null} status - Series: Jellyfin status (Continuing/Ended/Unreleased).
      * @property {number|null} latestAired - Series/Season: newest episode air date (ms).
      * @property {{s: number, e: number, isLast: boolean}|null} latestIndex - Its season/episode numbers.
@@ -745,14 +747,17 @@
      * Pick the one badge a card shows (first match wins), or null.
      * @param {StatusData} data - Card snapshot, refreshed from shared facts when available.
      * @param {string|null} itemId - The card's own item id (never its parent id).
+     * @param {Element|null} [el] - The card, whose played check says the viewer has watched it all.
      * @returns {{kind: string, key: string, label: string, compact?: string, rank?: number}|null}
      */
-    function pickBadge(data, itemId) {
+    function pickBadge(data, itemId, el) {
         const current = JE.tagPipeline?.peekItemFacts?.(normId(itemId));
         if (current) {
             // Shared caller-filtered facts are authoritative, including removed fields.
             Object.assign(data, readFacts(current), { latest: toMs(current.LatestEpisodeAdded) });
         }
+        // An admin switch: no status badge on collections at all.
+        if (data.type === 'BoxSet' && JE.pluginConfig?.StatusTagsOnCollections === false) return null;
         const now = Date.now();
         const today = localDay(now);
         const justAddedMs = windowMs('StatusTagsJustAddedDays', vocabulary.thresholds.justAddedDays);
@@ -768,6 +773,7 @@
 
         // Match the series aggregate: specials never identify a final regular episode.
         const finalRegular = finalRegularEpisode(data, facts);
+        const BINGE_DROP_DAYS = 3;
         const finalDay = airDay(finalRegular?.date);
         const finalAiredRecently = finalDay !== null && finalDay <= today && (today - finalDay) * DAY_MS <= newReleaseMs;
         // A premiere date is a calendar day (Jellyfin stores it at midnight UTC): it is compared with
@@ -776,12 +782,16 @@
         const airedWithin = (ms, windowMs) => { const day = premiereDay(ms); return day !== null && day <= today && (today - day) * DAY_MS <= windowMs; };
         const isNewRelease = airedWithin(data.premiere, newReleaseMs);
         const comingSoon = data.premiere !== null && premiereDay(data.premiere) > today;
-        const addedRecently = isWithin(data.created, now, justAddedMs);
+        // A collection is recreated by library scans (a fresh DateCreated every time), so its
+        // newest member's added date stands in; without that fact it shows no badge.
+        const addedRecently = isWithin(data.type === 'BoxSet' ? data.latest : data.created, now, justAddedMs);
         // "New Episode" on a container: an episode arrived recently in a
         // container that was itself already there before the window (else it
         // is just added).
+        // Not for a viewer who has watched everything in it: Jellyfin shows that as the card's played check.
+        const watchedAll = !!(el?.closest('.card') || el)?.querySelector('.playedIndicator');
         const newEpisode = isWithin(data.latest, now, justAddedMs)
-            && data.created !== null && now - data.created > justAddedMs;
+            && data.created !== null && now - data.created > justAddedMs && !watchedAll;
         // TMDB's next/last episode, as day numbers and days from today.
         const nextDay = airDay(facts?.next?.date);
         const lastDay = airDay(facts?.last?.date);
@@ -806,7 +816,9 @@
                 // The finale of an ended show, aired recently and in the library.
                 if (showMilestones && finalRegular && TMDB_ENDED.has(facts.status || '') && finalAiredRecently
                     && data.latestIndex && data.latestIndex.s === finalRegular.season && data.latestIndex.e === finalRegular.episode) {
-                    return makeBadge('milestone', 'series_finale');
+                    // A show released in one drop (premiere and finale days apart) is binge ready, not finishing a run.
+                    const first = premiereDay(data.premiere);
+                    return makeBadge('milestone', first !== null && finalDay - first <= BINGE_DROP_DAYS ? 'binge_ready' : 'series_finale');
                 }
                 const sp = data.seasonPremiere;
                 if (showMilestones && sp && sp.s > 1 && airedWithin(sp.aired, newReleaseMs)) return makeBadge('milestone', 'new_season');
@@ -857,7 +869,7 @@
                     && data.season === facts.last.season && holds(facts.last.episode)) {
                     if (lastAiredEndsSeason(facts, data.isLast)) return makeBadge('milestone', 'season_finale');
                 }
-                if (showNew && (airedWithin(data.premiere, justAddedMs) || addedRecently)) return makeBadge('new', 'new_episode');
+                if (showNew && airedWithin(data.premiere, justAddedMs)) return makeBadge('new', 'new_episode');
                 break;
             }
             case 'BoxSet':
@@ -1041,7 +1053,7 @@
         activateStatus(ctx);
         ensureTrending(ctx);
         const readsSeries = wantsSeriesFacts(data);
-        const badge = pickBadge(data, itemId);
+        const badge = pickBadge(data, itemId, el);
         // All date badges can change when a local day passes.
         const previous = liveCards.get(el);
         if (!readsSeries || (previous && (previous.id !== normId(itemId) || previous.domId !== cardIdentity(el)))) {
@@ -1234,7 +1246,7 @@
                 forgetSeriesCard(/** @type {HTMLElement} */ (el));
                 return;
             }
-            const badge = pickBadge(card.data, card.id);
+            const badge = pickBadge(card.data, card.id, el);
             const key = badgeKey(badge);
             if (key === card.shown) return;
             card.shown = key;

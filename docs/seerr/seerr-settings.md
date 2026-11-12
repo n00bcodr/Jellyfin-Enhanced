@@ -289,6 +289,27 @@ Find titles beyond your library from genre, studio, tag, person, and collection 
 | **Show "More from Actor"** | On | Adds filmography discovery to person pages using a TMDB ID or name search. |
 | **Show missing collection movies** | On | Shows missing movies with request buttons on BoxSet pages that have a TMDB collection ID. |
 
+### Discovery filters
+
+Choose which filters the **Filters** button of a "More" section offers. A filter turned off is never offered, to anyone. Viewers have no per-user setting for these.
+
+**How to use:** Open **Seerr** → **Discovery & UI Extras** → **Filters in the "More" sections** and turn off the filters you don't want. See [Filters, sort and roles](seerr-features.md#filters-sort-and-roles) for how viewers use them.
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| **Released** | On | A range of years, months or days. |
+| **Score** | On | A range of TMDB user scores, from 0 to 10. |
+| **Votes** | On | A range for the number of TMDB user votes. |
+| **Runtime** | On | A runtime range, in minutes. List pages only. |
+| **Genres** | On | One or more genres. |
+| **Original language** | On | One or more original languages. |
+| **Content rating** | On | The ratings used in your **Default Region** (**Elsewhere & Reviews** tab). US ratings where TMDB has none for it. List pages only. |
+| **Streaming services** | On | The services available in your **Default Region** (**Elsewhere & Reviews** tab). List pages only. |
+| **Keywords** | On | Keywords a title must have, and keywords it must not have. List pages only. |
+| **Role (actor pages)** | On | What the person did in a title: acting, or a crew department such as Directing or Writing. Person pages only. |
+
+The tabs (**All**, **Movies**, **Series**) and the sort have no switch. The filters reach Seerr's discover feeds; series by a studio come from TMDB directly, which needs the TMDB key described under **Show "More from Network"**.
+
 ### Add Requested Media to Watchlist
 
 Add requested titles to the requester's Jellyfin watchlist as they reach the library, or sync watchlist entries between Seerr and Jellyfin.
@@ -311,7 +332,7 @@ See [Watchlist Sync](seerr-features.md#watchlist-sync) for schedules, limits, an
 
 ??? note "Details"
 
-    The [KefinTweaks plugin](https://github.com/ranaldsgift/KefinTweaks) provides the Jellyfin watchlist interface. Sync switches are checked when their scheduled tasks run. Neither direction mirrors deletions.
+    The [KefinTweaks plugin](https://github.com/ranaldsgift/KefinTweaks) provides the Jellyfin watchlist interface. Sync switches are checked when their scheduled tasks run. The two add syncs never remove anything; removals are handled by **Sync Watchlist Removals** (see [Watchlist Removal Sync](seerr-features.md#watchlist-removal-sync)).
 
 ### Sync Seerr Watchlist to Jellyfin
 
@@ -324,6 +345,9 @@ Bring Seerr watchlist entries into Jellyfin with a scheduled task. It runs daily
 Bring Jellyfin watchlist entries into Seerr with a scheduled task. It runs daily at 03:30 by default.
 
 **How to use:** Enable **Sync Jellyfin Watchlist → Seerr**, then adjust or run **Sync Watchlist from Jellyfin to Seerr** under **Dashboard** → **Scheduled Tasks**.
+
+### Watchlist Removals
+Choose whose removals are copied to the other watchlist: **Jellyfin decides** (default), **Seerr decides**, **Both stay in sync**, or **Never**. Runs as **Sync Watchlist Removals between Jellyfin and Seerr**, daily at 04:00 by default. See [Watchlist Removal Sync](seerr-features.md#watchlist-removal-sync).
 
 ### Only Allow Requesting One Season at a Time
 - Removes **Select All** from the season modal and lets users tick only one season per request

@@ -29,6 +29,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
         {
             ["imdb"] = "imdb.png", ["tmdb"] = "tmdb.png", ["trakt"] = "trakt.png", ["letterboxd"] = "letterboxd.png",
             ["metacritic"] = "metacritic.png", ["rtAudience"] = "rottentomatoes_audience.png",
+            ["myAnimeList"] = "myanimelist.png", ["aniList"] = "anilist.png", ["metacriticUser"] = "metacritic_audience.png",
+            ["rogerEbert"] = "rogerebert.png", ["mdblist"] = "master.png",
         };
         private readonly ConcurrentDictionary<string, SKImage> _logos = new(StringComparer.Ordinal);
 

@@ -11,7 +11,7 @@
     if (!A) return;
 
     /** Every poster rating source, in the built-in order. */
-    const SOURCES = ['community', 'critic', 'imdb', 'tmdb', 'rtCritic', 'rtAudience', 'metacritic', 'letterboxd', 'trakt'];
+    const SOURCES = ['community', 'critic', 'imdb', 'tmdb', 'rtCritic', 'rtAudience', 'metacritic', 'letterboxd', 'trakt', 'myAnimeList', 'aniList', 'metacriticUser', 'rogerEbert', 'mdblist'];
 
     /**
      * The chosen sources: the explicit list, else the two legacy switches.

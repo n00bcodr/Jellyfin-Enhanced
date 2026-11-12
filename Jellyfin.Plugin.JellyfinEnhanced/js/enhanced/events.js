@@ -120,8 +120,8 @@
             case activeShortcuts.ShowPlaybackInfo:
                 e.preventDefault();
                 e.stopImmediatePropagation();
-                // Toggles the plugin-rendered playback-info overlay — no
-                // settings menu / stats panel is ever opened.
+                // Toggles jellyfin-web's native stats overlay (clicked through
+                // an invisible settings sheet); falls back to a plugin overlay.
                 JE.togglePlaybackInfo();
                 break;
             case activeShortcuts.SubtitleMenu:

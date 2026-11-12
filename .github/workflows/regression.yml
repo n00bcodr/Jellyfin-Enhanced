@@ -83,7 +83,7 @@ jobs:
         target: [jf10, jf12]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73
         with:
           dotnet-version: |
             9.0.x
@@ -146,9 +146,40 @@ jobs:
             coverage/
           retention-days: 14
 
+  # The browser suite only exercises the injected web files, the admin pages and its own
+  # fixtures, so a PR that touches none of them (backend C#, docs, locales) skips it.
+  # Pushes, the weekly schedule and manual runs always run it. A job skipped by `if`
+  # counts as passing for required checks.
+  browser-changes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.diff.outputs.run }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - id: diff
+        run: |
+          if [ "$GITHUB_EVENT_NAME" != pull_request ]; then
+            echo run=true >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if git diff --name-only HEAD^1 HEAD | grep -qE '^(Jellyfin\.Plugin\.JellyfinEnhanced/(js|Configuration|PluginPages|Assets)/|tests/(browser|fixtures|runner)/|tests/run\.py$|package(-lock)?\.json$|\.github/workflows/regression\.yml$)'; then
+            echo run=true >> "$GITHUB_OUTPUT"
+          else
+            echo run=false >> "$GITHUB_OUTPUT"
+          fi
+
+  # One job per Playwright project so the three run in parallel, each installing only its own browser.
   browser:
+    needs: browser-changes
+    if: needs.browser-changes.outputs.run == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [chromium, mobile-chromium, firefox]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
@@ -156,12 +187,13 @@ jobs:
           node-version: '22.14.0'
           cache: npm
       - run: npm ci
-      - run: npx playwright install --with-deps chromium firefox
-      - run: python3 tests/run.py browser
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps ${{ matrix.project == 'firefox' && 'firefox' || 'chromium' }}
+      - run: python3 tests/run.py browser --project ${{ matrix.project }}
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
-          name: browser-results
+          name: browser-results-${{ matrix.project }}
           path: |
             artifacts/regression/*.log
             artifacts/regression/summary.json
@@ -180,7 +212,7 @@ jobs:
         target: [jf10, jf12]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73
         with:
           dotnet-version: '10.0.x'
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
@@ -219,7 +251,7 @@ jobs:
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
           fi
-      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73
         if: steps.touched.outputs.run == 'true'
         with:
           dotnet-version: |
@@ -244,7 +276,7 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73
         with:
           dotnet-version: |
             9.0.x

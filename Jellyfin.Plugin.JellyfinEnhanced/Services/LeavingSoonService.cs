@@ -393,7 +393,68 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private async Task<Dictionary<string, long?>> FetchMaintainerrAsync(PluginConfiguration config, CancellationToken token)
         {
             var baseUrl = config.LeavingSoonMaintainerrUrl.Trim().TrimEnd('/');
-            var url = baseUrl + "/api/collections";
+            using var document = await GetJsonAsync(config, baseUrl + "/api/collections", token).ConfigureAwait(false);
+
+            // /api/collections embeds only a few members per collection; the paged endpoint has all of them.
+            var pages = new Dictionary<int, List<JsonDocument>>();
+            try
+            {
+                var list = document.RootElement;
+                if (list.ValueKind == JsonValueKind.Object)
+                {
+                    foreach (var name in new[] { "data", "items", "collections", "results" })
+                    {
+                        if (list.TryGetProperty(name, out var inner) && inner.ValueKind == JsonValueKind.Array) { list = inner; break; }
+                    }
+                }
+
+                if (list.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var collection in list.EnumerateArray())
+                    {
+                        if (collection.ValueKind != JsonValueKind.Object || !collection.TryGetProperty("id", out var idProp) || !idProp.TryGetInt32(out var id)) continue;
+                        if (collection.TryGetProperty("isActive", out var active) && active.ValueKind == JsonValueKind.False) continue;
+                        var fetched = new List<JsonDocument>();
+                        pages[id] = fetched;
+                        try
+                        {
+                            for (var page = 1; page <= MaxMemberPages; page++)
+                            {
+                                var doc = await GetJsonAsync(config, baseUrl + "/api/collections/media/" + id.ToString(CultureInfo.InvariantCulture) + "/content/" + page.ToString(CultureInfo.InvariantCulture) + "?size=" + PageSize.ToString(CultureInfo.InvariantCulture), token).ConfigureAwait(false);
+                                fetched.Add(doc);
+                                var root = doc.RootElement;
+                                // Rows whose media-server metadata is gone are dropped from a page, so a short page is not the last one: stop on totalSize or an empty page.
+                                if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array) throw new FormatException("Not a paged Maintainerr answer.");
+                                if (items.GetArrayLength() == 0) break;
+                                if (root.TryGetProperty("totalSize", out var total) && total.TryGetInt64(out var totalSize) && (long)page * PageSize >= totalSize) break;
+                            }
+                        }
+                        catch (Exception ex) when (ex is not OperationCanceledException)
+                        {
+                            // An older Maintainerr without the paged endpoint: keep the embedded list for this collection.
+                            foreach (var d in fetched) d.Dispose();
+                            pages.Remove(id);
+                        }
+                    }
+                }
+
+                var parsed = ParseCollections(document.RootElement, Now(), id =>
+                    pages.TryGetValue(id, out var docs)
+                        ? docs.SelectMany(d => d.RootElement.ValueKind == JsonValueKind.Object && d.RootElement.TryGetProperty("items", out var i) && i.ValueKind == JsonValueKind.Array ? i.EnumerateArray() : Enumerable.Empty<JsonElement>()).ToList()
+                        : null);
+                return ToItems(parsed, TmdbLookup);
+            }
+            finally
+            {
+                foreach (var d in pages.Values.SelectMany(x => x)) d.Dispose();
+            }
+        }
+
+        private const int PageSize = 500;
+        private const int MaxMemberPages = 40;
+
+        private async Task<JsonDocument> GetJsonAsync(PluginConfiguration config, string url, CancellationToken token)
+        {
             if (!await Helpers.ArrUrlGuard.IsAllowedUrlAsync(url, token).ConfigureAwait(false)) throw new UnauthorizedAccessException();
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
             timeout.CancelAfter(Timeout);
@@ -424,9 +485,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 buffer.Write(chunk, 0, read);
             }
 
-            using var document = JsonDocument.Parse(buffer.ToArray());
-            var parsed = ParseCollections(document.RootElement, Now());
-            return ToItems(parsed, TmdbLookup);
+            return JsonDocument.Parse(buffer.ToArray());
         }
 
         /// <summary>A computed delete time too far from now to be real (and possibly beyond what a renderer can show).</summary>
@@ -471,7 +530,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <see cref="MaxDateDistanceMs"/> from <paramref name="now"/> refuses the answer with
         /// <see cref="DateRangeException"/>.
         /// </summary>
-        internal static IReadOnlyList<MaintainerrMember> ParseCollections(JsonElement root, DateTimeOffset? now = null)
+        internal static IReadOnlyList<MaintainerrMember> ParseCollections(JsonElement root, DateTimeOffset? now = null, Func<int, IReadOnlyList<JsonElement>?>? fullMedia = null)
         {
             var nowMs = (now ?? DateTimeOffset.UtcNow).ToUnixTimeMilliseconds();
             var collections = root;
@@ -501,8 +560,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     if (collection.TryGetProperty(name, out var m) && m.ValueKind == JsonValueKind.Array) { media = m; break; }
                 }
 
-                if (media.ValueKind != JsonValueKind.Array) continue;
-                foreach (var item in media.EnumerateArray())
+                IEnumerable<JsonElement> mediaItems = media.ValueKind == JsonValueKind.Array ? media.EnumerateArray() : Enumerable.Empty<JsonElement>();
+                if (fullMedia != null && collection.TryGetProperty("id", out var cid) && cid.TryGetInt32(out var collectionId) && fullMedia(collectionId) is { } full) mediaItems = full;
+                foreach (var item in mediaItems)
                 {
                     listed++;
                     if (item.ValueKind != JsonValueKind.Object) continue;

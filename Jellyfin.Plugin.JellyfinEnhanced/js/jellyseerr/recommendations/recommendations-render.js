@@ -199,6 +199,34 @@
   }
 
   /**
+   * Prevents a mouse drag from activating a category tile on release.
+   * @param {HTMLElement} scroller
+   */
+  function preventTileDragClicks(scroller) {
+    let pointer = null;
+    let dragged = false;
+    const moved = e => Math.hypot(e.clientX - pointer.x, e.clientY - pointer.y) > 8;
+
+    scroller.addEventListener('pointerdown', e => {
+      pointer = e.pointerType === 'mouse' && e.button === 0
+        ? { id: e.pointerId, x: e.clientX, y: e.clientY } : null;
+      dragged = false;
+    }, true);
+    scroller.addEventListener('pointermove', e => {
+      if (pointer && e.pointerId === pointer.id && moved(e)) dragged = true;
+    }, true);
+    scroller.addEventListener('pointercancel', () => { pointer = null; }, true);
+    scroller.addEventListener('click', e => {
+      const suppress = e.detail > 0 && pointer && (dragged || moved(e));
+      pointer = null;
+      if (!suppress) return;
+      e.preventDefault();
+      // Capture runs before the tile's category navigation handler.
+      e.stopImmediatePropagation();
+    }, true);
+  }
+
+  /**
    * Builds a horizontal row of studio/network tiles that link into the
    * category page for that studio or network. Renders the entry's TMDB logo
    * (matching Seerr's own Studios/Networks rows), falling back to a plain
@@ -222,6 +250,7 @@
     scrollerContainer.className = 'padded-top-focusscale padded-bottom-focusscale emby-scroller';
     scrollerContainer.dataset.horizontal = "true";
     scrollerContainer.dataset.centerfocus = "card";
+    preventTileDragClicks(scrollerContainer);
 
     const itemsContainer = document.createElement('div');
     itemsContainer.setAttribute('is', 'emby-itemscontainer');
@@ -332,6 +361,7 @@
     scrollerContainer.className = 'padded-top-focusscale padded-bottom-focusscale emby-scroller';
     scrollerContainer.dataset.horizontal = "true";
     scrollerContainer.dataset.centerfocus = "card";
+    preventTileDragClicks(scrollerContainer);
 
     const itemsContainer = document.createElement('div');
     itemsContainer.setAttribute('is', 'emby-itemscontainer');
