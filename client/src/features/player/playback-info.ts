@@ -1,12 +1,50 @@
 import type { PlayerContext, TrackKind } from './context';
 import { decodeItem, decodeSegments, decodeSessions, type MediaSegment, type Stream, type PlayingSession } from './wire';
 import { normalizeItemId, parseItemIdFromVideosSrc } from './identity';
-export function installPlaybackInfo(context: PlayerContext, probeOwnSession: () => Promise<PlayingSession | null>, trackDisplayName: (stream: Stream | null | undefined) => string) {
+import type { TrackMenu } from './native-track-menu';
+export function installPlaybackInfo(context: PlayerContext, probeOwnSession: () => Promise<PlayingSession | null>, trackDisplayName: (stream: Stream | null | undefined) => string, menu: TrackMenu) {
  const { JE, ApiClient, lifetime, getVideo, getCurrentVideoItemId, tWithFallback } = context;
-    // ── Playback info overlay (DOM-free ShowPlaybackInfo) ────────────────────
+    // ── ShowPlaybackInfo: jellyfin-web's own stats panel first ───────────────
     //
-    // A plugin-rendered stats overlay toggled by the ShowPlaybackInfo shortcut,
-    // replacing the settings-menu → stats panel click chain. Data comes from the
+    // The shortcut opens the OSD settings menu while a short-lived style keeps
+    // every dialog invisible, and activates its "Playback Info" entry
+    // (data-id="stats"), which toggles jellyfin-web's native stats panel. The
+    // menu helpers are the track menus' (native-track-menu.ts): they wait for
+    // the new sheet, get past Firefox's OSD click guard, and close a sheet the
+    // way dialogHelper accepts. When the button or the entry is missing, the
+    // plugin overlay below is the fallback.
+    const SETTINGS_BUTTON = 'button.btnVideoOsdSettings';
+    const NATIVE_MENU_TIMEOUT_MS = 1500;
+    const HIDDEN_DIALOGS_MS = 400;
+    /** The native toggle in flight, so a second press cannot open a second menu. */
+    let pendingNative: Promise<boolean> | null = null;
+
+    /** Resolves true when jellyfin-web's stats panel was toggled, false when the caller should fall back. */
+    async function toggleNativePlaybackInfo() {
+        if (!document.querySelector(SETTINGS_BUTTON)) return false;
+        const style = document.createElement('style');
+        style.textContent = '.dialogContainer, .dialogBackdrop, .actionSheet { opacity:0 !important; transition:none !important; }';
+        document.head.appendChild(style);
+        try {
+            const container = await menu.openOsdMenu(SETTINGS_BUTTON, '', NATIVE_MENU_TIMEOUT_MS);
+            const entry = container?.querySelector<HTMLElement>('button[data-id="stats"]');
+            if (!entry) {
+                // Leave no invisible sheet behind.
+                if (container) menu.closeActionSheet(container);
+                return false;
+            }
+            menu.activate(entry);
+            return true;
+        } finally {
+            // A plain timer, not a lifetime one: a navigation must never leave every dialog invisible.
+            window.setTimeout(() => style.remove(), HIDDEN_DIALOGS_MS);
+        }
+    }
+
+    // ── Playback info overlay (the fallback) ─────────────────────────────────
+    //
+    // A plugin-rendered stats overlay for when the native panel cannot be
+    // opened. Data comes from the
     // media element itself plus the own-session probe (PlayState /
     // TranscodingInfo / MediaStreams). Every value lands via textContent — no
     // HTML sink. One 1s refresh timer exists only while the overlay is open,
@@ -156,10 +194,23 @@ export function installPlaybackInfo(context: PlayerContext, probeOwnSession: () 
     }
 
     /**
-     * Toggles the playback-info overlay (no native menus involved).
+     * Toggles jellyfin-web's stats panel, or the plugin overlay when that cannot be done.
      */
-    JE.togglePlaybackInfo = () => {
+    JE.togglePlaybackInfo = async () => {
         if (playbackInfoOverlay) { destroyPlaybackInfo(); return; }
+        if (pendingNative) return;
+        const lease = lifetime.lease();
+        const pending = toggleNativePlaybackInfo();
+        pendingNative = pending;
+        let toggled = false;
+        try {
+            toggled = await pending;
+        } catch (err) {
+            console.warn('🪼 Jellyfin Enhanced: native playback info failed, using overlay', err);
+        } finally {
+            if (pendingNative === pending) pendingNative = null;
+        }
+        if (toggled || !lease.current() || playbackInfoOverlay) return;
         const video = getVideo();
         if (!video) {
             JE.toast(JE.t('toast_no_video_found'));
@@ -185,5 +236,5 @@ export function installPlaybackInfo(context: PlayerContext, probeOwnSession: () 
     // two element/item helpers exported below.
 
 
-lifetime.onReset(destroyPlaybackInfo);
+lifetime.onReset(() => { destroyPlaybackInfo(); pendingNative = null; });
 }

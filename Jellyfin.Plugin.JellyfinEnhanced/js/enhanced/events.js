@@ -113,7 +113,8 @@
           else console.warn("🪼 Jellyfin Enhanced: New bookmark system not loaded, using fallback");
         }],
         ["CycleAspectRatio", () => JE.cycleAspect?.()],
-        // Toggles the plugin-rendered playback-info overlay; no host settings menu opens.
+        // Toggles jellyfin-web's own stats panel through its settings menu, kept invisible;
+        // the plugin-rendered overlay is the fallback (player/playback-info.ts).
         ["ShowPlaybackInfo", () => JE.togglePlaybackInfo?.()],
         ["SubtitleMenu", () => {
           const open = [...document.querySelectorAll(".actionSheetContent .actionSheetTitle")].find((el) => el.textContent === "Subtitles");

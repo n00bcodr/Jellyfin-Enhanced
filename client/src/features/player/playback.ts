@@ -105,8 +105,8 @@ const context = { JE, ApiClient, lifetime, getVideo, getCurrentVideoItemId, tWit
 installFrameSeek(context);
 installSegmentControls(context);
 const menu = createTrackMenu(context);
-const tracks = installTrackControls(context, menu);
+const tracks = installTrackControls(context, menu.cycleTrackMenu);
 installAspect(context);
-installPlaybackInfo(context, tracks.probeOwnSession, tracks.trackDisplayName);
+installPlaybackInfo(context, tracks.probeOwnSession, tracks.trackDisplayName, menu);
 installLongPress(context);
 ctx.own.player = Object.assign(ctx.own.player || {}, { getVideo, getCurrentVideoItemId });

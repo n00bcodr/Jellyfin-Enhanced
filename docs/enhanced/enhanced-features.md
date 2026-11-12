@@ -299,7 +299,7 @@ Navigate Jellyfin and control local video playback without opening menus. Admin 
 | Player action | Stock key | What it does |
 |---|---|---|
 | **Cycle Aspect Ratio** | ++a++ | Cycles **Auto → Cover → Fill**. |
-| **Show Playback Info** | ++i++ | Toggles JE's statistics overlay. |
+| **Show Playback Info** | ++i++ | Toggles Jellyfin's own Playback Info panel, or JE's statistics overlay when the player has no such entry. |
 | **Subtitle Menu** | ++s++ | Opens the subtitle menu. |
 | **Cycle Subtitle Tracks** | ++c++ | Cycles tracks, including **Off**. |
 | **Cycle Audio Tracks** | ++v++ | Cycles audio tracks, without an Off option. |
@@ -329,7 +329,7 @@ Navigate Jellyfin and control local video playback without opening menus. Admin 
 
     Held ++c++ or ++v++ does not repeatedly cycle tracks. Frame stepping uses media frame-rate metadata. When it is missing, JE falls back to 24 fps and shows a notice.
 
-    **Cycle Aspect Ratio** stores Jellyfin's aspect ratio in this browser and adjusts graphical-subtitle canvases. **Show Playback Info** refreshes the statistics overlay every second while open. **Skip Intro/Outro** seeks past the segment containing the current position, including other segment types, and falls back to an available native skip button. It is independent of auto-skip settings.
+    **Cycle Aspect Ratio** stores Jellyfin's aspect ratio in this browser and adjusts graphical-subtitle canvases. **Show Playback Info** opens the panel from the player's settings menu without showing that menu. JE's overlay, used when the menu has no Playback Info entry, refreshes every second while open. **Skip Intro/Outro** seeks past the segment containing the current position, including other segment types, and falls back to an available native skip button. It is independent of auto-skip settings.
 
 ### Smart Bookmarks
 

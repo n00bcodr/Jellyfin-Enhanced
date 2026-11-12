@@ -594,7 +594,7 @@
       });
       return true;
     }
-    function openOsdMenu(buttonSelector, expectedTitle) {
+    function openOsdMenu(buttonSelector, expectedTitle, timeout = 3e3) {
       const before = new Set(document.querySelectorAll(".dialogContainer"));
       const btn = (
         /** @type {HTMLElement|null} */
@@ -603,7 +603,7 @@
       if (!btn) return Promise.resolve(null);
       activate(btn);
       return JE2.core.dom.waitForElement(".dialogContainer", {
-        timeout: 3e3,
+        timeout,
         quiet: true,
         signal: lifetime2.lease().signal,
         predicate: (el) => {
@@ -681,7 +681,7 @@
       lastCycled.subtitle = lastCycled.audio = null;
       pendingMenuOpen = null;
     });
-    return cycleTrackMenu;
+    return { cycleTrackMenu, openOsdMenu, activate, closeActionSheet };
   }
 
   // client/src/features/player/track-controls.ts
@@ -923,8 +923,30 @@
   }
 
   // client/src/features/player/playback-info.ts
-  function installPlaybackInfo(context2, probeOwnSession, trackDisplayName) {
+  function installPlaybackInfo(context2, probeOwnSession, trackDisplayName, menu2) {
     const { JE: JE2, ApiClient: ApiClient2, lifetime: lifetime2, getVideo: getVideo2, getCurrentVideoItemId: getCurrentVideoItemId2, tWithFallback: tWithFallback2 } = context2;
+    const SETTINGS_BUTTON = "button.btnVideoOsdSettings";
+    const NATIVE_MENU_TIMEOUT_MS = 1500;
+    const HIDDEN_DIALOGS_MS = 400;
+    let pendingNative = null;
+    async function toggleNativePlaybackInfo() {
+      if (!document.querySelector(SETTINGS_BUTTON)) return false;
+      const style = document.createElement("style");
+      style.textContent = ".dialogContainer, .dialogBackdrop, .actionSheet { opacity:0 !important; transition:none !important; }";
+      document.head.appendChild(style);
+      try {
+        const container = await menu2.openOsdMenu(SETTINGS_BUTTON, "", NATIVE_MENU_TIMEOUT_MS);
+        const entry = container?.querySelector('button[data-id="stats"]');
+        if (!entry) {
+          if (container) menu2.closeActionSheet(container);
+          return false;
+        }
+        menu2.activate(entry);
+        return true;
+      } finally {
+        window.setTimeout(() => style.remove(), HIDDEN_DIALOGS_MS);
+      }
+    }
     const PLAYBACK_INFO_REFRESH_MS = 1e3;
     let playbackInfoOverlay = null;
     let playbackInfoTimer = null;
@@ -1049,11 +1071,24 @@
         }, PLAYBACK_INFO_REFRESH_MS);
       }
     }
-    JE2.togglePlaybackInfo = () => {
+    JE2.togglePlaybackInfo = async () => {
       if (playbackInfoOverlay) {
         destroyPlaybackInfo();
         return;
       }
+      if (pendingNative) return;
+      const lease = lifetime2.lease();
+      const pending = toggleNativePlaybackInfo();
+      pendingNative = pending;
+      let toggled = false;
+      try {
+        toggled = await pending;
+      } catch (err) {
+        console.warn("🪼 Jellyfin Enhanced: native playback info failed, using overlay", err);
+      } finally {
+        if (pendingNative === pending) pendingNative = null;
+      }
+      if (toggled || !lease.current() || playbackInfoOverlay) return;
       const video = getVideo2();
       if (!video) {
         JE2.toast(JE2.t("toast_no_video_found"));
@@ -1073,7 +1108,10 @@
       document.body.appendChild(overlay);
       refreshPlaybackInfo(overlay);
     };
-    lifetime2.onReset(destroyPlaybackInfo);
+    lifetime2.onReset(() => {
+      destroyPlaybackInfo();
+      pendingNative = null;
+    });
   }
 
   // client/src/features/player/long-press.ts
@@ -1295,9 +1333,9 @@
   installFrameSeek(context);
   installSegmentControls(context);
   var menu = createTrackMenu(context);
-  var tracks = installTrackControls(context, menu);
+  var tracks = installTrackControls(context, menu.cycleTrackMenu);
   installAspect(context);
-  installPlaybackInfo(context, tracks.probeOwnSession, tracks.trackDisplayName);
+  installPlaybackInfo(context, tracks.probeOwnSession, tracks.trackDisplayName, menu);
   installLongPress(context);
   ctx.own.player = Object.assign(ctx.own.player || {}, { getVideo, getCurrentVideoItemId });
 })();

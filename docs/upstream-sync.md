@@ -4,7 +4,7 @@
 
 What the rewrite has taken from [upstream](https://github.com/n00bcodr/Jellyfin-Enhanced) (`main`) since it branched at `2e0f9251bf`. The source of truth is [`upstream-sync.json`](upstream-sync.json); the procedure is [upstream-sync-procedure.md](upstream-sync-procedure.md).
 
-32 upstream commits: 32 ported.
+33 upstream commits: 33 ported.
 
 | # | Upstream | Date | Class | Features | Subject | Status | Rewrite commit | Note |
 |---|---|---|---|---|---|---|---|---|
@@ -40,3 +40,4 @@ What the rewrite has taken from [upstream](https://github.com/n00bcodr/Jellyfin-
 | 30 | [`c693f0ed`](https://github.com/n00bcodr/Jellyfin-Enhanced/commit/c693f0eddbd2fc26df25ac53dbd197a8fbffb0f7) | 2026-11-11 | fix | activity | fix(activity): show plays and favorites of versions, people and genres (#1042) | ported | `6493469c` | artifacts/restructure-plan/step-logs/upstream-sync-evidence/p30-* |
 | 31 | [`a10b7eab`](https://github.com/n00bcodr/Jellyfin-Enhanced/commit/a10b7eab04331b3385a17ea94510a5c982d44b5b) | 2026-11-11 | ci | media-tags, admin | fix(tests): make generator scripts and coverage test work on Windows | ported | `685b1958` | artifacts/restructure-plan/step-logs/upstream-sync-evidence/p31-windows-tooling.* |
 | 32 | [`8fe1e705`](https://github.com/n00bcodr/Jellyfin-Enhanced/commit/8fe1e7054d1c0a6c082de8705d1c077e7d3e3451) | 2026-11-11 | fix | media-tags | fix(leaving-soon): fall back to the embedded members when the paged endpoint answers something else, update request counts | ported | `1aeba588` | artifacts/restructure-plan/step-logs/upstream-sync-evidence/p32-* |
+| 33 | [`c55c758e`](https://github.com/n00bcodr/Jellyfin-Enhanced/commit/c55c758ede4a0f26192196ec8a9328dd9bc695cc) | 2026-11-11 | feature | chrome, player | feat(player): open the native playback info overlay from the shortcut, keep plugin overlay as fallback | ported | `d6d454be` | artifacts/restructure-plan/step-logs/upstream-sync-evidence/p33-* |

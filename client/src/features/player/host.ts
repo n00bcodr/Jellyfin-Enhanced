@@ -55,7 +55,7 @@ export interface PlayerBridge {
     openSettings(callback: () => void): void;
     adjustPlaybackSpeed(direction: string): void; resetPlaybackSpeed(): void; jumpToPercentage(percentage: number): void;
     frameStep(direction: string): Promise<void>; attachSeekTracker(video: HTMLVideoElement): void; jumpToLastPosition(): void;
-    skipIntroOutro(): void; cycleSubtitleTrack(): void; cycleAudioTrack(): void; cycleAspect(): void; togglePlaybackInfo(): void;
+    skipIntroOutro(): void; cycleSubtitleTrack(): void; cycleAudioTrack(): void; cycleAspect(): void; togglePlaybackInfo(): Promise<void>;
     adjustSubtitleOffset(deltaSeconds: number): void;
     handleLongPressDown(event: PressEvent): void; handleLongPressUp(event: PressEvent): void; handleLongPressCancel(): void; handleLongPressMove(event: PressEvent): void; handleLongPressClick(event: PressEvent): void;
     initializeAutoSkipObserver(): void; stopAutoSkip(): void;

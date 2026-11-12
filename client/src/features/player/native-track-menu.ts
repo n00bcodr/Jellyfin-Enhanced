@@ -179,7 +179,7 @@ export function createTrackMenu(context: PlayerContext) {
      * @param {string} buttonSelector
      * @returns {Promise<Element|null>} The new sheet's container, or null if none appeared.
      */
-    function openOsdMenu(buttonSelector: string, expectedTitle: string) {
+    function openOsdMenu(buttonSelector: string, expectedTitle: string, timeout = 3000) {
         const before = new Set<Element>(document.querySelectorAll<HTMLElement>('.dialogContainer'));
         const btn = /** @type {HTMLElement|null} */ (document.querySelector<HTMLElement>(buttonSelector));
         if (!btn) return Promise.resolve(null);
@@ -191,7 +191,7 @@ export function createTrackMenu(context: PlayerContext) {
         // must resolve immediately instead of stalling until the timeout. Also require the title
         // to be the menu we asked for, so a sheet opened concurrently elsewhere is not adopted.
         return JE.core.dom.waitForElement('.dialogContainer', {
-            timeout: 3000,
+            timeout,
             quiet: true,
             signal: lifetime.lease().signal,
             predicate: (el) => {
@@ -299,5 +299,6 @@ export function createTrackMenu(context: PlayerContext) {
 
 
 lifetime.onReset(() => { lastCycled.subtitle = lastCycled.audio = null; pendingMenuOpen = null; });
-return cycleTrackMenu;
+return { cycleTrackMenu, openOsdMenu, activate, closeActionSheet };
 }
+export type TrackMenu = ReturnType<typeof createTrackMenu>;
