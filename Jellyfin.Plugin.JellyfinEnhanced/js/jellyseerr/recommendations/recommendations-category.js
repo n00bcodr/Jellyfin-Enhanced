@@ -35,6 +35,9 @@
     if (sortBy === 'vote_average.desc') {
       // Spoiler Guard keeps a hidden score here, so a protected title doesn't sink.
       sorted.sort((a, b) => (b.jeSortRating || b.voteAverage || 0) - (a.jeSortRating || a.voteAverage || 0));
+    } else if (sortBy === 'vote_count.desc') {
+      // Spoiler Guard keeps a hidden vote count here too, for the same reason.
+      sorted.sort((a, b) => (Number(b.jeSortVotes || b.voteCount) || 0) - (Number(a.jeSortVotes || a.voteCount) || 0));
     } else if (sortBy === 'release_date.desc' || sortBy === 'release_date.asc') {
       const dir = sortBy.endsWith('.desc') ? -1 : 1;
       sorted.sort((a, b) => {

@@ -1,0 +1,237 @@
+// /js/jellyseerr/discovery/discovery-styles.js
+// The stylesheet of the Seerr discovery sections: the header and its join with the page, the
+// filter tabs and the sort, the line that goes to a section, the sort and filter menus, a section's
+// place while it loads, and the line that says Seerr did not answer (also the scroll engine's retry
+// row). The further filters' own rules (discovery-filter-panel.js), the busy state
+// (discovery-busy.js) and the role line (discovery-roles.js) inject their own.
+//
+// Public surface: JE.discoveryStyles { inject }.
+(function(JE) {
+    'use strict';
+
+    const STYLE_ID = 'jellyseerr-discovery-styles';
+
+    /**
+     * Adds the discovery sections' stylesheet to the page (once).
+     */
+    function inject() {
+        if (document.getElementById(STYLE_ID) || !document.head) return;
+        const style = document.createElement('style');
+        style.id = STYLE_ID;
+        style.textContent = `
+            /* ===== Discovery sections: the join with the page =====
+               A ruled header where the library's own list ends: the title, then one row with what
+               the titles are (not in the library) and the controls. While the section is being read
+               that row is held at the top of the screen, under Jellyfin's header: the rule and the
+               title scroll on under it, and the row shows the title in the place of its line of words. */
+            .jellyseerr-discovery-section { margin-top: 1.5em; }
+            .jellyseerr-discovery-header { --jellyseerr-line: var(--jf-palette-divider, rgba(255,255,255,.12)); position: sticky; top: calc(var(--jellyseerr-sticky-top, 3.5em) - var(--jellyseerr-header-tuck, 0px)); z-index: 3; padding: .8em 0 .5em; border-top: 1px solid transparent; border-bottom: 1px solid transparent; }
+            /* The rule, and the row of controls, end where the first row of cards does (the script measures it); the title keeps the column's width. */
+            .jellyseerr-discovery-header::before { content: ''; position: absolute; inset-block-start: -1px; inset-inline: 0 var(--jellyseerr-trim, 0px); height: 1px; background: var(--jellyseerr-line); }
+            /* The section's lines (the rule, the hairline under a held header, the one beside the sort) are one
+               strength: that of the dividers in Jellyfin's toolbar, taken from the text's colour so it follows the theme. */
+            @supports (color: color-mix(in srgb, red 30%, transparent)) { .jellyseerr-discovery-header { --jellyseerr-line: color-mix(in srgb, currentColor 30%, transparent); } }
+            /* Held: a hairline under it, and nothing of it behind Jellyfin's bar (a theme's bar may be see-through). */
+            /* At the join the header has no ground of its own (a theme's page may be a gradient or a backdrop picture).
+               Held, it needs one for the cards passing under it, and it is then a bar under Jellyfin's own, flat as
+               that one is: the theme's ground across the whole screen with a hairline under it (the line's colour
+               on that ground, so it does not change over what passes), and nothing of it behind Jellyfin's bar. */
+            .jellyseerr-discovery-header { --jellyseerr-ground: var(--jf-palette-background-default, #101010); --jellyseerr-held-line: var(--jellyseerr-line); }
+            @supports (color: color-mix(in srgb, red 30%, transparent)) { .jellyseerr-discovery-header { --jellyseerr-held-line: color-mix(in srgb, currentColor 30%, var(--jellyseerr-ground)); } }
+            .jellyseerr-discovery-header[data-stuck] { border-image: linear-gradient(to bottom, var(--jellyseerr-ground) calc(100% - 1px), var(--jellyseerr-held-line) 0) fill 0 / 0 / 0 100vmax; clip-path: inset(var(--jellyseerr-header-tuck, 0px) -100vmax -1em); }
+            /* A long name takes a second line; it is never cut on the first (the name is the point of the title). */
+            .jellyseerr-discovery-header > .sectionTitle { margin: 0; padding: 0; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; }
+            /* The title takes focus when the viewer is brought to the section; it is not a control and shows no ring. */
+            .jellyseerr-discovery-header > .sectionTitle:focus { outline: none; }
+            /* The name the title is about stays whole when the title takes two lines. */
+            .jellyseerr-discovery-name { display: inline-block; max-width: 100%; }
+            /* Held, the title above the row is out of sight (the row says it): nothing of it shows in the air kept above the row. */
+            .jellyseerr-discovery-header[data-stuck] > .sectionTitle { opacity: 0; }
+            /* For measuring a held title as the page lays it out; never seen. */
+            .jellyseerr-discovery-probe { position: absolute; visibility: hidden; font-size: 1.15em; white-space: nowrap; }
+            /* One row, on one baseline: the line of words (or, held, the title) and the controls at its end. */
+            /* (The gap is small: the controls bring their own room before their first word, and a held title needs the row's.) */
+            .jellyseerr-discovery-meta { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; column-gap: .4em; margin-inline-end: var(--jellyseerr-trim, 0px); }
+            .jellyseerr-discovery-meta::before, .jellyseerr-discovery-summary { grid-area: 1 / 1; min-width: 0; margin: 0; transition: opacity .15s, visibility .15s; }
+            .jellyseerr-discovery-summary { padding-block: .15em; color: var(--jf-palette-text-secondary, rgba(255,255,255,.7)); }
+            .jellyseerr-discovery-meta::before { content: attr(data-title); content: attr(data-title) / ''; font-size: 1.15em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: 0; visibility: hidden; }
+            .jellyseerr-discovery-header[data-stuck] .jellyseerr-discovery-meta::before { opacity: 1; visibility: visible; }
+            /* (Out of sight only: a screen reader still reads the line of words, and does not hear the title twice.) */
+            .jellyseerr-discovery-header[data-stuck] .jellyseerr-discovery-summary { opacity: 0; }
+            .jellyseerr-discovery-bar { grid-area: 1 / 2; justify-self: end; display: flex; align-items: center; gap: .5em 1em; min-width: 0; }
+            .jellyseerr-discovery-bar:empty { display: none; }
+            .jellyseerr-discovery-filter { display: inline-flex; align-items: center; min-width: 0; }
+            /* Filter and sort are no taller than their words (each keeps 44px to press, the ::after), so the row
+               is the same height at the join and held, at every width. */
+            .jellyseerr-discovery-filter .jellyseerr-filter-btn { padding: .55em .9em; min-height: 2.75em; font-size: inherit; }
+            .jellyseerr-discovery-header .jellyseerr-filter-btn { position: relative; padding-block: .2em; min-height: 0; overflow: visible; }
+            .jellyseerr-discovery-header .jellyseerr-filter-btn::after { content: ''; position: absolute; inset: 50% 0 auto; height: 44px; transform: translateY(-50%); }
+            /* The chosen filter: the theme's accent, as Jellyfin marks the page you are on in its top bar, and a
+               line under the word, so it is not told by colour alone. The accent is taken part of the way to
+               the text's colour, which keeps it readable on a light theme and brighter than its neighbours on a dark one. */
+            .jellyseerr-discovery-header, .jellyseerr-join-jump, .jellyseerr-sort-menu { --jellyseerr-accent: var(--jf-palette-primary-main, #00a4dc); }
+            @supports (color: color-mix(in oklab, red 60%, blue)) { .jellyseerr-discovery-header, .jellyseerr-join-jump, .jellyseerr-sort-menu { --jellyseerr-accent: color-mix(in oklab, var(--jf-palette-primary-main, #00a4dc) 60%, var(--jf-palette-text-primary, #fff)); } }
+            .jellyseerr-discovery-header .jellyseerr-filter-btn.emby-tab-button-active { color: var(--jellyseerr-accent); text-decoration: underline 2px; text-underline-offset: .32em; }
+            /* The sort: a quiet text button in the filter tabs' type and weight that names the current order,
+               with a small chevron on the text's line; no box, no fill, the page's own text colour (as
+               Jellyfin's own sort in its toolbar). At least 44px to press. */
+            .jellyseerr-sort-btn.emby-tab-button, .jellyseerr-filters-btn.emby-tab-button { position: relative; flex: none; margin-block: 0; margin-inline: .3em -.6em; display: inline-flex; align-items: center; gap: .15em; padding: .55em .6em; min-height: 2.75em; font-size: inherit; overflow: visible; cursor: pointer; }
+            /* In a section's header it is no taller than its words, and its box ends where the column does (so does its focus ring). */
+            .jellyseerr-discovery-header .jellyseerr-sort-btn.emby-tab-button, .jellyseerr-discovery-header .jellyseerr-filters-btn.emby-tab-button { margin-inline: .3em 0; padding: .2em .1em .2em .6em; min-height: 0; }
+            .jellyseerr-sort-btn.emby-tab-button:hover, .jellyseerr-sort-btn.emby-tab-button:focus-visible,
+            .jellyseerr-filters-btn.emby-tab-button:hover, .jellyseerr-filters-btn.emby-tab-button:focus-visible { color: var(--jf-palette-text-primary, #fff); }
+            .jellyseerr-sort-btn .material-icons, .jellyseerr-filters-btn .material-icons { font-size: 1.25em; line-height: 1; margin-inline-end: -.2em; }
+            .jellyseerr-sort-btn::after, .jellyseerr-filters-btn::after { content: ''; position: absolute; inset: 50% 0 auto; height: max(100%, 44px); transform: translateY(-50%); }
+            .jellyseerr-discovery-header .jellyseerr-sort-btn::after { inset-inline-end: -.5em; }
+            /* On a phone, held, the tabs' place shows the section's title (below). */
+            .jellyseerr-filter-held { display: none; }
+            /* A ring for keyboard focus, and for any focus on a TV (where the remote moves it). A shadow: Jellyfin removes outlines from its buttons. */
+            .jellyseerr-sort-btn:focus-visible, .layout-tv .jellyseerr-sort-btn:focus, .jellyseerr-filters-btn:focus-visible,
+            .jellyseerr-filter-btn:focus-visible, .layout-tv .jellyseerr-filter-btn:focus { box-shadow: 0 0 0 .14em var(--jellyseerr-accent, var(--jf-palette-primary-main, #00a4dc)); border-radius: .3em; }
+            /* On a TV the control the remote is on has a ground in the accent, not a ring (a ringed word reads as a boxed field). */
+            .layout-tv .jellyseerr-discovery-header .jellyseerr-sort-btn:focus, .layout-tv .jellyseerr-discovery-header .jellyseerr-filter-btn:focus, .layout-tv .jellyseerr-discovery-header .jellyseerr-filters-btn:focus,
+            .layout-tv .jellyseerr-filters-token:focus-within, .layout-tv .jellyseerr-filters-clear:focus { border-radius: .3em; box-shadow: 0 0 0 .3em var(--jellyseerr-focus-ground), inset 0 0 0 2em var(--jellyseerr-focus-ground); background: none; }
+            .jellyseerr-discovery-section { --jellyseerr-focus-ground: rgba(0, 164, 220, .3); }
+            @supports (color: color-mix(in srgb, red 30%, transparent)) { .jellyseerr-discovery-section { --jellyseerr-focus-ground: color-mix(in srgb, var(--jf-palette-primary-main, #00a4dc) 34%, transparent); } }
+            /* Beside each other, filter and sort are two controls: a hairline between them, of the strength of
+               the ones between the groups of Jellyfin's toolbar (a part of the text's own colour, so it follows the theme). */
+            @media (min-width: 34.01em) {
+                .jellyseerr-discovery-header .jellyseerr-discovery-filter::after { content: ''; flex: none; width: 1px; height: 1.6em; margin-inline-start: 1em; background: var(--jellyseerr-line); }
+            }
+            /* On a phone filter and sort take the row under the line of words together. Held, that row shows
+               the title where the three tabs were and the filter as one button (Jellyfin's filter icon, with
+               the choice in words and in the accent when it narrows the list): title, filter, sort, in one row. */
+            @media (max-width: 34em) {
+                .jellyseerr-discovery-meta { row-gap: .25em; }
+                .jellyseerr-discovery-bar[data-has-filter] { grid-area: 2 / 1 / 3 / -1; justify-self: stretch; }
+                .jellyseerr-discovery-header[data-has-filter] .jellyseerr-discovery-meta::before { display: none; }
+                .jellyseerr-discovery-header .jellyseerr-discovery-filter { position: relative; flex: 1 1 auto; }
+                .jellyseerr-discovery-filter .jellyseerr-filter-btn { padding-inline: .7em; }
+                .jellyseerr-discovery-header .jellyseerr-filter-btn { transition: opacity .15s, visibility .15s; }
+                .jellyseerr-discovery-filter .jellyseerr-filter-btn:first-child { padding-inline-start: 0; }
+                .jellyseerr-filter-held { position: absolute; inset: 0; display: flex; align-items: center; gap: .6em; opacity: 0; visibility: hidden; transition: opacity .15s, visibility .15s; }
+                .jellyseerr-filter-held-title { flex: 1 1 auto; min-width: 0; font-size: 1.15em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+                /* A section whose Filters button holds only All / Movies / Series shows it where the tabs are out of sight. */
+                .jellyseerr-discovery-header[data-stuck][data-has-filter] .jellyseerr-filters-btn[data-type-only] { display: inline-flex; }
+                /* There the button also stands for All / Movies / Series: a choice other than All shows on it as a filter does. */
+                .jellyseerr-discovery-header[data-stuck][data-has-filter] .jellyseerr-filters-btn.emby-tab-button[data-type-on] { color: var(--jellyseerr-accent); }
+                .jellyseerr-discovery-header[data-stuck][data-has-filter] .jellyseerr-filters-btn[data-type-on] .jellyseerr-filters-type { display: inline; margin-inline-start: .5em; }
+                /* (The title's own words come first: where they only fit without it, the script takes the type's word away.) */
+                /* (Out of sight, not out of the page: it is still said to a screen reader, where the tabs are not there to say it.) */
+                .jellyseerr-discovery-header[data-stuck][data-has-filter][data-type-word-off] .jellyseerr-filters-btn[data-type-on] .jellyseerr-filters-type { position: absolute; width: 1px; height: 1px; margin: 0; overflow: hidden; clip-path: inset(50%); }
+                /* Held, the row is the title and two controls: they stand closer than the tabs and the controls do at the join. */
+                .jellyseerr-discovery-header[data-stuck][data-has-filter] .jellyseerr-discovery-bar { column-gap: .25em; }
+                .jellyseerr-discovery-header[data-stuck][data-has-filter] .jellyseerr-filters-btn[data-type-on] .material-icons::after { content: ''; position: absolute; inset-block-start: -.06em; inset-inline-end: -.24em; width: .36em; height: .36em; border-radius: 50%; background: currentColor; }
+                .jellyseerr-discovery-header[data-stuck] .jellyseerr-filter-held { opacity: 1; visibility: visible; }
+                .jellyseerr-discovery-header[data-stuck] .jellyseerr-discovery-filter .jellyseerr-filter-btn { opacity: 0; visibility: hidden; }
+            }
+            /* A card brought into view by the keyboard or a remote stops below the held header, not under it. */
+            .jellyseerr-discovery-section .itemsContainer > .card { scroll-margin-top: calc(var(--jellyseerr-sticky-top, 3.5em) + 6.5em); }
+            @media (prefers-reduced-motion: reduce) { .jellyseerr-discovery-meta::before, .jellyseerr-discovery-summary, .jellyseerr-filter-held, .jellyseerr-discovery-filter .jellyseerr-filter-btn { transition: none; } }
+
+
+            /* ===== The join with a list page (studio, genre, tag) =====
+               On a single page the library's closing paging line only repeats the one above the list, and
+               stands between the list and the section: it goes. A list with more pages keeps it. */
+            :has(> .jellyseerr-discovery-section) > div:has(> .paging):not(.itemsViewSettingsContainer):not(:has(.btnNextPage, .btnPreviousPage)) { display: none; }
+            /* Jellyfin's A-Z rail belongs to the library's list: it leaves while it would run beside the section. */
+            .page:has(.jellyseerr-discovery-section[data-jellyseerr-rail="away"]) .alphaPicker-fixed { opacity: 0; visibility: hidden; transition: opacity .2s, visibility .2s; }
+            @media (prefers-reduced-motion: reduce) { .page:has(.jellyseerr-discovery-section[data-jellyseerr-rail="away"]) .alphaPicker-fixed { transition: none; } }
+            /* On a list longer than the screen: one line that goes to the section. It belongs to Jellyfin's
+               toolbar: on its axis, nearer to it than to the posters, the action in the weight of the
+               toolbar's buttons and the rest of the phrase after it. It is as wide as its words. */
+            .jellyseerr-join-jump { display: block; width: fit-content; max-width: 100%; min-height: 2.75em; margin: -1em auto 1.4em; padding: .3em .7em; border: 0; border-radius: .3em; background: none; color: inherit; font: inherit; text-align: center; text-wrap: balance; cursor: pointer; }
+            .jellyseerr-join-jump[hidden] { display: none; }
+            /* On a detail page (a person) there is no toolbar: the line stands at the start of the page's own lists, on their edge. */
+            .jellyseerr-join-jump-start { margin: 2.4em 0 -.7em -.7em; text-align: start; }
+            /* Arriving after the list has drawn (a slow answer from Seerr), it opens its room over a moment instead of dropping the list at once. */
+            @media (prefers-reduced-motion: no-preference) {
+                .jellyseerr-join-jump-late { overflow: hidden; animation: jellyseerr-join-arrive .18s ease-out; }
+                @keyframes jellyseerr-join-arrive { from { max-height: 0; min-height: 0; margin-bottom: 0; padding-block: 0; opacity: 0; } to { max-height: 6em; } }
+            }
+            /* The action and its name stay whole while they fit: a wrap falls after the comma, not inside the name. */
+            .jellyseerr-join-jump-lead { display: inline-block; max-width: 100%; }
+            .jellyseerr-join-jump-go { font-weight: 600; }
+            .jellyseerr-join-jump:hover .jellyseerr-join-jump-go, .jellyseerr-join-jump:focus-visible .jellyseerr-join-jump-go { color: var(--jf-palette-text-primary, #fff); }
+            .jellyseerr-join-jump:focus-visible, .layout-tv .jellyseerr-join-jump:focus { outline: none; box-shadow: 0 0 0 .14em var(--jellyseerr-accent); }
+
+
+            /* ===== The sort and filter menus =====
+               The menu takes the form Jellyfin's own menus have in the layout in use. On a TV that is
+               Jellyfin's action sheet, which its own classes draw. Everywhere else it is the small menu of
+               Jellyfin's library pages (under their Sort button): the paper colour raised above the page,
+               no title, the page not dimmed, rows as close as Jellyfin's, and the choice in use marked at
+               the row's end. Every value is the theme's own. (Where Jellyfin's action-sheet rules are
+               marked !important, the same mark is needed here to set the small menu's value.) */
+            html:not(.layout-tv) .jellyseerr-menu-backdrop { background: none; opacity: 0; }
+            html:not(.layout-tv) .jellyseerr-sort-menu { min-width: 9.5em; padding: 8px 0; border-radius: var(--jf-shape-borderRadius, 4px) !important; background-color: var(--jf-palette-background-paper, #202020); background-image: var(--jf-overlays-8, none); box-shadow: var(--jf-shadows-8, 0 5px 5px -3px rgba(0,0,0,.2), 0 8px 10px 1px rgba(0,0,0,.14), 0 3px 14px 2px rgba(0,0,0,.12)); color: var(--jf-palette-text-primary, #fff); }
+            html:not(.layout-tv) .jellyseerr-sort-menu .actionSheetContent, html:not(.layout-tv) .jellyseerr-sort-menu .actionSheetScroller { margin: 0 !important; padding: 0 !important; }
+            /* One part of a menu scrolls (its rows): a TV's title, and the foot of a menu of groups, stay. */
+            html:not(.layout-tv) .jellyseerr-sort-menu { display: flex; flex-direction: column; overflow: hidden; }
+            .jellyseerr-sort-menu .actionSheetContent { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow: hidden; }
+            .jellyseerr-sort-menu .actionSheetScroller { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scroll-padding-block: var(--jellyseerr-held, 0px) var(--jellyseerr-cut, 0px); }
+            .jellyseerr-menu-foot { flex: none; }
+            /* Where rows go on beyond what is in sight the script cuts the list inside a row, through its name; the edge itself is softened over a few pixels only, so that name stays at full strength. */
+            .jellyseerr-sort-menu .actionSheetContent[data-more] > .actionSheetScroller { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - .5em), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - .5em), transparent); }
+            /* Rows above what is in sight: the menu's top has an edge too (not on a TV, where the title is the top; nor where an open group's row is held there). */
+            html:not(.layout-tv) .jellyseerr-sort-menu .actionSheetContent[data-above]::before { content: ''; flex: none; position: relative; z-index: 3; height: 1px; margin-bottom: -1px; background: var(--jf-palette-divider, rgba(255,255,255,.12)); box-shadow: 0 6px 6px -6px rgba(0,0,0,.5); }
+            /* (And the foot has an upper edge then, wherever the rows happen to be cut.) */
+            .jellyseerr-sort-menu .actionSheetContent[data-more] > .jellyseerr-menu-foot { box-shadow: 0 -6px 6px -6px rgba(0,0,0,.5); }
+            .jellyseerr-sort-menu .actionSheetContent[data-above] > .actionSheetScroller { -webkit-mask-image: linear-gradient(to bottom, transparent, #000 .5em); mask-image: linear-gradient(to bottom, transparent, #000 .5em); }
+            .jellyseerr-sort-menu .actionSheetContent[data-above][data-more] > .actionSheetScroller { -webkit-mask-image: linear-gradient(to bottom, transparent, #000 .5em, #000 calc(100% - .5em), transparent); mask-image: linear-gradient(to bottom, transparent, #000 .5em, #000 calc(100% - .5em), transparent); }
+            html:not(.layout-tv) .jellyseerr-sort-menu .actionSheetMenuItem { display: flex; align-items: center; width: 100%; min-height: 0; margin: 0; padding: 6px 16px; border-radius: 0; background: none; box-shadow: none; color: inherit; font-size: inherit; font-weight: 400; line-height: 1.5; text-align: start; }
+            /* (A finger does not hover: on a touch screen a pressed row would keep the ground and read as chosen.) */
+            @media (hover: hover) { html:not(.layout-tv) .jellyseerr-sort-menu .actionSheetMenuItem:hover { background: var(--jf-palette-action-hover, rgba(255,255,255,.08)); } }
+            /* The row the keys are on: Jellyfin's focus ground, and a bar in the accent at its start, which the pointer's ground has not. */
+            html:not(.layout-tv) .jellyseerr-sort-menu .actionSheetMenuItem:focus-visible { background-color: var(--jf-palette-action-focus, rgba(255,255,255,.12)); box-shadow: inset 3px 0 0 var(--jellyseerr-accent); }
+            html[dir="rtl"]:not(.layout-tv) .jellyseerr-sort-menu .actionSheetMenuItem:focus-visible { box-shadow: inset -3px 0 0 var(--jellyseerr-accent); }
+            html:not(.layout-tv) .jellyseerr-sort-menu .listItemBody, html:not(.layout-tv) .jellyseerr-sort-menu .actionSheetItemText { flex: 1 1 auto; margin: 0; padding: 0 !important; line-height: 1.5; }
+            html:not(.layout-tv) .jellyseerr-sort-menu .actionsheetMenuItemIcon { order: 1; width: auto; margin: 0 !important; margin-inline-start: 1.4em !important; padding: 0; font-size: 1.2em; }
+            /* Groups (the filters): each is a row that names its choice in use and opens to its choices, as the
+               sections of Jellyfin's own filter menu open. A group that is narrowing the list says so in the accent. */
+            html:not(.layout-tv) .jellyseerr-menu-grouped { width: 19em; max-width: calc(100vw - 16px); }
+            /* On a phone it is as wide as the screen allows: nothing of the page is left as a strip beside it. */
+            @media (max-width: 600px) { html:not(.layout-tv) .jellyseerr-menu-grouped { width: calc(100vw - 16px); } }
+            /* On a TV it is one width whatever is open in it, and stays within the screen. */
+            .layout-tv .jellyseerr-menu-grouped { width: min(34em, 92vw); max-height: 84vh; }
+            /* The open group's row stays at the top of the menu's scroll, over its own body, and the group ends with a line. */
+            .jellyseerr-sort-menu { --jellyseerr-menu-ground: var(--jf-palette-background-paper, #202020); --jellyseerr-menu-shade: var(--jf-overlays-8, none); --jellyseerr-held-fade: .8; }
+            .layout-tv .jellyseerr-sort-menu { --jellyseerr-menu-shade: none; }
+            html .jellyseerr-sort-menu .actionSheetMenuItem.jellyseerr-menu-group[aria-expanded="true"] { position: sticky; top: 0; z-index: 2; overflow: visible; background-color: var(--jellyseerr-menu-ground); background-image: var(--jellyseerr-menu-shade); }
+            /* Once rows pass under it, it has a lower edge: a rule, and under the rule the menu's ground running on for a few pixels and fading, so no crumb of a row lies on the rule. */
+            html .jellyseerr-sort-menu .actionSheetMenuItem.jellyseerr-menu-group[data-over]:not(:has(+ .jellyseerr-menu-choices > .jellyseerr-menu-searchbar))::after, .jellyseerr-menu-group[data-over] + .jellyseerr-menu-choices > .jellyseerr-menu-searchbar::after { content: ''; position: absolute; inset-inline: 0; top: 100%; height: calc(var(--jellyseerr-held-fade) * 1em); border-top: 1px solid var(--jf-palette-divider, rgba(255,255,255,.12)); background: var(--jellyseerr-menu-shade), var(--jellyseerr-menu-ground); -webkit-mask-image: linear-gradient(#000 45%, transparent); mask-image: linear-gradient(#000 45%, transparent); pointer-events: none; }
+            .jellyseerr-menu-choices:not([hidden]) { padding-bottom: 8px; border-bottom: 1px solid var(--jf-palette-divider, rgba(255,255,255,.12)); }
+            .jellyseerr-menu-choices:last-child { border-bottom: 0; }
+            @media (hover: hover) { html:not(.layout-tv) .jellyseerr-sort-menu .actionSheetMenuItem.jellyseerr-menu-group[aria-expanded="true"]:hover { background-image: linear-gradient(var(--jf-palette-action-hover, rgba(255,255,255,.08)), var(--jf-palette-action-hover, rgba(255,255,255,.08))), var(--jellyseerr-menu-shade); } }
+            html:not(.layout-tv) .jellyseerr-sort-menu .actionSheetMenuItem.jellyseerr-menu-group[aria-expanded="true"]:focus-visible { background-image: linear-gradient(var(--jf-palette-action-focus, rgba(255,255,255,.12)), var(--jf-palette-action-focus, rgba(255,255,255,.12))), var(--jellyseerr-menu-shade); }
+            html .jellyseerr-sort-menu .actionSheetMenuItem.jellyseerr-menu-clear[aria-disabled="true"] { color: var(--jf-palette-text-disabled, rgba(255,255,255,.5)); cursor: default; background: none !important; }
+            .layout-tv .jellyseerr-sort-menu .actionSheetMenuItem.jellyseerr-menu-group[aria-expanded="true"]:focus { background-image: linear-gradient(var(--jf-palette-action-focus, rgba(255,255,255,.12)), var(--jf-palette-action-focus, rgba(255,255,255,.12))); }
+            /* The row the remote is on: Jellyfin's ground, and the accent bar at its start that the small menu's rows have under the keys. */
+            .layout-tv .jellyseerr-sort-menu .actionSheetMenuItem:focus { box-shadow: inset .25em 0 0 var(--jellyseerr-accent); }
+            html.layout-tv[dir="rtl"] .jellyseerr-sort-menu .actionSheetMenuItem:focus { box-shadow: inset -.25em 0 0 var(--jellyseerr-accent); }
+            .layout-tv .jellyseerr-menu-range, .layout-tv .jellyseerr-menu-note, .layout-tv .jellyseerr-menu-label, .layout-tv .jellyseerr-menu-searchbar { padding-inline-start: var(--jellyseerr-menu-indent, 32px); }
+            .layout-tv .jellyseerr-menu-list-rule { margin-inline-start: var(--jellyseerr-menu-indent, 32px); }
+            /* (On a TV the held strip's rule has the strength of the foot's.) */
+            html.layout-tv .jellyseerr-sort-menu .actionSheetMenuItem.jellyseerr-menu-group[data-over]:not(:has(+ .jellyseerr-menu-choices > .jellyseerr-menu-searchbar))::after, .layout-tv .jellyseerr-menu-group[data-over] + .jellyseerr-menu-choices > .jellyseerr-menu-searchbar::after { border-top-color: rgba(128,128,128,.6); }
+            .layout-tv .jellyseerr-menu-foot { margin-top: .3em; padding-top: .3em; border-top: 1px solid rgba(128,128,128,.3); }
+            /* (On a TV's near-black sheet a shadow does not show: the foot's rule is stronger while rows go on under it.) */
+            .layout-tv .jellyseerr-sort-menu .actionSheetContent[data-more] > .jellyseerr-menu-foot { border-top-color: rgba(128,128,128,.6); }
+            @media (prefers-reduced-motion: reduce) { .jellyseerr-menu-group .actionsheetMenuItemIcon { transition: none; } }
+            /* On a phone the rows are as tall as the rows of Jellyfin's menus there. */
+            @media (max-width: 600px) { html:not(.layout-tv) .jellyseerr-sort-menu .actionSheetMenuItem { min-height: 48px; } }
+
+            /* ===== A section's place while it loads, and the line that says Seerr did not answer ===== */
+            .jellyseerr-card-placeholder { pointer-events: none; }
+            .jellyseerr-section-message { display: flex; flex-wrap: wrap; align-items: center; gap: .6em 1em; padding: .9em 0; color: var(--jf-palette-text-secondary, rgba(255,255,255,.7)); }
+            .jellyseerr-section-message-action { margin: 0; flex: none; }
+            .jellyseerr-section-message-inline { display: inline-flex; flex-direction: column; justify-content: center; vertical-align: middle; white-space: normal; padding: 1em 1.5em; max-width: 14em; text-align: center; }
+        `;
+        document.head.appendChild(style);
+    }
+
+    // Inject styles on load (the scroll engine's retry row uses them outside the sections too).
+    inject();
+
+    JE.discoveryStyles = { inject };
+
+})(window.JellyfinEnhanced || (window.JellyfinEnhanced = {}));

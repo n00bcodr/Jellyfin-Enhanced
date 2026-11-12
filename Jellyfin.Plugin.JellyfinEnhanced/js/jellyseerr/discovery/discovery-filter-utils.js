@@ -12,11 +12,28 @@
     const runtimeSortModes = new Map();
 
     const SORT_OPTIONS = [
-        { value: '', label: 'Popular' },
-        { value: 'vote_average.desc', label: 'Top Rated' },
-        { value: 'release_date.desc', label: 'Newest' },
-        { value: 'release_date.asc', label: 'Oldest' }
+        { value: '', label: 'Popular', labelKey: 'discovery_sort_popular' },
+        { value: 'vote_average.desc', label: 'Top rated', labelKey: 'discovery_sort_top_rated' },
+        { value: 'vote_count.desc', label: 'Most votes', labelKey: 'discovery_sort_most_votes' },
+        { value: 'release_date.desc', label: 'Newest', labelKey: 'discovery_sort_newest' },
+        { value: 'release_date.asc', label: 'Oldest', labelKey: 'discovery_sort_oldest' }
     ];
+    // Per header's tabs: the All / Movies / Series choice, for the Filters menu to offer where the tabs are out of sight.
+    const typePickers = new WeakMap();
+
+    /**
+     * A translated string, in English where the key has no translation, with its {placeholders} filled.
+     * @param {string} key - Locale key
+     * @param {string} fallback - English text
+     * @param {Object<string, (string|number)>} [values] - Placeholder values
+     * @returns {string}
+     */
+    function label(key, fallback, values) {
+        const text = typeof JE?.t === 'function' ? JE.t(key, values) : '';
+        let said = text && text !== key ? text : fallback;
+        for (const [name, value] of Object.entries(values ?? {})) said = said.replace(`{${name}}`, String(value));
+        return said;
+    }
 
     /**
      * Gets the current filter mode for a module from runtime state.
@@ -43,11 +60,13 @@
     }
 
     /**
-     * Resets module filter mode back to default.
+     * Resets module filter mode back to default. A section starts with nothing narrowing it:
+     * neither the type nor the further filters.
      * @param {string} moduleName
      */
     function resetFilterMode(moduleName) {
         runtimeFilterModes.delete(moduleName);
+        JE.discoveryFilters?.reset?.(moduleName);
     }
 
     /**
@@ -164,175 +183,261 @@
     }
 
     /**
-     * Creates the filter control UI element
-     * @param {string} moduleName - Module name for persistence
-     * @param {Function} onFilterChange - Callback when filter changes: (newMode) => void
+     * All / Movies / Series as Jellyfin's own tab buttons, so the active theme styles them.
+     * Given a title (a section's header), it also carries what its row shows on a phone while the
+     * header is held at the top of the screen: that title in the tabs' place. (The choice itself is
+     * then in the Filters menu, beside it.)
+     * @param {string} moduleName - Module name for the runtime state
+     * @param {Function} [onFilterChange] - Callback when the type changes: (newMode) => void
+     * @param {string} [heldTitle] - The section's title, for its held row on a phone
      * @returns {HTMLElement} - The filter control container
      */
-    function createFilterControl(moduleName, onFilterChange) {
-        const currentMode = getFilterMode(moduleName);
-
+    function createFilterControl(moduleName, onFilterChange, heldTitle) {
+        const filterLabel = label('discovery_filter_label', 'Filter');
         const container = document.createElement('div');
         container.className = 'jellyseerr-discovery-filter';
-        container.style.cssText = 'display:inline-flex;gap:0;font-size:0.85em;vertical-align:middle;';
-
-        const allLabel = (typeof JE?.t === 'function') ? JE.t('jellyseerr_discover_all') || 'All' : 'All';
-        const moviesLabel = (typeof JE?.t === 'function') ? JE.t('jellyseerr_card_badge_movie') || 'Movies' : 'Movies';
-        const seriesLabel = (typeof JE?.t === 'function') ? JE.t('jellyseerr_card_badge_series') || 'Series' : 'Series';
-
+        container.setAttribute('role', 'group');
+        container.setAttribute('aria-label', filterLabel);
         const buttons = [
-            { mode: FILTER_MODES.MIXED, label: allLabel },
-            { mode: FILTER_MODES.MOVIES, label: moviesLabel },
-            { mode: FILTER_MODES.TV, label: seriesLabel }
+            { mode: FILTER_MODES.MIXED, label: label('jellyseerr_discover_all', 'All') },
+            { mode: FILTER_MODES.MOVIES, label: label('jellyseerr_quota_label_movie', 'Movies') },
+            { mode: FILTER_MODES.TV, label: label('jellyseerr_quota_label_tv', 'Series') }
         ];
-
-        buttons.forEach((btn, index) => {
+        /** Marks the type in use on its tab. */
+        const paint = () => {
+            const mode = getFilterMode(moduleName);
+            for (const tab of container.querySelectorAll('.jellyseerr-filter-btn')) {
+                const active = tab.getAttribute('data-mode') === mode;
+                tab.classList.toggle('emby-tab-button-active', active);
+                tab.setAttribute('aria-pressed', String(active));
+            }
+        };
+        /**
+         * Takes a type: the tabs, the Filters button beside them, then the list.
+         * @param {string} mode
+         */
+        const choose = (mode) => {
+            if (mode === getFilterMode(moduleName)) return;
+            setFilterMode(moduleName, mode);
+            paint();
+            JE.discoveryFilters?.repaint?.(container.closest('.jellyseerr-discovery-header') ?? container);
+            onFilterChange?.(mode);
+        };
+        for (const entry of buttons) {
             const button = document.createElement('button');
             button.type = 'button';
-            button.className = 'jellyseerr-filter-btn';
-            button.setAttribute('data-mode', btn.mode);
-            button.textContent = btn.label;
-
-            // Segmented button styling
-            let borderRadius = '0';
-            if (index === 0) borderRadius = '4px 0 0 4px';
-            if (index === buttons.length - 1) borderRadius = '0 4px 4px 0';
-
-            const isActive = currentMode === btn.mode;
-            button.style.cssText = `
-                padding: 4px 10px;
-                border: 1px solid rgba(255,255,255,0.3);
-                border-radius: ${borderRadius};
-                background: ${isActive ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.05)'};
-                color: rgba(255,255,255,0.8);
-                cursor: pointer;
-                font-size: inherit;
-                font-family: inherit;
-                margin-left: ${index > 0 ? '-1px' : '0'};
-                transition: background 0.15s, border-color 0.15s;
-                font-weight: ${isActive ? '600' : '400'};
-            `;
-
-            button.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-
-                const newMode = btn.mode;
-                if (newMode === getFilterMode(moduleName)) return;
-
-                setFilterMode(moduleName, newMode);
-
-                // Update button states
-                container.querySelectorAll('.jellyseerr-filter-btn').forEach(b => {
-                    const isNowActive = b.getAttribute('data-mode') === newMode;
-                    b.style.background = isNowActive ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.05)';
-                    b.style.fontWeight = isNowActive ? '600' : '400';
-                });
-
-                if (onFilterChange) {
-                    onFilterChange(newMode);
-                }
+            button.className = 'jellyseerr-filter-btn emby-tab-button emby-button';
+            button.setAttribute('data-mode', entry.mode);
+            button.textContent = entry.label;
+            button.addEventListener('click', event => {
+                event.preventDefault();
+                event.stopPropagation();
+                choose(entry.mode);
             });
-
-            // Hover effects
-            button.addEventListener('mouseenter', () => {
-                if (getFilterMode(moduleName) !== btn.mode) {
-                    button.style.background = 'rgba(255,255,255,0.1)';
-                }
-            });
-            button.addEventListener('mouseleave', () => {
-                const isActive = getFilterMode(moduleName) === btn.mode;
-                button.style.background = isActive ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.05)';
-            });
-
             container.appendChild(button);
+        }
+        if (heldTitle) {
+            // The heading itself is still on the page (above, out of sight): this copy is for the eye only.
+            const held = document.createElement('span');
+            held.className = 'jellyseerr-filter-held';
+            const title = document.createElement('span');
+            title.className = 'jellyseerr-filter-held-title';
+            title.setAttribute('aria-hidden', 'true');
+            title.textContent = heldTitle;
+            held.appendChild(title);
+            container.appendChild(held);
+        }
+        container.dataset.typeGroup = '';
+        typePickers.set(container, {
+            groupOf: () => ({
+                id: 'type', name: label('discovery_filter_type', 'Type'),
+                choices: buttons.map(entry => ({ id: entry.mode, name: entry.label, selected: entry.mode === getFilterMode(moduleName) }))
+            }),
+            choose,
+            // (Known from what puts them out of sight, a held header at a phone's width, as the stylesheet has
+            // it: their own style is no guide while they are still fading.)
+            tabsShowing: () => !(container.closest('.jellyseerr-discovery-header')?.hasAttribute('data-stuck')
+                && window.matchMedia?.('(max-width: 34em)').matches)
         });
-
+        paint();
         return container;
     }
 
     /**
-     * Creates the sort control dropdown
+     * The All / Movies / Series choice of a header's tabs, for the Filters menu to offer where the
+     * tabs are out of sight.
+     * @param {Element|null} tabs - The tabs' container (it carries [data-type-group])
+     * @returns {{groupOf: function(): Object, choose: function(string): void, tabsShowing: function(): boolean}|undefined}
+     */
+    function typePickerOf(tabs) {
+        return tabs ? typePickers.get(tabs) : undefined;
+    }
+
+    /**
+     * The sort control: a quiet text button in the filter tabs' type that names the current order
+     * and opens a menu of the others (Jellyfin's action sheet, not the browser's select list).
      * @param {string} moduleName
-     * @param {Function} onSortChange - Callback: (newSort) => void
+     * @param {Function} [onSortChange] - Callback: (newSort) => void
      * @returns {HTMLElement}
      */
     function createSortControl(moduleName, onSortChange) {
-        const currentSort = getSortMode(moduleName);
-
-        const container = document.createElement('div');
-        container.className = 'jellyseerr-discovery-sort';
-        container.style.cssText = 'display:inline-flex;align-items:center;gap:0.4em;font-size:0.85em;margin-left:auto;';
-
-        const label = document.createElement('span');
-        label.textContent = 'Sort:';
-        label.style.cssText = 'color:rgba(255,255,255,0.5);';
-        container.appendChild(label);
-
-        const select = document.createElement('select');
-        select.className = 'jellyseerr-sort-select';
-        select.style.cssText = `
-            background: rgba(255,255,255,0.08);
-            color: rgba(255,255,255,0.85);
-            border: 1px solid rgba(255,255,255,0.2);
-            border-radius: 4px;
-            padding: 3px 8px;
-            font-size: inherit;
-            font-family: inherit;
-            cursor: pointer;
-            outline: none;
-        `;
-
-        SORT_OPTIONS.forEach(opt => {
-            const option = document.createElement('option');
-            option.value = opt.value;
-            option.textContent = opt.label;
-            option.style.cssText = 'background:#1a1a2e;color:#fff;';
-            if (currentSort === opt.value) option.selected = true;
-            select.appendChild(option);
+        const sortLabel = label('discovery_sort_label', 'Sort');
+        /** @param {string} value */
+        const nameOf = (value) => {
+            const entry = SORT_OPTIONS.find(option => option.value === value) ?? SORT_OPTIONS[0];
+            return entry ? label(entry.labelKey, entry.label) : '';
+        };
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'jellyseerr-sort-btn emby-tab-button emby-button';
+        button.setAttribute('aria-haspopup', 'menu');
+        button.setAttribute('aria-expanded', 'false');
+        const text = document.createElement('span');
+        const chevron = document.createElement('span');
+        chevron.className = 'material-icons expand_more';
+        chevron.setAttribute('aria-hidden', 'true');
+        button.append(text, chevron);
+        /** Names the order in use. */
+        const paint = () => {
+            const current = nameOf(getSortMode(moduleName));
+            text.textContent = current;
+            // The visible word is the order; the label says what the button is for.
+            button.setAttribute('aria-label', `${sortLabel}: ${current}`);
+        };
+        paint();
+        button.addEventListener('click', () => {
+            const current = getSortMode(moduleName);
+            button.setAttribute('aria-expanded', 'true');
+            JE.discoveryMenu?.openMenu({
+                anchor: button, title: sortLabel, onClose: () => button.setAttribute('aria-expanded', 'false'),
+                choices: SORT_OPTIONS.map(option => ({ id: option.value, name: label(option.labelKey, option.label), selected: option.value === current })),
+                onPick(value) {
+                    if (value === getSortMode(moduleName)) return;
+                    setSortMode(moduleName, value);
+                    paint();
+                    JE.discoveryBusy?.hold?.(button);
+                    onSortChange?.(value);
+                }
+            });
         });
-
-        select.addEventListener('change', () => {
-            const newSort = select.value;
-            setSortMode(moduleName, newSort);
-            if (onSortChange) onSortChange(newSort);
-        });
-
-        container.appendChild(select);
-        return container;
+        return button;
     }
 
     /**
-     * Creates a section header with title, optional filter control, and sort dropdown
+     * Puts the filter in a header's bar, before the sort, so the two share a row.
+     * @param {Element} header - A section's header
+     * @param {string} moduleName
+     * @param {Function} [onFilterChange] - Callback when the type changes: (newMode) => void
+     */
+    function addFilterControl(header, moduleName, onFilterChange) {
+        const bar = header.querySelector('.jellyseerr-discovery-bar');
+        if (!bar || bar.querySelector('.jellyseerr-discovery-filter')) return;
+        bar.prepend(createFilterControl(moduleName, onFilterChange, header.querySelector('.sectionTitle')?.textContent || undefined));
+        // On the bar for its own layout, and on the header for its compact form.
+        bar.setAttribute('data-has-filter', '');
+        header.setAttribute('data-has-filter', '');
+    }
+
+    /**
+     * Creates a section header: the title; under it one row: what the titles are, in words, and the
+     * controls (All / Movies / Series, the Filters button, the sort).
      * @param {string} title - Section title text
-     * @param {string} moduleName - Module name for filter persistence
-     * @param {boolean} showFilter - Whether to show the filter control
-     * @param {Function} onFilterChange - Callback when filter changes
-     * @param {Function} [onSortChange] - Callback when sort changes
+     * @param {string} moduleName - Module name for the runtime state
+     * @param {boolean} showFilter - Whether to show the All / Movies / Series tabs now
+     * @param {Function} [onFilterChange] - Callback when the type changes
+     * @param {Function} [onSortChange] - Callback when the sort (or a further filter) changes
+     * @param {string} [subject] - The name the title is about, kept whole when the title wraps
+     * @param {'feed'|'person'} [scope='feed'] - Which further filters the section can offer
      * @returns {HTMLElement} - The header element
      */
-    function createSectionHeader(title, moduleName, showFilter, onFilterChange, onSortChange) {
+    function createSectionHeader(title, moduleName, showFilter, onFilterChange, onSortChange, subject, scope = 'feed') {
         const header = document.createElement('div');
         header.className = 'jellyseerr-discovery-header';
-        header.style.cssText = 'display:flex;align-items:baseline;gap:1em;margin-bottom:1em;flex-wrap:wrap;width:100%;';
-
-        const titleElement = document.createElement('h2');
-        titleElement.className = 'sectionTitle sectionTitle-cards';
-        titleElement.textContent = title;
-        titleElement.style.margin = '0';
-        header.appendChild(titleElement);
-
-        if (showFilter) {
-            const filterControl = createFilterControl(moduleName, onFilterChange);
-            header.appendChild(filterControl);
+        // Said only when it is true: the admin's setting leaves library titles out of these sections.
+        const notInLibrary = JE.pluginConfig?.JellyseerrExcludeLibraryItems === true;
+        // The words of the line that goes to this section from the top of a long list page: what
+        // pressing it does (with the title), then the rest of the phrase.
+        const [lead = '', rest = ''] = (notInLibrary
+            ? label('discovery_go_to_not_in_library', 'Go to {title}, not in your library')
+            : label('discovery_go_to', 'Go to {title}')).split('{title}');
+        header.setAttribute('data-jump-label', `${lead}${title}`);
+        if (rest) header.setAttribute('data-jump-note', rest);
+        // The title; under it one row: what the titles are, in words, and the controls.
+        const name = document.createElement('h2');
+        name.className = 'sectionTitle sectionTitle-cards';
+        // The name the title is about is kept whole when the title takes two lines ("More from" / "Channel 4 Television").
+        const at = subject ? title.indexOf(subject) : -1;
+        if (subject && at >= 0) {
+            const whole = document.createElement('span');
+            whole.className = 'jellyseerr-discovery-name';
+            whole.textContent = subject;
+            name.append(title.slice(0, at), whole, title.slice(at + subject.length));
+        } else name.textContent = title;
+        const meta = document.createElement('div');
+        meta.className = 'jellyseerr-discovery-meta';
+        // While the header is held at the top of the screen this row shows the title in the summary's place.
+        meta.setAttribute('data-title', title);
+        const bar = document.createElement('div');
+        bar.className = 'jellyseerr-discovery-bar';
+        if (notInLibrary) {
+            const summary = document.createElement('p');
+            summary.className = 'jellyseerr-discovery-summary';
+            summary.textContent = label('discovery_not_in_library', 'Not in your library');
+            meta.appendChild(summary);
         }
-
         if (onSortChange) {
-            const sortControl = createSortControl(moduleName, onSortChange);
-            header.appendChild(sortControl);
+            // (On a genre's page that genre is given: its Genres list says so.)
+            const filters = JE.discoveryFilters?.createFiltersControl?.(header, moduleName, scope,
+                () => onSortChange(getSortMode(moduleName)), moduleName === 'genre' ? subject : undefined);
+            if (filters) bar.appendChild(filters);
+            bar.appendChild(createSortControl(moduleName, onSortChange));
         }
-
+        meta.appendChild(bar);
+        header.append(name, meta);
+        if (showFilter) addFilterControl(header, moduleName, onFilterChange);
         return header;
+    }
+
+    /**
+     * What a feed's request carries after its page: the order, then the further filters.
+     * @param {string} moduleName
+     * @param {'tv'|'movie'} kind
+     * @returns {string} Query string part, starting with '&' (or empty)
+     */
+    function feedQuery(moduleName, kind) {
+        const sort = kind === 'tv' ? getTvSortMode(moduleName) : getSortMode(moduleName);
+        return `${sort ? `&sortBy=${encodeURIComponent(sort)}` : ''}${JE.discoveryFilters?.feedQuery?.(moduleName, kind) ?? ''}`;
+    }
+
+    /**
+     * A person's titles as the further filters keep them (all of them when none is set).
+     * @param {string} moduleName
+     * @param {Array} results
+     * @returns {Array}
+     */
+    function keepByFilters(moduleName, results) {
+        return JE.discoveryFilters?.keep?.(moduleName, results) ?? results;
+    }
+
+    /**
+     * Whether any further filter is narrowing a section.
+     * @param {string} moduleName
+     * @returns {boolean}
+     */
+    function hasMoreFilters(moduleName) {
+        return !!JE.discoveryFilters?.active?.(moduleName);
+    }
+
+    /**
+     * The rebuilt list takes its own height, and says so when the further filters leave it empty,
+     * with the way out. `hasMore`: Seerr has more to look through, so not yet.
+     * @param {string} moduleName
+     * @param {HTMLElement} container - The section's itemsContainer
+     * @param {boolean} hasMore
+     */
+    function noteIfEmpty(moduleName, container, hasMore) {
+        JE.discoveryBusy?.release?.(container);
+        JE.discoveryFilters?.noteIfEmpty?.(moduleName, container, hasMore);
     }
 
     /**
@@ -707,6 +812,8 @@
 
         // Add media type for fast CSS-based filtering
         card.setAttribute('data-media-type', item.mediaType);
+        // On a person's titles: what the person did in this one, on a line of its own under the title.
+        JE.discoveryRoles?.decorateCard?.(card, item);
 
         const jellyfinMediaId = item.mediaInfo?.jellyfinMediaId;
         if (jellyfinMediaId) {
@@ -1120,8 +1227,14 @@
         hasBothTypes,
         resultHasBothTypes,
         createFilterControl,
+        addFilterControl,
+        typePickerOf,
         createSortControl,
         createSectionHeader,
+        feedQuery,
+        keepByFilters,
+        hasMoreFilters,
+        noteIfEmpty,
         // Shared utilities
         fetchWithManagedRequest,
         fetchTmdbGenreList,
