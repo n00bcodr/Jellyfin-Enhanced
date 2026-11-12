@@ -112,7 +112,7 @@
         { id: 'layout', icon: 'view_quilt', nameKey: 'Layout defaults', shortKey: 'Layout', descKey: 'The layout, label density, group order, positions and limits new users start with.', lead: 'card' },
         { id: 'groups', icon: 'label', nameKey: 'Groups', descKey: 'Turn each tag group on or off for new users, and open a group for its server settings.', lead: 'card' },
         { id: 'rules', icon: 'rule', nameKey: 'Rules', descKey: 'Give some cards a different look by library, type, genre or age rating.', lead: 'card' },
-        { id: 'colours', icon: 'palette', nameKey: 'Colours', descKey: 'The colours of the tags, on the web and in native posters.', lead: 'card' },
+        { id: 'colours', icon: 'palette', nameKey: 'Colours', descKey: 'The colours of the tags, on the web and in native posters, and which tags to hide.', lead: 'card' },
         { id: 'badges', icon: 'new_releases', nameKey: 'Status badges', shortKey: 'Badges', descKey: 'Which status badges new users start with, and how long a title counts as new.', lead: 'card' },
         { id: 'server', icon: 'dns', nameKey: 'Server', descKey: 'The tag data the server keeps, and tags drawn into poster images for other apps.', lead: 'card' },
     ];
@@ -1045,12 +1045,15 @@
             const ownControls = hasOwnControls(s);
             const placement = JE.core?.tagLayout?.GROUPS?.includes(s.group.id)
                 ? `<a class="je-ta-link je-ta-crosslink" href="#" data-je-goto="layout:placement-${esc(s.group.id)}"><span class="je-ta-link-text">${tx('{group} position and limit (Layout defaults)', { group: name })}</span><span class="material-icons" aria-hidden="true">arrow_forward</span></a>` : '';
+            // Hidden tags live in the colour editor's tag list (#1043): every group with tags there points to it.
+            const hide = JE.core?.tagHidden?.GROUPS?.includes(s.group.id)
+                ? `<a class="je-ta-link je-ta-crosslink" href="#" data-je-goto="colours" data-je-colours-group="${esc(s.group.id)}"><span class="je-ta-link-text">${tx('Hidden {group} tags (Colours)', { group: name })}</span><span class="material-icons" aria-hidden="true">arrow_forward</span></a>` : '';
             if (!ownControls) {
                 // As every row: name first, the sample, then the switch on the right.
                 return `<div class="je-ta-grow" data-group="${esc(s.group.id)}" data-section="${esc(s.id)}" data-enabled="${on}" data-open="false" data-je-static>`
                     + '<div class="je-ta-grow-head">'
                     + `<div class="je-ta-grow-text"><span class="je-ta-grow-name" id="jeTaSec-${esc(s.id)}">${esc(name)}${enable ? ` ${perUserMark()}` : ''}</span><span class="je-ta-grow-sum"></span>`
-                    + `${scopesHtml(s.group.id)}${placement}</div>`
+                    + `${scopesHtml(s.group.id)}${placement}${hide}</div>`
                     + '<span class="je-ta-grow-sample" aria-hidden="true"></span>'
                     + (enable ? `<label class="je-ta-grow-check"><input type="checkbox" id="${esc(enable.id)}" data-je-field="${esc(enable.key)}" data-je-setting-id="${esc(enable.id)}" ${on ? 'checked' : ''} aria-label="${tx(enable.label)}"></label>` : '')
                     + '</div></div>';
@@ -1067,6 +1070,7 @@
                 + `<div class="je-ta-grow-body" id="jeTaGroup-${esc(s.group.id)}" role="region" aria-labelledby="jeTaSec-${esc(s.id)}" hidden>${s.hint ? `<p class="je-ta-hint">${tx(s.hint)}</p>` : ''}`
                 // Where it goes and how many show live on Layout defaults: say so, and go there.
                 + placement
+                + hide
                 + `${fieldsHtml(s.fields, config)}${scopesHtml(s.group.id)}<div class="je-ta-section-body"></div></div></div>`;
         }
 
@@ -1529,7 +1533,15 @@
                 const enable = (s.fields || []).find((f) => f.type === 'enable');
                 row.dataset.enabled = String(enable ? config[enable.key] === true : true);
                 const sum = row.querySelector('.je-ta-grow-sum');
-                if (sum) sum.textContent = s.group.summary ? s.group.summary(ctx) : '';
+                // A row says when its group hides tags for everyone (Hidden tags, set on the Colours tab).
+                const hiddenList = config.TagHiddenValues?.[s.group.id.charAt(0).toUpperCase() + s.group.id.slice(1)] ?? config.TagHiddenValues?.[s.group.id];
+                const hiddenCount = Array.isArray(hiddenList) ? hiddenList.length : 0;
+                // Age tiles stand for every rating sharing their colour: count the ratings, as the editor says.
+                const ages = s.group.id === 'ageRating' ? (JE.pluginConfig?.TagHiddenAgeRatings || []).length : 0;
+                const hiddenText = !hiddenCount ? '' : ages ? fmt(' · {n} ratings hidden', { n: ages }) : fmt(' · {n} {n|tag|tags} hidden', { n: hiddenCount });
+                if (sum) sum.textContent = (s.group.summary ? s.group.summary(ctx) : '') + hiddenText;
+                const hideLink = row.querySelector('[data-je-colours-group] .je-ta-link-text');
+                if (hideLink) hideLink.textContent = fmt(hiddenCount ? 'Hidden {group} tags (Colours)' : 'Hide individual {group} tags (Colours)', { group: fmt(s.title) });
                 const sample = row.querySelector('.je-ta-grow-sample');
                 if (sample) sample.innerHTML = (s.group.sample ? s.group.sample(ctx) : []).map(sampleChip).join('');
             }

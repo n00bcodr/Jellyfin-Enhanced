@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
+using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.Model;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution;
 
@@ -76,7 +77,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             PosterTagGroupLayout? quality = On(PosterTagGroup.Quality) ? ResolveQuality(entry, settings) : null;
             if (quality is not null && !settings.UsesJellyfinAudioPreference) groups.Add(quality);
 
-            if (On(PosterTagGroup.Genre) && GenreIcons.Resolve(entry.Genres, settings.GenreCap) is { } genres)
+            // Hidden genres go before the cap, so the next genres take their places.
+            if (On(PosterTagGroup.Genre) && GenreIcons.Resolve(VisibleGenres(entry.Genres, settings), settings.GenreCap) is { } genres)
             {
                 groups.Add(Group(PosterTagGroup.Genre, settings, genres));
             }
@@ -90,6 +92,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                     var review = context.UserReviewCount is null
                         ? null
                         : RatingRules.ResolveUserReview(entry, settings, context.UserReviewCount == 0 ? null : context.UserReviewAverage);
+                    // Hidden sources (Hidden tags) leave before the cap; compact density's critic rule then sees what is left.
+                    if (settings.Hidden.Any(TagStyleKeys.Rating))
+                    {
+                        rating.RemoveAll(t => t is RatingTag r && settings.Hidden.Hides(TagStyleKeys.Rating, r.SourceId));
+                        if (review is RatingTag own && settings.Hidden.Hides(TagStyleKeys.Rating, own.SourceId)) review = null;
+                    }
                     if (rating.Count > 0)
                     {
                         if (review is not null) rating.Add(review);
@@ -104,12 +112,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 }
             }
 
-            if (On(PosterTagGroup.AgeRating) && AgeRatingRules.Resolve(entry.OfficialRating) is { } age)
+            if (On(PosterTagGroup.AgeRating) && AgeRatingRules.Resolve(entry.OfficialRating) is { } age
+                && !settings.Hidden.Hides(TagStyleKeys.AgeRating, TagHiddenRules.AgeBoard(age.ColorKey)))
             {
                 groups.Add(Group(PosterTagGroup.AgeRating, settings, new List<PosterTag>(1) { age }));
             }
 
-            if (On(PosterTagGroup.Status) && StatusRules.Resolve(entry, settings, context.Status ?? new PosterStatusContext(DateTimeOffset.UtcNow)) is { } status)
+            if (On(PosterTagGroup.Status) && StatusRules.Resolve(entry, settings, context.Status ?? new PosterStatusContext(DateTimeOffset.UtcNow)) is { } status
+                && !settings.Hidden.Hides(TagStyleKeys.Status, status.StyleKey))
                 groups.Add(Group(PosterTagGroup.Status, settings, new List<PosterTag>(1) { status }));
             if (On(PosterTagGroup.Custom) && ResolveCustom(entry, settings) is { } custom)
             {
@@ -121,7 +131,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 groups.Add(Group(PosterTagGroup.Language, settings, languages));
             }
 
-            if (On(PosterTagGroup.Logos) && LogoRules.Resolve(entry.Logos) is { } logos)
+            if (On(PosterTagGroup.Logos) && LogoRules.Resolve(VisibleLogos(entry.Logos, settings)) is { } logos)
             {
                 groups.Add(Group(PosterTagGroup.Logos, settings, logos));
             }
@@ -138,6 +148,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 if (settings.AwardsOscar && awards.OscarWinner) tags.Add(new AwardTag("oscar", Caption("awards_tags_oscar")));
                 if (settings.AwardsEmmy && awards.EmmyWinner) tags.Add(new AwardTag("emmy", Caption("awards_tags_emmy")));
                 if (settings.AwardsLetterboxd && awards.LetterboxdRank is > 0 and <= 250) tags.Add(new AwardTag("letterboxdTop250", Caption("awards_tags_label_imdbTop250")));
+                if (settings.Hidden.Any(TagStyleKeys.Awards)) tags.RemoveAll(t => t is AwardTag award && settings.Hidden.Hides(TagStyleKeys.Awards, award.Id));
                 if (tags.Count > 0) groups.Add(Group(PosterTagGroup.Awards, settings, tags));
             }
             if (groups.Count == 0) return null;
@@ -151,6 +162,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
 
             return new PosterTagLayout(groups, HasTopRightOffset(groups, settings, context), landscape, settings.Styles, settings.Bands) { TagScale = settings.TagScale, TagGap = settings.TagGap, EdgeInset = settings.Bands ? 6f : settings.EdgeInset };
         }
+
+        /// <summary>The genres whose label (their icon's genre, else Other) is not hidden; the list itself when none is.</summary>
+        private static string?[]? VisibleGenres(string?[]? genres, PosterTagSettings settings)
+            => genres is null || !settings.Hidden.Any(TagStyleKeys.Genre) ? genres
+                : Array.FindAll(genres, g => g is null || !settings.Hidden.Hides(TagStyleKeys.Genre, TagHiddenRules.GenreLabel(g)));
+
+        /// <summary>The entry's logos without the hidden styles (logotags.js readLogos), before the two-logo limit.</summary>
+        private static TagLogo[]? VisibleLogos(TagLogo[]? logos, PosterTagSettings settings)
+            => logos is null || !settings.Hidden.Any(TagStyleKeys.Logos) ? logos
+                : Array.FindAll(logos, l => l is null || !settings.Hidden.Hides(TagStyleKeys.Logos, TagHiddenRules.LogoLabel(l.Kind, TagLogoService.IsLogoPath(l.Logo))));
 
         /// <summary>
         /// Whether jellyfin-web would show a played check mark or an unplayed count on this card
@@ -186,6 +207,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             var labels = SeriesQualityAggregation.Resolve(entry, settings.SeriesQualityAggregation, settings.PreferredAudioLanguage, settings.IsQualityCategoryShown, settings.AllQualityValues, settings.LegacyAudioFacts);
             if (labels.Count == 0) return null;
             var tags = QualityTagRules.Arrange(labels, settings);
+            // Hidden after arranging (one resolution kept), so hiding 4K never promotes 1080p.
+            if (settings.Hidden.Any(TagStyleKeys.Quality)) tags.RemoveAll(t => settings.Hidden.Hides(TagStyleKeys.Quality, TagHiddenRules.QualityLabel(t)));
             if (tags.Count == 0) return null;
             var list = new List<PosterTag>(tags.Count);
             list.AddRange(tags);
@@ -206,6 +229,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             {
                 var id = matcher.Ids[i];
                 if (Array.IndexOf(ids, id) < 0) continue;
+                if (settings.Hidden.Hides(TagStyleKeys.Custom, matcher.Rules[i].Label)) continue;
                 tags ??= new List<PosterTag>(ids.Length);
                 tags.Add(new CustomTag(matcher.Rules[i].Label, matcher.Rules[i].Icon, id));
             }

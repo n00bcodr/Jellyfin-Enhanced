@@ -344,11 +344,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             List<FlagInfo>? ResolveTracks(string[]? tracks, string[]? partial, bool asCodes) => Resolve(
                 tracks, partial, settings.LanguagePriorityTerms, settings.LanguagePriorityStrict,
                 settings.LanguageMergeRegions, cap: 0, codesStyle: asCodes, validateFlags: false, canonicalPriority: settings.LanguagePriorityIsPersonal);
-            var audio = settings.LanguageShowAudio ? ResolveTracks(entry.AudioLanguages, entry.PartialAudioLanguages, codes) : null;
-            var subtitles = settings.LanguageShowSubtitles ? ResolveTracks(entry.SubtitleLanguages, null, codes) : null;
+            // Hidden languages (Hidden tags) leave the flags and codes; the Dual/Multi count below still counts every
+            // audio language. Hidden "subtitles" drops every subtitle chip.
+            var hidden = settings.Hidden;
+            string[]? Shown(string[]? tracks) => tracks is null || !hidden.Any(TagStyleKeys.Language) ? tracks
+                : Array.FindAll(tracks, code => code is null || !hidden.Hides(TagStyleKeys.Language, Configuration.TagHiddenRules.LanguageLabel(code)));
+            var audio = settings.LanguageShowAudio ? ResolveTracks(Shown(entry.AudioLanguages), entry.PartialAudioLanguages, codes) : null;
+            var subtitles = settings.LanguageShowSubtitles && !hidden.Hides(TagStyleKeys.Language, "subtitles") ? ResolveTracks(Shown(entry.SubtitleLanguages), null, codes) : null;
             var count = settings.LanguageShowAudio && settings.LanguageCountBadge != "off"
                 ? ResolveTracks(entry.AudioLanguages, entry.PartialAudioLanguages, true)?.Select(f => { Parse(f.Code, out var parsed); return CanonicalBase(parsed.Base); }).Where(c => c != "zxx").Distinct().Count() ?? 0 : 0;
-            bool badge = settings.LanguageCountBadge != "off" && count >= 2;
+            bool badge = settings.LanguageCountBadge != "off" && count >= 2
+                && !hidden.Hides(TagStyleKeys.Language, "countBadge") && !hidden.Hides(TagStyleKeys.Language, count == 2 ? "dual" : "multi");
             var tags = new List<PosterTag>();
             // The style key stays Dual/Multi; the text is the shared vocabulary in the user's language.
             if (badge) tags.Add(new LanguageTag(string.Empty, string.Empty, false)

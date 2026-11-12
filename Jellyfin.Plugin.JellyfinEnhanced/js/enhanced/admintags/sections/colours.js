@@ -3,7 +3,8 @@
  * colours apply, whether users may pick their own preset, and the full
  * colour editor (tag-styles-editor.js) with Reset all colours (undoable).
  * Saves TagStyleOverrides and TagStylePreset whenever the editor's document
- * changes.
+ * changes. Each tag in the editor's tag list can also be hidden (Hidden tags,
+ * #1043): TagHiddenValues, which applies whether tag colours are on or not.
  */
 (function(JE) {
     'use strict';
@@ -21,9 +22,9 @@
         order: 10,
         title: 'Tag colours',
         hint: 'Colours for quality, age rating, rating, genre, status, language, awards, logo and custom tags.',
-        writes: ['TagStyleOverrides', 'TagStylePreset'],
+        writes: ['TagStyleOverrides', 'TagStylePreset', 'TagHiddenValues'],
         fields: [
-            { id: 'tagStylesEnabled', key: 'TagStylesEnabled', type: 'switch', label: 'Use tag colours', desc: 'Off shows the original colours (custom CSS keeps working). Your edits are kept.', master: true },
+            { id: 'tagStylesEnabled', key: 'TagStylesEnabled', type: 'switch', label: 'Use tag colours', desc: 'Off shows the original colours (custom CSS keeps working). Your edits are kept. Hidden tags apply either way.', master: true },
             { id: 'tagStyleTarget', key: 'TagStyleTarget', type: 'pills', label: 'Apply to', desc: 'Web recolours the overlays and wins over custom CSS colours. Native posters draws the colours into the posters of apps such as Android TV (needs Native Poster Tags; status tags are not drawn there).', options: [['web', 'Web'], ['native', 'Native posters'], ['both', 'Both']], read: (v) => (['web', 'native', 'both'].includes(v) ? v : 'both'), when: (c) => c.TagStylesEnabled === true },
             { id: 'tagStylesAllowUserPreset', key: 'TagStylesAllowUserPreset', type: 'switch', label: 'Let users pick their own preset', desc: 'Shows a colour preset choice in each user\'s Media Tags settings. Your group and label colours stay on top of their preset.', break: true },
         ],
@@ -56,8 +57,41 @@
                 sum();
                 section.addEventListener('change', () => setTimeout(sum), { signal: ctx.signal });
             }
-            editor = A.createTagStylesEditor(ctx.root, () => [...new Set((ctx.config.CustomTagRules || []).map((r) => r.Label || r.label).filter(Boolean))], () => ctx.isCurrent());
+            /**
+             * Hidden tags: the page's TagHiddenValues, saved with its other edits. This dashboard's own
+             * posters and previews follow at once (the public configuration they read is updated too).
+             */
+            const setHiddenDoc = (doc, ages) => {
+                ctx.setMany({ TagHiddenValues: doc }, { redraw: false });
+                if (JE.pluginConfig) Object.assign(JE.pluginConfig, { TagHiddenValues: doc, TagHiddenAgeRatings: ages });
+                // Redraw every group's tags (a renderer that never registered has nothing drawn).
+                for (const name of ['quality', 'genre', 'rating', 'agerating', 'status', 'language', 'awards', 'logos', 'custom']) JE.core?.tagRenderer?.reinitialize?.(name);
+            };
+            const hiddenStore = {
+                get: () => ctx.config.TagHiddenValues || null,
+                set(doc, ages, change) {
+                    const before = ctx.config.TagHiddenValues || null;
+                    const beforeAges = JE.pluginConfig?.TagHiddenAgeRatings || [];
+                    setHiddenDoc(doc, ages);
+                    // An age tile stands for every rating sharing its colour: the message counts them.
+                    // A Custom label without a rule shows nowhere: it is just no longer hidden.
+                    const message = change.orphan && !change.hidden ? A.fmt('{name} is no longer hidden', { name: change.label.key })
+                        : change.count > 1
+                        ? A.fmt(change.hidden ? '{count} ratings hidden' : '{count} ratings show again', { count: change.count })
+                        : A.fmt(change.hidden ? '{name} hidden' : '{name} shown again', { name: change.noun || change.label.name });
+                    ctx.snack(message, () => {
+                        setHiddenDoc(before, beforeAges);
+                        editor?.refreshHidden();
+                    });
+                },
+            };
+            editor = A.createTagStylesEditor(ctx.root, () => [...new Set((ctx.config.CustomTagRules || []).map((r) => r.Label || r.label).filter(Boolean))], () => ctx.isCurrent(), hiddenStore);
             ctx.root.addEventListener('je-custom-labels', () => { if (ctx.isCurrent()) editor.refreshLabels(); }, { signal: ctx.signal });
+            // Groups tab pointers ("Hidden Genre tags (Colours)") open that group's tag list here.
+            ctx.root.addEventListener('click', (e) => {
+                const link = /** @type {HTMLElement|null} */ (/** @type {HTMLElement} */ (e.target).closest?.('[data-je-colours-group]'));
+                if (link && ctx.isCurrent()) setTimeout(() => editor?.openGroup(link.dataset.jeColoursGroup || ''));
+            }, { signal: ctx.signal });
             /** Save the editor's document when an edit changed it. */
             const changed = () => {
                 const now = editor.snapshot();
@@ -90,8 +124,14 @@
             last = editor.snapshot();
         },
         refresh(ctx, body) {
-            const box = /** @type {HTMLElement|null} */ (body?.querySelector('#tagStylesBody'));
-            if (box) box.style.display = ctx.config.TagStylesEnabled === true ? '' : 'none';
+            // The editor stays open with tag colours off: its tag list is also where tags are hidden.
+            body?.querySelector('#tagStylesBody')?.classList.toggle('je-ts-colours-off', ctx.config.TagStylesEnabled !== true);
+            editor?.setColoursOffNote(ctx.config.TagStylesEnabled !== true, () => {
+                const input = /** @type {HTMLElement|null} */ (ctx.root.querySelector('#tagStylesEnabled'));
+                input?.scrollIntoView?.({ block: 'center' });
+                input?.focus();
+            });
+            editor?.refreshHidden();
         },
     });
 })(window.JellyfinEnhanced);

@@ -87,6 +87,10 @@
       "category": "Configuration"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagHiddenValues.cs",
+      "category": "Configuration"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLayoutSettings.cs",
       "category": "Configuration"
     },
@@ -5561,6 +5565,14 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "TagHiddenValues",
+      "type": "TagHiddenValues?",
+      "initializer": null,
+      "constructor_assignment": "null",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "TagLabelDensity",
       "type": "string",
       "initializer": "\"full\"",
@@ -7566,6 +7578,78 @@
       "initializer": null,
       "constructor_assignment": "0",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "TagHiddenValues",
+      "name": "Quality",
+      "type": "string[]?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagHiddenValues.cs"
+    },
+    {
+      "class": "TagHiddenValues",
+      "name": "AgeRating",
+      "type": "string[]?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagHiddenValues.cs"
+    },
+    {
+      "class": "TagHiddenValues",
+      "name": "Rating",
+      "type": "string[]?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagHiddenValues.cs"
+    },
+    {
+      "class": "TagHiddenValues",
+      "name": "Genre",
+      "type": "string[]?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagHiddenValues.cs"
+    },
+    {
+      "class": "TagHiddenValues",
+      "name": "Status",
+      "type": "string[]?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagHiddenValues.cs"
+    },
+    {
+      "class": "TagHiddenValues",
+      "name": "Language",
+      "type": "string[]?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagHiddenValues.cs"
+    },
+    {
+      "class": "TagHiddenValues",
+      "name": "Awards",
+      "type": "string[]?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagHiddenValues.cs"
+    },
+    {
+      "class": "TagHiddenValues",
+      "name": "Logos",
+      "type": "string[]?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagHiddenValues.cs"
+    },
+    {
+      "class": "TagHiddenValues",
+      "name": "Custom",
+      "type": "string[]?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagHiddenValues.cs"
     },
     {
       "class": "TagLayoutGroupSlot",
@@ -10483,9 +10567,9 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 484,
+    "files": 485,
     "routes": 207,
-    "configuration_properties": 758,
+    "configuration_properties": 768,
     "storage_references": 88,
     "scheduled_tasks": 16,
     "locales": 33

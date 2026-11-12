@@ -918,3 +918,58 @@ body.je-hide-descriptions .je-tag-admin .je-ta-intro { display: none; }
 
 /* The two card-shape selects share one width, so their edges line up whatever the chosen option says. */
 .je-tag-admin .je-ta-field-control select[data-shape] { width: 360px; max-width: 100%; }
+
+/* Hidden tags (#1043): a hidden tile is dimmed, outlined and carries the hidden mark on its chip's corner; the Hide
+   switch leads the picked tag (above the group note and the colour rows). */
+.je-tag-admin .je-ts-chip-wrap { position: relative; display: inline-flex; }
+.je-tag-admin .je-ts-target.je-ts-target-hidden { outline: 1px dashed var(--je-ta-border-strong); outline-offset: -1px; }
+.je-tag-admin .je-ts-target-hidden .je-ts-chip-wrap > :not(.je-ts-hidden-mark) { opacity: 0.5; }
+.je-tag-admin .je-ts-target-hidden .je-ts-target-name { opacity: 0.6; }
+.je-tag-admin .je-ts-hidden-mark { position: absolute; top: -7px; right: -7px; display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; background: var(--je-ta-page-bg); border: 1px solid var(--je-ta-border-strong); color: var(--je-ta-text); font-size: 11px; pointer-events: none; }
+.je-tag-admin .je-ts-target.je-ts-target-hidden.changed::after { right: auto; left: -2px; }
+.je-tag-admin .je-ts-hide-box { padding: 12px 0; border-bottom: 1px solid var(--je-border); }
+.je-tag-admin .je-ts-off-row { display: flex; align-items: center; gap: 6px; margin: 10px 0 0; font-size: 13px; line-height: 1.45; color: var(--je-ta-text); }
+.je-tag-admin .je-ts-off-row { align-items: flex-start; }
+.je-tag-admin .je-ts-off-row > .material-icons { font-size: 16px; line-height: 1.45em; color: var(--je-ta-muted); flex: 0 0 auto; }
+.je-tag-admin .je-ts-inline-link { display: inline; min-height: 0; font-size: inherit; }
+.je-tag-admin .je-ts-off-row[hidden] { display: none; }
+.je-tag-admin .je-ts-hide-box:empty { display: none; }
+.je-tag-admin .je-ts-hide-box .je-ta-switch { padding: 0; }
+.je-tag-admin .je-ts-hide-box .je-ta-switch-name { font-size: 14px; font-weight: 600; }
+.je-tag-admin .je-ts-hide-scope { display: block; max-width: 80ch; font-size: 13px; line-height: 1.45; color: var(--je-ta-muted); }
+.je-tag-admin .je-ts-hide-none { margin: 0; font-size: 13px; line-height: 1.45; color: var(--je-ta-muted); }
+.je-tag-admin .je-ts-hide-ratings { margin-top: 6px; font-size: 13px; color: var(--je-ta-muted); }
+.je-tag-admin .je-ts-hide-ratings > summary { cursor: pointer; min-height: 32px; display: flex; align-items: center; gap: 4px; list-style: none; font-weight: 500; color: var(--je-ta-text); }
+.je-tag-admin .je-ts-hide-ratings > summary::-webkit-details-marker { display: none; }
+.je-tag-admin .je-ts-hide-ratings > summary > .material-icons { font-size: 18px; transition: transform 0.2s ease; }
+.je-tag-admin .je-ts-hide-ratings[open] > summary > .material-icons { transform: rotate(180deg); }
+@container je-ta (max-width: 640px) { .je-tag-admin .je-ts-hide-ratings > summary { min-height: 44px; } }
+.je-tag-admin .je-ts-hide-ratings-list { margin: 4px 0 0; line-height: 1.5; }
+.je-tag-admin .je-ts-now-hidden { color: var(--je-ta-muted); }
+.je-tag-admin .je-ts-now-hidden .material-icons, .je-tag-admin .je-ts-tab-hidden .material-icons { font-size: 14px; vertical-align: -2px; margin-right: 2px; }
+.je-tag-admin .je-ts-tab-hidden { margin-left: 6px; font-size: 12px; white-space: nowrap; }
+.je-tag-admin .je-ts-tab:not(.active) .je-ts-tab-hidden { color: var(--je-ta-muted); }
+.je-tag-admin .je-ts-sample-hidden > :first-child, .je-tag-admin #tagStylesBody .je-ts-sample.je-ts-sample-hidden > :first-child { opacity: 0.5; }
+/* The Hide switch's track shows when off (a checkbox does not inherit the text colour its track mixes from). */
+.je-tag-admin .je-ts-hide-switch input[type="checkbox"] { color: var(--je-ta-text); background: color-mix(in srgb, var(--je-ta-text) 40%, transparent); }
+.je-tag-admin .je-ts-hide-switch input[type="checkbox"]:checked { background: var(--je-ta-accent); }
+/* Light theme: a stronger mix keeps the off track at 3:1 against the page (the white knob still reads on it). */
+.je-tag-admin.je-ta-light .je-ts-hide-switch input[type="checkbox"]:not(:checked) { background: color-mix(in srgb, var(--je-ta-text) 55%, transparent); }
+/* Tag colours off: the colour controls rest dimmed (still usable); the Hide switch stays at full strength. */
+.je-tag-admin #tagStylesBody.je-ts-colours-off :is(.je-ts-presets, .je-ts-group-preset, .je-ts-rows, .je-ts-note, .je-ts-sample > :first-child) { opacity: 0.75; }
+/* A contrast figure for colours that are not applied says nothing. */
+.je-tag-admin #tagStylesBody.je-ts-colours-off .je-ts-contrast { display: none; }
+/* A hidden tag's sample stays dimmer than the colours-off rest (same specificity: this comes later). */
+.je-tag-admin #tagStylesBody.je-ts-colours-off .je-ts-sample.je-ts-sample-hidden > :first-child { opacity: 0.4; }
+/* The group row's two cross-links read as a pair. */
+.je-ta-grow-body > .je-ta-crosslink + .je-ta-crosslink { margin-top: -12px; }
+.je-tag-admin .je-ts-hidden-pick { display: inline; background: none; border: 0; padding: 0; font: inherit; color: var(--je-ta-accent-text); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.je-tag-admin .je-ts-hidden-line { margin: 4px 0 8px; font-size: 13px; line-height: 1.6; color: var(--je-ta-muted); }
+.je-tag-admin .je-ts-hidden-line[hidden] { display: none; }
+.je-tag-admin .je-ts-hidden-line > .material-icons { font-size: 14px; vertical-align: -2px; margin-right: 4px; }
+/* Compact chips: room for the hidden mark inside the tile's selection ring. */
+.je-tag-admin .je-ts-targets-tiles .je-ts-target-hidden .je-ts-chip-wrap { margin: 5px 5px 0 0; }
+.je-tag-admin .je-ts-targets:not(.je-ts-targets-tiles) .je-ts-target-hidden .je-ts-hidden-mark { top: -4px; right: -4px; width: 14px; height: 14px; font-size: 10px; }
+.je-tag-admin .je-ts-hidden-view { display: inline; background: none; border: 0; padding: 0; font: inherit; font-weight: 600; color: var(--je-ta-text); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+@container je-ta (max-width: 640px) { .je-tag-admin .je-ts-hidden-view { display: inline-flex; align-items: center; min-height: 44px; vertical-align: middle; } }
+.je-tag-admin :is(.je-ts-inline-link, .je-ts-hidden-pick) { white-space: nowrap; }

@@ -35,9 +35,12 @@
                 <div id="tagStyleContrast" class="je-ts-contrast" role="status" aria-live="polite"></div>
                 <div class="je-ts-target-box" id="tagStyleTargetBox" hidden>
                 <p class="je-ts-target-hint" id="tagStyleTargetHint"></p>
+                <p class="je-ts-hidden-line" id="tagStyleHiddenLine" hidden></p>
                 <input id="tagStyleTargetFilter" class="je-ts-target-filter" type="search" autocomplete="off" hidden>
                 <div id="tagStyleTargets" class="je-ts-targets" role="radiogroup" aria-labelledby="tagStyleTargetsLabel"></div>
                 </div>
+                <div id="tagStyleHideRow" class="je-ts-hide-box"></div>
+                <p id="tagStyleOffRowNote" class="je-ts-off-row" hidden></p>
                 <div id="tagStyleGroupNote" class="je-ts-note"></div>
                 <div id="tagStyleRows" class="je-ts-rows"></div>
             </div>
@@ -55,7 +58,7 @@
      * @param {HTMLElement} root - Holds the editor markup (and #tagStylesEnabled).
      * @returns {{load: Function, serialize: Function, settings: Function, snapshot: Function}}
      */
-    function createTagStylesEditor(root, customLabels = () => [], isCurrent = () => true) {
+    function createTagStylesEditor(root, customLabels = () => [], isCurrent = () => true, hiddenStore = null) {
 
         const GROUPS = [
             { key: 'quality', title: T('Quality') }, { key: 'ageRating', title: T('Age Rating') }, { key: 'rating', title: T('Rating') },
@@ -97,6 +100,8 @@
         let target = ALL;
         // The label filter's text (tile groups with many labels); cleared on a group change.
         let filter = '';
+        // Hidden tags: the list shows only the hidden tags of the group (cleared on a group change).
+        let hiddenOnly = false;
         /** The colour property whose palette is open (one at a time), or null. */
         let openField = null;
         /** Whether the tag list (pick one tag of the group) is open. */
@@ -244,7 +249,12 @@
 
         // Custom labels are the rules table's, unsaved edits included.
         const labelsOf = (g) => {
-            if (g === 'custom') return customLabels().map(l => ({ key: l, name: l }));
+            if (g === 'custom') {
+                const rules = customLabels().map(l => ({ key: l, name: l }));
+                // A hidden label whose rule is gone keeps a tile, so it can be shown again (and does not silently hide a later rule).
+                const orphans = hiddenStore ? hiddenList('custom').filter((l) => !rules.some((r) => r.key === l)).map((l) => ({ key: l, name: T('{name} (no rule)', { name: l }) })) : [];
+                return rules.concat(orphans);
+            }
             const labels = ((cat && cat.groups[g]) || []).slice();
             if (g === 'language') {
                 for (const key of Object.keys(state.labels).filter(k => k.startsWith('language:')).map(k => k.slice(9))) {
@@ -378,7 +388,8 @@
         /** A real language-chip class and style label for one colour-editor sample. */
         function languageSample(label) {
             const count = ['dual', 'multi', 'countBadge'].includes(label.key);
-            const text = label.key === 'subtitles' ? 'CC EN' : count ? label.key === 'dual' ? T('Dual') : T('Multi') : label.key === 'code' ? 'EN' : label.key.toUpperCase();
+            // The style targets read as what they cover, so none looks like one language or the other badge.
+            const text = label.key === 'subtitles' ? 'CC EN' : count ? label.key === 'dual' ? T('Dual') : label.key === 'multi' ? T('Multi') : T('Dual') + ' · ' + T('Multi') : label.key === 'code' ? 'ABC' : label.key.toUpperCase();
             const n = el('span', 'je-ts-chip language-chip ' + (count ? 'language-count-badge' : 'language-code'), text);
             n.dataset.jeLanguage = count ? 'countBadge' : label.key === 'subtitles' ? 'subtitles' : 'flag';
             n.dataset.jeLanguageLabel = count ? label.key === 'dual' ? 'dual' : 'multi' : label.key === 'code' || label.key === 'subtitles' ? 'en' : label.key;
@@ -537,6 +548,16 @@
                 tabs.textContent = '';
                 GROUPS.forEach((g) => {
                     const b = el('button', 'je-ts-tab' + (g.key === current ? ' active' : ''), g.title);
+                    // A group that hides tags says so on its tab (hiding is silent for every user).
+                    const hiddenHere = hiddenStore ? hiddenCountOf(g.key) : 0;
+                    if (hiddenHere) {
+                        const mark = el('span', 'je-ts-tab-hidden');
+                        const icon = el('i', 'material-icons', 'visibility_off');
+                        icon.setAttribute('aria-hidden', 'true');
+                        mark.append(icon, String(hiddenHere));
+                        b.appendChild(mark);
+                        b.setAttribute('aria-label', T('{group}, {count} hidden', { group: g.title, count: hiddenHere }));
+                    }
                     b.type = 'button';
                     b.setAttribute('role', 'tab');
                     b.setAttribute('aria-selected', String(g.key === current));
@@ -544,7 +565,7 @@
                     b.dataset.tsKey = 'tab:' + g.key;
                     b.id = 'tagStyleTab-' + g.key;
                     b.setAttribute('aria-controls', 'tagStyleGroupPanel');
-                    b.addEventListener('click', () => { current = g.key; target = ALL; filter = ''; renderTabs(); renderGroup(); });
+                    b.addEventListener('click', () => { current = g.key; target = ALL; filter = ''; hiddenOnly = false; renderTabs(); renderGroup(); });
                     tabs.appendChild(b);
                 });
             });
@@ -552,7 +573,10 @@
             // A phone shows the groups as one select (the tabs wrap into rows there).
             const select = root.querySelector('#tagStyleGroupSelect');
             if (select) {
-                select.innerHTML = GROUPS.map((g) => '<option value="' + g.key + '"' + (g.key === current ? ' selected' : '') + '>' + g.title + '</option>').join('');
+                select.innerHTML = GROUPS.map((g) => {
+                    const hiddenHere = hiddenStore ? hiddenCountOf(g.key) : 0;
+                    return '<option value="' + g.key + '"' + (g.key === current ? ' selected' : '') + '>' + g.title + (hiddenHere ? ' ' + T('({count} hidden)', { count: hiddenHere }) : '') + '</option>';
+                }).join('');
                 select.onchange = () => tabs.querySelector('.je-ts-tab[data-group="' + select.value + '"]')?.click();
                 const label = root.querySelector('#tagStyleGroupSelectLabel');
                 if (label) label.textContent = tr('Tag group');
@@ -570,7 +594,8 @@
             root.querySelectorAll('#tagStyleTargets .je-ts-target').forEach((cell) => {
                 const label = cell.dataset.label;
                 const name = (cell.getAttribute('aria-label') || '').toLocaleLowerCase();
-                cell.hidden = !!needle && label !== ALL && label !== target && !name.includes(needle);
+                cell.hidden = (!!needle && label !== ALL && label !== target && !name.includes(needle))
+                    || (hiddenOnly && label !== ALL && label !== target && !isHidden(current, label));
             });
         }
 
@@ -597,8 +622,164 @@
             next.click();
         }
 
+        // ── Hidden tags (#1043) ──
+        // Each tile can be hidden: its chips never draw (web and native posters). The lists live in
+        // TagHiddenValues ({ Genre: ['drama'], … }), kept by the Colours section through hiddenStore
+        // ({ get(): doc|null, set(doc, ageRatings, change) }). Flag and Language codes colour every flag or
+        // code, so they are not tags to hide.
+        const NOT_HIDEABLE = { language: ['flag', 'code'] };
+        const pascal = (g) => g.charAt(0).toUpperCase() + g.slice(1);
+        /** @param {string} g @param {string} l @returns {boolean} */
+        const hideable = (g, l) => !!hiddenStore && l !== ALL && !(NOT_HIDEABLE[g] || []).includes(l);
+        /** @param {string} g @returns {string[]} The group's hidden labels. */
+        const hiddenList = (g) => {
+            const doc = (hiddenStore && hiddenStore.get()) || {};
+            const list = doc[pascal(g)] ?? doc[g];
+            return Array.isArray(list) ? list.map(String) : [];
+        };
+        /** @param {string} g @param {string} l @returns {boolean} */
+        const isHidden = (g, l) => hiddenList(g).includes(l);
+        /** @param {string} g @param {string} l @returns {boolean} Whether a tile is hidden by another (Dual · Multi covers Dual and Multi). */
+        const coveredBy = (g, l) => g === 'language' && (l === 'dual' || l === 'multi') && isHidden('language', 'countBadge');
+
+        /**
+         * Hide or show one tile's chips and hand the whole document to the store.
+         * @param {string} g
+         * @param {{key: string, name: string}} label
+         * @param {boolean} on
+         */
+        function setHidden(g, label, on) {
+            const doc = {};
+            for (const { key } of GROUPS) {
+                let list = hiddenList(key);
+                if (key === g) list = on ? list.concat(list.includes(label.key) ? [] : [label.key]) : list.filter((l) => l !== label.key);
+                if (list.length) doc[pascal(key)] = list;
+            }
+            const next = Object.keys(doc).length ? doc : null;
+            // The web matches age rating badges by the ratings on a board.
+            const ages = next && next.AgeRating ? (cat.age || []).filter((a) => next.AgeRating.includes(a.id)).flatMap((a) => a.ratings) : [];
+            const count = g === 'ageRating' ? (((cat.age || []).find((a) => a.id === label.key) || {}).ratings || []).length : 1;
+            // A Custom label whose rule is gone has a tile only while hidden: showing it again ends it.
+            const orphan = g === 'custom' && !customLabels().includes(label.key);
+            const noun = hideNoun(g, label);
+            hiddenStore.set(next, ages, { group: g, label, hidden: on, count, orphan, noun: noun.charAt(0).toUpperCase() + noun.slice(1) });
+            if (!on && orphan) {
+                target = ALL;
+                renderTabs();
+                renderGroup();
+                renderPreview();
+                root.querySelector('#tagStyleTargets .je-ts-target-all')?.focus();
+                return;
+            }
+            refreshHiddenViews();
+        }
+
+        /** Redraw what shows hidden state (the confirmation announces the change, so the header stays quiet). */
+        function refreshHiddenViews() {
+            const now = root.querySelector('#tagStyleEditingNow');
+            now?.removeAttribute('aria-live');
+            renderTabs();
+            renderTargets();
+            renderHideRow();
+            renderSample();
+            renderPreview();
+            // Live again only after this change has been observed (not announced).
+            setTimeout(() => now?.setAttribute('aria-live', 'polite'), 250);
+        }
+
+        /** @param {string} g @returns {number} How many of a group's tags are hidden. */
+        function hiddenCountOf(g) {
+            return labelsOf(g).filter((l) => isHidden(g, l.key)).length;
+        }
+
+        /**
+         * A language tile's code with its English name ("EN (English)"), as the page is in English.
+         * @param {{key: string, name: string}} label
+         * @returns {string}
+         */
+        function languageName(label) {
+            const code = label.name.toUpperCase();
+            try {
+                const name = new Intl.DisplayNames(['en'], { type: 'language' }).of(label.key);
+                return name && name.toLowerCase() !== label.key ? code + ' (' + name + ')' : code;
+            } catch { return code; }
+        }
+
+        // A rating keeps its hyphen on one line ("TV-14", never "TV-" / "14").
+        const nb = (text) => String(text).replace(/-/g, '\u2011');
+
+        /**
+         * The Hide switch's name: the tag it hides ("Hide Drama", "Hide PG-13 and 146 more ratings").
+         * @param {string} g
+         * @param {{key: string, name: string}} label
+         * @returns {string}
+         */
+        function hideName(g, label) {
+            return T('Hide {name}', { name: hideNoun(g, label) });
+        }
+
+        /**
+         * What a tile hides, as the switch and the confirmation name it ("Other genres", "EN (English)",
+         * "PG-13 and 146 more ratings").
+         * @param {string} g
+         * @param {{key: string, name: string}} label
+         * @returns {string}
+         */
+        function hideNoun(g, label) {
+            if (g === 'ageRating') {
+                const ages = (((cat.age || []).find((a) => a.id === label.key) || {}).ratings || []).length;
+                if (ages > 1) return T('{name} and {count} more ratings', { name: nb(label.name), count: ages - 1 });
+            }
+            if (g === 'genre' && label.key === 'other') return T('Other genres');
+            if (g === 'logos') return ({ provider: T('provider logos'), company: T('network and studio logos'), text: T('name chips') })[label.key] || label.name;
+            if (g === 'language') return ({ subtitles: T('subtitle chips'), countBadge: T('Dual and Multi badges'), dual: T('the Dual badge'), multi: T('the Multi badge') })[label.key]
+                || languageName(label);
+            return label.name;
+        }
+
+        /**
+         * A hidden tile's name in the hidden line: age tiles carry how many ratings they stand for.
+         * @param {string} g
+         * @param {{key: string, name: string}} label
+         * @returns {string}
+         */
+        function hiddenTileName(g, label) {
+            if (g !== 'ageRating') return label.name;
+            const ages = (((cat.age || []).find((a) => a.id === label.key) || {}).ratings || []).length;
+            return ages > 1 ? nb(label.name) + ' (+' + (ages - 1) + ')' : nb(label.name);
+        }
+
+        /**
+         * What hiding a tile does, in words.
+         * @param {string} g
+         * @param {{key: string, name: string}} label
+         * @returns {string}
+         */
+        function hideDescription(g, label) {
+            const name = label.name;
+            if (g === 'genre') return label.key === 'other'
+                ? T('Hides every genre without an icon of its own (Reality, Talk, Anime and the like) from posters. The next genres take their places.')
+                : T('Hides {name} from posters, in every spelling and language. The next genres take its place.', { name });
+            if (g === 'ageRating') {
+                const ratings = ((cat.age || []).find((a) => a.id === label.key) || {}).ratings || [];
+                const examples = ['G', 'PG', 'PG-13', 'R', 'NC-17', 'TV-14', 'TV-MA', '12A', '15', '18', 'NR'].filter((r) => ratings.includes(r)).concat(ratings).filter((r, i, a) => a.indexOf(r) === i).slice(0, 3);
+                return ratings.length > 3
+                    ? T('Hides every rating that shares these colours from posters, such as {examples}.', { examples: examples.map(nb).join(', ') })
+                    : T('Hides these ratings from posters: {ratings}.', { ratings: ratings.map(nb).join(', ') });
+            }
+            if (g === 'logos') return ({ provider: T('Hides provider (streaming service) logos from posters. The next logos take their place.'),
+                company: T('Hides network and studio logos from posters. The next logos take their place.'),
+                text: T('Hides logos without an image (name chips) from posters. The next logos take their place.') })[label.key] || '';
+            if (g === 'language') return ({ subtitles: T('Hides subtitle chips from posters.'), countBadge: T('Hides the Dual and Multi badges from posters.'),
+                dual: T('Hides the Dual badge from posters.'), multi: T('Hides the Multi badge from posters.') })[label.key]
+                || T('Hides {name} audio and subtitle chips from posters. The next languages take its place; the Dual and Multi badges still count it.', { name: languageName(label).replace(/^[A-Z]+ \((.+)\)$/, '$1') });
+            return T('Hides {name} from posters, native posters included. The next tags take its place.', { name });
+        }
+
         /** @returns {void} */
         function renderTargets() {
+            // The hidden-only view ends with the group's last hidden tag (before the list is filtered by it).
+            if (hiddenOnly && !(hiddenStore && labelsOf(current).some((l) => isHidden(current, l.key)))) hiddenOnly = false;
             const box = root.querySelector('#tagStyleTargets');
             // Rebuilding drops focus: a keyboard user keeps it on the selected tile.
             const focused = box.contains(document.activeElement);
@@ -617,7 +798,7 @@
             const targetBox = root.querySelector('#tagStyleTargetBox');
             if (targetBox) targetBox.hidden = !targetsOpen;
             const hint = root.querySelector('#tagStyleTargetHint');
-            if (hint) hint.textContent = tr('Choose a tag to change only its colours.');
+            if (hint) hint.textContent = tr(hiddenStore ? 'Choose a tag to change its colours or hide it.' : 'Choose a tag to change only its colours.');
             const search = root.querySelector('#tagStyleTargetFilter');
             if (search) {
                 // Any group with more labels than a glance takes gets the filter (genres name the box after themselves).
@@ -635,6 +816,13 @@
                 const label = target === ALL ? null : labelsOf(current).find((l) => l.key === target);
                 // The group part is dropped on a phone, where the group select above names it.
                 now.replaceChildren(el('span', 'je-ts-now-group', groupTitle + ' · '), document.createTextNode(label ? label.name : T('Whole group')));
+                if (label && (isHidden(current, label.key) || coveredBy(current, label.key))) {
+                    const flag = el('span', 'je-ts-now-hidden');
+                    const icon = el('i', 'material-icons', 'visibility_off');
+                    icon.setAttribute('aria-hidden', 'true');
+                    flag.append(' · ', icon, T('hidden'));
+                    now.appendChild(flag);
+                }
             }
             const all = radio('je-ts-target je-ts-target-all' + (state.groups[current] ? ' changed' : ''), target === ALL, () => { target = ALL; renderGroup(); });
             all.textContent = T('Whole group');
@@ -647,8 +835,23 @@
                 cell.title = current === 'ageRating'
                     ? T('Applies to: {ratings}', { ratings: ((cat.age.find((a) => a.id === label.key) || {}).ratings || []).join(', ') })
                     : label.name;
-                cell.setAttribute('aria-label', current === 'ageRating' ? T('{name} board', { name: label.name }) : label.name);
-                cell.appendChild(chip(current, label, effective(current, label.key)));
+                const boardSize = current === 'ageRating' ? (((cat.age || []).find((a) => a.id === label.key) || {}).ratings || []).length : 0;
+                cell.setAttribute('aria-label', boardSize > 1 ? T('{name} and {count} more ratings', { name: label.name, count: boardSize - 1 }) : label.name);
+                // A hidden tile says so: dimmed, with the hidden mark on its chip's corner and in its name.
+                const sample = chip(current, label, effective(current, label.key));
+                if (isHidden(current, label.key) || coveredBy(current, label.key)) {
+                    cell.classList.add('je-ts-target-hidden');
+                    cell.setAttribute('aria-label', coveredBy(current, label.key) && !isHidden(current, label.key)
+                        ? T('{name}, hidden by Dual and Multi badges', { name: cell.getAttribute('aria-label') })
+                        : T('{name}, hidden', { name: cell.getAttribute('aria-label') }));
+                    cell.title = T('{name} (hidden)', { name: cell.title });
+                    const wrap = el('span', 'je-ts-chip-wrap');
+                    wrap.appendChild(sample);
+                    const mark = el('i', 'material-icons je-ts-hidden-mark', 'visibility_off');
+                    mark.setAttribute('aria-hidden', 'true');
+                    wrap.appendChild(mark);
+                    cell.appendChild(wrap);
+                } else cell.appendChild(sample);
                 // Tiles carry their name too (shown where there is room; the tooltip always has it).
                 if (tiles) cell.appendChild(el('span', 'je-ts-target-name', label.name));
                 box.appendChild(cell);
@@ -667,13 +870,129 @@
             // Say when the list scrolls inside its box.
             if (hint) {
                 const count = labelsOf(current).length;
-                hint.textContent = tr('Choose a tag to change only its colours.') + (targetsOpen && box.scrollHeight > box.clientHeight + 2 ? ' ' + T('{count} tags; scroll for more.', { count: Number(count) }) : '');
+                const scrolls = targetsOpen && box.scrollHeight > box.clientHeight + 2;
+                const shownHidden = hiddenOnly ? labelsOf(current).filter((l) => isHidden(current, l.key)).length : 0;
+                hint.textContent = tr(hiddenStore ? 'Choose a tag to change its colours or hide it.' : 'Choose a tag to change only its colours.')
+                    + (hiddenOnly ? ' ' + T('Showing the {count} hidden tags only.', { count: shownHidden })
+                        : scrolls ? ' ' + T('{count} tags; scroll for more.', { count: Number(count) }) : '');
+            }
+            // The hidden tags by name on their own line, each a way to its switch (a long list can scroll them
+            // out of view); more than four: a view of the hidden tags only.
+            const line = root.querySelector('#tagStyleHiddenLine');
+            if (line) {
+                const hiddenLabels = hiddenStore ? labelsOf(current).filter((l) => isHidden(current, l.key)) : [];
+                line.hidden = !hiddenLabels.length;
+                line.textContent = '';
+                if (hiddenLabels.length) {
+                    const icon = el('i', 'material-icons', 'visibility_off');
+                    icon.setAttribute('aria-hidden', 'true');
+                    line.append(icon, T('Hidden ({count}):', { count: hiddenLabels.length }) + ' ');
+                    hiddenLabels.slice(0, 4).forEach((l, i) => {
+                        if (i) line.append(', ');
+                        const go = el('button', 'je-ts-hidden-pick', hiddenTileName(current, l));
+                        go.type = 'button';
+                        go.setAttribute('aria-label', T('{name}, hidden: go to its switch', { name: hiddenTileName(current, l) }));
+                        go.addEventListener('click', () => { target = l.key; renderGroup(); (root.querySelector('#tagStyleHide') || root.querySelector('#tagStyleTargets .je-ts-target[tabindex="0"]'))?.focus(); });
+                        line.appendChild(go);
+                    });
+                    if (hiddenLabels.length > 4) line.append(' ' + T('and {count} more', { count: hiddenLabels.length - 4 }));
+                    if (hiddenLabels.length > 4 || hiddenOnly) {
+                        // A view switch, set apart from the names (the hint says which view is on).
+                        line.append(' · ');
+                        const all = el('button', 'je-ts-hidden-view', hiddenOnly ? T('Show every tag') : T('Show only the hidden tags'));
+                        all.type = 'button';
+                        all.dataset.tsHiddenView = '';
+                        all.addEventListener('click', () => { hiddenOnly = !hiddenOnly; renderTargets(); root.querySelector('[data-ts-hidden-view]')?.focus(); });
+                        line.appendChild(all);
+                    }
+                }
             }
             // A long strip scrolls inside its box: keep the selected label in view there (never the page).
             if (selected && box.scrollHeight > box.clientHeight) {
                 const top = selected.offsetTop - box.offsetTop;
                 if (top < box.scrollTop || top + selected.offsetHeight > box.scrollTop + box.clientHeight) box.scrollTop = Math.max(0, top - 8);
             }
+        }
+
+        /**
+         * The picked tag's Hide switch, above the group note and the colour rows (it decides whether the tag
+         * shows at all). Picks without one say why: Whole group, and the language styles that colour every
+         * flag or code.
+         * @returns {void}
+         */
+        function renderHideRow() {
+            const box = root.querySelector('#tagStyleHideRow');
+            if (!box || !hiddenStore) return;
+            rebuildKeepingFocus(box, () => {
+                box.textContent = '';
+                const picked = target === ALL ? null : labelsOf(current).find((l) => l.key === target);
+                if (!picked) {
+                    // Whole group: hiding is per tag; the Groups tab (linked) turns a group off, for new users.
+                    const groupTitle = (GROUPS.find((g) => g.key === current) || {}).title || current;
+                    const line = el('p', 'je-ts-hide-none');
+                    const back = el('a', 'je-ta-link je-ts-inline-link', T('Groups › {group}', { group: groupTitle }));
+                    back.href = '#';
+                    back.dataset.jeGoto = 'groups:' + current;
+                    line.append(T('Hiding works per tag. To turn the whole group off for new users, see '), back, '.');
+                    box.appendChild(line);
+                    return;
+                }
+                // Hidden only through the Dual and Multi badges tag: a way to that tag's switch. (Hidden on its own
+                // as well, it keeps its own switch, with the same line under it.)
+                const coveredLine = () => {
+                    const line = el('p', 'je-ts-hide-none');
+                    const go = el('button', 'je-ts-hidden-pick', T('Dual and Multi badges'));
+                    go.type = 'button';
+                    go.addEventListener('click', () => { target = 'countBadge'; renderGroup(); root.querySelector('#tagStyleHide')?.focus(); });
+                    line.append(isHidden(current, picked.key) ? T('Also hidden by ') : T('Hidden by '), go,
+                        isHidden(current, picked.key) ? '.' : T('. Turn that off to show this badge again.'));
+                    return line;
+                };
+                if (coveredBy(current, picked.key) && !isHidden(current, picked.key)) {
+                    box.appendChild(coveredLine());
+                    return;
+                }
+                if (!hideable(current, picked.key)) {
+                    box.appendChild(el('p', 'je-ts-hide-none', picked.key === 'flag' ? T('This colours every flag. To hide one language, choose its code.')
+                            : T('This colours every language code. To hide one language, choose its code.')));
+                    return;
+                }
+                const sw = el('label', 'je-ta-switch je-ts-hide-switch');
+                const input = document.createElement('input');
+                input.type = 'checkbox';
+                input.checked = isHidden(current, picked.key);
+                input.dataset.tsKey = 'hide';
+                input.id = 'tagStyleHide';
+                // Named by its name alone; the scope sentence is its description (not read twice).
+                input.setAttribute('aria-labelledby', 'tagStyleHideName');
+                input.setAttribute('aria-describedby', 'tagStyleHideDesc');
+                input.addEventListener('change', () => setHidden(current, picked, input.checked));
+                const text = el('span', 'je-ta-switch-text');
+                const nameEl = el('span', 'je-ta-switch-name', hideName(current, picked));
+                nameEl.id = 'tagStyleHideName';
+                text.appendChild(nameEl);
+                // Scope, not help: it stays when the page hides descriptions.
+                const desc = el('span', 'je-ts-hide-scope', hideDescription(current, picked));
+                desc.id = 'tagStyleHideDesc';
+                text.appendChild(desc);
+                sw.appendChild(input);
+                sw.appendChild(text);
+                box.appendChild(sw);
+                if (coveredBy(current, picked.key)) box.appendChild(coveredLine());
+                // An age board's every rating, on request (the switch reads only the short sentence).
+                const ratings = current === 'ageRating' ? (((cat.age || []).find((a) => a.id === picked.key) || {}).ratings || []) : [];
+                if (ratings.length > 3) {
+                    const more = el('details', 'je-ts-hide-ratings');
+                    more.dataset.jeInfo = '';
+                    const summary = el('summary');
+                    const icon = el('i', 'material-icons', 'expand_more');
+                    icon.setAttribute('aria-hidden', 'true');
+                    summary.append(icon, T('Show all {count} ratings', { count: ratings.length }));
+                    more.appendChild(summary);
+                    more.appendChild(el('p', 'je-ts-hide-ratings-list', ratings.map(nb).join(', ')));
+                    box.appendChild(more);
+                }
+            });
         }
 
         /** @returns {void} */
@@ -884,11 +1203,15 @@
                 // The first label is not the typical one (R18+ sits in the plain unrated colour group, 1080i comes before
                 // 1080p), so the group sample shows PG-13 and 1080p.
                 const typical = { ageRating: 'PG-13', quality: '1080p' }[current];
-                label = weak ? low.l : (typical && labels.find((l) => l.name === typical)) || labels[0];
+                const shown = labels.filter((l) => !isHidden(current, l.key));
+                label = weak ? low.l : (typical && shown.find((l) => l.name === typical)) || shown[0] || labels[0];
             }
             if (!label) return;
+            const hidden = target !== ALL && (isHidden(current, label.key) || coveredBy(current, label.key));
+            const picked = target !== ALL && labels.some((l) => l.key === target);
+            box.classList.toggle('je-ts-sample-hidden', hidden);
             box.appendChild(chip(current, label, effective(current, label.key)));
-            box.appendChild(el('span', 'je-ts-sample-note', target !== ALL ? T('Editing this tag') : T(weak ? 'Lowest-contrast sample' : 'Sample tag')));
+            box.appendChild(el('span', 'je-ts-sample-note', target !== ALL ? (picked ? T('Editing this tag') : T('Sample tag')) : T(weak ? 'Lowest-contrast sample' : 'Sample tag')));
         }
 
         /** The select that gives the open group a preset of its own. @returns {void} */
@@ -912,6 +1235,7 @@
         function renderGroup() {
             renderGroupPreset();
             renderTargets();
+            renderHideRow();
             const note = NOTES[current] ? T(NOTES[current]) : '';
             root.querySelector('#tagStyleGroupNote').textContent = [presetOf(current) === 'poster' && (current !== 'language' || target !== 'flag') ? POSTER_NOTE : '', note].filter(Boolean).join(' ');
             renderRows();
@@ -1031,6 +1355,30 @@
          * @param {boolean} inline - Paint inline (no stylesheet generator).
          * @returns {HTMLElement}
          */
+        /**
+         * Whether the preview leaves a sample chip out (it is hidden).
+         * @param {string} g
+         * @param {{key: string, name: string}} label
+         * @returns {boolean}
+         */
+        function previewHides(g, label) {
+            if (!hiddenStore) return false;
+            if (g === 'ageRating') return hiddenList('ageRating').some((id) => (((cat.age || []).find((a) => a.id === id) || {}).ratings || []).includes(label.name));
+            // The preview's flag stands for English.
+            if (g === 'language' && label.key === 'flag') return isHidden('language', 'en');
+            return isHidden(g, label.key);
+        }
+
+        /**
+         * Sample genres for a preview card: its own, with hidden ones replaced by the next genres that show.
+         * @param {string[]} own
+         * @returns {string[]}
+         */
+        function previewGenres(own) {
+            const pool = own.concat(labelsOf('genre').map((l) => l.key)).filter((k, i, a) => a.indexOf(k) === i && !(hiddenStore && isHidden('genre', k)));
+            return pool.slice(0, own.length);
+        }
+
         function card(cls, title, corners, inline) {
             const n = el('div', 'je-ts-card ' + cls);
             const art = el('div', 'je-ts-art');
@@ -1039,7 +1387,8 @@
                 let box = null;
                 corners[corner].forEach(([g, l]) => {
                     const label = labelsOf(g).find((x) => x.key === l || x.name === l);
-                    if (!label) return;
+                    // Hidden tags never show on posters, the preview's included.
+                    if (!label || previewHides(g, label)) return;
                     if (!box || box.dataset.group !== g) {
                         box = el('div', CONTAINERS[g] + ' je-ts-corner-group');
                         box.dataset.group = g;
@@ -1075,13 +1424,13 @@
             const custom = labelsOf('custom').slice(0, 2).map((l) => ['custom', l.key]);
             box.appendChild(card('je-ts-card-movie', T('Movie'), {
                 tl: [['quality', '4K'], ['quality', 'Dolby Vision'], ['quality', 'ATMOS']].concat(custom),
-                tr: [['status', 'trending']].concat(GENRE_SAMPLES.movie.map((l) => ['genre', l])),
+                tr: [['status', 'trending']].concat(previewGenres(GENRE_SAMPLES.movie).map((l) => ['genre', l])),
                 bl: [['language', 'flag']],
                 br: [['rating', 'critic'], ['rating', 'community'], ['ageRating', 'PG-13']]
             }, !generate));
             box.appendChild(card('je-ts-card-episode', T('Episode'), {
                 tl: [['quality', '1080p'], ['quality', 'HEVC']],
-                tr: [['status', 'newEpisode']].concat(GENRE_SAMPLES.episode.map((l) => ['genre', l])),
+                tr: [['status', 'newEpisode']].concat(previewGenres(GENRE_SAMPLES.episode).map((l) => ['genre', l])),
                 bl: [['language', 'flag']],
                 br: [['rating', 'userReview'], ['ageRating', 'R']]
             }, !generate));
@@ -1249,7 +1598,40 @@
 
         const settings = () => ({ preset: state.preset });
 
-        return { load, serialize, settings, snapshot, refreshLabels() { if (current === 'custom' && target !== ALL && !labelsOf('custom').some((l) => l.key === target)) target = ALL; render(); } };
+        return { load, serialize, settings, snapshot,
+            /** Redraw after the hidden lists changed elsewhere (another administrator, an import, Undo). */
+            refreshHidden() { if (cat) refreshHiddenViews(); },
+            /** Say, beside the colour rows, that tag colours are off (null hides the note). @param {string|null} text */
+            setColoursOffNote(off, focusSwitch) {
+                const note = root.querySelector('#tagStyleOffRowNote');
+                if (!note) return;
+                note.hidden = !off;
+                if (!off) { note.textContent = ''; return; }
+                // The switch's name is a way to it (it never turns colours on: that recolours every poster).
+                const icon = el('i', 'material-icons', 'info');
+                icon.setAttribute('aria-hidden', 'true');
+                const go = el('a', 'je-ta-link je-ts-inline-link', T('Use tag colours'));
+                go.href = '#tagStylesEnabled';
+                go.addEventListener('click', (e) => { e.preventDefault(); focusSwitch?.(); });
+                const text = el('span');
+                text.append(T('Tag colours are off: these colours show once '), go, T(' is on.'));
+                note.replaceChildren(icon, text);
+            },
+            /** Open a group with its tag list (Groups tab pointers). @param {string} group */
+            openGroup(group) {
+                if (!GROUPS.some((g) => g.key === group)) return;
+                current = group; filter = ''; targetsOpen = true;
+                // The link names hidden tags: land on the first one (its switch, on, right below), else Whole group.
+                const first = hiddenStore ? labelsOf(group).find((l) => isHidden(group, l.key)) : null;
+                target = first ? first.key : ALL;
+                if (cat) { renderTabs(); renderGroup(); }
+                // The group's tab row at the top, clear of the sticky header (the page's scroll margin); focus does not scroll again.
+                const tab = root.querySelector('#tagStyleTab-' + group);
+                const tabsRow = root.querySelector('#tagStyleTabs');
+                (tab && tab.offsetParent ? tab : root.querySelector('#tagStyleGroupSelect') || tabsRow)?.scrollIntoView?.({ block: 'start' });
+                (root.querySelector('#tagStyleTargets .je-ts-target[tabindex="0"]') || tab)?.focus?.({ preventScroll: true });
+            },
+            refreshLabels() { if (current === 'custom' && target !== ALL && !labelsOf('custom').some((l) => l.key === target)) target = ALL; render(); } };
     }
 
     JE.adminTags = JE.adminTags || {};
