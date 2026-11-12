@@ -438,8 +438,8 @@ import { hiddenContentContext, host, registry, type HiddenHost } from './host';
       if (term.length < 2) { grid.replaceChildren(hint); return; }
       showMessage(JE.t('hidden_content_admin_add_searching'));
 
-      // Search the Jellyfin library AND Seerr (when available) in parallel, so the admin can hide
-      // items that aren't in the library too.
+      // Search the Jellyfin library AND Seerr (when the integration is on) in parallel, so the admin can
+      // hide items that aren't in the library too.
       // Routed through the core fetch layer (auth + JSON parse identical to the
       // former getApi().ajax call). A failed search resolves to null, so it is reported, not shown as "no matches".
       const searchFailed = (source: string) => (error: unknown) => { console.warn(`${logPrefix} Admin add search (${source}) failed:`, error); return null; };
@@ -447,7 +447,8 @@ import { hiddenContentContext, host, registry, type HiddenHost } from './host';
         userId: getApi().getCurrentUserId(), searchTerm: term, IncludeItemTypes: 'Movie,Series',
         Recursive: true, Limit: 24, Fields: 'ProviderIds', ImageTypeLimit: 1, EnableImageTypes: 'Primary',
       })).then(res => {const items=record(res).Items;if(!Array.isArray(items))throw new Error('Invalid item list');return items.map(decodeLibraryItem);}).catch(searchFailed('library'));
-      const seerrApi = featureCtx.peer('jellyseerrAPI');
+      // The Seerr API is installed even with the integration off, and the server then answers its routes with 503.
+      const seerrApi = JE.pluginConfig?.JellyseerrEnabled ? featureCtx.peer('jellyseerrAPI') : undefined;
       const seerrP = (seerrApi && seerrApi.search)
         ? seerrApi.search(term, 1, { throwOnError: true }).then(decodeSeerrSearch).then(res => res.results).catch(searchFailed('Seerr'))
         : Promise.resolve([]);

@@ -40,7 +40,7 @@ export interface HiddenHost {
  hiddenContent: Omit<HiddenDataSurface,'hiddenIdSet'|'normalizeId'|'getHiddenData'|'rebuildSets'|'shouldFilterSurface'|'emitChange'|'resetFromUserConfig'|'debouncedSave'|'refreshNativeCardVisibility'|'restoreNativeCardsForIds'|'getCardSurface'|'getCardItemId'|'filterAllNativeCards'|'setupNativeObserver'|'injectCSS'|'assertWritable'|'captureItemIntent'|'rebaseOnto'>;
  hiddenContentPage: Pick<PageSurface,'showPage'|'hidePage'|'renderForCustomTab'|'renderPage'|'injectStyles'> & {initialize():void};
  initializeHiddenContentPage?:()=>void;
- pluginConfig?:{HiddenContentEnabled?:boolean;HiddenContentAdmin?:boolean;HiddenContentUsePluginPages?:boolean;HiddenContentUseCustomTabs?:boolean;HiddenContentUseNativeTab?:boolean};
+ pluginConfig?:{HiddenContentEnabled?:boolean;HiddenContentAdmin?:boolean;JellyseerrEnabled?:boolean;HiddenContentUsePluginPages?:boolean;HiddenContentUseCustomTabs?:boolean;HiddenContentUseNativeTab?:boolean};
  core:{api:{fetch(url:string):Promise<unknown>};ui:{skeletonGridHtml(count:number,options:{minWidth:string;height:string;label:string}):string}};
  nativeTabs:{register(id:string,title:string,mount:(panel:HTMLElement)=>void,icon:string):void};
  currentSettings:{removeContinueWatchingEnabled?:boolean};

@@ -170,8 +170,8 @@ test('local undo queued during a scoped write survives its later acknowledgement
  const scoped=h.home.removeFromHomeSurface('a','nextup');await tick();h.api.unhideItem('a');const correction=h.api.flushPendingSave();pending.resolve({success:true});assert.equal(await scoped,true);await correction;assert.equal(h.api.getHiddenCount(),0);assert.deepEqual(writes.at(-1).items,{});
 });
 // BUG-011: the admin add-items search reports a failed search instead of "No matching titles".
-async function adminSearch(h,{library,seerr}){
- h.JE.core.api.fetch=library;if(seerr)h.JE.jellyseerrAPI={search:seerr};
+async function adminSearch(h,{library,seerr,seerrEnabled=true}){
+ h.JE.core.api.fetch=library;if(seerr)h.JE.jellyseerrAPI={search:seerr};h.JE.pluginConfig.JellyseerrEnabled=seerrEnabled;
  Object.assign(h.page.state,{selectedAdminUserId:'a',adminUserName:'A',adminItems:[]});
  h.page.openAdminAddModal();
  const overlay=h.document.querySelector('.je-hidden-admin-add-overlay'),input=overlay.querySelector('.je-hidden-management-search');
@@ -221,4 +221,14 @@ test('a stored HTML-escaped title reads back as the plain title without rewritin
  assert.equal(h.api.getAllHiddenItems()[0].name,"Tom & Jerry's Lab Day");
  assert.equal(h.api.filterCalendarEvents([{title:"Tom & Jerry's Lab Day"}]).length,0);
  assert.equal(stored.x.name,'Tom &amp; Jerry&#039;s Lab Day');
+});
+test('admin add-items search with the Seerr integration off searches only the library and says nothing about Seerr',async t=>{
+ const h=setup(t);for(const file of ['seerr-status.js','api.js'])h.load(`jellyseerr/${file}`);
+ const urls=[],library={Items:[{Id:'lib1',Name:'Alpha',Type:'Movie',ProviderIds:{Tmdb:'5'}}]};
+ // With the integration off the server answers every Seerr route with 503.
+ const fetch=url=>{urls.push(url);return url.includes('/JellyfinEnhanced/jellyseerr/')?Promise.reject(Object.assign(new Error('HTTP 503'),{status:503})):Promise.resolve(library);};
+ const grid=await adminSearch(h,{library:fetch,seerrEnabled:false});
+ assert.equal(grid.querySelectorAll('.je-hidden-item-card').length,1);
+ assert.doesNotMatch(grid.textContent,/hidden_content_admin_add_seerr_failed/);
+ assert.deepEqual(urls.filter(url=>url.includes('/JellyfinEnhanced/jellyseerr/')),[]);
 });
