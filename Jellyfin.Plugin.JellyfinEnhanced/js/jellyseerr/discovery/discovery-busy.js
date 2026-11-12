@@ -9,6 +9,8 @@
 
     /** How long a list being rebuilt keeps its height at most (ms). */
     const HOLD_LIST_MS = 8000;
+    /** Each held list's give-up timer. A newer change replaces it, and the release ends it, so an earlier change's timer never lets go of a later change's hold. */
+    const holdTimers = new WeakMap();
 
     /**
      * Jellyfin's loading circle, in the markup its own loading module draws, so its stylesheet and the
@@ -75,7 +77,8 @@
         list.dataset.held = section.querySelector('.jellyseerr-discovery-header')?.hasAttribute('data-stuck') ? 'stuck' : 'join';
         mark(section);
         // (Should the new cards never come, the height is not kept for ever.)
-        setTimeout(() => release(list), HOLD_LIST_MS);
+        clearTimeout(holdTimers.get(list));
+        holdTimers.set(list, setTimeout(() => release(list), HOLD_LIST_MS));
     }
 
     /**
@@ -83,6 +86,10 @@
      * @param {HTMLElement|null|undefined} list - The section's `.itemsContainer`
      */
     function release(list) {
+        if (list) {
+            clearTimeout(holdTimers.get(list));
+            holdTimers.delete(list);
+        }
         const held = list?.dataset?.held;
         if (!held) return;
         delete list.dataset.held;

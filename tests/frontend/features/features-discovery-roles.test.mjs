@@ -256,6 +256,40 @@ test('a list released under a held header starts again right under it', t => {
   assert.deepEqual(scrolled, [256]);
 });
 
+test('a second change keeps the list held past the first change\'s give-up time, and the page moves once, when its cards land', t => {
+  const h = bare(t, '<div class="jellyseerr-discovery-section"><div class="jellyseerr-discovery-header" data-stuck><button id="sort"></button></div>'
+    + '<div class="itemsContainer"></div></div>');
+  const list = h.document.querySelector('.itemsContainer');
+  const scrolled = [];
+  h.window.scrollTo = options => scrolled.push(options.top);
+  // A clock the test moves: the hold's timers run when it passes them.
+  let now = 0;
+  let next = 1;
+  const timers = new Map();
+  h.window.setTimeout = (run, ms) => { timers.set(next, { at: now + ms, run }); return next++; };
+  h.window.clearTimeout = id => { timers.delete(id); };
+  const advance = ms => {
+    now += ms;
+    for (const [id, timer] of [...timers]) if (timer.at <= now) { timers.delete(id); timer.run(); }
+  };
+  const { hold, release, HOLD_LIST_MS } = h.JE.discoveryBusy;
+  hold(h.document.querySelector('#sort'));
+  advance(HOLD_LIST_MS - 1000);
+  hold(h.document.querySelector('#sort'));
+  advance(1000);
+  assert.equal(list.dataset.held, 'stuck', 'still held for the second change');
+  assert.deepEqual(scrolled, [], 'the page has not moved');
+  release(list);
+  assert.equal(list.dataset.held, undefined);
+  assert.equal(scrolled.length, 1, 'it goes back under the header once, as the cards land');
+  assert.equal(timers.size, 0, 'no give-up time is left behind');
+  // Should the new cards never come, the hold still ends.
+  hold(h.document.querySelector('#sort'));
+  advance(HOLD_LIST_MS);
+  assert.equal(list.dataset.held, undefined);
+  assert.equal(list.style.minHeight, '');
+});
+
 test('a new order keeps the old cards, dimmed and out of reach, with the circle, until its first page lands', async t => {
   const page = deferred();
   const h = setup(t, { hash: '#/list?genreId=g1', routes: [
