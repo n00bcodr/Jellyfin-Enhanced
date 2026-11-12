@@ -191,6 +191,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             StatusTagsMilestones = true;
             StatusTagsSeriesStatus = false;
             StatusTagsScenes = false;
+            StatusTagsOnCollections = true;
             StatusTagsJustAddedDays = 7;
             StatusTagsNewReleaseDays = 30;
             StatusTagsLeaving = false;
@@ -259,6 +260,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             JellyseerrShowRecommended = true;
             JellyseerrShowRequestMoreOnSeries = true;
             JellyseerrShowNetworkDiscovery = true;
+            JellyseerrFilterYear = true;
+            JellyseerrFilterScore = true;
+            JellyseerrFilterVotes = true;
+            JellyseerrFilterRuntime = true;
+            JellyseerrFilterGenres = true;
+            JellyseerrFilterLanguage = true;
+            JellyseerrFilterContentRating = true;
+            JellyseerrFilterStreaming = true;
+            JellyseerrFilterKeywords = true;
+            JellyseerrFilterRole = true;
             JellyseerrShowGenreDiscovery = true;
             JellyseerrShowTagDiscovery = true;
             JellyseerrShowPersonDiscovery = true;
@@ -349,6 +360,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             SyncJellyseerrWatchlist = false;
             SyncJellyfinWatchlistToSeerr = false;
             PreventWatchlistReAddition = true;
+            WatchlistRemovalSync = "jellyfin";
             WatchlistMemoryRetentionDays = 365;
 
             // Bookmarks Settings
@@ -924,6 +936,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <summary>Default for the lowest-priority series status badge (Returning, Ended, Cancelled).</summary>
         public bool StatusTagsSeriesStatus { get; set; } = false;
         public bool StatusTagsScenes { get; set; } = false;
+        /// <summary>Admin-only: whether collections (box sets) can carry status badges. On, a collection shows Just Added when one of its members was added recently (never by its own date, which is reset when a tool creates it again).</summary>
+        public bool StatusTagsOnCollections { get; set; } = true;
         /// <summary>Admin-only: days an item counts as "Just Added" (or a series/season's latest episode as "New Episode"). 1-365.</summary>
         public int StatusTagsJustAddedDays { get; set; } = 7;
         /// <summary>Admin-only: days after its premiere date a Movie/Series counts as "New Movie"/"New Series". 1-365.</summary>
@@ -1019,6 +1033,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool JellyseerrShowRecommended { get; set; }
         public bool JellyseerrShowRequestMoreOnSeries { get; set; }
         public bool JellyseerrShowNetworkDiscovery { get; set; }
+        public bool JellyseerrFilterYear { get; set; }
+        public bool JellyseerrFilterScore { get; set; }
+        public bool JellyseerrFilterVotes { get; set; }
+        public bool JellyseerrFilterRuntime { get; set; }
+        public bool JellyseerrFilterGenres { get; set; }
+        public bool JellyseerrFilterLanguage { get; set; }
+        public bool JellyseerrFilterContentRating { get; set; }
+        public bool JellyseerrFilterStreaming { get; set; }
+        public bool JellyseerrFilterKeywords { get; set; }
+        public bool JellyseerrFilterRole { get; set; }
         public bool JellyseerrShowGenreDiscovery { get; set; }
         public bool JellyseerrShowTagDiscovery { get; set; }
         public bool JellyseerrShowPersonDiscovery { get; set; }
@@ -1124,6 +1148,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool SyncJellyseerrWatchlist { get; set; }
         public bool SyncJellyfinWatchlistToSeerr { get; set; }
         public bool PreventWatchlistReAddition { get; set; }
+        // Which side's removals are mirrored to the other: "off", "jellyfin", "seerr" or "both".
+        public string WatchlistRemovalSync { get; set; }
         public int WatchlistMemoryRetentionDays { get; set; }
 
         // User Import Settings

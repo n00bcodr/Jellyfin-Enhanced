@@ -826,6 +826,7 @@
     "status_tag_season_finale": "Финал на сезона",
     "status_tag_series_finale": "Финал на сериала",
     "status_tag_complete_season": "Завършен сезон",
+    "status_tag_binge_ready": "Готово за гледане наведнъж",
     "status_tag_airing_today": "Излъчва се днес",
     "status_tag_airs_date": "Излъчва се на {date}",
     "status_tag_returns_date": "Връща се на {date}",

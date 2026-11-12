@@ -270,6 +270,7 @@
                     <div data-je-section="svc-anilist"></div>
                     <div data-je-section="svc-mdblist"></div>
                     <div data-je-section="svc-ddd"></div>
+                    <div data-je-section="svc-maintainerr"></div>
                 </div>
 
                 <div id="extras" class="jellyfin-tab-content">
@@ -337,6 +338,7 @@
 
             <!-- Media Tags: drawn by js/enhanced/admintags/ the first time the tab opens, and saved one field at a time.
                  Outside the form, so its Save, unsaved-changes badge and search never read these controls. -->
+            <div id="jeMtSearchResults" class="je-mt-search-results" hidden></div>
             <div id="media-tags" class="jellyfin-tab-content je-mt-tab">
                 <div class="je-tag-admin"><p class="je-ta-wait" role="status">Loading Media Tags settings…</p></div>
             </div>
@@ -1272,6 +1274,8 @@
                 activateTab(savedTab);
                 searchCount.style.display = 'none';
                 searchClear.style.display = 'none';
+                var mtBox = document.getElementById('jeMtSearchResults');
+                if (mtBox) mtBox.hidden = true;
             }
 
             /**
@@ -1368,6 +1372,73 @@
                 }
                 searchCount.style.display = 'block';
                 searchClear.style.display = 'block';
+                searchMediaTags(query);
+            }
+
+            /**
+             * The Media Tags tab is drawn on demand outside this form, so the loop above never sees it: search its
+             * sections' declared titles, labels and descriptions instead, and list the matches under the form.
+             * @param {string} query - Lowercase search term.
+             */
+            function searchMediaTags(query) {
+                var box = document.getElementById('jeMtSearchResults');
+                if (!box) return;
+                jeMountMediaTags().then(function (ctx) {
+                    if (searchInput.value.toLowerCase().trim() !== query) return; // a newer query replaced this one
+                    var at = window.JellyfinEnhanced && window.JellyfinEnhanced.adminTags;
+                    if (!ctx || !at || !at.sections) { box.hidden = true; return; }
+                    var t = function (text, params) { try { return String(at.fmt(text, params)); } catch (e) { return String(text || ''); } };
+                    var tabName = {};
+                    JE_MT_SECTIONS.forEach(function (x) { tabName[x[0]] = x[1]; });
+                    var hits = [];
+                    at.sections.forEach(function (sec) {
+                        var secTitle = t(sec.title || '');
+                        var where = (tabName[sec.tab] || sec.tab) + (secTitle ? ' \u203a ' + secTitle : '');
+                        var sectionHit = (secTitle + ' ' + t(sec.hint || '')).toLowerCase().includes(query);
+                        (sec.fields || []).forEach(function (f) {
+                            if (!f.label) return;
+                            var label = t(f.label);
+                            var desc = f.desc ? t(f.desc, f.descParams) : '';
+                            if (sectionHit || (label + ' ' + desc + ' ' + f.id).toLowerCase().includes(query)) {
+                                hits.push({ tab: sec.tab, group: sec.group && sec.group.id, where: where, label: label, id: f.id });
+                            }
+                        });
+                    });
+                    box.textContent = '';
+                    if (!hits.length) { box.hidden = true; return; }
+                    var head = document.createElement('div');
+                    head.className = 'je-search-tab-label';
+                    head.textContent = 'Media Tags';
+                    box.appendChild(head);
+                    hits.slice(0, 40).forEach(function (h) {
+                        var b = document.createElement('button');
+                        b.type = 'button';
+                        b.className = 'je-mt-search-hit';
+                        var title = document.createElement('strong');
+                        title.textContent = h.label;
+                        var sub = document.createElement('span');
+                        sub.textContent = h.where;
+                        b.appendChild(title);
+                        b.appendChild(sub);
+                        b.addEventListener('click', function () {
+                            clearTimeout(searchDebounce);
+                            searchInput.value = '';
+                            performSearch('');
+                            jeOpenMediaTags(h.tab, h.group, false).then(function () {
+                                setTimeout(function () {
+                                    var row = document.querySelector('#media-tags [data-field-row="' + h.id + '"]');
+                                    if (!row) return;
+                                    row.scrollIntoView({ block: 'center' });
+                                    var ctl = row.querySelector('input, select, textarea');
+                                    if (ctl) ctl.focus({ preventScroll: true });
+                                }, 150);
+                            });
+                        });
+                        box.appendChild(b);
+                    });
+                    box.hidden = false;
+                    if (searchCount.textContent === 'No results') searchCount.textContent = hits.length + ' in Media Tags';
+                });
             }
 
             // Unsaved-changes indicator: diffs a snapshot of every form control against the last saved snapshot.
@@ -3582,23 +3653,31 @@
                 renderSpoilerAutoEnableLibraries(config.SpoilerAutoEnableLibraryIds || '');
 
 
-                // Set up event handler for watchlist prevention checkbox
-                function toggleWatchlistRetentionVisibility() {
-                    const preventionEnabled = document.querySelector('#preventWatchlistReAddition').checked;
-                    const retentionContainer = document.querySelector('#watchlistMemoryRetentionDays').closest('.inputContainer');
-                    if (retentionContainer) {
-                        retentionContainer.style.display = preventionEnabled ? '' : 'none';
+                // "Don't re-add removed items" (and its retention days) only matter when removals are set to
+                // "Seerr decides" or "Never". With "Jellyfin decides" or "Both", a removal in Jellyfin also removes the
+                // item from Seerr, so there is nothing left to re-add and both rows are hidden.
+                function updateWatchlistMemoryVisibility() {
+                    var modeEl = document.querySelector('#watchlistRemovalSync');
+                    var toggle = document.querySelector('#preventWatchlistReAddition');
+                    var days = document.querySelector('#watchlistMemoryRetentionDays');
+                    if (!modeEl || !toggle || !days) return;
+                    var applies = modeEl.value === 'seerr' || modeEl.value === 'off';
+                    var toggleRow = toggle.closest('.checkboxContainer, .inputContainer, .selectContainer') || toggle.closest('label');
+                    var daysRow = days.closest('.inputContainer');
+                    if (toggleRow) jeaSetDepHidden(toggleRow, 'preventWatchlistReAddition', !applies);
+                    var showDays = applies && toggle.checked;
+                    if (daysRow) {
+                        daysRow.style.display = showDays ? '' : 'none';
+                        jeaSetDepHidden(daysRow, 'watchlistMemoryRetentionDays', !showDays);
                     }
                 }
 
-                // Set initial visibility
-                toggleWatchlistRetentionVisibility();
-
-                // Add event listener
-                document.querySelector('#preventWatchlistReAddition').addEventListener('change', toggleWatchlistRetentionVisibility);
-
                 // Update TMDB-dependent settings after config is loaded
                 updateAllDependencies();
+                // After the generic dependency pass, so these two rows follow the removal mode as well.
+                updateWatchlistMemoryVisibility();
+                document.querySelector('#preventWatchlistReAddition').addEventListener('change', updateWatchlistMemoryVisibility);
+                document.querySelector('#watchlistRemovalSync').addEventListener('change', updateWatchlistMemoryVisibility);
 
                 // Refresh the Requests Page requirements banner off freshly-
                 // rendered instance cards and loaded Seerr fields.
@@ -5508,6 +5587,7 @@
 
                 renderWhatsNewBanner((perSetting.length ? groupWhatsNewByFieldset(perSetting) : []).concat(movedEntries), pluginVersion, singleVersion);
                 renderWhatsNewBadges(perSetting);
+                jeWatchMediaTagsBadges(newSettings);
             }).catch(function(err) {
                 console.warn('[JE] whats-new check failed:', err);
             });
@@ -5659,6 +5739,37 @@
             if (overview) overview.insertBefore(banner, overview.firstChild);
         }
 
+        var _jeMtNewSettings = {};
+        var _jeMtBadgeObserver = null;
+
+        /** Badges the new settings whose controls are drawn on the Media Tags tab (re-run when the tab redraws a section or opens a group). */
+        function jeBadgeMediaTags() {
+            var tab = document.getElementById('media-tags');
+            if (!tab) return;
+            Object.keys(_jeMtNewSettings).forEach(function(id) {
+                var row = tab.querySelector('[data-field-row="' + id + '"]');
+                var host = row && row.querySelector('[data-je-label], .je-ta-switch-name');
+                if (!host || host.querySelector(':scope > .je-new-badge')) return;
+                jeAppendNewBadge(host, _jeMtNewSettings[id]);
+            });
+        }
+
+        function jeWatchMediaTagsBadges(newSettings) {
+            _jeMtNewSettings = newSettings || {};
+            var tab = document.getElementById('media-tags');
+            if (!tab) return;
+            if (!_jeMtBadgeObserver) {
+                var queued = false;
+                _jeMtBadgeObserver = new MutationObserver(function() {
+                    if (queued) return;
+                    queued = true;
+                    requestAnimationFrame(function() { queued = false; jeBadgeMediaTags(); });
+                });
+                _jeMtBadgeObserver.observe(tab, { childList: true, subtree: true });
+            }
+            jeBadgeMediaTags();
+        }
+
         function jeAppendNewBadge(container, version) {
             if (!container) return;
             var badge = document.createElement('span');
@@ -5675,6 +5786,7 @@
         /** When a whole fieldset (or expander) is new, badge just its legend (or summary) instead of every control inside it. Each badge uses its own setting's first-detected version. */
         function renderWhatsNewBadges(perSetting) {
             document.querySelectorAll('.je-new-badge').forEach(function(b) { b.remove(); });
+            jeBadgeMediaTags();
             var newIdSet = new Set(perSetting.map(function(f) { return f.id; }));
             var versionById = new Map(perSetting.map(function(f) { return [f.id, f.version]; }));
 
@@ -7653,12 +7765,16 @@
                         if (el._jeRemoveTimer) clearTimeout(el._jeRemoveTimer);
                         el.remove();
                     });
-                    var ms = readMs(toastInput, 3000);
+                    // Same rule as the real toast: 0 means toasts are off, any other value is used as typed.
+                    var rawToastMs = parseInt(toastInput.value, 10);
+                    var toastMs = Number.isFinite(rawToastMs) && rawToastMs >= 0 ? Math.min(rawToastMs, 120000) : 3000;
+                    var toastOff = toastMs === 0;
+                    var ms = toastOff ? 3000 : toastMs;
                     var toast = document.createElement('div');
                     toast.className = 'je-preview-toast';
                     toast.setAttribute('role', 'status');
                     toast.setAttribute('aria-live', 'polite');
-                    toast.textContent = 'Example toast, disappears in ' + fmtSeconds(ms);
+                    toast.textContent = toastOff ? 'Toasts are turned off (0 ms). Nothing will pop up.' : 'Example toast, disappears in ' + fmtSeconds(ms);
                     document.body.appendChild(toast);
                     // Mirror real JE.toast(): slide in from the right after a tick,
                     // stay for `ms`, then slide back out by removing the .je-shown class.

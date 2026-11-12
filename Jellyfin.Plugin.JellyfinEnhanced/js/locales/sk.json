@@ -826,6 +826,7 @@
     "status_tag_season_finale": "Finále sezóny",
     "status_tag_series_finale": "Finále seriálu",
     "status_tag_complete_season": "Kompletná sezóna",
+    "status_tag_binge_ready": "Pripravené na maratón",
     "status_tag_airing_today": "Vysiela sa dnes",
     "status_tag_airs_date": "Vysiela sa {date}",
     "status_tag_returns_date": "Vracia sa {date}",

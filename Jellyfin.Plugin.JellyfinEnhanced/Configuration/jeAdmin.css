@@ -1358,6 +1358,10 @@
     margin-left: 0;
     margin-right: auto;
 }
+.jea-group > summary > .je-new-badge {
+    margin-left: 8px;
+    margin-right: auto;
+}
 /* Text field and dropdown cards are a flex column, which would stretch the badge into a
    full-width bar under the field; keep it badge-sized at the start of the row. */
 #JellyfinEnhancedPage .inputContainer > .je-new-badge,
@@ -2882,3 +2886,14 @@ div#bazarrMappingsValidationResult {
 }
 #JellyfinEnhancedPage .jellyfin-tab-button[data-je-mt-state="error"] h3::after { background: #ef5350; }
 #JellyfinEnhancedPage .je-sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* Media Tags matches in the settings search: the tab is drawn outside the form, so its hits are listed apart. */
+.je-mt-search-results { display: flex; flex-direction: column; gap: 8px; margin-top: 20px; }
+.je-mt-search-results[hidden] { display: none; }
+.je-mt-search-hit {
+    display: flex; flex-direction: column; gap: 2px; text-align: left; cursor: pointer;
+    padding: 10px 14px; border-radius: 8px; color: inherit; font: inherit;
+    background: transparent; border: 1px solid var(--je-border);
+}
+.je-mt-search-hit:hover, .je-mt-search-hit:focus-visible { border-color: var(--primary-accent-color, #00a4dc); }
+.je-mt-search-hit span { opacity: 0.7; font-size: 0.85em; }

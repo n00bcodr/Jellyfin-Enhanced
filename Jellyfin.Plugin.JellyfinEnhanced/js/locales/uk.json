@@ -826,6 +826,7 @@
     "status_tag_season_finale": "Фінал сезону",
     "status_tag_series_finale": "Фінал серіалу",
     "status_tag_complete_season": "Повний сезон",
+    "status_tag_binge_ready": "Можна дивитися запоєм",
     "status_tag_airing_today": "Виходить сьогодні",
     "status_tag_airs_date": "Вихід {date}",
     "status_tag_returns_date": "Повернення {date}",

@@ -72,8 +72,12 @@ public class TaskMetadataTests
         {
             if (request.RequestUri!.AbsolutePath == "/user")
                 return IntegrationTransport.Response(JsonSerializer.Serialize(new { rate_limit = 1000, rate_limit_remaining = remaining, rate_limit_reset = 1800000000 }));
-            batches.Add(await request.Content!.ReadAsStringAsync(ct));
-            return IntegrationTransport.Response("[]");
+            var batch = await request.Content!.ReadAsStringAsync(ct);
+            batches.Add(batch);
+            // MDBList answers each requested title (an answer that leaves one out sends it to its own lookup).
+            using var requested = JsonDocument.Parse(batch);
+            return IntegrationTransport.Response(JsonSerializer.Serialize(requested.RootElement.GetProperty("ids").EnumerateArray()
+                .Select(id => new { ids = new { tmdb = id.GetInt64() }, ratings = new[] { new { source = "imdb", score = 81 } } })));
         });
         using var service = new MdblistService(transport, f.Core.Paths.Object, f.Core.Logger);
         var task = new MdblistRatingsFetchTask(library.Object, service, f.Core.Logger);

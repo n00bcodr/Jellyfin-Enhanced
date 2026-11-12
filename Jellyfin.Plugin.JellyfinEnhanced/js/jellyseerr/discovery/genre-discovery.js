@@ -131,7 +131,7 @@
     /**
      * Resolves the TMDB genre feed ids + section title for the base.
      * @param {{id: string, signal: AbortSignal}} ctx
-     * @returns {Promise<{tvId: number|null, movieId: number|null, title: string}|null>}
+     * @returns {Promise<{tvId: number|null, movieId: number|null, title: string, name: string}|null>}
      */
     async function resolveFeeds({ id: genreId, signal }) {
         // Fetch genre info, user status and TMDB genres in parallel
@@ -154,7 +154,8 @@
         return {
             tvId: tmdbGenreIds.tv,
             movieId: tmdbGenreIds.movie,
-            title: JE.t('discovery_more_with_genre', { genre: genreInfo.name })
+            title: JE.t('discovery_more_with_genre', { genre: genreInfo.name }),
+            name: genreInfo.name
         };
     }
 

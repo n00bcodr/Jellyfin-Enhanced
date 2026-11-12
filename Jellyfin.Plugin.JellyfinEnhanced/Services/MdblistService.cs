@@ -121,6 +121,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 fetched = KeepLastGood(cached, fetched);
                 _cache[key] = fetched;
                 ScheduleDebouncedSave();
+                // Posters read the server tag cache's copy of these scores: publish a change now, not at its next reconcile.
+                if (TagSourceRatings.FromMdblist(cached) != TagSourceRatings.FromMdblist(fetched)) TagCacheService.Instance?.PublishSourceRatings(tmdbId);
                 return fetched;
             }
             finally
@@ -349,7 +351,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
         }
 
-        private async Task<MdblistCacheEntry> FetchFromMdblistAsync(string mediaType, string tmdbId, CancellationToken cancellationToken)
+        private async Task<MdblistCacheEntry> FetchFromMdblistAsync(string mediaType, string tmdbId, CancellationToken cancellationToken, bool quotaGateHeld = false)
         {
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             var apiKey = JellyfinEnhanced.Instance?.Configuration?.MdblistApiKey;
@@ -361,7 +363,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // Fail OPEN if account status is unknown (e.g. the one /user probe
             // itself failed); a defensive check layered on top of the real
             // request, not a hard requirement to proceed.
-            var status = await GetAccountStatusAsync(cancellationToken).ConfigureAwait(false);
+            var status = await GetAccountStatusCoreAsync(cancellationToken, false, null, quotaGateHeld).ConfigureAwait(false);
             if (status != null && status.RateLimitRemaining <= SafetyMargin)
             {
                 // Not a real "MDBList has no data" answer, so Confirmed=false
@@ -424,9 +426,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// sync to read from.
         ///
         /// Returns a tmdbId to parsed entry map for whichever requested ids
-        /// MDBList actually matched (an id absent from the result just has no
-        /// MDBList data, not an error). Returns null on failure (bad key,
-        /// network error, quota exhausted).
+        /// MDBList answered with scores (an absent id is not a "no match":
+        /// GetMediaBatchWithinReserveAsync asks its own lookup). Returns null
+        /// on failure (bad key, network error, quota exhausted, not a list).
         /// </summary>
         private async Task<Dictionary<string, MdblistCacheEntry>?> GetMediaBatchAsync(string mediaType, IReadOnlyList<string> tmdbIds, CancellationToken cancellationToken)
         {
@@ -483,7 +485,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         // The array item's own top-level "id" is an internal
                         // MDBList id, not the tmdb id we requested by. Match
                         // results back to our request via Ids["tmdb"] instead.
-                        if (entry.Ids.TryGetValue("tmdb", out var tmdbIdStr) && !string.IsNullOrEmpty(tmdbIdStr))
+                        // An item with no score (MDBList's batch can return
+                        // "ratings": []) is left for the title's own lookup.
+                        if (entry.Ids.TryGetValue("tmdb", out var tmdbIdStr) && !string.IsNullOrEmpty(tmdbIdStr)
+                            && entry.Ratings.Any(r => r.Source != "master" && (r.Score ?? r.Value) != null))
                         {
                             result[tmdbIdStr] = entry;
                         }
@@ -491,7 +496,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
                 else
                 {
+                    // An error body ({"error": ...}) answers for no title.
                     _logger.Warning($"[MDBList] Media batch response for {mediaType} wasn't a JSON array as expected.");
+                    return null;
                 }
 
                 return result;
@@ -542,6 +549,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
 
                 var results = await GetMediaBatchAsync(mediaType, tmdbIds, cancellationToken).ConfigureAwait(false);
+                // A title the batch answer leaves out or returns without scores is not a "no match": ask its own
+                // lookup (keyed by the request) within the same reserve. Past the reserve or after a failed lookup
+                // it is retried soon, keeping any last good scores.
+                var failed = false;
+                foreach (var id in results == null ? new List<string>() : tmdbIds.Distinct().Where(id => !results.ContainsKey(id)).ToList())
+                {
+                    var single = !failed && RemainingQuota() > Math.Max(SafetyMargin, reserve)
+                        ? await FetchFromMdblistAsync(mediaType, id, cancellationToken, quotaGateHeld: true).ConfigureAwait(false)
+                        : new MdblistCacheEntry { Found = false, Confirmed = false, FetchedAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() };
+                    failed |= !single.Confirmed;
+                    results![id] = KeepLastGood(GetCachedEntry(mediaType, id), single);
+                }
+
                 return new MdblistReservedBatch(results == null ? MdblistReservedBatchStatus.Failed : MdblistReservedBatchStatus.Sent, RemainingQuota(), results);
             }
             finally { _backgroundQuotaGate.Release(); }

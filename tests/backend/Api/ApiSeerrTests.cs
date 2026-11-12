@@ -87,6 +87,37 @@ public class ApiSeerrTests
     }
 
     [Fact]
+    public async Task AddingToTheSeerrWatchlistSendsOnlyTheTwoFieldsAsTheCallingUser()
+    {
+        using var f = new SeerrFixture();
+        f.Plugin.Plugin.Configuration.AddRequestedMediaToWatchlist = true;
+        f.Controller.Request.Headers["X-Api-User"] = "1"; // a client-supplied identity must be ignored
+        var result = await f.Controller.AddJellyseerrWatchlist(Body("{\"tmdbId\":603,\"mediaType\":\"movie\",\"title\":\"ignored\",\"extra\":true}"));
+        Assert.IsType<ContentResult>(result);
+        var call = Assert.Single(f.Calls, c => c.Method == "POST");
+        Assert.Equal("/api/v1/watchlist", call.Path);
+        Assert.Equal("27", call.User);
+        Assert.Equal("{\"tmdbId\":603,\"mediaType\":\"movie\"}", call.Body);
+    }
+
+    [Fact]
+    public async Task AddingToTheSeerrWatchlistFailsBeforeCallingSeerrWhenOffOrInvalid()
+    {
+        using var f = new SeerrFixture();
+        f.Plugin.Plugin.Configuration.AddRequestedMediaToWatchlist = false;
+        var off = Assert.IsType<BadRequestObjectResult>(await f.Controller.AddJellyseerrWatchlist(Body("{\"tmdbId\":603,\"mediaType\":\"movie\"}")));
+        Assert.Contains("watchlist_disabled", JsonSerializer.Serialize(off.Value));
+
+        f.Plugin.Plugin.Configuration.AddRequestedMediaToWatchlist = true;
+        foreach (var body in new[] { "{}", "[]", "{\"tmdbId\":0,\"mediaType\":\"movie\"}", "{\"tmdbId\":\"603\",\"mediaType\":\"movie\"}", "{\"tmdbId\":603,\"mediaType\":\"person\"}", "{\"tmdbId\":603}" })
+        {
+            var bad = Assert.IsType<BadRequestObjectResult>(await f.Controller.AddJellyseerrWatchlist(Body(body)));
+            Assert.Contains("invalid_watchlist_item", JsonSerializer.Serialize(bad.Value));
+        }
+        Assert.Empty(f.Calls);
+    }
+
+    [Fact]
     public async Task MissingRequestPermissionFailsBeforePostingAndMissingIdentityFailsBeforeLookup()
     {
         using var f = new SeerrFixture { Permissions = JellyseerrPermission.NONE };
@@ -241,6 +272,74 @@ public class ApiSeerrTests
         var write = await f.Controller.JellyseerrRequest(Body("{\"mediaType\":\"tv\",\"mediaId\":333,\"seasons\":[1]}"));
         Assert.IsType<ContentResult>(write);
         Assert.Single(f.Calls, c => c.Method == "POST");
+    }
+
+    [Theory]
+    [InlineData(nameof(JellyfinEnhancedController.GetSeerrFilterLanguages), "jellyseerr/filters/languages")]
+    [InlineData(nameof(JellyfinEnhancedController.GetSeerrFilterCertifications), "jellyseerr/filters/certifications/{mediaType}")]
+    [InlineData(nameof(JellyfinEnhancedController.GetSeerrFilterWatchProviders), "jellyseerr/filters/watchproviders/{mediaType}")]
+    public void DiscoveryFilterListsNeedASignedInUser(string method, string route)
+    {
+        var action = typeof(JellyfinEnhancedController).GetMethod(method)!;
+        Assert.Equal(route, Assert.Single(action.GetCustomAttributes(typeof(HttpGetAttribute), false).Cast<HttpGetAttribute>()).Template);
+        Assert.Single(action.GetCustomAttributes(typeof(Microsoft.AspNetCore.Authorization.AuthorizeAttribute), false));
+    }
+
+    [Fact]
+    public async Task DiscoveryFilterListsAskSeerrOnlyForAKnownTypeAndRegion()
+    {
+        using var f = new SeerrFixture();
+        f.Reply = _ => IntegrationTransport.Response("[]");
+        f.Plugin.Plugin.Configuration.DEFAULT_REGION = " gb ";
+        Assert.IsType<ContentResult>(await f.Controller.GetSeerrFilterLanguages());
+        Assert.IsType<ContentResult>(await f.Controller.GetSeerrFilterCertifications("movie"));
+        Assert.IsType<ContentResult>(await f.Controller.GetSeerrFilterWatchProviders("tv", "AU"));
+        // No region sent: the admin's Default Region, made valid.
+        Assert.IsType<ContentResult>(await f.Controller.GetSeerrFilterWatchProviders("movie"));
+        Assert.Equal(new[] { "/api/v1/languages", "/api/v1/certifications/movie", "/api/v1/watchproviders/tv?watchRegion=AU", "/api/v1/watchproviders/movies?watchRegion=GB" },
+            f.Calls.Where(c => !c.Path.StartsWith("/api/v1/user?", StringComparison.Ordinal)).Select(c => c.Path).ToArray());
+        var before = f.Calls.Count;
+        // Denied: anything else is refused before Seerr is asked.
+        foreach (var type in new[] { "person", "../settings", "MOVIE", "" })
+        {
+            Assert.IsType<BadRequestObjectResult>(await f.Controller.GetSeerrFilterCertifications(type));
+            Assert.IsType<BadRequestObjectResult>(await f.Controller.GetSeerrFilterWatchProviders(type, "US"));
+        }
+        foreach (var region in new[] { "us", "USA", "U", "US&page=2", "../" })
+        {
+            Assert.IsType<BadRequestObjectResult>(await f.Controller.GetSeerrFilterWatchProviders("movie", region));
+        }
+        Assert.Equal(before, f.Calls.Count);
+    }
+
+    [Fact]
+    public async Task ADiscoverFeedPassesOnTheFiltersSeerrTakesAndJoinsItsOwnGenre()
+    {
+        using var f = new SeerrFixture();
+        f.Reply = _ => IntegrationTransport.Response("{\"page\":1,\"totalPages\":1,\"results\":[]}");
+        f.Controller.Request.QueryString = new Microsoft.AspNetCore.Http.QueryString("?page=4&genre=35&voteCountGte=100&excludeKeywords=9715&withCompanies=1");
+        await f.Controller.DiscoverTvByGenre(16);
+        Assert.Contains(f.Calls, c => c.Path == "/api/v1/discover/tv?page=1&genre=16%2C35&voteCountGte=100&excludeKeywords=9715");
+    }
+
+    [Fact]
+    public async Task SeriesByStudioAskTmdbWithTheFiltersUnderTmdbsNames()
+    {
+        var asked = new ConcurrentQueue<string>();
+        using var tmdb = new TmdbResponseCache(new IntegrationTransport((request, _) =>
+        {
+            asked.Enqueue(request.RequestUri!.PathAndQuery);
+            return Task.FromResult(IntegrationTransport.Response("{\"page\":1,\"total_pages\":1,\"total_results\":0,\"results\":[]}"));
+        }), TimeProvider.System);
+        using var f = new SeerrFixture((_, _) => [tmdb]);
+        f.Plugin.Plugin.Configuration.TMDB_API_KEY = "tmdb-secret";
+        f.Controller.Request.QueryString = new Microsoft.AspNetCore.Http.QueryString("?firstAirDateGte=2000-01-01&genre=16&voteAverageGte=8;drop&watchRegion=usa");
+        Assert.IsType<ContentResult>(await f.Controller.DiscoverTvByStudio(3, 1, "vote_count.desc"));
+        var query = Assert.Single(asked);
+        Assert.Contains("with_companies=3&page=1&sort_by=vote_count.desc&first_air_date.gte=2000-01-01&with_genres=16", query);
+        // A value not of its parameter's shape never reaches TMDB.
+        Assert.DoesNotContain("vote_average", query);
+        Assert.DoesNotContain("watch_region", query);
     }
 
     private const string TmdbBody = "{\"id\":603,\"title\":\"Film\",\"overview\":\"Secret plot\"}";

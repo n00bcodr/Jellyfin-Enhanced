@@ -826,6 +826,7 @@
     "status_tag_season_finale": "גמר עונה",
     "status_tag_series_finale": "גמר סדרה",
     "status_tag_complete_season": "עונה מלאה",
+    "status_tag_binge_ready": "מוכן לצפייה רציפה",
     "status_tag_airing_today": "משודר היום",
     "status_tag_airs_date": "משודר {date}",
     "status_tag_returns_date": "חוזר {date}",

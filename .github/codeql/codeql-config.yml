@@ -8,3 +8,18 @@ query-filters:
   - exclude:
       problem.severity:
         - recommendation
+
+  # Code-quality warnings that only produce false positives here:
+  # - cs/useless-upcast: casts from `dynamic` fix the static type of anonymous
+  #   object / tuple members, so they are not useless.
+  # - cs/local-not-disposed: timers are swapped into a field with
+  #   Interlocked.Exchange and the previous one is disposed right after.
+  # - cs/constant-condition: misfires on nullable query parameters.
+  # - js/missing-await: flags promise comparisons in `finally` blocks that
+  #   follow an await.
+  - exclude:
+      id:
+        - cs/useless-upcast
+        - cs/local-not-disposed
+        - cs/constant-condition
+        - js/missing-await

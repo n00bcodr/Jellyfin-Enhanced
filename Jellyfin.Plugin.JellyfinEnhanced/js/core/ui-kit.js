@@ -72,10 +72,13 @@
      * NOTE: renders via innerHTML — escape user-controlled content with
      * JE.core.ui.escapeHtml before passing it in.
      * @param {string} html The (already localized/escaped) content to display.
-     * @param {number} [duration] How long to show the toast, in ms.
+     * @param {number} [duration] How long to show the toast, in ms (default: the Toast Notification Duration setting; 0 there turns toasts off).
      */
     function toast(html, duration) {
-        const ms = duration ?? ((JE.CONFIG && JE.CONFIG.TOAST_DURATION) || 1500);
+        const configured = JE.CONFIG ? JE.CONFIG.TOAST_DURATION : 1500;
+        // A duration of 0 in the plugin settings turns toasts off.
+        if (configured === 0) return;
+        const ms = duration ?? configured;
 
         // Use the theme system to get appropriate colors
         const themeVars = JE.themer?.getThemeVariables() || {};

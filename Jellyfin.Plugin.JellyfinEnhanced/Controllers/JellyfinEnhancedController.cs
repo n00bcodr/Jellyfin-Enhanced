@@ -648,32 +648,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return jellyseerrUserId;
         }
 
-        // Seerr's discover API accepts these params (verified live against
-        // Seerr 3.2.0). The correct names are `keywords`, `watchProviders`,
-        // `watchRegion` — no `with*` prefix; Seerr rejects `withCompanies`
-        // / `withNetworks` / `withOriginalLanguage` as `Unknown query parameter`.
-        // `studio` and `network` are accepted on /discover/movies and
-        // /discover/tv respectively (handled via path routes).
-        private static readonly string[] DiscoverFilterParams = {
-            "sortBy", "primaryReleaseDateGte", "primaryReleaseDateLte",
-            "firstAirDateGte", "firstAirDateLte",
-            "voteAverageGte", "voteAverageLte",
-            "withRuntimeGte", "withRuntimeLte",
-            "certification", "watchRegion", "language",
-            "keywords", "watchProviders"
-        };
-
+        /// <summary>Adds the request's discover filters to a Seerr path (see <see cref="Services.DiscoverFilters"/>).</summary>
         private string AppendDiscoverFilters(string basePath)
         {
-            var sb = new StringBuilder(basePath);
-            foreach (var param in DiscoverFilterParams)
-            {
-                if (Request.Query.TryGetValue(param, out var value) && !string.IsNullOrEmpty(value))
-                {
-                    sb.Append($"&{param}={Uri.EscapeDataString(value!)}");
-                }
-            }
-            return sb.ToString();
+            return Services.DiscoverFilters.AppendToSeerrPath(basePath, ReadQueryValue);
+        }
+
+        /// <summary>The request's query value for <paramref name="name"/>, or null when it has none.</summary>
+        private string? ReadQueryValue(string name)
+        {
+            return Request.Query.TryGetValue(name, out var value) ? value.ToString() : null;
         }
 
         private static bool IsCacheableApiPath(string apiPath, HttpMethod method)
@@ -2369,6 +2353,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 query += $"&sort_by={sortBy}";
             }
+            // The filters the Seerr-fed feeds take, under TMDB's names.
+            query += Services.DiscoverFilters.ToTmdbTvQuery(ReadQueryValue);
 
             try
             {
@@ -3132,6 +3118,50 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return ProxyJellyseerrRequest("/api/v1/genres/tv", HttpMethod.Get);
         }
 
+        // The lists the discovery filters offer, from Seerr (which reads them from
+        // TMDB). None of them carries a title.
+        /// <summary>The languages the discovery filters offer (Seerr's <c>/api/v1/languages</c>).</summary>
+        [HttpGet("jellyseerr/filters/languages")]
+        [Authorize]
+        public Task<IActionResult> GetSeerrFilterLanguages()
+        {
+            return ProxyJellyseerrRequest("/api/v1/languages", HttpMethod.Get);
+        }
+
+        /// <summary>The content ratings for movies or series (<paramref name="mediaType"/> is <c>movie</c> or <c>tv</c>).</summary>
+        [HttpGet("jellyseerr/filters/certifications/{mediaType}")]
+        [Authorize]
+        public Task<IActionResult> GetSeerrFilterCertifications(string mediaType)
+        {
+            if (mediaType != "movie" && mediaType != "tv")
+            {
+                return Task.FromResult<IActionResult>(BadRequest(new { error = true, code = "invalid_media_type", message = "mediaType must be movie or tv." }));
+            }
+            return ProxyJellyseerrRequest($"/api/v1/certifications/{mediaType}", HttpMethod.Get);
+        }
+
+        /// <summary>
+        /// The streaming services for movies or series in a region: <paramref name="watchRegion"/>,
+        /// or the admin's DEFAULT_REGION when none is sent.
+        /// </summary>
+        [HttpGet("jellyseerr/filters/watchproviders/{mediaType}")]
+        [Authorize]
+        public Task<IActionResult> GetSeerrFilterWatchProviders(string mediaType, [FromQuery] string? watchRegion = null)
+        {
+            if (mediaType != "movie" && mediaType != "tv")
+            {
+                return Task.FromResult<IActionResult>(BadRequest(new { error = true, code = "invalid_media_type", message = "mediaType must be movie or tv." }));
+            }
+            var region = string.IsNullOrEmpty(watchRegion)
+                ? Services.WatchProvidersBatch.DefaultRegion(JellyfinEnhanced.Instance?.Configuration?.DEFAULT_REGION)
+                : watchRegion;
+            if (!Services.WatchProvidersBatch.IsValidRegion(region))
+            {
+                return Task.FromResult<IActionResult>(BadRequest(new { error = true, code = "invalid_region", message = "watchRegion must be a two-letter region code." }));
+            }
+            return ProxyJellyseerrRequest($"/api/v1/watchproviders/{(mediaType == "movie" ? "movies" : "tv")}?watchRegion={region}", HttpMethod.Get);
+        }
+
         [HttpGet("jellyseerr/discover/genreslider/movie")]
         [Authorize]
         public Task<IActionResult> GetMovieGenreSlider()
@@ -3224,6 +3254,36 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // calls work.
             if (page < 1) page = 1;
             return ProxyJellyseerrRequest($"/api/v1/discover/watchlist?page={page}", HttpMethod.Get);
+        }
+
+        // Puts one title on the calling user's Seerr watchlist. The browser calls it right after a
+        // request when "Requested media goes on the requester's watchlist" is on. The Jellyfin
+        // watchlist is filled later by WatchlistMonitor, when the title reaches the library.
+        [HttpPost("jellyseerr/watchlist")]
+        [Authorize]
+        public Task<IActionResult> AddJellyseerrWatchlist([FromBody] JsonElement requestBody)
+        {
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null || !config.JellyseerrEnabled || !config.AddRequestedMediaToWatchlist)
+            {
+                return Task.FromResult<IActionResult>(BadRequest(new { error = true, code = "watchlist_disabled", message = "Adding requested media to the watchlist is turned off." }));
+            }
+
+            var tmdbId = 0;
+            string? mediaType = null;
+            if (requestBody.ValueKind == JsonValueKind.Object)
+            {
+                if (requestBody.TryGetProperty("tmdbId", out var idElement) && idElement.ValueKind == JsonValueKind.Number) idElement.TryGetInt32(out tmdbId);
+                if (requestBody.TryGetProperty("mediaType", out var typeElement) && typeElement.ValueKind == JsonValueKind.String) mediaType = typeElement.GetString();
+            }
+
+            if (tmdbId <= 0 || (mediaType != "movie" && mediaType != "tv"))
+            {
+                return Task.FromResult<IActionResult>(BadRequest(new { error = true, code = "invalid_watchlist_item", message = "tmdbId and a mediaType of 'movie' or 'tv' are required." }));
+            }
+
+            // Only the two validated fields are forwarded; Seerr answers 500 to an unknown mediaType.
+            return ProxyJellyseerrRequest("/api/v1/watchlist", HttpMethod.Post, JsonSerializer.Serialize(new { tmdbId, mediaType }));
         }
 
         [HttpPost("jellyseerr/sync-watchlist")]
@@ -4007,6 +4067,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.StatusTagsLeaving,
                 config.StatusTagsDirectPlay,
                 LeavingSoonAvailable = Services.LeavingSoonService.Configured(config),
+                config.StatusTagsOnCollections,
                 config.StatusTagsJustAddedDays,
                 config.StatusTagsNewReleaseDays,
                 // Poster tag layout starting defaults (normalized; null = built-in)
@@ -4056,6 +4117,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.JellyseerrShowRecommended,
                 config.JellyseerrShowRequestMoreOnSeries,
                 config.JellyseerrShowNetworkDiscovery,
+                config.JellyseerrFilterYear,
+                config.JellyseerrFilterScore,
+                config.JellyseerrFilterVotes,
+                config.JellyseerrFilterRuntime,
+                config.JellyseerrFilterGenres,
+                config.JellyseerrFilterLanguage,
+                config.JellyseerrFilterContentRating,
+                config.JellyseerrFilterStreaming,
+                config.JellyseerrFilterKeywords,
+                config.JellyseerrFilterRole,
                 config.JellyseerrShowGenreDiscovery,
                 config.JellyseerrShowTagDiscovery,
                 config.JellyseerrShowPersonDiscovery,
@@ -9787,6 +9858,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var factsNow = DateTime.UtcNow;
             (long? LatestAdded, Services.StatusTagsEpisodeFacts? Facts) TagDataEpisodeFacts(BaseItem tagItem)
             {
+                // A collection: its newest member this user can see ("Just Added" reads it instead of
+                // the collection's own DateCreated, which a library scan can reset).
+                if (latestEpisode && tagItem is MediaBrowser.Controller.Entities.Movies.BoxSet tagCollection)
+                {
+                    if (episodeFactsMemo.TryGetValue(tagItem.Id, out var collectionMemo)) return collectionMemo;
+                    long? newestMember = null;
+                    try
+                    {
+                        foreach (var member in ((Folder)tagCollection).GetChildren(user, true))
+                        {
+                            if (!Services.TagCacheService.IsDatedCollectionMember(member)) continue;
+                            if (Services.TagCacheService.ToUnixMilliseconds(member.DateCreated) is { } added && (newestMember == null || added > newestMember)) newestMember = added;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        // One unreadable collection must not fail the batch: it just shows no badge.
+                        _logger.Warning($"[TagData] Failed to read the members of collection {tagItem.Id}: {ex.Message}");
+                        newestMember = null;
+                    }
+
+                    return episodeFactsMemo[tagItem.Id] = (newestMember, null);
+                }
+
                 if (!latestEpisode || tagItem is not (MediaBrowser.Controller.Entities.TV.Series or MediaBrowser.Controller.Entities.TV.Season))
                 {
                     return (null, null);

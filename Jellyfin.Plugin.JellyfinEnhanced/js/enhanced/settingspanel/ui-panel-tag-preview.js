@@ -180,7 +180,7 @@
                 break;
             case 'rating':
                 for (const fact of JE.ratingSources.resolve(sample.rating.community, sample.rating.critic?.replace('%', ''),
-                    { imdb: 8.1, tmdb: 81, rtCritic: 92, rtAudience: 88, metacritic: 74, letterboxd: 4.1, trakt: 85 })) {
+                    { imdb: 8.1, tmdb: 81, rtCritic: 92, rtAudience: 88, metacritic: 74, letterboxd: 4.1, trakt: 85, myAnimeList: 8.4, aniList: 82, metacriticUser: 7.9, rogerEbert: 3.5, mdblist: 78 })) {
                     wrap.appendChild(JE.ratingSources.chip(fact));
                 }
                 break;

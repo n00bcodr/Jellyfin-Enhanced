@@ -850,8 +850,12 @@
                 const selectedSource = mediaSourceId && Array.isArray(mediaSources)
                     ? mediaSources.find(source => source.Id === mediaSourceId)
                     : null;
-                if (selectedSource) {
+                if (selectedSource?.MediaStreams) {
                     collectAudioLanguages(selectedSource.MediaStreams);
+                } else if (selectedSource) {
+                    // /tag-data lists each MediaSource by Id only and puts the
+                    // streams of the requested source on the top level.
+                    collectAudioLanguages(sourceItem?.MediaStreams);
                 } else {
                     collectAudioLanguages(sourceItem?.MediaStreams);
                     mediaSources?.forEach(source => {

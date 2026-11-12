@@ -826,6 +826,7 @@
     "status_tag_season_finale": "Sezon Finali",
     "status_tag_series_finale": "Dizi Finali",
     "status_tag_complete_season": "Tamamlanan Sezon",
+    "status_tag_binge_ready": "Peş peşe izlemeye hazır",
     "status_tag_airing_today": "Bugün Yayında",
     "status_tag_airs_date": "Yayın: {date}",
     "status_tag_returns_date": "Dönüş: {date}",

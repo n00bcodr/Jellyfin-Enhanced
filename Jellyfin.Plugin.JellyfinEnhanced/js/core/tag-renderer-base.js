@@ -48,7 +48,7 @@
      * @property {Function} [renderFromServerCache] - (ctx, el, entry, itemId) => void.
      * @property {Function} [onServerCacheRefresh] - (ctx, updatedIds|null, info?) => void;
      *   info.replaced is true when the pipeline swapped in a replacement cache
-     *   under cards it will not re-render itself.
+     *   before releasing the affected cards for a fresh scan.
      * @property {Function} [cleanup] - (ctx) => void; release feature resources on reinitialize/teardown.
      * @property {boolean} [needsFirstEpisode]
      * @property {boolean} [needsParentSeries]
