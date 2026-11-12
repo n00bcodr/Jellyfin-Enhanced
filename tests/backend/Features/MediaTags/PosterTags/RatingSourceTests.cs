@@ -470,7 +470,8 @@ public class RatingSourceTests
         cache.BuildFullCache(null, default);
         cache.WarmSourceRatingsForItems([movie], default);
         cache.BuildEntryOnDemand(movie);
-        Assert.Equal(fetches ? 2 : 0, requests);
+        // Status, the batch, and the title's own lookup: the batch answer ("[]") left it out.
+        Assert.Equal(fetches ? 3 : 0, requests);
         if (!fetches)
         {
             f.Plugin.Configuration.RatingTagsEnabled = true;

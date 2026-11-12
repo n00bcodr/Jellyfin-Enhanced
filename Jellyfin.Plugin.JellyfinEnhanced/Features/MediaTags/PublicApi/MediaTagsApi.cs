@@ -20,6 +20,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.PublicApi
 
             /// <summary><c>TagCacheService.Instance?.RefreshRatingSourceAvailability()</c>.</summary>
             public static void RefreshRatingSourceAvailability() => TagCacheService.Instance?.RefreshRatingSourceAvailability();
+
+            /// <summary><c>TagCacheService.Instance?.PublishSourceRatings(tmdbId)</c>.</summary>
+            public static void PublishSourceRatings(string tmdbId) => TagCacheService.Instance?.PublishSourceRatings(tmdbId);
         }
 
         /// <summary>Forwards to the static <see cref="PosterTags.NativeClientPolicy"/> members other features read.</summary>
