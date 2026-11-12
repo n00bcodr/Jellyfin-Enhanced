@@ -1235,6 +1235,43 @@
         return text + (audio && keepChannels ? ` ${audio[2]}` : '');
     }
 
+    // Community, critic and user-review rating chips by their class (named sources carry data-je-rating-source).
+    const RATING_CHIP_LABELS = [['rating-tag-tmdb', 'community'], ['rating-tag-critic', 'critic'], ['rating-tag-userreview', 'userReview']];
+
+    /**
+     * Whether a chip is hidden (Hidden tags, JE.core.tagHidden): its Tag Styles label, read from the
+     * attributes the colours match it by, is on its group's list. Languages and logos are dropped by their
+     * renderers before their grouping and limit; a language chip is checked here only for its kind.
+     * @param {string} group
+     * @param {HTMLElement} chip - A child of the group's display copy.
+     * @returns {boolean}
+     */
+    function isHiddenChip(group, chip) {
+        const H = JE.core.tagHidden;
+        if (!H?.any(group)) return false;
+        switch (group) {
+            case 'quality': return H.hides(group, chip.dataset.quality);
+            case 'genre': return H.hides(group, chip.dataset.jeGenre);
+            case 'status': return H.hides(group, chip.dataset.jeStatus);
+            case 'awards': return H.hides(group, chip.dataset.jeAward);
+            case 'custom': return H.hides(group, chip.dataset.jeCustom);
+            case 'logos': return H.hides(group, chip.dataset.jeLogoStyle);
+            case 'ageRating': return H.hidesAgeRating(chip.querySelector('[rating]')?.getAttribute('rating') ?? chip.getAttribute('rating'));
+            case 'rating': {
+                const own = chip.dataset.jeRatingSource || chip.querySelector('[data-je-rating-source]')?.getAttribute('data-je-rating-source');
+                const label = own || RATING_CHIP_LABELS.find(([cls]) => chip.classList.contains(cls))?.[1];
+                return H.hides(group, label);
+            }
+            case 'language': {
+                const kind = chip.dataset.jeLanguage;
+                if (kind === 'subtitles') return H.hides(group, 'subtitles');
+                if (kind === 'countBadge') return H.hides(group, 'countBadge') || H.hides(group, chip.dataset.jeLanguageLabel);
+                return false;
+            }
+            default: return false;
+        }
+    }
+
     /**
      * Apply density and the cap to a group copy in place: compact shortens
      * quality and status labels and drops the critic chip next to a community score;
@@ -1244,6 +1281,10 @@
      * @param {TagLayoutSettings} conf
      */
     function applyDensityAndCap(group, node, conf) {
+        // Hidden tags leave first, so the next chips take their places within the limit.
+        for (const chip of Array.from(node.children)) {
+            if (isHiddenChip(group, /** @type {HTMLElement} */ (chip))) chip.remove();
+        }
         if (conf.density === 'compact') {
             if (group === 'quality') {
                 for (const chip of node.querySelectorAll('.quality-overlay-label')) {

@@ -1,0 +1,21 @@
+{
+  "description": "Hidden tags (#1043): the Tag Styles label a chip is hidden by. The web (genretags.js data-je-genre, qualitytags.js data-quality, languagetags.js canonical codes) and native posters (TagHiddenRules.GenreLabel / QualityLabel / LanguageLabel) must agree on every row.",
+  "cases": [
+    ["genre", "Drama", "drama"],
+    ["genre", "Drame", "drama"],
+    ["genre", "Драма", "drama"],
+    ["genre", "Science Fiction", "science fiction"],
+    ["genre", "Sci-Fi", "science fiction"],
+    ["genre", "Reality", "other"],
+    ["genre", "Talk", "other"],
+    ["quality", "Dolby Digital+ 5.1", "Dolby Digital+"],
+    ["quality", "TRUEHD ATMOS 7.1", "TRUEHD ATMOS"],
+    ["quality", "HEVC", "HEVC"],
+    ["quality", "4K", "4K"],
+    ["language", "eng", "en"],
+    ["language", "en-GB", "en"],
+    ["language", "jpn", "ja"],
+    ["language", "tgl", "fil"],
+    ["language", "nob", "no"]
+  ]
+}
