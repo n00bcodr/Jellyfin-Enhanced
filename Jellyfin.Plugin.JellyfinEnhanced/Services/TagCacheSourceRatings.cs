@@ -300,8 +300,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 Math.Max(MdblistService.SafetyMargin, config.MdblistFetchReserve), null, cancellationToken).GetAwaiter().GetResult();
         }
 
-        /// <summary>Publish changed source facts under the caller's rebuild lock, including the reader mutation scope.</summary>
-        private void RefreshSourceRatings()
+        /// <summary>
+        /// A details-page lookup changed one title's MDBList scores: publish them to its entries now. Never waits:
+        /// while a build or reconcile holds the lock, the next reconcile publishes them.
+        /// </summary>
+        internal void PublishSourceRatings(string tmdbId)
+        {
+            if (_disposed || !_rebuildLock.Wait(0)) return;
+            try { RefreshSourceRatings(tmdbId); }
+            finally { _rebuildLock.Release(); }
+        }
+
+        /// <summary>Publish changed source facts (of every title, or of one TMDB id) under the caller's rebuild lock, including the reader mutation scope.</summary>
+        private void RefreshSourceRatings(string? onlyTmdbId = null)
         {
             using var writes = BeginInPlaceWrites();
             var changed = false;
@@ -309,6 +320,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 var entry = pair.Value;
                 var id = entry.Type is "Season" or "Episode" ? entry.SeriesTmdbId : entry.TmdbId;
+                if (onlyTmdbId != null && id != onlyTmdbId) continue;
                 var ratings = entry.Type is not ("Movie" or "Series" or "Season" or "Episode")
                     || !SourceRatingsConfigured || id == null || _mdblistService == null
                     ? null : TagSourceRatings.FromMdblist(_mdblistService.GetCachedEntry(entry.Type == "Movie" ? "movie" : "tv", id));
