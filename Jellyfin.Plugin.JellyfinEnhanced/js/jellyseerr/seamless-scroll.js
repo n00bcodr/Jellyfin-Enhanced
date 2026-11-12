@@ -259,59 +259,45 @@
          * Shows an action row (retry after failures, or "keep looking" once the
          * empty-page budget is spent). In a horizontal row it sits inline at the
          * end of the track so it is where the viewer is looking.
-         * @param {string|null} [label] - Text label; omit for an icon-only
-         *   button (avoids needing a new translated string).
-         * @param {string|null} [icon] - Material icon ligature shown instead
-         *   of (or in the absence of) the text label.
+         * @param {'failed'|'further'} [kind='failed'] - 'failed': says Seerr did
+         *   not answer, with a button to try again; 'further': an icon-only button
+         *   to look for more.
          */
-        const showRetryRow = (label = 'Tap to retry', icon = null) => {
+        const showRetryRow = (kind = 'failed') => {
             if (retryRow) return;
+            /**
+             * @param {string} key - Locale key
+             * @param {string} fallback - English text
+             * @returns {string}
+             */
+            const text = (key, fallback) => {
+                const value = typeof JE.t === 'function' ? JE.t(key) : '';
+                return value && value !== key ? value : fallback;
+            };
 
             retryRow = document.createElement('div');
-            retryRow.className = 'je-retry-row';
-            retryRow.style.cssText = horizontal ? `
-                display: inline-flex;
-                justify-content: center;
-                align-items: center;
-                vertical-align: middle;
-                padding: 1em 1.5em;
-                box-sizing: border-box;
-            ` : `
-                display: flex;
-                justify-content: center;
-                align-items: center;
-                padding: 1.5em;
-                width: 100%;
-                box-sizing: border-box;
-            `;
+            // Jellyfin's own button, on a line that says what happened (styled with the Seerr sections).
+            retryRow.className = `je-retry-row jellyseerr-section-message${horizontal ? ' jellyseerr-section-message-inline' : ''}`;
+            retryRow.setAttribute('role', 'status');
 
             const retryButton = document.createElement('button');
             retryButton.type = 'button';
-            if (label) {
+            retryButton.className = 'raised emby-button jellyseerr-section-message-action';
+            if (kind === 'failed') {
+                const message = document.createElement('span');
+                message.textContent = text('discovery_load_failed', 'Seerr did not answer.');
+                retryRow.appendChild(message);
+                retryButton.textContent = text('discovery_retry', 'Try again');
+            } else {
+                const label = text('discovery_look_further', 'Look for more');
                 retryButton.title = label;
                 retryButton.setAttribute('aria-label', label);
-            }
-            if (icon) {
                 const iconEl = document.createElement('span');
                 iconEl.className = 'material-icons';
-                iconEl.textContent = icon;
+                iconEl.textContent = 'refresh';
                 iconEl.setAttribute('aria-hidden', 'true');
                 retryButton.appendChild(iconEl);
-            } else {
-                retryButton.textContent = label;
             }
-            retryButton.style.cssText = `
-                padding: 0.8em 1.5em;
-                border-radius: 4px;
-                background: rgba(255,255,255,0.1);
-                color: rgba(255,255,255,0.8);
-                border: 1px solid rgba(255,255,255,0.2);
-                cursor: pointer;
-                font-size: 1em;
-                display: inline-flex;
-                align-items: center;
-                justify-content: center;
-            `;
 
             retryButton.addEventListener('click', () => {
                 retryCount = 0;
@@ -444,7 +430,7 @@
                     if (emptyPages >= CONFIG.maxConsecutiveEmptyPages) {
                         console.debug(`${logPrefix} ${emptyPages} consecutive pages rendered nothing; pausing until "Keep looking" is pressed`);
                         paused = true;
-                        showRetryRow(null, 'refresh');
+                        showRetryRow('further');
                         break;
                     }
                     if (lastMeasuredAhead !== null && g.ahead <= lastMeasuredAhead + 1) {
@@ -452,7 +438,7 @@
                         if (stuckFills >= CONFIG.maxStuckFills) {
                             console.warn(`${logPrefix} Buffer measurement hasn't grown after ${stuckFills} loads despite non-empty pages; pausing to avoid a runaway fetch loop`);
                             paused = true;
-                            showRetryRow(null, 'refresh');
+                            showRetryRow('further');
                             break;
                         }
                     } else {

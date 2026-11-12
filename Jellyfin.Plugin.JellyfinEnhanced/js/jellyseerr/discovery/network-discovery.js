@@ -203,7 +203,7 @@
      * series by network), so the base can show the All / Movies / Series
      * control. `tvSource` tells buildDiscoverPath how to read tvId.
      * @param {{id: string, signal: AbortSignal}} ctx
-     * @returns {Promise<{tvId: number|null, movieId: number|null, tvSource: 'network'|'company', title: string}|null>}
+     * @returns {Promise<{tvId: number|null, movieId: number|null, tvSource: 'network'|'company', title: string, name: string}|null>}
      */
     async function resolveFeeds({ id: studioId, signal }) {
         const studioInfoPromise = getStudioInfo(studioId, signal);
@@ -236,7 +236,8 @@
             tvId: tvNetworkId || (tvByCompany ? companyId : null),
             movieId: companyId,
             tvSource: tvNetworkId ? 'network' : 'company',
-            title: JE.t('discovery_more_from_studio', { studio: studioInfo.name })
+            title: JE.t('discovery_more_from_studio', { studio: studioInfo.name }),
+            name: studioInfo.name
         };
     }
 

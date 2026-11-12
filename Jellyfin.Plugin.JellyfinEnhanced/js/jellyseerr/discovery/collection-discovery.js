@@ -83,27 +83,46 @@
     }
 
     /**
+     * A translated string, in English where the key has no translation, with its {placeholders} filled.
+     * @param {string} key - Locale key
+     * @param {string} fallback - English text
+     * @param {Object<string, (string|number)>} [values] - Placeholder values
+     * @returns {string}
+     */
+    function label(key, fallback, values) {
+        const text = typeof JE.t === 'function' ? JE.t(key, values) : '';
+        let said = text && text !== key ? text : fallback;
+        for (const [name, value] of Object.entries(values ?? {})) said = said.replace(`{${name}}`, String(value));
+        return said;
+    }
+
+    /**
      * Creates the section container for missing collection movies
      * @param {string} title - Section heading text
+     * @param {string} goTo - The words of the line that goes to this section when it starts below the first screen
      * @returns {HTMLElement} The section element
      */
-    function createSectionContainer(title) {
+    function createSectionContainer(title, goTo) {
+        const header = document.createElement('div');
+        header.className = 'jellyseerr-discovery-header';
+        // The words of the line that goes to this section when it starts below the first screen.
+        header.setAttribute('data-jump-label', goTo);
+        const heading = document.createElement('h2');
+        heading.className = 'sectionTitle sectionTitle-cards';
+        heading.textContent = title;
+        header.appendChild(heading);
+        if (JE.discoverySection?.buildSection) {
+            return JE.discoverySection.buildSection({ key: 'collection', page: 'detail', header });
+        }
+        // (Without the section module: the same parts, with no join.)
         const section = document.createElement('div');
-        section.className = 'verticalSection jellyseerr-collection-discovery-section';
+        section.className = 'verticalSection jellyseerr-collection-discovery-section jellyseerr-discovery-section detailVerticalSection';
         section.setAttribute('data-jellyseerr-collection-discovery', 'true');
-        section.style.cssText = 'margin-top:2em;padding-top:1em;border-top:1px solid rgba(255,255,255,0.1)';
-
-        const titleElement = document.createElement('h2');
-        titleElement.className = 'sectionTitle sectionTitle-cards padded-left';
-        titleElement.textContent = title;
-        titleElement.style.marginBottom = '0.5em';
-        section.appendChild(titleElement);
-
+        section.appendChild(header);
         const itemsContainer = document.createElement('div');
         itemsContainer.setAttribute('is', 'emby-itemscontainer');
-        itemsContainer.className = 'itemsContainer padded-right vertical-wrap';
+        itemsContainer.className = 'itemsContainer vertical-wrap';
         section.appendChild(itemsContainer);
-
         return section;
     }
 
@@ -186,9 +205,10 @@
         // Build section title
         const totalInCollection = collectionDetails.parts.length;
         const availableCount = totalInCollection - missingMovies.length;
-        const sectionTitle = `Missing from ${boxsetInfo.name} (${availableCount}/${totalInCollection})`;
+        const sectionTitle = label('discovery_missing_from_collection', 'Missing from {collection} ({available}/{total})',
+            { collection: boxsetInfo.name, available: availableCount, total: totalInCollection });
 
-        const section = createSectionContainer(sectionTitle);
+        const section = createSectionContainer(sectionTitle, label('discovery_go_to', 'Go to {title}', { title: sectionTitle }));
         const itemsContainer = section.querySelector('.itemsContainer');
 
         // Create cards using the same shared card renderer as all other discovery modules
@@ -200,7 +220,8 @@
 
         itemsContainer.appendChild(fragment);
 
-        detailSection.appendChild(section);
+        if (JE.discoverySection?.placeSection) JE.discoverySection.placeSection(detailSection, section, 'detail');
+        else detailSection.appendChild(section);
         console.debug(`${logPrefix} Section added with ${missingMovies.length} missing movies from ${boxsetInfo.name}`);
 
         return true;

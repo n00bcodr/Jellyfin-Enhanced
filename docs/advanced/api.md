@@ -4,7 +4,7 @@ Use Jellyfin Enhanced (JE)'s API to manage bookmarks, reviews, and personal sett
 
 To use these APIs from a custom Jellyfin client, you need an HTTP client and a Jellyfin credential. You do not need the injected JE scripts.
 
-This reference covers the 199 method/path entries in plugin version **12.14.0.0**. Use the endpoint tables to check access requirements, inputs, responses, and limits.
+This reference covers the 202 method/path entries in plugin version **12.14.0.0**. Use the endpoint tables to check access requirements, inputs, responses, and limits.
 
 Paths in endpoint tables are relative to `/JellyfinEnhanced/`. Braces mark path parameters; replace them before making a request. The catch-all routes serve only the resources described below.
 
@@ -824,13 +824,16 @@ All routes in this table require **Seerr-linked** access, except TV-by-studio's 
 | GET | `jellyseerr/discover/tv/upcoming` | `page=1`, discover filters → upstream discovery page. |
 | GET | `jellyseerr/discover/tv/network/{networkId}` | `page=1`, discover filters → upstream discovery page. |
 | GET | `jellyseerr/discover/movies/studio/{studioId}` | `page=1`, discover filters → upstream discovery page. |
-| GET | `jellyseerr/discover/tv/studio/{studioId}` | Caller + enabled Seerr + TMDB key; positive `studioId`, `page=1` within `1..500`, optional `sortBy`. |
+| GET | `jellyseerr/discover/tv/studio/{studioId}` | Caller + enabled Seerr + TMDB key; positive `studioId`, `page=1` within `1..500`, optional `sortBy`, discover filters under TMDB's names. |
 | GET | `jellyseerr/discover/tv/genre/{genreId}` | `page=1`, discover filters → upstream discovery page. |
 | GET | `jellyseerr/discover/movies/genre/{genreId}` | `page=1`, discover filters → upstream discovery page. |
 | GET | `jellyseerr/discover/tv/keyword/{keywordId}` | `page=1`, discover filters → upstream discovery page. |
 | GET | `jellyseerr/discover/movies/keyword/{keywordId}` | `page=1`, discover filters → upstream discovery page. |
 | GET | `jellyseerr/discover/genreslider/movie` | Upstream genre-slider rows. |
 | GET | `jellyseerr/discover/genreslider/tv` | Upstream genre-slider rows. |
+| GET | `jellyseerr/filters/languages` | Upstream language list, for the discovery **Original language** filter. |
+| GET | `jellyseerr/filters/certifications/{mediaType}` | `mediaType` exactly `movie` or `tv` (`400` `invalid_media_type` otherwise) → upstream content ratings by country. |
+| GET | `jellyseerr/filters/watchproviders/{mediaType}` | `mediaType` exactly `movie` or `tv`; optional `watchRegion`, a two-letter upper-case code, defaulting to **Default Region** (or `US`); `400` `invalid_media_type` / `invalid_region` otherwise → upstream streaming services in that region. |
 | GET | `jellyseerr/person/{personId}` | Positive person ID (`400` otherwise) → upstream person detail. |
 | GET | `jellyseerr/person/{personId}/combined_credits` | Positive person ID → upstream filmography. |
 | GET | `jellyseerr/collection/{collectionId}` | Upstream collection detail. |
@@ -844,7 +847,7 @@ All routes in this table require **Seerr-linked** access, except TV-by-studio's 
 
 Search trims long queries to at most 256 UTF-16 units without splitting a surrogate pair; blank query returns `400` with `code:"missing_query"`. Feed/similar/recommendation pagination is generally forwarded without bounds checks; only the documented search, watchlist, and TV-studio actions clamp or validate it.
 
-Discover routes that say “discover filters” forward nonempty query values for `sortBy`, `primaryReleaseDateGte`, `primaryReleaseDateLte`, `firstAirDateGte`, `firstAirDateLte`, `voteAverageGte`, `voteAverageLte`, `withRuntimeGte`, `withRuntimeLte`, `certification`, `watchRegion`, `language`, `keywords`, `watchProviders`. Upstream Seerr interprets these strings.
+Discover routes that say “discover filters” forward nonempty query values for `sortBy`, `primaryReleaseDateGte`, `primaryReleaseDateLte`, `firstAirDateGte`, `firstAirDateLte`, `voteAverageGte`, `voteAverageLte`, `voteCountGte`, `voteCountLte`, `withRuntimeGte`, `withRuntimeLte`, `certification`, `certificationGte`, `certificationLte`, `certificationCountry`, `watchRegion`, `language`, `genre`, `keywords`, `excludeKeywords`, `watchProviders`. Upstream Seerr interprets these strings. On a genre or keyword route, a `genre` or `keywords` value joins the route's own with a comma (all of them). The discovery filters list their choices from the three `jellyseerr/filters/…` routes, `tmdb/genres/{movie|tv}` and `tmdb/search/keyword`.
 
 ```bash
 curl -G -H "Authorization: MediaBrowser Token=\"$TOKEN\"" \
@@ -889,7 +892,7 @@ TV-by-studio queries TMDB directly and returns a Seerr-shaped discover page. It 
 
 Only titles accessible in the caller's library receive library/media status enrichment.
 
-It uses only `studioId`, `page`, and supported `sortBy` values: `popularity`, `first_air_date`, `vote_average`, `vote_count`, `name`, `original_name`, each with `.asc` or `.desc`. Unsupported sorts are ignored.
+It uses `studioId`, `page`, supported `sortBy` values (`popularity`, `first_air_date`, `vote_average`, `vote_count`, `name`, `original_name`, each with `.asc` or `.desc`), and the discover filters a series takes, under TMDB discover/tv's names. Unsupported sorts are ignored, and so is a filter value not of its parameter's shape (dates `YYYY-MM-DD`, numbers, comma- or pipe-separated ids or two-letter languages, two-letter upper-case regions, short ratings).
 
 Setup returns `503`, invalid ID/page `400`, TMDB failure `502`, cancellation `499`; parental filtering still applies.
 
@@ -1004,7 +1007,7 @@ The Seerr proxy, the TMDB passthrough's title routes and `mdblist-ratings/{media
 | Response | Effect |
 |---|---|
 | Seerr and TMDB title details | Fields follow the caller's settings. Adds `jeSpoilerGuard: true`, `jeSpoilerGuardInherited: true` for a movie protected only through a collection, `jeSpoilerGuardItems` with the guarded library items, and `jeYear` when dates are hidden, also on seasons and episodes. Seerr keywords move to `jeRuleKeywords`, for request override rules. A started season or played episode stays visible when the library holds its TMDB id. A season's own response also accepts its TVDB id. |
-| Seerr lists | `overview` becomes the placeholder and ratings are removed, per setting. Dates stay. A removed score moves to `jeSortRating`, so Top Rated keeps its order. |
+| Seerr lists | `overview` becomes the placeholder and ratings are removed, per setting. Dates stay. A removed score moves to `jeSortRating` and a removed vote count to `jeSortVotes`, so Top Rated and Most votes keep their order. In a person's `combined_credits`, a protected title's cast row also loses `character` when titles or descriptions are hidden, as on its details. |
 | Seerr ratings, TMDB `movie/{id}/release_dates` | Empty when ratings or dates are hidden. |
 | TMDB title routes | `no-store`, with no ETag, so a stored unprotected copy can't be revalidated. |
 | Follow-ups to protected details | Ratings, season and TMDB requests can send `X-JE-Spoiler-Guarded` with the `jeSpoilerGuardItems` of their details, or `1`, because they carry only a TMDB id. It can only hide more. Items that aren't the caller's guards are ignored. |
@@ -1510,7 +1513,7 @@ Neither configuration endpoint exposes provider API keys. `TmdbEnabled` and `Mdb
     | `RatingTagsOnContinueWatching`, `RatingTagsOnNextUp`, `RatingTagsShowCommunity`, `RatingTagsShowCritic`, `ShowRatingInPlayer`, `DisableTagsOnSearchPage`, `TagsHideOnHover`, `TagCacheServerMode`, `EnableTagsLocalStorageFallback`, `JellyseerrEnabled` | Boolean |
     | `JellyseerrShowSearchResults`, `JellyseerrSearchExcludeLibraryItems`, `JellyseerrShowReportButton`, `JellyseerrShowIssueIndicator`, `JellyseerrEnable4KRequests`, `JellyseerrEnable4KTvRequests`, `ShowCollectionsInSearch`, `JellyseerrShowAdvanced` | Boolean |
     | `JellyseerrShowQuotaInfo`, `ShowElsewhereOnJellyseerr`, `JellyseerrUseMoreInfoModal`, `JellyseerrAvailablePosterLinksToJellyfin`, `AddRequestedMediaToWatchlist`, `SyncJellyseerrWatchlist`, `JellyseerrAutoImportUsers`, `JellyseerrShowSimilar` | Boolean |
-    | `JellyseerrShowRecommended`, `JellyseerrShowRequestMoreOnSeries`, `JellyseerrShowNetworkDiscovery`, `JellyseerrShowGenreDiscovery`, `JellyseerrShowTagDiscovery`, `JellyseerrShowPersonDiscovery`, `JellyseerrShowCollectionDiscovery`, `JellyseerrShowDetailPageLink` | Boolean |
+    | `JellyseerrShowRecommended`, `JellyseerrShowRequestMoreOnSeries`, `JellyseerrShowNetworkDiscovery`, `JellyseerrFilterYear`, `JellyseerrFilterScore`, `JellyseerrFilterVotes`, `JellyseerrFilterRuntime`, `JellyseerrFilterGenres`, `JellyseerrFilterLanguage`, `JellyseerrFilterContentRating`, `JellyseerrFilterStreaming`, `JellyseerrFilterKeywords`, `JellyseerrFilterRole`, `JellyseerrShowGenreDiscovery`, `JellyseerrShowTagDiscovery`, `JellyseerrShowPersonDiscovery`, `JellyseerrShowCollectionDiscovery`, `JellyseerrShowDetailPageLink` | Boolean |
     | `JellyseerrShowDetailPageLinkAsText`, `JellyseerrExcludeLibraryItems`, `JellyseerrExcludeBlocklistedItems`, `JellyseerrDisableCache`, `BookmarksEnabled`, `BookmarksUsePluginPages`, `BookmarksUseCustomTabs`, `BookmarksUseNativeTab` | Boolean |
     | `ArrLinksEnabled`, `ShowArrLinksAsText`, `ArrLinksShowStatusSingle`, `ArrTagsSyncEnabled`, `ArrTagsShowAsLinks`, `AudioLanguageTagSyncEnabled`, `AudioLanguageTagShowAsLinks`, `LetterboxdEnabled` | Boolean |
     | `ShowLetterboxdLinkAsText`, `MetadataIconsEnabled`, `UseIcons`, `ColoredRatingsEnabled`, `ThemeSelectorEnabled`, `ColoredActivityIconsEnabled`, `PluginIconsEnabled`, `EnableLoginImage` | Boolean |
@@ -1975,7 +1978,7 @@ These are resource URLs, separate from Jellyfin web hash navigation or placement
 
 ## Full Endpoint Index
 
-The endpoint tables above enumerate all 199 controller method/path entries, including the three catch-all templates. Each group documents effective access, inputs, response shape, and limits; shared proxy rows intentionally retain the configured upstream service's JSON contract.
+The endpoint tables above enumerate all 202 controller method/path entries, including the three catch-all templates. Each group documents effective access, inputs, response shape, and limits; shared proxy rows intentionally retain the configured upstream service's JSON contract.
 
 For implementation details, [JellyfinEnhancedController.cs](https://github.com/n00bcodr/Jellyfin-Enhanced/blob/main/Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs) implements all indexed routes except `catchup/*`, which is in [CatchUpController.cs](https://github.com/n00bcodr/Jellyfin-Enhanced/blob/main/Jellyfin.Plugin.JellyfinEnhanced/Controllers/CatchUpController.cs). These upstream source links may advance beyond this versioned reference.
 

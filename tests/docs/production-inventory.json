@@ -503,6 +503,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/DiscoverFilters.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/DoesTheDogDieService.cs",
       "category": "Services"
     },
@@ -1475,7 +1479,35 @@
       "category": "js"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/discovery/discovery-busy.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/discovery/discovery-filter-panel.js",
+      "category": "js"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/discovery/discovery-filter-utils.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/discovery/discovery-filters.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/discovery/discovery-menu.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/discovery/discovery-roles.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/discovery/discovery-section.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/discovery/discovery-styles.js",
       "category": "js"
     },
     {
@@ -2402,6 +2434,33 @@
       "verb": "GET",
       "path": "/JellyfinEnhanced/tmdb/genres/tv",
       "method": "GetTmdbTvGenres",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/jellyseerr/filters/languages",
+      "method": "GetSeerrFilterLanguages",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/jellyseerr/filters/certifications/{mediaType}",
+      "method": "GetSeerrFilterCertifications",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/jellyseerr/filters/watchproviders/{mediaType}",
+      "method": "GetSeerrFilterWatchProviders",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
       "following_attributes": [
         "Authorize"
@@ -5634,6 +5693,86 @@
     {
       "class": "PluginConfiguration",
       "name": "JellyseerrShowNetworkDiscovery",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "true",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "JellyseerrFilterYear",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "true",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "JellyseerrFilterScore",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "true",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "JellyseerrFilterVotes",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "true",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "JellyseerrFilterRuntime",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "true",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "JellyseerrFilterGenres",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "true",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "JellyseerrFilterLanguage",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "true",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "JellyseerrFilterContentRating",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "true",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "JellyseerrFilterStreaming",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "true",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "JellyseerrFilterKeywords",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "true",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "JellyseerrFilterRole",
       "type": "bool",
       "initializer": null,
       "constructor_assignment": "true",
@@ -10247,9 +10386,9 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 471,
-    "routes": 199,
-    "configuration_properties": 745,
+    "files": 479,
+    "routes": 202,
+    "configuration_properties": 755,
     "storage_references": 87,
     "scheduled_tasks": 16,
     "locales": 33

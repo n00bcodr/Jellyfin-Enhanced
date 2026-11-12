@@ -826,6 +826,29 @@ JEAdmin.define({
                   desc: 'When viewing an actor/person page, displays their filmography from Seerr including content not in your library.' },
                 { id: 'jellyseerrShowCollectionDiscovery', prop: 'JellyseerrShowCollectionDiscovery', type: 'toggle', default: true, label: 'Show missing collection movies',
                   desc: 'When viewing a collection/BoxSet page, shows movies from the collection that are not yet in your library with request buttons.' }
+            ] },
+            { type: 'group', title: 'Filters in the "More" sections', items: [
+                { type: 'note', html: 'The <b>Filters</b> button of a "More" section offers these. Turn one off and it is never offered, to anyone.' },
+                { id: 'jellyseerrFilterYear', prop: 'JellyseerrFilterYear', type: 'toggle', default: true, label: 'Released',
+                  desc: 'A range of years, months or days.' },
+                { id: 'jellyseerrFilterScore', prop: 'JellyseerrFilterScore', type: 'toggle', default: true, label: 'Score',
+                  desc: 'A range of TMDB user scores, from 0 to 10.' },
+                { id: 'jellyseerrFilterVotes', prop: 'JellyseerrFilterVotes', type: 'toggle', default: true, label: 'Votes',
+                  desc: 'A range for the number of TMDB user votes.' },
+                { id: 'jellyseerrFilterRuntime', prop: 'JellyseerrFilterRuntime', type: 'toggle', default: true, label: 'Runtime',
+                  desc: 'A runtime range, in minutes.' },
+                { id: 'jellyseerrFilterGenres', prop: 'JellyseerrFilterGenres', type: 'toggle', default: true, label: 'Genres',
+                  desc: 'One or more genres.' },
+                { id: 'jellyseerrFilterLanguage', prop: 'JellyseerrFilterLanguage', type: 'toggle', default: true, label: 'Original language',
+                  desc: 'One or more original languages.' },
+                { id: 'jellyseerrFilterContentRating', prop: 'JellyseerrFilterContentRating', type: 'toggle', default: true, label: 'Content rating',
+                  desc: 'The ratings used in your Default Region (Elsewhere & Reviews tab). US ratings where TMDB has none for it.' },
+                { id: 'jellyseerrFilterStreaming', prop: 'JellyseerrFilterStreaming', type: 'toggle', default: true, label: 'Streaming services',
+                  desc: 'The services available in your Default Region (Elsewhere & Reviews tab).' },
+                { id: 'jellyseerrFilterKeywords', prop: 'JellyseerrFilterKeywords', type: 'toggle', default: true, label: 'Keywords',
+                  desc: 'Keywords a title must have, and keywords it must not have.' },
+                { id: 'jellyseerrFilterRole', prop: 'JellyseerrFilterRole', type: 'toggle', default: true, label: 'Role (actor pages)',
+                  desc: 'What the person did in a title: acting, or a crew department such as Directing or Writing.' }
             ] }
         ]
     },

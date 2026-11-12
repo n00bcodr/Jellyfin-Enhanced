@@ -14,7 +14,7 @@ This section follows the client from loader injection through initialization and
 
 `Services/ScriptInjectionStartupFilter.cs` injects the loader into web responses. `GET /JellyfinEnhanced/script` serves `js/plugin.js`; it is separate from the component bundle. `JellyfinEnhanced.csproj` embeds `js/**`, and `GetScript` in `Controllers/JellyfinEnhancedController.cs` serves individual resources at `/JellyfinEnhanced/js/{path}`.
 
-The ordered module list lives in `js/component-scripts.json`: 181 component modules, with paths relative to `js/`. Entries starting with `//` are ordering notes.
+The ordered module list lives in `js/component-scripts.json`: 189 component modules, with paths relative to `js/`. Entries starting with `//` are ordering notes.
 
 **Modules execute in manifest order.** Place a module after every producer whose exports it reads at load time. A consumer loaded too early can capture `undefined`.
 
@@ -297,7 +297,7 @@ Administrator settings under **Pages**:
 | `item-details.js` | Similar/recommended detail rows and requests for missing series seasons. |
 | `hss-discovery-handler.js`, `seerr-detail-link.js` | Home Screen Sections discovery-card interception and detail-page links to Seerr. |
 | `seamless-scroll.js` | Shared buffer-fill scrolling and deduplication for search, discovery and category pages, with prefetching and failure backoff. Pauses for manual continuation after 40 consecutive empty pages. |
-| `discovery/` | `discovery-base.js` owns lifecycle, pagination, aborts, gating, filtering and rendering. `discovery-filter-utils.js` supplies shared filters/cards; `genre-discovery.js`, `network-discovery.js`, `person-discovery.js`, `tag-discovery.js`, `collection-discovery.js` provide feed specs. |
+| `discovery/` | `discovery-base.js` owns lifecycle, pagination, aborts, gating, filtering and rendering. `discovery-filter-utils.js` supplies the section header (type tabs, sort button), shared filters and cards; `genre-discovery.js`, `network-discovery.js`, `person-discovery.js`, `tag-discovery.js`, `collection-discovery.js` provide feed specs. `discovery-section.js` builds and places the section, its placeholders and retry row, and joins it to the page (sticky header, jump line); `discovery-menu.js` is the Jellyfin-style action sheet the sort and Filters buttons open; `discovery-filters.js` holds the further filters' logic and their lists; `discovery-filter-panel.js` is the Filters button, its menu, the set-filters line and the empty note; `discovery-roles.js` writes a person's role line on each card; `discovery-busy.js` dims a list and marks the control while it reloads; `discovery-styles.js` holds the section's CSS. |
 | `moreinfo/` | Eight `more-info-modal-*` modules: styles, data, seasons, badges, render, TV actions, general actions and initialization. |
 | `recommendations/` | Eight `recommendations-*` modules: styles, catalog, data, render, page, category, initialization and tab mounting. Discovery rows, studio/network tiles and category pages live here. |
 | `ui/` | Ten `ui-*` modules: icons, styles, popover, badges, cards, buttons, quota, results, request modals and season modal. |
@@ -455,7 +455,7 @@ The client interacts with server classes through endpoints, cookies and image re
 | `AutoMovieRequestMonitor.cs`, `AutoSeasonRequestMonitor.cs` | Playback event subscriptions feeding those request services. |
 | `WatchlistMonitor.cs`, `SeerrScanTriggerService.cs` | Watchlist event handling and debounced library-add → Seerr recently-added scan bridge. |
 | `SeerrParentalFilter.cs` | Shared parental filtering for integration responses. |
-| `TmdbResponseCache.cs`, `TmdbCompanyTvDiscover.cs` | TMDB response caching/coalescing and studio-produced TV discovery shaped for Seerr consumers. |
+| `TmdbResponseCache.cs`, `TmdbCompanyTvDiscover.cs`, `DiscoverFilters.cs` | TMDB response caching/coalescing, studio-produced TV discovery shaped for Seerr consumers, and the discover filters passed to Seerr or translated for TMDB discover/tv. |
 | `StatusTagsTrendingService.cs` | Server-wide trending ranks for Status Tags: TMDB daily trending, else Seerr weekly trending, cached for 30 minutes. |
 | `MovieCollectionsBatch.cs`, `WatchProvidersBatch.cs` | Parsing/shaping batched collection and regional streaming-provider lookups. Movie collections use Seerr first, then TMDB when needed. |
 | `ItemStatsService.cs` | Aggregate item/subtree size and watch-progress data for detail chips. |
