@@ -107,11 +107,23 @@ public class RequestRemovalPlannerTests
 [Collection("Plugin singleton")]
 public class AutoRequestRemovalTaskTests
 {
-    private sealed record Run(List<string> Deleted, List<string> Queries, bool SentApiUser);
+    private sealed record Run(List<string> Deleted, List<string> Queries, List<string> DetailReads, bool SentApiUser);
 
     private sealed record Req(int Id, string Type, int TmdbId, Guid Requester, int Status = 2, int MediaStatus = 5, int[]? Seasons = null);
 
+    // A row of Seerr's request list. Like the real one, it has no media.seasons.
     private static object Row(Req r) => new
+    {
+        id = r.Id,
+        status = r.Status,
+        type = r.Type,
+        media = new { tmdbId = r.TmdbId, status = r.MediaStatus },
+        seasons = (r.Seasons ?? []).Select(s => new { seasonNumber = s }),
+        requestedBy = new { id = 1, jellyfinUserId = r.Requester.ToString() }
+    };
+
+    // GET /api/v1/request/{id}: the same request with media.seasons and each season's status.
+    private static object Detail(Req r) => new
     {
         id = r.Id,
         status = r.Status,
@@ -145,7 +157,8 @@ public class AutoRequestRemovalTaskTests
         bool failSecondPage = false,
         int deleteStatus = 204,
         string blocked = "",
-        Episode[]? episodes = null)
+        Episode[]? episodes = null,
+        int detailStatus = 200)
     {
         using var f = new ApiPluginFixture();
         var config = f.Plugin.Configuration;
@@ -176,6 +189,7 @@ public class AutoRequestRemovalTaskTests
 
         var deleted = new List<string>();
         var queries = new List<string>();
+        var detailReads = new List<string>();
         var sentApiUser = false;
         using var transport = new IntegrationTransport((request, ct) =>
         {
@@ -184,6 +198,14 @@ public class AutoRequestRemovalTaskTests
                 deleted.Add(request.RequestUri!.AbsolutePath);
                 sentApiUser |= request.Headers.Contains("X-Api-User");
                 return Task.FromResult(new HttpResponseMessage((System.Net.HttpStatusCode)deleteStatus));
+            }
+
+            if (request.RequestUri!.AbsolutePath != "/api/v1/request")
+            {
+                detailReads.Add(request.RequestUri.AbsolutePath);
+                var id = int.Parse(request.RequestUri.AbsolutePath.Split('/')[^1]);
+                if (detailStatus != 200) return Task.FromResult(new HttpResponseMessage((System.Net.HttpStatusCode)detailStatus));
+                return Task.FromResult(IntegrationTransport.Response(JsonSerializer.Serialize(Detail(requests.Single(r => r.Id == id)))));
             }
 
             var query = System.Web.HttpUtility.ParseQueryString(request.RequestUri!.Query);
@@ -196,7 +218,7 @@ public class AutoRequestRemovalTaskTests
         });
 
         await new AutoRequestRemovalTask(library.Object, users.Object, dataManager.Object, transport, f.Core.Logger).ExecuteAsync(null!, default);
-        return new Run(deleted, queries, sentApiUser);
+        return new Run(deleted, queries, detailReads, sentApiUser);
     }
 
     private static User NewUser(string name) => new(name, "default", "default") { Id = Guid.NewGuid() };
@@ -271,15 +293,46 @@ public class AutoRequestRemovalTaskTests
         Assert.Equal(["/api/v1/request/11", "/api/v1/request/12"], run.Deleted);
     }
 
+    private static Episode Ep(int season, int episode) => new() { Id = Guid.NewGuid(), ParentIndexNumber = season, IndexNumber = episode };
+
     [Fact]
     public async Task AFullyWatchedSeasonRemovesTheSeriesRequest()
     {
+        // The list has no season statuses, so the task reads them from the request itself.
         var alice = NewUser("alice");
-        Episode Ep(int s, int e) => new() { Id = Guid.NewGuid(), ParentIndexNumber = s, IndexNumber = e };
         var run = await Execute([new Req(21, "tv", 1399, alice.Id, Seasons: [1])], alice, alice, episodes: [Ep(1, 1), Ep(1, 2)]);
+        Assert.Equal(["/api/v1/request/21"], run.DetailReads);
         Assert.Equal(["/api/v1/request/21"], run.Deleted);
 
         var noEpisodes = await Execute([new Req(21, "tv", 1399, alice.Id, Seasons: [1])], alice, alice);
         Assert.Empty(noEpisodes.Deleted);
+    }
+
+    [Fact]
+    public async Task AnUnwatchedSeriesRequestCostsNoExtraCall()
+    {
+        var alice = NewUser("alice");
+        var bob = NewUser("bob");
+        var run = await Execute([new Req(21, "tv", 1399, alice.Id, Seasons: [1])], alice, bob, episodes: [Ep(1, 1)]);
+        Assert.Empty(run.DetailReads);
+        Assert.Empty(run.Deleted);
+    }
+
+    [Fact]
+    public async Task ASeasonSeerrStillCallsUnavailableKeepsTheSeriesRequest()
+    {
+        var alice = NewUser("alice");
+        var run = await Execute([new Req(21, "tv", 1399, alice.Id, MediaStatus: 4, Seasons: [1])], alice, alice, episodes: [Ep(1, 1)]);
+        Assert.Equal(["/api/v1/request/21"], run.DetailReads);
+        Assert.Empty(run.Deleted);
+    }
+
+    [Fact]
+    public async Task AnUnreadableRequestIsKeptForTheNextRun()
+    {
+        var alice = NewUser("alice");
+        var run = await Execute([new Req(21, "tv", 1399, alice.Id, Seasons: [1]), new Req(11, "movie", 603, alice.Id)], alice, alice,
+            episodes: [Ep(1, 1)], detailStatus: 500);
+        Assert.Equal(["/api/v1/request/11"], run.Deleted);
     }
 }

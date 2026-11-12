@@ -94,5 +94,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             return Decision.RemoveIt("requester watched every requested season");
         }
+
+        /// <summary>
+        /// Decides a series request as if every requested season were available in Seerr. Seerr's
+        /// request list leaves out the per-season statuses, so this tells whether a request has
+        /// been watched far enough to be worth reading its details for them.
+        /// </summary>
+        public static Decision DecideAssumingSeasonsAvailable(
+            Candidate candidate,
+            IReadOnlyDictionary<int, IReadOnlyCollection<bool>>? episodesPlayedBySeason)
+        {
+            var assumed = candidate with
+            {
+                SeasonStatuses = candidate.RequestedSeasons.Distinct().ToDictionary(season => season, _ => MediaAvailable)
+            };
+            return Decide(assumed, null, episodesPlayedBySeason);
+        }
     }
 }

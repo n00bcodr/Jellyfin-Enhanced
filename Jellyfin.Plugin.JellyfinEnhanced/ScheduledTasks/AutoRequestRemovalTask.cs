@@ -135,9 +135,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                     if (!usersById.TryGetValue(request.RequesterJellyfinId, out var user)) continue;
                     if (!byKey.TryGetValue(LibraryKey(request.Candidate.IsTv, request.TmdbId), out var items)) continue;
 
-                    var decision = request.Candidate.IsTv
-                        ? RequestRemovalPlanner.Decide(request.Candidate, null, CollectEpisodesPlayed(user, items))
-                        : RequestRemovalPlanner.Decide(request.Candidate, CollectMoviesPlayed(user, items), null);
+                    RequestRemovalPlanner.Decision decision;
+                    if (!request.Candidate.IsTv)
+                    {
+                        decision = RequestRemovalPlanner.Decide(request.Candidate, CollectMoviesPlayed(user, items), null);
+                    }
+                    else
+                    {
+                        var episodes = CollectEpisodesPlayed(user, items);
+                        var candidate = request.Candidate;
+                        if (candidate.SeasonStatuses.Count == 0)
+                        {
+                            // Seerr's request list leaves out the per-season statuses. Read them from
+                            // the request itself, but only once the requester has watched every
+                            // requested season, so unwatched requests cost no extra call.
+                            var watched = RequestRemovalPlanner.DecideAssumingSeasonsAvailable(candidate, episodes);
+                            if (watched.Remove)
+                            {
+                                var details = await ReadRequest(httpClient, seerrUrl, config.JellyseerrApiKey, candidate.RequestId, cancellationToken);
+                                if (details == null) continue; // already logged; try again next run
+                                candidate = details.Candidate;
+                            }
+                        }
+
+                        decision = RequestRemovalPlanner.Decide(candidate, null, episodes);
+                    }
 
                     if (!decision.Remove)
                     {
@@ -272,6 +294,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
             }
 
             return result;
+        }
+
+        // Reads one request, which unlike the list includes media.seasons with each season's status.
+        private async Task<ParsedRequest?> ReadRequest(HttpClient httpClient, string seerrUrl, string apiKey, int requestId, CancellationToken cancellationToken)
+        {
+            try
+            {
+                var uri = $"{seerrUrl}/api/v1/request/{requestId}";
+                using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(HttpMethod.Get, uri, apiKey);
+                using var response = await httpClient.SendAsync(request, cancellationToken);
+                var (content, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, uri, cancellationToken);
+                if (error != null)
+                {
+                    _logger.Warning($"{Tag} ✗ Failed to read request {requestId}: code={error.Code} status={error.HttpStatus} cf-ray={error.CfRay}; will retry next run");
+                    return null;
+                }
+
+                using var doc = JsonDocument.Parse(content!);
+                return Parse(doc.RootElement);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"{Tag} ✗ Error reading request {requestId}: {ex.Message}");
+                return null;
+            }
         }
 
         // Turns one Seerr request row into a planner candidate. Rows that cannot be matched to a
