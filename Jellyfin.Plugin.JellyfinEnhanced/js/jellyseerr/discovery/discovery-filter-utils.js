@@ -358,7 +358,7 @@
         // The words of the line that goes to this section from the top of a long list page: what
         // pressing it does (with the title), then the rest of the phrase.
         const [lead = '', rest = ''] = (notInLibrary
-            ? label('discovery_go_to_not_in_library', 'Go to {title}, not in your library')
+            ? label('discovery_go_to_not_in_library', 'Go to {title}, not in the library')
             : label('discovery_go_to', 'Go to {title}')).split('{title}');
         header.setAttribute('data-jump-label', `${lead}${title}`);
         if (rest) header.setAttribute('data-jump-note', rest);
@@ -382,7 +382,7 @@
         if (notInLibrary) {
             const summary = document.createElement('p');
             summary.className = 'jellyseerr-discovery-summary';
-            summary.textContent = label('discovery_not_in_library', 'Not in your library');
+            summary.textContent = label('discovery_not_in_library', 'Not in the library');
             meta.appendChild(summary);
         }
         if (onSortChange) {

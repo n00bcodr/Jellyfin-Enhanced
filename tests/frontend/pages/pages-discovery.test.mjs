@@ -186,9 +186,9 @@ test('the header is the title, then one row: what the titles are, in words, and 
   const header = h.section('genre').querySelector('.jellyseerr-discovery-header');
   assert.deepEqual([...header.children].map(child => child.className), ['sectionTitle sectionTitle-cards', 'jellyseerr-discovery-meta']);
   assert.deepEqual([...header.querySelector('.jellyseerr-discovery-meta').children].map(child => child.className), ['jellyseerr-discovery-summary', 'jellyseerr-discovery-bar']);
-  assert.equal(header.querySelector('.jellyseerr-discovery-summary').textContent, 'Not in your library');
+  assert.equal(header.querySelector('.jellyseerr-discovery-summary').textContent, 'Not in the library');
   assert.equal(header.getAttribute('data-jump-label'), 'Go to More in Comedy');
-  assert.equal(header.getAttribute('data-jump-note'), ', not in your library');
+  assert.equal(header.getAttribute('data-jump-note'), ', not in the library');
   // No count anywhere in the header, whatever totals Seerr reports and whichever filter is chosen.
   const bar = header.querySelector('.jellyseerr-discovery-bar');
   assert.deepEqual([...bar.children].map(child => child.className.split(' ')[0]), ['jellyseerr-discovery-filter', 'jellyseerr-filters-btn', 'jellyseerr-sort-btn']);
@@ -227,7 +227,7 @@ test('a section of one type has a lone sort, which shares the summary\'s row; th
   const bar = h.section('genre').querySelector('.jellyseerr-discovery-bar');
   assert.equal(bar.querySelector('.jellyseerr-discovery-filter'), null);
   assert.equal(bar.hasAttribute('data-has-filter'), false);
-  assert.equal(bar.previousElementSibling.textContent, 'Not in your library');
+  assert.equal(bar.previousElementSibling.textContent, 'Not in the library');
   // The admin shows library titles in these sections: the line would be false, so it is not there.
   const all = setup(t, { ...oneType, config: { JellyseerrExcludeLibraryItems: false } });
   all.load('jellyseerr/discovery/genre-discovery.js');
