@@ -648,32 +648,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return jellyseerrUserId;
         }
 
-        // Seerr's discover API accepts these params (verified live against
-        // Seerr 3.2.0). The correct names are `keywords`, `watchProviders`,
-        // `watchRegion` — no `with*` prefix; Seerr rejects `withCompanies`
-        // / `withNetworks` / `withOriginalLanguage` as `Unknown query parameter`.
-        // `studio` and `network` are accepted on /discover/movies and
-        // /discover/tv respectively (handled via path routes).
-        private static readonly string[] DiscoverFilterParams = {
-            "sortBy", "primaryReleaseDateGte", "primaryReleaseDateLte",
-            "firstAirDateGte", "firstAirDateLte",
-            "voteAverageGte", "voteAverageLte",
-            "withRuntimeGte", "withRuntimeLte",
-            "certification", "watchRegion", "language",
-            "keywords", "watchProviders"
-        };
-
+        /// <summary>Adds the request's discover filters to a Seerr path (see <see cref="Services.DiscoverFilters"/>).</summary>
         private string AppendDiscoverFilters(string basePath)
         {
-            var sb = new StringBuilder(basePath);
-            foreach (var param in DiscoverFilterParams)
-            {
-                if (Request.Query.TryGetValue(param, out var value) && !string.IsNullOrEmpty(value))
-                {
-                    sb.Append($"&{param}={Uri.EscapeDataString(value!)}");
-                }
-            }
-            return sb.ToString();
+            return Services.DiscoverFilters.AppendToSeerrPath(basePath, ReadQueryValue);
+        }
+
+        /// <summary>The request's query value for <paramref name="name"/>, or null when it has none.</summary>
+        private string? ReadQueryValue(string name)
+        {
+            return Request.Query.TryGetValue(name, out var value) ? value.ToString() : null;
         }
 
         private static bool IsCacheableApiPath(string apiPath, HttpMethod method)
@@ -2369,6 +2353,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 query += $"&sort_by={sortBy}";
             }
+            // The filters the Seerr-fed feeds take, under TMDB's names.
+            query += Services.DiscoverFilters.ToTmdbTvQuery(ReadQueryValue);
 
             try
             {
@@ -3130,6 +3116,50 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         public Task<IActionResult> GetTmdbTvGenres()
         {
             return ProxyJellyseerrRequest("/api/v1/genres/tv", HttpMethod.Get);
+        }
+
+        // The lists the discovery filters offer, from Seerr (which reads them from
+        // TMDB). None of them carries a title.
+        /// <summary>The languages the discovery filters offer (Seerr's <c>/api/v1/languages</c>).</summary>
+        [HttpGet("jellyseerr/filters/languages")]
+        [Authorize]
+        public Task<IActionResult> GetSeerrFilterLanguages()
+        {
+            return ProxyJellyseerrRequest("/api/v1/languages", HttpMethod.Get);
+        }
+
+        /// <summary>The content ratings for movies or series (<paramref name="mediaType"/> is <c>movie</c> or <c>tv</c>).</summary>
+        [HttpGet("jellyseerr/filters/certifications/{mediaType}")]
+        [Authorize]
+        public Task<IActionResult> GetSeerrFilterCertifications(string mediaType)
+        {
+            if (mediaType != "movie" && mediaType != "tv")
+            {
+                return Task.FromResult<IActionResult>(BadRequest(new { error = true, code = "invalid_media_type", message = "mediaType must be movie or tv." }));
+            }
+            return ProxyJellyseerrRequest($"/api/v1/certifications/{mediaType}", HttpMethod.Get);
+        }
+
+        /// <summary>
+        /// The streaming services for movies or series in a region: <paramref name="watchRegion"/>,
+        /// or the admin's DEFAULT_REGION when none is sent.
+        /// </summary>
+        [HttpGet("jellyseerr/filters/watchproviders/{mediaType}")]
+        [Authorize]
+        public Task<IActionResult> GetSeerrFilterWatchProviders(string mediaType, [FromQuery] string? watchRegion = null)
+        {
+            if (mediaType != "movie" && mediaType != "tv")
+            {
+                return Task.FromResult<IActionResult>(BadRequest(new { error = true, code = "invalid_media_type", message = "mediaType must be movie or tv." }));
+            }
+            var region = string.IsNullOrEmpty(watchRegion)
+                ? Services.WatchProvidersBatch.DefaultRegion(JellyfinEnhanced.Instance?.Configuration?.DEFAULT_REGION)
+                : watchRegion;
+            if (!Services.WatchProvidersBatch.IsValidRegion(region))
+            {
+                return Task.FromResult<IActionResult>(BadRequest(new { error = true, code = "invalid_region", message = "watchRegion must be a two-letter region code." }));
+            }
+            return ProxyJellyseerrRequest($"/api/v1/watchproviders/{(mediaType == "movie" ? "movies" : "tv")}?watchRegion={region}", HttpMethod.Get);
         }
 
         [HttpGet("jellyseerr/discover/genreslider/movie")]
@@ -4087,6 +4117,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.JellyseerrShowRecommended,
                 config.JellyseerrShowRequestMoreOnSeries,
                 config.JellyseerrShowNetworkDiscovery,
+                config.JellyseerrFilterYear,
+                config.JellyseerrFilterScore,
+                config.JellyseerrFilterVotes,
+                config.JellyseerrFilterRuntime,
+                config.JellyseerrFilterGenres,
+                config.JellyseerrFilterLanguage,
+                config.JellyseerrFilterContentRating,
+                config.JellyseerrFilterStreaming,
+                config.JellyseerrFilterKeywords,
+                config.JellyseerrFilterRole,
                 config.JellyseerrShowGenreDiscovery,
                 config.JellyseerrShowTagDiscovery,
                 config.JellyseerrShowPersonDiscovery,
