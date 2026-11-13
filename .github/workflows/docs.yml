@@ -29,7 +29,7 @@ on:
         default: true
 
 permissions:
-  contents: write
+  contents: read
 
 # One writer at a time: every run pushes to the gh-pages branch.
 concurrency:
@@ -39,6 +39,9 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # Pushes the built docs to the gh-pages branch
+    permissions:
+      contents: write
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
@@ -54,12 +57,6 @@ jobs:
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
         with:
           python-version: "3.12"
-
-      - name: Cache dependencies
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
-        with:
-          key: ${{ github.ref }}
-          path: .cache
 
       # Always the current tooling (it includes mike), even when an older tag is being built.
       - name: Install dependencies
@@ -81,7 +78,7 @@ jobs:
       # A tag push (12.15.1.0) or a manual run with "release" set publishes a released version
       # named major.minor (12.15). It also moves the "latest" alias and the site default to it unless
       # "latest" is off (back filling an older release). Any other run (a push to main) publishes
-      # "dev", the unreleased docs. A tag from before the version switcher existed is built with an
+      # "dev" (titled "main"), the unreleased docs. A tag from before the version switcher existed is built with an
       # extra config that adds it.
       - name: Publish docs version
         env:
@@ -103,13 +100,16 @@ jobs:
             CONFIG=.mkdocs-mike.yml
           fi
           if [[ -z "$RELEASE" ]]; then
-            mike deploy --config-file "$CONFIG" --push --title "dev (unreleased)" dev
+            mike deploy --config-file "$CONFIG" --push --title "main" dev
           else
             VERSION=$(echo "$RELEASE" | cut -d. -f1,2)
             if [[ "$INPUT_LATEST" == "false" ]]; then
               mike deploy --config-file "$CONFIG" --push "$VERSION"
             else
-              mike deploy --config-file "$CONFIG" --push --update-aliases "$VERSION" latest
+              # The newest release is titled "latest (12.15)"; the one it replaces gets its plain version title back.
+              PREV=$(mike list --json | python3 -c "import json,sys; print(next((v['version'] for v in json.load(sys.stdin) if 'latest' in v['aliases']), ''))")
+              mike deploy --config-file "$CONFIG" --push --update-aliases --title "latest ($VERSION)" "$VERSION" latest
+              if [[ -n "$PREV" && "$PREV" != "$VERSION" ]]; then mike retitle --push "$PREV" "$PREV"; fi
               mike set-default --config-file "$CONFIG" --push latest
             fi
           fi
