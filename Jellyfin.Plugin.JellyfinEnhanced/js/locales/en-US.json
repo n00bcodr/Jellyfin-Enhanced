@@ -1434,5 +1434,6 @@
     "tag_looks_type_series": "Series",
     "status_tag_compact_finale": "Finale",
     "common_open": "Open",
-    "tag_layout_summary": "Summary"
+    "tag_layout_summary": "Summary",
+    "hidden_content_not_loaded": "Your hidden items could not be loaded, so this change was not made. Please reload and retry."
 }
