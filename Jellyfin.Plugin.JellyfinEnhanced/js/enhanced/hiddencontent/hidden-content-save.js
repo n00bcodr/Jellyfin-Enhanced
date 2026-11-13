@@ -150,6 +150,25 @@
     // Saves run one at a time: each reads the stored list and writes it back with this session's
     // changes, so two in flight at once could each write a list without the other's changes.
     let saveQueue = Promise.resolve();
+    // The last save queued, until it settles, so flushPendingSave can wait for it and report its failure.
+    let lastSave = null;
+
+    // Later saves and a Continue Watching / Next Up removal wait for the save in flight, and ApiClient.ajax
+    // only gives up on a request when asked to, so a read or write that never gets an answer fails after this
+    // long and the save is retried like any other failure.
+    const SAVE_REQUEST_TIMEOUT_MS = 30000;
+
+    async function requestWithTimeout(request) {
+        let timer = null;
+        const timedOut = new Promise((_, reject) => {
+            timer = setTimeout(() => reject(new Error('hidden-content request timed out')), SAVE_REQUEST_TIMEOUT_MS);
+        });
+        try {
+            return await Promise.race([ApiClient.ajax(request), timedOut]);
+        } finally {
+            clearTimeout(timer);
+        }
+    }
 
     // Direct bypass of JE.saveUserSettings (which swallows errors) so callers can react to failure.
     // Returns the saved list, as the session holds it, as JSON so the caller can compare it to current state and decide
@@ -157,6 +176,9 @@
     function directSaveHiddenContent() {
         const save = saveQueue.then(saveOnce);
         saveQueue = save.catch(() => {});
+        lastSave = save;
+        const settled = () => { if (lastSave === save) lastSave = null; };
+        save.then(settled, settled);
         return save;
     }
 
@@ -169,7 +191,7 @@
         const userId = ApiClient.getCurrentUserId();
         if (!userId) throw new Error('no current user');
         const generation = saveGeneration;
-        const fresh = await ApiClient.ajax({
+        const fresh = await requestWithTimeout({
             type: 'GET',
             url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/hidden-content.json?_=${Date.now()}`),
             dataType: 'json'
@@ -183,7 +205,7 @@
         const snapshot = JSON.stringify(list);
         // Nothing of this session's to write (e.g. a hide undone before the save ran).
         if (snapshot !== JSON.stringify(stored)) {
-            await ApiClient.ajax({
+            await requestWithTimeout({
                 type: 'POST',
                 url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/hidden-content.json`),
                 data: snapshot,
@@ -265,9 +287,13 @@
     // Flush pending debouncedSave so a following server-direct write sees the latest local state.
     // On failure: re-throw so the caller aborts, AND start a bounded background retry so the local mutation isn't lost.
     // With nothing pending, wait for a save already in flight: it read the list before the server-direct
-    // write and would otherwise write that read back over it.
+    // write and would otherwise write that read back over it. If it fails (or times out, when its write may
+    // still land), re-throw as well; whoever started it has already scheduled its retry.
     async function flushPendingSave() {
-        if (!saveTimeout) { await saveQueue; return; }
+        if (!saveTimeout) {
+            if (lastSave) await lastSave;
+            return;
+        }
         clearTimeout(saveTimeout);
         saveTimeout = null;
         const generation = saveGeneration;

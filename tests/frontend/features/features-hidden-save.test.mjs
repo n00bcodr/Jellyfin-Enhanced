@@ -269,6 +269,32 @@ test('a save in flight when Continue Watching removal starts finishes first and 
   assert.deepEqual(keys(h.api.stored), [episodeDashed, 'a', 'b']);
 });
 
+for (const step of ['GET', 'POST']) test(`a save whose ${step === 'GET' ? 'read' : 'write'} never gets an answer gives up, so later saves and Continue Watching removal go ahead`, async t => {
+  const h = setup(t, { loadedList: list('a') });
+  const remove = withContinueWatching(h);
+  const alerts = [];
+  h.window.Dashboard = { alert: message => alerts.push(message) };
+  holdNext(h, step); // never released
+  h.hc.hideItem(item('b'));
+  await h.timers.advance(500); // the save has started
+  let removed = 'waiting';
+  remove(episode, 'continuewatching').then(result => { removed = result; });
+  await h.timers.advance(29000);
+  assert.equal(removed, 'waiting', 'a removal waits for the save in flight');
+  await h.timers.advance(1000); // 30 seconds without an answer
+  assert.equal(removed, false, 'the removal is refused: that save may still land');
+  assert.deepEqual(alerts, ['remove_continue_watching_error_api']);
+
+  await h.timers.advance(1000); // the save's retry
+  assert.deepEqual(keys(h.api.stored), ['a', 'b']);
+  h.hc.hideItem(item('c'));
+  await h.timers.advance(1000);
+  assert.deepEqual(keys(h.api.stored), ['a', 'b', 'c']);
+  assert.equal(await remove(episode, 'continuewatching'), true);
+  assert.deepEqual(keys(h.api.stored), [episodeDashed, 'a', 'b', 'c']);
+  assert.deepEqual(h.toasts, []);
+});
+
 test('a row-only hide made here does not replace a global hide another device stored for the same title', async t => {
   const h = setup(t, { loadedList: list('a') });
   h.api.stored.items[episodeDashed] = { ...item(episodeDashed), hideScope: 'global' };
