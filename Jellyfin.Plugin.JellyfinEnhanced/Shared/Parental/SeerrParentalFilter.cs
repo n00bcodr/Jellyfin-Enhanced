@@ -1010,8 +1010,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.Parental
 
             try
             {
-                // Scored in the server's country first, as Jellyfin scores the rating
-                // it stores (a US fallback is stored without a country prefix).
+                // Scored in the server's country first, as Jellyfin scores the rating it
+                // stores (a US or first-listed fallback is stored without a country prefix).
                 var score = _localization.GetRatingScore(cert.Certification, region);
                 return score == null
                     ? new Signature(null, null, keywords, genres)

@@ -124,12 +124,14 @@ public class ApiSeerrTests
     }
 
     [Theory]
+    [InlineData("all", "filter=all")]
     [InlineData("pending", "filter=pending")]
     [InlineData("all&requestedBy=1&sort=modified", "filter=all%26requestedBy%3D1%26sort%3Dmodified")]
+    [InlineData("all#x", "filter=all%23x")]
     public async Task RequestListFilterReachesSeerrAsOneValue(string filter, string expected)
     {
         using var f = new SeerrFixture { Reply = _ => IntegrationTransport.Response("{\"results\":[]}") };
-        await f.Controller.GetJellyseerrRequests(filter: filter);
+        Assert.IsType<ContentResult>(await f.Controller.GetJellyseerrRequests(filter: filter));
         var call = Assert.Single(f.Calls, c => c.Path.StartsWith("/api/v1/request?"));
         Assert.Equal("/api/v1/request?take=500&skip=0&" + expected, call.Path);
     }
@@ -165,6 +167,18 @@ public class ApiSeerrTests
         var result = Assert.IsType<ContentResult>(await f.Controller.GetOverrideRules());
         Assert.Equal(4, Body(result.Content!)[0].GetProperty("id").GetInt32());
         Assert.Equal("27", Assert.Single(f.Calls, c => c.Path == "/api/v1/overrideRule").User);
+    }
+
+    [Fact]
+    public async Task OverrideRulesStillNeedRequestPermissionBeforeAnything()
+    {
+        // The existing gate is unchanged: without a request permission the caller gets JE's 403, not an empty list.
+        using var f = new SeerrFixture { Permissions = JellyseerrPermission.VIEW_ISSUES };
+        f.Reply = SeerrGatesOverrideRules(f);
+        var denied = Assert.IsType<ObjectResult>(await f.Controller.GetOverrideRules());
+        Assert.Equal(403, denied.StatusCode);
+        Assert.Contains("no_request_permission", JsonSerializer.Serialize(denied.Value));
+        Assert.DoesNotContain(f.Calls, c => c.Path.StartsWith("/api/v1/overrideRule"));
     }
 
     // Upstream 2e1f123d (#1032): POST jellyseerr/watchlist.

@@ -361,13 +361,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Seerr
         }
 
         /// <summary>
-        /// The item, when the caller may see it (library access and parental rules, as Jellyfin's own
-        /// item routes apply them); null otherwise, so a hidden item reads as a missing one.
-        /// Administrators get any item, as before.
+        /// The item behind <paramref name="id"/> when the caller may see it, as Jellyfin decides:
+        /// a studio, genre or person for any signed-in caller (Jellyfin's own /Studios, /Genres and
+        /// /Persons routes answer those to anyone), any other item only within the caller's library
+        /// access and parental rules (Jellyfin's user item routes). Null otherwise, so a hidden item
+        /// is answered exactly as a missing one. Administrators get any item, as before.
         /// </summary>
         private BaseItem? GetItemForCaller(Guid id)
         {
-            if (IsAdminUser()) return _libraryManager.GetItemById(id);
+            var item = _libraryManager.GetItemById(id);
+            if (item == null || item is Studio or Genre or Person || IsAdminUser()) return item;
             var userId = UserHelper.GetCurrentUserId(User);
             var user = userId.HasValue ? _userManager.GetUserById(userId.Value) : null;
             return user == null ? null : _libraryManager.GetItemById<BaseItem>(id, user);

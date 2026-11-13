@@ -11,8 +11,9 @@ using Moq;
 namespace JE.Tests.Features.Seerr;
 
 /// <summary>
-/// person/{id} names an item only when the caller may see it, like studio/, genre/ and boxset/: for any
-/// other id it answers exactly as for an id that does not exist, as Jellyfin's own item routes do.
+/// person/{id} names a title only when the caller may see it, like studio/, genre/ and boxset/, and a person
+/// for anyone, as Jellyfin's /Persons route and JE's people/info do: for any other id it answers exactly as
+/// for an id that does not exist.
 /// </summary>
 public class ApiPersonInfoAccessTests
 {
@@ -73,6 +74,20 @@ public class ApiPersonInfoAccessTests
         var shown = await Describe(controller.GetPersonInfo(person.Id));
         Assert.StartsWith("200 ", shown);
         Assert.Contains(person.Name, shown);
+    }
+
+    [Fact]
+    public async Task APersonIsNamedForAnySignedInCallerAsJellyfinsOwnRouteAndPeopleInfoDo()
+    {
+        using var lab = new Lab();
+        // Hidden from the user item route (as Jellyfin 10.11 hides an untagged person from a user with an
+        // Allowed Tags list); /Persons/{name} and JE's people/info still answer it.
+        var person = lab.Add(new Person { Name = "Open actor" }, canSee: false);
+        var controller = lab.Controller(admin: false);
+
+        var answer = await Describe(controller.GetPersonInfo(person.Id));
+        Assert.StartsWith("200 ", answer);
+        Assert.Contains(person.Name, answer);
     }
 
     [Fact]

@@ -1187,6 +1187,44 @@
       ],
       "notes": "Upstream squashes the five commits of its PR branch fix/arr-tag-sync. Four of them landed here first, as the rewrite's own commits, and are not repeated: (1) the Radarr and Sonarr tag fetches answer null when the service could not be read (refused URL, error status, network error, timeout, unreadable or null body) and the task keeps that service's items' tags, skipping their clean-up, while adding the tags of the instances that answered: 7af1bc19 (Shared/Arr/RadarrService.cs, SonarrService.cs, Features/MediaTags/Tasks/ArrTagsSyncTask.cs; the null-body exception's message reads 'null body' here, upstream's names the list; both are caught and logged the same way); (2) a blank or unset stored Tag Prefix means 'JE Arr Tag: ' in the sync: 0726eddc; (3) the admin field's default is the server default, so an emptied field saves 'JE Arr Tag: ': 6479995e (client/src/admin/config/sections/arr.ts, tests/fixtures/admin-config-baseline.json; its test is in tests/frontend/admin/config/admin-config-rewrite.test.mjs, where upstream's is in features-admin-config-schema.test.mjs); (4) a damaged instance list is logged by its length and where it stops parsing, not its text: c7d32f29 (Shared/Arr/ArrInstanceClient.cs, where upstream's JellyfinEnhancedController has it; test tests/backend/Features/DetailsProviders/ArrCorruptInstancesLogTests.cs, upstream's ApiArrInstancesLogTests). Docs from those commits are here too (0726eddc, 6479995e, 9d1e99e0). Ported here is the fifth: a run that could not read Radarr or Sonarr still finishes its item pass, then throws InvalidOperationException ('Radarr could not be read: …', 'Sonarr …' or 'Radarr and Sonarr …') so Scheduled Tasks shows it as failed: ArrTagsSyncTask.cs, upstream's lines. With it, upstream's docs lines on a failed read (docs/arr/arr-features.md, arr-settings.md, troubleshooting-support.md: the run shows as failed, disable an instance no longer used) and its coverage-matrix row. Tests: upstream's ArrTagsSyncTests is tests/backend/Features/MediaTags/ArrTagsSyncTests.cs (the media-tags test folder) with only the namespace changed; its 31 cases include the already-present behaviour, and on the branch's start 5 fail (EveryInstanceDownChangesNoItem x3 and ARunThatCouldNotReadAServiceFinishesThenReportsFailed x2), all pass after. Upstream's 'null' case is added to IntegrationArrTests.ProviderFailuresDoNotEscapeOrStartSecondRequest (passes before and after: (1) is here). The rewrite's own TaskMetadataTests.ArrSyncKeepsTagsOfAServiceThatCouldNotBeRead (from 7af1bc19, which upstream does not have) ran the task to completion with a service down; it now expects the run's InvalidOperationException and its message, then checks the same tags. Differences from upstream: none in behaviour. No setting, route, registration or stored data changes; css-customization.md already has upstream's line (6479995e).",
       "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p38-*"
+    },
+    {
+      "sha": "076012a2115b89f288a65f88d73957fe9488d2af",
+      "date": "2026-11-13T12:46:53+08:00",
+      "subject": "fix(seerr): Seerr routes follow the caller's library access and Jellyfin's parental rules (#1055)",
+      "class": "fix",
+      "features": [
+        "seerr",
+        "calendar"
+      ],
+      "issues": [
+        "#1055"
+      ],
+      "release": null,
+      "size": {
+        "files": 11,
+        "insertions": 628,
+        "deletions": 46
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Helpers/Jellyseerr/ParentalRatingDecision.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Helpers/Jellyseerr/SeerrCertificationExtractor.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/SeerrParentalFilter.cs",
+        "docs/advanced/api.md",
+        "docs/seerr/seerr-features.md",
+        "tests/backend/Api/ApiSeerrTests.cs",
+        "tests/backend/Privacy/ItemLookupAccessTests.cs",
+        "tests/backend/Privacy/PrivacyPolicyTests.cs",
+        "tests/backend/Privacy/SeerrParentalCertificationTests.cs",
+        "tests/docs/coverage-matrix.md"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "7d96b61d7794e1f503cd362436ecb302ecc761ed"
+      ],
+      "notes": "Upstream squashes the seven commits of its PR branch fix/seerr-access. Their first versions landed here first, as the rewrite's own commits: fc27dc69 (studio/, genre/, boxset/ and items/by-providers resolve the item through the caller; Features/Seerr/JeSeerrController.Discover.cs GetItemForCaller, Features/Calendar/JeCalendarController.cs), 63e5d7ef with c2197790 (person/ through the same helper), a1786432 (the certification falls back to the US one, and for a series the first listed; scored in the server's country first; Shared/Parental/SeerrCertificationExtractor.cs, SeerrParentalFilter.cs), 989f3c0b (a sub-score limit applies only at its own score; Shared/Parental/ParentalRatingDecision.cs), 087ff84d (the request list filter is escaped; JeSeerrController.Requests.cs) and 0304f12e (override rules answered [] without a Seerr call for a linked user who is not a Seerr admin; JeSeerrController.cs), with their auth-read contract lines (bc86d499). Those parts are not repeated. Ported here is what upstream's versions changed since: (1) studios, genres and persons are answered to any signed-in caller, as Jellyfin's /Studios/{name}, /Genres/{name} and /Persons/{name} routes and JE's people/info answer them; Jellyfin's user item overload hides an untagged studio or genre (and on 10.11 a person) from a user with an Allowed Tags list, which took the studio and genre discovery rows away from that user here. Titles and box sets still go through the caller. GetItemForCaller is upstream's, in this tree's controller partial. (2) A series' certification is picked exactly as Jellyfin's TmdbSeriesProvider picks it: the country's first entry, else the first US entry, else the first listed, and the entry picked decides, so an empty rating there leaves the title unrated (the rewrite's a1786432 tried every country and US entry and skipped empty ones, so a DE \"\" / US TV-MA series was scored TV-MA here and unrated in the library); an entry with no rating at all is passed over, as Jellyfin 12 does. (3) items/by-providers checks visibility for at most the first 100 matches for a non-administrator. (4) The comment that said Seerr does not gate /api/v1/overrideRule, and the extractor and filter comments, as upstream. (5) Docs: docs/advanced/api.md (the rating paragraph, jellyseerr/request, jellyseerr/overrideRule, studio/, boxset/, genre/, person/, items/by-providers rows and the by-providers paragraph) and docs/seerr/seerr-features.md (the rating pick) applied as is with git apply; tests/docs/coverage-matrix.md gets upstream's two sentences with this tree's test file names. Tests: upstream's ItemLookupAccessTests is split here by controller, as fc27dc69 and 63e5d7ef split it: its two new by-name tests are ApiItemInfoAccessTests.AStudioOrGenreIsNamedForAnySignedInCallerAsJellyfinsOwnRoutesDo and ApiPersonInfoAccessTests.APersonIsNamedForAnySignedInCallerAsJellyfinsOwnRouteAndPeopleInfoDo; the rest were already here. ApiItemByProvidersAccessTests.ALookupOfAnIdOnManyItemsChecksAtMostTheFirstHundred is new here (upstream has no test for the bound). SeerrParentalCertificationTests gets upstream's added cases (no POST after a refused request, a US G film in NZ, the empty-rating series theory, the no-rating series, the (12, 0) and (13, 0) sub-score titles and the two requests); ApiSeerrTests gets OverrideRulesStillNeedRequestPermissionBeforeAnything and the all and all#x filter cases; PrivacyPolicyTests the (13, null) row. On the branch's start 5 of the 101 tests in those classes fail (the studio, genre and person by-name cases, the 100 bound and the empty-rating series without block-unrated); all pass after. Differences from upstream: the rewrite builds for Jellyfin 12 only (JellyfinEnhanced.csproj refuses another target), so the #else branch for 10.11 in ExtractTv and in upstream's no-rating test is not ported; the test keeps the Jellyfin 12 assertion and is named ASeriesWhoseLocalEntryHasNoRatingMovesOnLikeJellyfin12. No route, verb, authorization or registration changes; the Architecture snapshot tests pass unchanged (GetItemForCaller reads the caller's identity the same way). Nothing stored changes shape.",
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p39-*"
     }
   ]
 }

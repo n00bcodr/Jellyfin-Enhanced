@@ -12,8 +12,9 @@ using Moq;
 namespace JE.Tests.Features.Seerr;
 
 /// <summary>
-/// studio/{id}, genre/{id} and boxset/{id} name an item only when the caller may see it: for any other
-/// id they answer exactly as for an id that does not exist, as Jellyfin's own item routes do.
+/// studio/{id}, genre/{id} and boxset/{id} name a title or box set only when the caller may see it, as
+/// Jellyfin's user item routes decide, and a studio or genre for anyone, as its /Studios and /Genres routes
+/// do: for any other id they answer exactly as for an id that does not exist.
 /// </summary>
 public class ApiItemInfoAccessTests
 {
@@ -94,6 +95,23 @@ public class ApiItemInfoAccessTests
         // An item the caller may see is still named.
         Assert.StartsWith("200 ", Describe(Call(controller, route, shown.Id)));
         Assert.Contains(shown.Name, Describe(Call(controller, route, shown.Id)));
+    }
+
+    [Theory]
+    [InlineData("studio")]
+    [InlineData("genre")]
+    public void AStudioOrGenreIsNamedForAnySignedInCallerAsJellyfinsOwnRoutesDo(string route)
+    {
+        using var lab = new Lab();
+        // Jellyfin's user item route hides an untagged studio or genre from a user with an Allowed Tags
+        // list; its /Studios/{name} and /Genres/{name} routes still answer them, and so does JE.
+        BaseItem entity = route == "studio" ? new Studio { Name = "Open studio" } : new Genre { Name = "Drama" };
+        lab.Add(entity, canSee: false);
+        var controller = lab.Controller(admin: false);
+
+        var answer = Describe(Call(controller, route, entity.Id));
+        Assert.StartsWith("200 ", answer);
+        Assert.Contains(entity.Name, answer);
     }
 
     [Theory]

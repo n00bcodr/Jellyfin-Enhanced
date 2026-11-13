@@ -369,9 +369,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Seerr
                                 return StatusCode(403, new { code = "no_issue_view_permission", message = "You do not have permission to view issues in Seerr." });
                         }
 
-                        // GET /api/v1/service/sonarr|radarr, /api/v1/service/{type}/{id},
-                        // /api/v1/overrideRule, Seerr does not gate this route
-                        // behind REQUEST_ADVANCED, so require just the ability to request.
+                        // GET /api/v1/service/sonarr|radarr, /api/v1/service/{type}/{id}:
+                        // Seerr does not gate these behind REQUEST_ADVANCED, so require just
+                        // the ability to request. /api/v1/overrideRule needs it too; Seerr
+                        // itself lets only its admins read that one (answered below).
                         if (method == HttpMethod.Get && (
                             apiPath.StartsWith("/api/v1/service/", StringComparison.OrdinalIgnoreCase)
                             || apiPath.StartsWith("/api/v1/overrideRule", StringComparison.OrdinalIgnoreCase)))

@@ -25,7 +25,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.Parental
 
         /// <summary>
         /// Reads the certification for <paramref name="mediaType"/> ("movie" or "tv")
-        /// from a detail object for <paramref name="region"/> only.
+        /// from a detail object for <paramref name="region"/>, falling back as Jellyfin does.
         /// </summary>
         public static CertificationResult Extract(JsonElement detail, string? mediaType, string region)
         {
@@ -41,8 +41,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.Parental
                 : ExtractTv(detail, normalizedRegion);
         }
 
-        // For movies: releases.results[].release_dates[].certification; the
-        // country's, else the US one (Jellyfin's TmdbMovieProvider).
+        // For movies: releases.results[].release_dates[].certification; the country's,
+        // else the US one, skipping entries without one (Jellyfin's TmdbMovieProvider).
         private static CertificationResult ExtractMovie(JsonElement detail, string region)
         {
             if (!TryGetResultsArray(detail, "releases", out var results))
@@ -107,8 +107,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.Parental
                 : new CertificationResult(cert, ReadString(regionRelease, "iso_3166_1"));
         }
 
-        // For TV: contentRatings.results[].rating; the country's, else the US one,
-        // else the first listed (Jellyfin's TmdbSeriesProvider).
+        // For TV: contentRatings.results[].rating, from the country's first entry, else
+        // the first US entry, else the first entry listed (Jellyfin's TmdbSeriesProvider).
+        // The entry picked decides: an empty rating there leaves the title unrated, as
+        // Jellyfin stores it as a bare country prefix that no rating table knows.
         private static CertificationResult ExtractTv(JsonElement detail, string region)
         {
             if (!TryGetResultsArray(detail, "contentRatings", out var results))
@@ -116,13 +118,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.Parental
                 return default;
             }
 
-            foreach (var entry in RegionEntries(results, region).Concat(RegionEntries(results, "US")).Concat(results.EnumerateArray().Take(1)))
+            var candidates = new[]
             {
+                RegionEntries(results, region).FirstOrDefault(),
+                RegionEntries(results, "US").FirstOrDefault(),
+                results.EnumerateArray().FirstOrDefault(),
+            };
+            foreach (var entry in candidates)
+            {
+                // Jellyfin 12 moves on from an entry that carries no rating at all.
                 var rating = ReadString(entry, "rating");
-                if (!string.IsNullOrWhiteSpace(rating))
+                if (rating == null)
                 {
-                    return new CertificationResult(rating, ReadString(entry, "iso_3166_1"));
+                    continue;
                 }
+
+                return string.IsNullOrWhiteSpace(rating)
+                    ? default
+                    : new CertificationResult(rating, ReadString(entry, "iso_3166_1"));
             }
 
             return default;

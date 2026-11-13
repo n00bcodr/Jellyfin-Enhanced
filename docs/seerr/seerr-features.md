@@ -495,8 +495,8 @@ JE applies your Jellyfin parental policy to protected Seerr browsing and request
 
     Users without a maximum rating, movie/series block-unrated preference, or blocked/allowed tags need no additional parental metadata lookups.
 
-    - Certifications use the server's metadata country, with US only when none is configured, and Jellyfin's rating table. Other countries' ratings are not substituted. More Info can display another region's rating through your Elsewhere preference without changing enforcement.
-    - Successfully fetched titles without a recognized local rating follow the user's unrated policy for that media type. Failed/unresolved lookups remain hidden until verified. Search/discovery can re-fetch once delayed lookups finish.
+    - A title's rating is picked the way Jellyfin's TMDB metadata picks it for library items: the server's metadata country (US when none is configured), else the US rating, and for a series else the first one listed. It is scored with Jellyfin's rating table for the server's country, so a US-only R film is refused for a child limited to 12 on a German server, as it would be in the library. More Info can display another region's rating through your Elsewhere preference without changing enforcement.
+    - Successfully fetched titles with no usable rating follow the user's unrated policy for that media type. Failed/unresolved lookups remain hidden until verified. Search/discovery can re-fetch once delayed lookups finish.
     - Resolved ratings/keywords are cached server-wide for 24 hours; failed lookups retry after five minutes. With a TMDB key, certification lookups use TMDB; otherwise JE uses Seerr title details.
     - Blocked tags match TMDB keywords and genre names. Allowed tags form an allow-list against keywords only; blocked tags win. Matches compare the full value, ignoring case: `Sci-Fi` matches `sci-fi`, but not `sci fi`. Community keyword coverage can be incomplete.
     - Collection cards remain visible without a rating; their movies are filtered when opened.

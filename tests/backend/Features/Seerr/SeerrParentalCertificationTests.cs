@@ -40,7 +40,9 @@ public class SeerrParentalCertificationTests
     private static readonly Dictionary<string, ParentalRatingScore> SubScored = new(StringComparer.OrdinalIgnoreCase)
     {
         ["TEST-10-1"] = new ParentalRatingScore(10, 1),
+        ["TEST-12-0"] = new ParentalRatingScore(12, 0),
         ["TEST-12-1"] = new ParentalRatingScore(12, 1),
+        ["TEST-13-0"] = new ParentalRatingScore(13, 0),
     };
 
     private static ParentalRatingScore? Score(string rating, string? country)
@@ -59,6 +61,7 @@ public class SeerrParentalCertificationTests
         public ApiPluginFixture Plugin { get; } = new();
         public User Kid { get; } = new("kid", "default", "default") { Id = Guid.NewGuid(), MaxParentalRatingScore = 12 };
         public Dictionary<string, string> Details { get; } = new(StringComparer.Ordinal);
+        public List<HttpMethod> Methods { get; } = new();
         public JeSeerrController Controller { get; }
 
         public Lab(bool blockUnrated, string country = "DE")
@@ -74,6 +77,7 @@ public class SeerrParentalCertificationTests
             var transport = new IntegrationTransport((request, _) =>
             {
                 var path = request.RequestUri!.AbsolutePath;
+                lock (Methods) Methods.Add(request.Method);
                 if (path == "/api/v1/user") return Task.FromResult(IntegrationTransport.Response(JsonSerializer.Serialize(new { results = new[] {
                     new { id = 27, jellyfinUserId = Kid.Id.ToString("N"), permissions = (int)JellyseerrPermission.REQUEST } } })));
                 if (request.Method == HttpMethod.Post) return Task.FromResult(IntegrationTransport.Response("{\"id\":99}", 201));
@@ -101,7 +105,7 @@ public class SeerrParentalCertificationTests
         releases = new { results = releases.Select(r => new { iso_3166_1 = r.Iso, release_dates = new[] { new { certification = r.Cert, type = 3 } } }) },
     });
 
-    private static string Series(int id, params (string Iso, string Rating)[] ratings) => JsonSerializer.Serialize(new
+    private static string Series(int id, params (string Iso, string? Rating)[] ratings) => JsonSerializer.Serialize(new
     {
         id,
         name = "Show " + id,
@@ -124,6 +128,7 @@ public class SeerrParentalCertificationTests
         Assert.True(Refused(await lab.Controller.GetTvShow(601)));
         // ... and refuses the request whichever surface it came from.
         Assert.True(Refused(await lab.Controller.JellyseerrRequest(JsonSerializer.Deserialize<JsonElement>("{\"mediaType\":\"movie\",\"mediaId\":501}"))));
+        Assert.DoesNotContain(HttpMethod.Post, lab.Methods);
         // Within the limit through the US rating, and the local rating still wins over the US one.
         Assert.False(Refused(await lab.Controller.GetMovie(502)));
         Assert.False(Refused(await lab.Controller.GetMovie(503)));
@@ -135,8 +140,10 @@ public class SeerrParentalCertificationTests
         // Jellyfin stores the US "PG" unprefixed and scores it in the New Zealand table first (13).
         using var lab = new Lab(blockUnrated: false, country: "NZ");
         lab.Details["/api/v1/movie/506"] = Movie(506, ("US", "PG"));
+        lab.Details["/api/v1/movie/509"] = Movie(509, ("US", "G"));
 
         Assert.True(Refused(await lab.Controller.GetMovie(506)));
+        Assert.False(Refused(await lab.Controller.GetMovie(509)));
     }
 
     [Fact]
@@ -150,18 +157,54 @@ public class SeerrParentalCertificationTests
         Assert.False(Refused(await lab.Controller.GetTvShow(603)));
     }
 
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    public async Task ASeriesWhoseLocalEntryHasAnEmptyRatingStaysUnratedLikeJellyfin(bool blockUnrated, bool refused)
+    {
+        // Jellyfin takes the country's entry whatever its rating text: an empty one is stored as "DE-",
+        // which no rating table knows, so the series is unrated there and the US rating is never read.
+        using var lab = new Lab(blockUnrated);
+        lab.Details["/api/v1/tv/605"] = Series(605, ("DE", ""), ("US", "TV-MA"));
+        lab.Details["/api/v1/tv/606"] = Series(606, ("US", ""), ("GB", "18"));
+
+        Assert.Equal(refused, Refused(await lab.Controller.GetTvShow(605)));
+        Assert.Equal(refused, Refused(await lab.Controller.GetTvShow(606)));
+    }
+
+    [Fact]
+    public async Task ASeriesWhoseLocalEntryHasNoRatingMovesOnLikeJellyfin12()
+    {
+        using var lab = new Lab(blockUnrated: false);
+        lab.Details["/api/v1/tv/607"] = Series(607, ("DE", null), ("US", "TV-MA"));
+        // No country entry, and the US entry, which is also the first listed, has no rating: the series is
+        // unrated (Jellyfin 12 skips both picks), and the GB "18" after it is never read.
+        lab.Details["/api/v1/tv/608"] = Series(608, ("US", null), ("GB", "18"));
+        Assert.False(Refused(await lab.Controller.GetTvShow(608)));
+
+        // Jellyfin 12 moves past an entry without a rating to the US one (TV-MA, 17).
+        Assert.True(Refused(await lab.Controller.GetTvShow(607)));
+    }
+
     [Fact]
     public async Task ASubScoreLimitAppliesOnlyAtItsOwnScoreLikeJellyfin()
     {
-        // Jellyfin compares (score, sub-score) in order: under a (12, 0) limit the library shows a title scored
-        // (10, 1) and hides one scored (12, 1).
+        // Jellyfin compares (score, sub-score) in order, in BaseItem.IsParentalAllowed and in the library query:
+        // under a (12, 0) limit the library shows a title scored (10, 1) or (12, 0) and hides one scored
+        // (12, 1) or (13, 0).
         using var lab = new Lab(blockUnrated: false);
         lab.Kid.MaxParentalRatingSubScore = 0;
         lab.Details["/api/v1/movie/507"] = Movie(507, ("DE", "TEST-10-1"));
+        lab.Details["/api/v1/movie/510"] = Movie(510, ("DE", "TEST-12-0"));
         lab.Details["/api/v1/movie/508"] = Movie(508, ("DE", "TEST-12-1"));
+        lab.Details["/api/v1/movie/511"] = Movie(511, ("DE", "TEST-13-0"));
 
         Assert.False(Refused(await lab.Controller.GetMovie(507)));
+        Assert.False(Refused(await lab.Controller.GetMovie(510)));
         Assert.True(Refused(await lab.Controller.GetMovie(508)));
+        Assert.True(Refused(await lab.Controller.GetMovie(511)));
+        Assert.True(Refused(await lab.Controller.JellyseerrRequest(JsonSerializer.Deserialize<JsonElement>("{\"mediaType\":\"movie\",\"mediaId\":508}"))));
+        Assert.False(Refused(await lab.Controller.JellyseerrRequest(JsonSerializer.Deserialize<JsonElement>("{\"mediaType\":\"movie\",\"mediaId\":507}"))));
     }
 
     [Theory]

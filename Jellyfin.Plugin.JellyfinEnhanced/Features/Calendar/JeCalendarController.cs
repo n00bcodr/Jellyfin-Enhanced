@@ -916,9 +916,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Calendar
             if (!IsAdminUser())
             {
                 // Only an item the caller may see, as Jellyfin's own item routes decide; administrators as before.
+                // The checks stop at the first visible match, and at 100 matches: an untyped lookup of an id
+                // stamped on many episodes would otherwise load each.
                 var userId = UserHelper.GetCurrentUserId(User);
                 var user = userId.HasValue ? _userManager.GetUserById(userId.Value) : null;
-                itemIds = itemIds.Where(id => user != null && _libraryManager.GetItemById<BaseItem>(id, user) != null).Take(1).ToList();
+                itemIds = itemIds.Take(100).Where(id => user != null && _libraryManager.GetItemById<BaseItem>(id, user) != null).Take(1).ToList();
             }
 
             if (itemIds.Count == 0)
