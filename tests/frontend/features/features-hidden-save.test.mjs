@@ -284,3 +284,20 @@ test('unhiding one entry leaves a separate TMDB entry for the same title alone',
   await h.timers.advance(1000);
   assert.deepEqual(keys(h.api.stored), ['tmdb-42']);
 });
+
+// jellyfin-web dispatches a bubbling legacy `pagehide` on each view it leaves; only the page's own pagehide
+// (not persisted in the back/forward cache) means the retry can never run.
+for (const [label, hide, retried] of [
+  ['a view jellyfin-web leaves', h => h.document.querySelector('#view').dispatchEvent(new h.window.CustomEvent('pagehide', { bubbles: true })), true],
+  ['a back/forward cache hide', h => h.window.dispatchEvent(new h.window.PageTransitionEvent('pagehide', { persisted: true })), true],
+  ['the page being unloaded', h => h.window.dispatchEvent(new h.window.PageTransitionEvent('pagehide', { persisted: false })), false],
+]) test(`a save waiting to retry is ${retried ? 'still retried after' : 'dropped on'} the pagehide of ${label}`, async t => {
+  const h = setup(t, { loadedList: list('a'), html: '<div id="view" class="page"></div>' });
+  h.api.failPosts = 1;
+  h.hc.hideItem(item('b'));
+  await h.timers.advance(600);
+  assert.equal(h.api.posts().length, 1, 'the first attempt failed');
+  hide(h);
+  await h.timers.advance(2000);
+  assert.deepEqual(keys(h.api.stored), retried ? ['a', 'b'] : ['a']);
+});
