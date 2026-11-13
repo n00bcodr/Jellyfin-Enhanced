@@ -73,12 +73,16 @@
      * JE.core.ui.escapeHtml before passing it in.
      * @param {string} html The (already localized/escaped) content to display.
      * @param {number} [duration] How long to show the toast, in ms (default: the Toast Notification Duration setting; 0 there turns toasts off).
+     * @param {{action?: {label: string, onClick: () => void}}} [options] An action button (Undo): the toast
+     *   stays at least 6 seconds so it can be pressed, and closes when it is.
+     * @returns {HTMLElement|null} The toast, or null when toasts are off.
      */
-    function toast(html, duration) {
+    function toast(html, duration, options) {
         const configured = JE.CONFIG ? JE.CONFIG.TOAST_DURATION : 1500;
         // A duration of 0 in the plugin settings turns toasts off.
-        if (configured === 0) return;
-        const ms = duration ?? configured;
+        if (configured === 0) return null;
+        const action = options?.action;
+        const ms = Math.max(duration ?? configured, action ? 6000 : 0);
 
         // Use the theme system to get appropriate colors
         const themeVars = JE.themer?.getThemeVariables() || {};
@@ -108,12 +112,32 @@
             maxWidth: 'clamp(280px, 80vw, 350px)'
         });
         t.innerHTML = html; // Note: the calling function should pass the localized string
-        document.body.appendChild(t);
-        setTimeout(() => t.style.transform = 'translateX(0)', 10);
-        setTimeout(() => {
+        let closed = false;
+        const close = () => {
+            if (closed) return;
+            closed = true;
             t.style.transform = 'translateX(100%)';
             setTimeout(() => t.remove(), 300);
-        }, ms);
+        };
+        if (action) {
+            t.style.display = 'flex';
+            t.style.alignItems = 'center';
+            t.style.gap = '12px';
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'jellyfin-enhanced-toast-action';
+            button.textContent = action.label;
+            Object.assign(button.style, {
+                background: 'transparent', border: 'none', color: themeVars.primaryAccent || '#00a4dc', cursor: 'pointer',
+                font: 'inherit', fontWeight: '700', textTransform: 'uppercase', padding: '4px 6px', marginLeft: 'auto',
+            });
+            button.addEventListener('click', () => { close(); try { action.onClick(); } catch (err) { console.warn('🪼 Jellyfin Enhanced: toast action failed', err); } });
+            t.appendChild(button);
+        }
+        document.body.appendChild(t);
+        setTimeout(() => t.style.transform = 'translateX(0)', 10);
+        setTimeout(close, ms);
+        return t;
     }
 
     // Most recent scroll seen anywhere in the document (capture phase sees the

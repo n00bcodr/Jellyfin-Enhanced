@@ -234,7 +234,7 @@
                     <div class="je-info-banner je-fieldset-wide je-tab-intro">
                         <i class="material-icons je-info-icon">download_for_offline</i>
                         <div>
-                            Connect Jellyfin Enhanced to your <strong>Sonarr</strong>, <strong>Radarr</strong>, <strong>Bazarr</strong>, and <strong>Shoko</strong> instances.<br/>Each service gets its own box below; add as many Sonarr/Radarr instances as you want (one per quality profile / library), plus a single Bazarr endpoint and a single Shoko endpoint. Each instance can be enabled, disabled, or removed independently.
+                            Connect Jellyfin Enhanced to your <strong>Sonarr</strong>, <strong>Radarr</strong>, <strong>Bazarr</strong>, <strong>Shoko</strong> and <strong>Maintainerr</strong> instances.<br/>Each service gets its own box below; add as many Sonarr/Radarr instances as you want (one per quality profile / library), plus a single Bazarr endpoint and a single Shoko endpoint. Each instance can be enabled, disabled, or removed independently.
                         </div>
                     </div>
 
@@ -243,6 +243,7 @@
 
                     <div data-je-section="arr-bazarr"></div>
                     <div data-je-section="arr-shoko"></div>
+                    <div data-je-section="arr-maintainerr"></div>
                     <div data-je-section="arr-links"></div>
                     <div data-je-section="arr-tags"></div>
                 </div>
@@ -6336,6 +6337,8 @@
          *
          * Each card is a <button> that jumps to the relevant settings tab.
          */
+        // Maintainerr's card on the dashboard follows the server's last read of it (the Maintainerr card loads it).
+        if (window.JEAdmin && JEAdmin.maintainerr) JEAdmin.maintainerr.onStatus = function () { try { renderServiceStatusDashboard(); } catch (e) { /* dashboard not mounted */ } };
         // Remaining request budget per service, read from the server (MDBList account status, DoesTheDogDie rate-limit headers).
         var _jeUsage = {};
         var _jeUsageAt = {};
@@ -6482,6 +6485,34 @@
                     detail: (shokoUrl && shokoApiKey) ? 'URL and API key configured' : (!shokoUrl ? 'URL missing' : 'API key missing')
                 });
             }
+
+            // Maintainerr: always listed. With an address, the server's last read of it (admin/leaving-soon) is the state.
+            var maintainerrUrl = readFieldValue('#LeavingSoonMaintainerrUrl');
+            var maintainerrCard = { id: 'maintainerr', name: 'Maintainerr', tab: 'arr', icon: 'auto_delete', scrollTo: '#LeavingSoonMaintainerrUrl' };
+            if (!maintainerrUrl) {
+                maintainerrCard.state = 'off';
+                maintainerrCard.detail = 'Not set up';
+            } else {
+                var ms = window.JEAdmin && JEAdmin.maintainerr ? JEAdmin.maintainerr.status() : null;
+                if (!ms) {
+                    maintainerrCard.state = 'pending';
+                    maintainerrCard.detail = 'Checking...';
+                    if (window.JEAdmin && JEAdmin.maintainerr) JEAdmin.maintainerr.load(false);
+                } else if (ms.failed || !ms.Maintainerr) {
+                    maintainerrCard.state = 'warn';
+                    maintainerrCard.detail = ms.failed ? 'Status unavailable' : 'Address not saved yet';
+                } else if (ms.LastError) {
+                    maintainerrCard.state = 'error';
+                    maintainerrCard.detail = 'Last read failed: ' + ms.LastError;
+                } else if (ms.LastSuccess) {
+                    maintainerrCard.state = 'ok';
+                    maintainerrCard.detail = (ms.Items || 0) + ' item(s) leaving';
+                } else {
+                    maintainerrCard.state = 'pending';
+                    maintainerrCard.detail = 'Configured, not yet read';
+                }
+            }
+            pushCard(maintainerrCard);
 
             // MDBList and DoesTheDogDie: always listed, with the remaining request budget once it has been read.
             [
