@@ -290,6 +290,44 @@ public class CustomTagRulesTests
     }
 
     [Fact]
+    public void AFullLoadsCursorCoversTheStampsOfABuildThatOutranTheClock()
+    {
+        // A full build of a few thousand items hands out stamps faster than one a millisecond, so its last entries
+        // carry stamps ahead of the clock; the 5,000 stamps drawn first stand in for that. A delta at the cursor the
+        // full load returned must not re-send them, and a change made after the build must still reach that client.
+        using var f = new ApiPluginFixture();
+        f.Plugin.Configuration.TagCacheServerMode = true;
+        var library = new Library();
+        var previous = BaseItem.LibraryManager;
+        BaseItem.LibraryManager = library.Mock.Object;
+        try
+        {
+            var first = new Movie { Id = Guid.NewGuid(), Name = "First", Genres = ["Drama"] };
+            var second = new Movie { Id = Guid.NewGuid(), Name = "Second", Genres = ["Comedy"] };
+            library.Items.AddRange(new BaseItem[] { first, second });
+            var viewer = new User("viewer", "default", "default") { Id = Guid.NewGuid() };
+            using var cache = new TagCacheService(library.Mock.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger, new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger));
+            for (var i = 0; i < 5000; i++) cache.NextStamp();
+            cache.BuildFullCache(null, CancellationToken.None);
+
+            Assert.Equal(2, cache.GetCacheForUser(viewer, out _, out var cursor).Count);
+            Assert.Empty(cache.GetCacheForUser(viewer, out _, out _, since: cursor));
+
+            first.Genres = ["Drama", "Thriller"];
+            cache.EnqueueUpdate(first.Id);
+            Flush(cache);
+            var delta = cache.GetCacheForUser(viewer, out _, out var next, since: cursor);
+            Assert.Equal(new[] { first.Id.ToString("N") }, delta.Keys.ToArray());
+            Assert.True(next >= cursor, "the cursor never goes back");
+            Assert.Empty(cache.GetCacheForUser(viewer, out _, out _, since: next));
+        }
+        finally
+        {
+            BaseItem.LibraryManager = previous;
+        }
+    }
+
+    [Fact]
     public void ASeriesGenreEditReachesASeasonThatTookItsGenres()
     {
         using var f = new ApiPluginFixture();
