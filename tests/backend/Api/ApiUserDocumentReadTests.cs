@@ -87,6 +87,86 @@ public class ApiUserDocumentReadTests
         Assert.IsType<OkObjectResult>(answer);
     }
 
+    // After a read that does not parse, the list is read again under the file's lock before it is moved
+    // aside. That second read can fail to open the file too, which says nothing about its content.
+    [Theory]
+    [InlineData("hidden-content.json")]
+    [InlineData("shortcuts.json")]
+    public void SecondReadThatCannotOpenTheFileLeavesItWhereItIs(string file)
+    {
+        using var f = new ApiPluginFixture();
+        var user = Guid.NewGuid();
+        var path = Store(f, user, file, "{\"Items\":{\"kept\":");
+        var controller = Controller(f, user);
+        IActionResult? answer = null;
+        var reader = new Thread(() => answer = file == "shortcuts.json"
+            ? controller.GetUserSettingsShortcuts(user.ToString("N"))
+            : controller.GetUserHiddenContent(user.ToString("N")));
+        var fileLock = f.Core.Manager.GetUserFileLock(user.ToString("N"), file);
+        FileStream? held = null;
+        Monitor.Enter(fileLock);
+        try
+        {
+            reader.Start();
+            // The first read found content that does not parse and waits for the lock to read again.
+            Assert.True(SpinWait.SpinUntil(() => LogMentions(f, $"Failed to parse '{file}'") && (reader.ThreadState & ThreadState.WaitSleepJoin) != 0, TimeSpan.FromSeconds(10)));
+            // Meanwhile the file holds a good list again, and something holds it open (an antivirus scan).
+            File.WriteAllText(path, Kept);
+            held = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+        }
+        finally
+        {
+            Monitor.Exit(fileLock);
+        }
+        try
+        {
+            Assert.True(reader.Join(TimeSpan.FromSeconds(10)));
+        }
+        finally
+        {
+            held?.Dispose();
+        }
+
+        Assert.Equal(500, Assert.IsAssignableFrom<ObjectResult>(answer).StatusCode);
+        Assert.Equal(Kept, File.ReadAllText(path));
+        Assert.Empty(Directory.GetFiles(Path.GetDirectoryName(path)!, file + ".corrupt-*"));
+    }
+
+    private static bool LogMentions(ApiPluginFixture f, string text)
+    {
+        try
+        {
+            return File.Exists(f.Core.Logger.CurrentLogFilePath) && File.ReadAllText(f.Core.Logger.CurrentLogFilePath).Contains(text, StringComparison.Ordinal);
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+    }
+
+    // That second read and moving the file aside happen under the file's lock, so a save that replaces
+    // the file in between could have its list moved aside. Every writer of the two files takes the lock.
+    [Fact]
+    public void ShortcutsSaveWaitsForTheFileLock()
+    {
+        using var f = new ApiPluginFixture();
+        var user = Guid.NewGuid();
+        var controller = Controller(f, user);
+        var shortcuts = new Jellyfin.Plugin.JellyfinEnhanced.Configuration.UserShortcuts();
+        shortcuts.Shortcuts.Add(new Jellyfin.Plugin.JellyfinEnhanced.Configuration.Shortcut { Name = "GoToHome", Key = "Q" });
+        IActionResult? answer = null;
+        var saver = new Thread(() => answer = controller.SaveUserSettingsShortcuts(user.ToString("N"), shortcuts));
+        lock (f.Core.Manager.GetUserFileLock(user.ToString("N"), "shortcuts.json"))
+        {
+            saver.Start();
+            Assert.False(saver.Join(TimeSpan.FromMilliseconds(500)), "the save waits while the lock is held");
+            Assert.False(File.Exists(Path.Combine(f.Core.ConfigRoot, user.ToString("N"), "shortcuts.json")));
+        }
+        Assert.True(saver.Join(TimeSpan.FromSeconds(10)));
+        Assert.IsType<OkObjectResult>(answer);
+        Assert.Contains("\"Q\"", File.ReadAllText(Path.Combine(f.Core.ConfigRoot, user.ToString("N"), "shortcuts.json")), StringComparison.Ordinal);
+    }
+
     [Fact]
     public void StandaloneHiddenContentReadReportsAnUnparseableList()
     {

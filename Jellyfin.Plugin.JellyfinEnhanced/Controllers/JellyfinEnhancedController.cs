@@ -4458,11 +4458,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
             catch (Exception ex) when (ex is InvalidDataException || ex is Newtonsoft.Json.JsonException)
             {
+                // Every writer of these files holds this lock, so a save cannot replace the file
+                // between the read below and moving it aside.
                 lock (_userConfigurationManager.GetUserFileLock(authorizedUserId, fileName))
                 {
-                    // Read again under the writers' lock: a save may have replaced the file meanwhile;
-                    // if it still does not parse, this read moves it aside and throws.
-                    return _userConfigurationManager.GetUserConfigurationStrict<T>(authorizedUserId, fileName);
+                    try
+                    {
+                        // Read again: a save may have replaced the file since the first read.
+                        return _userConfigurationManager.GetUserConfigurationStrict<T>(authorizedUserId, fileName, quarantineCorrupt: false);
+                    }
+                    catch (Exception again) when (again is InvalidDataException || again is Newtonsoft.Json.JsonException)
+                    {
+                        _userConfigurationManager.QuarantineUserConfiguration(authorizedUserId, fileName);
+                        throw;
+                    }
                 }
             }
         }
@@ -6060,7 +6069,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             try
             {
-                _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "shortcuts.json", userConfiguration);
+                // Under the file's lock, like every hidden-content.json writer: the read for the
+                // bootstrap and the GET moves content that does not parse aside under it.
+                lock (_userConfigurationManager.GetUserFileLock(authorizedUserId, "shortcuts.json"))
+                {
+                    _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "shortcuts.json", userConfiguration);
+                }
                 _logger.Info($"Saved user shortcuts for {ResolveUserDisplay(authorizedUserId)} to shortcuts.json");
                 return Ok(new { success = true, file = "shortcuts.json" });
             }
