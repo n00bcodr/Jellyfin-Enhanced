@@ -361,6 +361,7 @@
       document.body.appendChild(overlay);
     }
     function confirmAndHide(itemData, onHidden, dialogOptions = {}) {
+      if (internal.refuseEditIfNotLoaded()) return;
       if (!dialogOptions.showEpisodeChoice && !dialogOptions.surface && isConfirmationSuppressed()) {
         hideItem(itemData);
         if (onHidden) onHidden();

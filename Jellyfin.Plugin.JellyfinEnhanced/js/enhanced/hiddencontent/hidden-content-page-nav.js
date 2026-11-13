@@ -119,11 +119,11 @@
       return page;
     }
     function showPage() {
-      if (state.pageVisible) return;
+      if (state.pageVisible) return true;
       const config = JE.pluginConfig || {};
-      if (pluginPagesExists && config.HiddenContentUsePluginPages) return;
-      if (config.HiddenContentUseCustomTabs) return;
-      if (config.HiddenContentUseNativeTab) return;
+      if (pluginPagesExists && config.HiddenContentUsePluginPages) return false;
+      if (config.HiddenContentUseCustomTabs) return false;
+      if (config.HiddenContentUseNativeTab) return false;
       state.pageVisible = true;
       startLocationWatcher();
       injectStyles();
@@ -161,6 +161,7 @@
         })
       );
       renderPage();
+      return true;
     }
     function hidePage() {
       if (!state.pageVisible) return;

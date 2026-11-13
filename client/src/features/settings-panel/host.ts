@@ -171,7 +171,7 @@ export interface PanelBridge {
     addRandomButton(): void;
 
     hiddenContent?: HiddenContentSurface;
-    hiddenContentPage?: { showPage(): void };
+    hiddenContentPage?: { showPage(): boolean };
 
     tagPipeline?: TagPipeline;
     awardsTags?: AwardsTagsApi;

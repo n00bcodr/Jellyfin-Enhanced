@@ -25,8 +25,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.HiddenContent
         /// <summary>
         /// Loads (seeding defaults on first access) the user's hidden-content.json
         /// document. Shared by the hidden-content.json endpoint and /bootstrap.
-        /// Throws, and leaves the file as it is, when the stored list cannot be read or parsed:
-        /// the client saves the whole list, so an empty stand-in would replace it.
+        /// Throws when the stored list cannot be read or parsed: the client saves the whole list, so an empty
+        /// stand-in would replace it. A read error leaves the file as it is; content that does not parse is moved
+        /// aside to <c>.corrupt-{ts}</c> under the file's lock, as the save path does, so the next read starts from
+        /// the defaults instead of failing on every page load.
         /// </summary>
         public UserHiddenContent LoadUserHiddenContentDocument(string authorizedUserId)
         {
@@ -53,7 +55,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.HiddenContent
                 }
             }
 
-            return _userConfigurationManager.GetUserConfigurationStrict<UserHiddenContent>(authorizedUserId, "hidden-content.json", quarantineCorrupt: false);
+            return _userConfigurationManager.GetUserConfigurationStrict<UserHiddenContent>(authorizedUserId, "hidden-content.json");
         }
     }
 }

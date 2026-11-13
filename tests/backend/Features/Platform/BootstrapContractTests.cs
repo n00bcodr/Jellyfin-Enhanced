@@ -80,7 +80,9 @@ public class BootstrapContractTests
     }
 
     // Both are saved whole, so an empty stand-in for a stored file that cannot be read becomes the
-    // next save. The bootstrap and the fallback endpoints report the read as failed and keep the bytes.
+    // next save. The bootstrap and the fallback endpoints report content that does not parse as failed,
+    // and set it aside once, as a save does, so the next read starts from the defaults instead of
+    // failing on every page load. The bytes are kept beside the file.
     [Fact]
     public void UnreadableHiddenListAndShortcutsAreReportedAsFailedNotEmpty()
     {
@@ -90,17 +92,34 @@ public class BootstrapContractTests
         Directory.CreateDirectory(directory);
         const string Stored = "{\"Items\":{\"kept\":";
         var files = new[] { "hidden-content.json", "shortcuts.json" };
-        foreach (var file in files) File.WriteAllText(Path.Combine(directory, file), Stored);
+        void Store() { foreach (var file in files) File.WriteAllText(Path.Combine(directory, file), Stored); }
+        void AssertSetAside(int times)
+        {
+            foreach (var file in files)
+            {
+                Assert.False(File.Exists(Path.Combine(directory, file)));
+                var copies = Directory.GetFiles(directory, file + ".corrupt-*");
+                Assert.Equal(times, copies.Length);
+                Assert.All(copies, copy => Assert.Equal(Stored, File.ReadAllText(copy)));
+            }
+        }
+        Store();
         var controller = Controller(fixture, user, false);
 
         var body = Assert.IsType<BootstrapResponse>(Assert.IsType<JsonResult>(controller.GetBootstrap()).Value);
         Assert.Null(body.UserSettings.HiddenContent);
         Assert.Null(body.UserSettings.Shortcuts);
+        AssertSetAside(1);
+
+        Store();
         var hidden = ApiAssetTests.Sibling<Jellyfin.Plugin.JellyfinEnhanced.Features.HiddenContent.JeHiddenContentController>(controller, fixture.Core, fixture.Core.Manager, Mock.Of<IUserManager>());
         Assert.Equal(500, Assert.IsAssignableFrom<ObjectResult>(hidden.GetUserHiddenContent(user.ToString("N"))).StatusCode);
         var settings = ApiAssetTests.Sibling<JeSettingsController>(controller, fixture.Core, fixture.Core.Manager);
         Assert.Equal(500, Assert.IsAssignableFrom<ObjectResult>(settings.GetUserSettingsShortcuts(user.ToString("N"))).StatusCode);
-        foreach (var file in files) Assert.Equal(Stored, File.ReadAllText(Path.Combine(directory, file)));
+        AssertSetAside(2);
+
+        Assert.IsType<OkObjectResult>(hidden.GetUserHiddenContent(user.ToString("N")));
+        Assert.IsType<OkObjectResult>(settings.GetUserSettingsShortcuts(user.ToString("N")));
     }
 
     // This verifies the generated browser boundary against actual server serialization,

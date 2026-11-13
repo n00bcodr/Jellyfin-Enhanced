@@ -1,7 +1,7 @@
 import { getApi, lease, invalidatePolicy } from './host';
 import { installOnce, onDispose, selectionLease, enqueueWrite, pendingWrites } from './host';
 import type { HiddenDataSurface } from './host';
-import { decodeDocument, settingsFor, normalizeId, widestScope, sameValue, earliestHiddenAt, aliasMetadata, withChanges, mergeHomeScope as mergeCwScope, type HiddenDocument, type HiddenItem, type Settings } from './model';
+import { decodeDocument, settingsFor, normalizeId, widestScope, sameValue, earliestHiddenAt, aliasMetadata, withChanges, withPlainNames, mergeHomeScope as mergeCwScope, type HiddenDocument, type HiddenItem, type Settings } from './model';
 import { host, registry, type HiddenHost } from './host';
 /**
  * @file Hidden Content — data store, lookup sets, and the public data API.
@@ -89,6 +89,23 @@ import { host, registry, type HiddenHost } from './host';
      */
     function assertWritable() { getHiddenData(); if (!loadValid || !dataOwner?.current()) throw new Error("Hidden Content policy unavailable; reload before editing"); }
 
+    /**
+     * Whether an edit must be refused because the list is not loaded (it failed to load, or after a user switch the
+     * incoming user's list has not loaded yet). When it must, logs and tells the user to reload, and returns true.
+     */
+    function refuseEditIfNotLoaded(): boolean {
+        getHiddenData();
+        if (loadValid && dataOwner?.current()) return false;
+        console.warn('🪼 Jellyfin Enhanced: Hidden Content list did not load; change not made so the stored list is kept');
+        try {
+            JE.toast?.(JE.t('hidden_content_not_loaded'), 5000);
+        } catch { /* toast helper unavailable; the warning above stands */ }
+        return true;
+    }
+
+    /** An edit the user asked for: refused with a message, and thrown, while the list is not loaded. */
+    function assertEditable() { refuseEditIfNotLoaded(); assertWritable(); }
+
     function getSettings() {
         const data = getHiddenData();
         return settingsFor(data);
@@ -172,12 +189,14 @@ import { host, registry, type HiddenHost } from './host';
             });
             if (!requestToken.current() || (JE.session && !JE.session.isCurrent(requestEpoch))) return false;
             if (revision!==policyRevision || requestId!==refreshSequence || before!==JSON.stringify(hiddenData)) return false;
-            const camelCased = decodeDocument(fresh);
+            const read = withPlainNames(decodeDocument(fresh));
+            // Changes this session has not saved yet stay on top of the list as read.
+            const next = loadValid && dataOwner?.current() ? withChanges(storedCopy, getHiddenData(), read) : read;
             loadValid = true;
             JE.userConfig = JE.userConfig || {};
-            JE.userConfig.hiddenContent = camelCased || { items: {}, settings: {} };
-            noteItemChanges(hiddenData?.items??{},camelCased.items);
-            hiddenData = camelCased; storedCopy = camelCased; dataOwner=requestToken;
+            JE.userConfig.hiddenContent = next;
+            noteItemChanges(hiddenData?.items??{},next.items);
+            hiddenData = next; storedCopy = read; dataOwner=requestToken;
             rebuildSets();
             emitChange();
             refreshNativeCardVisibility();
@@ -290,7 +309,7 @@ import { host, registry, type HiddenHost } from './host';
      * @param {string} [params.hideScope] Scope: 'global', 'nextup', 'continuewatching', or 'homesections'.
      */
     function hideItem({ itemId, name, type, tmdbId, posterPath, seriesId, seriesName, seasonNumber, episodeNumber, hideScope }: HiddenItem) {
-        assertWritable();
+        assertEditable();
         const data = getHiddenData();
         if(!itemId && !tmdbId)throw new Error('Hidden item needs a Jellyfin or TMDB identity');
         const requestedKey=itemId||`tmdb-${tmdbId}`;
@@ -316,7 +335,7 @@ import { host, registry, type HiddenHost } from './host';
         hiddenData={...data,items};JE.userConfig.hiddenContent=hiddenData;
         rebuildSets();debouncedSave();emitChange();
         showUndoToast(name||'Item',key,()=>{
-            assertWritable();
+            assertEditable();
             const current=getHiddenData();
             if(affected.some(key=>itemEdits.get(key)!==appliedVersions.get(key)||!sameValue(current.items[key],items[key])))return;
             const restored={...current.items};
@@ -334,7 +353,7 @@ import { host, registry, type HiddenHost } from './host';
      * @param {string} itemId The storage key or Jellyfin item ID to unhide.
      */
     function unhideItem(itemId: string) {
-        assertWritable();
+        assertEditable();
         const data = getHiddenData();
         const newItems = { ...data.items };
         let restoredJellyfinId = '';
@@ -368,7 +387,7 @@ import { host, registry, type HiddenHost } from './host';
      * @param {Object} partial Key-value pairs to merge into settings.
      */
     function updateSettings(partial: Partial<Settings>) {
-        assertWritable();
+        assertEditable();
         const data = getHiddenData();
         hiddenData = {
             ...data,
@@ -468,7 +487,7 @@ import { host, registry, type HiddenHost } from './host';
      * Unhides all items, restoring full visibility.  Clears the entire items map.
      */
     function unhideAll() {
-        assertWritable();
+        assertEditable();
         const oldHiddenIds = new Set(hiddenIdSet);
         const data = getHiddenData();
         intentReset++;
@@ -490,7 +509,7 @@ import { host, registry, type HiddenHost } from './host';
     function resetFromUserConfig() {
         policyRevision++; intentReset++; itemIntents.clear();
         try {
-            const next = JE.userConfig?.hiddenContent == null ? { items: {}, settings: {} } : decodeDocument(JE.userConfig.hiddenContent);
+            const next = JE.userConfig?.hiddenContent == null ? { items: {}, settings: {} } : withPlainNames(decodeDocument(JE.userConfig.hiddenContent));
             // A list that failed to load (null) is unknown, not empty: nothing shows as hidden and edits are refused.
             hiddenData = next; storedCopy = next; dataOwner=lease(JE); itemEdits.clear(); loadValid = JE.userConfig?.hiddenContent != null; rebuildSets();
         } catch (error) { hiddenData ??= {items:{},settings:{}}; loadValid = false; console.warn("Invalid hidden-content policy", error); }
@@ -499,17 +518,20 @@ import { host, registry, type HiddenHost } from './host';
     /**
      * A save writes the whole list, so it starts from `stored`, the list as just read (another device, an
      * administrator or the server may have changed it), and applies only what this session changed. `saved()`,
-     * called once that is written, takes the result as this session's list, keeping edits made meanwhile.
+     * called once that is written, takes the result as this session's list, keeping edits made meanwhile, and returns
+     * it as the session holds it unchanged (names read as plain text).
      */
     function rebaseOnto(stored: HiddenDocument) {
         assertWritable();
         const owner=dataOwner, sent=getHiddenData(), merged=withChanges(storedCopy, sent, stored);
         return { merged, saved() {
-            if (dataOwner !== owner) return;
-            const local=getHiddenData(), next=withChanges(sent, local, merged), changed=!sameValue(local, next);
+            const written=withPlainNames(merged);
+            if (dataOwner !== owner) return written;
+            const local=getHiddenData(), next=withChanges(sent, local, written), changed=!sameValue(local, next);
             if (changed) noteItemChanges(local.items, next.items);
-            storedCopy = merged; hiddenData = next; JE.userConfig.hiddenContent = next;
+            storedCopy = written; hiddenData = next; JE.userConfig.hiddenContent = next;
             if (changed) { rebuildSets(); emitChange(); refreshNativeCardVisibility(); }
+            return written;
         } };
     }
 
@@ -534,6 +556,7 @@ import { host, registry, type HiddenHost } from './host';
 
     Object.assign(internal, {
         assertWritable,
+        refuseEditIfNotLoaded,
         captureItemIntent,
         isLoadOk:()=>loadValid,
         hiddenIdSet,

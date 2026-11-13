@@ -332,6 +332,89 @@ test('real loader keeps a hidden list or shortcut list whose fallback request fa
   assert.equal(h.plugin.userConfig.shortcuts, null);
 });
 
+// Upstream's bootstrap leaves a document that failed to load out of UserSettings (Jellyfin's serializer omits nulls),
+// and its client reads a missing one as not loaded. This tree's bootstrap writes the null, and a bootstrap without the
+// document fails the contract: the loader then reads each document on its own and never takes one as empty.
+test('real loader reads a hidden list or shortcut list left out of the bootstrap on its own, never as empty', async t => {
+  const missing = payload();
+  delete missing.UserSettings.HiddenContent;
+  delete missing.UserSettings.Shortcuts;
+  const h = setup(t, { ajax: async path => {
+    if (path.endsWith('/bootstrap')) return missing;
+    if (path.endsWith('/component-scripts.json')) return modules;
+    if (path === '/Plugins') return [];
+    if (path.endsWith('/version')) return { Version: 'fallback' };
+    if (path.endsWith('/hidden-content.json')) return { Items: { a: { ItemId: 'a' } }, Settings: {} };
+    if (path.endsWith('/shortcuts.json')) return { Shortcuts: [{ Name: 'GoToHome', Key: 'Q' }] };
+    return {};
+  } });
+  await until(() => h.plugin.initialized);
+  assert.deepEqual(plain(h.plugin.userConfig.hiddenContent), { items: { a: { itemId: 'a' } }, settings: {} });
+  assert.deepEqual(plain(h.plugin.userConfig.shortcuts), { Shortcuts: [{ Name: 'GoToHome', Key: 'Q' }] });
+});
+
+// hidden-content.json as the server stores and answers it: the C# model's property names with every
+// property present. A POST is bound to that model (names matched case-insensitively, absent ones at
+// their defaults) and written back out with the model's names. Upstream's test (7649dda9), except that this tab
+// unhides `a`, not the Continue Watching entry: here an unhide removes every entry stored for one item ID.
+const HIDDEN_SETTINGS = { Enabled: true, FilterLibrary: true, FilterDiscovery: true, FilterUpcoming: true, FilterCalendar: true, FilterSearch: false,
+  FilterRecommendations: true, FilterRequests: true, FilterNextUp: true, FilterContinueWatching: true, ShowHideButtons: true,
+  ShowHideConfirmation: true, ShowButtonJellyseerr: true, ShowButtonLibrary: false, ShowButtonDetails: true, ShowButtonCast: false,
+  ExperimentalHideCollections: false };
+const HIDDEN_ITEM = { ItemId: '', Name: '', Type: '', TmdbId: '', HiddenAt: '', PosterPath: '', SeriesId: '', SeriesName: '',
+  SeasonNumber: null, EpisodeNumber: null, HideScope: 'global' };
+const bindTo = (model, body) => Object.fromEntries(Object.entries(model).map(([name, value]) => {
+  const posted = Object.keys(body || {}).find(key => key.toLowerCase() === name.toLowerCase());
+  return [name, posted === undefined ? value : body[posted]];
+}));
+const asStoredHiddenContent = body => ({
+  Items: Object.fromEntries(Object.entries(body.Items ?? body.items ?? {}).map(([key, entry]) => [key, bindTo(HIDDEN_ITEM, entry)])),
+  Settings: bindTo(HIDDEN_SETTINGS, body.Settings ?? body.settings)
+});
+
+test('a hidden list booted and saved in the shape the server answers and stores keeps every change', async t => {
+  const dashed = '01234567-89ab-cdef-0123-456789abcdef', undashed = '0123456789abcdef0123456789abcdef';
+  let stored = asStoredHiddenContent({ items: { a: { itemId: 'a', name: 'A' },
+    [dashed]: { itemId: dashed, name: 'Episode', type: 'Episode', hideScope: 'continuewatching' },
+    [undashed]: { itemId: undashed, name: 'Episode', type: 'Episode' } }, settings: { filterSearch: true } });
+  const requests = [];
+  const h = setup(t, { ajax: async (path, request) => {
+    if (path.endsWith('/bootstrap')) return payload({ UserSettings: { HiddenContent: plain(stored) } });
+    if (path !== '/JellyfinEnhanced/user-settings/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/hidden-content.json') throw new Error(`Unexpected endpoint ${path}`);
+    requests.push({ type: request.type, body: request.data && JSON.parse(request.data) });
+    if (request.type === 'GET') return plain(stored);
+    stored = asStoredHiddenContent(JSON.parse(request.data));
+    return { success: true, file: 'hidden-content.json' };
+  } });
+  await until(() => h.plugin.initialized);
+  for (const name of ['data', 'save', 'dialogs', 'filter']) h.load(`enhanced/hiddencontent/hidden-content-${name}.js`);
+  const hc = h.plugin.internals.hiddenContent;
+  hc.resetFromUserConfig();
+  const posts = () => requests.filter(r => r.type === 'POST');
+
+  // Another device hides b and turns the calendar filter off; this tab unhides a, turns the library filter off and
+  // hides c.
+  stored.Items.b = asStoredHiddenContent({ items: { b: { itemId: 'b', name: 'B' } } }).Items.b;
+  stored.Settings.FilterCalendar = false;
+  hc.unhideItem('a');
+  hc.updateSettings({ filterLibrary: false });
+  hc.hideItem({ itemId: 'c', name: 'C', type: 'Movie' });
+  await until(() => posts().length === 1);
+
+  assert.deepEqual(Object.keys(stored.Items).sort(), [dashed, undashed, 'b', 'c']);
+  assert.equal(stored.Items[undashed].Name, 'Episode');
+  assert.equal(stored.Items[dashed].HideScope, 'continuewatching');
+  assert.deepEqual(stored.Settings, { ...HIDDEN_SETTINGS, FilterSearch: true, FilterCalendar: false, FilterLibrary: false });
+  assert.deepEqual(Object.keys(posts()[0].body).sort(), ['items', 'settings'], 'one spelling of each property is posted');
+  assert.equal(hc.isHidden('b'), true, 'the tab shows what the save read');
+
+  hc.unhideItem('b');
+  await until(() => posts().length === 2);
+  assert.deepEqual(Object.keys(stored.Items).sort(), [dashed, undashed, 'c']);
+  await new Promise(resolve => setTimeout(resolve, 1000));
+  assert.equal(requests.length, 4, 'two saves, one read and one write each; the stored shape is not taken as a change');
+});
+
 
 test('real loader discards a same-user response after server identity changes during boot', async t => {
   const stale = deferred();

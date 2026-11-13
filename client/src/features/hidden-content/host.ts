@@ -8,6 +8,8 @@ export interface HiddenDataSurface {
  normalizeId(id: unknown): string;
  getHiddenData(): HiddenDocument;
  assertWritable():void;
+ /** True, after telling the user why, when an edit must be refused because the list is not loaded. */
+ refuseEditIfNotLoaded():boolean;
  captureItemIntent(itemId:string):{current():boolean};
  isLoadOk():boolean;
  getSettings(): Settings;
@@ -20,7 +22,7 @@ export interface HiddenDataSurface {
  filterCalendarEvents<T extends {tmdbId?: unknown; itemId?: unknown; title?: string}>(items: T[]): T[];
  filterRequestItems<T extends {tmdbId?: unknown; id?: unknown; jellyfinMediaId?: unknown}>(items: T[]): T[];
  unhideAll(): void; resetFromUserConfig(): void;
- rebaseOnto(stored: HiddenDocument): {merged: HiddenDocument; saved(): void};
+ rebaseOnto(stored: HiddenDocument): {merged: HiddenDocument; saved(): HiddenDocument};
  debouncedSave(): void; flushPendingSave(): Promise<void>;
  fetchHiddenContentUsers(): Promise<AdminUser[] | null>;
  fetchUserHiddenItemsForAdmin(userId: string): Promise<ListedItem[] | null>;
@@ -37,7 +39,7 @@ export interface HiddenDataSurface {
 }
 export interface HiddenHost {
  internals?: { hiddenContentRuntime?: Runtime; features?:Partial<HomeSurfaceApi>; hiddenContent?: Partial<HiddenDataSurface>; hiddenContentPage?: Partial<PageSurface> };
- hiddenContent: Omit<HiddenDataSurface,'hiddenIdSet'|'normalizeId'|'getHiddenData'|'rebuildSets'|'shouldFilterSurface'|'emitChange'|'resetFromUserConfig'|'debouncedSave'|'refreshNativeCardVisibility'|'restoreNativeCardsForIds'|'getCardSurface'|'getCardItemId'|'filterAllNativeCards'|'setupNativeObserver'|'injectCSS'|'assertWritable'|'captureItemIntent'|'rebaseOnto'>;
+ hiddenContent: Omit<HiddenDataSurface,'hiddenIdSet'|'normalizeId'|'getHiddenData'|'rebuildSets'|'shouldFilterSurface'|'emitChange'|'resetFromUserConfig'|'debouncedSave'|'refreshNativeCardVisibility'|'restoreNativeCardsForIds'|'getCardSurface'|'getCardItemId'|'filterAllNativeCards'|'setupNativeObserver'|'injectCSS'|'assertWritable'|'refuseEditIfNotLoaded'|'captureItemIntent'|'rebaseOnto'>;
  hiddenContentPage: Pick<PageSurface,'showPage'|'hidePage'|'renderForCustomTab'|'renderPage'|'injectStyles'> & {initialize():void};
  initializeHiddenContentPage?:()=>void;
  pluginConfig?:{HiddenContentEnabled?:boolean;HiddenContentAdmin?:boolean;JellyseerrEnabled?:boolean;HiddenContentUsePluginPages?:boolean;HiddenContentUseCustomTabs?:boolean;HiddenContentUseNativeTab?:boolean};

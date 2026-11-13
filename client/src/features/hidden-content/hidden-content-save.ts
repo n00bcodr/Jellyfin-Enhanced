@@ -1,6 +1,6 @@
 import { installOnce, onDispose, selectionLease, enqueueWrite, pendingWrites } from './host';
 import { lease } from './host';
-import { decodeDocument, decodeUsers, record, type HiddenItem } from './model';
+import { decodeDocument, decodeUsers, record, withPlainNames, type HiddenItem } from './model';
 import { host, registry, type HiddenHost } from './host';
 /**
  * @file Hidden Content — debounced persistence, the bounded retry ladder,
@@ -101,7 +101,7 @@ import { host, registry, type HiddenHost } from './host';
             // The server returns PascalCase ({ Items, Settings }); reuse the shared converter so the
             // items match locally-loaded ones (toCamelCase is idempotent and recurses into Items).
             if (!token.current()) return null;
-            const hc = decodeDocument(record(res).hiddenContent);
+            const hc = withPlainNames(decodeDocument(record(res).hiddenContent));
             const items = hc.items;
             return Object.entries(items).map(([key, item]) => ({ ...item, _key: key }));
         } catch (e) {
@@ -159,30 +159,49 @@ import { host, registry, type HiddenHost } from './host';
         }
     }
 
+    // Saves run one at a time, and Remove from Continue Watching / Next Up waits for the save in flight. ApiClient.ajax
+    // only gives up on a request when asked to, so a read or write of a save that never gets an answer fails after this
+    // long, and the save is retried like any other failed save.
+    const SAVE_REQUEST_TIMEOUT_MS = 30000;
+
+    async function withTimeout<T>(request: Promise<T>): Promise<T> {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const timedOut = new Promise<never>((_, reject) => {
+            timer = setTimeout(() => reject(new Error('hidden-content request timed out')), SAVE_REQUEST_TIMEOUT_MS);
+        });
+        try {
+            return await Promise.race([request, timedOut]);
+        } finally {
+            clearTimeout(timer);
+        }
+    }
+
     // Direct bypass of JE.saveUserSettings (which swallows errors) so callers can react to failure.
-    // Returns the JSON snapshot that was sent so the caller can compare it to current state and decide
-    // whether the success acknowledgement still represents the latest local intent.
+    // Returns the saved list, as the session now holds it, as JSON so the caller can compare it to current state and
+    // decide whether the success acknowledgement still represents the latest local intent.
     // The list is read again first: this session's changes are written onto it, never the copy loaded with the page.
     function directSaveHiddenContent() {
         return enqueueWrite(JE,async(api)=>{
         assertWritable();
         const userId = api.getCurrentUserId();
         if (!userId) throw new Error('no current user');
-        const stored = decodeDocument(await api.ajax({
+        const stored = decodeDocument(await withTimeout(api.ajax({
             type: 'GET',
             url: api.getUrl(`/JellyfinEnhanced/user-settings/${userId}/hidden-content.json?_=${Date.now()}`),
             dataType: 'json'
-        }));
+        })));
         const { merged, saved } = rebaseOnto(stored);
         const snapshot = JSON.stringify(merged);
-        await api.ajax({
-            type: 'POST',
-            url: api.getUrl(`/JellyfinEnhanced/user-settings/${userId}/hidden-content.json`),
-            data: snapshot,
-            contentType: 'application/json'
-        });
-        saved();
-        return snapshot;
+        // Nothing of this session's to write (a change undone before the save ran, say).
+        if (snapshot !== JSON.stringify(stored)) {
+            await withTimeout(api.ajax({
+                type: 'POST',
+                url: api.getUrl(`/JellyfinEnhanced/user-settings/${userId}/hidden-content.json`),
+                data: snapshot,
+                contentType: 'application/json'
+            }));
+        }
+        return JSON.stringify(saved());
         });
     }
 

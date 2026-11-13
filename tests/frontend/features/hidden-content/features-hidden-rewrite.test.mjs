@@ -134,15 +134,19 @@ test('scoped write flush awaiting another write rejects account switch before se
  h.api.hideItem({itemId:'a'});const save=h.api.flushPendingSave();await tick();const scoped=h.home.removeFromHomeSurface('b','nextup');h.switchUser();pending.resolve({});await save;assert.equal(await scoped,false);assert.equal(requests,1);
 });
 test('hide and undo preserve unrelated stored extensions in the shipped assets',async t=>{
- let sent;const h=setup(t,{reads:true,ajax:async request=>{if(request.type==='GET')return {items:{},settings:{},extension:{v:1}};sent=JSON.parse(request.data);return {};}});
- h.api.getHiddenData().extension={v:1};h.api.hideItem({itemId:'a',name:'A'});h.document.querySelector('.je-undo-btn').click();await h.api.flushPendingSave();assert.deepEqual(sent.items,{});assert.equal(sent.extension.v,1);
+ let held={items:{},settings:{},extension:{v:1}},sent;const h=setup(t,{reads:true,ajax:async request=>{if(request.type==='GET')return structuredClone(held);sent=held=JSON.parse(request.data);return {};}});
+ // The hide is saved first: a hide undone before its save writes nothing.
+ h.api.getHiddenData().extension={v:1};h.api.hideItem({itemId:'a',name:'A'});await h.api.flushPendingSave();assert.ok(sent.items.a);assert.equal(sent.extension.v,1);
+ h.document.querySelector('.je-undo-btn').click();await h.api.flushPendingSave();assert.deepEqual(sent.items,{});assert.equal(sent.extension.v,1);
 });
 test('malformed scoped mutation acknowledgement does not mark an item hidden',async t=>{
  const h=setup(t,{ajax:async()=>({success:'yes'})});assert.equal(await h.home.removeFromHomeSurface('a','nextup'),false);assert.equal(h.api.getHiddenCount(),0);
 });
 test('undo restores an earlier home scope and unknown fields instead of deleting the prior policy',async t=>{
  let saved;const h=setup(t,{items:{a:{itemId:'a',hideScope:'nextup',future:42}},ajax:async request=>{saved=JSON.parse(request.data);return {};}});
- h.api.hideItem({itemId:'a',hideScope:'global'});assert.equal(h.api.isHidden('a'),true);h.document.querySelector('.je-undo-btn').click();await h.api.flushPendingSave();
+ // The hide is saved first: a hide undone before its save writes nothing.
+ h.api.hideItem({itemId:'a',hideScope:'global'});await h.api.flushPendingSave();assert.equal(saved.items.a.hideScope,'global');
+ assert.equal(h.api.isHidden('a'),true);h.document.querySelector('.je-undo-btn').click();await h.api.flushPendingSave();
  assert.equal(saved.items.a.hideScope,'nextup');assert.equal(saved.items.a.future,42);assert.equal(h.api.isHidden('a'),false);
 });
 test('disabling a scoped-only policy restores its native card',t=>{

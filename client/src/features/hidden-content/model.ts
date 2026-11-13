@@ -25,6 +25,21 @@ const itemStrings = ['itemId','name','type','posterPath','seriesId','seriesName'
 // Seerr cards used to store titles HTML-escaped; such names read back as the title they escaped.
 const ESCAPED: Readonly<Record<string, string>> = {'&amp;':'&','&lt;':'<','&gt;':'>','&quot;':'"','&#039;':"'",'&#39;':"'"};
 const unescapeName = (name: string) => name.replace(/&(?:amp|lt|gt|quot|#0?39);/g, e => ESCAPED[e] ?? e);
+/**
+ * The list with names stored HTML-escaped read as plain text, for showing and matching (only the escaper's own
+ * entities, only in names). Nothing is written back: a save starts from the list as stored, so an entry's stored text
+ * changes only when the user changes that entry. Returns `doc` itself when no name needs it.
+ */
+export function withPlainNames(doc: HiddenDocument): HiddenDocument {
+ let items: Record<string, HiddenItem> | null = null;
+ for (const [key, item] of Object.entries(doc.items)) {
+  if (typeof item.name !== 'string' || !item.name.includes('&')) continue;
+  const name = unescapeName(item.name);
+  if (name === item.name) continue;
+  (items ??= { ...doc.items })[key] = { ...item, name };
+ }
+ return items ? { ...doc, items } : doc;
+}
 function field(source: Record<string, unknown>, name: string): unknown {
  return Object.prototype.hasOwnProperty.call(source,name) ? source[name] : source[name[0]?.toUpperCase() + name.slice(1)];
 }
@@ -34,7 +49,7 @@ export function decodeItem(value: unknown): HiddenItem {
  for(const key of [...itemStrings,'tmdbId','seasonNumber','episodeNumber']) delete item[key];
  for (const key of itemStrings) {
   const v = field(raw,key);
-  if (v !== undefined && v !== null) { if (typeof v !== 'string') throw new Error(`Invalid ${key}`); item[key]=key==='name' ? unescapeName(v) : v; }
+  if (v !== undefined && v !== null) { if (typeof v !== 'string') throw new Error(`Invalid ${key}`); item[key]=v; }
  }
  const tmdb = field(raw,'tmdbId');
  if (tmdb !== undefined && tmdb !== null) {
@@ -125,18 +140,28 @@ export function sameValue(left:unknown,right:unknown):boolean {
  const a=record(left),b=record(right),keys=Object.keys(a);
  return keys.length===Object.keys(b).length&&keys.every(k=>Object.prototype.hasOwnProperty.call(b,k)&&sameValue(a[k],b[k]));
 }
-/** `onto` with each top-level field, item and setting that differs between `base` and `edited` taken from `edited`. */
+/**
+ * `onto` with each top-level field, item and setting that differs between `base` and `edited` taken from `edited`.
+ * An item `base` holds that is changed or removed is also replaced or removed under a spelling of its key (compared
+ * as IDs are, see normalizeId) that `base` does not hold: that is the server's copy of the same entry (it keys a
+ * Continue Watching hide by the dashed ID, this client by the ID it was given). A key `base` holds and the changes
+ * leave alone stays, as do entries under other spellings of an added key.
+ */
 export function withChanges(base:HiddenDocument,edited:HiddenDocument,onto:HiddenDocument):HiddenDocument {
- const apply=<T>(from:Record<string,T>,to:Record<string,T>,target:Record<string,T>):Record<string,T> => {
+ const apply=<T>(from:Record<string,T>,to:Record<string,T>,target:Record<string,T>,respell=false):Record<string,T> => {
   const out={...target};
-  for(const key of new Set([...Object.keys(from),...Object.keys(to)])) {
+  const changed=[...new Set([...Object.keys(from),...Object.keys(to)])].filter(key=>!sameValue(from[key],to[key]));
+  if(respell) {
+   const replaced=new Set(changed.filter(key=>from[key]!==undefined).map(normalizeId)), keys=new Set(changed);
+   for(const key of Object.keys(out))if(replaced.has(normalizeId(key))&&from[key]===undefined&&!keys.has(key))delete out[key];
+  }
+  for(const key of changed) {
    const value=to[key];
-   if(sameValue(from[key],value))continue;
    if(value===undefined)delete out[key];else out[key]=value;
   }
   return out;
  };
- return {...apply(base,edited,onto),items:apply(base.items,edited.items,onto.items),settings:apply(base.settings,edited.settings,onto.settings)};
+ return {...apply(base,edited,onto),items:apply(base.items,edited.items,onto.items,true),settings:apply(base.settings,edited.settings,onto.settings)};
 }
 /** Ask the same parser which decimal fraction supplies the clock, ignoring comments/date fields. */
 function parsedFraction(stamp:string,time:number):string {

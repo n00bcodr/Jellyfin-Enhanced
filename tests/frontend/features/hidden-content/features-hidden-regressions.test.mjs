@@ -215,7 +215,8 @@ test('HC-R3-002 sequential scoped actions on the same item still compose home sc
 
 for(const event of ['hashchange','popstate','viewhide'])test(`HC-R4B-001 same-account ${event} retains usable Undo`,async t=>{
  let saved;const h=setup(t,{ajax:async r=>{saved=JSON.parse(r.data);return {};}});
- h.api.hideItem({itemId:'a'});assert.ok(h.document.querySelector('.je-undo-btn'));
+ // The hide is saved first: a hide undone before its save writes nothing.
+ h.api.hideItem({itemId:'a'});await h.api.flushPendingSave();assert.ok(saved.items.a);assert.ok(h.document.querySelector('.je-undo-btn'));
  if(event==='viewhide')h.document.dispatchEvent(new h.window.Event(event));
  else {h.window.history.replaceState({},'', '#/details?id=another');h.window.dispatchEvent(new h.window.Event(event));}
  assert.ok(h.document.querySelector('.je-undo-btn'));h.document.querySelector('.je-undo-btn').click();await h.api.flushPendingSave();assert.deepEqual(saved.items,{});

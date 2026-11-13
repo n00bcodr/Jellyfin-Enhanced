@@ -101,6 +101,7 @@
   var export1 = /* @__PURE__ */ sharedExport(shared, "decodeDocument");
   var export6 = /* @__PURE__ */ sharedExport(shared, "decodeUsers");
   var export11 = /* @__PURE__ */ sharedExport(shared, "record");
+  var export16 = /* @__PURE__ */ sharedExport(shared, "withPlainNames");
 
   // client/src/features/hidden-content/hidden-content-save.ts
   (function(JE) {
@@ -156,7 +157,7 @@
           dataType: "json"
         });
         if (!token.current()) return null;
-        const hc = export1(export11(res).hiddenContent);
+        const hc = export16(export1(export11(res).hiddenContent));
         const items = hc.items;
         return Object.entries(items).map(([key, item]) => ({ ...item, _key: key }));
       } catch (e) {
@@ -196,26 +197,39 @@
         return false;
       }
     }
+    const SAVE_REQUEST_TIMEOUT_MS = 3e4;
+    async function withTimeout(request) {
+      let timer;
+      const timedOut = new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error("hidden-content request timed out")), SAVE_REQUEST_TIMEOUT_MS);
+      });
+      try {
+        return await Promise.race([request, timedOut]);
+      } finally {
+        clearTimeout(timer);
+      }
+    }
     function directSaveHiddenContent() {
       return enqueueWrite(JE, async (api) => {
         assertWritable();
         const userId = api.getCurrentUserId();
         if (!userId) throw new Error("no current user");
-        const stored = export1(await api.ajax({
+        const stored = export1(await withTimeout(api.ajax({
           type: "GET",
           url: api.getUrl(`/JellyfinEnhanced/user-settings/${userId}/hidden-content.json?_=${Date.now()}`),
           dataType: "json"
-        }));
+        })));
         const { merged, saved } = rebaseOnto(stored);
         const snapshot = JSON.stringify(merged);
-        await api.ajax({
-          type: "POST",
-          url: api.getUrl(`/JellyfinEnhanced/user-settings/${userId}/hidden-content.json`),
-          data: snapshot,
-          contentType: "application/json"
-        });
-        saved();
-        return snapshot;
+        if (snapshot !== JSON.stringify(stored)) {
+          await withTimeout(api.ajax({
+            type: "POST",
+            url: api.getUrl(`/JellyfinEnhanced/user-settings/${userId}/hidden-content.json`),
+            data: snapshot,
+            contentType: "application/json"
+          }));
+        }
+        return JSON.stringify(saved());
       });
     }
     function reconcileAfterSave(snapshotSent, generation, identity) {

@@ -49,7 +49,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.HiddenContent
             catch (Exception)
             {
                 // The strict read has logged why.
-                return StatusCode(500, new { success = false, message = "Hidden content could not be read. The stored list has been preserved." });
+                return StatusCode(500, new { success = false, message = "Hidden content could not be read. Please retry." });
             }
         }
 

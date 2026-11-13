@@ -647,6 +647,7 @@
     "remove_continue_watching_error_api": "Unable to remove item: {error}",
     "unknown_error": "Unknown error",
     "hidden_content_save_failed_persistent": "Hidden Content changes could not be saved. Please reload and retry.",
+    "hidden_content_not_loaded": "Your hidden items could not be loaded, so this change was not made. Please reload and retry.",
     "remove_continue_watching_success": "Item removed from Continue Watching",
     "remove_next_up_success": "Item removed from Next Up",
     "remove_items_success": "Items removed",

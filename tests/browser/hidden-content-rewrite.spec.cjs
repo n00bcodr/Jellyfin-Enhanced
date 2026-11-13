@@ -30,6 +30,9 @@ test('shipped hide and undo update native cards and persist the final intent',as
  await setup(page);
  await page.evaluate(()=>window.JellyfinEnhanced.hiddenContent.hideItem({itemId:'episode',name:'Episode'}));
  await expect(page.locator('.card.je-hidden')).toHaveCount(2);
+ // The hide is saved first: a hide undone before its save writes nothing.
+ await page.evaluate(()=>window.JellyfinEnhanced.hiddenContent.flushPendingSave());
+ expect(await page.evaluate(()=>Object.keys(JSON.parse(window.saved.at(-1).data).items))).toEqual(['episode']);
  await page.locator('.je-undo-btn').click();
  await expect(page.locator('.card.je-hidden')).toHaveCount(0);
  await page.evaluate(()=>window.JellyfinEnhanced.hiddenContent.flushPendingSave());
@@ -61,6 +64,9 @@ test('Undo remains usable after same-account navigation and clears on account ch
  await setup(page);
  await page.evaluate(()=>window.JellyfinEnhanced.hiddenContent.hideItem({itemId:'episode',name:'Episode'}));
  await expect(page.locator('.je-undo-btn')).toBeVisible();
+ // The hide is saved first: a hide undone before its save writes nothing.
+ await page.evaluate(()=>window.JellyfinEnhanced.hiddenContent.flushPendingSave());
+ expect(await page.evaluate(()=>Object.keys(JSON.parse(window.saved.at(-1).data).items))).toEqual(['episode']);
  await page.evaluate(()=>{history.pushState({},'', '#/details?id=other');window.dispatchEvent(new Event('popstate'));document.dispatchEvent(new Event('viewhide'));});
  await expect(page.locator('.je-undo-btn')).toBeVisible();await page.locator('.je-undo-btn').click();
  await page.evaluate(()=>window.JellyfinEnhanced.hiddenContent.flushPendingSave());

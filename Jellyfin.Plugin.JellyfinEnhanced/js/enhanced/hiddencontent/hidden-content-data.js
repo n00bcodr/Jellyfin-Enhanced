@@ -92,6 +92,7 @@
   var export13 = /* @__PURE__ */ sharedExport(shared, "settingsFor");
   var export14 = /* @__PURE__ */ sharedExport(shared, "widestScope");
   var export15 = /* @__PURE__ */ sharedExport(shared, "withChanges");
+  var export16 = /* @__PURE__ */ sharedExport(shared, "withPlainNames");
 
   // client/src/features/hidden-content/hidden-content-data.ts
   (function(JE) {
@@ -138,6 +139,20 @@
     function assertWritable() {
       getHiddenData();
       if (!loadValid || !dataOwner?.current()) throw new Error("Hidden Content policy unavailable; reload before editing");
+    }
+    function refuseEditIfNotLoaded() {
+      getHiddenData();
+      if (loadValid && dataOwner?.current()) return false;
+      console.warn("🪼 Jellyfin Enhanced: Hidden Content list did not load; change not made so the stored list is kept");
+      try {
+        JE.toast?.(JE.t("hidden_content_not_loaded"), 5e3);
+      } catch {
+      }
+      return true;
+    }
+    function assertEditable() {
+      refuseEditIfNotLoaded();
+      assertWritable();
     }
     function getSettings() {
       const data = getHiddenData();
@@ -209,13 +224,14 @@
         });
         if (!requestToken.current() || JE.session && !JE.session.isCurrent(requestEpoch)) return false;
         if (revision !== policyRevision || requestId !== refreshSequence || before !== JSON.stringify(hiddenData)) return false;
-        const camelCased = export1(fresh);
+        const read = export16(export1(fresh));
+        const next = loadValid && dataOwner?.current() ? export15(storedCopy, getHiddenData(), read) : read;
         loadValid = true;
         JE.userConfig = JE.userConfig || {};
-        JE.userConfig.hiddenContent = camelCased || { items: {}, settings: {} };
-        noteItemChanges(hiddenData?.items ?? {}, camelCased.items);
-        hiddenData = camelCased;
-        storedCopy = camelCased;
+        JE.userConfig.hiddenContent = next;
+        noteItemChanges(hiddenData?.items ?? {}, next.items);
+        hiddenData = next;
+        storedCopy = read;
         dataOwner = requestToken;
         rebuildSets();
         emitChange();
@@ -281,7 +297,7 @@
       return hiddenTmdbIdSet.has(String(tmdbId));
     }
     function hideItem({ itemId, name, type, tmdbId, posterPath, seriesId, seriesName, seasonNumber, episodeNumber, hideScope }) {
-      assertWritable();
+      assertEditable();
       const data = getHiddenData();
       if (!itemId && !tmdbId) throw new Error("Hidden item needs a Jellyfin or TMDB identity");
       const requestedKey = itemId || `tmdb-${tmdbId}`;
@@ -316,7 +332,7 @@
       debouncedSave();
       emitChange();
       showUndoToast(name || "Item", key, () => {
-        assertWritable();
+        assertEditable();
         const current = getHiddenData();
         if (affected.some((key2) => itemEdits.get(key2) !== appliedVersions.get(key2) || !export12(current.items[key2], items[key2]))) return;
         const restored = { ...current.items };
@@ -335,7 +351,7 @@
       refreshNativeCardVisibility();
     }
     function unhideItem(itemId) {
-      assertWritable();
+      assertEditable();
       const data = getHiddenData();
       const newItems = { ...data.items };
       let restoredJellyfinId = "";
@@ -360,7 +376,7 @@
       refreshNativeCardVisibility();
     }
     function updateSettings(partial) {
-      assertWritable();
+      assertEditable();
       const data = getHiddenData();
       hiddenData = {
         ...data,
@@ -421,7 +437,7 @@
       });
     }
     function unhideAll() {
-      assertWritable();
+      assertEditable();
       const oldHiddenIds = new Set(hiddenIdSet);
       const data = getHiddenData();
       intentReset++;
@@ -439,7 +455,7 @@
       intentReset++;
       itemIntents.clear();
       try {
-        const next = JE.userConfig?.hiddenContent == null ? { items: {}, settings: {} } : export1(JE.userConfig.hiddenContent);
+        const next = JE.userConfig?.hiddenContent == null ? { items: {}, settings: {} } : export16(export1(JE.userConfig.hiddenContent));
         hiddenData = next;
         storedCopy = next;
         dataOwner = lease(JE);
@@ -456,10 +472,11 @@
       assertWritable();
       const owner = dataOwner, sent = getHiddenData(), merged = export15(storedCopy, sent, stored);
       return { merged, saved() {
-        if (dataOwner !== owner) return;
-        const local = getHiddenData(), next = export15(sent, local, merged), changed = !export12(local, next);
+        const written = export16(merged);
+        if (dataOwner !== owner) return written;
+        const local = getHiddenData(), next = export15(sent, local, written), changed = !export12(local, next);
         if (changed) noteItemChanges(local.items, next.items);
-        storedCopy = merged;
+        storedCopy = written;
         hiddenData = next;
         JE.userConfig.hiddenContent = next;
         if (changed) {
@@ -467,6 +484,7 @@
           emitChange();
           refreshNativeCardVisibility();
         }
+        return written;
       } };
     }
     JE.session?.onUserChange("hidden-content-data", () => {
@@ -488,6 +506,7 @@
     });
     Object.assign(internal, {
       assertWritable,
+      refuseEditIfNotLoaded,
       captureItemIntent,
       isLoadOk: () => loadValid,
       hiddenIdSet,

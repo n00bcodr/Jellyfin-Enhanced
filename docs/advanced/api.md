@@ -419,6 +419,8 @@ The bookmark GET/POST pair is listed in [Bookmarks API endpoints](#bookmarks-api
 
 Settings, shortcuts, Elsewhere, and bookmark whole-file saves do not strict-read the previous document.
 
+The Hidden Content and shortcuts GETs, and the same two documents in `bootstrap`, never answer an empty document for a stored file they cannot read, because clients save both whole. A read error returns `500` (`null` in `bootstrap`) and leaves the file as it is. Content that does not parse is first moved aside to `.corrupt-<timestamp>`, as a save would, so the next read returns the defaults.
+
 Hidden Content and raw Spoiler Guard saves lock and strict-read first: corruption returns `503` with backup/retry guidance, temporary I/O failures `500`.
 
 Raw Spoiler Guard POST has a **2 MiB** request limit and at most **1000 entries in each** of `Series`, `Movies`, `Collections`, `PendingTmdb`; exceeding the dictionary cap returns `413`.
@@ -1492,7 +1494,7 @@ Use `bootstrap` to load your initial configuration, user documents, and availabl
 
 A missing/unparseable claim returns `403`; an empty but parseable GUID passes the initial check. There is no target-user parameter or account-existence check. Missing configuration returns `503`.
 
-Individual document loading failures can yield null rather than failing bootstrap. First settings/Hidden Content loads can seed saved defaults as on their standalone GETs.
+Individual document loading failures can yield null rather than failing bootstrap; the client treats a null Hidden Content or shortcuts document as not loaded. First settings/Hidden Content loads can seed saved defaults as on their standalone GETs.
 
 Prefetch values depend on feature/access/cache gates. Spoiler state is included only when enabled and readable without recovery; Seerr values are included only when existing caches avoid an upstream lookup; stream sessions require allowed access. Null means use the standalone endpoint when needed.
 

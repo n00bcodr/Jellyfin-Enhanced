@@ -97,15 +97,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Settings
                 return authorizationResult;
             }
 
-            // The client saves the whole list: an unreadable one is reported, never answered as empty.
+            // The client saves the whole list: an unreadable one is reported, never answered as empty. A read error
+            // leaves the file as it is; content that does not parse is moved aside, so the next read gets the defaults.
             try
             {
-                return Ok(_userConfigurationManager.GetUserConfigurationStrict<UserShortcuts>(authorizedUserId, "shortcuts.json", quarantineCorrupt: false));
+                return Ok(_userConfigurationManager.GetUserConfigurationStrict<UserShortcuts>(authorizedUserId, "shortcuts.json"));
             }
             catch (Exception)
             {
                 // The strict read has logged why.
-                return StatusCode(500, new { success = false, message = "Shortcuts could not be read. The stored list has been preserved." });
+                return StatusCode(500, new { success = false, message = "Shortcuts could not be read. Please retry." });
             }
         }
 

@@ -16,7 +16,7 @@ export interface PageSurface {
  toOpaqueColor(value:unknown):string|null;applyAdminThemeVars(container:HTMLElement):void;isCssColor(value:unknown):value is string;
  createAdminViewingBadge():HTMLElement;handleUnhide(key:string):void;handleUnhideMany(keys:string[]):void;openAdminAddModal():void;
  createGroupCard(group:Group):HTMLElement;createSection(title:string,content:HTMLElement,options?:{expandable?:boolean}):HTMLElement;
- renderPage(container?:HTMLElement):void;createPageContainer():HTMLElement;showPage():void;hidePage():void;
+ renderPage(container?:HTMLElement):void;createPageContainer():HTMLElement;showPage():boolean;hidePage():void;
  interceptNavigation(event:HashChangeEvent|PopStateEvent):void;handleNavigation():void;handleViewShow(event:Event):void;handleNavClick(event:MouseEvent):void;
  injectNavigation():void;setupNavigationWatcher():void;renderForCustomTab(container?:HTMLElement):void;
 }

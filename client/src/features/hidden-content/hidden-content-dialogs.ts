@@ -392,6 +392,8 @@ import { host, registry, type HiddenHost } from './host';
      * @param {Object} [dialogOptions] Options passed to showHideConfirmation.
      */
     function confirmAndHide(itemData: HiddenItem, onHidden?: () => void, dialogOptions: DialogOptions = {}) {
+        // A list that did not load can't be changed: say so before asking anything.
+        if (internal.refuseEditIfNotLoaded()) return;
         if (!dialogOptions.showEpisodeChoice && !dialogOptions.surface && isConfirmationSuppressed()) {
             hideItem(itemData);
             if (onHidden) onHidden();

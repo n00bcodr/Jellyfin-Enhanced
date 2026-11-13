@@ -44,13 +44,24 @@
       const { resetAutoCloseTimer } = ctx;
       const hidden = JE.hiddenContent;
       if (!hidden) return;
-      const onToggle = (id, handler) => {
+      const onToggle = (id, key, handler = () => {
+      }) => {
         const el = inputById(id);
-        if (el) el.addEventListener("change", () => handler(el.checked));
+        if (!el) return;
+        el.addEventListener("change", () => {
+          try {
+            hidden.updateSettings({ [key]: el.checked });
+          } catch (error) {
+            console.warn("🪼 Jellyfin Enhanced: Hidden Content setting not changed", error);
+            el.checked = !el.checked;
+            resetAutoCloseTimer();
+            return;
+          }
+          handler(el.checked);
+        });
       };
       for (const [id, key] of HIDDEN_BUTTON_TOGGLES) {
-        onToggle(id, (checked) => {
-          hidden.updateSettings({ [key]: checked });
+        onToggle(id, key, (checked) => {
           if (key === "showButtonLibrary" || key === "showButtonCast") {
             if (checked) {
               hidden.addLibraryHideButtons();
@@ -62,12 +73,10 @@
           resetAutoCloseTimer();
         });
       }
-      onToggle("hiddenContentEnabledToggle", (checked) => {
-        hidden.updateSettings({ enabled: checked });
+      onToggle("hiddenContentEnabledToggle", "enabled", () => {
         resetAutoCloseTimer();
       });
-      onToggle("hiddenShowHideButtons", (checked) => {
-        hidden.updateSettings({ showHideButtons: checked });
+      onToggle("hiddenShowHideButtons", "showHideButtons", (checked) => {
         if (checked) {
           if (hidden.getSettings().showButtonLibrary) {
             hidden.addLibraryHideButtons();
@@ -78,18 +87,15 @@
         resetAutoCloseTimer();
       });
       for (const [id, key] of HIDDEN_SURFACE_TOGGLES) {
-        onToggle(id, (checked) => {
-          hidden.updateSettings({ [key]: checked });
+        onToggle(id, key, () => {
           resetAutoCloseTimer();
         });
       }
-      onToggle("hiddenShowConfirmation", (checked) => {
-        hidden.updateSettings({ showHideConfirmation: checked });
+      onToggle("hiddenShowConfirmation", "showHideConfirmation", () => {
         localStorage.removeItem("je_hide_confirm_suppressed_until");
         resetAutoCloseTimer();
       });
-      onToggle("hiddenExperimentalCollections", (checked) => {
-        hidden.updateSettings({ experimentalHideCollections: checked });
+      onToggle("hiddenExperimentalCollections", "experimentalHideCollections", (checked) => {
         if (!checked) {
           hidden.removeLibraryHideButtons();
           hidden.addLibraryHideButtons();
@@ -100,11 +106,8 @@
       if (manageBtn) {
         manageBtn.addEventListener("click", () => {
           ctx.closePanel();
-          const config = JE.pluginConfig;
-          const placed = config?.HiddenContentUseNativeTab || config?.HiddenContentUseCustomTabs || config?.HiddenContentUsePluginPages;
-          if (config?.HiddenContentEnabled && JE.hiddenContentPage && !placed) {
-            JE.hiddenContentPage.showPage();
-          } else {
+          const pageShown = !!(JE.pluginConfig?.HiddenContentEnabled && JE.hiddenContentPage?.showPage());
+          if (!pageShown) {
             hidden.showManagementPanel();
           }
         });

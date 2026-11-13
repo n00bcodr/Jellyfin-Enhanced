@@ -45,7 +45,8 @@
     sameValue: () => sameValue,
     settingsFor: () => settingsFor,
     widestScope: () => widestScope,
-    withChanges: () => withChanges
+    withChanges: () => withChanges,
+    withPlainNames: () => withPlainNames
   });
   var defaults = {
     enabled: true,
@@ -76,6 +77,16 @@
   var itemStrings = ["itemId", "name", "type", "posterPath", "seriesId", "seriesName", "hiddenAt", "hideScope"];
   var ESCAPED = { "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&#039;": "'", "&#39;": "'" };
   var unescapeName = (name) => name.replace(/&(?:amp|lt|gt|quot|#0?39);/g, (e) => ESCAPED[e] ?? e);
+  function withPlainNames(doc) {
+    let items = null;
+    for (const [key, item] of Object.entries(doc.items)) {
+      if (typeof item.name !== "string" || !item.name.includes("&")) continue;
+      const name = unescapeName(item.name);
+      if (name === item.name) continue;
+      (items ?? (items = { ...doc.items }))[key] = { ...item, name };
+    }
+    return items ? { ...doc, items } : doc;
+  }
   function field(source, name) {
     return Object.prototype.hasOwnProperty.call(source, name) ? source[name] : source[name[0]?.toUpperCase() + name.slice(1)];
   }
@@ -87,7 +98,7 @@
       const v = field(raw, key);
       if (v !== void 0 && v !== null) {
         if (typeof v !== "string") throw new Error(`Invalid ${key}`);
-        item[key] = key === "name" ? unescapeName(v) : v;
+        item[key] = v;
       }
     }
     const tmdb = field(raw, "tmdbId");
@@ -212,17 +223,21 @@
     return keys.length === Object.keys(b).length && keys.every((k) => Object.prototype.hasOwnProperty.call(b, k) && sameValue(a[k], b[k]));
   }
   function withChanges(base, edited, onto) {
-    const apply = (from, to, target) => {
+    const apply = (from, to, target, respell = false) => {
       const out = { ...target };
-      for (const key of /* @__PURE__ */ new Set([...Object.keys(from), ...Object.keys(to)])) {
+      const changed = [.../* @__PURE__ */ new Set([...Object.keys(from), ...Object.keys(to)])].filter((key) => !sameValue(from[key], to[key]));
+      if (respell) {
+        const replaced = new Set(changed.filter((key) => from[key] !== void 0).map(normalizeId)), keys = new Set(changed);
+        for (const key of Object.keys(out)) if (replaced.has(normalizeId(key)) && from[key] === void 0 && !keys.has(key)) delete out[key];
+      }
+      for (const key of changed) {
         const value = to[key];
-        if (sameValue(from[key], value)) continue;
         if (value === void 0) delete out[key];
         else out[key] = value;
       }
       return out;
     };
-    return { ...apply(base, edited, onto), items: apply(base.items, edited.items, onto.items), settings: apply(base.settings, edited.settings, onto.settings) };
+    return { ...apply(base, edited, onto), items: apply(base.items, edited.items, onto.items, true), settings: apply(base.settings, edited.settings, onto.settings) };
   }
   function parsedFraction(stamp, time) {
     const seconds = Math.floor(time / 1e3) * 1e3, millis = time - seconds;
