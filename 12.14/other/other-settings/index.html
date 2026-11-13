@@ -1,0 +1,3928 @@
+<!DOCTYPE html><html lang="en" class="no-js"><head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="The essential enhancement suite for Jellyfin, bundling advanced features and customizations into one convenient plugin.">
+      
+      
+        <meta name="author" content="n00bcodr">
+      
+      
+        <link rel="canonical" href="https://n00bcodr.github.io/Jellyfin-Enhanced/12.14/other/other-settings/">
+      
+      
+        <link rel="prev" href="../other-features/">
+      
+      
+        <link rel="next" href="../../advanced/css-customization/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../images/favicon.ico">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.0">
+    
+    
+  
+  
+    
+      <title>Settings · Other - Jellyfin Enhanced</title>
+    
+  
+
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Noto+Sans:300,300i,400,400i,700,700i%7CNoto+Sans+Mono:400,400i,700,700i&amp;display=fallback">
+        <style>:root{--md-text-font:"Noto Sans";--md-code-font:"Noto Sans Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+      <link rel="stylesheet" href="../../stylesheets/touch.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  <link href="../../assets/stylesheets/glightbox.min.css" rel="stylesheet"><script src="../../assets/javascripts/glightbox.min.js"></script><style id="glightbox-style">
+            html.glightbox-open { overflow: initial; height: 100%; }
+            .gslide-title { margin-top: 0px; user-select: text; }
+            .gslide-desc { color: #666; user-select: text; }
+            .gslide-image img { background: white; }
+            .gscrollbar-fixer { padding-right: 15px; }
+            .gdesc-inner { font-size: 0.75rem; }
+            body[data-md-color-scheme="slate"] .gdesc-inner { background: var(--md-default-bg-color); }
+            body[data-md-color-scheme="slate"] .gslide-title { color: var(--md-default-fg-color); }
+            body[data-md-color-scheme="slate"] .gslide-desc { color: var(--md-default-fg-color); }
+        </style></head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#other-settings" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden="">
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Jellyfin Enhanced" class="md-header__button md-logo" aria-label="Jellyfin Enhanced" data-md-component="logo">
+      <span class="je-mark" aria-hidden="true"></span>
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"></path></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Jellyfin Enhanced
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+              <span class="je-topic-area">Other</span>
+            
+            
+              Settings
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom" aria-label="Switch to dark mode" type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden="">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"></path></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom" aria-label="Switch to light mode" type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden="">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"></path></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"></path></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required="">
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"></path></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M15.41 16.58 10.83 12l4.58-4.59L14 6l-6 6 6 6z"></path></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard="" data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"></path></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"></path></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix="">
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/n00bcodr/Jellyfin-Enhanced" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"></path></svg>
+  </div>
+  <div class="md-source__repository">
+    n00bcodr/Jellyfin-Enhanced
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 5.69 5 4.5V18h-2v-6H9v6H7v-7.81zM12 3 2 12h3v8h6v-6h2v6h6v-8h3"></path></svg>
+  
+  <span class="je-tab-label">Home</span>
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../getting-started/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m13.13 22.19-1.63-3.83c1.57-.58 3.04-1.36 4.4-2.27zM5.64 12.5l-3.83-1.63 6.1-2.77C7 9.46 6.22 10.93 5.64 12.5M19.22 4c.28 0 .53 0 .74.05.17 1.39-.02 4.25-3.3 7.53-1.7 1.71-3.73 3.02-6.01 3.89l-2.15-2.1c.92-2.31 2.23-4.34 3.92-6.03C15.18 4.58 17.64 4 19.22 4m0-2c-1.98 0-4.98.69-8.22 3.93-2.19 2.19-3.5 4.6-4.35 6.71-.28.75-.09 1.57.46 2.13l2.13 2.12c.38.38.89.61 1.42.61.23 0 .47-.06.7-.15A19.1 19.1 0 0 0 18.07 13c5.66-5.66 3.54-10.61 3.54-10.61S20.7 2 19.22 2m-4.68 7.46c-.78-.78-.78-2.05 0-2.83s2.05-.78 2.83 0c.77.78.78 2.05 0 2.83s-2.05.78-2.83 0m-5.66 7.07-1.41-1.41zM6.24 22l3.64-3.64c-.34-.09-.67-.24-.97-.45L4.83 22zM2 22h1.41l4.77-4.76-1.42-1.41L2 20.59zm0-2.83 4.09-4.08c-.21-.3-.36-.62-.45-.97L2 17.76z"></path></svg>
+  
+  <span class="je-tab-label">Getting Started</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../enhanced/enhanced-features/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 4c3.8 0 6.5 2.8 6.5 6.8a18.3 18.3 0 0 1-13 0C5.5 6.8 8.2 4 12 4m0-2c-4.7 0-8.5 3.5-8.5 8.9.06.8.56 1.5 1.3 1.8l1.7.5v2.3a.5.5 0 0 1-.5.5.5.5 0 0 1-.5-.5.898.898 0 0 0-1-1 .898.898 0 0 0-1 1A2.405 2.405 0 0 0 5.9 18H6c1.41.06 2.56-1.09 2.5-2.5v-1.8h1v5.7c0 .67-1 .67-1 0a.898.898 0 0 0-1-1 .898.898 0 0 0-1 1c-.11 1.4 1 2.6 2.4 2.6H9c1.41.06 2.56-1.09 2.5-2.5V14h1v5.5A2.394 2.394 0 0 0 15 22h.1c1.37 0 2.46-1.14 2.4-2.5 0-1.33-2-1.33-2 0 0 .67-1 .67-1 0v-5.7h1v1.8c0 1.36 1.13 2.46 2.5 2.4h.1c1.37 0 2.46-1.14 2.4-2.5 0-1.33-2-1.33-2 0 0 .67-1 .67-1 0v-2.3l1.7-.5c.72-.34 1.21-1.02 1.3-1.8C20.5 5.5 16.7 2 12 2m0 4.2c-1.47.4-2.76 1.33-3.6 2.6-.4.53-1.2-.07-.8-.6a7.47 7.47 0 0 1 4.2-3 .5.5 0 0 1 .6.4c.1.3-.1.5-.4.6"></path></svg>
+  
+  <span class="je-tab-label">Enhanced</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../spoiler-guard/spoiler-guard-features/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 11c0 5.55-3.84 10.74-9 12-5.16-1.26-9-6.45-9-12V5l9-4 9 4zm-9 10c3.75-1 7-5.46 7-9.78V6.3l-7-3.12L5 6.3v4.92C5 15.54 8.25 20 12 21m2.8-10V9.5C14.8 8.1 13.4 7 12 7S9.2 8.1 9.2 9.5V11c-.6 0-1.2.6-1.2 1.2v3.5c0 .7.6 1.3 1.2 1.3h5.5c.7 0 1.3-.6 1.3-1.2v-3.5c0-.7-.6-1.3-1.2-1.3m-1.3 0h-3V9.5c0-.8.7-1.3 1.5-1.3s1.5.5 1.5 1.3z"></path></svg>
+  
+  <span class="je-tab-label">Spoiler Guard</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../seerr/seerr-features/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M11 20H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2h1l2 4h3L8 4h2l2 4h3l-2-4h2l2 4h3l-2-4h4v9c-.5-.8-1.2-1.5-2-2v-1H5.8L4 6.5V18h6.2c.2.7.4 1.4.8 2m9.3-1.1c.4-.7.7-1.5.7-2.4 0-2.5-2-4.5-4.5-4.5S12 14 12 16.5s2 4.5 4.5 4.5c.9 0 1.7-.2 2.4-.7l3.1 3.1 1.4-1.4zm-3.8.1c-1.4 0-2.5-1.1-2.5-2.5s1.1-2.5 2.5-2.5 2.5 1.1 2.5 2.5-1.1 2.5-2.5 2.5"></path></svg>
+  
+  <span class="je-tab-label">Seerr</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../arr/arr-features/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M7 11h2v2H7zm14-6v14c0 1.11-.89 2-2 2H5a2 2 0 0 1-2-2V5c0-1.1.9-2 2-2h1V1h2v2h8V1h2v2h1a2 2 0 0 1 2 2M5 7h14V5H5zm14 12V9H5v10zm-4-6v-2h2v2zm-4 0v-2h2v2zm-4 2h2v2H7zm8 2v-2h2v2zm-4 0v-2h2v2z"></path></svg>
+  
+  <span class="je-tab-label">*arr</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../elsewhere/elsewhere-features/" class="md-tabs__link">
+          
+  
+  
+  
+    
+  
+  <span class="je-tab-label">Elsewhere &amp; Reviews</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../other-features/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m9 4 2.5 5.5L17 12l-5.5 2.5L9 20l-2.5-5.5L1 12l5.5-2.5zm0 4.83L8 11l-2.17 1L8 13l1 2.17L10 13l2.17-1L10 11zM19 9l-1.26-2.74L15 5l2.74-1.25L19 1l1.25 2.75L23 5l-2.75 1.26zm0 14-1.26-2.74L15 19l2.74-1.25L19 15l1.25 2.75L23 19l-2.75 1.26z"></path></svg>
+  
+  <span class="je-tab-label">Other</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../advanced/css-customization/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M8 3a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2H3v2h1a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h2v-2H8v-5a2 2 0 0 0-2-2 2 2 0 0 0 2-2V5h2V3m6 0a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h1v2h-1a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2h-2v-2h2v-5a2 2 0 0 1 2-2 2 2 0 0 1-2-2V5h-2V3z"></path></svg>
+  
+  <span class="je-tab-label">Advanced</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../faq-support/faq/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19.79 15.41c.95-2.17.95-4.66 0-6.82l-2.74 1.24c.6 1.38.6 2.95.01 4.34zm-4.37-11.2a8.54 8.54 0 0 0-6.83 0l1.24 2.73c1.39-.59 2.96-.59 4.35.01zM4.21 8.58a8.56 8.56 0 0 0 0 6.84l2.74-1.25c-.6-1.38-.6-2.96 0-4.35zm4.38 11.21a8.5 8.5 0 0 0 6.83-.01l-1.24-2.73a5.5 5.5 0 0 1-4.34.01zM12 2a10 10 0 0 1 10 10 10 10 0 0 1-10 10A10 10 0 0 1 2 12 10 10 0 0 1 12 2m0 6a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4"></path></svg>
+  
+  <span class="je-tab-label">Help</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation">
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Jellyfin Enhanced" class="md-nav__button md-logo" aria-label="Jellyfin Enhanced" data-md-component="logo">
+      <span class="je-mark" aria-hidden="true"></span>
+    </a>
+    Jellyfin Enhanced
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/n00bcodr/Jellyfin-Enhanced" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"></path></svg>
+  </div>
+  <div class="md-source__repository">
+    n00bcodr/Jellyfin-Enhanced
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix="">
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 5.69 5 4.5V18h-2v-6H9v6H7v-7.81zM12 3 2 12h3v8h6v-6h2v6h6v-8h3"></path></svg>
+  
+  <span class="md-ellipsis">
+    Home
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../getting-started/" class="md-nav__link ">
+              
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m13.13 22.19-1.63-3.83c1.57-.58 3.04-1.36 4.4-2.27zM5.64 12.5l-3.83-1.63 6.1-2.77C7 9.46 6.22 10.93 5.64 12.5M19.22 4c.28 0 .53 0 .74.05.17 1.39-.02 4.25-3.3 7.53-1.7 1.71-3.73 3.02-6.01 3.89l-2.15-2.1c.92-2.31 2.23-4.34 3.92-6.03C15.18 4.58 17.64 4 19.22 4m0-2c-1.98 0-4.98.69-8.22 3.93-2.19 2.19-3.5 4.6-4.35 6.71-.28.75-.09 1.57.46 2.13l2.13 2.12c.38.38.89.61 1.42.61.23 0 .47-.06.7-.15A19.1 19.1 0 0 0 18.07 13c5.66-5.66 3.54-10.61 3.54-10.61S20.7 2 19.22 2m-4.68 7.46c-.78-.78-.78-2.05 0-2.83s2.05-.78 2.83 0c.77.78.78 2.05 0 2.83s-2.05.78-2.83 0m-5.66 7.07-1.41-1.41zM6.24 22l3.64-3.64c-.34-.09-.67-.24-.97-.45L4.83 22zM2 22h1.41l4.77-4.76-1.42-1.41L2 20.59zm0-2.83 4.09-4.08c-.21-.3-.36-.62-.45-.97L2 17.76z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Getting Started
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            Getting Started
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/installation/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 5v6h1.17L12 13.17 9.83 11H11V5zm2-2H9v6H5l7 7 7-7h-4zm4 15H5v2h14z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Installation
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/compatibility/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18V4H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h4v-2H3zm10 6H9v1.78c-.61.55-1 1.33-1 2.22s.39 1.67 1 2.22V20h4v-1.78c.61-.55 1-1.34 1-2.22s-.39-1.67-1-2.22zm-2 5.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5M22 8h-6c-.5 0-1 .5-1 1v10c0 .5.5 1 1 1h6c.5 0 1-.5 1-1V9c0-.5-.5-1-1-1m-1 10h-4v-8h4z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Compatibility
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/settings-overview/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M8 13c-1.86 0-3.41 1.28-3.86 3H2v2h2.14c.45 1.72 2 3 3.86 3s3.41-1.28 3.86-3H22v-2H11.86c-.45-1.72-2-3-3.86-3m0 6c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2M19.86 6c-.45-1.72-2-3-3.86-3s-3.41 1.28-3.86 3H2v2h10.14c.45 1.72 2 3 3.86 3s3.41-1.28 3.86-3H22V6zM16 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2"></path></svg>
+  
+  <span class="md-ellipsis">
+    Settings Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/pages-and-tabs/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 5v2h-4V5zM9 5v6H5V5zm10 8v6h-4v-6zM9 17v2H5v-2zM21 3h-8v6h8zM11 3H3v10h8zm10 8h-8v10h8zm-10 4H3v6h8z"></path></svg>
+  
+  <span class="md-ellipsis">
+    JE Pages &amp; Tabs
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/troubleshooting/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m22.61 19-9.08-9.09c.93-2.34.47-5.1-1.44-7C9.79.61 6.21.4 3.66 2.26L7.5 6.11 6.08 7.5 2.25 3.69C.39 6.23.6 9.82 2.9 12.11c1.86 1.86 4.57 2.35 6.89 1.48l9.11 9.11c.39.39 1.02.39 1.41 0l2.3-2.3c.39-.4.39-1.01 0-1.4m-3 1.59-9.46-9.46c-.61.45-1.29.72-2 .82-1.36.2-2.79-.21-3.83-1.25C3.37 9.76 2.93 8.5 3 7.26l3.09 3.09 4.24-4.24L7.24 3c1.26-.05 2.49.39 3.44 1.33a4.47 4.47 0 0 1 1.24 3.96 4.35 4.35 0 0 1-.88 1.96l9.46 9.45z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Troubleshooting
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3">
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 4c3.8 0 6.5 2.8 6.5 6.8a18.3 18.3 0 0 1-13 0C5.5 6.8 8.2 4 12 4m0-2c-4.7 0-8.5 3.5-8.5 8.9.06.8.56 1.5 1.3 1.8l1.7.5v2.3a.5.5 0 0 1-.5.5.5.5 0 0 1-.5-.5.898.898 0 0 0-1-1 .898.898 0 0 0-1 1A2.405 2.405 0 0 0 5.9 18H6c1.41.06 2.56-1.09 2.5-2.5v-1.8h1v5.7c0 .67-1 .67-1 0a.898.898 0 0 0-1-1 .898.898 0 0 0-1 1c-.11 1.4 1 2.6 2.4 2.6H9c1.41.06 2.56-1.09 2.5-2.5V14h1v5.5A2.394 2.394 0 0 0 15 22h.1c1.37 0 2.46-1.14 2.4-2.5 0-1.33-2-1.33-2 0 0 .67-1 .67-1 0v-5.7h1v1.8c0 1.36 1.13 2.46 2.5 2.4h.1c1.37 0 2.46-1.14 2.4-2.5 0-1.33-2-1.33-2 0 0 .67-1 .67-1 0v-2.3l1.7-.5c.72-.34 1.21-1.02 1.3-1.8C20.5 5.5 16.7 2 12 2m0 4.2c-1.47.4-2.76 1.33-3.6 2.6-.4.53-1.2-.07-.8-.6a7.47 7.47 0 0 1 4.2-3 .5.5 0 0 1 .6.4c.1.3-.1.5-.4.6"></path></svg>
+  
+  <span class="md-ellipsis">
+    Enhanced
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            Enhanced
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../enhanced/enhanced-features/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Features
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../enhanced/tags/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M6.5 10C7.3 10 8 9.3 8 8.5S7.3 7 6.5 7 5 7.7 5 8.5 5.7 10 6.5 10M9 6l7 7-5 5-7-7V6zm0-2H4c-1.1 0-2 .9-2 2v5c0 .6.2 1.1.6 1.4l7 7c.3.4.8.6 1.4.6s1.1-.2 1.4-.6l5-5c.4-.4.6-.9.6-1.4 0-.6-.2-1.1-.6-1.4l-7-7C10.1 4.2 9.6 4 9 4m4.5 1.7 1-1 6.9 6.9c.4.4.6.9.6 1.4s-.2 1.1-.6 1.4L16 19.8l-1-1 5.7-5.8z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Tags &amp; Badges
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../enhanced/enhanced-settings/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4">
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 11c0 5.55-3.84 10.74-9 12-5.16-1.26-9-6.45-9-12V5l9-4 9 4zm-9 10c3.75-1 7-5.46 7-9.78V6.3l-7-3.12L5 6.3v4.92C5 15.54 8.25 20 12 21m2.8-10V9.5C14.8 8.1 13.4 7 12 7S9.2 8.1 9.2 9.5V11c-.6 0-1.2.6-1.2 1.2v3.5c0 .7.6 1.3 1.2 1.3h5.5c.7 0 1.3-.6 1.3-1.2v-3.5c0-.7-.6-1.3-1.2-1.3m-1.3 0h-3V9.5c0-.8.7-1.3 1.5-1.3s1.5.5 1.5 1.3z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Spoiler Guard
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            Spoiler Guard
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../spoiler-guard/spoiler-guard-features/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Features
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../spoiler-guard/spoiler-guard-settings/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5">
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M11 20H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2h1l2 4h3L8 4h2l2 4h3l-2-4h2l2 4h3l-2-4h4v9c-.5-.8-1.2-1.5-2-2v-1H5.8L4 6.5V18h6.2c.2.7.4 1.4.8 2m9.3-1.1c.4-.7.7-1.5.7-2.4 0-2.5-2-4.5-4.5-4.5S12 14 12 16.5s2 4.5 4.5 4.5c.9 0 1.7-.2 2.4-.7l3.1 3.1 1.4-1.4zm-3.8.1c-1.4 0-2.5-1.1-2.5-2.5s1.1-2.5 2.5-2.5 2.5 1.1 2.5 2.5-1.1 2.5-2.5 2.5"></path></svg>
+  
+  <span class="md-ellipsis">
+    Seerr
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            Seerr
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../seerr/seerr-features/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Features
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../seerr/seerr-settings/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../seerr/permission-audit/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 1 3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5zm0 2.18 7 3.12v4.92c0 1.7-.5 3.43-1.35 4.95C16 14.94 13.26 14.5 12 14.5s-4 .44-5.65 1.67C5.5 14.65 5 12.92 5 11.22V6.3zM12 6a3.5 3.5 0 0 0-3.5 3.5A3.5 3.5 0 0 0 12 13a3.5 3.5 0 0 0 3.5-3.5A3.5 3.5 0 0 0 12 6m0 2a1.5 1.5 0 0 1 1.5 1.5A1.5 1.5 0 0 1 12 11a1.5 1.5 0 0 1-1.5-1.5A1.5 1.5 0 0 1 12 8m0 8.5c1.57 0 3.64.61 4.53 1.34C15.29 19.38 13.7 20.55 12 21c-1.7-.45-3.29-1.62-4.53-3.16.9-.73 2.96-1.34 4.53-1.34"></path></svg>
+  
+  <span class="md-ellipsis">
+    Permission Audit
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6">
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M7 11h2v2H7zm14-6v14c0 1.11-.89 2-2 2H5a2 2 0 0 1-2-2V5c0-1.1.9-2 2-2h1V1h2v2h8V1h2v2h1a2 2 0 0 1 2 2M5 7h14V5H5zm14 12V9H5v10zm-4-6v-2h2v2zm-4 0v-2h2v2zm-4 2h2v2H7zm8 2v-2h2v2zm-4 0v-2h2v2z"></path></svg>
+  
+  <span class="md-ellipsis">
+    *arr
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            *arr
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../arr/arr-features/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Features
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../arr/arr-settings/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../arr/troubleshooting-support/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m22.61 19-9.08-9.09c.93-2.34.47-5.1-1.44-7C9.79.61 6.21.4 3.66 2.26L7.5 6.11 6.08 7.5 2.25 3.69C.39 6.23.6 9.82 2.9 12.11c1.86 1.86 4.57 2.35 6.89 1.48l9.11 9.11c.39.39 1.02.39 1.41 0l2.3-2.3c.39-.4.39-1.01 0-1.4m-3 1.59-9.46-9.46c-.61.45-1.29.72-2 .82-1.36.2-2.79-.21-3.83-1.25C3.37 9.76 2.93 8.5 3 7.26l3.09 3.09 4.24-4.24L7.24 3c1.26-.05 2.49.39 3.44 1.33a4.47 4.47 0 0 1 1.24 3.96 4.35 4.35 0 0 1-.88 1.96l9.46 9.45z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Troubleshooting
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7">
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  
+  <span class="md-ellipsis">
+    Elsewhere &amp; Reviews
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            Elsewhere &amp; Reviews
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../elsewhere/elsewhere-features/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Features
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../elsewhere/elsewhere-settings/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" checked="">
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m9 4 2.5 5.5L17 12l-5.5 2.5L9 20l-2.5-5.5L1 12l5.5-2.5zm0 4.83L8 11l-2.17 1L8 13l1 2.17L10 13l2.17-1L10 11zM19 9l-1.26-2.74L15 5l2.74-1.25L19 1l1.25 2.75L23 5l-2.75 1.26zm0 14-1.26-2.74L15 19l2.74-1.25L19 15l1.25 2.75L23 19l-2.75 1.26z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Other
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            Other
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../other-features/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Features
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+      
+        
+
+  
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
+      
+        <li class="md-nav__item">
+  <a href="#custom-branding" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Custom Branding
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Custom Branding">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-to-use" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How to use
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#icon-settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Icon Settings
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#extras" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Extras
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Extras">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-to-use_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How to use
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#activity-feed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Activity Feed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#active-streams-widget" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Active Streams Widget
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#timeout-settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Timeout Settings
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Timeout Settings">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-to-use_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How to use
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#letterboxd-integration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Letterboxd Integration
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#metadata-icons" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Metadata Icons
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mdblist-ratings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MDBList Ratings
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="MDBList Ratings">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-to-use_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How to use
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fetch-then-sync" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fetch, then sync
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#display-controls" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Display controls
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fetch-controls" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fetch controls
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sync-controls" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sync controls
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sources-and-fallbacks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sources and fallbacks
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#content-warnings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Content Warnings
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Content Warnings">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-to-use_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How to use
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#hidden-content" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hidden Content
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#splash-screen" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Splash Screen
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#default-ui-language" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Default UI Language
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cache-management" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cache Management
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#scheduled-tasks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scheduled Tasks
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#maintenance-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Maintenance Mode
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Maintenance Mode">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#manual-maintenance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Manual maintenance
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scheduled-window" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scheduled window
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#usage-statistics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Usage Statistics
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Usage Statistics">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-to-use_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How to use
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#developer-settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Developer Settings
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9">
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M8 3a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2H3v2h1a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h2v-2H8v-5a2 2 0 0 0-2-2 2 2 0 0 0 2-2V5h2V3m6 0a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h1v2h-1a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2h-2v-2h2v-5a2 2 0 0 1 2-2 2 2 0 0 1-2-2V5h-2V3z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Advanced
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            Advanced
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../advanced/css-customization/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 22A10 10 0 0 1 2 12 10 10 0 0 1 12 2c5.5 0 10 4 10 9a6 6 0 0 1-6 6h-1.8c-.3 0-.5.2-.5.5 0 .1.1.2.1.3.4.5.6 1.1.6 1.7.1 1.4-1 2.5-2.4 2.5m0-18a8 8 0 0 0-8 8 8 8 0 0 0 8 8c.3 0 .5-.2.5-.5 0-.2-.1-.3-.1-.4-.4-.5-.6-1-.6-1.6 0-1.4 1.1-2.5 2.5-2.5H16a4 4 0 0 0 4-4c0-3.9-3.6-7-8-7m-5.5 6c.8 0 1.5.7 1.5 1.5S7.3 13 6.5 13 5 12.3 5 11.5 5.7 10 6.5 10m3-4c.8 0 1.5.7 1.5 1.5S10.3 9 9.5 9 8 8.3 8 7.5 8.7 6 9.5 6m5 0c.8 0 1.5.7 1.5 1.5S15.3 9 14.5 9 13 8.3 13 7.5 13.7 6 14.5 6m3 4c.8 0 1.5.7 1.5 1.5s-.7 1.5-1.5 1.5-1.5-.7-1.5-1.5.7-1.5 1.5-1.5"></path></svg>
+  
+  <span class="md-ellipsis">
+    CSS Customization
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../advanced/api/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M7 7H5a2 2 0 0 0-2 2v8h2v-4h2v4h2V9a2 2 0 0 0-2-2m0 4H5V9h2m7-2h-4v10h2v-4h2a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2m0 4h-2V9h2m6 0v6h1v2h-4v-2h1V9h-1V7h4v2Z"></path></svg>
+  
+  <span class="md-ellipsis">
+    API
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../advanced/community-analytics/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M22 21H2V3h2v16h2v-9h4v9h2V6h4v13h2v-5h4z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Community Analytics
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../advanced/project-structure/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 13H7v5h5v2H5V10h2v1h5zM8 4v2H4V4zm2-2H2v6h8zm10 9v2h-4v-2zm2-2h-8v6h8zm-2 9v2h-4v-2zm2-2h-8v6h8z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Project Structure
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10">
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19.79 15.41c.95-2.17.95-4.66 0-6.82l-2.74 1.24c.6 1.38.6 2.95.01 4.34zm-4.37-11.2a8.54 8.54 0 0 0-6.83 0l1.24 2.73c1.39-.59 2.96-.59 4.35.01zM4.21 8.58a8.56 8.56 0 0 0 0 6.84l2.74-1.25c-.6-1.38-.6-2.96 0-4.35zm4.38 11.21a8.5 8.5 0 0 0 6.83-.01l-1.24-2.73a5.5 5.5 0 0 1-4.34.01zM12 2a10 10 0 0 1 10 10 10 10 0 0 1-10 10A10 10 0 0 1 2 12 10 10 0 0 1 12 2m0 6a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4"></path></svg>
+  
+  <span class="md-ellipsis">
+    Help
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            Help
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../faq-support/faq/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M11 18h2v-2h-2zm1-16A10 10 0 0 0 2 12a10 10 0 0 0 10 10 10 10 0 0 0 10-10A10 10 0 0 0 12 2m0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8m0-14a4 4 0 0 0-4 4h2a2 2 0 0 1 2-2 2 2 0 0 1 2 2c0 2-3 1.75-3 5h2c0-2.25 3-2.5 3-5a4 4 0 0 0-4-4"></path></svg>
+  
+  <span class="md-ellipsis">
+    FAQ
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../faq-support/report-issues/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 8h-2.81c-.45-.8-1.07-1.5-1.82-2L17 4.41 15.59 3l-2.17 2.17a6 6 0 0 0-2.83 0L8.41 3 7 4.41 8.62 6c-.75.5-1.36 1.21-1.81 2H4v2h2.09c-.06.33-.09.66-.09 1v1H4v2h2v1c0 .34.03.67.09 1H4v2h2.81A5.99 5.99 0 0 0 15 20.18c.91-.52 1.67-1.28 2.19-2.18H20v-2h-2.09c.06-.33.09-.66.09-1v-1h2v-2h-2v-1c0-.34-.03-.67-.09-1H20zm-4 7a4 4 0 0 1-4 4 4 4 0 0 1-4-4v-4a4 4 0 0 1 4-4 4 4 0 0 1 4 4zm-2-5v2h-4v-2zm-4 4h4v2h-4z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Report Issues
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../faq-support/feature-requests/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11h3v2h-3zM1 11h3v2H1zM13 1v3h-2V1zM4.92 3.5l2.13 2.14-1.42 1.41L3.5 4.93zm12.03 2.13 2.12-2.13 1.43 1.43-2.13 2.12zM12 6a6 6 0 0 1 6 6c0 2.22-1.21 4.16-3 5.2V19a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1v-1.8c-1.79-1.04-3-2.98-3-5.2a6 6 0 0 1 6-6m2 15v1a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1v-1zm-3-3h2v-2.13c1.73-.44 3-2.01 3-3.87a4 4 0 0 0-4-4 4 4 0 0 0-4 4c0 1.86 1.27 3.43 3 3.87z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Feature Requests
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../faq-support/contributing-translations/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12.87 15.07-2.54-2.51.03-.03A17.5 17.5 0 0 0 14.07 6H17V4h-7V2H8v2H1v2h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11zM18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2zm-2.62 7 1.62-4.33L19.12 17z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Contributing Translations
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../faq-support/support/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M15 4v7H5.17L4 12.17V4zm1-2H3a1 1 0 0 0-1 1v14l4-4h10a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1m5 4h-2v9H6v2a1 1 0 0 0 1 1h11l4 4V7a1 1 0 0 0-1-1"></path></svg>
+  
+  <span class="md-ellipsis">
+    Support + Community
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../other-projects/other-projects/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M22 13.5c0 1.76-1.3 3.22-3 3.46V20a2 2 0 0 1-2 2h-3.8v-.3a2.7 2.7 0 0 0-2.7-2.7c-1.5 0-2.7 1.21-2.7 2.7v.3H4a2 2 0 0 1-2-2v-3.8h.3C3.79 16.2 5 15 5 13.5s-1.21-2.7-2.7-2.7H2V7a2 2 0 0 1 2-2h3.04c.24-1.7 1.7-3 3.46-3s3.22 1.3 3.46 3H17a2 2 0 0 1 2 2v3.04c1.7.24 3 1.7 3 3.46M17 15h1.5a1.5 1.5 0 0 0 1.5-1.5 1.5 1.5 0 0 0-1.5-1.5H17V7h-5V5.5A1.5 1.5 0 0 0 10.5 4 1.5 1.5 0 0 0 9 5.5V7H4v2.12c1.76.68 3 2.38 3 4.38s-1.25 3.7-3 4.38V20h2.12a4.7 4.7 0 0 1 4.38-3c2 0 3.7 1.25 4.38 3H17z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Related Projects
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../about/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M11 9h2V7h-2m1 13c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8m0-18A10 10 0 0 0 2 12a10 10 0 0 0 10 10 10 10 0 0 0 10-10A10 10 0 0 0 12 2m-1 15h2v-6h-2z"></path></svg>
+  
+  <span class="md-ellipsis">
+    About
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc">
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+  
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
+      
+        <li class="md-nav__item">
+  <a href="#custom-branding" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Custom Branding
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Custom Branding">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-to-use" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How to use
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#icon-settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Icon Settings
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#extras" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Extras
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Extras">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-to-use_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How to use
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#activity-feed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Activity Feed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#active-streams-widget" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Active Streams Widget
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#timeout-settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Timeout Settings
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Timeout Settings">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-to-use_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How to use
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#letterboxd-integration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Letterboxd Integration
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#metadata-icons" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Metadata Icons
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mdblist-ratings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MDBList Ratings
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="MDBList Ratings">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-to-use_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How to use
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fetch-then-sync" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fetch, then sync
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#display-controls" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Display controls
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fetch-controls" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fetch controls
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sync-controls" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sync controls
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sources-and-fallbacks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sources and fallbacks
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#content-warnings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Content Warnings
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Content Warnings">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-to-use_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How to use
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#hidden-content" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hidden Content
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#splash-screen" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Splash Screen
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#default-ui-language" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Default UI Language
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cache-management" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cache Management
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#scheduled-tasks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scheduled Tasks
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#maintenance-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Maintenance Mode
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Maintenance Mode">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#manual-maintenance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Manual maintenance
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scheduled-window" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scheduled window
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#usage-statistics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Usage Statistics
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Usage Statistics">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-to-use_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How to use
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#developer-settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Developer Settings
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+  
+    
+    
+    
+    <nav class="je-sectionbar" aria-label="Other pages">
+      <a class="je-sectionbar__area" href="../other-features/">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m9 4 2.5 5.5L17 12l-5.5 2.5L9 20l-2.5-5.5L1 12l5.5-2.5zm0 4.83L8 11l-2.17 1L8 13l1 2.17L10 13l2.17-1L10 11zM19 9l-1.26-2.74L15 5l2.74-1.25L19 1l1.25 2.75L23 5l-2.75 1.26zm0 14-1.26-2.74L15 19l2.74-1.25L19 15l1.25 2.75L23 19l-2.75 1.26z"></path></svg>
+        <span>Other</span>
+      </a>
+      
+        <ul class="je-sectionbar__pages">
+          
+            
+              <li>
+                <a class="je-chip" href="../other-features/">Features</a>
+              </li>
+            
+          
+            
+              <li>
+                <a class="je-chip je-chip--active" href="./" aria-current="page">Settings</a>
+              </li>
+            
+          
+        </ul>
+      
+    </nav>
+  
+  
+                  
+
+
+  
+  
+
+
+<h1 id="other-settings">Other Settings<a class="headerlink" href="#other-settings" title="Permanent link">¶</a></h1>
+<p>Use these controls to personalize Jellyfin and manage your server. Unless marked per-user, they are administrator settings. See <a href="../other-features/">Other Features</a> for usage and <a href="../../getting-started/settings-overview/">Settings Overview</a> for personal defaults and overrides.</p>
+<details class="note">
+<summary>Admin tab reference</summary>
+<p>“Other” is a documentation category, not a plugin tab. Open <strong>Dashboard</strong> → <strong>Plugins</strong> → <strong>Jellyfin Enhanced</strong> and use the locations below.</p>
+<p>After changing configuration fields, click <strong>Save Settings</strong> and reload the web client. Branding uploads and cache actions apply separately.</p>
+<table>
+<thead>
+<tr>
+<th>Admin tab</th>
+<th>Settings covered here</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Display</strong></td>
+<td><strong>Icons &amp; Theme</strong>, <strong>Default Language</strong>, <strong>MDBList Ratings</strong>, <strong>Content Warnings</strong>, client tag-cache clearing</td>
+</tr>
+<tr>
+<td><strong>Playback</strong></td>
+<td><strong>Shortcuts Panel &amp; Toast Timing</strong></td>
+</tr>
+<tr>
+<td><strong>Extras</strong></td>
+<td><strong>UI Tweaks</strong>, <strong>External Links</strong>, <strong>Custom Image Assets</strong></td>
+</tr>
+<tr>
+<td><strong>Pages</strong></td>
+<td>Hidden Content and Activity Feed — links to their canonical guides below</td>
+</tr>
+<tr>
+<td><strong>Admin</strong></td>
+<td><strong>Usage Statistics</strong>, <strong>Maintenance Mode</strong>, <strong>Tag Cache</strong>, <strong>Developer Settings</strong></td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="custom-branding">Custom Branding<a class="headerlink" href="#custom-branding" title="Permanent link">¶</a></h2>
+<p>Replace Jellyfin's branding with your own logos and icons. You do not need another branding plugin.</p>
+<h3 id="how-to-use">How to use<a class="headerlink" href="#how-to-use" title="Permanent link">¶</a></h3>
+<ol>
+<li>Open admin <strong>Extras</strong> → <strong>Custom Image Assets</strong>.</li>
+<li>Click a slot or drop an image onto it. Upload starts immediately; wait for <strong>✓ Uploaded</strong>.</li>
+<li>Check the preview and measured dimensions where available, then reload. Use <span class="keys"><kbd class="key-control">Ctrl</kbd><span>+</span><kbd class="key-f5">F5</kbd></span> if an old image remains cached.</li>
+<li>Upload again to replace a slot, or use its trash button to delete the custom file immediately. Reload after either action.</li>
+</ol>
+<p><strong>Save Settings</strong> applies configuration fields; uploads do not wait for it.</p>
+<p><a class="glightbox" data-type="image" data-width="100%" data-height="auto" href="../../images/admin/branding-assets.webp" data-desc-position="bottom"><img alt="Custom Image Assets with five branding slots showing uploaded previews and measured sizes" src="../../images/admin/branding-assets.webp"></a></p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Icon Transparent</strong></td>
+<td>Stock icon</td>
+<td>Replaces the top-left logo beside the server version. UI recommendation: 536×536 PNG with transparency.</td>
+</tr>
+<tr>
+<td><strong>Favicon</strong></td>
+<td>Stock favicon</td>
+<td>Replaces the browser tab icon. UI suggests 256×256 for PNG and lists ICO, PNG, or SVG. Prefer ICO.</td>
+</tr>
+<tr>
+<td><strong>Banner Dark</strong></td>
+<td>Stock banner</td>
+<td>Replaces the light-mode loading banner. UI recommendation: 1302×378, PNG, JPG, or WebP. Prefer PNG.</td>
+</tr>
+<tr>
+<td><strong>Banner Light</strong></td>
+<td>Stock banner</td>
+<td>Replaces the dark-mode loading banner. UI recommendation: 1302×378, PNG, JPG, or WebP. Prefer PNG.</td>
+</tr>
+<tr>
+<td><strong>Apple Touch Icon</strong></td>
+<td>Stock touch icon</td>
+<td>Replaces the iOS Home Screen icon and supported PWA touch-icon assets, including Jellyfin 12's sized variants. UI recommendation: 180×180 PNG.</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition note">
+<p class="admonition-title">Accepted uploads are not converted</p>
+<p>Use PNG for <code>.png</code> slots and ICO for the favicon, even when the UI lists other formats. Uploads accept image MIME types up to 10 MiB. Recommended dimensions are not enforced.</p>
+</div>
+<details class="info">
+<summary>How it works</summary>
+<p>These slots are uploaded files, not configuration properties. JE serves them through its own middleware and uses Jellyfin's stock asset when no replacement file exists. It keeps the original bytes without converting them, under these fixed filenames. The served MIME type follows the filename extension.</p>
+<table>
+<thead>
+<tr>
+<th>Slot</th>
+<th>Filename</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Icon Transparent</strong></td>
+<td><code>icon-transparent.png</code></td>
+</tr>
+<tr>
+<td><strong>Favicon</strong></td>
+<td><code>favicon.ico</code></td>
+</tr>
+<tr>
+<td><strong>Banner Dark</strong></td>
+<td><code>banner-dark.png</code></td>
+</tr>
+<tr>
+<td><strong>Banner Light</strong></td>
+<td><code>banner-light.png</code></td>
+</tr>
+<tr>
+<td><strong>Apple Touch Icon</strong></td>
+<td><code>apple-touch-icon.png</code></td>
+</tr>
+</tbody>
+</table>
+</details>
+<details class="note">
+<summary>Details</summary>
+<p>Files live in <code>&lt;JE configuration-file directory&gt;/&lt;JE configuration-file basename&gt;/custom_branding/</code>. The absolute path depends on your installation. Keep that storage writable and persistent to retain branding across updates. See <a href="../other-features/#custom-branding">Custom Branding</a> for middleware behavior and troubleshooting.</p>
+</details>
+<h2 id="icon-settings">Icon Settings<a class="headerlink" href="#icon-settings" title="Permanent link">¶</a></h2>
+<p>Choose the icons you see in JE's panel headings and toast notifications.</p>
+<p><strong>How to use:</strong> Open admin <strong>Display</strong> → <strong>Icons &amp; Theme</strong>, turn on <strong>Use Icons in UI</strong>, and choose <strong>Icon Style</strong>. Click <strong>Save Settings</strong> and reload.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Use Icons in UI</strong></td>
+<td>On</td>
+<td>Enables icons in JE regions that use its icon helper, including toasts and panel headings.</td>
+</tr>
+<tr>
+<td><strong>Icon Style</strong></td>
+<td><strong>Emoji</strong></td>
+<td>Chooses <strong>Emoji</strong>, <strong>Lucide Icons</strong>, or <strong>Material UI Icons</strong>. Available when <strong>Use Icons in UI</strong> is on.</td>
+</tr>
+</tbody>
+</table>
+<details class="info">
+<summary>How it works</summary>
+<p>These controls apply to JE regions that use its icon helper. They do not replace every Jellyfin icon or every icon supplied by an extra. Unsupported helper entries fall back to emoji. <a href="#metadata-icons">Metadata Icons</a> is a separate feature.</p>
+<p>Stored style values are <strong>Emoji</strong> (<code>emoji</code>), <strong>Lucide Icons</strong> (<code>lucide</code>), and <strong>Material UI Icons</strong> (<code>mui</code>).</p>
+</details>
+<h2 id="extras">Extras<a class="headerlink" href="#extras" title="Permanent link">¶</a></h2>
+<p>Customize the dashboard, login screen, and user-preferences menu with these optional switches.</p>
+<h3 id="how-to-use_1">How to use<a class="headerlink" href="#how-to-use_1" title="Permanent link">¶</a></h3>
+<ol>
+<li>Open admin <strong>Extras</strong> → <strong>UI Tweaks</strong> and turn on the switches you want.</li>
+<li>
+<p>For <strong>Sidebar Custom Links</strong>, open <strong>Extras</strong> → <strong>External Links</strong>. Enter one configuration-page name/icon pair per line, using the decoded page name, including spaces:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>Jellyfin Enhanced | tune
+</span></code></pre></div>
+</li>
+<li>
+<p>Use <strong>Test Links</strong> to preview entered links in the current window until refresh.</p>
+</li>
+<li>Click <strong>Save Settings</strong> to persist your configuration, then reload.</li>
+</ol>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Colored Dashboard Icons</strong></td>
+<td>Off</td>
+<td>Replaces matching icons in the dashboard Home activity list with predefined Material icons and colors.</td>
+</tr>
+<tr>
+<td><strong>Colored Ratings Backgrounds</strong></td>
+<td>Off</td>
+<td>Colors official age/content classifications, such as PG-13, TV-MA, and FSK-12. Does not color numerical review scores.</td>
+</tr>
+<tr>
+<td><strong>Profile Picture on Login</strong></td>
+<td>Off</td>
+<td>Shows the selected public login card's avatar above the password field and hides the username area. Hidden users entered through <strong>Manual Login</strong> have no matching card.</td>
+</tr>
+<tr>
+<td><strong>Custom Plugin Menu Icons</strong></td>
+<td>Off</td>
+<td>Replaces supported plugin-link icons in the dashboard sidebar. Also enables saved custom configuration-page links.</td>
+</tr>
+<tr>
+<td><strong>Theme Selector (Jellyfish)</strong></td>
+<td>Off</td>
+<td>Adds <strong>Theme</strong> to Jellyfin's user-preferences menu. Requires the Jellyfish base theme installed natively to use its color palettes.</td>
+</tr>
+<tr>
+<td><strong>Sidebar Custom Links</strong></td>
+<td>Empty</td>
+<td>Adds configuration-page links when <strong>Custom Plugin Menu Icons</strong> is enabled. One <code>Configuration Page Name \| Material Icon Name</code> pair per line.</td>
+</tr>
+</tbody>
+</table>
+<details class="note">
+<summary>Details</summary>
+<p>The second <strong>Sidebar Custom Links</strong> field is an icon name, not a destination URL. See <a href="../other-features/#extras">Extras</a> for supported plugin mappings, theme choices, and login limitations.</p>
+</details>
+<h3 id="activity-feed">Activity Feed<a class="headerlink" href="#activity-feed" title="Permanent link">¶</a></h3>
+<p>Use the user Activity Feed to see activity separately from dashboard icon coloring.</p>
+<p><strong>How to use:</strong> Open <strong>Pages</strong> → <strong>Activity Feed</strong>. Follow <a href="../../enhanced/enhanced-settings/">Enhanced Settings</a> and <a href="../../enhanced/enhanced-features/">Enhanced Features</a> for setup and use.</p>
+<div class="admonition note">
+<p class="admonition-title">Active Streams section requirements</p>
+<p>Enable <strong>Enable Activity Feed</strong>, <strong>Show Active Streams section</strong>, and <strong>Active Streams Header Widget</strong>. Non-admin viewers also need <strong>Show widget to non-admins</strong>.</p>
+</div>
+<details class="info">
+<summary>How it works</summary>
+<p>The feed's stream section polls while visible. The header widget below refreshes on demand.</p>
+</details>
+<h2 id="active-streams-widget">Active Streams Widget<a class="headerlink" href="#active-streams-widget" title="Permanent link">¶</a></h2>
+<p>See who is watching and open their current session details from Jellyfin's header.</p>
+<p><strong>How to use:</strong> Open admin <strong>Extras</strong> → <strong>UI Tweaks</strong> and turn on <strong>Active Streams Header Widget</strong>. Click <strong>Save Settings</strong>, reload, and open the widget; use <strong>Refresh</strong> for current data.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Active Streams Header Widget</strong></td>
+<td>Off</td>
+<td>Adds a header counter and a sessions panel. Administrators have access by default.</td>
+</tr>
+<tr>
+<td><strong>Show widget to non-admins</strong></td>
+<td>Off</td>
+<td>Allows signed-in non-admin users to read current sessions when the widget is enabled.</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition note">
+<p class="admonition-title">What non-admin viewers can see</p>
+<p>Enabling <strong>Show widget to non-admins</strong> exposes other users' stream titles, names, clients, devices, and playback details. This session list does not use the historical Activity Feed's library-access filtering. IP addresses and broadcasting remain admin-only.</p>
+</div>
+<details class="info">
+<summary>How it works</summary>
+<p>The widget fetches at initialization, when opened, and with <strong>Refresh</strong>; it does not continuously poll. See <a href="../other-features/#active-streams-widget">Active Streams Widget</a> for cards, player placement, and broadcast fields.</p>
+</details>
+<h2 id="timeout-settings">Timeout Settings<a class="headerlink" href="#timeout-settings" title="Permanent link">¶</a></h2>
+<p>Adjust how long the Enhanced panel and ordinary JE toast messages stay visible.</p>
+<h3 id="how-to-use_2">How to use<a class="headerlink" href="#how-to-use_2" title="Permanent link">¶</a></h3>
+<ol>
+<li>Open admin <strong>Playback</strong> → <strong>Shortcuts Panel &amp; Toast Timing</strong> and enter durations in milliseconds.</li>
+<li>Try <strong>Preview autoclose</strong> and <strong>Preview toast</strong>. They use your unsaved inputs.</li>
+<li>Click <strong>Save Settings</strong> and reload.</li>
+</ol>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Shortcuts Panel Autoclose Delay (ms)</strong></td>
+<td>15000 ms</td>
+<td>Sets the Enhanced panel's inactivity timer. Hover keeps it open; interaction restarts the timer.</td>
+</tr>
+<tr>
+<td><strong>Toast Notification Duration (ms)</strong></td>
+<td>1500 ms</td>
+<td>Sets the duration of ordinary JE toast messages.</td>
+</tr>
+</tbody>
+</table>
+<details class="note">
+<summary>Details</summary>
+<p>Previews fall back for invalid values or values below 200 ms and cap at 120000 ms. These preview limits do not constrain the saved settings. Preview fallbacks are 15000 ms for the panel and 3000 ms for the toast; the latter differs from the actual client default. The number inputs declare no minimum or maximum. Zero uses the client default and does not disable auto-close.</p>
+<p>The toast field's help text says 3000 ms, but the server default and client fallback are <strong>1500 ms</strong>. Hidden Content's Undo toast lasts eight seconds independently; broadcasts use their own timeout.</p>
+</details>
+<h2 id="letterboxd-integration">Letterboxd Integration<a class="headerlink" href="#letterboxd-integration" title="Permanent link">¶</a></h2>
+<p>Add a <strong>Letterboxd</strong> link to supported movie and person detail pages.</p>
+<p><strong>How to use:</strong> Open admin <strong>Extras</strong> → <strong>External Links</strong>, turn on <strong>Enable Letterboxd Links</strong>, and optionally enable <strong>Show link as text</strong>. Click <strong>Save Settings</strong> and reload.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Enable Letterboxd Links</strong></td>
+<td>Off</td>
+<td>Adds external links on supported movie and person detail pages.</td>
+</tr>
+<tr>
+<td><strong>Show link as text</strong></td>
+<td>Off</td>
+<td>Displays <strong>Letterboxd</strong> text instead of the normal icon.</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition note">
+<p class="admonition-title">Requirements and text links</p>
+<p>Movies need an IMDb ID. <strong>Show link as text</strong> depends on <strong>Enable Letterboxd Links</strong>. <strong>Enable Metadata Icons (Druidblack)</strong> disables the text option and forces it off when saved.</p>
+</div>
+<details class="note">
+<summary>Details</summary>
+<p>Person links use name-derived actor slugs and can be ambiguous or fail to resolve. This standalone feature does not add series links. See <a href="../other-features/#letterboxd-integration">Letterboxd Integration</a>.</p>
+</details>
+<h2 id="metadata-icons">Metadata Icons<a class="headerlink" href="#metadata-icons" title="Permanent link">¶</a></h2>
+<p>Show supported metadata and external links as icons on item detail pages.</p>
+<p><strong>How to use:</strong> Open admin <strong>Extras</strong> → <strong>External Links</strong> and turn on <strong>Enable Metadata Icons (Druidblack)</strong>. Click <strong>Save Settings</strong>, reload, and inspect an item's metadata and external links.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Enable Metadata Icons (Druidblack)</strong></td>
+<td>Off</td>
+<td>Styles supported metadata and external links. Forces Letterboxd and *arr links into icon mode.</td>
+</tr>
+</tbody>
+</table>
+<details class="info">
+<summary>How it works</summary>
+<p>JE loads Druidblack's metadata-icon stylesheet through its local asset service and applies supporting external-link styling. This is separate from <strong>Use Icons in UI</strong>, <strong>Icon Style</strong>, and poster tags. See <a href="../other-features/#metadata-icons">Metadata Icons</a>.</p>
+</details>
+<h2 id="mdblist-ratings">MDBList Ratings<a class="headerlink" href="#mdblist-ratings" title="Permanent link">¶</a></h2>
+<p>Show ratings from several sources on detail pages, or fill Jellyfin's own Community/Critic Rating fields. Displaying ratings, fetching data, and writing Jellyfin fields have separate controls.</p>
+<h3 id="how-to-use_3">How to use<a class="headerlink" href="#how-to-use_3" title="Permanent link">¶</a></h3>
+<ol>
+<li>Open admin <strong>Display</strong> → <strong>MDBList Ratings</strong> and turn on <strong>Enable MDBList Ratings</strong>.</li>
+<li>Enter <strong>MDBList API Key</strong> and click <strong>Check</strong>. This tests the entered key before saving and shows account quota/reset information.</li>
+<li>Leave <strong>Show Ratings Row on Item Details</strong> on for badges. Open <strong>Configure ratings shown</strong> to select and reorder them with the up/down controls.</li>
+<li>Click <strong>Save Settings</strong> and reload.</li>
+</ol>
+<h3 id="fetch-then-sync">Fetch, then sync<a class="headerlink" href="#fetch-then-sync" title="Permanent link">¶</a></h3>
+<p>After setting up the master switch and key above:</p>
+<ol>
+<li>Enable <strong>Fetch Ratings from MDBList</strong>, choose a reserve, and enable <strong>Sync Ratings from MDBList to Jellyfin</strong> if you want Jellyfin fields populated.</li>
+<li>Choose primary/fallback sources, review overwrite behavior, and click <strong>Save Settings</strong>.</li>
+<li>Under <strong>Dashboard</strong> → <strong>Scheduled Tasks</strong>, run <strong>Fetch Ratings from MDBList</strong>, then <strong>Sync Ratings from MDBList to Jellyfin</strong>. Add your own triggers for recurring runs; neither supplies one by default.</li>
+</ol>
+<h3 id="display-controls">Display controls<a class="headerlink" href="#display-controls" title="Permanent link">¶</a></h3>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Enable MDBList Ratings</strong></td>
+<td>Off</td>
+<td>Master switch for ratings requests, display, and both rating tasks.</td>
+</tr>
+<tr>
+<td><strong>MDBList API Key</strong></td>
+<td>Empty</td>
+<td>Key from <a href="https://mdblist.com/preferences/#api">MDBList preferences</a>. Administrators can view, edit, and test it; ordinary viewer requests go through JE.</td>
+</tr>
+<tr>
+<td><strong>Show Ratings Row on Item Details</strong></td>
+<td>On</td>
+<td>Displays source badges on supported movie/series detail pages; seasons and episodes use their parent series. Requires the master switch.</td>
+</tr>
+<tr>
+<td><strong>Configure ratings shown</strong></td>
+<td>Empty source list: all returned sources</td>
+<td>Expands checkboxes and up/down controls to select and order detail-page badges independently of sync sources.</td>
+</tr>
+<tr>
+<td><strong>Show % Symbol</strong></td>
+<td>Off</td>
+<td>Adds <code>%</code> to normalized badge scores; raw-value fallbacks retain their source scale and precision.</td>
+</tr>
+</tbody>
+</table>
+<p>To hide the entire row, turn off <strong>Show Ratings Row on Item Details</strong>. Clearing every badge checkbox saves an empty list, which shows all usable returned sources.</p>
+<h3 id="fetch-controls">Fetch controls<a class="headerlink" href="#fetch-controls" title="Permanent link">¶</a></h3>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Fetch Ratings from MDBList</strong></td>
+<td>Off</td>
+<td>Allows the corresponding scheduled task to fetch missing/stale MDBList data without changing Jellyfin rating fields.</td>
+</tr>
+<tr>
+<td><strong>Fetch Task Reserve</strong></td>
+<td>400</td>
+<td>Stops Fetch when the remaining account quota is at or below this value.</td>
+</tr>
+</tbody>
+</table>
+<details class="note">
+<summary>Details</summary>
+<p>Fetch uses the cached live remaining quota. <strong>Fetch Task Reserve</strong> input bounds are 1–100000.</p>
+</details>
+<h3 id="sync-controls">Sync controls<a class="headerlink" href="#sync-controls" title="Permanent link">¶</a></h3>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Sync Ratings from MDBList to Jellyfin</strong></td>
+<td>Off</td>
+<td>Allows the corresponding scheduled task to write Jellyfin's Community/Critic Rating fields from cached data, without MDBList API calls.</td>
+</tr>
+<tr>
+<td><strong>Star Rating Source (Community Rating)</strong></td>
+<td><strong>TMDB</strong></td>
+<td>Selects the source written to Community Rating.</td>
+</tr>
+<tr>
+<td><strong>Star Rating Fallback Source</strong></td>
+<td><strong>None</strong> (empty)</td>
+<td>Used when the primary star-rating source has no usable score.</td>
+</tr>
+<tr>
+<td><strong>Tomato Rating Source (Critic Rating)</strong></td>
+<td><strong>RT Critic</strong></td>
+<td>Selects the source written to Critic Rating.</td>
+</tr>
+<tr>
+<td><strong>Tomato Rating Fallback Source</strong></td>
+<td><strong>None</strong> (empty)</td>
+<td>Used when the primary critic-rating source has no usable score.</td>
+</tr>
+<tr>
+<td><strong>Overwrite Existing Jellyfin Ratings</strong></td>
+<td>Off</td>
+<td>Off: preserves each populated field independently. On: replaces each field for which the selected primary/fallback source has usable cached data. Missing data does not erase existing values.</td>
+</tr>
+</tbody>
+</table>
+<details class="info">
+<summary>How it works</summary>
+<p>Based on <a href="https://github.com/xroguel1ke/jellyfin_ratings">xroguel1ke's original script</a>.</p>
+<p>The master switch gates operation; display/fetch/sync choices are stored independently. Source changes do not replace populated Jellyfin fields unless <strong>Overwrite Existing Jellyfin Ratings</strong> is on.</p>
+<p>Both tasks are registered even when their switches are off. Execution checks the master switch and the corresponding task switch. Sync needs usable cache data, not an enabled Fetch switch: viewing detail pages can also populate the cache, despite the configuration help saying Fetch must be enabled first.</p>
+</details>
+<h3 id="sources-and-fallbacks">Sources and fallbacks<a class="headerlink" href="#sources-and-fallbacks" title="Permanent link">¶</a></h3>
+<p>All four sync selectors offer <strong>TMDB</strong>, <strong>RT Critic</strong>, <strong>RT Audience</strong>, <strong>IMDb</strong>, <strong>Trakt</strong>, <strong>Metascore</strong>, <strong>Metacritic User</strong>, <strong>Letterboxd</strong>, <strong>MAL</strong>, <strong>AniList</strong>, and <strong>Master</strong>. The two fallback selectors also offer <strong>None</strong>. <strong>Roger Ebert</strong> is available only for badges.</p>
+<details class="info">
+<summary>How it works</summary>
+<table>
+<thead>
+<tr>
+<th>Source label</th>
+<th>Stored value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>TMDB</strong></td>
+<td><code>tmdb</code></td>
+</tr>
+<tr>
+<td><strong>RT Critic</strong></td>
+<td><code>tomatoes</code></td>
+</tr>
+<tr>
+<td><strong>RT Audience</strong></td>
+<td><code>popcorn</code></td>
+</tr>
+<tr>
+<td><strong>IMDb</strong></td>
+<td><code>imdb</code></td>
+</tr>
+<tr>
+<td><strong>Trakt</strong></td>
+<td><code>trakt</code></td>
+</tr>
+<tr>
+<td><strong>Metascore</strong></td>
+<td><code>metacritic</code></td>
+</tr>
+<tr>
+<td><strong>Metacritic User</strong></td>
+<td><code>metacriticuser</code></td>
+</tr>
+<tr>
+<td><strong>Letterboxd</strong></td>
+<td><code>letterboxd</code></td>
+</tr>
+<tr>
+<td><strong>MAL</strong></td>
+<td><code>myanimelist</code></td>
+</tr>
+<tr>
+<td><strong>AniList</strong></td>
+<td><code>anilist</code></td>
+</tr>
+<tr>
+<td><strong>Master</strong></td>
+<td><code>master</code></td>
+</tr>
+<tr>
+<td><strong>Roger Ebert</strong></td>
+<td><code>rogerebert</code></td>
+</tr>
+</tbody>
+</table>
+<p>Sync prefers MDBList's normalized <code>Score</code>; only TMDB and RT Critic may fall back to raw <code>Value</code>. Community Rating converts the chosen result to the 0–10 scale by dividing by ten; Critic Rating uses it directly on the 0–100 scale.</p>
+<p>The default order prioritizes TMDB, RT Critic, RT Audience, IMDb, Trakt, and Metascore, then the others. A nonempty list selects only those sources in that order.</p>
+</details>
+<p>See <a href="../other-features/#mdblist-ratings">MDBList Ratings</a> for batching, expiry, quota safeguards, and troubleshooting.</p>
+<h2 id="content-warnings">Content Warnings<a class="headerlink" href="#content-warnings" title="Permanent link">¶</a></h2>
+<p>Show community content warnings from DoesTheDogDie on movie and series pages. See the <a href="../other-features/#content-warnings">feature guide</a> for what users see and how the request budget works.</p>
+<h3 id="how-to-use_4">How to use<a class="headerlink" href="#how-to-use_4" title="Permanent link">¶</a></h3>
+<ol>
+<li>Open admin <strong>Display</strong> → <strong>Content Warnings (DoesTheDogDie)</strong> and turn on <strong>Show Content Warnings</strong>.</li>
+<li>Enter <strong>DoesTheDogDie API Key</strong>, from your account profile on doesthedogdie.com.</li>
+<li>Click <strong>Save Settings</strong> and reload.</li>
+</ol>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Show Content Warnings</strong></td>
+<td>Off</td>
+<td>Master switch. Needs a saved key to take effect.</td>
+</tr>
+<tr>
+<td><strong>DoesTheDogDie API Key</strong></td>
+<td>Empty</td>
+<td>Used by the server only. Never sent to clients.</td>
+</tr>
+</tbody>
+</table>
+<p>These controls are server-wide. Each user picks their own triggers from the gear icon on the section, so there is no admin trigger list.</p>
+<div class="admonition warning">
+<p class="admonition-title">Free tier limits</p>
+<p>The free API tier is for non-commercial use and allows 5,000 requests a month and 30 per minute for the whole server. A commercial server needs their Commercial tier. Results are cached for weeks, so usage depends mostly on how many different titles are opened.</p>
+</div>
+<h2 id="hidden-content">Hidden Content<a class="headerlink" href="#hidden-content" title="Permanent link">¶</a></h2>
+<p>Manage Hidden Content's server settings and personal options.</p>
+<p><strong>How to use:</strong> Open <strong>Pages</strong> → <strong>Hidden Content</strong> for server controls, or the Enhanced panel for personal controls. See <a href="../../enhanced/enhanced-features/#content-management">Content Management</a> for hiding, restoration, delivery modes, and administrator management. <a href="../../enhanced/enhanced-settings/">Enhanced Settings</a> covers all defaults and personal options.</p>
+<h2 id="splash-screen">Splash Screen<a class="headerlink" href="#splash-screen" title="Permanent link">¶</a></h2>
+<p>Show your logo on JE's loading overlay, with a decorative progress bar.</p>
+<p><strong>How to use:</strong> Open admin <strong>Extras</strong> → <strong>Custom Image Assets</strong>, turn on <strong>Enable Splash Screen Override</strong>, and enter <strong>Splash Screen Image URL</strong>. Check that the URL opens an image in your browser, then click <strong>Save Settings</strong> and reload.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Enable Splash Screen Override</strong></td>
+<td>Off</td>
+<td>Shows JE's loading overlay with a contained logo and decorative progress bar.</td>
+</tr>
+<tr>
+<td><strong>Splash Screen Image URL</strong></td>
+<td><code>/web/assets/img/banner-light.png</code></td>
+<td>Browser-reachable logo URL or suitable same-origin path. Available when the override is enabled.</td>
+</tr>
+</tbody>
+</table>
+<details class="note">
+<summary>Details</summary>
+<p>Use a logo legible within approximately 250×250 px. Include your Jellyfin application base in a same-origin path if needed; the default <code>/web/...</code> path assumes Jellyfin is served at the origin root.</p>
+<p>JE uses the image URL as entered; it does not discover Jellyfin's current hashed banner filename. Test the URL instead of assuming the default path exists.</p>
+<p>JE suppresses a competing Media Bar splash while its override is active. Combinations of custom loading screens may still need testing. See <a href="../other-features/#splash-screen">Splash Screen</a>.</p>
+</details>
+<h2 id="default-ui-language">Default UI Language<a class="headerlink" href="#default-ui-language" title="Permanent link">¶</a></h2>
+<p>Choose a starting language for JE's interface. Users can save a personal choice that overrides the admin default.</p>
+<p><strong>How to use:</strong></p>
+<ul>
+<li><strong>Administrator default:</strong> Open <strong>Display</strong> → <strong>Default Language</strong>, choose <strong>Default UI Language</strong>, and click <strong>Save Settings</strong>.</li>
+<li><strong>Personal choice:</strong> Open the Enhanced panel → <strong>Language Settings</strong> and choose <strong>Display Language</strong>. A change saves your preference and browser language key, then reloads.</li>
+</ul>
+<p><strong>Administrator setting:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Default UI Language</strong></td>
+<td><strong>System Default</strong> (empty)</td>
+<td>Supplies the initial JE display language for users without a saved personal choice. Choose a listed language; this is a dropdown, not a free-text language-code input.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Per-user location:</strong> Enhanced panel → <strong>Language Settings</strong>.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Display Language</strong></td>
+<td><strong>Auto</strong> (empty before the admin default supplies a starting value)</td>
+<td>Overrides the admin default with a saved personal selection.</td>
+</tr>
+</tbody>
+</table>
+<details class="info">
+<summary>How it works</summary>
+<p>A saved personal selection, including an explicitly saved <strong>Auto</strong>, takes precedence over the admin default. Automatic resolution uses the browser's user language key, then Jellyfin's document language, with English as fallback. See <a href="../other-features/#internationalization">Internationalization</a> for bundled languages and loading behavior.</p>
+</details>
+<h2 id="cache-management">Cache Management<a class="headerlink" href="#cache-management" title="Permanent link">¶</a></h2>
+<p>Refresh cached JE data when it becomes stale. These actions do not reset all preferences or delete the MDBList server cache.</p>
+<p><strong>How to use:</strong> Choose the action below for the data you want to refresh. <strong>Clear All Client Caches</strong> asks for confirmation.</p>
+<table>
+<thead>
+<tr>
+<th>Action</th>
+<th>Location</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Clear All Client Caches</strong></td>
+<td>Admin <strong>Display</strong> → <strong>Media Tags</strong>, with <strong>Server-Side Tag Cache</strong> off; <strong>Overview</strong> → <strong>Quick Actions</strong> labels the shortcut <strong>Clear all client tag caches</strong></td>
+<td>Clears targeted JE client caches on their next page load. Keeps server-stored personal preferences and unrelated browser storage.</td>
+</tr>
+<tr>
+<td><strong>Rebuild Server Tag Cache</strong></td>
+<td>Admin <strong>Admin</strong> → <strong>Tag Cache</strong>, with <strong>Server-Side Tag Cache</strong> on</td>
+<td>Rebuilds cached tag data for the library. This may take time on a large server.</td>
+</tr>
+<tr>
+<td><strong>Clear Translation Cache</strong></td>
+<td>Per-user Enhanced panel → <strong>Language Settings</strong></td>
+<td>Clears this browser's translation entries and reloads. Does not signal other clients or reset the language selection.</td>
+</tr>
+</tbody>
+</table>
+<details class="info">
+<summary>How it works</summary>
+<p>After confirmation, <strong>Clear All Client Caches</strong> updates the server's client-cache signal.</p>
+<p><code>ClearLocalStorageTimestamp</code> and <code>ClearTranslationCacheTimestamp</code> both start at <code>0</code>. They are invalidation markers, not durations or switches. The latter is set by <strong>Refresh Translation Cache</strong>, a scheduled task; there is no separate admin button with the personal cache-clear label.</p>
+<p>For tag-cache configuration, see <a href="../../enhanced/tags/">Tags &amp; Badges</a>. A translation reload still prefers a usable bundled locale; refreshing the CDN cache does not force the loader to replace it with an upstream translation.</p>
+</details>
+<h2 id="scheduled-tasks">Scheduled Tasks<a class="headerlink" href="#scheduled-tasks" title="Permanent link">¶</a></h2>
+<p>Run JE's background jobs manually or choose when they run.</p>
+<p><strong>How to use:</strong> Open <strong>Dashboard</strong> → <strong>Scheduled Tasks</strong> and run a task or manage its triggers. Enabling a feature does not add a trigger where the task's default is none.</p>
+<table>
+<thead>
+<tr>
+<th>Task</th>
+<th>Default trigger</th>
+<th>Requirements and effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Fetch Ratings from MDBList</strong></td>
+<td>None</td>
+<td>MDBList master, Fetch switch, valid key, and available quota. Fetches missing/stale movie/series ratings in batches and updates the server cache.</td>
+</tr>
+<tr>
+<td><strong>Sync Ratings from MDBList to Jellyfin</strong></td>
+<td>None</td>
+<td>MDBList master, Sync switch, and usable cached data. Writes Jellyfin's rating fields locally.</td>
+</tr>
+<tr>
+<td><strong>Refresh Translation Cache</strong></td>
+<td>Server startup</td>
+<td>Signals clients to refresh translation caches on their next load. Can be run manually.</td>
+</tr>
+<tr>
+<td><strong>Refresh CDN Assets</strong></td>
+<td>Server startup and every 24 hours</td>
+<td>Refreshes server-local copies of external assets; no enable switch.</td>
+</tr>
+<tr>
+<td>*<em>Sync Tags from <em>arr to Jellyfin</em></em></td>
+<td>None</td>
+<td>Requires <strong>Enable Tags Sync</strong> and configured *arr integration. See <a href="../../arr/arr-features/">*arr Features</a> and <a href="../../arr/arr-settings/">*arr Settings</a> for prefixes, filters, and tag removal options before running.</td>
+</tr>
+</tbody>
+</table>
+<details class="note">
+<summary>Details</summary>
+<p><strong>Refresh Translation Cache</strong> sets a server timestamp to signal clients. The asset service also uses a 24-hour cache policy.</p>
+<p>The daily maintenance window uses a background service, not a Jellyfin scheduled task.</p>
+</details>
+<h2 id="maintenance-mode">Maintenance Mode<a class="headerlink" href="#maintenance-mode" title="Permanent link">¶</a></h2>
+<p>Warn users during server work and optionally restrict non-admin accounts or remote connections. Read <a href="../other-features/#maintenance-mode">Maintenance Mode</a> before enabling.</p>
+<div class="admonition warning">
+<p class="admonition-title">Saving can restrict access immediately</p>
+<p>Saving can immediately change account and remote-access policies. The manual default disables non-admin accounts. For a banner/notification-only window, leave both <strong>Action</strong> boxes unchecked.</p>
+</div>
+<p><strong>Admin location:</strong> <strong>Admin</strong> → <strong>Maintenance Mode</strong>.</p>
+<h3 id="manual-maintenance">Manual maintenance<a class="headerlink" href="#manual-maintenance" title="Permanent link">¶</a></h3>
+<p>Keep maintenance on until you disable it, or set a duration.</p>
+<p><strong>How to use:</strong></p>
+<ol>
+<li>Enter the banner and session messages, then choose <strong>Action</strong> and <strong>Affected Users</strong>.</li>
+<li>Set <strong>Duration (minutes)</strong> and turn on <strong>Enable Maintenance Mode</strong>.</li>
+<li>Click <strong>Save Settings</strong>. To end the window, turn off <strong>Enable Maintenance Mode</strong> and save again.</li>
+</ol>
+<p><a class="glightbox" data-type="image" data-width="100%" data-height="auto" href="../../images/admin/maintenance.webp" data-desc-position="bottom"><img alt="Maintenance Mode settings with manual and scheduled window controls, both switched off" src="../../images/admin/maintenance.webp"></a>
+<em>The capture has both manual <strong>Action</strong> boxes unchecked; <strong>Disable user accounts</strong> is on by default.</em></p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Enable Maintenance Mode</strong></td>
+<td>Off</td>
+<td>Applies the manual window on save. Turning it off attempts restoration of changes JE recorded.</td>
+</tr>
+<tr>
+<td><strong>Duration (minutes)</strong></td>
+<td>0</td>
+<td><code>0</code> means until disabled. Positive values set an absolute end time. Input bounds: 0–525600.</td>
+</tr>
+<tr>
+<td><strong>Login Page Banner Message</strong></td>
+<td><code>This server is currently undergoing maintenance. Please try again.</code></td>
+<td>Plain-text web banner. Supports <code>{countdown}</code> and <code>{ends_at}</code>.</td>
+</tr>
+<tr>
+<td><strong>Active Session Notification</strong></td>
+<td><code>Server undergoing maintenance.</code></td>
+<td>Native message attempted on applicable saves with manual maintenance enabled. Blank text falls back to the banner, then built-in notification text.</td>
+</tr>
+<tr>
+<td><strong>Remind on playback start</strong></td>
+<td>Off</td>
+<td>Sends a 15-second reminder to affected non-admin sessions starting playback, with a five-minute per-session cooldown. Also applies to scheduled maintenance.</td>
+</tr>
+<tr>
+<td><strong>Disable user accounts</strong></td>
+<td>On</td>
+<td>Under <strong>Action</strong>; disables login for affected non-admin accounts.</td>
+</tr>
+<tr>
+<td><strong>Disable remote connections</strong></td>
+<td>Off</td>
+<td>Under <strong>Action</strong>; disables remote access for affected non-admin users. With accounts enabled, LAN access remains available.</td>
+</tr>
+<tr>
+<td><strong>Affected Users</strong></td>
+<td><strong>All non-admin users</strong></td>
+<td>Choose <strong>All non-admin users</strong> or <strong>Select specific users</strong>. Shared with scheduled maintenance. Administrators are excluded from policy changes.</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition warning">
+<p class="admonition-title">An empty user selection affects all non-admins</p>
+<p>An empty selection means all eligible non-admin users. <strong>Deselect All</strong> does not mean “affect nobody.”</p>
+</div>
+<details class="info">
+<summary>How it works</summary>
+<p>Both <strong>Action</strong> boxes unchecked stores <code>none</code>; account-only stores <code>disable_accounts</code>, remote-only stores <code>disable_remote</code>, and both stores <code>both</code>.</p>
+<p><strong>Affected Users</strong> stores <code>all</code> or a JSON array of selected user IDs.</p>
+<p>The configuration's banner default above differs from the deliberately blank banner's client fallback: <code>This server is currently undergoing maintenance. Please try again later.</code> Blank fields do not reliably suppress the banner or notifications.</p>
+</details>
+<h3 id="scheduled-window">Scheduled window<a class="headerlink" href="#scheduled-window" title="Permanent link">¶</a></h3>
+<p>Run a daily maintenance window using the server's local clock. Manual maintenance takes precedence while active.</p>
+<p><strong>How to use:</strong></p>
+<ol>
+<li>Turn on <strong>Enable daily maintenance window</strong> and choose <strong>Start time</strong> and <strong>End time</strong>.</li>
+<li>Check the server time and UTC offset shown under the time fields.</li>
+<li>Choose scheduled messages and <strong>Scheduled Action</strong>, then click <strong>Save Settings</strong>.</li>
+</ol>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Enable daily maintenance window</strong></td>
+<td>Off</td>
+<td>Opens/closes maintenance daily using server-local time. Manual maintenance takes precedence while active.</td>
+</tr>
+<tr>
+<td><strong>Start time</strong></td>
+<td><code>00:00</code></td>
+<td>Start of the window; must differ from the end.</td>
+</tr>
+<tr>
+<td><strong>End time</strong></td>
+<td><code>08:00</code></td>
+<td>End of the window. Earlier than the start means the window crosses midnight.</td>
+</tr>
+<tr>
+<td><strong>Scheduled Banner Message</strong></td>
+<td><code>The library is updating; slowdowns are normal. Time remaining: {countdown}</code></td>
+<td>Plain-text banner during scheduled maintenance.</td>
+</tr>
+<tr>
+<td><strong>Scheduled Session Notification</strong></td>
+<td><code>The library is updating; slowdowns are normal.</code></td>
+<td>Native message attempted when the window opens; also used for playback reminders.</td>
+</tr>
+<tr>
+<td><strong>Disable user accounts</strong></td>
+<td>Off</td>
+<td>Under <strong>Scheduled Action</strong>; scheduled account restriction.</td>
+</tr>
+<tr>
+<td><strong>Disable remote connections</strong></td>
+<td>Off</td>
+<td>Under <strong>Scheduled Action</strong>; scheduled remote-access restriction.</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition note">
+<p class="admonition-title">Choose valid, different times</p>
+<p>Invalid or equal times make JE ignore the schedule.</p>
+</div>
+<details class="info">
+<summary>How it works</summary>
+<p>The default <strong>Scheduled Action</strong> is <code>none</code>, with both boxes unchecked. The same action encodings apply as in manual maintenance.</p>
+<p>Checks begin about 15 seconds after startup and repeat about every 30 seconds. Transitions are not guaranteed at the exact second.</p>
+</details>
+<div class="admonition warning">
+<p class="admonition-title">Restoration and recovery</p>
+<p>JE restores only policy changes it recorded as applied. Accounts already disabled, or remote access already restricted before maintenance, stay that way. Partial failures can leave restoration pending. Preserve <code>maintenance-state.json</code>, check logs and actual user policies, and follow <a href="../other-features/#maintenance-recovery">Maintenance recovery</a> if the journal is unreadable. Deleting it alone does not restore users.</p>
+</div>
+<h2 id="usage-statistics">Usage Statistics<a class="headerlink" href="#usage-statistics" title="Permanent link">¶</a></h2>
+<p>Choose whether your server shares usage statistics. See <a href="../../advanced/community-analytics/">Community Analytics</a> for what is collected and how it is used.</p>
+<h3 id="how-to-use_5">How to use<a class="headerlink" href="#how-to-use_5" title="Permanent link">¶</a></h3>
+<ol>
+<li>Open admin <strong>Admin</strong> → <strong>Usage Statistics</strong> and turn on <strong>Share Anonymous Usage Statistics</strong>. On first enabling it, the form selects all three categories.</li>
+<li>Uncheck any categories you do not want and inspect <strong>Preview</strong>.</li>
+<li>Click <strong>Save Settings</strong> to opt in.</li>
+</ol>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Share Anonymous Usage Statistics</strong></td>
+<td>Off</td>
+<td>Opts the server into usage reporting after saving.</td>
+</tr>
+<tr>
+<td><strong>Feature toggle states (on/off only)</strong></td>
+<td>On</td>
+<td>Includes feature-switch states and selected text settings when reporting is enabled.</td>
+</tr>
+<tr>
+<td><strong>Feature usage counts</strong></td>
+<td>On</td>
+<td>Includes usage counts when reporting is enabled.</td>
+</tr>
+<tr>
+<td><strong>Data file sizes (bytes only, never contents)</strong></td>
+<td>On</td>
+<td>Includes only the total size of the custom branding directory, without file names or contents, when reporting is enabled.</td>
+</tr>
+<tr>
+<td><strong>Reporting interval (days)</strong></td>
+<td>15</td>
+<td>Sets the reporting interval, constrained to 7–30 days.</td>
+</tr>
+</tbody>
+</table>
+<p>The page shows the last-sent time, or that no report has been sent. <strong>Preview</strong> shows your current selections without registering the installation or transmitting a report.</p>
+<details class="note">
+<summary>Details</summary>
+<p>Later enable/disable changes preserve your configured category choices. To preview while saved reporting remains off, check the master temporarily without saving.</p>
+</details>
+<details class="info">
+<summary>How it works</summary>
+<p>Reporting also maintains internal state, not additional editable controls. <code>AnalyticsHasBeenConfigured</code> starts at <code>false</code>; <code>AnalyticsLastReportedAt</code> and <code>AnalyticsForbiddenSinceLastSuccess</code> start at <code>0</code>. <code>AnalyticsInstallId</code>, <code>AnalyticsInstallSecret</code>, <code>AnalyticsLastPayloadJson</code>, <code>AnalyticsLastReportedPluginVersion</code>, <code>AnalyticsLastReportedJellyfinTarget</code>, and <code>AnalyticsLastReportedJellyfinVersion</code> start empty. These track registration, configured choices, and report history; see <a href="../../advanced/community-analytics/">Community Analytics</a> for their role.</p>
+</details>
+<h2 id="developer-settings">Developer Settings<a class="headerlink" href="#developer-settings" title="Permanent link">¶</a></h2>
+<p>Use <strong>Dev Mode</strong> when developing JE scripts. Leave it off for normal use.</p>
+<p><strong>How to use:</strong> Open admin <strong>Admin</strong> → <strong>Developer Settings</strong>, change <strong>Dev Mode</strong>, click <strong>Save Settings</strong>, and reload.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Dev Mode</strong></td>
+<td>Off</td>
+<td>Disables normal script caching for development.</td>
+</tr>
+</tbody>
+</table>
+<details class="note">
+<summary>Details</summary>
+<p>In <strong>Dev Mode</strong>, clients load individual scripts and the bundle is rebuilt with no-store responses.</p>
+<p>The following configuration-only troubleshooting properties have no visible admin controls:</p>
+<table>
+<thead>
+<tr>
+<th>Property</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>DisableScriptInjectionMiddleware</code></td>
+<td><code>false</code></td>
+<td>Bypasses JE's request-time script-injection middleware.</td>
+</tr>
+<tr>
+<td><code>DisableBrandingMiddleware</code></td>
+<td><code>false</code></td>
+<td>Bypasses uploaded branding overrides and lets stock assets pass through.</td>
+</tr>
+</tbody>
+</table>
+<p>See <a href="../../installation/troubleshooting/">Troubleshooting Installation</a> before changing configuration-only properties.</p>
+</details>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden="">
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"></path></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer">
+        
+          
+          <a href="../other-features/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Features (Other)">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M15.41 16.58 10.83 12l4.58-4.59L14 6l-6 6 6 6z"></path></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous · Other
+              </span>
+              <div class="md-ellipsis">
+                Features
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../../advanced/css-customization/" class="md-footer__link md-footer__link--next" aria-label="Next: CSS Customization (Advanced)">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next · Advanced
+              </span>
+              <div class="md-ellipsis">
+                CSS Customization
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M8.59 16.58 13.17 12 8.59 7.41 10 6l6 6-6 6z"></path></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  <p class="je-keyhint">
+    Press <kbd>/</kbd> to search, <kbd>P</kbd> or <kbd>N</kbd> for the previous or next page
+  </p>
+  
+    <div class="md-copyright__highlight">
+      Copyright ©2026 n00bcodr. Made with 💜 for Jellyfin and the community
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+    <a href="https://github.com/n00bcodr/Jellyfin-Enhanced" target="_blank" rel="noopener" title="GitHub Repository" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"></path></svg>
+    </a>
+  
+    
+    
+    
+    
+    <a href="https://discord.gg/EYNFf7y4CG" target="_blank" rel="noopener" title="Jellyfin Community Discord - Jellyfin Enhanced Channel" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M492.5 69.8c-.2-.3-.4-.6-.8-.7-38.1-17.5-78.4-30-119.7-37.1-.4-.1-.8 0-1.1.1s-.6.4-.8.8c-5.5 9.9-10.5 20.2-14.9 30.6-44.6-6.8-89.9-6.8-134.4 0-4.5-10.5-9.5-20.7-15.1-30.6-.2-.3-.5-.6-.8-.8s-.7-.2-1.1-.2C162.5 39 122.2 51.5 84.1 69c-.3.1-.6.4-.8.7C7.1 183.5-13.8 294.6-3.6 404.2c0 .3.1.5.2.8s.3.4.5.6c44.4 32.9 94 58 146.8 74.2.4.1.8.1 1.1 0s.7-.4.9-.7c11.3-15.4 21.4-31.8 30-48.8.1-.2.2-.5.2-.8s0-.5-.1-.8-.2-.5-.4-.6-.4-.3-.7-.4c-15.8-6.1-31.2-13.4-45.9-21.9-.3-.2-.5-.4-.7-.6s-.3-.6-.3-.9 0-.6.2-.9.3-.5.6-.7c3.1-2.3 6.2-4.7 9.1-7.1.3-.2.6-.4.9-.4s.7 0 1 .1c96.2 43.9 200.4 43.9 295.5 0 .3-.1.7-.2 1-.2s.7.2.9.4c2.9 2.4 6 4.9 9.1 7.2.2.2.4.4.6.7s.2.6.2.9-.1.6-.3.9-.4.5-.6.6c-14.7 8.6-30 15.9-45.9 21.8-.2.1-.5.2-.7.4s-.3.4-.4.7-.1.5-.1.8.1.5.2.8c8.8 17 18.8 33.3 30 48.8.2.3.6.6.9.7s.8.1 1.1 0c52.9-16.2 102.6-41.3 147.1-74.2.2-.2.4-.4.5-.6s.2-.5.2-.8c12.3-126.8-20.5-236.9-86.9-334.5zm-302 267.7c-29 0-52.8-26.6-52.8-59.2s23.4-59.2 52.8-59.2c29.7 0 53.3 26.8 52.8 59.2 0 32.7-23.4 59.2-52.8 59.2m195.4 0c-29 0-52.8-26.6-52.8-59.2s23.4-59.2 52.8-59.2c29.7 0 53.3 26.8 52.8 59.2 0 32.7-23.2 59.2-52.8 59.2"></path></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+      <div class="md-progress" data-md-component="progress" role="progressbar"></div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.instant", "navigation.instant.progress", "navigation.tracking", "navigation.tabs", "navigation.tabs.sticky", "navigation.sections", "navigation.indexes", "navigation.top", "navigation.footer", "toc.follow", "search.suggest", "search.highlight", "search.share", "content.code.copy", "content.code.annotate", "content.tabs.link", "announce.dismiss"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.c21346df.min.js"></script>
+      
+        <script src="../../javascripts/extra.js"></script>
+      
+    
+  
+<script id="init-glightbox">const lightbox = GLightbox({"touchNavigation": true, "loop": false, "zoomable": true, "draggable": false, "openEffect": "zoom", "closeEffect": "zoom", "slideEffect": "slide"});
+document$.subscribe(()=>{ lightbox.reload(); });
+</script></body></html>

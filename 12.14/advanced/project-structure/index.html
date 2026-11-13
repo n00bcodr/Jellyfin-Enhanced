@@ -1,0 +1,4394 @@
+<!DOCTYPE html><html lang="en" class="no-js"><head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="The essential enhancement suite for Jellyfin, bundling advanced features and customizations into one convenient plugin.">
+      
+      
+        <meta name="author" content="n00bcodr">
+      
+      
+        <link rel="canonical" href="https://n00bcodr.github.io/Jellyfin-Enhanced/12.14/advanced/project-structure/">
+      
+      
+        <link rel="prev" href="../community-analytics/">
+      
+      
+        <link rel="next" href="../../faq-support/faq/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../images/favicon.ico">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.0">
+    
+    
+  
+  
+    
+      <title>Project Structure · Advanced - Jellyfin Enhanced</title>
+    
+  
+
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Noto+Sans:300,300i,400,400i,700,700i%7CNoto+Sans+Mono:400,400i,700,700i&amp;display=fallback">
+        <style>:root{--md-text-font:"Noto Sans";--md-code-font:"Noto Sans Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+      <link rel="stylesheet" href="../../stylesheets/touch.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  <link href="../../assets/stylesheets/glightbox.min.css" rel="stylesheet"><script src="../../assets/javascripts/glightbox.min.js"></script><style id="glightbox-style">
+            html.glightbox-open { overflow: initial; height: 100%; }
+            .gslide-title { margin-top: 0px; user-select: text; }
+            .gslide-desc { color: #666; user-select: text; }
+            .gslide-image img { background: white; }
+            .gscrollbar-fixer { padding-right: 15px; }
+            .gdesc-inner { font-size: 0.75rem; }
+            body[data-md-color-scheme="slate"] .gdesc-inner { background: var(--md-default-bg-color); }
+            body[data-md-color-scheme="slate"] .gslide-title { color: var(--md-default-fg-color); }
+            body[data-md-color-scheme="slate"] .gslide-desc { color: var(--md-default-fg-color); }
+        </style></head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#project-structure" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden="">
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Jellyfin Enhanced" class="md-header__button md-logo" aria-label="Jellyfin Enhanced" data-md-component="logo">
+      <span class="je-mark" aria-hidden="true"></span>
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"></path></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Jellyfin Enhanced
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+              <span class="je-topic-area">Advanced</span>
+            
+            
+              Project Structure
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom" aria-label="Switch to dark mode" type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden="">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"></path></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom" aria-label="Switch to light mode" type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden="">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"></path></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"></path></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required="">
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"></path></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M15.41 16.58 10.83 12l4.58-4.59L14 6l-6 6 6 6z"></path></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard="" data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"></path></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"></path></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix="">
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/n00bcodr/Jellyfin-Enhanced" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"></path></svg>
+  </div>
+  <div class="md-source__repository">
+    n00bcodr/Jellyfin-Enhanced
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 5.69 5 4.5V18h-2v-6H9v6H7v-7.81zM12 3 2 12h3v8h6v-6h2v6h6v-8h3"></path></svg>
+  
+  <span class="je-tab-label">Home</span>
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../getting-started/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m13.13 22.19-1.63-3.83c1.57-.58 3.04-1.36 4.4-2.27zM5.64 12.5l-3.83-1.63 6.1-2.77C7 9.46 6.22 10.93 5.64 12.5M19.22 4c.28 0 .53 0 .74.05.17 1.39-.02 4.25-3.3 7.53-1.7 1.71-3.73 3.02-6.01 3.89l-2.15-2.1c.92-2.31 2.23-4.34 3.92-6.03C15.18 4.58 17.64 4 19.22 4m0-2c-1.98 0-4.98.69-8.22 3.93-2.19 2.19-3.5 4.6-4.35 6.71-.28.75-.09 1.57.46 2.13l2.13 2.12c.38.38.89.61 1.42.61.23 0 .47-.06.7-.15A19.1 19.1 0 0 0 18.07 13c5.66-5.66 3.54-10.61 3.54-10.61S20.7 2 19.22 2m-4.68 7.46c-.78-.78-.78-2.05 0-2.83s2.05-.78 2.83 0c.77.78.78 2.05 0 2.83s-2.05.78-2.83 0m-5.66 7.07-1.41-1.41zM6.24 22l3.64-3.64c-.34-.09-.67-.24-.97-.45L4.83 22zM2 22h1.41l4.77-4.76-1.42-1.41L2 20.59zm0-2.83 4.09-4.08c-.21-.3-.36-.62-.45-.97L2 17.76z"></path></svg>
+  
+  <span class="je-tab-label">Getting Started</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../enhanced/enhanced-features/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 4c3.8 0 6.5 2.8 6.5 6.8a18.3 18.3 0 0 1-13 0C5.5 6.8 8.2 4 12 4m0-2c-4.7 0-8.5 3.5-8.5 8.9.06.8.56 1.5 1.3 1.8l1.7.5v2.3a.5.5 0 0 1-.5.5.5.5 0 0 1-.5-.5.898.898 0 0 0-1-1 .898.898 0 0 0-1 1A2.405 2.405 0 0 0 5.9 18H6c1.41.06 2.56-1.09 2.5-2.5v-1.8h1v5.7c0 .67-1 .67-1 0a.898.898 0 0 0-1-1 .898.898 0 0 0-1 1c-.11 1.4 1 2.6 2.4 2.6H9c1.41.06 2.56-1.09 2.5-2.5V14h1v5.5A2.394 2.394 0 0 0 15 22h.1c1.37 0 2.46-1.14 2.4-2.5 0-1.33-2-1.33-2 0 0 .67-1 .67-1 0v-5.7h1v1.8c0 1.36 1.13 2.46 2.5 2.4h.1c1.37 0 2.46-1.14 2.4-2.5 0-1.33-2-1.33-2 0 0 .67-1 .67-1 0v-2.3l1.7-.5c.72-.34 1.21-1.02 1.3-1.8C20.5 5.5 16.7 2 12 2m0 4.2c-1.47.4-2.76 1.33-3.6 2.6-.4.53-1.2-.07-.8-.6a7.47 7.47 0 0 1 4.2-3 .5.5 0 0 1 .6.4c.1.3-.1.5-.4.6"></path></svg>
+  
+  <span class="je-tab-label">Enhanced</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../spoiler-guard/spoiler-guard-features/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 11c0 5.55-3.84 10.74-9 12-5.16-1.26-9-6.45-9-12V5l9-4 9 4zm-9 10c3.75-1 7-5.46 7-9.78V6.3l-7-3.12L5 6.3v4.92C5 15.54 8.25 20 12 21m2.8-10V9.5C14.8 8.1 13.4 7 12 7S9.2 8.1 9.2 9.5V11c-.6 0-1.2.6-1.2 1.2v3.5c0 .7.6 1.3 1.2 1.3h5.5c.7 0 1.3-.6 1.3-1.2v-3.5c0-.7-.6-1.3-1.2-1.3m-1.3 0h-3V9.5c0-.8.7-1.3 1.5-1.3s1.5.5 1.5 1.3z"></path></svg>
+  
+  <span class="je-tab-label">Spoiler Guard</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../seerr/seerr-features/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M11 20H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2h1l2 4h3L8 4h2l2 4h3l-2-4h2l2 4h3l-2-4h4v9c-.5-.8-1.2-1.5-2-2v-1H5.8L4 6.5V18h6.2c.2.7.4 1.4.8 2m9.3-1.1c.4-.7.7-1.5.7-2.4 0-2.5-2-4.5-4.5-4.5S12 14 12 16.5s2 4.5 4.5 4.5c.9 0 1.7-.2 2.4-.7l3.1 3.1 1.4-1.4zm-3.8.1c-1.4 0-2.5-1.1-2.5-2.5s1.1-2.5 2.5-2.5 2.5 1.1 2.5 2.5-1.1 2.5-2.5 2.5"></path></svg>
+  
+  <span class="je-tab-label">Seerr</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../arr/arr-features/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M7 11h2v2H7zm14-6v14c0 1.11-.89 2-2 2H5a2 2 0 0 1-2-2V5c0-1.1.9-2 2-2h1V1h2v2h8V1h2v2h1a2 2 0 0 1 2 2M5 7h14V5H5zm14 12V9H5v10zm-4-6v-2h2v2zm-4 0v-2h2v2zm-4 2h2v2H7zm8 2v-2h2v2zm-4 0v-2h2v2z"></path></svg>
+  
+  <span class="je-tab-label">*arr</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../elsewhere/elsewhere-features/" class="md-tabs__link">
+          
+  
+  
+  
+    
+  
+  <span class="je-tab-label">Elsewhere &amp; Reviews</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../other/other-features/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m9 4 2.5 5.5L17 12l-5.5 2.5L9 20l-2.5-5.5L1 12l5.5-2.5zm0 4.83L8 11l-2.17 1L8 13l1 2.17L10 13l2.17-1L10 11zM19 9l-1.26-2.74L15 5l2.74-1.25L19 1l1.25 2.75L23 5l-2.75 1.26zm0 14-1.26-2.74L15 19l2.74-1.25L19 15l1.25 2.75L23 19l-2.75 1.26z"></path></svg>
+  
+  <span class="je-tab-label">Other</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../css-customization/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M8 3a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2H3v2h1a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h2v-2H8v-5a2 2 0 0 0-2-2 2 2 0 0 0 2-2V5h2V3m6 0a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h1v2h-1a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2h-2v-2h2v-5a2 2 0 0 1 2-2 2 2 0 0 1-2-2V5h-2V3z"></path></svg>
+  
+  <span class="je-tab-label">Advanced</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../faq-support/faq/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19.79 15.41c.95-2.17.95-4.66 0-6.82l-2.74 1.24c.6 1.38.6 2.95.01 4.34zm-4.37-11.2a8.54 8.54 0 0 0-6.83 0l1.24 2.73c1.39-.59 2.96-.59 4.35.01zM4.21 8.58a8.56 8.56 0 0 0 0 6.84l2.74-1.25c-.6-1.38-.6-2.96 0-4.35zm4.38 11.21a8.5 8.5 0 0 0 6.83-.01l-1.24-2.73a5.5 5.5 0 0 1-4.34.01zM12 2a10 10 0 0 1 10 10 10 10 0 0 1-10 10A10 10 0 0 1 2 12 10 10 0 0 1 12 2m0 6a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4"></path></svg>
+  
+  <span class="je-tab-label">Help</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation">
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Jellyfin Enhanced" class="md-nav__button md-logo" aria-label="Jellyfin Enhanced" data-md-component="logo">
+      <span class="je-mark" aria-hidden="true"></span>
+    </a>
+    Jellyfin Enhanced
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/n00bcodr/Jellyfin-Enhanced" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"></path></svg>
+  </div>
+  <div class="md-source__repository">
+    n00bcodr/Jellyfin-Enhanced
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix="">
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 5.69 5 4.5V18h-2v-6H9v6H7v-7.81zM12 3 2 12h3v8h6v-6h2v6h6v-8h3"></path></svg>
+  
+  <span class="md-ellipsis">
+    Home
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../getting-started/" class="md-nav__link ">
+              
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m13.13 22.19-1.63-3.83c1.57-.58 3.04-1.36 4.4-2.27zM5.64 12.5l-3.83-1.63 6.1-2.77C7 9.46 6.22 10.93 5.64 12.5M19.22 4c.28 0 .53 0 .74.05.17 1.39-.02 4.25-3.3 7.53-1.7 1.71-3.73 3.02-6.01 3.89l-2.15-2.1c.92-2.31 2.23-4.34 3.92-6.03C15.18 4.58 17.64 4 19.22 4m0-2c-1.98 0-4.98.69-8.22 3.93-2.19 2.19-3.5 4.6-4.35 6.71-.28.75-.09 1.57.46 2.13l2.13 2.12c.38.38.89.61 1.42.61.23 0 .47-.06.7-.15A19.1 19.1 0 0 0 18.07 13c5.66-5.66 3.54-10.61 3.54-10.61S20.7 2 19.22 2m-4.68 7.46c-.78-.78-.78-2.05 0-2.83s2.05-.78 2.83 0c.77.78.78 2.05 0 2.83s-2.05.78-2.83 0m-5.66 7.07-1.41-1.41zM6.24 22l3.64-3.64c-.34-.09-.67-.24-.97-.45L4.83 22zM2 22h1.41l4.77-4.76-1.42-1.41L2 20.59zm0-2.83 4.09-4.08c-.21-.3-.36-.62-.45-.97L2 17.76z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Getting Started
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            Getting Started
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/installation/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 5v6h1.17L12 13.17 9.83 11H11V5zm2-2H9v6H5l7 7 7-7h-4zm4 15H5v2h14z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Installation
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/compatibility/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18V4H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h4v-2H3zm10 6H9v1.78c-.61.55-1 1.33-1 2.22s.39 1.67 1 2.22V20h4v-1.78c.61-.55 1-1.34 1-2.22s-.39-1.67-1-2.22zm-2 5.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5M22 8h-6c-.5 0-1 .5-1 1v10c0 .5.5 1 1 1h6c.5 0 1-.5 1-1V9c0-.5-.5-1-1-1m-1 10h-4v-8h4z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Compatibility
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/settings-overview/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M8 13c-1.86 0-3.41 1.28-3.86 3H2v2h2.14c.45 1.72 2 3 3.86 3s3.41-1.28 3.86-3H22v-2H11.86c-.45-1.72-2-3-3.86-3m0 6c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2M19.86 6c-.45-1.72-2-3-3.86-3s-3.41 1.28-3.86 3H2v2h10.14c.45 1.72 2 3 3.86 3s3.41-1.28 3.86-3H22V6zM16 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2"></path></svg>
+  
+  <span class="md-ellipsis">
+    Settings Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/pages-and-tabs/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 5v2h-4V5zM9 5v6H5V5zm10 8v6h-4v-6zM9 17v2H5v-2zM21 3h-8v6h8zM11 3H3v10h8zm10 8h-8v10h8zm-10 4H3v6h8z"></path></svg>
+  
+  <span class="md-ellipsis">
+    JE Pages &amp; Tabs
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/troubleshooting/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m22.61 19-9.08-9.09c.93-2.34.47-5.1-1.44-7C9.79.61 6.21.4 3.66 2.26L7.5 6.11 6.08 7.5 2.25 3.69C.39 6.23.6 9.82 2.9 12.11c1.86 1.86 4.57 2.35 6.89 1.48l9.11 9.11c.39.39 1.02.39 1.41 0l2.3-2.3c.39-.4.39-1.01 0-1.4m-3 1.59-9.46-9.46c-.61.45-1.29.72-2 .82-1.36.2-2.79-.21-3.83-1.25C3.37 9.76 2.93 8.5 3 7.26l3.09 3.09 4.24-4.24L7.24 3c1.26-.05 2.49.39 3.44 1.33a4.47 4.47 0 0 1 1.24 3.96 4.35 4.35 0 0 1-.88 1.96l9.46 9.45z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Troubleshooting
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3">
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 4c3.8 0 6.5 2.8 6.5 6.8a18.3 18.3 0 0 1-13 0C5.5 6.8 8.2 4 12 4m0-2c-4.7 0-8.5 3.5-8.5 8.9.06.8.56 1.5 1.3 1.8l1.7.5v2.3a.5.5 0 0 1-.5.5.5.5 0 0 1-.5-.5.898.898 0 0 0-1-1 .898.898 0 0 0-1 1A2.405 2.405 0 0 0 5.9 18H6c1.41.06 2.56-1.09 2.5-2.5v-1.8h1v5.7c0 .67-1 .67-1 0a.898.898 0 0 0-1-1 .898.898 0 0 0-1 1c-.11 1.4 1 2.6 2.4 2.6H9c1.41.06 2.56-1.09 2.5-2.5V14h1v5.5A2.394 2.394 0 0 0 15 22h.1c1.37 0 2.46-1.14 2.4-2.5 0-1.33-2-1.33-2 0 0 .67-1 .67-1 0v-5.7h1v1.8c0 1.36 1.13 2.46 2.5 2.4h.1c1.37 0 2.46-1.14 2.4-2.5 0-1.33-2-1.33-2 0 0 .67-1 .67-1 0v-2.3l1.7-.5c.72-.34 1.21-1.02 1.3-1.8C20.5 5.5 16.7 2 12 2m0 4.2c-1.47.4-2.76 1.33-3.6 2.6-.4.53-1.2-.07-.8-.6a7.47 7.47 0 0 1 4.2-3 .5.5 0 0 1 .6.4c.1.3-.1.5-.4.6"></path></svg>
+  
+  <span class="md-ellipsis">
+    Enhanced
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            Enhanced
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../enhanced/enhanced-features/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Features
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../enhanced/tags/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M6.5 10C7.3 10 8 9.3 8 8.5S7.3 7 6.5 7 5 7.7 5 8.5 5.7 10 6.5 10M9 6l7 7-5 5-7-7V6zm0-2H4c-1.1 0-2 .9-2 2v5c0 .6.2 1.1.6 1.4l7 7c.3.4.8.6 1.4.6s1.1-.2 1.4-.6l5-5c.4-.4.6-.9.6-1.4 0-.6-.2-1.1-.6-1.4l-7-7C10.1 4.2 9.6 4 9 4m4.5 1.7 1-1 6.9 6.9c.4.4.6.9.6 1.4s-.2 1.1-.6 1.4L16 19.8l-1-1 5.7-5.8z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Tags &amp; Badges
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../enhanced/enhanced-settings/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4">
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 11c0 5.55-3.84 10.74-9 12-5.16-1.26-9-6.45-9-12V5l9-4 9 4zm-9 10c3.75-1 7-5.46 7-9.78V6.3l-7-3.12L5 6.3v4.92C5 15.54 8.25 20 12 21m2.8-10V9.5C14.8 8.1 13.4 7 12 7S9.2 8.1 9.2 9.5V11c-.6 0-1.2.6-1.2 1.2v3.5c0 .7.6 1.3 1.2 1.3h5.5c.7 0 1.3-.6 1.3-1.2v-3.5c0-.7-.6-1.3-1.2-1.3m-1.3 0h-3V9.5c0-.8.7-1.3 1.5-1.3s1.5.5 1.5 1.3z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Spoiler Guard
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            Spoiler Guard
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../spoiler-guard/spoiler-guard-features/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Features
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../spoiler-guard/spoiler-guard-settings/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5">
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M11 20H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2h1l2 4h3L8 4h2l2 4h3l-2-4h2l2 4h3l-2-4h4v9c-.5-.8-1.2-1.5-2-2v-1H5.8L4 6.5V18h6.2c.2.7.4 1.4.8 2m9.3-1.1c.4-.7.7-1.5.7-2.4 0-2.5-2-4.5-4.5-4.5S12 14 12 16.5s2 4.5 4.5 4.5c.9 0 1.7-.2 2.4-.7l3.1 3.1 1.4-1.4zm-3.8.1c-1.4 0-2.5-1.1-2.5-2.5s1.1-2.5 2.5-2.5 2.5 1.1 2.5 2.5-1.1 2.5-2.5 2.5"></path></svg>
+  
+  <span class="md-ellipsis">
+    Seerr
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            Seerr
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../seerr/seerr-features/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Features
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../seerr/seerr-settings/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../seerr/permission-audit/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 1 3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5zm0 2.18 7 3.12v4.92c0 1.7-.5 3.43-1.35 4.95C16 14.94 13.26 14.5 12 14.5s-4 .44-5.65 1.67C5.5 14.65 5 12.92 5 11.22V6.3zM12 6a3.5 3.5 0 0 0-3.5 3.5A3.5 3.5 0 0 0 12 13a3.5 3.5 0 0 0 3.5-3.5A3.5 3.5 0 0 0 12 6m0 2a1.5 1.5 0 0 1 1.5 1.5A1.5 1.5 0 0 1 12 11a1.5 1.5 0 0 1-1.5-1.5A1.5 1.5 0 0 1 12 8m0 8.5c1.57 0 3.64.61 4.53 1.34C15.29 19.38 13.7 20.55 12 21c-1.7-.45-3.29-1.62-4.53-3.16.9-.73 2.96-1.34 4.53-1.34"></path></svg>
+  
+  <span class="md-ellipsis">
+    Permission Audit
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6">
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M7 11h2v2H7zm14-6v14c0 1.11-.89 2-2 2H5a2 2 0 0 1-2-2V5c0-1.1.9-2 2-2h1V1h2v2h8V1h2v2h1a2 2 0 0 1 2 2M5 7h14V5H5zm14 12V9H5v10zm-4-6v-2h2v2zm-4 0v-2h2v2zm-4 2h2v2H7zm8 2v-2h2v2zm-4 0v-2h2v2z"></path></svg>
+  
+  <span class="md-ellipsis">
+    *arr
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            *arr
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../arr/arr-features/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Features
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../arr/arr-settings/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../arr/troubleshooting-support/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m22.61 19-9.08-9.09c.93-2.34.47-5.1-1.44-7C9.79.61 6.21.4 3.66 2.26L7.5 6.11 6.08 7.5 2.25 3.69C.39 6.23.6 9.82 2.9 12.11c1.86 1.86 4.57 2.35 6.89 1.48l9.11 9.11c.39.39 1.02.39 1.41 0l2.3-2.3c.39-.4.39-1.01 0-1.4m-3 1.59-9.46-9.46c-.61.45-1.29.72-2 .82-1.36.2-2.79-.21-3.83-1.25C3.37 9.76 2.93 8.5 3 7.26l3.09 3.09 4.24-4.24L7.24 3c1.26-.05 2.49.39 3.44 1.33a4.47 4.47 0 0 1 1.24 3.96 4.35 4.35 0 0 1-.88 1.96l9.46 9.45z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Troubleshooting
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7">
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  
+  <span class="md-ellipsis">
+    Elsewhere &amp; Reviews
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            Elsewhere &amp; Reviews
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../elsewhere/elsewhere-features/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Features
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../elsewhere/elsewhere-settings/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8">
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m9 4 2.5 5.5L17 12l-5.5 2.5L9 20l-2.5-5.5L1 12l5.5-2.5zm0 4.83L8 11l-2.17 1L8 13l1 2.17L10 13l2.17-1L10 11zM19 9l-1.26-2.74L15 5l2.74-1.25L19 1l1.25 2.75L23 5l-2.75 1.26zm0 14-1.26-2.74L15 19l2.74-1.25L19 15l1.25 2.75L23 19l-2.75 1.26z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Other
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            Other
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../other/other-features/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Features
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../other/other-settings/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9" checked="">
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M8 3a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2H3v2h1a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h2v-2H8v-5a2 2 0 0 0-2-2 2 2 0 0 0 2-2V5h2V3m6 0a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h1v2h-1a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2h-2v-2h2v-5a2 2 0 0 1 2-2 2 2 0 0 1-2-2V5h-2V3z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Advanced
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            Advanced
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../css-customization/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 22A10 10 0 0 1 2 12 10 10 0 0 1 12 2c5.5 0 10 4 10 9a6 6 0 0 1-6 6h-1.8c-.3 0-.5.2-.5.5 0 .1.1.2.1.3.4.5.6 1.1.6 1.7.1 1.4-1 2.5-2.4 2.5m0-18a8 8 0 0 0-8 8 8 8 0 0 0 8 8c.3 0 .5-.2.5-.5 0-.2-.1-.3-.1-.4-.4-.5-.6-1-.6-1.6 0-1.4 1.1-2.5 2.5-2.5H16a4 4 0 0 0 4-4c0-3.9-3.6-7-8-7m-5.5 6c.8 0 1.5.7 1.5 1.5S7.3 13 6.5 13 5 12.3 5 11.5 5.7 10 6.5 10m3-4c.8 0 1.5.7 1.5 1.5S10.3 9 9.5 9 8 8.3 8 7.5 8.7 6 9.5 6m5 0c.8 0 1.5.7 1.5 1.5S15.3 9 14.5 9 13 8.3 13 7.5 13.7 6 14.5 6m3 4c.8 0 1.5.7 1.5 1.5s-.7 1.5-1.5 1.5-1.5-.7-1.5-1.5.7-1.5 1.5-1.5"></path></svg>
+  
+  <span class="md-ellipsis">
+    CSS Customization
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M7 7H5a2 2 0 0 0-2 2v8h2v-4h2v4h2V9a2 2 0 0 0-2-2m0 4H5V9h2m7-2h-4v10h2v-4h2a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2m0 4h-2V9h2m6 0v6h1v2h-4v-2h1V9h-1V7h4v2Z"></path></svg>
+  
+  <span class="md-ellipsis">
+    API
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../community-analytics/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M22 21H2V3h2v16h2v-9h4v9h2V6h4v13h2v-5h4z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Community Analytics
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 13H7v5h5v2H5V10h2v1h5zM8 4v2H4V4zm2-2H2v6h8zm10 9v2h-4v-2zm2-2h-8v6h8zm-2 9v2h-4v-2zm2-2h-8v6h8z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Project Structure
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 13H7v5h5v2H5V10h2v1h5zM8 4v2H4V4zm2-2H2v6h8zm10 9v2h-4v-2zm2-2h-8v6h8zm-2 9v2h-4v-2zm2-2h-8v6h8z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Project Structure
+    
+  </span>
+  
+
+      </a>
+      
+        
+
+  
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
+      
+        <li class="md-nav__item">
+  <a href="#client-delivery-and-initialization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Client delivery and initialization
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Client delivery and initialization">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#bundle-and-development-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bundle and development mode
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#file-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        File Structure
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="File Structure">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#build-targets-and-logging" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Build targets and logging
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#configuration-and-persistence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration and persistence
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#page-wrappers-and-placement" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Page wrappers and placement
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-modules-are-organised" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How modules are organised
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#component-breakdown" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Component Breakdown
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Component Breakdown">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#shared-browser-primitives-jscore" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Shared browser primitives: js/core/
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#enhanced-ui-jsenhanced" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Enhanced UI: js/enhanced/
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#catch-up" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Catch Up
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#seerr-and-discovery-jsjellyseerr" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Seerr and discovery: js/jellyseerr/
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#calendar-and-requests-jsarr" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Calendar and requests: js/arr/
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#web-tags-jstags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Web tags: js/tags/
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#other-web-components" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Other web components
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#activity-feed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Activity Feed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mdblist-display-and-metadata-writes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MDBList display and metadata writes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#server-ownership" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Server ownership
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Server ownership">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#root-services-services" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Root services: Services/
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#spoiler-guard-and-identity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Spoiler Guard and identity
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#native-poster-tags-servicespostertags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Native Poster Tags: Services/PosterTags/
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#helpers-extensions-and-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Helpers, extensions and models
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#event-handlers-eventhandlers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Event handlers: EventHandlers/
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scheduled-tasks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scheduled tasks
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#repository-documentation-and-tooling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Repository documentation and tooling
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Repository documentation and tooling">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#documentation-tree" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Documentation tree
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#generated-assets-and-maintenance-scripts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Generated assets and maintenance scripts
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#regression-tests-and-inventory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Regression tests and inventory
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ci-and-repository-policies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CI and repository policies
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10">
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19.79 15.41c.95-2.17.95-4.66 0-6.82l-2.74 1.24c.6 1.38.6 2.95.01 4.34zm-4.37-11.2a8.54 8.54 0 0 0-6.83 0l1.24 2.73c1.39-.59 2.96-.59 4.35.01zM4.21 8.58a8.56 8.56 0 0 0 0 6.84l2.74-1.25c-.6-1.38-.6-2.96 0-4.35zm4.38 11.21a8.5 8.5 0 0 0 6.83-.01l-1.24-2.73a5.5 5.5 0 0 1-4.34.01zM12 2a10 10 0 0 1 10 10 10 10 0 0 1-10 10A10 10 0 0 1 2 12 10 10 0 0 1 12 2m0 6a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4"></path></svg>
+  
+  <span class="md-ellipsis">
+    Help
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            Help
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../faq-support/faq/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M11 18h2v-2h-2zm1-16A10 10 0 0 0 2 12a10 10 0 0 0 10 10 10 10 0 0 0 10-10A10 10 0 0 0 12 2m0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8m0-14a4 4 0 0 0-4 4h2a2 2 0 0 1 2-2 2 2 0 0 1 2 2c0 2-3 1.75-3 5h2c0-2.25 3-2.5 3-5a4 4 0 0 0-4-4"></path></svg>
+  
+  <span class="md-ellipsis">
+    FAQ
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../faq-support/report-issues/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 8h-2.81c-.45-.8-1.07-1.5-1.82-2L17 4.41 15.59 3l-2.17 2.17a6 6 0 0 0-2.83 0L8.41 3 7 4.41 8.62 6c-.75.5-1.36 1.21-1.81 2H4v2h2.09c-.06.33-.09.66-.09 1v1H4v2h2v1c0 .34.03.67.09 1H4v2h2.81A5.99 5.99 0 0 0 15 20.18c.91-.52 1.67-1.28 2.19-2.18H20v-2h-2.09c.06-.33.09-.66.09-1v-1h2v-2h-2v-1c0-.34-.03-.67-.09-1H20zm-4 7a4 4 0 0 1-4 4 4 4 0 0 1-4-4v-4a4 4 0 0 1 4-4 4 4 0 0 1 4 4zm-2-5v2h-4v-2zm-4 4h4v2h-4z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Report Issues
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../faq-support/feature-requests/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11h3v2h-3zM1 11h3v2H1zM13 1v3h-2V1zM4.92 3.5l2.13 2.14-1.42 1.41L3.5 4.93zm12.03 2.13 2.12-2.13 1.43 1.43-2.13 2.12zM12 6a6 6 0 0 1 6 6c0 2.22-1.21 4.16-3 5.2V19a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1v-1.8c-1.79-1.04-3-2.98-3-5.2a6 6 0 0 1 6-6m2 15v1a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1v-1zm-3-3h2v-2.13c1.73-.44 3-2.01 3-3.87a4 4 0 0 0-4-4 4 4 0 0 0-4 4c0 1.86 1.27 3.43 3 3.87z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Feature Requests
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../faq-support/contributing-translations/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12.87 15.07-2.54-2.51.03-.03A17.5 17.5 0 0 0 14.07 6H17V4h-7V2H8v2H1v2h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11zM18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2zm-2.62 7 1.62-4.33L19.12 17z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Contributing Translations
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../faq-support/support/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M15 4v7H5.17L4 12.17V4zm1-2H3a1 1 0 0 0-1 1v14l4-4h10a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1m5 4h-2v9H6v2a1 1 0 0 0 1 1h11l4 4V7a1 1 0 0 0-1-1"></path></svg>
+  
+  <span class="md-ellipsis">
+    Support + Community
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../other-projects/other-projects/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M22 13.5c0 1.76-1.3 3.22-3 3.46V20a2 2 0 0 1-2 2h-3.8v-.3a2.7 2.7 0 0 0-2.7-2.7c-1.5 0-2.7 1.21-2.7 2.7v.3H4a2 2 0 0 1-2-2v-3.8h.3C3.79 16.2 5 15 5 13.5s-1.21-2.7-2.7-2.7H2V7a2 2 0 0 1 2-2h3.04c.24-1.7 1.7-3 3.46-3s3.22 1.3 3.46 3H17a2 2 0 0 1 2 2v3.04c1.7.24 3 1.7 3 3.46M17 15h1.5a1.5 1.5 0 0 0 1.5-1.5 1.5 1.5 0 0 0-1.5-1.5H17V7h-5V5.5A1.5 1.5 0 0 0 10.5 4 1.5 1.5 0 0 0 9 5.5V7H4v2.12c1.76.68 3 2.38 3 4.38s-1.25 3.7-3 4.38V20h2.12a4.7 4.7 0 0 1 4.38-3c2 0 3.7 1.25 4.38 3H17z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Related Projects
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../about/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M11 9h2V7h-2m1 13c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8m0-18A10 10 0 0 0 2 12a10 10 0 0 0 10 10 10 10 0 0 0 10-10A10 10 0 0 0 12 2m-1 15h2v-6h-2z"></path></svg>
+  
+  <span class="md-ellipsis">
+    About
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc">
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+  
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
+      
+        <li class="md-nav__item">
+  <a href="#client-delivery-and-initialization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Client delivery and initialization
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Client delivery and initialization">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#bundle-and-development-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bundle and development mode
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#file-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        File Structure
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="File Structure">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#build-targets-and-logging" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Build targets and logging
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#configuration-and-persistence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration and persistence
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#page-wrappers-and-placement" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Page wrappers and placement
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-modules-are-organised" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How modules are organised
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#component-breakdown" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Component Breakdown
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Component Breakdown">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#shared-browser-primitives-jscore" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Shared browser primitives: js/core/
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#enhanced-ui-jsenhanced" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Enhanced UI: js/enhanced/
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#catch-up" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Catch Up
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#seerr-and-discovery-jsjellyseerr" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Seerr and discovery: js/jellyseerr/
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#calendar-and-requests-jsarr" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Calendar and requests: js/arr/
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#web-tags-jstags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Web tags: js/tags/
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#other-web-components" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Other web components
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#activity-feed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Activity Feed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mdblist-display-and-metadata-writes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MDBList display and metadata writes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#server-ownership" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Server ownership
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Server ownership">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#root-services-services" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Root services: Services/
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#spoiler-guard-and-identity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Spoiler Guard and identity
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#native-poster-tags-servicespostertags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Native Poster Tags: Services/PosterTags/
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#helpers-extensions-and-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Helpers, extensions and models
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#event-handlers-eventhandlers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Event handlers: EventHandlers/
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scheduled-tasks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scheduled tasks
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#repository-documentation-and-tooling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Repository documentation and tooling
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Repository documentation and tooling">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#documentation-tree" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Documentation tree
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#generated-assets-and-maintenance-scripts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Generated assets and maintenance scripts
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#regression-tests-and-inventory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Regression tests and inventory
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ci-and-repository-policies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CI and repository policies
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+  
+    
+    
+    
+    <nav class="je-sectionbar" aria-label="Advanced pages">
+      <a class="je-sectionbar__area" href="../css-customization/">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M8 3a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2H3v2h1a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h2v-2H8v-5a2 2 0 0 0-2-2 2 2 0 0 0 2-2V5h2V3m6 0a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h1v2h-1a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2h-2v-2h2v-5a2 2 0 0 1 2-2 2 2 0 0 1-2-2V5h-2V3z"></path></svg>
+        <span>Advanced</span>
+      </a>
+      
+        <ul class="je-sectionbar__pages">
+          
+            
+              <li>
+                <a class="je-chip" href="../css-customization/">CSS Customization</a>
+              </li>
+            
+          
+            
+              <li>
+                <a class="je-chip" href="../api/">API</a>
+              </li>
+            
+          
+            
+              <li>
+                <a class="je-chip" href="../community-analytics/">Community Analytics</a>
+              </li>
+            
+          
+            
+              <li>
+                <a class="je-chip je-chip--active" href="./" aria-current="page">Project Structure</a>
+              </li>
+            
+          
+        </ul>
+      
+    </nav>
+  
+  
+                  
+
+
+  
+  
+
+
+<h1 id="project-structure">Project Structure<a class="headerlink" href="#project-structure" title="Permanent link">¶</a></h1>
+<p>Use this map to find the files responsible for a feature before changing it. Jellyfin Enhanced has two parts: a C# server plugin and an injected JavaScript client.</p>
+<p>The server owns configuration, persistence, integration proxies and response filters. The client adds controls and pages to Jellyfin Web.</p>
+<p>Unless a repository-root path is stated, source paths below are relative to <code>Jellyfin.Plugin.JellyfinEnhanced/</code>. Leading slashes denote HTTP routes.</p>
+<p>For endpoint details, see the <a href="../api/">API reference</a>. For setup and placement, see <a href="../../getting-started/settings-overview/">Settings Overview</a> and <a href="../../getting-started/pages-and-tabs/">JE Pages &amp; Tabs</a>.</p>
+<h2 id="client-delivery-and-initialization">Client delivery and initialization<a class="headerlink" href="#client-delivery-and-initialization" title="Permanent link">¶</a></h2>
+<p>This section follows the client from loader injection through initialization and user switches.</p>
+<p><code>Services/ScriptInjectionStartupFilter.cs</code> injects the loader into web responses. <code>GET /JellyfinEnhanced/script</code> serves <code>js/plugin.js</code>; it is separate from the component bundle. <code>JellyfinEnhanced.csproj</code> embeds <code>js/**</code>, and <code>GetScript</code> in <code>Controllers/JellyfinEnhancedController.cs</code> serves individual resources at <code>/JellyfinEnhanced/js/{path}</code>.</p>
+<p>The ordered module list lives in <code>js/component-scripts.json</code>: 161 component modules, with paths relative to <code>js/</code>. Entries starting with <code>//</code> are ordering notes.</p>
+<p><strong>Modules execute in manifest order.</strong> Place a module after every producer whose exports it reads at load time. A consumer loaded too early can capture <code>undefined</code>.</p>
+<p>The initialization stages and user-switch behavior are:</p>
+<table>
+<thead>
+<tr>
+<th>Stage</th>
+<th>Owner and behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Early UI</td>
+<td>Dedicated loaders inject <code>js/others/splashscreen.js</code> and, when enabled, <code>js/extras/login-image.js</code> before the component stage so they can affect the login screen.</td>
+</tr>
+<tr>
+<td>Translations</td>
+<td><code>js/enhanced/translations.js</code> starts loading at the beginning of <code>initialize()</code>, in parallel with bootstrap. It loads/caches locale JSON and resolves <code>JE.t</code> before components run.</td>
+</tr>
+<tr>
+<td>Bootstrap</td>
+<td>Authenticated <code>GET /JellyfinEnhanced/bootstrap</code> returns version, token user ID, public configuration, administrator-only private configuration, Custom Tabs / Plugin Pages presence flags, five user documents and the component list. Non-admin <code>PrivateConfig</code> is null. The loader falls back to individual endpoints if bootstrap fails.</td>
+</tr>
+<tr>
+<td>Components</td>
+<td>After configuration is applied, production loads <code>GET /JellyfinEnhanced/bundle.js</code>; development mode and bundle failure use individual scripts.</td>
+</tr>
+<tr>
+<td>User switches</td>
+<td><code>js/core/session.js</code> detects identity changes and resets registered feature state. The loader reloads the incoming user's documents and emits <code>je:user-data-loaded</code>. Async work uses identity epochs to discard stale results.</td>
+</tr>
+</tbody>
+</table>
+<p>The bootstrap's <code>UserSettings</code> members are <code>Settings</code>, <code>Shortcuts</code>, <code>Bookmark</code>, <code>Elsewhere</code> and <code>HiddenContent</code>. A document-loading failure yields null for that document. Bootstrap always loads the token user's data, with no target-user parameter, and is served with <code>no-store</code>.</p>
+<p>Bootstrap's <code>Prefetched</code> block can carry <code>SpoilerBlurSeries</code>, <code>SeerrUserStatus</code>, <code>SeerrStatus</code> and <code>ActiveStreamSessions</code>. These reuse standalone response bodies under the same feature, access and cache gates. Seerr answers are included only when no upstream lookup is needed; sessions follow the active-streams access gate.</p>
+<p>Components consume a value once, shortly after bootstrap, through <code>JE.takePrefetched(name)</code>. Otherwise, they call their endpoint normally. Bootstrap does not fetch every feature's data.</p>
+<h3 id="bundle-and-development-mode">Bundle and development mode<a class="headerlink" href="#bundle-and-development-mode" title="Permanent link">¶</a></h3>
+<p><code>Services/ClientScriptBundle.cs</code> builds the bundle on first use and caches it by the plugin's script cache key (version plus DLL timestamp). It wraps each manifest file in a function and publishes <code>window.__JE_BUNDLE_MODULES</code>.</p>
+<p>The index source map at <code>/JellyfinEnhanced/bundle.js.map</code> uses <code>sections</code> to preserve original filenames and line numbers in DevTools and stack traces. Bundle and map routes are anonymous; production responses use <code>public, max-age=31536000, immutable</code>.</p>
+<p>The loader waits for browser idle time, with a 100 ms timeout. It then executes functions in order, yielding between modules at an approximately 10 ms budget. This reduces interference with initial rendering; a synchronous module can still exceed the budget and occupy the main thread. A top-level exception is reported and skipped without re-running that module.</p>
+<p>If the bundle request fails or the bundle does not define a valid module array, the loader injects individual files with <code>script.async = false</code>. Downloads can overlap; execution follows manifest order.</p>
+<p>Administrator setting, under <strong>Admin</strong> → <strong>Developer Settings</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Dev Mode</strong></td>
+<td>Off (<code>DevMode=false</code>)</td>
+<td>Loads individual component scripts and serves script responses with <code>no-store</code>. Direct bundle requests also rebuild rather than using the process cache.</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Development mode still serves embedded resources. Rebuild the plugin and load the new assembly after editing JavaScript; it does not read loose source files from your checkout.</p>
+</div>
+<p><code>DisableScriptInjectionMiddleware=false</code> is a server configuration property without an admin-page control. It gates the request-time injection middleware. <code>BrandingAssetStartupFilter.cs</code> handles custom image assets separately from script injection.</p>
+<h2 id="file-structure">File Structure<a class="headerlink" href="#file-structure" title="Permanent link">¶</a></h2>
+<p>Use the tree below to find the directory responsible for a feature. Detailed file indexes follow. The manifest is the authoritative list and order of component files. The repository also contains the three dedicated-loader scripts described above.</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>Jellyfin.Plugin.JellyfinEnhanced/
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>├── JellyfinEnhanced.cs               # Plugin entry point; GetPages() and GetViews()
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>├── JellyfinEnhanced.csproj           # Targets, dependencies and embedded resources
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>├── packages.jf12.lock.json
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>├── packages.jf10.lock.json
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>├── PluginServiceRegistrator.cs       # Dependency injection, hosted services, filters
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>├── Logger.cs
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>├── Configuration/
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>│   ├── PluginConfiguration.cs
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>│   ├── UserConfiguration.cs
+</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>│   ├── UserConfigurationManager.cs
+</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>│   ├── configPage.html
+</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>│   ├── configPage.css
+</span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>│   └── whats-new-seed.json
+</span><span id="__span-0-15"><a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>├── Controllers/
+</span><span id="__span-0-16"><a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>│   ├── JellyfinEnhancedController.cs  # Most plugin endpoints
+</span><span id="__span-0-17"><a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>│   └── CatchUpController.cs           # Catch Up event recording and admin reads
+</span><span id="__span-0-18"><a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>├── PluginPages/                      # Seven embedded page wrappers
+</span><span id="__span-0-19"><a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>├── Helpers/
+</span><span id="__span-0-20"><a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>│   └── Jellyseerr/                   # Seerr HTTP, permissions, imports, parental rules
+</span><span id="__span-0-21"><a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>├── Extensions/                       # Repository, database and user API adapters
+</span><span id="__span-0-22"><a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>├── EventHandlers/                    # Playback and user topology consumers/hooks
+</span><span id="__span-0-23"><a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>├── Model/
+</span><span id="__span-0-24"><a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a>│   ├── Arr/
+</span><span id="__span-0-25"><a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a>│   └── Jellyseerr/
+</span><span id="__span-0-26"><a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a>├── ScheduledTasks/                   # Dashboard tasks and MDBList fetch runner
+</span><span id="__span-0-27"><a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a>├── Services/
+</span><span id="__span-0-28"><a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a>│   ├── Identity/
+</span><span id="__span-0-29"><a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a>│   ├── PosterTags/
+</span><span id="__span-0-30"><a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a>│   │   ├── Rendering/
+</span><span id="__span-0-31"><a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a>│   │   └── Resolution/
+</span><span id="__span-0-32"><a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a>│   └── SpoilerGuard/
+</span><span id="__span-0-33"><a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a>├── Assets/
+</span><span id="__span-0-34"><a id="__codelineno-0-34" name="__codelineno-0-34" href="#__codelineno-0-34"></a>│   └── PosterTags/                   # Generated, embedded rendering assets
+</span><span id="__span-0-35"><a id="__codelineno-0-35" name="__codelineno-0-35" href="#__codelineno-0-35"></a>└── js/
+</span><span id="__span-0-36"><a id="__codelineno-0-36" name="__codelineno-0-36" href="#__codelineno-0-36"></a>    ├── plugin.js
+</span><span id="__span-0-37"><a id="__codelineno-0-37" name="__codelineno-0-37" href="#__codelineno-0-37"></a>    ├── component-scripts.json
+</span><span id="__span-0-38"><a id="__codelineno-0-38" name="__codelineno-0-38" href="#__codelineno-0-38"></a>    ├── fonts/                        # Full and subset Material Symbols WOFF2 files
+</span><span id="__span-0-39"><a id="__codelineno-0-39" name="__codelineno-0-39" href="#__codelineno-0-39"></a>    ├── locales/                      # 33 bundled JSON files, including regional variants
+</span><span id="__span-0-40"><a id="__codelineno-0-40" name="__codelineno-0-40" href="#__codelineno-0-40"></a>    ├── core/                         # Shared browser primitives
+</span><span id="__span-0-41"><a id="__codelineno-0-41" name="__codelineno-0-41" href="#__codelineno-0-41"></a>    ├── enhanced/
+</span><span id="__span-0-42"><a id="__codelineno-0-42" name="__codelineno-0-42" href="#__codelineno-0-42"></a>    │   ├── bookmarks/
+</span><span id="__span-0-43"><a id="__codelineno-0-43" name="__codelineno-0-43" href="#__codelineno-0-43"></a>    │   ├── catchup/
+</span><span id="__span-0-44"><a id="__codelineno-0-44" name="__codelineno-0-44" href="#__codelineno-0-44"></a>    │   ├── hiddencontent/
+</span><span id="__span-0-45"><a id="__codelineno-0-45" name="__codelineno-0-45" href="#__codelineno-0-45"></a>    │   ├── homeremoval/
+</span><span id="__span-0-46"><a id="__codelineno-0-46" name="__codelineno-0-46" href="#__codelineno-0-46"></a>    │   ├── itemdetails/
+</span><span id="__span-0-47"><a id="__codelineno-0-47" name="__codelineno-0-47" href="#__codelineno-0-47"></a>    │   ├── player/
+</span><span id="__span-0-48"><a id="__codelineno-0-48" name="__codelineno-0-48" href="#__codelineno-0-48"></a>    │   ├── settingspanel/
+</span><span id="__span-0-49"><a id="__codelineno-0-49" name="__codelineno-0-49" href="#__codelineno-0-49"></a>    │   └── spoilerguard/
+</span><span id="__span-0-50"><a id="__codelineno-0-50" name="__codelineno-0-50" href="#__codelineno-0-50"></a>    ├── jellyseerr/
+</span><span id="__span-0-51"><a id="__codelineno-0-51" name="__codelineno-0-51" href="#__codelineno-0-51"></a>    │   ├── discovery/
+</span><span id="__span-0-52"><a id="__codelineno-0-52" name="__codelineno-0-52" href="#__codelineno-0-52"></a>    │   ├── moreinfo/
+</span><span id="__span-0-53"><a id="__codelineno-0-53" name="__codelineno-0-53" href="#__codelineno-0-53"></a>    │   ├── recommendations/
+</span><span id="__span-0-54"><a id="__codelineno-0-54" name="__codelineno-0-54" href="#__codelineno-0-54"></a>    │   └── ui/
+</span><span id="__span-0-55"><a id="__codelineno-0-55" name="__codelineno-0-55" href="#__codelineno-0-55"></a>    ├── arr/
+</span><span id="__span-0-56"><a id="__codelineno-0-56" name="__codelineno-0-56" href="#__codelineno-0-56"></a>    │   ├── calendar/
+</span><span id="__span-0-57"><a id="__codelineno-0-57" name="__codelineno-0-57" href="#__codelineno-0-57"></a>    │   └── requests/
+</span><span id="__span-0-58"><a id="__codelineno-0-58" name="__codelineno-0-58" href="#__codelineno-0-58"></a>    ├── awards/
+</span><span id="__span-0-59"><a id="__codelineno-0-59" name="__codelineno-0-59" href="#__codelineno-0-59"></a>    ├── tags/
+</span><span id="__span-0-60"><a id="__codelineno-0-60" name="__codelineno-0-60" href="#__codelineno-0-60"></a>    ├── elsewhere/
+</span><span id="__span-0-61"><a id="__codelineno-0-61" name="__codelineno-0-61" href="#__codelineno-0-61"></a>    ├── extras/
+</span><span id="__span-0-62"><a id="__codelineno-0-62" name="__codelineno-0-62" href="#__codelineno-0-62"></a>    └── others/
+</span></code></pre></div>
+<h3 id="build-targets-and-logging">Build targets and logging<a class="headerlink" href="#build-targets-and-logging" title="Permanent link">¶</a></h3>
+<p><code>JellyfinEnhanced.csproj</code> uses the root namespace and assembly name <code>Jellyfin.Plugin.JellyfinEnhanced</code>. Directory organization does not always match C# namespaces: for example, services in <code>Services/SpoilerGuard/</code> and <code>Services/Identity/</code> use <code>Jellyfin.Plugin.JellyfinEnhanced.Services</code>. Check declarations rather than deriving namespaces from folders.</p>
+<table>
+<thead>
+<tr>
+<th><code>JellyfinTarget</code></th>
+<th>Jellyfin references</th>
+<th>Framework</th>
+<th>Compilation symbol</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>jf12</code> (default)</td>
+<td>12.0.0</td>
+<td><code>net10.0</code></td>
+<td><code>JF12</code></td>
+</tr>
+<tr>
+<td><code>jf10</code></td>
+<td>10.11.0</td>
+<td><code>net9.0</code></td>
+<td><code>JF10</code></td>
+</tr>
+</tbody>
+</table>
+<p>Build separate artifacts for the two targets. Package-reference changes require refreshing both plugin lock files and both locks beside <code>tests/backend/JE.Tests.csproj</code>. See <a href="https://github.com/n00bcodr/Jellyfin-Enhanced/blob/main/CONTRIBUTING.md">CONTRIBUTING.md</a> for build and locked-restore instructions.</p>
+<p><code>Logger.cs</code> forwards messages to Jellyfin's main log and writes <code>JellyfinEnhanced_YYYY-MM-DD.log</code> under Jellyfin's log directory. <code>Services/HostCompatibilityService.cs</code> compares the assembly's build target with the running host and exposes mismatch diagnostics.</p>
+<h3 id="configuration-and-persistence">Configuration and persistence<a class="headerlink" href="#configuration-and-persistence" title="Permanent link">¶</a></h3>
+<p>This table maps server settings, per-user documents and the configuration UI to their source files. Storage locations follow it.</p>
+<table>
+<thead>
+<tr>
+<th>Source</th>
+<th>Responsibility</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Configuration/PluginConfiguration.cs</code></td>
+<td>Server settings and administrator defaults.</td>
+</tr>
+<tr>
+<td><code>Configuration/configPage.html</code>, <code>configPage.css</code></td>
+<td>Admin UI, control labels, save wiring and styling. Tabs: <strong>Overview</strong>, <strong>Display</strong>, <strong>Playback</strong>, <strong>Pages</strong>, <strong>Seerr</strong>, <strong>*arr</strong>, <strong>Elsewhere &amp; Reviews</strong>, <strong>Extras</strong>, <strong>Keyboard</strong>, <strong>Admin</strong>, <strong>Docs</strong>.</td>
+</tr>
+<tr>
+<td><code>Configuration/UserConfiguration.cs</code></td>
+<td>Per-user document models, including settings, shortcuts, bookmarks, Elsewhere, Hidden Content and Spoiler Guard.</td>
+</tr>
+<tr>
+<td><code>Configuration/UserConfigurationManager.cs</code></td>
+<td>Server file storage, locking, writes, shared stores and migration of historical user-ID directory variants.</td>
+</tr>
+<tr>
+<td><code>Configuration/whats-new-seed.json</code></td>
+<td>Fallback baseline for detecting new admin controls; this is a historical baseline, not current defaults or a feature count.</td>
+</tr>
+<tr>
+<td><code>js/enhanced/config.js</code></td>
+<td>Resolves effective values from server-stored user settings, admin defaults and client fallbacks; serializes per-user saves to the server in order. It does not store user settings in localStorage.</td>
+</tr>
+</tbody>
+</table>
+<p>Per-user files live under <code>&lt;PluginsPath&gt;/configurations/Jellyfin.Plugin.JellyfinEnhanced/&lt;normalized-user-id&gt;/</code>. IDs are lowercase with hyphens removed. Bootstrap loads <code>settings.json</code>, <code>shortcuts.json</code>, <code>bookmark.json</code>, <code>elsewhere.json</code> and <code>hidden-content.json</code>; Spoiler Guard additionally uses <code>spoilerblur.json</code>, and Content Warnings stores its trigger picks in <code>ddd-triggers.json</code>, loaded on demand rather than at bootstrap.</p>
+<p>Shared <code>reviews.json</code> and <code>activity.json</code> live in the parent plugin configuration directory, as do <code>catchup-log.jsonl</code> and its rotated <code>catchup-log.1.jsonl</code>. <code>UserConfigurationManager</code> owns the shared review/activity stores; <code>CatchUpLogService</code> owns the Catch Up log.</p>
+<p>Browser storage serves other purposes: translation caching, IndexedDB tag snapshots and per-user Catch Up dismissals. Those are separate from the server-stored personal settings.</p>
+<p>Admin changes may affect the server immediately, while web clients retain loaded configuration until refreshed. See <a href="../../getting-started/settings-overview/">Settings Overview</a> for defaults, reset and backup procedures.</p>
+<h3 id="page-wrappers-and-placement">Page wrappers and placement<a class="headerlink" href="#page-wrappers-and-placement" title="Permanent link">¶</a></h3>
+<p><code>GetPages()</code> registers the administrator configuration page. <code>GetViews()</code> exposes all seven embedded feature wrappers:</p>
+<table>
+<thead>
+<tr>
+<th>File under <code>PluginPages/</code></th>
+<th>View name</th>
+<th>Client owner</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>CalendarPage.html</code></td>
+<td><code>calendarPage</code></td>
+<td><code>js/arr/calendar/</code></td>
+</tr>
+<tr>
+<td><code>DownloadsPage.html</code></td>
+<td><code>downloadsPage</code></td>
+<td><code>js/arr/requests/</code> (combined requests/downloads page)</td>
+</tr>
+<tr>
+<td><code>BookmarksPage.html</code></td>
+<td><code>bookmarksPage</code></td>
+<td><code>js/enhanced/bookmarks/</code></td>
+</tr>
+<tr>
+<td><code>HiddenContentPage.html</code></td>
+<td><code>hiddenContentPage</code></td>
+<td><code>js/enhanced/hiddencontent/</code></td>
+</tr>
+<tr>
+<td><code>RecommendationsPage.html</code></td>
+<td><code>recommendationsPage</code></td>
+<td><code>js/jellyseerr/recommendations/</code></td>
+</tr>
+<tr>
+<td><code>ActivityPage.html</code></td>
+<td><code>activityPage</code></td>
+<td><code>js/extras/activity-page.js</code>, <code>activity-custom-tab.js</code></td>
+</tr>
+<tr>
+<td><code>CatchUpPage.html</code></td>
+<td><code>catchUpPage</code></td>
+<td><code>js/enhanced/catchup/</code></td>
+</tr>
+</tbody>
+</table>
+<p>Embedded view availability is distinct from where a page appears. <code>JellyfinEnhanced.cs</code> manages external Plugin Pages sidebar registration and optional Custom Tabs entries. Client mounting modules implement Custom Tabs panels and JE native Home tabs.</p>
+<p>Feature and delivery flags determine registration/mounting. Each external delivery mode requires the corresponding external plugin. Native tabs use <code>js/enhanced/native-tabs.js</code> and do not require those plugins. See <a href="../../getting-started/pages-and-tabs/">JE Pages &amp; Tabs</a> for layout requirements and placement choices.</p>
+<h2 id="how-modules-are-organised">How modules are organised<a class="headerlink" href="#how-modules-are-organised" title="Permanent link">¶</a></h2>
+<p>Each component is a single top-level IIFE. Larger features split implementation by concern. The Calendar, Requests, More Info and Recommendations directories use this pattern:</p>
+<table>
+<thead>
+<tr>
+<th>Suffix</th>
+<th>Responsibility</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>-styles</code></td>
+<td>CSS injection</td>
+</tr>
+<tr>
+<td><code>-data</code></td>
+<td>State and data access: fetching and caching</td>
+</tr>
+<tr>
+<td><code>-render</code></td>
+<td>HTML/DOM construction, sometimes split into helpers or cards</td>
+</tr>
+<tr>
+<td><code>-actions</code></td>
+<td>User interactions: filters, pagination and buttons</td>
+</tr>
+<tr>
+<td><code>-init</code></td>
+<td>Bootstrap, navigation wiring and the public surface</td>
+</tr>
+<tr>
+<td><code>-custom-tab</code></td>
+<td>Mounting inside Custom Tabs or native tab panels</td>
+</tr>
+</tbody>
+</table>
+<p>Other directories have local conventions: <code>spoilerguard/</code> uses bare names such as <code>state.js</code>; <code>settingspanel/</code> and <code>jellyseerr/ui/</code> use <code>ui-</code>; discovery modules mix <code>discovery-base.js</code> and <code>genre-discovery.js</code>; <code>itemdetails/</code> and <code>homeremoval/</code> retain <code>features-</code>. Follow the directory you are touching.</p>
+<p>Many modules idempotently create an empty namespace:</p>
+<div class="language-javascript highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kd">const</span><span class="w"> </span><span class="nx">P</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="nx">JE</span><span class="p">.</span><span class="nx">internals</span><span class="p">.</span><span class="nx">requestsPage</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">JE</span><span class="p">.</span><span class="nx">internals</span><span class="p">.</span><span class="nx">requestsPage</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="p">{});</span>
+</span></code></pre></div>
+<p>That guard does not initialize state or remove ordering dependencies. <code>requests-page-data.js</code> owns Requests state; <code>hidden-content-data.js</code> owns Hidden Content data; <code>hidden-content-page-state.js</code> owns its management-page state; <code>catchup-core.js</code> owns <code>JE.internals.catchUp</code>. Their consumers must follow them.</p>
+<p><code>jellyseerr/ui/ui-icons.js</code> and <code>jellyseerr/moreinfo/more-info-modal-data.js</code> seed their respective shared namespaces, which later modules read directly.</p>
+<p>Avoid hyphens in JavaScript directory segments under the current implicit embedded-resource naming (<code>settingspanel</code>, not <code>settings-panel</code>). Directory hyphens are rewritten in resource names, while the loaders look up paths by converting slashes to dots; file-name hyphens are supported. Supporting hyphenated directories requires resource names matching that lookup and verification of both bundle and individual-script delivery.</p>
+<p><a href="https://github.com/n00bcodr/Jellyfin-Enhanced/blob/main/tests/frontend/bootstrap/bootstrap-manifest.test.mjs">bootstrap-manifest.test.mjs</a> checks manifest-order loading and the single-IIFE shape. Top-level directives or declarations outside that IIFE break the wrapping contract. These tests do not build a complete dependency graph; producer-before-consumer order remains your responsibility.</p>
+<h2 id="component-breakdown">Component Breakdown<a class="headerlink" href="#component-breakdown" title="Permanent link">¶</a></h2>
+<p>These indexes group client modules and relevant supporting server files by web feature area.</p>
+<h3 id="shared-browser-primitives-jscore">Shared browser primitives: <code>js/core/</code><a class="headerlink" href="#shared-browser-primitives-jscore" title="Permanent link">¶</a></h3>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Responsibility</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>api-client.js</code></td>
+<td>Shared managed HTTP layer, <code>JE.core.api.{fetch,jf,plugin}</code>: authentication, retry/backoff, caching, deduplication, concurrency limits and abort support. Persistence, translations and some features also issue direct <code>ApiClient.ajax</code> or <code>fetch</code> requests.</td>
+</tr>
+<tr>
+<td><code>dom-observer.js</code></td>
+<td>One shared body MutationObserver with named subscribers, dedicated observers and <code>waitForElement</code>.</td>
+</tr>
+<tr>
+<td><code>lifecycle.js</code></td>
+<td>Registers feature observers, timers and listeners for coordinated cleanup.</td>
+</tr>
+<tr>
+<td><code>navigation.js</code></td>
+<td>Deduplicated SPA navigation notifications through <code>onNavigate</code> and <code>onViewPage</code>.</td>
+</tr>
+<tr>
+<td><code>session.js</code></td>
+<td>Hooks <code>ApiClient.setAuthenticationInfo</code>, follows navigation notifications and reconciles every five seconds. Runs <code>JE.session.onUserChange</code> reset handlers and emits <code>je:user-changed</code>; supplies identity epochs for async work.</td>
+</tr>
+<tr>
+<td><code>media-language.js</code></td>
+<td>Shared audio-language/region-to-flag resolution through <code>JE.core.mediaLanguage.resolveFlag</code>.</td>
+</tr>
+<tr>
+<td><code>tag-renderer-base.js</code></td>
+<td>Overlay creation, positioning, deduplication, caching and reinitialization for genre, language, quality, rating and age-rating tags. People and user-review renderers are independent.</td>
+</tr>
+<tr>
+<td><code>ui-kit.js</code></td>
+<td>HTML escaping, toasts, deduplicated CSS injection and scroll-friendly direct/delegated tap listeners.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="enhanced-ui-jsenhanced">Enhanced UI: <code>js/enhanced/</code><a class="headerlink" href="#enhanced-ui-jsenhanced" title="Permanent link">¶</a></h3>
+<table>
+<thead>
+<tr>
+<th>File or directory</th>
+<th>Responsibility</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>config.js</code></td>
+<td>Effective settings, shared state and server persistence.</td>
+</tr>
+<tr>
+<td><code>helpers.js</code>, <code>events.js</code></td>
+<td>Shared utilities and input/event wiring.</td>
+</tr>
+<tr>
+<td><code>header-actions.js</code></td>
+<td>Measures header space and moves overflow actions into a menu, retaining original buttons/listeners. Launcher: <strong>More from Jellyfin Enhanced</strong>; menu heading: <strong>More from JE</strong>. Follows <code>helpers.js</code> and precedes native tabs/consumers; no dedicated enable setting.</td>
+</tr>
+<tr>
+<td><code>features-random-button.js</code></td>
+<td>Random-item selection and header entry point.</td>
+</tr>
+<tr>
+<td><code>icons.js</code></td>
+<td>Emoji, Lucide and Material icon selection/rendering.</td>
+</tr>
+<tr>
+<td><code>native-tabs.js</code></td>
+<td>Registry for JE Home tabs. Reconciles positions against live tabs and other plugins' claimed indexes, and handles stable <code>jeTab=&lt;id&gt;</code> deep links.</td>
+</tr>
+<tr>
+<td><code>themer.js</code>, <code>ui-styles.js</code></td>
+<td>Theme detection, panel styling and responsive injected UI.</td>
+</tr>
+<tr>
+<td><code>translations.js</code></td>
+<td>Dedicated translation loader/cache, outside the component manifest. <code>js/locales/en.json</code> is the English string reference.</td>
+</tr>
+<tr>
+<td><code>bookmarks/</code></td>
+<td><code>bookmarks.js</code> handles playback bookmark creation with <span class="keys"><kbd class="key-b">B</kbd></span>, timeline markers and navigation. Seven <code>bookmarks-library-*</code> modules cover styles, page, rendering, item management, modals, replacements and initialization, including orphan cleanup, duplicate detection and time-offset adjustment.</td>
+</tr>
+<tr>
+<td><code>hiddencontent/</code></td>
+<td>Sixteen modules covering data, saving, filtering, hide controls, dialogs, panel wiring and the management page's state, admin operations, cards, rendering, navigation and mounting.</td>
+</tr>
+<tr>
+<td><code>homeremoval/</code></td>
+<td><code>features-remove-home.js</code> and <code>features-remove-multiselect.js</code>: Continue Watching / Next Up removal and multi-select.</td>
+</tr>
+<tr>
+<td><code>itemdetails/</code></td>
+<td><code>features-details-media-info.js</code>, <code>features-release-dates.js</code>, <code>features-details-page.js</code>: media information, file sizes, audio languages, release dates and detail-page orchestration.</td>
+</tr>
+<tr>
+<td><code>player/</code></td>
+<td><code>playback.js</code> supplies speed, seeking and track cycling; <code>auto-skip.js</code> consumes its player state for media-segment skipping; <code>subtitles.js</code> handles styles/presets; <code>pausescreen.js</code> supplies the pause overlay; <code>osd-rating.js</code> shows Jellyfin community/critic scores; <code>playback-rating-badge.js</code> supplies the playback-start age-rating/genre card.</td>
+</tr>
+<tr>
+<td><code>settingspanel/</code></td>
+<td>Eight modules: <code>ui-entry-points.js</code>, <code>ui-release-notes.js</code>, <code>ui-panel-template.js</code>, <code>ui-panel-shortcut-editor.js</code>, <code>ui-panel-settings.js</code>, <code>ui-panel-hidden-content.js</code>, <code>ui-panel-language.js</code>, <code>ui-panel.js</code>. The shell orchestrates section wiring after its producers.</td>
+</tr>
+<tr>
+<td><code>spoilerguard/</code></td>
+<td>Twelve modules: <code>ids.js</code>, <code>state.js</code>, <code>image-refresh.js</code>, <code>snooze.js</code>, <code>dialog.js</code>, <code>identity.js</code>, <code>styles.js</code>, <code>settings-tab.js</code>, <code>seerr-toggle.js</code>, <code>detail-button.js</code>, <code>watched-refresh.js</code>, <code>index.js</code>. The final module publishes <code>JE.spoilerBlur</code>; server filters perform image/metadata protection.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="catch-up">Catch Up<a class="headerlink" href="#catch-up" title="Permanent link">¶</a></h3>
+<p><code>js/enhanced/catchup/</code> contains <code>catchup-core.js</code>, <code>catchup-styles.js</code>, <code>catchup-deck.js</code>, <code>catchup-activity.js</code>, <code>catchup-page.js</code> and <code>catchup-custom-tab.js</code>.</p>
+<p>Core loads first and owns state, helpers and API actions. The deck implements swipes, page code orchestrates the feature, and the mounting module follows the public page surface.</p>
+<p>Swipes mark watched, dismiss, add to the watchlist (Jellyfin's Likes flag) or open a title. Dismissals are per-user browser-local data.</p>
+<p><code>Controllers/CatchUpController.cs</code> records authenticated users' actions through <code>POST /JellyfinEnhanced/catchup/event</code>; both feature and recording gates must be enabled. <code>GET /JellyfinEnhanced/catchup/events</code> and <code>GET /JellyfinEnhanced/catchup/summary</code> require authentication and enforce administrator status inside their methods. <code>Services/CatchUpLogService.cs</code> stores the bounded log, independently of Activity Feed.</p>
+<p>Administrator settings under <strong>Pages</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Enable Catch Up</strong></td>
+<td>Off</td>
+<td>Gates Catch Up (<code>CatchUpEnabled</code>).</td>
+</tr>
+<tr>
+<td><strong>Record Catch Up activity</strong></td>
+<td>On</td>
+<td>Gates server logging (<code>CatchUpLogEnabled</code>), when Catch Up is enabled.</td>
+</tr>
+<tr>
+<td><strong>Add Catch Up as a native Home tab</strong></td>
+<td>Off</td>
+<td>JE native-tab placement (<code>CatchUpUseNativeTab</code>).</td>
+</tr>
+<tr>
+<td><strong>Use Plugin Pages</strong></td>
+<td>Off</td>
+<td>Sidebar delivery (<code>CatchUpUsePluginPages</code>); requires Plugin Pages.</td>
+</tr>
+<tr>
+<td><strong>Use Custom Tabs</strong></td>
+<td>Off</td>
+<td>External tab delivery (<code>CatchUpUseCustomTabs</code>); requires Custom Tabs.</td>
+</tr>
+<tr>
+<td><strong>Add the Custom Tabs entry for me</strong></td>
+<td>Off</td>
+<td>Manages the external entry (<code>CatchUpAutoCreateCustomTab</code>).</td>
+</tr>
+</tbody>
+</table>
+<p><code>CatchUpCustomTabJeOwned=false</code> tracks internal ownership, not an administrator control. See <a href="../../enhanced/enhanced-features/">Enhanced Features</a> for usage.</p>
+<h3 id="seerr-and-discovery-jsjellyseerr">Seerr and discovery: <code>js/jellyseerr/</code><a class="headerlink" href="#seerr-and-discovery-jsjellyseerr" title="Permanent link">¶</a></h3>
+<table>
+<thead>
+<tr>
+<th>File or directory</th>
+<th>Responsibility</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>api.js</code>, <code>request-manager.js</code>, <code>seerr-status.js</code></td>
+<td>Seerr proxy communication, the stable alias onto <code>JE.core.api.manager</code>, and shared media/display status constants.</td>
+</tr>
+<tr>
+<td><code>jellyseerr.js</code></td>
+<td>Search-results integration and pagination. Other Seerr components initialize independently of the search-results gate.</td>
+</tr>
+<tr>
+<td><code>modal.js</code>, <code>issue-reporter.js</code></td>
+<td>Request dialog support and media problem reporting.</td>
+</tr>
+<tr>
+<td><code>item-details.js</code></td>
+<td>Similar/recommended detail rows and requests for missing series seasons.</td>
+</tr>
+<tr>
+<td><code>hss-discovery-handler.js</code>, <code>seerr-detail-link.js</code></td>
+<td>Home Screen Sections discovery-card interception and detail-page links to Seerr.</td>
+</tr>
+<tr>
+<td><code>seamless-scroll.js</code></td>
+<td>Shared buffer-fill scrolling and deduplication for search, discovery and category pages, with prefetching and failure backoff. Pauses for manual continuation after 40 consecutive empty pages.</td>
+</tr>
+<tr>
+<td><code>discovery/</code></td>
+<td><code>discovery-base.js</code> owns lifecycle, pagination, aborts, gating, filtering and rendering. <code>discovery-filter-utils.js</code> supplies shared filters/cards; <code>genre-discovery.js</code>, <code>network-discovery.js</code>, <code>person-discovery.js</code>, <code>tag-discovery.js</code>, <code>collection-discovery.js</code> provide feed specs.</td>
+</tr>
+<tr>
+<td><code>moreinfo/</code></td>
+<td>Eight <code>more-info-modal-*</code> modules: styles, data, seasons, badges, render, TV actions, general actions and initialization.</td>
+</tr>
+<tr>
+<td><code>recommendations/</code></td>
+<td>Eight <code>recommendations-*</code> modules: styles, catalog, data, render, page, category, initialization and tab mounting. Discovery rows, studio/network tiles and category pages live here.</td>
+</tr>
+<tr>
+<td><code>ui/</code></td>
+<td>Ten <code>ui-*</code> modules: icons, styles, popover, badges, cards, buttons, quota, results, request modals and season modal.</td>
+</tr>
+</tbody>
+</table>
+<p>See <a href="../../seerr/seerr-features/">Seerr Features</a> for permissions and integration requirements.</p>
+<h3 id="calendar-and-requests-jsarr">Calendar and requests: <code>js/arr/</code><a class="headerlink" href="#calendar-and-requests-jsarr" title="Permanent link">¶</a></h3>
+<p><code>arr-links.js</code> adds administrator detail links to Sonarr, Radarr and Bazarr; <code>arr-tag-links.js</code> turns synced *arr tags into filtered links.</p>
+<p><code>arr/calendar/</code> has seven modules: <code>calendar-page-styles.js</code>, <code>calendar-page-data.js</code>, <code>calendar-page-render-events.js</code>, <code>calendar-page-render-views.js</code>, <code>calendar-page-actions.js</code>, <code>calendar-page-init.js</code>, <code>calendar-custom-tab.js</code>.</p>
+<p>Calendar combines Radarr, Sonarr and Shoko data. Shoko retrieval lives in the main controller, with Jellyfin posters and deep-link handling in the calendar modules; there is no separate <code>ShokoService.cs</code>. Shoko is configured when both URL and API key are present. Check it alone and alongside *arr sources when changing calendar behavior. See <a href="../../arr/arr-settings/">*arr Settings</a> for setup.</p>
+<p>Administrator settings under <strong>*arr</strong> → <strong>Shoko</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Shoko URL</strong></td>
+<td>Empty</td>
+<td>Server connection (<code>ShokoUrl</code>).</td>
+</tr>
+<tr>
+<td><strong>Shoko API Key</strong></td>
+<td>Empty</td>
+<td>Authentication (<code>ShokoApiKey</code>).</td>
+</tr>
+<tr>
+<td><strong>Shoko URL Mappings</strong></td>
+<td>Empty</td>
+<td>Browser-facing links (<code>ShokoUrlMappings</code>).</td>
+</tr>
+<tr>
+<td><strong>Episodes</strong></td>
+<td>On</td>
+<td>Includes regular episodes (<code>ShokoShowEpisodes</code>).</td>
+</tr>
+<tr>
+<td><strong>Specials</strong></td>
+<td>Off</td>
+<td>Includes specials (<code>ShokoShowSpecials</code>).</td>
+</tr>
+<tr>
+<td><strong>Credits (OP/ED)</strong></td>
+<td>Off</td>
+<td>Includes credits (<code>ShokoShowCredits</code>).</td>
+</tr>
+<tr>
+<td><strong>Trailers</strong></td>
+<td>Off</td>
+<td>Includes trailers (<code>ShokoShowTrailers</code>).</td>
+</tr>
+<tr>
+<td><strong>Parodies</strong></td>
+<td>Off</td>
+<td>Includes parodies (<code>ShokoShowParodies</code>).</td>
+</tr>
+<tr>
+<td><strong>Other</strong></td>
+<td>Off</td>
+<td>Includes other episode types (<code>ShokoShowOther</code>).</td>
+</tr>
+</tbody>
+</table>
+<p><code>arr/requests/</code> has eight modules: <code>requests-page-styles.js</code>, <code>requests-page-data.js</code>, <code>requests-page-render-helpers.js</code>, <code>requests-page-render-cards.js</code>, <code>requests-page-render.js</code>, <code>requests-page-actions.js</code>, <code>requests-page-init.js</code>, <code>requests-custom-tab.js</code>. They implement the combined requests, downloads, issues and import-history page backed by Seerr and *arr integrations. See <a href="../../seerr/seerr-features/">Seerr Features</a> for the page's user-visible behavior.</p>
+<h3 id="web-tags-jstags">Web tags: <code>js/tags/</code><a class="headerlink" href="#web-tags-jstags" title="Permanent link">¶</a></h3>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Responsibility</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>genretags.js</code>, <code>languagetags.js</code>, <code>qualitytags.js</code></td>
+<td>Genre badges, language flags and quality tags such as resolution, dynamic range and audio format.</td>
+</tr>
+<tr>
+<td><code>ratingtags.js</code></td>
+<td>Jellyfin <code>CommunityRating</code> and <code>CriticRating</code>, with star/tomato presentation. Metadata providers or MDBList synchronization determine the upstream scores.</td>
+</tr>
+<tr>
+<td><code>ageratingtags.js</code></td>
+<td>Color-coded parental/age ratings, sharing the Colored Ratings color table.</td>
+</tr>
+<tr>
+<td><code>peopletags.js</code></td>
+<td>Cast age, birthplace flags and deceased indicators.</td>
+</tr>
+<tr>
+<td><code>userreviewtags.js</code></td>
+<td>Average of rated reviews visible to the current viewer, composed into the rating overlay. Uses tag-cache averages or batched <code>/JellyfinEnhanced/reviews/ratings</code> requests.</td>
+</tr>
+<tr>
+<td><code>tag-cache-store.js</code></td>
+<td>IndexedDB snapshot scoped by server and user; memory-only fallback when unavailable.</td>
+</tr>
+<tr>
+<td><code>tag-pipeline.js</code></td>
+<td>Restores/downloads the bulk server cache, applies <code>?since=</code> deltas and scans cards in idle slices.</td>
+</tr>
+<tr>
+<td><code>tag-styles.js</code></td>
+<td>Retrieves validated color overrides and injects web CSS; paired with server <code>Services/PosterTags/TagStyles.cs</code>.</td>
+</tr>
+</tbody>
+</table>
+<p>See <a href="../../enhanced/tags/#tag-styles-and-css">Tag Styles and CSS</a> and <a href="../../enhanced/tags/#native-poster-tags-experimental">Native Poster Tags</a> for controls and defaults. Tag Styles change colors, not size, shape or position. Administrator controls under <strong>Display</strong> map to these properties:</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Property</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Enable Tag Styles</strong></td>
+<td><code>TagStylesEnabled</code></td>
+</tr>
+<tr>
+<td><strong>Apply Tag Styles To</strong></td>
+<td><code>TagStyleTarget</code></td>
+</tr>
+<tr>
+<td><strong>Preset</strong></td>
+<td><code>TagStylePreset</code></td>
+</tr>
+<tr>
+<td><strong>Apply to</strong></td>
+<td><code>TagStyleApplyScope</code></td>
+</tr>
+<tr>
+<td><strong>Enable Native Poster Tags (Experimental)</strong></td>
+<td><code>NativePosterTagsEnabled</code></td>
+</tr>
+<tr>
+<td><strong>Additional Excluded Clients</strong></td>
+<td><code>NativePosterTagsWebClientNames</code></td>
+</tr>
+</tbody>
+</table>
+<p>The editor stores <code>TagStyleOverrides=""</code> until overrides are saved. Native rendering uses the same validated styles.</p>
+<h3 id="other-web-components">Other web components<a class="headerlink" href="#other-web-components" title="Permanent link">¶</a></h3>
+<table>
+<thead>
+<tr>
+<th>Location</th>
+<th>Responsibility</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>js/elsewhere/elsewhere.js</code></td>
+<td>Streaming-provider discovery; see <a href="../../elsewhere/elsewhere-features/">Elsewhere &amp; Reviews Features</a>.</td>
+</tr>
+<tr>
+<td><code>js/elsewhere/reviews.js</code></td>
+<td>TMDB and JE user reviews. Review visibility uses the shared author policy; Spoiler Guard suppression of this web panel is client behavior.</td>
+</tr>
+<tr>
+<td><code>js/awards/awards.js</code></td>
+<td>Details-page awards banner, backed by <code>Services/WikidataAwardsService.cs</code> and <code>Model/AwardsData.cs</code>. Authenticated <code>GET /JellyfinEnhanced/awards/{mediaType}/{tmdbId}</code> supports <code>movie</code>, <code>tv</code>, <code>person</code>; Wikidata needs no API key. Server results are cached.</td>
+</tr>
+<tr>
+<td><code>js/extras/active-streams.js</code></td>
+<td>Active stream header widget and session details.</td>
+</tr>
+<tr>
+<td><code>js/extras/colored-activity-icons.js</code>, <code>colored-ratings.js</code></td>
+<td>Colored activity icons and detail-page parental-rating backgrounds.</td>
+</tr>
+<tr>
+<td><code>js/extras/plugin-icons.js</code></td>
+<td>Dashboard plugin icons and custom configuration-page links.</td>
+</tr>
+<tr>
+<td><code>js/extras/plugin-revisions.js</code></td>
+<td>Hides repeated version rows within each plugin-detail revision list, retaining the first. Catalog compatibility filtering remains upstream; React nodes/install handlers and package responses are preserved. No dedicated setting.</td>
+</tr>
+<tr>
+<td><code>js/extras/theme-selector.js</code></td>
+<td>Jellyfish palette selection and optional daily random palette.</td>
+</tr>
+<tr>
+<td><code>js/extras/login-image.js</code></td>
+<td>Dedicated early loader for profile images on manual login.</td>
+</tr>
+<tr>
+<td><code>js/others/letterboxd-links.js</code></td>
+<td>Movie and person detail links to Letterboxd.</td>
+</tr>
+<tr>
+<td><code>js/others/splashscreen.js</code></td>
+<td>Dedicated early loader for the custom splash screen.</td>
+</tr>
+</tbody>
+</table>
+<p>Administrator setting under <strong>Display</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Show Awards Banner</strong></td>
+<td>Off</td>
+<td>Enables the details-page banner (<code>ShowAwards=false</code>).</td>
+</tr>
+</tbody>
+</table>
+<h3 id="activity-feed">Activity Feed<a class="headerlink" href="#activity-feed" title="Permanent link">¶</a></h3>
+<p><code>js/extras/activity-page.js</code> renders the feed; <code>activity-custom-tab.js</code> mounts it.</p>
+<p>On the server, <code>EventHandlers/ActivityPlaybackConsumer.cs</code> records playback-stop activity after at least 5% progress or Jellyfin-reported completion. <code>Services/ActivityFavoriteMonitor.cs</code> watches favorite changes; <code>ActivityService.cs</code> supplies the recording API over <code>UserConfigurationManager</code> storage. <code>ActivityFeedBuilder.cs</code> merges activity and reviews, filters by viewer access/author visibility, then hydrates card data.</p>
+<p>Administrator settings under <strong>Pages</strong> (the final two controls are under <strong>Extras</strong>):</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Enable Activity Feed</strong></td>
+<td>Off</td>
+<td>Gates recording/display (<code>ActivityFeedEnabled</code>).</td>
+</tr>
+<tr>
+<td><strong>Show recently watched</strong></td>
+<td>On</td>
+<td>Playback activity (<code>ActivityFeedShowWatched</code>).</td>
+</tr>
+<tr>
+<td><strong>Show recently favorited</strong></td>
+<td>On</td>
+<td>Favorite activity (<code>ActivityFeedShowFavorited</code>).</td>
+</tr>
+<tr>
+<td><strong>Show recently reviewed</strong></td>
+<td>On</td>
+<td>Review activity (<code>ActivityFeedShowReviewed</code>).</td>
+</tr>
+<tr>
+<td><strong>Show Active Streams section</strong></td>
+<td>On</td>
+<td>Live sessions section (<code>ActivityFeedShowActiveStreams</code>), subject to the session gate below.</td>
+</tr>
+<tr>
+<td><strong>Add Activity as a native Home tab</strong></td>
+<td>Off</td>
+<td>Native placement (<code>ActivityFeedUseNativeTab</code>).</td>
+</tr>
+<tr>
+<td><strong>Use Plugin Pages</strong></td>
+<td>Off</td>
+<td>Sidebar delivery (<code>ActivityFeedUsePluginPages</code>); requires Plugin Pages.</td>
+</tr>
+<tr>
+<td><strong>Use Custom Tabs</strong></td>
+<td>Off</td>
+<td>External tab delivery (<code>ActivityFeedUseCustomTabs</code>); requires Custom Tabs.</td>
+</tr>
+<tr>
+<td><strong>Add the Custom Tabs entry for me</strong></td>
+<td>Off</td>
+<td>Entry management (<code>ActivityFeedAutoCreateCustomTab</code>).</td>
+</tr>
+<tr>
+<td><strong>Active Streams Header Widget</strong></td>
+<td>Off</td>
+<td>Enables the active-session data gate (<code>ActiveStreamsEnabled</code>).</td>
+</tr>
+<tr>
+<td><strong>Show widget to non-admins</strong></td>
+<td>Off</td>
+<td>Additionally required for non-admin session access (<code>ActiveStreamsAllUsers</code>).</td>
+</tr>
+</tbody>
+</table>
+<p><code>ActivityFeedCustomTabJeOwned=false</code> is internal ownership bookkeeping. The feed's session section shares the endpoint's gates even when the header widget itself is not mounted.</p>
+<h3 id="mdblist-display-and-metadata-writes">MDBList display and metadata writes<a class="headerlink" href="#mdblist-display-and-metadata-writes" title="Permanent link">¶</a></h3>
+<p><code>js/others/mdblist-ratings.js</code> displays the details-page ratings row. <code>Services/MdblistService.cs</code> fetches/caches upstream results, with cache/account models in <code>Model/MdblistRatings.cs</code>.</p>
+<p><code>ScheduledTasks/MdblistRatingsFetchTask.cs</code> uses <code>MdblistRatingsFetchRunner.cs</code> to populate the cache and stops when remaining quota reaches the reserve. <code>MdblistRatingsSyncTask.cs</code> writes cached scores into Jellyfin's <code>CommunityRating</code> and <code>CriticRating</code>; the display overlay does not write metadata.</p>
+<p>See <a href="../../other/other-settings/#mdblist-ratings">MDBList Ratings</a> for controls and defaults. Administrator settings under <strong>Display</strong> map to these properties:</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Property</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Enable MDBList Ratings</strong></td>
+<td><code>MdblistRatingsEnabled</code></td>
+</tr>
+<tr>
+<td><strong>MDBList API Key</strong></td>
+<td><code>MdblistApiKey</code></td>
+</tr>
+<tr>
+<td><strong>Show Ratings Row on Item Details</strong></td>
+<td><code>MdblistRatingsShowOnItemDetails</code></td>
+</tr>
+<tr>
+<td><strong>Fetch Ratings from MDBList</strong></td>
+<td><code>MdblistRatingsFetchEnabled</code></td>
+</tr>
+<tr>
+<td><strong>Fetch Task Reserve</strong></td>
+<td><code>MdblistFetchReserve</code></td>
+</tr>
+<tr>
+<td><strong>Sync Ratings from MDBList to Jellyfin</strong></td>
+<td><code>MdblistRatingsAutoSyncEnabled</code></td>
+</tr>
+<tr>
+<td><strong>Star Rating Source (Community Rating)</strong></td>
+<td><code>MdblistCommunityRatingSource</code></td>
+</tr>
+<tr>
+<td><strong>Star Rating Fallback Source</strong></td>
+<td><code>MdblistCommunityRatingFallbackSource</code></td>
+</tr>
+<tr>
+<td><strong>Tomato Rating Source (Critic Rating)</strong></td>
+<td><code>MdblistCriticRatingSource</code></td>
+</tr>
+<tr>
+<td><strong>Tomato Rating Fallback Source</strong></td>
+<td><code>MdblistCriticRatingFallbackSource</code></td>
+</tr>
+<tr>
+<td><strong>Overwrite Existing Jellyfin Ratings</strong></td>
+<td><code>MdblistRatingsOverwriteExisting</code></td>
+</tr>
+<tr>
+<td><strong>Configure ratings shown</strong></td>
+<td><code>MdblistRatingsSources</code></td>
+</tr>
+<tr>
+<td><strong>Show % Symbol</strong></td>
+<td><code>MdblistRatingsShowPercentSymbol</code></td>
+</tr>
+</tbody>
+</table>
+<p>Repository-root <code>images/mdblist-logos/</code> supplies logos. See <a href="../../other/other-features/">Other Features</a> for usage and limits.</p>
+<h2 id="server-ownership">Server ownership<a class="headerlink" href="#server-ownership" title="Permanent link">¶</a></h2>
+<p>The client interacts with server classes through endpoints, cookies and image responses, rather than referencing C# class names. <code>PluginServiceRegistrator.cs</code> is the source of truth for service lifetimes, event-consumer registrations and MVC filter order.</p>
+<h3 id="root-services-services">Root services: <code>Services/</code><a class="headerlink" href="#root-services-services" title="Permanent link">¶</a></h3>
+<table>
+<thead>
+<tr>
+<th>Files</th>
+<th>Responsibility</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>RadarrService.cs</code>, <code>SonarrService.cs</code></td>
+<td>*arr integration access. Shoko handling is in the main controller.</td>
+</tr>
+<tr>
+<td><code>AutoMovieRequestService.cs</code>, <code>AutoSeasonRequestService.cs</code></td>
+<td>Automatic next-collection-movie and next-season request decisions/execution.</td>
+</tr>
+<tr>
+<td><code>AutoMovieRequestMonitor.cs</code>, <code>AutoSeasonRequestMonitor.cs</code></td>
+<td>Playback event subscriptions feeding those request services.</td>
+</tr>
+<tr>
+<td><code>WatchlistMonitor.cs</code>, <code>SeerrScanTriggerService.cs</code></td>
+<td>Watchlist event handling and debounced library-add → Seerr recently-added scan bridge.</td>
+</tr>
+<tr>
+<td><code>SeerrParentalFilter.cs</code></td>
+<td>Shared parental filtering for integration responses.</td>
+</tr>
+<tr>
+<td><code>TmdbResponseCache.cs</code>, <code>TmdbCompanyTvDiscover.cs</code></td>
+<td>TMDB response caching/coalescing and studio-produced TV discovery shaped for Seerr consumers.</td>
+</tr>
+<tr>
+<td><code>MovieCollectionsBatch.cs</code>, <code>WatchProvidersBatch.cs</code></td>
+<td>Parsing/shaping batched collection and regional streaming-provider lookups. Movie collections use Seerr first, then TMDB when needed.</td>
+</tr>
+<tr>
+<td><code>ItemStatsService.cs</code></td>
+<td>Aggregate item/subtree size and watch-progress data for detail chips.</td>
+</tr>
+<tr>
+<td><code>TagCacheService.cs</code>, <code>TagCacheMonitor.cs</code></td>
+<td>Builds/persists tag data and incrementally maintains it from library events.</td>
+</tr>
+<tr>
+<td><code>TagCachePendingChanges.cs</code>, <code>TagCacheResponseBody.cs</code></td>
+<td>Coalesces pending item changes; assembles bulk response bytes and hashes the viewer's final body for its ETag.</td>
+</tr>
+<tr>
+<td><code>HiddenContentResponseFilter.cs</code></td>
+<td>Filters supported Jellyfin item lists and Home Screen Sections responses using the viewer's hidden-content scopes.</td>
+</tr>
+<tr>
+<td><code>ReviewAuthorCache.cs</code></td>
+<td>Cached author lookups for review visibility, invalidated by user changes/deletion/lockout.</td>
+</tr>
+<tr>
+<td><code>CdnAssetService.cs</code></td>
+<td>Local routes and disk caching for third-party static assets; separate from generated embedded poster assets.</td>
+</tr>
+<tr>
+<td><code>ScriptInjectionStartupFilter.cs</code>, <code>BrandingAssetStartupFilter.cs</code></td>
+<td>Request-time loader injection and custom branding asset delivery.</td>
+</tr>
+<tr>
+<td><code>StartupService.cs</code>, <code>HostCompatibilityService.cs</code></td>
+<td>Scheduled startup initialization and build/host compatibility diagnostics.</td>
+</tr>
+<tr>
+<td><code>WhatsNewService.cs</code></td>
+<td>Admin control-schema discovery and change-baseline persistence.</td>
+</tr>
+<tr>
+<td><code>UsageEventCounterService.cs</code>, <code>AnalyticsReportingService.cs</code></td>
+<td>Usage counters and opt-in report construction/sending; see <a href="../community-analytics/">Community Analytics</a>.</td>
+</tr>
+<tr>
+<td><code>WikidataAwardsService.cs</code>, <code>MdblistService.cs</code></td>
+<td>Awards and MDBList fetching/cache ownership.</td>
+</tr>
+<tr>
+<td><code>ActivityService.cs</code>, <code>ActivityFavoriteMonitor.cs</code>, <code>ActivityFeedBuilder.cs</code>, <code>CatchUpLogService.cs</code></td>
+<td>Activity recording/selection and separate Catch Up action logs.</td>
+</tr>
+<tr>
+<td><code>MaintenanceModeService.cs</code></td>
+<td>Maintenance state file, policy changes/restoration, message tokens <code>{countdown}</code> / <code>{ends_at}</code> and session popups.</td>
+</tr>
+<tr>
+<td><code>MaintenanceScheduleService.cs</code></td>
+<td>Hosted 30-second timer for scheduled windows and timed-window expiry; distinct from scheduled tasks.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="spoiler-guard-and-identity">Spoiler Guard and identity<a class="headerlink" href="#spoiler-guard-and-identity" title="Permanent link">¶</a></h3>
+<p>All files in this table are under <code>Services/SpoilerGuard/</code>:</p>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Responsibility</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ImageBlurService.cs</code></td>
+<td>SkiaSharp Gaussian blur, stock cards and pre-encoded fail-closed JPEG fallback, with result caching.</td>
+</tr>
+<tr>
+<td><code>SpoilerBlurImageFilter.cs</code></td>
+<td>Replaces protected image/trickplay responses with parent art, blur or fallback according to mode and availability.</td>
+</tr>
+<tr>
+<td><code>SpoilerFieldStripFilter.cs</code></td>
+<td>Strips/rewrites supported unwatched-item metadata in Jellyfin API responses, honoring user state and overrides.</td>
+</tr>
+<tr>
+<td><code>SpoilerIdentityService.cs</code>, <code>SpoilerIdentityTagFilter.cs</code></td>
+<td>Stable per-user markers and item DTO image-tag stamping for anonymous image requests. The tag filter also calls native poster stamping.</td>
+</tr>
+<tr>
+<td><code>ImageTagDecoration.cs</code></td>
+<td>Shared parsing/composition of <code>[sb-{8hex}-]{jellyfinTag}[-jet{23hex}][-jeu{12hex}]</code>.</td>
+</tr>
+<tr>
+<td><code>SpoilerUserResolver.cs</code></td>
+<td>Loads Spoiler Guard state for the resolved requester.</td>
+</tr>
+<tr>
+<td><code>SpoilerNextUnwatchedService.cs</code></td>
+<td>Cached per-user/per-series next-unwatched boundary for advanced category reveals.</td>
+</tr>
+<tr>
+<td><code>SpoilerTagDataStripper.cs</code></td>
+<td>Removes sensitive tag data, shared by web tag endpoints and native poster rendering.</td>
+</tr>
+<tr>
+<td><code>SpoilerAutoEnableFilter.cs</code></td>
+<td>Shared content-type/library scope gate for first-play, Seerr-request and library-add automation.</td>
+</tr>
+<tr>
+<td><code>SpoilerAutoEnableArmer.cs</code></td>
+<td>Bulk arming for users with library access, including disabled accounts, with one locked <code>spoilerblur.json</code> update per user.</td>
+</tr>
+<tr>
+<td><code>SpoilerLibraryAddAutoEnabler.cs</code></td>
+<td>Batches new-title library events into bulk arming.</td>
+</tr>
+<tr>
+<td><code>SpoilerExistingTitlesApplier.cs</code></td>
+<td>Preview/application for existing titles, run by <code>ScheduledTasks/SpoilerApplyExistingTitlesTask.cs</code>.</td>
+</tr>
+<tr>
+<td><code>SpoilerSeerrPendingPromoter.cs</code></td>
+<td>Converts pending pre-acquisition protection into library-item entries when content arrives.</td>
+</tr>
+</tbody>
+</table>
+<p><code>Services/Identity/RequestIdentityService.cs</code> resolves authenticated claims first, then image markers, the single-user shortcut, validated cookies and session-by-IP candidates. Consumers distinguish confident identity from ambiguous shared-IP candidates.</p>
+<p>Server filters protect supported Jellyfin images/metadata; suppression of JE's Reviews panel happens in <code>js/elsewhere/reviews.js</code>. The review-list API uses author visibility rules and does not itself apply that web-panel suppression. See <a href="../../spoiler-guard/spoiler-guard-features/">Spoiler Guard</a> for protection boundaries.</p>
+<h3 id="native-poster-tags-servicespostertags">Native Poster Tags: <code>Services/PosterTags/</code><a class="headerlink" href="#native-poster-tags-servicespostertags" title="Permanent link">¶</a></h3>
+<p>Native rendering draws each user's tags into Primary image responses for clients that do not run web overlays. It is subject to the administrator master gate and enabled tag groups. Original artwork files are preserved. The administrator controls are listed under <a href="#web-tags-jstags">Web tags</a>.</p>
+<p>Per-user setting in the Enhanced panel:</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Show Tags in Native Clients (Experimental)</strong></td>
+<td>On when unset (<code>UseNativePosterTags=null</code>)</td>
+<td>Personal preference, subject to the administrator master gate.</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>File or directory</th>
+<th>Responsibility</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>NativeClientPolicy.cs</code></td>
+<td>Excludes known clients running web overlays plus admin-configured client names.</td>
+</tr>
+<tr>
+<td><code>NativePosterTagStamper.cs</code></td>
+<td>Metadata-time Primary tag stamping, called by <code>SpoilerIdentityTagFilter</code>.</td>
+</tr>
+<tr>
+<td><code>PosterTagSettings.cs</code>, <code>PosterTagSettingsProvider.cs</code></td>
+<td>Effective personal settings/admin defaults, rendering digest, per-user cache and invalidation on settings/config changes.</td>
+</tr>
+<tr>
+<td><code>PosterTagUserCache.cs</code>, <code>PosterTagReviewRatings.cs</code></td>
+<td>User lookups and viewer-aware review averages.</td>
+</tr>
+<tr>
+<td><code>PosterTagDataProvider.cs</code></td>
+<td>Cache/on-demand tag data, access checks and Spoiler Guard stripping.</td>
+</tr>
+<tr>
+<td><code>PosterTagModel.cs</code>, <code>PosterTagResolver.cs</code></td>
+<td>Semantic corner/group/tag layout and web-parity resolution rules.</td>
+</tr>
+<tr>
+<td><code>PosterTagComposer.cs</code></td>
+<td>Data → layout → pixels, shared by image filtering and previews; content-addressed cache keys and composition version.</td>
+</tr>
+<tr>
+<td><code>PosterTagImageFilter.cs</code></td>
+<td>Primary response composition. Registered before the blur filter, so its response processing runs after blur and draws on the protected result. Rendering failure passes through the underlying image response.</td>
+</tr>
+<tr>
+<td><code>PosterTagVariantToken.cs</code></td>
+<td>Signed <code>-jet</code> variants bound to user, item, settings, pixel version, flags and data hash.</td>
+</tr>
+<tr>
+<td><code>CompositeImageCache.cs</code></td>
+<td>Byte-bounded memory LRU and disk cache under Jellyfin's cache path, in-flight coalescing and bounded render concurrency.</td>
+</tr>
+<tr>
+<td><code>TagStyles.cs</code></td>
+<td>Validated shared color overrides for web CSS and native drawing.</td>
+</tr>
+<tr>
+<td><code>Resolution/</code></td>
+<td><code>AgeRatingRules.cs</code>, <code>GenreIcons.cs</code>, <code>JsText.cs</code>, <code>LanguageFlagRules.cs</code>, <code>LanguageNames.cs</code>, <code>QualityTagRules.cs</code>, <code>RatingRules.cs</code>, <code>ResolutionData.g.cs</code>.</td>
+</tr>
+<tr>
+<td><code>Rendering/</code></td>
+<td><code>PosterTagAssets.cs</code>, <code>PosterTagCss.cs</code>, <code>PosterTagImageScaler.cs</code>, <code>PosterTagPlan.cs</code>, <code>PosterTagRenderer.cs</code>, <code>PosterTagText.cs</code>, <code>PosterTagTileCache.cs</code>: embedded assets, layout, scaling, text shaping, drawing and reusable tile caching.</td>
+</tr>
+</tbody>
+</table>
+<p><code>ResolutionData.g.cs</code> is generated by repository-root <code>tests/poster/parity/gen-resolution-data.mjs</code>; do not edit it by hand. Renderer/composition version changes retire existing variant tokens, preventing old URLs from serving newly changed pixels under long-lived client caches.</p>
+<p><code>PosterTagVariantToken.cs</code> persists a 32-byte random signing secret at <code>&lt;PluginsPath&gt;/configurations/Jellyfin.Plugin.JellyfinEnhanced/native-poster-tags.key</code>, separate from rendered-image caches. Preserve it for URL-signing continuity during restoration.</p>
+<p>Missing or wrong-length keys are recreated; old URLs can serve original artwork until clients refresh metadata. Persistence failure logs a warning and uses a process-lifetime key, changing URLs after restart. Unix creation uses owner-only read/write permissions. This is internal state without an admin control.</p>
+<h3 id="helpers-extensions-and-models">Helpers, extensions and models<a class="headerlink" href="#helpers-extensions-and-models" title="Permanent link">¶</a></h3>
+<table>
+<thead>
+<tr>
+<th>Location</th>
+<th>Files and responsibilities</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Helpers/</code></td>
+<td><code>ArrUrlGuard.cs</code> checks integration URLs; <code>BuildAttestation.cs</code> handles release attestation; <code>ProviderHelper.cs</code> and <code>UserHelper.cs</code> resolve provider/user identifiers; <code>ReviewVisibility.cs</code> applies author visibility; <code>TagEpisodeSelector.cs</code> chooses representative episodes with usable streams.</td>
+</tr>
+<tr>
+<td><code>Helpers/</code> language handling</td>
+<td><code>MatroskaLanguageReader.cs</code>, <code>MediaStreamLanguageResolver.cs</code> recover stream language data; <code>AudioLanguageTagHelper.cs</code> maps base/regional codes to tag names and computes changes.</td>
+</tr>
+<tr>
+<td><code>Helpers/Jellyseerr/</code></td>
+<td><code>SeerrHttpHelper.cs</code>, <code>JellyseerrPermissionHelper.cs</code>, <code>JellyseerrUserImportHelper.cs</code>: HTTP, permission and import helpers. <code>ParentalRatingDecision.cs</code>, <code>ParentalTagDecision.cs</code>, <code>SeerrCertificationExtractor.cs</code>, <code>SeerrTagSignatureExtractor.cs</code>: shared parental decisions/extraction.</td>
+</tr>
+<tr>
+<td><code>Extensions/</code></td>
+<td><code>ItemRepositoryExtensions.cs</code>, <code>JellyfinDbContextExtensions.cs</code>, <code>UserManagerExtensions.cs</code>: repository/database provider lookups and compatible user enumeration across server API changes.</td>
+</tr>
+<tr>
+<td><code>Model/TagCacheEntry.cs</code></td>
+<td>Precomputed item tag data, including parent-series IDs for Spoiler Guard filtering without per-entry library lookups.</td>
+</tr>
+<tr>
+<td><code>Model/AnalyticsData.cs</code>, <code>WhatsNewData.cs</code></td>
+<td>Report/counter records and inclusion/exclusion annotations; configuration-schema and pending-change records.</td>
+</tr>
+<tr>
+<td><code>Model/AwardsData.cs</code>, <code>MdblistRatings.cs</code></td>
+<td>Awards cache records and MDBList cache/account models.</td>
+</tr>
+<tr>
+<td><code>Model/Arr/</code></td>
+<td><code>ArrInstance.cs</code>, <code>ArrItem.cs</code>, <code>ArrType.cs</code>: integration instance/item/type models.</td>
+</tr>
+<tr>
+<td><code>Model/Jellyseerr/</code></td>
+<td><code>JellyseerrPermission.cs</code>, <code>JellyseerrUser.cs</code>: Seerr permission/user models.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="event-handlers-eventhandlers">Event handlers: <code>EventHandlers/</code><a class="headerlink" href="#event-handlers-eventhandlers" title="Permanent link">¶</a></h3>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Responsibility</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ActivityPlaybackConsumer.cs</code></td>
+<td>Qualifying playback-stop activity recording.</td>
+</tr>
+<tr>
+<td><code>ContinueWatchingPlaybackEvents.cs</code></td>
+<td><code>ContinueWatchingPlaybackConsumer</code> clears Continue Watching-only hides on playback start and demotes combined Continue Watching/Next Up hides to Next Up-only. Global/Next Up-only hides remain. <code>ContinueWatchingLibraryHook</code> prunes removed item IDs from personal hidden-content documents.</td>
+</tr>
+<tr>
+<td><code>MaintenancePlaybackReminder.cs</code></td>
+<td><code>MaintenancePlaybackReminderConsumer</code> re-sends active-maintenance notifications on playback start, throttled per session.</td>
+</tr>
+<tr>
+<td><code>SpoilerAutoEnableEvents.cs</code></td>
+<td><code>SpoilerAutoEnableOnFirstPlayConsumer</code> arms a series on qualifying first-episode playback.</td>
+</tr>
+<tr>
+<td><code>UserTopologyEvents.cs</code></td>
+<td>User creation/deletion invalidates identity caches; updates/deletions invalidate tag-access caches; updates/deletions/lockout invalidate review-author caches.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="scheduled-tasks">Scheduled tasks<a class="headerlink" href="#scheduled-tasks" title="Permanent link">¶</a></h3>
+<p>The table lists task names as shown by Jellyfin and their default triggers. Files are under <code>ScheduledTasks/</code> unless stated otherwise.</p>
+<p>Feature gates still apply when a task runs. A task is hidden from the dashboard list while its feature is off and appears again once the feature is on, with no restart. Always listed: Refresh Translation Cache, Refresh CDN Assets and Jellyfin Enhanced Startup. Default triggers are distinct from an administrator's saved schedule.</p>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Task name</th>
+<th>Default triggers</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>AnalyticsReportTask.cs</code></td>
+<td><strong>Send Anonymous Usage Report</strong></td>
+<td>Every 24 hours; execution also checks the configured reporting interval.</td>
+</tr>
+<tr>
+<td><code>ArrTagsSyncTask.cs</code></td>
+<td><strong>Sync Tags from *arr to Jellyfin</strong></td>
+<td>None</td>
+</tr>
+<tr>
+<td><code>AudioLanguageTagsSyncTask.cs</code></td>
+<td><strong>Sync Audio Language Tags to Jellyfin</strong></td>
+<td>None</td>
+</tr>
+<tr>
+<td><code>BuildTagCacheTask.cs</code></td>
+<td><strong>Refresh Tag Cache</strong></td>
+<td>Daily at 03:00</td>
+</tr>
+<tr>
+<td><code>ClearTranslationCacheTask.cs</code></td>
+<td><strong>Refresh Translation Cache</strong></td>
+<td>Application startup</td>
+</tr>
+<tr>
+<td><code>JellyfinToSeerrWatchlistSyncTask.cs</code></td>
+<td><strong>Sync Watchlist from Jellyfin to Seerr</strong></td>
+<td>Daily at 03:30</td>
+</tr>
+<tr>
+<td><code>JellyseerrUserImportTask.cs</code></td>
+<td><strong>Import Jellyfin Users to Seerr</strong></td>
+<td>Every six hours</td>
+</tr>
+<tr>
+<td><code>JellyseerrWatchlistSyncTask.cs</code></td>
+<td><strong>Sync Watchlist from Seerr to Jellyfin</strong></td>
+<td>Daily at 03:00</td>
+</tr>
+<tr>
+<td><code>MdblistRatingsFetchTask.cs</code></td>
+<td><strong>Fetch Ratings from MDBList</strong></td>
+<td>None</td>
+</tr>
+<tr>
+<td><code>MdblistRatingsSyncTask.cs</code></td>
+<td><strong>Sync Ratings from MDBList to Jellyfin</strong></td>
+<td>None</td>
+</tr>
+<tr>
+<td><code>RefreshCdnAssetsTask.cs</code></td>
+<td><strong>Refresh CDN Assets</strong></td>
+<td>Application startup and every 24 hours</td>
+</tr>
+<tr>
+<td><code>SpoilerApplyExistingTitlesTask.cs</code></td>
+<td><strong>Spoiler Guard: apply to existing titles</strong></td>
+<td>None</td>
+</tr>
+<tr>
+<td><code>Services/StartupService.cs</code></td>
+<td><strong>Jellyfin Enhanced Startup</strong></td>
+<td>Application startup</td>
+</tr>
+</tbody>
+</table>
+<p><code>MdblistRatingsFetchRunner.cs</code> is shared fetching logic, not another task. Hosted timers/monitors listed above are separate from this dashboard task system.</p>
+<p>Administrator setting under <strong>Display</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Enable Audio Language Tags Sync</strong></td>
+<td>Off (<code>AudioLanguageTagSyncEnabled=false</code>)</td>
+<td>Gates the language-tag task's writes to movies/series.</td>
+</tr>
+</tbody>
+</table>
+<p><code>TagCacheService.cs</code> applies the same language tags when rebuilding entries after library events.</p>
+<h2 id="repository-documentation-and-tooling">Repository documentation and tooling<a class="headerlink" href="#repository-documentation-and-tooling" title="Permanent link">¶</a></h2>
+<p>Repository-root files support development, documentation and release metadata:</p>
+<table>
+<thead>
+<tr>
+<th>Location</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>README.md</code>, <code>CONTRIBUTING.md</code></td>
+<td>Project overview and contribution/build/check guidance.</td>
+</tr>
+<tr>
+<td><code>mkdocs.yml</code>, <code>docs/</code></td>
+<td>MkDocs navigation, enabled extensions and site content. Documentation is separate from embedded plugin resources.</td>
+</tr>
+<tr>
+<td><code>manifest.json</code></td>
+<td>Release/plugin catalog metadata; distinct from the component manifest and generated-asset manifest.</td>
+</tr>
+<tr>
+<td><code>package.json</code>, <code>package-lock.json</code></td>
+<td>Test tooling/dependencies; production client bundling is performed by C#, without an npm bundler.</td>
+</tr>
+<tr>
+<td><code>css/ratings.css</code>, <code>images/mdblist-logos/</code></td>
+<td>Rating color-table input and MDBList logo sources.</td>
+</tr>
+<tr>
+<td><code>LICENSE</code>, <code>SECURITY.md</code></td>
+<td>License and security-reporting policy.</td>
+</tr>
+<tr>
+<td><code>.gitattributes</code>, <code>.gitignore</code>, <code>.pre-commit-config.yaml</code>, <code>.vscode/settings.json</code></td>
+<td>Repository/editor conventions and local checks.</td>
+</tr>
+<tr>
+<td><code>scripts/</code></td>
+<td>Translation validation, generated documentation and asset maintenance.</td>
+</tr>
+<tr>
+<td><code>tests/</code></td>
+<td>Regression suites, fixtures, harnesses and evidence documentation.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="documentation-tree">Documentation tree<a class="headerlink" href="#documentation-tree" title="Permanent link">¶</a></h3>
+<p>The overhaul organizes site pages as follows, including the new getting-started and tag pages:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>docs/
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>├── index.md
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>├── about.md
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>├── 404.md
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>├── getting-started/
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>│   ├── index.md
+</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>│   ├── compatibility.md
+</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>│   ├── settings-overview.md
+</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>│   └── pages-and-tabs.md
+</span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>├── installation/
+</span><span id="__span-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>├── enhanced/                         # Includes tags.md
+</span><span id="__span-2-12"><a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>├── spoiler-guard/                    # Screenshots stay beside these pages
+</span><span id="__span-2-13"><a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>├── seerr/
+</span><span id="__span-2-14"><a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a>├── arr/
+</span><span id="__span-2-15"><a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a>├── elsewhere/
+</span><span id="__span-2-16"><a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a>├── other/
+</span><span id="__span-2-17"><a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a>├── advanced/                         # API, CSS, analytics and this map
+</span><span id="__span-2-18"><a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a>├── faq-support/
+</span><span id="__span-2-19"><a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a>├── other-projects/
+</span><span id="__span-2-20"><a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a>├── images/
+</span><span id="__span-2-21"><a id="__codelineno-2-21" name="__codelineno-2-21" href="#__codelineno-2-21"></a>│   ├── getting-started/              # Screenshots (WebP) and recordings (MP4)
+</span><span id="__span-2-22"><a id="__codelineno-2-22" name="__codelineno-2-22" href="#__codelineno-2-22"></a>│   ├── enhanced/                     # Screenshots (WebP) and recordings (MP4)
+</span><span id="__span-2-23"><a id="__codelineno-2-23" name="__codelineno-2-23" href="#__codelineno-2-23"></a>│   ├── tags/                         # Screenshots (WebP) and recordings (MP4)
+</span><span id="__span-2-24"><a id="__codelineno-2-24" name="__codelineno-2-24" href="#__codelineno-2-24"></a>│   ├── seerr/                        # Screenshots (WebP) and recordings (MP4)
+</span><span id="__span-2-25"><a id="__codelineno-2-25" name="__codelineno-2-25" href="#__codelineno-2-25"></a>│   ├── arr/                          # Screenshots (WebP) and recordings (MP4)
+</span><span id="__span-2-26"><a id="__codelineno-2-26" name="__codelineno-2-26" href="#__codelineno-2-26"></a>│   ├── elsewhere/                    # Screenshots (WebP) and recordings (MP4)
+</span><span id="__span-2-27"><a id="__codelineno-2-27" name="__codelineno-2-27" href="#__codelineno-2-27"></a>│   ├── other/                        # Screenshots (WebP) and recordings (MP4)
+</span><span id="__span-2-28"><a id="__codelineno-2-28" name="__codelineno-2-28" href="#__codelineno-2-28"></a>│   ├── admin/                        # Screenshots (WebP) and recordings (MP4)
+</span><span id="__span-2-29"><a id="__codelineno-2-29" name="__codelineno-2-29" href="#__codelineno-2-29"></a>│   └── readme/                       # README images
+</span><span id="__span-2-30"><a id="__codelineno-2-30" name="__codelineno-2-30" href="#__codelineno-2-30"></a>├── javascripts/
+</span><span id="__span-2-31"><a id="__codelineno-2-31" name="__codelineno-2-31" href="#__codelineno-2-31"></a>│   └── extra.js                      # Small layout helpers (phone tables, scroll rows, nav icons)
+</span><span id="__span-2-32"><a id="__codelineno-2-32" name="__codelineno-2-32" href="#__codelineno-2-32"></a>└── stylesheets/
+</span><span id="__span-2-33"><a id="__codelineno-2-33" name="__codelineno-2-33" href="#__codelineno-2-33"></a>    ├── extra.css                     # The JE-style theme
+</span><span id="__span-2-34"><a id="__codelineno-2-34" name="__codelineno-2-34" href="#__codelineno-2-34"></a>    └── touch.css                     # Phone/tablet scrolling and search-overlay fixes
+</span><span id="__span-2-35"><a id="__codelineno-2-35" name="__codelineno-2-35" href="#__codelineno-2-35"></a>overrides/                            # Theme template overrides (copies of Material 9.6.12 templates with marked changes)
+</span></code></pre></div>
+<p><code>mkdocs.yml</code> owns navigation and Markdown extensions. Site screenshots (WebP) and short screen recordings (MP4) live in the <code>docs/images/&lt;area&gt;/</code> folders above; Spoiler Guard's sit beside its pages in <code>docs/spoiler-guard/</code>. <code>docs/images/readme/</code> holds the README images. Keep the flat <code>docs/images/ratings.png</code>, <code>theme-selector.png</code>, <code>colored-activity-icons.png</code>, <code>login-image.png</code> and <code>plugin-icons.png</code>: the admin page loads them from <code>main</code> for its <strong>View Screenshot</strong> previews. <code>overrides/</code> copies a few Material 9.6.12 templates, so refresh it if the Material version pin in <code>.github/workflows/docs.yml</code> changes.</p>
+<p>These are documentation assets, separate from runtime fonts, native rendering assets and root feature assets. The admin <strong>Docs</strong> tab loads the hosted site from the browser, rather than an offline copy embedded in the assembly.</p>
+<h3 id="generated-assets-and-maintenance-scripts">Generated assets and maintenance scripts<a class="headerlink" href="#generated-assets-and-maintenance-scripts" title="Permanent link">¶</a></h3>
+<p>Use this index to find validation and asset-generation scripts and their maintenance requirements.</p>
+<table>
+<thead>
+<tr>
+<th>Repository-root script</th>
+<th>Inputs/outputs and maintenance contract</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>scripts/generate_config_flag_groups.py</code></td>
+<td>Regenerates <code>docs/advanced/config-flag-groups.json</code> from admin configuration markup; docs CI runs it before building.</td>
+</tr>
+<tr>
+<td><code>scripts/validate-translations.js</code></td>
+<td>Validates locale JSON against <code>js/locales/en.json</code>; see <a href="../../faq-support/contributing-translations/">Contributing Translations</a>.</td>
+</tr>
+<tr>
+<td><code>scripts/material-symbols/subset.py</code></td>
+<td>Builds the two Material Symbols subsets from bundled full fonts. Add every new runtime icon name to <code>ICONS</code>, install fonttools/Brotli, regenerate and include both subset outputs. Literal scanning cannot cover dynamically constructed names.</td>
+</tr>
+<tr>
+<td><code>scripts/build_poster_assets.py</code></td>
+<td>Downloads pinned upstream inputs, verifies checksums and generates <code>Assets/PosterTags/</code>. Outputs are committed and do not regenerate during <code>dotnet build</code>.</td>
+</tr>
+<tr>
+<td><code>scripts/poster-assets/package.json</code>, <code>package-lock.json</code>, <code>rasterize_flags.mjs</code></td>
+<td>Pinned Node/Playwright tooling for Chromium flag rasterization used by the poster asset generator.</td>
+</tr>
+</tbody>
+</table>
+<p><code>js/fonts/</code> contains <code>materialsymbolsrounded.woff2</code>, <code>materialsymbolsoutlined.woff2</code>, <code>materialsymbolsrounded-subset.woff2</code> and <code>materialsymbolsoutlined-subset.woff2</code>. Full fonts use the public Material Symbols family names for themes/custom CSS; subsets use private <code>JE Material Symbols …</code> families and <code>.je-msym-*</code> classes for JE's own icons. Keep those families separate so a subset does not shadow a theme's full font.</p>
+<p>Generated <code>Assets/PosterTags/</code> contains <code>fonts/NotoSans-Bold.ttf.br</code>, <code>flags/*.webp</code>, <code>icons.json</code>, <code>vector-icons.json</code>, <code>age-rating-colours.json</code>, <code>quality-colours.json</code>, <code>THIRD_PARTY_NOTICES.md</code> and <code>manifest.json</code>. The manifest records pins, tool versions, options and output checksums and is excluded from embedding. These generated assets use explicit resource names.</p>
+<p>Full regeneration requires Python 3.10+ with the generator's pinned fonttools/Brotli/Pillow versions, plus Node 18+, pinned Playwright and Chromium for flags. Use the dependency versions in the script/manifest to reproduce bytes. From the repository root:</p>
+<div class="language-sh highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>python3<span class="w"> </span>scripts/build_poster_assets.py<span class="w"> </span>--check
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>python3<span class="w"> </span>scripts/build_poster_assets.py<span class="w"> </span>--check<span class="w"> </span>--full
+</span></code></pre></div>
+<p>The fast check uses only the Python standard library to verify repository inputs and output checksums. The full check regenerates into a temporary directory and compares bytes, requiring the complete toolchain.</p>
+<h3 id="regression-tests-and-inventory">Regression tests and inventory<a class="headerlink" href="#regression-tests-and-inventory" title="Permanent link">¶</a></h3>
+<p>Use this tree to find test suites, shared fixtures and supporting evidence.</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>tests/
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>├── run.py
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>├── README.md
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>├── backend/                          # JE.Tests.csproj + jf12/jf10 package locks
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>│   ├── Api/
+</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>│   ├── Core/
+</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>│   ├── Integrations/
+</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>│   ├── PosterTags/
+</span><span id="__span-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>│   ├── Privacy/
+</span><span id="__span-4-10"><a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>│   ├── ScheduledTasks/
+</span><span id="__span-4-11"><a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>│   └── Support/                      # Shared storage/plugin/HTTP fixtures
+</span><span id="__span-4-12"><a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a>├── frontend/
+</span><span id="__span-4-13"><a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a>│   ├── run.mjs
+</span><span id="__span-4-14"><a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a>│   ├── bootstrap/
+</span><span id="__span-4-15"><a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a>│   ├── core/
+</span><span id="__span-4-16"><a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a>│   ├── features/
+</span><span id="__span-4-17"><a id="__codelineno-4-17" name="__codelineno-4-17" href="#__codelineno-4-17"></a>│   ├── pages/
+</span><span id="__span-4-18"><a id="__codelineno-4-18" name="__codelineno-4-18" href="#__codelineno-4-18"></a>│   ├── requests/
+</span><span id="__span-4-19"><a id="__codelineno-4-19" name="__codelineno-4-19" href="#__codelineno-4-19"></a>│   ├── regressions/
+</span><span id="__span-4-20"><a id="__codelineno-4-20" name="__codelineno-4-20" href="#__codelineno-4-20"></a>│   └── helpers/                      # Shared realms, discovery and coverage
+</span><span id="__span-4-21"><a id="__codelineno-4-21" name="__codelineno-4-21" href="#__codelineno-4-21"></a>├── browser/                          # Fixtures, server, Playwright config,
+</span><span id="__span-4-22"><a id="__codelineno-4-22" name="__codelineno-4-22" href="#__codelineno-4-22"></a>│                                     # reviewed snapshots and licensed fonts
+</span><span id="__span-4-23"><a id="__codelineno-4-23" name="__codelineno-4-23" href="#__codelineno-4-23"></a>├── host/                             # Disposable-host runner and browser checks
+</span><span id="__span-4-24"><a id="__codelineno-4-24" name="__codelineno-4-24" href="#__codelineno-4-24"></a>├── poster/
+</span><span id="__span-4-25"><a id="__codelineno-4-25" name="__codelineno-4-25" href="#__codelineno-4-25"></a>│   ├── rendering/
+</span><span id="__span-4-26"><a id="__codelineno-4-26" name="__codelineno-4-26" href="#__codelineno-4-26"></a>│   ├── pipeline/
+</span><span id="__span-4-27"><a id="__codelineno-4-27" name="__codelineno-4-27" href="#__codelineno-4-27"></a>│   └── parity/
+</span><span id="__span-4-28"><a id="__codelineno-4-28" name="__codelineno-4-28" href="#__codelineno-4-28"></a>├── history/                          # Historical fault manifests/triage
+</span><span id="__span-4-29"><a id="__codelineno-4-29" name="__codelineno-4-29" href="#__codelineno-4-29"></a>├── inventory/
+</span><span id="__span-4-30"><a id="__codelineno-4-30" name="__codelineno-4-30" href="#__codelineno-4-30"></a>│   └── generate.py
+</span><span id="__span-4-31"><a id="__codelineno-4-31" name="__codelineno-4-31" href="#__codelineno-4-31"></a>├── runner/
+</span><span id="__span-4-32"><a id="__codelineno-4-32" name="__codelineno-4-32" href="#__codelineno-4-32"></a>│   ├── clean.py
+</span><span id="__span-4-33"><a id="__codelineno-4-33" name="__codelineno-4-33" href="#__codelineno-4-33"></a>│   ├── coverage.py
+</span><span id="__span-4-34"><a id="__codelineno-4-34" name="__codelineno-4-34" href="#__codelineno-4-34"></a>│   ├── mutations.py
+</span><span id="__span-4-35"><a id="__codelineno-4-35" name="__codelineno-4-35" href="#__codelineno-4-35"></a>│   ├── poster.py
+</span><span id="__span-4-36"><a id="__codelineno-4-36" name="__codelineno-4-36" href="#__codelineno-4-36"></a>│   └── tests/test_regression.py
+</span><span id="__span-4-37"><a id="__codelineno-4-37" name="__codelineno-4-37" href="#__codelineno-4-37"></a>└── docs/                             # Setup, inventory, coverage and history evidence
+</span></code></pre></div>
+<p>Frontend test discovery is recursive. Reuse backend <code>Support/</code> and frontend <code>helpers/</code> fixtures, review browser snapshot changes, and keep generated evidence in the ignored root <code>artifacts/</code> directory. Real-host tests use disposable Jellyfin instances. See <a href="https://github.com/n00bcodr/Jellyfin-Enhanced/blob/main/tests/README.md">tests/README.md</a> for prerequisites and suite selection.</p>
+<div class="language-sh highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>python3<span class="w"> </span>tests/run.py<span class="w"> </span>fast
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>python3<span class="w"> </span>tests/run.py<span class="w"> </span>all
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>python3<span class="w"> </span>tests/inventory/generate.py<span class="w"> </span>--check
+</span></code></pre></div>
+<p>The inventory at <code>tests/docs/production-inventory.json</code> records lexical production surfaces such as files, routes, configuration and tasks; it is not behavioral coverage. Regenerate it with <code>python3 tests/inventory/generate.py</code> after relevant surface changes. Coverage gaps and historical evidence live in <code>tests/docs/</code>.</p>
+<h3 id="ci-and-repository-policies">CI and repository policies<a class="headerlink" href="#ci-and-repository-policies" title="Permanent link">¶</a></h3>
+<p><code>.github/workflows/</code> contains:</p>
+<table>
+<thead>
+<tr>
+<th>Workflows</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>regression.yml</code></td>
+<td>Regression suites, lock checks and production inventory.</td>
+</tr>
+<tr>
+<td><code>docs.yml</code></td>
+<td>Generated config groups, MkDocs Material 9.6.12 build and Pages deployment.</td>
+</tr>
+<tr>
+<td><code>translation_validation.yml</code>, <code>check-unused-translations.yml</code></td>
+<td>Locale validation and unused-key reporting.</td>
+</tr>
+<tr>
+<td><code>validate-manifest.yml</code></td>
+<td>Release manifest validation.</td>
+</tr>
+<tr>
+<td><code>codeql.yml</code>, <code>dependency-review.yml</code>, <code>security-scan.yml</code>, <code>scorecards.yml</code></td>
+<td>Static analysis, dependency/security checks and repository scorecard.</td>
+</tr>
+<tr>
+<td><code>more-info-needed.yml</code>, <code>stale.yml</code></td>
+<td>Issue maintenance.</td>
+</tr>
+</tbody>
+</table>
+<p><code>.github/ISSUE_TEMPLATE/bug.md</code> and <code>.github/ISSUE_TEMPLATE/feature_request.md</code> provide report templates; <code>.github/SECURITY_GUIDELINES.md</code>, <code>.github/codeql/codeql-config.yml</code>, <code>.github/dependabot.yml</code> and <code>.github/funding.yml</code> hold repository policy/configuration. Follow <a href="https://github.com/n00bcodr/Jellyfin-Enhanced/blob/main/CONTRIBUTING.md">CONTRIBUTING.md</a> for which checks apply to a contribution and <a href="https://github.com/n00bcodr/Jellyfin-Enhanced/blob/main/SECURITY.md">SECURITY.md</a> for reporting vulnerabilities.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden="">
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"></path></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer">
+        
+          
+          <a href="../community-analytics/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Community Analytics (Advanced)">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M15.41 16.58 10.83 12l4.58-4.59L14 6l-6 6 6 6z"></path></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous · Advanced
+              </span>
+              <div class="md-ellipsis">
+                Community Analytics
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../../faq-support/faq/" class="md-footer__link md-footer__link--next" aria-label="Next: FAQ (Help)">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next · Help
+              </span>
+              <div class="md-ellipsis">
+                FAQ
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M8.59 16.58 13.17 12 8.59 7.41 10 6l6 6-6 6z"></path></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  <p class="je-keyhint">
+    Press <kbd>/</kbd> to search, <kbd>P</kbd> or <kbd>N</kbd> for the previous or next page
+  </p>
+  
+    <div class="md-copyright__highlight">
+      Copyright ©2026 n00bcodr. Made with 💜 for Jellyfin and the community
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+    <a href="https://github.com/n00bcodr/Jellyfin-Enhanced" target="_blank" rel="noopener" title="GitHub Repository" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"></path></svg>
+    </a>
+  
+    
+    
+    
+    
+    <a href="https://discord.gg/EYNFf7y4CG" target="_blank" rel="noopener" title="Jellyfin Community Discord - Jellyfin Enhanced Channel" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M492.5 69.8c-.2-.3-.4-.6-.8-.7-38.1-17.5-78.4-30-119.7-37.1-.4-.1-.8 0-1.1.1s-.6.4-.8.8c-5.5 9.9-10.5 20.2-14.9 30.6-44.6-6.8-89.9-6.8-134.4 0-4.5-10.5-9.5-20.7-15.1-30.6-.2-.3-.5-.6-.8-.8s-.7-.2-1.1-.2C162.5 39 122.2 51.5 84.1 69c-.3.1-.6.4-.8.7C7.1 183.5-13.8 294.6-3.6 404.2c0 .3.1.5.2.8s.3.4.5.6c44.4 32.9 94 58 146.8 74.2.4.1.8.1 1.1 0s.7-.4.9-.7c11.3-15.4 21.4-31.8 30-48.8.1-.2.2-.5.2-.8s0-.5-.1-.8-.2-.5-.4-.6-.4-.3-.7-.4c-15.8-6.1-31.2-13.4-45.9-21.9-.3-.2-.5-.4-.7-.6s-.3-.6-.3-.9 0-.6.2-.9.3-.5.6-.7c3.1-2.3 6.2-4.7 9.1-7.1.3-.2.6-.4.9-.4s.7 0 1 .1c96.2 43.9 200.4 43.9 295.5 0 .3-.1.7-.2 1-.2s.7.2.9.4c2.9 2.4 6 4.9 9.1 7.2.2.2.4.4.6.7s.2.6.2.9-.1.6-.3.9-.4.5-.6.6c-14.7 8.6-30 15.9-45.9 21.8-.2.1-.5.2-.7.4s-.3.4-.4.7-.1.5-.1.8.1.5.2.8c8.8 17 18.8 33.3 30 48.8.2.3.6.6.9.7s.8.1 1.1 0c52.9-16.2 102.6-41.3 147.1-74.2.2-.2.4-.4.5-.6s.2-.5.2-.8c12.3-126.8-20.5-236.9-86.9-334.5zm-302 267.7c-29 0-52.8-26.6-52.8-59.2s23.4-59.2 52.8-59.2c29.7 0 53.3 26.8 52.8 59.2 0 32.7-23.4 59.2-52.8 59.2m195.4 0c-29 0-52.8-26.6-52.8-59.2s23.4-59.2 52.8-59.2c29.7 0 53.3 26.8 52.8 59.2 0 32.7-23.2 59.2-52.8 59.2"></path></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+      <div class="md-progress" data-md-component="progress" role="progressbar"></div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.instant", "navigation.instant.progress", "navigation.tracking", "navigation.tabs", "navigation.tabs.sticky", "navigation.sections", "navigation.indexes", "navigation.top", "navigation.footer", "toc.follow", "search.suggest", "search.highlight", "search.share", "content.code.copy", "content.code.annotate", "content.tabs.link", "announce.dismiss"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.c21346df.min.js"></script>
+      
+        <script src="../../javascripts/extra.js"></script>
+      
+    
+  
+<script id="init-glightbox">const lightbox = GLightbox({"touchNavigation": true, "loop": false, "zoomable": true, "draggable": false, "openEffect": "zoom", "closeEffect": "zoom", "slideEffect": "slide"});
+document$.subscribe(()=>{ lightbox.reload(); });
+</script></body></html>
