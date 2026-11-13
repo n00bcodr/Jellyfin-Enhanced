@@ -66,6 +66,23 @@ test('load and collect round-trip a section without touching its manual fields',
     assert.equal(out.Untouched, 'kept');
 });
 
+// The Tag Prefix field suggests the server default; emptying it must save that same prefix, or the next sync
+// writes a second set of tags under a prefix nobody chose and the details-page tag links stop matching.
+test('an emptied arr Tag Prefix saves the prefix the field suggests, which is the server default', (t) => {
+    const serverDefault = /ArrTagsPrefix = "([^"]*)";/.exec(readFileSync(join(config, 'PluginConfiguration.cs'), 'utf8'))[1];
+    const { dom, doc, JEAdmin } = renderPage();
+    t.after(() => dom.window.close());
+    JEAdmin.load({ ArrTagsPrefix: 'Mine: ' });
+    const field = doc.getElementById('arrTagsPrefix');
+    assert.equal(field.value, 'Mine: ');
+    assert.equal(JEAdmin.collect({}).ArrTagsPrefix, 'Mine: ', 'a chosen prefix is kept');
+    field.value = '';
+    assert.equal(field.placeholder, serverDefault);
+    assert.equal(JEAdmin.collect({}).ArrTagsPrefix, serverDefault);
+    JEAdmin.load({ ArrTagsPrefix: '' });
+    assert.equal(field.value, serverDefault, 'a stored empty prefix shows as the default it is saved as');
+});
+
 // The per-user list drives the icon and the apply-to-all banner. It is generated from the controller; this fails when the
 // controller changed and scripts/generate_per_user_props.py was not run.
 test('the per-user setting list matches the controller', () => {

@@ -63,10 +63,10 @@ Tag sync copies source tags into Jellyfin metadata. Check the task first, then d
 3. Check that source tags exist.
 4. If **Sync to Jellyfin Filter** is set, use comma- or semicolon-separated source names without the prefix. Putting each name on a new line does not work for sync, even though the form suggests it.
 5. Inspect the Jellyfin item's metadata tags. **Tag Prefix** is added during sync; source tags do not need to contain it.
-6. Check task/server logs for a failed or disabled instance and review cleanup before running again.
+6. Check task/server logs for a failed or disabled instance and review cleanup before running again. A run that could not read Radarr or Sonarr shows as failed in Scheduled Tasks, logs `Radarr could not be read` or `Sonarr could not be read`, and leaves that service's tags as they are. An instance that is retired but still enabled keeps doing this: disable it.
 
 !!! warning "Preserve tags while investigating"
-    **Clear old tags before sync** removes tags starting with the current prefix even on unmatched items or empty/failed source results. Turn it off if you need to preserve existing tags. Changing the prefix does not remove tags bearing the old prefix.
+    **Clear old tags before sync** removes tags starting with the current prefix even on unmatched items or when a source answers with no tags. A source that cannot be read keeps its items' tags for that run. Turn it off if you need to preserve existing tags. Changing the prefix does not remove tags bearing the old prefix.
 
 If tags are present in metadata but missing as links:
 
@@ -79,7 +79,7 @@ Seeing existing tag links does not require administrator status or **Enable Tags
 ??? info "Tag matching and prefix behavior"
     Movie sync matches TMDB IDs; series sync matches IMDb IDs, not the TVDB ID used by Sonarr item links. Sync updates movies and series in your library, excluding virtual placeholders.
 
-    Keep **Tag Prefix** nonempty. Settings replace a blank value with `Requested by: `, while displayed tag links use `JE Arr Tag: ` for a blank prefix. Sync uses `Requested by: ` only if the stored prefix is unset, rather than empty. See [tag settings and examples](arr-features.md#arr-tags).
+    Keep **Tag Prefix** nonempty. Settings save a blank value as the default, `JE Arr Tag: `, and sync and displayed tag links also use `JE Arr Tag: ` for a blank or unset stored prefix. See [tag settings and examples](arr-features.md#arr-tags).
 
 ### Calendar Not Loading
 

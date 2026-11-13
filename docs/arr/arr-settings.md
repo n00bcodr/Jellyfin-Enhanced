@@ -231,10 +231,10 @@ Copy Sonarr/Radarr tags into Jellyfin metadata and show them as clickable links.
 | **Hide Specific Links Filter** | Empty | Newline-separated names to hide; hiding wins over the show filter. |
 
 !!! warning "Review cleanup and filter format"
-    **Clear old tags before sync** also removes tags on unmatched items or failed/empty source results. Use commas or semicolons for **Sync to Jellyfin Filter**, even though the form says one per line.
+    **Clear old tags before sync** also removes tags on unmatched items and on items whose source answered with no tags. A Radarr or Sonarr instance that cannot be read leaves that service's movies or series as they are for the run, and the run shows as failed in Scheduled Tasks; disable an instance you no longer use. Use commas or semicolons for **Sync to Jellyfin Filter**, even though the form says one per line.
 
 ??? info "Prefix and matching details"
-    Settings replace a blank **Tag Prefix** with `Requested by: `. When the prefix is blank, displayed tag links use `JE Arr Tag: `; sync uses `Requested by: ` only if the stored prefix is unset, rather than empty. Avoid blank prefixes. Changing the prefix leaves previously prefixed metadata in place.
+    Settings save a blank **Tag Prefix** as the default, `JE Arr Tag: `. When the stored prefix is blank or unset, sync and displayed tag links both use `JE Arr Tag: `. Avoid blank prefixes. Changing the prefix leaves previously prefixed metadata in place.
 
     Filters ignore capitalization in tag names, but displayed links require matching prefix capitalization. Movies match by TMDB, series by IMDb. See [ARR Tags](arr-features.md#arr-tags) for cleanup limits, working filter examples, and styling.
 
