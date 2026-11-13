@@ -241,7 +241,7 @@ Show subscription-provider icons on Seerr posters.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| **Show Streaming Providers on Posters** | Off | Adds up to four subscription-provider icons from the admin's default Elsewhere region to Seerr posters. |
+| **Show Streaming Providers on Posters** | Off | Adds up to four subscription-provider icons from the admin's default Elsewhere region (or each user's Seerr streaming region when that Elsewhere option is on) to Seerr posters; needs a TMDB key or the Seerr integration. |
 
 !!! note "Requires TMDB"
 

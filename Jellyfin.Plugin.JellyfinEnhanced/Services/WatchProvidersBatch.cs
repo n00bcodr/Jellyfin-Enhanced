@@ -158,6 +158,73 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         /// <summary>
+        /// Extracts one region's flat-rate providers from a Seerr movie/tv detail
+        /// body (its <c>watchProviders</c> array of
+        /// <c>{ iso_3166_1, flatrate: [ { id, name, logoPath } ] }</c>), in Seerr's
+        /// order, with the same name/logo checks as <see cref="ExtractFlatrate"/>.
+        /// Returns an empty list when the region or its flat-rate list is absent,
+        /// and null when the body is not the expected JSON.
+        /// </summary>
+        public static List<Provider>? ExtractSeerrFlatrate(string json, string region)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+                if (root.ValueKind != JsonValueKind.Object)
+                {
+                    return null;
+                }
+
+                var providers = new List<Provider>();
+                if (!root.TryGetProperty("watchProviders", out var all) || all.ValueKind != JsonValueKind.Array)
+                {
+                    return providers;
+                }
+
+                foreach (var regional in all.EnumerateArray())
+                {
+                    if (regional.ValueKind != JsonValueKind.Object
+                        || !regional.TryGetProperty("iso_3166_1", out var codeEl) || codeEl.ValueKind != JsonValueKind.String
+                        || !string.Equals(codeEl.GetString(), region, StringComparison.Ordinal)
+                        || !regional.TryGetProperty("flatrate", out var flatrate) || flatrate.ValueKind != JsonValueKind.Array)
+                    {
+                        continue;
+                    }
+
+                    foreach (var entry in flatrate.EnumerateArray())
+                    {
+                        if (entry.ValueKind != JsonValueKind.Object
+                            || !entry.TryGetProperty("name", out var nameEl) || nameEl.ValueKind != JsonValueKind.String
+                            || !entry.TryGetProperty("logoPath", out var logoEl) || logoEl.ValueKind != JsonValueKind.String)
+                        {
+                            continue;
+                        }
+
+                        var name = nameEl.GetString() ?? string.Empty;
+                        var logo = logoEl.GetString() ?? string.Empty;
+                        if (name.Length == 0 || name.Length > MaxProviderNameLength || !LogoPathPattern.IsMatch(logo))
+                        {
+                            continue;
+                        }
+
+                        var id = entry.TryGetProperty("id", out var idEl) && idEl.ValueKind == JsonValueKind.Number
+                            && idEl.TryGetInt32(out var parsedId) ? parsedId : 0;
+                        providers.Add(new Provider(id, name, logo));
+                    }
+
+                    break;
+                }
+
+                return providers;
+            }
+            catch (JsonException)
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
         /// Serialises the batch response:
         /// { "region": "US", "results": { "movie:603": [ { provider_id, provider_name, logo_path } ] | null } }.
         /// Keys follow <paramref name="items"/> order; a missing entry is written as null.

@@ -8,7 +8,7 @@ You can set up provider lookup, TMDB reviews, release dates, and reviews from yo
 
 !!! note "API key requirements"
 
-    Provider lookup, TMDB reviews, and release dates share the **TMDB API Key**. User-written reviews stay on your server and need no API key.
+    TMDB reviews and release dates need the **TMDB API Key**. Provider lookup uses the same key, or, if no TMDB key is set and the Seerr integration is enabled, Seerr's own streaming-provider data. Per-season providers need a TMDB key. User-written reviews stay on your server and need no API key.
 
 ## Streaming Provider Lookup
 
@@ -31,7 +31,7 @@ Admin settings in **Elsewhere & Reviews**:
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| **Enable Elsewhere** | On | Enables the detail-page provider panel with a configured TMDB key. |
+| **Enable Elsewhere** | On | Enables the detail-page provider panel with a configured TMDB key or, without one, the Seerr integration. |
 | **TMDB API Key** | Empty | Supplies the shared key for server-side TMDB requests. |
 | **Default Region** | `US` | Sets the automatic country until you choose a personal default. |
 | **Default Providers** | Empty | Allows all subscription providers when empty; otherwise allows only exact provider names. |
@@ -61,6 +61,7 @@ See which services carry each part of a series. When seasons have different prov
 
 | Setting | Default | What it does |
 | --- | --- | --- |
+| **Use each user's Seerr streaming region** | Off (admin) | Providers follow each user's Seerr Streaming Region instead of their Elsewhere country; the country picker is then locked. |
 | **Per-season providers** | On (admin) | Enables automatic season lookup for default/aired-order series. |
 | **Show providers per season (when seasons differ)** | On (per user) | Lets you turn off season lookup for your account. |
 
