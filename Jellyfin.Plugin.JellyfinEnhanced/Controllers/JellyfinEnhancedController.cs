@@ -5546,7 +5546,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 if (firstSeen)
                     _logger.Error("SonarrInstances config is corrupt JSON — instance list is effectively empty. "
                         + "Endpoints will return no Sonarr data until the admin opens the config page and resets it. "
-                        + $"Raw value (first 200 chars): {(config.SonarrInstances ?? "").Substring(0, Math.Min(200, (config.SonarrInstances ?? "").Length))}");
+                        + DescribeCorruptArrInstances(config.SonarrInstances));
             }
             if (config.IsRadarrInstancesCorrupt())
             {
@@ -5556,7 +5556,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 if (firstSeen)
                     _logger.Error("RadarrInstances config is corrupt JSON — instance list is effectively empty. "
                         + "Endpoints will return no Radarr data until the admin opens the config page and resets it. "
-                        + $"Raw value (first 200 chars): {(config.RadarrInstances ?? "").Substring(0, Math.Min(200, (config.RadarrInstances ?? "").Length))}");
+                        + DescribeCorruptArrInstances(config.RadarrInstances));
+            }
+        }
+
+        /// <summary>
+        /// Describes a stored instance list that does not parse by its length and the position where
+        /// parsing stops. The list holds each instance's URL and API key, so its text is never logged.
+        /// </summary>
+        private static string DescribeCorruptArrInstances(string? raw)
+        {
+            raw ??= "";
+            try
+            {
+                JsonSerializer.Deserialize<List<ArrInstance>>(raw);
+                return $"Stored value: {raw.Length} characters.";
+            }
+            catch (JsonException ex)
+            {
+                return $"Stored value: {raw.Length} characters, not valid JSON at line {(ex.LineNumber ?? 0) + 1}, byte {(ex.BytePositionInLine ?? 0) + 1}.";
             }
         }
 
