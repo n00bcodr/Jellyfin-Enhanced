@@ -1,0 +1,3789 @@
+<!DOCTYPE html><html lang="en" class="no-js"><head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="The essential enhancement suite for Jellyfin, bundling advanced features and customizations into one convenient plugin.">
+      
+      
+        <meta name="author" content="n00bcodr">
+      
+      
+        <link rel="canonical" href="https://n00bcodr.github.io/Jellyfin-Enhanced/12.13/faq-support/faq/">
+      
+      
+        <link rel="prev" href="../../advanced/project-structure/">
+      
+      
+        <link rel="next" href="../report-issues/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../images/favicon.ico">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.0">
+    
+    
+  
+  
+    
+      <title>FAQ · Help - Jellyfin Enhanced</title>
+    
+  
+
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Noto+Sans:300,300i,400,400i,700,700i%7CNoto+Sans+Mono:400,400i,700,700i&amp;display=fallback">
+        <style>:root{--md-text-font:"Noto Sans";--md-code-font:"Noto Sans Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+      <link rel="stylesheet" href="../../stylesheets/touch.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  <link href="../../assets/stylesheets/glightbox.min.css" rel="stylesheet"><script src="../../assets/javascripts/glightbox.min.js"></script><style id="glightbox-style">
+            html.glightbox-open { overflow: initial; height: 100%; }
+            .gslide-title { margin-top: 0px; user-select: text; }
+            .gslide-desc { color: #666; user-select: text; }
+            .gslide-image img { background: white; }
+            .gscrollbar-fixer { padding-right: 15px; }
+            .gdesc-inner { font-size: 0.75rem; }
+            body[data-md-color-scheme="slate"] .gdesc-inner { background: var(--md-default-bg-color); }
+            body[data-md-color-scheme="slate"] .gslide-title { color: var(--md-default-fg-color); }
+            body[data-md-color-scheme="slate"] .gslide-desc { color: var(--md-default-fg-color); }
+        </style></head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#frequently-asked-questions" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden="">
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Jellyfin Enhanced" class="md-header__button md-logo" aria-label="Jellyfin Enhanced" data-md-component="logo">
+      <span class="je-mark" aria-hidden="true"></span>
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"></path></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Jellyfin Enhanced
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+              <span class="je-topic-area">Help</span>
+            
+            
+              FAQ
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom" aria-label="Switch to dark mode" type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden="">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"></path></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom" aria-label="Switch to light mode" type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden="">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"></path></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"></path></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required="">
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"></path></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M15.41 16.58 10.83 12l4.58-4.59L14 6l-6 6 6 6z"></path></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard="" data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"></path></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"></path></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix="">
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/n00bcodr/Jellyfin-Enhanced" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"></path></svg>
+  </div>
+  <div class="md-source__repository">
+    n00bcodr/Jellyfin-Enhanced
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 5.69 5 4.5V18h-2v-6H9v6H7v-7.81zM12 3 2 12h3v8h6v-6h2v6h6v-8h3"></path></svg>
+  
+  <span class="je-tab-label">Home</span>
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../getting-started/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m13.13 22.19-1.63-3.83c1.57-.58 3.04-1.36 4.4-2.27zM5.64 12.5l-3.83-1.63 6.1-2.77C7 9.46 6.22 10.93 5.64 12.5M19.22 4c.28 0 .53 0 .74.05.17 1.39-.02 4.25-3.3 7.53-1.7 1.71-3.73 3.02-6.01 3.89l-2.15-2.1c.92-2.31 2.23-4.34 3.92-6.03C15.18 4.58 17.64 4 19.22 4m0-2c-1.98 0-4.98.69-8.22 3.93-2.19 2.19-3.5 4.6-4.35 6.71-.28.75-.09 1.57.46 2.13l2.13 2.12c.38.38.89.61 1.42.61.23 0 .47-.06.7-.15A19.1 19.1 0 0 0 18.07 13c5.66-5.66 3.54-10.61 3.54-10.61S20.7 2 19.22 2m-4.68 7.46c-.78-.78-.78-2.05 0-2.83s2.05-.78 2.83 0c.77.78.78 2.05 0 2.83s-2.05.78-2.83 0m-5.66 7.07-1.41-1.41zM6.24 22l3.64-3.64c-.34-.09-.67-.24-.97-.45L4.83 22zM2 22h1.41l4.77-4.76-1.42-1.41L2 20.59zm0-2.83 4.09-4.08c-.21-.3-.36-.62-.45-.97L2 17.76z"></path></svg>
+  
+  <span class="je-tab-label">Getting Started</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../enhanced/enhanced-features/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 4c3.8 0 6.5 2.8 6.5 6.8a18.3 18.3 0 0 1-13 0C5.5 6.8 8.2 4 12 4m0-2c-4.7 0-8.5 3.5-8.5 8.9.06.8.56 1.5 1.3 1.8l1.7.5v2.3a.5.5 0 0 1-.5.5.5.5 0 0 1-.5-.5.898.898 0 0 0-1-1 .898.898 0 0 0-1 1A2.405 2.405 0 0 0 5.9 18H6c1.41.06 2.56-1.09 2.5-2.5v-1.8h1v5.7c0 .67-1 .67-1 0a.898.898 0 0 0-1-1 .898.898 0 0 0-1 1c-.11 1.4 1 2.6 2.4 2.6H9c1.41.06 2.56-1.09 2.5-2.5V14h1v5.5A2.394 2.394 0 0 0 15 22h.1c1.37 0 2.46-1.14 2.4-2.5 0-1.33-2-1.33-2 0 0 .67-1 .67-1 0v-5.7h1v1.8c0 1.36 1.13 2.46 2.5 2.4h.1c1.37 0 2.46-1.14 2.4-2.5 0-1.33-2-1.33-2 0 0 .67-1 .67-1 0v-2.3l1.7-.5c.72-.34 1.21-1.02 1.3-1.8C20.5 5.5 16.7 2 12 2m0 4.2c-1.47.4-2.76 1.33-3.6 2.6-.4.53-1.2-.07-.8-.6a7.47 7.47 0 0 1 4.2-3 .5.5 0 0 1 .6.4c.1.3-.1.5-.4.6"></path></svg>
+  
+  <span class="je-tab-label">Enhanced</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../spoiler-guard/spoiler-guard-features/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 11c0 5.55-3.84 10.74-9 12-5.16-1.26-9-6.45-9-12V5l9-4 9 4zm-9 10c3.75-1 7-5.46 7-9.78V6.3l-7-3.12L5 6.3v4.92C5 15.54 8.25 20 12 21m2.8-10V9.5C14.8 8.1 13.4 7 12 7S9.2 8.1 9.2 9.5V11c-.6 0-1.2.6-1.2 1.2v3.5c0 .7.6 1.3 1.2 1.3h5.5c.7 0 1.3-.6 1.3-1.2v-3.5c0-.7-.6-1.3-1.2-1.3m-1.3 0h-3V9.5c0-.8.7-1.3 1.5-1.3s1.5.5 1.5 1.3z"></path></svg>
+  
+  <span class="je-tab-label">Spoiler Guard</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../seerr/seerr-features/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M11 20H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2h1l2 4h3L8 4h2l2 4h3l-2-4h2l2 4h3l-2-4h4v9c-.5-.8-1.2-1.5-2-2v-1H5.8L4 6.5V18h6.2c.2.7.4 1.4.8 2m9.3-1.1c.4-.7.7-1.5.7-2.4 0-2.5-2-4.5-4.5-4.5S12 14 12 16.5s2 4.5 4.5 4.5c.9 0 1.7-.2 2.4-.7l3.1 3.1 1.4-1.4zm-3.8.1c-1.4 0-2.5-1.1-2.5-2.5s1.1-2.5 2.5-2.5 2.5 1.1 2.5 2.5-1.1 2.5-2.5 2.5"></path></svg>
+  
+  <span class="je-tab-label">Seerr</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../arr/arr-features/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M7 11h2v2H7zm14-6v14c0 1.11-.89 2-2 2H5a2 2 0 0 1-2-2V5c0-1.1.9-2 2-2h1V1h2v2h8V1h2v2h1a2 2 0 0 1 2 2M5 7h14V5H5zm14 12V9H5v10zm-4-6v-2h2v2zm-4 0v-2h2v2zm-4 2h2v2H7zm8 2v-2h2v2zm-4 0v-2h2v2z"></path></svg>
+  
+  <span class="je-tab-label">*arr</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../elsewhere/elsewhere-features/" class="md-tabs__link">
+          
+  
+  
+  
+    
+  
+  <span class="je-tab-label">Elsewhere &amp; Reviews</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../other/other-features/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m9 4 2.5 5.5L17 12l-5.5 2.5L9 20l-2.5-5.5L1 12l5.5-2.5zm0 4.83L8 11l-2.17 1L8 13l1 2.17L10 13l2.17-1L10 11zM19 9l-1.26-2.74L15 5l2.74-1.25L19 1l1.25 2.75L23 5l-2.75 1.26zm0 14-1.26-2.74L15 19l2.74-1.25L19 15l1.25 2.75L23 19l-2.75 1.26z"></path></svg>
+  
+  <span class="je-tab-label">Other</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../advanced/css-customization/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M8 3a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2H3v2h1a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h2v-2H8v-5a2 2 0 0 0-2-2 2 2 0 0 0 2-2V5h2V3m6 0a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h1v2h-1a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2h-2v-2h2v-5a2 2 0 0 1 2-2 2 2 0 0 1-2-2V5h-2V3z"></path></svg>
+  
+  <span class="je-tab-label">Advanced</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="./" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19.79 15.41c.95-2.17.95-4.66 0-6.82l-2.74 1.24c.6 1.38.6 2.95.01 4.34zm-4.37-11.2a8.54 8.54 0 0 0-6.83 0l1.24 2.73c1.39-.59 2.96-.59 4.35.01zM4.21 8.58a8.56 8.56 0 0 0 0 6.84l2.74-1.25c-.6-1.38-.6-2.96 0-4.35zm4.38 11.21a8.5 8.5 0 0 0 6.83-.01l-1.24-2.73a5.5 5.5 0 0 1-4.34.01zM12 2a10 10 0 0 1 10 10 10 10 0 0 1-10 10A10 10 0 0 1 2 12 10 10 0 0 1 12 2m0 6a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4"></path></svg>
+  
+  <span class="je-tab-label">Help</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation">
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Jellyfin Enhanced" class="md-nav__button md-logo" aria-label="Jellyfin Enhanced" data-md-component="logo">
+      <span class="je-mark" aria-hidden="true"></span>
+    </a>
+    Jellyfin Enhanced
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/n00bcodr/Jellyfin-Enhanced" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"></path></svg>
+  </div>
+  <div class="md-source__repository">
+    n00bcodr/Jellyfin-Enhanced
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix="">
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 5.69 5 4.5V18h-2v-6H9v6H7v-7.81zM12 3 2 12h3v8h6v-6h2v6h6v-8h3"></path></svg>
+  
+  <span class="md-ellipsis">
+    Home
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../getting-started/" class="md-nav__link ">
+              
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m13.13 22.19-1.63-3.83c1.57-.58 3.04-1.36 4.4-2.27zM5.64 12.5l-3.83-1.63 6.1-2.77C7 9.46 6.22 10.93 5.64 12.5M19.22 4c.28 0 .53 0 .74.05.17 1.39-.02 4.25-3.3 7.53-1.7 1.71-3.73 3.02-6.01 3.89l-2.15-2.1c.92-2.31 2.23-4.34 3.92-6.03C15.18 4.58 17.64 4 19.22 4m0-2c-1.98 0-4.98.69-8.22 3.93-2.19 2.19-3.5 4.6-4.35 6.71-.28.75-.09 1.57.46 2.13l2.13 2.12c.38.38.89.61 1.42.61.23 0 .47-.06.7-.15A19.1 19.1 0 0 0 18.07 13c5.66-5.66 3.54-10.61 3.54-10.61S20.7 2 19.22 2m-4.68 7.46c-.78-.78-.78-2.05 0-2.83s2.05-.78 2.83 0c.77.78.78 2.05 0 2.83s-2.05.78-2.83 0m-5.66 7.07-1.41-1.41zM6.24 22l3.64-3.64c-.34-.09-.67-.24-.97-.45L4.83 22zM2 22h1.41l4.77-4.76-1.42-1.41L2 20.59zm0-2.83 4.09-4.08c-.21-.3-.36-.62-.45-.97L2 17.76z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Getting Started
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            Getting Started
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/installation/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 5v6h1.17L12 13.17 9.83 11H11V5zm2-2H9v6H5l7 7 7-7h-4zm4 15H5v2h14z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Installation
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/compatibility/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18V4H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h4v-2H3zm10 6H9v1.78c-.61.55-1 1.33-1 2.22s.39 1.67 1 2.22V20h4v-1.78c.61-.55 1-1.34 1-2.22s-.39-1.67-1-2.22zm-2 5.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5M22 8h-6c-.5 0-1 .5-1 1v10c0 .5.5 1 1 1h6c.5 0 1-.5 1-1V9c0-.5-.5-1-1-1m-1 10h-4v-8h4z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Compatibility
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/settings-overview/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M8 13c-1.86 0-3.41 1.28-3.86 3H2v2h2.14c.45 1.72 2 3 3.86 3s3.41-1.28 3.86-3H22v-2H11.86c-.45-1.72-2-3-3.86-3m0 6c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2M19.86 6c-.45-1.72-2-3-3.86-3s-3.41 1.28-3.86 3H2v2h10.14c.45 1.72 2 3 3.86 3s3.41-1.28 3.86-3H22V6zM16 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2"></path></svg>
+  
+  <span class="md-ellipsis">
+    Settings Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/pages-and-tabs/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 5v2h-4V5zM9 5v6H5V5zm10 8v6h-4v-6zM9 17v2H5v-2zM21 3h-8v6h8zM11 3H3v10h8zm10 8h-8v10h8zm-10 4H3v6h8z"></path></svg>
+  
+  <span class="md-ellipsis">
+    JE Pages &amp; Tabs
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/troubleshooting/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m22.61 19-9.08-9.09c.93-2.34.47-5.1-1.44-7C9.79.61 6.21.4 3.66 2.26L7.5 6.11 6.08 7.5 2.25 3.69C.39 6.23.6 9.82 2.9 12.11c1.86 1.86 4.57 2.35 6.89 1.48l9.11 9.11c.39.39 1.02.39 1.41 0l2.3-2.3c.39-.4.39-1.01 0-1.4m-3 1.59-9.46-9.46c-.61.45-1.29.72-2 .82-1.36.2-2.79-.21-3.83-1.25C3.37 9.76 2.93 8.5 3 7.26l3.09 3.09 4.24-4.24L7.24 3c1.26-.05 2.49.39 3.44 1.33a4.47 4.47 0 0 1 1.24 3.96 4.35 4.35 0 0 1-.88 1.96l9.46 9.45z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Troubleshooting
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3">
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 4c3.8 0 6.5 2.8 6.5 6.8a18.3 18.3 0 0 1-13 0C5.5 6.8 8.2 4 12 4m0-2c-4.7 0-8.5 3.5-8.5 8.9.06.8.56 1.5 1.3 1.8l1.7.5v2.3a.5.5 0 0 1-.5.5.5.5 0 0 1-.5-.5.898.898 0 0 0-1-1 .898.898 0 0 0-1 1A2.405 2.405 0 0 0 5.9 18H6c1.41.06 2.56-1.09 2.5-2.5v-1.8h1v5.7c0 .67-1 .67-1 0a.898.898 0 0 0-1-1 .898.898 0 0 0-1 1c-.11 1.4 1 2.6 2.4 2.6H9c1.41.06 2.56-1.09 2.5-2.5V14h1v5.5A2.394 2.394 0 0 0 15 22h.1c1.37 0 2.46-1.14 2.4-2.5 0-1.33-2-1.33-2 0 0 .67-1 .67-1 0v-5.7h1v1.8c0 1.36 1.13 2.46 2.5 2.4h.1c1.37 0 2.46-1.14 2.4-2.5 0-1.33-2-1.33-2 0 0 .67-1 .67-1 0v-2.3l1.7-.5c.72-.34 1.21-1.02 1.3-1.8C20.5 5.5 16.7 2 12 2m0 4.2c-1.47.4-2.76 1.33-3.6 2.6-.4.53-1.2-.07-.8-.6a7.47 7.47 0 0 1 4.2-3 .5.5 0 0 1 .6.4c.1.3-.1.5-.4.6"></path></svg>
+  
+  <span class="md-ellipsis">
+    Enhanced
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            Enhanced
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../enhanced/enhanced-features/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Features
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../enhanced/tags/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M6.5 10C7.3 10 8 9.3 8 8.5S7.3 7 6.5 7 5 7.7 5 8.5 5.7 10 6.5 10M9 6l7 7-5 5-7-7V6zm0-2H4c-1.1 0-2 .9-2 2v5c0 .6.2 1.1.6 1.4l7 7c.3.4.8.6 1.4.6s1.1-.2 1.4-.6l5-5c.4-.4.6-.9.6-1.4 0-.6-.2-1.1-.6-1.4l-7-7C10.1 4.2 9.6 4 9 4m4.5 1.7 1-1 6.9 6.9c.4.4.6.9.6 1.4s-.2 1.1-.6 1.4L16 19.8l-1-1 5.7-5.8z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Tags &amp; Badges
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../enhanced/enhanced-settings/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4">
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 11c0 5.55-3.84 10.74-9 12-5.16-1.26-9-6.45-9-12V5l9-4 9 4zm-9 10c3.75-1 7-5.46 7-9.78V6.3l-7-3.12L5 6.3v4.92C5 15.54 8.25 20 12 21m2.8-10V9.5C14.8 8.1 13.4 7 12 7S9.2 8.1 9.2 9.5V11c-.6 0-1.2.6-1.2 1.2v3.5c0 .7.6 1.3 1.2 1.3h5.5c.7 0 1.3-.6 1.3-1.2v-3.5c0-.7-.6-1.3-1.2-1.3m-1.3 0h-3V9.5c0-.8.7-1.3 1.5-1.3s1.5.5 1.5 1.3z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Spoiler Guard
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            Spoiler Guard
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../spoiler-guard/spoiler-guard-features/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Features
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../spoiler-guard/spoiler-guard-settings/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5">
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M11 20H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2h1l2 4h3L8 4h2l2 4h3l-2-4h2l2 4h3l-2-4h4v9c-.5-.8-1.2-1.5-2-2v-1H5.8L4 6.5V18h6.2c.2.7.4 1.4.8 2m9.3-1.1c.4-.7.7-1.5.7-2.4 0-2.5-2-4.5-4.5-4.5S12 14 12 16.5s2 4.5 4.5 4.5c.9 0 1.7-.2 2.4-.7l3.1 3.1 1.4-1.4zm-3.8.1c-1.4 0-2.5-1.1-2.5-2.5s1.1-2.5 2.5-2.5 2.5 1.1 2.5 2.5-1.1 2.5-2.5 2.5"></path></svg>
+  
+  <span class="md-ellipsis">
+    Seerr
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            Seerr
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../seerr/seerr-features/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Features
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../seerr/seerr-settings/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../seerr/permission-audit/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 1 3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5zm0 2.18 7 3.12v4.92c0 1.7-.5 3.43-1.35 4.95C16 14.94 13.26 14.5 12 14.5s-4 .44-5.65 1.67C5.5 14.65 5 12.92 5 11.22V6.3zM12 6a3.5 3.5 0 0 0-3.5 3.5A3.5 3.5 0 0 0 12 13a3.5 3.5 0 0 0 3.5-3.5A3.5 3.5 0 0 0 12 6m0 2a1.5 1.5 0 0 1 1.5 1.5A1.5 1.5 0 0 1 12 11a1.5 1.5 0 0 1-1.5-1.5A1.5 1.5 0 0 1 12 8m0 8.5c1.57 0 3.64.61 4.53 1.34C15.29 19.38 13.7 20.55 12 21c-1.7-.45-3.29-1.62-4.53-3.16.9-.73 2.96-1.34 4.53-1.34"></path></svg>
+  
+  <span class="md-ellipsis">
+    Permission Audit
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6">
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M7 11h2v2H7zm14-6v14c0 1.11-.89 2-2 2H5a2 2 0 0 1-2-2V5c0-1.1.9-2 2-2h1V1h2v2h8V1h2v2h1a2 2 0 0 1 2 2M5 7h14V5H5zm14 12V9H5v10zm-4-6v-2h2v2zm-4 0v-2h2v2zm-4 2h2v2H7zm8 2v-2h2v2zm-4 0v-2h2v2z"></path></svg>
+  
+  <span class="md-ellipsis">
+    *arr
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            *arr
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../arr/arr-features/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Features
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../arr/arr-settings/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../arr/troubleshooting-support/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m22.61 19-9.08-9.09c.93-2.34.47-5.1-1.44-7C9.79.61 6.21.4 3.66 2.26L7.5 6.11 6.08 7.5 2.25 3.69C.39 6.23.6 9.82 2.9 12.11c1.86 1.86 4.57 2.35 6.89 1.48l9.11 9.11c.39.39 1.02.39 1.41 0l2.3-2.3c.39-.4.39-1.01 0-1.4m-3 1.59-9.46-9.46c-.61.45-1.29.72-2 .82-1.36.2-2.79-.21-3.83-1.25C3.37 9.76 2.93 8.5 3 7.26l3.09 3.09 4.24-4.24L7.24 3c1.26-.05 2.49.39 3.44 1.33a4.47 4.47 0 0 1 1.24 3.96 4.35 4.35 0 0 1-.88 1.96l9.46 9.45z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Troubleshooting
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7">
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  
+  <span class="md-ellipsis">
+    Elsewhere &amp; Reviews
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            Elsewhere &amp; Reviews
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../elsewhere/elsewhere-features/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Features
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../elsewhere/elsewhere-settings/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8">
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m9 4 2.5 5.5L17 12l-5.5 2.5L9 20l-2.5-5.5L1 12l5.5-2.5zm0 4.83L8 11l-2.17 1L8 13l1 2.17L10 13l2.17-1L10 11zM19 9l-1.26-2.74L15 5l2.74-1.25L19 1l1.25 2.75L23 5l-2.75 1.26zm0 14-1.26-2.74L15 19l2.74-1.25L19 15l1.25 2.75L23 19l-2.75 1.26z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Other
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            Other
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../other/other-features/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Features
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../other/other-settings/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9">
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M8 3a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2H3v2h1a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h2v-2H8v-5a2 2 0 0 0-2-2 2 2 0 0 0 2-2V5h2V3m6 0a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h1v2h-1a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2h-2v-2h2v-5a2 2 0 0 1 2-2 2 2 0 0 1-2-2V5h-2V3z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Advanced
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            Advanced
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../advanced/css-customization/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 22A10 10 0 0 1 2 12 10 10 0 0 1 12 2c5.5 0 10 4 10 9a6 6 0 0 1-6 6h-1.8c-.3 0-.5.2-.5.5 0 .1.1.2.1.3.4.5.6 1.1.6 1.7.1 1.4-1 2.5-2.4 2.5m0-18a8 8 0 0 0-8 8 8 8 0 0 0 8 8c.3 0 .5-.2.5-.5 0-.2-.1-.3-.1-.4-.4-.5-.6-1-.6-1.6 0-1.4 1.1-2.5 2.5-2.5H16a4 4 0 0 0 4-4c0-3.9-3.6-7-8-7m-5.5 6c.8 0 1.5.7 1.5 1.5S7.3 13 6.5 13 5 12.3 5 11.5 5.7 10 6.5 10m3-4c.8 0 1.5.7 1.5 1.5S10.3 9 9.5 9 8 8.3 8 7.5 8.7 6 9.5 6m5 0c.8 0 1.5.7 1.5 1.5S15.3 9 14.5 9 13 8.3 13 7.5 13.7 6 14.5 6m3 4c.8 0 1.5.7 1.5 1.5s-.7 1.5-1.5 1.5-1.5-.7-1.5-1.5.7-1.5 1.5-1.5"></path></svg>
+  
+  <span class="md-ellipsis">
+    CSS Customization
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../advanced/api/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M7 7H5a2 2 0 0 0-2 2v8h2v-4h2v4h2V9a2 2 0 0 0-2-2m0 4H5V9h2m7-2h-4v10h2v-4h2a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2m0 4h-2V9h2m6 0v6h1v2h-4v-2h1V9h-1V7h4v2Z"></path></svg>
+  
+  <span class="md-ellipsis">
+    API
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../advanced/community-analytics/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M22 21H2V3h2v16h2v-9h4v9h2V6h4v13h2v-5h4z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Community Analytics
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../advanced/project-structure/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 13H7v5h5v2H5V10h2v1h5zM8 4v2H4V4zm2-2H2v6h8zm10 9v2h-4v-2zm2-2h-8v6h8zm-2 9v2h-4v-2zm2-2h-8v6h8z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Project Structure
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10" checked="">
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19.79 15.41c.95-2.17.95-4.66 0-6.82l-2.74 1.24c.6 1.38.6 2.95.01 4.34zm-4.37-11.2a8.54 8.54 0 0 0-6.83 0l1.24 2.73c1.39-.59 2.96-.59 4.35.01zM4.21 8.58a8.56 8.56 0 0 0 0 6.84l2.74-1.25c-.6-1.38-.6-2.96 0-4.35zm4.38 11.21a8.5 8.5 0 0 0 6.83-.01l-1.24-2.73a5.5 5.5 0 0 1-4.34.01zM12 2a10 10 0 0 1 10 10 10 10 0 0 1-10 10A10 10 0 0 1 2 12 10 10 0 0 1 12 2m0 6a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4"></path></svg>
+  
+  <span class="md-ellipsis">
+    Help
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            Help
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M11 18h2v-2h-2zm1-16A10 10 0 0 0 2 12a10 10 0 0 0 10 10 10 10 0 0 0 10-10A10 10 0 0 0 12 2m0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8m0-14a4 4 0 0 0-4 4h2a2 2 0 0 1 2-2 2 2 0 0 1 2 2c0 2-3 1.75-3 5h2c0-2.25 3-2.5 3-5a4 4 0 0 0-4-4"></path></svg>
+  
+  <span class="md-ellipsis">
+    FAQ
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M11 18h2v-2h-2zm1-16A10 10 0 0 0 2 12a10 10 0 0 0 10 10 10 10 0 0 0 10-10A10 10 0 0 0 12 2m0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8m0-14a4 4 0 0 0-4 4h2a2 2 0 0 1 2-2 2 2 0 0 1 2 2c0 2-3 1.75-3 5h2c0-2.25 3-2.5 3-5a4 4 0 0 0-4-4"></path></svg>
+  
+  <span class="md-ellipsis">
+    FAQ
+    
+  </span>
+  
+
+      </a>
+      
+        
+
+  
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
+      
+        <li class="md-nav__item">
+  <a href="#general-questions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        General Questions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="General Questions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-is-jellyfin-enhanced" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What is Jellyfin Enhanced?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#can-i-customize-the-keyboard-shortcuts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Can I customize the keyboard shortcuts?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#does-this-work-on-mobile-apps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Does this work on mobile apps?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#does-this-work-on-android-tv-or-other-tv-platforms" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Does this work on Android TV or other TV platforms?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#is-this-plugin-affiliated-with-seerr" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Is this plugin affiliated with Seerr?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-do-i-change-the-plugins-language" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How do I change the plugin's language?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#where-is-the-userscript-version" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Where is the userscript version?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#does-je-send-usage-statistics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Does JE send usage statistics?
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#installation-setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Installation &amp; Setup
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Installation &amp; Setup">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#plugin-compatibility" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Plugin Compatibility
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#plugin-not-appearing-after-installation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Plugin not appearing after installation?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scripts-not-loading-after-installation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scripts not loading after installation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#update-not-working-properly" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Update not working properly?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#i-see-permission-denied-errors-in-logs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        I see "permission denied" errors in logs!
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#features-functionality" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Features &amp; Functionality
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Features &amp; Functionality">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#auto-skip-intros-not-working" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Auto-skip intros not working?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#seerr-integration-not-connecting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Seerr integration not connecting?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tags-not-showing-on-posters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tags not showing on posters?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bookmarks-not-syncing-across-devices" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bookmarks not syncing across devices?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-did-changing-an-administrator-default-not-change-my-settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why did changing an administrator default not change my settings?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-should-i-back-up-and-does-uninstalling-erase-my-data" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What should I back up, and does uninstalling erase my data?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pause-screen-not-appearing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pause screen not appearing?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#reviews-elsewhere-or-seerr-icons-not-working" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reviews, Elsewhere, or Seerr icons not working?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#is-remove-from-continue-watching-next-up-destructive" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Is "Remove from Continue Watching / Next Up" destructive?
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#customization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Customization
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Customization">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-do-i-customize-tag-appearance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How do I customize tag appearance?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-do-i-upload-custom-branding" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How do I upload custom branding?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-arent-my-subtitles-using-the-jellyfin-enhanced-styling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why aren't my subtitles using the Jellyfin Enhanced styling?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-do-i-turn-off-subtitle-styling-and-use-jellyfins-own" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How do I turn off subtitle styling and use Jellyfin's own?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#can-i-change-tag-positions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Can I change tag positions?
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Troubleshooting
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Troubleshooting">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-do-i-gather-logs-for-bug-reports" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How do I gather logs for bug reports?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#common-error-messages-and-solutions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common error messages and solutions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#native-home-tabs-and-the-custom-tabs-plugin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Native Home tabs and the Custom Tabs plugin
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-is-catch-up" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What is Catch Up?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#plugin-conflicts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Plugin conflicts?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#performance-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Performance issues?
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#support-community" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Support &amp; Community
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Support &amp; Community">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#where-can-i-get-help" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Where can I get help?
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#related-projects" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Related Projects
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#still-have-questions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Still Have Questions?
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../report-issues/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 8h-2.81c-.45-.8-1.07-1.5-1.82-2L17 4.41 15.59 3l-2.17 2.17a6 6 0 0 0-2.83 0L8.41 3 7 4.41 8.62 6c-.75.5-1.36 1.21-1.81 2H4v2h2.09c-.06.33-.09.66-.09 1v1H4v2h2v1c0 .34.03.67.09 1H4v2h2.81A5.99 5.99 0 0 0 15 20.18c.91-.52 1.67-1.28 2.19-2.18H20v-2h-2.09c.06-.33.09-.66.09-1v-1h2v-2h-2v-1c0-.34-.03-.67-.09-1H20zm-4 7a4 4 0 0 1-4 4 4 4 0 0 1-4-4v-4a4 4 0 0 1 4-4 4 4 0 0 1 4 4zm-2-5v2h-4v-2zm-4 4h4v2h-4z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Report Issues
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../feature-requests/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11h3v2h-3zM1 11h3v2H1zM13 1v3h-2V1zM4.92 3.5l2.13 2.14-1.42 1.41L3.5 4.93zm12.03 2.13 2.12-2.13 1.43 1.43-2.13 2.12zM12 6a6 6 0 0 1 6 6c0 2.22-1.21 4.16-3 5.2V19a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1v-1.8c-1.79-1.04-3-2.98-3-5.2a6 6 0 0 1 6-6m2 15v1a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1v-1zm-3-3h2v-2.13c1.73-.44 3-2.01 3-3.87a4 4 0 0 0-4-4 4 4 0 0 0-4 4c0 1.86 1.27 3.43 3 3.87z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Feature Requests
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../contributing-translations/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12.87 15.07-2.54-2.51.03-.03A17.5 17.5 0 0 0 14.07 6H17V4h-7V2H8v2H1v2h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11zM18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2zm-2.62 7 1.62-4.33L19.12 17z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Contributing Translations
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../support/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M15 4v7H5.17L4 12.17V4zm1-2H3a1 1 0 0 0-1 1v14l4-4h10a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1m5 4h-2v9H6v2a1 1 0 0 0 1 1h11l4 4V7a1 1 0 0 0-1-1"></path></svg>
+  
+  <span class="md-ellipsis">
+    Support + Community
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../other-projects/other-projects/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M22 13.5c0 1.76-1.3 3.22-3 3.46V20a2 2 0 0 1-2 2h-3.8v-.3a2.7 2.7 0 0 0-2.7-2.7c-1.5 0-2.7 1.21-2.7 2.7v.3H4a2 2 0 0 1-2-2v-3.8h.3C3.79 16.2 5 15 5 13.5s-1.21-2.7-2.7-2.7H2V7a2 2 0 0 1 2-2h3.04c.24-1.7 1.7-3 3.46-3s3.22 1.3 3.46 3H17a2 2 0 0 1 2 2v3.04c1.7.24 3 1.7 3 3.46M17 15h1.5a1.5 1.5 0 0 0 1.5-1.5 1.5 1.5 0 0 0-1.5-1.5H17V7h-5V5.5A1.5 1.5 0 0 0 10.5 4 1.5 1.5 0 0 0 9 5.5V7H4v2.12c1.76.68 3 2.38 3 4.38s-1.25 3.7-3 4.38V20h2.12a4.7 4.7 0 0 1 4.38-3c2 0 3.7 1.25 4.38 3H17z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Related Projects
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../about/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M11 9h2V7h-2m1 13c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8m0-18A10 10 0 0 0 2 12a10 10 0 0 0 10 10 10 10 0 0 0 10-10A10 10 0 0 0 12 2m-1 15h2v-6h-2z"></path></svg>
+  
+  <span class="md-ellipsis">
+    About
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc">
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+  
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
+      
+        <li class="md-nav__item">
+  <a href="#general-questions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        General Questions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="General Questions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-is-jellyfin-enhanced" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What is Jellyfin Enhanced?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#can-i-customize-the-keyboard-shortcuts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Can I customize the keyboard shortcuts?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#does-this-work-on-mobile-apps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Does this work on mobile apps?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#does-this-work-on-android-tv-or-other-tv-platforms" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Does this work on Android TV or other TV platforms?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#is-this-plugin-affiliated-with-seerr" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Is this plugin affiliated with Seerr?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-do-i-change-the-plugins-language" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How do I change the plugin's language?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#where-is-the-userscript-version" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Where is the userscript version?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#does-je-send-usage-statistics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Does JE send usage statistics?
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#installation-setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Installation &amp; Setup
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Installation &amp; Setup">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#plugin-compatibility" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Plugin Compatibility
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#plugin-not-appearing-after-installation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Plugin not appearing after installation?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scripts-not-loading-after-installation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scripts not loading after installation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#update-not-working-properly" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Update not working properly?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#i-see-permission-denied-errors-in-logs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        I see "permission denied" errors in logs!
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#features-functionality" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Features &amp; Functionality
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Features &amp; Functionality">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#auto-skip-intros-not-working" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Auto-skip intros not working?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#seerr-integration-not-connecting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Seerr integration not connecting?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tags-not-showing-on-posters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tags not showing on posters?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bookmarks-not-syncing-across-devices" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bookmarks not syncing across devices?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-did-changing-an-administrator-default-not-change-my-settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why did changing an administrator default not change my settings?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-should-i-back-up-and-does-uninstalling-erase-my-data" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What should I back up, and does uninstalling erase my data?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pause-screen-not-appearing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pause screen not appearing?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#reviews-elsewhere-or-seerr-icons-not-working" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reviews, Elsewhere, or Seerr icons not working?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#is-remove-from-continue-watching-next-up-destructive" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Is "Remove from Continue Watching / Next Up" destructive?
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#customization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Customization
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Customization">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-do-i-customize-tag-appearance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How do I customize tag appearance?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-do-i-upload-custom-branding" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How do I upload custom branding?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-arent-my-subtitles-using-the-jellyfin-enhanced-styling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why aren't my subtitles using the Jellyfin Enhanced styling?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-do-i-turn-off-subtitle-styling-and-use-jellyfins-own" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How do I turn off subtitle styling and use Jellyfin's own?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#can-i-change-tag-positions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Can I change tag positions?
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Troubleshooting
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Troubleshooting">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-do-i-gather-logs-for-bug-reports" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How do I gather logs for bug reports?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#common-error-messages-and-solutions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common error messages and solutions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#native-home-tabs-and-the-custom-tabs-plugin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Native Home tabs and the Custom Tabs plugin
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-is-catch-up" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What is Catch Up?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#plugin-conflicts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Plugin conflicts?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#performance-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Performance issues?
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#support-community" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Support &amp; Community
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Support &amp; Community">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#where-can-i-get-help" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Where can I get help?
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#related-projects" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Related Projects
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#still-have-questions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Still Have Questions?
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+  
+    
+    
+    
+    <nav class="je-sectionbar" aria-label="Help pages">
+      <a class="je-sectionbar__area" href="./">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19.79 15.41c.95-2.17.95-4.66 0-6.82l-2.74 1.24c.6 1.38.6 2.95.01 4.34zm-4.37-11.2a8.54 8.54 0 0 0-6.83 0l1.24 2.73c1.39-.59 2.96-.59 4.35.01zM4.21 8.58a8.56 8.56 0 0 0 0 6.84l2.74-1.25c-.6-1.38-.6-2.96 0-4.35zm4.38 11.21a8.5 8.5 0 0 0 6.83-.01l-1.24-2.73a5.5 5.5 0 0 1-4.34.01zM12 2a10 10 0 0 1 10 10 10 10 0 0 1-10 10A10 10 0 0 1 2 12 10 10 0 0 1 12 2m0 6a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4"></path></svg>
+        <span>Help</span>
+      </a>
+      
+        <ul class="je-sectionbar__pages">
+          
+            
+              <li>
+                <a class="je-chip je-chip--active" href="./" aria-current="page">FAQ</a>
+              </li>
+            
+          
+            
+              <li>
+                <a class="je-chip" href="../report-issues/">Report Issues</a>
+              </li>
+            
+          
+            
+              <li>
+                <a class="je-chip" href="../feature-requests/">Feature Requests</a>
+              </li>
+            
+          
+            
+              <li>
+                <a class="je-chip" href="../contributing-translations/">Contributing Translations</a>
+              </li>
+            
+          
+            
+              <li>
+                <a class="je-chip" href="../support/">Support + Community</a>
+              </li>
+            
+          
+            
+              <li>
+                <a class="je-chip" href="../../other-projects/other-projects/">Related Projects</a>
+              </li>
+            
+          
+            
+              <li>
+                <a class="je-chip" href="../../about/">About</a>
+              </li>
+            
+          
+        </ul>
+      
+    </nav>
+  
+  
+                  
+
+
+  
+  
+
+
+<h1 id="frequently-asked-questions">Frequently Asked Questions<a class="headerlink" href="#frequently-asked-questions" title="Permanent link">¶</a></h1>
+<p>Use these answers to find the right settings or troubleshooting guide. For installation failures, start with <a href="../../installation/troubleshooting/">Troubleshooting installation</a>.</p>
+<h2 id="general-questions">General Questions<a class="headerlink" href="#general-questions" title="Permanent link">¶</a></h2>
+<h3 id="what-is-jellyfin-enhanced">What is Jellyfin Enhanced?<a class="headerlink" href="#what-is-jellyfin-enhanced" title="Permanent link">¶</a></h3>
+<p>Jellyfin Enhanced (JE) adds personal controls, playback enhancements, media tags, pages, and optional service integrations to Jellyfin. Start with <a href="../../getting-started/">Quick start</a>, then use <a href="../../getting-started/settings-overview/">Settings Overview</a> to find the administrator and personal controls.</p>
+<h3 id="can-i-customize-the-keyboard-shortcuts">Can I customize the keyboard shortcuts?<a class="headerlink" href="#can-i-customize-the-keyboard-shortcuts" title="Permanent link">¶</a></h3>
+<p>Yes. You can change shortcut combinations for your account, and changes save automatically.</p>
+<ol>
+<li>Open your <strong>Enhanced Panel</strong> with <span class="keys"><kbd class="key-question">?</kbd></span> while you are not typing in an input or text area.</li>
+<li>Select <strong>Shortcuts</strong>.</li>
+<li>Click a binding and press your new combination.</li>
+</ol>
+<p>While the binding is listening, <span class="keys"><kbd class="key-backspace">Backspace</kbd></span> restores the administrator binding and <span class="keys"><kbd class="key-delete">Del</kbd></span> disables that action for you.</p>
+<p>Administrators control shortcut availability under <strong>Keyboard</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Disable Keyboard Shortcuts</strong></td>
+<td>Off</td>
+<td>Stops ordinary JE shortcuts and hides <strong>Shortcuts</strong> in the personal panel.</td>
+</tr>
+</tbody>
+</table>
+<p>You can still open the panel with <span class="keys"><kbd class="key-question">?</kbd></span>, and you cannot change that key. See <a href="../../enhanced/enhanced-settings/">Enhanced settings</a> for the controls and <a href="../../getting-started/settings-overview/">Settings Overview</a> for alternative panel entry points.</p>
+<details class="note">
+<summary>Details</summary>
+<p>Changes save to your account's server-side <code>shortcuts.json</code>. Modifier-only keys are ignored. Duplicate combinations are rejected; player actions also reject keys reserved by Jellyfin's player. A rejected binding flashes red and shakes. Percentage jumping is read-only.</p>
+</details>
+<h3 id="does-this-work-on-mobile-apps">Does this work on mobile apps?<a class="headerlink" href="#does-this-work-on-mobile-apps" title="Permanent link">¶</a></h3>
+<p>To use JE's web controls, your app must load the web interface served by your Jellyfin server. Playback enhancements also need a browser player that JE can control. Check <a href="../../getting-started/compatibility/">Compatibility</a> for your app and playback mode.</p>
+<h3 id="does-this-work-on-android-tv-or-other-tv-platforms">Does this work on Android TV or other TV platforms?<a class="headerlink" href="#does-this-work-on-android-tv-or-other-tv-platforms" title="Permanent link">¶</a></h3>
+<p>Native apps do not receive JE's web controls, but enabled server features can still affect them. Examples include Spoiler Guard, hiding content from supported lists and Home rows, automatic requests, experimental Native Poster Tags, and data synchronized into Jellyfin. Each has its own switches and limits on the screens and clients it supports. See <a href="../../getting-started/compatibility/">Compatibility</a>.</p>
+<h3 id="is-this-plugin-affiliated-with-seerr">Is this plugin affiliated with Seerr?<a class="headerlink" href="#is-this-plugin-affiliated-with-seerr" title="Permanent link">¶</a></h3>
+<p>JE is an independent project that integrates with Seerr. Report JE integration problems through <a href="../report-issues/">JE's bug-report process</a>. If the same problem occurs directly in Seerr, investigate that service separately.</p>
+<h3 id="how-do-i-change-the-plugins-language">How do I change the plugin's language?<a class="headerlink" href="#how-do-i-change-the-plugins-language" title="Permanent link">¶</a></h3>
+<p>You can choose a JE language independently of Jellyfin's language.</p>
+<ol>
+<li>In your personal <strong>Settings</strong>, open <strong>Language Settings</strong> → <strong>Display Language</strong>.</li>
+<li>Select a language. JE saves your preference and reloads the page.</li>
+</ol>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Display Language</strong> (per user)</td>
+<td><strong>Auto</strong></td>
+<td>Follows Jellyfin's language unless your administrator sets a starting language or you choose your own.</td>
+</tr>
+<tr>
+<td><strong>Default UI Language</strong> (admin, <strong>Display</strong>)</td>
+<td><strong>System Default</strong></td>
+<td>Sets the starting JE language for new users; they can change it in their personal settings.</td>
+</tr>
+</tbody>
+</table>
+<details class="info">
+<summary>How it works</summary>
+<p>With <strong>Auto</strong> in your personal settings, JE follows Jellyfin's language and uses English if that translation is unavailable. <strong>Clear Translation Cache</strong> clears this browser's saved translations and reloads. It normally reloads the translation included with your installed plugin. See <a href="../contributing-translations/">Contributing Translations</a> for languages, loading order, and release timing.</p>
+</details>
+<h3 id="where-is-the-userscript-version">Where is the userscript version?<a class="headerlink" href="#where-is-the-userscript-version" title="Permanent link">¶</a></h3>
+<p>The userscript is discontinued. An <a href="https://github.com/n00bcodr/Jellyfin-Enhanced/raw/05dd5b54802f149e45c76102dabf6235aaf7a5fb/jf_enhanced.user.js">archived userscript</a> remains for the old basic shortcut implementation; it is not a substitute for the current plugin.</p>
+<h3 id="does-je-send-usage-statistics">Does JE send usage statistics?<a class="headerlink" href="#does-je-send-usage-statistics" title="Permanent link">¶</a></h3>
+<p>Usage reporting is opt-in and off by default.</p>
+<ol>
+<li>As an administrator, open <strong>Admin</strong> → <strong>Usage Statistics</strong>.</li>
+<li>Turn on <strong>Share Anonymous Usage Statistics</strong> if you want to participate.</li>
+<li>Use <strong>Preview</strong> to see what you would share before you save.</li>
+</ol>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Share Anonymous Usage Statistics</strong></td>
+<td>Off</td>
+<td>Enables optional analytics reporting.</td>
+</tr>
+<tr>
+<td><strong>Feature toggle states (on/off only)</strong></td>
+<td>On</td>
+<td>Includes feature-switch states and selected text settings when reporting is enabled.</td>
+</tr>
+<tr>
+<td><strong>Feature usage counts</strong></td>
+<td>On</td>
+<td>Includes usage counts when reporting is enabled.</td>
+</tr>
+<tr>
+<td><strong>Data file sizes (bytes only, never contents)</strong></td>
+<td>On</td>
+<td>Includes only the total size of the custom branding directory, without file names or contents, when reporting is enabled.</td>
+</tr>
+<tr>
+<td><strong>Reporting interval (days)</strong></td>
+<td>15</td>
+<td>Sets the interval, clamped to 7–30 days.</td>
+</tr>
+</tbody>
+</table>
+<details class="info">
+<summary>How it works</summary>
+<p>Reports always include an anonymous installation ID, plugin and Jellyfin versions, and the Jellyfin build target, even with all three categories off. Turning reporting on schedules a report right away. Turning it off asks the analytics service to exclude your registered installation from public statistics.</p>
+</details>
+<p>Optional analytics is separate from requests needed for enabled integrations, assets, or hosted documentation. See <a href="../../advanced/community-analytics/">Community Analytics</a> for the full privacy and reporting details.</p>
+<h2 id="installation-setup">Installation &amp; Setup<a class="headerlink" href="#installation-setup" title="Permanent link">¶</a></h2>
+<h3 id="plugin-compatibility">Plugin Compatibility<a class="headerlink" href="#plugin-compatibility" title="Permanent link">¶</a></h3>
+<p>See <a href="../../getting-started/compatibility/">Compatibility</a> for Jellyfin versions, clients, layouts, companion plugins, and integration requirements. Use the shared manifest in the <a href="../../installation/installation/">Installation Guide</a> to get the matching server build.</p>
+<h3 id="plugin-not-appearing-after-installation">Plugin not appearing after installation?<a class="headerlink" href="#plugin-not-appearing-after-installation" title="Permanent link">¶</a></h3>
+<p>Check whether the server plugin is loaded before diagnosing the panel. Follow <a href="../../installation/troubleshooting/#plugin-not-appearing-after-installation">Plugin Not Appearing After Installation</a>.</p>
+<h3 id="scripts-not-loading-after-installation">Scripts not loading after installation<a class="headerlink" href="#scripts-not-loading-after-installation" title="Permanent link">¶</a></h3>
+<p>Check whether the page includes JE's script and whether the scripts load. Follow <a href="../../installation/troubleshooting/#scripts-not-loading">Scripts Not Loading</a>.</p>
+<details class="note">
+<summary>Details</summary>
+<p>Normal injection is not repaired simply by running the startup task.</p>
+</details>
+<h3 id="update-not-working-properly">Update not working properly?<a class="headerlink" href="#update-not-working-properly" title="Permanent link">¶</a></h3>
+<p>Compare the running version and build target, then check client and proxy caching. Follow <a href="../../installation/troubleshooting/#update-not-working">Update Not Working</a>.</p>
+<h3 id="i-see-permission-denied-errors-in-logs">I see "permission denied" errors in logs!<a class="headerlink" href="#i-see-permission-denied-errors-in-logs" title="Permanent link">¶</a></h3>
+<p>Find the path and operation in the full error, then use <a href="../../installation/troubleshooting/#permission-issues">Permission Issues</a>.</p>
+<details class="note">
+<summary>Details</summary>
+<p>Normal injection needs no writable web directory. User data, branding, caches, logs, and old-tag cleanup have different storage requirements.</p>
+</details>
+<h2 id="features-functionality">Features &amp; Functionality<a class="headerlink" href="#features-functionality" title="Permanent link">¶</a></h2>
+<h3 id="auto-skip-intros-not-working">Auto-skip intros not working?<a class="headerlink" href="#auto-skip-intros-not-working" title="Permanent link">¶</a></h3>
+<p>Check that the item has Intro or Outro segments, then enable the matching auto-skip control.</p>
+<div class="admonition note">
+<p class="admonition-title">Required</p>
+<p>JE reads Jellyfin's stored Intro and Outro media segments; it does not detect them. A segment provider such as Intro Skipper must supply usable start and end boundaries.</p>
+</div>
+<ol>
+<li>Check that the item has segments before changing JE settings. The details below explain how to check them with a request.</li>
+<li>In the Enhanced panel's <strong>Auto-Skip Settings</strong>, enable the relevant control.</li>
+</ol>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Automatically Skip Intro</strong></td>
+<td>Off</td>
+<td>Seeks to the end of a stored Intro segment.</td>
+</tr>
+<tr>
+<td><strong>Automatically Skip Outro</strong></td>
+<td>Off</td>
+<td>Seeks to the end of a stored Outro segment.</td>
+</tr>
+</tbody>
+</table>
+<p>See <a href="../../enhanced/enhanced-features/#playback-controls">Playback controls</a> for the workflow and <a href="../../enhanced/enhanced-settings/">Enhanced settings</a> for administrator defaults.</p>
+<details class="note">
+<summary>Details</summary>
+<p>An authenticated request to Jellyfin's <code>/MediaSegments/{itemId}</code> can confirm the item's segments; a signed-out request may return 401. Do not share API keys in reports. JE does not need a visible native skip button or English button text.</p>
+<p>Direct play/stream and HLS support the intended local seek. Progressive transcodes can stall or fail to seek ahead, and this local seek does not synchronize a SyncPlay group. Seeking backward into a skipped segment suppresses immediate re-skipping.</p>
+</details>
+<h3 id="seerr-integration-not-connecting">Seerr integration not connecting?<a class="headerlink" href="#seerr-integration-not-connecting" title="Permanent link">¶</a></h3>
+<p>Test the connection from Jellyfin first, then check account import and permissions separately.</p>
+<ol>
+<li>In administrator <strong>Seerr</strong>, configure <strong>Enable Seerr integration</strong>, <strong>Seerr URL(s) (One per line)</strong>, and <strong>Seerr API Key</strong>.</li>
+<li>Select <strong>Test</strong> beside the key.</li>
+<li>For a linked account, use <strong>Permission Audit</strong> → <strong>Run Audit</strong> to check permissions needed by enabled features.</li>
+</ol>
+<div class="admonition note">
+<p class="admonition-title">Required</p>
+<p>Jellyfin's server must be able to reach Seerr. In a container, <code>localhost</code> means that container.</p>
+</div>
+<p>Use <a href="../../seerr/seerr-settings/">Seerr settings</a> for setup, defaults, sign-in/import instructions, and connection diagnosis; use <a href="../../seerr/permission-audit/">Permission Audit</a> for authorization checks.</p>
+<p>These screenshots show external account management. They do not show JE feature permissions:</p>
+<p><a class="glightbox" data-type="image" data-width="100%" data-height="auto" href="../../images/users-with-access.png" data-desc-position="bottom"><img alt="An example Seerr list of imported Jellyfin accounts" src="../../images/users-with-access.png"></a>
+<em>An imported account still needs the permissions required by the enabled features.</em></p>
+<p><a class="glightbox" data-type="image" data-width="100%" data-height="auto" href="../../images/users-no-access.png" data-desc-position="bottom"><img alt="An example Seerr dialog for selecting Jellyfin accounts to import" src="../../images/users-no-access.png"></a>
+<em>Manual import is an alternative when automatic import is not enabled; this dialog does not demonstrate access denial.</em></p>
+<h3 id="tags-not-showing-on-posters">Tags not showing on posters?<a class="headerlink" href="#tags-not-showing-on-posters" title="Permanent link">¶</a></h3>
+<p>Open <strong>UI Settings</strong> in the Enhanced panel, enable the tag groups you want, and check the item's metadata; your saved choices override administrator defaults. See <a href="../../enhanced/tags/">Tags &amp; Badges</a> for setup, scopes, and native posters, and the <a href="../../enhanced/tags/#rating-tags">score sources and fallback rules</a> for season/episode differences between server-cache, batch, and player paths. For stale data, use <a href="../../installation/troubleshooting/#stale-caches-or-missing-assets">targeted cache troubleshooting</a>.</p>
+<h3 id="bookmarks-not-syncing-across-devices">Bookmarks not syncing across devices?<a class="headerlink" href="#bookmarks-not-syncing-across-devices" title="Permanent link">¶</a></h3>
+<p>Sign in with the same Jellyfin account and reload the other device. JE saves bookmarks, main Enhanced preferences, and shortcut overrides on the server for that account.</p>
+<ol>
+<li>Reload the page to pick up changes to bookmarks and other saved data. Reopen the personal panel to reload your main settings.</li>
+<li>If a bookmark still does not save or appear, check its failed request and the server log for storage errors.</li>
+</ol>
+<p>See <a href="../../enhanced/enhanced-features/#smart-bookmarks">Smart Bookmarks</a> for bookmarks and <a href="../../getting-started/settings-overview/">Settings Overview</a> for user-data storage and backups.</p>
+<details class="info">
+<summary>How it works</summary>
+<p>Reopening the personal panel reloads your main settings from <code>settings.json</code>. Browser storage also holds caches and local UI state.</p>
+</details>
+<h3 id="why-did-changing-an-administrator-default-not-change-my-settings">Why did changing an administrator default not change my settings?<a class="headerlink" href="#why-did-changing-an-administrator-default-not-change-my-settings" title="Permanent link">¶</a></h3>
+<p>Saved personal preferences take precedence over administrator defaults. Ordinary administrator saves do not continually replace your choices.</p>
+<p>To deliberately replace existing preferences:</p>
+<ol>
+<li>Save the desired administrator defaults.</li>
+<li>Use administrator <strong>Overview</strong> → <strong>Quick Actions</strong> → <strong>Overwrite everyone's personal settings</strong>.</li>
+</ol>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>This action replaces personal choices. Back up first and have users reload their clients afterward. See <a href="../../getting-started/settings-overview/">Settings Overview</a> for its scope and recovery instructions.</p>
+</div>
+<details class="note">
+<summary>Details</summary>
+<p>The action also saves the current form. It replaces <code>settings.json</code> for known user directories, resets Hidden Content settings while keeping hidden items, and resets existing Spoiler Guard preference overrides while keeping their lists. It does not reset <code>shortcuts.json</code>.</p>
+</details>
+<h3 id="what-should-i-back-up-and-does-uninstalling-erase-my-data">What should I back up, and does uninstalling erase my data?<a class="headerlink" href="#what-should-i-back-up-and-does-uninstalling-erase-my-data" title="Permanent link">¶</a></h3>
+<p>Back up the plugin XML configuration and JE's data, including personal data, shared records, and uploaded branding. Uninstalling JE leaves your saved user data in place.</p>
+<p>Follow <a href="../../getting-started/settings-overview/">Settings Overview</a> for storage, backup, and restoration instructions.</p>
+<details class="note">
+<summary>Details</summary>
+<p>Back up the plugin XML configuration and JE's data, including personal <code>settings.json</code>, <code>shortcuts.json</code>, <code>bookmark.json</code>, <code>elsewhere.json</code>, <code>hidden-content.json</code>, and <code>spoilerblur.json</code>. User directories live beneath <code>&lt;PluginsPath&gt;/configurations/Jellyfin.Plugin.JellyfinEnhanced/&lt;lowercase-user-id-without-hyphens&gt;/</code>.</p>
+<p>Keep shared records, uploaded branding, and <code>native-poster-tags.key</code> too. You can find <code>custom_branding</code> inside a folder beside the plugin XML configuration file, with the same name minus <code>.xml</code>. JE can download <code>cdn-cache</code> again. Keep <code>native-poster-tags.key</code> so your restored server can still use existing personalized poster links; losing it can leave clients showing original artwork until they refresh metadata.</p>
+<p>Uninstalling JE attempts to remove any old script added to the web files and leaves your saved user data in place. Deleting a Jellyfin account can also leave its personal settings, reviews, and activity records behind.</p>
+</details>
+<h3 id="pause-screen-not-appearing">Pause screen not appearing?<a class="headerlink" href="#pause-screen-not-appearing" title="Permanent link">¶</a></h3>
+<p>Turn on your personal pause screen and stop interacting with the player for the configured delay.</p>
+<ol>
+<li>Open personal <strong>Settings</strong> → <strong>Playback Settings</strong> and make sure <strong>Custom Pause Screen</strong> is on.</li>
+<li>Pause a video in a browser player JE can control.</li>
+<li>Stop interacting for the configured delay. Fullscreen and theater mode are optional.</li>
+</ol>
+<p>Personal controls:</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Custom Pause Screen</strong></td>
+<td>On</td>
+<td>Shows the overlay during paused browser playback.</td>
+</tr>
+<tr>
+<td><strong>Delay before showing (seconds):</strong></td>
+<td>5</td>
+<td>Sets how long you must stop interacting before the overlay appears.</td>
+</tr>
+</tbody>
+</table>
+<details class="note">
+<summary>Details</summary>
+<p>Moving the mouse, touching the screen, or pressing a key postpones the overlay. If you dismiss it, it stays hidden until you resume and pause again.</p>
+</details>
+<p>See <a href="../../enhanced/enhanced-features/#playback-controls">Playback controls</a> and <a href="../../advanced/css-customization/">CSS Customization</a> for use and styling.</p>
+<h3 id="reviews-elsewhere-or-seerr-icons-not-working">Reviews, Elsewhere, or Seerr icons not working?<a class="headerlink" href="#reviews-elsewhere-or-seerr-icons-not-working" title="Permanent link">¶</a></h3>
+<p>Identify what failed before treating it as a TMDB problem:</p>
+<ul>
+<li>TMDB-backed reviews or availability: check the configured JE TMDB key, provider IDs, the relevant proxy request, and server connectivity. See <a href="../../elsewhere/elsewhere-settings/">Elsewhere &amp; Reviews Settings</a>.</li>
+<li>Seerr search or requests: check service connectivity, account linking, and permissions through <a href="../../seerr/seerr-settings/">Seerr settings</a>.</li>
+<li>Stored poster ratings: check Jellyfin rating metadata using <a href="../../enhanced/tags/">Media tags</a>.</li>
+<li>Static icons: check local CDN asset requests using <a href="../../installation/troubleshooting/#cdn-connectivity-and-limits">installation troubleshooting</a>.</li>
+<li>Local user-written reviews: check the JE review request and server log; these are separate from fetching external TMDB reviews. See <a href="../../elsewhere/elsewhere-features/#user-reviews">User Reviews</a>.</li>
+</ul>
+<h3 id="is-remove-from-continue-watching-next-up-destructive">Is "Remove from Continue Watching / Next Up" destructive?<a class="headerlink" href="#is-remove-from-continue-watching-next-up-destructive" title="Permanent link">¶</a></h3>
+<p>It preserves playback progress and watched state.</p>
+<ol>
+<li>Enable your personal <strong>Add Remove from Continue Watching &amp; Next Up Buttons</strong> preference.</li>
+<li>For lasting row filtering, your administrator must enable <strong>Enable "Remove from Continue Watching"</strong> or <strong>Enable Hidden Content</strong>.</li>
+<li>Enable your personal <strong>Enable Content Hiding</strong> and the filter for the affected row.</li>
+</ol>
+<p>Administrator settings:</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Enable "Remove from Continue Watching"</strong></td>
+<td>Off</td>
+<td>Turns on server row filtering and sets the starting value of the personal removal-button preference.</td>
+</tr>
+<tr>
+<td><strong>Enable Hidden Content</strong></td>
+<td>Off</td>
+<td>Enables the broader Hidden Content feature and its management page; row removal works without this switch.</td>
+</tr>
+</tbody>
+</table>
+<p>Personal settings start with administrator defaults; you can change them for your account:</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Add Remove from Continue Watching &amp; Next Up Buttons</strong></td>
+<td>Off</td>
+<td>Adds the removal controls to item menus, even with both server switches off.</td>
+</tr>
+<tr>
+<td><strong>Enable Content Hiding</strong></td>
+<td>On</td>
+<td>Enables your hidden-item filters.</td>
+</tr>
+<tr>
+<td><strong>Filter Continue Watching</strong></td>
+<td>On</td>
+<td>Hides removed items from this row.</td>
+</tr>
+<tr>
+<td><strong>Filter Next Up</strong></td>
+<td>On</td>
+<td>Hides removed items from this row.</td>
+</tr>
+</tbody>
+</table>
+<p>On the <strong>Hidden Content</strong> management page, Continue Watching-only entries use <strong>Add back to Continue Watching</strong>; other scopes use <strong>Unhide</strong>.</p>
+<p>See <a href="../../enhanced/enhanced-features/#content-management">Content management</a> and <a href="../../enhanced/enhanced-settings/">Enhanced settings</a> for scopes, prerequisites, and restoration.</p>
+<details class="info">
+<summary>How it works</summary>
+<p>Starting playback clears a matching Continue Watching-only hide. A combined home-sections hide becomes Next Up-only; Next Up-only and global hides remain.</p>
+</details>
+<h2 id="customization">Customization<a class="headerlink" href="#customization" title="Permanent link">¶</a></h2>
+<h3 id="how-do-i-customize-tag-appearance">How do I customize tag appearance?<a class="headerlink" href="#how-do-i-customize-tag-appearance" title="Permanent link">¶</a></h3>
+<p>Use the built-in tag settings first. For selectors and CSS examples, see <a href="../../enhanced/tags/">Media tags</a> and <a href="../../advanced/css-customization/">CSS Customization</a>.</p>
+<h3 id="how-do-i-upload-custom-branding">How do I upload custom branding?<a class="headerlink" href="#how-do-i-upload-custom-branding" title="Permanent link">¶</a></h3>
+<p>Upload images to replace Jellyfin's branding assets.</p>
+<ol>
+<li>As an administrator, open <strong>Jellyfin Enhanced</strong> → <strong>Extras</strong> → <strong>Custom Image Assets</strong>.</li>
+<li>Select or drop an image into a slot.</li>
+<li>Check its preview, reported dimensions, and upload status.</li>
+<li>Refresh the web client.</li>
+</ol>
+<table>
+<thead>
+<tr>
+<th>Asset slot</th>
+<th>Recommended dimensions</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Icon Transparent</strong></td>
+<td>536×536 pixels</td>
+</tr>
+<tr>
+<td><strong>Favicon</strong></td>
+<td>256×256 pixels</td>
+</tr>
+<tr>
+<td><strong>Banner Dark</strong></td>
+<td>1302×378 pixels</td>
+</tr>
+<tr>
+<td><strong>Banner Light</strong></td>
+<td>1302×378 pixels</td>
+</tr>
+<tr>
+<td><strong>Apple Touch Icon</strong></td>
+<td>180×180 pixels</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition note">
+<p class="admonition-title">Upload requirements</p>
+<p>Use an image file no larger than 10 MiB in a format suitable for the slot. You need administrator access, and Jellyfin must be able to write to the branding folder.</p>
+</div>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>Uploads and deletions persist immediately. They do not wait for a configuration save.</p>
+</div>
+<p>The separate URL-based override has these administrator settings:</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Enable Splash Screen Override</strong></td>
+<td>Off</td>
+<td>Shows the configured logo on a temporary black loading overlay until Jellyfin is ready or the 20-second timeout expires.</td>
+</tr>
+<tr>
+<td><strong>Splash Screen Image URL</strong></td>
+<td><code>/web/assets/img/banner-light.png</code></td>
+<td>Selects the splash image when the override is enabled.</td>
+</tr>
+</tbody>
+</table>
+<p>See <a href="../../other/other-settings/">Other settings</a> for formats and limits.</p>
+<details class="info">
+<summary>How it works</summary>
+<p>Slots initially have no uploaded file. JE saves each image in its original format without converting it. JE's image replacements are enabled by default (<code>DisableBrandingMiddleware=false</code>); File Transformation is not required.</p>
+</details>
+<h3 id="why-arent-my-subtitles-using-the-jellyfin-enhanced-styling">Why aren't my subtitles using the Jellyfin Enhanced styling?<a class="headerlink" href="#why-arent-my-subtitles-using-the-jellyfin-enhanced-styling" title="Permanent link">¶</a></h3>
+<p>JE can style text subtitles drawn by Jellyfin's web player. For <strong>Position</strong>, select <strong>Custom</strong> in Jellyfin's subtitle settings so Jellyfin draws the captions instead of your browser.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>These controls cannot style subtitles burned into the video, image-based tracks, or subtitles drawn by a different player.</p>
+</div>
+<p>See <a href="../../enhanced/enhanced-features/#playback-controls">Playback controls</a> for supported playback modes and <a href="../../getting-started/compatibility/">Compatibility</a> for client limits.</p>
+<h3 id="how-do-i-turn-off-subtitle-styling-and-use-jellyfins-own">How do I turn off subtitle styling and use Jellyfin's own?<a class="headerlink" href="#how-do-i-turn-off-subtitle-styling-and-use-jellyfins-own" title="Permanent link">¶</a></h3>
+<p>Enable <strong>Disable Custom Styles</strong> to use Jellyfin's own subtitle styles.</p>
+<ol>
+<li>Open personal <strong>Settings</strong> → <strong>Subtitle Settings</strong>.</li>
+<li>Turn on <strong>Disable Custom Styles</strong> and reload.</li>
+</ol>
+<p>Personal setting:</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Disable Custom Styles</strong></td>
+<td>Off</td>
+<td>Stops JE's subtitle styling so Jellyfin's own styles apply.</td>
+</tr>
+</tbody>
+</table>
+<p>Administrators set the starting preference under <strong>Playback</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Disable Custom Subtitle Styles by default</strong></td>
+<td>Off</td>
+<td>Starts users without saved preferences with JE's subtitle styling disabled.</td>
+</tr>
+</tbody>
+</table>
+<p>Saved personal choices take precedence over the administrator default. See <a href="../../enhanced/enhanced-settings/">Enhanced settings</a> for the full subtitle controls, or <a href="../../getting-started/settings-overview/">Settings Overview</a> if you intend to overwrite preferences for everyone.</p>
+<h3 id="can-i-change-tag-positions">Can I change tag positions?<a class="headerlink" href="#can-i-change-tag-positions" title="Permanent link">¶</a></h3>
+<p>Yes. Open personal <strong>Settings</strong> and choose the position for the relevant tag type. See <a href="../../enhanced/tags/">Media tags</a> for controls and <a href="../../advanced/css-customization/">CSS Customization</a> for advanced styling.</p>
+<h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">¶</a></h2>
+<h3 id="how-do-i-gather-logs-for-bug-reports">How do I gather logs for bug reports?<a class="headerlink" href="#how-do-i-gather-logs-for-bug-reports" title="Permanent link">¶</a></h3>
+<p>Reproduce the problem once and note the time. This helps you match browser and server log entries.</p>
+<ol>
+<li>Open developer tools with <span class="keys"><kbd class="key-f12">F12</kbd></span> and select <strong>Console</strong>. Filter for <code>Jellyfin Enhanced</code> and copy the relevant error, stack trace, and nearby messages that explain it.</li>
+<li>In <strong>Network</strong>, filter for <code>JellyfinEnhanced</code> and reproduce the failure. Record the request path, method, status code, and useful response body.</li>
+<li>Open Jellyfin's server logs from its administration tools or configured log directory. Include the relevant error and nearby lines rather than an unrelated full log. The details below explain which JE logs to look for.</li>
+</ol>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>Before sharing logs, screenshots, or network exports, redact API keys, access tokens, cookies, passwords, private URLs, usernames, and other personal information.</p>
+</div>
+<p>Collect evidence promptly. Then follow <a href="../report-issues/">Report issues</a> for the environment details to include.</p>
+<details class="note">
+<summary>Details</summary>
+<p>Look for the <code>Jellyfin.Plugin.JellyfinEnhanced</code> logger category and the dedicated <code>JellyfinEnhanced_yyyy-mm-dd.log</code> file. JE's dedicated logs are in Jellyfin's configured log directory; its messages also appear in Jellyfin's main log.</p>
+<p>When JE starts, it removes dedicated log files created more than three days ago. It checks the file's creation time, not the date in its name, and only performs this cleanup when starting.</p>
+<p>A proxy login page returned instead of JSON or a script is useful evidence. Leave <strong>Dev Mode</strong> off unless you need to check which individual script fails to load. See <a href="../../installation/troubleshooting/#scripts-not-loading">Scripts Not Loading</a> for that diagnostic option.</p>
+</details>
+<h3 id="common-error-messages-and-solutions">Common error messages and solutions<a class="headerlink" href="#common-error-messages-and-solutions" title="Permanent link">¶</a></h3>
+<table>
+<thead>
+<tr>
+<th>Error or symptom</th>
+<th>Next step</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>BUILD/HOST MISMATCH</code></td>
+<td><a href="../../installation/troubleshooting/#wrong-plugin-build">Install the matching build</a>.</td>
+</tr>
+<tr>
+<td><code>index.html</code> access denied</td>
+<td><a href="../../installation/troubleshooting/#permission-issues">Check whether JE was removing an old script or writing a new one</a>.</td>
+</tr>
+<tr>
+<td>Plugin loaded but panel missing</td>
+<td><a href="../../installation/troubleshooting/#scripts-not-loading">Inspect HTML and client requests</a>.</td>
+</tr>
+<tr>
+<td>Bookmarks/settings fail to save</td>
+<td><a href="../../installation/troubleshooting/#permission-issues">Check the failing storage operation</a>.</td>
+</tr>
+<tr>
+<td>Seerr search/account/permission failure</td>
+<td><a href="../../seerr/seerr-settings/">Check Seerr setup</a> and <a href="../../seerr/permission-audit/">Permission Audit</a>.</td>
+</tr>
+<tr>
+<td>Calendar or Requests is blank</td>
+<td><a href="../../arr/troubleshooting-support/">Use *arr troubleshooting</a>, including source and proxy checks.</td>
+</tr>
+<tr>
+<td>Administrator tabs do nothing</td>
+<td><a href="../../installation/troubleshooting/#admin-config-page-tabs-not-switching">Compare local and proxy access</a>.</td>
+</tr>
+<tr>
+<td>Tags or translation text are stale</td>
+<td><a href="../../installation/troubleshooting/#stale-caches-or-missing-assets">Target the affected cache</a>.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="native-home-tabs-and-the-custom-tabs-plugin">Native Home tabs and the Custom Tabs plugin<a class="headerlink" href="#native-home-tabs-and-the-custom-tabs-plugin" title="Permanent link">¶</a></h3>
+<p>JE can show <strong>Bookmarks</strong>, <strong>Hidden Content</strong>, <strong>Requests</strong>, <strong>Calendar</strong>, <strong>Recommendations</strong>, <strong>Activity</strong>, and <strong>Catch Up</strong> as native Home tabs without a companion plugin.</p>
+<ol>
+<li>Choose either a native Home tab or Custom Tabs for each JE page using <a href="../../getting-started/pages-and-tabs/">JE Pages &amp; Tabs</a>.</li>
+<li>If you let JE add a Custom Tabs entry, remove any duplicate you added yourself.</li>
+<li>If you choose Plugin Pages, restart Jellyfin when using an older version or when updating its entries fails.</li>
+</ol>
+<p>Check <a href="../../getting-started/compatibility/">Compatibility</a> for layout and companion requirements. If detection fails, follow <a href="../../installation/troubleshooting/#plugin-detection-issue">Plugin detection issue</a>.</p>
+<details class="info">
+<summary>How it works</summary>
+<p>Native JE tabs can coexist with external Custom Tabs; JE tabs follow those tabs. Generated links include a current numeric index and stable identity, such as <code>#/home?tab=4&amp;jeTab=bookmarks</code> or <code>jeTab=catchup</code>.</p>
+<p>With a compatible Plugin Pages 3.0+ version, JE tries to update its entries when you save. Restart Jellyfin if you use an older version or that update fails. <strong>Add the Custom Tabs entry for me</strong> works when JE supports your Custom Tabs configuration.</p>
+</details>
+<h3 id="what-is-catch-up">What is Catch Up?<a class="headerlink" href="#what-is-catch-up" title="Permanent link">¶</a></h3>
+<p><strong>Catch Up</strong> is a page for marking titles watched, dismissing them, or adding them to your watchlist.</p>
+<ol>
+<li>As an administrator, enable it under <strong>Pages</strong> → <strong>Catch Up</strong> and choose its placement.</li>
+<li>Open it from the chosen location. For Plugin Pages, use its registered entry.</li>
+</ol>
+<p>Catch Up can record activity. You need administrator access to view its activity feed and summary. See <a href="../../enhanced/enhanced-features/">Enhanced features</a> for the workflow, <a href="../../enhanced/enhanced-settings/">Enhanced settings</a> for settings and logging limits, and <a href="../../getting-started/pages-and-tabs/">JE Pages &amp; Tabs</a> for navigation.</p>
+<details class="note">
+<summary>Details</summary>
+<p>A native link uses <code>jeTab=catchup</code>.</p>
+</details>
+<h3 id="plugin-conflicts">Plugin conflicts?<a class="headerlink" href="#plugin-conflicts" title="Permanent link">¶</a></h3>
+<p>Test with a clean browser profile, then check custom CSS, browser extensions, and companion plugins one at a time.</p>
+<details class="note">
+<summary>Details</summary>
+<p>The <strong>Enable Splash Screen Override</strong> help warns that it might cause strange behavior with Media Bar. This is a conditional warning, not a guarantee that the plugins always conflict.</p>
+</details>
+<p>For nonworking administrator tabs, compare local/proxied access through <a href="../../installation/troubleshooting/#admin-config-page-tabs-not-switching">installation troubleshooting</a>. Include the theme and relevant companion versions in a <a href="../report-issues/">bug report</a>.</p>
+<h3 id="performance-issues">Performance issues?<a class="headerlink" href="#performance-issues" title="Permanent link">¶</a></h3>
+<p>Find where the delay happens before changing unrelated settings.</p>
+<ol>
+<li>Check whether the browser takes a long time to display the page, a request waits for a response, or a server task takes too long.</li>
+<li>Compare with a clean profile and temporarily disable the affected feature to narrow it down.</li>
+<li>Check request timing and server logs.</li>
+</ol>
+<p>For tags, check cache mode and exclusions in <a href="../../enhanced/tags/">Media tags</a>. For service pages, use <a href="../../seerr/seerr-settings/">Seerr settings</a> or <a href="../../arr/troubleshooting-support/">*arr troubleshooting</a>. Routine browser-cache clearing is not a performance fix.</p>
+<h2 id="support-community">Support &amp; Community<a class="headerlink" href="#support-community" title="Permanent link">¶</a></h2>
+<h3 id="where-can-i-get-help">Where can I get help?<a class="headerlink" href="#where-can-i-get-help" title="Permanent link">¶</a></h3>
+<p>Use <a href="../support/">Support &amp; Community</a> for questions, <a href="../report-issues/">Report issues</a> for reproducible bugs, <a href="../feature-requests/">Feature Requests</a> for proposals, and <a href="../contributing-translations/">Contributing Translations</a> for language work.</p>
+<h2 id="related-projects">Related Projects<a class="headerlink" href="#related-projects" title="Permanent link">¶</a></h2>
+<p>See <a href="../../other-projects/other-projects/">Related Projects</a> for other projects and <a href="../../getting-started/compatibility/">Compatibility</a> for companion plugins.</p>
+<h2 id="still-have-questions">Still Have Questions?<a class="headerlink" href="#still-have-questions" title="Permanent link">¶</a></h2>
+<p>Search the <a href="../support/">support channels</a> and existing issues first. When asking for help, include the versions, client, reproduction steps, and relevant redacted logs described in <a href="../report-issues/">Report issues</a>.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden="">
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"></path></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer">
+        
+          
+          <a href="../../advanced/project-structure/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Project Structure (Advanced)">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M15.41 16.58 10.83 12l4.58-4.59L14 6l-6 6 6 6z"></path></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous · Advanced
+              </span>
+              <div class="md-ellipsis">
+                Project Structure
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../report-issues/" class="md-footer__link md-footer__link--next" aria-label="Next: Report Issues (Help)">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next · Help
+              </span>
+              <div class="md-ellipsis">
+                Report Issues
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M8.59 16.58 13.17 12 8.59 7.41 10 6l6 6-6 6z"></path></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  <p class="je-keyhint">
+    Press <kbd>/</kbd> to search, <kbd>P</kbd> or <kbd>N</kbd> for the previous or next page
+  </p>
+  
+    <div class="md-copyright__highlight">
+      Copyright ©2026 n00bcodr. Made with 💜 for Jellyfin and the community
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+    <a href="https://github.com/n00bcodr/Jellyfin-Enhanced" target="_blank" rel="noopener" title="GitHub Repository" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"></path></svg>
+    </a>
+  
+    
+    
+    
+    
+    <a href="https://discord.gg/EYNFf7y4CG" target="_blank" rel="noopener" title="Jellyfin Community Discord - Jellyfin Enhanced Channel" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M492.5 69.8c-.2-.3-.4-.6-.8-.7-38.1-17.5-78.4-30-119.7-37.1-.4-.1-.8 0-1.1.1s-.6.4-.8.8c-5.5 9.9-10.5 20.2-14.9 30.6-44.6-6.8-89.9-6.8-134.4 0-4.5-10.5-9.5-20.7-15.1-30.6-.2-.3-.5-.6-.8-.8s-.7-.2-1.1-.2C162.5 39 122.2 51.5 84.1 69c-.3.1-.6.4-.8.7C7.1 183.5-13.8 294.6-3.6 404.2c0 .3.1.5.2.8s.3.4.5.6c44.4 32.9 94 58 146.8 74.2.4.1.8.1 1.1 0s.7-.4.9-.7c11.3-15.4 21.4-31.8 30-48.8.1-.2.2-.5.2-.8s0-.5-.1-.8-.2-.5-.4-.6-.4-.3-.7-.4c-15.8-6.1-31.2-13.4-45.9-21.9-.3-.2-.5-.4-.7-.6s-.3-.6-.3-.9 0-.6.2-.9.3-.5.6-.7c3.1-2.3 6.2-4.7 9.1-7.1.3-.2.6-.4.9-.4s.7 0 1 .1c96.2 43.9 200.4 43.9 295.5 0 .3-.1.7-.2 1-.2s.7.2.9.4c2.9 2.4 6 4.9 9.1 7.2.2.2.4.4.6.7s.2.6.2.9-.1.6-.3.9-.4.5-.6.6c-14.7 8.6-30 15.9-45.9 21.8-.2.1-.5.2-.7.4s-.3.4-.4.7-.1.5-.1.8.1.5.2.8c8.8 17 18.8 33.3 30 48.8.2.3.6.6.9.7s.8.1 1.1 0c52.9-16.2 102.6-41.3 147.1-74.2.2-.2.4-.4.5-.6s.2-.5.2-.8c12.3-126.8-20.5-236.9-86.9-334.5zm-302 267.7c-29 0-52.8-26.6-52.8-59.2s23.4-59.2 52.8-59.2c29.7 0 53.3 26.8 52.8 59.2 0 32.7-23.4 59.2-52.8 59.2m195.4 0c-29 0-52.8-26.6-52.8-59.2s23.4-59.2 52.8-59.2c29.7 0 53.3 26.8 52.8 59.2 0 32.7-23.2 59.2-52.8 59.2"></path></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+      <div class="md-progress" data-md-component="progress" role="progressbar"></div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.instant", "navigation.instant.progress", "navigation.tracking", "navigation.tabs", "navigation.tabs.sticky", "navigation.sections", "navigation.indexes", "navigation.top", "navigation.footer", "toc.follow", "search.suggest", "search.highlight", "search.share", "content.code.copy", "content.code.annotate", "content.tabs.link", "announce.dismiss"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.c21346df.min.js"></script>
+      
+        <script src="../../javascripts/extra.js"></script>
+      
+    
+  
+<script id="init-glightbox">const lightbox = GLightbox({"touchNavigation": true, "loop": false, "zoomable": true, "draggable": false, "openEffect": "zoom", "closeEffect": "zoom", "slideEffect": "slide"});
+document$.subscribe(()=>{ lightbox.reload(); });
+</script></body></html>

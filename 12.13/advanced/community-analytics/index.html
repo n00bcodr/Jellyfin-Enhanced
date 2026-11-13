@@ -1,0 +1,3441 @@
+<!DOCTYPE html><html lang="en" class="no-js"><head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="The essential enhancement suite for Jellyfin, bundling advanced features and customizations into one convenient plugin.">
+      
+      
+        <meta name="author" content="n00bcodr">
+      
+      
+        <link rel="canonical" href="https://n00bcodr.github.io/Jellyfin-Enhanced/12.13/advanced/community-analytics/">
+      
+      
+        <link rel="prev" href="../api/">
+      
+      
+        <link rel="next" href="../project-structure/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../images/favicon.ico">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.0">
+    
+    
+  
+  
+    
+      <title>Community Analytics · Advanced - Jellyfin Enhanced</title>
+    
+  
+
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Noto+Sans:300,300i,400,400i,700,700i%7CNoto+Sans+Mono:400,400i,700,700i&amp;display=fallback">
+        <style>:root{--md-text-font:"Noto Sans";--md-code-font:"Noto Sans Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+      <link rel="stylesheet" href="../../stylesheets/touch.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  <link href="../../assets/stylesheets/glightbox.min.css" rel="stylesheet"><script src="../../assets/javascripts/glightbox.min.js"></script><style id="glightbox-style">
+            html.glightbox-open { overflow: initial; height: 100%; }
+            .gslide-title { margin-top: 0px; user-select: text; }
+            .gslide-desc { color: #666; user-select: text; }
+            .gslide-image img { background: white; }
+            .gscrollbar-fixer { padding-right: 15px; }
+            .gdesc-inner { font-size: 0.75rem; }
+            body[data-md-color-scheme="slate"] .gdesc-inner { background: var(--md-default-bg-color); }
+            body[data-md-color-scheme="slate"] .gslide-title { color: var(--md-default-fg-color); }
+            body[data-md-color-scheme="slate"] .gslide-desc { color: var(--md-default-fg-color); }
+        </style></head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#community-analytics" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden="">
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Jellyfin Enhanced" class="md-header__button md-logo" aria-label="Jellyfin Enhanced" data-md-component="logo">
+      <span class="je-mark" aria-hidden="true"></span>
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"></path></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Jellyfin Enhanced
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+              <span class="je-topic-area">Advanced</span>
+            
+            
+              Community Analytics
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom" aria-label="Switch to dark mode" type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden="">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"></path></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom" aria-label="Switch to light mode" type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden="">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"></path></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"></path></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required="">
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"></path></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M15.41 16.58 10.83 12l4.58-4.59L14 6l-6 6 6 6z"></path></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard="" data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"></path></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"></path></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix="">
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/n00bcodr/Jellyfin-Enhanced" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"></path></svg>
+  </div>
+  <div class="md-source__repository">
+    n00bcodr/Jellyfin-Enhanced
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 5.69 5 4.5V18h-2v-6H9v6H7v-7.81zM12 3 2 12h3v8h6v-6h2v6h6v-8h3"></path></svg>
+  
+  <span class="je-tab-label">Home</span>
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../getting-started/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m13.13 22.19-1.63-3.83c1.57-.58 3.04-1.36 4.4-2.27zM5.64 12.5l-3.83-1.63 6.1-2.77C7 9.46 6.22 10.93 5.64 12.5M19.22 4c.28 0 .53 0 .74.05.17 1.39-.02 4.25-3.3 7.53-1.7 1.71-3.73 3.02-6.01 3.89l-2.15-2.1c.92-2.31 2.23-4.34 3.92-6.03C15.18 4.58 17.64 4 19.22 4m0-2c-1.98 0-4.98.69-8.22 3.93-2.19 2.19-3.5 4.6-4.35 6.71-.28.75-.09 1.57.46 2.13l2.13 2.12c.38.38.89.61 1.42.61.23 0 .47-.06.7-.15A19.1 19.1 0 0 0 18.07 13c5.66-5.66 3.54-10.61 3.54-10.61S20.7 2 19.22 2m-4.68 7.46c-.78-.78-.78-2.05 0-2.83s2.05-.78 2.83 0c.77.78.78 2.05 0 2.83s-2.05.78-2.83 0m-5.66 7.07-1.41-1.41zM6.24 22l3.64-3.64c-.34-.09-.67-.24-.97-.45L4.83 22zM2 22h1.41l4.77-4.76-1.42-1.41L2 20.59zm0-2.83 4.09-4.08c-.21-.3-.36-.62-.45-.97L2 17.76z"></path></svg>
+  
+  <span class="je-tab-label">Getting Started</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../enhanced/enhanced-features/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 4c3.8 0 6.5 2.8 6.5 6.8a18.3 18.3 0 0 1-13 0C5.5 6.8 8.2 4 12 4m0-2c-4.7 0-8.5 3.5-8.5 8.9.06.8.56 1.5 1.3 1.8l1.7.5v2.3a.5.5 0 0 1-.5.5.5.5 0 0 1-.5-.5.898.898 0 0 0-1-1 .898.898 0 0 0-1 1A2.405 2.405 0 0 0 5.9 18H6c1.41.06 2.56-1.09 2.5-2.5v-1.8h1v5.7c0 .67-1 .67-1 0a.898.898 0 0 0-1-1 .898.898 0 0 0-1 1c-.11 1.4 1 2.6 2.4 2.6H9c1.41.06 2.56-1.09 2.5-2.5V14h1v5.5A2.394 2.394 0 0 0 15 22h.1c1.37 0 2.46-1.14 2.4-2.5 0-1.33-2-1.33-2 0 0 .67-1 .67-1 0v-5.7h1v1.8c0 1.36 1.13 2.46 2.5 2.4h.1c1.37 0 2.46-1.14 2.4-2.5 0-1.33-2-1.33-2 0 0 .67-1 .67-1 0v-2.3l1.7-.5c.72-.34 1.21-1.02 1.3-1.8C20.5 5.5 16.7 2 12 2m0 4.2c-1.47.4-2.76 1.33-3.6 2.6-.4.53-1.2-.07-.8-.6a7.47 7.47 0 0 1 4.2-3 .5.5 0 0 1 .6.4c.1.3-.1.5-.4.6"></path></svg>
+  
+  <span class="je-tab-label">Enhanced</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../spoiler-guard/spoiler-guard-features/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 11c0 5.55-3.84 10.74-9 12-5.16-1.26-9-6.45-9-12V5l9-4 9 4zm-9 10c3.75-1 7-5.46 7-9.78V6.3l-7-3.12L5 6.3v4.92C5 15.54 8.25 20 12 21m2.8-10V9.5C14.8 8.1 13.4 7 12 7S9.2 8.1 9.2 9.5V11c-.6 0-1.2.6-1.2 1.2v3.5c0 .7.6 1.3 1.2 1.3h5.5c.7 0 1.3-.6 1.3-1.2v-3.5c0-.7-.6-1.3-1.2-1.3m-1.3 0h-3V9.5c0-.8.7-1.3 1.5-1.3s1.5.5 1.5 1.3z"></path></svg>
+  
+  <span class="je-tab-label">Spoiler Guard</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../seerr/seerr-features/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M11 20H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2h1l2 4h3L8 4h2l2 4h3l-2-4h2l2 4h3l-2-4h4v9c-.5-.8-1.2-1.5-2-2v-1H5.8L4 6.5V18h6.2c.2.7.4 1.4.8 2m9.3-1.1c.4-.7.7-1.5.7-2.4 0-2.5-2-4.5-4.5-4.5S12 14 12 16.5s2 4.5 4.5 4.5c.9 0 1.7-.2 2.4-.7l3.1 3.1 1.4-1.4zm-3.8.1c-1.4 0-2.5-1.1-2.5-2.5s1.1-2.5 2.5-2.5 2.5 1.1 2.5 2.5-1.1 2.5-2.5 2.5"></path></svg>
+  
+  <span class="je-tab-label">Seerr</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../arr/arr-features/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M7 11h2v2H7zm14-6v14c0 1.11-.89 2-2 2H5a2 2 0 0 1-2-2V5c0-1.1.9-2 2-2h1V1h2v2h8V1h2v2h1a2 2 0 0 1 2 2M5 7h14V5H5zm14 12V9H5v10zm-4-6v-2h2v2zm-4 0v-2h2v2zm-4 2h2v2H7zm8 2v-2h2v2zm-4 0v-2h2v2z"></path></svg>
+  
+  <span class="je-tab-label">*arr</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../elsewhere/elsewhere-features/" class="md-tabs__link">
+          
+  
+  
+  
+    
+  
+  <span class="je-tab-label">Elsewhere &amp; Reviews</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../other/other-features/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m9 4 2.5 5.5L17 12l-5.5 2.5L9 20l-2.5-5.5L1 12l5.5-2.5zm0 4.83L8 11l-2.17 1L8 13l1 2.17L10 13l2.17-1L10 11zM19 9l-1.26-2.74L15 5l2.74-1.25L19 1l1.25 2.75L23 5l-2.75 1.26zm0 14-1.26-2.74L15 19l2.74-1.25L19 15l1.25 2.75L23 19l-2.75 1.26z"></path></svg>
+  
+  <span class="je-tab-label">Other</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../css-customization/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M8 3a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2H3v2h1a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h2v-2H8v-5a2 2 0 0 0-2-2 2 2 0 0 0 2-2V5h2V3m6 0a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h1v2h-1a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2h-2v-2h2v-5a2 2 0 0 1 2-2 2 2 0 0 1-2-2V5h-2V3z"></path></svg>
+  
+  <span class="je-tab-label">Advanced</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../faq-support/faq/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19.79 15.41c.95-2.17.95-4.66 0-6.82l-2.74 1.24c.6 1.38.6 2.95.01 4.34zm-4.37-11.2a8.54 8.54 0 0 0-6.83 0l1.24 2.73c1.39-.59 2.96-.59 4.35.01zM4.21 8.58a8.56 8.56 0 0 0 0 6.84l2.74-1.25c-.6-1.38-.6-2.96 0-4.35zm4.38 11.21a8.5 8.5 0 0 0 6.83-.01l-1.24-2.73a5.5 5.5 0 0 1-4.34.01zM12 2a10 10 0 0 1 10 10 10 10 0 0 1-10 10A10 10 0 0 1 2 12 10 10 0 0 1 12 2m0 6a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4"></path></svg>
+  
+  <span class="je-tab-label">Help</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation">
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Jellyfin Enhanced" class="md-nav__button md-logo" aria-label="Jellyfin Enhanced" data-md-component="logo">
+      <span class="je-mark" aria-hidden="true"></span>
+    </a>
+    Jellyfin Enhanced
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/n00bcodr/Jellyfin-Enhanced" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"></path></svg>
+  </div>
+  <div class="md-source__repository">
+    n00bcodr/Jellyfin-Enhanced
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix="">
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 5.69 5 4.5V18h-2v-6H9v6H7v-7.81zM12 3 2 12h3v8h6v-6h2v6h6v-8h3"></path></svg>
+  
+  <span class="md-ellipsis">
+    Home
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../getting-started/" class="md-nav__link ">
+              
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m13.13 22.19-1.63-3.83c1.57-.58 3.04-1.36 4.4-2.27zM5.64 12.5l-3.83-1.63 6.1-2.77C7 9.46 6.22 10.93 5.64 12.5M19.22 4c.28 0 .53 0 .74.05.17 1.39-.02 4.25-3.3 7.53-1.7 1.71-3.73 3.02-6.01 3.89l-2.15-2.1c.92-2.31 2.23-4.34 3.92-6.03C15.18 4.58 17.64 4 19.22 4m0-2c-1.98 0-4.98.69-8.22 3.93-2.19 2.19-3.5 4.6-4.35 6.71-.28.75-.09 1.57.46 2.13l2.13 2.12c.38.38.89.61 1.42.61.23 0 .47-.06.7-.15A19.1 19.1 0 0 0 18.07 13c5.66-5.66 3.54-10.61 3.54-10.61S20.7 2 19.22 2m-4.68 7.46c-.78-.78-.78-2.05 0-2.83s2.05-.78 2.83 0c.77.78.78 2.05 0 2.83s-2.05.78-2.83 0m-5.66 7.07-1.41-1.41zM6.24 22l3.64-3.64c-.34-.09-.67-.24-.97-.45L4.83 22zM2 22h1.41l4.77-4.76-1.42-1.41L2 20.59zm0-2.83 4.09-4.08c-.21-.3-.36-.62-.45-.97L2 17.76z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Getting Started
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            Getting Started
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/installation/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 5v6h1.17L12 13.17 9.83 11H11V5zm2-2H9v6H5l7 7 7-7h-4zm4 15H5v2h14z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Installation
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/compatibility/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18V4H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h4v-2H3zm10 6H9v1.78c-.61.55-1 1.33-1 2.22s.39 1.67 1 2.22V20h4v-1.78c.61-.55 1-1.34 1-2.22s-.39-1.67-1-2.22zm-2 5.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5M22 8h-6c-.5 0-1 .5-1 1v10c0 .5.5 1 1 1h6c.5 0 1-.5 1-1V9c0-.5-.5-1-1-1m-1 10h-4v-8h4z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Compatibility
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/settings-overview/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M8 13c-1.86 0-3.41 1.28-3.86 3H2v2h2.14c.45 1.72 2 3 3.86 3s3.41-1.28 3.86-3H22v-2H11.86c-.45-1.72-2-3-3.86-3m0 6c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2M19.86 6c-.45-1.72-2-3-3.86-3s-3.41 1.28-3.86 3H2v2h10.14c.45 1.72 2 3 3.86 3s3.41-1.28 3.86-3H22V6zM16 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2"></path></svg>
+  
+  <span class="md-ellipsis">
+    Settings Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/pages-and-tabs/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 5v2h-4V5zM9 5v6H5V5zm10 8v6h-4v-6zM9 17v2H5v-2zM21 3h-8v6h8zM11 3H3v10h8zm10 8h-8v10h8zm-10 4H3v6h8z"></path></svg>
+  
+  <span class="md-ellipsis">
+    JE Pages &amp; Tabs
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/troubleshooting/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m22.61 19-9.08-9.09c.93-2.34.47-5.1-1.44-7C9.79.61 6.21.4 3.66 2.26L7.5 6.11 6.08 7.5 2.25 3.69C.39 6.23.6 9.82 2.9 12.11c1.86 1.86 4.57 2.35 6.89 1.48l9.11 9.11c.39.39 1.02.39 1.41 0l2.3-2.3c.39-.4.39-1.01 0-1.4m-3 1.59-9.46-9.46c-.61.45-1.29.72-2 .82-1.36.2-2.79-.21-3.83-1.25C3.37 9.76 2.93 8.5 3 7.26l3.09 3.09 4.24-4.24L7.24 3c1.26-.05 2.49.39 3.44 1.33a4.47 4.47 0 0 1 1.24 3.96 4.35 4.35 0 0 1-.88 1.96l9.46 9.45z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Troubleshooting
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3">
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 4c3.8 0 6.5 2.8 6.5 6.8a18.3 18.3 0 0 1-13 0C5.5 6.8 8.2 4 12 4m0-2c-4.7 0-8.5 3.5-8.5 8.9.06.8.56 1.5 1.3 1.8l1.7.5v2.3a.5.5 0 0 1-.5.5.5.5 0 0 1-.5-.5.898.898 0 0 0-1-1 .898.898 0 0 0-1 1A2.405 2.405 0 0 0 5.9 18H6c1.41.06 2.56-1.09 2.5-2.5v-1.8h1v5.7c0 .67-1 .67-1 0a.898.898 0 0 0-1-1 .898.898 0 0 0-1 1c-.11 1.4 1 2.6 2.4 2.6H9c1.41.06 2.56-1.09 2.5-2.5V14h1v5.5A2.394 2.394 0 0 0 15 22h.1c1.37 0 2.46-1.14 2.4-2.5 0-1.33-2-1.33-2 0 0 .67-1 .67-1 0v-5.7h1v1.8c0 1.36 1.13 2.46 2.5 2.4h.1c1.37 0 2.46-1.14 2.4-2.5 0-1.33-2-1.33-2 0 0 .67-1 .67-1 0v-2.3l1.7-.5c.72-.34 1.21-1.02 1.3-1.8C20.5 5.5 16.7 2 12 2m0 4.2c-1.47.4-2.76 1.33-3.6 2.6-.4.53-1.2-.07-.8-.6a7.47 7.47 0 0 1 4.2-3 .5.5 0 0 1 .6.4c.1.3-.1.5-.4.6"></path></svg>
+  
+  <span class="md-ellipsis">
+    Enhanced
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            Enhanced
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../enhanced/enhanced-features/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Features
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../enhanced/tags/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M6.5 10C7.3 10 8 9.3 8 8.5S7.3 7 6.5 7 5 7.7 5 8.5 5.7 10 6.5 10M9 6l7 7-5 5-7-7V6zm0-2H4c-1.1 0-2 .9-2 2v5c0 .6.2 1.1.6 1.4l7 7c.3.4.8.6 1.4.6s1.1-.2 1.4-.6l5-5c.4-.4.6-.9.6-1.4 0-.6-.2-1.1-.6-1.4l-7-7C10.1 4.2 9.6 4 9 4m4.5 1.7 1-1 6.9 6.9c.4.4.6.9.6 1.4s-.2 1.1-.6 1.4L16 19.8l-1-1 5.7-5.8z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Tags &amp; Badges
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../enhanced/enhanced-settings/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4">
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 11c0 5.55-3.84 10.74-9 12-5.16-1.26-9-6.45-9-12V5l9-4 9 4zm-9 10c3.75-1 7-5.46 7-9.78V6.3l-7-3.12L5 6.3v4.92C5 15.54 8.25 20 12 21m2.8-10V9.5C14.8 8.1 13.4 7 12 7S9.2 8.1 9.2 9.5V11c-.6 0-1.2.6-1.2 1.2v3.5c0 .7.6 1.3 1.2 1.3h5.5c.7 0 1.3-.6 1.3-1.2v-3.5c0-.7-.6-1.3-1.2-1.3m-1.3 0h-3V9.5c0-.8.7-1.3 1.5-1.3s1.5.5 1.5 1.3z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Spoiler Guard
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            Spoiler Guard
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../spoiler-guard/spoiler-guard-features/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Features
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../spoiler-guard/spoiler-guard-settings/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5">
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M11 20H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2h1l2 4h3L8 4h2l2 4h3l-2-4h2l2 4h3l-2-4h4v9c-.5-.8-1.2-1.5-2-2v-1H5.8L4 6.5V18h6.2c.2.7.4 1.4.8 2m9.3-1.1c.4-.7.7-1.5.7-2.4 0-2.5-2-4.5-4.5-4.5S12 14 12 16.5s2 4.5 4.5 4.5c.9 0 1.7-.2 2.4-.7l3.1 3.1 1.4-1.4zm-3.8.1c-1.4 0-2.5-1.1-2.5-2.5s1.1-2.5 2.5-2.5 2.5 1.1 2.5 2.5-1.1 2.5-2.5 2.5"></path></svg>
+  
+  <span class="md-ellipsis">
+    Seerr
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            Seerr
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../seerr/seerr-features/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Features
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../seerr/seerr-settings/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../seerr/permission-audit/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 1 3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5zm0 2.18 7 3.12v4.92c0 1.7-.5 3.43-1.35 4.95C16 14.94 13.26 14.5 12 14.5s-4 .44-5.65 1.67C5.5 14.65 5 12.92 5 11.22V6.3zM12 6a3.5 3.5 0 0 0-3.5 3.5A3.5 3.5 0 0 0 12 13a3.5 3.5 0 0 0 3.5-3.5A3.5 3.5 0 0 0 12 6m0 2a1.5 1.5 0 0 1 1.5 1.5A1.5 1.5 0 0 1 12 11a1.5 1.5 0 0 1-1.5-1.5A1.5 1.5 0 0 1 12 8m0 8.5c1.57 0 3.64.61 4.53 1.34C15.29 19.38 13.7 20.55 12 21c-1.7-.45-3.29-1.62-4.53-3.16.9-.73 2.96-1.34 4.53-1.34"></path></svg>
+  
+  <span class="md-ellipsis">
+    Permission Audit
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6">
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M7 11h2v2H7zm14-6v14c0 1.11-.89 2-2 2H5a2 2 0 0 1-2-2V5c0-1.1.9-2 2-2h1V1h2v2h8V1h2v2h1a2 2 0 0 1 2 2M5 7h14V5H5zm14 12V9H5v10zm-4-6v-2h2v2zm-4 0v-2h2v2zm-4 2h2v2H7zm8 2v-2h2v2zm-4 0v-2h2v2z"></path></svg>
+  
+  <span class="md-ellipsis">
+    *arr
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            *arr
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../arr/arr-features/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Features
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../arr/arr-settings/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../arr/troubleshooting-support/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m22.61 19-9.08-9.09c.93-2.34.47-5.1-1.44-7C9.79.61 6.21.4 3.66 2.26L7.5 6.11 6.08 7.5 2.25 3.69C.39 6.23.6 9.82 2.9 12.11c1.86 1.86 4.57 2.35 6.89 1.48l9.11 9.11c.39.39 1.02.39 1.41 0l2.3-2.3c.39-.4.39-1.01 0-1.4m-3 1.59-9.46-9.46c-.61.45-1.29.72-2 .82-1.36.2-2.79-.21-3.83-1.25C3.37 9.76 2.93 8.5 3 7.26l3.09 3.09 4.24-4.24L7.24 3c1.26-.05 2.49.39 3.44 1.33a4.47 4.47 0 0 1 1.24 3.96 4.35 4.35 0 0 1-.88 1.96l9.46 9.45z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Troubleshooting
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7">
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  
+  <span class="md-ellipsis">
+    Elsewhere &amp; Reviews
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            Elsewhere &amp; Reviews
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../elsewhere/elsewhere-features/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Features
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../elsewhere/elsewhere-settings/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8">
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m9 4 2.5 5.5L17 12l-5.5 2.5L9 20l-2.5-5.5L1 12l5.5-2.5zm0 4.83L8 11l-2.17 1L8 13l1 2.17L10 13l2.17-1L10 11zM19 9l-1.26-2.74L15 5l2.74-1.25L19 1l1.25 2.75L23 5l-2.75 1.26zm0 14-1.26-2.74L15 19l2.74-1.25L19 15l1.25 2.75L23 19l-2.75 1.26z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Other
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            Other
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../other/other-features/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Features
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../other/other-settings/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9" checked="">
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M8 3a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2H3v2h1a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h2v-2H8v-5a2 2 0 0 0-2-2 2 2 0 0 0 2-2V5h2V3m6 0a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h1v2h-1a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2h-2v-2h2v-5a2 2 0 0 1 2-2 2 2 0 0 1-2-2V5h-2V3z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Advanced
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            Advanced
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../css-customization/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 22A10 10 0 0 1 2 12 10 10 0 0 1 12 2c5.5 0 10 4 10 9a6 6 0 0 1-6 6h-1.8c-.3 0-.5.2-.5.5 0 .1.1.2.1.3.4.5.6 1.1.6 1.7.1 1.4-1 2.5-2.4 2.5m0-18a8 8 0 0 0-8 8 8 8 0 0 0 8 8c.3 0 .5-.2.5-.5 0-.2-.1-.3-.1-.4-.4-.5-.6-1-.6-1.6 0-1.4 1.1-2.5 2.5-2.5H16a4 4 0 0 0 4-4c0-3.9-3.6-7-8-7m-5.5 6c.8 0 1.5.7 1.5 1.5S7.3 13 6.5 13 5 12.3 5 11.5 5.7 10 6.5 10m3-4c.8 0 1.5.7 1.5 1.5S10.3 9 9.5 9 8 8.3 8 7.5 8.7 6 9.5 6m5 0c.8 0 1.5.7 1.5 1.5S15.3 9 14.5 9 13 8.3 13 7.5 13.7 6 14.5 6m3 4c.8 0 1.5.7 1.5 1.5s-.7 1.5-1.5 1.5-1.5-.7-1.5-1.5.7-1.5 1.5-1.5"></path></svg>
+  
+  <span class="md-ellipsis">
+    CSS Customization
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M7 7H5a2 2 0 0 0-2 2v8h2v-4h2v4h2V9a2 2 0 0 0-2-2m0 4H5V9h2m7-2h-4v10h2v-4h2a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2m0 4h-2V9h2m6 0v6h1v2h-4v-2h1V9h-1V7h4v2Z"></path></svg>
+  
+  <span class="md-ellipsis">
+    API
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M22 21H2V3h2v16h2v-9h4v9h2V6h4v13h2v-5h4z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Community Analytics
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M22 21H2V3h2v16h2v-9h4v9h2V6h4v13h2v-5h4z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Community Analytics
+    
+  </span>
+  
+
+      </a>
+      
+        
+
+  
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
+      
+        <li class="md-nav__item">
+  <a href="#how-to-use" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How to use
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="How to use">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-preview-shows" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What Preview shows
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#whats-collected" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What's collected
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="What's collected">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#always-included" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Always included
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#feature-toggle-states" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Feature toggle states
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#feature-usage-counts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Feature usage counts
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#data-file-sizes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Data file sizes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#reporting-storage-and-opt-out" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reporting, storage and opt-out
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Reporting, storage and opt-out">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#local-catch-up-activity-log" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Local Catch Up activity log
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#live-dashboard" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Live Dashboard
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Live Dashboard">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#installs-versions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Installs &amp; Versions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#current-totals" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Current Totals
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#feature-usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Feature Usage
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#feature-toggle-adoption" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Feature Toggle Adoption
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#settings-distribution" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Settings Distribution
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../project-structure/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 13H7v5h5v2H5V10h2v1h5zM8 4v2H4V4zm2-2H2v6h8zm10 9v2h-4v-2zm2-2h-8v6h8zm-2 9v2h-4v-2zm2-2h-8v6h8z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Project Structure
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10">
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19.79 15.41c.95-2.17.95-4.66 0-6.82l-2.74 1.24c.6 1.38.6 2.95.01 4.34zm-4.37-11.2a8.54 8.54 0 0 0-6.83 0l1.24 2.73c1.39-.59 2.96-.59 4.35.01zM4.21 8.58a8.56 8.56 0 0 0 0 6.84l2.74-1.25c-.6-1.38-.6-2.96 0-4.35zm4.38 11.21a8.5 8.5 0 0 0 6.83-.01l-1.24-2.73a5.5 5.5 0 0 1-4.34.01zM12 2a10 10 0 0 1 10 10 10 10 0 0 1-10 10A10 10 0 0 1 2 12 10 10 0 0 1 12 2m0 6a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4"></path></svg>
+  
+  <span class="md-ellipsis">
+    Help
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            Help
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../faq-support/faq/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M11 18h2v-2h-2zm1-16A10 10 0 0 0 2 12a10 10 0 0 0 10 10 10 10 0 0 0 10-10A10 10 0 0 0 12 2m0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8m0-14a4 4 0 0 0-4 4h2a2 2 0 0 1 2-2 2 2 0 0 1 2 2c0 2-3 1.75-3 5h2c0-2.25 3-2.5 3-5a4 4 0 0 0-4-4"></path></svg>
+  
+  <span class="md-ellipsis">
+    FAQ
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../faq-support/report-issues/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 8h-2.81c-.45-.8-1.07-1.5-1.82-2L17 4.41 15.59 3l-2.17 2.17a6 6 0 0 0-2.83 0L8.41 3 7 4.41 8.62 6c-.75.5-1.36 1.21-1.81 2H4v2h2.09c-.06.33-.09.66-.09 1v1H4v2h2v1c0 .34.03.67.09 1H4v2h2.81A5.99 5.99 0 0 0 15 20.18c.91-.52 1.67-1.28 2.19-2.18H20v-2h-2.09c.06-.33.09-.66.09-1v-1h2v-2h-2v-1c0-.34-.03-.67-.09-1H20zm-4 7a4 4 0 0 1-4 4 4 4 0 0 1-4-4v-4a4 4 0 0 1 4-4 4 4 0 0 1 4 4zm-2-5v2h-4v-2zm-4 4h4v2h-4z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Report Issues
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../faq-support/feature-requests/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11h3v2h-3zM1 11h3v2H1zM13 1v3h-2V1zM4.92 3.5l2.13 2.14-1.42 1.41L3.5 4.93zm12.03 2.13 2.12-2.13 1.43 1.43-2.13 2.12zM12 6a6 6 0 0 1 6 6c0 2.22-1.21 4.16-3 5.2V19a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1v-1.8c-1.79-1.04-3-2.98-3-5.2a6 6 0 0 1 6-6m2 15v1a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1v-1zm-3-3h2v-2.13c1.73-.44 3-2.01 3-3.87a4 4 0 0 0-4-4 4 4 0 0 0-4 4c0 1.86 1.27 3.43 3 3.87z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Feature Requests
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../faq-support/contributing-translations/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12.87 15.07-2.54-2.51.03-.03A17.5 17.5 0 0 0 14.07 6H17V4h-7V2H8v2H1v2h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11zM18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2zm-2.62 7 1.62-4.33L19.12 17z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Contributing Translations
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../faq-support/support/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M15 4v7H5.17L4 12.17V4zm1-2H3a1 1 0 0 0-1 1v14l4-4h10a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1m5 4h-2v9H6v2a1 1 0 0 0 1 1h11l4 4V7a1 1 0 0 0-1-1"></path></svg>
+  
+  <span class="md-ellipsis">
+    Support + Community
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../other-projects/other-projects/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M22 13.5c0 1.76-1.3 3.22-3 3.46V20a2 2 0 0 1-2 2h-3.8v-.3a2.7 2.7 0 0 0-2.7-2.7c-1.5 0-2.7 1.21-2.7 2.7v.3H4a2 2 0 0 1-2-2v-3.8h.3C3.79 16.2 5 15 5 13.5s-1.21-2.7-2.7-2.7H2V7a2 2 0 0 1 2-2h3.04c.24-1.7 1.7-3 3.46-3s3.22 1.3 3.46 3H17a2 2 0 0 1 2 2v3.04c1.7.24 3 1.7 3 3.46M17 15h1.5a1.5 1.5 0 0 0 1.5-1.5 1.5 1.5 0 0 0-1.5-1.5H17V7h-5V5.5A1.5 1.5 0 0 0 10.5 4 1.5 1.5 0 0 0 9 5.5V7H4v2.12c1.76.68 3 2.38 3 4.38s-1.25 3.7-3 4.38V20h2.12a4.7 4.7 0 0 1 4.38-3c2 0 3.7 1.25 4.38 3H17z"></path></svg>
+  
+  <span class="md-ellipsis">
+    Related Projects
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../about/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M11 9h2V7h-2m1 13c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8m0-18A10 10 0 0 0 2 12a10 10 0 0 0 10 10 10 10 0 0 0 10-10A10 10 0 0 0 12 2m-1 15h2v-6h-2z"></path></svg>
+  
+  <span class="md-ellipsis">
+    About
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc">
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+  
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
+      
+        <li class="md-nav__item">
+  <a href="#how-to-use" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How to use
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="How to use">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-preview-shows" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What Preview shows
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#whats-collected" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What's collected
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="What's collected">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#always-included" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Always included
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#feature-toggle-states" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Feature toggle states
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#feature-usage-counts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Feature usage counts
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#data-file-sizes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Data file sizes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#reporting-storage-and-opt-out" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reporting, storage and opt-out
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Reporting, storage and opt-out">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#local-catch-up-activity-log" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Local Catch Up activity log
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#live-dashboard" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Live Dashboard
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Live Dashboard">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#installs-versions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Installs &amp; Versions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#current-totals" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Current Totals
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#feature-usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Feature Usage
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#feature-toggle-adoption" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Feature Toggle Adoption
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#settings-distribution" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Settings Distribution
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+  
+    
+    
+    
+    <nav class="je-sectionbar" aria-label="Advanced pages">
+      <a class="je-sectionbar__area" href="../css-customization/">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M8 3a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2H3v2h1a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h2v-2H8v-5a2 2 0 0 0-2-2 2 2 0 0 0 2-2V5h2V3m6 0a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h1v2h-1a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2h-2v-2h2v-5a2 2 0 0 1 2-2 2 2 0 0 1-2-2V5h-2V3z"></path></svg>
+        <span>Advanced</span>
+      </a>
+      
+        <ul class="je-sectionbar__pages">
+          
+            
+              <li>
+                <a class="je-chip" href="../css-customization/">CSS Customization</a>
+              </li>
+            
+          
+            
+              <li>
+                <a class="je-chip" href="../api/">API</a>
+              </li>
+            
+          
+            
+              <li>
+                <a class="je-chip je-chip--active" href="./" aria-current="page">Community Analytics</a>
+              </li>
+            
+          
+            
+              <li>
+                <a class="je-chip" href="../project-structure/">Project Structure</a>
+              </li>
+            
+          
+        </ul>
+      
+    </nav>
+  
+  
+                  
+
+
+  
+  
+
+
+<h1 id="community-analytics">Community Analytics<a class="headerlink" href="#community-analytics" title="Permanent link">¶</a></h1>
+<p>JE can share installation statistics to help you see how the community uses the plugin. Reporting is <strong>opt-in and off by default</strong>; an administrator must enable <strong>Share Anonymous Usage Statistics</strong> and save.</p>
+<div class="admonition note">
+<p class="admonition-title">About the dashboard</p>
+<p>The dashboard reads aggregate results from public views. Visiting this page makes browser requests to the analytics service, Google Fonts and external tab-icon assets, even if your Jellyfin server has never enabled reporting. These requests are separate from installation reports.</p>
+<p>The figures show trends among installations that choose to report. They do not count all JE installations.</p>
+</div>
+<h2 id="how-to-use">How to use<a class="headerlink" href="#how-to-use" title="Permanent link">¶</a></h2>
+<p>Choose the categories you want to share, and use <strong>Preview</strong> to check the statistics before saving.</p>
+<ol>
+<li>Open <strong>Dashboard → Plugins → Jellyfin Enhanced → Admin → Usage Statistics</strong>.</li>
+<li>Turn on <strong>Share Anonymous Usage Statistics</strong> to show the category, interval, and <strong>Preview</strong> controls. Uncheck any categories you do not want to share.</li>
+<li>Optionally click <strong>Preview</strong> to inspect your selections.</li>
+<li>Save. JE queues the first reporting attempt automatically; you do not need to use <strong>Preview</strong> first.</li>
+</ol>
+<p>The page shows the last successful report time, or tells you that no report has been sent yet.</p>
+<p>Administrator settings:</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Share Anonymous Usage Statistics</strong></td>
+<td>Off</td>
+<td>Enables server reporting to the community analytics service.</td>
+</tr>
+<tr>
+<td><strong>Feature toggle states (on/off only)</strong></td>
+<td>On</td>
+<td>Shares on/off settings and selected text settings, despite the checkbox wording.</td>
+</tr>
+<tr>
+<td><strong>Feature usage counts</strong></td>
+<td>On</td>
+<td>Shares action counts and current totals of stored entries.</td>
+</tr>
+<tr>
+<td><strong>Data file sizes (bytes only, never contents)</strong></td>
+<td>On</td>
+<td>Shares the total size of the custom branding directory.</td>
+</tr>
+<tr>
+<td><strong>Reporting interval (days)</strong></td>
+<td>15</td>
+<td>Sets how often reports are sent, within 7–30 days.</td>
+</tr>
+</tbody>
+</table>
+<details class="note">
+<summary>Details</summary>
+<p>On first enablement, the interface checks all three categories. After you save your choices, later enables preserve them. The category defaults do not enable reporting while the master setting is off.</p>
+<p>If you uncheck all three categories, reports still include version information, installation credentials, the counting-period start date and build proof. See <strong>Always included</strong> below. The reporting interval is clamped to 7–30 days.</p>
+</details>
+<h3 id="what-preview-shows">What Preview shows<a class="headerlink" href="#what-preview-shows" title="Permanent link">¶</a></h3>
+<p><strong>Preview</strong> lets you inspect the selected statistics without registering your installation or sending a report. It uses the category selections currently on screen, including unsaved changes.</p>
+<p><a class="glightbox" data-type="image" data-width="100%" data-height="auto" href="../../images/admin/analytics-preview.webp" data-desc-position="bottom"><img alt="Usage Statistics with the preview of the anonymous report shown before sharing is saved" src="../../images/admin/analytics-preview.webp"></a>
+<em>Previewing a report does not enable sharing.</em></p>
+<p>Other configuration values come from your saved server configuration. Counts and file sizes show the current state and may change before JE sends the report.</p>
+<details class="info">
+<summary>How it works</summary>
+<p>The preview route is administrator-only: <code>POST /JellyfinEnhanced/usage/preview</code>. Before registration, the install ID reads <code>(not registered yet; assigned on first real send)</code>.</p>
+<p>Preview shows readable property names. The actual report uses <code>p_*</code> field names and also sends the installation secret and a build-proof field, neither of which appears in Preview. The proof comes from the plugin assembly, installation ID and plugin version. It can be null if JE cannot read the assembly.</p>
+</details>
+<h2 id="whats-collected">What's collected<a class="headerlink" href="#whats-collected" title="Permanent link">¶</a></h2>
+<p>Every enabled report includes installation and version information. The three optional categories add settings, counts or branding-directory size.</p>
+<h3 id="always-included">Always included<a class="headerlink" href="#always-included" title="Permanent link">¶</a></h3>
+<p>Every enabled report includes these fields, even if you uncheck all three categories:</p>
+<ul>
+<li>A persistent installation ID assigned by the reporting service.</li>
+<li>The plugin version, Jellyfin server version and build target.</li>
+<li>The start date of the counting period.</li>
+<li>The installation secret used to authenticate the report, and the build-proof field.</li>
+</ul>
+<details class="info">
+<summary>How it works</summary>
+<p>The build target is <code>jf10</code> or <code>jf12</code>. During registration, the service returns the installation ID and secret. JE stores them in its plugin configuration.</p>
+</details>
+<h3 id="feature-toggle-states">Feature toggle states<a class="headerlink" href="#feature-toggle-states" title="Permanent link">¶</a></h3>
+<p>This category shows which features participating servers use. It shares on/off settings, whether TMDB and MDBList keys are configured, and a selected set of text settings.</p>
+<p>Select <strong>Feature toggle states (on/off only)</strong> before saving to include this category.</p>
+<details class="info">
+<summary>How it works</summary>
+<p>Boolean settings are included except properties beginning with <code>Analytics</code> and properties marked <code>[AnalyticsExclude]</code>. <code>TmdbEnabled</code> and <code>MdblistEnabled</code> indicate whether keys are configured; the keys themselves are not sent.</p>
+<p>The selected text settings are:</p>
+<table>
+<thead>
+<tr>
+<th>Choice</th>
+<th>Reported property and filtering</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Icon style</td>
+<td><code>IconStyle</code></td>
+</tr>
+<tr>
+<td>Maintenance actions and affected users</td>
+<td><code>MaintenanceModeAction</code>, <code>MaintenanceScheduleAction</code> and <code>MaintenanceModeAffectedUsers</code>. The user scope is reduced to <code>all</code> or <code>selected</code>, without selected user IDs.</td>
+</tr>
+<tr>
+<td>Tag positions</td>
+<td><code>QualityTagsPosition</code>, <code>GenreTagsPosition</code>, <code>LanguageTagsPosition</code>, <code>RatingTagsPosition</code>, <code>AgeRatingTagsPosition</code></td>
+</tr>
+<tr>
+<td>Tag styling</td>
+<td><code>TagStyleTarget</code>, <code>TagStylePreset</code>, <code>TagStyleApplyScope</code></td>
+</tr>
+<tr>
+<td>Language priority</td>
+<td><code>LanguageTagsPriority</code>, filtered to tokens shaped like language codes and converted to lowercase</td>
+</tr>
+<tr>
+<td>Additional Native Poster Tags client exclusions</td>
+<td><code>NativePosterTagsWebClientNames</code>, filtered to short app-name-shaped entries, deduplicated and limited to 20. Built-in web clients are omitted.</td>
+</tr>
+</tbody>
+</table>
+<p>Nonempty strings marked <code>[AnalyticsInclude]</code> are included as stored. Other strings are excluded unless the reporting code explicitly derives and filters them. Checking the shape of language/client strings does not guarantee what the entered text means.</p>
+<p>The report does not include configured service URLs, media-service API keys, branding text or image contents.</p>
+</details>
+<h3 id="feature-usage-counts">Feature usage counts<a class="headerlink" href="#feature-usage-counts" title="Permanent link">¶</a></h3>
+<p>This category shares counts of Seerr requests and qualifying home-row removal events, plus totals of stored entries. It sends counts rather than titles, review contents or user records.</p>
+<p>Select <strong>Feature usage counts</strong> before saving to include this category.</p>
+<p>Current totals cover:</p>
+<ul>
+<li>Bookmarks across user files.</li>
+<li>Hidden-content entries, including home-row suppression entries.</li>
+<li>Direct Spoiler Guard series, movie and collection entries; pending protection intents are excluded.</li>
+<li>Reviews in the shared review store.</li>
+</ul>
+<p>These totals count entries. The same title can contribute entries for several users, so the totals do not count unique titles or users.</p>
+<details class="info">
+<summary>How it works</summary>
+<p>Action counters record:</p>
+<table>
+<thead>
+<tr>
+<th>Counter</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>seerr.request_submitted</code></td>
+<td>Submitted Seerr requests recorded by the client.</td>
+</tr>
+<tr>
+<td><code>continue_watching.auto_removed</code></td>
+<td>Playback-start events that clear or demote qualifying home-row removals while the Remove Continue Watching feature is enabled. Counts events, not individual entries removed.</td>
+</tr>
+</tbody>
+</table>
+<p>Actions count only while reporting <strong>and</strong> the usage-count category are enabled. JE does not reconstruct earlier activity. Each off-to-on reporting transition clears counters at the point you enable reporting.</p>
+<p>Every successful report advances the counting period and subtracts the captured counter snapshot. This also happens when <strong>Feature usage counts</strong> is unchecked and those earlier counts were omitted from the report. Increments during transmission carry forward. Failed attempts do not subtract the captured counts.</p>
+</details>
+<h3 id="data-file-sizes">Data file sizes<a class="headerlink" href="#data-file-sizes" title="Permanent link">¶</a></h3>
+<p>This category shares the total size of your custom branding directory, without file names or contents. It does not include other plugin data-file sizes.</p>
+<p>Select <strong>Data file sizes (bytes only, never contents)</strong> before saving to include this category.</p>
+<details class="info">
+<summary>How it works</summary>
+<p>The report uses the key <code>custom_branding</code>. It sends the total bytes in the branding directory, or zero if the directory is absent, empty or unreadable.</p>
+</details>
+<h2 id="reporting-storage-and-opt-out">Reporting, storage and opt-out<a class="headerlink" href="#reporting-storage-and-opt-out" title="Permanent link">¶</a></h2>
+<p>JE checks whether a report is due at startup and through the <strong>Send Anonymous Usage Report</strong> scheduled task. Turning reporting on and saving queues an immediate attempt.</p>
+<p>To stop reporting:</p>
+<ol>
+<li>Open <strong>Admin → Usage Statistics</strong> in the plugin configuration.</li>
+<li>Turn off <strong>Share Anonymous Usage Statistics</strong> and save.</li>
+</ol>
+<div class="admonition note">
+<p class="admonition-title">Opting out and remote history</p>
+<p>For a registered installation, JE asks the service to exclude it from public views while keeping its history. Re-enabling reporting asks the service to include it again. Both effects depend on successful requests and the external service. Turning reporting off does not request remote deletion.</p>
+</div>
+<details class="info">
+<summary>How it works</summary>
+<p>The server sends HTTPS requests to <code>https://cgsdfzfdoxunzoofzhgd.supabase.co</code>. Registration uses <code>/rest/v1/rpc/register_install</code>; reports use <code>/rest/v1/rpc/report_stats</code>.</p>
+<p>The scheduled task's default trigger is every 24 hours. It sends only when the configured interval has elapsed or the plugin version, Jellyfin version or build target has changed. Running the task manually uses the same check. Saving an off-to-on transition bypasses the check for its immediate attempt.</p>
+<p>Failed registration or reporting logs a warning, retains unsent counts and leaves the last-success timestamp unchanged. Repeated credential rejection can cause JE to clear its credentials and register again on the next attempt.</p>
+<p>Credentials, the last report projection and report state are saved in plugin configuration. Action counters are stored locally in <code>usage-counters.json</code>.</p>
+<p>Opting out queues a best-effort <code>/rest/v1/rpc/set_opted_out</code> request using the installation ID and secret. Re-enabling queues a report intended to clear that flag.</p>
+</details>
+<details class="note">
+<summary>Details</summary>
+<p>Reports have no dedicated username, media-title or IP-address fields. They do use persistent installation credentials and selected text settings. This repository does not establish the remote service's retention policy or access-log practices. The dashboard shows aggregate results.</p>
+</details>
+<h3 id="local-catch-up-activity-log">Local Catch Up activity log<a class="headerlink" href="#local-catch-up-activity-log" title="Permanent link">¶</a></h3>
+<p>Catch Up has a separate local activity log for administrators. Its records are not included in installation analytics reports.</p>
+<p>With <strong>Enable Catch Up</strong> and <strong>Record Catch Up activity</strong> enabled, the server records the user's username and ID, title and ID, action, time, reported success, and selected seasons where applicable. Only administrators can retrieve the log and summary through JE.</p>
+<p>To stop future recording, turn off <strong>Record Catch Up activity</strong> and save.</p>
+<p>Administrator settings:</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Enable Catch Up</strong></td>
+<td>Off</td>
+<td>Enables the Catch Up page.</td>
+</tr>
+<tr>
+<td><strong>Record Catch Up activity</strong></td>
+<td>On</td>
+<td>Records local activity when Catch Up is enabled.</td>
+</tr>
+</tbody>
+</table>
+<details class="info">
+<summary>How it works</summary>
+<p>The server keeps <code>catchup-log.jsonl</code> and one rotated <code>catchup-log.1.jsonl</code> beside JE's shared data files. Rotation occurs at approximately 5 MiB per file.</p>
+</details>
+<p>See <a href="../../enhanced/enhanced-features/">Catch Up and Activity</a> and <a href="../../enhanced/enhanced-settings/">settings</a>.</p>
+<h2 id="live-dashboard">Live Dashboard<a class="headerlink" href="#live-dashboard" title="Permanent link">¶</a></h2>
+<p>Browse aggregate results from participating installations. Usage covers the last 45 days; totals show current stored entries.</p>
+<ol>
+<li>Use the facet buttons to select a settings tab.</li>
+<li>Type to filter a table.</li>
+<li>Click a column heading to sort; click it again to reverse the order.</li>
+</ol>
+<p>Data reloads when you arrive on the page or refresh your browser. A version warning means the build target does not match the Jellyfin major version.</p>
+<details class="note">
+<summary>Details</summary>
+<p><strong>Feature Toggle Adoption</strong> lists settings present in reporting data. New or unreported settings may be absent; it is not a complete configuration catalog.</p>
+<p>Labels and defaults come from the generated settings map. Unknown labels use readable versions of property names, and unknown groups use Other.</p>
+<p>Queries have these limits:</p>
+<table>
+<thead>
+<tr>
+<th>Data</th>
+<th>Limit</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Versions</td>
+<td>Up to 500 rows fetched; the largest 50 fetched groups appear in the version table</td>
+</tr>
+<tr>
+<td>Usage</td>
+<td>20 rows</td>
+</tr>
+<tr>
+<td>Current totals</td>
+<td>24 rows</td>
+</tr>
+<tr>
+<td>Feature flags</td>
+<td>500 rows</td>
+</tr>
+<tr>
+<td>Setting values</td>
+<td>500 rows</td>
+</tr>
+</tbody>
+</table>
+<p>Settings percentages use the fetched value rows for each setting. These limits can further reduce the sample.</p>
+</details>
+<div id="je-analytics-dashboard">
+<p id="je-analytics-loading">Loading live data…</p>
+<p class="je-analytics-error" hidden="hidden" id="je-analytics-error-banner"></p>
+<h3 id="installs-versions">Installs &amp; Versions<a class="headerlink" href="#installs-versions" title="Permanent link">¶</a></h3>
+<div id="je-section-versions"></div>
+<h3 id="current-totals">Current Totals<a class="headerlink" href="#current-totals" title="Permanent link">¶</a></h3>
+<p class="je-section-subtitle">Across reporting installs</p>
+<div id="je-section-totals"></div>
+<h3 id="feature-usage">Feature Usage<a class="headerlink" href="#feature-usage" title="Permanent link">¶</a></h3>
+<p class="je-section-subtitle">Last 45 days</p>
+<div id="je-section-usage"></div>
+<h3 id="feature-toggle-adoption">Feature Toggle Adoption<a class="headerlink" href="#feature-toggle-adoption" title="Permanent link">¶</a></h3>
+<div id="je-section-flags"></div>
+<h3 id="settings-distribution">Settings Distribution<a class="headerlink" href="#settings-distribution" title="Permanent link">¶</a></h3>
+<div id="je-section-settings"></div>
+<p class="je-analytics-updated" id="je-analytics-updated"></p>
+</div>
+<style>
+/* Same Material Icons font the config page's tabs use; this docs page is a
+   separate static site so it needs its own copy loaded. */
+@import url('https://fonts.googleapis.com/icon?family=Material+Icons');
+.je-pill-icon {
+  font-family: 'Material Icons'; font-weight: normal; font-style: normal;
+  font-size: 1.1em; line-height: 1; letter-spacing: normal; text-transform: none;
+  white-space: nowrap; word-wrap: normal; direction: ltr;
+  -webkit-font-smoothing: antialiased; vertical-align: -0.2em; margin-right: 0.3em;
+}
+.je-pill-icon-img { width: 1em; height: 1em; vertical-align: -0.15em; margin-right: 0.3em; }
+#je-analytics-error-banner { margin: 1em 0; }
+.je-section-subtitle { opacity: 0.65; font-size: 0.9em; margin-top: -0.6em; }
+.je-stat-cards { display: flex; flex-wrap: wrap; gap: 1em; margin: 1em 0; }
+.je-stat-card.je-stat-card-hero { flex-basis: 100%; }
+.je-stat-card {
+  flex: 1 1 110px;
+  min-width: 0;
+  border: 1px solid var(--md-default-fg-color--lightest, #ddd);
+  border-radius: 8px;
+  padding: 1em 1.2em;
+}
+.je-stat-card .je-stat-value { font-size: 1.8em; font-weight: 700; }
+.je-stat-card .je-stat-label { opacity: 0.7; font-size: 0.85em; }
+.je-stat-card .je-stat-label-primary { font-size: 1.05em; font-weight: 600; margin-top: 0.4em; }
+.je-stat-card .je-stat-label-secondary { opacity: 0.65; font-size: 0.6em; margin-top: 0.15em; }
+.je-table-scroll { overflow-x: auto; }
+.je-analytics-table { width: 100%; border-collapse: collapse; margin: 1em 0; }
+.je-analytics-table th, .je-analytics-table td {
+  text-align: left; padding: 0.4em 0.7em; border-bottom: 1px solid var(--md-default-fg-color--lightest, #ddd);
+  font-size: 0.9em; vertical-align: top;
+}
+.je-analytics-bar-track {
+  background: var(--md-default-fg-color--lightest, #eee);
+  border-radius: 4px; height: 8px; width: 100%; overflow: hidden;
+}
+.je-analytics-bar-fill { background: var(--md-accent-fg-color, #7c4dff); height: 100%; }
+.je-analytics-updated { font-size: 0.8em; opacity: 0.6; margin-top: 1.5em; }
+.je-analytics-error { color: #c0392b; }
+.je-analytics-mismatch { color: #d35400; font-weight: 600; }
+.je-pill-row { display: flex; flex-wrap: wrap; gap: 0.4em; margin-bottom: 0.6em; }
+.je-pill {
+  cursor: pointer; font: inherit; font-size: 0.85em; padding: 0.3em 0.8em;
+  border: 1px solid var(--md-default-fg-color--lightest, #ddd); border-radius: 999px;
+  background: transparent; color: inherit;
+}
+.je-pill:hover { opacity: 0.8; }
+.je-pill-active { background: var(--md-accent-fg-color, #7c4dff); border-color: transparent; color: rgba(0, 0, 0, 0.87); }
+.je-table-search {
+  display: block; width: 100%; max-width: 320px; margin-bottom: 0.6em;
+  padding: 0.4em 0.6em; border: 1px solid var(--md-default-fg-color--lightest, #ddd);
+  border-radius: 6px; background: transparent; color: inherit; font: inherit;
+}
+.je-sortable-th { user-select: none; white-space: nowrap; }
+.je-sortable-th button {
+  font: inherit; color: inherit; font-weight: inherit; text-align: inherit;
+  background: none; border: none; padding: 0; width: 100%; cursor: pointer;
+}
+.je-sortable-th button:hover { opacity: 0.75; }
+.je-sortable-th button:focus-visible { outline: 2px solid var(--je-link); outline-offset: 2px; }
+.je-sort-active { font-weight: 700; }
+.je-pct-cell { display: inline-flex; align-items: center; gap: 0.5em; white-space: nowrap; }
+.je-inline-bar-track {
+  flex: 0 0 auto;
+  width: 100px; height: 8px; border-radius: 4px; overflow: hidden;
+  background: var(--md-default-fg-color--lightest, #eee);
+}
+.je-inline-bar-track .je-analytics-bar-fill { height: 100%; }
+</style>
+
+<script>
+(function() {
+  // Instant navigation may execute this page script more than once.
+  if (window.jeAnalyticsDashboard) window.jeAnalyticsDashboard.dispose();
+  let activeRoot = null;
+  let activeController = null;
+  let subscription = null;
+  const SUPABASE_URL = "https://cgsdfzfdoxunzoofzhgd.supabase.co";
+  const SUPABASE_ANON_KEY = "sb_publishable_ShFKE3ognn7ZgncCGmCR-A_R1tPApiW";
+
+  // Hard cap on rows pulled from any one view. report_stats is reachable by
+  // anyone holding the anon key, so a flood of forged installs shouldn't be
+  // able to make every visitor download/render unbounded rows.
+  const MAX_ROWS = 500;
+
+  async function fetchView(name, query, signal) {
+    const q = query || "select=*";
+    const withLimit = /(^|&)limit=/.test(q) ? q : `${q}&limit=${MAX_ROWS}`;
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${name}?${withLimit}`, {
+      signal,
+      headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }
+    });
+    if (!res.ok) throw new Error(`${name}: ${res.status}`);
+    return res.json();
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+  }
+
+  // Coerces report-derived fields before they hit innerHTML/style="width:N%".
+  function num(v) { return Number.isFinite(Number(v)) ? Number(v) : 0; }
+  function pct(v) { return Math.max(0, Math.min(100, num(v))); }
+
+  // Bar first, percentage after, both in a nowrap span: a leading number of
+  // variable width (6% vs 100%) would otherwise misalign the bars, and a
+  // squeezed cell could wrap the number onto its own line above the bar.
+  function barCell(p) {
+    return `<span class="je-pct-cell"><div class="je-inline-bar-track"><div class="je-analytics-bar-fill" style="width:${p}%;"></div></div>${p}%</span>`;
+  }
+
+  // Same "DD-MMM-YYYY" convention as the config page's own formatDateDMY --
+  // explicit instead of toLocaleDateString() so it doesn't vary by the
+  // visitor's browser locale.
+  const DATE_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  function formatDateDMY(d) {
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${day}-${DATE_MONTHS[d.getMonth()]}-${d.getFullYear()}`;
+  }
+
+  // Fallback for names with no config-page label (e.g. "total.*" keys).
+  function humanize(name) {
+    // String() guard: name can originate from a report-supplied field.
+    const s = String(name == null ? '' : name);
+    const spaced = s.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/_/g, ' ');
+    return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+  }
+
+  // Prefers the config page's real label over the humanize() fallback; the
+  // raw PropertyName is a hover title rather than always-visible text.
+  function labeledName(rawName) {
+    // hasOwnProperty guard: rawName is report-supplied, so a name like
+    // "toString" or "constructor" would otherwise pull a function off
+    // Object.prototype instead of a label.
+    const display = Object.prototype.hasOwnProperty.call(FLAG_LABELS_MAP, rawName)
+      ? FLAG_LABELS_MAP[rawName] : humanize(rawName);
+    return `<span title="${escapeHtml(rawName)}">${escapeHtml(display)}</span>`;
+  }
+
+  // Flags a jf10 build running on a v12+ server or vice versa (both work,
+  // since the injection middleware is plain ASP.NET on either runtime, but
+  // it's the wrong build for that server). Compares major-version ranges
+  // rather than startsWith('12.'), so this doesn't misfire once Jellyfin 13 ships.
+  function isTargetMismatch(target, jellyfinVersion) {
+    const major = parseInt(jellyfinVersion, 10);
+    if (!Number.isFinite(major)) return false;
+    return (target === 'jf10' && major >= 12) || (target === 'jf12' && major < 12);
+  }
+
+  function renderVersionCards(rows) {
+    const totalInstalls = rows.reduce((sum, r) => sum + num(r.install_count), 0);
+    // Object.create(null) wherever report-supplied strings become keys: an
+    // inherited name like "hasOwnProperty" must index nothing.
+    const byTarget = Object.create(null);
+    rows.forEach(r => { byTarget[r.jellyfin_target] = (byTarget[r.jellyfin_target] || 0) + num(r.install_count); });
+
+    let html = `<div class="je-stat-cards">
+      <div class="je-stat-card je-stat-card-hero"><div class="je-stat-value">${totalInstalls}</div><div class="je-stat-label">Reporting installs</div></div>`;
+    // Cap BY COUNT, not alphabetically: jellyfin_target is attacker-mintable.
+    Object.keys(byTarget).sort((a, b) => byTarget[b] - byTarget[a]).slice(0, 12).forEach(target => {
+      html += `<div class="je-stat-card"><div class="je-stat-value">${byTarget[target]}</div><div class="je-stat-label">on ${escapeHtml(target)}</div></div>`;
+    });
+    html += `</div>`;
+
+    // Cap BY COUNT before sorting, so the cap keeps the biggest groups.
+    const items = rows.slice().sort((a, b) => num(b.install_count) - num(a.install_count)).slice(0, 50).map(r => ({
+      pluginVersion: String(r.plugin_version == null ? '' : r.plugin_version),
+      target: String(r.jellyfin_target == null ? '' : r.jellyfin_target),
+      jfVersion: String(r.jellyfin_version == null ? '' : r.jellyfin_version),
+      installs: num(r.install_count),
+      seenTs: new Date(r.most_recent_seen).getTime() || 0,
+      mismatch: isTargetMismatch(r.jellyfin_target, r.jellyfin_version),
+    }));
+
+    // Zero-padded segments so "12.10.0" sorts after "12.9.0" as a string compare.
+    const versionKey = v => String(v).split('.').map(p => String(parseInt(p, 10) || 0).padStart(6, '0')).join('.');
+
+    const columns = [
+      { key: 'plugin', label: 'Plugin Version', sortValue: i => versionKey(i.pluginVersion), text: i => i.pluginVersion, render: i => escapeHtml(i.pluginVersion) },
+      { key: 'target', label: 'Jellyfin Target', sortValue: i => i.target, render: i => escapeHtml(i.target) },
+      { key: 'jf', label: 'Jellyfin Version', sortValue: i => versionKey(i.jfVersion), text: i => i.jfVersion,
+        render: i => i.mismatch
+          ? `<span class="je-analytics-mismatch" title="This build target doesn't match the running server's major version">${escapeHtml(i.jfVersion)} ⚠</span>`
+          : escapeHtml(i.jfVersion) },
+      { key: 'installs', label: 'Installs', firstDir: 'desc', sortValue: i => i.installs, render: i => String(i.installs) },
+      { key: 'seen', label: 'Recently Seen On', firstDir: 'desc', sortValue: i => i.seenTs, text: i => formatDateDMY(new Date(i.seenTs)), render: i => formatDateDMY(new Date(i.seenTs)) },
+    ];
+
+    // Faceted by build target so the jf10/jf12 split is one click away.
+    const table = renderSortableTable(items, columns, 'installs', 'target', 'desc');
+    return { html: html + table.html, mount: table.mount };
+  }
+
+  // "total.*" keys are point-in-time snapshots (e.g. total.bookmarks), sent
+  // through the same pipeline as per-period action counters (e.g.
+  // bookmarks.created) but rendered separately since they mean different things.
+  const TOTAL_COUNT_PREFIX = 'total.';
+
+  const WINDOW_DAYS = 45; // must match v_feature_usage_window's own interval
+
+  // Sourced from v_feature_usage_window: count(distinct install_id) done
+  // server-side, since taking Math.max(install_count) across per-period rows
+  // client-side undercounts once different installs land in different periods.
+  function renderUsageTable(rows) {
+    if (!rows.length) {
+      return `<p><em>No usage-count data reported yet. This fills in once opted-in installs have accumulated activity over a reporting cycle.</em></p>`;
+    }
+    const maxCount = Math.max(...rows.map(r => num(r.total_count)), 1);
+    let html = rows.length >= 20 ? `<p>Showing the top 20 keys.</p>` : '';
+    html += `<div class="je-table-scroll"><table class="je-analytics-table"><thead><tr><th>Feature key</th><th>Total uses</th><th>Installs reporting it</th><th></th></tr></thead><tbody>`;
+    rows.forEach(r => {
+      const barPct = pct(Math.round((num(r.total_count) / maxCount) * 100));
+      html += `<tr><td>${labeledName(String(r.feature_key || ''))}</td><td>${num(r.total_count)}</td><td>${num(r.install_count)}</td>
+        <td style="width:120px;"><div class="je-analytics-bar-track"><div class="je-analytics-bar-fill" style="width:${barPct}%;"></div></div></td></tr>`;
+    });
+    html += `</tbody></table></div>`;
+    return html;
+  }
+
+  // Current totals (not deltas), summed from v_current_totals, which picks
+  // each install's own latest report before summing (installs report on
+  // staggered schedules). brandingRow is folded in as a count-only card.
+  function renderTotalCounts(rows, brandingRow) {
+    if (!rows.length && !brandingRow) {
+      return `<p><em>No total-count data reported yet.</em></p>`;
+    }
+    // Already aggregated server-side and capped/ordered by the fetch itself;
+    // just order alphabetically for display.
+    const latest = rows.slice().sort((a, b) => String(a.feature_key).localeCompare(String(b.feature_key)));
+
+    let html = `<div class="je-stat-cards">`;
+    latest.forEach(r => {
+      const label = humanize(String(r.feature_key).slice(TOTAL_COUNT_PREFIX.length));
+      html += `<div class="je-stat-card">
+        <div class="je-stat-value">${num(r.total_count)}</div>
+        <div class="je-stat-label-primary">${escapeHtml(label)}</div>
+        <div class="je-stat-label-secondary">Present on ${num(r.nonzero_install_count)} of ${num(r.install_count)} reporting installs</div>
+      </div>`;
+    });
+    if (brandingRow) {
+      html += `<div class="je-stat-card">
+        <div class="je-stat-value">${num(brandingRow.nonzero_install_count)}</div>
+        <div class="je-stat-label-primary">Using Custom branding</div>
+        <div class="je-stat-label-secondary">Used on ${num(brandingRow.nonzero_install_count)} of ${num(brandingRow.install_count)} reporting installs</div>
+      </div>`;
+    }
+    html += `</div>`;
+    return html;
+  }
+
+  // All generated by scripts/generate_config_flag_groups.py before every
+  // docs build. A setting absent from the config page falls back to
+  // "Other"/humanize(); one absent from defaults just shows no default.
+  let FLAG_GROUPS_MAP = {};
+  let FLAG_LABELS_MAP = {};
+  let FLAG_TABS_MAP = {};
+  let TAB_ICONS_MAP = {};
+  let FLAG_DEFAULTS_MAP = {};
+
+  async function loadFlagGroups(signal) {
+    try {
+      const res = await fetch(new URL('../config-flag-groups.json', window.location.href), { signal });
+      if (res.ok) {
+        const data = await res.json();
+        FLAG_GROUPS_MAP = data.groups || {};
+        FLAG_LABELS_MAP = data.labels || {};
+        FLAG_TABS_MAP = data.tabs || {};
+        TAB_ICONS_MAP = data.tabIcons || {};
+        FLAG_DEFAULTS_MAP = data.defaults || {};
+      }
+    } catch (err) {
+      // Non-fatal: everything just falls into "Other" / humanize() until this loads.
+    }
+  }
+
+  // {type: "material", value: ligature} or {type: "img", src: url}; no icon
+  // for "Other" (unmapped names) or if this tab genuinely has none.
+  function iconFor(tabName) {
+    const icon = TAB_ICONS_MAP[tabName];
+    if (!icon) return '';
+    if (icon.type === 'material') return `<i class="je-pill-icon" aria-hidden="true">${escapeHtml(icon.value)}</i>`;
+    if (icon.type === 'img') return `<img class="je-pill-icon-img" src="${escapeHtml(icon.src)}" alt="" />`;
+    return '';
+  }
+
+  function groupFor(flagName) {
+    // Same hasOwnProperty guard as labeledName: flagName is report-supplied.
+    return Object.prototype.hasOwnProperty.call(FLAG_GROUPS_MAP, flagName)
+      ? FLAG_GROUPS_MAP[flagName] : 'Other';
+  }
+
+  function tabFor(flagName) {
+    return Object.prototype.hasOwnProperty.call(FLAG_TABS_MAP, flagName)
+      ? FLAG_TABS_MAP[flagName] : 'Other';
+  }
+
+  // Flat, sortable/filterable table with optional facet pills (e.g. by
+  // "tab") above it. columns: {key, label, render(row), sortValue(row),
+  // text(row) -- optional search haystack, defaults to sortValue}. Returns
+  // {html, mount}; setSection calls mount(container) after insertion to
+  // wire up click-to-sort/type-to-filter/pill-click via event delegation.
+  function renderSortableTable(rows, columns, initialSortKey, facetKey, initialSortDir) {
+    const uid = Math.random().toString(36).slice(2);
+    const tbodyId = 'je-tbody-' + uid;
+    let sortKey = initialSortKey || columns[0].key;
+    let sortDir = initialSortDir || 'asc';
+    let filterText = '';
+    let activeFacet = null; // null = "All"
+
+    const facetCol = facetKey ? columns.find(c => c.key === facetKey) : null;
+
+    function haystack(row) {
+      return columns.map(c => String((c.text || c.sortValue)(row))).join(' ').toLowerCase();
+    }
+
+    function visibleRows() {
+      let filtered = facetCol && activeFacet !== null
+        ? rows.filter(r => facetCol.sortValue(r) === activeFacet) : rows;
+      if (filterText) filtered = filtered.filter(r => haystack(r).includes(filterText));
+      const col = columns.find(c => c.key === sortKey);
+      const dir = sortDir === 'asc' ? 1 : -1;
+      return filtered.slice().sort((a, b) => {
+        const av = col.sortValue(a), bv = col.sortValue(b);
+        if (av < bv) return -1 * dir;
+        if (av > bv) return 1 * dir;
+        return 0;
+      });
+    }
+
+    function renderRows() {
+      const list = visibleRows();
+      if (!list.length) return `<tr><td colspan="${columns.length}"><em>No matches.</em></td></tr>`;
+      return list.map(row => `<tr>${columns.map(c => `<td>${c.render(row)}</td>`).join('')}</tr>`).join('');
+    }
+
+    function renderHead() {
+      return columns.map(c => {
+        const active = c.key === sortKey;
+        return `<th class="je-sortable-th${active ? ' je-sort-active' : ''}" data-sort-key="${escapeHtml(c.key)}"${active ? ` aria-sort="${sortDir === 'asc' ? 'ascending' : 'descending'}"` : ''}><button type="button">${escapeHtml(c.label)}${active ? `<span aria-hidden="true">${sortDir === 'asc' ? ' ▲' : ' ▼'}</span>` : ''}</button></th>`;
+      }).join('');
+    }
+
+    function facetCounts() {
+      const counts = Object.create(null);
+      rows.forEach(r => {
+        const v = facetCol.sortValue(r);
+        counts[v] = (counts[v] || 0) + 1;
+      });
+      return counts;
+    }
+
+    function renderPills() {
+      if (!facetCol) return '';
+      const counts = facetCounts();
+      const names = Object.keys(counts).sort((a, b) => {
+        if (a === 'Other') return 1;
+        if (b === 'Other') return -1;
+        return a.localeCompare(b);
+      });
+      // Icons are tab-icon data specifically, so only show them when this
+      // facet actually is the tab column.
+      const pill = (value, label, active, iconHtml) =>
+        `<button type="button" class="je-pill${active ? ' je-pill-active' : ''}" aria-pressed="${active}" data-facet-value="${escapeHtml(value)}">${iconHtml || ''}${escapeHtml(label)}</button>`;
+      return pill('', `All (${rows.length})`, activeFacet === null, '')
+        + names.map(n => pill(n, `${n} (${counts[n]})`, activeFacet === n, facetKey === 'tab' ? iconFor(n) : '')).join('');
+    }
+
+    const html = `
+      <div class="je-pill-row">${renderPills()}</div>
+      <input type="text" class="je-table-search" placeholder="Filter…" />
+      <div class="je-table-scroll"><table class="je-analytics-table"><thead><tr>${renderHead()}</tr></thead>
+      <tbody id="${tbodyId}">${renderRows()}</tbody></table></div>
+    `;
+
+    function mount(container) {
+      const pillRow = container.querySelector('.je-pill-row');
+      const input = container.querySelector('.je-table-search');
+      const thead = container.querySelector('thead');
+      const tbody = container.querySelector('#' + tbodyId);
+
+      if (pillRow) {
+        pillRow.addEventListener('click', e => {
+          const btn = e.target.closest('button[data-facet-value]');
+          if (!btn) return;
+          activeFacet = btn.dataset.facetValue || null;
+          pillRow.innerHTML = renderPills();
+          tbody.innerHTML = renderRows();
+          pillRow.querySelector('.je-pill-active')?.focus();
+        });
+      }
+
+      input.addEventListener('input', () => {
+        filterText = input.value.trim().toLowerCase();
+        tbody.innerHTML = renderRows();
+      });
+
+      thead.addEventListener('click', e => {
+        const th = e.target.closest('th[data-sort-key]');
+        if (!th) return;
+        const key = th.dataset.sortKey;
+        // Re-click flips direction; a new column starts at its natural
+        // direction (numeric/date columns: biggest/newest first).
+        if (key === sortKey) {
+          sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+        } else {
+          sortDir = columns.find(c => c.key === key).firstDir || 'asc';
+          sortKey = key;
+        }
+        thead.innerHTML = renderHead();
+        tbody.innerHTML = renderRows();
+        thead.querySelector('.je-sort-active button').focus();
+      });
+    }
+
+    return { html, mount };
+  }
+
+  function renderFlagRates(rows) {
+    const reporting = rows.filter(r => num(r.reporting_count) > 0);
+    if (!reporting.length) {
+      return `<p><em>No config-flag data reported yet.</em></p>`;
+    }
+
+    const items = reporting.map(r => {
+      // hasOwnProperty guard: r.flag_name is report-supplied.
+      const hasDefault = Object.prototype.hasOwnProperty.call(FLAG_DEFAULTS_MAP, r.flag_name);
+      return {
+        tab: tabFor(r.flag_name),
+        group: groupFor(r.flag_name),
+        flagName: r.flag_name,
+        label: Object.prototype.hasOwnProperty.call(FLAG_LABELS_MAP, r.flag_name) ? FLAG_LABELS_MAP[r.flag_name] : humanize(r.flag_name),
+        defaultOn: hasDefault ? FLAG_DEFAULTS_MAP[r.flag_name] : null,
+        enabledPct: pct(r.enabled_pct),
+      };
+    });
+
+    const columns = [
+      { key: 'tab', label: 'Tab', sortValue: i => i.tab, render: i => escapeHtml(i.tab) },
+      { key: 'group', label: 'Group', sortValue: i => i.group, render: i => escapeHtml(i.group) },
+      { key: 'toggle', label: 'Feature toggle', sortValue: i => i.label, text: i => `${i.label} ${i.flagName}`, render: i => labeledName(i.flagName) },
+      { key: 'default', label: 'Default', sortValue: i => i.defaultOn === null ? -1 : (i.defaultOn ? 1 : 0), render: i => i.defaultOn === null ? '—' : (i.defaultOn ? 'ON' : 'OFF') },
+      { key: 'pct', label: '% ON', sortValue: i => i.enabledPct, render: i => barCell(i.enabledPct) },
+    ];
+
+    // Faceted by tab, sorted by group -- sorting by tab would be a no-op
+    // once narrowed to one pill.
+    return renderSortableTable(items, columns, 'group', 'tab');
+  }
+
+  // One row per (setting, value) pair -- e.g. IconStyle contributes a
+  // "lucide" row and a "material" row, each with its own install share.
+  function renderSettingValues(rows) {
+    if (!rows.length) {
+      return `<p><em>No settings data reported yet.</em></p>`;
+    }
+
+    // Object.create(null): setting_name is report-supplied, and a name like
+    // "toString" hitting an inherited member would throw and blank the page.
+    const bySetting = Object.create(null);
+    rows.forEach(r => { (bySetting[r.setting_name] = bySetting[r.setting_name] || []).push(r); });
+
+    const items = [];
+    Object.keys(bySetting).forEach(name => {
+      const values = bySetting[name];
+      const total = values.reduce((sum, v) => sum + num(v.install_count), 0);
+      // hasOwnProperty guard: name is report-supplied.
+      const hasDefault = Object.prototype.hasOwnProperty.call(FLAG_DEFAULTS_MAP, name);
+      const defaultValue = hasDefault ? String(FLAG_DEFAULTS_MAP[name]) : null;
+      // Always humanize(), never the config page's short contextual label
+      // (e.g. "Position") -- on the real config page that's unambiguous
+      // because it's visually nested under a "Quality Tags"/"Genre Tags"/etc.
+      // heading, but flattened into one table it isn't, and the Group column
+      // ("Media Tags") is too coarse to disambiguate on its own.
+      const label = humanize(name);
+      values.forEach(v => {
+        items.push({
+          tab: tabFor(name),
+          group: groupFor(name),
+          settingName: name,
+          label,
+          value: String(v.setting_value),
+          installCount: num(v.install_count),
+          sharePct: total > 0 ? pct(Math.round((num(v.install_count) / total) * 100)) : 0,
+          isDefault: defaultValue !== null && String(v.setting_value) === defaultValue,
+        });
+      });
+    });
+
+    const columns = [
+      { key: 'tab', label: 'Tab', sortValue: i => i.tab, render: i => escapeHtml(i.tab) },
+      { key: 'group', label: 'Group', sortValue: i => i.group, render: i => escapeHtml(i.group) },
+      { key: 'setting', label: 'Setting', sortValue: i => i.label, text: i => `${i.label} ${i.settingName}`, render: i => `<span title="${escapeHtml(i.settingName)}">${escapeHtml(i.label)}</span>` },
+      { key: 'value', label: 'Value', sortValue: i => i.value, render: i => escapeHtml(i.value) + (i.isDefault ? ' <em>(default)</em>' : '') },
+      { key: 'installs', label: 'Installs', sortValue: i => i.installCount, render: i => String(i.installCount) },
+      { key: 'share', label: '%', sortValue: i => i.sharePct, render: i => barCell(i.sharePct) },
+    ];
+
+    // Faceted by tab, sorted by group -- sorting by tab would be a no-op
+    // once narrowed to one pill.
+    return renderSortableTable(items, columns, 'group', 'tab');
+  }
+
+  // A section that throws renders its own error line rather than blanking
+  // the whole dashboard. Accepts a plain HTML string or {html, mount} (for
+  // renderers needing to wire up interactivity once inserted into the DOM).
+  function setSection(id, fn, ...args) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    try {
+      const result = fn(...args);
+      if (result && typeof result === 'object' && typeof result.mount === 'function') {
+        el.innerHTML = result.html;
+        result.mount(el);
+      } else {
+        el.innerHTML = result;
+      }
+    } catch (err) {
+      el.innerHTML = `<p class="je-analytics-error">Couldn't render this section (${escapeHtml(err && err.message ? err.message : err)}).</p>`;
+    }
+  }
+
+  async function render(root, signal) {
+    const loadingEl = document.getElementById('je-analytics-loading');
+    const errorEl = document.getElementById('je-analytics-error-banner');
+    try {
+      // Explicit order= on every view: an unordered query plus fetchView's row
+      // limit would let PostgREST truncate an arbitrary subset once a view
+      // outgrows it, instead of deterministically keeping the top rows.
+      const [versionRows, windowRows, totalRows, brandingRows, flagRows, settingRows] = await Promise.all([
+        fetchView("v_version_adoption", "select=*&order=most_recent_seen.desc", signal),
+        fetchView("v_feature_usage_window", "select=*&order=total_count.desc&limit=20", signal),
+        fetchView("v_current_totals", "select=*&order=total_count.desc&limit=24", signal),
+        fetchView("v_branding_usage", "select=*", signal),
+        fetchView("v_config_flag_rates", "select=*&order=enabled_pct.desc", signal),
+        fetchView("v_config_setting_values", "select=*&order=install_count.desc", signal),
+        loadFlagGroups(signal)
+      ]);
+
+      if (signal.aborted || !root.isConnected || root !== activeRoot) return;
+
+      setSection('je-section-versions', renderVersionCards, versionRows);
+      setSection('je-section-totals', renderTotalCounts, totalRows, brandingRows[0]);
+      setSection('je-section-usage', renderUsageTable, windowRows);
+      setSection('je-section-flags', renderFlagRates, flagRows);
+      setSection('je-section-settings', renderSettingValues, settingRows);
+
+      const updatedEl = document.getElementById('je-analytics-updated');
+      if (updatedEl) updatedEl.textContent = 'Loaded live just now from the community analytics project. Refresh this page any time for current numbers.';
+      if (loadingEl) loadingEl.remove();
+    } catch (err) {
+      if (signal.aborted || !root.isConnected || root !== activeRoot) return;
+      if (loadingEl) loadingEl.remove();
+      if (errorEl) {
+        errorEl.hidden = false;
+        errorEl.textContent = `Couldn't load live analytics data right now (${err.message}). Try refreshing.`;
+      }
+    }
+  }
+
+  function onPage() {
+    const root = document.getElementById('je-analytics-dashboard');
+    if (root === activeRoot) return;
+    if (activeController) activeController.abort();
+    activeRoot = root;
+    activeController = null;
+    if (!root) return;
+    activeController = new AbortController();
+    render(root, activeController.signal);
+  }
+
+  window.jeAnalyticsDashboard = {
+    dispose() {
+      if (activeController) activeController.abort();
+      if (subscription) subscription.unsubscribe();
+      activeRoot = null;
+    }
+  };
+  if (typeof document$ !== 'undefined') subscription = document$.subscribe(onPage);
+  onPage();
+})();
+</script>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden="">
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"></path></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer">
+        
+          
+          <a href="../api/" class="md-footer__link md-footer__link--prev" aria-label="Previous: API (Advanced)">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M15.41 16.58 10.83 12l4.58-4.59L14 6l-6 6 6 6z"></path></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous · Advanced
+              </span>
+              <div class="md-ellipsis">
+                API
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../project-structure/" class="md-footer__link md-footer__link--next" aria-label="Next: Project Structure (Advanced)">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next · Advanced
+              </span>
+              <div class="md-ellipsis">
+                Project Structure
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M8.59 16.58 13.17 12 8.59 7.41 10 6l6 6-6 6z"></path></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  <p class="je-keyhint">
+    Press <kbd>/</kbd> to search, <kbd>P</kbd> or <kbd>N</kbd> for the previous or next page
+  </p>
+  
+    <div class="md-copyright__highlight">
+      Copyright ©2026 n00bcodr. Made with 💜 for Jellyfin and the community
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+    <a href="https://github.com/n00bcodr/Jellyfin-Enhanced" target="_blank" rel="noopener" title="GitHub Repository" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"></path></svg>
+    </a>
+  
+    
+    
+    
+    
+    <a href="https://discord.gg/EYNFf7y4CG" target="_blank" rel="noopener" title="Jellyfin Community Discord - Jellyfin Enhanced Channel" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M492.5 69.8c-.2-.3-.4-.6-.8-.7-38.1-17.5-78.4-30-119.7-37.1-.4-.1-.8 0-1.1.1s-.6.4-.8.8c-5.5 9.9-10.5 20.2-14.9 30.6-44.6-6.8-89.9-6.8-134.4 0-4.5-10.5-9.5-20.7-15.1-30.6-.2-.3-.5-.6-.8-.8s-.7-.2-1.1-.2C162.5 39 122.2 51.5 84.1 69c-.3.1-.6.4-.8.7C7.1 183.5-13.8 294.6-3.6 404.2c0 .3.1.5.2.8s.3.4.5.6c44.4 32.9 94 58 146.8 74.2.4.1.8.1 1.1 0s.7-.4.9-.7c11.3-15.4 21.4-31.8 30-48.8.1-.2.2-.5.2-.8s0-.5-.1-.8-.2-.5-.4-.6-.4-.3-.7-.4c-15.8-6.1-31.2-13.4-45.9-21.9-.3-.2-.5-.4-.7-.6s-.3-.6-.3-.9 0-.6.2-.9.3-.5.6-.7c3.1-2.3 6.2-4.7 9.1-7.1.3-.2.6-.4.9-.4s.7 0 1 .1c96.2 43.9 200.4 43.9 295.5 0 .3-.1.7-.2 1-.2s.7.2.9.4c2.9 2.4 6 4.9 9.1 7.2.2.2.4.4.6.7s.2.6.2.9-.1.6-.3.9-.4.5-.6.6c-14.7 8.6-30 15.9-45.9 21.8-.2.1-.5.2-.7.4s-.3.4-.4.7-.1.5-.1.8.1.5.2.8c8.8 17 18.8 33.3 30 48.8.2.3.6.6.9.7s.8.1 1.1 0c52.9-16.2 102.6-41.3 147.1-74.2.2-.2.4-.4.5-.6s.2-.5.2-.8c12.3-126.8-20.5-236.9-86.9-334.5zm-302 267.7c-29 0-52.8-26.6-52.8-59.2s23.4-59.2 52.8-59.2c29.7 0 53.3 26.8 52.8 59.2 0 32.7-23.4 59.2-52.8 59.2m195.4 0c-29 0-52.8-26.6-52.8-59.2s23.4-59.2 52.8-59.2c29.7 0 53.3 26.8 52.8 59.2 0 32.7-23.2 59.2-52.8 59.2"></path></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+      <div class="md-progress" data-md-component="progress" role="progressbar"></div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.instant", "navigation.instant.progress", "navigation.tracking", "navigation.tabs", "navigation.tabs.sticky", "navigation.sections", "navigation.indexes", "navigation.top", "navigation.footer", "toc.follow", "search.suggest", "search.highlight", "search.share", "content.code.copy", "content.code.annotate", "content.tabs.link", "announce.dismiss"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.c21346df.min.js"></script>
+      
+        <script src="../../javascripts/extra.js"></script>
+      
+    
+  
+<script id="init-glightbox">const lightbox = GLightbox({"touchNavigation": true, "loop": false, "zoomable": true, "draggable": false, "openEffect": "zoom", "closeEffect": "zoom", "slideEffect": "slide"});
+document$.subscribe(()=>{ lightbox.reload(); });
+</script></body></html>
