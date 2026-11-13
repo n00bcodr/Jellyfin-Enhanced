@@ -301,3 +301,17 @@ for (const [label, hide, retried] of [
   await h.timers.advance(2000);
   assert.deepEqual(keys(h.api.stored), retried ? ['a', 'b'] : ['a']);
 });
+
+// Seerr cards used to pass the title HTML-escaped, and it was stored that way.
+test('a name stored HTML-escaped reads as its title, and is not rewritten by other changes', async t => {
+  const escaped = { itemId: '', tmdbId: '7', name: 'Tom &amp; Jerry&#039;s &lt;Show&gt; &quot;Live&quot; &amp;amp;', type: 'Series', hideScope: 'global' };
+  const h = setup(t, { loadedList: { items: { 'tmdb-7': escaped }, settings: {} } });
+  assert.equal(h.hc.getAllHiddenItems()[0].name, 'Tom & Jerry\'s <Show> "Live" &amp;');
+  assert.equal(h.hc.filterCalendarEvents([{ title: 'Tom & Jerry\'s <Show> "Live" &amp;' }]).length, 0, 'the calendar matches the title');
+
+  h.hc.hideItem(item('b'));
+  await h.timers.advance(5000);
+  assert.equal(h.api.stored.items['tmdb-7'].name, escaped.name, 'the stored text is left as it is');
+  assert.equal(h.api.requests.filter(r => r.type === 'GET').length, 1, 'one save, no repeat');
+  assert.equal(h.hc.getAllHiddenItems().find(i => i._key === 'tmdb-7').name, 'Tom & Jerry\'s <Show> "Live" &amp;');
+});

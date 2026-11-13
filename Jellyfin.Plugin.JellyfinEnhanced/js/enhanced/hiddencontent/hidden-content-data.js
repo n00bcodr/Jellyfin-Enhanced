@@ -118,6 +118,32 @@
         return { ...onto, items, settings };
     }
 
+    // Seerr cards used to store titles HTML-escaped ("Tom &amp; Jerry"). Such names
+    // read as the title they escaped: only the escaper's own entities, only in names.
+    const ESCAPED_ENTITIES = { '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#039;': "'", '&#39;': "'" };
+
+    /**
+     * Returns the list with stored names that were saved HTML-escaped read as
+     * plain text, for display and matching. Nothing is written back: an entry's
+     * stored text only changes when this session changes that entry.
+     * @param {{items: Object}|null} doc A hidden list as stored.
+     * @returns {{items: Object}|null} `doc` itself when no name needs it.
+     */
+    function withPlainNames(doc) {
+        const items = doc?.items;
+        if (!items || typeof items !== 'object') return doc;
+        let plainItems = null;
+        for (const [key, entry] of Object.entries(items)) {
+            const name = entry?.name;
+            if (typeof name !== 'string' || !name.includes('&')) continue;
+            const plain = name.replace(/&(?:amp|lt|gt|quot|#0?39);/g, entity => ESCAPED_ENTITIES[entity]);
+            if (plain === name) continue;
+            plainItems = plainItems || { ...items };
+            plainItems[key] = { ...entry, name: plain };
+        }
+        return plainItems ? { ...doc, items: plainItems } : doc;
+    }
+
     /**
      * Returns the in-memory hidden-content data object, lazily initialised
      * from `JE.userConfig.hiddenContent`.
@@ -125,7 +151,7 @@
      */
     function getHiddenData() {
         if (!hiddenData) {
-            hiddenData = JE.userConfig?.hiddenContent || { items: {}, settings: {} };
+            hiddenData = withPlainNames(JE.userConfig?.hiddenContent) || { items: {}, settings: {} };
         }
         return hiddenData;
     }
@@ -255,9 +281,10 @@
             if (JE.session && !JE.session.isCurrent(requestEpoch)) return false;
             const camelCased = (typeof JE.toCamelCase === 'function') ? JE.toCamelCase(fresh) : fresh;
             if (!camelCased || typeof camelCased !== 'object') return false;
+            const read = withPlainNames(camelCased);
             // Changes this session has not saved yet stay on top of the list as read.
-            hiddenData = loaded ? withChanges(storedCopy, getHiddenData(), camelCased) : camelCased;
-            storedCopy = copyOf(camelCased);
+            hiddenData = loaded ? withChanges(storedCopy, getHiddenData(), read) : read;
+            storedCopy = copyOf(read);
             loaded = true;
             JE.userConfig = JE.userConfig || {};
             JE.userConfig.hiddenContent = hiddenData;
@@ -614,7 +641,7 @@
      */
     function resetFromUserConfig() {
         loaded = JE.userConfig?.hiddenContent != null;
-        hiddenData = JE.userConfig?.hiddenContent || { items: {}, settings: {} };
+        hiddenData = withPlainNames(JE.userConfig?.hiddenContent) || { items: {}, settings: {} };
         storedCopy = copyOf(hiddenData);
         listGeneration++;
         rebuildSets();
@@ -625,7 +652,8 @@
      * the list as just read from the server, and applies only what this session
      * changed since it last read or wrote the list. Call `saved()` once `list`
      * is written: the session then shows that list, keeping any change made
-     * while the save was in flight for the next save.
+     * while the save was in flight for the next save. `saved()` returns the
+     * list as the session now holds it unchanged (with plain names).
      * @param {{items: Object, settings: Object}} stored The list as stored now (camelCase).
      * @returns {{list: Object, saved: Function}}
      */
@@ -637,10 +665,11 @@
         return {
             list,
             saved() {
-                if (generation !== listGeneration) return; // another user's list, or reloaded meanwhile
+                if (generation !== listGeneration) return list; // another user's list, or reloaded meanwhile
+                const written = withPlainNames(list);
                 const local = getHiddenData();
-                const next = sameValue(sent, local) ? list : withChanges(sent, local, list);
-                storedCopy = copyOf(list);
+                const next = sameValue(sent, local) ? written : withChanges(sent, local, written);
+                storedCopy = copyOf(written);
                 hiddenData = next;
                 JE.userConfig = JE.userConfig || {};
                 JE.userConfig.hiddenContent = next;
@@ -649,6 +678,7 @@
                     emitChange();
                     refreshNativeCardVisibility();
                 }
+                return written;
             }
         };
     }
@@ -698,6 +728,7 @@
         unhideAll,
         resetFromUserConfig,
         rebaseOnto,
+        withPlainNames,
     });
 
 })(window.JellyfinEnhanced);

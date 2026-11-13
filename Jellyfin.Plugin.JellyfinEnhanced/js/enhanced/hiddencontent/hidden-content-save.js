@@ -89,9 +89,9 @@
             });
             // The server returns PascalCase ({ Items, Settings }); reuse the shared converter so the
             // items match locally-loaded ones (toCamelCase is idempotent and recurses into Items).
-            const hc = (typeof JE.toCamelCase === 'function')
+            const hc = internal.withPlainNames((typeof JE.toCamelCase === 'function')
                 ? JE.toCamelCase(res && res.hiddenContent)
-                : (res && res.hiddenContent);
+                : (res && res.hiddenContent));
             const items = (hc && hc.items) || {};
             return Object.entries(items).map(([key, item]) => ({ ...item, _key: key }));
         } catch (e) {
@@ -152,7 +152,7 @@
     let saveQueue = Promise.resolve();
 
     // Direct bypass of JE.saveUserSettings (which swallows errors) so callers can react to failure.
-    // Returns the JSON snapshot that was saved so the caller can compare it to current state and decide
+    // Returns the saved list, as the session holds it, as JSON so the caller can compare it to current state and decide
     // whether the success acknowledgement still represents the latest local intent.
     function directSaveHiddenContent() {
         const save = saveQueue.then(saveOnce);
@@ -190,8 +190,8 @@
                 contentType: 'application/json'
             });
         }
-        saved();
-        return snapshot;
+        // What the session now holds unchanged (names read as plain text), for reconcileAfterSave.
+        return JSON.stringify(saved());
     }
 
     // After a successful save, decide whether the server is caught up.
