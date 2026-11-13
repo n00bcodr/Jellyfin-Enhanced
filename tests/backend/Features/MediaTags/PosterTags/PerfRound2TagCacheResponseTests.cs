@@ -218,6 +218,20 @@ public class PerfRound2TagCacheResponseTests
         AssertEmptyDelta(revoked.Body);
     }
 
+    [Fact]
+    public async Task ADeltaAtAFullLoadsCursorIsEmptyWhenTheSavedCursorLagsItsEntries()
+    {
+        // A snapshot saved by a build whose stamps ran ahead of the clock: an entry stamped after the saved cursor.
+        var late = Guid.NewGuid();
+        using var endpoint = new Endpoint(_ => new() { [late.ToString("N")] = new() { Type = "Movie", Genres = ["Late"], LastUpdated = 250 } });
+        endpoint.AliceAccess = [endpoint.First, late];
+        var full = await endpoint.Read(endpoint.Alice);
+        using var json = JsonDocument.Parse(full.Body);
+        Assert.Equal(2, json.RootElement.GetProperty("count").GetInt32());
+        var cursor = json.RootElement.GetProperty("timestamp").GetInt64();
+        AssertEmptyDelta((await endpoint.Read(endpoint.Alice, since: cursor, known: FilterRevision(full.Body))).Body);
+    }
+
     private static string[]? Visible(string body)
     {
         using var json = JsonDocument.Parse(body);

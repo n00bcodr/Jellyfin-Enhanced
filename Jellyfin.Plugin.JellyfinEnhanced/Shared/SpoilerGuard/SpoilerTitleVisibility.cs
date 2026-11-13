@@ -44,14 +44,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.SpoilerGuard
         }
 
         /// <summary>
-        /// Removes from <paramref name="state"/>, a copy read for one response, the series and film entries
-        /// <paramref name="user"/> may not see (an unknown user sees none). The stored file is not changed: an entry
-        /// guards its title again if the user is later allowed to see it.
+        /// Removes from <paramref name="state"/>, a copy read for one response, the series and film entries the user
+        /// <paramref name="user"/> returns may not see (an unknown user sees none). The user is looked up only when
+        /// the list names a series or film: every page load's bootstrap comes here. The stored file is not changed:
+        /// an entry guards its title again if the user is later allowed to see it.
         /// </summary>
-        public static UserSpoilerBlur WithoutHiddenTitles(ILibraryManager libraryManager, User? user, UserSpoilerBlur state)
+        public static UserSpoilerBlur WithoutHiddenTitles(ILibraryManager libraryManager, Func<User?> user, UserSpoilerBlur state)
         {
             if (state.Series.Count == 0 && state.Movies.Count == 0) return state;
-            var visible = user == null ? new HashSet<Guid>() : VisibleTitleIds(libraryManager, user);
+            var owner = user();
+            var visible = owner == null ? new HashSet<Guid>() : VisibleTitleIds(libraryManager, owner);
             if (visible == null) return state;
 
             bool Hidden(string key) => !Guid.TryParse(key, out var id) || !visible.Contains(id);

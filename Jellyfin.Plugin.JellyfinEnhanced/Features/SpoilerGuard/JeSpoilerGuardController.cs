@@ -62,7 +62,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.SpoilerGuard
             var state = _userConfigurationManager.GetUserConfiguration<UserSpoilerBlur>(
                 authorizedUserId, Services.SpoilerBlurImageFilter.SpoilerBlurFileName);
             // Never name a title the file's owner may not see, as GET spoiler-blur/series does not.
-            return Ok(SpoilerTitleVisibility.WithoutHiddenTitles(_libraryManager, _userManager.GetUserById(Guid.ParseExact(authorizedUserId, "N")), state));
+            return Ok(SpoilerTitleVisibility.WithoutHiddenTitles(_libraryManager, () => _userManager.GetUserById(Guid.ParseExact(authorizedUserId, "N")), state));
         }
 
         // Hard cap per spoiler-list dict on the raw full-state save endpoint:
@@ -386,7 +386,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.SpoilerGuard
             {
                 var state = _userConfigurationManager.GetUserConfigurationStrict<UserSpoilerBlur>(
                     userKey, fileName);
-                return Ok(SpoilerTitleVisibility.WithoutHiddenTitles(_libraryManager, _userManager.GetUserById(userId.Value), state));
+                return Ok(SpoilerTitleVisibility.WithoutHiddenTitles(_libraryManager, () => _userManager.GetUserById(userId.Value), state));
             }
             catch (InvalidDataException strictEx)
             {

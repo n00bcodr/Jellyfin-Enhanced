@@ -7,6 +7,11 @@ import { createHarness, deferred, englishT } from '../../helpers/harness.mjs';
 const movie = 'a'.repeat(32);
 const other = 'b'.repeat(32);
 const card = id => `<div class="card" data-id="${id}" data-type="Movie"><div class="cardScalable"><div class="cardImageContainer"></div><div class="cardOverlayContainer"></div></div></div>`;
+// Entries of items with no card on the page; each counts how often it is serialized.
+const offPageCount = 200;
+let serialized = 0;
+const offPage = () => Object.fromEntries(Array.from({ length: offPageCount }, (_, i) => [`e${i.toString(16).padStart(31, '0')}`,
+  { Type: 'Episode', AudioLanguages: ['en'], toJSON() { serialized++; return { Type: this.Type, AudioLanguages: this.AudioLanguages }; } }]));
 
 /** Production pipeline, renderer and layout; only the server response is a fixture. */
 async function setup(t, mode = 'delta') {
@@ -28,6 +33,9 @@ async function setup(t, mode = 'delta') {
       // Spoiler Guard re-sends every guarded entry with each delta, changed or not.
       if (mode === 'rider' && delta) return { items: { [other]: { Type: 'Movie', AudioLanguages: ['ja'] } }, removed: [], count: 2,
         version: 1, timestamp: 200 + now, filterRevision: 'all', filterBase: 'base' };
+      // A full load and a delta that re-sends it whole, as a server whose cursor lags its entries does.
+      if (mode === 'resent') return { items: { [movie]: { Type: 'Movie', AudioLanguages: ['en', 'fr'] }, [other]: { Type: 'Movie', AudioLanguages: ['ja'] }, ...offPage() },
+        removed: [], count: 2 + offPageCount, version: 1, timestamp: delta ? 200 + now : 100, filterRevision: 'all', filterBase: 'base' };
       const removed = (mode === 'removed' || mode === 'late-store') && changed;
       const hidden = mode === 'access' && changed;
       const items = delta
@@ -118,6 +126,17 @@ test('a delta that re-sends an unchanged entry leaves its card alone', async t =
   const kept = h.document.querySelectorAll('.card')[2].querySelector('.language-flag');
   await h.refresh();
   assert.equal(h.document.querySelectorAll('.card')[2].querySelector('.language-flag'), kept);
+});
+
+test('a delta re-sending entries without a card on the page compares none of them', async t => {
+  const h = await setup(t, 'resent');
+  const cards = [...h.document.querySelectorAll('.card')];
+  const kept = cards.map(el => el.querySelector('.language-flag'));
+  serialized = 0;
+  await h.refresh();
+  assert.equal(h.JE.tagPipeline.peekServerEntry(`e${'0'.repeat(31)}`).Type, 'Episode', 'the delta was applied');
+  assert.equal(serialized, 0, 'only the entries of cards on the page are compared');
+  assert.deepEqual(cards.map(el => el.querySelector('.language-flag')), kept, 'unchanged cards are left alone');
 });
 
 test('an empty metadata delta preserves the existing cards', async t => {

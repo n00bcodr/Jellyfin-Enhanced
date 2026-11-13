@@ -403,7 +403,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
 
             if (!changed) return;
             // Changed entries reach clients as a delta (their LastUpdated); only removals and rebuild swaps change the version.
-            Interlocked.Exchange(ref _lastModified, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+            TouchLastModified();
             ScheduleDebouncedSave();
         }
     }

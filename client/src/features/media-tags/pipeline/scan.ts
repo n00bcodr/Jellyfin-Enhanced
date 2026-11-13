@@ -354,14 +354,15 @@ export function createScan(s: PipelineState, JE: TagRuntimeBridge, deps: Pipelin
      * for it (an item in a library excluded from the tag cache keeps its tags).
      * @param updatedIds - null means the server cache was replaced.
      * @param hiddenIds - Items the user can no longer see: cleared, never looked up.
+     * @param unchanged - For an updated item with a card on the page: whether its entry is the same as before, so the card is left alone.
      */
-    function refreshVisibleCards(updatedIds: readonly string[] | null = null, hiddenIds: readonly string[] = []): void {
+    function refreshVisibleCards(updatedIds: readonly string[] | null = null, hiddenIds: readonly string[] = [], unchanged?: (id: string) => boolean): void {
         const changed = updatedIds ? new Set(updatedIds) : null;
         const hidden = new Set(hiddenIds);
         let released = false;
         for (const el of document.querySelectorAll<HTMLElement>(CARD_IMAGE_SELECTOR)) {
             const itemId = getItemId(el);
-            if (!itemId || (changed && !changed.has(itemId))) continue;
+            if (!itemId || (changed && !changed.has(itemId)) || unchanged?.(itemId)) continue;
             s.cardReuse.set(el, (s.cardReuse.get(el) || 0) + 1);
             JE.core.tagLayout?.clearCard(el.closest<HTMLElement>('.cardScalable') || el);
             if (hidden.has(itemId)) s.processedCards.add(el);

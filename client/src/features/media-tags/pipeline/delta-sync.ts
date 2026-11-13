@@ -118,16 +118,20 @@ export function createDeltaSync(s: PipelineState, JE: TagRuntimeBridge, deps: Pi
      * @returns whether the copy was reconciled (false: the caller replaces it)
      */
     /**
-     * Whether a delta entry differs from the one memory holds. For a user under
+     * Which delta entries did not change, asked only for the cards on the page
+     * (refreshVisibleCards): a delta can carry thousands of entries, and comparing
+     * each one costs more than the cards it would spare. For a user under
      * Spoiler Guard every guarded entry rides along with each delta, mostly
      * unchanged; their cards must not be torn down and redrawn every time.
-     * An entry memory does not hold (a restored copy not yet read) counts as changed.
-     * @param held - The entry in memory before the delta.
-     * @param entry - The entry the delta brought.
+     * An entry memory did not hold (a restored copy not yet read) counts as changed.
+     * @param before - Each delta entry's id: what memory held before the delta, and what the delta brought.
      */
-    function entryChanged(held: JsonRecord | undefined, entry: JsonRecord): boolean {
-        if (!held) return true;
-        try { return JSON.stringify(held) !== JSON.stringify(entry); } catch { return true; }
+    function unchangedEntries(before: Map<string, [JsonRecord | undefined, JsonRecord]>): (id: string) => boolean {
+        return (id) => {
+            const [held, entry] = before.get(id) || [];
+            if (!held || !entry) return false;
+            try { return JSON.stringify(held) === JSON.stringify(entry); } catch { return false; }
+        };
     }
 
     async function reconcileAccess(resp: JsonRecord, base: SnapshotBase, generation: number): Promise<boolean> {
@@ -173,9 +177,9 @@ export function createDeltaSync(s: PipelineState, JE: TagRuntimeBridge, deps: Pi
             s.deltaIds.delete(id);
             s.storeMisses.add(id);
         }
-        const redrawn: string[] = [];
+        const before = new Map<string, [JsonRecord | undefined, JsonRecord]>();
         for (const [id, entry] of newEntries) {
-            if (entryChanged(s.serverCache.get(id), entry)) redrawn.push(id);
+            before.set(id, [s.serverCache.get(id), entry]);
             deps.forgetItemFacts(id);
             s.serverCache.set(id, entry);
             s.storeMisses.delete(id);
@@ -196,7 +200,7 @@ export function createDeltaSync(s: PipelineState, JE: TagRuntimeBridge, deps: Pi
                     try { renderer.onServerCacheRefresh(changedIds); } catch {}
                 }
             }
-            deps.refreshVisibleCards(redrawn.concat(removed, dropped), dropped);
+            deps.refreshVisibleCards(changedIds, dropped, unchangedEntries(before));
         }
         console.log(`${logPrefix} Access changed: +${newEntries.length} items, -${removed.length + dropped.length} no longer visible`);
         return true;
@@ -292,9 +296,9 @@ export function createDeltaSync(s: PipelineState, JE: TagRuntimeBridge, deps: Pi
             const carried = record(resp.items);
             const removed = stringList(resp.removed).filter(id => !(id in carried));
             if (newEntries.length > 0 || removed.length > 0) {
-                const redrawn: string[] = [];
+                const before = new Map<string, [JsonRecord | undefined, JsonRecord]>();
                 for (const [id, entry] of newEntries) {
-                    if (entryChanged(s.serverCache.get(id), entry)) redrawn.push(id);
+                    before.set(id, [s.serverCache.get(id), entry]);
                     deps.forgetItemFacts(id);
                     s.serverCache.set(id, entry);
                     s.storeMisses.delete(id);
@@ -316,7 +320,7 @@ export function createDeltaSync(s: PipelineState, JE: TagRuntimeBridge, deps: Pi
                         try { renderer.onServerCacheRefresh(changedIds); } catch {}
                     }
                 }
-                deps.refreshVisibleCards(redrawn.concat(removed));
+                deps.refreshVisibleCards(changedIds, [], unchangedEntries(before));
                 console.log(`${logPrefix} Server cache updated: +${newEntries.length} items, -${removed.length} removed`);
             }
             settled = true;

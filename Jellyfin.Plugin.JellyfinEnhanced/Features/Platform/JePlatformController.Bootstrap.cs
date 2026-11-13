@@ -672,7 +672,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Platform
             {
                 try
                 {
-                    spoilerBlurSeries = Shared.SpoilerGuard.SpoilerTitleVisibility.WithoutHiddenTitles(_libraryManager, _userManager.GetUserById(userId), spoilerBlurSeries);
+                    spoilerBlurSeries = Shared.SpoilerGuard.SpoilerTitleVisibility.WithoutHiddenTitles(_libraryManager, () => _userManager.GetUserById(userId), spoilerBlurSeries);
                 }
                 catch (Exception ex)
                 {

@@ -150,6 +150,32 @@ public class PrivacyAutoEnableTests
         Assert.Equal(s.Keys(s.Family, s.Rated), f.Core.Manager.GetUserConfiguration<UserSpoilerBlur>(childKey, SpoilerBlurImageFilter.SpoilerBlurFileName)!.Movies.Keys.OrderBy(k => k).ToArray());
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AListWithNoSeriesOrFilmAsksNoUserLookup(bool documentSaved)
+    {
+        // Every page load sends the caller's list in the bootstrap; with no series or film in it there is nothing
+        // to hide, so Jellyfin's user database is not asked (an admin's bootstrap reads no user otherwise).
+        using var f = new JE.Tests.ApiPluginFixture(); f.Plugin.Configuration.SpoilerBlurEnabled = true;
+        var caller = Guid.NewGuid();
+        var state = new UserSpoilerBlur { Collections = new() { [new string('c', 32)] = new() { CollectionName = "Collection" } } };
+        if (documentSaved) f.Core.Manager.SaveUserConfiguration(caller.ToString("N"), SpoilerBlurImageFilter.SpoilerBlurFileName, state);
+        // A returning user: Hidden Content's first-visit seeding (which logs the user's name) is done.
+        f.Core.Manager.SaveUserConfiguration(caller.ToString("N"), "hidden-content.json", new UserHiddenContent());
+        var users = new Mock<IUserManager>();
+        var guard = (JeSpoilerGuardController)JE.Tests.ApiAssetTests.Controller(typeof(JeSpoilerGuardController), f.Core, Mock.Of<ILibraryManager>(), users.Object, f.Core.Manager);
+        guard.HttpContext.User = PrivacyPolicyTests.Principal(caller, admin: true);
+        Assert.Equal(documentSaved ? 1 : 0, Assert.IsType<UserSpoilerBlur>(Assert.IsType<OkObjectResult>(guard.GetSpoilerBlurSeries()).Value).Collections.Count);
+        Assert.Equal(documentSaved ? 1 : 0, Assert.IsType<UserSpoilerBlur>(Assert.IsType<OkObjectResult>(guard.GetUserSpoilerBlur(caller.ToString("N"))).Value).Collections.Count);
+        var maintenance = new Jellyfin.Plugin.JellyfinEnhanced.Shared.Maintenance.MaintenanceModeService(Mock.Of<IUserManager>(), Mock.Of<ISessionManager>(), f.Core.Paths.Object, f.Core.Logger);
+        var platform = JE.Tests.ApiAssetTests.Controller(f.Core, maintenance, f.Core.Manager, Mock.Of<ILibraryManager>(), users.Object);
+        platform.HttpContext.User = PrivacyPolicyTests.Principal(caller, admin: true);
+        var bootstrap = Assert.IsType<Jellyfin.Plugin.JellyfinEnhanced.Transport.BootstrapResponse>(Assert.IsType<JsonResult>(platform.GetBootstrap()).Value);
+        Assert.Equal(documentSaved ? 1 : 0, bootstrap.Prefetched.SpoilerBlurSeries!.Collections.Count);
+        users.Verify(x => x.GetUserById(It.IsAny<Guid>()), Times.Never());
+    }
+
     private sealed record PendingSetup(JE.Tests.ApiPluginFixture Fixture, User Alice, User Bob, Series Series, string PendingKey, Mock<ILibraryManager> Library, SpoilerSeerrPendingPromoter Service) : IAsyncDisposable
     {
         public UserSpoilerBlur Saved(User user) => Fixture.Core.Manager.GetUserConfiguration<UserSpoilerBlur>(user.Id.ToString("N"), SpoilerBlurImageFilter.SpoilerBlurFileName)!;

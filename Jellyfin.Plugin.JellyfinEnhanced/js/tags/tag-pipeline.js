@@ -166,13 +166,16 @@
       });
       return entry.promise;
     }
-    function entryChanged(held, entry) {
-      if (!held) return true;
-      try {
-        return JSON.stringify(held) !== JSON.stringify(entry);
-      } catch {
-        return true;
-      }
+    function unchangedEntries(before) {
+      return (id) => {
+        const [held, entry] = before.get(id) || [];
+        if (!held || !entry) return false;
+        try {
+          return JSON.stringify(held) === JSON.stringify(entry);
+        } catch {
+          return false;
+        }
+      };
     }
     async function reconcileAccess(resp, base, generation) {
       const revision = textOrEmpty(resp.filterRevision);
@@ -220,9 +223,9 @@
         s.deltaIds.delete(id);
         s.storeMisses.add(id);
       }
-      const redrawn = [];
+      const before = /* @__PURE__ */ new Map();
       for (const [id, entry] of newEntries) {
-        if (entryChanged(s.serverCache.get(id), entry)) redrawn.push(id);
+        before.set(id, [s.serverCache.get(id), entry]);
         deps.forgetItemFacts(id);
         s.serverCache.set(id, entry);
         s.storeMisses.delete(id);
@@ -246,7 +249,7 @@
             }
           }
         }
-        deps.refreshVisibleCards(redrawn.concat(removed, dropped), dropped);
+        deps.refreshVisibleCards(changedIds, dropped, unchangedEntries(before));
       }
       console.log(`${logPrefix} Access changed: +${newEntries.length} items, -${removed.length + dropped.length} no longer visible`);
       return true;
@@ -318,9 +321,9 @@
         const carried = export10(resp.items);
         const removed = export122(resp.removed).filter((id) => !(id in carried));
         if (newEntries.length > 0 || removed.length > 0) {
-          const redrawn = [];
+          const before = /* @__PURE__ */ new Map();
           for (const [id, entry] of newEntries) {
-            if (entryChanged(s.serverCache.get(id), entry)) redrawn.push(id);
+            before.set(id, [s.serverCache.get(id), entry]);
             deps.forgetItemFacts(id);
             s.serverCache.set(id, entry);
             s.storeMisses.delete(id);
@@ -343,7 +346,7 @@
               }
             }
           }
-          deps.refreshVisibleCards(redrawn.concat(removed));
+          deps.refreshVisibleCards(changedIds, [], unchangedEntries(before));
           console.log(`${logPrefix} Server cache updated: +${newEntries.length} items, -${removed.length} removed`);
         }
         settled = true;
@@ -1061,13 +1064,13 @@
       }
       if (released) scheduleScan();
     }
-    function refreshVisibleCards(updatedIds = null, hiddenIds = []) {
+    function refreshVisibleCards(updatedIds = null, hiddenIds = [], unchanged) {
       const changed = updatedIds ? new Set(updatedIds) : null;
       const hidden = new Set(hiddenIds);
       let released = false;
       for (const el of document.querySelectorAll(CARD_IMAGE_SELECTOR)) {
         const itemId = getItemId(el);
-        if (!itemId || changed && !changed.has(itemId)) continue;
+        if (!itemId || changed && !changed.has(itemId) || unchanged?.(itemId)) continue;
         s.cardReuse.set(el, (s.cardReuse.get(el) || 0) + 1);
         JE.core.tagLayout?.clearCard(el.closest(".cardScalable") || el);
         if (hidden.has(itemId)) s.processedCards.add(el);

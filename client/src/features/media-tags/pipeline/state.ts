@@ -220,7 +220,7 @@ export interface PipelineFns {
     persistDelta: (entries: EntryPairs, base: SnapshotBase, timestamp: number, servedAt: number, removed?: readonly string[]) => void;
     queuePersist: (work: () => Promise<void>) => void;
     refreshServerCache: () => Promise<void>;
-    refreshVisibleCards: (updatedIds?: readonly string[] | null, hiddenIds?: readonly string[]) => void;
+    refreshVisibleCards: (updatedIds?: readonly string[] | null, hiddenIds?: readonly string[], unchanged?: (id: string) => boolean) => void;
     refreshServerCacheCore: () => Promise<void>;
     registerRenderer: (name: string, config: PipelineRendererConfig) => void;
     releaseReusedCards: (mutations: MutationRecord[]) => void;

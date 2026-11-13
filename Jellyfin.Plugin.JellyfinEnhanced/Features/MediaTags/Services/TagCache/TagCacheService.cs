@@ -836,7 +836,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
                     _customTagsFingerprint = customTagsFingerprint;
                     _collectionMatchesUnreconciled = false;
                     Interlocked.Increment(ref _version);
-                    Interlocked.Exchange(ref _lastModified, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+                    Interlocked.Exchange(ref _lastModified, Math.Max(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), newMaxLastUpdated));
                     Interlocked.Exchange(ref _maxLastUpdated, newMaxLastUpdated);
                     ClearTombstones();
                     Interlocked.Increment(ref _mutationEpoch);
@@ -1547,11 +1547,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
         }
 
         /// <summary>
-        /// Advance the delta cursor after a pass that changed or removed entries: the wall clock, or the newest
-        /// removal stamp when that is later, so a client at the returned cursor is not sent the same removals again.
+        /// Advance the delta cursor after a pass that changed or removed entries to the wall clock, or to the newest removal
+        /// or entry stamp when later: stamps handed out faster than one a millisecond outrun the clock (publish and load too).
         /// </summary>
-        internal void TouchLastModified() =>
-            Interlocked.Exchange(ref _lastModified, Math.Max(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), Interlocked.Read(ref _maxTombstone)));
+        internal void TouchLastModified() => Interlocked.Exchange(ref _lastModified, Math.Max(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            Math.Max(Interlocked.Read(ref _maxTombstone), Interlocked.Read(ref _maxLastUpdated))));
 
         /// <summary>
         /// Keys removed after <paramref name="since"/>, except those stored again since their removal
@@ -2593,7 +2593,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
                             // Which collections its matches came from is not in the snapshot.
                             _collectionMatchesUnreconciled = true;
                             Interlocked.Exchange(ref _version, data.Version);
-                            Interlocked.Exchange(ref _lastModified, data.LastModified);
+                            Interlocked.Exchange(ref _lastModified, Math.Max(data.LastModified, loadedMaxLastUpdated));
                             Interlocked.Exchange(ref _maxLastUpdated, loadedMaxLastUpdated);
                             ClearTombstones();
                             foreach (var (key, stamp) in data.Tombstones ?? new Dictionary<string, long>())
@@ -2662,7 +2662,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
             QueueCollectionsOfChangedMembers();
             if (!changed) return;
             // Changed entries reach clients as a delta (their LastUpdated); only removals and rebuild swaps change the version.
-            Interlocked.Exchange(ref _lastModified, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+            TouchLastModified();
             InvalidateUserAccess();
             ScheduleDebouncedSave();
         }
