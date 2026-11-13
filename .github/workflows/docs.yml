@@ -18,8 +18,15 @@ on:
   workflow_dispatch:
     inputs:
       release:
-        description: 'Publish the selected branch/tag as this released docs version (e.g. 12.15). Leave empty to publish "dev".'
+        description: 'Publish as this released docs version (e.g. 12.15). Leave empty to publish "dev".'
         required: false
+      ref:
+        description: 'Tag or branch to build the docs from (e.g. 12.15.0.0). Leave empty to use the ref the workflow runs on. Use it to back fill older releases.'
+        required: false
+      latest:
+        description: 'Also make this release the "latest" default (turn off when back filling an older release)'
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -41,6 +48,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
+          ref: ${{ inputs.ref }}
 
       - name: Set up Python
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
@@ -53,15 +61,17 @@ jobs:
           key: ${{ github.ref }}
           path: .cache
 
+      # Always the current tooling (it includes mike), even when an older tag is being built.
       - name: Install dependencies
         run: |
-          pip install --require-hashes -r .github/docs/requirements.txt
+          git show origin/main:.github/docs/requirements.txt > "$RUNNER_TEMP/docs-requirements.txt"
+          pip install --require-hashes -r "$RUNNER_TEMP/docs-requirements.txt"
 
       - name: Install Node dependencies
-        run: npm ci --ignore-scripts
+        run: '[ ! -f package-lock.json ] || npm ci --ignore-scripts'
 
       - name: Generate config flag groups
-        run: python scripts/generate_config_flag_groups.py
+        run: '[ ! -f scripts/generate_config_flag_groups.py ] || python scripts/generate_config_flag_groups.py'
 
       - name: Configure git identity for mike
         run: |
@@ -69,19 +79,37 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       # A tag push (12.15.1.0) or a manual run with "release" set publishes a released version
-      # named major.minor (12.15) and moves the "latest" alias to it. Any other run (a push to
-      # main) publishes "dev", the unreleased docs.
+      # named major.minor (12.15). It also moves the "latest" alias and the site default to it unless
+      # "latest" is off (back filling an older release). Any other run (a push to main) publishes
+      # "dev", the unreleased docs. A tag from before the version switcher existed is built with an
+      # extra config that adds it.
       - name: Publish docs version
         env:
           INPUT_RELEASE: ${{ inputs.release }}
+          INPUT_LATEST: ${{ inputs.latest }}
         run: |
           RELEASE=""
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then RELEASE="$GITHUB_REF_NAME"; fi
           if [[ -n "$INPUT_RELEASE" ]]; then RELEASE="$INPUT_RELEASE"; fi
-          if [[ -n "$RELEASE" ]]; then
-            VERSION=$(echo "$RELEASE" | cut -d. -f1,2)
-            mike deploy --push --update-aliases "$VERSION" latest
-            mike set-default --push latest
+          CONFIG=mkdocs.yml
+          if ! grep -q "provider: mike" mkdocs.yml; then
+            {
+              echo "INHERIT: mkdocs.yml"
+              echo "extra:"
+              echo "  version:"
+              echo "    provider: mike"
+              echo "    default: latest"
+            } > .mkdocs-mike.yml
+            CONFIG=.mkdocs-mike.yml
+          fi
+          if [[ -z "$RELEASE" ]]; then
+            mike deploy --config-file "$CONFIG" --push --title "dev (unreleased)" dev
           else
-            mike deploy --push --title "dev (unreleased)" dev
+            VERSION=$(echo "$RELEASE" | cut -d. -f1,2)
+            if [[ "$INPUT_LATEST" == "false" ]]; then
+              mike deploy --config-file "$CONFIG" --push "$VERSION"
+            else
+              mike deploy --config-file "$CONFIG" --push --update-aliases "$VERSION" latest
+              mike set-default --config-file "$CONFIG" --push latest
+            fi
           fi
