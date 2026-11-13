@@ -1027,12 +1027,19 @@
         hiddenContent: 'hidden-content.json'
     };
 
+    // Documents the client saves whole. One that failed to load (null) stays
+    // null instead of taking the empty default: the next change would
+    // otherwise be saved over the user's stored list.
+    const SAVED_WHOLE_DOCUMENTS = new Set(['shortcuts', 'hiddenContent']);
+
     /**
      * Assembles a fresh userConfig object from the five per-user documents.
      * A document that is missing or failed to load (null/undefined/non-object)
-     * keeps its default; settings, bookmark and hidden-content are converted
-     * from PascalCase to camelCase. Shared by the per-endpoint loader and the
-     * bootstrap payload so both build the object identically.
+     * keeps its default, except that a hidden-content or shortcuts document
+     * that failed to load (null) stays null; settings, bookmark and
+     * hidden-content are converted from PascalCase to camelCase. Shared by the
+     * per-endpoint loader and the bootstrap payload so both build the object
+     * identically.
      * @param {object} documents - Map of document name (settings, shortcuts,
      *   bookmark, elsewhere, hiddenContent) to its parsed JSON, or null.
      * @returns {object} A freshly-built userConfig object.
@@ -1041,6 +1048,7 @@
         const userConfig = { settings: {}, shortcuts: { Shortcuts: [] }, bookmark: { bookmarks: {} }, elsewhere: {}, hiddenContent: { items: {}, settings: {} } };
         for (const name of Object.keys(USER_CONFIG_DOCUMENTS)) {
             const value = documents ? documents[name] : null;
+            if (value === null && SAVED_WHOLE_DOCUMENTS.has(name)) { userConfig[name] = null; continue; }
             if (!value || typeof value !== 'object') continue; // keep the default
             // *** CONVERT PASCALCASE TO CAMELCASE ***
             if (name === 'settings' || name === 'bookmark' || name === 'hiddenContent') {
@@ -1054,18 +1062,22 @@
 
     /**
      * Builds the userConfig object from the bootstrap payload's UserSettings
-     * block (the same five documents the standalone endpoints return).
+     * block (the same five documents the standalone endpoints return). The
+     * server answers null for a document it could not load, and Jellyfin's
+     * serializer leaves null properties out, so a missing document is one
+     * that failed to load.
      * @param {object} userSettings - `UserSettings` from the bootstrap payload.
      * @returns {object} A freshly-built userConfig object.
      */
     function buildUserConfigFromBootstrap(userSettings) {
         const docs = userSettings && typeof userSettings === 'object' ? userSettings : {};
+        const doc = key => (Object.prototype.hasOwnProperty.call(docs, key) ? docs[key] : null);
         return buildUserConfig({
-            settings: docs.Settings,
-            shortcuts: docs.Shortcuts,
-            bookmark: docs.Bookmark,
-            elsewhere: docs.Elsewhere,
-            hiddenContent: docs.HiddenContent
+            settings: doc('Settings'),
+            shortcuts: doc('Shortcuts'),
+            bookmark: doc('Bookmark'),
+            elsewhere: doc('Elsewhere'),
+            hiddenContent: doc('HiddenContent')
         });
     }
 

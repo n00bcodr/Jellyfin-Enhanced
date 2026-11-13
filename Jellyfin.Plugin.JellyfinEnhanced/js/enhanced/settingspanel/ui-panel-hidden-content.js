@@ -24,6 +24,14 @@
         // the "Manage Hidden Content" button.
         // ============================================================
         if (JE.hiddenContent) {
+            // Saves a switch's change. updateSettings refuses (and says why) while the hidden list
+            // is not loaded; the switch then goes back to the stored value and nothing else runs.
+            const refused = (partial, e) => {
+                if (JE.hiddenContent.updateSettings(partial) !== false) return false;
+                e.target.checked = !e.target.checked;
+                resetAutoCloseTimer();
+                return true;
+            };
             const hiddenButtonToggles = [
                 ['hiddenShowButtonJellyseerr', 'showButtonJellyseerr'],
                 ['hiddenShowButtonLibrary', 'showButtonLibrary'],
@@ -34,7 +42,7 @@
                 const el = document.getElementById(id);
                 if (el) {
                     el.addEventListener('change', (e) => {
-                        JE.hiddenContent.updateSettings({ [key]: e.target.checked });
+                        if (refused({ [key]: e.target.checked }, e)) return;
                         if (key === 'showButtonLibrary' || key === 'showButtonCast') {
                             if (e.target.checked) {
                                 JE.hiddenContent.addLibraryHideButtons();
@@ -61,14 +69,14 @@
             const masterToggle = document.getElementById('hiddenContentEnabledToggle');
             if (masterToggle) {
                 masterToggle.addEventListener('change', (e) => {
-                    JE.hiddenContent.updateSettings({ enabled: e.target.checked });
+                    if (refused({ enabled: e.target.checked }, e)) return;
                     resetAutoCloseTimer();
                 });
             }
             const buttonsToggle = document.getElementById('hiddenShowHideButtons');
             if (buttonsToggle) {
                 buttonsToggle.addEventListener('change', (e) => {
-                    JE.hiddenContent.updateSettings({ showHideButtons: e.target.checked });
+                    if (refused({ showHideButtons: e.target.checked }, e)) return;
                     if (e.target.checked) {
                         if (JE.hiddenContent.getSettings().showButtonLibrary) {
                             JE.hiddenContent.addLibraryHideButtons();
@@ -83,7 +91,7 @@
                 const el = document.getElementById(id);
                 if (el) {
                     el.addEventListener('change', (e) => {
-                        JE.hiddenContent.updateSettings({ [key]: e.target.checked });
+                        if (refused({ [key]: e.target.checked }, e)) return;
                         resetAutoCloseTimer();
                     });
                 }
@@ -91,7 +99,7 @@
             const confirmToggle = document.getElementById('hiddenShowConfirmation');
             if (confirmToggle) {
                 confirmToggle.addEventListener('change', (e) => {
-                    JE.hiddenContent.updateSettings({ showHideConfirmation: e.target.checked });
+                    if (refused({ showHideConfirmation: e.target.checked }, e)) return;
                     localStorage.removeItem('je_hide_confirm_suppressed_until');
                     resetAutoCloseTimer();
                 });
@@ -99,7 +107,7 @@
             const experimentalCollections = document.getElementById('hiddenExperimentalCollections');
             if (experimentalCollections) {
                 experimentalCollections.addEventListener('change', (e) => {
-                    JE.hiddenContent.updateSettings({ experimentalHideCollections: e.target.checked });
+                    if (refused({ experimentalHideCollections: e.target.checked }, e)) return;
                     if (!e.target.checked) {
                         JE.hiddenContent.removeLibraryHideButtons();
                         JE.hiddenContent.addLibraryHideButtons();
@@ -112,9 +120,9 @@
                 manageBtn.addEventListener('click', () => {
                     // Both the page and fallback modal take over from this dialog.
                     ctx.closePanel();
-                    if (JE.pluginConfig?.HiddenContentEnabled && JE.hiddenContentPage) {
-                        JE.hiddenContentPage.showPage();
-                    } else {
+                    // Placed as a tab or Plugin Page, the page never opens over the current view: manage here instead.
+                    const pageShown = !!(JE.pluginConfig?.HiddenContentEnabled && JE.hiddenContentPage?.showPage());
+                    if (!pageShown) {
                         JE.hiddenContent.showManagementPanel();
                     }
                 });

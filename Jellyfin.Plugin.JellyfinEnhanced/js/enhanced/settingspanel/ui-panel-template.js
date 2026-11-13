@@ -75,7 +75,7 @@
         const decodedSubtitleBg = JE.decodeSubtitleColor(JE.currentSettings.customSubtitleBgColor, { fallbackSwatch: '#000000', fallbackAlphaValue: 0 });
         const previewTextShadow = JE.getSubtitleTextShadow(JE.currentSettings.customSubtitleBgColor || '#00000000');
 
-        const userShortcuts = (JE.userConfig.shortcuts.Shortcuts || []).reduce((acc, s) => {
+        const userShortcuts = (JE.userConfig.shortcuts?.Shortcuts || []).reduce((acc, s) => {
             acc[s.Name] = s;
             return acc;
         }, {});

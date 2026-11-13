@@ -817,7 +817,8 @@
         }
         JE.hiddenContent.confirmAndHide({
             itemId: state.jellyfinMediaId || '',
-            name: escapeHtml(item.title || item.name),
+            // Stored and shown as text by Hidden Content: the title itself, not HTML.
+            name: item.title || item.name || '',
             type: item.mediaType === 'tv' ? 'Series' : 'Movie',
             tmdbId: item.id,
             posterPath: item.posterPath || ''
