@@ -737,6 +737,8 @@ GET parental filtering can change lists or deny detail/subresource access. Reque
 
 Jellyfin parental policy applies server-side. Denied title/request access returns `403 {"error":true,"code":"parental_block","message":"This title is above your parental rating limit."}`.
 
+A title's rating is read the way Jellyfin's TMDB metadata fills an item's rating: the certification for the server's metadata country, else the US one, and for a series else the first one listed (the country's or US entry decides even when its rating is empty, which leaves the title unrated). It is scored in the server's country first, as Jellyfin scores the rating it stores, and compared with the user's limit as Jellyfin compares it: a lower score is allowed whatever its sub-score, a higher one is not, and the user's sub-score limit decides only at the limit's own score. A title with no rating follows the user's block-unrated setting.
+
 Filtered reads still awaiting rating verification can return `504` with `code:"parental_pending"` and `Retry-After: 2`; retry these instead of treating them as an empty successful page.
 
 GETs can return `499` on disconnect. Proxy POSTs continue independently of client disconnects.
@@ -805,7 +807,7 @@ All routes in this table require **Seerr-linked** access, except TV-by-studio's 
 | GET | `jellyseerr/sonarr/lookup/{tmdbId}` | Request/discovery permission → upstream Sonarr match candidates. |
 | GET | `jellyseerr/{type}/{serverId}` | Exact `type=sonarr` or `radarr` (`400` otherwise) → service profiles/folders/details. |
 | POST | `jellyseerr/request` | JSON request object → upstream request record. |
-| GET | `jellyseerr/request` | `take=500`, `skip=0`, `filter=all`, forwarded without JE clamping → upstream request page. |
+| GET | `jellyseerr/request` | `take=500`, `skip=0`, `filter=all`, forwarded without JE clamping (`filter` escaped as one value) → upstream request page. |
 | GET | `jellyseerr/quota` | Caller's quota; movie/TV sides can gain ISO `nextResetAt`. |
 | GET | `jellyseerr/movie/{tmdbId}` | Movie detail. Spoiler Guard shapes this and the other title responses for the caller; see [below](#spoiler-guard-on-title-responses). |
 | GET | `jellyseerr/tv/{tmdbId}` | TV detail. |
@@ -837,7 +839,7 @@ All routes in this table require **Seerr-linked** access, except TV-by-studio's 
 | GET | `jellyseerr/person/{personId}` | Positive person ID (`400` otherwise) → upstream person detail. |
 | GET | `jellyseerr/person/{personId}/combined_credits` | Positive person ID → upstream filmography. |
 | GET | `jellyseerr/collection/{collectionId}` | Upstream collection detail. |
-| GET | `jellyseerr/overrideRule` | Request/discovery permission → upstream override-rule list. |
+| GET | `jellyseerr/overrideRule` | Request/discovery permission → upstream override-rule list when the linked Seerr user is a Seerr admin; otherwise `[]` without calling Seerr, which lets only its admins read the rules and applies them itself when a request is created. |
 | POST | `jellyseerr/request/tv/{tmdbId}/seasons` | Positive TMDB route ID, request body → upstream request record. |
 | GET | `jellyseerr/watchlist` | `page=1`, minimum 1 → caller's upstream watchlist page; uncached. |
 | POST | `jellyseerr/watchlist` | `{tmdbId, mediaType}` with a positive `tmdbId` and `mediaType` of `movie` or `tv` (`400` otherwise, or when Seerr or **Requested media goes on the requester's watchlist** is off); only those two fields are forwarded, as the caller → upstream watchlist record (`409` when already on it). |
@@ -917,10 +919,10 @@ Use local GUID routes for Jellyfin metadata, the generic TMDB route for external
 
 | Method | Path | Access | Inputs → response |
 |---|---|---|---|
-| GET | `studio/{studioId}` | Authenticated | Jellyfin GUID → `{id,name,tmdbId,type}`. |
-| GET | `boxset/{boxsetId}` | Authenticated | Jellyfin BoxSet GUID → `{id,name,tmdbId,type}`. |
-| GET | `genre/{genreId}` | Authenticated | Jellyfin GUID → `{id,name,type}`. |
-| GET | `person/{personId}` | Authenticated | Jellyfin GUID, optional query `itemId` GUID → person info. |
+| GET | `studio/{studioId}` | Authenticated | Jellyfin GUID → `{id,name,tmdbId,type}`. A studio is answered to any caller; another item only when the caller can see it, else `404`. |
+| GET | `boxset/{boxsetId}` | Authenticated | Jellyfin BoxSet GUID → `{id,name,tmdbId,type}`; `404` for a box set the caller cannot see. |
+| GET | `genre/{genreId}` | Authenticated | Jellyfin GUID → `{id,name,type}`. A genre is answered to any caller; another item only when the caller can see it, else `404`. |
+| GET | `person/{personId}` | Authenticated | Jellyfin GUID, optional query `itemId` GUID → person info. A person is answered to any caller; another item only when the caller can see it, else `404`. |
 | GET | `people/info` | Authenticated | Query `ids` (GUID list), optional `itemId` → `{"people":{"<personIdN>":<info>}}`. |
 | GET | `tmdb/search/person` | Seerr-linked | Required nonblank `query` → Seerr search response, page 1. |
 | GET | `tmdb/search/keyword` | Seerr-linked | Required nonblank `query` → Seerr keyword-search response. |
@@ -1828,7 +1830,7 @@ Read now-playing sessions or send an administrator message to sessions with usab
 | GET | `active-streams/sessions` | Administrator, or authenticated with viewer setting enabled | Bare now-playing session array. |
 | POST | `active-streams/broadcast` | Administrator | `{Header,Text,TimeoutMs}` → `{sent,skipped,errors}`. |
 | GET | `proxy/avatar` | Authenticated | Query `path` → cached raster image bytes. |
-| GET | `items/by-providers` | Authenticated | Query provider dictionary and optional `types` → one matching GUID. |
+| GET | `items/by-providers` | Authenticated | Query provider dictionary and optional `types` → one matching GUID the caller can see. |
 
 ```bash
 curl -H "Authorization: MediaBrowser Token=\"$TOKEN\"" "$JE_URL/active-streams/sessions"
@@ -1872,7 +1874,7 @@ curl -G -H "Authorization: MediaBrowser Token=\"$TOKEN\"" \
 
 Provider lookup accepts multiple dictionary entries such as `providers[Tmdb]`, `providers[Imdb]`. `types` is a comma-separated item-kind list parsed case-insensitively; invalid kinds are ignored. No IDs/match returns `400` with `No provider ids supplied or no items found`; success is a GUID value.
 
-Repository lookup is not filtered to caller library access and does not establish permission to view the returned item.
+For non-administrators the match is limited to items the caller can see (library access and parental rules, as Jellyfin's own item routes apply them): a title held only where the caller has no access returns the same `400` as one the server does not hold. Administrators get the first match in any library.
 
 ## Branding
 
