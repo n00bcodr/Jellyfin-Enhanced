@@ -91,6 +91,32 @@ test('a hidden list that failed to load is not saved over the stored one', async
   assert.ok(h.toasts.length >= 1 && h.toasts.every(message => message === 'hidden_content_not_loaded'), h.toasts.join());
 });
 
+for (const loaded of [false, true]) test(`a settings panel switch ${loaded ? 'saves its change' : 'goes back when the change is refused'} (${loaded ? 'list loaded' : 'list not loaded'})`, async t => {
+  const switches = { hiddenContentEnabledToggle: true, hiddenShowHideButtons: true, hiddenShowButtonLibrary: false, hiddenFilterSearch: false, hiddenShowConfirmation: true, hiddenExperimentalCollections: false };
+  const html = Object.entries(switches).map(([id, on]) => `<input type="checkbox" id="${id}"${on ? ' checked' : ''}>`).join('');
+  const h = setup(t, { loadedList: loaded ? list('a') : null, stored: list('a'), html });
+  const calls = [];
+  h.JE.hiddenContent = { updateSettings: h.hc.updateSettings, getSettings: h.hc.getSettings,
+    addLibraryHideButtons: () => calls.push('add'), removeLibraryHideButtons: () => calls.push('remove') };
+  h.window.localStorage.setItem('je_hide_confirm_suppressed_until', 'later');
+  h.load('enhanced/settingspanel/ui-panel-hidden-content.js');
+  h.JE.internals.enhancedUi.wireHiddenContentListeners({ resetAutoCloseTimer() {}, closePanel() {} });
+
+  for (const id of Object.keys(switches)) h.document.getElementById(id).click();
+  await h.timers.advance(1000);
+
+  for (const [id, on] of Object.entries(switches)) assert.equal(h.document.getElementById(id).checked, loaded ? !on : on, id);
+  if (loaded) {
+    assert.equal(h.api.stored.settings.filterSearch, true);
+    assert.equal(h.api.stored.settings.enabled, false);
+  } else {
+    assert.deepEqual(h.api.stored, list('a'));
+    assert.deepEqual(calls, [], 'no hide buttons added or removed');
+    assert.equal(h.window.localStorage.getItem('je_hide_confirm_suppressed_until'), 'later');
+    assert.ok(h.toasts.length >= 1 && h.toasts.every(message => message === 'hidden_content_not_loaded'), h.toasts.join());
+  }
+});
+
 test('a list that loads later becomes writable', async t => {
   const h = setup(t, { loadedList: null, stored: list('a') });
   assert.equal(await h.hc.refresh(), true);
