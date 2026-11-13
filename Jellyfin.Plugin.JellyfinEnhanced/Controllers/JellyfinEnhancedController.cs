@@ -2665,7 +2665,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         {
             try
             {
-                var person = _libraryManager.GetItemById(personId);
+                // Any id is accepted, so a title the caller may not see must read as a missing one.
+                var person = GetItemForCaller(personId);
                 if (person == null)
                 {
                     return NotFound(new { message = "Person not found" });

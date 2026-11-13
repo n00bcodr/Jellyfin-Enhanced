@@ -920,7 +920,7 @@ Use local GUID routes for Jellyfin metadata, the generic TMDB route for external
 | GET | `studio/{studioId}` | Authenticated | Jellyfin GUID → `{id,name,tmdbId,type}`. A studio is answered to any caller; another item only when the caller can see it, else `404`. |
 | GET | `boxset/{boxsetId}` | Authenticated | Jellyfin BoxSet GUID → `{id,name,tmdbId,type}`; `404` for a box set the caller cannot see. |
 | GET | `genre/{genreId}` | Authenticated | Jellyfin GUID → `{id,name,type}`. A genre is answered to any caller; another item only when the caller can see it, else `404`. |
-| GET | `person/{personId}` | Authenticated | Jellyfin GUID, optional query `itemId` GUID → person info. |
+| GET | `person/{personId}` | Authenticated | Jellyfin GUID, optional query `itemId` GUID → person info. A person is answered to any caller; another item only when the caller can see it, else `404`. |
 | GET | `people/info` | Authenticated | Query `ids` (GUID list), optional `itemId` → `{"people":{"<personIdN>":<info>}}`. |
 | GET | `tmdb/search/person` | Seerr-linked | Required nonblank `query` → Seerr search response, page 1. |
 | GET | `tmdb/search/keyword` | Seerr-linked | Required nonblank `query` → Seerr keyword-search response. |

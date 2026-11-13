@@ -13,11 +13,11 @@ using Moq;
 namespace JE.Tests;
 
 /// <summary>
-/// The item lookups the Seerr discovery pages and the calendar use (studio/, genre/, boxset/,
+/// The item lookups the Seerr discovery pages and the calendar use (studio/, genre/, boxset/, person/,
 /// items/by-providers) name an item only when the caller may see it, as Jellyfin decides: a title or box
-/// set only within the caller's library access and parental rules (Jellyfin's user item routes), a studio
-/// or genre for anyone (Jellyfin's /Studios and /Genres routes). For any other id they answer exactly as
-/// for an id that does not exist. Administrators get the same answers as before.
+/// set only within the caller's library access and parental rules (Jellyfin's user item routes), a studio,
+/// genre or person for anyone (Jellyfin's /Studios, /Genres and /Persons routes). For any other id they
+/// answer exactly as for an id that does not exist. Administrators get the same answers as before.
 /// </summary>
 public class ItemLookupAccessTests
 {
@@ -131,6 +131,52 @@ public class ItemLookupAccessTests
         var controller = library.Controller(admin: true);
 
         var answer = Describe(Info(controller, route, hidden.Id));
+        Assert.StartsWith("200 ", answer);
+        Assert.Contains(hidden.Name, answer);
+    }
+
+    private static async Task<string> Person(JellyfinEnhancedController controller, Guid id)
+        => Describe(await controller.GetPersonInfo(id));
+
+    [Fact]
+    public async Task PersonAnswersATitleTheCallerCannotSeeAsOneThatDoesNotExist()
+    {
+        using var library = new Library();
+        var hidden = library.Add(new Movie { Name = "Private film", PremiereDate = new DateTime(2020, 5, 1) }, canSee: false);
+        var shown = library.Add(new Movie { Name = "Open film" }, canSee: true);
+        var controller = library.Controller(admin: false);
+
+        var missing = await Person(controller, Guid.NewGuid());
+        Assert.StartsWith("404 ", missing);
+        Assert.Equal(missing, await Person(controller, hidden.Id));
+        // A title the caller may see is still answered, as before.
+        var answer = await Person(controller, shown.Id);
+        Assert.StartsWith("200 ", answer);
+        Assert.Contains(shown.Name, answer);
+    }
+
+    [Fact]
+    public async Task APersonIsNamedForAnySignedInCallerAsJellyfinsOwnRouteAndPeopleInfoDo()
+    {
+        using var library = new Library();
+        // Hidden from the user item route (as Jellyfin 10.11 hides an untagged person from a user with an
+        // Allowed Tags list); /Persons/{name} and JE's people/info still answer it.
+        var person = library.Add(new Person { Name = "Open actor" }, canSee: false);
+        var controller = library.Controller(admin: false);
+
+        var answer = await Person(controller, person.Id);
+        Assert.StartsWith("200 ", answer);
+        Assert.Contains(person.Name, answer);
+    }
+
+    [Fact]
+    public async Task PersonGivesAnAdministratorTheSameAnswerAsBefore()
+    {
+        using var library = new Library();
+        var hidden = library.Add(new Movie { Name = "Private film" }, canSee: false);
+        var controller = library.Controller(admin: true);
+
+        var answer = await Person(controller, hidden.Id);
         Assert.StartsWith("200 ", answer);
         Assert.Contains(hidden.Name, answer);
     }
