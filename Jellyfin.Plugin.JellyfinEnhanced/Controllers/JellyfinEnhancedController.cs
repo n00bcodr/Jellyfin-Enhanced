@@ -13813,10 +13813,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 // Only a title the caller may see, as Jellyfin's own item routes decide, so one held
                 // only in a library they cannot open reads as one the server does not hold.
-                // Administrators get the same answer as before.
+                // Administrators get the same answer as before. The checks stop at the first visible match, and
+                // at 100 matches: an untyped lookup of an id stamped on many episodes would otherwise load each.
                 var userId = UserHelper.GetCurrentUserId(User);
                 var user = userId.HasValue ? _userManager.GetUserById(userId.Value) : null;
-                itemIds = itemIds.Where(id => user != null && _libraryManager.GetItemById<BaseItem>(id, user) != null).Take(1).ToList();
+                itemIds = itemIds.Take(100).Where(id => user != null && _libraryManager.GetItemById<BaseItem>(id, user) != null).Take(1).ToList();
             }
 
             if (itemIds.Count == 0)

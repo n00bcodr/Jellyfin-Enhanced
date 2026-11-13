@@ -179,6 +179,10 @@ public class SeerrParentalCertificationTests
     {
         using var lab = new Lab(blockUnrated: false);
         lab.Details["/api/v1/tv/607"] = Series(607, ("DE", null), ("US", "TV-MA"));
+        // No country entry, and the US entry, which is also the first listed, has no rating: on both versions the
+        // series is unrated (12 skips both picks, 10.11 stores no rating), and the GB "18" after it is never read.
+        lab.Details["/api/v1/tv/608"] = Series(608, ("US", null), ("GB", "18"));
+        Assert.False(Refused(await lab.Controller.GetTvShow(608)));
 
 #if JF12
         // Jellyfin 12 moves past an entry without a rating to the US one (TV-MA, 17).
