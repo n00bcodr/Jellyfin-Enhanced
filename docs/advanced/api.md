@@ -839,7 +839,7 @@ All routes in this table require **Seerr-linked** access, except TV-by-studio's 
 | GET | `jellyseerr/person/{personId}` | Positive person ID (`400` otherwise) → upstream person detail. |
 | GET | `jellyseerr/person/{personId}/combined_credits` | Positive person ID → upstream filmography. |
 | GET | `jellyseerr/collection/{collectionId}` | Upstream collection detail. |
-| GET | `jellyseerr/overrideRule` | Request/discovery permission → upstream override-rule list. |
+| GET | `jellyseerr/overrideRule` | Request/discovery permission → upstream override-rule list when the linked Seerr user is a Seerr admin; otherwise `[]` without calling Seerr, which lets only its admins read the rules and applies them itself when a request is created. |
 | POST | `jellyseerr/request/tv/{tmdbId}/seasons` | Positive TMDB route ID, request body → upstream request record. |
 | GET | `jellyseerr/watchlist` | `page=1`, minimum 1 → caller's upstream watchlist page; uncached. |
 | POST | `jellyseerr/watchlist` | `{tmdbId, mediaType}` with a positive `tmdbId` and `mediaType` of `movie` or `tv` (`400` otherwise, or when Seerr or **Requested media goes on the requester's watchlist** is off); only those two fields are forwarded, as the caller → upstream watchlist record (`409` when already on it). |

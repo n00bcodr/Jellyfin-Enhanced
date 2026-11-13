@@ -86,6 +86,51 @@ public class ApiSeerrTests
         Assert.Single(f.Calls, c => c.Path.StartsWith("/api/v1/user?"));
     }
 
+    // Seerr 3.4/3.5 and Jellyseerr 2.7 let only their admins read override rules (GET /api/v1/overrideRule is
+    // isAuthenticated(Permission.ADMIN)), and apply the rules themselves when a request is created. The proxy
+    // acts as the linked Seerr user, so for anyone else Seerr answered 403 and the client logged an error.
+    private static Func<HttpRequestMessage, HttpResponseMessage> SeerrGatesOverrideRules(SeerrFixture f) => request =>
+        request.RequestUri!.AbsolutePath != "/api/v1/overrideRule" ? IntegrationTransport.Response("{\"id\":99}")
+        : (f.Permissions & JellyseerrPermission.ADMIN) != 0 ? IntegrationTransport.Response("[{\"id\":4,\"profileId\":7}]")
+        : IntegrationTransport.Response("{\"message\":\"You do not have permission to access this endpoint.\"}", 403);
+
+    [Theory]
+    [InlineData(JellyseerrPermission.REQUEST, false)]
+    [InlineData(JellyseerrPermission.REQUEST | JellyseerrPermission.REQUEST_ADVANCED, false)]
+    [InlineData(JellyseerrPermission.REQUEST | JellyseerrPermission.MANAGE_REQUESTS, false)]
+    [InlineData(JellyseerrPermission.REQUEST, true)]
+    public async Task OverrideRulesAreNotAskedOfSeerrForAUserWhoMayNotReadThem(JellyseerrPermission permissions, bool jellyfinAdmin)
+    {
+        using var f = new SeerrFixture { Permissions = permissions };
+        f.Reply = SeerrGatesOverrideRules(f);
+        f.SetUser(f.UserId, jellyfinAdmin);
+        var result = Assert.IsType<ContentResult>(await f.Controller.GetOverrideRules());
+        Assert.Equal("[]", result.Content);
+        Assert.DoesNotContain(f.Calls, c => c.Path.StartsWith("/api/v1/overrideRule"));
+    }
+
+    [Fact]
+    public async Task ASeerrAdminStillReadsTheOverrideRulesFromSeerr()
+    {
+        using var f = new SeerrFixture { Permissions = JellyseerrPermission.ADMIN };
+        f.Reply = SeerrGatesOverrideRules(f);
+        var result = Assert.IsType<ContentResult>(await f.Controller.GetOverrideRules());
+        Assert.Equal(4, Body(result.Content!)[0].GetProperty("id").GetInt32());
+        Assert.Equal("27", Assert.Single(f.Calls, c => c.Path == "/api/v1/overrideRule").User);
+    }
+
+    [Fact]
+    public async Task OverrideRulesStillNeedRequestPermissionBeforeAnything()
+    {
+        // The existing gate is unchanged: without a request permission the caller gets JE's 403, not an empty list.
+        using var f = new SeerrFixture { Permissions = JellyseerrPermission.VIEW_ISSUES };
+        f.Reply = SeerrGatesOverrideRules(f);
+        var denied = Assert.IsType<ObjectResult>(await f.Controller.GetOverrideRules());
+        Assert.Equal(403, denied.StatusCode);
+        Assert.Contains("no_request_permission", JsonSerializer.Serialize(denied.Value));
+        Assert.DoesNotContain(f.Calls, c => c.Path.StartsWith("/api/v1/overrideRule"));
+    }
+
     [Theory]
     [InlineData("all", "filter=all")]
     [InlineData("pending", "filter=pending")]

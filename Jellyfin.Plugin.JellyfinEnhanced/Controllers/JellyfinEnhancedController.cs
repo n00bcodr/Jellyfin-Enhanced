@@ -965,9 +965,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                 return StatusCode(403, new { code = "no_issue_view_permission", message = "You do not have permission to view issues in Seerr." });
                         }
 
-                        // GET /api/v1/service/sonarr|radarr, /api/v1/service/{type}/{id},
-                        // /api/v1/overrideRule, Seerr does not gate this route
-                        // behind REQUEST_ADVANCED, so require just the ability to request.
+                        // GET /api/v1/service/sonarr|radarr, /api/v1/service/{type}/{id}:
+                        // Seerr does not gate these behind REQUEST_ADVANCED, so require just
+                        // the ability to request. /api/v1/overrideRule needs it too; Seerr
+                        // itself lets only its admins read that one (answered below).
                         if (method == HttpMethod.Get && (
                             apiPath.StartsWith("/api/v1/service/", StringComparison.OrdinalIgnoreCase)
                             || apiPath.StartsWith("/api/v1/overrideRule", StringComparison.OrdinalIgnoreCase)))
@@ -979,6 +980,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         }
                     }
                 }
+            }
+
+            // Only Seerr admins may read the override rules (Permission.ADMIN in Seerr 3.x and
+            // Jellyseerr 2.x), and Seerr applies them itself when a request is created. The proxy
+            // acts as the linked Seerr user, so anyone else has none to read here, not Seerr's 403.
+            if (method == HttpMethod.Get
+                && string.Equals(apiPath, "/api/v1/overrideRule", StringComparison.OrdinalIgnoreCase)
+                && seerrUser != null
+                && !JellyseerrPermissionHelper.HasPermission(seerrUser.Permissions, JellyseerrPermission.ADMIN))
+            {
+                return Content("[]", "application/json");
             }
 
             // Check server-side response cache for cacheable endpoints.
