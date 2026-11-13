@@ -9,7 +9,7 @@
     JE.internals = JE.internals || {};
     const internal = JE.internals.hiddenContent = JE.internals.hiddenContent || {};
 
-    const { getHiddenData, isLoaded } = internal;
+    const { getHiddenData, isLoaded, rebaseOnto } = internal;
 
     let saveTimeout = null;
 
@@ -147,21 +147,50 @@
         }
     }
 
+    // Saves run one at a time: each reads the stored list and writes it back with this session's
+    // changes, so two in flight at once could each write a list without the other's changes.
+    let saveQueue = Promise.resolve();
+
     // Direct bypass of JE.saveUserSettings (which swallows errors) so callers can react to failure.
-    // Returns the JSON snapshot that was sent so the caller can compare it to current state and decide
+    // Returns the JSON snapshot that was saved so the caller can compare it to current state and decide
     // whether the success acknowledgement still represents the latest local intent.
-    async function directSaveHiddenContent() {
+    function directSaveHiddenContent() {
+        const save = saveQueue.then(saveOnce);
+        saveQueue = save.catch(() => {});
+        return save;
+    }
+
+    // The list is saved whole, but other devices, an administrator and the server (Continue Watching
+    // hides dropped on playback, removed items) change it too. So each save reads the stored list first
+    // and writes it with only this session's changes applied, never the copy the page loaded.
+    async function saveOnce() {
         // Never write a list that did not load: it would replace the stored one.
         if (!isLoaded()) throw new Error('hidden-content list not loaded');
         const userId = ApiClient.getCurrentUserId();
         if (!userId) throw new Error('no current user');
-        const snapshot = JSON.stringify(getHiddenData());
-        await ApiClient.ajax({
-            type: 'POST',
-            url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/hidden-content.json`),
-            data: snapshot,
-            contentType: 'application/json'
+        const generation = saveGeneration;
+        const fresh = await ApiClient.ajax({
+            type: 'GET',
+            url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/hidden-content.json?_=${Date.now()}`),
+            dataType: 'json'
         });
+        if (generation !== saveGeneration || ApiClient.getCurrentUserId() !== userId) throw new Error('user changed during save');
+        const stored = (typeof JE.toCamelCase === 'function') ? JE.toCamelCase(fresh) : fresh;
+        if (!stored || typeof stored !== 'object' || (stored.items != null && typeof stored.items !== 'object')) {
+            throw new Error('invalid hidden-content response');
+        }
+        const { list, saved } = rebaseOnto(stored);
+        const snapshot = JSON.stringify(list);
+        // Nothing of this session's to write (e.g. a hide undone before the save ran).
+        if (snapshot !== JSON.stringify(stored)) {
+            await ApiClient.ajax({
+                type: 'POST',
+                url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/hidden-content.json`),
+                data: snapshot,
+                contentType: 'application/json'
+            });
+        }
+        saved();
         return snapshot;
     }
 
@@ -235,8 +264,10 @@
 
     // Flush pending debouncedSave so a following server-direct write sees the latest local state.
     // On failure: re-throw so the caller aborts, AND start a bounded background retry so the local mutation isn't lost.
+    // With nothing pending, wait for a save already in flight: it read the list before the server-direct
+    // write and would otherwise write that read back over it.
     async function flushPendingSave() {
-        if (!saveTimeout) return;
+        if (!saveTimeout) { await saveQueue; return; }
         clearTimeout(saveTimeout);
         saveTimeout = null;
         const generation = saveGeneration;

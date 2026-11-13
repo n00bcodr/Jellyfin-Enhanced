@@ -136,7 +136,7 @@ An already-hidden item shows a crossed-out eye; use it to **Unhide**. After a hi
 - **Scoped only** shows non-global entries, rather than selecting a particular scope. Badges distinguish **Continue Watching only**, **Next Up only**, and **Home sections only**.
 - **Expand All** / **Collapse All** opens or closes series groups.
 - **Unhide** restores an entry; **Add back to Continue Watching** restores a Continue Watching-only entry. **Unhide All for This Show** clears a series group.
-- **Unhide All** clears the entire list, even if search or **Scoped only** currently shows a subset.
+- **Unhide All** clears every entry on the page, even if search or **Scoped only** currently shows a subset. Entries hidden elsewhere since the page last loaded or saved your list stay.
 
 Personal settings in the Enhanced panel's **Hidden Content** section start from admin **Pages → Hidden Content** defaults. The table includes matching admin labels. Button visibility and filtering are separate:
 
@@ -180,7 +180,7 @@ Admin settings in **Pages → Hidden Content**:
 
     Standard confirmation offers **Don't ask again for 15 minutes**. This preference is local to your browser and specific to your account. **Show Confirmation Dialog** controls the persistent preference. Episode/show and home-row choice dialogs still appear when you need to choose an action.
 
-    The other filter labels are identical in the personal and admin interfaces. Hidden Content preferences are saved with your per-account list on the server in `hidden-content.json`, separately from ordinary personal settings. If your list could not be loaded when the page opened, nothing shows as hidden and hides, unhides and preference changes are refused with a message until you reload, so the stored list is never replaced. The standalone `#/hidden-content` route opens only with native Home tab and Custom Tabs placement off and no detected Plugin Pages integration for Hidden Content. See the [standalone-route table](../getting-started/pages-and-tabs.md#reach-the-pages-on-desktop-and-phone) for navigation conditions.
+    The other filter labels are identical in the personal and admin interfaces. Hidden Content preferences are saved with your per-account list on the server in `hidden-content.json`, separately from ordinary personal settings. If your list could not be loaded when the page opened, nothing shows as hidden and hides, unhides and preference changes are refused with a message until you reload, so the stored list is never replaced. Each change is saved onto your list as it is stored at that moment, so hides, unhides and preference changes made meanwhile on another device or by an administrator, and Continue Watching hides removed when you resumed playback, are kept; the page then shows the saved list. The standalone `#/hidden-content` route opens only with native Home tab and Custom Tabs placement off and no detected Plugin Pages integration for Hidden Content. See the [standalone-route table](../getting-started/pages-and-tabs.md#reach-the-pages-on-desktop-and-phone) for navigation conditions.
 
     Cast hiding saves the person as a hidden item; it does not hide every movie or show featuring that person. A series hide can suppress its episodes and seasons through their series ID.
 

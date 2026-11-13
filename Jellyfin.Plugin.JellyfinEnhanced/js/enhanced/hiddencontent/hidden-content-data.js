@@ -30,6 +30,14 @@
     // replace the stored one. False until the first load and from a user switch
     // until the incoming user's list has loaded.
     let loaded = false;
+    // The stored list as this session last read or wrote it. Where the session's
+    // list differs from it is this session's own change, and a save writes only
+    // that onto the list as stored at that moment (see rebaseOnto): another
+    // device, an administrator or the server may have changed it meanwhile.
+    let storedCopy = { items: {}, settings: {} };
+    // Bumped whenever the session's list is replaced from outside (a load or a
+    // user switch), so a save that started before cannot adopt its result.
+    let listGeneration = 0;
 
     // ============================================================
     // Internal helpers
@@ -49,6 +57,65 @@
         if (!id) return '';
         if (typeof id !== 'string' && typeof id !== 'number' && typeof id !== 'bigint') return '';
         return String(id).replace(/-/g, '').toLowerCase();
+    }
+
+    /**
+     * A deep copy of a hidden list, so the stored copy can't change with the session's list.
+     * @param {Object} doc
+     * @returns {Object}
+     */
+    function copyOf(doc) {
+        return JSON.parse(JSON.stringify(doc));
+    }
+
+    /**
+     * Deep equality for JSON values, ignoring object key order.
+     * @param {*} a
+     * @param {*} b
+     * @returns {boolean}
+     */
+    function sameValue(a, b) {
+        if (a === b) return true;
+        if (!a || !b || typeof a !== 'object' || typeof b !== 'object' || Array.isArray(a) !== Array.isArray(b)) return false;
+        const keys = Object.keys(a);
+        return keys.length === Object.keys(b).length
+            && keys.every(key => Object.prototype.hasOwnProperty.call(b, key) && sameValue(a[key], b[key]));
+    }
+
+    /**
+     * Returns `onto` with the changes that turn `base` into `edited` applied:
+     * each setting whose value differs, and each hidden item added, changed or
+     * removed. An entry `base` holds that is changed or removed is replaced or
+     * removed under every spelling of its key (compared the way IDs are, see
+     * normalizeId): the server keys a Continue Watching hide by the dashed ID,
+     * this client by the ID it was given. An added entry leaves entries stored
+     * under other spellings alone, as a separate entry would be.
+     * @param {{items: Object, settings: Object}} base The list the changes were made from.
+     * @param {{items: Object, settings: Object}} edited The list with the changes.
+     * @param {{items: Object, settings: Object}} onto The list to apply them to.
+     * @returns {{items: Object, settings: Object}} A new list; the inputs are not modified.
+     */
+    function withChanges(base, edited, onto) {
+        const baseItems = base?.items || {}, editedItems = edited?.items || {};
+        const items = { ...(onto?.items || {}) };
+        const changed = [...new Set([...Object.keys(baseItems), ...Object.keys(editedItems)])]
+            .filter(key => !sameValue(baseItems[key], editedItems[key]));
+        const replaced = new Set(changed.filter(key => baseItems[key] !== undefined).map(normalizeId));
+        for (const key of Object.keys(items)) {
+            if (replaced.has(normalizeId(key))) delete items[key];
+        }
+        for (const key of changed) {
+            if (editedItems[key] !== undefined) items[key] = editedItems[key];
+        }
+
+        const baseSettings = base?.settings || {}, editedSettings = edited?.settings || {};
+        const settings = { ...(onto?.settings || {}) };
+        for (const key of new Set([...Object.keys(baseSettings), ...Object.keys(editedSettings)])) {
+            if (sameValue(baseSettings[key], editedSettings[key])) continue;
+            if (editedSettings[key] === undefined) delete settings[key];
+            else settings[key] = editedSettings[key];
+        }
+        return { ...onto, items, settings };
     }
 
     /**
@@ -187,10 +254,13 @@
             });
             if (JE.session && !JE.session.isCurrent(requestEpoch)) return false;
             const camelCased = (typeof JE.toCamelCase === 'function') ? JE.toCamelCase(fresh) : fresh;
+            if (!camelCased || typeof camelCased !== 'object') return false;
+            // Changes this session has not saved yet stay on top of the list as read.
+            hiddenData = loaded ? withChanges(storedCopy, getHiddenData(), camelCased) : camelCased;
+            storedCopy = copyOf(camelCased);
+            loaded = true;
             JE.userConfig = JE.userConfig || {};
-            JE.userConfig.hiddenContent = camelCased || { items: {}, settings: {} };
-            hiddenData = JE.userConfig.hiddenContent;
-            loaded = !!camelCased;
+            JE.userConfig.hiddenContent = hiddenData;
             rebuildSets();
             emitChange();
             return true;
@@ -224,12 +294,17 @@
         return ra >= rb ? la : lb;
     }
 
-    // Local-cache mirror of a server-side hide write — preserves existing metadata + merges scopes via mergeCwScope.
-    // Looks up under hyphenated AND N-format keys (server canonical is hyphenated; some callers pass N-format from data-id).
-    function markScopedHidden(itemId, scope) {
-        if (!itemId) return;
-        const _scope = (scope || 'continuewatching').toLowerCase();
-        const data = getHiddenData();
+    /**
+     * Returns `data` with the scoped home-row hide the server wrote for `itemId`
+     * mirrored in: preserves existing metadata and merges scopes via
+     * mergeCwScope. Returns `data` itself when it already holds that entry.
+     * @param {{items: Object}} data A hidden list.
+     * @param {string} itemId Jellyfin item ID, dashed or not.
+     * @param {string} _scope Lowercase scope that was written.
+     * @param {string} now Timestamp for a new entry.
+     * @returns {{items: Object}}
+     */
+    function withScopedHide(data, itemId, _scope, now) {
         const items = (data.items) || {};
         const noHyphen = itemId.replace(/-/g, '');
         const hyphenated = noHyphen.length === 32
@@ -244,7 +319,7 @@
         const finalScope = mergeCwScope(widestExisting, _scope);
         const existing = variants[0] || null;
         const altPresent = (hyphenated !== itemId && items[hyphenated]) || (noHyphen !== itemId && items[noHyphen]);
-        if (items[itemId] && items[itemId].hideScope === finalScope && !altPresent) return;
+        if (items[itemId] && items[itemId].hideScope === finalScope && !altPresent) return data;
         // Pick the earliest hiddenAt across variants so re-affirming doesn't reset history.
         let earliestHiddenAt = '';
         for (const v of variants) {
@@ -256,7 +331,7 @@
             name: existing?.name || '',
             type: existing?.type || '',
             tmdbId: existing?.tmdbId || '',
-            hiddenAt: earliestHiddenAt || new Date().toISOString(),
+            hiddenAt: earliestHiddenAt || now,
             posterPath: existing?.posterPath || '',
             seriesId: existing?.seriesId || '',
             seriesName: existing?.seriesName || '',
@@ -267,7 +342,22 @@
         const nextItems = { ...items, [itemId]: merged };
         if (hyphenated !== itemId) delete nextItems[hyphenated];
         if (noHyphen !== itemId) delete nextItems[noHyphen];
-        hiddenData = { ...data, items: nextItems };
+        return { ...data, items: nextItems };
+    }
+
+    // Local-cache mirror of a server-side hide write — preserves existing metadata + merges scopes via mergeCwScope.
+    // Looks up under hyphenated AND N-format keys (server canonical is hyphenated; some callers pass N-format from data-id).
+    // The server wrote the entry, so it is recorded as stored as well: a save never counts it as this session's own
+    // change, and so never writes it back after the server drops it (playback, item removal).
+    function markScopedHidden(itemId, scope) {
+        if (!itemId) return;
+        const _scope = (scope || 'continuewatching').toLowerCase();
+        const now = new Date().toISOString();
+        storedCopy = withScopedHide(storedCopy, itemId, _scope, now);
+        const data = getHiddenData();
+        const next = withScopedHide(data, itemId, _scope, now);
+        if (next === data) return;
+        hiddenData = next;
         JE.userConfig = JE.userConfig || {};
         JE.userConfig.hiddenContent = hiddenData;
         rebuildSets();
@@ -525,7 +615,42 @@
     function resetFromUserConfig() {
         loaded = JE.userConfig?.hiddenContent != null;
         hiddenData = JE.userConfig?.hiddenContent || { items: {}, settings: {} };
+        storedCopy = copyOf(hiddenData);
+        listGeneration++;
         rebuildSets();
+    }
+
+    /**
+     * Starts a save. The list is saved whole, so the save starts from `stored`,
+     * the list as just read from the server, and applies only what this session
+     * changed since it last read or wrote the list. Call `saved()` once `list`
+     * is written: the session then shows that list, keeping any change made
+     * while the save was in flight for the next save.
+     * @param {{items: Object, settings: Object}} stored The list as stored now (camelCase).
+     * @returns {{list: Object, saved: Function}}
+     */
+    function rebaseOnto(stored) {
+        const generation = listGeneration;
+        // A copy: the session's list must not change under the save.
+        const sent = copyOf(getHiddenData());
+        const list = withChanges(storedCopy, sent, stored);
+        return {
+            list,
+            saved() {
+                if (generation !== listGeneration) return; // another user's list, or reloaded meanwhile
+                const local = getHiddenData();
+                const next = sameValue(sent, local) ? list : withChanges(sent, local, list);
+                storedCopy = copyOf(list);
+                hiddenData = next;
+                JE.userConfig = JE.userConfig || {};
+                JE.userConfig.hiddenContent = next;
+                if (!sameValue(local, next)) {
+                    rebuildSets();
+                    emitChange();
+                    refreshNativeCardVisibility();
+                }
+            }
+        };
     }
 
     // Hidden-content data is per-user. Clear the local mirror the moment the
@@ -535,6 +660,8 @@
     JE.session?.onUserChange('hidden-content-data', () => {
         hiddenData = null;
         loaded = false;
+        storedCopy = { items: {}, settings: {} };
+        listGeneration++;
         hiddenIdSet.clear();
         hiddenTmdbIdSet.clear();
     });
@@ -570,6 +697,7 @@
         filterRequestItems,
         unhideAll,
         resetFromUserConfig,
+        rebaseOnto,
     });
 
 })(window.JellyfinEnhanced);

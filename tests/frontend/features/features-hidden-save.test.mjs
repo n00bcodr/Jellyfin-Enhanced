@@ -118,3 +118,169 @@ test('between a user switch and the incoming list loading, nothing is saved', as
   assert.deepEqual(h.api.stored, list('a'));
   assert.equal(h.api.posts().length, 0);
 });
+
+// Every save writes the whole list. It must carry only this session's changes onto the list as stored now:
+// other devices, an administrator and the server itself write the same file while a tab stays open.
+const keys = doc => Object.keys(doc.items).sort();
+
+test('a hide on another device is kept when this tab saves', async t => {
+  const h = setup(t, { loadedList: list('a') });
+  h.api.stored.items.b = item('b'); // the phone, after this tab loaded
+  h.hc.hideItem(item('c'));
+  await h.timers.advance(1000);
+  assert.deepEqual(keys(h.api.stored), ['a', 'b', 'c']);
+  assert.equal(h.hc.isHidden('b'), true, 'the tab now shows what the save read');
+});
+
+test('an unhide on another device is not undone when this tab saves', async t => {
+  const h = setup(t, { loadedList: list('a', 'b') });
+  delete h.api.stored.items.b;
+  h.hc.hideItem(item('c'));
+  await h.timers.advance(1000);
+  assert.deepEqual(keys(h.api.stored), ['a', 'c']);
+  assert.equal(h.hc.isHidden('b'), false);
+});
+
+test("an administrator's hides and unhides for the user survive the user's next change", async t => {
+  const h = setup(t, { loadedList: list('a', 'b') });
+  // "Add items" and "Unhide" for this user from the administrator's Hidden Content page (server read-modify-write).
+  h.api.stored.items.admin = { ...item('admin'), hiddenAt: '2026-01-01T00:00:00.000Z' };
+  delete h.api.stored.items.a;
+  h.hc.updateSettings({ filterLibrary: false });
+  await h.timers.advance(1000);
+  assert.deepEqual(keys(h.api.stored), ['admin', 'b']);
+  assert.equal(h.api.stored.settings.filterLibrary, false);
+  assert.equal(h.api.stored.settings.filterSearch, true);
+});
+
+test('a setting changed elsewhere is kept; this tab writes only the settings it changed', async t => {
+  const h = setup(t, { loadedList: list('a') });
+  h.api.stored.settings.filterCalendar = false;
+  h.hc.updateSettings({ filterSearch: false });
+  await h.timers.advance(1000);
+  assert.deepEqual(h.api.stored.settings, { filterSearch: false, filterCalendar: false });
+});
+
+test('unhiding an item this tab knew removes it; items added elsewhere stay', async t => {
+  const h = setup(t, { loadedList: list('a', 'b') });
+  h.api.stored.items.c = item('c');
+  h.hc.unhideItem('a');
+  await h.timers.advance(1000);
+  assert.deepEqual(keys(h.api.stored), ['b', 'c']);
+  h.hc.unhideAll();
+  await h.timers.advance(1000);
+  assert.deepEqual(keys(h.api.stored), [], 'Unhide All clears what the tab shows, which now includes c');
+});
+
+/** Answers the next request of this type (the read as of now, or the write) only when released. */
+function holdNext(h, type = 'GET') {
+  let answer, deliver;
+  const ajax = h.api.ajax;
+  h.api.ajax = request => {
+    if (request.type !== type || answer) return ajax(request);
+    answer = ajax(request);
+    return new Promise(resolve => { deliver = resolve; });
+  };
+  return () => deliver(answer);
+}
+
+for (const step of ['GET', 'POST']) test(`a change made while a save's ${step === 'GET' ? 'read' : 'write'} is in flight is kept and saved`, async t => {
+  const h = setup(t, { loadedList: list('a') });
+  const release = holdNext(h, step);
+  h.hc.hideItem(item('b'));
+  await h.timers.advance(500); // the save has started
+  h.hc.hideItem(item('c'));
+  release();
+  await h.timers.advance(2000);
+  assert.deepEqual(keys(h.api.stored), ['a', 'b', 'c']);
+  for (const id of ['a', 'b', 'c']) assert.equal(h.hc.isHidden(id), true, id);
+});
+
+test('a save whose read fails writes nothing and retries onto the list stored then', async t => {
+  const h = setup(t, { loadedList: list('a') });
+  h.api.failGets = 1;
+  h.hc.hideItem(item('b'));
+  await h.timers.advance(600);
+  assert.equal(h.api.posts().length, 0);
+  h.api.stored.items.c = item('c');
+  await h.timers.advance(2000);
+  assert.deepEqual(keys(h.api.stored), ['a', 'b', 'c']);
+});
+
+test('a change undone before it is saved writes nothing', async t => {
+  const h = setup(t, { loadedList: list('a') });
+  h.hc.hideItem(item('b'));
+  h.hc.unhideItem('b');
+  await h.timers.advance(1000);
+  assert.equal(h.api.posts().length, 0);
+  assert.deepEqual(h.api.stored, list('a'));
+});
+
+/** Continue Watching removal through the real remove-home module and the server's scoped write. */
+function withContinueWatching(h) {
+  h.load('enhanced/homeremoval/features-remove-home.js');
+  h.JE.hiddenContent = { flushPendingSave: h.hc.flushPendingSave, markScopedHidden: h.hc.markScopedHidden };
+  const ajax = h.api.ajax;
+  h.api.ajax = async request => {
+    const match = /\/JellyfinEnhanced\/continue-watching\/hide\/(\w+)$/.exec(new URL(request.url).pathname);
+    if (!match) return ajax(request);
+    h.api.requests.push({ type: request.type, path: match[0] });
+    // As the server does: a read-modify-write that stores the entry under the dashed id.
+    const n = match[1], dashed = `${n.slice(0, 8)}-${n.slice(8, 12)}-${n.slice(12, 16)}-${n.slice(16, 20)}-${n.slice(20)}`;
+    h.api.stored.items[dashed] = { itemId: dashed, name: 'Episode', type: 'Episode', hideScope: 'continuewatching', hiddenAt: '2026-11-13T00:00:00.0000000Z' };
+    return { success: true };
+  };
+  return h.JE.internals.features.removeFromHomeSurface;
+}
+const episode = '0123456789abcdef0123456789abcdef', episodeDashed = '01234567-89ab-cdef-0123-456789abcdef';
+
+test('a Continue Watching hide the server dropped on playback is not written back by the next save', async t => {
+  const h = setup(t, { loadedList: list('a') });
+  const remove = withContinueWatching(h);
+  assert.equal(await remove(episode, 'continuewatching'), true);
+  assert.equal(h.hc.isHiddenOnSurface(episode, 'continuewatching'), true);
+  delete h.api.stored.items[episodeDashed]; // the user resumed it: the playback consumer dropped the hide
+  h.hc.hideItem(item('b'));
+  await h.timers.advance(1000);
+  assert.deepEqual(keys(h.api.stored), ['a', 'b']);
+  assert.equal(h.hc.isHiddenOnSurface(episode, 'continuewatching'), false, 'the tab shows it in Continue Watching again');
+});
+
+test('adding back to Continue Watching right after removing it sticks', async t => {
+  const h = setup(t, { loadedList: list('a') });
+  const remove = withContinueWatching(h);
+  assert.equal(await remove(episode, 'continuewatching'), true);
+  h.hc.unhideItem(episode);
+  await h.timers.advance(1000);
+  assert.deepEqual(keys(h.api.stored), ['a']);
+});
+
+test('a save in flight when Continue Watching removal starts finishes first and keeps the entry', async t => {
+  const h = setup(t, { loadedList: list('a') });
+  const remove = withContinueWatching(h);
+  const release = holdNext(h);
+  h.hc.hideItem(item('b'));
+  await h.timers.advance(500);
+  const removed = remove(episode, 'continuewatching');
+  await h.timers.advance(0);
+  release();
+  assert.equal(await removed, true);
+  await h.timers.advance(2000);
+  assert.deepEqual(keys(h.api.stored), [episodeDashed, 'a', 'b']);
+});
+
+test('a row-only hide made here does not replace a global hide another device stored for the same title', async t => {
+  const h = setup(t, { loadedList: list('a') });
+  h.api.stored.items[episodeDashed] = { ...item(episodeDashed), hideScope: 'global' };
+  h.hc.hideItem({ ...item(episode), hideScope: 'nextup' });
+  await h.timers.advance(1000);
+  assert.deepEqual(keys(h.api.stored), [episodeDashed, episode, 'a']);
+  assert.equal(h.api.stored.items[episodeDashed].hideScope, 'global');
+});
+
+test('unhiding one entry leaves a separate TMDB entry for the same title alone', async t => {
+  const h = setup(t, { loadedList: { items: { abc: item('abc'), 'tmdb-42': { ...item(''), tmdbId: '42', name: 'Seerr hide' } }, settings: {} } });
+  h.hc.unhideItem('abc');
+  await h.timers.advance(1000);
+  assert.deepEqual(keys(h.api.stored), ['tmdb-42']);
+});
