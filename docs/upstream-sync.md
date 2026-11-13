@@ -4,7 +4,7 @@
 
 What the rewrite has taken from [upstream](https://github.com/n00bcodr/Jellyfin-Enhanced) (`main`) since it branched at `2e0f9251bf`. The source of truth is [`upstream-sync.json`](upstream-sync.json); the procedure is [upstream-sync-procedure.md](upstream-sync-procedure.md).
 
-40 upstream commits: 39 ported, 1 already-present.
+41 upstream commits: 40 ported, 1 already-present.
 
 | # | Upstream | Date | Class | Features | Subject | Status | Rewrite commit | Note |
 |---|---|---|---|---|---|---|---|---|
@@ -48,3 +48,4 @@ What the rewrite has taken from [upstream](https://github.com/n00bcodr/Jellyfin-
 | 38 | [`0dba36b6`](https://github.com/n00bcodr/Jellyfin-Enhanced/commit/0dba36b6b4ab8a4247c42dfbf3964994b84b24a6) | 2026-11-13 | fix | media-tags, admin, details-providers | fix(arr): keep synced tags when Radarr or Sonarr can't be read, and make a blank Tag Prefix mean the default (#1054) | ported | `a7962a31` | artifacts/restructure-plan/step-logs/upstream-sync-evidence/p38-* |
 | 39 | [`076012a2`](https://github.com/n00bcodr/Jellyfin-Enhanced/commit/076012a2115b89f288a65f88d73957fe9488d2af) | 2026-11-13 | fix | seerr, calendar | fix(seerr): Seerr routes follow the caller's library access and Jellyfin's parental rules (#1055) | ported | `7d96b61d` | artifacts/restructure-plan/step-logs/upstream-sync-evidence/p39-* |
 | 40 | [`7649dda9`](https://github.com/n00bcodr/Jellyfin-Enhanced/commit/7649dda978ac84eec0a25146e6e45be063ed4c17) | 2026-11-13 | fix | hidden-content, media-tags, platform, seerr, settings, settings-panel | fix(hidden-content): saves keep changes made elsewhere and never replace a list that failed to load (#1056) | ported | `4ccc4428` | artifacts/restructure-plan/step-logs/upstream-sync-evidence/p40-* |
+| 41 | [`31969cba`](https://github.com/n00bcodr/Jellyfin-Enhanced/commit/31969cbac00e366f6d1e69a50a2a9120e02af38a) | 2026-11-13 | translation | platform, hidden-content | Translations update from Hosted Weblate (#1057) | ported | `6b4c05cf` | artifacts/restructure-plan/step-logs/upstream-sync-evidence/p41-* |
