@@ -278,6 +278,19 @@ test('a row-only hide made here does not replace a global hide another device st
   assert.equal(h.api.stored.items[episodeDashed].hideScope, 'global');
 });
 
+// A Continue Watching removal is stored under the dashed id; a later hide from a card is stored under the
+// undashed one. Both entries are listed, and each is removed on its own.
+for (const [removed, kept] of [[episodeDashed, episode], [episode, episodeDashed]]) {
+  test(`removing the ${removed === episode ? 'hide' : 'Continue Watching entry'} keeps the separate ${kept === episode ? 'hide' : 'Continue Watching entry'} of the same item`, async t => {
+    const both = { items: { [episodeDashed]: { ...item(episodeDashed), hideScope: 'continuewatching' }, [episode]: item(episode) }, settings: {} };
+    const h = setup(t, { loadedList: both });
+    assert.equal(h.hc.unhideItem(removed), true);
+    await h.timers.advance(1000);
+    assert.deepEqual(keys(h.api.stored), [kept]);
+    assert.deepEqual(plain(h.hc.getAllHiddenItems().map(entry => entry._key)), [kept]);
+  });
+}
+
 test('unhiding one entry leaves a separate TMDB entry for the same title alone', async t => {
   const h = setup(t, { loadedList: { items: { abc: item('abc'), 'tmdb-42': { ...item(''), tmdbId: '42', name: 'Seerr hide' } }, settings: {} } });
   h.hc.unhideItem('abc');

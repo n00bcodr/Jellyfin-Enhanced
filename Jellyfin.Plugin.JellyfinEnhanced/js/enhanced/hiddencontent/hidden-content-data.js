@@ -85,11 +85,13 @@
     /**
      * Returns `onto` with the changes that turn `base` into `edited` applied:
      * each setting whose value differs, and each hidden item added, changed or
-     * removed. An entry `base` holds that is changed or removed is replaced or
-     * removed under every spelling of its key (compared the way IDs are, see
-     * normalizeId): the server keys a Continue Watching hide by the dashed ID,
-     * this client by the ID it was given. An added entry leaves entries stored
-     * under other spellings alone, as a separate entry would be.
+     * removed. An entry `base` holds that is changed or removed is also replaced
+     * or removed under a spelling of its key (compared the way IDs are, see
+     * normalizeId) that `base` does not hold: that is the server's copy of the
+     * same entry (it keys a Continue Watching hide by the dashed ID, this client
+     * by the ID it was given). A key `base` holds and the changes leave alone is
+     * a separate entry for the same item (a Continue Watching removal next to a
+     * hide) and stays, as do entries under other spellings of an added key.
      * @param {{items: Object, settings: Object}} base The list the changes were made from.
      * @param {{items: Object, settings: Object}} edited The list with the changes.
      * @param {{items: Object, settings: Object}} onto The list to apply them to.
@@ -100,9 +102,11 @@
         const items = { ...(onto?.items || {}) };
         const changed = [...new Set([...Object.keys(baseItems), ...Object.keys(editedItems)])]
             .filter(key => !sameValue(baseItems[key], editedItems[key]));
+        const changedKeys = new Set(changed);
         const replaced = new Set(changed.filter(key => baseItems[key] !== undefined).map(normalizeId));
         for (const key of Object.keys(items)) {
-            if (replaced.has(normalizeId(key))) delete items[key];
+            if (!replaced.has(normalizeId(key))) continue;
+            if (changedKeys.has(key) || baseItems[key] === undefined) delete items[key];
         }
         for (const key of changed) {
             if (editedItems[key] !== undefined) items[key] = editedItems[key];
