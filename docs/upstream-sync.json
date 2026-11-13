@@ -1307,6 +1307,56 @@
       ],
       "notes": "Applied as is (git show 31969cba | git apply --3way, clean): the 32 locale files under Jellyfin.Plugin.JellyfinEnhanced/js/locales/ are byte-identical to upstream's at 31969cba. It adds one key to each, hidden_content_not_loaded, the message of the Hidden Content saves follow-ups (#1056, ported here as row 40) shown when an edit is refused because the hidden list did not load. Every one of the 32 values is the English source text, the same as en.json here and upstream (Weblate seeding a new key), so a user reads what the English fallback already gave them. No key changes or goes; the value has no {placeholders}; the key exists in this tree's en.json. No key the server reads for poster tag captions (StatusRules) changes, so no resolver version moves. No difference from upstream.",
       "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p41-*"
+    },
+    {
+      "sha": "79a90422714edc65d7ae95648baf50be4bcd1986",
+      "date": "2026-11-13T13:07:19+00:00",
+      "subject": "feat(elsewhere): streaming providers from Seerr when there is no TMDB key (#1058)",
+      "class": "feature",
+      "features": [
+        "details-providers",
+        "seerr",
+        "admin",
+        "platform",
+        "media-tags"
+      ],
+      "issues": [
+        "#1052",
+        "#1058"
+      ],
+      "release": null,
+      "size": {
+        "files": 21,
+        "insertions": 420,
+        "deletions": 55
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/configPage.html",
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/admin/sections.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/WatchProvidersBatch.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/elsewhere/elsewhere.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/api.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/discovery/discovery-filter-panel.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/moreinfo/more-info-modal-init.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/moreinfo/more-info-modal-render.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/ui/ui-badges.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/ui/ui-cards.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/locales/en.json",
+        "docs/advanced/api.md",
+        "docs/advanced/config-flag-groups.json",
+        "docs/elsewhere/elsewhere-features.md",
+        "docs/elsewhere/elsewhere-settings.md",
+        "docs/seerr/seerr-features.md",
+        "docs/seerr/seerr-settings.md",
+        "tests/backend/Integrations/IntegrationWatchProvidersTests.cs",
+        "tests/docs/production-inventory.json"
+      ],
+      "status": "deferred",
+      "rewriteCommits": [],
+      "reason": "The port changes two existing contract lines, which an unattended sync may not land: upstream's watch-providers batch reads Seerr's title detail through ProxyJellyseerrRequest when there is no TMDB key, so GetWatchProvidersBatch in auth-helper-calls.snapshot.json and GET watch-providers in auth-reads-by-route.base.json grow from {User 1, UserHelper.GetCurrentUserId 1} to {IsAdminUser 5, User 2, UserHelper.GetCurrentUserId 2} (the proxy's own reads). Reading Seerr outside the proxy to keep those lines would skip its permission checks and parental gating, a weaker check than upstream's. Everything else in the port only adds (one route, GET jellyseerr/streaming-region).",
+      "needs": "A maintainer's review of the last commit of branch sync/contract-79a90422, `contract: upstream sync additions and two changed lines`: the finished port (tests, lab parity with upstream's build) with the snapshot lines for the new route (route-auth.snapshot.json, auth-helper-calls.snapshot.json, auth-reads-by-route.base.json, baselines/inventory-routes.txt, ExpectedRoutes 206 to 207) and the two changed lines above. Accepted, that branch lands as it is and marks this entry ported."
     }
   ]
 }
