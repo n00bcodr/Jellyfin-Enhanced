@@ -56,6 +56,8 @@ public class ArrTagsSyncTests
         public readonly Series Show = new() { Id = Guid.NewGuid(), Name = "Show", Tags = ["Arr: stale", "Keep"], ProviderIds = new() { ["Imdb"] = "tt201" } };
         public readonly Mock<ILibraryManager> Manager = new();
         public int Writes;
+        // The error the run ended with (a service that could not be read), or null.
+        public InvalidOperationException? Failure;
 
         public Library()
         {
@@ -96,6 +98,10 @@ public class ArrTagsSyncTests
         {
             await new ArrTagsSyncTask(library.Manager.Object, transport, f.Core.Logger).ExecuteAsync(new Progress<double>(), default);
         }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("could not be read", StringComparison.Ordinal))
+        {
+            library.Failure = ex;
+        }
         finally { BaseItem.LibraryManager = previous; }
         return (library, File.ReadAllText(f.Core.Logger.CurrentLogFilePath));
     }
@@ -112,6 +118,7 @@ public class ArrTagsSyncTests
         Assert.Equal(new[] { "Keep", "Arr: dave" }, library.Show.Tags);
         Assert.Equal(3, library.Writes);
         Assert.DoesNotContain("could not be read", log);
+        Assert.Null(library.Failure);
     }
 
     [Fact]
@@ -125,6 +132,7 @@ public class ArrTagsSyncTests
         Assert.Equal(new[] { "Keep" }, library.Unmatched.Tags);
         Assert.Equal(new[] { "Keep" }, library.Show.Tags);
         Assert.DoesNotContain("could not be read", log);
+        Assert.Null(library.Failure);
     }
 
     [Theory]
@@ -183,6 +191,49 @@ public class ArrTagsSyncTests
         Assert.Equal(0, library.Writes);
         Assert.Contains("Radarr could not be read", log);
         Assert.Contains("Sonarr could not be read", log);
+        Assert.StartsWith("Radarr and Sonarr could not be read", library.Failure?.Message);
+    }
+
+    // The run still finishes the item pass (tags from instances that answered are added), then reports itself
+    // failed, so Scheduled Tasks shows an instance that stays down instead of only a log line.
+    [Theory]
+    [InlineData("radarr")]
+    [InlineData("sonarr")]
+    public async Task ARunThatCouldNotReadAServiceFinishesThenReportsFailed(string service)
+    {
+        using var f = new ApiPluginFixture();
+        var (library, _) = service == "radarr"
+            ? await Sync(f, "network", [RadarrSecond])
+            : await Sync(f, "network", [Sonarr]);
+
+        Assert.StartsWith(service == "radarr" ? "Radarr could not be read" : "Sonarr could not be read", library.Failure?.Message);
+        Assert.True(library.Writes > 0);
+    }
+
+    // With Clear old tags off, a failure only means nothing is removed anyway: tags from the instances that
+    // answered are still added, and no tag is taken away.
+    [Fact]
+    public async Task ClearOldTagsOffWithAnInstanceDownOnlyAddsTags()
+    {
+        using var f = new ApiPluginFixture();
+        var (library, _) = await Sync(f, "network", [RadarrSecond], configure: c => c.ArrTagsClearOldTags = false);
+
+        Assert.Equal(new[] { "Keep", "Arr: stale", "Arr: alice" }, library.Matched.Tags);
+        Assert.Equal(new[] { "Arr: old", "Keep" }, library.Unmatched.Tags);
+        Assert.Equal(new[] { "Arr: stale", "Keep", "Arr: dave" }, library.Show.Tags);
+    }
+
+    // A sync filter limits what is added; a service that could not be read still keeps its items' tags,
+    // including tags the filter would not add.
+    [Fact]
+    public async Task ASyncFilterWithAnInstanceDownKeepsTheUnreadServicesTagsAndFiltersTheRest()
+    {
+        using var f = new ApiPluginFixture();
+        var (library, _) = await Sync(f, "network", [Sonarr], configure: c => c.ArrTagsSyncFilter = "carol");
+
+        Assert.Equal(new[] { "Keep", "Arr: carol" }, library.Matched.Tags);
+        Assert.Equal(new[] { "Keep" }, library.Unmatched.Tags);
+        Assert.Equal(new[] { "Arr: stale", "Keep" }, library.Show.Tags);
     }
 
     // An instance that answers, but with an error status or something that is not its tag list.

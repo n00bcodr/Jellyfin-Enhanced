@@ -63,7 +63,7 @@ Tag sync copies source tags into Jellyfin metadata. Check the task first, then d
 3. Check that source tags exist.
 4. If **Sync to Jellyfin Filter** is set, use comma- or semicolon-separated source names without the prefix. Putting each name on a new line does not work for sync, even though the form suggests it.
 5. Inspect the Jellyfin item's metadata tags. **Tag Prefix** is added during sync; source tags do not need to contain it.
-6. Check task/server logs for a failed or disabled instance and review cleanup before running again. A run that could not read Radarr or Sonarr logs `Radarr could not be read` or `Sonarr could not be read` and leaves that service's tags as they are.
+6. Check task/server logs for a failed or disabled instance and review cleanup before running again. A run that could not read Radarr or Sonarr shows as failed in Scheduled Tasks, logs `Radarr could not be read` or `Sonarr could not be read`, and leaves that service's tags as they are. An instance that is retired but still enabled keeps doing this: disable it.
 
 !!! warning "Preserve tags while investigating"
     **Clear old tags before sync** removes tags starting with the current prefix even on unmatched items or when a source answers with no tags. A source that cannot be read keeps its items' tags for that run. Turn it off if you need to preserve existing tags. Changing the prefix does not remove tags bearing the old prefix.
