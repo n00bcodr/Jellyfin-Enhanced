@@ -1434,5 +1434,6 @@
     "discovery_filter_set_with": "With {name}",
     "discovery_role_visual_effects": "Visual Effects",
     "discovery_filter_minutes": "min",
-    "discovery_filters_done": "Done"
+    "discovery_filters_done": "Done",
+    "hidden_content_not_loaded": "Your hidden items could not be loaded, so this change was not made. Please reload and retry."
 }
