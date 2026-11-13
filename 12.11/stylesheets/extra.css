@@ -1,0 +1,257 @@
+:root {
+  --md-primary-fg-rgb: 155, 89, 182;
+  --md-primary-fg-color: rgba(var(--md-primary-fg-rgb), 1);
+  --md-primary-fg-color--light: rgba(205, 110, 198, 1);
+  --md-primary-fg-color--dark: rgba(78, 69, 163, 1);
+  --md-accent-fg-color: rgba(0, 180, 216, 1);
+}
+
+/* ============================================================
+   NAVIGATION
+   ============================================================ */
+.md-nav__link {
+  border-radius: 8px;
+  padding: 4px 8px;
+  transition: background 0.2s ease;
+}
+
+/* Active nav item */
+.md-nav__link--active {
+  background: rgba(155, 89, 182, 0.15);
+}
+
+/* ============================================================
+   HEADER / TOPBAR
+   ============================================================ */
+.md-header {
+  background: var(--md-primary-fg-color) !important;
+  transition: background 0.3s ease, backdrop-filter 0.3s ease;
+}
+.md-tabs {
+  border-radius: 0 0 20px 20px;
+}
+
+.md-header.scrolled {
+  backdrop-filter: blur(20px);
+  background: linear-gradient(180deg, rgba(var(--md-primary-fg-rgb), 0.8), rgba(var(--md-primary-fg-rgb), 0.2)) !important;
+  border-radius: 0 0 20px 20px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+}
+
+/* ============================================================
+   SEARCH
+   ============================================================ */
+.md-search__form {
+  border-radius: 20px;
+  border: 1px solid rgba(155, 89, 182, 0.3);
+  transition: border 0.2s ease;
+}
+.md-search__output,
+.md-search__form {
+  border-radius: 20px !important;
+}
+.md-search__form:focus-within {
+  border-color: rgba(155, 89, 182, 0.8);
+}
+
+/* ============================================================
+   CODE BLOCKS
+   ============================================================ */
+.highlight {
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.md-typeset code {
+  border-radius: 4px;
+  padding: 2px 5px;
+  background: rgba(155, 89, 182, 0.15) !important;
+  color: #c472f7 !important; /* this impacts ALL rendered code */
+}
+
+/* Annotations wider, for more content */
+:root {
+  --md-tooltip-width: 600px;
+}
+
+
+/* ============================================================
+   ADMONITIONS (note, tip, warning etc)
+   ============================================================ */
+.md-typeset .admonition {
+  border-radius: 12px;
+  overflow: hidden;
+  border: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.md-typeset .admonition-title {
+  border-radius: 10px 10px 0 0;
+}
+
+/* Custom admonition          */
+/* use as `!!! dev`           */
+:root {
+  /* Icon for the custom admonition:  */
+  /* Fontawesome: `code`              */
+  --md-admonition-icon--dev: url('data:image/svg+xml;charset=utf-8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640"><!--!Font Awesome Free v7.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2026 Fonticons, Inc.--><path d="M392.8 65.2C375.8 60.3 358.1 70.2 353.2 87.2L225.2 535.2C220.3 552.2 230.2 569.9 247.2 574.8C264.2 579.7 281.9 569.8 286.8 552.8L414.8 104.8C419.7 87.8 409.8 70.1 392.8 65.2zM457.4 201.3C444.9 213.8 444.9 234.1 457.4 246.6L530.8 320L457.4 393.4C444.9 405.9 444.9 426.2 457.4 438.7C469.9 451.2 490.2 451.2 502.7 438.7L598.7 342.7C611.2 330.2 611.2 309.9 598.7 297.4L502.7 201.4C490.2 188.9 469.9 188.9 457.4 201.4zM182.7 201.3C170.2 188.8 149.9 188.8 137.4 201.3L41.4 297.3C28.9 309.8 28.9 330.1 41.4 342.6L137.4 438.6C149.9 451.1 170.2 451.1 182.7 438.6C195.2 426.1 195.2 405.8 182.7 393.3L109.3 320L182.6 246.6C195.1 234.1 195.1 213.8 182.6 201.3z"/></svg>')
+}
+/* "details" (for collapsed only) */
+.md-typeset .admonition.dev,
+.md-typeset details.dev {
+  border-color: var(--md-primary-fg-color);
+}
+/* title */
+.md-typeset .dev > .admonition-title,
+.md-typeset .dev > summary {
+  background-color: var(--md-primary-fg-color);
+}
+/* icon */
+.md-typeset .dev > .admonition-title::before,
+.md-typeset .dev > summary::before {
+  background-color: #ffffff;
+  -webkit-mask-image: var(--md-admonition-icon--dev);
+          mask-image: var(--md-admonition-icon--dev);
+}
+
+/* ============================================================
+   TABLES
+   ============================================================ */
+.md-typeset__scrollwrap {
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.md-typeset table:not([class]) {
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.md-typeset table:not([class]) th {
+  background: rgba(155, 89, 182, 0.3);
+}
+
+.md-typeset table:not([class]) tr:hover {
+  background: rgba(155, 89, 182, 0.1);
+  transition: background 0.2s ease;
+}
+
+/* ============================================================
+   CONTENT AREA
+   ============================================================ */
+.md-content__inner {
+  padding: 2rem;
+  border-radius: 12px;
+}
+
+/* ============================================================
+   TABS (pymdownx.tabbed)
+   ============================================================ */
+.md-typeset .tabbed-labels {
+  border-radius: 8px 8px 0 0;
+}
+
+.md-typeset .tabbed-content {
+  border-radius: 0 0 8px 8px;
+  overflow: hidden;
+}
+
+/* ============================================================
+   FOOTER
+   ============================================================ */
+.md-footer {
+  backdrop-filter: blur(20px);
+  background: linear-gradient(0deg, rgba(var(--md-primary-fg-rgb), 0.4), rgba(var(--md-primary-fg-rgb), 0.2)) !important;
+  border-radius: 20px 20px 0 0;
+
+}
+
+/* ============================================================
+   SCROLLBAR
+   ============================================================ */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(155, 89, 182, 0.5);
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(155, 89, 182, 0.8);
+}
+
+/* ============================================================
+   BUTTONS
+   ============================================================ */
+.md-button {
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.md-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(155, 89, 182, 0.4);
+}
+
+/* ============================================================
+   HEADER REPO SOURCE FACTS
+   ============================================================ */
+
+.md-source__fact--version {
+  color: #ffffff;
+}
+
+.md-source__fact--stars {
+  color: #ffc107;
+}
+
+.md-source__fact--stars::before {
+  color: #ffc107;
+}
+
+.md-source__fact--forks {
+  color: #64b5f6;
+}
+
+/* ============================================================
+   SOCIAL ICONS - INDIVIDUAL COLORS
+   ============================================================ */
+
+.md-social__link[title="GitHub Repository"]:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.5);
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.2);
+  border-radius: 999px;
+}
+
+.md-social__link[title="GitHub Repository"] svg {
+  fill: rgba(255, 255, 255, 0.8);
+}
+
+/* Discord - blurple */
+.md-social__link[title="Jellyfin Community Discord - Jellyfin Enhanced Channel"] {
+  border-color: rgba(88, 101, 242, 0.4);
+  border-radius: 999px;
+}
+
+.md-social__link[title="Jellyfin Community Discord - Jellyfin Enhanced Channel"]:hover {
+  background: rgba(88, 101, 242, 0.25);
+  border-color: rgba(88, 101, 242, 0.8);
+  box-shadow: 0 0 12px rgba(88, 101, 242, 0.4);
+}
+
+.md-social__link[title="Jellyfin Community Discord - Jellyfin Enhanced Channel"] svg {
+  fill: #5865f2;
+}
+
+.md-social__link[title="Jellyfin Community Discord - Jellyfin Enhanced Channel"]:hover svg {
+  fill: #7983f5;
+}

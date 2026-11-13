@@ -1,0 +1,3744 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="The essential enhancement suite for Jellyfin, bundling advanced features and customizations into one convenient plugin.">
+      
+      
+        <meta name="author" content="n00bcodr">
+      
+      
+        <link rel="canonical" href="https://n00bcodr.github.io/Jellyfin-Enhanced/12.11/advanced/api/">
+      
+      
+        <link rel="prev" href="../css-customization/">
+      
+      
+        <link rel="next" href="../project-structure/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../images/favicon.ico">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.0">
+    
+    
+      
+        <title>API - Jellyfin Enhanced</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#jellyfin-enhanceds-api" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Jellyfin Enhanced" class="md-header__button md-logo" aria-label="Jellyfin Enhanced" data-md-component="logo">
+      
+  <img src="../../images/favicon.ico" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Jellyfin Enhanced
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              API
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/n00bcodr/Jellyfin-Enhanced" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    n00bcodr/Jellyfin-Enhanced
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../installation/installation/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Installation
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../enhanced/enhanced-features/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Enhanced
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../elsewhere/elsewhere-features/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Elsewhere
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../seerr/seerr-features/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Seerr
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../spoiler-guard/spoiler-guard-features/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Spoiler Guard
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../arr/arr-features/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  *arr
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../other/other-features/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Other
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../css-customization/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Advanced
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../faq-support/faq/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  FAQ + Support
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../community-analytics/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Community Analytics
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../other-projects/other-projects/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Related Projects
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../about/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  About
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+  
+
+<nav class="md-nav md-nav--primary md-nav--lifted md-nav--integrated" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Jellyfin Enhanced" class="md-nav__button md-logo" aria-label="Jellyfin Enhanced" data-md-component="logo">
+      
+  <img src="../../images/favicon.ico" alt="logo">
+
+    </a>
+    Jellyfin Enhanced
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/n00bcodr/Jellyfin-Enhanced" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    n00bcodr/Jellyfin-Enhanced
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Installation
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Enhanced
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Enhanced
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../enhanced/enhanced-features/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Enhanced Features
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../enhanced/enhanced-settings/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Enhanced Settings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Elsewhere
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Elsewhere
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../elsewhere/elsewhere-features/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Elsewhere Features
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../elsewhere/elsewhere-settings/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Elsewhere Settings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Seerr
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Seerr
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../seerr/seerr-features/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Seerr Features
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../seerr/seerr-settings/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Seerr Settings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../seerr/permission-audit/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Permission Audit
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Spoiler Guard
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Spoiler Guard
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../spoiler-guard/spoiler-guard-features/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Spoiler Guard Features
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../spoiler-guard/spoiler-guard-settings/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Spoiler Guard Settings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    *arr
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    *arr
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../arr/arr-features/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    *arr Features
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../arr/arr-settings/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    *arr Settings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../arr/troubleshooting-support/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting + Support
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Other
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Other
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../other/other-features/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Other Features
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../other/other-settings/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Other Settings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advanced
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Advanced
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../css-customization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CSS Customization
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#quick-start-normal-user-vs-admin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quick Start: Normal User vs Admin
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Quick Start: Normal User vs Admin">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#as-a-normal-user-your-own-data-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        As a normal user, your own data only
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#as-an-admin-any-users-data" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        As an admin, any user's data
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#bookmarks-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bookmarks API
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Bookmarks API">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#bookmarks-storage-directory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bookmarks Storage Directory
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#authentication-two-ways-to-call-these" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Authentication: two ways to call these
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bookmarks-api-endpoints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bookmarks API endpoints
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#reviews-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reviews API
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Reviews API">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#rating-and-content-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rating and content rules
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#reviewing-a-season-or-episode-of-a-tv-show" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reviewing a season or episode of a TV show
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#seerr-integration-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Seerr Integration API
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#admin-hidden-content-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Admin Hidden Content API
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Admin Hidden Content API">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#list-users-with-hidden-content" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        List Users With Hidden Content
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-a-users-hidden-content" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Get A User's Hidden Content
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#unhide-items-for-a-user" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Unhide Items For A User
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#hide-items-for-a-user" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hide Items For A User
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#full-endpoint-index" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Full Endpoint Index
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Full Endpoint Index">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#seerr-discovery-requests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Seerr Discovery &amp; Requests
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tmdb-proxy-metadata" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TMDB Proxy &amp; Metadata
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#client-bootstrap-config" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Client Bootstrap &amp; Config
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#per-user-settings-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-User Settings Files
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#spoiler-guard" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Spoiler Guard
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#continue-watching-next-up" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Continue Watching / Next Up
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tags-cache-watch-data" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tags, Cache &amp; Watch Data
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#activity-feed-whats-new" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Activity Feed &amp; What's New
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#branding" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Branding
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#arr-sonarrradarrbazarr" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        *arr (Sonarr/Radarr/Bazarr)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#active-streams-proxy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Active Streams &amp; Proxy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#maintenance-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Maintenance Mode
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#misc" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Misc
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../project-structure/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project Structure
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    FAQ + Support
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    FAQ + Support
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../faq-support/faq/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    FAQ
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../faq-support/report-issues/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Report issues
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../faq-support/feature-requests/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Feature Requests
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../faq-support/contributing-translations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing Translations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../faq-support/support/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Support + Community
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../community-analytics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Community Analytics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../other-projects/other-projects/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Related Projects
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../about/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    About
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="jellyfin-enhanceds-api">Jellyfin Enhanced's API</h1>
+<p>Jellyfin Enhanced adds features like <strong>Bookmarks</strong> and <strong>User Reviews/Ratings</strong> that live entirely in this plugin, not in Jellyfin Server itself. A user of any other Jellyfin client (Wholphin, Streamyfin, Afinity, a custom app, etc.) only gets these features if that client talks to the endpoints on this page directly, over plain HTTP with a Jellyfin token or API key. No client-side plugin, SDK, or Jellyfin Enhanced code is required, just an HTTP client and the request shapes documented below.</p>
+<p>Requirements before any of this works:</p>
+<ul>
+<li>The Jellyfin Enhanced plugin must be installed and enabled on the target server</li>
+<li>Your app needs a Jellyfin auth token (per-user, from that user logging in) or a server API key, exactly as it would for any other Jellyfin Server request. See <a href="#quick-start-normal-user-vs-admin">Quick Start</a> below for how to get one and which calls need which</li>
+<li>Bookmarks and Reviews both use <strong>TMDB IDs</strong>, not Jellyfin item IDs, to key data server-side (bookmarks also take an <code>itemId</code> when adding one, see <a href="#bookmarks-api-endpoints">Bookmarks API endpoints</a>)</li>
+</ul>
+<p>What this lets a client build, using only these HTTP endpoints:</p>
+<ul>
+<li>A "bookmark this moment" button on the video player, and a bookmarks list/library screen (see <a href="#bookmarks-api">Bookmarks API</a>)</li>
+<li>Star ratings and written reviews on a movie/show/season/episode details page, shared across every user on the server (see <a href="#reviews-api">Reviews API</a>)</li>
+</ul>
+<div class="admonition danger">
+<p class="admonition-title">Jellyfin 10.11 vs 12: the auth header that works is not the same</p>
+<p>This plugin builds one identical set of endpoints for both Jellyfin 10.11 and 12, so the request/response shapes on this page don't change between server versions, only <strong>which auth header Jellyfin Server itself accepts</strong> does. Confirmed live against both a 10.11.11 and a 12.0.0 server:</p>
+<ul>
+<li><code>X-Emby-Token</code> and <code>X-Emby-Authorization</code> work on Jellyfin <strong>10.11</strong></li>
+<li>On Jellyfin <strong>12</strong>, both of the above are rejected by default (<code>401</code>/<code>400</code>) — Jellyfin 12 ships with <code>ServerConfiguration.EnableLegacyAuthorization</code> <strong>off</strong>, and a server-side migration force-disables it even on servers upgraded from 10.x</li>
+<li><code>Authorization: MediaBrowser Token="..."</code> (and, for the one pre-login call below, <code>Authorization: MediaBrowser Client="...", Device="...", DeviceId="...", Version="..."</code>) works on <strong>both</strong> versions, unaffected by that setting</li>
+</ul>
+<p>A client that only wants to support one code path, rather than detecting the server version and switching headers, should always send <code>Authorization</code>, never <code>X-Emby-Token</code>/<code>X-Emby-Authorization</code> alone. Some examples below still show <code>X-Emby-Token</code> because that's what a plain server API key traditionally uses; substitute <code>Authorization: MediaBrowser Token="{apiKeyOrUserToken}"</code> for the same call if the target server might be running Jellyfin 12.</p>
+</div>
+<p><strong><code>/JellyfinEnhanced</code></strong></p>
+<details class="dev" open="open">
+<summary>Check version</summary>
+<p><strong><code>/JellyfinEnhanced/version</code></strong></p>
+<div class="tabbed-set tabbed-alternate" data-tabs="1:1"><input checked="checked" id="__tabbed_1_1" name="__tabbed_1" type="radio" /><div class="tabbed-labels"><label for="__tabbed_1_1">cURL</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<div class="language-bash highlight"><span class="filename">Bash</span><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>curl<span class="w"> </span>-X<span class="w"> </span>GET<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="hll"><span class="w">  </span><span class="s2">"JELLYFIN_SERVER_URL/JellyfinEnhanced/version"</span>
+</span></span></code></pre></div>
+</div>
+</div>
+</div>
+<ul>
+<li>Jellyfin Server URL (<code>JELLYFIN_URL</code>)</li>
+</ul>
+</details>
+<!-- TODO: add more here -->
+
+<h2 id="quick-start-normal-user-vs-admin">Quick Start: Normal User vs Admin</h2>
+<p>There are two distinct ways to call the Bookmarks and Reviews endpoints below, depending on who is calling and whose data they are touching.</p>
+<h3 id="as-a-normal-user-your-own-data-only">As a normal user, your own data only</h3>
+<p>Log in as that user to get a per-user access token, then use that token in <code>Authorization: MediaBrowser Token="..."</code> for every call. With this token you can only read or write your own bookmarks and your own review, never another user's.</p>
+<details class="question">
+<summary>How do I get <code>JELLYFIN_USER_ACCESS_TOKEN</code>?</summary>
+<p>Call Jellyfin's own <code>POST /Users/AuthenticateByName</code> with that user's username and password. This is not a Jellyfin Enhanced endpoint, it is part of Jellyfin Server's own API.</p>
+<div class="tabbed-set tabbed-alternate" data-tabs="2:1"><input checked="checked" id="__tabbed_2_1" name="__tabbed_2" type="radio" /><div class="tabbed-labels"><label for="__tabbed_2_1">cURL</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<div class="language-bash highlight"><span class="filename">Bash</span><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="hll"><span class="w">  </span>-H<span class="w"> </span><span class="s1">'Content-Type: application/json'</span><span class="w"> </span><span class="se">\</span>
+</span></span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="hll"><span class="w">  </span>-H<span class="w"> </span><span class="s1">'Authorization: MediaBrowser Client="MyApp", Device="MyApp", DeviceId="my-app-1", Version="1.0.0"'</span><span class="w"> </span><span class="se">\</span>
+</span></span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="hll"><span class="w">  </span>-d<span class="w"> </span><span class="s1">'{"Username": "JELLYFIN_USERNAME", "Pw": "JELLYFIN_PASSWORD"}'</span><span class="w"> </span><span class="se">\</span>
+</span></span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">  </span><span class="s1">'JELLYFIN_SERVER_URL/Users/AuthenticateByName'</span>
+</span></code></pre></div>
+</div>
+</div>
+</div>
+<p>A client-identification header (<code>Client</code>, <code>Device</code>, <code>DeviceId</code>, <code>Version</code>, any values that identify your app) is required here, Jellyfin rejects the request without it even though no token exists yet at this point. Use the <strong><code>Authorization</code></strong> header for it, not <code>X-Emby-Authorization</code>: confirmed live against a Jellyfin 12 server, <code>X-Emby-Authorization</code> alone gets a bare <code>400 Error processing request</code> there, because Jellyfin 12 disables the legacy <code>X-Emby-*</code>/<code>X-MediaBrowser-*</code> header family by default (<code>ServerConfiguration.EnableLegacyAuthorization</code>). <code>Authorization: MediaBrowser ...</code> is never gated by that setting, on 10.11 or 12, so it is the one header name safe to hard-code in a client.</p>
+<p>The response body includes an <code>AccessToken</code> field, that is <code>JELLYFIN_USER_ACCESS_TOKEN</code>. It does not expire on its own, it stays valid until the user signs out or an admin revokes it from the Jellyfin Dashboard.</p>
+<p>Alternatively, <a href="https://jellyfin.org/docs/general/clients/quick-connect/">Quick Connect</a> gets a token without the app ever handling the user's password.</p>
+</details>
+<ul>
+<li>Post your own review: <code>POST /JellyfinEnhanced/reviews/{mediaType}/{tmdbId}</code></li>
+<li>Delete your own review: <code>DELETE /JellyfinEnhanced/reviews/{mediaType}/{tmdbId}</code></li>
+<li>Add a bookmark for yourself: <code>POST /JellyfinEnhanced/user-settings/{yourUserId}/bookmark.json/add</code></li>
+<li>Remove a bookmark for yourself: <code>DELETE /JellyfinEnhanced/user-settings/{yourUserId}/bookmark.json/{bookmarkId}</code></li>
+</ul>
+<h3 id="as-an-admin-any-users-data">As an admin, any user's data</h3>
+<p>Generate a server API key from the Jellyfin Dashboard (Settings &gt; API Keys), created by an Administrator account. Use that key in <code>X-Emby-Token</code> (Reviews) or <code>Authorization: MediaBrowser Token="..."</code> (Bookmarks), and put the target user's ID directly in the URL. This is the pattern a 3rd-party app should use to manage bookmarks and reviews for every user with a single credential, with no per-user login required.</p>
+<ul>
+<li>Post a review as a specific user: <code>POST /JellyfinEnhanced/reviews/admin/{userIdN}/{mediaType}/{tmdbId}</code></li>
+<li>Delete a specific user's review: <code>DELETE /JellyfinEnhanced/reviews/admin/{userIdN}/{mediaType}/{tmdbId}</code></li>
+<li>Add a bookmark for a specific user: <code>POST /JellyfinEnhanced/user-settings/{userId}/bookmark.json/add</code></li>
+<li>Remove a bookmark for a specific user: <code>DELETE /JellyfinEnhanced/user-settings/{userId}/bookmark.json/{bookmarkId}</code></li>
+</ul>
+<p>A non-admin token used against another user's <code>{userId}</code> is rejected. Full request and response details for every endpoint are below.</p>
+<div class="admonition tip">
+<p class="admonition-title">Ratings vs. text reviews</p>
+<p><code>{tmdbId}</code> in every Reviews endpoint above also accepts <code>{tmdbId}:s{season}</code> or <code>{tmdbId}:s{season}:e{episode}</code>, so a TV show can carry its own review plus separate ones per season/episode. A review's <code>rating</code> (1-5) and <code>content</code> are independent: send <code>rating</code> alone for a star-rating-only UI, <code>content</code> alone for text-only, or both. See <a href="#rating-and-content-rules">Rating and content rules</a> in the Reviews API section.</p>
+</div>
+<h2 id="bookmarks-api">Bookmarks API</h2>
+<div class="admonition info">
+<p class="admonition-title">New in v11.13.0.0</p>
+<p>The additive <code>bookmark.json/add</code> and <code>bookmark.json/{bookmarkId}</code> endpoints below, and admin access to any user's bookmarks via a server API key, are new in v11.13.0.0. Earlier versions only support reading or replacing the whole file with a per-user access token.</p>
+</div>
+<h3 id="bookmarks-storage-directory">Bookmarks Storage Directory</h3>
+<p>Bookmarks are stored as <code>bookmark.json</code> (singular), inside a folder named after the user's ID, under the plugin's own configuration directory:</p>
+<div class="language-text highlight"><span class="filename">bookmark.json</span><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>{JELLYFIN_DATA_DIR}/plugins/configurations/Jellyfin.Plugin.JellyfinEnhanced/JELLYFIN_USER_ID/bookmark.json
+</span></code></pre></div>
+<p><code>JELLYFIN_USER_ID</code> here is the user's GUID with hyphens stripped and lowercased (e.g. <code>9285e8b541494149...</code>), regardless of the casing or format used in the URL.</p>
+<details class="question">
+<summary><code>userID</code>? <code>JELLYFIN_USER_ID</code>?</summary>
+<blockquote>
+<p class="annotate"><strong><code>userID</code> is Jellyfin Server's unique ID for each user</strong></p>
+<!-- annotation -->
+<p><code>JELLYFIN_USER_ID</code> is a placeholder for the user's <code>userID</code></p>
+<p><br></p>
+<p>Reference:</p>
+<p><a href="https://api.jellyfin.org/#tag/User">Jellyfin's API documentation on <code>/Users</code></a></p>
+</blockquote>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>A simple way to <strong>find which <code>userID</code> belongs to which user:</strong></p>
+<ul class="task-list">
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled checked/><span class="task-list-indicator"></span></label> Jellyfin Dashboard: <code>Users</code></li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled checked/><span class="task-list-indicator"></span></label> Click a user's profile</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled checked/><span class="task-list-indicator"></span></label> The <code>userID</code> for that user appears in the URL. For example: <code>9285e8b54149414941494edb9e464dcd</code> in the URL <code>http://localhost:8096/#/dashboard/users/profile?userId=9285e8b54149414941494edb9e464dcd</code></li>
+</ul>
+</div>
+</details>
+<div class="language-json highlight"><span class="filename">bookmark.json: Example Data structure</span><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="p">{</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span><span class="nt">"Bookmarks"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">    </span><span class="nt">"unique-bookmark-id"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">      </span><span class="nt">"ItemId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"jellyfin-item-id"</span><span class="p">,</span>
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">      </span><span class="nt">"TmdbId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"12345"</span><span class="p">,</span>
+</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">      </span><span class="nt">"TvdbId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"67890"</span><span class="p">,</span>
+</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">      </span><span class="nt">"MediaType"</span><span class="p">:</span><span class="w"> </span><span class="s2">"movie"</span><span class="w"> </span><span class="err">|</span><span class="w"> </span><span class="s2">"tv"</span><span class="p">,</span>
+</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="w">      </span><span class="nt">"Name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Item Name"</span><span class="p">,</span>
+</span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="w">      </span><span class="nt">"Timestamp"</span><span class="p">:</span><span class="w"> </span><span class="mf">123.45</span><span class="p">,</span>
+</span><span id="__span-3-10"><a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="w">      </span><span class="nt">"Label"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Epic scene"</span><span class="p">,</span>
+</span><span id="__span-3-11"><a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="w">      </span><span class="nt">"CreatedAt"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-01-03T12:00:00.000Z"</span><span class="p">,</span>
+</span><span id="__span-3-12"><a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="w">      </span><span class="nt">"UpdatedAt"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-01-03T12:00:00.000Z"</span><span class="p">,</span>
+</span><span id="__span-3-13"><a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="w">      </span><span class="nt">"SyncedFrom"</span><span class="p">:</span><span class="w"> </span><span class="s2">"original-item-id"</span>
+</span><span id="__span-3-14"><a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a><span class="w">    </span><span class="p">}</span>
+</span><span id="__span-3-15"><a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a><span class="w">  </span><span class="p">}</span>
+</span><span id="__span-3-16"><a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a><span class="p">}</span>
+</span></code></pre></div>
+<div class="admonition warning">
+<p class="admonition-title">Field casing is PascalCase, except on <code>add</code></p>
+<p>The Get, Replace-all, and Remove endpoints below all read/write <code>BookmarkItem</code> fields in <strong>PascalCase</strong> (<code>ItemId</code>, <code>TmdbId</code>, <code>MediaType</code>, <code>Timestamp</code>, ...) as shown above — confirmed against a live server, not just the source. The one exception is the <strong>Add one Bookmark</strong> endpoint: its request body accepts either casing (ASP.NET Core's model binder is case-insensitive), but its own success response is a separate small object using <strong>camelCase</strong> (<code>{"success": true, "id": "..."}</code>). Don't assume one casing convention across every Bookmarks endpoint.</p>
+</div>
+<h3 id="authentication-two-ways-to-call-these">Authentication: two ways to call these</h3>
+<ul>
+<li><strong>As the user themselves</strong>: pass a per-user access token (obtained by that user logging in) in <code>Authorization: MediaBrowser Token="..."</code>. Works for the user's own <code>JELLYFIN_USER_ID</code> only.</li>
+<li><strong>As an admin, for any user</strong>: pass a server <strong>Administrator</strong> API key. The plugin will let an Administrator key act on any <code>JELLYFIN_USER_ID</code>, which is what lets a 3rd-party app manage bookmarks for every user with a single credential.</li>
+</ul>
+<p>A non-admin user calling with someone else's <code>JELLYFIN_USER_ID</code> is rejected.</p>
+<h3 id="bookmarks-api-endpoints">Bookmarks API endpoints</h3>
+<p><code>bookmark.json</code> is one of several per-user settings files served under <code>/user-settings/{userId}/{file}</code> (the same pattern covers <code>settings.json</code>, <code>shortcuts.json</code>, <code>elsewhere.json</code>, and <code>hidden-content.json</code>).</p>
+<details class="dev" open="open">
+<summary>Get Bookmarks</summary>
+<p><strong><code>/JellyfinEnhanced/user-settings/{userId}/bookmark.json</code></strong></p>
+<div class="tabbed-set tabbed-alternate" data-tabs="3:2"><input checked="checked" id="__tabbed_3_1" name="__tabbed_3" type="radio" /><input id="__tabbed_3_2" name="__tabbed_3" type="radio" /><div class="tabbed-labels"><label for="__tabbed_3_1">cURL</label><label for="__tabbed_3_2">HTTP</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<div class="language-bash highlight"><span class="filename">Bash</span><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>curl<span class="w"> </span>-X<span class="w"> </span>GET<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="hll"><span class="w">  </span>-H<span class="w"> </span><span class="s1">'Authorization: MediaBrowser Token="JELLYFIN_TOKEN"'</span><span class="w"> </span><span class="se">\</span>
+</span></span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="hll"><span class="w">  </span><span class="s1">'JELLYFIN_SERVER_URL/JellyfinEnhanced/user-settings/JELLYFIN_USER_ID/bookmark.json'</span>
+</span></span></code></pre></div>
+</div>
+<div class="tabbed-block">
+<div class="language-http highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="err">GET /JellyfinEnhanced/user-settings/JELLYFIN_USER_ID/bookmark.json</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="err">Authorization: MediaBrowser Token="JELLYFIN_TOKEN"</span>
+</span></code></pre></div>
+</div>
+</div>
+</div>
+<ul>
+<li><code>JELLYFIN_TOKEN</code>: a per-user access token for <code>JELLYFIN_USER_ID</code>, or an Administrator API key</li>
+<li>Jellyfin Server URL <code>JELLYFIN_SERVER_URL</code></li>
+</ul>
+<p>Returns the <code>bookmark.json</code> contents directly, not wrapped. An empty <code>{"Bookmarks": {}}</code> if the user has none yet.</p>
+</details>
+<details class="dev" open="open">
+<summary>Replace all Bookmarks</summary>
+<p><strong><code>/JellyfinEnhanced/user-settings/{userId}/bookmark.json</code></strong></p>
+<p>Overwrites the whole file. Use the additive endpoint below instead if you only want to add or remove one bookmark.</p>
+<div class="tabbed-set tabbed-alternate" data-tabs="4:2"><input checked="checked" id="__tabbed_4_1" name="__tabbed_4" type="radio" /><input id="__tabbed_4_2" name="__tabbed_4" type="radio" /><div class="tabbed-labels"><label for="__tabbed_4_1">cURL</label><label for="__tabbed_4_2">HTTP</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<div class="language-bash highlight"><span class="filename">Bash</span><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="hll"><span class="w">  </span>-H<span class="w"> </span><span class="s1">'Content-Type: application/json'</span><span class="w"> </span><span class="se">\</span>
+</span></span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="hll"><span class="w">  </span>-H<span class="w"> </span><span class="s1">'Authorization: MediaBrowser Token="JELLYFIN_TOKEN"'</span><span class="w"> </span><span class="se">\</span>
+</span></span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="hll"><span class="w">  </span>-d<span class="w"> </span><span class="s1">'{</span>
+</span></span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="hll"><span class="s1">        "Bookmarks": {}</span>
+</span></span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="hll"><span class="s1">      }'</span><span class="w"> </span><span class="se">\</span>
+</span></span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="w">  </span><span class="s1">'JELLYFIN_SERVER_URL/JellyfinEnhanced/user-settings/JELLYFIN_USER_ID/bookmark.json'</span>
+</span></code></pre></div>
+</div>
+<div class="tabbed-block">
+<div class="language-http highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="err">POST /JellyfinEnhanced/user-settings/JELLYFIN_USER_ID/bookmark.json</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="err">Authorization: MediaBrowser Token="JELLYFIN_TOKEN"</span>
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="err">Content-Type: application/json</span>
+</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>
+</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="err">{ "Bookmarks": { ... } }</span>
+</span></code></pre></div>
+</div>
+</div>
+</div>
+<ul>
+<li><code>JELLYFIN_TOKEN</code>: a per-user access token for <code>JELLYFIN_USER_ID</code>, or an Administrator API key</li>
+<li>Jellyfin Server URL <code>JELLYFIN_SERVER_URL</code></li>
+<li>The request body is the raw bookmarks object itself, not wrapped in <code>{ "fileName": ..., "data": ... }</code>. Each bookmark item's fields are <strong>PascalCase</strong> (<code>ItemId</code>, <code>TmdbId</code>, <code>MediaType</code>, <code>Timestamp</code>, <code>Label</code>, ...), matching the <a href="#bookmarks-storage-directory">Example Data structure</a> above.</li>
+</ul>
+</details>
+<details class="dev" open="open">
+<summary>Add one Bookmark</summary>
+<p><strong><code>/JellyfinEnhanced/user-settings/{userId}/bookmark.json/add</code></strong></p>
+<p>Adds a single bookmark without touching the rest of the file. The server generates the bookmark ID and timestamps and returns the new ID.</p>
+<div class="tabbed-set tabbed-alternate" data-tabs="5:1"><input checked="checked" id="__tabbed_5_1" name="__tabbed_5" type="radio" /><div class="tabbed-labels"><label for="__tabbed_5_1">cURL</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<div class="language-bash highlight"><span class="filename">Bash</span><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="hll"><span class="w">  </span>-H<span class="w"> </span><span class="s1">'Content-Type: application/json'</span><span class="w"> </span><span class="se">\</span>
+</span></span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="hll"><span class="w">  </span>-H<span class="w"> </span><span class="s1">'Authorization: MediaBrowser Token="JELLYFIN_TOKEN"'</span><span class="w"> </span><span class="se">\</span>
+</span></span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="hll"><span class="w">  </span>-d<span class="w"> </span><span class="s1">'{</span>
+</span></span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="s1">        "itemId": "jellyfin-item-id",</span>
+</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="s1">        "tmdbId": "1949",</span>
+</span><span id="__span-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="s1">        "mediaType": "movie",</span>
+</span><span id="__span-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="s1">        "name": "Zodiac",</span>
+</span><span id="__span-8-9"><a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a><span class="s1">        "timestamp": 1234.5,</span>
+</span><span id="__span-8-10"><a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a><span class="s1">        "label": "Great scene"</span>
+</span><span id="__span-8-11"><a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a><span class="s1">      }'</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-8-12"><a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a><span class="w">  </span><span class="s1">'JELLYFIN_SERVER_URL/JellyfinEnhanced/user-settings/JELLYFIN_USER_ID/bookmark.json/add'</span>
+</span></code></pre></div>
+</div>
+</div>
+</div>
+<ul>
+<li><code>JELLYFIN_TOKEN</code>: a per-user access token for <code>JELLYFIN_USER_ID</code>, or an Administrator API key</li>
+<li><code>itemId</code> is required. <code>tmdbId</code>, <code>tvdbId</code>, <code>mediaType</code>, <code>name</code>, <code>timestamp</code>, <code>label</code>, and <code>syncedFrom</code> are all optional.</li>
+</ul>
+<p>Response: <code>{"success": true, "id": "Bm_1234567890_abc123xyz"}</code></p>
+</details>
+<details class="dev" open="open">
+<summary>Remove one Bookmark</summary>
+<p><strong><code>/JellyfinEnhanced/user-settings/{userId}/bookmark.json/{bookmarkId}</code></strong></p>
+<div class="tabbed-set tabbed-alternate" data-tabs="6:1"><input checked="checked" id="__tabbed_6_1" name="__tabbed_6" type="radio" /><div class="tabbed-labels"><label for="__tabbed_6_1">cURL</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<div class="language-bash highlight"><span class="filename">Bash</span><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>curl<span class="w"> </span>-X<span class="w"> </span>DELETE<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="hll"><span class="w">  </span>-H<span class="w"> </span><span class="s1">'Authorization: MediaBrowser Token="JELLYFIN_TOKEN"'</span><span class="w"> </span><span class="se">\</span>
+</span></span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="w">  </span><span class="s1">'JELLYFIN_SERVER_URL/JellyfinEnhanced/user-settings/JELLYFIN_USER_ID/bookmark.json/BOOKMARK_ID'</span>
+</span></code></pre></div>
+</div>
+</div>
+</div>
+<ul>
+<li><code>BOOKMARK_ID</code> is the ID returned by the add endpoint, or a key from the <code>Bookmarks</code> object returned by the get endpoint</li>
+<li>Returns <code>404</code> with <code>{"success": false, "removed": false}</code> if no bookmark with that ID exists</li>
+</ul>
+</details>
+<h2 id="reviews-api">Reviews API</h2>
+<div class="admonition info">
+<p class="admonition-title">New in v11.13.0.0</p>
+<p>Admin access to any user's reviews via a server API key is new in v11.13.0.0. Earlier versions only support reading reviews or writing your own review with a per-user access token.</p>
+</div>
+<p>User reviews and ratings, shared across all users on the server. Each review is a <code>content</code> string and an optional 1-5 star <code>rating</code>, keyed by author + item, and reviews for one item are stored together in a single shared <code>reviews.json</code> (not a per-user file). This is the API to use if you want to build star ratings, review lists, or an average-rating badge for a client.</p>
+<h3 id="rating-and-content-rules">Rating and content rules</h3>
+<p>Every write endpoint below (self or admin) validates the same <code>ReviewPayload</code> body:</p>
+<ul>
+<li><code>content</code> (string, optional): trimmed server-side; rejected with <code>400</code> if longer than 2000 characters</li>
+<li><code>rating</code> (number, optional): must be <code>1</code>-<code>5</code> inclusive in <code>0.5</code> increments (e.g. <code>4.5</code>), or omitted; <code>0</code>, <code>6</code>, or a value not on a half-star boundary (e.g. <code>4.3</code>) is rejected with <code>400</code></li>
+<li>At least one of <code>content</code> or <code>rating</code> must be present, an empty payload (<code>{}</code>) is rejected with <code>400 {"success": false, "message": "A rating or review text is required."}</code></li>
+<li>This means a <strong>ratings-only</strong> review (<code>{"rating": 4}</code>, no text) and a <strong>text-only</strong> review (<code>{"content": "..."}</code>, no rating) are both valid</li>
+</ul>
+<h3 id="reviewing-a-season-or-episode-of-a-tv-show">Reviewing a season or episode of a TV show</h3>
+<p><code>{tmdbId}</code> in the URL is not just the bare TMDB ID, it also accepts two extended forms so a single <code>mediaType: tv</code> item can carry separate reviews per season or per episode:</p>
+<ul>
+<li><code>{tmdbId}</code> — the show as a whole, e.g. <code>1399</code></li>
+<li><code>{tmdbId}:s{season}</code> — a specific season, e.g. <code>1399:s1</code></li>
+<li><code>{tmdbId}:s{season}:e{episode}</code> — a specific episode, e.g. <code>1399:s1:e1</code></li>
+</ul>
+<p>Any other shape (letters, missing digits, extra segments) is rejected with <code>400 {"message": "Invalid TmdbId."}</code>. <code>mediaType</code> must always be <code>movie</code> or <code>tv</code>, both <code>movie:s1</code> and any <code>mediaType</code> other than <code>movie</code>/<code>tv</code> are rejected the same way. URL-encode the colons (<code>%3A</code>) if your HTTP client doesn't do it for you.</p>
+<details class="dev" open="open">
+<summary>Get reviews for an item</summary>
+<p><strong><code>/JellyfinEnhanced/reviews/{mediaType}/{tmdbId}</code></strong></p>
+<div class="tabbed-set tabbed-alternate" data-tabs="7:1"><input checked="checked" id="__tabbed_7_1" name="__tabbed_7" type="radio" /><div class="tabbed-labels"><label for="__tabbed_7_1">cURL</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<div class="language-bash highlight"><span class="filename">Bash</span><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>curl<span class="w"> </span>-X<span class="w"> </span>GET<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="hll"><span class="w">  </span>-H<span class="w"> </span><span class="s2">"X-Emby-Token: JELLYFIN_API_KEY"</span><span class="w"> </span><span class="se">\</span>
+</span></span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="w">  </span><span class="s2">"JELLYFIN_SERVER_URL/JellyfinEnhanced/reviews/movie/TMDB_ID"</span>
+</span></code></pre></div>
+</div>
+</div>
+</div>
+<ul>
+<li>Jellyfin Server API key (<code>JELLYFIN_API_KEY</code>)</li>
+<li><code>mediaType</code>: <code>movie</code> or <code>tv</code></li>
+<li><code>TMDB_ID</code>: the item's TMDB ID, or one of the season/episode forms above</li>
+</ul>
+<p>A plain API key is enough to read reviews, there is no per-user identity involved here. Any authenticated caller (per-user token or API key) sees every non-hidden reviewer's review; an admin caller always sees every review, including ones from hidden or disabled authors, for moderation.</p>
+<p>Response:</p>
+<div class="language-json highlight"><span class="filename">200 OK</span><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="p">{</span>
+</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="w">  </span><span class="nt">"reviews"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+</span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="w">    </span><span class="p">{</span>
+</span><span id="__span-11-4"><a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="w">      </span><span class="nt">"userId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"9285e8b541494149..."</span><span class="p">,</span>
+</span><span id="__span-11-5"><a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="w">      </span><span class="nt">"userName"</span><span class="p">:</span><span class="w"> </span><span class="s2">"alice"</span><span class="p">,</span>
+</span><span id="__span-11-6"><a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="w">      </span><span class="nt">"tmdbId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"TMDB_ID"</span><span class="p">,</span>
+</span><span id="__span-11-7"><a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a><span class="w">      </span><span class="nt">"mediaType"</span><span class="p">:</span><span class="w"> </span><span class="s2">"movie"</span><span class="p">,</span>
+</span><span id="__span-11-8"><a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a><span class="w">      </span><span class="nt">"content"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Great movie!"</span><span class="p">,</span>
+</span><span id="__span-11-9"><a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a><span class="w">      </span><span class="nt">"rating"</span><span class="p">:</span><span class="w"> </span><span class="mi">5</span><span class="p">,</span>
+</span><span id="__span-11-10"><a id="__codelineno-11-10" name="__codelineno-11-10" href="#__codelineno-11-10"></a><span class="w">      </span><span class="nt">"createdAt"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-01-03T12:00:00.000Z"</span><span class="p">,</span>
+</span><span id="__span-11-11"><a id="__codelineno-11-11" name="__codelineno-11-11" href="#__codelineno-11-11"></a><span class="w">      </span><span class="nt">"updatedAt"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-01-03T12:00:00.000Z"</span>
+</span><span id="__span-11-12"><a id="__codelineno-11-12" name="__codelineno-11-12" href="#__codelineno-11-12"></a><span class="w">    </span><span class="p">}</span>
+</span><span id="__span-11-13"><a id="__codelineno-11-13" name="__codelineno-11-13" href="#__codelineno-11-13"></a><span class="w">  </span><span class="p">]</span>
+</span><span id="__span-11-14"><a id="__codelineno-11-14" name="__codelineno-11-14" href="#__codelineno-11-14"></a><span class="p">}</span>
+</span></code></pre></div>
+<ul>
+<li><code>reviews</code> is <code>[]</code>, never missing, when nobody has reviewed the item yet</li>
+<li><code>rating</code> is <strong>omitted from the object entirely</strong> for a text-only review, it is not present as <code>rating: null</code>. Check <code>"rating" in review</code> (or the equivalent in your language) rather than a null check if you need to tell "no rating given" apart from "rated 0". <code>content</code> behaves differently: a rating-only review still gets <code>content: ""</code> rather than omitting the key</li>
+<li>Average rating and review count are not pre-computed by the server, a client wanting those should reduce over the <code>rating</code> field of the returned array itself, skipping entries where the key is absent</li>
+</ul>
+</details>
+<details class="dev" open="open">
+<summary>Add or edit your own review</summary>
+<p><strong><code>/JellyfinEnhanced/reviews/{mediaType}/{tmdbId}</code></strong></p>
+<p>Creates your review if you don't have one for this item yet, or updates it (both <code>content</code> and <code>rating</code> are replaced, not merged) if you do.</p>
+<div class="tabbed-set tabbed-alternate" data-tabs="8:1"><input checked="checked" id="__tabbed_8_1" name="__tabbed_8" type="radio" /><div class="tabbed-labels"><label for="__tabbed_8_1">cURL</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<div class="language-bash highlight"><span class="filename">Bash</span><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="hll"><span class="w">  </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+</span></span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="hll"><span class="w">  </span>-H<span class="w"> </span><span class="s1">'Authorization: MediaBrowser Token="JELLYFIN_USER_ACCESS_TOKEN"'</span><span class="w"> </span><span class="se">\</span>
+</span></span><span id="__span-12-4"><a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="w">  </span>-d<span class="w"> </span><span class="s1">'{"content": "Great movie!", "rating": 5}'</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-12-5"><a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a><span class="w">  </span><span class="s2">"JELLYFIN_SERVER_URL/JellyfinEnhanced/reviews/movie/TMDB_ID"</span>
+</span></code></pre></div>
+</div>
+</div>
+</div>
+<ul>
+<li>A per-user access token (<code>JELLYFIN_USER_ACCESS_TOKEN</code>), this writes the review under whichever user the token belongs to</li>
+<li><code>rating</code> is optional, omit it to leave a text-only review; see <a href="#rating-and-content-rules">Rating and content rules</a> above for the accepted values</li>
+<li>Response: <code>{"success": true}</code>. A <code>400</code> with <code>{"success": false, "message": "..."}</code> explains which validation rule failed</li>
+</ul>
+</details>
+<details class="dev" open="open">
+<summary>Delete your own review</summary>
+<p><strong><code>/JellyfinEnhanced/reviews/{mediaType}/{tmdbId}</code></strong></p>
+<div class="tabbed-set tabbed-alternate" data-tabs="9:1"><input checked="checked" id="__tabbed_9_1" name="__tabbed_9" type="radio" /><div class="tabbed-labels"><label for="__tabbed_9_1">cURL</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<div class="language-bash highlight"><span class="filename">Bash</span><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>curl<span class="w"> </span>-X<span class="w"> </span>DELETE<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="hll"><span class="w">  </span>-H<span class="w"> </span><span class="s1">'Authorization: MediaBrowser Token="JELLYFIN_USER_ACCESS_TOKEN"'</span><span class="w"> </span><span class="se">\</span>
+</span></span><span id="__span-13-3"><a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="w">  </span><span class="s2">"JELLYFIN_SERVER_URL/JellyfinEnhanced/reviews/movie/TMDB_ID"</span>
+</span></code></pre></div>
+</div>
+</div>
+</div>
+<ul>
+<li>Response: <code>{"success": true}</code> whether or not a review existed, this endpoint does not report <code>404</code> for a no-op delete (unlike the bookmark and admin-review delete endpoints below)</li>
+</ul>
+</details>
+<details class="dev" open="open">
+<summary>Add or edit a review as a specific user (admin)</summary>
+<p><strong><code>/JellyfinEnhanced/reviews/admin/{userIdN}/{mediaType}/{tmdbId}</code></strong></p>
+<p>Lets an Administrator API key create or update a review for any user, identified by an explicit <code>userIdN</code>. This is what a 3rd-party app should use to manage reviews for multiple users with one credential. Creates the review if none exists yet for that user and item, or updates it otherwise.</p>
+<div class="tabbed-set tabbed-alternate" data-tabs="10:1"><input checked="checked" id="__tabbed_10_1" name="__tabbed_10" type="radio" /><div class="tabbed-labels"><label for="__tabbed_10_1">cURL</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<div class="language-bash highlight"><span class="filename">Bash</span><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-14-2"><a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="hll"><span class="w">  </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+</span></span><span id="__span-14-3"><a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="hll"><span class="w">  </span>-H<span class="w"> </span><span class="s2">"X-Emby-Token: JELLYFIN_API_KEY"</span><span class="w"> </span><span class="se">\</span>
+</span></span><span id="__span-14-4"><a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a><span class="w">  </span>-d<span class="w"> </span><span class="s1">'{"content": "Great movie!", "rating": 5}'</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-14-5"><a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a><span class="w">  </span><span class="s2">"JELLYFIN_SERVER_URL/JellyfinEnhanced/reviews/admin/JELLYFIN_USER_ID/movie/TMDB_ID"</span>
+</span></code></pre></div>
+</div>
+</div>
+</div>
+<ul>
+<li>Jellyfin Server <strong>Administrator</strong> API key (<code>JELLYFIN_API_KEY</code>)</li>
+<li><code>JELLYFIN_USER_ID</code> here is the 32-character hex form with no dashes (the same format returned by the get-bookmarks endpoint, not the dashed form shown in the Jellyfin dashboard URL)</li>
+<li>Same <a href="#rating-and-content-rules">rating and content rules</a> as the self-review endpoint above; <code>rating</code> still only allows <code>1</code>-<code>5</code> in <code>0.5</code> increments or omitted, an admin key does not bypass validation</li>
+<li>Response: <code>{"success": true}</code>. A non-admin key gets <code>403 Forbidden</code>, a malformed <code>userIdN</code> gets <code>400</code></li>
+</ul>
+</details>
+<details class="dev" open="open">
+<summary>Delete a specific user's review (admin)</summary>
+<p><strong><code>/JellyfinEnhanced/reviews/admin/{userIdN}/{mediaType}/{tmdbId}</code></strong></p>
+<div class="tabbed-set tabbed-alternate" data-tabs="11:1"><input checked="checked" id="__tabbed_11_1" name="__tabbed_11" type="radio" /><div class="tabbed-labels"><label for="__tabbed_11_1">cURL</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<div class="language-bash highlight"><span class="filename">Bash</span><pre><span></span><code><span id="__span-15-1"><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>curl<span class="w"> </span>-X<span class="w"> </span>DELETE<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-15-2"><a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a><span class="hll"><span class="w">  </span>-H<span class="w"> </span><span class="s2">"X-Emby-Token: JELLYFIN_API_KEY"</span><span class="w"> </span><span class="se">\</span>
+</span></span><span id="__span-15-3"><a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a><span class="w">  </span><span class="s2">"JELLYFIN_SERVER_URL/JellyfinEnhanced/reviews/admin/JELLYFIN_USER_ID/movie/TMDB_ID"</span>
+</span></code></pre></div>
+</div>
+</div>
+</div>
+<p>Returns <code>404</code> with <code>{"success": false, "removed": false}</code> if no review exists for that user and item.</p>
+</details>
+<details class="dev" open="open">
+<summary>List every review on the server (admin)</summary>
+<p><strong><code>/JellyfinEnhanced/reviews/admin/all</code></strong></p>
+<p>Returns all reviews from every user in one call, for headless consumers (a scrobbler, a Letterboxd/Trakt sync job, a backup script) that want the whole store without knowing its on-disk layout or calling the per-item endpoint once per TMDB ID. Ordered by <code>updatedAt</code> ascending, so a poller can keep the newest <code>updatedAt</code> it has seen and pass it back as <code>since</code> next time.</p>
+<div class="tabbed-set tabbed-alternate" data-tabs="12:1"><input checked="checked" id="__tabbed_12_1" name="__tabbed_12" type="radio" /><div class="tabbed-labels"><label for="__tabbed_12_1">cURL</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<div class="language-bash highlight"><span class="filename">Bash</span><pre><span></span><code><span id="__span-16-1"><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>curl<span class="w"> </span>-X<span class="w"> </span>GET<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-16-2"><a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a><span class="hll"><span class="w">  </span>-H<span class="w"> </span><span class="s2">"X-Emby-Token: JELLYFIN_API_KEY"</span><span class="w"> </span><span class="se">\</span>
+</span></span><span id="__span-16-3"><a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a><span class="w">  </span><span class="s2">"JELLYFIN_SERVER_URL/JellyfinEnhanced/reviews/admin/all?since=2026-01-01T00:00:00Z&amp;limit=500&amp;offset=0"</span>
+</span></code></pre></div>
+</div>
+</div>
+</div>
+<ul>
+<li>Jellyfin Server <strong>Administrator</strong> API key (<code>JELLYFIN_API_KEY</code>); a non-admin caller gets <code>403 Forbidden</code></li>
+<li><code>since</code> (optional): ISO 8601 timestamp; only reviews whose <code>updatedAt</code> is at or after it are returned. Inclusive, so a poller that passes back the last <code>updatedAt</code> it saw will see that review again and should treat the pair <code>userId</code> + <code>mediaType</code> + <code>tmdbId</code> as the identity when de-duplicating</li>
+<li><code>userId</code> (optional): restrict to one author, 32-character hex form with no dashes</li>
+<li><code>limit</code> (optional, default <code>500</code>, max <code>1000</code>) and <code>offset</code> (optional, default <code>0</code>) page through the result; <code>total</code> in the response is the count of reviews matching the filters, not the page size</li>
+<li>Hidden and disabled authors are <strong>not</strong> filtered out here: this is an admin surface and returns the whole store, the same as what an admin sees on an item page</li>
+</ul>
+<p>Response:</p>
+<div class="language-json highlight"><span class="filename">200 OK</span><pre><span></span><code><span id="__span-17-1"><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="p">{</span>
+</span><span id="__span-17-2"><a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a><span class="w">  </span><span class="nt">"reviews"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+</span><span id="__span-17-3"><a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a><span class="w">    </span><span class="p">{</span>
+</span><span id="__span-17-4"><a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a><span class="w">      </span><span class="nt">"userId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"9285e8b541494149..."</span><span class="p">,</span>
+</span><span id="__span-17-5"><a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a><span class="w">      </span><span class="nt">"userName"</span><span class="p">:</span><span class="w"> </span><span class="s2">"alice"</span><span class="p">,</span>
+</span><span id="__span-17-6"><a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a><span class="w">      </span><span class="nt">"tmdbId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"1399:s1:e1"</span><span class="p">,</span>
+</span><span id="__span-17-7"><a id="__codelineno-17-7" name="__codelineno-17-7" href="#__codelineno-17-7"></a><span class="w">      </span><span class="nt">"mediaType"</span><span class="p">:</span><span class="w"> </span><span class="s2">"tv"</span><span class="p">,</span>
+</span><span id="__span-17-8"><a id="__codelineno-17-8" name="__codelineno-17-8" href="#__codelineno-17-8"></a><span class="w">      </span><span class="nt">"content"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Great episode!"</span><span class="p">,</span>
+</span><span id="__span-17-9"><a id="__codelineno-17-9" name="__codelineno-17-9" href="#__codelineno-17-9"></a><span class="w">      </span><span class="nt">"rating"</span><span class="p">:</span><span class="w"> </span><span class="mf">4.5</span><span class="p">,</span>
+</span><span id="__span-17-10"><a id="__codelineno-17-10" name="__codelineno-17-10" href="#__codelineno-17-10"></a><span class="w">      </span><span class="nt">"createdAt"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-01-03T12:00:00.000Z"</span><span class="p">,</span>
+</span><span id="__span-17-11"><a id="__codelineno-17-11" name="__codelineno-17-11" href="#__codelineno-17-11"></a><span class="w">      </span><span class="nt">"updatedAt"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-01-05T09:30:00.000Z"</span>
+</span><span id="__span-17-12"><a id="__codelineno-17-12" name="__codelineno-17-12" href="#__codelineno-17-12"></a><span class="w">    </span><span class="p">}</span>
+</span><span id="__span-17-13"><a id="__codelineno-17-13" name="__codelineno-17-13" href="#__codelineno-17-13"></a><span class="w">  </span><span class="p">],</span>
+</span><span id="__span-17-14"><a id="__codelineno-17-14" name="__codelineno-17-14" href="#__codelineno-17-14"></a><span class="w">  </span><span class="nt">"total"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
+</span><span id="__span-17-15"><a id="__codelineno-17-15" name="__codelineno-17-15" href="#__codelineno-17-15"></a><span class="w">  </span><span class="nt">"offset"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+</span><span id="__span-17-16"><a id="__codelineno-17-16" name="__codelineno-17-16" href="#__codelineno-17-16"></a><span class="w">  </span><span class="nt">"limit"</span><span class="p">:</span><span class="w"> </span><span class="mi">500</span>
+</span><span id="__span-17-17"><a id="__codelineno-17-17" name="__codelineno-17-17" href="#__codelineno-17-17"></a><span class="p">}</span>
+</span></code></pre></div>
+<ul>
+<li>Each entry has the same shape as the per-item endpoint, including <code>rating</code> being omitted for a text-only review; <code>tmdbId</code> carries the season/episode suffix for season and episode reviews</li>
+<li>A review whose stored <code>updatedAt</code> cannot be parsed is always returned (and sorts first) rather than being silently dropped by the <code>since</code> filter</li>
+</ul>
+</details>
+<h2 id="seerr-integration-api">Seerr Integration API</h2>
+<p><strong><code>/JellyfinEnhanced/jellyseerr</code></strong></p>
+<!-- explain what `JELLYFIN_USER_ID` and `JELLYFIN_API_KEY` are -->
+<div class="admonition info">
+<p class="admonition-title">Jellyfin Server's API</p>
+<p>These values are from <a href="https://api.jellyfin.org/">Jellyfin Server's API:</a></p>
+<ul>
+<li><code>X-Jellyfin-User-Id</code>:<ul>
+<li><strong>User Unique ID (UUID)</strong></li>
+<li><a href="https://jellyfin.org/docs/general/server/users/">Jellyfin's documentation: users</a></li>
+</ul>
+</li>
+</ul>
+<ul>
+<li><code>X-Emby-Token</code>:<ul>
+<li><strong>API key</strong></li>
+</ul>
+</li>
+</ul>
+</div>
+<details class="dev" open="open">
+<summary>Check Seerr connection</summary>
+<p><strong><code>/JellyfinEnhanced/jellyseerr/status</code></strong></p>
+<div class="tabbed-set tabbed-alternate" data-tabs="13:1"><input checked="checked" id="__tabbed_13_1" name="__tabbed_13" type="radio" /><div class="tabbed-labels"><label for="__tabbed_13_1">cURL</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<div class="language-bash highlight"><span class="filename">Bash</span><pre><span></span><code><span id="__span-18-1"><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>curl<span class="w"> </span>-X<span class="w"> </span>GET<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-18-2"><a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a><span class="hll"><span class="w">  </span>-H<span class="w"> </span><span class="s2">"X-Emby-Token: JELLYFIN_API_KEY"</span><span class="w"> </span><span class="se">\</span>
+</span></span><span id="__span-18-3"><a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a><span class="hll"><span class="w">  </span><span class="s2">"&lt;JELLYFIN_URL&gt;/JellyfinEnhanced/jellyseerr/status"</span>
+</span></span></code></pre></div>
+</div>
+</div>
+</div>
+<ul>
+<li>Jellyfin Server API key (<code>JELLYFIN_API_KEY</code>)</li>
+<li>Jellyfin Server User ID (<code>JELLYFIN_USER_ID</code>)</li>
+<li>Jellyfin Server URL (<code>JELLYFIN_URL</code>)</li>
+</ul>
+<p>Using <a href="../../seerr/seerr-settings/">Seerr configuration</a>:</p>
+<ul>
+<li>URL(s)</li>
+<li>API keys</li>
+</ul>
+</details>
+<details class="dev" open="open">
+<summary>Check if user <code>X-Jellyfin-User-Id</code> has a successfully linked Seerr account</summary>
+<p><strong><code>/JellyfinEnhanced/jellyseerr/user-status</code></strong></p>
+<div class="tabbed-set tabbed-alternate" data-tabs="14:1"><input checked="checked" id="__tabbed_14_1" name="__tabbed_14" type="radio" /><div class="tabbed-labels"><label for="__tabbed_14_1">cURL</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<div class="language-bash highlight"><span class="filename">Bash</span><pre><span></span><code><span id="__span-19-1"><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>curl<span class="w"> </span>-X<span class="w"> </span>GET<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-19-2"><a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a><span class="hll"><span class="w">  </span>-H<span class="w"> </span><span class="s2">"X-Emby-Token: JELLYFIN_API_KEY"</span><span class="w"> </span><span class="se">\</span>
+</span></span><span id="__span-19-3"><a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a><span class="hll"><span class="w">  </span>-H<span class="w"> </span><span class="s2">"X-Jellyfin-User-Id: JELLYFIN_USER_ID"</span><span class="w"> </span><span class="se">\</span>
+</span></span><span id="__span-19-4"><a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a><span class="hll"><span class="w">  </span><span class="s2">"JELLYFIN_SERVER_URL/JellyfinEnhanced/jellyseerr/user-status"</span>
+</span></span></code></pre></div>
+</div>
+</div>
+</div>
+<ul>
+<li>Jellyfin Server API key <code>X-Emby-Token</code> (<code>JELLYFIN_API_KEY</code>)</li>
+<li>Jellyfin Server User ID <code>X-Jellyfin-User-Id</code> (<code>JELLYFIN_USER_ID</code>)</li>
+<li>Jellyfin Server URL (<code>JELLYFIN_URL</code>)</li>
+</ul>
+</details>
+<!-- TODO: add annotation, on the highlighted line (URL) -->
+<p>Example:
+<div class="language-bash highlight"><span class="filename">Bash</span><pre><span></span><code><span id="__span-20-1"><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-20-2"><a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a><span class="w">  </span>-H<span class="w"> </span><span class="s2">"X-Emby-Token: &lt;API_KEY&gt;"</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-20-3"><a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a><span class="w">  </span>-H<span class="w"> </span><span class="s2">"X-Jellyfin-User-Id: &lt;USER_ID&gt;"</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-20-4"><a id="__codelineno-20-4" name="__codelineno-20-4" href="#__codelineno-20-4"></a><span class="w">  </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-20-5"><a id="__codelineno-20-5" name="__codelineno-20-5" href="#__codelineno-20-5"></a><span class="w">  </span>-d<span class="w"> </span><span class="s1">'{"mediaType": "movie", "mediaId": 27205}'</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-20-6"><a id="__codelineno-20-6" name="__codelineno-20-6" href="#__codelineno-20-6"></a><span class="hll"><span class="w">  </span><span class="s2">"&lt;JELLYFIN_URL&gt;/JellyfinEnhanced/jellyseerr/request"</span>
+</span></span></code></pre></div></p>
+<h2 id="admin-hidden-content-api">Admin Hidden Content API</h2>
+<p>Admin-only endpoints that let an administrator view and manage what <strong>other</strong> users have hidden. Every endpoint requires a Jellyfin <strong>administrator</strong> token and the <strong>Let admins view and manage other users' hidden content</strong> toggle (<strong>Pages → Hidden Content → Admin Controls</strong>) to be enabled; otherwise it returns <code>403</code>. <code>&lt;USER_ID&gt;</code> is the 32-character hex (<code>"N"</code> format) Jellyfin user id.</p>
+<h3 id="list-users-with-hidden-content">List Users With Hidden Content</h3>
+<p>Returns each user (except the caller) who has hidden at least one item, with their hidden-item count, used to populate the admin user-filter dropdown.</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-21-1"><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>curl<span class="w"> </span>-X<span class="w"> </span>GET<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-21-2"><a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a><span class="w">  </span>-H<span class="w"> </span><span class="s2">"X-Emby-Token: &lt;ADMIN_API_KEY&gt;"</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-21-3"><a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a><span class="w">  </span><span class="s2">"&lt;JELLYFIN_URL&gt;/JellyfinEnhanced/admin/hidden-content-users"</span>
+</span></code></pre></div>
+<h3 id="get-a-users-hidden-content">Get A User's Hidden Content</h3>
+<p>Returns a single user's hidden content (read-only).</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-22-1"><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a>curl<span class="w"> </span>-X<span class="w"> </span>GET<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-22-2"><a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a><span class="w">  </span>-H<span class="w"> </span><span class="s2">"X-Emby-Token: &lt;ADMIN_API_KEY&gt;"</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-22-3"><a id="__codelineno-22-3" name="__codelineno-22-3" href="#__codelineno-22-3"></a><span class="w">  </span><span class="s2">"&lt;JELLYFIN_URL&gt;/JellyfinEnhanced/admin/hidden-content/&lt;USER_ID&gt;"</span>
+</span></code></pre></div>
+<h3 id="unhide-items-for-a-user">Unhide Items For A User</h3>
+<p>Removes one or more items from a user's hidden list. The body is a JSON array of item keys (an <code>itemId</code>, or <code>tmdb-&lt;id&gt;</code> for items not in the library).</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-23-1"><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-23-2"><a id="__codelineno-23-2" name="__codelineno-23-2" href="#__codelineno-23-2"></a><span class="w">  </span>-H<span class="w"> </span><span class="s2">"X-Emby-Token: &lt;ADMIN_API_KEY&gt;"</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-23-3"><a id="__codelineno-23-3" name="__codelineno-23-3" href="#__codelineno-23-3"></a><span class="w">  </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-23-4"><a id="__codelineno-23-4" name="__codelineno-23-4" href="#__codelineno-23-4"></a><span class="w">  </span>-d<span class="w"> </span><span class="s1">'["a1b2c3d4e5f6...", "tmdb-27205"]'</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-23-5"><a id="__codelineno-23-5" name="__codelineno-23-5" href="#__codelineno-23-5"></a><span class="w">  </span><span class="s2">"&lt;JELLYFIN_URL&gt;/JellyfinEnhanced/admin/hidden-content/&lt;USER_ID&gt;/unhide"</span>
+</span></code></pre></div>
+<h3 id="hide-items-for-a-user">Hide Items For A User</h3>
+<p>Adds one or more items to a user's hidden list (max 200 per call; an item the user hid themselves is never overwritten). The body is a JSON array of hidden-content items.</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-24-1"><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-24-2"><a id="__codelineno-24-2" name="__codelineno-24-2" href="#__codelineno-24-2"></a><span class="w">  </span>-H<span class="w"> </span><span class="s2">"X-Emby-Token: &lt;ADMIN_API_KEY&gt;"</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-24-3"><a id="__codelineno-24-3" name="__codelineno-24-3" href="#__codelineno-24-3"></a><span class="w">  </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-24-4"><a id="__codelineno-24-4" name="__codelineno-24-4" href="#__codelineno-24-4"></a><span class="w">  </span>-d<span class="w"> </span><span class="s1">'[{"TmdbId": "27205", "Name": "Inception", "Type": "Movie", "PosterPath": "/edv5CZvWj09upOsy2Y6IwDhK8bt.jpg"}]'</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-24-5"><a id="__codelineno-24-5" name="__codelineno-24-5" href="#__codelineno-24-5"></a><span class="w">  </span><span class="s2">"&lt;JELLYFIN_URL&gt;/JellyfinEnhanced/admin/hidden-content/&lt;USER_ID&gt;/hide"</span>
+</span></code></pre></div>
+<h2 id="full-endpoint-index">Full Endpoint Index</h2>
+<p>The sections above document Bookmarks, Reviews, Seerr, and Admin Hidden Content in full (auth, request/response shapes, edge cases). Everything else this plugin exposes is listed here as a map, method + path + a one-line purpose, so a client author knows what exists before reading <code>Controllers/JellyfinEnhancedController.cs</code> for the exact request/response shape. All paths are relative to <code>/JellyfinEnhanced/</code>. <code>[Authorize]</code> means any authenticated Jellyfin user or API key; admin-only endpoints are noted individually.</p>
+<div class="admonition info">
+<p class="admonition-title">Not fully documented yet</p>
+<p>This index is deliberately terse. If you're building against one of these and need the exact request/response shape, the fastest source of truth is the corresponding controller method (grep the path string in <code>JellyfinEnhancedController.cs</code>) - contributions expanding any of these into full sections like the ones above are welcome.</p>
+</div>
+<h3 id="seerr-discovery-requests">Seerr Discovery &amp; Requests</h3>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GET</td>
+<td><code>jellyseerr/status</code></td>
+<td>Seerr connection/reachability check (answer cached for 30 s)</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>jellyseerr/validate</code></td>
+<td>Validate configured Seerr URL(s) + API key</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>jellyseerr/trigger-recently-added-scan</code></td>
+<td>Kick off a Seerr library scan</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>jellyseerr/user-status</code></td>
+<td>Is the calling Jellyfin user linked to a Seerr account</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>jellyseerr/permission-audit</code></td>
+<td>Admin: audit every Jellyfin user's Seerr permission bits</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>jellyseerr/search</code></td>
+<td>Proxy a Seerr search query</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>jellyseerr/sonarr</code> / <code>jellyseerr/radarr</code></td>
+<td>List Sonarr/Radarr instances known to Seerr (read-only profile/folder discovery, no credentials)</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>jellyseerr/sonarr/lookup/{tmdbId}</code></td>
+<td>Sonarr title-lookup candidates for a series TMDB has no TVDB ID for; backs the "match series" block in the season modal. 404 when Seerr has no Sonarr configured</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>jellyseerr/{type}/{serverId}</code></td>
+<td>Sonarr/Radarr server details by Seerr service id</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>jellyseerr/settings/{type}</code></td>
+<td>Admin-only: Seerr's own Radarr/Sonarr instance connection settings (hostname, port, <strong>apiKey</strong>, externalUrl, ...). Backs the *arr tab's "Import from Seerr" button; not the same endpoint as <code>jellyseerr/sonarr</code>/<code>jellyseerr/radarr</code> above</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>jellyfin-urls</code></td>
+<td>Admin-only: Jellyfin's own detected internal LAN URL and "Published server URIs" external/all override from Dashboard → Networking → Advanced, if configured. Backs the Seerr-import URL Mapping pre-fill</td>
+</tr>
+<tr>
+<td>POST / GET</td>
+<td><code>jellyseerr/request</code></td>
+<td>Create / list Seerr requests</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>jellyseerr/quota</code></td>
+<td>Calling user's Seerr request quota</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>jellyseerr/tv/{tmdbId}</code>, <code>jellyseerr/movie/{tmdbId}</code></td>
+<td>TV/movie detail proxy</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>.../season/{seasonNumber}</code></td>
+<td>Season detail proxy</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>.../similar</code>, <code>.../recommendations</code></td>
+<td>Similar / recommended titles</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>jellyseerr/movie/{tmdbId}/ratingscombined</code>, <code>jellyseerr/tv/{tmdbId}/ratings</code></td>
+<td>Combined critic/audience ratings</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>jellyseerr/discover/movies</code>, <code>jellyseerr/discover/tv</code></td>
+<td>Discovery feed</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>.../upcoming</code></td>
+<td>Upcoming releases</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>.../trending</code></td>
+<td>Trending feed</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>.../network/{networkId}</code>, <code>.../studio/{studioId}</code></td>
+<td>Discovery filtered by network/studio</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>jellyseerr/discover/tv/studio/{studioId}</code></td>
+<td>Series produced by a TMDB company, from TMDB (needs the TMDB key) in Seerr's discover shape; only rows in the caller's library carry a status (Seerr's own)</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>.../genre/{genreId}</code>, <code>.../keyword/{keywordId}</code></td>
+<td>Discovery filtered by genre/keyword</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>jellyseerr/discover/genreslider/movie</code>, <code>.../tv</code></td>
+<td>Genre-slider rows for the discovery UI</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>jellyseerr/person/{personId}</code></td>
+<td>Person detail proxy</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>jellyseerr/person/{personId}/combined_credits</code></td>
+<td>Person's filmography</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>jellyseerr/collection/{collectionId}</code></td>
+<td>Collection detail proxy</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>jellyseerr/overrideRule</code></td>
+<td>Seerr auto-approval override rules</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>jellyseerr/user</code></td>
+<td>Calling user's Seerr profile</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>jellyseerr/request/tv/{tmdbId}/seasons</code></td>
+<td>Request specific seasons of a show</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>jellyseerr/watchlist</code></td>
+<td>Calling user's Seerr watchlist</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>jellyseerr/sync-watchlist</code></td>
+<td>Trigger a watchlist sync</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>jellyseerr/import-users</code></td>
+<td>Admin: import Jellyfin users into Seerr</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>jellyseerr/settings/partial-requests</code></td>
+<td>Whether Seerr allows partial season requests</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>jellyseerr/issue</code>, <code>jellyseerr/issue/{id}</code></td>
+<td>List / get Seerr issues</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>jellyseerr/issue</code></td>
+<td>File a Seerr issue</td>
+</tr>
+</tbody>
+</table>
+<h3 id="tmdb-proxy-metadata">TMDB Proxy &amp; Metadata</h3>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GET</td>
+<td><code>studio/{studioId}</code></td>
+<td>Studio metadata (non-Seerr TMDB proxy)</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>boxset/{boxsetId}</code></td>
+<td>Collection/boxset metadata</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>person/{personId}</code></td>
+<td>Person metadata</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>genre/{genreId}</code></td>
+<td>Genre metadata</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>tmdb/search/person</code>, <code>tmdb/search/keyword</code></td>
+<td>TMDB search proxy</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>tmdb/genres/movie</code>, <code>tmdb/genres/tv</code></td>
+<td>TMDB genre lists</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>tmdb/validate</code></td>
+<td>Validate the configured TMDB API key</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>tmdb/{**apiPath}</code></td>
+<td>Generic pass-through TMDB proxy (catch-all). Responses are cached server-side (6 h for single resources, 30 min for lists, persisted across restarts); a cold <code>movie</code>/<code>tv</code> title and its <code>release_dates</code>, <code>watch/providers</code> and <code>reviews</code> are fetched in one upstream call</td>
+</tr>
+</tbody>
+</table>
+<h3 id="client-bootstrap-config">Client Bootstrap &amp; Config</h3>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GET</td>
+<td><code>script</code></td>
+<td>The injected client <code>&lt;script&gt;</code> bundle</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>js/{**path}</code></td>
+<td>Individual JS module files</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>Configuration/configPage.css</code></td>
+<td>Admin config page stylesheet</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>version</code></td>
+<td>Plugin version</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>private-config</code></td>
+<td>Admin-only: full plugin config</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>public-config</code></td>
+<td>Curated, non-sensitive config subset the client script reads</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>locales</code>, <code>locales/{lang}.json</code></td>
+<td>Available languages / one language's translation bundle</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>cdn/{source}/{**path}</code></td>
+<td>Local mirror of third-party static assets (icons, fonts, logos)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="per-user-settings-files">Per-User Settings Files</h3>
+<p>Same <code>user-settings/{userId}/{file}</code> pattern as Bookmarks (see above) for every other per-user JSON store:</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GET / POST</td>
+<td><code>user-settings/{userId}/settings.json</code></td>
+<td>Enhanced panel settings</td>
+</tr>
+<tr>
+<td>GET / POST</td>
+<td><code>user-settings/{userId}/shortcuts.json</code></td>
+<td>Keyboard shortcut overrides</td>
+</tr>
+<tr>
+<td>GET / POST</td>
+<td><code>user-settings/{userId}/elsewhere.json</code></td>
+<td>Elsewhere (streaming provider) preferences</td>
+</tr>
+<tr>
+<td>GET / POST</td>
+<td><code>user-settings/{userId}/hidden-content.json</code></td>
+<td>Hidden Content list</td>
+</tr>
+<tr>
+<td>GET / POST</td>
+<td><code>user-settings/{userId}/spoilerblur.json</code></td>
+<td>Spoiler Guard per-user state</td>
+</tr>
+</tbody>
+</table>
+<h3 id="spoiler-guard">Spoiler Guard</h3>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GET</td>
+<td><code>spoiler-blur/health</code></td>
+<td>Diagnostic: blur filter health</td>
+</tr>
+<tr>
+<td>DELETE</td>
+<td><code>spoiler-blur/health/{targetUserId}</code></td>
+<td>Reset a user's blur-health state</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>spoiler-blur/series</code></td>
+<td>Series currently under Spoiler Guard</td>
+</tr>
+<tr>
+<td>GET / POST</td>
+<td><code>spoiler-blur/user-prefs</code></td>
+<td>Per-user Spoiler Guard preferences</td>
+</tr>
+<tr>
+<td>POST / DELETE</td>
+<td><code>spoiler-blur/series/{seriesId}</code></td>
+<td>Enable/disable Spoiler Guard for a series</td>
+</tr>
+<tr>
+<td>POST / DELETE</td>
+<td><code>spoiler-blur/movies/{movieId}</code></td>
+<td>Enable/disable for a movie</td>
+</tr>
+<tr>
+<td>POST / DELETE</td>
+<td><code>spoiler-blur/collections/{collectionId}</code></td>
+<td>Enable/disable for a collection</td>
+</tr>
+<tr>
+<td>POST / DELETE</td>
+<td><code>spoiler-blur/pending/{mediaType}/{tmdbId}</code></td>
+<td>Pre-arm Spoiler Guard for a title not yet in the library</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>spoiler-blur/apply-existing/preview?skipStarted=false</code></td>
+<td>Admin: dry run of "apply to existing titles" with the saved auto-enable scope (per-user counts, nothing written; <code>409</code> if Spoiler Guard is off or a run is in progress, <code>500</code> with the error message if the count fails)</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>spoiler-blur/apply-existing?skipStarted=false</code></td>
+<td>Admin: start the "Spoiler Guard: apply to existing titles" scheduled task with these options (<code>202</code> with <code>completedRuns</code>; <code>409</code> if already running or Spoiler Guard is off; <code>503</code> if the task isn't registered)</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>spoiler-blur/apply-existing/status</code></td>
+<td>Admin: task <code>state</code> and <code>progress</code>, <code>completedRuns</code> and the last run's summary (<code>lastRun</code>) since server start</td>
+</tr>
+</tbody>
+</table>
+<h3 id="continue-watching-next-up">Continue Watching / Next Up</h3>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>POST / DELETE</td>
+<td><code>continue-watching/hide/{itemId}</code></td>
+<td>Hide/unhide an item from Continue Watching</td>
+</tr>
+<tr>
+<td>POST / DELETE</td>
+<td><code>next-up/hide/{itemId}</code></td>
+<td>Hide/unhide an item from Next Up</td>
+</tr>
+</tbody>
+</table>
+<h3 id="tags-cache-watch-data">Tags, Cache &amp; Watch Data</h3>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>POST</td>
+<td><code>tag-cache/rebuild</code></td>
+<td>Admin: force a full tag-cache rebuild</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>tag-cache/{userId}</code></td>
+<td>This user's tag cache (<code>?since=&lt;timestamp&gt;</code> returns only entries changed since, plus any under the user's Spoiler Guard). Includes <code>servedAt</code> (server time the response was captured, for ordering stored copies), <code>filterRevision</code>, a fingerprint of how this user's entries are filtered (library access) and Spoiler Guard-stripped (a client holding a copy made under another revision must replace it), and <code>reviewRatings</code>, the average user-review rating per <code>mediaType:tmdbKey</code> visible to this user, when user ratings on posters are on</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>tag-data/{userId}</code></td>
+<td>Batch tag lookup by item ids</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>item-stats/{userId}/{itemId}</code></td>
+<td>File size and watch progress for an item in one response (what the details page uses)</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>file-size/{userId}/{itemId}</code></td>
+<td>File size for an item</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>watch-progress/{userId}/{itemId}</code></td>
+<td>Watch progress for an item</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>audio-language-tags?codes=</code></td>
+<td>Audio-language tag names (base and regional) for comma-separated stream language codes</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>awards/{mediaType}/{tmdbId}</code></td>
+<td>Wikidata award wins/nominations</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>mdblist-ratings/{mediaType}/{tmdbId}</code></td>
+<td>MDBList ratings for a title</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>mdblist-ratings/account-status</code></td>
+<td>MDBList account quota/status</td>
+</tr>
+</tbody>
+</table>
+<h3 id="activity-feed-whats-new">Activity Feed &amp; What's New</h3>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GET</td>
+<td><code>activity</code></td>
+<td>The Activity Feed (recently watched/favorited/reviewed)</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>whats-new</code></td>
+<td>Admin: pending "What's New" settings for the config page</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>whats-new/dismiss</code></td>
+<td>Admin: acknowledge the current "What's New" state</td>
+</tr>
+</tbody>
+</table>
+<h3 id="branding">Branding</h3>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>POST</td>
+<td><code>UploadBrandingImage</code></td>
+<td>Admin: upload a custom logo/banner/favicon</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>BrandingImage</code></td>
+<td>Serve a custom branding image</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>DeleteBrandingImage</code></td>
+<td>Admin: remove a custom branding image</td>
+</tr>
+</tbody>
+</table>
+<h3 id="arr-sonarrradarrbazarr">*arr (Sonarr/Radarr/Bazarr)</h3>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GET</td>
+<td><code>arr/validate/sonarr</code>, <code>arr/validate/radarr</code></td>
+<td>Validate an instance's URL/API key</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>arr/identify-url</code></td>
+<td>Resolve which configured instance owns a given item</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>arr/series-slug</code>, <code>arr/series-slugs</code></td>
+<td>Sonarr URL slug lookup, single/batch</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>arr/movie-instances</code></td>
+<td>Which Radarr instance(s) a movie belongs to</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>arr/queue</code></td>
+<td>Sonarr/Radarr download queue</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>arr/history</code></td>
+<td>Sonarr/Radarr import history</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>arr/requests</code></td>
+<td>Requests page data (Seerr + arr queue merged)</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>arr/requests/{requestId}/approve</code>, <code>.../decline</code></td>
+<td>Admin: approve/decline a Seerr request</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>arr/calendar</code></td>
+<td>Calendar page data</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>arr/calendar/user-data</code></td>
+<td>Per-user calendar preferences (favorites/watched highlighting)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="active-streams-proxy">Active Streams &amp; Proxy</h3>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GET</td>
+<td><code>active-streams/sessions</code></td>
+<td>Currently active playback sessions</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>active-streams/broadcast</code></td>
+<td>Admin: broadcast a message to active sessions</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>proxy/avatar</code></td>
+<td>Cached avatar image proxy</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>items/by-providers</code></td>
+<td>Look up Jellyfin items by external provider id</td>
+</tr>
+</tbody>
+</table>
+<h3 id="maintenance-mode">Maintenance Mode</h3>
+<p>All admin-only.</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GET</td>
+<td><code>MaintenanceMode/Status</code></td>
+<td>Current maintenance-mode state (includes <code>Source</code>: <code>manual</code> or <code>schedule</code>, <code>EndsAt</code>, and the server's local time / UTC offset)</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>MaintenanceMode/Enable</code></td>
+<td>Enable maintenance mode (<code>message</code>, <code>notificationMessage</code>, <code>durationMinutes</code>, <code>action</code>, <code>affectedUserIds</code>). While a manual window is running, re-sending the same <code>durationMinutes</code> keeps its end time; a different value restarts the clock</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>MaintenanceMode/Disable</code></td>
+<td>Disable maintenance mode. A scheduled window ended this way stays off until the next day's window; <code>?includeScheduled=false</code> (what the config page sends while the daily schedule is on) leaves it running instead</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>MaintenanceMode/Users</code></td>
+<td>Users affected by the current maintenance-mode config</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>MaintenanceMode/Broadcast</code></td>
+<td>Send the maintenance notification immediately (<code>{countdown}</code> / <code>{ends_at}</code> are resolved)</td>
+</tr>
+</tbody>
+</table>
+<p>The anonymous <code>public-config</code> payload carries <code>MaintenanceModeEnabled</code>, <code>MaintenanceModeMessage</code> and <code>MaintenanceModeEndsAt</code> (UTC, or null when open-ended) for the banner countdown.</p>
+<h3 id="misc">Misc</h3>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>POST</td>
+<td><code>reset-all-users-settings</code></td>
+<td>Admin: overwrite every user's settings with the current defaults</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>{viewName}</code></td>
+<td>Catch-all: serves a Plugin Pages HTML view by name</td>
+</tr>
+</tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../css-customization/" class="md-footer__link md-footer__link--prev" aria-label="Previous: CSS Customization">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                CSS Customization
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../project-structure/" class="md-footer__link md-footer__link--next" aria-label="Next: Project Structure">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Project Structure
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Copyright &copy;2026 n00bcodr. Made with 💜 for Jellyfin and the community
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+    <a href="https://github.com/n00bcodr/Jellyfin-Enhanced" target="_blank" rel="noopener" title="GitHub Repository" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+    
+    
+    
+    
+    <a href="https://discord.gg/EYNFf7y4CG" target="_blank" rel="noopener" title="Jellyfin Community Discord - Jellyfin Enhanced Channel" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M492.5 69.8c-.2-.3-.4-.6-.8-.7-38.1-17.5-78.4-30-119.7-37.1-.4-.1-.8 0-1.1.1s-.6.4-.8.8c-5.5 9.9-10.5 20.2-14.9 30.6-44.6-6.8-89.9-6.8-134.4 0-4.5-10.5-9.5-20.7-15.1-30.6-.2-.3-.5-.6-.8-.8s-.7-.2-1.1-.2C162.5 39 122.2 51.5 84.1 69c-.3.1-.6.4-.8.7C7.1 183.5-13.8 294.6-3.6 404.2c0 .3.1.5.2.8s.3.4.5.6c44.4 32.9 94 58 146.8 74.2.4.1.8.1 1.1 0s.7-.4.9-.7c11.3-15.4 21.4-31.8 30-48.8.1-.2.2-.5.2-.8s0-.5-.1-.8-.2-.5-.4-.6-.4-.3-.7-.4c-15.8-6.1-31.2-13.4-45.9-21.9-.3-.2-.5-.4-.7-.6s-.3-.6-.3-.9 0-.6.2-.9.3-.5.6-.7c3.1-2.3 6.2-4.7 9.1-7.1.3-.2.6-.4.9-.4s.7 0 1 .1c96.2 43.9 200.4 43.9 295.5 0 .3-.1.7-.2 1-.2s.7.2.9.4c2.9 2.4 6 4.9 9.1 7.2.2.2.4.4.6.7s.2.6.2.9-.1.6-.3.9-.4.5-.6.6c-14.7 8.6-30 15.9-45.9 21.8-.2.1-.5.2-.7.4s-.3.4-.4.7-.1.5-.1.8.1.5.2.8c8.8 17 18.8 33.3 30 48.8.2.3.6.6.9.7s.8.1 1.1 0c52.9-16.2 102.6-41.3 147.1-74.2.2-.2.4-.4.5-.6s.2-.5.2-.8c12.3-126.8-20.5-236.9-86.9-334.5zm-302 267.7c-29 0-52.8-26.6-52.8-59.2s23.4-59.2 52.8-59.2c29.7 0 53.3 26.8 52.8 59.2 0 32.7-23.4 59.2-52.8 59.2m195.4 0c-29 0-52.8-26.6-52.8-59.2s23.4-59.2 52.8-59.2c29.7 0 53.3 26.8 52.8 59.2 0 32.7-23.2 59.2-52.8 59.2"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.instant", "navigation.tracking", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.footer", "navigation.indexes", "toc.follow", "toc.integrate", "search.suggest", "search.highlight", "search.share", "content.code.copy", "content.code.annotate", "announce.dismiss"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.c21346df.min.js"></script>
+      
+        <script src="../../javascripts/extra.js"></script>
+      
+    
+  </body>
+</html>

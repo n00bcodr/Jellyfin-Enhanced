@@ -1,0 +1,2612 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="The essential enhancement suite for Jellyfin, bundling advanced features and customizations into one convenient plugin.">
+      
+      
+        <meta name="author" content="n00bcodr">
+      
+      
+        <link rel="canonical" href="https://n00bcodr.github.io/Jellyfin-Enhanced/12.11/spoiler-guard/spoiler-guard-features/">
+      
+      
+        <link rel="prev" href="../../seerr/permission-audit/">
+      
+      
+        <link rel="next" href="../spoiler-guard-settings/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../images/favicon.ico">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.0">
+    
+    
+      
+        <title>Spoiler Guard Features - Jellyfin Enhanced</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#spoiler-guard" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Jellyfin Enhanced" class="md-header__button md-logo" aria-label="Jellyfin Enhanced" data-md-component="logo">
+      
+  <img src="../../images/favicon.ico" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Jellyfin Enhanced
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Spoiler Guard Features
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/n00bcodr/Jellyfin-Enhanced" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    n00bcodr/Jellyfin-Enhanced
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../installation/installation/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Installation
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../enhanced/enhanced-features/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Enhanced
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../elsewhere/elsewhere-features/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Elsewhere
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../seerr/seerr-features/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Seerr
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="./" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Spoiler Guard
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../arr/arr-features/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  *arr
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../other/other-features/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Other
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../advanced/css-customization/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Advanced
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../faq-support/faq/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  FAQ + Support
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../advanced/community-analytics/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Community Analytics
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../other-projects/other-projects/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Related Projects
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../about/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  About
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+  
+
+<nav class="md-nav md-nav--primary md-nav--lifted md-nav--integrated" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Jellyfin Enhanced" class="md-nav__button md-logo" aria-label="Jellyfin Enhanced" data-md-component="logo">
+      
+  <img src="../../images/favicon.ico" alt="logo">
+
+    </a>
+    Jellyfin Enhanced
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/n00bcodr/Jellyfin-Enhanced" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    n00bcodr/Jellyfin-Enhanced
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Installation
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Enhanced
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Enhanced
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../enhanced/enhanced-features/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Enhanced Features
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../enhanced/enhanced-settings/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Enhanced Settings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Elsewhere
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Elsewhere
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../elsewhere/elsewhere-features/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Elsewhere Features
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../elsewhere/elsewhere-settings/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Elsewhere Settings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Seerr
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Seerr
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../seerr/seerr-features/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Seerr Features
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../seerr/seerr-settings/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Seerr Settings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../seerr/permission-audit/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Permission Audit
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Spoiler Guard
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Spoiler Guard
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Spoiler Guard Features
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Spoiler Guard Features
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#what-spoiler-guard-protects" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What Spoiler Guard protects
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#turning-spoiler-guard-on" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Turning Spoiler Guard on
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Turning Spoiler Guard on">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#per-series-tv-shows" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per series (TV shows)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#per-movie" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per movie
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#per-collection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per collection
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pre-arming-for-titles-not-yet-in-your-library" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pre-arming (for titles not yet in your library)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#image-replacement-mode-show-stock-cards-vs-blur" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Image Replacement Mode — Show stock cards vs Blur
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#after-toggling-what-happens-on-your-screen" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        After toggling — what happens on your screen
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#when-you-mark-an-episode-watched" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When you mark an episode watched
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#multi-client-support" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Multi-client support
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#auto-enable-options-optional-admin-controlled" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Auto-enable options (optional, admin-controlled)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#disable-confirm-dialog" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Disable-confirm dialog
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#per-user-overrides" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-user overrides
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#advanced-per-category-reveals-optional-admin-controlled" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Advanced per-category reveals (optional, admin-controlled)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#whats-not-protected-by-design" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What's not protected (by design)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#per-user-isolation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-user isolation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Troubleshooting
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../spoiler-guard-settings/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Spoiler Guard Settings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    *arr
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    *arr
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../arr/arr-features/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    *arr Features
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../arr/arr-settings/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    *arr Settings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../arr/troubleshooting-support/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting + Support
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Other
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Other
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../other/other-features/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Other Features
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../other/other-settings/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Other Settings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advanced
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Advanced
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../advanced/css-customization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CSS Customization
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../advanced/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../advanced/project-structure/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project Structure
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    FAQ + Support
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    FAQ + Support
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../faq-support/faq/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    FAQ
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../faq-support/report-issues/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Report issues
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../faq-support/feature-requests/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Feature Requests
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../faq-support/contributing-translations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing Translations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../faq-support/support/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Support + Community
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../advanced/community-analytics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Community Analytics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../other-projects/other-projects/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Related Projects
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../about/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    About
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="spoiler-guard">Spoiler Guard</h1>
+<p>A per-user, per-show opt-in protection layer for episodes, seasons, movies, and collections you haven't watched yet. Spoiler Guard blurs (or fully hides) thumbnail art, replaces episode titles, strips synopses, taglines, ratings, chapter names, cast lists, and reviews — all server-side, so <strong>every Jellyfin client benefits</strong> (Web, Android TV, iOS Swiftfin, Roku, Wholphin, Moonfin, Findroid, Streamyfin, etc.).</p>
+<p><img alt="Spoiler Guard on a series page" src="../web-02-bluey-series.png" /></p>
+<p><img alt="The same season with Spoiler Guard on and off" src="../../images/readme/spoiler-guard-compare.webp" /></p>
+<div class="admonition info">
+<p class="admonition-title">How it works at a glance</p>
+<p>Spoiler Guard runs on the server inside Jellyfin's image and metadata APIs. When you have Spoiler Guard enabled for a series:</p>
+<ul>
+<li><strong>Image bytes</strong> for unwatched episodes are intercepted and replaced before they leave the server — your client never sees the original frame.</li>
+<li><strong>Episode metadata</strong> (titles, synopses, ratings, chapter names, cast) is stripped or rewritten in the same response, so even a "lite" mobile client that ignores image transforms still gets safe text.</li>
+<li><strong>TMDB / user reviews</strong> are suppressed on the affected series detail pages.</li>
+</ul>
+<p>The server forgets none of this — your watched-state, your per-show opt-in list, and the admin's policy all combine before each request is answered. There's no client-side check that a bad actor could bypass.</p>
+</div>
+<hr />
+<h2 id="what-spoiler-guard-protects">What Spoiler Guard protects</h2>
+<p>Once you turn Spoiler Guard on for a show or movie, the plugin hides every spoiler surface for items you haven't watched yet:</p>
+<table>
+<thead>
+<tr>
+<th>Surface</th>
+<th>What's hidden</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Episode thumbnails</strong></td>
+<td>Replaced with a parent-level placeholder (Series Backdrop, Series Primary, or Collection art) or blurred, depending on the admin's Image Replacement mode.</td>
+</tr>
+<tr>
+<td><strong>Season posters</strong></td>
+<td>Same treatment as episode thumbnails — Season 1 always shows so you have an entry point; later seasons hide until any episode in them is watched.</td>
+</tr>
+<tr>
+<td><strong>TV show descriptions</strong></td>
+<td>Replaced with the configured placeholder when the admin's independent TV-show-description option is enabled.</td>
+</tr>
+<tr>
+<td><strong>Episode titles</strong></td>
+<td>Replaced with <code>Season X, Episode Y</code> so a title like "The Death of Y" can't spoil the reveal.</td>
+</tr>
+<tr>
+<td><strong>Episode synopses</strong></td>
+<td>Replaced with a configurable placeholder (default: <code>Spoiler Guard activated</code>).</td>
+</tr>
+<tr>
+<td><strong>Tags</strong></td>
+<td>Story tags like "Death of a main character" are dropped.</td>
+</tr>
+<tr>
+<td><strong>Chapter names</strong></td>
+<td>Replaced with <code>Chapter N</code> so the player's chapter list doesn't spoil the next scene. The chapter <strong>timestamps</strong> stay so you can still navigate.</td>
+</tr>
+<tr>
+<td><strong>Chapter thumbnails</strong></td>
+<td>Stripped on unwatched episodes — for movies, only chapter thumbs <strong>after</strong> your current watch position are stripped (progressive reveal).</td>
+</tr>
+<tr>
+<td><strong>Trickplay timeline previews</strong></td>
+<td>The sprite-sheet tiles your player uses for hover-scrubbing previews are blurred / hidden — with the same progressive reveal as chapters: a preview tile stays clear once its whole time range is behind your watch position, so scrubbing back over scenes you've already seen shows them normally while scenes ahead stay blurred.</td>
+</tr>
+<tr>
+<td><strong>Taglines</strong></td>
+<td>TMDB taglines like "Everything changes tonight" are dropped.</td>
+</tr>
+<tr>
+<td><strong>Ratings</strong></td>
+<td>The community/TMDB rating and the critic rating are both hidden — a 9.8/10 rating on a specific episode is a hint that something big happens. The Jellyfin Enhanced card rating overlay is suppressed too on the series, season, and unwatched-episode cards of a guarded show (it won't fall back to the parent series' rating); watched episodes keep theirs.</td>
+</tr>
+<tr>
+<td><strong>Air date</strong></td>
+<td>Hidden — a multi-month gap before an episode can imply "season finale" or "long-anticipated reveal".</td>
+</tr>
+<tr>
+<td><strong>Cast</strong></td>
+<td>By default, only guest stars on unwatched episodes are hidden (regular cast appears in every episode anyway). Strict mode hides the entire cast.</td>
+</tr>
+<tr>
+<td><strong>TMDB + user reviews</strong></td>
+<td>The Reviews panel is suppressed on series detail pages for shows you have Spoiler Guard on for.</td>
+</tr>
+<tr>
+<td><strong>Search results</strong></td>
+<td>Episode hints in search are rewritten to <code>Season X, Episode Y</code> and the matched-term echo is suppressed.</td>
+</tr>
+</tbody>
+</table>
+<p>Watched episodes pass through completely untouched. Your library doesn't change — Spoiler Guard only changes what you see.</p>
+<hr />
+<h2 id="turning-spoiler-guard-on">Turning Spoiler Guard on</h2>
+<h3 id="per-series-tv-shows">Per series (TV shows)</h3>
+<p>Open any series detail page. The Spoiler Guard toggle button sits in the action row next to Play / Mark Watched:</p>
+<p><img alt="Spoiler Guard toggle button in the action row" src="../web-toggle-button.png" /></p>
+<p>Click it. The button flips to <strong>Spoiler Guard: On</strong> and you'll see a toast confirmation:</p>
+<blockquote>
+<p>Spoiler Guard: On</p>
+</blockquote>
+<p>Every other Jellyfin client you use will pick up the same protection on its next image fetch — the server holds the opt-in list, not the browser.</p>
+<h3 id="per-movie">Per movie</h3>
+<p>The same toggle button appears on Movie detail pages. Click the toggle and the poster blurs (or hides, depending on Image Replacement mode), the description swaps to the placeholder, and chapters / cast on unwatched cards get the same treatment:</p>
+<table>
+<thead>
+<tr>
+<th>Before toggle</th>
+<th>After toggle</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><img alt="Back to the Future Part II — Spoiler Guard off" src="../web-bttf2-movie-before.png" /></td>
+<td><img alt="Back to the Future Part II — Spoiler Guard on" src="../web-bttf2-movie-after.png" /></td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>Spoiler Guard: On</p>
+</blockquote>
+<h3 id="per-collection">Per collection</h3>
+<p>For a BoxSet (movie collection), enabling Spoiler Guard at the <strong>collection level</strong> acts as a shortcut — every movie inside the collection gets protected until you mark each one watched. The collection's own art and description pass through clear (it's the entry point you just clicked, same model as a series detail page).</p>
+<p>With Spoiler Guard on, the collection art stays visible but the individual movie posters in the rail are protected:</p>
+<table>
+<thead>
+<tr>
+<th>Before toggle</th>
+<th>After toggle</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><img alt="Back to the Future Collection — Spoiler Guard off" src="../web-bttf-collection-before.png" /></td>
+<td><img alt="Back to the Future Collection — Spoiler Guard on" src="../web-bttf-collection-after.png" /></td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>Spoiler Guard: On</p>
+</blockquote>
+<h3 id="pre-arming-for-titles-not-yet-in-your-library">Pre-arming (for titles not yet in your library)</h3>
+<p>Open the Seerr <strong>More Info</strong> modal for any title — whether you're about to request it or another user already has. You'll see an <strong>Enable Spoiler Guard</strong> button:</p>
+<blockquote>
+<p>Spoiler Guard will engage when this title arrives in your library.</p>
+</blockquote>
+<p>Click it to register a <em>pending</em> Spoiler Guard intent for the TMDB id. When the content lands in your library (via Seerr, manual import, or any other source), the plugin automatically promotes the pending entry into a real per-series or per-movie protection — no extra clicks from you.</p>
+<p>You can also pre-arm a title another user requested. Your pending intent only activates for <em>you</em> when the content arrives, not for anyone else.</p>
+<hr />
+<h2 id="image-replacement-mode-show-stock-cards-vs-blur">Image Replacement Mode — Show stock cards vs Blur</h2>
+<p>The admin chooses how unwatched cards are visually hidden. There are two modes:</p>
+<div class="tabbed-set tabbed-alternate" data-tabs="1:2"><input checked="checked" id="__tabbed_1_1" name="__tabbed_1" type="radio" /><input id="__tabbed_1_2" name="__tabbed_1" type="radio" /><div class="tabbed-labels"><label for="__tabbed_1_1">Show stock cards (default)</label><label for="__tabbed_1_2">Blur images</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<p>The episode-specific image is replaced with a <strong>parent-level placeholder</strong> picked so the aspect ratio matches the card slot:</p>
+<ul>
+<li><strong>Episode thumbnails</strong> (16:9) → Series Backdrop</li>
+<li><strong>Season posters</strong> (2:3) → Series Primary</li>
+<li><strong>Movies opted in via a collection</strong> (2:3) → Collection Primary</li>
+<li><strong>Movies opted in directly / no safe parent art available</strong> → blurred version of the original (so the card always renders something instead of going blank). A pre-encoded flat dark JPEG remains as a final fail-closed safety net if the blur step itself fails.</li>
+</ul>
+<p>Useful when partial-blur feels like a tease. The viewer sees a consistent grid of "this show / this franchise" art instead of mystery boxes — and when no safe parent is available, a blur rather than a blank box.</p>
+</div>
+<div class="tabbed-block">
+<p>The original image runs through a server-side Gaussian blur. Silhouettes and dominant colours stay visible — you can tell <em>something</em> is there, but not what.</p>
+<p><img alt="Bluey S2 blurred" src="../web-03-bluey-s2.png" /></p>
+<p>The blur intensity is admin-controlled (default 40 — strong enough to make characters unrecognizable while keeping the show's colour palette visible).</p>
+</div>
+</div>
+</div>
+<p>Both modes run server-side: every native client and every browser sees the same protected bytes.</p>
+<hr />
+<h2 id="after-toggling-what-happens-on-your-screen">After toggling — what happens on your screen</h2>
+<p>By default Spoiler Guard does a <strong>soft refresh</strong>: it immediately rewrites every <code>&lt;img&gt;</code> URL on the current page so you see the new blur/clear state instantly, without a full-page flash. Page-rendered text (Overview, episode titles, ratings) continues to show whatever was on screen until your next navigation, at which point everything will be in sync with the new state.</p>
+<table>
+<thead>
+<tr>
+<th>Before toggle</th>
+<th>After toggle (soft)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><img alt="Before" src="../web-refresh-after-toggle-off.png" /></td>
+<td><img alt="After ON" src="../web-refresh-after-toggle-on.png" /></td>
+</tr>
+</tbody>
+</table>
+<p>If your admin enables <strong>Strict refresh mode</strong>, the page also auto-reloads after every toggle so the text updates immediately — at the cost of a brief page flash.</p>
+<hr />
+<h2 id="when-you-mark-an-episode-watched">When you mark an episode watched</h2>
+<p>The blur (or hide-mode placeholder) automatically lifts for the episode you just marked. No manual refresh needed — the plugin intercepts the watched-state mutation and rewrites image URLs on the page within a couple of frames.</p>
+<p>The reverse works too: marking an episode <em>unplayed</em> re-blurs it within the same window.</p>
+<hr />
+<h2 id="multi-client-support">Multi-client support</h2>
+<p>Spoiler Guard intercepts at the server level, so every client sees the same protected images and metadata. Tested:</p>
+<ul>
+<li><strong>Jellyfin Web</strong> (Chrome, Firefox, Safari)</li>
+<li><strong>Wholphin</strong> (Android TV)</li>
+<li><strong>Moonfin</strong> (Android TV)</li>
+<li><strong>Findroid</strong> (Android)</li>
+<li><strong>Swiftfin</strong> (iOS, tvOS)</li>
+<li><strong>Streamyfin</strong> (mobile)</li>
+<li><strong>Jellyfin Media Player</strong> (desktop)</li>
+</ul>
+<p>There are no client-side tweaks to install. Once an admin turns the master switch on and a user opts a series in, every client picks it up on its next image fetch.</p>
+<hr />
+<h2 id="auto-enable-options-optional-admin-controlled">Auto-enable options (optional, admin-controlled)</h2>
+<p>Three admin toggles can save you from manually opting in for every new show:</p>
+<ul>
+<li><strong>Auto-enable on first play of a new show</strong> — the first time you press play on S1E1 of a series you've never watched, the plugin adds it to your Spoiler Guard list automatically. Rewatches and jumping in at later episodes don't trigger it.</li>
+<li><strong>Auto-enable on Seerr request</strong> — every successful Seerr request you submit via JE automatically registers a pending Spoiler Guard intent. When the content lands, Spoiler Guard is already on for you.</li>
+<li><strong>Auto-enable when new titles are added to the library</strong> — every new show or movie that appears in a library you can see is added to your Spoiler Guard list the moment it lands, before anyone presses play. You can still switch it off per title afterwards, and a rescan or metadata refresh won't bring it back.</li>
+</ul>
+<p>All three are admin-level (off by default), and the admin can limit them to TV shows only, movies only, or specific libraries. Ask your admin to turn them on if you want a hands-free experience.</p>
+<p>Titles that were already in the library aren't armed by a rescan. An admin can arm them once with <strong>Apply to existing titles now…</strong> (or the matching scheduled task), which skips anything you already guard or have fully watched. See <a href="../spoiler-guard-settings/#guarding-titles-already-in-the-library">Guarding titles already in the library</a>.</p>
+<hr />
+<h2 id="disable-confirm-dialog">Disable-confirm dialog</h2>
+<p>Turning Spoiler Guard <strong>off</strong> prompts a brief confirmation:</p>
+<blockquote>
+<p><strong>Disable Spoiler Guard?</strong><br />
+Original images and episode details will be visible again straight away.</p>
+</blockquote>
+<p>A "Don't ask again for 15 minutes" checkbox lets you batch-disable a few series without re-confirming each time. The snooze is per-browser and self-expires.</p>
+<p>This catches accidental clicks (the toggle is right next to Play / Mark Watched). If you'd rather skip the prompt every time, just tick the snooze box once — or turn it off permanently in the per-user overrides described below.</p>
+<hr />
+<h2 id="per-user-overrides">Per-user overrides</h2>
+<p>Your admin decides which spoiler surfaces get stripped, but you can relax any of them for yourself. Open the JE settings panel (gear icon → <strong>Jellyfin Enhanced</strong>) and expand the <strong>Spoiler Guard</strong> section. Under <strong>"Show me this even with Spoiler Guard on"</strong> there's a checkbox per category:</p>
+<p>TV show descriptions, Episode descriptions, Episode titles, Chapter names, Cast list, Ratings, Air date, Taglines, Tags, and Reviews.</p>
+<p>Every box starts checked (following your admin's policy). Uncheck one and that information becomes visible to you again on the relevant protected show or unwatched episode — for example, uncheck <strong>Ratings</strong> if you like seeing community and critic scores but still want synopses and images hidden. Overrides only affect your account; images always stay protected regardless.</p>
+<p>A category only appears in the list when your admin has that strip enabled — there's nothing to opt out of for a category that's already off server-wide.</p>
+<p>If your admin has turned on <strong>Advanced per-category reveals</strong> (see below), one extra checkbox shows up here with the same name. That one runs the other way round: unchecking it hides <em>more</em>, not less — it puts your account back on the uniform full strip instead of the reveals your admin configured.</p>
+<p>The same section has a <strong>"Don't ask me to confirm when turning Spoiler Guard off"</strong> checkbox, which permanently skips the disable-confirmation dialog (unlike the dialog's own "Don't ask again for 15 minutes" snooze, this one never expires).</p>
+<hr />
+<h2 id="advanced-per-category-reveals-optional-admin-controlled">Advanced per-category reveals (optional, admin-controlled)</h2>
+<p>Normally every unwatched episode of a protected show is hidden identically. When your admin enables <strong>Advanced per-category reveals</strong>, unwatched episodes split into three groups and the first two can show a little more:</p>
+<ul>
+<li><strong>Your next episode</strong> — the first episode you haven't watched, in season/episode order (specials don't count). Out of the box this is the only thing that changes: its <strong>real title becomes visible</strong> while the synopsis, ratings, and artwork stay hidden. You get to see <em>what</em> you're about to watch, and nothing else.</li>
+<li><strong>The rest of that season</strong> — hidden exactly as before unless your admin relaxes titles, descriptions, or ratings for the category.</li>
+<li><strong>Everything else</strong> — later seasons, seasons you skipped, and specials keep the full protection. So do images, search results, and card rating overlays, in every category — the reveals only ever affect episode metadata in lists and on detail pages.</li>
+</ul>
+<p>The boundary moves as you watch: mark your next episode played and the following one takes over. Anything the plugin can't categorise with certainty stays fully hidden, so a reveal never appears by accident.</p>
+<p>Don't want it? Uncheck <strong>Advanced per-category reveals</strong> in your own Spoiler Guard settings and your account goes back to the uniform full strip.</p>
+<hr />
+<h2 id="whats-not-protected-by-design">What's <em>not</em> protected (by design)</h2>
+<p>A short list of things Spoiler Guard deliberately leaves alone:</p>
+<ul>
+<li><strong>Series titles and posters</strong> — the user-facing series identity stays visible. Series-level overviews are independently configurable: they stay visible when <strong>Hide TV show descriptions</strong> is off and use the placeholder when it is on.</li>
+<li><strong>Collection posters</strong> — same reasoning. The collection art is your entry point.</li>
+<li><strong>The "this episode is here" indicator</strong> — episode rows and counts in the season grid stay so you can navigate. Only the thumbnail / title / synopsis / chapters etc. are hidden.</li>
+<li><strong>Season 0 (Specials) and Season 1 <em>posters</em></strong> — the season poster and season overview always pass through so you have an entry point into a brand-new show without every season being a wall of placeholders. Unwatched <strong>episodes</strong> inside Season 0/1 are still protected (their thumbnails/titles/synopses are hidden until you watch them) — it's only the season-level art that's exempt.</li>
+<li><strong>External-player playback</strong> — if you launch playback in an external player (mpv, VLC, infuse, etc.), that player fetches metadata directly from Jellyfin's regular APIs and may show un-stripped fields. Spoiler Guard runs inside the JE plugin's response filters, which external players bypass.</li>
+</ul>
+<hr />
+<h2 id="per-user-isolation">Per-user isolation</h2>
+<p>Spoiler Guard preferences are <strong>per user</strong>. Your spoiler list doesn't affect anyone else on your server — and theirs doesn't affect yours.</p>
+<p>Cache-bust tokens are also per-user, so two users on the same family network seeing different blur states of the same image is fully supported. Native-client image caches (Glide, Coil, SDWebImage) automatically refetch when your watched-state changes, even though they otherwise cache strictly by URL.</p>
+<p>How the server knows <em>which</em> user an image request belongs to: image fetches are anonymous in Jellyfin, so the plugin embeds a small per-user <strong>identity marker</strong> in the image <code>tag</code> values each user receives. Every client — web, Android TV, iOS, Roku — echoes that value back when it fetches the image, letting Spoiler Guard apply exactly your protection state without depending on your device's IP address. This works out of the box behind reverse proxies, VPNs, and shared/NAT networks. Requests without a marker, such as a client replaying an old cached URL, fall back through the existing single-user, cookie, and shared-IP identity ladder and fail closed if the remaining candidates are ambiguous.</p>
+<hr />
+<h2 id="troubleshooting">Troubleshooting</h2>
+<p><strong>The toggle button isn't showing on a series page.</strong></p>
+<p>The admin needs to flip the master <strong>Enable Spoiler Guard</strong> switch in the plugin config. Until that's on, no user-facing UI appears.</p>
+<p><strong>I enabled Spoiler Guard but I still see episode thumbnails.</strong></p>
+<ul>
+<li>Refresh the page — your browser may have cached the original images before you opted in.</li>
+<li>Confirm the series is in your Spoiler Guard list (the toggle should read <strong>Spoiler Guard: On</strong>).</li>
+<li>Protection is applied entirely on the server (the image API returns the protected bytes for every client), so a plain refresh is enough — a hard reload (Ctrl-F5) only helps if the browser cached the clear image before you opted in.</li>
+</ul>
+<p><strong>Android TV (Wholphin / Moonfin / Findroid) shows the original images on first load after enabling Spoiler Guard.</strong></p>
+<p>Android TV clients cache image bytes locally using Glide / Coil. If you enabled Spoiler Guard for a series while that client already had the original thumbnails cached on disk, the client serves them from cache instead of re-fetching from the server. <strong>Clear the image cache once</strong> in the client's settings (or force-stop the app and reopen) and the protected images will load correctly from that point onward. After this first clear, Spoiler Guard's per-user cache-bust tokens and identity markers automatically invalidate the cache whenever your spoiler state changes — you won't need to clear it again.</p>
+<p><strong>A user sees another user's shows blurred (or their own non-guarded shows blurred) behind a reverse proxy.</strong></p>
+<p>This should no longer happen in normal operation. Spoiler Guard identifies image requests by the per-user <strong>identity marker</strong> embedded in image tags, which every client echoes back regardless of the IP address Jellyfin sees.</p>
+<p>If it still happens, the affected client is probably fetching images from old cached URLs minted before this feature. Those URLs carry no marker, so the server falls back to IP matching and fails closed on a shared IP. Clear the client's image cache once so it refetches fresh marker-carrying URLs, or configure the proxy to send <code>X-Forwarded-For</code> and add it to <strong>Dashboard → Networking → Known proxies</strong> so the fallback path can see real client IPs too. Identity tags are automatic whenever Spoiler Guard is enabled.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../../seerr/permission-audit/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Permission Audit">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Permission Audit
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../spoiler-guard-settings/" class="md-footer__link md-footer__link--next" aria-label="Next: Spoiler Guard Settings">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Spoiler Guard Settings
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Copyright &copy;2026 n00bcodr. Made with 💜 for Jellyfin and the community
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+    <a href="https://github.com/n00bcodr/Jellyfin-Enhanced" target="_blank" rel="noopener" title="GitHub Repository" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+    
+    
+    
+    
+    <a href="https://discord.gg/EYNFf7y4CG" target="_blank" rel="noopener" title="Jellyfin Community Discord - Jellyfin Enhanced Channel" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M492.5 69.8c-.2-.3-.4-.6-.8-.7-38.1-17.5-78.4-30-119.7-37.1-.4-.1-.8 0-1.1.1s-.6.4-.8.8c-5.5 9.9-10.5 20.2-14.9 30.6-44.6-6.8-89.9-6.8-134.4 0-4.5-10.5-9.5-20.7-15.1-30.6-.2-.3-.5-.6-.8-.8s-.7-.2-1.1-.2C162.5 39 122.2 51.5 84.1 69c-.3.1-.6.4-.8.7C7.1 183.5-13.8 294.6-3.6 404.2c0 .3.1.5.2.8s.3.4.5.6c44.4 32.9 94 58 146.8 74.2.4.1.8.1 1.1 0s.7-.4.9-.7c11.3-15.4 21.4-31.8 30-48.8.1-.2.2-.5.2-.8s0-.5-.1-.8-.2-.5-.4-.6-.4-.3-.7-.4c-15.8-6.1-31.2-13.4-45.9-21.9-.3-.2-.5-.4-.7-.6s-.3-.6-.3-.9 0-.6.2-.9.3-.5.6-.7c3.1-2.3 6.2-4.7 9.1-7.1.3-.2.6-.4.9-.4s.7 0 1 .1c96.2 43.9 200.4 43.9 295.5 0 .3-.1.7-.2 1-.2s.7.2.9.4c2.9 2.4 6 4.9 9.1 7.2.2.2.4.4.6.7s.2.6.2.9-.1.6-.3.9-.4.5-.6.6c-14.7 8.6-30 15.9-45.9 21.8-.2.1-.5.2-.7.4s-.3.4-.4.7-.1.5-.1.8.1.5.2.8c8.8 17 18.8 33.3 30 48.8.2.3.6.6.9.7s.8.1 1.1 0c52.9-16.2 102.6-41.3 147.1-74.2.2-.2.4-.4.5-.6s.2-.5.2-.8c12.3-126.8-20.5-236.9-86.9-334.5zm-302 267.7c-29 0-52.8-26.6-52.8-59.2s23.4-59.2 52.8-59.2c29.7 0 53.3 26.8 52.8 59.2 0 32.7-23.4 59.2-52.8 59.2m195.4 0c-29 0-52.8-26.6-52.8-59.2s23.4-59.2 52.8-59.2c29.7 0 53.3 26.8 52.8 59.2 0 32.7-23.2 59.2-52.8 59.2"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.instant", "navigation.tracking", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.footer", "navigation.indexes", "toc.follow", "toc.integrate", "search.suggest", "search.highlight", "search.share", "content.code.copy", "content.code.annotate", "announce.dismiss"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.c21346df.min.js"></script>
+      
+        <script src="../../javascripts/extra.js"></script>
+      
+    
+  </body>
+</html>

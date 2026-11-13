@@ -1,0 +1,3397 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="The essential enhancement suite for Jellyfin, bundling advanced features and customizations into one convenient plugin.">
+      
+      
+        <meta name="author" content="n00bcodr">
+      
+      
+        <link rel="canonical" href="https://n00bcodr.github.io/Jellyfin-Enhanced/12.11/faq-support/faq/">
+      
+      
+        <link rel="prev" href="../../advanced/project-structure/">
+      
+      
+        <link rel="next" href="../report-issues/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../images/favicon.ico">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.0">
+    
+    
+      
+        <title>FAQ - Jellyfin Enhanced</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#frequently-asked-questions" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Jellyfin Enhanced" class="md-header__button md-logo" aria-label="Jellyfin Enhanced" data-md-component="logo">
+      
+  <img src="../../images/favicon.ico" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Jellyfin Enhanced
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              FAQ
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/n00bcodr/Jellyfin-Enhanced" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    n00bcodr/Jellyfin-Enhanced
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../installation/installation/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Installation
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../enhanced/enhanced-features/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Enhanced
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../elsewhere/elsewhere-features/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Elsewhere
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../seerr/seerr-features/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Seerr
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../spoiler-guard/spoiler-guard-features/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Spoiler Guard
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../arr/arr-features/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  *arr
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../other/other-features/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Other
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../advanced/css-customization/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Advanced
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="./" class="md-tabs__link">
+          
+  
+  
+    
+  
+  FAQ + Support
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../advanced/community-analytics/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Community Analytics
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../other-projects/other-projects/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Related Projects
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../about/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  About
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+  
+
+<nav class="md-nav md-nav--primary md-nav--lifted md-nav--integrated" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Jellyfin Enhanced" class="md-nav__button md-logo" aria-label="Jellyfin Enhanced" data-md-component="logo">
+      
+  <img src="../../images/favicon.ico" alt="logo">
+
+    </a>
+    Jellyfin Enhanced
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/n00bcodr/Jellyfin-Enhanced" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    n00bcodr/Jellyfin-Enhanced
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Installation
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Enhanced
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Enhanced
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../enhanced/enhanced-features/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Enhanced Features
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../enhanced/enhanced-settings/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Enhanced Settings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Elsewhere
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Elsewhere
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../elsewhere/elsewhere-features/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Elsewhere Features
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../elsewhere/elsewhere-settings/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Elsewhere Settings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Seerr
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Seerr
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../seerr/seerr-features/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Seerr Features
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../seerr/seerr-settings/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Seerr Settings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../seerr/permission-audit/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Permission Audit
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Spoiler Guard
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Spoiler Guard
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../spoiler-guard/spoiler-guard-features/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Spoiler Guard Features
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../spoiler-guard/spoiler-guard-settings/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Spoiler Guard Settings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    *arr
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    *arr
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../arr/arr-features/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    *arr Features
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../arr/arr-settings/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    *arr Settings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../arr/troubleshooting-support/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting + Support
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Other
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Other
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../other/other-features/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Other Features
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../other/other-settings/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Other Settings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advanced
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Advanced
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../advanced/css-customization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CSS Customization
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../advanced/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../advanced/project-structure/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project Structure
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    FAQ + Support
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    FAQ + Support
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    FAQ
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    FAQ
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#general-questions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        General Questions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="General Questions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-is-jellyfin-enhanced" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What is Jellyfin Enhanced?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#can-i-customize-the-keyboard-shortcuts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Can I customize the keyboard shortcuts?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#does-this-work-on-mobile-apps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Does this work on mobile apps?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#does-this-work-on-android-tv-or-other-tv-platforms" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Does this work on Android TV or other TV platforms?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#is-this-plugin-affiliated-with-seerr" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Is this plugin affiliated with Seerr?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-do-i-change-the-plugins-language" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How do I change the plugin's language?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#where-is-the-userscript-version" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Where is the userscript version?
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#installation-setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Installation &amp; Setup
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Installation &amp; Setup">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#plugin-compatibility" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Plugin Compatibility
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#plugin-not-appearing-after-installation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Plugin not appearing after installation?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scripts-not-loading-after-installation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scripts not loading after installation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#update-not-working-properly" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Update not working properly?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#i-see-permission-denied-errors-in-logs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        I see "permission denied" errors in logs!!
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#features-functionality" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Features &amp; Functionality
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Features &amp; Functionality">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#auto-skip-intros-not-working" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Auto-skip intros not working?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#seerr-integration-not-connecting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Seerr integration not connecting?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tags-not-showing-on-posters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tags not showing on posters?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bookmarks-not-syncing-across-devices" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bookmarks not syncing across devices?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pause-screen-not-appearing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pause screen not appearing?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#reviews-elsewhere-or-seerr-icons-not-working" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reviews, Elsewhere, or Seerr icons not working?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#is-remove-from-continue-watching-next-up-destructive" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Is "Remove from Continue Watching / Next Up" destructive?
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#customization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Customization
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Customization">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-do-i-customize-tag-appearance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How do I customize tag appearance?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-do-i-upload-custom-branding" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How do I upload custom branding?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-arent-my-subtitles-using-the-jellyfin-enhanced-styling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why aren't my subtitles using the Jellyfin Enhanced styling?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-do-i-turn-off-subtitle-styling-and-use-jellyfins-own" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How do I turn off subtitle styling and use Jellyfin's own?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#can-i-change-tag-positions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Can I change tag positions?
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Troubleshooting
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Troubleshooting">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-do-i-gather-logs-for-bug-reports" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How do I gather logs for bug reports?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#common-error-messages-and-solutions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common error messages and solutions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#native-home-tabs-and-the-custom-tabs-plugin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Native Home tabs and the Custom Tabs plugin
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#plugin-conflicts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Plugin conflicts?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#performance-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Performance issues?
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-can-i-contribute-translations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How can I contribute translations?
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-can-i-request-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How can I request features?
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-can-i-report-bugs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How can I report bugs?
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#support-community" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Support &amp; Community
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Support &amp; Community">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#where-can-i-get-help" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Where can I get help?
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#related-projects" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Related Projects
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Related Projects">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#other-projects-by-n00bcodr" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Other projects by n00bcodr
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#recommended-plugins" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recommended plugins
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#still-have-questions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Still Have Questions?
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../report-issues/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Report issues
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../feature-requests/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Feature Requests
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../contributing-translations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing Translations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../support/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Support + Community
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../advanced/community-analytics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Community Analytics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../other-projects/other-projects/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Related Projects
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../about/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    About
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="frequently-asked-questions">Frequently Asked Questions</h1>
+<h2 id="general-questions">General Questions</h2>
+<!-- todo: make these collapsible  -->
+
+<h3 id="what-is-jellyfin-enhanced">What is Jellyfin Enhanced?</h3>
+<p>Jellyfin Enhanced is a comprehensive plugin that bundles advanced features and customizations for Jellyfin. It adds keyboard shortcuts, visual enhancements, Seerr integration, custom pause screens, quality tags, and much more — all in one convenient package.</p>
+<h3 id="can-i-customize-the-keyboard-shortcuts">Can I customize the keyboard shortcuts?</h3>
+<p>Yes! Open the Jellyfin Enhanced panel by clicking the menu item in the sidebar (Jellyfin 12: user profile menu instead) or pressing <code>?</code>, then go to the <strong>Shortcuts</strong> tab. Click on any key to set a custom shortcut. Changes save automatically.</p>
+<h3 id="does-this-work-on-mobile-apps">Does this work on mobile apps?</h3>
+<p>Yes, the plugin works on the official Jellyfin Android and iOS apps, as well as desktop and web UIs. All features are available as long as the app uses Jellyfin's embedded web UI.</p>
+<h3 id="does-this-work-on-android-tv-or-other-tv-platforms">Does this work on Android TV or other TV platforms?</h3>
+<p>No, the plugin does not work on Android TV or other native TV apps. It only functions on clients that use Jellyfin's embedded web UI, such as the official web, desktop, and mobile apps.</p>
+<p>Two things do reach native apps because they happen on the server: automatic season and movie requests, and the experimental <a href="../../enhanced/enhanced-features/#native-poster-tags-experimental">Native Poster Tags</a>, which draw your tags into the poster images native apps download.</p>
+<h3 id="is-this-plugin-affiliated-with-seerr">Is this plugin affiliated with Seerr?</h3>
+<p>No, this plugin is not affiliated with Seerr. Seerr is an independent project, and this plugin simply integrates with it to enhance the Jellyfin experience. <strong>Please report plugin issues to this repository, not to the Seerr team</strong>.</p>
+<h3 id="how-do-i-change-the-plugins-language">How do I change the plugin's language?</h3>
+<p>The plugin automatically uses the language set in your Jellyfin user profile. If your language isn't available, it defaults to English. See the <a href="../contributing-translations/">Contributing Translations</a> section to help add your language!</p>
+<h3 id="where-is-the-userscript-version">Where is the userscript version?</h3>
+<p>The userscript has been discontinued as the plugin functionality has grown significantly. The last version is available <a href="https://github.com/n00bcodr/Jellyfin-Enhanced/raw/05dd5b54802f149e45c76102dabf6235aaf7a5fb/jf_enhanced.user.js">here</a> if you only need basic keyboard shortcuts.</p>
+<hr />
+<h2 id="installation-setup">Installation &amp; Setup</h2>
+<h3 id="plugin-compatibility">Plugin Compatibility</h3>
+<table>
+<thead>
+<tr>
+<th>Plugin</th>
+<th>Jellyfin 10.11</th>
+<th>Jellyfin 10.10</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Jellyfin Enhanced</td>
+<td>✅</td>
+<td>✅ (frozen at 10.11.1.0)</td>
+<td>One manifest for all lines</td>
+</tr>
+</tbody>
+</table>
+<h3 id="plugin-not-appearing-after-installation">Plugin not appearing after installation?</h3>
+<p><strong>See <a href="../../installation/troubleshooting/#plugin-not-appearing-after-installation">this page in Installation Troubleshooting</a></strong></p>
+<h3 id="scripts-not-loading-after-installation">Scripts not loading after installation</h3>
+<p><strong>See <a href="../../installation/troubleshooting/#scripts-not-loading">this page in Installation Troubleshooting</a></strong></p>
+<h3 id="update-not-working-properly">Update not working properly?</h3>
+<p><strong>See this page in <a href="../../installation/troubleshooting/#update-not-working">Installation Troubleshooting</a></strong></p>
+<h3 id="i-see-permission-denied-errors-in-logs">I see "permission denied" errors in logs!!</h3>
+<p><strong>See this page in <a href="../../installation/troubleshooting/#permission-issues">Installation Troubleshooting, regarding permission issuses</a></strong></p>
+<hr />
+<h2 id="features-functionality">Features &amp; Functionality</h2>
+<h3 id="auto-skip-intros-not-working">Auto-skip intros not working?</h3>
+<p>Auto-skip seeks using the media segments Jellyfin stores for an item, so a segment
+provider — usually the <a href="https://github.com/intro-skipper/intro-skipper">Intro Skipper plugin</a> —
+has to detect them first. Jellyfin Enhanced does not detect intros itself.</p>
+<p><strong>Requirements:</strong></p>
+<ol>
+<li>
+<p>Install Intro Skipper plugin</p>
+</li>
+<li>
+<p>Enable intro detection in Intro Skipper settings</p>
+</li>
+<li>
+<p>Run intro detection on your library</p>
+</li>
+<li>
+<p>Enable auto-skip in Jellyfin Enhanced settings</p>
+</li>
+<li>
+<p>Intro segments must be detected for your media</p>
+</li>
+</ol>
+<p><strong>Check Detection:</strong></p>
+<ul class="task-list">
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled checked/><span class="task-list-indicator"></span></label> Play a video with a known intro</li>
+</ul>
+<ul class="task-list">
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled checked/><span class="task-list-indicator"></span></label> Check the item's segments with an API key from <strong>Dashboard → API Keys</strong>:
+  <code>http://&lt;your-server&gt;/MediaSegments/&lt;item-id&gt;?api_key=&lt;your-key&gt;</code> — an entry with
+  <code>"Type": "Intro"</code> means detection worked (the endpoint needs a key; a plain
+  browser request returns 401)</li>
+</ul>
+<ul class="task-list">
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled checked/><span class="task-list-indicator"></span></label> If the list is empty, run intro detection again</li>
+</ul>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>You do <strong>not</strong> need Jellyfin's own "Skip Intro" button for this. Auto-skip no
+longer clicks that button, so it works with the segment action set to <strong>None</strong>
+in Playback settings, and on non-English clients where the button is translated.</p>
+</div>
+<h3 id="seerr-integration-not-connecting">Seerr integration not connecting?</h3>
+<!-- todo -->
+<!-- ![Seerr Settings](../images/jellyseerr.png) -->
+
+<p><strong>Check Configuration:</strong></p>
+<ol>
+<li>
+<p>Verify Seerr URL is correct and accessible</p>
+</li>
+<li>
+<p>Verify API key is correct (from Seerr Settings → General)</p>
+</li>
+<li>
+<p>Click "Test Connection" in plugin settings</p>
+</li>
+<li>
+<p>Check icon status on search page:</p>
+<ul>
+<li>🟢 Active = Working</li>
+<li>🔴 No Access = User not imported</li>
+<li>⚫ Offline = Cannot connect</li>
+</ul>
+</li>
+</ol>
+<p><strong>Enable Jellyfin Sign-In:</strong></p>
+<ol>
+<li>
+<p>In Seerr, go to Settings → Users</p>
+</li>
+<li>
+<p>Enable "Enable Jellyfin Sign-In"</p>
+</li>
+<li>
+<p>Import your Jellyfin users</p>
+</li>
+</ol>
+<!-- todo -->
+<!-- ![Jellyfin Sign-In](../images/jellyfin-signin.png) -->
+
+<p><strong>Import Users:</strong></p>
+<p>Option A (automatic, recommended):</p>
+<ol>
+<li>
+<p>In Jellyfin, go to Dashboard -&gt; Plugins -&gt; Jellyfin Enhanced -&gt; Seerr Settings</p>
+</li>
+<li>
+<p>Enable "Auto import Jellyfin users to Seerr"</p>
+</li>
+<li>
+<p>Optional: click "Import Users Now" to run bulk import immediately</p>
+</li>
+</ol>
+<p>Option B (manual in Seerr):</p>
+<ol>
+<li>
+<p>In Seerr, go to Users page</p>
+</li>
+<li>
+<p>Click "Import Jellyfin Users"</p>
+</li>
+<li>
+<p>Select users to import</p>
+</li>
+<li>
+<p>Save changes</p>
+</li>
+</ol>
+<p><strong>User Access:</strong></p>
+<ul>
+<li>Users WITH access: <img alt="Users with access" src="../../images/users-with-access.png" /></li>
+</ul>
+<ul>
+<li>Users WITHOUT access: <img alt="Users without access" src="../../images/users-no-access.png" /></li>
+</ul>
+<!-- todo -->
+
+<p><strong>Check Logs:</strong></p>
+<ol>
+<li>
+<p>Browser console (F12) for client errors</p>
+</li>
+<li>
+<p>Jellyfin server logs for proxy errors</p>
+</li>
+<li>
+<p>Seerr logs for API errors</p>
+</li>
+</ol>
+<h3 id="tags-not-showing-on-posters">Tags not showing on posters?</h3>
+<p><strong>Enable Feature:</strong></p>
+<ol>
+<li>
+<p>Open Enhanced panel (press <code>?</code>)</p>
+</li>
+<li>
+<p>Go to Settings tab</p>
+</li>
+<li>
+<p>Enable desired tags:</p>
+<ul>
+<li>Quality Tags</li>
+<li>Genre Tags</li>
+<li>Language Tags</li>
+<li>Rating Tags</li>
+<li>Age Rating Tags</li>
+</ul>
+</li>
+<li>
+<p>Adjust position if needed</p>
+</li>
+</ol>
+<p><strong>Clear Cache:</strong></p>
+<ol>
+<li>
+<p>Hard refresh browser (Ctrl+F5)</p>
+</li>
+<li>
+<p>Clear all browser cache</p>
+</li>
+<li>
+<p>Restart browser</p>
+</li>
+</ol>
+<p><strong>Check Metadata:</strong></p>
+<ul>
+<li>Quality tags require media file metadata</li>
+</ul>
+<ul>
+<li>Genre tags require genre information</li>
+</ul>
+<ul>
+<li>Language tags require audio track data</li>
+</ul>
+<ul>
+<li>Rating tags require TMDB/RT ratings</li>
+</ul>
+<ul>
+<li>Age rating tags require a parental rating on the item (or its series)</li>
+</ul>
+<p><strong>Check Console:</strong></p>
+<ol>
+<li>
+<p>Press F12 → Console</p>
+</li>
+<li>
+<p>Look for tag-related errors</p>
+</li>
+<li>
+<p>Report issues on GitHub</p>
+</li>
+</ol>
+<h3 id="bookmarks-not-syncing-across-devices">Bookmarks not syncing across devices?</h3>
+<!-- use a custom title -->
+<div class="admonition info">
+<p class="admonition-title">How it works</p>
+<p>Same user should be able to access bookmarks, from any device</p>
+<p><strong>Bookmarks are stored server-side, but settings are per-browser.</strong></p>
+<p><strong>Stored on Jellyfin server:</strong></p>
+<ul>
+<li><a href="../../advanced/api/#bookmarks-api">Bookmark <strong>data</strong> <code>bookmark.json</code></a></li>
+</ul>
+<ul>
+<li>Spoiler Guard <strong>per-user list and override prefs</strong> <code>spoilerblur.json</code></li>
+</ul>
+<p><strong>Stored in browsers' <code>localStorage</code>:</strong></p>
+<ul>
+<li><a href="../../enhanced/enhanced-features/#smart-bookmarks">Users' <strong>settings</strong></a></li>
+</ul>
+<ul>
+<li>Each browser has independent settings</li>
+</ul>
+</div>
+<p><strong>Troubleshooting:</strong></p>
+<ul>
+<li>Verify same user account</li>
+</ul>
+<ul>
+<li>Check bookmark file exists on server</li>
+</ul>
+<ul>
+<li>Look in <code>{JELLYFIN_DATA_DIR}/plugins/configurations/Jellyfin.Plugin.JellyfinEnhanced/{userId}/bookmark.json</code></li>
+</ul>
+<ul>
+<li>Check browser console for errors</li>
+</ul>
+<h3 id="pause-screen-not-appearing">Pause screen not appearing?</h3>
+<p><strong>Enable Feature:</strong></p>
+<ol>
+<li>
+<p>Open Enhanced panel</p>
+</li>
+<li>
+<p>Go to Settings tab</p>
+</li>
+<li>
+<p>Enable "Custom Pause Screen"</p>
+</li>
+<li>
+<p>Adjust settings as desired</p>
+</li>
+</ol>
+<p><strong>Check Playback:</strong></p>
+<ul class="task-list">
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled checked/><span class="task-list-indicator"></span></label> Must be in fullscreen or theater mode</li>
+</ul>
+<ul class="task-list">
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Pause video (press Space)</li>
+</ul>
+<ul class="task-list">
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Screen should appear after brief delay</li>
+</ul>
+<p><strong>Customize Elements:</strong></p>
+<!-- * EXAMPLE OF A LINK! -->
+<p>See <a href="../../advanced/css-customization/#pause-screen">Pause Screen CSS</a> for hiding/styling elements.</p>
+<h3 id="reviews-elsewhere-or-seerr-icons-not-working">Reviews, Elsewhere, or Seerr icons not working?</h3>
+<p>This is usually due to TMDB API access issues.</p>
+<p><strong>TMDB API Blocked:</strong></p>
+<ul>
+<li>TMDB API may be blocked in your region</li>
+</ul>
+<ul>
+<li>Check Seerr troubleshooting: <a href="https://docs.seerr.dev/troubleshooting#tmdb-failed-to-retrievefetch-xxx">TMDB Access</a></li>
+</ul>
+<ul>
+<li>Use VPN or proxy if needed</li>
+</ul>
+<ul>
+<li>Contact your ISP about API access</li>
+</ul>
+<p><strong>Check Connection:</strong></p>
+<ol>
+<li>
+<p>Open browser console <span class="keys"><kbd class="key-f12">F12</kbd></span></p>
+</li>
+<li>
+<p>Look for TMDB-related errors</p>
+</li>
+<li>
+<p>Check network tab for failed requests</p>
+</li>
+<li>
+<p>Verify Seerr can access TMDB</p>
+</li>
+</ol>
+<h3 id="is-remove-from-continue-watching-next-up-destructive">Is "Remove from Continue Watching / Next Up" destructive?</h3>
+<p><strong>No.</strong> It is non-destructive — your playback position and watched state are always preserved. It only hides the item from the <strong>Continue Watching</strong> (and <strong>Next Up</strong>) row.</p>
+<p><strong>How It Works:</strong></p>
+<ul>
+<li>Adds a <strong>Remove</strong> option to an item's "⋯" menu (and to the long-press / multi-select menu on touch devices) for Continue Watching and Next Up items</li>
+<li>Hides the item from that row only — your progress is <strong>not</strong> reset and the item is <strong>not</strong> marked played</li>
+<li>The hidden state is stored server-side per-user, so it applies across all your devices</li>
+<li>It is enforced server-side, so the row stays tidy on every client — including home screens built by the <a href="https://github.com/IAmParadox27/jellyfin-plugin-home-sections">Home Screen Sections</a> plugin</li>
+</ul>
+<p><strong>Can it be undone?</strong></p>
+<p>Yes:</p>
+<ul>
+<li>Removed items appear in the <strong>Hidden Content</strong> management page, where each has an "Add back" button</li>
+<li>Simply <strong>resuming</strong> a hidden item unhides it automatically</li>
+</ul>
+<p><strong>Use Cases:</strong></p>
+<ul>
+<li>Tidy up the Continue Watching / Next Up rows without losing your place</li>
+<li>Hide a show you're not ready to continue, then resume it later to bring it back</li>
+</ul>
+<hr />
+<h2 id="customization">Customization</h2>
+<h3 id="how-do-i-customize-tag-appearance">How do I customize tag appearance?</h3>
+<p>Use Custom CSS in Jellyfin settings:</p>
+<ol>
+<li>Go to <strong>Dashboard</strong> → <strong>General</strong> → <strong>Custom CSS</strong></li>
+<li>Add your custom styles</li>
+<li>Click <strong>Save</strong></li>
+<li>Refresh browser (Ctrl+F5)</li>
+</ol>
+<p><strong>Examples:</strong></p>
+<div class="language-css highlight"><span class="filename">Hide Quality Tag</span><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="p">.</span><span class="nc">quality-overlay-label</span><span class="o">[</span><span class="nt">data-quality</span><span class="o">=</span><span class="s2">"H264"</span><span class="o">]</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">    </span><span class="k">display</span><span class="p">:</span><span class="w"> </span><span class="kc">none</span><span class="w"> </span><span class="cp">!important</span><span class="p">;</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="p">}</span>
+</span></code></pre></div>
+<div class="language-css highlight"><span class="filename">Change Tag Color</span><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="p">.</span><span class="nc">quality-overlay-label</span><span class="o">[</span><span class="nt">data-quality</span><span class="o">=</span><span class="s2">"4K"</span><span class="o">]</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">    </span><span class="k">background-color</span><span class="p">:</span><span class="w"> </span><span class="kc">purple</span><span class="w"> </span><span class="cp">!important</span><span class="p">;</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="p">}</span>
+</span></code></pre></div>
+<div class="language-css highlight"><span class="filename">Adjust Tag Size</span><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="p">.</span><span class="nc">quality-overlay-label</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">    </span><span class="k">font-size</span><span class="p">:</span><span class="w"> </span><span class="mf">0.9</span><span class="kt">rem</span><span class="w"> </span><span class="cp">!important</span><span class="p">;</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">    </span><span class="k">padding</span><span class="p">:</span><span class="w"> </span><span class="mi">4</span><span class="kt">px</span><span class="w"> </span><span class="mi">8</span><span class="kt">px</span><span class="w"> </span><span class="cp">!important</span><span class="p">;</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="p">}</span>
+</span></code></pre></div>
+<p>See <a href="../../advanced/css-customization/">CSS Customization Guide</a> for complete CSS documentation.</p>
+<h3 id="how-do-i-upload-custom-branding">How do I upload custom branding?</h3>
+<p><strong>Requirements:</strong></p>
+<ul>
+<li><a href="https://github.com/IAmParadox27/jellyfin-plugin-file-transformation">file-transformation plugin</a> installed</li>
+<li>Admin access to Jellyfin</li>
+</ul>
+<p><strong>Steps:</strong></p>
+<ol>
+<li>
+<p>Go to <strong>Dashboard</strong> → <strong>Plugins</strong> → <strong>Jellyfin Enhanced</strong></p>
+</li>
+<li>
+<p>Navigate to <strong>Other Settings</strong> tab</p>
+</li>
+<li>
+<p>Find <strong>Custom Branding</strong> section</p>
+</li>
+<li>
+<p>Upload your images:</p>
+<ul>
+<li>Icon Transparent (header logo)</li>
+<li>Banner Light (dark theme splash)</li>
+<li>Banner Dark (light theme splash)</li>
+<li>Favicon (browser icon)</li>
+</ul>
+</li>
+<li>
+<p>Click <code>Save</code></p>
+</li>
+<li>
+<p>Force refresh <span class="keys"><kbd class="key-control">Ctrl</kbd><span>+</span><kbd class="key-f5">F5</kbd></span></p>
+</li>
+</ol>
+<p><strong>Image Requirements:</strong></p>
+<ul class="task-list">
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled checked/><span class="task-list-indicator"></span></label> PNG or SVG format recommended</li>
+</ul>
+<ul class="task-list">
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled checked/><span class="task-list-indicator"></span></label> Transparent backgrounds for logos</li>
+</ul>
+<ul class="task-list">
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled checked/><span class="task-list-indicator"></span></label> Appropriate dimensions for each type</li>
+</ul>
+<ul class="task-list">
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled checked/><span class="task-list-indicator"></span></label> Files stored in plugin config folder</li>
+</ul>
+<h3 id="why-arent-my-subtitles-using-the-jellyfin-enhanced-styling">Why aren't my subtitles using the Jellyfin Enhanced styling?</h3>
+<p>Jellyfin Enhanced can only style subtitles that Jellyfin draws as text.</p>
+<ul>
+<li><strong>ASS/SSA, PGS and VobSub subtitles</strong> are drawn as images or by Jellyfin's own renderer, so their look comes from the subtitle track and cannot be changed. Choose a text-based track (for example SRT) instead.</li>
+<li><strong>Position</strong> only works when Jellyfin's <strong>Subtitle styling</strong> (User Preferences → Subtitles) is set to <strong>Custom</strong>. Chrome uses the browser's native captions in <strong>Auto</strong> mode, which cannot be repositioned.</li>
+<li><strong>Burned-in subtitles</strong> (drawn into the video during a transcode) cannot be changed.</li>
+</ul>
+<p>See <a href="../../enhanced/enhanced-features/#customizable-subtitles">Customizable Subtitles</a> for the full list.</p>
+<h3 id="how-do-i-turn-off-subtitle-styling-and-use-jellyfins-own">How do I turn off subtitle styling and use Jellyfin's own?</h3>
+<p>Enable <strong>Disable Custom Subtitle Styles</strong> in the Enhanced panel → Settings and reload the page. Your Jellyfin <strong>User Preferences</strong> → <strong>Subtitles</strong> settings then apply unchanged. To do it for every user, enable <strong>Disable Custom Subtitle Styles by default</strong> in the plugin settings, save, then use <strong>Overwrite everyone's personal settings</strong> in Quick Actions. The default alone only applies to users who have no saved settings yet.</p>
+<h3 id="can-i-change-tag-positions">Can I change tag positions?</h3>
+<p>Yes, via Enhanced panel settings:</p>
+<ol>
+<li>
+<p>Open Enhanced panel (press <span class="keys"><kbd class="key-question">?</kbd></span>)</p>
+</li>
+<li>
+<p>Go to Settings tab</p>
+</li>
+<li>
+<p>Find tag position options</p>
+</li>
+<li>
+<p>Select position (top-left, top-right, bottom-left, bottom-right)</p>
+</li>
+<li>
+<p>Changes apply immediately</p>
+</li>
+</ol>
+<p><strong>Advanced Positioning:</strong></p>
+<div class="language-css highlight"><span class="filename">Change tag positions</span><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="p">.</span><span class="nc">quality-overlay-container</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">    </span><span class="k">top</span><span class="p">:</span><span class="w"> </span><span class="mi">10</span><span class="kt">px</span><span class="w"> </span><span class="cp">!important</span><span class="p">;</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">    </span><span class="k">right</span><span class="p">:</span><span class="w"> </span><span class="mi">10</span><span class="kt">px</span><span class="w"> </span><span class="cp">!important</span><span class="p">;</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="p">}</span>
+</span></code></pre></div>
+<hr />
+<h2 id="troubleshooting">Troubleshooting</h2>
+<h3 id="how-do-i-gather-logs-for-bug-reports">How do I gather logs for bug reports?</h3>
+<p><strong>Browser Console Logs:</strong></p>
+<ol>
+<li>
+<p>Press <span class="keys"><kbd class="key-f12">F12</kbd></span> to open developer tools</p>
+</li>
+<li>
+<p>Go to Console tab</p>
+</li>
+<li>
+<p>Filter by <code>🪼Jellyfin Enhanced</code></p>
+</li>
+<li>
+<p>Look for errors (red text)</p>
+</li>
+<li>
+<p>Copy error messages</p>
+</li>
+<li>
+<p>Include in bug report</p>
+</li>
+</ol>
+<p><strong>Network Logs:</strong></p>
+<ol>
+<li>
+<p>Press <span class="keys"><kbd class="key-f12">F12</kbd></span> → <code>Network</code> tab</p>
+</li>
+<li>
+<p>Filter by <code>JellyfinEnhanced</code></p>
+</li>
+<li>
+<p>Look for failed requests (red)</p>
+</li>
+<li>
+<p>Check status codes</p>
+</li>
+<li>
+<p>Include in bug report</p>
+</li>
+</ol>
+<p><strong>Server Logs:</strong></p>
+<ol>
+<li>
+<p>Go to <strong>Dashboard</strong> → <strong>Logs</strong></p>
+</li>
+<li>
+<p>Look for <code>JellyfinEnhanced</code> entries</p>
+</li>
+<li>
+<p>Check log files: <code>JellyfinEnhanced_yyyy-mm-dd.log</code></p>
+</li>
+<li>
+<p>Copy relevant errors</p>
+</li>
+<li>
+<p>Include in bug report</p>
+</li>
+</ol>
+<p><strong>What to Include:</strong></p>
+<ul>
+<li>Plugin version</li>
+</ul>
+<ul>
+<li>Jellyfin version</li>
+</ul>
+<ul>
+<li>Browser and version</li>
+</ul>
+<ul>
+<li>Operating system</li>
+</ul>
+<ul>
+<li>Steps to reproduce</li>
+</ul>
+<ul>
+<li>Console errors</li>
+</ul>
+<ul>
+<li>Server log errors</li>
+</ul>
+<ul>
+<li>Screenshots if applicable</li>
+</ul>
+<h3 id="common-error-messages-and-solutions">Common error messages and solutions</h3>
+<table>
+<thead>
+<tr>
+<th>Error</th>
+<th>Solution</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Access to the path '/jellyfin/jellyfin-web/index.html' is denied.</code></td>
+<td>Install <a href="https://github.com/IAmParadox27/jellyfin-plugin-file-transformation">file-transformation plugin</a> or follow <a href="../../installation/troubleshooting/#docker">Docker workaround</a></td>
+</tr>
+<tr>
+<td><code>Access to the path 'C:\Program Files\Jellyfin\Server\jellyfin-web\index.html' is denied.</code></td>
+<td>Grant "NETWORK SERVICE" Read/Write permissions to Jellyfin folder</td>
+</tr>
+<tr>
+<td>Plugin installed but scripts don't load</td>
+<td>Run "Jellyfin Enhanced Startup" scheduled task, verify trigger exists</td>
+</tr>
+<tr>
+<td>Reviews/Elsewhere/Seerr icons not working</td>
+<td>TMDB API may be blocked in your region, see <a href="https://docs.seerr.dev/troubleshooting#tmdb-failed-to-retrievefetch-xxx">Seerr troubleshooting</a></td>
+</tr>
+<tr>
+<td>Seerr search not working</td>
+<td>Enable "Jellyfin Sign-In" in Seerr. Then either enable plugin auto import and run "Import Users Now", or import users manually in Seerr. Also verify user is not in blocked users list.</td>
+</tr>
+<tr>
+<td>Tags not appearing</td>
+<td>Enable in settings, clear cache, verify metadata exists</td>
+</tr>
+<tr>
+<td>Bookmarks not saving</td>
+<td>Check server logs, verify user data folder permissions</td>
+</tr>
+<tr>
+<td>Admin config page tabs not switching</td>
+<td>May be caused by Cloudflare Rocket Loader — try disabling it for your Jellyfin domain. See <a href="../../installation/troubleshooting/#admin-config-page-tabs-not-switching">troubleshooting</a></td>
+</tr>
+<tr>
+<td>Calendar/Requests custom tab shows blank screen</td>
+<td>Disable Cloudflare Rocket Loader for your Jellyfin domain. See <a href="../../arr/troubleshooting-support/#calendar-not-loading">arr troubleshooting</a></td>
+</tr>
+</tbody>
+</table>
+<h3 id="native-home-tabs-and-the-custom-tabs-plugin">Native Home tabs and the Custom Tabs plugin</h3>
+<p>Jellyfin Enhanced's native Home tabs (Bookmarks, Hidden Content, Requests, Calendar, Recommendations, Activity) work alongside your own <a href="https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs">Custom Tabs</a> tabs:</p>
+<ul>
+<li>They always come after the Custom Tabs tabs, in the order and at the URLs Jellyfin expects, on both the Modern and Legacy layouts. Adding or removing a Custom Tab moves them along without a page reload.</li>
+<li>Their links look like <code>#/home?tab=4&amp;jeTab=bookmarks</code>. The <code>jeTab</code> part keeps a saved link pointing at the right page even after the number changes.</li>
+<li>A page can use the native tab or Custom Tabs, not both; the settings page turns the other one off. If you also added a Custom Tabs entry for the same page by hand, you will see it twice. Remove that entry in the Custom Tabs settings.</li>
+<li>A disabled Custom Tabs or Plugin Pages plugin counts as not installed once Jellyfin has restarted. Until then it is still running and still shows its pages.</li>
+</ul>
+<h3 id="plugin-conflicts">Plugin conflicts?</h3>
+<p><strong>Known Conflicts:</strong></p>
+<ul>
+<li>None currently documented</li>
+</ul>
+<p><strong>Potential Issues:</strong></p>
+<ul>
+<li>Multiple JavaScript injection plugins</li>
+</ul>
+<ul>
+<li>Custom CSS overriding plugin styles</li>
+</ul>
+<ul>
+<li>Browser extensions blocking scripts</li>
+</ul>
+<p><strong>Troubleshooting:</strong></p>
+<ol>
+<li>
+<p>Disable other plugins temporarily</p>
+</li>
+<li>
+<p>Test with clean browser profile</p>
+</li>
+<li>
+<p>Check for CSS conflicts</p>
+</li>
+<li>
+<p>Disable browser extensions</p>
+</li>
+<li>
+<p>Report conflicts on GitHub</p>
+</li>
+</ol>
+<h3 id="performance-issues">Performance issues?</h3>
+<p><strong>Optimization Tips:</strong></p>
+<ol>
+<li>
+<p>Disable unused features in settings</p>
+</li>
+<li>
+<p>Reduce number of visible tags</p>
+</li>
+<li>
+<p>Clear browser cache regularly</p>
+</li>
+<li>
+<p>Use modern browser version</p>
+</li>
+<li>
+<p>Check server resources</p>
+</li>
+</ol>
+<p><strong>Heavy Features:</strong></p>
+<ul>
+<li>Seerr discovery pages (many API calls)</li>
+</ul>
+<ul>
+<li>People tags (age calculations)</li>
+</ul>
+<ul>
+<li>Multiple tag types enabled</li>
+</ul>
+<ul>
+<li>Large bookmark collections</li>
+</ul>
+<p><strong>Improve Performance:</strong></p>
+<ul>
+<li>Enable only needed features</li>
+</ul>
+<ul>
+<li>Use tag filters to reduce display</li>
+</ul>
+<ul>
+<li>Clear old bookmarks</li>
+</ul>
+<ul>
+<li>Limit Seerr results</li>
+</ul>
+<hr />
+<h2 id="how-can-i-contribute-translations"><a href="../contributing-translations/">How can I contribute translations?</a></h2>
+<h2 id="how-can-i-request-features"><a href="../feature-requests/">How can I request features?</a></h2>
+<h2 id="how-can-i-report-bugs"><a href="../report-issues/">How can I report bugs?</a></h2>
+<hr />
+<h2 id="support-community">Support &amp; Community</h2>
+<h3 id="where-can-i-get-help">Where can I get help?</h3>
+<p><strong>Official Channels:</strong></p>
+<ul>
+<li><a href="https://github.com/n00bcodr/Jellyfin-Enhanced/issues">GitHub Issues</a> - Bug reports and feature requests</li>
+<li><a href="https://github.com/n00bcodr/Jellyfin-Enhanced/discussions">GitHub Discussions</a> - General questions and discussion</li>
+<li><a href="https://discord.gg/EYNFf7y4CG">Discord Community</a> - Real-time chat and support</li>
+</ul>
+<p><strong>Before Asking:</strong></p>
+<ol>
+<li>Read this FAQ</li>
+<li>Check <a href="../../installation/installation/">Installation Guide</a></li>
+<li>Review <a href="../../enhanced/enhanced-features/">Enhanced Features Guide</a></li>
+<li>Search existing issues</li>
+<li>Check browser console for errors</li>
+</ol>
+<p><strong>When Asking for Help:</strong></p>
+<ul>
+<li>Describe the problem clearly</li>
+<li>Include plugin and Jellyfin versions</li>
+<li>Provide browser and OS info</li>
+<li>Share relevant logs</li>
+<li>Include screenshots if helpful</li>
+<li>Be patient and respectful</li>
+</ul>
+<h2 id="related-projects">Related Projects</h2>
+<h3 id="other-projects-by-n00bcodr">Other projects by n00bcodr</h3>
+<ul>
+<li><a href="https://github.com/n00bcodr/Jellyfin-Elsewhere">Jellyfin-Elsewhere</a> - Streaming provider lookup (standalone)</li>
+<li><a href="https://github.com/n00bcodr/JellyfinTweaks">Jellyfin-Tweaks</a> - Additional tweaks plugin</li>
+<li><a href="https://github.com/n00bcodr/Jellyfin-JavaScript-Injector">Jellyfin-JavaScript-Injector</a> - Custom script injection</li>
+<li><a href="https://github.com/n00bcodr/Jellyfish/">Jellyfish</a> - Custom Jellyfin theme</li>
+</ul>
+<h3 id="recommended-plugins">Recommended plugins</h3>
+<ul>
+<li><a href="https://github.com/IAmParadox27/jellyfin-plugin-file-transformation">File Transformation</a> - Safe file modifications</li>
+<li><a href="https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs">Custom Tabs</a> - Custom navigation tabs</li>
+<li><a href="https://github.com/IAmParadox27/jellyfin-plugin-pages">Plugin Pages</a> - Helps Plugins create custom pages for settings and info</li>
+<li><a href="https://github.com/ranaldsgift/KefinTweaks">Kefin Tweaks</a> - Watchlist and more</li>
+</ul>
+<hr />
+<h2 id="still-have-questions">Still Have Questions?</h2>
+<p>If your question isn't answered here:</p>
+<ol>
+<li>Search <a href="https://github.com/n00bcodr/Jellyfin-Enhanced/discussions">GitHub Discussions</a></li>
+<li>Ask in <a href="https://discord.gg/EYNFf7y4CG">Discord Community</a></li>
+<li>Create a <a href="https://github.com/n00bcodr/Jellyfin-Enhanced/issues/new">GitHub Issue</a></li>
+</ol>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../../advanced/project-structure/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Project Structure">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Project Structure
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../report-issues/" class="md-footer__link md-footer__link--next" aria-label="Next: Report issues">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Report issues
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Copyright &copy;2026 n00bcodr. Made with 💜 for Jellyfin and the community
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+    <a href="https://github.com/n00bcodr/Jellyfin-Enhanced" target="_blank" rel="noopener" title="GitHub Repository" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+    
+    
+    
+    
+    <a href="https://discord.gg/EYNFf7y4CG" target="_blank" rel="noopener" title="Jellyfin Community Discord - Jellyfin Enhanced Channel" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M492.5 69.8c-.2-.3-.4-.6-.8-.7-38.1-17.5-78.4-30-119.7-37.1-.4-.1-.8 0-1.1.1s-.6.4-.8.8c-5.5 9.9-10.5 20.2-14.9 30.6-44.6-6.8-89.9-6.8-134.4 0-4.5-10.5-9.5-20.7-15.1-30.6-.2-.3-.5-.6-.8-.8s-.7-.2-1.1-.2C162.5 39 122.2 51.5 84.1 69c-.3.1-.6.4-.8.7C7.1 183.5-13.8 294.6-3.6 404.2c0 .3.1.5.2.8s.3.4.5.6c44.4 32.9 94 58 146.8 74.2.4.1.8.1 1.1 0s.7-.4.9-.7c11.3-15.4 21.4-31.8 30-48.8.1-.2.2-.5.2-.8s0-.5-.1-.8-.2-.5-.4-.6-.4-.3-.7-.4c-15.8-6.1-31.2-13.4-45.9-21.9-.3-.2-.5-.4-.7-.6s-.3-.6-.3-.9 0-.6.2-.9.3-.5.6-.7c3.1-2.3 6.2-4.7 9.1-7.1.3-.2.6-.4.9-.4s.7 0 1 .1c96.2 43.9 200.4 43.9 295.5 0 .3-.1.7-.2 1-.2s.7.2.9.4c2.9 2.4 6 4.9 9.1 7.2.2.2.4.4.6.7s.2.6.2.9-.1.6-.3.9-.4.5-.6.6c-14.7 8.6-30 15.9-45.9 21.8-.2.1-.5.2-.7.4s-.3.4-.4.7-.1.5-.1.8.1.5.2.8c8.8 17 18.8 33.3 30 48.8.2.3.6.6.9.7s.8.1 1.1 0c52.9-16.2 102.6-41.3 147.1-74.2.2-.2.4-.4.5-.6s.2-.5.2-.8c12.3-126.8-20.5-236.9-86.9-334.5zm-302 267.7c-29 0-52.8-26.6-52.8-59.2s23.4-59.2 52.8-59.2c29.7 0 53.3 26.8 52.8 59.2 0 32.7-23.4 59.2-52.8 59.2m195.4 0c-29 0-52.8-26.6-52.8-59.2s23.4-59.2 52.8-59.2c29.7 0 53.3 26.8 52.8 59.2 0 32.7-23.2 59.2-52.8 59.2"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.instant", "navigation.tracking", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.footer", "navigation.indexes", "toc.follow", "toc.integrate", "search.suggest", "search.highlight", "search.share", "content.code.copy", "content.code.annotate", "announce.dismiss"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.c21346df.min.js"></script>
+      
+        <script src="../../javascripts/extra.js"></script>
+      
+    
+  </body>
+</html>
