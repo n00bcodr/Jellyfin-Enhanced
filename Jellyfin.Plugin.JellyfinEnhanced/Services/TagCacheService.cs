@@ -1818,10 +1818,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private long _lastStamp;
 
         /// <summary>
-        /// A LastUpdated stamp later than every stamp already handed out or published: the wall-clock millisecond, or
-        /// one past the newest when that is not later. Delta reads return entries strictly after the client's cursor,
-        /// so two publications in the same millisecond must not share a stamp, or the second would never reach a
-        /// browser that read the first.
+        /// A LastUpdated stamp later than every stamp already handed out or published and than the delta cursor: the
+        /// wall-clock millisecond, or one past the newest when that is not later. Delta reads return entries strictly
+        /// after the client's cursor, so two publications in the same millisecond must not share a stamp, and a stamp
+        /// must not equal a cursor a pass set to the clock in the same millisecond (or one restored from disk while
+        /// the clock is behind it), or the entry would never reach a browser holding that cursor.
         /// </summary>
         internal long NextStamp()
         {
@@ -1829,7 +1830,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             while (true)
             {
                 var last = Interlocked.Read(ref _lastStamp);
-                var next = Math.Max(now, Math.Max(last, Interlocked.Read(ref _maxLastUpdated)) + 1);
+                var next = Math.Max(now, Math.Max(Math.Max(last, Interlocked.Read(ref _maxLastUpdated)), Interlocked.Read(ref _lastModified)) + 1);
                 if (Interlocked.CompareExchange(ref _lastStamp, next, last) == last) return next;
             }
         }
