@@ -917,9 +917,9 @@ Use local GUID routes for Jellyfin metadata, the generic TMDB route for external
 
 | Method | Path | Access | Inputs → response |
 |---|---|---|---|
-| GET | `studio/{studioId}` | Authenticated | Jellyfin GUID → `{id,name,tmdbId,type}`. |
-| GET | `boxset/{boxsetId}` | Authenticated | Jellyfin BoxSet GUID → `{id,name,tmdbId,type}`. |
-| GET | `genre/{genreId}` | Authenticated | Jellyfin GUID → `{id,name,type}`. |
+| GET | `studio/{studioId}` | Authenticated | Jellyfin GUID → `{id,name,tmdbId,type}`. A studio is answered to any caller; another item only when the caller can see it, else `404`. |
+| GET | `boxset/{boxsetId}` | Authenticated | Jellyfin BoxSet GUID → `{id,name,tmdbId,type}`; `404` for a box set the caller cannot see. |
+| GET | `genre/{genreId}` | Authenticated | Jellyfin GUID → `{id,name,type}`. A genre is answered to any caller; another item only when the caller can see it, else `404`. |
 | GET | `person/{personId}` | Authenticated | Jellyfin GUID, optional query `itemId` GUID → person info. |
 | GET | `people/info` | Authenticated | Query `ids` (GUID list), optional `itemId` → `{"people":{"<personIdN>":<info>}}`. |
 | GET | `tmdb/search/person` | Seerr-linked | Required nonblank `query` → Seerr search response, page 1. |
@@ -1828,7 +1828,7 @@ Read now-playing sessions or send an administrator message to sessions with usab
 | GET | `active-streams/sessions` | Administrator, or authenticated with viewer setting enabled | Bare now-playing session array. |
 | POST | `active-streams/broadcast` | Administrator | `{Header,Text,TimeoutMs}` → `{sent,skipped,errors}`. |
 | GET | `proxy/avatar` | Authenticated | Query `path` → cached raster image bytes. |
-| GET | `items/by-providers` | Authenticated | Query provider dictionary and optional `types` → one matching GUID. |
+| GET | `items/by-providers` | Authenticated | Query provider dictionary and optional `types` → one matching GUID the caller can see. |
 
 ```bash
 curl -H "Authorization: MediaBrowser Token=\"$TOKEN\"" "$JE_URL/active-streams/sessions"
@@ -1872,7 +1872,7 @@ curl -G -H "Authorization: MediaBrowser Token=\"$TOKEN\"" \
 
 Provider lookup accepts multiple dictionary entries such as `providers[Tmdb]`, `providers[Imdb]`. `types` is a comma-separated item-kind list parsed case-insensitively; invalid kinds are ignored. No IDs/match returns `400` with `No provider ids supplied or no items found`; success is a GUID value.
 
-Repository lookup is not filtered to caller library access and does not establish permission to view the returned item.
+For non-administrators the match is limited to items the caller can see (library access and parental rules, as Jellyfin's own item routes apply them): a title held only where the caller has no access returns the same `400` as one the server does not hold. Administrators get the first match in any library.
 
 ## Branding
 

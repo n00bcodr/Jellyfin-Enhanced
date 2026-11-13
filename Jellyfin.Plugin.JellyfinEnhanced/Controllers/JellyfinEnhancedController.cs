@@ -2569,13 +2569,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return ProxyJellyseerrRequest(AppendDiscoverFilters($"/api/v1/discover/tv/upcoming?page={page}"), HttpMethod.Get);
         }
 
+        /// <summary>
+        /// The item behind <paramref name="id"/> when the caller may see it, as Jellyfin decides:
+        /// a studio, genre or person for any signed-in caller (Jellyfin's own /Studios, /Genres and
+        /// /Persons routes answer those to anyone), any other item only within the caller's library
+        /// access and parental rules (Jellyfin's user item routes). Null otherwise, so a hidden item
+        /// is answered exactly as a missing one. Administrators get any item, as before.
+        /// </summary>
+        private BaseItem? GetItemForCaller(Guid id)
+        {
+            var item = _libraryManager.GetItemById(id);
+            if (item == null
+                || item is MediaBrowser.Controller.Entities.Studio or MediaBrowser.Controller.Entities.Genre or MediaBrowser.Controller.Entities.Person
+                || IsAdminUser())
+            {
+                return item;
+            }
+
+            var userId = UserHelper.GetCurrentUserId(User);
+            var user = userId.HasValue ? _userManager.GetUserById(userId.Value) : null;
+            return user == null ? null : _libraryManager.GetItemById<BaseItem>(id, user);
+        }
+
         [HttpGet("studio/{studioId}")]
         [Authorize]
         public IActionResult GetStudioInfo(Guid studioId)
         {
             try
             {
-                var studio = _libraryManager.GetItemById(studioId);
+                var studio = GetItemForCaller(studioId);
                 if (studio == null)
                 {
                     return NotFound(new { message = "Studio not found" });
@@ -2609,7 +2631,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         {
             try
             {
-                var boxset = _libraryManager.GetItemById(boxsetId);
+                var boxset = GetItemForCaller(boxsetId);
                 if (boxset == null || boxset.GetType().Name != "BoxSet")
                 {
                     return NotFound(new { message = "BoxSet not found" });
@@ -2999,7 +3021,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         {
             try
             {
-                var genre = _libraryManager.GetItemById(genreId);
+                var genre = GetItemForCaller(genreId);
                 if (genre == null)
                 {
                     return NotFound(new { message = "Genre not found" });
@@ -13773,6 +13795,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
 
             var itemIds = _itemRepository.GetItemIdsByProviders(providers, includeItemTypes);
+            if (!IsAdminUser())
+            {
+                // Only a title the caller may see, as Jellyfin's own item routes decide, so one held
+                // only in a library they cannot open reads as one the server does not hold.
+                // Administrators get the same answer as before.
+                var userId = UserHelper.GetCurrentUserId(User);
+                var user = userId.HasValue ? _userManager.GetUserById(userId.Value) : null;
+                itemIds = itemIds.Where(id => user != null && _libraryManager.GetItemById<BaseItem>(id, user) != null).Take(1).ToList();
+            }
 
             if (itemIds.Count == 0)
                 return BadRequest("No provider ids supplied or no items found");
