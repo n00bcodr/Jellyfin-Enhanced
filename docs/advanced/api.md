@@ -4,7 +4,7 @@ Use Jellyfin Enhanced (JE)'s API to manage bookmarks, reviews, and personal sett
 
 To use these APIs from a custom Jellyfin client, you need an HTTP client and a Jellyfin credential. You do not need the injected JE scripts.
 
-This reference covers the 202 method/path entries in plugin version **12.14.0.0**. Use the endpoint tables to check access requirements, inputs, responses, and limits.
+This reference covers the 203 method/path entries in plugin version **12.14.0.0**. Use the endpoint tables to check access requirements, inputs, responses, and limits.
 
 Paths in endpoint tables are relative to `/JellyfinEnhanced/`. Braces mark path parameters; replace them before making a request. The catch-all routes serve only the resources described below.
 
@@ -933,6 +933,7 @@ Use local GUID routes for Jellyfin metadata, the generic TMDB route for external
 | GET | `tmdb/validate` | Administrator | Supplied query `apiKey` → `{"ok":true}`. |
 | GET | `tmdb/{**apiPath}` | Authenticated | TMDB `/3/` resource path and query → upstream TMDB JSON/status. |
 | GET | `watch-providers` | Authenticated | Query `items`, optional `region` → regional flat-rate provider map. |
+| GET | `jellyseerr/streaming-region` | Authenticated | The caller's Seerr streaming region (own setting, else Seerr's global) → `{ region, source }` (US when Seerr has none set, as Seerr itself does). |
 | GET | `logo/{size}/{file}` | Anonymous | `size` `w45` or `w92`, `file` a logo file name the server has seen in a Logos lookup, spelled exactly as TMDB spells it (case-sensitive) → the image from the server's cache; `404` otherwise. |
 
 Local lookups return `404` if absent and `500` on lookup errors. Boxset checks type; single studio/genre/person actions do not explicitly enforce their named type. They are local metadata lookups, rather than Seerr proxies.
@@ -1506,7 +1507,7 @@ Neither configuration endpoint exposes provider API keys. `TmdbEnabled` and `Mdb
 
     | Fields | JSON type |
     |---|---|
-    | `TmdbEnabled`, `EnableCustomSplashScreen`, `ElsewhereEnabled`, `ElsewhereSeasonProviders`, `AutoPauseEnabled`, `AutoResumeEnabled`, `AutoPipEnabled`, `AutoSkipIntro` | Boolean |
+    | `TmdbEnabled`, `EnableCustomSplashScreen`, `ElsewhereEnabled`, `ElsewhereSeasonProviders`, `ElsewhereUseSeerrRegion`, `AutoPauseEnabled`, `AutoResumeEnabled`, `AutoPipEnabled`, `AutoSkipIntro` | Boolean |
     | `AutoSkipOutro`, `LongPress2xEnabled`, `RandomButtonEnabled`, `RandomIncludeMovies`, `RandomIncludeShows`, `RandomUnwatchedOnly`, `RandomScopeCurrentContainer`, `ShowWatchProgress` | Boolean |
     | `ShowFileSizes`, `RemoveContinueWatchingEnabled`, `ShowAudioLanguages`, `ShowReviews`, `ShowUserReviews`, `ReviewsExpandedByDefault`, `HideReviewsFromHiddenUsers`, `HideReviewsFromDisabledUsers` | Boolean |
     | `ShowAwards`, `DoesTheDogDieEnabled`, `MdblistEnabled`, `MdblistRatingsEnabled`, `MdblistRatingsShowOnItemDetails`, `MdblistRatingsShowPercentSymbol`, `ShowReleaseDates`, `ShowUserRatingOnPosters`, `ShowUserRatingDash` | Boolean |
@@ -1982,7 +1983,7 @@ These are resource URLs, separate from Jellyfin web hash navigation or placement
 
 ## Full Endpoint Index
 
-The endpoint tables above enumerate all 202 controller method/path entries, including the three catch-all templates. Each group documents effective access, inputs, response shape, and limits; shared proxy rows intentionally retain the configured upstream service's JSON contract.
+The endpoint tables above enumerate all 203 controller method/path entries, including the three catch-all templates. Each group documents effective access, inputs, response shape, and limits; shared proxy rows intentionally retain the configured upstream service's JSON contract.
 
 For implementation details, [JellyfinEnhancedController.cs](https://github.com/n00bcodr/Jellyfin-Enhanced/blob/main/Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs) implements all indexed routes except `catchup/*`, which is in [CatchUpController.cs](https://github.com/n00bcodr/Jellyfin-Enhanced/blob/main/Jellyfin.Plugin.JellyfinEnhanced/Controllers/CatchUpController.cs). These upstream source links may advance beyond this versioned reference.
 

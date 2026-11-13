@@ -1058,6 +1058,18 @@
         return baseUrl;
     };
 
+    // The signed-in user's Seerr "Streaming Region" (own setting, else Seerr's
+    // global), resolved once per user session. Null until known or when unset.
+    let streamingRegionPromise = null;
+    api.streamingRegion = null;
+    api.getStreamingRegion = function() {
+        if (!streamingRegionPromise) {
+            streamingRegionPromise = JE.core.api.fetch(ApiClient.getUrl('/JellyfinEnhanced/jellyseerr/streaming-region'))
+                .then(data => { api.streamingRegion = /^[A-Z]{2}$/.test(data?.region || '') ? data.region : null; return api.streamingRegion; })
+                .catch(() => { streamingRegionPromise = null; return null; });
+        }
+        return streamingRegionPromise;
+    };
     // The Seerr identity (linked user, permissions, override rules) is
     // per-Jellyfin-user; a sticky success cached for user A must not answer
     // for user B after an SPA user switch.
@@ -1066,9 +1078,15 @@
         cachedUserStatusAt = 0;
         cachedOverrideRules = null;
         overrideRulesCachedAt = 0;
+        streamingRegionPromise = null;
+        api.streamingRegion = null;
         // Allow the status banner to surface again for the new user.
         window.__JE_userStatusBannerShown = null;
     });
+
+    // Resolve early when the admin option is on, so sync readers (discovery filters,
+    // poster icons, More Info) already have the region by the time they render.
+    if (JE.pluginConfig?.ElsewhereUseSeerrRegion && JE.pluginConfig?.JellyseerrEnabled) api.getStreamingRegion();
 
     // Expose the API module on the global JE object
     JE.jellyseerrAPI = api;

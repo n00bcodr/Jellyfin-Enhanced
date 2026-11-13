@@ -2115,6 +2115,94 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return null;
         }
 
+        /// <summary>
+        /// The streaming region Seerr itself shows watch providers for: the caller's
+        /// own Seerr "Streaming Region" when set, otherwise Seerr's global one, otherwise
+        /// US (what Seerr itself falls back to). Null only when Seerr can't be read.
+        /// Response: { "region": "IN" | null, "source": "user" | "seerr" | "default" | null }.
+        /// </summary>
+        [HttpGet("jellyseerr/streaming-region")]
+        [Authorize]
+        public async Task<IActionResult> GetSeerrStreamingRegion()
+        {
+            Response.Headers["Cache-Control"] = "no-store";
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null || !config.JellyseerrEnabled || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.JellyseerrApiKey))
+            {
+                return StatusCode(503, "Seerr integration is not configured or enabled.");
+            }
+
+            var callerId = UserHelper.GetCurrentUserId(User)?.ToString();
+            if (string.IsNullOrEmpty(callerId))
+            {
+                return Forbid();
+            }
+
+            var seerrUser = await GetJellyseerrUser(callerId);
+            var aborted = HttpContext.RequestAborted;
+            var httpClient = Helpers.Jellyseerr.SeerrHttpHelper.CreateClient(_httpClientFactory);
+
+            // (reachable, region): region is null when Seerr answered but has none set.
+            async Task<(bool Ok, string? Region)> ReadRegionAsync(string baseUrl, string path)
+            {
+                var requestUri = $"{baseUrl.TrimEnd('/')}{path}";
+                using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(HttpMethod.Get, requestUri, config.JellyseerrApiKey);
+                using var response = await httpClient.SendAsync(request, aborted).ConfigureAwait(false);
+                var (body, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
+                if (error != null || body == null)
+                {
+                    return (false, null);
+                }
+
+                using var doc = JsonDocument.Parse(body);
+                if (doc.RootElement.ValueKind == JsonValueKind.Object
+                    && doc.RootElement.TryGetProperty("streamingRegion", out var el) && el.ValueKind == JsonValueKind.String)
+                {
+                    var code = el.GetString()?.Trim().ToUpperInvariant();
+                    return (true, Services.WatchProvidersBatch.IsValidRegion(code) ? code : null);
+                }
+
+                return (true, null);
+            }
+
+            foreach (var url in config.JellyseerrUrls.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                try
+                {
+                    var trimmed = url.Trim();
+                    if (seerrUser != null)
+                    {
+                        var own = await ReadRegionAsync(trimmed, $"/api/v1/user/{seerrUser.Id}/settings/main").ConfigureAwait(false);
+                        if (own.Region != null)
+                        {
+                            return Ok(new { region = own.Region, source = "user" });
+                        }
+                    }
+
+                    var global = await ReadRegionAsync(trimmed, "/api/v1/settings/main").ConfigureAwait(false);
+                    if (!global.Ok)
+                    {
+                        continue;
+                    }
+
+                    // Seerr itself shows US when neither the user nor the server sets one.
+                    return global.Region != null
+                        ? Ok(new { region = global.Region, source = "seerr" })
+                        : Ok(new { region = "US", source = "default" });
+                }
+                catch (OperationCanceledException) when (aborted.IsCancellationRequested)
+                {
+                    return StatusCode(499);
+                }
+                catch (Exception ex) when (ex is HttpRequestException or JsonException or OperationCanceledException or IOException)
+                {
+                    _logger.Warning($"Could not read the Seerr streaming region from a Seerr URL: {ex.Message}");
+                }
+            }
+
+            return Ok(new { region = (string?)null, source = (string?)null });
+        }
+
         [HttpGet("jellyseerr/tv/{tmdbId}")]
         [Authorize]
         public Task<IActionResult> GetTvShow(int tmdbId)
@@ -2462,7 +2550,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
-            Response.Headers["Cache-Control"] = "private, max-age=300";
+            Response.Headers["Cache-Control"] = "no-store";
             return Ok(new { source = snapshot.Source, movies = snapshot.Movies, series = snapshot.Series });
         }
 
@@ -3948,6 +4036,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.DEFAULT_PROVIDERS,
                 config.IGNORE_PROVIDERS,
                 config.ElsewhereSeasonProviders,
+                config.ElsewhereUseSeerrRegion,
                 config.ElsewhereCustomBrandingText,
                 config.ElsewhereCustomBrandingImageUrl,
                 config.ClearLocalStorageTimestamp,
@@ -4694,9 +4783,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             Response.Headers["Cache-Control"] = "no-store";
 
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null || string.IsNullOrEmpty(config.TMDB_API_KEY))
+            // Without a TMDB key the providers come from Seerr's own title detail.
+            var useSeerr = config != null && string.IsNullOrEmpty(config.TMDB_API_KEY)
+                && config.JellyseerrEnabled && !string.IsNullOrEmpty(config.JellyseerrUrls) && !string.IsNullOrEmpty(config.JellyseerrApiKey);
+            if (config == null || (string.IsNullOrEmpty(config.TMDB_API_KEY) && !useSeerr))
             {
-                return StatusCode(503, "TMDB API key is not configured.");
+                return StatusCode(503, "Neither a TMDB API key nor the Seerr integration is configured.");
             }
 
             if (!Services.WatchProvidersBatch.TryParseItems(items, out var requested, out var itemsError))
@@ -4739,6 +4831,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                 }
                                 break;
                         }
+                    }
+
+                    if (useSeerr)
+                    {
+                        // The caller's Seerr detail: its response cache, Seerr user and
+                        // permission checks. Anything but a readable 200 stays null.
+                        var seerr = await ProxyJellyseerrRequest($"/api/v1/{item.MediaType}/{item.TmdbId}", HttpMethod.Get).ConfigureAwait(false);
+                        if (seerr is ContentResult { StatusCode: null or 200, Content: { } seerrJson })
+                        {
+                            results[item.Key] = Services.WatchProvidersBatch.ExtractSeerrFlatrate(seerrJson, regionCode);
+                        }
+                        return;
                     }
 
                     var response = await _tmdbResponseCache.GetAsync(item.ApiPath, string.Empty, apiKey, aborted).ConfigureAwait(false);

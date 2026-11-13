@@ -53,6 +53,21 @@ public class IntegrationWatchProvidersTests
     }
 
     [Fact]
+    public void ExtractSeerrFlatrateReadsTheRequestedRegionOnly()
+    {
+        const string json = "{\"watchProviders\":[{\"iso_3166_1\":\"AU\",\"flatrate\":[{\"id\":1,\"name\":\"Other\",\"logoPath\":\"/o.png\"}]},"
+            + "{\"iso_3166_1\":\"US\",\"buy\":[{\"id\":9,\"name\":\"Store\",\"logoPath\":\"/s.png\"}],"
+            + "\"flatrate\":[{\"id\":8,\"name\":\"Netflix\",\"logoPath\":\"/n.png\"},{\"id\":2,\"name\":\"Bad\",\"logoPath\":\"//evil\"}]}]}";
+        var providers = WatchProvidersBatch.ExtractSeerrFlatrate(json, "US")!;
+        var only = Assert.Single(providers);
+        Assert.Equal(new WatchProvidersBatch.Provider(8, "Netflix", "/n.png"), only);
+        Assert.Empty(WatchProvidersBatch.ExtractSeerrFlatrate(json, "DE")!);
+        Assert.Empty(WatchProvidersBatch.ExtractSeerrFlatrate("{}", "US")!);
+        Assert.Null(WatchProvidersBatch.ExtractSeerrFlatrate("{", "US"));
+        Assert.Null(WatchProvidersBatch.ExtractSeerrFlatrate("[]", "US"));
+    }
+
+    [Fact]
     public void OutputDistinguishesProviderAbsenceFromFailedLookupAndEscapesNames()
     {
         var providers = WatchProvidersBatch.ExtractFlatrate("{\"results\":{\"US\":{\"flatrate\":[{\"provider_id\":7,\"provider_name\":\"A & 日本語\",\"logo_path\":\"/a.png\"}],\"rent\":[{}]},\"AU\":{\"flatrate\":[{}]}}}", "US")!;
