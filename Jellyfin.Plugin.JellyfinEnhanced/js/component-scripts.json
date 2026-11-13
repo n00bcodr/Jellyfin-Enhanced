@@ -229,6 +229,8 @@
     "// Jellyfin's item menu; both read JE.core.tagLook / tagLayout at call time.",
     "tags/tag-item-editor.js",
     "tags/tag-item-menu.js",
+    "// Administrators' Maintainerr rows (mark, keep, postpone) in the same menu.",
+    "tags/maintainerr-item-menu.js",
 
     "// arr",
     "arr/arr-links.js",

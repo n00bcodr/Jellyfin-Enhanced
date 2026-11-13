@@ -4192,6 +4192,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.StatusTagsLeaving,
                 config.StatusTagsDirectPlay,
                 LeavingSoonAvailable = Services.LeavingSoonService.Configured(config),
+                // Whether administrators can mark, keep and postpone removals from the item menu (the actions
+                // switch and a Maintainerr URL); the rows themselves are admin-only on the server.
+                MaintainerrActionsAvailable = Services.MaintainerrActions.Enabled(config),
                 config.StatusTagsOnCollections,
                 config.StatusTagsJustAddedDays,
                 config.StatusTagsNewReleaseDays,
@@ -9467,10 +9470,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [HttpGet("admin/leaving-soon")]
         [Authorize]
         [Produces("application/json")]
-        public IActionResult GetLeavingSoonStatus([FromServices] Services.LeavingSoonService leavingSoon)
+        public IActionResult GetLeavingSoonStatus([FromServices] Services.LeavingSoonService leavingSoon, [FromServices] Services.LeavingSoonHomeSection homeRow)
         {
             if (!IsAdminUser()) return Forbid();
-            return Ok(leavingSoon.Status(JellyfinEnhanced.Instance?.Configuration));
+            return Ok(leavingSoon.Status(JellyfinEnhanced.Instance?.Configuration, homeRow.Status));
         }
 
         /// <summary>Refresh the Leaving soon facts now (the Media Tags tab's Refresh), then answer the status. Admin only.</summary>
@@ -9480,11 +9483,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [HttpPost("admin/leaving-soon/refresh")]
         [Authorize]
         [Produces("application/json")]
-        public async Task<IActionResult> RefreshLeavingSoon([FromServices] Services.LeavingSoonService leavingSoon, CancellationToken cancellationToken)
+        public async Task<IActionResult> RefreshLeavingSoon([FromServices] Services.LeavingSoonService leavingSoon, [FromServices] Services.LeavingSoonHomeSection homeRow, CancellationToken cancellationToken)
         {
             if (!IsAdminUser()) return Forbid();
             await _tagCacheService.RefreshLeavingAsync(force: true, cancellationToken).ConfigureAwait(false);
-            return Ok(leavingSoon.Status(JellyfinEnhanced.Instance?.Configuration));
+            return Ok(leavingSoon.Status(JellyfinEnhanced.Instance?.Configuration, homeRow.Status));
         }
 
         /// <summary>
