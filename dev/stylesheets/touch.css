@@ -1,0 +1,63 @@
+/* ============================================================
+   TOUCH & SCROLLING
+   Keeps phones and tablets from reloading the page by accident and
+   keeps the search overlay usable wherever you are on a page.
+   ============================================================ */
+
+/* The docs never need pull-to-refresh. Without this, a scroll that reaches the top
+   of the menu or of the search results carries on to the page and reloads it. */
+html,
+body {
+  overscroll-behavior-y: none;
+}
+
+/* Menus and search results scroll on their own and never hand the scroll to the page */
+.md-sidebar__scrollwrap,
+.md-nav--primary,
+.md-search__output,
+.md-search__scrollwrap {
+  overscroll-behavior: contain;
+}
+
+/* Search can cover the page at any width, so the page behind it stays still */
+html:has(#__search:checked) {
+  overflow: hidden;
+}
+
+/* Only lock the page where Material shows the drawer. Its checkbox can stay checked
+   after a resize to desktop, where the drawer and its button are hidden. */
+@media screen and (max-width: 76.234375em) {
+  html:has(#__drawer:checked) {
+    overflow: hidden;
+  }
+}
+
+/* The header blur lives on a layer behind the header instead of on the header itself.
+   A backdrop-filter on .md-header makes it the frame for its fixed-position children,
+   and the search overlay is one of them: on tablets and in landscape, and on any
+   screen once the header blurred on scroll, search was squeezed into the header bar,
+   so you couldn't see what you typed and couldn't scroll the results. */
+.md-header {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+@media screen and (min-width: 45em) {
+  .md-header::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    -webkit-backdrop-filter: saturate(140%) blur(10px);
+    backdrop-filter: saturate(140%) blur(10px);
+  }
+}
+
+/* The autocomplete hint sits behind the search text and must use the same size,
+   or the two drift apart ("bookmarkks"). */
+@media screen and (min-width: 60em) {
+  .md-search__suggest {
+    font-size: .7rem;
+  }
+}
