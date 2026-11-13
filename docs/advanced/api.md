@@ -737,7 +737,7 @@ GET parental filtering can change lists or deny detail/subresource access. Reque
 
 Jellyfin parental policy applies server-side. Denied title/request access returns `403 {"error":true,"code":"parental_block","message":"This title is above your parental rating limit."}`.
 
-A title's rating is read the way Jellyfin's TMDB metadata fills an item's rating: the certification for the server's metadata country, else the US one, and for a series else the first one listed (the country's or US entry decides even when its rating is empty, which leaves the title unrated). It is scored in the server's country first, as Jellyfin scores the rating it stores. A title with no rating follows the user's block-unrated setting.
+A title's rating is read the way Jellyfin's TMDB metadata fills an item's rating: the certification for the server's metadata country, else the US one, and for a series else the first one listed (the country's or US entry decides even when its rating is empty, which leaves the title unrated). It is scored in the server's country first, as Jellyfin scores the rating it stores, and compared with the user's limit as Jellyfin compares it: a lower score is allowed whatever its sub-score, a higher one is not, and the user's sub-score limit decides only at the limit's own score. A title with no rating follows the user's block-unrated setting.
 
 Filtered reads still awaiting rating verification can return `504` with `code:"parental_pending"` and `Retry-After: 2`; retry these instead of treating them as an empty successful page.
 

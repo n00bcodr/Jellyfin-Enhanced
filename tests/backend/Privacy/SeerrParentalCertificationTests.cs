@@ -37,8 +37,18 @@ public class SeerrParentalCertificationTests
         ["NZ"] = new(StringComparer.OrdinalIgnoreCase) { ["G"] = 0, ["PG"] = 13, ["M"] = 16, ["R18"] = 18 },
     };
 
+    // Ratings scored with a sub-score, as some of Jellyfin's rating tables give one.
+    private static readonly Dictionary<string, ParentalRatingScore> SubScored = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["TEST-10-1"] = new ParentalRatingScore(10, 1),
+        ["TEST-12-0"] = new ParentalRatingScore(12, 0),
+        ["TEST-12-1"] = new ParentalRatingScore(12, 1),
+        ["TEST-13-0"] = new ParentalRatingScore(13, 0),
+    };
+
     private static ParentalRatingScore? Score(string rating, string? country)
     {
+        if (SubScored.TryGetValue(rating, out var scored)) return scored;
         if (int.TryParse(rating, out var n)) return new ParentalRatingScore(n, null);
         foreach (var table in new[] { country ?? "", "US" }.Select(c => Tables.GetValueOrDefault(c)).Concat(Tables.Values))
         {
@@ -177,6 +187,27 @@ public class SeerrParentalCertificationTests
         // Jellyfin 10.11 takes the country's entry anyway, so the series is unrated there.
         Assert.False(Refused(await lab.Controller.GetTvShow(607)));
 #endif
+    }
+
+    [Fact]
+    public async Task ASubScoreLimitAppliesOnlyAtItsOwnScoreLikeJellyfin()
+    {
+        // Jellyfin 10.11 and 12 compare (score, sub-score) in order, in BaseItem.IsParentalAllowed and in
+        // the library query: under a (12, 0) limit the library shows a title scored (10, 1) or (12, 0)
+        // and hides one scored (12, 1) or (13, 0).
+        using var lab = new Lab(blockUnrated: false);
+        lab.Kid.MaxParentalRatingSubScore = 0;
+        lab.Details["/api/v1/movie/507"] = Movie(507, ("DE", "TEST-10-1"));
+        lab.Details["/api/v1/movie/510"] = Movie(510, ("DE", "TEST-12-0"));
+        lab.Details["/api/v1/movie/508"] = Movie(508, ("DE", "TEST-12-1"));
+        lab.Details["/api/v1/movie/511"] = Movie(511, ("DE", "TEST-13-0"));
+
+        Assert.False(Refused(await lab.Controller.GetMovie(507)));
+        Assert.False(Refused(await lab.Controller.GetMovie(510)));
+        Assert.True(Refused(await lab.Controller.GetMovie(508)));
+        Assert.True(Refused(await lab.Controller.GetMovie(511)));
+        Assert.True(Refused(await lab.Controller.JellyseerrRequest(JsonSerializer.Deserialize<JsonElement>("{\"mediaType\":\"movie\",\"mediaId\":508}"))));
+        Assert.False(Refused(await lab.Controller.JellyseerrRequest(JsonSerializer.Deserialize<JsonElement>("{\"mediaType\":\"movie\",\"mediaId\":507}"))));
     }
 
     [Theory]
