@@ -124,6 +124,7 @@ public class IntegrationArrTests
     [InlineData("json")]
     [InlineData("network")]
     [InlineData("timeout")]
+    [InlineData("null")]
     public async Task ProviderFailuresDoNotEscapeOrStartSecondRequest(string failure)
     {
         using var env = new IntegrationEnvironment();
@@ -133,6 +134,7 @@ public class IntegrationArrTests
             "timeout" => throw new TaskCanceledException("timeout"),
             // A valid empty list, so only the status check can stop the second request.
             "status" => Task.FromResult(IntegrationTransport.Response("[]", 503)),
+            "null" => Task.FromResult(IntegrationTransport.Response("null")),
             _ => Task.FromResult(IntegrationTransport.Response("{"))
         });
         Assert.Null(await new RadarrService(transport, env.Logger).GetMovieTagsByTmdbId("http://127.0.0.1", "key"));

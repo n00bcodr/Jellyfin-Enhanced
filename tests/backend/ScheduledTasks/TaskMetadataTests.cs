@@ -176,7 +176,10 @@ public class TaskMetadataTests
         BaseItem.LibraryManager = library.Object;
         try
         {
-            await new ArrTagsSyncTask(library.Object, transport, f.Core.Logger).ExecuteAsync(new Progress<double>(), default);
+            // The run still finishes the item pass, then reports itself failed (Scheduled Tasks shows it).
+            var failed = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                new ArrTagsSyncTask(library.Object, transport, f.Core.Logger).ExecuteAsync(new Progress<double>(), default));
+            Assert.StartsWith(failing == "radarr" ? "Radarr could not be read" : "Sonarr could not be read", failed.Message);
             var (unread, answered) = failing == "radarr" ? ((BaseItem)movie, (BaseItem)series) : (series, movie);
             Assert.Equal(new[] { "Keep", "Arr: stale" }, unread.Tags);
             Assert.Equal(new[] { "Keep", "Arr: alice" }, answered.Tags);

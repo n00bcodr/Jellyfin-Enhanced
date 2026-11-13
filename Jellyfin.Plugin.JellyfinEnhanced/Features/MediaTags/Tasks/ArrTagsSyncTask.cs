@@ -344,6 +344,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
 
             _logger.Info($"Arr Tags Sync completed. Updated {updatedCount} items out of {totalItems}");
             progress?.Report(100);
+
+            // The run kept the tags of a service it could not read. Show it as failed in Scheduled Tasks, so an
+            // instance that stays down (or one retired but still enabled) is noticed rather than leaving its
+            // service's tags uncleaned run after run with only a log line to say so.
+            if (radarrFailed || sonarrFailed)
+            {
+                var unread = radarrFailed && sonarrFailed ? "Radarr and Sonarr" : radarrFailed ? "Radarr" : "Sonarr";
+                throw new InvalidOperationException(
+                    $"{unread} could not be read: the tags already on its items were kept and the other tags were synced. "
+                    + "Check that every enabled instance answers, or disable an instance that is no longer used.");
+            }
         }
     }
 }

@@ -293,6 +293,21 @@ public class CustomTagRulesTests
     }
 
     [Fact]
+    public void AStampIsAlwaysLaterThanTheCursorAPassPublished()
+    {
+        // A pass that sets the cursor to the clock, followed in the same millisecond by another pass's first stamp: a
+        // delta at that cursor returns entries strictly after it, so the stamp must be later or the entry is skipped.
+        using var f = new ApiPluginFixture();
+        using var cache = new TagCacheService(Mock.Of<ILibraryManager>(), f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger, new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger));
+        for (var i = 0; i < 2000; i++)
+        {
+            cache.TouchLastModified();
+            var cursor = cache.LastModified;
+            Assert.True(cache.NextStamp() > cursor, $"stamp after cursor {cursor}");
+        }
+    }
+
+    [Fact]
     public void AFullLoadsCursorCoversTheStampsOfABuildThatOutranTheClock()
     {
         // A full build of a few thousand items hands out stamps faster than one a millisecond, so its last entries

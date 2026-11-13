@@ -1116,6 +1116,77 @@
       ],
       "notes": "Applied as is (git show 24fbd7b0 | git apply --3way, clean): the 30 locale files under Jellyfin.Plugin.JellyfinEnhanced/js/locales/ are byte-identical to upstream's at 24fbd7b0. It adds 74 keys to each, all discovery_* strings of the discovery join (#1044, ported here as row 35): the Filters menu, its groups and hints, the sort labels, the role lines and the retry and not-in-library lines. No key changes or goes; every new value has the same {placeholders} as en.json; every key exists in this tree's en.json. No key the server reads for poster tag captions (StatusRules) changes, so no resolver version moves. The 49 keys only this tree's en.json has stay untranslated in these languages, as before. No difference from upstream.",
       "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p36-*"
+    },
+    {
+      "sha": "20700ef22658a0cf2d0dc1d980027f0fbf55085c",
+      "date": "2026-11-13T12:22:41+08:00",
+      "subject": "perf(tags): stop every tag-cache delta re-sending a rebuild's entries (#1053)",
+      "class": "performance",
+      "features": [
+        "media-tags"
+      ],
+      "issues": [
+        "#1053"
+      ],
+      "release": null,
+      "size": {
+        "files": 9,
+        "insertions": 89,
+        "deletions": 18
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/ (7 files)",
+        "tests/backend/PosterTags/CustomTagRulesTests.cs",
+        "tests/backend/PosterTags/PerfRound2TagCacheResponseTests.cs"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "9b8a1aa31453f651d5a3f1a17e5ddcf670bb6d08"
+      ],
+      "notes": "Upstream squashes two commits. The first (the delta cursor covers the newest entry stamp: the build publish and the disk load take the later of the clock and the newest entry stamp, and every in-place pass, awards, custom tags, Leaving soon, logos, scenes, source ratings and the update queue, advances the cursor through TouchLastModified, which also counts the newest entry stamp) is already here as the rewrite's 680e243c (perf(media-tags): a tag-cache cursor covers the stamps its entries carry), which landed first: its hunks to Features/MediaTags/Services/TagCache/TagCache{Service,Awards,CustomTags,Leaving,Logos,Scenes,SourceRatings}.cs are upstream's to Services/ line for line, and upstream's tests AFullLoadsCursorCoversTheStampsOfABuildThatOutranTheClock (CustomTagRulesTests) and ADeltaAtAFullLoadsCursorIsEmptyWhenTheSavedCursorLagsItsEntries (PerfRound2TagCacheResponseTests) are already in tests/backend/Features/MediaTags/PosterTags/. Ported here is the second (fix(tags): a new tag-cache stamp is always later than the published cursor): NextStamp in TagCacheService.cs also clears the delta cursor (_lastModified), so a stamp handed out in the same millisecond a pass set the cursor to the clock, or after a restart while the clock is behind the saved cursor, is later than the cursor and reaches a browser holding it. Upstream's test AStampIsAlwaysLaterThanTheCursorAPassPublished is in CustomTagRulesTests with no change. Differences from upstream: (1) NextStamp's doc comment is reworded to keep TagCacheService.cs at its FileSizeTests allow-list size (4,084 lines; AGENTS.md: the entry only shrinks); the code line is upstream's. (2) TouchLastModified keeps the rewrite's shorter comment from 680e243c; upstream's adds that the passes calling it hold _rebuildLock, which is true here too and changes nothing. No cached-output version moves: what an entry holds and how tags resolve are unchanged, only which stamp a new entry gets.",
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p37-*"
+    },
+    {
+      "sha": "0dba36b6b4ab8a4247c42dfbf3964994b84b24a6",
+      "date": "2026-11-13T12:26:54+08:00",
+      "subject": "fix(arr): keep synced tags when Radarr or Sonarr can't be read, and make a blank Tag Prefix mean the default (#1054)",
+      "class": "fix",
+      "features": [
+        "media-tags",
+        "admin",
+        "details-providers"
+      ],
+      "issues": [
+        "#1054"
+      ],
+      "release": null,
+      "size": {
+        "files": 14,
+        "insertions": 468,
+        "deletions": 35
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/admin/sections.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/ArrTagsSyncTask.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/RadarrService.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/SonarrService.cs",
+        "docs/advanced/css-customization.md",
+        "docs/arr/arr-features.md",
+        "docs/arr/arr-settings.md",
+        "docs/arr/troubleshooting-support.md",
+        "tests/backend/Api/ApiArrInstancesLogTests.cs",
+        "tests/backend/Integrations/IntegrationHttpTests.cs",
+        "tests/backend/ScheduledTasks/ArrTagsSyncTests.cs",
+        "tests/docs/coverage-matrix.md",
+        "tests/frontend/features/features-admin-config-schema.test.mjs"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "a7962a31c81d6c3798d9a4e7706d1265f05c3666"
+      ],
+      "notes": "Upstream squashes the five commits of its PR branch fix/arr-tag-sync. Four of them landed here first, as the rewrite's own commits, and are not repeated: (1) the Radarr and Sonarr tag fetches answer null when the service could not be read (refused URL, error status, network error, timeout, unreadable or null body) and the task keeps that service's items' tags, skipping their clean-up, while adding the tags of the instances that answered: 7af1bc19 (Shared/Arr/RadarrService.cs, SonarrService.cs, Features/MediaTags/Tasks/ArrTagsSyncTask.cs; the null-body exception's message reads 'null body' here, upstream's names the list; both are caught and logged the same way); (2) a blank or unset stored Tag Prefix means 'JE Arr Tag: ' in the sync: 0726eddc; (3) the admin field's default is the server default, so an emptied field saves 'JE Arr Tag: ': 6479995e (client/src/admin/config/sections/arr.ts, tests/fixtures/admin-config-baseline.json; its test is in tests/frontend/admin/config/admin-config-rewrite.test.mjs, where upstream's is in features-admin-config-schema.test.mjs); (4) a damaged instance list is logged by its length and where it stops parsing, not its text: c7d32f29 (Shared/Arr/ArrInstanceClient.cs, where upstream's JellyfinEnhancedController has it; test tests/backend/Features/DetailsProviders/ArrCorruptInstancesLogTests.cs, upstream's ApiArrInstancesLogTests). Docs from those commits are here too (0726eddc, 6479995e, 9d1e99e0). Ported here is the fifth: a run that could not read Radarr or Sonarr still finishes its item pass, then throws InvalidOperationException ('Radarr could not be read: …', 'Sonarr …' or 'Radarr and Sonarr …') so Scheduled Tasks shows it as failed: ArrTagsSyncTask.cs, upstream's lines. With it, upstream's docs lines on a failed read (docs/arr/arr-features.md, arr-settings.md, troubleshooting-support.md: the run shows as failed, disable an instance no longer used) and its coverage-matrix row. Tests: upstream's ArrTagsSyncTests is tests/backend/Features/MediaTags/ArrTagsSyncTests.cs (the media-tags test folder) with only the namespace changed; its 31 cases include the already-present behaviour, and on the branch's start 5 fail (EveryInstanceDownChangesNoItem x3 and ARunThatCouldNotReadAServiceFinishesThenReportsFailed x2), all pass after. Upstream's 'null' case is added to IntegrationArrTests.ProviderFailuresDoNotEscapeOrStartSecondRequest (passes before and after: (1) is here). The rewrite's own TaskMetadataTests.ArrSyncKeepsTagsOfAServiceThatCouldNotBeRead (from 7af1bc19, which upstream does not have) ran the task to completion with a service down; it now expects the run's InvalidOperationException and its message, then checks the same tags. Differences from upstream: none in behaviour. No setting, route, registration or stored data changes; css-customization.md already has upstream's line (6479995e).",
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p38-*"
     }
   ]
 }
