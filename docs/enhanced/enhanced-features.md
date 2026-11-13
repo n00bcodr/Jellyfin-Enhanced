@@ -180,7 +180,7 @@ Admin settings in **Pages → Hidden Content**:
 
     Standard confirmation offers **Don't ask again for 15 minutes**. This preference is local to your browser and specific to your account. **Show Confirmation Dialog** controls the persistent preference. Episode/show and home-row choice dialogs still appear when you need to choose an action.
 
-    The other filter labels are identical in the personal and admin interfaces. Hidden Content preferences are saved with your per-account list on the server in `hidden-content.json`, separately from ordinary personal settings. The standalone `#/hidden-content` route opens only with native Home tab and Custom Tabs placement off and no detected Plugin Pages integration for Hidden Content. See the [standalone-route table](../getting-started/pages-and-tabs.md#reach-the-pages-on-desktop-and-phone) for navigation conditions.
+    The other filter labels are identical in the personal and admin interfaces. Hidden Content preferences are saved with your per-account list on the server in `hidden-content.json`, separately from ordinary personal settings. If your list could not be loaded when the page opened, nothing shows as hidden and hides, unhides and preference changes are refused with a message until you reload, so the stored list is never replaced. The standalone `#/hidden-content` route opens only with native Home tab and Custom Tabs placement off and no detected Plugin Pages integration for Hidden Content. See the [standalone-route table](../getting-started/pages-and-tabs.md#reach-the-pages-on-desktop-and-phone) for navigation conditions.
 
     Cast hiding saves the person as a hidden item; it does not hide every movie or show featuring that person. A series hide can suppress its episodes and seasons through their series ID.
 
@@ -323,7 +323,7 @@ Navigate Jellyfin and control local video playback without opening menus. Admin 
 
 ??? info "Shortcut behavior and admin bindings"
 
-    Modifier-only presses are ignored. Conflicts and reserved native player bindings are rejected with a red shake; a dot marks personal overrides. Changes save in your server-side `shortcuts.json`.
+    Modifier-only presses are ignored. Conflicts and reserved native player bindings are rejected with a red shake; a dot marks personal overrides. Changes save in your server-side `shortcuts.json`. If your overrides could not be loaded when the page opened, the keys are shown read-only until you reload.
 
     Administrators can set server bindings in **Keyboard → Keyboard Shortcuts** using its recorder, then **Save Settings**. While recording there, ++delete++ disables an action and ++backspace++ restores its stock binding. Existing personal overrides still take precedence.
 

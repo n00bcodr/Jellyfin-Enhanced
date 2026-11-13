@@ -24,6 +24,12 @@
     const hiddenIdSet = new Set();
     const hiddenTmdbIdSet = new Set();
     let hiddenData = null;
+    // Whether this session's list came from the server. A list that failed to
+    // load (JE.userConfig.hiddenContent is null) is unknown, not empty: every
+    // save writes the whole list, so an edit made on an empty stand-in would
+    // replace the stored one. False until the first load and from a user switch
+    // until the incoming user's list has loaded.
+    let loaded = false;
 
     // ============================================================
     // Internal helpers
@@ -55,6 +61,30 @@
             hiddenData = JE.userConfig?.hiddenContent || { items: {}, settings: {} };
         }
         return hiddenData;
+    }
+
+    /**
+     * Whether this session's hidden list was loaded from the server, so edits
+     * can be saved. False while it failed to load or is still loading after a
+     * user switch.
+     * @returns {boolean}
+     */
+    function isLoaded() {
+        return loaded;
+    }
+
+    /**
+     * Refuses an edit while the list is not loaded: logs, tells the user to
+     * reload, and returns true. Returns false when the edit may go ahead.
+     * @returns {boolean} `true` if the edit must not be made.
+     */
+    function refuseEditIfNotLoaded() {
+        if (loaded) return false;
+        console.warn('🪼 Jellyfin Enhanced: Hidden Content list did not load; change not made so the stored list is kept');
+        try {
+            if (typeof JE.toast === 'function') JE.toast(JE.t('hidden_content_not_loaded'), 5000);
+        } catch (_) { /* toast helper unavailable; the warning above stands */ }
+        return true;
     }
 
     /**
@@ -160,6 +190,7 @@
             JE.userConfig = JE.userConfig || {};
             JE.userConfig.hiddenContent = camelCased || { items: {}, settings: {} };
             hiddenData = JE.userConfig.hiddenContent;
+            loaded = !!camelCased;
             rebuildSets();
             emitChange();
             return true;
@@ -286,8 +317,10 @@
      * @param {number|null} [params.seasonNumber] Season number.
      * @param {number|null} [params.episodeNumber] Episode number.
      * @param {string} [params.hideScope] Scope: 'global', 'nextup', 'continuewatching', or 'homesections'.
+     * @returns {boolean} `false` if the list is not loaded and nothing was hidden.
      */
     function hideItem({ itemId, name, type, tmdbId, posterPath, seriesId, seriesName, seasonNumber, episodeNumber, hideScope }) {
+        if (refuseEditIfNotLoaded()) return false;
         const data = getHiddenData();
         const key = itemId || `tmdb-${tmdbId}`;
         const newItem = {
@@ -314,14 +347,17 @@
         emitChange();
         showUndoToast(name || 'Item', key);
         refreshNativeCardVisibility();
+        return true;
     }
 
     /**
      * Unhides an item by removing it from the hidden-content data store.
      * Restores visibility for the item's native cards.
      * @param {string} itemId The storage key or Jellyfin item ID to unhide.
+     * @returns {boolean} `false` if the list is not loaded and nothing was unhidden.
      */
     function unhideItem(itemId) {
+        if (refuseEditIfNotLoaded()) return false;
         const data = getHiddenData();
         const newItems = { ...data.items };
         let restoredJellyfinId = '';
@@ -357,14 +393,17 @@
         else if (itemId && !String(itemId).startsWith('tmdb-')) idsToRestore.add(itemId);
         restoreNativeCardsForIds(idsToRestore);
         refreshNativeCardVisibility();
+        return true;
     }
 
     /**
      * Merges partial settings into the hidden-content settings.
      * Triggers a save, change event, and native card re-filter.
      * @param {Object} partial Key-value pairs to merge into settings.
+     * @returns {boolean} `false` if the list is not loaded and nothing was changed.
      */
     function updateSettings(partial) {
+        if (refuseEditIfNotLoaded()) return false;
         const data = getHiddenData();
         hiddenData = {
             ...data,
@@ -374,6 +413,7 @@
         debouncedSave();
         emitChange();
         refreshNativeCardVisibility();
+        return true;
     }
 
     /**
@@ -461,8 +501,10 @@
 
     /**
      * Unhides all items, restoring full visibility.  Clears the entire items map.
+     * @returns {boolean} `false` if the list is not loaded and nothing was unhidden.
      */
     function unhideAll() {
+        if (refuseEditIfNotLoaded()) return false;
         const oldHiddenIds = new Set(hiddenIdSet);
         const data = getHiddenData();
         hiddenData = { ...data, items: {} };
@@ -472,6 +514,7 @@
         emitChange();
         restoreNativeCardsForIds(oldHiddenIds);
         refreshNativeCardVisibility();
+        return true;
     }
 
     /**
@@ -480,6 +523,7 @@
      * that owns the hiddenData closure variable.
      */
     function resetFromUserConfig() {
+        loaded = JE.userConfig?.hiddenContent != null;
         hiddenData = JE.userConfig?.hiddenContent || { items: {}, settings: {} };
         rebuildSets();
     }
@@ -490,6 +534,7 @@
     // from the incoming user's config once the re-bootstrap has loaded it.
     JE.session?.onUserChange('hidden-content-data', () => {
         hiddenData = null;
+        loaded = false;
         hiddenIdSet.clear();
         hiddenTmdbIdSet.clear();
     });
@@ -505,6 +550,8 @@
         hiddenIdSet,
         normalizeId,
         getHiddenData,
+        isLoaded,
+        refuseEditIfNotLoaded,
         getSettings,
         rebuildSets,
         shouldFilterSurface,

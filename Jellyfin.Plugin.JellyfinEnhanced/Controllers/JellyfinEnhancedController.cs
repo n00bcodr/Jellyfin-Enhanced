@@ -4338,7 +4338,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 UserSettings = new
                 {
                     Settings = TryLoadUserDocument("settings.json", authorizedUserId, () => LoadUserSettingsDocument(authorizedUserId)),
-                    Shortcuts = TryLoadUserDocument("shortcuts.json", authorizedUserId, () => _userConfigurationManager.GetUserConfiguration<UserShortcuts>(authorizedUserId, "shortcuts.json")),
+                    Shortcuts = TryLoadUserDocument("shortcuts.json", authorizedUserId, () => LoadSavedWholeDocument<UserShortcuts>(authorizedUserId, "shortcuts.json")),
                     Bookmark = TryLoadUserDocument("bookmark.json", authorizedUserId, () => _userConfigurationManager.GetUserConfiguration<UserBookmark>(authorizedUserId, "bookmark.json")),
                     Elsewhere = TryLoadUserDocument("elsewhere.json", authorizedUserId, () => _userConfigurationManager.GetUserConfiguration<ElsewhereSettings>(authorizedUserId, "elsewhere.json")),
                     HiddenContent = TryLoadUserDocument("hidden-content.json", authorizedUserId, () => LoadUserHiddenContentDocument(authorizedUserId)),
@@ -4438,6 +4438,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 _logger.Error($"Bootstrap: failed to load {fileName} for {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
                 return null;
+            }
+        }
+
+        /// <summary>
+        /// Reads a per-user document the client saves whole (hidden-content.json, shortcuts.json).
+        /// The lenient read answers an empty document for a file it cannot read, and the client's
+        /// next save would then replace the stored list with that one change, so this read throws
+        /// instead (the bootstrap answers null, the endpoint an error). A read error, such as a
+        /// lock or a network share, leaves the file as it is. Content that does not parse is moved
+        /// aside first, as the save path already does, so the next read starts from the defaults
+        /// instead of failing on every page load.
+        /// </summary>
+        private T LoadSavedWholeDocument<T>(string authorizedUserId, string fileName) where T : new()
+        {
+            try
+            {
+                return _userConfigurationManager.GetUserConfigurationStrict<T>(authorizedUserId, fileName, quarantineCorrupt: false);
+            }
+            catch (Exception ex) when (ex is InvalidDataException || ex is Newtonsoft.Json.JsonException)
+            {
+                lock (_userConfigurationManager.GetUserFileLock(authorizedUserId, fileName))
+                {
+                    // Read again under the writers' lock: a save may have replaced the file meanwhile;
+                    // if it still does not parse, this read moves it aside and throws.
+                    return _userConfigurationManager.GetUserConfigurationStrict<T>(authorizedUserId, fileName);
+                }
             }
         }
 
@@ -5765,8 +5791,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return authorizationResult;
             }
 
-            var userConfig = _userConfigurationManager.GetUserConfiguration<UserShortcuts>(authorizedUserId, "shortcuts.json");
-            return Ok(userConfig);
+            try
+            {
+                return Ok(LoadSavedWholeDocument<UserShortcuts>(authorizedUserId, "shortcuts.json"));
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"shortcuts.json could not be read for {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Shortcuts could not be read. Please retry." });
+            }
         }
 
         [HttpGet("user-settings/{userId}/elsewhere.json")]
@@ -6218,12 +6251,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return authorizationResult;
             }
 
-            return Ok(LoadUserHiddenContentDocument(authorizedUserId));
+            try
+            {
+                return Ok(LoadUserHiddenContentDocument(authorizedUserId));
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"hidden-content.json could not be read for {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Hidden content could not be read. Please retry." });
+            }
         }
 
         /// <summary>
         /// Loads (seeding defaults on first access) the user's hidden-content.json
         /// document. Shared by the hidden-content.json endpoint and /bootstrap.
+        /// Throws when the stored list cannot be read (see <see cref="LoadSavedWholeDocument{T}"/>).
         /// </summary>
         private UserHiddenContent LoadUserHiddenContentDocument(string authorizedUserId)
         {
@@ -6250,7 +6292,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
-            return _userConfigurationManager.GetUserConfiguration<UserHiddenContent>(authorizedUserId, "hidden-content.json");
+            return LoadSavedWholeDocument<UserHiddenContent>(authorizedUserId, "hidden-content.json");
         }
 
         private static HiddenContentSettings BuildHcDefaultSettings(PluginConfiguration src)

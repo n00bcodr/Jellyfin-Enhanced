@@ -31,7 +31,9 @@
         const { help, pluginShortcuts, primaryAccentColor, kbdBackground } = ctx;
 
         // --- Shortcut Key Binding Logic ---
-        if (!JE.pluginConfig.DisableAllShortcuts) {
+        // Overrides that failed to load (null) are unknown: every change saves the
+        // whole list, so a rebind would replace all of them. Keys stay read-only.
+        if (!JE.pluginConfig.DisableAllShortcuts && JE.userConfig?.shortcuts) {
             const displayKey = (key) => key || JE.t('panel_shortcuts_disabled') || 'Disabled';
 
             const applyDisabledVisuals = (action) => {

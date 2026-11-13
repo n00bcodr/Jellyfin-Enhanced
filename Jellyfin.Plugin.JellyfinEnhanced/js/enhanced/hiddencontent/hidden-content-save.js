@@ -9,7 +9,7 @@
     JE.internals = JE.internals || {};
     const internal = JE.internals.hiddenContent = JE.internals.hiddenContent || {};
 
-    const { getHiddenData } = internal;
+    const { getHiddenData, isLoaded } = internal;
 
     let saveTimeout = null;
 
@@ -151,6 +151,8 @@
     // Returns the JSON snapshot that was sent so the caller can compare it to current state and decide
     // whether the success acknowledgement still represents the latest local intent.
     async function directSaveHiddenContent() {
+        // Never write a list that did not load: it would replace the stored one.
+        if (!isLoaded()) throw new Error('hidden-content list not loaded');
         const userId = ApiClient.getCurrentUserId();
         if (!userId) throw new Error('no current user');
         const snapshot = JSON.stringify(getHiddenData());

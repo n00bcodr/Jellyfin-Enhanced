@@ -105,7 +105,29 @@ test('wrong-user bootstrap is rejected and endpoint failures retain safe default
   assert.equal(h.plugin.currentSettings.qualityTagsEnabled, false);
   assert.equal(h.plugin.pluginVersion, 'unknown');
   assert.deepEqual(plain(h.plugin.userConfig.bookmark), { bookmarks: {} });
+  // The hidden list and shortcut overrides are saved whole: one that failed to load stays unknown (null),
+  // never an empty list the next change would be saved over.
+  assert.equal(h.plugin.userConfig.hiddenContent, null);
+  assert.equal(h.plugin.userConfig.shortcuts, null);
   assert.equal(h.calls.filter(p => p.includes('/user-settings/user-a/')).length, 5);
+});
+
+// The server answers null for a document it could not load, and Jellyfin's serializer leaves null
+// properties out of the response, so the bootstrap simply lacks that document.
+for (const [label, userSettings] of [['left out', { Settings: {}, Bookmark: {}, Elsewhere: {} }], ['null', { Settings: {}, Shortcuts: null, Bookmark: {}, Elsewhere: {}, HiddenContent: null }]]) {
+  test(`a hidden list or shortcut list the server could not read (${label}) stays unknown`, async t => {
+    const h = setup(t, { data: payload({ UserSettings: userSettings }) });
+    await until(() => h.plugin.initialized);
+    assert.equal(h.plugin.userConfig.hiddenContent, null);
+    assert.equal(h.plugin.userConfig.shortcuts, null);
+  });
+}
+
+test('documents the server loaded are used as they are, empty ones included', async t => {
+  const h = setup(t, { data: payload({ UserSettings: { Settings: {}, Shortcuts: { Shortcuts: [] }, Bookmark: {}, Elsewhere: {}, HiddenContent: { Items: { a: { ItemId: 'a' } }, Settings: {} } } }) });
+  await until(() => h.plugin.initialized);
+  assert.deepEqual(plain(h.plugin.userConfig.hiddenContent), { items: { a: { itemId: 'a' } }, settings: {} });
+  assert.deepEqual(plain(h.plugin.userConfig.shortcuts), { Shortcuts: [] });
 });
 
 for (const installed of [true, false]) test(`delivery plugin flags reflect installed=${installed}`, async t => {
