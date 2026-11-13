@@ -112,9 +112,9 @@
                 manageBtn.addEventListener('click', () => {
                     // Both the page and fallback modal take over from this dialog.
                     ctx.closePanel();
-                    if (JE.pluginConfig?.HiddenContentEnabled && JE.hiddenContentPage) {
-                        JE.hiddenContentPage.showPage();
-                    } else {
+                    // Placed as a tab or Plugin Page, the page never opens over the current view: manage here instead.
+                    const pageShown = !!(JE.pluginConfig?.HiddenContentEnabled && JE.hiddenContentPage?.showPage());
+                    if (!pageShown) {
                         JE.hiddenContent.showManagementPanel();
                     }
                 });

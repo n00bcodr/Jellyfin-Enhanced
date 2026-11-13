@@ -128,7 +128,7 @@ An already-hidden item shows a crossed-out eye; use it to **Unhide**. After a hi
   <figcaption>Hiding a library movie and restoring it with Undo.</figcaption>
 </figure>
 
-**How to manage:** Open **Hidden Content** through its configured entry, or choose **Manage Hidden Content** in the personal section. The page presents **Movies**, expandable **Series** groups, and **Cast / Actors**.
+**How to manage:** Open **Hidden Content** through its configured entry, or choose **Manage Hidden Content** in the personal section. The page presents **Movies**, expandable **Series** groups, and **Cast / Actors**. When the page is placed as a native Home tab, a Custom Tabs tab or a Plugin Page, **Manage Hidden Content** opens a searchable list of your hidden items in a dialog instead.
 
 ![Hidden Content page with grouped items and Scoped only filter](../images/enhanced/hidden-page.webp)
 

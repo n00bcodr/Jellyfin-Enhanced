@@ -112,14 +112,17 @@
 
   /**
    * Shows the hidden content page, hiding the currently active Jellyfin page.
+   * @returns {boolean} Whether the page is showing: false when it is placed as a
+   *   Plugin Page, a Custom Tabs tab or a native Home tab, where it never opens
+   *   over the current view.
    */
   function showPage() {
-    if (state.pageVisible) return;
+    if (state.pageVisible) return true;
 
     const config = JE.pluginConfig || {};
-    if (pluginPagesExists && config.HiddenContentUsePluginPages) return;
-    if (config.HiddenContentUseCustomTabs) return;
-    if (config.HiddenContentUseNativeTab) return;
+    if (pluginPagesExists && config.HiddenContentUsePluginPages) return false;
+    if (config.HiddenContentUseCustomTabs) return false;
+    if (config.HiddenContentUseNativeTab) return false;
 
     state.pageVisible = true;
 
@@ -165,6 +168,7 @@
     );
 
     renderPage();
+    return true;
   }
 
   /**
