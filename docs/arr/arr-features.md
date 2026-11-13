@@ -148,7 +148,7 @@ These are admin (server) settings:
     **Clear old tags before sync** also affects unmatched items, and items whose service answered with no tags. When a Radarr or Sonarr instance cannot be read (unreachable, an error answer, an unreadable answer or a damaged instance list), that service's items (movies for Radarr, series for Sonarr) keep their tags for that run; tags from the instances that did answer are still added. Turning cleanup off preserves stale tags; changing **Tag Prefix** leaves tags bearing the previous prefix in place.
 
 ??? note "Prefix behavior"
-    Keep **Tag Prefix** nonempty and its spelling/case consistent. The factory default is `JE Arr Tag: `, but settings replace a blank value with `Requested by: `. When the prefix is blank, displayed tag links use `JE Arr Tag: `; sync uses `Requested by: ` only if the stored prefix is unset, rather than empty. Links require matching prefix capitalization; cleanup ignores capitalization.
+    Keep **Tag Prefix** nonempty and its spelling/case consistent. The factory default is `JE Arr Tag: `, but settings replace a blank value with `Requested by: `. When the stored prefix is blank or unset, sync and displayed tag links both use `JE Arr Tag: `. Links require matching prefix capitalization; cleanup ignores capitalization.
 
 ### Tag Filtering
 

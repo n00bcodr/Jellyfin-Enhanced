@@ -79,7 +79,7 @@ Seeing existing tag links does not require administrator status or **Enable Tags
 ??? info "Tag matching and prefix behavior"
     Movie sync matches TMDB IDs; series sync matches IMDb IDs, not the TVDB ID used by Sonarr item links. Sync updates movies and series in your library, excluding virtual placeholders.
 
-    Keep **Tag Prefix** nonempty. Settings replace a blank value with `Requested by: `, while displayed tag links use `JE Arr Tag: ` for a blank prefix. Sync uses `Requested by: ` only if the stored prefix is unset, rather than empty. See [tag settings and examples](arr-features.md#arr-tags).
+    Keep **Tag Prefix** nonempty. Settings replace a blank value with `Requested by: `. When the stored prefix is blank or unset, sync and displayed tag links both use `JE Arr Tag: `. See [tag settings and examples](arr-features.md#arr-tags).
 
 ### Calendar Not Loading
 

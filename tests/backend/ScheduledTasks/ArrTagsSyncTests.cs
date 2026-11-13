@@ -72,7 +72,8 @@ public class ArrTagsSyncTests
     /// Runs the sync with two Radarr instances and one Sonarr (unless <paramref name="radarr"/> or
     /// <paramref name="sonarr"/> replaces a stored list); the ports in <paramref name="down"/> answer with <paramref name="failure"/>.
     /// </summary>
-    private static async Task<(Library Library, string Log)> Sync(ApiPluginFixture f, string failure, int[] down, string? radarr = null, string? sonarr = null)
+    private static async Task<(Library Library, string Log)> Sync(ApiPluginFixture f, string failure, int[] down, string? radarr = null, string? sonarr = null,
+        Library? library = null, Action<Jellyfin.Plugin.JellyfinEnhanced.Configuration.PluginConfiguration>? configure = null)
     {
         var config = f.Plugin.Configuration;
         config.ArrTagsSyncEnabled = true;
@@ -80,7 +81,8 @@ public class ArrTagsSyncTests
         config.ArrTagsPrefix = Prefix;
         config.RadarrInstances = radarr ?? Instances(("Main", $"http://127.0.0.1:{RadarrMain}"), ("Second", $"http://127.0.0.1:{RadarrSecond}"));
         config.SonarrInstances = sonarr ?? Instances(("Shows", $"http://127.0.0.1:{Sonarr}"));
-        var library = new Library();
+        configure?.Invoke(config);
+        library ??= new Library();
         using var transport = new IntegrationTransport((request, _) =>
         {
             Assert.Equal("test-key", Assert.Single(request.Headers.GetValues("X-Api-Key")));
@@ -225,5 +227,24 @@ public class ArrTagsSyncTests
             Assert.Equal(new[] { "Keep", "Arr: alice", "Arr: carol" }, library.Matched.Tags);
             Assert.Equal(new[] { "Arr: stale", "Keep" }, library.Show.Tags);
         }
+    }
+
+    // A blank or missing stored prefix (the plugin configuration API, a hand-edited file) means the
+    // server default, the prefix the details-page links fall back to; it must never match every tag.
+    [Theory]
+    [InlineData("")]
+    [InlineData(null)]
+    public async Task ABlankStoredPrefixSyncsUnderTheDefaultAndKeepsEveryOtherTag(string? prefix)
+    {
+        using var f = new ApiPluginFixture();
+        var library = new Library();
+        library.Matched.Tags = ["Keep", "Arr: mine", "JE Arr Tag: stale"];
+        library.Unmatched.Tags = ["JE Arr Tag: old", "Keep"];
+        library.Show.Tags = ["JE Arr Tag: stale", "Keep"];
+        await Sync(f, "none", [], library: library, configure: c => c.ArrTagsPrefix = prefix!);
+
+        Assert.Equal(new[] { "Keep", "Arr: mine", "JE Arr Tag: alice", "JE Arr Tag: carol" }, library.Matched.Tags);
+        Assert.Equal(new[] { "Keep" }, library.Unmatched.Tags);
+        Assert.Equal(new[] { "Keep", "JE Arr Tag: dave" }, library.Show.Tags);
     }
 }
