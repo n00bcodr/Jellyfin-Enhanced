@@ -1701,6 +1701,9 @@ export const bootstrapSchema = {
         "LongPress2xEnabled": {
           "type": "boolean"
         },
+        "MaintainerrActionsAvailable": {
+          "type": "boolean"
+        },
         "MaintenanceModeAction": {
           "type": "string"
         },
@@ -2378,6 +2381,7 @@ export const bootstrapSchema = {
         "LogoTagsPosition",
         "LogoTagsSeriesMode",
         "LongPress2xEnabled",
+        "MaintainerrActionsAvailable",
         "MaintenanceModeAction",
         "MaintenanceModeAffectedUsers",
         "MaintenanceModeEnabled",

@@ -385,7 +385,7 @@ public class ApiMediaTagsPortableTests
         Assert.False(settings.ContainsKey("CustomTagRuleKey"));
         Assert.False(settings.ContainsKey("ClearLocalStorageTimestamp"));
         Assert.Equal(MediaTagsPortable.AdminFields(MediaTagsPageFields.Allowed), settings.Select(p => p.Key));
-        Assert.Equal(MediaTagsPageFields.Allowed.Count - 2, settings.Count);
+        Assert.Equal(MediaTagsPageFields.Allowed.Count - 1, settings.Count);
         Assert.Equal("Remaster", (string?)settings["CustomTagRules"]![0]!["Label"]);
         Assert.Equal("ls012345", (string?)settings["AwardsTagsImdbList"]);
         Assert.Equal("studio", (string?)settings["LogoTagsMovieMode"]);
@@ -668,8 +668,8 @@ public class ApiMediaTagsPortableTests
         // Other spellings of a credential, from a hand-edited or newer document.
         foreach (var field in new[] { "tmdb_api_key", "Other-Api-Key", "AuthToken", "AdminPassword", "ClientSecretValue", "leavingsoonmaintainerrapikey", "Leaving-Soon-Maintainerr-Api-Key" })
             Assert.True(MediaTagsPortable.IsSecret(field), field);
-        // No page field is one: they all export.
-        Assert.Equal(new[] { "LeavingSoonMaintainerrApiKey" }, MediaTagsPageFields.Allowed.Where(MediaTagsPortable.IsSecret));
+        // No page field is one: they all export (the Maintainerr key is saved by the Services tab, not this page).
+        Assert.Empty(MediaTagsPageFields.Allowed.Where(MediaTagsPortable.IsSecret));
 
         // Both previews report every one as a secret, never as unknown, and read none of them.
         var settings = new JsonObject { ["TagGap"] = "roomy" };

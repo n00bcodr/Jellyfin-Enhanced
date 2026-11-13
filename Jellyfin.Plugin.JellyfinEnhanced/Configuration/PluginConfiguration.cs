@@ -958,6 +958,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string LeavingSoonCollections { get; set; } = string.Empty;
         /// <summary>Hours between Leaving soon refreshes (1-168).</summary>
         public int LeavingSoonRefreshHours { get; set; } = 6;
+        /// <summary>
+        /// Administrators mark, keep and postpone removals from the item menu (writes to Maintainerr's manual
+        /// collections). Needs the Maintainerr URL. On by default: the menu rows only appear for administrators.
+        /// </summary>
+        public bool LeavingSoonMaintainerrActions { get; set; } = true;
+        /// <summary>
+        /// A "Leaving soon" row on the Home Screen Sections home page (registered with that plugin when it is
+        /// installed), listing Maintainerr's members soonest removal first. Needs the Maintainerr URL.
+        /// </summary>
+        public bool LeavingSoonHomeRow { get; set; } = true;
         /// <summary>Starting poster tag layout for new users (corners, bands, caption, summary, minimal).</summary>
         [AnalyticsInclude]
         public string TagLayout { get; set; } = "corners";

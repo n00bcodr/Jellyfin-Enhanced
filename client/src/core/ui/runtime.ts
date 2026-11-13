@@ -62,12 +62,16 @@ export function createUi(host: UiHost) {
      * JE.core.ui.escapeHtml before passing it in.
      * @param html The (already localized/escaped) content to display.
      * @param [duration] How long to show the toast, in ms (default: the Toast Notification Duration setting; 0 there turns toasts off).
+     * @param [options] An action button (Undo): the toast stays at least 6 seconds so it can be pressed, and closes
+     *   when it is.
+     * @returns The toast, or null when toasts are off.
      */
-    function toast(html: string, duration?: number) {
+    function toast(html: string, duration?: number, options?: ToastOptions): HTMLElement | null {
         const configured = host.toastDuration();
         // A duration of 0 in the plugin settings turns toasts off, including ones that pass their own duration.
-        if (configured === 0) return;
-        const ms = duration ?? configured ?? 1500;
+        if (configured === 0) return null;
+        const action = options?.action;
+        const ms = Math.max(duration ?? configured ?? 1500, action ? 6000 : 0);
 
         // Use the theme system to get appropriate colors
         const themeVars = host.themeVariables();
@@ -97,12 +101,35 @@ export function createUi(host: UiHost) {
             maxWidth: 'clamp(280px, 80vw, 350px)'
         });
         t.innerHTML = html; // Note: the calling function should pass the localized string
-        document.body.appendChild(t);
-        host.setTimeout(() => t.style.transform = 'translateX(0)', 10);
-        host.setTimeout(() => {
+        let closed = false;
+        const close = (): void => {
+            if (closed) return;
+            closed = true;
             t.style.transform = 'translateX(100%)';
             host.setTimeout(() => t.remove(), 300);
-        }, ms);
+        };
+        if (action) {
+            t.style.display = 'flex';
+            t.style.alignItems = 'center';
+            t.style.gap = '12px';
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'jellyfin-enhanced-toast-action';
+            button.textContent = action.label;
+            Object.assign(button.style, {
+                background: 'transparent', border: 'none', color: themeVars.primaryAccent || '#00a4dc', cursor: 'pointer',
+                font: 'inherit', fontWeight: '700', textTransform: 'uppercase', padding: '4px 6px', marginLeft: 'auto',
+            });
+            button.addEventListener('click', () => {
+                close();
+                try { action.onClick(); } catch (err) { console.warn('🪼 Jellyfin Enhanced: toast action failed', err); }
+            });
+            t.appendChild(button);
+        }
+        document.body.appendChild(t);
+        host.setTimeout(() => t.style.transform = 'translateX(0)', 10);
+        host.setTimeout(close, ms);
+        return t;
     }
 
     // One capture listener per installed UI runtime; siblings do not cancel taps.
@@ -258,3 +285,6 @@ export function createUi(host: UiHost) {
         addTouchTapListener, addDelegatedTouchTapListener, isTvLayout };
 }
 export type Ui = ReturnType<typeof createUi>;
+
+/** A toast's optional action button (e.g. Undo). */
+export interface ToastOptions { action?: { label: string; onClick: () => void } }

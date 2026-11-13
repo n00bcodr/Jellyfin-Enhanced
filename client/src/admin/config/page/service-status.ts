@@ -1,5 +1,5 @@
 import type { PageModules } from './modules';
-import { asObject, num, shown } from '../domain/config';
+import { asObject, num, shown, type JsonObject } from '../domain/config';
 import type { ServiceCard, ServiceUsage } from './types';
 import { requestFailure } from '../domain/http';
 import { asControl, asHtml, asInput } from './dom';
@@ -88,6 +88,69 @@ export function createServiceStatus(m: ServiceStatusDeps) {
                     done({ remaining: typeof u.RemainingMonth === 'number' ? u.RemainingMonth : null, limit: num(u.LimitMonth) || 5000 });
                 }).catch(function() { done({ error: 'Could not read DoesTheDogDie usage' }); });
             }
+        }
+
+        // Maintainerr card (*arr tab, its linked copy under Services, and the Overview's Service Status): the server's
+        // last read of the Leaving soon source and its Home Screen Sections row (GET admin/leaving-soon), and Refresh now
+        // (POST admin/leaving-soon/refresh). Upstream 481a10ee keeps this as JEAdmin.maintainerr in sections.js.
+        var MAINTAINERR_ROW: Readonly<Record<string, string>> = {
+            registered: 'Home row: registered with Home Screen Sections.',
+            'hss-missing': 'Home row: Home Screen Sections is not installed, so there is no row.',
+            'ft-missing': 'Home row: registered, but File Transformation is not installed, so Home Screen Sections cannot draw it.',
+            failed: 'Home row: registration failed (see the plugin log).',
+            off: '',
+            unknown: 'Home row: waiting for Home Screen Sections to load.'
+        };
+        var maintainerrBusy = false;
+        /** The last answer, or { failed: true } when it could not be read; null before the first. */
+        var maintainerrLast: JsonObject | null = null;
+
+        function maintainerrWhen(ms: unknown): string {
+            if (typeof ms !== 'number' || !Number.isFinite(ms)) return '\u2014';
+            try { return new Date(ms).toLocaleString(); } catch (e) { return new Date(ms).toISOString(); }
+        }
+
+        function paintMaintainerr(s: JsonObject | null, failed: boolean): void {
+            var state = asHtml(document.getElementById('maintainerrStatusLine'));
+            var icon = asHtml(document.getElementById('maintainerrStatusIndicator'));
+            var row = asHtml(document.getElementById('maintainerrRowLine'));
+            var button = asControl(document.getElementById('maintainerrRefreshBtn'));
+            if (!state) return;
+            if (button) button.disabled = maintainerrBusy || !(s && s.Configured === true);
+            var text: string, kind: string;
+            if (failed || !s) { text = 'Status unavailable.'; kind = 'warn'; }
+            else if (s.Configured !== true) { text = 'No source set. Enter the Maintainerr address and save.'; kind = 'off'; }
+            else if (s.LastError) { text = 'Last read failed: ' + shown(s.LastError) + '.'; kind = 'error'; }
+            else if (s.LastSuccess) { kind = 'ok'; text = num(s.Items) + ' item(s) leaving (' + num(s.Dated) + ' with a date). Last read ' + maintainerrWhen(s.LastSuccess) + ', next ' + maintainerrWhen(s.NextRefresh) + '.'; }
+            else { text = 'Not read yet.'; kind = 'warn'; }
+            state.textContent = text;
+            if (icon) {
+                icon.textContent = kind === 'ok' ? 'check_circle' : kind === 'error' ? 'error' : kind === 'off' ? 'remove_circle_outline' : 'info';
+                icon.style.color = kind === 'ok' ? '#4caf50' : kind === 'error' ? '#f44336' : '';
+            }
+            if (row) row.textContent = s && s.Maintainerr === true && typeof s.HomeRow === 'string' ? (MAINTAINERR_ROW[s.HomeRow] ?? '') : '';
+        }
+
+        /** Read the state (or read Maintainerr again first), then repaint the card and the Overview's Service Status. */
+        function loadMaintainerr(refresh: boolean): Promise<void> {
+            if (maintainerrBusy) return Promise.resolve();
+            maintainerrBusy = true;
+            var pending = asHtml(document.getElementById('maintainerrStatusLine'));
+            if (pending) pending.textContent = refresh ? 'Reading Maintainerr\u2026' : 'Loading status\u2026';
+            var button = asControl(document.getElementById('maintainerrRefreshBtn'));
+            if (button) button.disabled = true;
+            var url = ApiClient.getUrl('JellyfinEnhanced/admin/leaving-soon' + (refresh ? '/refresh' : ''));
+            return ApiClient.ajax({ type: refresh ? 'POST' : 'GET', url: url, dataType: 'json' }).then(function(answer) {
+                return { status: asObject(answer), failed: false };
+            }, function() {
+                return { status: null, failed: true };
+            }).then(function(result) {
+                maintainerrBusy = false;
+                if (m.context.lifecycle.disposed) return;
+                maintainerrLast = result.failed ? { failed: true } : result.status;
+                paintMaintainerr(result.status, result.failed);
+                try { renderServiceStatusDashboard(); } catch (e) { /* dashboard not mounted */ }
+            });
         }
 
         function renderServiceStatusDashboard() : void {
@@ -206,6 +269,33 @@ export function createServiceStatus(m: ServiceStatusDeps) {
                 });
             }
 
+            // Maintainerr: always listed. With an address, the server's last read of it (admin/leaving-soon) is the state.
+            var maintainerrUrl = readFieldValue('#LeavingSoonMaintainerrUrl');
+            var maintainerrCard: ServiceCard = { id: 'maintainerr', name: 'Maintainerr', tab: 'arr', icon: 'auto_delete', scrollTo: '#LeavingSoonMaintainerrUrl', state: 'off', detail: '' };
+            if (!maintainerrUrl) {
+                maintainerrCard.detail = 'Not set up';
+            } else {
+                var ms = maintainerrLast;
+                if (!ms) {
+                    maintainerrCard.state = 'pending';
+                    maintainerrCard.detail = 'Checking...';
+                    void loadMaintainerr(false);
+                } else if (ms.failed === true || ms.Maintainerr !== true) {
+                    maintainerrCard.state = 'warn';
+                    maintainerrCard.detail = ms.failed === true ? 'Status unavailable' : 'Address not saved yet';
+                } else if (ms.LastError) {
+                    maintainerrCard.state = 'error';
+                    maintainerrCard.detail = 'Last read failed: ' + shown(ms.LastError);
+                } else if (ms.LastSuccess) {
+                    maintainerrCard.state = 'ok';
+                    maintainerrCard.detail = num(ms.Items) + ' item(s) leaving';
+                } else {
+                    maintainerrCard.state = 'pending';
+                    maintainerrCard.detail = 'Configured, not yet read';
+                }
+            }
+            pushCard(maintainerrCard);
+
             // MDBList and DoesTheDogDie: always listed, with the remaining request budget once it has been read.
             [
                 { id: 'mdblist', name: 'MDBList', icon: 'star_rate', on: '#mdblistRatingsEnabled', key: '#mdblistApiKey', period: 'today' },
@@ -317,12 +407,23 @@ export function createServiceStatus(m: ServiceStatusDeps) {
 
     /** Runs this module's start-up work, in the page's original order. */
     function wire(): void {
-
+        // The Maintainerr card: Refresh now, and a fresh read whenever the Services tab (its linked copy) is opened,
+        // since the server's answer changes while the page is open (schedule, other administrators).
+        var refreshButton = asControl(document.getElementById('maintainerrRefreshBtn'));
+        if (refreshButton) {
+            refreshButton.addEventListener('click', function() { void loadMaintainerr(true); }, { signal: m.context.lifecycle.signal });
+            document.addEventListener('click', function(e) {
+                var target = e.target instanceof Element ? e.target : null;
+                if (target && target.closest('.jellyfin-tab-button[data-tab="services"]')) m.context.lifecycle.timeout(function() { void loadMaintainerr(false); }, 0);
+            }, { signal: m.context.lifecycle.signal });
+            m.context.lifecycle.timeout(function() { void loadMaintainerr(false); }, 0);
+        }
     }
 
     return {
         wire,
         renderServiceStatusDashboard,
         updateStatusDashboard,
+        loadMaintainerr,
     };
 }

@@ -1,0 +1,12 @@
+.je-mt-backdrop{position:fixed;inset:0;z-index:100001;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:16px}
+.je-mt-dialog{background:#1f1f1f;color:#fff;border-radius:8px;padding:20px 22px;max-width:420px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.6);font-size:15px}
+.je-mt-title{margin:0 0 6px;font-size:1.25em}
+.je-mt-hint{margin:0 0 14px;opacity:.8}
+.je-mt-quick{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.je-mt-button{border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.08);color:inherit;border-radius:6px;padding:8px 12px;cursor:pointer;font:inherit}
+.je-mt-button:hover,.je-mt-button:focus-visible{background:rgba(255,255,255,.18);outline:none}
+.je-mt-custom{display:flex;align-items:flex-end;gap:8px;margin-bottom:16px}
+.je-mt-custom label{display:flex;flex-direction:column;gap:4px;flex:1}
+.je-mt-label{font-size:.85em;opacity:.8}
+.je-mt-input{background:rgba(255,255,255,.08);color:inherit;border:1px solid rgba(255,255,255,.18);border-radius:6px;padding:8px;font:inherit;width:100%;box-sizing:border-box}
+.je-mt-footer{display:flex;justify-content:space-between;gap:8px}

@@ -37,7 +37,7 @@ interface MenuContext {
 // sheet with the item menu's own rows, and while a poster tag type is on.
 //
 // Public surface: JE.tagItemMenu { inject } (tests).
-export function createItemMenu(JE: TagRuntimeBridge) {
+export function createItemMenu(JE: TagRuntimeBridge, alsoCapture?: (e: Event) => void) {
 
     const DATA_ID = 'je-media-tags';
     const CONTEXT_TTL_MS = 5000;
@@ -65,6 +65,8 @@ export function createItemMenu(JE: TagRuntimeBridge) {
      * Remember the item whose menu is about to open.
      */
     function capture(e: Event) {
+        // The Maintainerr rows (same bundle) learn the menu's item from the same press.
+        alsoCapture?.(e);
         const el = e.target instanceof HTMLElement ? e.target : null;
         if (!el || el.closest('.actionSheet, .dialogContainer, .je-tie-backdrop')) return;
         const more = el.closest<HTMLElement>('.btnMoreCommands');

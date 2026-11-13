@@ -75,10 +75,11 @@
       }
       return false;
     }
-    function toast(html, duration) {
+    function toast(html, duration, options) {
       const configured = host.toastDuration();
-      if (configured === 0) return;
-      const ms = duration ?? configured ?? 1500;
+      if (configured === 0) return null;
+      const action = options?.action;
+      const ms = Math.max(duration ?? configured ?? 1500, action ? 6e3 : 0);
       const themeVars = host.themeVariables();
       const toastBg = themeVars.secondaryBg || "linear-gradient(135deg, rgba(0,0,0,0.9), rgba(40,40,40,0.9))";
       const toastBorder = `1px solid ${themeVars.primaryAccent || "rgba(255,255,255,0.1)"}`;
@@ -105,12 +106,46 @@
         maxWidth: "clamp(280px, 80vw, 350px)"
       });
       t.innerHTML = html;
-      document2.body.appendChild(t);
-      host.setTimeout(() => t.style.transform = "translateX(0)", 10);
-      host.setTimeout(() => {
+      let closed = false;
+      const close = () => {
+        if (closed) return;
+        closed = true;
         t.style.transform = "translateX(100%)";
         host.setTimeout(() => t.remove(), 300);
-      }, ms);
+      };
+      if (action) {
+        t.style.display = "flex";
+        t.style.alignItems = "center";
+        t.style.gap = "12px";
+        const button = document2.createElement("button");
+        button.type = "button";
+        button.className = "jellyfin-enhanced-toast-action";
+        button.textContent = action.label;
+        Object.assign(button.style, {
+          background: "transparent",
+          border: "none",
+          color: themeVars.primaryAccent || "#00a4dc",
+          cursor: "pointer",
+          font: "inherit",
+          fontWeight: "700",
+          textTransform: "uppercase",
+          padding: "4px 6px",
+          marginLeft: "auto"
+        });
+        button.addEventListener("click", () => {
+          close();
+          try {
+            action.onClick();
+          } catch (err) {
+            console.warn("🪼 Jellyfin Enhanced: toast action failed", err);
+          }
+        });
+        t.appendChild(button);
+      }
+      document2.body.appendChild(t);
+      host.setTimeout(() => t.style.transform = "translateX(0)", 10);
+      host.setTimeout(close, ms);
+      return t;
     }
     let lastScrollTs = 0;
     let lastScrollTarget = null;

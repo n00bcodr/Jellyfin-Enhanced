@@ -42,6 +42,44 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags
                 .ToArray();
         }
 
+        /// <summary>
+        /// Whether administrators' Maintainerr actions (mark, keep, postpone from the item menu) are on: their switch and
+        /// a Maintainerr URL.
+        /// </summary>
+        public static bool MaintainerrActionsEnabled(PluginConfiguration? config)
+            => config != null && config.LeavingSoonMaintainerrActions && IsMaintainerrUrl(config.LeavingSoonMaintainerrUrl);
+
+        /// <summary>Whether the Leaving soon Home Screen Sections row is wanted: its switch and a Maintainerr URL.</summary>
+        public static bool HomeRowWanted(PluginConfiguration? config)
+            => config != null && config.LeavingSoonHomeRow && IsMaintainerrUrl(config.LeavingSoonMaintainerrUrl);
+
+        /// <summary>
+        /// Check the source fields of a configuration a save brings (the Services tab's Maintainerr card, an API
+        /// call or a restored backup) against their contracts and store them trimmed: a Maintainerr address that
+        /// is not an <c>http(s)</c> address without credentials, query or fragment, a key with characters outside
+        /// printable ASCII or spaces, or a collection list over its bounds keeps the stored value
+        /// (<paramref name="current"/>, or empty); the refresh hours are clamped to 1 to 168. Returns what was
+        /// refused (names only, never the values, so a key cannot reach a log).
+        /// </summary>
+        public static IReadOnlyList<string> NormalizeSource(PluginConfiguration incoming, PluginConfiguration? current)
+        {
+            var problems = new List<string>();
+            var url = (incoming.LeavingSoonMaintainerrUrl ?? string.Empty).Trim();
+            if (url.Length == 0 || IsMaintainerrUrl(url)) incoming.LeavingSoonMaintainerrUrl = url;
+            else { incoming.LeavingSoonMaintainerrUrl = current?.LeavingSoonMaintainerrUrl ?? string.Empty; problems.Add("Maintainerr URL is not an http(s) address without credentials, query or fragment"); }
+
+            var key = (incoming.LeavingSoonMaintainerrApiKey ?? string.Empty).Trim();
+            if (key.Length <= 256 && key.All(c => c > ' ' && c < '\u007f')) incoming.LeavingSoonMaintainerrApiKey = key;
+            else { incoming.LeavingSoonMaintainerrApiKey = current?.LeavingSoonMaintainerrApiKey ?? string.Empty; problems.Add("Maintainerr API key is not printable ASCII without spaces (256 characters at most)"); }
+
+            var names = incoming.LeavingSoonCollections ?? string.Empty;
+            if (IsCollectionList(names) && names.Length <= 4096) incoming.LeavingSoonCollections = names.Trim();
+            else { incoming.LeavingSoonCollections = current?.LeavingSoonCollections ?? string.Empty; problems.Add($"Leaving collections are over {MaxCollectionNames} names of {MaxCollectionNameLength} characters"); }
+
+            incoming.LeavingSoonRefreshHours = Math.Clamp(incoming.LeavingSoonRefreshHours, 1, 168);
+            return problems;
+        }
+
         /// <summary>Whether a fallback list is acceptable as typed: every name within bounds and at most <see cref="MaxCollectionNames"/>.</summary>
         public static bool IsCollectionList(string? text)
         {

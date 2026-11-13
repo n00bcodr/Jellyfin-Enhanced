@@ -221,6 +221,11 @@ import { defineAllSections } from './sections';
  *  { id: 'shokoShowParodies', type: 'toggle' }
  *  { id: 'shokoShowOther', type: 'toggle' }
  *  { id: 'shokoUrlMappings', type: 'textarea' }
+ *  { id: 'LeavingSoonMaintainerrUrl', type: 'text' }
+ *  { id: 'LeavingSoonMaintainerrApiKey', type: 'text' }
+ *  { id: 'LeavingSoonMaintainerrActions', type: 'toggle' }
+ *  { id: 'LeavingSoonHomeRow', type: 'toggle' }
+ *  { id: 'LeavingSoonRefreshHours', type: 'number' }
  *  { id: 'arrLinksEnabled', type: 'toggle' }
  *  { id: 'showArrLinksAsText', type: 'toggle' }
  *  { id: 'arrLinksShowStatusSingle', type: 'toggle' }

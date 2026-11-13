@@ -67,6 +67,7 @@ Sources are relative to this folder; outputs are relative to `Jellyfin.Plugin.Je
 
 - Facades this feature publishes on `window.JellyfinEnhanced`: `tagPipeline`, `tagCacheStore`, `tagDirectPlay`, `reinitializeTagLayout`, `reinitializeQualityTags`, `adminTags`, `appendUserRatingToContainer`; `peopleTags` (step C4: the same object as its `JE.internals.peopleTags` slot, for the details page).
 - `JE.internals` slots it owns (`tests/frontend/architecture/internals-owners.json`): `peopleTags`.
+- `js/tags/tag-item-menu.js` also carries `editor/maintainerr-item-menu.ts` (upstream's `tags/maintainerr-item-menu.js`, the administrators' Mark / Keep / Postpone rows in the item menu, `JE.maintainerrMenu` for tests): the load order is pinned, so it has no script of its own, and the Media Tags row's capture listener hands it each ⋮ press.
 
 ## Settings / admin UI
 

@@ -940,7 +940,12 @@ For series cards on screen, and parent series of season/episode cards, the brows
 
 [Maintainerr](https://github.com/jorenn92/Maintainerr) puts the media its rules will delete into collections (often one called **Leaving Soon**) and deletes each item a set number of days after it was added. With **Leaving soon** on, cards say when an item goes.
 
-An administrator sets the source in **Media Tags** › **Status badges** › **Leaving soon**:
+An administrator sets the source in **\*arr** › **Maintainerr** (shown as a linked copy under **Services**; the **Media Tags** › **Status badges** › **Leaving soon** section shows its live state, with a **Refresh now** button and a link to the settings, and the Overview tab's **Service Status** lists Maintainerr with its last read):
+
+![Maintainerr on the Overview tab's Service Status](../images/tags/maintainerr-overview.webp)
+
+![The Maintainerr card in the *arr tab: address, key, status with Refresh now, the item-menu and home-row switches and the refresh interval](../images/tags/maintainerr-settings.webp)
+
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -948,11 +953,39 @@ An administrator sets the source in **Media Tags** › **Status badges** › **L
 | **Maintainerr API key** | Empty | Sent as `X-Api-Key` when set. It is kept in the plugin configuration like the other keys and never sent to users or written to the Leaving soon snapshot or logs |
 | **Leaving collections** | Empty | Existing Jellyfin collection names, one per line (up to 20), whose members count as leaving, without a date. For setups without the API; nothing is created |
 | **Refresh every** | 6 hours | How often the server reads the source again (1–168 hours) |
+| **Mark, keep and postpone from the item menu** | On | Administrators get **Mark for removal**, **Keep (cancel removal)** and **Postpone removal** in an item's ⋮ menu (see below). Needs the Maintainerr URL |
+| **Leaving soon home row** | On | A **Leaving soon** row on a [Home Screen Sections](https://github.com/IAmParadox27/jellyfin-plugin-home-sections) home page (see below). Needs the Maintainerr URL |
 | **Leaving soon** (family switch) | Off | Whether new users start with the badge on |
 
-Cards never ask Maintainerr: the **Refresh Leaving Soon Tags** scheduled task (hourly, acting only once the interval has passed), a source change and the section's **Refresh now** button read it on the server and put the result into the tag cache entries (`Leaving`). A failed request (including an answer that lists entries but no collection or member it can read, and a page of members that fails, or one after the first that is not a page) keeps the last good answer and retries after 15 minutes, then 30, 60 and so on, at most the refresh interval; the section shows the last read, the next one, the item counts and the last failure. Maintainerr items are matched by their Jellyfin item id (`mediaServerId`); a Plex-backed Maintainerr's movies and shows are matched by TMDB id. A season or episode leaves with its season or series, whichever goes first. Users who can see an item see its Maintainerr badge; a badge that only a leaving collection gives is shown to users who can access that collection (as for collection-matched [Custom Tags](#custom-tags)). The collection names and the Maintainerr address stay on the server.
+![Media Tags › Status badges › Leaving soon: the leaving collections list, the live state and the home row's state](../images/tags/maintainerr-media-tags.webp)
 
-`LeavingSoonMaintainerrApiKey` is explicitly excluded from both user and administrator portable exports/imports, public/private configuration and runtime snapshots. The Status badges page shows the key in a plain text field like the TMDB key, and its patch response returns it and conflict-checks it like any other field; the administrator-only core Jellyfin plugin configuration API keeps its normal credential-editing contract. Source URLs, collection names and cadence are administrator settings; private collection provenance never reaches tag clients.
+Cards never ask Maintainerr: the **Refresh Leaving Soon Tags** scheduled task (hourly, acting only once the interval has passed), a source change and **Refresh now** (in the Services card and in the Leaving soon section) read it on the server and put the result into the tag cache entries (`Leaving`). A failed request (including an answer that lists entries but no collection or member it can read, and a page of members that fails, or one after the first that is not a page) keeps the last good answer and retries after 15 minutes, then 30, 60 and so on, at most the refresh interval; the card shows the last read, the next one, the item counts and the last failure. Maintainerr items are matched by their Jellyfin item id (`mediaServerId`); a Plex-backed Maintainerr's movies and shows are matched by TMDB id. A season or episode leaves with its season or series, whichever goes first. Users who can see an item see its Maintainerr badge; a badge that only a leaving collection gives is shown to users who can access that collection (as for collection-matched [Custom Tags](#custom-tags)). The collection names and the Maintainerr address stay on the server.
+
+`LeavingSoonMaintainerrApiKey` is explicitly excluded from both user and administrator portable exports/imports, public/private configuration and runtime snapshots. The Maintainerr card (the *arr tab, with a linked copy under Services) keeps the key in a plain text field like the TMDB key, saved with the configuration page's **Save** button, and the Media Tags field patch neither takes nor returns it. The administrator-only core Jellyfin plugin configuration API retains its normal credential-editing contract. Source URLs, collection names and cadence are administrator settings; private collection provenance never reaches tag clients.
+
+#### Marking, keeping and postponing from the item menu
+
+With **Mark, keep and postpone from the item menu** on (and a Maintainerr URL), an administrator's ⋮ menu on a movie or series (the detail page's or a card's) gets:
+
+| Item | Row | What happens |
+|---|---|---|
+| Not in Maintainerr | **Mark for removal** | The item is added to Maintainerr's manual collection for its library, at once, and a toast with **Undo** follows (Undo removes it again). There is no confirm dialog |
+| In Maintainerr | **Keep (cancel removal)** | The item is removed from its Maintainerr collection; the toast's **Undo** marks it again |
+| In Maintainerr | **Postpone removal** | A small chooser: **+7**, **+14**, **+30** or **+90 days**, a custom count (1–3650), or **Reset timer** (count the collection's days from today) |
+
+![The ⋮ menu of a movie Maintainerr does not list: Mark for removal](../images/tags/maintainerr-menu-unmarked.webp) ![Marking applies at once, with an Undo](../images/tags/maintainerr-toast.webp)
+
+![The ⋮ menu of a movie Maintainerr lists: Keep and Postpone removal](../images/tags/maintainerr-menu-marked.webp) ![The postpone chooser](../images/tags/maintainerr-postpone.webp)
+
+Maintainerr is set up first, as today, with a rule per library that uses a **manual collection** (its "Use manual collection" option); the plugin never creates collections. An item is matched to the one active manual collection of its type (movie or show) on its Jellyfin library. When one library has several (say a 4K and an HD list, each tied to its own Radarr), the plugin asks each collection's Radarr or Sonarr server, as Maintainerr lists them, whether it holds the item (by TMDB id for movies, TVDB id for series) and uses the one that does. When nothing fits, or more than one does, the toast says so and names Maintainerr's collections. Every change reads Maintainerr again at once, so the badge, the row and the next menu follow without waiting for the scheduled refresh. The rows are only offered to administrators, and the server refuses everyone else regardless; the Maintainerr address and key, and the *arr addresses and keys Maintainerr holds, never reach the browser. Seasons and episodes get no rows.
+
+The rows are added to Jellyfin's item menu the same way as **Media Tags**, so they share its dependence on jellyfin-web's private menu behaviour (see [One item's look](#one-items-look)).
+
+#### The Leaving soon home row
+
+With **Leaving soon home row** on (and a Maintainerr URL), the plugin registers a **Leaving soon** section with the [Home Screen Sections](https://github.com/IAmParadox27/jellyfin-plugin-home-sections) plugin when that plugin is installed (it also needs File Transformation to draw its rows). The row lists Maintainerr's items the viewer can see, soonest removal first, movies and series only (a leaving season or episode shows as its series), up to 20. It is registered on every start (Home Screen Sections keeps registrations in memory) and, if Home Screen Sections has no entry for it yet, added to its section list enabled for everyone with user override allowed; users who keep their own section list may need to turn it on there. The **Leaving soon** section of the Media Tags tab says whether the row is registered, or which plugin is missing. The cards carry the usual Leaving soon badge for users who have it on.
+
+![The Leaving soon row on the home page, soonest removal first](../images/tags/maintainerr-home-row.webp)
 
 ### Direct-play warning
 

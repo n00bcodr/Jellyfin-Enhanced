@@ -1,5 +1,5 @@
 {
-  "_source": "What Shared/MediaTags/MediaTagsPageFields.cs, Features/Admin/Services/WhatsNewService.cs and scripts/generate_config_flag_groups.py read from the section modules at 0e141dfae70366c87e1ccd7eedd4b368887f5d3b (the hand-written JavaScript), through tests/frontend/helpers/admin-tags-declarations.mjs. The generated modules must read the same. Since then: TagKindLooks (Default look: Size and opacity per tag).",
+  "_source": "What Shared/MediaTags/MediaTagsPageFields.cs, Features/Admin/Services/WhatsNewService.cs and scripts/generate_config_flag_groups.py read from the section modules at 0e141dfae70366c87e1ccd7eedd4b368887f5d3b (the hand-written JavaScript), through tests/frontend/helpers/admin-tags-declarations.mjs. The generated modules must read the same. Since then: TagKindLooks (Default look: Size and opacity per tag). Upstream 481a10ee moved the Maintainerr URL, key and refresh interval to the Services tab's form (the *arr tab's Maintainerr card), so they left this tab.",
   "allowed": [
     "AgeRatingTagsEnabled",
     "AgeRatingTagsPosition",
@@ -36,9 +36,6 @@
     "LanguageTagsShowSubtitles",
     "LanguageTagsStyle",
     "LeavingSoonCollections",
-    "LeavingSoonMaintainerrApiKey",
-    "LeavingSoonMaintainerrUrl",
-    "LeavingSoonRefreshHours",
     "LogoTagsEnabled",
     "LogoTagsMaxLogos",
     "LogoTagsMovieMode",
@@ -150,10 +147,7 @@
     "statusTagsOnCollections",
     "statusTagsJustAddedDays",
     "statusTagsNewReleaseDays",
-    "leavingSoonMaintainerrUrl",
-    "leavingSoonMaintainerrApiKey",
     "leavingSoonCollections",
-    "leavingSoonRefreshHours",
     "tagStylesEnabled",
     "tagStyleTarget",
     "tagStylesAllowUserPreset",
@@ -396,28 +390,7 @@
         }
       ],
       [
-        "leavingSoonMaintainerrUrl",
-        {
-          "tab": "badges",
-          "group": null
-        }
-      ],
-      [
-        "leavingSoonMaintainerrApiKey",
-        {
-          "tab": "badges",
-          "group": null
-        }
-      ],
-      [
         "leavingSoonCollections",
-        {
-          "tab": "badges",
-          "group": null
-        }
-      ],
-      [
-        "leavingSoonRefreshHours",
         {
           "tab": "badges",
           "group": null
@@ -1129,24 +1102,9 @@
         "New release"
       ],
       [
-        "LeavingSoonMaintainerrUrl",
-        "Leaving soon",
-        "Maintainerr URL"
-      ],
-      [
-        "LeavingSoonMaintainerrApiKey",
-        "Leaving soon",
-        "Maintainerr API key"
-      ],
-      [
         "LeavingSoonCollections",
         "Leaving soon",
         "Leaving collections"
-      ],
-      [
-        "LeavingSoonRefreshHours",
-        "Leaving soon",
-        "Refresh every"
       ]
     ],
     "colours.js": [

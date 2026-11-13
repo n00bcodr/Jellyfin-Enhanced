@@ -5,7 +5,7 @@ import type { Lifecycle } from '../../core/lifecycle';
 import type { Navigation } from '../../core/navigation';
 import type { Session } from '../../core/session';
 import type { CoreApi } from '../../core/api/api';
-import type { Ui } from '../../core/ui/runtime';
+import type { ToastOptions, Ui } from '../../core/ui/runtime';
 import type { MediaLanguage } from './types/language/media-language';
 import type { RatingSources } from './types/ratings/rating-sources';
 import type { PosterColours } from './layout/poster-colours';
@@ -17,6 +17,7 @@ import type { TagScopes, TagSettingsMatrix } from './pipeline/scopes';
 import type { TagCacheStore } from './pipeline/tag-cache-store';
 import type { DirectPlay } from './types/direct-play/tag-direct-play';
 import type { ItemEditor } from './editor/tag-item-editor';
+import type { MaintainerrMenu } from './editor/maintainerr-item-menu';
 import type { JsonRecord } from './pipeline/dto';
 
 /** Mutable settings documents with dynamic group keys; values stay unknown until read. */
@@ -100,7 +101,7 @@ export interface TagRuntimeBridge {
     peopleTags?: TagRuntimeInternals['peopleTags'];
     cdn: { url(bucket: string, file: string): string; flagPng(code: string): string };
     t(key: string, values?: Readonly<Record<string, unknown>>): string;
-    toast?(message: string): unknown;
+    toast?(message: string, duration?: number, options?: ToastOptions): unknown;
     escapeHtml(value: string): string;
     takePrefetched?(name: string): unknown;
     detectCardRowSurface?(el: Element): string;
@@ -116,6 +117,7 @@ export interface TagRuntimeBridge {
     tagDirectPlay?: DirectPlay;
     tagItemEditor?: ItemEditor;
     tagItemMenu?: { inject(): Promise<void>; DATA_ID: string };
+    maintainerrMenu?: MaintainerrMenu;
     tagStyles?: import('./layout/tag-styles').TagStyles;
     genreTags?: { iconFor(name: string): string; labelFor(name: string): string };
     logoTags?: import('./types/logo/logotags').LogoTags;

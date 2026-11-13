@@ -107,6 +107,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddSingleton<RequestIdentityService>();
 
             serviceCollection.AddJeMvcFilters();
+            // Last: the earlier hosted services keep their start order.
+            serviceCollection.AddJeMediaTagsLateHostedServices();
         }
     }
 }

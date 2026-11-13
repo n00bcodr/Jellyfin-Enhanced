@@ -1357,6 +1357,101 @@
       "rewriteCommits": [],
       "reason": "The port changes two existing contract lines, which an unattended sync may not land: upstream's watch-providers batch reads Seerr's title detail through ProxyJellyseerrRequest when there is no TMDB key, so GetWatchProvidersBatch in auth-helper-calls.snapshot.json and GET watch-providers in auth-reads-by-route.base.json grow from {User 1, UserHelper.GetCurrentUserId 1} to {IsAdminUser 5, User 2, UserHelper.GetCurrentUserId 2} (the proxy's own reads). Reading Seerr outside the proxy to keep those lines would skip its permission checks and parental gating, a weaker check than upstream's. Everything else in the port only adds (one route, GET jellyseerr/streaming-region).",
       "needs": "A maintainer's review of the last commit of branch sync/contract-79a90422, `contract: upstream sync additions and two changed lines`: the finished port (tests, lab parity with upstream's build) with the snapshot lines for the new route (route-auth.snapshot.json, auth-helper-calls.snapshot.json, auth-reads-by-route.base.json, baselines/inventory-routes.txt, ExpectedRoutes 206 to 207) and the two changed lines above. Accepted, that branch lands as it is and marks this entry ported."
+    },
+    {
+      "sha": "e0c8763dcea4ecc0be47c852a2938eadbe7355d5",
+      "date": "2026-11-13T19:23:38+00:00",
+      "subject": "feat(poster-tags): draw native poster tags on Thumb images",
+      "class": "feature",
+      "features": [
+        "media-tags"
+      ],
+      "issues": [],
+      "release": null,
+      "size": {
+        "files": 2,
+        "insertions": 14,
+        "deletions": 5
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/NativePosterTagStamper.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/PosterTagImageFilter.cs"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "105ea35edae61e7f13f47f80e4dbeab302544fb5"
+      ],
+      "notes": "Applied as is at the moved paths (git show e0c8763d, Services/PosterTags/ to Features/MediaTags/PosterTags/, git apply --3way, clean): NativePosterTagStamper stamps an item's own Thumb tag the way it stamps its Primary (same owner, look, flags and pinned data hash) and re-keys that image type's blurhash under the new tag (ReKeyPrimaryBlurhash becomes ReKeyBlurhash with the image type); PosterTagImageFilter takes Thumb image requests as well as Primary ones. The two files were identical to upstream's before the commit apart from namespaces, and the composer already picks the landscape layout from the decoded image's aspect, so the Thumb composite is drawn landscape. Differences from upstream: one comment in the filter's fast path names Thumb too. No cached-output version moves: the composite cache is content-addressed by the base image (a Thumb never shares a key with a Primary), the tags resolved for the same settings and data do not change (ResolverVersion), and a Primary composite's pixels do not change (CompositionVersion). Tests added (upstream has none for this commit): tests/backend/Features/MediaTags/PosterTags/NativeThumbTagsTests.cs, two failing before the port.",
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p43-*"
+    },
+    {
+      "sha": "481a10eea0843e73b40101c917fed8db0426ef72",
+      "date": "2026-11-13T19:24:35+00:00",
+      "subject": "feat(maintainerr): mark, keep and postpone removals from the item menu, and a Leaving soon home row",
+      "class": "feature",
+      "features": [
+        "media-tags",
+        "admin",
+        "platform"
+      ],
+      "issues": [],
+      "release": null,
+      "size": {
+        "files": 42,
+        "insertions": 2362,
+        "deletions": 248
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/configPage.html",
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/admin/sections.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Controllers/MaintainerrController.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Helpers/MediaTagsPageFields.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Helpers/MediaTagsPortable.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Helpers/PluginConfigurationPatch.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/PluginServiceRegistrator.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/LeavingSoonHomeSection.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/LeavingSoonService.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/MaintainerrActions.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/MaintainerrHttp.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/component-scripts.json",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/core/ui-kit.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/sections/badges.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/locales/en.json",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/tags/maintainerr-item-menu.js",
+        "docs/advanced/admin-media-tags.md",
+        "docs/advanced/api.md",
+        "docs/advanced/config-flag-groups.json",
+        "docs/enhanced/tags.md",
+        "docs/images/tags/ (8 files)",
+        "scripts/tag-translation-coverage.mjs",
+        "tests/backend/Api/ApiMediaTagsPageTests.cs",
+        "tests/backend/Api/ApiMediaTagsPortableTests.cs",
+        "tests/backend/Integrations/IntegrationMaintainerrActionsTests.cs",
+        "tests/backend/PosterTags/LeavingSoonTests.cs",
+        "tests/docs/production-inventory.json",
+        "tests/fixtures/admin-tags-page-fields.json",
+        "tests/frontend/features/features-admin-tags-page-colours-status.test.mjs",
+        "tests/frontend/features/features-admin-tags-page-server.test.mjs",
+        "tests/frontend/features/features-admin-tags-page.old-form-fields.json",
+        "tests/frontend/features/features-maintainerr-menu.test.mjs"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "a56b4ca32cb5df2f7af105719dcfe2cd48c4e806"
+      ],
+      "unmappedPaths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Controllers/MaintainerrController.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/LeavingSoonHomeSection.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/MaintainerrActions.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/MaintainerrHttp.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/component-scripts.json"
+      ],
+      "notes": "Re-implemented. Server: Features/MediaTags/Services/MaintainerrHttp.cs, MaintainerrActions.cs and LeavingSoonHomeSection.cs (upstream's files in this tree's namespaces), LeavingSoonService.cs (the shared client, the collection each member came from, CollectionOf, MaintainerrItems, Status's Actions and HomeRow), Shared/MediaTags/LeavingSoonSources.cs (NormalizeSource, MaintainerrActionsEnabled, HomeRowWanted), PluginConfiguration (LeavingSoonMaintainerrActions, LeavingSoonHomeRow, both on), JellyfinEnhanced.cs (NormalizeSource on every full save), MediaTagsPageFields/PluginConfigurationPatch/MediaTagsPortable as upstream (the Maintainerr URL, key and refresh hours leave the Media Tags patch; the key is write-only there), BootstrapConfig.MaintainerrActionsAvailable, and the four admin routes in JeMediaTagsController.Maintainerr.cs. Client: features/media-tags/editor/maintainerr-item-menu.ts (+ .css), core/ui/runtime.ts (a toast's action button), the Media Tags page's Leaving soon section, the configuration page's *arr Maintainerr card with its Services copy (sections/arr.ts, about.ts, the template) and its status, Refresh and Overview card (page/service-status.ts), the 19 en.json strings and scripts/tag-translation-coverage.mjs. Docs and the eight screenshots as upstream. Differences from upstream: (1) One controller per feature: the routes are a partial of JeMediaTagsController (GetMaintainerrItemState, MarkForMaintainerrRemoval, KeepFromMaintainerrRemoval, PostponeMaintainerrRemoval) with the same paths, verbs, [Authorize] and admin check (JeControllerBase.IsAdminUser, the rule upstream's IsAdmin copies); MaintainerrActions comes [FromServices]; the body type is Features/MediaTags/Models/MaintainerrActionRequest.cs. (2) The home row's state reaches GET admin/leaving-soon and POST admin/leaving-soon/refresh through LeavingSoonService.HomeRowStatus, which LeavingSoonHomeSection sets, not through a new [FromServices] parameter, so those two routes' contract lines stay as they are. The status says off whenever the row is not wanted and unknown until the service's first look (upstream says off for the first seconds after a start, and keeps the previous state until its next minute-long loop after a switch changes). (3) LeavingSoonHomeSection keeps ft-missing after registering (upstream's next loop replaces it with registered although File Transformation is still missing; filed), calls HSS's RegisterSection once per process and retries only the missing section entry when adding it failed. It is registered with AddHostedService<T> (no factory, so the base-anchored factory snapshot is unchanged) and last of all (AddJeMediaTagsLateHostedServices), so every existing hosted service keeps its start order. (4) The pure rules live in Shared/MediaTags/LeavingSoonSources, so the bootstrap (Platform) and the configuration save read them without crossing into MediaTags; MaintainerrActions.Enabled and LeavingSoonHomeSection.Wanted forward to them. (5) MaintainerrHttp reads an empty success body as {} only for an action (not a GET): upstream's helper would read an empty first page of members as a source without the paged route and fall back to the embedded members, which this tree's stricter paging (LeavingSoonTests, the failed-page cases) refuses as a failed refresh. The paged route's 404 fallback reads MaintainerrException 404. (6) The item-menu rows are bundled into js/tags/tag-item-menu.js (component-scripts.json is pinned) and take each ⋮ press from the Media Tags row's own capture listener, so the page keeps one pair of document listeners for both (the leak guard's L2 ratchet); an action's toast is not shown when another user signed in while it ran (a session lease). (7) In this tree section modules declare markup and page modules wire it, so upstream's JEAdmin.maintainerr is part of page/service-status.ts. The Maintainerr card carries data-dep-setup like Bazarr's and Shoko's: upstream's card is locked in the *arr tab (its fields and Refresh disabled) whenever no Sonarr or Radarr is set up, although Maintainerr needs neither (filed). (8) Docs with this tree's paths; api.md counts 210 routes (206 + 4). Two corrections to upstream's text: LeavingSoonCollections stays a Media Tags field (upstream's api.md and admin-media-tags.md give it to the Services form, its code does not), and the key is a text field like the TMDB key (upstream's tags.md says a password field). Tests: upstream's backend tests at their moved paths (LeavingSoonSources.NormalizeSource; the home row's state through HomeRowStatus), two route-level tests (administrators only, 404 while off, 400 for an unknown item or a refusal, 502 with Maintainerr's reason and never the address or key); upstream's frontend tests at moved paths, loading tags/tag-item-menu.js, plus a user-switch case; the configuration page's old Maintainerr card test replaced by two tests of the new card. Records: tests/fixtures/admin-config-baseline.json (the five settings, the card's ids and section, their defaults), tests/frontend/features/media-tags/admin/admin-tags-rewrite.declarations.json and tests/fixtures/admin-tags-page-fields.json (the three fields that left the Media Tags page), docs/advanced/config-flag-groups.json regenerated (identical to upstream's change); the rewrite's own wide-box test no longer names the moved fields. Contract: four routes, MaintainerrActions (singleton) and LeavingSoonHomeSection (hosted service, appended to the IHostedService order) are added by the branch's last commit, contract: upstream sync additions. No cached-output version moves: leaving-soon.json keeps schema 2, and an older snapshot without the collection ids is read again when an action needs them (as upstream). Outbound: as upstream, the server now writes to the administrator's Maintainerr and, when one library has several manual collections, asks the Radarr or Sonarr servers Maintainerr lists (their addresses and keys from Maintainerr's settings API) whether they hold the item, through ArrUrlGuard; nothing new reaches the browser.",
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p44-*"
     }
   ]
 }

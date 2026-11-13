@@ -125,13 +125,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.PosterTags
         internal sealed record Plan(BaseItem Item, JUser User, PosterTagSettings Settings, PosterTagVariant Variant, string Tag, PosterTagDataSnapshot? Snapshot, bool Strong, bool SpoilerScoped, DateTimeOffset Instant);
 
         // Synchronous fast path: registered globally, so every MVC action pays
-        // only these checks unless the request is a Primary image whose tag
+        // only these checks unless the request is a Primary or Thumb image whose tag
         // carries a "-jet" token (which only exists once the feature was on).
         public Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
         {
             if (!IsImageAction(context)) return next();
             if (!context.ActionArguments.TryGetValue("imageType", out var imageType)
-                || !string.Equals(imageType?.ToString(), "Primary", StringComparison.OrdinalIgnoreCase))
+                || !(string.Equals(imageType?.ToString(), "Primary", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(imageType?.ToString(), "Thumb", StringComparison.OrdinalIgnoreCase)))
             {
                 return next();
             }

@@ -326,6 +326,10 @@
       "category": "Features"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Features/MediaTags/JeMediaTagsController.Maintainerr.cs",
+      "category": "Features"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Features/MediaTags/JeMediaTagsController.TagCache.cs",
       "category": "Features"
     },
@@ -335,6 +339,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Features/MediaTags/MediaTagsServiceRegistration.cs",
+      "category": "Features"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Features/MediaTags/Models/MaintainerrActionRequest.cs",
       "category": "Features"
     },
     {
@@ -434,7 +442,19 @@
       "category": "Features"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Features/MediaTags/Services/LeavingSoonHomeSection.cs",
+      "category": "Features"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Features/MediaTags/Services/LeavingSoonService.cs",
+      "category": "Features"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Features/MediaTags/Services/MaintainerrActions.cs",
+      "category": "Features"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Features/MediaTags/Services/MaintainerrHttp.cs",
       "category": "Features"
     },
     {
@@ -2966,6 +2986,46 @@
       "following_attributes": [
         "Authorize",
         "RequestSizeLimit(PluginConfigurationPatch.MaxRequestBytes)",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/maintainerr/item/{itemId}",
+      "method": "GetMaintainerrItemState",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Features/MediaTags/JeMediaTagsController.Maintainerr.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/maintainerr/mark",
+      "method": "MarkForMaintainerrRemoval",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Features/MediaTags/JeMediaTagsController.Maintainerr.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/maintainerr/unmark",
+      "method": "KeepFromMaintainerrRemoval",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Features/MediaTags/JeMediaTagsController.Maintainerr.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/maintainerr/postpone",
+      "method": "PostponeMaintainerrRemoval",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Features/MediaTags/JeMediaTagsController.Maintainerr.cs",
+      "following_attributes": [
+        "Authorize",
         "Produces(\"application/json\")"
       ]
     },
@@ -5737,6 +5797,22 @@
       "type": "int",
       "initializer": "6",
       "constructor_assignment": "6",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "LeavingSoonMaintainerrActions",
+      "type": "bool",
+      "initializer": "true",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "LeavingSoonHomeRow",
+      "type": "bool",
+      "initializer": "true",
+      "constructor_assignment": null,
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
     },
     {
@@ -10775,9 +10851,9 @@
   ],
   "counts": {
     "build_targets": 1,
-    "files": 549,
-    "routes": 206,
-    "configuration_properties": 760,
+    "files": 554,
+    "routes": 210,
+    "configuration_properties": 762,
     "storage_references": 96,
     "scheduled_tasks": 16,
     "locales": 33

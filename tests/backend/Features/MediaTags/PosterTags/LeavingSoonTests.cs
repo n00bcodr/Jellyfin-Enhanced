@@ -1229,32 +1229,73 @@ public sealed class LeavingSoonTests : IDisposable
         Assert.Equal(string.Empty, LeavingSoonService.ConfigurationIdentity(Config()));
     }
 
+    // Upstream 481a10ee: the Maintainerr source moved to the Services tab's form, so a configuration save checks it
+    // (LeavingSoonSources.NormalizeSource) and the Media Tags page's field patch no longer takes it.
     [Theory]
-    [InlineData("LeavingSoonMaintainerrUrl", "http://maintainerr:6246", true)]
-    [InlineData("LeavingSoonMaintainerrUrl", "", true)]
-    [InlineData("LeavingSoonMaintainerrUrl", "javascript:alert(1)", false)]
-    [InlineData("LeavingSoonMaintainerrUrl", "http://a:b@host", false)]
-    [InlineData("LeavingSoonMaintainerrApiKey", "abc123-XYZ", true)]
-    [InlineData("LeavingSoonMaintainerrApiKey", "has space", false)]
-    [InlineData("LeavingSoonCollections", "Leaving Soon\nGone Next Week", true)]
-    [InlineData("LeavingSoonCollections", "", true)]
-    public void Page_fields_are_validated(string field, string value, bool ok)
+    [InlineData("http://maintainerr:6246", true)]
+    [InlineData("", true)]
+    [InlineData("javascript:alert(1)", false)]
+    [InlineData("http://a:b@host", false)]
+    [InlineData("http://host/api?token=1", false)]
+    public void The_source_address_is_checked_on_a_save_and_a_refused_one_keeps_the_stored_value(string url, bool ok)
     {
-        Assert.Contains(field, MediaTagsPageFields.Allowed);
-        Assert.Equal(ok, MediaTagsPageFields.TryNormalize(field, value, out _, out var error));
-        Assert.Equal(ok, error == null);
+        var stored = new PluginConfiguration { LeavingSoonMaintainerrUrl = "http://stored:6246" };
+        var incoming = new PluginConfiguration { LeavingSoonMaintainerrUrl = url };
+        var problems = LeavingSoonSources.NormalizeSource(incoming, stored);
+        Assert.Equal(ok, problems.Count == 0);
+        Assert.Equal(ok ? url : "http://stored:6246", incoming.LeavingSoonMaintainerrUrl);
+    }
+
+    [Theory]
+    [InlineData("abc123-XYZ", true)]
+    [InlineData("", true)]
+    [InlineData("has space", false)]
+    [InlineData("naïve", false)]
+    public void The_key_is_printable_ascii_and_a_refused_one_keeps_the_stored_key_out_of_the_problems(string key, bool ok)
+    {
+        var incoming = new PluginConfiguration { LeavingSoonMaintainerrApiKey = key };
+        var problems = LeavingSoonSources.NormalizeSource(incoming, new PluginConfiguration { LeavingSoonMaintainerrApiKey = "stored-key" });
+        Assert.Equal(ok, problems.Count == 0);
+        Assert.Equal(ok ? key : "stored-key", incoming.LeavingSoonMaintainerrApiKey);
+        Assert.DoesNotContain(problems, p => p.Contains(key.Length > 0 ? key : "\u0001") || p.Contains("stored-key"));
     }
 
     [Fact]
-    public void Page_number_and_list_limits_are_validated()
+    public void The_refresh_hours_and_the_collection_list_are_bounded_on_a_save()
     {
-        Assert.True(MediaTagsPageFields.TryNormalize("LeavingSoonRefreshHours", 6, out _, out _));
-        Assert.False(MediaTagsPageFields.TryNormalize("LeavingSoonRefreshHours", 0, out _, out _));
-        Assert.False(MediaTagsPageFields.TryNormalize("LeavingSoonRefreshHours", 169, out _, out _));
+        foreach (var (given, expected) in new[] { (6, 6), (0, 1), (169, 168), (-5, 1) })
+        {
+            var c = new PluginConfiguration { LeavingSoonRefreshHours = given };
+            LeavingSoonSources.NormalizeSource(c, null);
+            Assert.Equal(expected, c.LeavingSoonRefreshHours);
+        }
+
+        var stored = new PluginConfiguration { LeavingSoonCollections = "Stored" };
+        var many = new PluginConfiguration { LeavingSoonCollections = string.Join("\n", Enumerable.Range(1, 21).Select(i => "Collection " + i)) };
+        Assert.Single(LeavingSoonSources.NormalizeSource(many, stored));
+        Assert.Equal("Stored", many.LeavingSoonCollections);
+        var long1 = new PluginConfiguration { LeavingSoonCollections = new string('x', 201) };
+        Assert.Single(LeavingSoonSources.NormalizeSource(long1, stored));
+        Assert.Equal("Stored", long1.LeavingSoonCollections);
+        var good = new PluginConfiguration { LeavingSoonCollections = " Leaving Soon\nGone Next Week " };
+        Assert.Empty(LeavingSoonSources.NormalizeSource(good, stored));
+        Assert.Equal("Leaving Soon\nGone Next Week", good.LeavingSoonCollections);
+        // The status family switches stay on the Media Tags page; the source fields no longer do.
+        foreach (var field in new[] { "StatusTagsLeaving", "StatusTagsDirectPlay" }) Assert.Contains(field, MediaTagsPageFields.Allowed);
+        foreach (var field in new[] { "LeavingSoonMaintainerrUrl", "LeavingSoonMaintainerrApiKey", "LeavingSoonRefreshHours" }) Assert.DoesNotContain(field, MediaTagsPageFields.Allowed);
+    }
+
+    [Theory]
+    [InlineData("Leaving Soon\nGone Next Week", true)]
+    [InlineData("", true)]
+    public void The_collections_list_is_a_Media_Tags_page_field_with_its_own_contract(string value, bool ok)
+    {
+        Assert.Contains("LeavingSoonCollections", MediaTagsPageFields.Allowed);
+        Assert.Equal(ok, MediaTagsPageFields.TryNormalize("LeavingSoonCollections", value, out _, out var error));
+        Assert.Equal(ok, error == null);
         var many = string.Join("\n", Enumerable.Range(1, 21).Select(i => "Collection " + i));
         Assert.False(MediaTagsPageFields.TryNormalize("LeavingSoonCollections", many, out _, out _));
         Assert.False(MediaTagsPageFields.TryNormalize("LeavingSoonCollections", new string('x', 201), out _, out _));
-        foreach (var field in new[] { "StatusTagsLeaving", "StatusTagsDirectPlay" }) Assert.Contains(field, MediaTagsPageFields.Allowed);
     }
 
     [Theory]

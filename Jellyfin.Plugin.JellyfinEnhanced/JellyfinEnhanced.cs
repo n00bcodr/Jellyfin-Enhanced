@@ -370,6 +370,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                     statusTagsConfig.StatusTagsNewReleaseDays = Math.Clamp(statusTagsConfig.StatusTagsNewReleaseDays, 1, 365);
                 }
 
+                // Leaving soon source (Services tab, Maintainerr): a value the field's contract refuses keeps the
+                // stored one, since a save can come from anywhere (API, restored backup).
+                if (configuration is PluginConfiguration leavingConfig)
+                {
+                    var leavingProblems = Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags.LeavingSoonSources.NormalizeSource(leavingConfig, Configuration);
+                    foreach (var problem in leavingProblems)
+                        _logger.Warning($"Jellyfin Enhanced: Leaving soon setting not saved ({problem}); keeping the current value.");
+                }
+
                 // Logos tag group: unknown modes, regions and maximums fall back to the defaults.
                 if (configuration is PluginConfiguration logosConfig) LogoTagRules.Normalize(logosConfig);
                 // Custom tag rules: unknown match types dropped, values and labels trimmed,

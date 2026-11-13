@@ -26,6 +26,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags
                 // Its Maintainerr client never follows redirects (the API key must not reach another origin).
                 LeavingSoonService.AddHttpClient(serviceCollection);
                 serviceCollection.AddSingleton<LeavingSoonService>();
+                // Administrators' Maintainerr actions (mark, keep, postpone) over the same client.
+                serviceCollection.AddSingleton<MaintainerrActions>();
                 // Server-wide trending list for the Status Tags poster badges (30-minute cache).
                 serviceCollection.AddSingleton<StatusTagsTrendingService>();
                 // TMDB schedule facts for the Status Tags series badges (rate-limited lookups).
@@ -59,6 +61,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags
                 serviceCollection.AddSingleton<PosterTagComposer>();
                 serviceCollection.AddSingleton<NativePosterTagStamper>();
                 serviceCollection.AddSingleton<PosterTagImageFilter>();
+            return serviceCollection;
+        }
+
+        /// <summary>
+        /// Media Tags' hosted services that start after every other one: called last in PluginServiceRegistrator, so
+        /// the hosted services registered before them keep their start order.
+        /// </summary>
+        public static IServiceCollection AddJeMediaTagsLateHostedServices(this IServiceCollection serviceCollection)
+        {
+            // The "Leaving soon" Home Screen Sections row (upstream 481a10ee): registered with HSS by reflection once it
+            // has loaded; its state reaches the admin status through LeavingSoonService.
+            serviceCollection.AddHostedService<LeavingSoonHomeSection>();
             return serviceCollection;
         }
     }

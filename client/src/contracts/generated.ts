@@ -245,6 +245,7 @@ export interface BootstrapPublicConfig {
   "LogoTagsPosition": string;
   "LogoTagsSeriesMode": string;
   "LongPress2xEnabled": boolean;
+  "MaintainerrActionsAvailable": boolean;
   "MaintenanceModeAction": string;
   "MaintenanceModeAffectedUsers": string;
   "MaintenanceModeEnabled": boolean;

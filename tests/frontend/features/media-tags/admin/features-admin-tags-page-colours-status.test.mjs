@@ -62,41 +62,29 @@ test('Status badges › Collections: one switch between the families and the win
   assert.deepEqual(h.patches.at(-1), { Changes: { StatusTagsOnCollections: false }, Expected: { StatusTagsOnCollections: true } });
 });
 
-test('Status badges › Leaving soon: source fields save, the key shows like the TMDB key, and Refresh saves first then asks the server', async t => {
-  const status = { Configured: true, Maintainerr: true, Collections: 1, CollectionsFound: 1, Items: 4, Dated: 3, LastSuccess: Date.UTC(2026, 9, 30, 9), NextRefresh: Date.UTC(2026, 9, 30, 15), LastError: null };
-  const h = setup(t, { config: { LeavingSoonCollections: 'Leaving Soon', LeavingSoonMaintainerrApiKey: 'stored-key-canary' }, routes: { '/admin/leaving-soon': () => status } });
+test('Status badges › Leaving soon: shows the live state and the home row, links to the Maintainerr settings, and edits only the collections list', async t => {
+  const status = { Configured: true, Maintainerr: true, Actions: true, HomeRow: 'registered', Collections: 1, CollectionsFound: 1, Items: 4, Dated: 3, LastSuccess: Date.UTC(2026, 9, 30, 9), NextRefresh: Date.UTC(2026, 9, 30, 15), LastError: null };
+  const h = setup(t, { config: { LeavingSoonMaintainerrUrl: 'http://maintainerr:6246', LeavingSoonCollections: 'Leaving Soon', LeavingSoonMaintainerrApiKey: 'stored-key-canary' }, routes: { '/admin/leaving-soon': () => status } });
   await h.settle(); await h.settle();
   assert.equal(h.$('[data-leaving-state]').textContent, 'Up to date');
   assert.match(h.$('[data-leaving-detail]').textContent, /^4 items leaving \(3 with a date\) · .* · 1 of 1 collections found$/);
-  const key = h.$('#leavingSoonMaintainerrApiKey');
-  assert.equal(key.type, 'text', 'a plain field, like the TMDB key');
-  assert.ok(key.classList.contains('je-ta-masked'), 'shown as dots until hovered or focused, like the TMDB key');
-  assert.equal(key.getAttribute('autocomplete'), 'off');
-  assert.equal(key.getAttribute('class'), 'je-ta-masked', 'one class attribute');
-  assert.equal(key.value, 'stored-key-canary', 'the stored key is shown');
-  h.change(h.$('#leavingSoonMaintainerrUrl'), ' http://maintainerr:6246 ');
-  h.change(key, 'abc123');
+  assert.equal(h.$('[data-leaving-row]').textContent, 'Item-menu actions: on. Home row: registered with Home Screen Sections.');
+  // The Maintainerr source belongs to the Services tab now: nothing here edits it or shows the key.
+  for (const id of ['leavingSoonMaintainerrUrl', 'leavingSoonMaintainerrApiKey', 'leavingSoonRefreshHours', 'leavingSoonMaintainerrActions', 'leavingSoonHomeRow']) assert.equal(h.$('#' + id), null, id);
+  assert.equal(h.$('#leavingSoonCollections').value, 'Leaving Soon', 'the collections list is the one source field kept here');
+  assert.ok(!h.document.body.textContent.includes('stored-key-canary'), 'the key is not shown on this page');
+  assert.match(h.$('.je-ta-link[href*="arr"]')?.getAttribute('href') || '', /tab=arr|section=arr|arr/);
   h.change(h.$('#leavingSoonCollections'), 'Leaving Soon\nGone Next Week');
-  h.change(h.$('#leavingSoonRefreshHours'), '500');
-  h.change(h.$('#statusTagsLeaving'), true);
-  h.change(h.$('#statusTagsDirectPlay'), true);
-  // Refresh: pending edits are saved before the server reads the source.
+  await h.save();
+  assert.equal(h.server.LeavingSoonCollections, 'Leaving Soon\nGone Next Week');
+  // Refresh asks the server straight away (there are no unsaved source edits on this page).
   h.$('#leavingSoonRefreshBtn').click();
   await h.settle(); await h.settle(); await h.settle();
-  assert.equal(h.server.LeavingSoonMaintainerrUrl, 'http://maintainerr:6246');
-  assert.equal(h.server.LeavingSoonMaintainerrApiKey, 'abc123');
-  assert.equal(h.server.LeavingSoonCollections, 'Leaving Soon\nGone Next Week');
-  assert.equal(h.server.LeavingSoonRefreshHours, 168);
-  assert.equal(h.server.StatusTagsLeaving, true);
-  assert.equal(h.server.StatusTagsDirectPlay, true);
-  assert.equal(key.value, 'abc123', 'what was typed stays in the box after the save');
-  h.ctx.reload({ ...h.server, LeavingSoonMaintainerrApiKey: 'another-stored-key' });
-  assert.equal(key.value, 'another-stored-key', 'a reload shows what the server stored');
   assert.deepEqual(h.posts.filter((p) => p.includes('leaving-soon')), ['/JellyfinEnhanced/admin/leaving-soon/refresh']);
+  assert.equal(h.$('.je-ta-snack')?.textContent, 'Leaving soon refreshed');
   // Without a source the button is off.
-  h.change(h.$('#leavingSoonMaintainerrUrl'), '');
-  h.change(h.$('#leavingSoonCollections'), '');
-  await h.save();
+  h.ctx.reload({ ...h.server, LeavingSoonMaintainerrUrl: '', LeavingSoonCollections: '' });
+  await h.settle();
   assert.equal(h.$('#leavingSoonRefreshBtn').disabled, true);
   assert.equal(h.$('[data-leaving-state]').textContent, 'No source set');
 });
@@ -106,11 +94,12 @@ test('boxes for long values (URLs, keys, lists) are wide, short ones are not, an
   const h = setup(t);
   await h.settle(); await h.settle();
   const control = (id) => h.$('#' + id).parentElement.getAttribute('class');
-  for (const id of ['leavingSoonMaintainerrUrl', 'leavingSoonMaintainerrApiKey', 'awardsTagsImdbList', 'awardsTagsLetterboxdList', 'languageTagsPriority']) {
+  // (Upstream 481a10ee moved the Maintainerr URL and key, the page's only masked field, to the Services tab.)
+  for (const id of ['awardsTagsImdbList', 'awardsTagsLetterboxdList', 'languageTagsPriority']) {
     assert.equal(control(id), 'je-ta-field-control je-ta-field-control--wide', id);
   }
-  for (const id of ['leavingSoonRefreshHours', 'awardsTagsRefreshHours']) assert.equal(control(id), 'je-ta-field-control', id);
-  assert.equal(h.$('#leavingSoonMaintainerrUrl').hasAttribute('class'), false, 'only a key is masked');
+  for (const id of ['awardsTagsRefreshHours']) assert.equal(control(id), 'je-ta-field-control', id);
+  assert.equal(h.$('#awardsTagsImdbList').hasAttribute('class'), false, 'only a key is masked');
   const css = readFileSync(resolve(jsRoot, 'enhanced/admintags/admin-tags.css'), 'utf8');
   assert.match(css, /\.je-ta-field-control--wide \{ flex: 0 1 28em; \}/);
   assert.match(css, /\.je-ta-field-control--wide input \{ width: 100%; \}/);
@@ -118,42 +107,12 @@ test('boxes for long values (URLs, keys, lists) are wide, short ones are not, an
   assert.match(css, /\.je-ta-masked:is\(:hover, :focus\) \{ -webkit-text-security: none; text-security: none; \}/);
 });
 
-test('Status badges › Leaving soon: Refresh asks nothing while the source edit is refused, and works once it is settled', async t => {
-  const status = { Configured: true, Collections: 1, CollectionsFound: 1, Items: 4, Dated: 3, LastSuccess: Date.UTC(2026, 9, 30, 9), NextRefresh: Date.UTC(2026, 9, 30, 15), LastError: null };
-  const h = setup(t, { config: { LeavingSoonCollections: 'Original' }, routes: { '/admin/leaving-soon': () => status } });
-  await h.settle(); await h.settle(); await h.settle();
-  const refreshes = () => h.posts.filter((p) => p.endsWith('/admin/leaving-soon/refresh'));
-  // Another administrator saved the source meanwhile.
-  h.change(h.$('#leavingSoonCollections'), 'Draft');
-  h.server.LeavingSoonCollections = 'Remote';
-  h.$('#leavingSoonRefreshBtn').click();
-  for (let n = 0; n < 10; n++) await h.settle();
-  assert.equal(h.A.pendingState().state, 'conflict');
-  assert.deepEqual(refreshes(), [], 'the stored source was not refreshed');
-  assert.equal(h.$('.je-ta-snack')?.textContent, 'Not refreshed: changes on this page are not saved yet. Retry the save, or choose Keep mine or Take theirs, then refresh again.');
-  assert.equal(h.$('#leavingSoonRefreshBtn').disabled, false, 'the button stays usable for a retry');
-  // Keep mine saves the draft; Refresh then asks the server.
-  h.$('#jeTaSaved [data-je-keep]').click();
-  await h.save();
-  assert.equal(h.server.LeavingSoonCollections, 'Draft');
-  h.$('#leavingSoonRefreshBtn').click();
-  for (let n = 0; n < 10; n++) await h.settle();
-  assert.equal(refreshes().length, 1);
-  assert.equal(h.$('.je-ta-snack')?.textContent, 'Leaving soon refreshed');
-});
-
-test('Status badges › Leaving soon: Refresh asks nothing when saving the source edit fails', async t => {
-  const status = { Configured: true, Collections: 1, CollectionsFound: 1, Items: 4, Dated: 3, LastSuccess: Date.UTC(2026, 9, 30, 9), NextRefresh: Date.UTC(2026, 9, 30, 15), LastError: null };
-  const h = setup(t, { config: { LeavingSoonCollections: 'Original' }, routes: { '/admin/leaving-soon': () => status }, patch: () => { throw { status: 500 }; } });
-  h.expectConsoleError(/could not save the Media Tags settings/);
-  await h.settle(); await h.settle(); await h.settle();
-  h.change(h.$('#leavingSoonCollections'), 'Draft');
-  h.$('#leavingSoonRefreshBtn').click();
-  for (let n = 0; n < 10; n++) await h.settle();
-  assert.equal(h.A.pendingState().state, 'error');
-  assert.deepEqual(h.posts.filter((p) => p.includes('leaving-soon')), []);
-  assert.equal(h.$('.je-ta-snack')?.textContent, 'Not refreshed: changes on this page are not saved yet. Retry the save, or choose Keep mine or Take theirs, then refresh again.');
-  assert.equal(h.$('#leavingSoonRefreshBtn').disabled, false);
+test('Status badges › Leaving soon: says which plugin is missing for the home row', async t => {
+  for (const [row, text] of [['hss-missing', 'Home Screen Sections is not installed'], ['ft-missing', 'File Transformation is not installed'], ['failed', 'registration failed']]) {
+    const h = setup(t, { config: { LeavingSoonMaintainerrUrl: 'http://maintainerr:6246' }, routes: { '/admin/leaving-soon': () => ({ Configured: true, Maintainerr: true, Actions: false, HomeRow: row, Items: 0, Dated: 0, LastSuccess: Date.UTC(2026, 9, 30, 9), LastError: null }) } });
+    await h.settle(); await h.settle();
+    assert.match(h.$('[data-leaving-row]').textContent, new RegExp('^Item-menu actions: off\\. Home row: .*' + text));
+  }
 });
 
 for (const outcome of ['answer', 'rejection']) {

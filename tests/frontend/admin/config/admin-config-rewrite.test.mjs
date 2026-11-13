@@ -790,20 +790,64 @@ test('the Custom Tabs copy snippets escape their quotes in the markup and still 
 });
 
 // Upstream 189a0a26: Maintainerr's address and key are fields of the Media Tags tab, so its Services card only explains and links.
-test('the Services tab has a Maintainerr card that says what it is for and links to the Leaving soon fields', async t => {
-  const h = await loadedPage(t);
-  const cards = [...h.document.querySelectorAll('#services fieldset.jea-section')];
-  assert.deepEqual(cards.map(c => c.querySelector('legend').textContent.trim()), ['TMDB', 'AniList', 'MDBList Ratings', 'Content Warnings (DoesTheDogDie)', 'Maintainerr']);
-  const card = cards.at(-1);
-  assert.equal(card.querySelector('legend img').getAttribute('data-je-cdn'), 'selfhst/svg/maintainerr.svg');
-  assert.match(card.querySelector('.jea-note').textContent, /^Maintainerr is only used to show how many days are left before an item leaves, on the Leaving soon media tag\./);
-  const link = card.querySelector('a.jea-btn');
-  assert.equal(link.getAttribute('href'), '#/configurationpage?name=Jellyfin%20Enhanced&jeSection=media-tags&tab=badges');
-  // Upstream 23281542: the Status badges icon, and a button that is not underlined like a text link.
-  assert.equal(link.querySelector('i.material-icons').textContent, 'new_releases');
-  assert.equal(link.style.textDecoration, 'none');
-  assert.equal(link.textContent.replace('new_releases', '').trim(), 'Set up Leaving soon');
-  assert.equal(card.querySelectorAll('input, select, textarea, button').length, 0, 'nothing here is a setting: the fields live on the Media Tags tab');
+// Upstream 481a10ee: Maintainerr's card moves to the *arr tab with its fields (address, key, the item-menu actions and
+// home row switches, the refresh interval) saved by the page's Save, a linked copy under Services, a live status line
+// with Refresh now, and a Maintainerr card in the Overview's Service Status.
+test('the *arr tab has the Maintainerr card with its settings, Services has its linked copy, and Refresh reads the server', async t => {
+  const status = { Configured: true, Maintainerr: true, Actions: true, HomeRow: 'hss-missing', Items: 4, Dated: 3, LastSuccess: Date.UTC(2026, 9, 30, 9), NextRefresh: Date.UTC(2026, 9, 30, 15), LastError: null };
+  const refreshed = { ...status, Items: 5, HomeRow: 'registered' };
+  const h = await loadedPage(t, {
+    saved: { JellyseerrEnabled: true, JellyseerrUrls: 'http://seerr.test', JellyseerrApiKey: 'k', TMDB_API_KEY: 'stored', LeavingSoonMaintainerrUrl: 'http://maintainerr:6246', LeavingSoonMaintainerrApiKey: 'stored-key' },
+    ajax: (request) => request.url.includes('/admin/leaving-soon') ? (request.url.endsWith('/refresh') ? refreshed : status) : undefined,
+  });
+  await settle(h.window, 20);
+  const arrCards = [...h.document.querySelectorAll('#arr fieldset.jea-section')].map(c => c.querySelector('legend').textContent.trim());
+  assert.ok(arrCards.indexOf('Maintainerr') === arrCards.indexOf('Shoko') + 1, arrCards.join(', '));
+  const services = [...h.document.querySelectorAll('#services fieldset.jea-section')];
+  assert.deepEqual(services.map(c => c.querySelector('legend').textContent.trim()), ['TMDB', 'AniList', 'MDBList Ratings', 'Content Warnings (DoesTheDogDie)', 'Maintainerr']);
+  assert.ok(services.at(-1).classList.contains('jea-mirror'), 'the Services card is the linked copy');
+  // No Sonarr or Radarr is set up: the *arr tab locks its feature cards, but Maintainerr's is a setup card like Shoko's.
+  const card = [...h.document.querySelectorAll('#arr fieldset.jea-section')].find(c => c.querySelector('legend').textContent.trim() === 'Maintainerr');
+  assert.ok(card.hasAttribute('data-dep-setup'));
+  assert.equal(card.classList.contains('jea-locked'), false);
+  assert.equal(h.document.getElementById('LeavingSoonMaintainerrUrl').disabled, false);
+  assert.equal(h.document.getElementById('LeavingSoonMaintainerrUrl').value, 'http://maintainerr:6246');
+  assert.equal(h.document.getElementById('LeavingSoonMaintainerrApiKey').value, 'stored-key');
+  assert.equal(h.document.getElementById('LeavingSoonMaintainerrActions').checked, true, 'on by default');
+  assert.equal(h.document.getElementById('LeavingSoonHomeRow').checked, true, 'on by default');
+  assert.equal(h.document.getElementById('LeavingSoonRefreshHours').value, '6');
+  // The page asked for the status once and shows it, with the home row's state.
+  assert.deepEqual(h.calls.ajax.filter(r => r.url.includes('leaving-soon')).map(r => r.type + ' ' + new URL(r.url).pathname), ['GET /JellyfinEnhanced/admin/leaving-soon']);
+  assert.match(h.document.getElementById('maintainerrStatusLine').textContent, /^4 item\(s\) leaving \(3 with a date\)\. Last read /);
+  assert.equal(h.document.getElementById('maintainerrRowLine').textContent, 'Home row: Home Screen Sections is not installed, so there is no row.');
+  const dashboard = h.document.querySelector('#je-service-dashboard [data-status-id="maintainerr"]');
+  assert.ok(dashboard, 'the Overview lists Maintainerr');
+  assert.match(dashboard.textContent, /4 item\(s\) leaving/);
+  // Refresh now (here through the Services copy, whose button presses the original) reads Maintainerr again.
+  h.document.getElementById('maintainerrRefreshBtn--mirror').click();
+  await settle(h.window, 20);
+  assert.deepEqual(h.calls.ajax.filter(r => r.url.includes('leaving-soon')).map(r => r.type + ' ' + new URL(r.url).pathname).at(-1), 'POST /JellyfinEnhanced/admin/leaving-soon/refresh');
+  assert.match(h.document.getElementById('maintainerrStatusLine').textContent, /^5 item\(s\) leaving/);
+  assert.equal(h.document.getElementById('maintainerrRowLine').textContent, 'Home row: registered with Home Screen Sections.');
+  // The fields are the page's own: Save writes them with the rest of the configuration.
+  h.document.getElementById('LeavingSoonMaintainerrActions').checked = false;
+  h.document.getElementById('LeavingSoonRefreshHours').value = '12';
+  h.submit();
+  await settle(h.window, 40);
+  const saved = h.calls.puts.at(-1);
+  assert.equal(saved.LeavingSoonMaintainerrActions, false);
+  assert.equal(saved.LeavingSoonRefreshHours, 12);
+  assert.equal(saved.LeavingSoonMaintainerrUrl, 'http://maintainerr:6246');
+});
+
+test('the Overview lists Maintainerr as not set up without an address, and the card says what is missing', async t => {
+  const h = await loadedPage(t, { ajax: (request) => request.url.includes('/admin/leaving-soon') ? { Configured: false, Maintainerr: false, HomeRow: 'off', Items: 0, Dated: 0 } : undefined });
+  await settle(h.window, 20);
+  const dashboard = h.document.querySelector('#je-service-dashboard [data-status-id="maintainerr"]');
+  assert.ok(dashboard);
+  assert.match(dashboard.textContent, /Not set up/);
+  assert.equal(h.document.getElementById('maintainerrStatusLine').textContent, 'No source set. Enter the Maintainerr address and save.');
+  assert.equal(h.document.getElementById('maintainerrRefreshBtn').disabled, true);
 });
 
 // The Custom Tabs link stays inside the web client, so it keeps a reverse proxy's base path.

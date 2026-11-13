@@ -76,10 +76,7 @@
   registerSection({
       tab: 'badges',
       title: 'Leaving soon',
-          { id: 'leavingSoonMaintainerrUrl', key: 'LeavingSoonMaintainerrUrl', type: 'text', label: 'Maintainerr URL' },
-          { id: 'leavingSoonMaintainerrApiKey', key: 'LeavingSoonMaintainerrApiKey', type: 'text', label: 'Maintainerr API key' },
           { id: 'leavingSoonCollections', key: 'LeavingSoonCollections', type: 'textarea', label: 'Leaving collections' },
-          { id: 'leavingSoonRefreshHours', key: 'LeavingSoonRefreshHours', type: 'number', label: 'Refresh every' },
   */
   var SAMPLES = {
     statusTagsJustAdded: ["added", "added", "Just Added"],
@@ -113,9 +110,19 @@
       Collections: read("Collections"),
       CollectionsFound: read("CollectionsFound"),
       Items: read("Items"),
-      Dated: read("Dated")
+      Dated: read("Dated"),
+      Actions: read("Actions"),
+      HomeRow: read("HomeRow")
     };
   }
+  var HOME_ROW_STATES = {
+    registered: "Home row: registered with Home Screen Sections.",
+    "hss-missing": "Home row: Home Screen Sections is not installed, so there is no row.",
+    "ft-missing": "Home row: registered, but File Transformation is not installed, so Home Screen Sections cannot draw it.",
+    failed: "Home row: registration failed (see the plugin log).",
+    off: "Home row: off.",
+    unknown: "Home row: waiting for Home Screen Sections to load."
+  };
   var LEAVING_STATES = { "Up to date": "on", "No source set": "off" };
   function leavingState(configured, s) {
     const key = !configured ? "No source set" : !s ? "Status unavailable" : s.LastError ? "Last refresh failed: {error}" : s.LastSuccess ? "Up to date" : "Not read yet";
@@ -151,12 +158,6 @@
       const button = findAs(ctx.root, "#leavingSoonRefreshBtn", HTMLButtonElement);
       if (button) button.disabled = true;
       try {
-        const saved = refresh ? await ctx.flush() : true;
-        if (!ctx.isCurrent()) return;
-        if (!saved) {
-          ctx.snack(A.fmt("Not refreshed: changes on this page are not saved yet. Retry the save, or choose Keep mine or Take theirs, then refresh again."));
-          return;
-        }
         const answer = await client.ajax({
           type: refresh ? "POST" : "GET",
           url: client.getUrl(refresh ? "JellyfinEnhanced/admin/leaving-soon/refresh" : "JellyfinEnhanced/admin/leaving-soon"),
@@ -231,15 +232,12 @@
       tab: "badges",
       order: 40,
       title: "Leaving soon",
-      hint: "Where the Leaving soon badge comes from: Maintainerr's collections (with the day each item goes), or existing Jellyfin collections by name (no date).",
+      hint: "Where the Leaving soon badge comes from: Maintainerr's collections (with the day each item goes), or existing Jellyfin collections by name (no date). Maintainerr's address, key, item-menu actions and home row are set in the *arr tab (also under Services).",
       fields: [
-        { id: "leavingSoonMaintainerrUrl", key: "LeavingSoonMaintainerrUrl", type: "text", wide: true, placeholder: "http://maintainerr:6246", pattern: "https?://[^\\s?#]+", label: "Maintainerr URL", desc: "The address this server reaches Maintainerr at. Empty uses only the collection names." },
-        { id: "leavingSoonMaintainerrApiKey", key: "LeavingSoonMaintainerrApiKey", type: "text", wide: true, mask: true, label: "Maintainerr API key", desc: "Optional. Only needed if Maintainerr has an API key set." },
-        { id: "leavingSoonCollections", key: "LeavingSoonCollections", type: "textarea", rows: 3, placeholder: "Leaving Soon", label: "Leaving collections", desc: "Existing collection names, one per line, whose items count as leaving soon (for setups without the API). Up to 20." },
-        { id: "leavingSoonRefreshHours", key: "LeavingSoonRefreshHours", type: "number", min: 1, max: 168, fallback: 6, unit: "hours", label: "Refresh every", desc: "How often the server reads the source again (1–168 hours). A failed request is retried sooner.", read: (v) => Number(v) || 6 }
+        { id: "leavingSoonCollections", key: "LeavingSoonCollections", type: "textarea", rows: 3, placeholder: "Leaving Soon", label: "Leaving collections", desc: "Existing Jellyfin collection names, one per line, whose items count as leaving soon, without a date. For setups that do not use Maintainerr's address; nothing is created. Up to 20." }
       ],
       render(ctx, body) {
-        body.innerHTML = `<div class="je-ta-state-row"><span class="je-ta-state" data-leaving-state></span></div><p class="je-ta-hint" data-leaving-detail></p><div class="je-ta-actions"><button type="button" class="je-ta-button" id="leavingSoonRefreshBtn"><span class="material-icons" aria-hidden="true">refresh</span>${ctx.tx("Refresh now")}</button></div><p class="je-ta-hint">${ctx.tx("Cards never ask Maintainerr: the server reads it on this schedule and keeps the answer in the tag cache.")}</p>`;
+        body.innerHTML = `<div class="je-ta-state-row"><span class="je-ta-state" data-leaving-state></span></div><p class="je-ta-hint" data-leaving-detail></p><p class="je-ta-hint" data-leaving-row></p><div class="je-ta-actions"><button type="button" class="je-ta-button" id="leavingSoonRefreshBtn"><span class="material-icons" aria-hidden="true">refresh</span>${ctx.tx("Refresh now")}</button></div><p class="je-ta-hint">${ctx.tx("Cards never ask Maintainerr: the server reads it on a schedule and keeps the answer in the tag cache.")}</p><a class="je-ta-link" href="${ctx.esc(ctx.mainPageUrl(null, "arr"))}"><span class="je-ta-link-text">${ctx.tx("Maintainerr settings")}</span><span class="material-icons" aria-hidden="true">open_in_new</span></a>`;
         body.querySelector("#leavingSoonRefreshBtn")?.addEventListener("click", () => {
           void loadLeavingStatus(ctx, true);
         });
@@ -249,9 +247,11 @@
         if (!body) return;
         const state = find(body, "[data-leaving-state]");
         const detail = body.querySelector("[data-leaving-detail]");
+        const row = body.querySelector("[data-leaving-row]");
         const button = findAs(body, "#leavingSoonRefreshBtn", HTMLButtonElement);
         const { status: s, busy } = leavingOf(ctx);
-        const configured = String(ctx.config.LeavingSoonMaintainerrUrl || "").trim() !== "" || String(ctx.config.LeavingSoonCollections || "").trim() !== "";
+        const maintainerr = String(ctx.config.LeavingSoonMaintainerrUrl || "").trim() !== "";
+        const configured = maintainerr || String(ctx.config.LeavingSoonCollections || "").trim() !== "";
         if (button) button.disabled = busy || !configured;
         if (!state || !detail) return;
         const shown = leavingState(configured, s);
@@ -264,6 +264,7 @@
           last: when(s.LastSuccess),
           next: when(s.NextRefresh)
         }) + collections : "";
+        if (row) row.textContent = !maintainerr || !s ? "" : [A.fmt(s.Actions === true ? "Item-menu actions: on." : "Item-menu actions: off."), A.fmt(own(HOME_ROW_STATES, String(s.HomeRow)) ?? HOME_ROW_STATES.unknown ?? "")].filter(Boolean).join(" ");
       }
     });
   });

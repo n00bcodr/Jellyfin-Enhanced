@@ -20,12 +20,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags
     public static class PluginConfigurationPatch
     {
         /// <summary>
-        /// Whether a credential is never sent back to the page after a save. Every credential is, except the
-        /// Maintainerr key: like the TMDB key it is shown to the administrator who owns the page. It stays out of
-        /// exports and imports (<see cref="MediaTagsPortable.IsSecret"/>).
+        /// Whether a credential is never sent back to the page after a save. Every credential is: the Maintainerr
+        /// key belongs to the Services tab's form now, not to a field of the Media Tags page
+        /// (<see cref="MediaTagsPortable.IsSecret"/>).
         /// </summary>
-        private static bool IsWriteOnly(string key)
-            => MediaTagsPortable.IsSecret(key) && key != nameof(PluginConfiguration.LeavingSoonMaintainerrApiKey);
+        private static bool IsWriteOnly(string key) => MediaTagsPortable.IsSecret(key);
 
         /// <summary>
         /// The largest request body the patch endpoint reads. The page usually sends a few fields at a time; an

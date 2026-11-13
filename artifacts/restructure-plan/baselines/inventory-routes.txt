@@ -118,6 +118,10 @@ GET /JellyfinEnhanced/js/{**path}
 GET /JellyfinEnhanced/locales
 GET /JellyfinEnhanced/locales/{lang}.json
 GET /JellyfinEnhanced/logo/{size}/{file}
+GET /JellyfinEnhanced/maintainerr/item/{itemId}
+POST /JellyfinEnhanced/maintainerr/mark
+POST /JellyfinEnhanced/maintainerr/postpone
+POST /JellyfinEnhanced/maintainerr/unmark
 GET /JellyfinEnhanced/mdblist-ratings/account-status
 GET /JellyfinEnhanced/mdblist-ratings/{mediaType}/{tmdbId}
 GET /JellyfinEnhanced/native-poster-tags/preview/{itemId}

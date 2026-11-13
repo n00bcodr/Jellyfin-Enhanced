@@ -344,6 +344,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Platform
                 StatusTagsLeaving = config.StatusTagsLeaving,
                 StatusTagsDirectPlay = config.StatusTagsDirectPlay,
                 LeavingSoonAvailable = LeavingSoonSources.Configured(config),
+                // Whether administrators can mark, keep and postpone removals from the item menu (the actions
+                // switch and a Maintainerr URL); the rows themselves are admin-only on the server.
+                MaintainerrActionsAvailable = LeavingSoonSources.MaintainerrActionsEnabled(config),
                 StatusTagsOnCollections = config.StatusTagsOnCollections,
                 StatusTagsJustAddedDays = config.StatusTagsJustAddedDays,
                 StatusTagsNewReleaseDays = config.StatusTagsNewReleaseDays,
