@@ -807,7 +807,7 @@ All routes in this table require **Seerr-linked** access, except TV-by-studio's 
 | GET | `jellyseerr/sonarr/lookup/{tmdbId}` | Request/discovery permission → upstream Sonarr match candidates. |
 | GET | `jellyseerr/{type}/{serverId}` | Exact `type=sonarr` or `radarr` (`400` otherwise) → service profiles/folders/details. |
 | POST | `jellyseerr/request` | JSON request object → upstream request record. |
-| GET | `jellyseerr/request` | `take=500`, `skip=0`, `filter=all`, forwarded without JE clamping → upstream request page. |
+| GET | `jellyseerr/request` | `take=500`, `skip=0`, `filter=all`, forwarded without JE clamping (`filter` escaped as one value) → upstream request page. |
 | GET | `jellyseerr/quota` | Caller's quota; movie/TV sides can gain ISO `nextResetAt`. |
 | GET | `jellyseerr/movie/{tmdbId}` | Movie detail. Spoiler Guard shapes this and the other title responses for the caller; see [below](#spoiler-guard-on-title-responses). |
 | GET | `jellyseerr/tv/{tmdbId}` | TV detail. |

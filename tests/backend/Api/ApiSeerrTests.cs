@@ -86,6 +86,19 @@ public class ApiSeerrTests
         Assert.Single(f.Calls, c => c.Path.StartsWith("/api/v1/user?"));
     }
 
+    [Theory]
+    [InlineData("all", "filter=all")]
+    [InlineData("pending", "filter=pending")]
+    [InlineData("all&requestedBy=1&sort=modified", "filter=all%26requestedBy%3D1%26sort%3Dmodified")]
+    [InlineData("all#x", "filter=all%23x")]
+    public async Task RequestListFilterReachesSeerrAsOneValue(string filter, string expected)
+    {
+        using var f = new SeerrFixture { Reply = _ => IntegrationTransport.Response("{\"results\":[]}") };
+        Assert.IsType<ContentResult>(await f.Controller.GetJellyseerrRequests(filter: filter));
+        var call = Assert.Single(f.Calls, c => c.Path.StartsWith("/api/v1/request"));
+        Assert.Equal("/api/v1/request?take=500&skip=0&" + expected, call.Path);
+    }
+
     [Fact]
     public async Task AddingToTheSeerrWatchlistSendsOnlyTheTwoFieldsAsTheCallingUser()
     {
