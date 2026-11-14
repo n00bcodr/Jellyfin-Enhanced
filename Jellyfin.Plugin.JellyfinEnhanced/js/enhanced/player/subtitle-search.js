@@ -650,6 +650,15 @@
     /** The last track loaded, so reopening on the same track needs no request. */
     let lineCache = null;
 
+    /** A closed dialog's resume still waiting to be decided (see closeDialog). */
+    let pendingResume = null;
+
+    /** Drops a closed dialog's waiting resume: a new dialog now owns what happens to playback. */
+    function cancelPendingResume() {
+        if (pendingResume) pendingResume.cancel();
+        pendingResume = null;
+    }
+
     /**
      * Whether a dialog is still the open one and still about the same playback.
      * @param {DialogState} state
@@ -1381,6 +1390,7 @@
         if (document.documentElement.classList.contains('pause-screen-active')) {
             JE.pauseScreenInstance?.hideOverlay?.();
         }
+        cancelPendingResume();
         // Changes already on screen are recorded first, so only later ones count as made while
         // the dialog was open (see closeDialog).
         catchUpSubtitleChanges();
@@ -1508,14 +1518,21 @@
             // Cues that are not showing at this moment may be Firefox's brief mode flip on an
             // offset change (the same cues come back), or subtitles turned off: decide once settled.
             if (rendererKey(video) === null && rendererKeySeen) {
-                // Anything that would have stopped the resume while open still stops it until then.
+                // Anything that would have stopped the resume while open still stops it until then,
+                // and so does another dialog opening (cancelPendingResume).
                 const cancel = () => { state.pausedByUs = false; };
                 const triggers = [[video, 'seeking'], [video, 'emptied'], [document, 'viewshow'], [window, 'hashchange']];
                 for (const [target, name] of triggers) target.addEventListener(name, cancel);
-                setTimeout(() => {
+                const settle = () => {
+                    clearTimeout(timer);
                     for (const [target, name] of triggers) target.removeEventListener(name, cancel);
+                    if (pendingResume && pendingResume.state === state) pendingResume = null;
+                };
+                const timer = setTimeout(() => {
+                    settle();
                     resumeIfOwned(state);
                 }, 60);
+                pendingResume = { state, cancel: () => { cancel(); settle(); } };
             } else {
                 resumeIfOwned(state);
             }

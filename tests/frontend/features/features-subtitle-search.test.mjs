@@ -658,6 +658,19 @@ test('closing while the cues are hidden waits: Firefox\'s offset flip resumes, s
     await new Promise(done => setTimeout(done, 100));
     assert.equal(h.isPaused(), true, what);
   }
+
+  // Opened again (on paused playback) and closed while that decision waits: the new dialog owns
+  // what happens, and it found playback paused.
+  const again = setup(t);
+  again.JE.toggleSubtitleSearch();
+  await flush();
+  again.tracks[0].mode = 'disabled';
+  again.overlay().querySelector('.je-subsearch-close').click();
+  again.tracks[0].mode = 'showing';
+  again.JE.toggleSubtitleSearch();
+  again.overlay().querySelector('.je-subsearch-close').click();
+  await new Promise(done => setTimeout(done, 100));
+  assert.equal(again.isPaused(), true);
 });
 
 test('switching from cues to ASS, or turning subtitles off, while open makes the lines unusable', async t => {
