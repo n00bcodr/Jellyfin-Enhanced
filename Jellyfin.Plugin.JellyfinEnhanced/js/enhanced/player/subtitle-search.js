@@ -363,29 +363,95 @@
         return (parent && parent.querySelector('.libassjs-canvas-parent')) || null;
     }
 
-    /** How many times JE has set the offset (JE.setSubtitleOffset in playback.js). */
-    function offsetWrites() {
-        const count = JE.internals?.player?.subtitleOffsetWrites;
-        return typeof count === 'function' ? count() : 0;
+    /**
+     * Writes to jellyfin-web's subtitle offset through its sync control since the page loaded:
+     * its slider's updateOffset() (used by its G/H keys, its text field and JE) and dragging the
+     * slider. Counted by watchSliderWrites.
+     */
+    let sliderWrites = 0;
+
+    /** Sliders already watched (jellyfin-web makes a new one for each playback). */
+    const watchedSliders = new WeakSet();
+
+    /**
+     * Counts every write through jellyfin-web's subtitle sync slider: wraps its updateOffset
+     * (calling the original unchanged) and listens for it being dragged.
+     */
+    function watchSliderWrites() {
+        const slider = document.querySelector('.subtitleSyncSlider');
+        if (!slider || watchedSliders.has(slider) || typeof slider.updateOffset !== 'function') return;
+        watchedSliders.add(slider);
+        const original = slider.updateOffset;
+        slider.updateOffset = function () {
+            sliderWrites++;
+            return original.apply(this, arguments);
+        };
+        slider.addEventListener('change', () => { sliderWrites++; });
     }
 
     /**
-     * The drawn surface last seen on the page, with the slider value and JE's write count at
-     * that moment. Kept up to date on every video-page DOM update (JE.addSubtitleSearchButton),
-     * so a new surface is seen right after jellyfin-web creates it.
-     * @type {{surface: Element|null, slider: number|null, writes: number, atCreation: boolean}}
+     * The drawn surface last seen on the page, with the slider value and write count at that
+     * moment. Kept up to date on every video-page DOM update (JE.addSubtitleSearchButton), so a
+     * new surface is seen right after jellyfin-web creates it.
+     * @type {{surface: Element|null, writes: number}}
      */
-    let surfaceSeen = { surface: null, slider: null, writes: 0, atCreation: false };
+    let surfaceSeen = { surface: null, writes: 0 };
 
     /** When the subtitles on screen last changed (shown, switched or turned off), by this page's clock. */
     let subtitlesChangedAt = 0;
 
+    /** Counts subtitle changes on screen; a load spanning a change can't trust what it read. */
+    let subtitleGeneration = 0;
+
+    /** The cue track's content last seen (see cueSignature). */
+    let cueSignatureSeen = 'none';
+
     /** The text track list watched for subtitle changes. */
     let watchedTrackList = null;
 
-    /** Notes a subtitle change on screen (jellyfin-web toggles its cue track's mode on each one). */
-    function onTrackListChange() {
+    /**
+     * What the cue track shows, without times: jellyfin-web refills it on a track switch and
+     * empties or hides it when subtitles go off, while an offset change only moves cue times (and
+     * on Firefox flips the mode for a moment).
+     * @param {HTMLVideoElement|null} video
+     * @returns {string}
+     */
+    function cueSignature(video) {
+        const track = video ? shownCueTrack(video) : null;
+        const cues = track && track.cues;
+        if (!cues || !cues.length) return 'none';
+        return cues.length + '|' + searchKey(cleanLineText(/** @type {VTTCue} */ (cues[0]).text));
+    }
+
+    /** Records a subtitle change on screen. */
+    function noteSubtitleChange() {
         subtitlesChangedAt = Date.now();
+        subtitleGeneration++;
+    }
+
+    /**
+     * A change of the video's text tracks: once it settles (Firefox restores the mode after an
+     * offset change in a 0 ms timeout), it is a subtitle change if the cue track's content differs.
+     */
+    function onTrackListChange() {
+        setTimeout(noteCueChange, 50);
+    }
+
+    /** Records a subtitle change when the cue track's content differs from the last seen. */
+    function noteCueChange() {
+        const signature = cueSignature(getVideo());
+        if (signature === cueSignatureSeen) return;
+        cueSignatureSeen = signature;
+        noteSubtitleChange();
+    }
+
+    /**
+     * Brings the change records up to date before they are relied on, as a change can be newer
+     * than the last page update or the settle delay above.
+     */
+    function catchUpSubtitleChanges() {
+        noteSurface();
+        noteCueChange();
     }
 
     /**
@@ -400,28 +466,31 @@
             watchedTrackList.removeEventListener('change', onTrackListChange);
         }
         watchedTrackList = list;
+        cueSignatureSeen = cueSignature(video);
         list.addEventListener('change', onTrackListChange);
     }
 
     /**
-     * Records the drawn surface when it changed.
-     * @param {boolean} atCreation Whether this is the regular DOM-update check, which sees a new
-     *   surface as it appears (a first look from the dialog can't tell when it appeared).
+     * Records the drawn surface when it changed, after making sure offset writes and track
+     * changes are watched. Every surface is seen soon after jellyfin-web creates it: this runs on
+     * each video-page DOM update, and playback never outlives a page load, so JE is always
+     * running before the first one appears.
      */
-    function noteSurface(atCreation) {
+    function noteSurface() {
+        watchSliderWrites();
         const video = getVideo();
-        if (atCreation) watchSubtitleChanges(video);
+        watchSubtitleChanges(video);
         const surface = video ? drawnSurface(video) : null;
         if (surface === surfaceSeen.surface) return;
-        if (atCreation) subtitlesChangedAt = Date.now();
-        surfaceSeen = { surface, slider: currentOffset(), writes: offsetWrites(), atCreation };
+        noteSubtitleChange();
+        surfaceSeen = { surface, writes: sliderWrites };
     }
 
     /**
      * The offset the dialog shows and jumps with. jellyfin-web's hidden slider keeps an earlier
      * track's value after a track switch, while the player resets the offset to 0. With cues it
-     * is measured from them; on a drawn surface whose slider value hasn't changed since the
-     * surface appeared (and JE hasn't set it since), it is 0; otherwise the slider's.
+     * is measured from them; on a drawn surface whose slider nobody has written since the surface
+     * appeared, it is 0; otherwise the slider's.
      * @param {DialogState} state
      * @returns {number|null} null when the player has no subtitle offset.
      */
@@ -432,25 +501,46 @@
             const measured = measureOffset(state.lines, cueSample(state.video));
             if (typeof measured === 'number') return measured;
         }
-        noteSurface(false);
+        noteSurface();
         const surface = drawnSurface(state.video);
-        if (surface && surface === surfaceSeen.surface && surfaceSeen.atCreation
-            && slider === surfaceSeen.slider && offsetWrites() === surfaceSeen.writes) {
+        if (surface && surface === surfaceSeen.surface && sliderWrites === surfaceSeen.writes) {
             return 0;
         }
         return slider;
     }
 
     /**
-     * Whether the listed lines are still the subtitles on screen: the drawn surface they were
-     * loaded with is still there, and the cues (when jellyfin-web uses them) match their text.
+     * Which of jellyfin-web's renderers shows the primary subtitles, and what it draws with.
+     * @param {HTMLVideoElement} video
+     * @returns {{kind: 'cues', track: TextTrack}|{kind: 'drawn', el: Element}|{kind: 'none'}}
+     */
+    function rendererOf(video) {
+        const track = shownCueTrack(video);
+        if (track) return { kind: 'cues', track };
+        const el = drawnSurface(video);
+        return el ? { kind: 'drawn', el } : { kind: 'none' };
+    }
+
+    /**
+     * Whether the listed lines are still the subtitles on screen. Cues prove it by their text;
+     * a drawn surface (libass, custom element) must be the one the lines were checked against,
+     * as jellyfin-web replaces it for another track. Lines listed while nothing was drawn
+     * (burned in, or still loading) stay usable until something else appears, unless it is a cue
+     * track with their text.
      * @param {DialogState} state
      * @returns {boolean}
      */
     function linesStillShown(state) {
-        if (!state.lines) return false;
-        if (state.drawn && drawnSurface(state.video) !== state.drawn) return false;
-        return measureOffset(state.lines, cueSample(state.video)) !== 'mismatch';
+        if (!state.lines || !state.renderer) return false;
+        const now = rendererOf(state.video);
+        const was = state.renderer;
+        if (was.kind === 'cues') {
+            return now.kind === 'cues' && now.track === was.track
+                && measureOffset(state.lines, cueSample(state.video)) !== 'mismatch';
+        }
+        if (was.kind === 'drawn') return now.kind === 'drawn' && now.el === was.el;
+        if (now.kind === 'drawn') return false;
+        return now.kind === 'none' || measureOffset(state.lines, cueSample(state.video)) !== 'mismatch';
     }
 
     /**
@@ -526,7 +616,8 @@
      * @property {*} searchTimer
      * @property {boolean} supportShown Whether the hint currently says choosing a line syncs it.
      * @property {string|null} sessionId This device's session, for a seek the element can't do.
-     * @property {Element|null} drawn The drawn subtitle surface when the lines loaded.
+     * @property {{kind: string, track?: TextTrack, el?: Element}|null} renderer What drew the subtitles when the lines were checked.
+     * @property {boolean} [relooked] Whether the lines were looked up again after the surface changed during a load.
      */
 
     /** @type {DialogState|null} */
@@ -923,6 +1014,10 @@
      */
     async function populate(state) {
         setStatus(state, tr('subtitle_search_loading', 'Loading the subtitle lines…'));
+        // What drew the subtitles before anything was looked up, to check the answer against.
+        catchUpSubtitleChanges();
+        const startRenderer = rendererOf(state.video);
+        const startGeneration = subtitleGeneration;
         let track;
         try {
             track = await resolveTrack(state);
@@ -967,13 +1062,24 @@
             setStatus(state, tr('subtitle_search_empty', 'This subtitle track has no lines.'), 'info');
             return;
         }
-        if (measureOffset(lines, cueSample(state.video)) === 'mismatch') {
+        // Cue text proves which track the lines are. A drawn surface (libass, custom element) can't
+        // be compared, so it must be the one that was there before the lookup, with no subtitle
+        // change since; one that appeared or changed meanwhile gets one more lookup.
+        const now = rendererOf(state.video);
+        const unproven = now.kind === 'drawn' && (startRenderer.kind !== 'drawn' || startRenderer.el !== now.el
+            || subtitleGeneration !== startGeneration);
+        if (unproven && !state.relooked) {
+            state.relooked = true;
+            populate(state);
+            return;
+        }
+        if (unproven || measureOffset(lines, cueSample(state.video)) === 'mismatch') {
             showStale(state);
             return;
         }
         setStatus(state, '');
         state.sessionId = track.sessionId;
-        state.drawn = drawnSurface(state.video);
+        state.renderer = now;
         state.lines = lines;
         renderLines(state);
     }
@@ -985,6 +1091,7 @@
      */
     function showStale(state) {
         state.lines = null;
+        state.renderer = null;
         state.rows = new Map();
         state.overlay.querySelector('.je-subsearch-list').replaceChildren();
         state.overlay.querySelector('.je-subsearch-foot').textContent = '';
@@ -1225,6 +1332,11 @@
             return;
         }
         injectStyles();
+        // JE's pause screen would sit behind the dialog and take its keys; it waits while the
+        // dialog is open (pausescreen.js) and is put away now if it is showing.
+        if (document.documentElement.classList.contains('pause-screen-active')) {
+            JE.pauseScreenInstance?.hideOverlay?.();
+        }
         const wasPlaying = !video.paused && !video.ended;
         if (wasPlaying) video.pause();
         const overlay = buildOverlay();
@@ -1244,7 +1356,7 @@
             searchTimer: null,
             supportShown: false,
             sessionId: null,
-            drawn: null
+            renderer: null
         };
         dialog = state;
 
@@ -1298,11 +1410,13 @@
         const onGone = () => closeDialog({ resume: false });
         // jellyfin-web shows a cue track once it has loaded it, which can make these subtitles
         // shiftable after the dialog opened.
-        const onTracks = () => {
+        // Checked once the change settles: Firefox flips the cue track's mode for a moment on
+        // every offset change.
+        const onTracks = () => setTimeout(() => {
             if (dialog !== state || !state.lines) return;
             if (linesStillShown(state)) refreshMeta(state);
             else showStale(state);
-        };
+        }, 60);
         const textTracks = video.textTracks;
         textTracks?.addEventListener?.('change', onTracks);
         video.addEventListener('emptied', onGone);
@@ -1366,7 +1480,7 @@
      * happen (see effectiveOffset and probeFreshSession), whether or not the button is shown.
      */
     JE.addSubtitleSearchButton = () => {
-        noteSurface(true);
+        noteSurface();
         const existing = document.getElementById(BUTTON_ID);
         if (JE.currentSettings?.subtitleSearchButtonEnabled !== true) {
             existing?.remove();

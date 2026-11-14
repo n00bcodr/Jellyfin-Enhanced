@@ -531,6 +531,8 @@
         setupKeyboardAccessibility() {
           // Space/Enter resumes when overlay visible
           this.keyboardListener = (e) => {
+            // Keys typed in a JE dialog that handles its own keys (subtitle search) are its own.
+            if (e.target && typeof e.target.closest === 'function' && e.target.closest('[data-je-own-keys]')) return;
             if (this.overlay.getAttribute('aria-hidden') === 'false') {
               if (JE.core.ui.isTvLayout() && this.handleRemoteKey(e)) return;
               if (e.code === 'Space' || e.code === 'Enter') {
@@ -583,6 +585,13 @@
             const video = this.currentVideo;
             if (!video || !video.paused || video.ended) {
               this.pauseScreenTimer = null;
+              return;
+            }
+
+            // A JE dialog that handles its own keys is open (subtitle search): showing the pause
+            // screen would take its focus. Try again once it has closed.
+            if (document.querySelector('[data-je-own-keys]')) {
+              this.pauseScreenTimer = setTimeout(tryShowWhenIdle, 500);
               return;
             }
 

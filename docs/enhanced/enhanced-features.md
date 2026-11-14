@@ -555,7 +555,7 @@ List every line of the subtitles that are playing, find the one you just heard, 
 | A line | Syncs the subtitles so this line shows at **Heard at**, then closes the list. |
 | Arrow button | Jumps to where this line shows, then closes the list. |
 
-Search ignores case, accents and punctuation; a line must contain every word you type. ++down++ moves from the search box into the list, ++up++ and ++down++ move between lines, ++enter++ chooses one, and ++esc++ (or a TV remote's Back) or ++shift+s++ closes the list. Remote D-pads and gamepads move and choose the same way. Playback resumes on close only if the list paused it.
+Search ignores case, accents and punctuation; a line must contain every word you type. ++down++ moves from the search box into the list, ++up++ and ++down++ move between lines, ++enter++ chooses one, and ++esc++ (or a TV remote's Back) or ++shift+s++ closes the list. Remote D-pads and gamepads move and choose the same way. Playback resumes on close only if the list paused it, and JE's [pause screen](#custom-pause-screen) stays away while the list is open.
 
 | Setting | Default | What it does |
 |---|---|---|
