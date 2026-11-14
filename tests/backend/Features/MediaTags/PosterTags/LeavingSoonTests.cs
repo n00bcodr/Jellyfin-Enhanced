@@ -27,6 +27,7 @@ using Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags;
 using Jellyfin.Plugin.JellyfinEnhanced.Shared.SpoilerGuard;
 using Jellyfin.Plugin.JellyfinEnhanced.Features.SpoilerGuard.Services;
 using Jellyfin.Plugin.JellyfinEnhanced.Shared.Maintenance;
+using Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks;
 
 namespace JE.Tests.Features.MediaTags;
 
@@ -192,6 +193,57 @@ public sealed class LeavingSoonTests : IDisposable
 
     private static PluginConfiguration Config(string? url = null, string key = "", string names = "", int hours = 6)
         => new() { LeavingSoonMaintainerrUrl = url ?? string.Empty, LeavingSoonMaintainerrApiKey = key, LeavingSoonCollections = names, LeavingSoonRefreshHours = hours };
+
+    [Fact]
+    public void Leaving_facts_are_consumed_only_while_a_source_is_set_and_something_uses_them()
+    {
+        var url = "http://maintainerr:6246";
+        PluginConfiguration With(string? u, string names, bool badge, bool row, bool actions)
+        {
+            var c = Config(url: u, names: names);
+            c.StatusTagsLeaving = badge; c.LeavingSoonHomeRow = row; c.LeavingSoonMaintainerrActions = actions;
+            return c;
+        }
+
+        // No source: never, even with everything on.
+        Assert.False(LeavingSoonService.Consumed(With(null, "", true, true, true), () => true));
+        Assert.False(LeavingSoonService.Consumed(null, () => true));
+        // A source but nothing uses it: skipped; a user with the badge on counts.
+        Assert.False(LeavingSoonService.Consumed(With(url, "", false, false, false), () => false));
+        Assert.True(LeavingSoonService.Consumed(With(url, "", false, false, false), () => true));
+        // The badge default, or the home row / actions with a Maintainerr URL, count; the row and actions need that URL.
+        Assert.True(LeavingSoonService.Consumed(With(null, "Leaving", true, false, false), () => false));
+        Assert.True(LeavingSoonService.Consumed(With(url, "", false, true, false), () => false));
+        Assert.True(LeavingSoonService.Consumed(With(url, "", false, false, true), () => false));
+        Assert.False(LeavingSoonService.Consumed(With(null, "Leaving", false, true, true), () => false));
+        // The users' settings are read last, only when nothing else decides.
+        Assert.True(LeavingSoonService.Consumed(With(url, "", true, false, false), () => throw new InvalidOperationException("read")));
+    }
+
+    [Fact]
+    public async Task The_scheduled_refresh_asks_Maintainerr_only_while_a_badge_home_row_or_action_uses_the_facts()
+    {
+        using var f = new ApiPluginFixture();
+        using var server = new MaintainerrFixture();
+        var library = new Mock<ILibraryManager>();
+        f.Plugin.Configuration.LeavingSoonMaintainerrUrl = server.Url;
+        f.Plugin.Configuration.StatusTagsLeaving = false;
+        f.Plugin.Configuration.LeavingSoonHomeRow = false;
+        f.Plugin.Configuration.LeavingSoonMaintainerrActions = false;
+        using var cache = new TagCacheService(library.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger,
+            new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger), leavingSoonService: Service(library.Object));
+        var task = new RefreshLeavingSoonTagsTask(cache, f.Core.Manager, f.Core.Logger);
+
+        // A source, but no badge, home row or action reads it: the run asks nothing.
+        f.Core.Manager.SaveUserConfiguration(Guid.NewGuid().ToString("N"), "settings.json", new JellyfinEnhancedUserSettings { StatusTagsLeaving = false });
+        await task.ExecuteAsync(new Progress<double>(), CancellationToken.None);
+        Assert.Equal(0, server.Requests);
+
+        // One user with the badge on: the due refresh runs.
+        f.Core.Manager.SaveUserConfiguration(Guid.NewGuid().ToString("N"), "settings.json", new JellyfinEnhancedUserSettings { StatusTagsLeaving = true });
+        await task.ExecuteAsync(new Progress<double>(), CancellationToken.None);
+        Assert.Equal(1, server.Requests);
+    }
 
     [Fact]
     public void Parses_dated_undated_inactive_wrapped_and_numeric_type_answers()

@@ -111,6 +111,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
             + "\n" + (config.LeavingSoonMaintainerrApiKey ?? string.Empty).Trim()
             + "\n" + string.Join("\n", CollectionNames(config.LeavingSoonCollections).Select(n => n.ToLowerInvariant()).Order(StringComparer.Ordinal)))));
 
+        /// <summary>
+        /// Whether anything reads the leaving facts: a source is set and the badge default, the home row or the
+        /// Maintainerr actions use it, or (checked last, it reads each user's settings) some user has the badge on.
+        /// </summary>
+        public static bool Consumed(PluginConfiguration? config, Func<bool> anyUserShowsBadge)
+            => Configured(config)
+                && (config!.StatusTagsLeaving || HomeRowWanted(config) || MaintainerrActionsEnabled(config) || anyUserShowsBadge());
+
         /// <summary>Only a source change needs a refresh on an admin save.</summary>
         internal static string ConfigurationIdentity(PluginConfiguration? config) => config == null || !Configured(config) ? string.Empty : Signature(config);
 

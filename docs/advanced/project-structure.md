@@ -771,7 +771,7 @@ Native settings and cache digests are resolved in `Shared/MediaTags/PosterTags/P
 - `Features/MediaTags/Services/AwardTagsService.cs`: persistent `award-tags.json`, configurable MDBList list membership, provider certification, cached Wikidata winner projection, TTLs, quota reserve and cancellation.
 - `Features/MediaTags/Services/TagCache/TagCacheAwards.cs`: cache-only batch/native projection and normal tag-cache publication after scheduled refresh or config changes.
 - `Features/MediaTags/Tasks/RefreshAwardTagsTask.cs`: **Refresh Awards Tags**, daily 04:00 and on demand, hidden while Awards is off.
-- `Features/MediaTags/Tasks/RefreshLeavingSoonTagsTask.cs`: **Refresh Leaving Soon Tags**, hourly, acting once the configured interval has passed, hidden without a Leaving soon source. `Shared/MediaTags/TagLeaving.cs` is its cache-entry value.
+- `Features/MediaTags/Tasks/RefreshLeavingSoonTagsTask.cs`: **Refresh Leaving Soon Tags**, hourly, acting once the configured interval has passed and only while a badge, the home row or the Maintainerr actions use the facts, hidden without a Leaving soon source. `Shared/MediaTags/TagLeaving.cs` is its cache-entry value.
 - `js/tags/awardstags.js`: IIFE renderer and shared preview chips/logos, registered in the component manifest.
 - `Assets/PosterTags/award-icons.json`: generated logo paths loaded by `PosterTagAssets`; `scripts/build_poster_assets.py --awards-only` regenerates just those paths and manifest records. Source marks are nominative; project artwork is GPL-3.0 and trademarks remain with their owners.
 

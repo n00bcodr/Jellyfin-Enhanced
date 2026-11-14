@@ -10438,6 +10438,10 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Features/MediaTags/Services/TagLogoService.cs"
     },
     {
+      "literal": "settings.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Features/MediaTags/Tasks/RefreshLeavingSoonTagsTask.cs"
+    },
+    {
       "literal": "Jellyfin.Plugin.JellyfinEnhanced.js.locales.{baseLang}.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Features/Platform/JePlatformController.Assets.cs"
     },
@@ -10854,7 +10858,7 @@
     "files": 554,
     "routes": 210,
     "configuration_properties": 762,
-    "storage_references": 96,
+    "storage_references": 97,
     "scheduled_tasks": 16,
     "locales": 33
   }
