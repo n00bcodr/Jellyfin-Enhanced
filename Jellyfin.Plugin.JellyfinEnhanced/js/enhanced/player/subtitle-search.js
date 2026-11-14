@@ -636,7 +636,6 @@
      * @property {Array<() => void>} cleanup
      * @property {*} searchTimer
      * @property {boolean} supportShown Whether the hint currently says choosing a line syncs it.
-     * @property {string|null} sessionId This device's session, for a seek the element can't do.
      * @property {{kind: string, track?: TextTrack, cue?: TextTrackCue|null, el?: Element}|null} renderer What drew the subtitles when the lines were checked.
      * @property {boolean} [relooked] Whether the lines were looked up again after the surface changed during a load.
      */
@@ -987,7 +986,7 @@
      * Resolves which subtitle track is playing: the server's view of this device's session,
      * checked against the item the page is playing.
      * @param {DialogState} state
-     * @returns {Promise<null|{error: 'session'|'none'|'image', stream?: object}|{itemId: string, mediaSourceId: string, index: number, stream: object|null, sessionId: string|null}>}
+     * @returns {Promise<null|{error: 'session'|'none'|'image', stream?: object}|{itemId: string, mediaSourceId: string, index: number, stream: object|null}>}
      */
     async function resolveTrack(state) {
         const session = await probeFreshSession(state);
@@ -1022,7 +1021,7 @@
                 .find(s => s && s.Type === 'Subtitle' && s.Index === index) || null;
         }
         if (stream && stream.IsTextSubtitleStream === false) return { error: 'image', stream };
-        return { itemId, mediaSourceId, index, stream, sessionId: session.Id || null };
+        return { itemId, mediaSourceId, index, stream };
     }
 
     /**
@@ -1119,7 +1118,6 @@
             return;
         }
         setStatus(state, '');
-        state.sessionId = track.sessionId;
         state.renderer = now;
         state.lines = lines;
         renderLines(state);
@@ -1185,7 +1183,9 @@
     }
 
     /**
-     * Seeks to where `line` shows with the current offset, then closes the dialog.
+     * Seeks to where `line` shows with the current offset, then closes the dialog. A progressive
+     * transcode only holds what the server has produced from where that stream started, so a
+     * line outside the element's seekable range is not jumped to; the dialog says why.
      * @param {DialogState} state
      * @param {SubtitleLine} line
      */
@@ -1199,61 +1199,32 @@
             return;
         }
         const offset = effectiveOffset(state) || 0;
-        const target = Math.max(0, line.start - offset);
-        if (isProgressiveTranscode(videoSrc(state.video)) && state.sessionId) {
-            // The element only holds what the server has produced from where this stream
-            // started, so the jump goes through jellyfin-web's own seek (see followRemoteSeek).
-            const stopFollowing = followRemoteSeek(state, state.pausedByUs);
-            closeDialog({ resume: false });
-            seekThroughSession(state.sessionId, target).catch(err => {
-                stopFollowing();
-                console.warn('🪼 Jellyfin Enhanced: subtitle search seek failed', err);
-                JE.toast?.(tr('subtitle_search_jump_failed', 'Couldn\'t jump to that line.'));
-            });
+        const elementTime = Math.max(0, line.start - offset) - transcodeOffsetSeconds(state.video);
+        if (isProgressiveTranscode(videoSrc(state.video)) && !withinSeekable(state.video, elementTime)) {
+            setStatus(state, tr('subtitle_search_jump_unavailable', 'This stream can only jump within the part the server has prepared so far, and that line is outside it.'), 'error');
             return;
         }
-        state.video.currentTime = Math.max(0, target - transcodeOffsetSeconds(state.video));
+        state.video.currentTime = Math.max(0, elementTime);
         closeDialog();
     }
 
     /**
-     * After a jump through jellyfin-web's seek, leaves playback as closing the dialog would:
-     * playing if the dialog paused it, paused otherwise. jellyfin-web either seeks the element
-     * in place when the position is within what it can seek ('seeked'), or restarts the stream
-     * there and plays it ('emptied'/'loadstart', then 'playing'). Stops at the first of those
-     * outcomes, after 20 s, or when the player or user changed.
-     * @param {DialogState} state
-     * @param {boolean} resumeAfter Whether playback should end up playing.
-     * @returns {() => void} Stops following.
+     * Whether the media element can seek to a time (its seekable ranges).
+     * @param {HTMLVideoElement} video
+     * @param {number} time Element time, seconds.
+     * @returns {boolean}
      */
-    function followRemoteSeek(state, resumeAfter) {
-        const video = state.video;
-        let restarted = false;
-        let timer = null;
-        const stillThisPlayback = () => video.isConnected && getVideo() === video
-            && (!JE.session || JE.session.isCurrent(state.epoch));
-        const onRestart = () => { restarted = true; };
-        const onSeeked = () => {
-            if (restarted) return;
-            stop();
-            if (resumeAfter && video.paused && stillThisPlayback()) {
-                const played = video.play();
-                if (played && typeof played.catch === 'function') played.catch(() => {});
+    function withinSeekable(video, time) {
+        if (!(time >= 0)) return false;
+        try {
+            const ranges = video.seekable;
+            for (let i = 0; ranges && i < ranges.length; i++) {
+                if (time >= ranges.start(i) && time <= ranges.end(i)) return true;
             }
-        };
-        const onPlaying = () => {
-            if (!restarted) return;
-            stop();
-            if (!resumeAfter && stillThisPlayback()) video.pause();
-        };
-        const handlers = [['emptied', onRestart], ['loadstart', onRestart], ['seeked', onSeeked], ['playing', onPlaying]];
-        function stop() {
-            clearTimeout(timer);
-            for (const [name, fn] of handlers) video.removeEventListener(name, fn);
+        } catch (err) {
+            console.warn('🪼 Jellyfin Enhanced: subtitle search seekable check failed', err);
         }
-        for (const [name, fn] of handlers) video.addEventListener(name, fn);
-        timer = setTimeout(stop, 20000);
-        return stop;
+        return false;
     }
 
     /**
@@ -1271,21 +1242,6 @@
             if (name.toLowerCase() === 'static' && String(value).toLowerCase() === 'true') return false;
         }
         return true;
-    }
-
-    /**
-     * Seeks this device's playback through the server's remote-control channel, which hands
-     * the position to jellyfin-web's playbackManager (serverNotifications Playstate Seek).
-     * @param {string} sessionId
-     * @param {number} seconds Media time.
-     * @returns {Promise<void>}
-     */
-    async function seekThroughSession(sessionId, seconds) {
-        const ac = window.ApiClient;
-        await ac.ajax({
-            type: 'POST',
-            url: ac.getUrl(`/Sessions/${encodeURIComponent(sessionId)}/Playing/Seek?SeekPositionTicks=${Math.round(seconds * TICKS_PER_SECOND)}`)
-        });
     }
 
     /**
@@ -1438,7 +1394,6 @@
             cleanup: [],
             searchTimer: null,
             supportShown: false,
-            sessionId: null,
             renderer: null
         };
         dialog = state;

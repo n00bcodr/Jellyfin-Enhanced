@@ -740,7 +740,7 @@
     "subtitle_search_error_load": "Couldn't load the subtitle lines.",
     "subtitle_search_stale": "These lines don't match the subtitles on screen.",
     "subtitle_search_reload": "Reload",
-    "subtitle_search_jump_failed": "{{icon:error}} Couldn't jump to that line.",
+    "subtitle_search_jump_unavailable": "This stream can only jump within the part the server has prepared so far, and that line is outside it.",
     "subtitle_search_retry": "Try again",
     "subtitle_search_empty": "This subtitle track has no lines.",
     "subtitle_search_no_match": "No lines match your search.",

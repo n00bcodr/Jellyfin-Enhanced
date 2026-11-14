@@ -290,38 +290,40 @@ test('the jump button seeks to where the line shows with the current offset', as
   assert.equal(h.isPaused(), false);
 });
 
-// jellyfin-web's seek either moves the element in place ('seeked') or restarts the stream and
-// plays it ('emptied', then 'playing'); afterwards playback is as closing the dialog leaves it.
-for (const outcome of ['in place', 'restart']) for (const pausedBefore of [false, true]) {
-  test(`a progressive jump goes through jellyfin-web's seek (${outcome}, ${pausedBefore ? 'paused' : 'playing'} before)`, async t => {
-    // The stream started at 60 s: the element can't reach 22.981 s itself.
-    const h = setup(t, { renderer: 'none', src: 'http://jellyfin.test/Videos/item1/stream.mp4?StartTimeTicks=600000000', time: 4.98 });
-    h.setPaused(pausedBefore);
+// A progressive transcode started at 60 s and has produced 80 s of it so far (element 0–80 s).
+function progressive(t) {
+  const h = setup(t, { renderer: 'none', src: 'http://jellyfin.test/Videos/item1/stream.mp4?StartTimeTicks=600000000', time: 4.98 });
+  Object.defineProperty(h.video, 'seekable', { configurable: true, value: { length: 1, start: () => 0, end: () => 80 } });
+  return h;
+}
+
+test('a progressive transcode jumps on the element clock within what the server has produced', async t => {
+  const h = progressive(t);
+  h.JE.toggleSubtitleSearch();
+  await flush();
+  assert.equal(h.text('.je-subsearch-anchor'), 'Heard at 1:04');
+  h.row('Aah!').querySelector('.je-subsearch-jump').click();
+  assert.ok(Math.abs(h.video.currentTime - 50.3) < 1e-9);
+  assert.equal(h.overlay(), null);
+  assert.equal(h.isPaused(), false, 'resumed, as the dialog paused it');
+});
+
+for (const what of ['before the stream started', 'beyond what is produced']) {
+  test(`a progressive transcode refuses a jump ${what}`, async t => {
+    const h = progressive(t);
     h.JE.toggleSubtitleSearch();
     await flush();
-    assert.equal(h.text('.je-subsearch-anchor'), 'Heard at 1:04');
-    h.row('outcome was never').querySelector('.je-subsearch-jump').click();
-    await flush(2);
-    assert.deepEqual(h.ajaxCalls.filter(c => c.type === 'POST').map(c => c.url), ['http://jellyfin.test/Sessions/session-1/Playing/Seek?SeekPositionTicks=229810000']);
+    const line = what.startsWith('before') ? 'outcome was never' : 'Aah!';
+    if (what.startsWith('beyond')) Object.defineProperty(h.video, 'seekable', { value: { length: 1, start: () => 0, end: () => 30 } });
+    h.row(line).querySelector('.je-subsearch-jump').click();
     assert.equal(h.video.currentTime, 4.98);
-    assert.equal(h.overlay(), null);
-    assert.equal(h.isPaused(), true, 'nothing resumes before the seek lands');
-    if (outcome === 'in place') {
-      h.video.dispatchEvent(new h.window.Event('seeked'));
-    } else {
-      h.video.dispatchEvent(new h.window.Event('emptied'));
-      h.setPaused(false); // jellyfin-web plays the restarted stream
-      h.video.dispatchEvent(new h.window.Event('playing'));
-    }
-    assert.equal(h.isPaused(), pausedBefore, pausedBefore ? 'stays paused' : 'plays, as the dialog paused it');
-    // Nothing is left listening: a later Play is the user's.
-    h.setPaused(false);
-    h.video.dispatchEvent(new h.window.Event('playing'));
-    assert.equal(h.isPaused(), false);
+    assert.ok(h.overlay(), 'the dialog stays open');
+    assert.match(h.text('.je-subsearch-status'), /only jump within the part the server has prepared/);
+    assert.deepEqual(h.ajaxCalls.filter(c => c.type === 'POST'), []);
   });
 }
 
-test('only progressive transcodes count as needing the server seek', t => {
+test('only progressive transcodes count as limited to what the server has produced', t => {
   const { api } = setup(t);
   assert.equal(api.isProgressiveTranscode('http://s/Videos/a/stream.mp4?StartTimeTicks=10'), true);
   assert.equal(api.isProgressiveTranscode('http://s/videos/a/stream.mkv?static=TRUE'), false);
