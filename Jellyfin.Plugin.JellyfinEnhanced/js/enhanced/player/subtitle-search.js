@@ -78,12 +78,19 @@
      */
     function cleanLineText(text) {
         if (typeof text !== 'string') return '';
-        return text
+        let stripped = text
             .replace(/\\N/gi, '\n')
             .replace(/\\h/g, ' ')
             .replace(/\r/g, '')
-            .replace(/\{\\[^}]*\}/g, '')
-            .replace(/<\/?[a-zA-Z][^>]*>/g, '')
+            .replace(/\{\\[^}]*\}/g, '');
+        // Removing one tag can join its neighbours into a new one ("<<i>b>"), so repeat until
+        // nothing changes. The text is only ever shown through textContent.
+        let previous;
+        do {
+            previous = stripped;
+            stripped = stripped.replace(/<\/?[a-zA-Z][^>]*>/g, '');
+        } while (stripped !== previous);
+        return stripped
             .split('\n')
             .map(part => part.replace(/\s+/g, ' ').trim())
             .filter(Boolean)

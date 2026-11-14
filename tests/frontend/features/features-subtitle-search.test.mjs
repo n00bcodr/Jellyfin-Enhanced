@@ -147,6 +147,7 @@ test('subtitle lines lose ASS overrides and HTML tags, keep line breaks', t => {
   assert.equal(api.cleanLineText('{\\an8}<i>Hello</i>\\Nthere  you\\hare'), 'Hello\nthere you are');
   assert.equal(api.cleanLineText('<font color="#ff0">Loud</font>\r\n  \n quiet '), 'Loud\nquiet');
   assert.equal(api.cleanLineText('I <3 you & a < b'), 'I <3 you & a < b');
+  assert.equal(api.cleanLineText('<<i>script>alert(1)<</i>/script>'), 'alert(1)');
   assert.equal(api.cleanLineText(null), '');
 });
 
