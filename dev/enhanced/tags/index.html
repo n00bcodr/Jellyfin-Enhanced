@@ -1511,6 +1511,28 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#tag-text" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tag text
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#hidden-tags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hidden tags
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#genre-colours" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3300,6 +3322,28 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#tag-text" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tag text
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#hidden-tags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hidden tags
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#genre-colours" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3776,7 +3820,7 @@
 <li><strong>Where to show:</strong> every group has the same six switches: <strong>Movies</strong>, <strong>Series</strong>, <strong>Seasons</strong>, <strong>Episodes</strong>, <strong>Continue Watching row</strong> and <strong>Next Up row</strong>. Turn one off to keep that group off those cards, for example genres off episodes or the age rating off the Next Up row. Each switch you have not changed follows the administrator's choice, and <strong>Follow server</strong> puts the whole group back on the administrator's choices. The item types also apply to <a href="#native-poster-tags-experimental">Native Poster Tags</a>. The two home rows are a web setting, because an app's image request does not say which row a poster is in. The live preview applies the switches to its sample movie, series and episode. People Tags appear on cast cards, not on media cards, so they have no switches. The item editor does not have them either, since they are set for all titles here. Collections and other videos always show the group. Rating works the same way: a Rating switch you turned off before this release stays off, and the others follow the administrator.</li>
 <li><strong>Show up to</strong> reads <strong>Always one tag</strong> for Status, Age rating and a one-logo Logos group, on the hub and in the item editor.</li>
 </ul>
-<p>The limit applies after each group's own filtering (quality categories, language grouping and priority, each group's <strong>Where to show</strong> switches). <strong>Reset to defaults</strong> restores the administrator's layout, density, positions, order and limits; your group switches and include choices stay.</p>
+<p>The limit applies after each group's own filtering (quality categories, language grouping and priority, <a href="#hidden-tags">hidden tags</a>, each group's <strong>Where to show</strong> switches). <strong>Reset to defaults</strong> restores the administrator's layout, density, positions, order and limits; your group switches and include choices stay.</p>
 <p><strong>Show up to</strong> appears only for groups that can show multiple chips. Status (including Leaving soon and direct play) and Age rating always have a limit of one. Logos hides the control when the administrator permits only one logo, and shows it when the maximum is two. Saved higher limits cannot increase these single-chip groups. The hub and administrator Layout defaults / Groups panels follow the same rule.</p>
 <p><a class="glightbox" data-type="image" data-width="100%" data-height="auto" href="../../images/tags/tag-group-editor.webp" data-desc-position="bottom"><img alt="The Groups tab with Quality open: the named 3×3 Position picker, Hidden and the Show up to stepper, with the live preview" src="../../images/tags/tag-group-editor.webp"></a></p>
 <table>
@@ -4461,6 +4505,11 @@
 <td>Admin: <strong>Enable Genre Tags</strong> / personal: <strong>Genre</strong> switch</td>
 <td>Off</td>
 <td>Shows genre icons on supported cards (three by default; see <a href="#layouts">Layouts</a>)</td>
+</tr>
+<tr>
+<td>Admin: <strong>Hide</strong> switch of a genre (Colours tab)</td>
+<td>Off</td>
+<td>Hides a genre, in every spelling, from every poster; the next genres take its place (see <a href="#hidden-tags">Hidden tags</a>)</td>
 </tr>
 </tbody>
 </table>
@@ -5857,6 +5906,59 @@
 </table>
 <p>| <strong>Custom</strong> | Each label of the <strong>Custom tag rules</strong> | The labels follow the rules table as you edit it; rules that share a label share its colours. The icon takes the text colour |</p>
 <p>A tag's colours are worked out field by field: its own colour if you set one, else the group colour, else the preset. <strong>Default</strong> on a row removes that one colour from what you are editing, so it falls back to the group or the preset.</p>
+<h4 id="tag-text">Tag text<a class="headerlink" href="#tag-text" title="Permanent link">¶</a></h4>
+<p>Quality, genre, status and awards tags also have a <strong>Text</strong> field under their <strong>Hide</strong> switch: choose a tag and type the words its chips should show (for example <strong>Season Finale</strong> becomes <strong>End of Season</strong>). The text replaces the whole chip text for every user, on web posters and on native posters (native genre chips draw only an icon, so a genre text shows on the web only). Leave the field empty to go back to the tag's own words; it saves when you leave the field and offers Undo. Texts are up to 32 characters, apply in Full and Compact density alike, and are not translated: every language shows what you typed. A tile renames every chip it colours, so renaming <strong>Dolby Digital+</strong> replaces <strong>Dolby Digital+ 5.1</strong> and <strong>Dolby Digital+ 2.0</strong> alike.</p>
+<h4 id="hidden-tags">Hidden tags<a class="headerlink" href="#hidden-tags" title="Permanent link">¶</a></h4>
+<p>Any tag in the editor's tag list can also be hidden: choose it and turn on its <strong>Hide</strong> switch (named after the tag, for example <strong>Hide Drama</strong>). Its chips then never show, on web posters and native posters, for every user. Hidden tiles are dimmed, outlined and marked; the group's tab shows how many it hides; and a <strong>Hidden</strong> line under the list names them, each a shortcut to its switch (with more than four, <strong>Show only the hidden tags</strong> narrows the list to them). <strong>Undo</strong> in the confirmation brings a tag back, as does turning the switch off again. Hidden tags work whether <strong>Use tag colours</strong> is on or off; with colours off the editor stays open for hiding and its colour controls are dimmed.</p>
+<p>Each group on the <strong>Groups</strong> tab says how many of its tags are hidden and links to them (<strong>Hidden Genre tags (Colours and text)</strong>). Turning a group off there only changes what new users start with; hiding a tag applies to everyone.</p>
+<p>A tag hides exactly the chips its colours apply to:</p>
+<table>
+<thead>
+<tr>
+<th>Tab</th>
+<th>Hiding a tag hides</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Quality</strong></td>
+<td>That label, whatever its channels (<strong>Dolby Digital+</strong> hides <em>Dolby Digital+ 5.1</em>). Hiding a resolution such as <strong>4K</strong> never shows a lower resolution in its place.</td>
+</tr>
+<tr>
+<td><strong>Age</strong></td>
+<td>Every rating on that colour board (hover the tile for the list).</td>
+</tr>
+<tr>
+<td><strong>Rating</strong></td>
+<td>That score (Community, Critic, User review or a named source).</td>
+</tr>
+<tr>
+<td><strong>Genre</strong></td>
+<td>That genre in every spelling and translation (<strong>Drama</strong> hides <em>Drame</em> and <em>Драма</em>). <strong>Other</strong> hides every genre without an icon of its own, such as <em>Reality</em>, <em>Talk</em> or <em>Anime</em>. The next genres take the hidden ones' places within <strong>Show up to</strong>.</td>
+</tr>
+<tr>
+<td><strong>Status</strong></td>
+<td>That badge.</td>
+</tr>
+<tr>
+<td><strong>Awards</strong></td>
+<td>That ribbon.</td>
+</tr>
+<tr>
+<td><strong>Language</strong></td>
+<td>A language code hides that language's audio and subtitle chips (the Dual/Multi badge still counts it); <strong>Subtitles</strong>, <strong>Dual / Multi</strong>, <strong>Dual</strong> and <strong>Multi</strong> hide those chips. <strong>Flag image</strong> and <strong>Language codes</strong> colour every flag or code and cannot be hidden.</td>
+</tr>
+<tr>
+<td><strong>Logos</strong></td>
+<td>Every logo of that kind: <strong>Provider logo</strong> (streaming services), <strong>Network / studio logo</strong>, or <strong>Name chip</strong> (logos without an image). The next logo takes their place.</td>
+</tr>
+<tr>
+<td><strong>Custom</strong></td>
+<td>Every chip with that label. A hidden label whose rule was removed keeps its tile (<em>Kids (no rule)</em>) until it is shown again, so it never silently hides a later rule with the same label.</td>
+</tr>
+</tbody>
+</table>
+<p><a class="glightbox" data-type="image" data-width="100%" data-height="auto" href="../../images/tags/tag-hidden-tags.webp" data-desc-position="bottom"><img alt="The Genre tab of the colour editor with Drama hidden" src="../../images/tags/tag-hidden-tags.webp"></a></p>
 <h4 id="genre-colours">Genre colours<a class="headerlink" href="#genre-colours" title="Permanent link">¶</a></h4>
 <p>Each genre the icons know is its own tag on the <strong>Genre</strong> tab, shown as its icon (with its name where there is room; hover a tile for the name). <strong>Find a genre</strong> narrows the list. With the keyboard the tiles are a single stop: the arrow keys move the selection, <strong>Home</strong> and <strong>End</strong> jump to the first and last tile. A genre and its other spellings and translations share one tag, so colouring <strong>Comedy</strong> also colours <em>Comédie</em> and <em>Komödie</em>. Genres without an icon of their own (for example <em>Anime</em> or <em>Children</em>) use <strong>Other</strong>. Genre names are matched without regard to case.</p>
 <p><a class="glightbox" data-type="image" data-width="100%" data-height="auto" href="../../images/admin/tag-styles-genre.webp" data-desc-position="bottom"><img alt="The Genre tab of the Tag Styles editor: Whole group, then one icon tile per genre, with Horror, Comedy and Animation coloured" src="../../images/admin/tag-styles-genre.webp"></a></p>

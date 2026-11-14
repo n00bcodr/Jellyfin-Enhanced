@@ -4599,6 +4599,11 @@
 <td><code>null</code></td>
 </tr>
 <tr>
+<td><code>TagHiddenValues</code></td>
+<td>Object or null: per group (<code>Quality</code>, <code>AgeRating</code>, <code>Rating</code>, <code>Genre</code>, <code>Status</code>, <code>Language</code>, <code>Awards</code>, <code>Logos</code>, <code>Custom</code>) a string array of Tag Styles labels whose chips never draw (the <strong>Hide</strong> switches of the Colours tab). Only catalog labels are kept (<code>TagHiddenRules.Normalize</code>; the language <code>flag</code> and <code>code</code> styles are not hideable); an empty result is <code>null</code>. A label hides exactly the chips it colours: a genre label every spelling (<code>other</code>: every genre without an icon), an age board every rating on it, a logo style every logo of that kind. The public configuration also returns <code>TagHiddenAgeRatings</code>, the ratings on the hidden boards. Native posters apply it (<code>TagHiddenRules</code>); a shown group that hides something enters the native settings digest (<code>hidden.&lt;group&gt;</code>), so poster URLs retire.</td>
+<td><code>null</code></td>
+</tr>
+<tr>
 <td><code>RatingTagsShowCommunity</code></td>
 <td>Boolean</td>
 <td><code>true</code></td>
