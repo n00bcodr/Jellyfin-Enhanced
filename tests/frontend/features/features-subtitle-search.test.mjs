@@ -53,10 +53,11 @@ function setup(t, {
     NowPlayingItem: { Id: 'item1', MediaStreams: [], ...nowPlaying },
     PlayState: { IsPaused: true, SubtitleStreamIndex: 2, MediaSourceId: 'src1', ...playState }
   };
-  const earlier = { ...session, PlayState: { ...session.PlayState, ...(before || {}) } };
-  let reported = false;
-  let checkIns = 1;
-  const report = () => { reported = true; checkIns++; };
+  // What the server holds: the state jellyfin-web last reported, not the live one.
+  const snapshot = from => ({ ...from, NowPlayingItem: { ...from.NowPlayingItem }, PlayState: { ...from.PlayState } });
+  let served = snapshot({ ...session, PlayState: { ...session.PlayState, ...(before || {}) } });
+  let checkIns = 10;
+  const report = () => { checkIns++; served = snapshot(session); };
   const ajaxCalls = [];
   const JE = {
     currentSettings: { subtitleSearchButtonEnabled: enabled },
@@ -86,7 +87,7 @@ function setup(t, {
       ajax: async (req) => {
         ajaxCalls.push({ type: req.type || 'GET', url: String(req.url) });
         if (String(req.url).includes('/Sessions?')) {
-          return [{ ...(reported ? session : earlier), LastPlaybackCheckIn: `2026-11-15T01:00:0${checkIns}Z` }];
+          return [{ ...served, LastPlaybackCheckIn: `2026-11-15T01:00:${checkIns}Z` }];
         }
         if (req.type === 'POST') return {};
         throw new Error('unexpected ajax ' + req.url);
@@ -486,6 +487,8 @@ test('a track switched while the dialog is open makes its lines unusable until r
   assert.equal(h.overlay().querySelectorAll('.je-subsearch-row').length, 0);
   h.overlay().querySelector('.je-subsearch-status button').click();
   await flush();
+  h.report(); // jellyfin-web's next report names track 3
+  await flush();
   assert.equal(h.rows().length, 7);
   assert.match(h.rows()[0].textContent, /Deutsche Zeile 0/);
 });
@@ -506,7 +509,11 @@ test('a new libass surface (another ASS track) makes the listed lines unusable',
 test('after an ASS track switch the slider\'s old value is not taken as the offset', async t => {
   // jellyfin-web created this libass surface after resetting the offset to 0; its hidden slider still says -6.7.
   const h = setup(t, { renderer: 'ass', slider: '-6.7' });
-  h.JE.addSubtitleSearchButton(); // the video-page DOM update that sees the surface appear
+  const surface = h.document.querySelector('.libassjs-canvas-parent');
+  surface.remove();
+  h.JE.addSubtitleSearchButton(); // a page update before the surface exists
+  h.video.parentElement.append(surface);
+  h.JE.addSubtitleSearchButton(); // the page update that sees it appear
   h.JE.toggleSubtitleSearch();
   await flush();
   assert.equal(h.text('.je-subsearch-offset'), 'Offset 0.0 s');
@@ -584,8 +591,9 @@ test('an ASS switch while the lines load looks them up again for the new track',
   fresh.className = 'libassjs-canvas-parent';
   h.document.querySelector('.libassjs-canvas-parent').replaceWith(fresh);
   h.session.PlayState.SubtitleStreamIndex = 3;
-  h.report();
   release();
+  await flush(20);
+  h.report(); // the report after the switch
   await flush(20);
   assert.equal(calls, 2);
   assert.match(h.rows()[0].textContent, /Deutsche Zeile 0/);
@@ -593,6 +601,10 @@ test('an ASS switch while the lines load looks them up again for the new track',
 
 test('jellyfin-web\'s own offset keys count as setting the offset', async t => {
   const h = setup(t, { renderer: 'ass', slider: '-10.8' });
+  const surface = h.document.querySelector('.libassjs-canvas-parent');
+  surface.remove();
+  h.JE.addSubtitleSearchButton();
+  h.video.parentElement.append(surface);
   h.JE.addSubtitleSearchButton(); // the surface appears with a stale slider
   // G then H: jellyfin-web's update() goes through the slider's updateOffset.
   h.sliderEl.updateOffset(-10.9);
@@ -624,8 +636,9 @@ test('subtitles turned off while the lines load are looked up again, not listed 
     if (renderer === 'cues') h.tracks[0].mode = 'disabled';
     else h.document.querySelector('.libassjs-canvas-parent').remove();
     h.session.PlayState.SubtitleStreamIndex = -1;
-    h.report();
     release();
+    await flush(20);
+    h.report(); // the report after subtitles went off
     await flush(20);
     assert.equal(calls, 1, renderer);
     assert.equal(h.overlay().querySelectorAll('.je-subsearch-row').length, 0, renderer);
@@ -664,6 +677,69 @@ test('a retimed same-text switch while the dialog is open makes the lines unusab
   h.row('buttering me up').querySelector('.je-subsearch-line').click();
   assert.deepEqual(h.offsets, []);
   assert.match(h.text('.je-subsearch-status'), /don't match the subtitles on screen/);
+});
+
+test('subtitles turned off during the load wait for a report sent after that, not the pause report', async t => {
+  let release;
+  let calls = 0;
+  const h = setup(t, { jf: () => { calls++; return new Promise(resolve => { release = () => resolve(structuredClone(STREAM)); }); } });
+  h.JE.toggleSubtitleSearch(); // pauses: jellyfin-web reports subtitle track 2
+  await flush();
+  h.tracks[0].mode = 'disabled';
+  h.session.PlayState.SubtitleStreamIndex = -1; // not reported yet
+  release();
+  await flush(20);
+  assert.equal(h.overlay().querySelectorAll('.je-subsearch-row').length, 0);
+  assert.match(h.text('.je-subsearch-status'), /Loading/);
+  h.report();
+  await flush(20);
+  assert.equal(calls, 1);
+  assert.match(h.text('.je-subsearch-status'), /Turn on a subtitle track first/);
+});
+
+test('a retimed same-text switch during the load waits for the report naming the new track', async t => {
+  let release;
+  let calls = 0;
+  const h = setup(t, { jf: (path) => {
+    calls++;
+    h.requests.push({ path });
+    if (calls === 1) return new Promise(resolve => { release = () => resolve(structuredClone(STREAM)); });
+    return Promise.resolve(structuredClone(path.includes('/Subtitles/3/') ? RETIMED : STREAM));
+  } });
+  h.JE.toggleSubtitleSearch();
+  await flush();
+  h.tracks[0].cues = retimedCues();
+  h.session.PlayState.SubtitleStreamIndex = 3; // not reported yet
+  release();
+  await flush(20);
+  assert.equal(h.overlay().querySelectorAll('.je-subsearch-row').length, 0);
+  h.report();
+  await flush(20);
+  assert.deepEqual(h.requests.map(r => r.path), ['/Videos/item1/src1/Subtitles/2/0/Stream.js', '/Videos/item1/src1/Subtitles/3/0/Stream.js']);
+  h.row('buttering me up').querySelector('.je-subsearch-line').click();
+  assert.deepEqual(h.offsets, [-4]);
+});
+
+test('with too few cues to measure, a new cue track counts as offset 0 until the offset is set', async t => {
+  // Mostly repeated text: the cues can't tell the applied offset.
+  const events = [ev(10, 11, 'Alpha one'), ev(56, 58, 'Buttering me up')];
+  for (let i = 0; i < 20; i++) events.push(ev(70 + i * 2, 71 + i * 2, 'Yes.'));
+  const SPARSE = { TrackEvents: events };
+  const cues = SPARSE.TrackEvents.map(e => ({ startTime: e.StartPositionTicks / TICKS, text: e.Text }));
+  const h = setup(t, { data: SPARSE, cues, slider: '-6.7' }); // jellyfin-web reset the offset; its slider says -6.7
+  h.tracks[0].mode = 'disabled';
+  h.JE.addSubtitleSearchButton(); // a page update before the cues are shown
+  h.tracks[0].mode = 'showing';
+  h.JE.addSubtitleSearchButton(); // the page update that sees the new cues
+  h.JE.toggleSubtitleSearch();
+  await flush();
+  assert.equal(h.text('.je-subsearch-offset'), 'Offset 0.0 s');
+  h.row('Buttering me up').querySelector('.je-subsearch-jump').click();
+  assert.equal(h.video.currentTime, 56);
+  h.JE.setSubtitleOffset(-2);
+  h.JE.toggleSubtitleSearch();
+  await flush();
+  assert.equal(h.text('.je-subsearch-offset'), 'Offset -2.0 s');
 });
 
 // ── Keys, closing and stale answers ──────────────────────────────────────────────────────────

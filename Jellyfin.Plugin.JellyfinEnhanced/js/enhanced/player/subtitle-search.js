@@ -389,31 +389,27 @@
         slider.addEventListener('change', () => { sliderWrites++; });
     }
 
-    /**
-     * The drawn surface last seen on the page, with the slider value and write count at that
-     * moment. Kept up to date on every video-page DOM update (JE.addSubtitleSearchButton), so a
-     * new surface is seen right after jellyfin-web creates it.
-     * @type {{surface: Element|null, writes: number}}
-     */
-    let surfaceSeen = { surface: null, writes: 0 };
-
     /** When the subtitles on screen last changed (shown, switched or turned off), by this page's clock. */
     let subtitlesChangedAt = 0;
 
     /** Counts subtitle changes on screen; a load spanning a change can't trust what it read. */
     let subtitleGeneration = 0;
 
-    /** The cue track's first cue last seen (see firstCue). */
-    let firstCueSeen = null;
+    /** The renderer key last seen (see rendererKey); undefined before the first look. */
+    let rendererKeySeen;
+
+    /**
+     * Each renderer key seen, with the slider write count when it was first seen. A key seen
+     * again (Firefox briefly hides the cues on every offset change) keeps its first record.
+     * @type {WeakMap<object, number>}
+     */
+    const rendererFirstSeen = new WeakMap();
 
     /** The text track list watched for subtitle changes. */
     let watchedTrackList = null;
 
     /**
-     * The first cue object of the shown cue track, which identifies the track it holds:
-     * jellyfin-web replaces every cue with new ones on a track switch (even one with the same
-     * text) and removes or hides them when subtitles go off, while an offset change only moves
-     * the existing cues' times (and on Firefox flips the mode for a moment).
+     * The first cue object of the shown cue track.
      * @param {HTMLVideoElement|null} video
      * @returns {TextTrackCue|null}
      */
@@ -423,6 +419,19 @@
         return cues && cues.length ? cues[0] : null;
     }
 
+    /**
+     * What identifies the subtitles jellyfin-web is drawing: its cue track's first cue object, or
+     * its drawn element (libass, custom element). Both are new for every track it shows, and it
+     * creates them right after resetting the offset to 0 (htmlVideoPlayer setTrackForDisplay →
+     * renderTracksEvents, jellyfin-web 10.11 and 12), even for a file with the same text; an
+     * offset change only moves the existing cues' times.
+     * @param {HTMLVideoElement|null} video
+     * @returns {object|null}
+     */
+    function rendererKey(video) {
+        return video ? firstCue(video) || drawnSurface(video) : null;
+    }
+
     /** Records a subtitle change on screen. */
     function noteSubtitleChange() {
         subtitlesChangedAt = Date.now();
@@ -430,19 +439,35 @@
     }
 
     /**
-     * A change of the video's text tracks: once it settles (Firefox restores the mode after an
-     * offset change in a 0 ms timeout), it is a subtitle change if the cue track's content differs.
+     * Records the renderer when it changed, after making sure offset writes and track changes
+     * are watched. A new renderer is seen soon after jellyfin-web creates it: this runs on every
+     * video-page DOM update (the first of which comes before any subtitles are drawn), 50 ms
+     * after each text track change, and before the dialog relies on it.
      */
-    function onTrackListChange() {
-        setTimeout(noteCueChange, 50);
+    function noteRenderer() {
+        watchSliderWrites();
+        const video = getVideo();
+        watchSubtitleChanges(video);
+        const key = rendererKey(video);
+        if (rendererKeySeen === undefined) {
+            // The first look: what is there already is not a change, and its offset history is
+            // unknown (the slider is trusted for it).
+            rendererKeySeen = key;
+            return;
+        }
+        if (key === rendererKeySeen) return;
+        rendererKeySeen = key;
+        if (key && rendererFirstSeen.has(key)) return;
+        if (key) rendererFirstSeen.set(key, sliderWrites);
+        noteSubtitleChange();
     }
 
-    /** Records a subtitle change when the cue track holds other cues than last seen. */
-    function noteCueChange() {
-        const cue = firstCue(getVideo());
-        if (cue === firstCueSeen) return;
-        firstCueSeen = cue;
-        noteSubtitleChange();
+    /**
+     * A change of the video's text tracks, looked at once it settles (Firefox restores the mode
+     * after an offset change in a 0 ms timeout).
+     */
+    function onTrackListChange() {
+        setTimeout(noteRenderer, 50);
     }
 
     /**
@@ -450,8 +475,7 @@
      * than the last page update or the settle delay above.
      */
     function catchUpSubtitleChanges() {
-        noteSurface();
-        noteCueChange();
+        noteRenderer();
     }
 
     /**
@@ -466,31 +490,14 @@
             watchedTrackList.removeEventListener('change', onTrackListChange);
         }
         watchedTrackList = list;
-        firstCueSeen = firstCue(video);
         list.addEventListener('change', onTrackListChange);
     }
 
     /**
-     * Records the drawn surface when it changed, after making sure offset writes and track
-     * changes are watched. Every surface is seen soon after jellyfin-web creates it: this runs on
-     * each video-page DOM update, and playback never outlives a page load, so JE is always
-     * running before the first one appears.
-     */
-    function noteSurface() {
-        watchSliderWrites();
-        const video = getVideo();
-        watchSubtitleChanges(video);
-        const surface = video ? drawnSurface(video) : null;
-        if (surface === surfaceSeen.surface) return;
-        noteSubtitleChange();
-        surfaceSeen = { surface, writes: sliderWrites };
-    }
-
-    /**
      * The offset the dialog shows and jumps with. jellyfin-web's hidden slider keeps an earlier
-     * track's value after a track switch, while the player resets the offset to 0. With cues it
-     * is measured from them; on a drawn surface whose slider nobody has written since the surface
-     * appeared, it is 0; otherwise the slider's.
+     * track's value after a track switch, while the player resets the offset to 0. With enough
+     * cues it is measured from them; otherwise, when nobody has written the offset since the
+     * current renderer appeared, it is 0; otherwise the slider's.
      * @param {DialogState} state
      * @returns {number|null} null when the player has no subtitle offset.
      */
@@ -501,11 +508,9 @@
             const measured = measureOffset(state.lines, cueSample(state.video));
             if (typeof measured === 'number') return measured;
         }
-        noteSurface();
-        const surface = drawnSurface(state.video);
-        if (surface && surface === surfaceSeen.surface && sliderWrites === surfaceSeen.writes) {
-            return 0;
-        }
+        noteRenderer();
+        const key = rendererKey(state.video);
+        if (key && rendererFirstSeen.has(key) && rendererFirstSeen.get(key) === sliderWrites) return 0;
         return slider;
     }
 
@@ -612,6 +617,7 @@
      * @property {number} epoch
      * @property {number} anchor Media time when the dialog opened, seconds.
      * @property {boolean} pausedByUs
+     * @property {number} openedAt When the dialog opened (and paused playback), by this page's clock.
      * @property {AbortController} abort
      * @property {Element|null} returnFocus
      * @property {HTMLElement} overlay
@@ -915,10 +921,11 @@
     /**
      * This device's session, once it is known to describe what is on screen. A pause makes
      * jellyfin-web report its whole state, so when the dialog paused playback a session that
-     * shows it paused is current. When playback was already paused, the last report is at most
-     * ten seconds old: it is current unless the subtitles on screen changed since (a track shown,
-     * switched or turned off, see watchSubtitleChanges), in which case the dialog waits for the
-     * next report (LastPlaybackCheckIn moves). Null when no current answer came in time.
+     * shows it paused is current, unless the subtitles changed after that. Otherwise the last
+     * report is at most ten seconds old: it is current unless the subtitles on screen changed
+     * since (a track shown, switched or turned off, see noteRenderer), in which case the dialog
+     * waits for the next report (LastPlaybackCheckIn moves). Null when no current answer came in
+     * time.
      * @param {DialogState} state
      * @returns {Promise<object|null>}
      */
@@ -926,8 +933,11 @@
         const probe = JE.internals?.player?.probeOwnSession;
         if (typeof probe !== 'function') return null;
         const deadline = Date.now() + TIMEOUTS.sessionWait;
-        const awaitReport = !state.pausedByUs && subtitlesChangedAt > 0
-            && Date.now() - subtitlesChangedAt < REPORT_INTERVAL_MS;
+        // A recent subtitle change needs a report sent after it, unless it came before the
+        // dialog's own pause (whose report already includes it).
+        const recentChange = subtitlesChangedAt > 0 && Date.now() - subtitlesChangedAt < REPORT_INTERVAL_MS;
+        const coveredByPause = state.pausedByUs && subtitlesChangedAt <= state.openedAt;
+        const awaitReport = recentChange && !coveredByPause;
         /** @type {string|null|undefined} undefined until a session has been seen. */
         let baseline;
         for (;;) {
@@ -935,13 +945,12 @@
             if (!isCurrent(state)) return null;
             if (session) {
                 const checkIn = session.LastPlaybackCheckIn || null;
-                if (state.pausedByUs) {
+                if (awaitReport) {
+                    if (baseline === undefined) baseline = checkIn;
+                    else if (checkIn !== baseline) return session;
+                } else if (state.pausedByUs) {
                     if (session.PlayState && session.PlayState.IsPaused === true) return session;
-                } else if (!awaitReport) {
-                    return session;
-                } else if (baseline === undefined) {
-                    baseline = checkIn;
-                } else if (checkIn !== baseline) {
+                } else {
                     return session;
                 }
             }
@@ -1356,6 +1365,7 @@
             epoch: JE.session ? JE.session.getEpoch() : 0,
             anchor: mediaTime(video),
             pausedByUs: wasPlaying,
+            openedAt: Date.now(),
             abort: new AbortController(),
             returnFocus: document.activeElement,
             overlay,
@@ -1489,7 +1499,7 @@
      * happen (see effectiveOffset and probeFreshSession), whether or not the button is shown.
      */
     JE.addSubtitleSearchButton = () => {
-        noteSurface();
+        noteRenderer();
         const existing = document.getElementById(BUTTON_ID);
         if (JE.currentSettings?.subtitleSearchButtonEnabled !== true) {
             existing?.remove();
