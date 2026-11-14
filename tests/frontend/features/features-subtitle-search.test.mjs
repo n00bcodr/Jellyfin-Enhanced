@@ -615,6 +615,16 @@ test('a seek or a track switch made elsewhere while open leaves playback paused 
   switched.JE.addSubtitleSearchButton(); // the page update that sees it
   switched.JE.toggleSubtitleSearch();
   assert.equal(switched.isPaused(), true);
+
+  // Closed at once, before the track change's settle check has run.
+  const quick = setup(t);
+  quick.JE.toggleSubtitleSearch();
+  await flush();
+  quick.tracks[0].cues = retimedCues(); // another track's cues
+  quick.trackListChanged();
+  quick.overlay().querySelector('.je-subsearch-close').click();
+  assert.equal(quick.overlay(), null);
+  assert.equal(quick.isPaused(), true);
 });
 
 test('switching from cues to ASS, or turning subtitles off, while open makes the lines unusable', async t => {

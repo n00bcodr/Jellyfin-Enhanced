@@ -1505,7 +1505,9 @@
         state.overlay.remove();
         const video = state.video;
         const resume = !(opts && opts.resume === false);
-        // Nor after a subtitle change on screen while it was open (a track switched elsewhere).
+        // Nor after a subtitle change on screen while it was open (a track switched elsewhere),
+        // including one too recent for the settle delay to have recorded yet.
+        catchUpSubtitleChanges();
         if (resume && state.pausedByUs && subtitleGeneration === state.generationAtOpen
             && video.isConnected && getVideo() === video && videoSrc(video) === state.src && video.paused) {
             const played = video.play();
