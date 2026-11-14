@@ -573,7 +573,7 @@ Search ignores case, accents and punctuation; a line must contain every word you
 
     The lines come from the server's copy of the track. Jellyfin's player tells the server which track it shows when it pauses and every ten seconds, so right after you change track the list can take a few seconds to load. If the track changes while the list is open, it says the lines no longer match and offers **Reload**.
 
-    Jellyfin's offset belongs to the current track: it goes back to 0 when you change track or video. A jump on a progressive (non-HLS) transcode goes through Jellyfin's own seek, which restarts the stream there; other jumps are local seeks, like Auto-Skip's, so SyncPlay peers do not follow them.
+    Jellyfin's offset belongs to the current track: it goes back to 0 when you change track or video. A jump on a progressive (non-HLS) transcode goes through Jellyfin's own seek, which moves within the stream or restarts it there, and playback then continues or stays paused as it would on closing the list; other jumps are local seeks, like Auto-Skip's, so SyncPlay peers do not follow them.
 
 ### Player Ratings
 

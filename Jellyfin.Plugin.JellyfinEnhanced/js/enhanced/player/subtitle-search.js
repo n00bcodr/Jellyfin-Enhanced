@@ -1202,11 +1202,11 @@
         const target = Math.max(0, line.start - offset);
         if (isProgressiveTranscode(videoSrc(state.video)) && state.sessionId) {
             // The element only holds what the server has produced from where this stream
-            // started; jellyfin-web's own seek restarts the transcode at the target, and plays it.
-            const stopKeepingPaused = state.pausedByUs ? () => {} : keepPausedAfterRestart(state);
+            // started, so the jump goes through jellyfin-web's own seek (see followRemoteSeek).
+            const stopFollowing = followRemoteSeek(state, state.pausedByUs);
             closeDialog({ resume: false });
             seekThroughSession(state.sessionId, target).catch(err => {
-                stopKeepingPaused();
+                stopFollowing();
                 console.warn('🪼 Jellyfin Enhanced: subtitle search seek failed', err);
                 JE.toast?.(tr('subtitle_search_jump_failed', 'Couldn\'t jump to that line.'));
             });
@@ -1217,26 +1217,41 @@
     }
 
     /**
-     * Playback was paused before the dialog opened: pauses the stream jellyfin-web restarts for
-     * a jump (it plays it from the new position) once it starts, if it is still this player and
-     * user, within 20 s.
+     * After a jump through jellyfin-web's seek, leaves playback as closing the dialog would:
+     * playing if the dialog paused it, paused otherwise. jellyfin-web either seeks the element
+     * in place when the position is within what it can seek ('seeked'), or restarts the stream
+     * there and plays it ('emptied'/'loadstart', then 'playing'). Stops at the first of those
+     * outcomes, after 20 s, or when the player or user changed.
      * @param {DialogState} state
-     * @returns {() => void} Stops waiting.
+     * @param {boolean} resumeAfter Whether playback should end up playing.
+     * @returns {() => void} Stops following.
      */
-    function keepPausedAfterRestart(state) {
+    function followRemoteSeek(state, resumeAfter) {
         const video = state.video;
+        let restarted = false;
         let timer = null;
-        const stop = () => {
-            clearTimeout(timer);
-            video.removeEventListener('playing', onPlaying);
-        };
-        const onPlaying = () => {
+        const stillThisPlayback = () => video.isConnected && getVideo() === video
+            && (!JE.session || JE.session.isCurrent(state.epoch));
+        const onRestart = () => { restarted = true; };
+        const onSeeked = () => {
+            if (restarted) return;
             stop();
-            if (video.isConnected && getVideo() === video && (!JE.session || JE.session.isCurrent(state.epoch))) {
-                video.pause();
+            if (resumeAfter && video.paused && stillThisPlayback()) {
+                const played = video.play();
+                if (played && typeof played.catch === 'function') played.catch(() => {});
             }
         };
-        video.addEventListener('playing', onPlaying);
+        const onPlaying = () => {
+            if (!restarted) return;
+            stop();
+            if (!resumeAfter && stillThisPlayback()) video.pause();
+        };
+        const handlers = [['emptied', onRestart], ['loadstart', onRestart], ['seeked', onSeeked], ['playing', onPlaying]];
+        function stop() {
+            clearTimeout(timer);
+            for (const [name, fn] of handlers) video.removeEventListener(name, fn);
+        }
+        for (const [name, fn] of handlers) video.addEventListener(name, fn);
         timer = setTimeout(stop, 20000);
         return stop;
     }
