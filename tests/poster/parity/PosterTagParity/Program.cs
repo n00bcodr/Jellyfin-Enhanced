@@ -161,6 +161,7 @@ static JellyfinEnhancedUserSettings ControllerDefaults(PluginConfiguration defau
     AutoResumeEnabled = defaultConfig.AutoResumeEnabled,
     AutoPipEnabled = defaultConfig.AutoPipEnabled,
     LongPress2xEnabled = defaultConfig.LongPress2xEnabled,
+    SubtitleSyncButtonEnabled = defaultConfig.SubtitleSyncButtonEnabled,
     PauseScreenEnabled = defaultConfig.PauseScreenEnabled,
     PauseScreenDelaySeconds = defaultConfig.PauseScreenDelaySeconds,
     AutoSkipIntro = defaultConfig.AutoSkipIntro,

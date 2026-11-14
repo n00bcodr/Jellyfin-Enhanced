@@ -1343,6 +1343,10 @@
       "category": "js"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/player/subtitle-sync.js",
+      "category": "js"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/player/subtitles.js",
       "category": "js"
     },
@@ -4259,6 +4263,14 @@
     {
       "class": "PluginConfiguration",
       "name": "LongPress2xEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "false",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "SubtitleSyncButtonEnabled",
       "type": "bool",
       "initializer": null,
       "constructor_assignment": "false",
@@ -8218,6 +8230,14 @@
     },
     {
       "class": "JellyfinEnhancedUserSettings",
+      "name": "SubtitleSyncButtonEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
       "name": "PauseScreenEnabled",
       "type": "bool",
       "initializer": null,
@@ -10609,9 +10629,9 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 488,
+    "files": 489,
     "routes": 208,
-    "configuration_properties": 770,
+    "configuration_properties": 772,
     "storage_references": 88,
     "scheduled_tasks": 17,
     "locales": 33

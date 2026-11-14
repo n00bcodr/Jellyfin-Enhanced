@@ -99,3 +99,21 @@ test('a late response for the previous item cannot fill the overlay after a sour
  gate.resolve();await flush();
  assert.equal(x.p.currentItemId,B);assert.equal(x.plot(),'overview B');
 });
+
+test('a JE dialog that handles its own keys keeps the pause screen away and its keys to itself',async t=>{
+ const h=setup(t);h.JE.initializePauseScreen();const p=h.JE.pauseScreenInstance;
+ const dialog=h.document.createElement('div');dialog.setAttribute('data-je-own-keys','');dialog.innerHTML='<input>';h.document.body.append(dialog);
+ // Showing: Space typed in the dialog is not the pause screen's.
+ p.showOverlay();const input=dialog.querySelector('input');input.focus();
+ const space=new h.window.KeyboardEvent('keydown',{code:'Space',key:' ',bubbles:true,cancelable:true});input.dispatchEvent(space);
+ assert.equal(space.defaultPrevented,false);assert.equal(p.overlay.getAttribute('aria-hidden'),'false');
+ p.hideOverlay();input.focus();
+ // Idle and paused: it waits while the dialog is open, then shows.
+ let paused=true;p.currentVideo={paused:true,ended:false,get currentSrc(){return '';}};Object.defineProperty(p.currentVideo,'paused',{get:()=>paused});
+ p.lastUserInteractionAt=0;p.pauseScreenDelayMs=0;p._dismissedThisPause=false;p.readyItemId='item';p.currentItemId='item';
+ p.schedulePauseOverlayDelay();await new Promise(done=>setTimeout(done,50));
+ assert.equal(p.overlay.getAttribute('aria-hidden'),'true');assert.equal(h.document.activeElement,input);
+ dialog.remove();await new Promise(done=>setTimeout(done,650));
+ assert.equal(p.overlay.getAttribute('aria-hidden'),'false');
+ p.destroy();
+});

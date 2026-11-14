@@ -1008,7 +1008,7 @@ Conditional controls appear only when their feature is available.
 | Auto-skip | `#autoSkipIntroToggle`, `#autoSkipOutroToggle` |
 | Subtitle presets | `.preset-box`, `.style-preset`, `.font-size-preset`, `.font-family-preset`, `.text-effect-preset`, `[data-preset-index]`; `#subtitle-style-presets-container`, `#font-size-presets-container`, `#font-family-presets-container`, `#text-effect-presets-container` |
 | Subtitle colors | `.je-subtitle-color-layout`, `.je-subtitle-color-controls`, `.je-subtitle-color-control-row`, `#customSubtitleTextColorPicker`, `#customSubtitleTextAlpha`, `#customSubtitleBgColorPicker`, `#customSubtitleBgAlpha`, `#subtitleColorPreview` |
-| Subtitle position and status | `#subtitlePositionGrid`, `#subtitlePositionPreview`, `#subtitlePositionReset`, `#disableCustomSubtitleStyles`, `#je-subtitle-format-warning`, `#je-subtitle-position-note` |
+| Subtitle position and status | `#subtitlePositionGrid`, `#subtitlePositionPreview`, `#subtitlePositionReset`, `#disableCustomSubtitleStyles`, `#subtitleSyncButtonEnabled`, `#je-subtitle-format-warning`, `#je-subtitle-position-note` |
 | Random selection | `#randomButtonToggle`, `#randomUnwatchedOnly`, `#randomIncludeMovies`, `#randomIncludeShows`, `#randomScopeCurrentContainer`, `#randomSourceSelect` |
 | Detail display | `#showWatchProgressToggle`, `#watchProgressModeSelect`, `#watchProgressTimeFormatSelect`, `#showFileSizesToggle`, `#showAudioLanguagesToggle` |
 | Tags and removal | Conditional `#nativePosterTagsToggle`; `#qualityTagsToggle`, `#genreTagsToggle`, `#languageTagsToggle`, `#ratingTagsToggle`, `#ageRatingTagsToggle`, `#statusTagsToggle`, `#logoTagsToggle`, `#peopleTagsToggle`, `#tagsHideOnHoverToggle`, `#removeContinueWatchingToggle` |
@@ -1145,6 +1145,31 @@ The startup card uses `#je-playback-rating-badge`, the visibility class `.je-vis
 ```
 
 Keep `.je-visible` and the timed visibility behavior intact. See [Enhanced Features](../enhanced/enhanced-features.md#playback-controls) for playback features.
+
+## Subtitle sync list
+
+The [Subtitle Sync](../enhanced/enhanced-features.md#subtitle-sync) button is `#je-subtitle-sync-btn`, placed right after the player's `.btnSubtitles`. The list is `#je-subtitle-sync` (the backdrop) around `.je-subsync-dialog`.
+
+| Part | Hooks |
+| --- | --- |
+| Header | `.je-subsync-title`, `.je-subsync-track`, `.je-subsync-close` |
+| Sync point and offset | `.je-subsync-meta`, `.je-subsync-anchor`, `.je-subsync-offset`, `.je-subsync-reset` |
+| Search and messages | `.je-subsync-input`, `.je-subsync-hint`, `.je-subsync-status` (`[data-kind="error"]` for errors), `.je-subsync-empty`, `.je-subsync-foot` |
+| Lines | `.je-subsync-row` (`.is-current` for the line on screen at the sync point, `[data-index]`), `.je-subsync-line`, `.je-subsync-time`, `.je-subsync-text`, `.je-subsync-jump` |
+
+The accent comes from the theme's primary accent through `--je-subsync-accent` on `#je-subtitle-sync`.
+
+```css
+#je-subtitle-sync {
+    --je-subsync-accent: gold;
+}
+
+#je-subtitle-sync .je-subsync-dialog {
+    max-width: 900px;
+}
+```
+
+Keep rows' `hidden` attribute working: searching hides rows with it.
 
 ## Other styling hooks
 
