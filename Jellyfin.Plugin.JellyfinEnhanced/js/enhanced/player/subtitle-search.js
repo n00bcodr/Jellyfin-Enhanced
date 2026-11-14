@@ -31,7 +31,7 @@
     const SEARCH_DEBOUNCE_MS = 80;
     /** How long to wait for the server to show the dialog's pause (and so the current track). */
     const SESSION_WAIT_MS = 4000;
-    const SESSION_POLL_MS = 400;
+    const SESSION_POLL_MS = 250;
     /** Cues compared with the lines to tell whether they are the same track. */
     const CUE_SAMPLE_SIZE = 24;
 

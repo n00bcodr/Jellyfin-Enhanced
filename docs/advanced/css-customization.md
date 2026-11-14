@@ -1008,7 +1008,7 @@ Conditional controls appear only when their feature is available.
 | Auto-skip | `#autoSkipIntroToggle`, `#autoSkipOutroToggle` |
 | Subtitle presets | `.preset-box`, `.style-preset`, `.font-size-preset`, `.font-family-preset`, `.text-effect-preset`, `[data-preset-index]`; `#subtitle-style-presets-container`, `#font-size-presets-container`, `#font-family-presets-container`, `#text-effect-presets-container` |
 | Subtitle colors | `.je-subtitle-color-layout`, `.je-subtitle-color-controls`, `.je-subtitle-color-control-row`, `#customSubtitleTextColorPicker`, `#customSubtitleTextAlpha`, `#customSubtitleBgColorPicker`, `#customSubtitleBgAlpha`, `#subtitleColorPreview` |
-| Subtitle position and status | `#subtitlePositionGrid`, `#subtitlePositionPreview`, `#subtitlePositionReset`, `#disableCustomSubtitleStyles`, `#je-subtitle-format-warning`, `#je-subtitle-position-note` |
+| Subtitle position and status | `#subtitlePositionGrid`, `#subtitlePositionPreview`, `#subtitlePositionReset`, `#disableCustomSubtitleStyles`, `#subtitleSearchButtonEnabled`, `#je-subtitle-format-warning`, `#je-subtitle-position-note` |
 | Random selection | `#randomButtonToggle`, `#randomUnwatchedOnly`, `#randomIncludeMovies`, `#randomIncludeShows`, `#randomScopeCurrentContainer`, `#randomSourceSelect` |
 | Detail display | `#showWatchProgressToggle`, `#watchProgressModeSelect`, `#watchProgressTimeFormatSelect`, `#showFileSizesToggle`, `#showAudioLanguagesToggle` |
 | Tags and removal | Conditional `#nativePosterTagsToggle`; `#qualityTagsToggle`, `#genreTagsToggle`, `#languageTagsToggle`, `#ratingTagsToggle`, `#ageRatingTagsToggle`, `#statusTagsToggle`, `#logoTagsToggle`, `#peopleTagsToggle`, `#tagsHideOnHoverToggle`, `#removeContinueWatchingToggle` |
@@ -1145,6 +1145,31 @@ The startup card uses `#je-playback-rating-badge`, the visibility class `.je-vis
 ```
 
 Keep `.je-visible` and the timed visibility behavior intact. See [Enhanced Features](../enhanced/enhanced-features.md#playback-controls) for playback features.
+
+## Subtitle lines list
+
+The [subtitle search](../enhanced/enhanced-features.md#subtitle-search-and-sync) button is `#je-subtitle-search-btn`, placed right after the player's `.btnSubtitles`. The list is `#je-subtitle-search` (the backdrop) around `.je-subsearch-dialog`.
+
+| Part | Hooks |
+| --- | --- |
+| Header | `.je-subsearch-title`, `.je-subsearch-track`, `.je-subsearch-close` |
+| Sync point and offset | `.je-subsearch-meta`, `.je-subsearch-anchor`, `.je-subsearch-offset`, `.je-subsearch-reset` |
+| Search and messages | `.je-subsearch-input`, `.je-subsearch-hint`, `.je-subsearch-status` (`[data-kind="error"]` for errors), `.je-subsearch-empty`, `.je-subsearch-foot` |
+| Lines | `.je-subsearch-row` (`.is-current` for the line on screen at the sync point, `[data-index]`), `.je-subsearch-line`, `.je-subsearch-time`, `.je-subsearch-text`, `.je-subsearch-jump` |
+
+The accent comes from the theme's primary accent through `--je-subsearch-accent` on `#je-subtitle-search`.
+
+```css
+#je-subtitle-search {
+    --je-subsearch-accent: gold;
+}
+
+#je-subtitle-search .je-subsearch-dialog {
+    max-width: 900px;
+}
+```
+
+Keep rows' `hidden` attribute working: searching hides rows with it.
 
 ## Other styling hooks
 

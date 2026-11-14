@@ -1114,7 +1114,7 @@
     /**
      * Nudges the subtitle offset through jellyfin-web's own subtitle sync slider
      * (see JE.setSubtitleOffset).
-     * @param {number} delta Seconds to add (negative = subtitles earlier).
+     * @param {number} delta Seconds to add (negative = subtitles later).
      */
     JE.adjustSubtitleOffset = (delta) => {
         const slider = document.querySelector('.subtitleSyncSlider');

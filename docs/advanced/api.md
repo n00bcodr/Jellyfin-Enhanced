@@ -445,6 +445,7 @@ The table below gives the `UserSettings` **model defaults** used when properties
 | `AutoResumeEnabled` | Boolean | `false` |
 | `AutoPipEnabled` | Boolean | `false` |
 | `LongPress2xEnabled` | Boolean | `false` |
+| `SubtitleSearchButtonEnabled` | Boolean | `false` |
 | `PauseScreenEnabled` | Boolean | `false` |
 | `PauseScreenDelaySeconds` | Integer | `5` |
 | `AutoSkipIntro` | Boolean | `false` |
@@ -1513,7 +1514,7 @@ Neither configuration endpoint exposes provider API keys. `TmdbEnabled` and `Mdb
     | Fields | JSON type |
     |---|---|
     | `TmdbEnabled`, `EnableCustomSplashScreen`, `ElsewhereEnabled`, `ElsewhereSeasonProviders`, `ElsewhereUseSeerrRegion`, `AutoPauseEnabled`, `AutoResumeEnabled`, `AutoPipEnabled`, `AutoSkipIntro` | Boolean |
-    | `AutoSkipOutro`, `LongPress2xEnabled`, `RandomButtonEnabled`, `RandomIncludeMovies`, `RandomIncludeShows`, `RandomUnwatchedOnly`, `RandomScopeCurrentContainer`, `ShowWatchProgress` | Boolean |
+    | `AutoSkipOutro`, `LongPress2xEnabled`, `SubtitleSearchButtonEnabled`, `RandomButtonEnabled`, `RandomIncludeMovies`, `RandomIncludeShows`, `RandomUnwatchedOnly`, `RandomScopeCurrentContainer`, `ShowWatchProgress` | Boolean |
     | `ShowFileSizes`, `RemoveContinueWatchingEnabled`, `ShowAudioLanguages`, `ShowReviews`, `ShowUserReviews`, `ReviewsExpandedByDefault`, `HideReviewsFromHiddenUsers`, `HideReviewsFromDisabledUsers` | Boolean |
     | `ShowAwards`, `DoesTheDogDieEnabled`, `MdblistEnabled`, `MdblistRatingsEnabled`, `MdblistRatingsShowOnItemDetails`, `MdblistRatingsShowPercentSymbol`, `ShowReleaseDates`, `ShowUserRatingOnPosters`, `ShowUserRatingDash` | Boolean |
     | `PauseScreenEnabled`, `ShowPlaybackRatingBadge`, `NativePosterTagsEnabled`, `TagStyleWebActive`, `QualityTagsEnabled`, `ShowResolutionTag`, `ShowSourceTag`, `ShowEditionTag`, `ShowLowQualitySourceTag`, `ShowDynamicRangeTag` | Boolean |

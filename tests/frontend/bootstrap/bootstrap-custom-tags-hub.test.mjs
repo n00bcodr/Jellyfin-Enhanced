@@ -5,7 +5,7 @@ import { createHarness } from '../helpers/harness.mjs';
 // Panel controls outside the Media Tags hub that the settings wiring binds by id.
 const otherToggles = ['autoPauseToggle', 'autoResumeToggle', 'autoPipToggle', 'autoSkipIntroToggle', 'autoSkipOutroToggle',
   'randomButtonToggle', 'randomUnwatchedOnly', 'randomScopeCurrentContainer', 'showWatchProgressToggle', 'showFileSizesToggle', 'showAudioLanguagesToggle',
-  'removeContinueWatchingToggle', 'pauseScreenToggle', 'disableCustomSubtitleStyles', 'longPress2xEnabled', 'randomIncludeMovies', 'randomIncludeShows'];
+  'removeContinueWatchingToggle', 'pauseScreenToggle', 'disableCustomSubtitleStyles', 'longPress2xEnabled', 'subtitleSearchButtonEnabled', 'randomIncludeMovies', 'randomIncludeShows'];
 
 // As the public configuration serves them: opaque ids, labels and icons.
 const RULES = [

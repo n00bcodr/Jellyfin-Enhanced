@@ -8,7 +8,7 @@ const toggles = ['autoPauseToggle', 'autoResumeToggle', 'autoPipToggle', 'autoSk
   'randomButtonToggle', 'randomUnwatchedOnly', 'randomScopeCurrentContainer', 'showWatchProgressToggle', 'showFileSizesToggle',
   'showAudioLanguagesToggle', 'removeContinueWatchingToggle', 'qualityTagsToggle', 'genreTagsToggle', 'pauseScreenToggle',
   'languageTagsToggle', 'ratingTagsToggle', 'ageRatingTagsToggle', 'statusTagsToggle', 'logoTagsToggle', 'customTagsToggle', 'peopleTagsToggle', 'tagsHideOnHoverToggle',
-  'disableCustomSubtitleStyles', 'longPress2xEnabled', 'nativePosterTagsToggle', 'randomIncludeMovies', 'randomIncludeShows'];
+  'disableCustomSubtitleStyles', 'longPress2xEnabled', 'subtitleSearchButtonEnabled', 'nativePosterTagsToggle', 'randomIncludeMovies', 'randomIncludeShows'];
 
 /**
  * tag-styles.js with ui-kit's injectCss and a captured tag-styles endpoint;

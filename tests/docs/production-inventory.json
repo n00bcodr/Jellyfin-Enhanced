@@ -8231,7 +8231,7 @@
     {
       "class": "JellyfinEnhancedUserSettings",
       "name": "SubtitleSearchButtonEnabled",
-      "type": "bool?",
+      "type": "bool",
       "initializer": null,
       "constructor_assignment": null,
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"

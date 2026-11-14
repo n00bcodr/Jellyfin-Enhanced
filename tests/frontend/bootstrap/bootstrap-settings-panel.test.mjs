@@ -47,7 +47,7 @@ for (const enabled of [false, true]) test(`native poster preference is editable 
   if (enabled) assert.equal(JSON.parse(h.writes[0].data).useNativePosterTags, false);
 });
 
-test('subtitle search button setting inherits the admin default until chosen, then saves and updates the player', async t => {
+test('subtitle search button setting starts from the admin default, keeps a personal choice, saves and updates the player', async t => {
   const inherited = setup(t, { SubtitleSearchButtonEnabled: true });
   assert.equal(inherited.JE.currentSettings.subtitleSearchButtonEnabled, true);
   assert.equal(setup(t, {}).JE.currentSettings.subtitleSearchButtonEnabled, false);

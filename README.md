@@ -257,6 +257,7 @@ Save favorite moments, adjust subtitles and make playback more comfortable in Je
 - **Automatic intro and outro skipping**, using the intro data Jellyfin already has (for example from [Intro Skipper](https://github.com/intro-skipper/intro-skipper))
 - **Auto-pause** when you switch browser tabs, **auto-resume** when you come back, and optional picture-in-picture
 - **Custom subtitles:** font, size, color, background, position and an outline or drop shadow, with a live preview
+- **Subtitle search and sync:** list the subtitle lines, search them, jump to one, or pick the line you just heard to sync the subtitles to it
 - **Press and hold the video for 2× speed** (mouse or touch)
 - **Ratings in the player** while the controls are showing, and optionally a brief age rating, content advisory and genre card when playback starts
 
@@ -337,6 +338,7 @@ Desktop restores your last section. Phone layouts start at the section list with
 | | | <kbd>P</kbd> | Episode preview (with the [InPlayerEpisodePreview](https://github.com/Namo2/InPlayerEpisodePreview) plugin) |
 | | | <kbd>,</kbd> / <kbd>.</kbd> | Back or forward one frame |
 | | | <kbd>Z</kbd> | Jump back to where you were |
+| | | <kbd>Shift</kbd>+<kbd>S</kbd> | Search the subtitle lines and sync them |
 | | | <kbd>0</kbd>–<kbd>9</kbd> | Jump to 0–90% of the video |
 
 </details>

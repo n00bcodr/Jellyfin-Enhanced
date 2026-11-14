@@ -12,7 +12,7 @@ const LOCKED = 'cccccccccccccccccccccccccccccccc';
 // Panel controls outside the Media Tags hub that the settings wiring binds by id.
 const otherToggles = ['autoPauseToggle', 'autoResumeToggle', 'autoPipToggle', 'autoSkipIntroToggle', 'autoSkipOutroToggle',
   'randomButtonToggle', 'randomUnwatchedOnly', 'randomScopeCurrentContainer', 'showWatchProgressToggle', 'showFileSizesToggle', 'showAudioLanguagesToggle',
-  'removeContinueWatchingToggle', 'pauseScreenToggle', 'disableCustomSubtitleStyles', 'longPress2xEnabled', 'randomIncludeMovies', 'randomIncludeShows'];
+  'removeContinueWatchingToggle', 'pauseScreenToggle', 'disableCustomSubtitleStyles', 'longPress2xEnabled', 'subtitleSearchButtonEnabled', 'randomIncludeMovies', 'randomIncludeShows'];
 
 /**
  * The real panel host (ui-panel.js) around the real Media Tags hub with

@@ -311,8 +311,9 @@ Navigate Jellyfin and control local video playback without opening menus. Admin 
 | **Skip Intro/Outro** | ++o++ | Skips the current segment. |
 | **Step Back One Frame** | ++comma++ | Pauses and seeks back one estimated frame. |
 | **Step Forward One Frame** | ++period++ | Pauses and seeks forward one estimated frame. |
-| **Decrease Subtitle Offset** | ++left-bracket++ | Shifts subtitles 0.1 s earlier (lowers the offset) and briefly shows Jellyfin's subtitle offset panel. |
-| **Increase Subtitle Offset** | ++right-bracket++ | Shifts subtitles 0.1 s later (raises the offset) and briefly shows Jellyfin's subtitle offset panel. |
+| **Decrease Subtitle Offset** | ++left-bracket++ | Shifts subtitles 0.1 s later (lowers the offset) and briefly shows Jellyfin's subtitle offset panel. |
+| **Increase Subtitle Offset** | ++right-bracket++ | Shifts subtitles 0.1 s earlier (raises the offset) and briefly shows Jellyfin's subtitle offset panel. |
+| **Search Subtitle Lines** | ++shift+s++ | Opens or closes the [subtitle lines](#subtitle-search-and-sync) list. |
 | **Jump to Last Position** | ++z++ | Returns once to the position saved before the last seek. |
 | **Jump to % of video** | ++0++–++9++ | Seeks to 0%, 10%, … 90%. Can be disabled but not rebound. |
 
@@ -526,6 +527,53 @@ To stop styling, turn on personal **Disable Custom Styles** and reload. To chang
     | Browser native captions | Color, background, size, font, and effect. No position grid, custom padding, or rounded box. |
 
     The panel checks format when opened, using the first controllable session with a playing item and its primary subtitle stream. Reopen after changing tracks. It may reflect another session or miss a secondary track, so no warning is not proof of support.
+
+### Subtitle Search and Sync
+
+List every line of the subtitles that are playing, find the one you just heard, and sync the subtitles to it. You can also jump to any line.
+
+**How to use:**
+
+1. Turn on **Subtitle Search Button** in personal **Subtitle Settings**, or use ++shift+s++ during playback.
+2. Right after a line is spoken, click the search button next to **Subtitles** or press ++shift+s++. Playback pauses and the list opens at the line on screen.
+3. Type a few of the words you heard and choose the line. The subtitles shift so that line shows at the moment you opened the list, and playback resumes.
+4. To go to a line instead, use the arrow button at the end of its row.
+
+![Subtitle lines list over the player, with the line on screen highlighted](../images/enhanced/subtitle-search.webp)
+
+<figure class="je-video">
+  <video autoplay loop muted playsinline controls preload="metadata" aria-label="Searching the subtitle lines and syncing the subtitles to a line">
+    <source src="../../images/enhanced/subtitle-sync.mp4" type="video/mp4">
+  </video>
+  <figcaption>Finding a line, syncing it, and reopening the list: the line now shows when it was heard.</figcaption>
+</figure>
+
+| Part | What it does |
+|---|---|
+| **Heard at** | The playback position when the list opened. Choosing a line syncs it to this moment. |
+| **Offset** | The subtitle offset in use. **Reset offset** sets it back to 0. |
+| A line | Syncs the subtitles so this line shows at **Heard at**, then closes the list. |
+| Arrow button | Jumps to where this line shows, then closes the list. |
+
+Search ignores case, accents and punctuation; a line must contain every word you type. ++down++ moves from the search box into the list, ++up++ and ++down++ move between lines, ++enter++ chooses one, and ++esc++ or ++shift+s++ closes the list. Playback resumes on close only if the list paused it.
+
+| Setting | Default | What it does |
+|---|---|---|
+| **Subtitle Search Button** — personal; **Show Subtitle Search Button in the Player** — admin | Off | Shows the button next to **Subtitles**; it is hidden whenever Jellyfin hides its **Subtitles** button. ++shift+s++ works either way. |
+
+!!! note "What can be synced"
+
+    Syncing sets Jellyfin's own subtitle offset, the same one as **Subtitle offset** in the player settings and the ++left-bracket++ / ++right-bracket++ shortcuts. It reaches 30 seconds either way; a line further away is refused and the list says how far it is.
+
+    - **Text subtitles** (SRT, ASS/SSA, WebVTT, and text tracks inside the file) are listed and can be synced.
+    - **Image subtitles** (PGS, VobSub, DVB) have no text to list.
+    - **Burned-in subtitles** (Jellyfin's **Burn in subtitles** setting, or when the server has to) are listed but can't be shifted, so choosing a line jumps to it.
+
+??? info "Details"
+
+    The lines come from the server's copy of the track. The list waits until the server knows playback is paused, because Jellyfin's player only reports which track it shows from time to time; if you changed track while already paused, the list may not match the subtitles on screen and says so. Play for a moment and open it again.
+
+    Jellyfin's offset belongs to the current track: it goes back to 0 when you change track or video. A jump is a local seek, like Auto-Skip's: progressive transcodes can stall beyond what the server has produced, and SyncPlay peers do not follow it.
 
 ### Player Ratings
 
