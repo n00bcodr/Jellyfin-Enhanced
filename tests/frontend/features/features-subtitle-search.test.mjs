@@ -594,6 +594,27 @@ test('an offset change that flips the cue track\'s mode (Firefox) is not a track
   assert.equal(h.rows().length, 7);
   h.row('buttering me up').querySelector('.je-subsearch-line').click();
   assert.deepEqual(h.offsets, [-9]);
+  assert.equal(h.isPaused(), false, 'the flip is not a change made elsewhere: playback resumes');
+});
+
+test('a seek or a track switch made elsewhere while open leaves playback paused on close', async t => {
+  const seeked = setup(t);
+  seeked.JE.toggleSubtitleSearch(); // pauses playback
+  await flush();
+  seeked.video.dispatchEvent(new seeked.window.Event('seeking')); // another device seeks this player
+  seeked.JE.toggleSubtitleSearch();
+  assert.equal(seeked.overlay(), null);
+  assert.equal(seeked.isPaused(), true);
+
+  const switched = setup(t, { renderer: 'ass' });
+  switched.JE.toggleSubtitleSearch();
+  await flush();
+  const fresh = switched.document.createElement('div');
+  fresh.className = 'libassjs-canvas-parent';
+  switched.document.querySelector('.libassjs-canvas-parent').replaceWith(fresh); // another ASS track
+  switched.JE.addSubtitleSearchButton(); // the page update that sees it
+  switched.JE.toggleSubtitleSearch();
+  assert.equal(switched.isPaused(), true);
 });
 
 test('switching from cues to ASS, or turning subtitles off, while open makes the lines unusable', async t => {

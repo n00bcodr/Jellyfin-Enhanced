@@ -630,7 +630,8 @@
      * @property {string} src
      * @property {number} epoch
      * @property {number} anchor Media time when the dialog opened, seconds.
-     * @property {boolean} pausedByUs
+     * @property {boolean} pausedByUs Whether the dialog paused playback (cleared by a seek made elsewhere while open).
+     * @property {number} generationAtOpen subtitleGeneration when the dialog opened.
      * @property {AbortController} abort
      * @property {Element|null} returnFocus
      * @property {HTMLElement} overlay
@@ -1380,6 +1381,9 @@
         if (document.documentElement.classList.contains('pause-screen-active')) {
             JE.pauseScreenInstance?.hideOverlay?.();
         }
+        // Changes already on screen are recorded first, so only later ones count as made while
+        // the dialog was open (see closeDialog).
+        catchUpSubtitleChanges();
         const wasPlaying = !video.paused && !video.ended;
         if (wasPlaying) video.pause();
         const overlay = buildOverlay();
@@ -1390,6 +1394,7 @@
             epoch: JE.session ? JE.session.getEpoch() : 0,
             anchor: mediaTime(video),
             pausedByUs: wasPlaying,
+            generationAtOpen: subtitleGeneration,
             abort: new AbortController(),
             returnFocus: document.activeElement,
             overlay,
@@ -1459,13 +1464,18 @@
             if (linesStillShown(state)) refreshMeta(state);
             else showStale(state);
         }, 60);
+        // A seek made elsewhere while the dialog is open (its own jump closes it first) means
+        // playback is no longer the one the dialog paused: closing leaves it paused.
+        const onSeeking = () => { state.pausedByUs = false; };
         const textTracks = video.textTracks;
         textTracks?.addEventListener?.('change', onTracks);
+        video.addEventListener('seeking', onSeeking);
         video.addEventListener('emptied', onGone);
         document.addEventListener('viewshow', onGone);
         window.addEventListener('hashchange', onGone);
         state.cleanup.push(() => {
             textTracks?.removeEventListener?.('change', onTracks);
+            video.removeEventListener('seeking', onSeeking);
             video.removeEventListener('emptied', onGone);
             document.removeEventListener('viewshow', onGone);
             window.removeEventListener('hashchange', onGone);
@@ -1479,8 +1489,9 @@
     }
 
     /**
-     * Closes the dialog. Playback resumes only if the dialog paused it and the same video is
-     * still loaded, unless `resume` is false.
+     * Closes the dialog. Playback resumes only if the dialog paused it, the same video is still
+     * loaded, and nothing else seeked or changed the subtitles while it was open, unless `resume`
+     * is false.
      * @param {{resume?: boolean}} [opts]
      */
     function closeDialog(opts) {
@@ -1494,7 +1505,9 @@
         state.overlay.remove();
         const video = state.video;
         const resume = !(opts && opts.resume === false);
-        if (resume && state.pausedByUs && video.isConnected && getVideo() === video && videoSrc(video) === state.src && video.paused) {
+        // Nor after a subtitle change on screen while it was open (a track switched elsewhere).
+        if (resume && state.pausedByUs && subtitleGeneration === state.generationAtOpen
+            && video.isConnected && getVideo() === video && videoSrc(video) === state.src && video.paused) {
             const played = video.play();
             if (played && typeof played.catch === 'function') played.catch(() => {});
         }
