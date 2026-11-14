@@ -1558,7 +1558,7 @@
         }
     };
 
-    // Shared with the sibling player modules (auto-skip.js, subtitle-search.js) so the
+    // Shared with the sibling player modules (auto-skip.js, subtitle-sync.js) so the
     // video-element lookup, the video-page item-id parse and the own-session probe live in
     // exactly one place.
     JE.internals = JE.internals || {};

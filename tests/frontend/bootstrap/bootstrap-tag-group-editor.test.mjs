@@ -5,7 +5,7 @@ import { createHarness } from '../helpers/harness.mjs';
 // Panel controls outside the Media Tags hub that the settings wiring binds by id.
 const otherToggles = ['autoPauseToggle', 'autoResumeToggle', 'autoPipToggle', 'autoSkipIntroToggle', 'autoSkipOutroToggle',
   'randomButtonToggle', 'randomUnwatchedOnly', 'randomScopeCurrentContainer', 'showWatchProgressToggle', 'showFileSizesToggle', 'showAudioLanguagesToggle',
-  'removeContinueWatchingToggle', 'pauseScreenToggle', 'disableCustomSubtitleStyles', 'longPress2xEnabled', 'subtitleSearchButtonEnabled', 'randomIncludeMovies', 'randomIncludeShows'];
+  'removeContinueWatchingToggle', 'pauseScreenToggle', 'disableCustomSubtitleStyles', 'longPress2xEnabled', 'subtitleSyncButtonEnabled', 'randomIncludeMovies', 'randomIncludeShows'];
 
 /**
  * The real Media Tags hub (ui-panel-media-tags.js) with the real tag group

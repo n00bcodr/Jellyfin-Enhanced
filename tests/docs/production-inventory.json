@@ -1343,7 +1343,7 @@
       "category": "js"
     },
     {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/player/subtitle-search.js",
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/player/subtitle-sync.js",
       "category": "js"
     },
     {
@@ -4270,7 +4270,7 @@
     },
     {
       "class": "PluginConfiguration",
-      "name": "SubtitleSearchButtonEnabled",
+      "name": "SubtitleSyncButtonEnabled",
       "type": "bool",
       "initializer": null,
       "constructor_assignment": "false",
@@ -8230,7 +8230,7 @@
     },
     {
       "class": "JellyfinEnhancedUserSettings",
-      "name": "SubtitleSearchButtonEnabled",
+      "name": "SubtitleSyncButtonEnabled",
       "type": "bool",
       "initializer": null,
       "constructor_assignment": null,

@@ -366,8 +366,8 @@ JEAdmin.define({
         items: [
             { id: 'disableCustomSubtitleStyles', prop: 'DisableCustomSubtitleStyles', type: 'toggle', perUser: true, label: 'Disable Custom Subtitle Styles by default',
               desc: 'Globally disables Jellyfin\'s custom subtitle style overrides so the source subtitle styling is shown unmodified.' },
-            { id: 'subtitleSearchButtonEnabled', prop: 'SubtitleSearchButtonEnabled', type: 'toggle', perUser: true, label: 'Show Subtitle Search Button in the Player',
-              desc: 'Adds a button next to Subtitles in the player that lists the subtitle lines with their times, to search them, jump to one, or sync the subtitles to the line you just heard. The Search Subtitle Lines shortcut (Shift+S) opens the list with or without the button.' },
+            { id: 'subtitleSyncButtonEnabled', prop: 'SubtitleSyncButtonEnabled', type: 'toggle', perUser: true, label: 'Show Subtitle Sync Button in the Player',
+              desc: 'Adds a button next to Subtitles in the player that syncs the subtitles to the line you just heard, from a list of the subtitle lines with their times that can also be searched and jumped through. The Sync Subtitles shortcut (Shift+S) opens the list with or without the button.' },
             { type: 'group', title: 'Default appearance for new users', open: true, items: [
                 { id: 'DefaultSubtitleStyle', prop: 'DefaultSubtitleStyle', type: 'select', perUser: true, default: 0, label: 'Default Subtitle Style',
                   options: [['0', 'Clean White'], ['1', 'Classic Black Box'], ['2', 'Netflix Style'], ['3', 'Cinema Yellow'], ['4', 'Soft Gray'], ['5', 'High Contrast']],

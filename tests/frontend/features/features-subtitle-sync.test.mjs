@@ -2,8 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHarness } from '../helpers/harness.mjs';
 
-// Subtitle search and sync (#1061): enhanced/player/subtitle-search.js driven through its real
-// entry points (the OSD button, JE.toggleSubtitleSearch, the shortcut in events.js) with the real
+// Subtitle sync (#1061): enhanced/player/subtitle-sync.js driven through its real
+// entry points (the OSD button, JE.toggleSubtitleSync, the shortcut in events.js) with the real
 // playback.js (JE.setSubtitleOffset, the own-session probe) and auto-skip.js (source parsing).
 
 const TICKS = 10000000;
@@ -35,7 +35,7 @@ const plain = v => JSON.parse(JSON.stringify(v));
 const flush = async (n = 12) => { for (let i = 0; i < n; i++) await new Promise(done => setTimeout(done, 5)); };
 
 /** Opens the dialog right after a subtitle change: it waits for jellyfin-web's next report. */
-const openReported = async (h) => { h.JE.toggleSubtitleSearch(); await flush(); h.report(); await flush(); };
+const openReported = async (h) => { h.JE.toggleSubtitleSync(); await flush(); h.report(); await flush(); };
 
 /**
  * A player page with jellyfin-web's OSD buttons, its hidden subtitle sync control, a video at
@@ -63,12 +63,12 @@ function setup(t, {
   const report = () => { checkIns++; served = snapshot(session); };
   const ajaxCalls = [];
   const JE = {
-    currentSettings: { subtitleSearchButtonEnabled: enabled },
+    currentSettings: { subtitleSyncButtonEnabled: enabled },
     t: key => key,
     toast: text => toasts.push(text),
     isVideoPage: () => true,
     keyCombo,
-    state: { activeShortcuts: { SubtitleSearch: 'Shift+S', SubtitleMenu: 'S' } },
+    state: { activeShortcuts: { SubtitleSync: 'Shift+S', SubtitleMenu: 'S' } },
     core: { api: { jf: jf || (async (path, opts) => { requests.push({ path, opts }); return structuredClone(data); }) } }
   };
   const h = createHarness({
@@ -130,12 +130,12 @@ function setup(t, {
   sliderEl.updateOffset = function (v) { offsets.push(v); this.value = String(v); };
   h.load('enhanced/player/playback.js');
   h.load('enhanced/player/auto-skip.js');
-  h.load('enhanced/player/subtitle-search.js');
-  const api = h.JE.internals.subtitleSearch;
+  h.load('enhanced/player/subtitle-sync.js');
+  const api = h.JE.internals.subtitleSync;
   Object.assign(api.timeouts, { sessionWait: 300, sessionPoll: 10, lookup: 100 });
-  const overlay = () => document.getElementById('je-subtitle-search');
+  const overlay = () => document.getElementById('je-subtitle-sync');
   const text = sel => overlay()?.querySelector(sel)?.textContent;
-  const rows = () => [...overlay().querySelectorAll('.je-subsearch-row')];
+  const rows = () => [...overlay().querySelectorAll('.je-subsync-row')];
   const row = startText => rows().find(r => r.textContent.includes(startText));
   return { ...h, api, video, tracks, listeners, session, toasts, requests, offsets, ajaxCalls, overlay, text, rows, row, sliderEl, isPaused: () => paused, setPaused: v => { paused = v; }, report, trackListChanged: () => listeners.forEach(fn => fn()) };
 }
@@ -227,39 +227,39 @@ test('repeated lines can\'t pair a cue with the wrong occurrence', t => {
 
 test('the button sits after Subtitles only while the setting is on', t => {
   const h = setup(t, { enabled: false });
-  h.JE.addSubtitleSearchButton();
-  assert.equal(h.document.getElementById('je-subtitle-search-btn'), null);
-  h.JE.currentSettings.subtitleSearchButtonEnabled = true;
-  h.JE.addSubtitleSearchButton();
-  h.JE.addSubtitleSearchButton();
-  const buttons = h.document.querySelectorAll('#je-subtitle-search-btn');
+  h.JE.addSubtitleSyncButton();
+  assert.equal(h.document.getElementById('je-subtitle-sync-btn'), null);
+  h.JE.currentSettings.subtitleSyncButtonEnabled = true;
+  h.JE.addSubtitleSyncButton();
+  h.JE.addSubtitleSyncButton();
+  const buttons = h.document.querySelectorAll('#je-subtitle-sync-btn');
   assert.equal(buttons.length, 1);
   assert.equal(buttons[0].previousElementSibling.className.includes('btnSubtitles'), true);
   assert.equal(buttons[0].getAttribute('aria-label'), 'Search subtitles');
   // It hides with jellyfin-web's Subtitles button (items without subtitles).
-  assert.match(h.document.getElementById('je-subtitle-search-style').textContent, /\.btnSubtitles\.hide \+ #je-subtitle-search-btn/);
-  h.JE.currentSettings.subtitleSearchButtonEnabled = false;
-  h.JE.addSubtitleSearchButton();
-  assert.equal(h.document.getElementById('je-subtitle-search-btn'), null);
+  assert.match(h.document.getElementById('je-subtitle-sync-style').textContent, /\.btnSubtitles\.hide \+ #je-subtitle-sync-btn/);
+  h.JE.currentSettings.subtitleSyncButtonEnabled = false;
+  h.JE.addSubtitleSyncButton();
+  assert.equal(h.document.getElementById('je-subtitle-sync-btn'), null);
 });
 
 // ── Sync, jump and the cases that can't sync ─────────────────────────────────────────────────
 
 test('choosing a line syncs it to the moment the dialog opened and resumes playback', async t => {
   const h = setup(t);
-  h.JE.addSubtitleSearchButton();
-  h.document.getElementById('je-subtitle-search-btn').click();
+  h.JE.addSubtitleSyncButton();
+  h.document.getElementById('je-subtitle-sync-btn').click();
   assert.equal(h.isPaused(), true, 'the dialog pauses playback');
   await flush();
   assert.deepEqual(h.requests.map(r => r.path), ['/Videos/item1/src1/Subtitles/2/0/Stream.js']);
   assert.equal(h.requests[0].opts.timeoutMs > 0 && !!h.requests[0].opts.signal, true);
   assert.equal(h.rows().length, 7);
-  assert.equal(h.text('.je-subsearch-track'), 'English - SRT');
-  assert.equal(h.text('.je-subsearch-anchor'), 'Heard at 1:04');
-  assert.equal(h.text('.je-subsearch-offset'), 'Offset 0.0 s');
+  assert.equal(h.text('.je-subsync-track'), 'English - SRT');
+  assert.equal(h.text('.je-subsync-anchor'), 'Heard at 1:04');
+  assert.equal(h.text('.je-subsync-offset'), 'Offset 0.0 s');
   assert.match(h.overlay().querySelector('.is-current').textContent, /These tickets suck\.\.\.\nright in the nosebleeds/);
-  assert.equal(h.text('.je-subsearch-foot'), '7 of 7 lines');
-  h.row('buttering me up').querySelector('.je-subsearch-line').click();
+  assert.equal(h.text('.je-subsync-foot'), '7 of 7 lines');
+  h.row('buttering me up').querySelector('.je-subsync-line').click();
   assert.deepEqual(h.offsets, [-9]);
   assert.equal(h.overlay(), null);
   assert.equal(h.isPaused(), false, 'resumed because the dialog paused it');
@@ -269,22 +269,22 @@ test('choosing a line syncs it to the moment the dialog opened and resumes playb
 
 test('a line more than 30 s away is refused and nothing changes', async t => {
   const h = setup(t);
-  h.JE.toggleSubtitleSearch();
+  h.JE.toggleSubtitleSync();
   await flush();
-  h.row('outcome was never').querySelector('.je-subsearch-line').click();
+  h.row('outcome was never').querySelector('.je-subsync-line').click();
   assert.deepEqual(h.offsets, []);
   assert.ok(h.overlay(), 'the dialog stays open');
-  assert.match(h.text('.je-subsearch-status'), /That line is -42\.0 s away\. Jellyfin can shift subtitles by up to 30 seconds/);
+  assert.match(h.text('.je-subsync-status'), /That line is -42\.0 s away\. Jellyfin can shift subtitles by up to 30 seconds/);
   assert.equal(h.isPaused(), true);
 });
 
 test('the jump button seeks to where the line shows with the current offset', async t => {
   const h = setup(t, { slider: '2' });
-  h.JE.toggleSubtitleSearch();
+  h.JE.toggleSubtitleSync();
   await flush();
-  assert.equal(h.text('.je-subsearch-offset'), 'Offset +2.0 s');
-  assert.equal(h.row('Aah!').querySelector('.je-subsearch-time').textContent, '1:48');
-  h.row('Aah!').querySelector('.je-subsearch-jump').click();
+  assert.equal(h.text('.je-subsync-offset'), 'Offset +2.0 s');
+  assert.equal(h.row('Aah!').querySelector('.je-subsync-time').textContent, '1:48');
+  h.row('Aah!').querySelector('.je-subsync-jump').click();
   assert.ok(Math.abs(h.video.currentTime - 108.3) < 1e-9);
   assert.deepEqual(h.offsets, []);
   assert.equal(h.overlay(), null);
@@ -300,10 +300,10 @@ function progressive(t) {
 
 test('a progressive transcode jumps on the element clock within what the server has produced', async t => {
   const h = progressive(t);
-  h.JE.toggleSubtitleSearch();
+  h.JE.toggleSubtitleSync();
   await flush();
-  assert.equal(h.text('.je-subsearch-anchor'), 'Heard at 1:04');
-  h.row('Aah!').querySelector('.je-subsearch-jump').click();
+  assert.equal(h.text('.je-subsync-anchor'), 'Heard at 1:04');
+  h.row('Aah!').querySelector('.je-subsync-jump').click();
   assert.ok(Math.abs(h.video.currentTime - 50.3) < 1e-9);
   assert.equal(h.overlay(), null);
   assert.equal(h.isPaused(), false, 'resumed, as the dialog paused it');
@@ -312,14 +312,14 @@ test('a progressive transcode jumps on the element clock within what the server 
 for (const what of ['before the stream started', 'beyond what is produced']) {
   test(`a progressive transcode refuses a jump ${what}`, async t => {
     const h = progressive(t);
-    h.JE.toggleSubtitleSearch();
+    h.JE.toggleSubtitleSync();
     await flush();
     const line = what.startsWith('before') ? 'outcome was never' : 'Aah!';
     if (what.startsWith('beyond')) Object.defineProperty(h.video, 'seekable', { value: { length: 1, start: () => 0, end: () => 30 } });
-    h.row(line).querySelector('.je-subsearch-jump').click();
+    h.row(line).querySelector('.je-subsync-jump').click();
     assert.equal(h.video.currentTime, 4.98);
     assert.ok(h.overlay(), 'the dialog stays open');
-    assert.match(h.text('.je-subsearch-status'), /only jump within the part the server has prepared/);
+    assert.match(h.text('.je-subsync-status'), /only jump within the part the server has prepared/);
     assert.deepEqual(h.ajaxCalls.filter(c => c.type === 'POST'), []);
   });
 }
@@ -335,10 +335,10 @@ test('only progressive transcodes count as limited to what the server has produc
 
 test('burned-in subtitles list lines but choosing one jumps, as the hint says', async t => {
   const h = setup(t, { renderer: 'none' });
-  h.JE.toggleSubtitleSearch();
+  h.JE.toggleSubtitleSync();
   await flush();
-  assert.match(h.text('.je-subsearch-hint'), /part of the video picture/);
-  h.row('Aah!').querySelector('.je-subsearch-line').click();
+  assert.match(h.text('.je-subsync-hint'), /part of the video picture/);
+  h.row('Aah!').querySelector('.je-subsync-line').click();
   assert.deepEqual(h.offsets, []);
   assert.ok(Math.abs(h.video.currentTime - 110.3) < 1e-9);
 });
@@ -346,46 +346,46 @@ test('burned-in subtitles list lines but choosing one jumps, as the hint says', 
 test('burned-in subtitles ignore a slider value: times, highlight and jumps are the file\'s', async t => {
   // The slider still says +5 s (an earlier track, or the [ ] keys), but the picture never moves.
   const h = setup(t, { renderer: 'none', slider: '5' });
-  h.JE.toggleSubtitleSearch();
+  h.JE.toggleSubtitleSync();
   await flush();
-  assert.equal(h.text('.je-subsearch-offset'), '');
-  assert.equal(h.row('Aah!').querySelector('.je-subsearch-time').textContent, '1:50');
+  assert.equal(h.text('.je-subsync-offset'), '');
+  assert.equal(h.row('Aah!').querySelector('.je-subsync-time').textContent, '1:50');
   assert.match(h.overlay().querySelector('.is-current').textContent, /These tickets/);
-  h.row('Aah!').querySelector('.je-subsearch-line').click(); // choosing a line jumps here
+  h.row('Aah!').querySelector('.je-subsync-line').click(); // choosing a line jumps here
   assert.ok(Math.abs(h.video.currentTime - 110.3) < 1e-9);
 });
 
 test('ASS subtitles drawn by libass can be synced', async t => {
   const h = setup(t, { renderer: 'ass' });
-  h.JE.toggleSubtitleSearch();
+  h.JE.toggleSubtitleSync();
   await flush();
-  assert.match(h.text('.je-subsearch-hint'), /sync the subtitles/);
-  h.row("I'm afraid").querySelector('.je-subsearch-line').click();
+  assert.match(h.text('.je-subsync-hint'), /sync the subtitles/);
+  h.row("I'm afraid").querySelector('.je-subsync-line').click();
   assert.deepEqual(h.offsets, [-4.9]);
 });
 
 test('image subtitles, no subtitles and an unknown session explain themselves without a lines request', async t => {
   const image = setup(t, { stream: { Type: 'Subtitle', Index: 2, Codec: 'PGSSUB', DisplayTitle: 'English - PGSSUB', IsTextSubtitleStream: false } });
-  image.JE.toggleSubtitleSearch();
+  image.JE.toggleSubtitleSync();
   await flush();
-  assert.match(image.text('.je-subsearch-status'), /made of images/);
+  assert.match(image.text('.je-subsync-status'), /made of images/);
   assert.deepEqual(image.requests, []);
-  assert.equal(image.text('.je-subsearch-offset'), '');
+  assert.equal(image.text('.je-subsync-offset'), '');
 
   const off = setup(t, { playState: { SubtitleStreamIndex: -1 } });
   let menuOpened = 0;
   off.document.querySelector('.btnSubtitles').addEventListener('click', () => menuOpened++);
-  off.JE.toggleSubtitleSearch();
+  off.JE.toggleSubtitleSync();
   await flush();
-  assert.match(off.text('.je-subsearch-status'), /Turn on a subtitle track first/);
-  off.overlay().querySelector('.je-subsearch-status button').click();
+  assert.match(off.text('.je-subsync-status'), /Turn on a subtitle track first/);
+  off.overlay().querySelector('.je-subsync-status button').click();
   assert.equal(menuOpened, 1);
   assert.equal(off.overlay(), null);
 
   const other = setup(t, { src: 'http://jellyfin.test/Videos/aaaaaaaabbbbccccddddeeeeeeeeeeee/stream.mp4?Static=true' });
-  other.JE.toggleSubtitleSearch();
+  other.JE.toggleSubtitleSync();
   await flush();
-  assert.match(other.text('.je-subsearch-status'), /Couldn't tell which subtitles are playing/);
+  assert.match(other.text('.je-subsync-status'), /Couldn't tell which subtitles are playing/);
   assert.deepEqual(other.requests, []);
 });
 
@@ -393,19 +393,19 @@ test('a failed lines request offers a retry that loads them', async t => {
   let calls = 0;
   const h = setup(t, { jf: async () => { calls++; if (calls === 1) throw new Error('500'); return structuredClone(STREAM); } });
   h.allowConsoleError(/./);
-  h.JE.toggleSubtitleSearch();
+  h.JE.toggleSubtitleSync();
   await flush();
-  assert.match(h.text('.je-subsearch-status'), /Couldn't load the subtitle lines/);
-  h.overlay().querySelector('.je-subsearch-status button').click();
+  assert.match(h.text('.je-subsync-status'), /Couldn't load the subtitle lines/);
+  h.overlay().querySelector('.je-subsync-status button').click();
   await flush();
   assert.equal(h.rows().length, 7);
-  assert.equal(h.text('.je-subsearch-status'), '');
+  assert.equal(h.text('.je-subsync-status'), '');
 });
 
 test('opened on playing video, the track is read from the report its pause makes', async t => {
   // The server still says subtitles are off until jellyfin-web reports again; pausing makes it report.
   const h = setup(t, { before: { SubtitleStreamIndex: -1, IsPaused: false } });
-  h.JE.toggleSubtitleSearch();
+  h.JE.toggleSubtitleSync();
   await flush();
   assert.equal(h.rows().length, 7);
   assert.deepEqual(h.requests.map(r => r.path), ['/Videos/item1/src1/Subtitles/2/0/Stream.js']);
@@ -415,12 +415,12 @@ test('opened on paused video right after a subtitle change, it waits for the nex
   const h = setup(t, { before: { SubtitleStreamIndex: -1 } });
   h.setPaused(true);
   h.tracks[0].mode = 'disabled'; // subtitles off
-  h.JE.addSubtitleSearchButton(); // the page update that starts watching the player's tracks
+  h.JE.addSubtitleSyncButton(); // the page update that starts watching the player's tracks
   h.tracks[0].mode = 'showing'; // jellyfin-web shows a track
   h.trackListChanged();
-  h.JE.toggleSubtitleSearch(); // at once: before the change event's own check has run
+  h.JE.toggleSubtitleSync(); // at once: before the change event's own check has run
   await flush();
-  assert.match(h.text('.je-subsearch-status'), /Loading/);
+  assert.match(h.text('.je-subsync-status'), /Loading/);
   assert.deepEqual(h.requests, []);
   h.report(); // jellyfin-web's next progress report
   await flush();
@@ -432,15 +432,15 @@ test('without a newer report the dialog says it can\'t tell, and Try again asks 
   const h = setup(t, { before: { SubtitleStreamIndex: -1 } });
   h.setPaused(true);
   h.tracks[0].mode = 'disabled';
-  h.JE.addSubtitleSearchButton();
+  h.JE.addSubtitleSyncButton();
   h.tracks[0].mode = 'showing';
   h.trackListChanged();
   await new Promise(done => setTimeout(done, 80));
-  h.JE.toggleSubtitleSearch();
+  h.JE.toggleSubtitleSync();
   await new Promise(done => setTimeout(done, 400));
-  assert.match(h.text('.je-subsearch-status'), /Couldn't tell which subtitles are playing/);
+  assert.match(h.text('.je-subsync-status'), /Couldn't tell which subtitles are playing/);
   assert.deepEqual(h.requests, []);
-  h.overlay().querySelector('.je-subsearch-status button').click();
+  h.overlay().querySelector('.je-subsync-status button').click();
   await flush();
   h.report();
   await flush();
@@ -450,55 +450,55 @@ test('without a newer report the dialog says it can\'t tell, and Try again asks 
 test('opened on paused video with no recent subtitle change, the last report is used at once', async t => {
   const h = setup(t);
   h.setPaused(true);
-  h.JE.toggleSubtitleSearch();
+  h.JE.toggleSubtitleSync();
   await flush(3);
   assert.equal(h.rows().length, 7);
 });
 
 test('an item lookup that never answers doesn\'t hold up the lines', async t => {
   const h = setup(t, { getItem: () => new Promise(() => {}), nowPlaying: { MediaStreams: [{ Type: 'Subtitle', Index: 2, DisplayTitle: 'English - SRT (session)' }] } });
-  h.JE.toggleSubtitleSearch();
+  h.JE.toggleSubtitleSync();
   await new Promise(done => setTimeout(done, 250));
   assert.equal(h.rows().length, 7);
-  assert.equal(h.text('.je-subsearch-track'), 'English - SRT (session)');
+  assert.equal(h.text('.je-subsync-track'), 'English - SRT (session)');
 });
 
 test('lines that do not match the cues on screen are not offered', async t => {
   const cues = [1, 2, 3, 4, 5].map(i => ({ startTime: i * 10, text: 'Zeile ' + i + ' auf Deutsch' }));
   const h = setup(t, { cues });
-  h.JE.toggleSubtitleSearch();
+  h.JE.toggleSubtitleSync();
   await flush();
-  assert.match(h.text('.je-subsearch-status'), /don't match the subtitles on screen/);
-  assert.equal(h.overlay().querySelectorAll('.je-subsearch-row').length, 0);
+  assert.match(h.text('.je-subsync-status'), /don't match the subtitles on screen/);
+  assert.equal(h.overlay().querySelectorAll('.je-subsync-row').length, 0);
 });
 
 test('the offset shown is the one on the cues, not a slider left over from another track', async t => {
   // jellyfin-web resets the offset to 0 on a track switch but leaves its hidden slider at -6.3.
   const h = setup(t, { slider: '0' });
   h.sliderEl.value = '-6.3';
-  h.JE.toggleSubtitleSearch();
+  h.JE.toggleSubtitleSync();
   await flush();
-  assert.equal(h.text('.je-subsearch-offset'), 'Offset 0.0 s');
-  assert.equal(h.overlay().querySelector('.je-subsearch-meta .je-subsearch-reset').hidden, true);
-  h.row('Aah!').querySelector('.je-subsearch-jump').click();
+  assert.equal(h.text('.je-subsync-offset'), 'Offset 0.0 s');
+  assert.equal(h.overlay().querySelector('.je-subsync-meta .je-subsync-reset').hidden, true);
+  h.row('Aah!').querySelector('.je-subsync-jump').click();
   assert.ok(Math.abs(h.video.currentTime - 110.3) < 1e-9);
 });
 
 test('searching hides other rows and counts matches', async t => {
   const h = setup(t);
-  h.JE.toggleSubtitleSearch();
+  h.JE.toggleSubtitleSync();
   await flush();
-  const input = h.overlay().querySelector('.je-subsearch-input');
+  const input = h.overlay().querySelector('.je-subsync-input');
   assert.equal(h.document.activeElement, input);
   input.value = 'GARY';
   input.dispatchEvent(new h.window.Event('input'));
   await new Promise(done => setTimeout(done, 120));
   assert.deepEqual(h.rows().filter(r => !r.hidden).map(r => r.dataset.index), ['0', '1', '3']);
-  assert.equal(h.text('.je-subsearch-foot'), '3 of 7 lines');
+  assert.equal(h.text('.je-subsync-foot'), '3 of 7 lines');
   input.value = 'zzz';
   input.dispatchEvent(new h.window.Event('input'));
   await new Promise(done => setTimeout(done, 120));
-  assert.equal(h.text('.je-subsearch-empty'), 'No lines match your search.');
+  assert.equal(h.text('.je-subsync-empty'), 'No lines match your search.');
 });
 
 test('the [ and ] offset nudges still step from jellyfin-web\'s slider', async t => {
@@ -516,17 +516,17 @@ test('the [ and ] offset nudges still step from jellyfin-web\'s slider', async t
 test('a track switched while the dialog is open makes its lines unusable until reloaded', async t => {
   const GERMAN = { TrackEvents: STREAM.TrackEvents.map((e, i) => ({ ...e, Text: 'Deutsche Zeile ' + i })) };
   const h = setup(t, { jf: async (path) => { h.requests.push({ path }); return structuredClone(path.includes('/Subtitles/3/') ? GERMAN : STREAM); } });
-  h.JE.toggleSubtitleSearch();
+  h.JE.toggleSubtitleSync();
   await flush();
   assert.equal(h.rows().length, 7);
   // Another device switches this player to track 3: jellyfin-web refills its cue track.
   h.session.PlayState.SubtitleStreamIndex = 3;
   h.tracks[0].cues = GERMAN.TrackEvents.map(e => ({ startTime: e.StartPositionTicks / TICKS, text: e.Text }));
-  h.row('buttering me up').querySelector('.je-subsearch-line').click();
+  h.row('buttering me up').querySelector('.je-subsync-line').click();
   assert.deepEqual(h.offsets, []);
-  assert.match(h.text('.je-subsearch-status'), /don't match the subtitles on screen/);
-  assert.equal(h.overlay().querySelectorAll('.je-subsearch-row').length, 0);
-  h.overlay().querySelector('.je-subsearch-status button').click();
+  assert.match(h.text('.je-subsync-status'), /don't match the subtitles on screen/);
+  assert.equal(h.overlay().querySelectorAll('.je-subsync-row').length, 0);
+  h.overlay().querySelector('.je-subsync-status button').click();
   await flush();
   h.report(); // jellyfin-web's next report names track 3
   await flush();
@@ -536,14 +536,14 @@ test('a track switched while the dialog is open makes its lines unusable until r
 
 test('a new libass surface (another ASS track) makes the listed lines unusable', async t => {
   const h = setup(t, { renderer: 'ass' });
-  h.JE.toggleSubtitleSearch();
+  h.JE.toggleSubtitleSync();
   await flush();
   const old = h.document.querySelector('.libassjs-canvas-parent');
   const fresh = h.document.createElement('div');
   fresh.className = 'libassjs-canvas-parent';
   old.replaceWith(fresh);
-  h.row('Aah!').querySelector('.je-subsearch-jump').click();
-  assert.match(h.text('.je-subsearch-status'), /don't match the subtitles on screen/);
+  h.row('Aah!').querySelector('.je-subsync-jump').click();
+  assert.match(h.text('.je-subsync-status'), /don't match the subtitles on screen/);
   assert.equal(h.video.currentTime, 64.98);
 });
 
@@ -552,40 +552,40 @@ test('after an ASS track switch the slider\'s old value is not taken as the offs
   const h = setup(t, { renderer: 'ass', slider: '-6.7' });
   const surface = h.document.querySelector('.libassjs-canvas-parent');
   surface.remove();
-  h.JE.addSubtitleSearchButton(); // a page update before the surface exists
+  h.JE.addSubtitleSyncButton(); // a page update before the surface exists
   h.video.parentElement.append(surface);
-  h.JE.addSubtitleSearchButton(); // the page update that sees it appear
+  h.JE.addSubtitleSyncButton(); // the page update that sees it appear
   await openReported(h);
-  assert.equal(h.text('.je-subsearch-offset'), 'Offset 0.0 s');
-  h.row('Aah!').querySelector('.je-subsearch-jump').click();
+  assert.equal(h.text('.je-subsync-offset'), 'Offset 0.0 s');
+  h.row('Aah!').querySelector('.je-subsync-jump').click();
   assert.ok(Math.abs(h.video.currentTime - 110.3) < 1e-9);
   // Once the offset is set again (here by JE), the slider is right again.
   h.JE.setSubtitleOffset(-2);
   await openReported(h);
-  assert.equal(h.text('.je-subsearch-offset'), 'Offset -2.0 s');
+  assert.equal(h.text('.je-subsync-offset'), 'Offset -2.0 s');
 });
 
 test('TV remote and gamepad keys work in the dialog', async t => {
   const h = setup(t);
   const key = (el, keyCode) => el.dispatchEvent(new h.window.KeyboardEvent('keydown', { keyCode, bubbles: true }));
-  h.JE.toggleSubtitleSearch();
+  h.JE.toggleSubtitleSync();
   await flush();
-  key(h.overlay().querySelector('.je-subsearch-input'), 204); // D-pad down
-  assert.equal(h.document.activeElement.closest('.je-subsearch-row').classList.contains('is-current'), true);
+  key(h.overlay().querySelector('.je-subsync-input'), 204); // D-pad down
+  assert.equal(h.document.activeElement.closest('.je-subsync-row').classList.contains('is-current'), true);
   key(h.document.activeElement, 195); // A: choose
   assert.deepEqual(h.offsets, [-1]);
   assert.equal(h.overlay(), null);
   for (const back of [461, 10009]) {
-    h.JE.toggleSubtitleSearch();
+    h.JE.toggleSubtitleSync();
     await flush();
-    key(h.overlay().querySelector('.je-subsearch-input'), back);
+    key(h.overlay().querySelector('.je-subsync-input'), back);
     assert.equal(h.overlay(), null, `Back (${back}) closes`);
   }
 });
 
 test('an offset change that flips the cue track\'s mode (Firefox) is not a track change', async t => {
   const h = setup(t);
-  h.JE.toggleSubtitleSearch();
+  h.JE.toggleSubtitleSync();
   await flush();
   h.tracks[0].mode = 'disabled';
   h.trackListChanged();
@@ -593,56 +593,56 @@ test('an offset change that flips the cue track\'s mode (Firefox) is not a track
   h.trackListChanged();
   await new Promise(done => setTimeout(done, 120));
   assert.equal(h.rows().length, 7);
-  h.row('buttering me up').querySelector('.je-subsearch-line').click();
+  h.row('buttering me up').querySelector('.je-subsync-line').click();
   assert.deepEqual(h.offsets, [-9]);
   assert.equal(h.isPaused(), false, 'the flip is not a change made elsewhere: playback resumes');
 });
 
 test('a seek or a track switch made elsewhere while open leaves playback paused on close', async t => {
   const seeked = setup(t);
-  seeked.JE.toggleSubtitleSearch(); // pauses playback
+  seeked.JE.toggleSubtitleSync(); // pauses playback
   await flush();
   seeked.video.dispatchEvent(new seeked.window.Event('seeking')); // another device seeks this player
-  seeked.JE.toggleSubtitleSearch();
+  seeked.JE.toggleSubtitleSync();
   assert.equal(seeked.overlay(), null);
   assert.equal(seeked.isPaused(), true);
 
   const switched = setup(t, { renderer: 'ass' });
-  switched.JE.toggleSubtitleSearch();
+  switched.JE.toggleSubtitleSync();
   await flush();
   const fresh = switched.document.createElement('div');
   fresh.className = 'libassjs-canvas-parent';
   switched.document.querySelector('.libassjs-canvas-parent').replaceWith(fresh); // another ASS track
-  switched.JE.addSubtitleSearchButton(); // the page update that sees it
-  switched.JE.toggleSubtitleSearch();
+  switched.JE.addSubtitleSyncButton(); // the page update that sees it
+  switched.JE.toggleSubtitleSync();
   assert.equal(switched.isPaused(), true);
 
   // Closed at once, before the track change's settle check has run.
   const quick = setup(t);
-  quick.JE.toggleSubtitleSearch();
+  quick.JE.toggleSubtitleSync();
   await flush();
   quick.tracks[0].cues = retimedCues(); // another track's cues
   quick.trackListChanged();
-  quick.overlay().querySelector('.je-subsearch-close').click();
+  quick.overlay().querySelector('.je-subsync-close').click();
   assert.equal(quick.overlay(), null);
   assert.equal(quick.isPaused(), true);
 });
 
 test('closing while the cues are hidden waits: Firefox\'s offset flip resumes, subtitles turned off do not', async t => {
   const flip = setup(t);
-  flip.JE.toggleSubtitleSearch();
+  flip.JE.toggleSubtitleSync();
   await flush();
   flip.tracks[0].mode = 'disabled'; // jellyfin-web's debounced offset task hides the cues…
-  flip.overlay().querySelector('.je-subsearch-close').click();
+  flip.overlay().querySelector('.je-subsync-close').click();
   flip.tracks[0].mode = 'showing'; // …and its 0 ms task brings the same cues back
   await new Promise(done => setTimeout(done, 100));
   assert.equal(flip.isPaused(), false);
 
   const off = setup(t);
-  off.JE.toggleSubtitleSearch();
+  off.JE.toggleSubtitleSync();
   await flush();
   off.tracks[0].mode = 'disabled'; // subtitles turned off elsewhere
-  off.overlay().querySelector('.je-subsearch-close').click();
+  off.overlay().querySelector('.je-subsync-close').click();
   await new Promise(done => setTimeout(done, 100));
   assert.equal(off.isPaused(), true);
 
@@ -650,10 +650,10 @@ test('closing while the cues are hidden waits: Firefox\'s offset flip resumes, s
   for (const [what, act] of [['seek', h => h.video.dispatchEvent(new h.window.Event('seeking'))],
     ['page change', h => h.document.dispatchEvent(new h.window.Event('viewshow'))]]) {
     const h = setup(t);
-    h.JE.toggleSubtitleSearch();
+    h.JE.toggleSubtitleSync();
     await flush();
     h.tracks[0].mode = 'disabled';
-    h.overlay().querySelector('.je-subsearch-close').click();
+    h.overlay().querySelector('.je-subsync-close').click();
     h.tracks[0].mode = 'showing';
     act(h);
     await new Promise(done => setTimeout(done, 100));
@@ -663,13 +663,13 @@ test('closing while the cues are hidden waits: Firefox\'s offset flip resumes, s
   // Opened again (on paused playback) and closed while that decision waits: the new dialog owns
   // what happens, and it found playback paused.
   const again = setup(t);
-  again.JE.toggleSubtitleSearch();
+  again.JE.toggleSubtitleSync();
   await flush();
   again.tracks[0].mode = 'disabled';
-  again.overlay().querySelector('.je-subsearch-close').click();
+  again.overlay().querySelector('.je-subsync-close').click();
   again.tracks[0].mode = 'showing';
-  again.JE.toggleSubtitleSearch();
-  again.overlay().querySelector('.je-subsearch-close').click();
+  again.JE.toggleSubtitleSync();
+  again.overlay().querySelector('.je-subsync-close').click();
   await new Promise(done => setTimeout(done, 100));
   assert.equal(again.isPaused(), true);
 });
@@ -677,7 +677,7 @@ test('closing while the cues are hidden waits: Firefox\'s offset flip resumes, s
 test('switching from cues to ASS, or turning subtitles off, while open makes the lines unusable', async t => {
   for (const change of ['ass', 'off']) {
     const h = setup(t);
-    h.JE.toggleSubtitleSearch();
+    h.JE.toggleSubtitleSync();
     await flush();
     h.tracks[0].mode = 'disabled';
     if (change === 'ass') {
@@ -685,9 +685,9 @@ test('switching from cues to ASS, or turning subtitles off, while open makes the
       parent.className = 'libassjs-canvas-parent';
       h.video.parentElement.append(parent);
     }
-    h.row('buttering me up').querySelector('.je-subsearch-line').click();
+    h.row('buttering me up').querySelector('.je-subsync-line').click();
     assert.deepEqual(h.offsets, [], change);
-    assert.match(h.text('.je-subsearch-status'), /don't match the subtitles on screen/, change);
+    assert.match(h.text('.je-subsync-status'), /don't match the subtitles on screen/, change);
   }
 });
 
@@ -700,7 +700,7 @@ test('an ASS switch while the lines load looks them up again for the new track',
     if (calls === 1) return new Promise(resolve => { release = () => resolve(structuredClone(STREAM)); });
     return Promise.resolve(structuredClone(path.includes('/Subtitles/3/') ? GERMAN : STREAM));
   } });
-  h.JE.toggleSubtitleSearch();
+  h.JE.toggleSubtitleSync();
   await flush();
   // jellyfin-web switches to ASS track 3: a new libass surface, and the server learns of it.
   const fresh = h.document.createElement('div');
@@ -719,15 +719,15 @@ test('jellyfin-web\'s own offset keys count as setting the offset', async t => {
   const h = setup(t, { renderer: 'ass', slider: '-10.8' });
   const surface = h.document.querySelector('.libassjs-canvas-parent');
   surface.remove();
-  h.JE.addSubtitleSearchButton();
+  h.JE.addSubtitleSyncButton();
   h.video.parentElement.append(surface);
-  h.JE.addSubtitleSearchButton(); // the surface appears with a stale slider
+  h.JE.addSubtitleSyncButton(); // the surface appears with a stale slider
   // G then H: jellyfin-web's update() goes through the slider's updateOffset.
   h.sliderEl.updateOffset(-10.9);
   h.sliderEl.updateOffset(-10.8);
   await openReported(h);
-  assert.equal(h.text('.je-subsearch-offset'), 'Offset -10.8 s');
-  h.row('Aah!').querySelector('.je-subsearch-jump').click();
+  assert.equal(h.text('.je-subsync-offset'), 'Offset -10.8 s');
+  h.row('Aah!').querySelector('.je-subsync-jump').click();
   assert.ok(Math.abs(h.video.currentTime - 121.1) < 1e-9);
 });
 
@@ -736,9 +736,9 @@ test('opening over JE\'s pause screen puts it away first', async t => {
   let hidden = 0;
   h.JE.pauseScreenInstance = { hideOverlay: () => { hidden++; h.document.documentElement.classList.remove('pause-screen-active'); } };
   h.document.documentElement.classList.add('pause-screen-active');
-  h.JE.toggleSubtitleSearch();
+  h.JE.toggleSubtitleSync();
   assert.equal(hidden, 1);
-  assert.equal(h.document.activeElement, h.overlay().querySelector('.je-subsearch-input'));
+  assert.equal(h.document.activeElement, h.overlay().querySelector('.je-subsync-input'));
 });
 
 test('subtitles turned off while the lines load are looked up again, not listed as burned in', async t => {
@@ -746,7 +746,7 @@ test('subtitles turned off while the lines load are looked up again, not listed 
     let release;
     let calls = 0;
     const h = setup(t, { renderer, jf: () => { calls++; return new Promise(resolve => { release = () => resolve(structuredClone(STREAM)); }); } });
-    h.JE.toggleSubtitleSearch();
+    h.JE.toggleSubtitleSync();
     await flush();
     if (renderer === 'cues') h.tracks[0].mode = 'disabled';
     else h.document.querySelector('.libassjs-canvas-parent').remove();
@@ -756,8 +756,8 @@ test('subtitles turned off while the lines load are looked up again, not listed 
     h.report(); // the report after subtitles went off
     await flush(20);
     assert.equal(calls, 1, renderer);
-    assert.equal(h.overlay().querySelectorAll('.je-subsearch-row').length, 0, renderer);
-    assert.match(h.text('.je-subsearch-status'), /Turn on a subtitle track first/, renderer);
+    assert.equal(h.overlay().querySelectorAll('.je-subsync-row').length, 0, renderer);
+    assert.match(h.text('.je-subsync-status'), /Turn on a subtitle track first/, renderer);
   }
 });
 
@@ -768,48 +768,48 @@ const retimedCues = () => RETIMED.TrackEvents.map(e => ({ startTime: e.StartPosi
 test('a switch to a retimed file with the same text is a track change, not an offset', async t => {
   const h = setup(t, { jf: async (path) => { h.requests.push({ path }); return structuredClone(path.includes('/Subtitles/3/') ? RETIMED : STREAM); } });
   h.setPaused(true);
-  h.JE.addSubtitleSearchButton();
+  h.JE.addSubtitleSyncButton();
   // jellyfin-web switches to track 3: new cue objects with the same text, 5 s later.
   h.tracks[0].cues = retimedCues();
   h.trackListChanged();
   h.session.PlayState.SubtitleStreamIndex = 3;
-  h.JE.toggleSubtitleSearch();
+  h.JE.toggleSubtitleSync();
   await flush();
   assert.deepEqual(h.requests, [], 'waits for the report naming the new track');
   h.report();
   await flush();
   assert.deepEqual(h.requests.map(r => r.path), ['/Videos/item1/src1/Subtitles/3/0/Stream.js']);
-  assert.equal(h.text('.je-subsearch-offset'), 'Offset 0.0 s');
-  h.row('buttering me up').querySelector('.je-subsearch-line').click();
+  assert.equal(h.text('.je-subsync-offset'), 'Offset 0.0 s');
+  h.row('buttering me up').querySelector('.je-subsync-line').click();
   assert.deepEqual(h.offsets, [-4]);
 });
 
 test('a retimed same-text switch while the dialog is open makes the lines unusable', async t => {
   const h = setup(t);
-  h.JE.toggleSubtitleSearch();
+  h.JE.toggleSubtitleSync();
   await flush();
   h.tracks[0].cues = retimedCues();
-  h.row('buttering me up').querySelector('.je-subsearch-line').click();
+  h.row('buttering me up').querySelector('.je-subsync-line').click();
   assert.deepEqual(h.offsets, []);
-  assert.match(h.text('.je-subsearch-status'), /don't match the subtitles on screen/);
+  assert.match(h.text('.je-subsync-status'), /don't match the subtitles on screen/);
 });
 
 test('subtitles turned off during the load wait for a report sent after that, not the pause report', async t => {
   let release;
   let calls = 0;
   const h = setup(t, { jf: () => { calls++; return new Promise(resolve => { release = () => resolve(structuredClone(STREAM)); }); } });
-  h.JE.toggleSubtitleSearch(); // pauses: jellyfin-web reports subtitle track 2
+  h.JE.toggleSubtitleSync(); // pauses: jellyfin-web reports subtitle track 2
   await flush();
   h.tracks[0].mode = 'disabled';
   h.session.PlayState.SubtitleStreamIndex = -1; // not reported yet
   release();
   await flush(20);
-  assert.equal(h.overlay().querySelectorAll('.je-subsearch-row').length, 0);
-  assert.match(h.text('.je-subsearch-status'), /Loading/);
+  assert.equal(h.overlay().querySelectorAll('.je-subsync-row').length, 0);
+  assert.match(h.text('.je-subsync-status'), /Loading/);
   h.report();
   await flush(20);
   assert.equal(calls, 1);
-  assert.match(h.text('.je-subsearch-status'), /Turn on a subtitle track first/);
+  assert.match(h.text('.je-subsync-status'), /Turn on a subtitle track first/);
 });
 
 test('a retimed same-text switch during the load waits for the report naming the new track', async t => {
@@ -821,17 +821,17 @@ test('a retimed same-text switch during the load waits for the report naming the
     if (calls === 1) return new Promise(resolve => { release = () => resolve(structuredClone(STREAM)); });
     return Promise.resolve(structuredClone(path.includes('/Subtitles/3/') ? RETIMED : STREAM));
   } });
-  h.JE.toggleSubtitleSearch();
+  h.JE.toggleSubtitleSync();
   await flush();
   h.tracks[0].cues = retimedCues();
   h.session.PlayState.SubtitleStreamIndex = 3; // not reported yet
   release();
   await flush(20);
-  assert.equal(h.overlay().querySelectorAll('.je-subsearch-row').length, 0);
+  assert.equal(h.overlay().querySelectorAll('.je-subsync-row').length, 0);
   h.report();
   await flush(20);
   assert.deepEqual(h.requests.map(r => r.path), ['/Videos/item1/src1/Subtitles/2/0/Stream.js', '/Videos/item1/src1/Subtitles/3/0/Stream.js']);
-  h.row('buttering me up').querySelector('.je-subsearch-line').click();
+  h.row('buttering me up').querySelector('.je-subsync-line').click();
   assert.deepEqual(h.offsets, [-4]);
 });
 
@@ -843,16 +843,16 @@ test('with too few cues to measure, a new cue track counts as offset 0 until the
   const cues = SPARSE.TrackEvents.map(e => ({ startTime: e.StartPositionTicks / TICKS, text: e.Text }));
   const h = setup(t, { data: SPARSE, cues, slider: '-6.7' }); // jellyfin-web reset the offset; its slider says -6.7
   h.tracks[0].mode = 'disabled';
-  h.JE.addSubtitleSearchButton(); // a page update before the cues are shown
+  h.JE.addSubtitleSyncButton(); // a page update before the cues are shown
   h.tracks[0].mode = 'showing';
-  h.JE.addSubtitleSearchButton(); // the page update that sees the new cues
+  h.JE.addSubtitleSyncButton(); // the page update that sees the new cues
   await openReported(h);
-  assert.equal(h.text('.je-subsearch-offset'), 'Offset 0.0 s');
-  h.row('Buttering me up').querySelector('.je-subsearch-jump').click();
+  assert.equal(h.text('.je-subsync-offset'), 'Offset 0.0 s');
+  h.row('Buttering me up').querySelector('.je-subsync-jump').click();
   assert.equal(h.video.currentTime, 56);
   h.JE.setSubtitleOffset(-2);
   await openReported(h);
-  assert.equal(h.text('.je-subsearch-offset'), 'Offset -2.0 s');
+  assert.equal(h.text('.je-subsync-offset'), 'Offset -2.0 s');
 });
 
 for (const earlier of [30, 64.88]) test(`an earlier pause still on the server (at ${earlier} s) is not taken for the dialog's own pause report`, async t => {
@@ -861,17 +861,17 @@ for (const earlier of [30, 64.88]) test(`an earlier pause still on the server (a
   // dialog opens can't stand in for a report sent after the switch.
   const h = setup(t, { before: { IsPaused: true, PositionTicks: Math.round(earlier * TICKS) }, pauseReports: false,
     jf: async (path) => { h.requests.push({ path }); return structuredClone(path.includes('/Subtitles/3/') ? RETIMED : STREAM); } });
-  h.JE.addSubtitleSearchButton(); // the page update before the switch
+  h.JE.addSubtitleSyncButton(); // the page update before the switch
   h.tracks[0].cues = retimedCues();
   h.session.PlayState.SubtitleStreamIndex = 3;
-  h.JE.addSubtitleSearchButton(); // the page update that sees the new cues
-  h.JE.toggleSubtitleSearch(); // pauses at 64.98 s; its report is on its way
+  h.JE.addSubtitleSyncButton(); // the page update that sees the new cues
+  h.JE.toggleSubtitleSync(); // pauses at 64.98 s; its report is on its way
   await flush();
   assert.deepEqual(h.requests, []);
   h.report();
   await flush();
   assert.deepEqual(h.requests.map(r => r.path), ['/Videos/item1/src1/Subtitles/3/0/Stream.js']);
-  h.row('buttering me up').querySelector('.je-subsearch-line').click();
+  h.row('buttering me up').querySelector('.je-subsync-line').click();
   assert.deepEqual(h.offsets, [-4]);
 });
 
@@ -879,12 +879,12 @@ test('an offset set before the page noticed a new renderer still counts as set',
   const h = setup(t, { renderer: 'ass', slider: '-6.7' });
   const surface = h.document.querySelector('.libassjs-canvas-parent');
   surface.remove();
-  h.JE.addSubtitleSearchButton();
+  h.JE.addSubtitleSyncButton();
   h.video.parentElement.append(surface); // a new ASS track, not yet seen by a page update
   h.JE.setSubtitleOffset(-2);
   await openReported(h);
-  assert.equal(h.text('.je-subsearch-offset'), 'Offset -2.0 s');
-  h.row('Aah!').querySelector('.je-subsearch-jump').click();
+  assert.equal(h.text('.je-subsync-offset'), 'Offset -2.0 s');
+  h.row('Aah!').querySelector('.je-subsync-jump').click();
   assert.ok(Math.abs(h.video.currentTime - 112.3) < 1e-9);
 });
 
@@ -902,10 +902,10 @@ test('keys typed in the dialog never reach the player; Escape closes and resumes
   assert.ok(h.overlay(), 'Shift+S opens the dialog');
   assert.equal(menuOpened, 0);
   await flush();
-  const input = h.overlay().querySelector('.je-subsearch-input');
+  const input = h.overlay().querySelector('.je-subsync-input');
   input.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: ' ', bubbles: true }));
   input.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
-  assert.equal(h.document.activeElement.closest('.je-subsearch-row').classList.contains('is-current'), true, 'ArrowDown enters the list at the highlighted line');
+  assert.equal(h.document.activeElement.closest('.je-subsync-row').classList.contains('is-current'), true, 'ArrowDown enters the list at the highlighted line');
   // A row button has focus: JE's own S (Subtitle Menu) must not fire either.
   h.document.activeElement.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 's', bubbles: true }));
   assert.equal(menuOpened, 0);
@@ -917,9 +917,9 @@ test('keys typed in the dialog never reach the player; Escape closes and resumes
 
 test('the shortcut closes the dialog from a line', async t => {
   const h = setup(t);
-  h.JE.toggleSubtitleSearch();
+  h.JE.toggleSubtitleSync();
   await flush();
-  const line = h.overlay().querySelector('.je-subsearch-line');
+  const line = h.overlay().querySelector('.je-subsync-line');
   line.focus();
   line.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'S', shiftKey: true, bubbles: true }));
   assert.equal(h.overlay(), null);
@@ -928,9 +928,9 @@ test('the shortcut closes the dialog from a line', async t => {
 test('a dialog opened on paused playback leaves it paused', async t => {
   const h = setup(t);
   h.setPaused(true);
-  h.JE.toggleSubtitleSearch();
+  h.JE.toggleSubtitleSync();
   await flush();
-  h.row('buttering me up').querySelector('.je-subsearch-line').click();
+  h.row('buttering me up').querySelector('.je-subsync-line').click();
   assert.deepEqual(h.offsets, [-9]);
   assert.equal(h.isPaused(), true);
 });
@@ -938,16 +938,16 @@ test('a dialog opened on paused playback leaves it paused', async t => {
 test('an answer that arrives after the dialog closed or the video changed is dropped', async t => {
   let release;
   const h = setup(t, { jf: () => new Promise(resolve => { release = () => resolve(structuredClone(STREAM)); }) });
-  h.JE.toggleSubtitleSearch();
+  h.JE.toggleSubtitleSync();
   await flush();
-  h.JE.toggleSubtitleSearch(); // close while the lines are loading
+  h.JE.toggleSubtitleSync(); // close while the lines are loading
   assert.equal(h.overlay(), null);
   release();
   await flush();
-  assert.equal(h.document.querySelector('.je-subsearch-row'), null);
+  assert.equal(h.document.querySelector('.je-subsync-row'), null);
 
   const v = setup(t);
-  v.JE.toggleSubtitleSearch();
+  v.JE.toggleSubtitleSync();
   v.video.dispatchEvent(new v.window.Event('emptied')); // the source changed (next episode)
   await flush();
   assert.equal(v.overlay(), null);
@@ -956,7 +956,7 @@ test('an answer that arrives after the dialog closed or the video changed is dro
 
 test('leaving the player closes the dialog without resuming', async t => {
   const h = setup(t);
-  h.JE.toggleSubtitleSearch();
+  h.JE.toggleSubtitleSync();
   await flush();
   h.window.location.hash = '#/home';
   h.window.dispatchEvent(new h.window.HashChangeEvent('hashchange'));

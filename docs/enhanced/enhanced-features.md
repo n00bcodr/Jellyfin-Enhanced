@@ -313,7 +313,7 @@ Navigate Jellyfin and control local video playback without opening menus. Admin 
 | **Step Forward One Frame** | ++period++ | Pauses and seeks forward one estimated frame. |
 | **Decrease Subtitle Offset** | ++left-bracket++ | Shifts subtitles 0.1 s later (lowers the offset) and briefly shows Jellyfin's subtitle offset panel. |
 | **Increase Subtitle Offset** | ++right-bracket++ | Shifts subtitles 0.1 s earlier (raises the offset) and briefly shows Jellyfin's subtitle offset panel. |
-| **Search Subtitle Lines** | ++shift+s++ | Opens or closes the [subtitle lines](#subtitle-search-and-sync) list. |
+| **Sync Subtitles** | ++shift+s++ | Opens or closes [Subtitle Sync](#subtitle-sync). |
 | **Jump to Last Position** | ++z++ | Returns once to the position saved before the last seek. |
 | **Jump to % of video** | ++0++–++9++ | Seeks to 0%, 10%, … 90%. Can be disabled but not rebound. |
 
@@ -528,18 +528,18 @@ To stop styling, turn on personal **Disable Custom Styles** and reload. To chang
 
     The panel checks format when opened, using the first controllable session with a playing item and its primary subtitle stream. Reopen after changing tracks. It may reflect another session or miss a secondary track, so no warning is not proof of support.
 
-### Subtitle Search and Sync
+### Subtitle Sync
 
-List every line of the subtitles that are playing, find the one you just heard, and sync the subtitles to it. You can also jump to any line.
+Sync the subtitles to what you hear: open the list of the playing subtitles' lines, find the one you just heard, and choose it. You can also search the lines and jump to any of them.
 
 **How to use:**
 
-1. Turn on **Subtitle Search Button** in personal **Subtitle Settings**, or use ++shift+s++ during playback.
-2. Right after a line is spoken, click the search button next to **Subtitles** or press ++shift+s++. Playback pauses and the list opens at the line on screen.
+1. Turn on **Subtitle Sync Button** in personal **Subtitle Settings**, or use ++shift+s++ during playback.
+2. Right after a line is spoken, click the **Sync subtitles** button next to **Subtitles** or press ++shift+s++. Playback pauses and the list opens at the line on screen.
 3. Type a few of the words you heard and choose the line. The subtitles shift so that line shows at the moment you opened the list, and playback resumes.
 4. To go to a line instead, use the arrow button at the end of its row.
 
-![Subtitle lines list over the player, with the line on screen highlighted](../images/enhanced/subtitle-search.webp)
+![Sync subtitles list over the player, with the line on screen highlighted](../images/enhanced/subtitle-sync.webp)
 
 <figure class="je-video">
   <video autoplay loop muted playsinline controls preload="metadata" aria-label="Searching the subtitle lines and syncing the subtitles to a line">
@@ -559,7 +559,7 @@ Search ignores case, accents and punctuation; a line must contain every word you
 
 | Setting | Default | What it does |
 |---|---|---|
-| **Subtitle Search Button** — personal; **Show Subtitle Search Button in the Player** — admin | Off | Shows the button next to **Subtitles**; it is hidden whenever Jellyfin hides its **Subtitles** button. ++shift+s++ works either way. |
+| **Subtitle Sync Button** — personal; **Show Subtitle Sync Button in the Player** — admin | Off | Shows the button next to **Subtitles**; it is hidden whenever Jellyfin hides its **Subtitles** button. ++shift+s++ works either way. |
 
 !!! note "What can be synced"
 

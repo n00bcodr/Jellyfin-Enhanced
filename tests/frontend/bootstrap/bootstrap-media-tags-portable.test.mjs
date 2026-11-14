@@ -10,7 +10,7 @@ import { createHarness } from '../helpers/harness.mjs';
 
 const otherToggles = ['autoPauseToggle', 'autoResumeToggle', 'autoPipToggle', 'autoSkipIntroToggle', 'autoSkipOutroToggle',
   'randomButtonToggle', 'randomUnwatchedOnly', 'randomScopeCurrentContainer', 'showWatchProgressToggle', 'showFileSizesToggle', 'showAudioLanguagesToggle',
-  'removeContinueWatchingToggle', 'pauseScreenToggle', 'disableCustomSubtitleStyles', 'longPress2xEnabled', 'subtitleSearchButtonEnabled', 'randomIncludeMovies', 'randomIncludeShows'];
+  'removeContinueWatchingToggle', 'pauseScreenToggle', 'disableCustomSubtitleStyles', 'longPress2xEnabled', 'subtitleSyncButtonEnabled', 'randomIncludeMovies', 'randomIncludeShows'];
 
 /** plugin.js's key converters (object keys, arrays as they are). */
 const convert = (first) => function walk(obj) {

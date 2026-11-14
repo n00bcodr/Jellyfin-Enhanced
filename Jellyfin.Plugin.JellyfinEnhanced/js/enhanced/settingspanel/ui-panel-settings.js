@@ -644,9 +644,9 @@
         }
         addSettingToggleListener('disableCustomSubtitleStyles', 'disableCustomSubtitleStyles', 'feature_disable_custom_subtitle_styles', true);
         addSettingToggleListener('longPress2xEnabled', 'longPress2xEnabled', 'feature_long_press_2x_speed');
-        addSettingToggleListener('subtitleSearchButtonEnabled', 'subtitleSearchButtonEnabled', 'feature_subtitle_search_button');
+        addSettingToggleListener('subtitleSyncButtonEnabled', 'subtitleSyncButtonEnabled', 'feature_subtitle_sync_button');
         // Shows or removes the player button at once when the panel is opened from the player.
-        document.getElementById('subtitleSearchButtonEnabled')?.addEventListener('change', () => JE.addSubtitleSearchButton?.());
+        document.getElementById('subtitleSyncButtonEnabled')?.addEventListener('change', () => JE.addSubtitleSyncButton?.());
 
         // --- Dynamic subtitle-styling warnings ---
         // Both warnings only matter when JE's custom subtitle styling is actually

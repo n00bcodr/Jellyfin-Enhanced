@@ -108,7 +108,7 @@ The stock bindings are:
 | **Step Forward One Frame** | ++period++ | Pauses and seeks forward by an estimated frame duration. |
 | **Decrease Subtitle Offset** | ++left-bracket++ | Shifts subtitles 0.1 s later (lowers the offset) and briefly shows Jellyfin's subtitle offset panel. |
 | **Increase Subtitle Offset** | ++right-bracket++ | Shifts subtitles 0.1 s earlier (raises the offset) and briefly shows Jellyfin's subtitle offset panel. |
-| **Search Subtitle Lines** | ++shift+s++ | Opens or closes the list of subtitle lines, to search them, sync the subtitles or jump to a line. |
+| **Sync Subtitles** | ++shift+s++ | Opens or closes [Subtitle Sync](enhanced-features.md#subtitle-sync): choose the line you just heard to sync the subtitles, or search and jump to a line. |
 | **Jump to Last Position** | ++z++ | Returns once to the saved position before your last seek. |
 | **Jump to % of video** | ++0++–++9++ | Seeks to 0%, 10%, … 90% of the video. |
 
@@ -187,7 +187,7 @@ Make text subtitles easier to read with your preferred colors, size, and positio
 | Setting | Default | What it does |
 | --- | --- | --- |
 | **Disable Custom Styles** | Off | Uses Jellyfin's subtitle styling instead of JE's overrides. Refresh after changing it. |
-| **Subtitle Search Button** | Off | Adds a button next to **Subtitles** in the player that lists the subtitle lines, to search them, jump to one, or sync the subtitles to the line you just heard. See [Subtitle Search and Sync](enhanced-features.md#subtitle-search-and-sync). |
+| **Subtitle Sync Button** | Off | Adds a button next to **Subtitles** in the player that syncs the subtitles to the line you just heard. Its list of lines can also be searched and jumped through. See [Subtitle Sync](enhanced-features.md#subtitle-sync). |
 | **Style** | **Clean White** | Chooses **Clean White**, **Classic Black Box**, **Netflix Style**, **Cinema Yellow**, **Soft Gray**, or **High Contrast**. Choosing a style replaces custom text/background colors. |
 | **Text** | Opaque white (`#FFFFFFFF`) | Sets text color and opacity; the opacity slider runs from 0–255. |
 | **Background** | Transparent (`#00000000`) | Sets background color and opacity, also 0–255. |
@@ -550,7 +550,7 @@ Under **Playback** → **Subtitles**, choose starting preferences for **Subtitle
 | Setting | Default | What it does |
 | --- | --- | --- |
 | **Disable Custom Subtitle Styles by default** | Off | Starts **Disable Custom Styles** enabled. Users can override it. |
-| **Show Subtitle Search Button in the Player** | Off | Starts **Subtitle Search Button** enabled. Users can override it. |
+| **Show Subtitle Sync Button in the Player** | Off | Starts **Subtitle Sync Button** enabled. Users can override it. |
 | **Default Subtitle Style** | **Clean White** | Supplies the initial **Style**. |
 | **Default Subtitle Size** | **Normal** | Supplies the initial **Size**. |
 | **Default Subtitle Font** | **Default** | Supplies the initial **Font**. |

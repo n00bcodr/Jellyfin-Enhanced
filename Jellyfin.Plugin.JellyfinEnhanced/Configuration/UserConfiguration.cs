@@ -10,7 +10,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool AutoResumeEnabled { get; set; }
         public bool AutoPipEnabled { get; set; }
         public bool LongPress2xEnabled { get; set; }
-        public bool SubtitleSearchButtonEnabled { get; set; }
+        public bool SubtitleSyncButtonEnabled { get; set; }
         public bool PauseScreenEnabled { get; set; }
         public int PauseScreenDelaySeconds { get; set; } = 5;
         public bool AutoSkipIntro { get; set; }

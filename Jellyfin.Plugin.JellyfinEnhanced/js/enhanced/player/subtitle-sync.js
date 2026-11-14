@@ -1,5 +1,5 @@
 /**
- * @file Subtitle search and sync (#1061).
+ * @file Subtitle sync (#1061).
  *
  * A player dialog that lists every line of the subtitle track that is playing, with its time.
  * Typing filters the lines. Choosing a line syncs the subtitles to it: the offset is set so the
@@ -25,9 +25,9 @@
     /** jellyfin-web's subtitle sync slider range (subtitlesync.template.html: min -30, max 30). */
     const MAX_OFFSET_SECONDS = 30;
     const FETCH_TIMEOUT_MS = 30000;
-    const OVERLAY_ID = 'je-subtitle-search';
-    const BUTTON_ID = 'je-subtitle-search-btn';
-    const STYLE_ID = 'je-subtitle-search-style';
+    const OVERLAY_ID = 'je-subtitle-sync';
+    const BUTTON_ID = 'je-subtitle-sync-btn';
+    const STYLE_ID = 'je-subtitle-sync-style';
     const SEARCH_DEBOUNCE_MS = 80;
     /** Cues compared with the lines to tell whether they are the same track. */
     const CUE_SAMPLE_SIZE = 24;
@@ -67,7 +67,7 @@
         return text;
     }
 
-    // ── Pure helpers (unit-tested through JE.internals.subtitleSearch) ─────────────────────
+    // ── Pure helpers (unit-tested through JE.internals.subtitleSync) ─────────────────────
 
     /**
      * Turns a server track event's text into plain display text: ASS line breaks become new
@@ -272,7 +272,7 @@
      */
     function formatOffset(seconds) {
         const v = roundOffset(seconds);
-        return tr('subtitle_search_seconds', '{value} s', { value: (v > 0 ? '+' : '') + v.toFixed(1) });
+        return tr('subtitle_sync_seconds', '{value} s', { value: (v > 0 ? '+' : '') + v.toFixed(1) });
     }
 
     // ── Player state ──────────────────────────────────────────────────────────────────────
@@ -694,59 +694,59 @@
             #${OVERLAY_ID} {
                 position: fixed; inset: 0; z-index: 10000; display: flex; align-items: center; justify-content: center;
                 padding: 16px; box-sizing: border-box; background: rgba(0,0,0,0.6);
-                --je-subsearch-accent: ${accent};
+                --je-subsync-accent: ${accent};
             }
-            #${OVERLAY_ID} .je-subsearch-dialog {
+            #${OVERLAY_ID} .je-subsync-dialog {
                 display: flex; flex-direction: column; width: min(680px, 100%); max-height: min(80vh, 760px);
                 background: rgba(24,24,24,0.97); color: #fff; border: 1px solid rgba(255,255,255,0.12);
                 border-radius: 12px; box-shadow: 0 16px 48px rgba(0,0,0,0.6); overflow: hidden; font-size: 15px;
             }
-            #${OVERLAY_ID} .je-subsearch-head { display: flex; align-items: flex-start; gap: 12px; padding: 16px 16px 8px 20px; }
-            #${OVERLAY_ID} .je-subsearch-titles { flex: 1; min-width: 0; }
-            #${OVERLAY_ID} .je-subsearch-title { margin: 0; font-size: 1.15em; font-weight: 600; }
-            #${OVERLAY_ID} .je-subsearch-track { margin-top: 2px; font-size: 0.85em; color: rgba(255,255,255,0.65); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-            #${OVERLAY_ID} .je-subsearch-icon-btn {
+            #${OVERLAY_ID} .je-subsync-head { display: flex; align-items: flex-start; gap: 12px; padding: 16px 16px 8px 20px; }
+            #${OVERLAY_ID} .je-subsync-titles { flex: 1; min-width: 0; }
+            #${OVERLAY_ID} .je-subsync-title { margin: 0; font-size: 1.15em; font-weight: 600; }
+            #${OVERLAY_ID} .je-subsync-track { margin-top: 2px; font-size: 0.85em; color: rgba(255,255,255,0.65); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+            #${OVERLAY_ID} .je-subsync-icon-btn {
                 flex: none; display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px;
                 border: 0; border-radius: 50%; background: transparent; color: inherit; cursor: pointer; padding: 0;
             }
-            #${OVERLAY_ID} .je-subsearch-icon-btn:hover, #${OVERLAY_ID} .je-subsearch-icon-btn:focus-visible { background: rgba(255,255,255,0.12); outline: none; }
-            #${OVERLAY_ID} .je-subsearch-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; padding: 0 20px 10px; font-size: 0.85em; color: rgba(255,255,255,0.75); }
-            #${OVERLAY_ID} .je-subsearch-meta b { color: #fff; font-variant-numeric: tabular-nums; }
-            #${OVERLAY_ID} .je-subsearch-reset {
+            #${OVERLAY_ID} .je-subsync-icon-btn:hover, #${OVERLAY_ID} .je-subsync-icon-btn:focus-visible { background: rgba(255,255,255,0.12); outline: none; }
+            #${OVERLAY_ID} .je-subsync-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; padding: 0 20px 10px; font-size: 0.85em; color: rgba(255,255,255,0.75); }
+            #${OVERLAY_ID} .je-subsync-meta b { color: #fff; font-variant-numeric: tabular-nums; }
+            #${OVERLAY_ID} .je-subsync-reset {
                 border: 1px solid rgba(255,255,255,0.25); background: transparent; color: inherit; border-radius: 999px;
                 padding: 2px 10px; font: inherit; cursor: pointer;
             }
-            #${OVERLAY_ID} .je-subsearch-reset:hover, #${OVERLAY_ID} .je-subsearch-reset:focus-visible { border-color: var(--je-subsearch-accent); outline: none; }
-            #${OVERLAY_ID} .je-subsearch-reset[hidden] { display: none; }
-            #${OVERLAY_ID} .je-subsearch-search { padding: 0 16px 8px; }
-            #${OVERLAY_ID} .je-subsearch-input {
+            #${OVERLAY_ID} .je-subsync-reset:hover, #${OVERLAY_ID} .je-subsync-reset:focus-visible { border-color: var(--je-subsync-accent); outline: none; }
+            #${OVERLAY_ID} .je-subsync-reset[hidden] { display: none; }
+            #${OVERLAY_ID} .je-subsync-search { padding: 0 16px 8px; }
+            #${OVERLAY_ID} .je-subsync-input {
                 width: 100%; box-sizing: border-box; padding: 10px 12px; border-radius: 8px; font: inherit; color: #fff;
                 background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.18);
             }
-            #${OVERLAY_ID} .je-subsearch-input:focus { outline: none; border-color: var(--je-subsearch-accent); }
-            #${OVERLAY_ID} .je-subsearch-hint { padding: 0 20px 8px; font-size: 0.8em; color: rgba(255,255,255,0.6); }
-            #${OVERLAY_ID} .je-subsearch-status { padding: 4px 20px 8px; font-size: 0.85em; }
-            #${OVERLAY_ID} .je-subsearch-status:empty { display: none; }
-            #${OVERLAY_ID} .je-subsearch-status[data-kind="error"] { color: #ff8a80; }
-            #${OVERLAY_ID} .je-subsearch-status button { margin-left: 8px; }
-            #${OVERLAY_ID} .je-subsearch-list { list-style: none; margin: 0; padding: 0 8px 8px; overflow-y: auto; flex: 1; min-height: 0; overscroll-behavior: contain; }
-            #${OVERLAY_ID} .je-subsearch-row { display: flex; align-items: stretch; border-radius: 8px; }
-            #${OVERLAY_ID} .je-subsearch-row[hidden] { display: none; }
-            #${OVERLAY_ID} .je-subsearch-row.is-current { background: rgba(255,255,255,0.07); box-shadow: inset 3px 0 0 var(--je-subsearch-accent); }
-            #${OVERLAY_ID} .je-subsearch-line {
+            #${OVERLAY_ID} .je-subsync-input:focus { outline: none; border-color: var(--je-subsync-accent); }
+            #${OVERLAY_ID} .je-subsync-hint { padding: 0 20px 8px; font-size: 0.8em; color: rgba(255,255,255,0.6); }
+            #${OVERLAY_ID} .je-subsync-status { padding: 4px 20px 8px; font-size: 0.85em; }
+            #${OVERLAY_ID} .je-subsync-status:empty { display: none; }
+            #${OVERLAY_ID} .je-subsync-status[data-kind="error"] { color: #ff8a80; }
+            #${OVERLAY_ID} .je-subsync-status button { margin-left: 8px; }
+            #${OVERLAY_ID} .je-subsync-list { list-style: none; margin: 0; padding: 0 8px 8px; overflow-y: auto; flex: 1; min-height: 0; overscroll-behavior: contain; }
+            #${OVERLAY_ID} .je-subsync-row { display: flex; align-items: stretch; border-radius: 8px; }
+            #${OVERLAY_ID} .je-subsync-row[hidden] { display: none; }
+            #${OVERLAY_ID} .je-subsync-row.is-current { background: rgba(255,255,255,0.07); box-shadow: inset 3px 0 0 var(--je-subsync-accent); }
+            #${OVERLAY_ID} .je-subsync-line {
                 flex: 1; min-width: 0; display: flex; gap: 12px; align-items: baseline; text-align: left; padding: 8px 10px;
                 border: 0; border-radius: 8px; background: transparent; color: inherit; font: inherit; cursor: pointer;
             }
-            #${OVERLAY_ID} .je-subsearch-line:hover, #${OVERLAY_ID} .je-subsearch-line:focus-visible { background: rgba(255,255,255,0.12); outline: none; }
-            #${OVERLAY_ID} .je-subsearch-time { flex: none; min-width: 4.2em; font-size: 0.85em; color: rgba(255,255,255,0.6); font-variant-numeric: tabular-nums; }
-            #${OVERLAY_ID} .je-subsearch-text { flex: 1; min-width: 0; white-space: pre-line; overflow-wrap: anywhere; }
-            #${OVERLAY_ID} .je-subsearch-jump { align-self: center; color: rgba(255,255,255,0.7); }
-            #${OVERLAY_ID} .je-subsearch-empty { padding: 24px 20px; text-align: center; color: rgba(255,255,255,0.6); }
-            #${OVERLAY_ID} .je-subsearch-foot { padding: 8px 20px 12px; font-size: 0.8em; color: rgba(255,255,255,0.55); border-top: 1px solid rgba(255,255,255,0.08); }
+            #${OVERLAY_ID} .je-subsync-line:hover, #${OVERLAY_ID} .je-subsync-line:focus-visible { background: rgba(255,255,255,0.12); outline: none; }
+            #${OVERLAY_ID} .je-subsync-time { flex: none; min-width: 4.2em; font-size: 0.85em; color: rgba(255,255,255,0.6); font-variant-numeric: tabular-nums; }
+            #${OVERLAY_ID} .je-subsync-text { flex: 1; min-width: 0; white-space: pre-line; overflow-wrap: anywhere; }
+            #${OVERLAY_ID} .je-subsync-jump { align-self: center; color: rgba(255,255,255,0.7); }
+            #${OVERLAY_ID} .je-subsync-empty { padding: 24px 20px; text-align: center; color: rgba(255,255,255,0.6); }
+            #${OVERLAY_ID} .je-subsync-foot { padding: 8px 20px 12px; font-size: 0.8em; color: rgba(255,255,255,0.55); border-top: 1px solid rgba(255,255,255,0.08); }
             #${OVERLAY_ID} .material-icons { font-size: 22px; }
             @media (max-width: 600px) {
                 #${OVERLAY_ID} { padding: 16px; align-items: flex-end; }
-                #${OVERLAY_ID} .je-subsearch-dialog { max-height: 85vh; }
+                #${OVERLAY_ID} .je-subsync-dialog { max-height: 85vh; }
             }
         `;
         if (JE.core?.ui?.injectCss) {
@@ -768,34 +768,34 @@
         overlay.id = OVERLAY_ID;
         overlay.setAttribute('data-je-own-keys', '');
         overlay.innerHTML = `
-            <div class="je-subsearch-dialog" role="dialog" aria-modal="true" aria-labelledby="je-subsearch-title">
-                <div class="je-subsearch-head">
-                    <div class="je-subsearch-titles">
-                        <h2 class="je-subsearch-title" id="je-subsearch-title"></h2>
-                        <div class="je-subsearch-track"></div>
+            <div class="je-subsync-dialog" role="dialog" aria-modal="true" aria-labelledby="je-subsync-title">
+                <div class="je-subsync-head">
+                    <div class="je-subsync-titles">
+                        <h2 class="je-subsync-title" id="je-subsync-title"></h2>
+                        <div class="je-subsync-track"></div>
                     </div>
-                    <button type="button" class="je-subsearch-icon-btn je-subsearch-close"><span class="material-icons close" aria-hidden="true"></span></button>
+                    <button type="button" class="je-subsync-icon-btn je-subsync-close"><span class="material-icons close" aria-hidden="true"></span></button>
                 </div>
-                <div class="je-subsearch-meta">
-                    <span class="je-subsearch-anchor"></span>
-                    <span class="je-subsearch-offset"></span>
-                    <button type="button" class="je-subsearch-reset" hidden></button>
+                <div class="je-subsync-meta">
+                    <span class="je-subsync-anchor"></span>
+                    <span class="je-subsync-offset"></span>
+                    <button type="button" class="je-subsync-reset" hidden></button>
                 </div>
-                <div class="je-subsearch-search"><input type="search" class="je-subsearch-input" autocomplete="off" spellcheck="false" enterkeyhint="search"></div>
-                <div class="je-subsearch-hint"></div>
-                <div class="je-subsearch-status" role="status" aria-live="polite"></div>
-                <ul class="je-subsearch-list"></ul>
-                <div class="je-subsearch-foot" aria-live="polite"></div>
+                <div class="je-subsync-search"><input type="search" class="je-subsync-input" autocomplete="off" spellcheck="false" enterkeyhint="search"></div>
+                <div class="je-subsync-hint"></div>
+                <div class="je-subsync-status" role="status" aria-live="polite"></div>
+                <ul class="je-subsync-list"></ul>
+                <div class="je-subsync-foot" aria-live="polite"></div>
             </div>`;
-        const title = tr('subtitle_search_title', 'Subtitle lines');
-        overlay.querySelector('.je-subsearch-title').textContent = title;
-        const close = overlay.querySelector('.je-subsearch-close');
-        close.title = tr('subtitle_search_close', 'Close');
+        const title = tr('subtitle_sync_title', 'Sync subtitles');
+        overlay.querySelector('.je-subsync-title').textContent = title;
+        const close = overlay.querySelector('.je-subsync-close');
+        close.title = tr('subtitle_sync_close', 'Close');
         close.setAttribute('aria-label', close.title);
-        const input = /** @type {HTMLInputElement} */ (overlay.querySelector('.je-subsearch-input'));
-        input.placeholder = tr('subtitle_search_placeholder', 'Search the subtitles');
+        const input = /** @type {HTMLInputElement} */ (overlay.querySelector('.je-subsync-input'));
+        input.placeholder = tr('subtitle_sync_placeholder', 'Search the subtitles');
         input.setAttribute('aria-label', input.placeholder);
-        overlay.querySelector('.je-subsearch-reset').textContent = tr('subtitle_search_reset', 'Reset offset');
+        overlay.querySelector('.je-subsync-reset').textContent = tr('subtitle_sync_reset', 'Reset offset');
         return overlay;
     }
 
@@ -807,7 +807,7 @@
      * @param {{label: string, run: () => void}} [action]
      */
     function setStatus(state, text, kind, action) {
-        const box = state.overlay.querySelector('.je-subsearch-status');
+        const box = state.overlay.querySelector('.je-subsync-status');
         box.replaceChildren();
         box.dataset.kind = kind || 'info';
         if (!text) return;
@@ -815,7 +815,7 @@
         if (action) {
             const btn = document.createElement('button');
             btn.type = 'button';
-            btn.className = 'je-subsearch-reset';
+            btn.className = 'je-subsync-reset';
             btn.textContent = action.label;
             btn.addEventListener('click', action.run);
             box.append(btn);
@@ -830,31 +830,31 @@
     function refreshMeta(state) {
         const offset = effectiveOffset(state);
         const o = offset === null ? 0 : offset;
-        state.overlay.querySelector('.je-subsearch-anchor').textContent =
-            tr('subtitle_search_sync_point', 'Heard at {time}', { time: formatTime(state.anchor) });
-        const offsetEl = state.overlay.querySelector('.je-subsearch-offset');
+        state.overlay.querySelector('.je-subsync-anchor').textContent =
+            tr('subtitle_sync_sync_point', 'Heard at {time}', { time: formatTime(state.anchor) });
+        const offsetEl = state.overlay.querySelector('.je-subsync-offset');
         // Only with a track listed that the offset moves: without one the slider may still hold an
         // earlier track's value, and burned-in subtitles don't move with it.
         const showOffset = offset !== null && !!(state.lines && state.lines.length) && syncSupport(state.video).ok;
-        offsetEl.textContent = showOffset ? tr('subtitle_search_offset', 'Offset {offset}', { offset: formatOffset(o) }) : '';
-        const reset = /** @type {HTMLButtonElement} */ (state.overlay.querySelector('.je-subsearch-reset'));
+        offsetEl.textContent = showOffset ? tr('subtitle_sync_offset', 'Offset {offset}', { offset: formatOffset(o) }) : '';
+        const reset = /** @type {HTMLButtonElement} */ (state.overlay.querySelector('.je-subsync-reset'));
         reset.hidden = !showOffset || roundOffset(o) === 0;
         const support = syncSupport(state.video);
         state.supportShown = support.ok;
-        const hint = state.overlay.querySelector('.je-subsearch-hint');
+        const hint = state.overlay.querySelector('.je-subsync-hint');
         if (!state.lines || !state.lines.length) {
             hint.textContent = '';
         } else if (support.ok) {
-            hint.textContent = tr('subtitle_search_hint', 'Choose the line you just heard to sync the subtitles to it. The arrow button jumps to a line.');
+            hint.textContent = tr('subtitle_sync_hint', 'Choose the line you just heard to sync the subtitles to it. The arrow button jumps to a line.');
         } else if (support.reason === 'burned') {
-            hint.textContent = tr('subtitle_search_hint_burned', 'These subtitles are part of the video picture, so they can\'t be shifted. Choosing a line jumps to it.');
+            hint.textContent = tr('subtitle_sync_hint_burned', 'These subtitles are part of the video picture, so they can\'t be shifted. Choosing a line jumps to it.');
         } else {
-            hint.textContent = tr('subtitle_search_hint_unavailable', 'This player can\'t shift subtitles. Choosing a line jumps to it.');
+            hint.textContent = tr('subtitle_sync_hint_unavailable', 'This player can\'t shift subtitles. Choosing a line jumps to it.');
         }
         if (state.lines) {
             const currentIndex = lineIndexAt(state.lines, state.anchor, o);
             for (const [index, row] of state.rows) {
-                row.querySelector('.je-subsearch-time').textContent = formatTime(state.lines[index].start - o);
+                row.querySelector('.je-subsync-time').textContent = formatTime(state.lines[index].start - o);
                 row.classList.toggle('is-current', index === currentIndex);
             }
         }
@@ -865,26 +865,26 @@
      * @param {DialogState} state
      */
     function renderLines(state) {
-        const list = state.overlay.querySelector('.je-subsearch-list');
+        const list = state.overlay.querySelector('.je-subsync-list');
         const fragment = document.createDocumentFragment();
         state.rows = new Map();
-        const jumpLabel = tr('subtitle_search_jump', 'Go to this line');
+        const jumpLabel = tr('subtitle_sync_jump', 'Go to this line');
         for (const line of state.lines || []) {
             const row = document.createElement('li');
-            row.className = 'je-subsearch-row';
+            row.className = 'je-subsync-row';
             row.dataset.index = String(line.index);
             const main = document.createElement('button');
             main.type = 'button';
-            main.className = 'je-subsearch-line';
+            main.className = 'je-subsync-line';
             const time = document.createElement('span');
-            time.className = 'je-subsearch-time';
+            time.className = 'je-subsync-time';
             const text = document.createElement('span');
-            text.className = 'je-subsearch-text';
+            text.className = 'je-subsync-text';
             text.textContent = line.text;
             main.append(time, text);
             const jump = document.createElement('button');
             jump.type = 'button';
-            jump.className = 'je-subsearch-icon-btn je-subsearch-jump';
+            jump.className = 'je-subsync-icon-btn je-subsync-jump';
             jump.title = jumpLabel;
             jump.setAttribute('aria-label', jumpLabel);
             jump.innerHTML = '<span class="material-icons redo" aria-hidden="true"></span>';
@@ -904,26 +904,26 @@
      */
     function applyFilter(state) {
         if (!state.lines) return;
-        const query = /** @type {HTMLInputElement} */ (state.overlay.querySelector('.je-subsearch-input')).value;
+        const query = /** @type {HTMLInputElement} */ (state.overlay.querySelector('.je-subsync-input')).value;
         const matches = filterLines(state.lines, query);
         const shown = new Set(matches.map(line => line.index));
         for (const [index, row] of state.rows) row.hidden = !shown.has(index);
-        const list = state.overlay.querySelector('.je-subsearch-list');
-        let empty = list.querySelector('.je-subsearch-empty');
+        const list = state.overlay.querySelector('.je-subsync-list');
+        let empty = list.querySelector('.je-subsync-empty');
         if (!matches.length && state.lines.length) {
             if (!empty) {
                 empty = document.createElement('li');
-                empty.className = 'je-subsearch-empty';
+                empty.className = 'je-subsync-empty';
                 list.append(empty);
             }
-            empty.textContent = tr('subtitle_search_no_match', 'No lines match your search.');
+            empty.textContent = tr('subtitle_sync_no_match', 'No lines match your search.');
         } else if (empty) {
             empty.remove();
         }
-        state.overlay.querySelector('.je-subsearch-foot').textContent =
-            tr('subtitle_search_count', '{shown} of {total} lines', { shown: matches.length, total: state.lines.length });
+        state.overlay.querySelector('.je-subsync-foot').textContent =
+            tr('subtitle_sync_count', '{shown} of {total} lines', { shown: matches.length, total: state.lines.length });
         if (!searchKey(query)) {
-            const current = list.querySelector('.je-subsearch-row.is-current');
+            const current = list.querySelector('.je-subsync-row.is-current');
             if (current) current.scrollIntoView({ block: 'center' });
         } else {
             list.scrollTop = 0;
@@ -1034,7 +1034,7 @@
         } catch (err) {
             // The track's description is only for the label and the image check; the lines
             // request below still tells whether the track has text.
-            console.warn('🪼 Jellyfin Enhanced: subtitle search item lookup failed', err);
+            console.warn('🪼 Jellyfin Enhanced: subtitle sync item lookup failed', err);
         }
         if (!isCurrent(state)) return null;
         if (!stream) {
@@ -1076,7 +1076,7 @@
      * @param {DialogState} state
      */
     async function populate(state) {
-        setStatus(state, tr('subtitle_search_loading', 'Loading the subtitle lines…'));
+        setStatus(state, tr('subtitle_sync_loading', 'Loading the subtitle lines…'));
         // What drew the subtitles before anything was looked up, to check the answer against.
         catchUpSubtitleChanges();
         const startRenderer = rendererOf(state.video);
@@ -1085,26 +1085,26 @@
         try {
             track = await resolveTrack(state);
         } catch (err) {
-            console.warn('🪼 Jellyfin Enhanced: subtitle search track lookup failed', err);
+            console.warn('🪼 Jellyfin Enhanced: subtitle sync track lookup failed', err);
             track = { error: 'session' };
         }
         if (!track || !isCurrent(state)) return;
         const label = trackLabel(track.stream || null);
-        state.overlay.querySelector('.je-subsearch-track').textContent = label;
+        state.overlay.querySelector('.je-subsync-track').textContent = label;
         if ('error' in track) {
             if (track.error === 'none') {
-                setStatus(state, tr('subtitle_search_none', 'Turn on a subtitle track first.'), 'info', {
-                    label: tr('subtitle_search_choose_track', 'Choose subtitles'),
+                setStatus(state, tr('subtitle_sync_none', 'Turn on a subtitle track first.'), 'info', {
+                    label: tr('subtitle_sync_choose_track', 'Choose subtitles'),
                     run: () => {
                         closeDialog();
                         document.querySelector('.videoOsdBottom .btnSubtitles')?.click();
                     }
                 });
             } else if (track.error === 'image') {
-                setStatus(state, tr('subtitle_search_image', 'This subtitle track is made of images, so its lines can\'t be listed.'), 'info');
+                setStatus(state, tr('subtitle_sync_image', 'This subtitle track is made of images, so its lines can\'t be listed.'), 'info');
             } else {
-                setStatus(state, tr('subtitle_search_error_session', 'Couldn\'t tell which subtitles are playing.'), 'error', {
-                    label: tr('subtitle_search_retry', 'Try again'), run: () => populate(state)
+                setStatus(state, tr('subtitle_sync_error_session', 'Couldn\'t tell which subtitles are playing.'), 'error', {
+                    label: tr('subtitle_sync_retry', 'Try again'), run: () => populate(state)
                 });
             }
             return;
@@ -1115,14 +1115,14 @@
         } catch (err) {
             if (!isCurrent(state)) return;
             console.warn('🪼 Jellyfin Enhanced: subtitle lines request failed', err);
-            setStatus(state, tr('subtitle_search_error_load', 'Couldn\'t load the subtitle lines.'), 'error', {
-                label: tr('subtitle_search_retry', 'Try again'), run: () => populate(state)
+            setStatus(state, tr('subtitle_sync_error_load', 'Couldn\'t load the subtitle lines.'), 'error', {
+                label: tr('subtitle_sync_retry', 'Try again'), run: () => populate(state)
             });
             return;
         }
         if (!isCurrent(state)) return;
         if (!lines.length) {
-            setStatus(state, tr('subtitle_search_empty', 'This subtitle track has no lines.'), 'info');
+            setStatus(state, tr('subtitle_sync_empty', 'This subtitle track has no lines.'), 'info');
             return;
         }
         // The answer describes the subtitles that were on screen when the lookup started. If they
@@ -1153,11 +1153,11 @@
         state.lines = null;
         state.renderer = null;
         state.rows = new Map();
-        state.overlay.querySelector('.je-subsearch-list').replaceChildren();
-        state.overlay.querySelector('.je-subsearch-foot').textContent = '';
+        state.overlay.querySelector('.je-subsync-list').replaceChildren();
+        state.overlay.querySelector('.je-subsync-foot').textContent = '';
         refreshMeta(state);
-        setStatus(state, tr('subtitle_search_stale', 'These lines don\'t match the subtitles on screen.'), 'error', {
-            label: tr('subtitle_search_reload', 'Reload'), run: () => populate(state)
+        setStatus(state, tr('subtitle_sync_stale', 'These lines don\'t match the subtitles on screen.'), 'error', {
+            label: tr('subtitle_sync_reload', 'Reload'), run: () => populate(state)
         });
     }
 
@@ -1189,17 +1189,17 @@
         }
         const offset = syncOffsetFor(line.start, state.anchor);
         if (!offsetInRange(offset)) {
-            setStatus(state, tr('subtitle_search_too_far', 'That line is {offset} away. Jellyfin can shift subtitles by up to {max} seconds.', {
+            setStatus(state, tr('subtitle_sync_too_far', 'That line is {offset} away. Jellyfin can shift subtitles by up to {max} seconds.', {
                 offset: formatOffset(offset), max: MAX_OFFSET_SECONDS
             }), 'error');
             return;
         }
         if (typeof JE.setSubtitleOffset !== 'function' || !JE.setSubtitleOffset(offset)) {
-            setStatus(state, tr('subtitle_search_hint_unavailable', 'This player can\'t shift subtitles. Choosing a line jumps to it.'), 'error');
+            setStatus(state, tr('subtitle_sync_hint_unavailable', 'This player can\'t shift subtitles. Choosing a line jumps to it.'), 'error');
             refreshMeta(state);
             return;
         }
-        JE.toast?.(tr('subtitle_search_synced', 'Subtitles synced ({offset})', { offset: formatOffset(offset) }));
+        JE.toast?.(tr('subtitle_sync_synced', 'Subtitles synced ({offset})', { offset: formatOffset(offset) }));
         closeDialog();
     }
 
@@ -1222,7 +1222,7 @@
         const offset = effectiveOffset(state) || 0;
         const elementTime = Math.max(0, line.start - offset) - transcodeOffsetSeconds(state.video);
         if (isProgressiveTranscode(videoSrc(state.video)) && !withinSeekable(state.video, elementTime)) {
-            setStatus(state, tr('subtitle_search_jump_unavailable', 'This stream can only jump within the part the server has prepared so far, and that line is outside it.'), 'error');
+            setStatus(state, tr('subtitle_sync_jump_unavailable', 'This stream can only jump within the part the server has prepared so far, and that line is outside it.'), 'error');
             return;
         }
         state.video.currentTime = Math.max(0, elementTime);
@@ -1243,7 +1243,7 @@
                 if (time >= ranges.start(i) && time <= ranges.end(i)) return true;
             }
         } catch (err) {
-            console.warn('🪼 Jellyfin Enhanced: subtitle search seekable check failed', err);
+            console.warn('🪼 Jellyfin Enhanced: subtitle sync seekable check failed', err);
         }
         return false;
     }
@@ -1273,20 +1273,20 @@
      * @returns {boolean} Whether focus moved.
      */
     function moveFocus(state, from, step) {
-        const buttons = Array.from(state.overlay.querySelectorAll('.je-subsearch-row:not([hidden]) .je-subsearch-line'));
+        const buttons = Array.from(state.overlay.querySelectorAll('.je-subsync-row:not([hidden]) .je-subsync-line'));
         if (!buttons.length) return false;
-        const input = state.overlay.querySelector('.je-subsearch-input');
+        const input = state.overlay.querySelector('.je-subsync-input');
         if (from === input) {
             if (step < 0) return false;
             // Into the list at the highlighted line when it is shown, else at the first match.
-            const current = state.overlay.querySelector('.je-subsearch-row.is-current:not([hidden]) .je-subsearch-line');
+            const current = state.overlay.querySelector('.je-subsync-row.is-current:not([hidden]) .je-subsync-line');
             const first = /** @type {HTMLElement} */ (current || buttons[0]);
             first.focus();
             first.scrollIntoView({ block: 'nearest' });
             return true;
         }
-        const row = from.closest('.je-subsearch-row');
-        const at = row ? buttons.indexOf(row.querySelector('.je-subsearch-line')) : -1;
+        const row = from.closest('.je-subsync-row');
+        const at = row ? buttons.indexOf(row.querySelector('.je-subsync-line')) : -1;
         if (at === -1) return false;
         const next = at + step;
         if (next < 0) {
@@ -1339,7 +1339,7 @@
             if (moveFocus(state, target, key === 'ArrowDown' ? 1 : -1)) e.preventDefault();
             return;
         }
-        if ((key === 'Enter' || key === 'GamepadA') && target.classList.contains('je-subsearch-input')) {
+        if ((key === 'Enter' || key === 'GamepadA') && target.classList.contains('je-subsync-input')) {
             e.preventDefault();
             moveFocus(state, target, 1);
             return;
@@ -1364,11 +1364,11 @@
             }
             return;
         }
-        if (target.classList.contains('je-subsearch-input')) return;
+        if (target.classList.contains('je-subsync-input')) return;
         // The open shortcut closes the dialog again.
         const combo = typeof JE.keyCombo === 'function' ? JE.keyCombo(e) : null;
         const canonical = JE.internals?.canonicalCombo;
-        const bound = JE.state?.activeShortcuts?.SubtitleSearch;
+        const bound = JE.state?.activeShortcuts?.SubtitleSync;
         if (combo && bound && (typeof canonical === 'function' ? canonical(bound) === canonical(combo) : bound === combo)) {
             e.preventDefault();
             closeDialog();
@@ -1381,7 +1381,7 @@
     function openDialog() {
         if (dialog) {
             if (isCurrent(dialog)) {
-                /** @type {HTMLElement|null} */ (dialog.overlay.querySelector('.je-subsearch-input'))?.focus();
+                /** @type {HTMLElement|null} */ (dialog.overlay.querySelector('.je-subsync-input'))?.focus();
                 return;
             }
             closeDialog({ resume: false });
@@ -1436,33 +1436,33 @@
                 closeDialog();
                 return;
             }
-            if (target.closest('.je-subsearch-close')) {
+            if (target.closest('.je-subsync-close')) {
                 closeDialog();
                 return;
             }
-            if (target.closest('.je-subsearch-meta .je-subsearch-reset')) {
+            if (target.closest('.je-subsync-meta .je-subsync-reset')) {
                 if (typeof JE.setSubtitleOffset === 'function' && JE.setSubtitleOffset(0)) {
-                    JE.toast?.(tr('subtitle_search_offset_reset', 'Subtitle offset reset'));
+                    JE.toast?.(tr('subtitle_sync_offset_reset', 'Subtitle offset reset'));
                 }
                 refreshMeta(state);
                 // jellyfin-web applies an offset 100 ms later (debounced); measure again after.
                 setTimeout(() => {
                     if (dialog === state) refreshMeta(state);
                 }, 250);
-                /** @type {HTMLElement|null} */ (overlay.querySelector('.je-subsearch-input'))?.focus();
+                /** @type {HTMLElement|null} */ (overlay.querySelector('.je-subsync-input'))?.focus();
                 return;
             }
-            const row = target.closest('.je-subsearch-row');
+            const row = target.closest('.je-subsync-row');
             if (!row || !state.lines) return;
             const line = state.lines[Number(row.dataset.index)];
             if (!line) return;
-            if (target.closest('.je-subsearch-jump')) {
+            if (target.closest('.je-subsync-jump')) {
                 jumpToLine(state, line);
-            } else if (target.closest('.je-subsearch-line')) {
+            } else if (target.closest('.je-subsync-line')) {
                 chooseLine(state, line);
             }
         });
-        const input = /** @type {HTMLInputElement} */ (overlay.querySelector('.je-subsearch-input'));
+        const input = /** @type {HTMLInputElement} */ (overlay.querySelector('.je-subsync-input'));
         input.addEventListener('input', () => {
             clearTimeout(state.searchTimer);
             state.searchTimer = setTimeout(() => {
@@ -1517,7 +1517,7 @@
         dialog = null;
         state.abort.abort();
         for (const fn of state.cleanup) {
-            try { fn(); } catch (err) { console.warn('🪼 Jellyfin Enhanced: subtitle search cleanup failed', err); }
+            try { fn(); } catch (err) { console.warn('🪼 Jellyfin Enhanced: subtitle sync cleanup failed', err); }
         }
         state.overlay.remove();
         const video = state.video;
@@ -1572,7 +1572,7 @@
     /**
      * Opens the dialog, or closes it when it is open (the keyboard shortcut).
      */
-    JE.toggleSubtitleSearch = () => {
+    JE.toggleSubtitleSync = () => {
         if (dialog && isCurrent(dialog)) {
             closeDialog();
         } else {
@@ -1581,15 +1581,15 @@
     };
 
     /**
-     * Adds the Subtitle search button after jellyfin-web's Subtitles button in the player, or
+     * Adds the Subtitle Sync button after jellyfin-web's Subtitles button in the player, or
      * removes it when the setting is off. It hides with the Subtitles button through CSS.
      * Called on every video-page DOM update, which also notes subtitle changes on screen as they
      * happen (see effectiveOffset and probeFreshSession), whether or not the button is shown.
      */
-    JE.addSubtitleSearchButton = () => {
+    JE.addSubtitleSyncButton = () => {
         noteRenderer();
         const existing = document.getElementById(BUTTON_ID);
-        if (JE.currentSettings?.subtitleSearchButtonEnabled !== true) {
+        if (JE.currentSettings?.subtitleSyncButtonEnabled !== true) {
             existing?.remove();
             return;
         }
@@ -1598,7 +1598,7 @@
         if (existing && existing.previousElementSibling === subtitlesButton) return;
         existing?.remove();
         injectStyles();
-        const label = tr('subtitle_search_button', 'Search subtitles');
+        const label = tr('subtitle_sync_button', 'Search subtitles');
         const button = document.createElement('button');
         button.id = BUTTON_ID;
         button.type = 'button';
@@ -1614,13 +1614,13 @@
         subtitlesButton.insertAdjacentElement('afterend', button);
     };
 
-    JE.session?.onUserChange?.('subtitle-search', () => {
+    JE.session?.onUserChange?.('subtitle-sync', () => {
         closeDialog({ resume: false });
         lineCache = null;
     });
 
     JE.internals = JE.internals || {};
-    JE.internals.subtitleSearch = {
+    JE.internals.subtitleSync = {
         MAX_OFFSET_SECONDS,
         cleanLineText,
         searchKey,

@@ -6,7 +6,7 @@ const toggles = ['autoPauseToggle', 'autoResumeToggle', 'autoPipToggle', 'autoSk
   'randomButtonToggle', 'randomUnwatchedOnly', 'randomScopeCurrentContainer', 'showWatchProgressToggle', 'showFileSizesToggle',
   'showAudioLanguagesToggle', 'removeContinueWatchingToggle', 'qualityTagsToggle', 'genreTagsToggle', 'pauseScreenToggle',
   'languageTagsToggle', 'ratingTagsToggle', 'ageRatingTagsToggle', 'statusTagsToggle', 'logoTagsToggle', 'customTagsToggle', 'peopleTagsToggle', 'tagsHideOnHoverToggle',
-  'disableCustomSubtitleStyles', 'longPress2xEnabled', 'subtitleSearchButtonEnabled', 'nativePosterTagsToggle'];
+  'disableCustomSubtitleStyles', 'longPress2xEnabled', 'subtitleSyncButtonEnabled', 'nativePosterTagsToggle'];
 function setup(t, config = {}) {
   const writes = [], toasts = [];
   const h = createHarness({ html: toggles.map(id => `<input type="checkbox" id="${id}">`).join('') + '<input id="pauseScreenDelayInput"><div id="statusTagsSubToggles">' + ['statusTagsSchedule', 'statusTagsMilestones', 'statusTagsSeriesStatus'].map(key => `<div class="je-quality-cat-row" data-cat-key="${key}"><input id="${key}Toggle" type="checkbox"></div>`).join('') + '</div>',
@@ -47,20 +47,20 @@ for (const enabled of [false, true]) test(`native poster preference is editable 
   if (enabled) assert.equal(JSON.parse(h.writes[0].data).useNativePosterTags, false);
 });
 
-test('subtitle search button setting starts from the admin default, keeps a personal choice, saves and updates the player', async t => {
-  const inherited = setup(t, { SubtitleSearchButtonEnabled: true });
-  assert.equal(inherited.JE.currentSettings.subtitleSearchButtonEnabled, true);
-  assert.equal(setup(t, {}).JE.currentSettings.subtitleSearchButtonEnabled, false);
-  const h = setup(t, { SubtitleSearchButtonEnabled: true });
-  h.JE.userConfig.settings.subtitleSearchButtonEnabled = false;
+test('subtitle sync button setting starts from the admin default, keeps a personal choice, saves and updates the player', async t => {
+  const inherited = setup(t, { SubtitleSyncButtonEnabled: true });
+  assert.equal(inherited.JE.currentSettings.subtitleSyncButtonEnabled, true);
+  assert.equal(setup(t, {}).JE.currentSettings.subtitleSyncButtonEnabled, false);
+  const h = setup(t, { SubtitleSyncButtonEnabled: true });
+  h.JE.userConfig.settings.subtitleSyncButtonEnabled = false;
   h.JE.currentSettings = h.JE.loadSettings();
-  assert.equal(h.JE.currentSettings.subtitleSearchButtonEnabled, false, 'a personal choice wins over the admin default');
+  assert.equal(h.JE.currentSettings.subtitleSyncButtonEnabled, false, 'a personal choice wins over the admin default');
   let updates = 0;
-  h.JE.addSubtitleSearchButton = () => updates++;
-  await h.change('subtitleSearchButtonEnabled', true);
-  assert.equal(JSON.parse(h.writes.at(-1).data).subtitleSearchButtonEnabled, true);
+  h.JE.addSubtitleSyncButton = () => updates++;
+  await h.change('subtitleSyncButtonEnabled', true);
+  assert.equal(JSON.parse(h.writes.at(-1).data).subtitleSyncButtonEnabled, true);
   assert.equal(updates, 1);
-  assert.deepEqual(h.toasts, ['feature_subtitle_search_button:true']);
+  assert.deepEqual(h.toasts, ['feature_subtitle_sync_button:true']);
 });
 
 test('quality toggle initializes on enable and removes overlays on disable while persisting each choice', async t => {
