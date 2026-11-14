@@ -1091,6 +1091,8 @@
     }
 
     let _subOffsetHideTimer = null;
+    /** How many times JE has set the subtitle offset; subtitle-search.js compares it. */
+    let _subOffsetWrites = 0;
 
     /**
      * Sets the subtitle offset by driving jellyfin-web's own subtitle sync slider
@@ -1105,6 +1107,7 @@
         const box = document.querySelector('.subtitleSyncContainer');
         if (!slider || !box || typeof slider.updateOffset !== 'function') return false;
         slider.updateOffset(Math.round(seconds * 10) / 10);
+        _subOffsetWrites++;
         box.classList.remove('hide');
         clearTimeout(_subOffsetHideTimer);
         _subOffsetHideTimer = setTimeout(() => box.classList.add('hide'), 2000);
@@ -1565,7 +1568,8 @@
     JE.internals.player = Object.assign(JE.internals.player || {}, {
         getVideo,
         getCurrentVideoItemId,
-        probeOwnSession
+        probeOwnSession,
+        subtitleOffsetWrites: () => _subOffsetWrites
     });
 
 })(window.JellyfinEnhanced);

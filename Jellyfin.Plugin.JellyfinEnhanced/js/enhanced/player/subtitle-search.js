@@ -29,11 +29,21 @@
     const BUTTON_ID = 'je-subtitle-search-btn';
     const STYLE_ID = 'je-subtitle-search-style';
     const SEARCH_DEBOUNCE_MS = 80;
-    /** How long to wait for the server to show the dialog's pause (and so the current track). */
-    const SESSION_WAIT_MS = 4000;
-    const SESSION_POLL_MS = 250;
     /** Cues compared with the lines to tell whether they are the same track. */
     const CUE_SAMPLE_SIZE = 24;
+    /** Lines with unique text needed before a measured offset is trusted. */
+    const MIN_OFFSET_MATCHES = 3;
+    /**
+     * Waits, in milliseconds (read when used; the tests shorten them): `sessionWait` for the
+     * state report the dialog asks for, polled every `sessionPoll`; `lookup` for the item lookup.
+     */
+    const TIMEOUTS = { sessionWait: 12000, sessionPoll: 250, lookup: 8000 };
+    /**
+     * jellyfin-web reports its playback state (subtitle track included) on pause and at least
+     * every ten seconds otherwise (playbackManager's progress interval), so the server's answer
+     * can be this much older than what is on screen.
+     */
+    const REPORT_INTERVAL_MS = 11000;
 
     /**
      * Translates a key, falling back to English text when the key is missing.
@@ -194,10 +204,11 @@
 
     /**
      * Compares lines from the server with cues jellyfin-web is showing ({start, key} with key =
-     * searchKey of the cue's clean text). When most cues match a line's text at one consistent
-     * shift, they are the same track and the shift is the offset jellyfin-web applied (it moves
-     * each cue to start - offset). Returns that offset, 'mismatch' when the cues belong to
-     * different subtitles, or null when there is nothing to compare.
+     * searchKey of the cue's clean text). It is a different track when most cues' text is not
+     * among the lines. Otherwise the shift is measured only on texts that occur once in the
+     * lines, so a repeated line ("Yes.") can't pair a cue with the wrong occurrence; when most of
+     * those agree on one shift, it is the offset jellyfin-web applied (it moves each cue to
+     * start - offset). Returns that offset, 'mismatch', or null when it can't tell.
      * @param {SubtitleLine[]} lines
      * @param {Array<{start: number, key: string}>|null} sample
      * @returns {number|'mismatch'|null}
@@ -214,25 +225,22 @@
         }
         const diffs = [];
         let compared = 0;
+        let found = 0;
         for (const cue of sample) {
             if (!cue.key) continue;
             compared++;
             const starts = startsByKey.get(cue.key);
             if (!starts) continue;
-            let best = null;
-            for (const start of starts) {
-                const d = start - cue.start;
-                if (best === null || Math.abs(d) < Math.abs(best)) best = d;
-            }
-            diffs.push(best);
+            found++;
+            if (starts.length === 1) diffs.push(starts[0] - cue.start);
         }
         if (!compared) return null;
-        const needed = Math.ceil(compared * 0.6);
-        if (diffs.length < needed) return 'mismatch';
+        if (found < Math.ceil(compared * 0.6)) return 'mismatch';
+        if (diffs.length < MIN_OFFSET_MATCHES) return null;
         diffs.sort((a, b) => a - b);
         const median = diffs[diffs.length >> 1];
         const agreeing = diffs.filter(d => Math.abs(d - median) <= 0.05).length;
-        return agreeing < needed ? 'mismatch' : roundOffset(median);
+        return agreeing < Math.ceil(diffs.length * 0.6) ? null : roundOffset(median);
     }
 
     /**
@@ -341,9 +349,79 @@
     }
 
     /**
-     * The offset the dialog shows and jumps with. When jellyfin-web shows the lines as cues, it
-     * is measured from them: its slider keeps an old value after a track switch (the player
-     * resets the offset to 0 but the hidden slider is not updated). Otherwise the slider's.
+     * The element jellyfin-web draws the primary subtitles on when it doesn't use a cue track:
+     * its custom subtitle element or the libass canvas for ASS/SSA. It creates a new one for each
+     * track it shows, right after resetting the subtitle offset to 0 (htmlVideoPlayer
+     * setTrackForDisplay).
+     * @param {HTMLVideoElement} video
+     * @returns {Element|null}
+     */
+    function drawnSurface(video) {
+        const custom = document.querySelector('.videoSubtitles .videoSubtitlesInner');
+        if (custom) return custom;
+        const parent = video && video.parentElement;
+        return (parent && parent.querySelector('.libassjs-canvas-parent')) || null;
+    }
+
+    /** How many times JE has set the offset (JE.setSubtitleOffset in playback.js). */
+    function offsetWrites() {
+        const count = JE.internals?.player?.subtitleOffsetWrites;
+        return typeof count === 'function' ? count() : 0;
+    }
+
+    /**
+     * The drawn surface last seen on the page, with the slider value and JE's write count at
+     * that moment. Kept up to date on every video-page DOM update (JE.addSubtitleSearchButton),
+     * so a new surface is seen right after jellyfin-web creates it.
+     * @type {{surface: Element|null, slider: number|null, writes: number, atCreation: boolean}}
+     */
+    let surfaceSeen = { surface: null, slider: null, writes: 0, atCreation: false };
+
+    /** When the subtitles on screen last changed (shown, switched or turned off), by this page's clock. */
+    let subtitlesChangedAt = 0;
+
+    /** The text track list watched for subtitle changes. */
+    let watchedTrackList = null;
+
+    /** Notes a subtitle change on screen (jellyfin-web toggles its cue track's mode on each one). */
+    function onTrackListChange() {
+        subtitlesChangedAt = Date.now();
+    }
+
+    /**
+     * Watches the video's text track list for changes, moving to a new video element when the
+     * player replaces it.
+     * @param {HTMLVideoElement|null} video
+     */
+    function watchSubtitleChanges(video) {
+        const list = video && video.textTracks;
+        if (!list || list === watchedTrackList || typeof list.addEventListener !== 'function') return;
+        if (watchedTrackList && typeof watchedTrackList.removeEventListener === 'function') {
+            watchedTrackList.removeEventListener('change', onTrackListChange);
+        }
+        watchedTrackList = list;
+        list.addEventListener('change', onTrackListChange);
+    }
+
+    /**
+     * Records the drawn surface when it changed.
+     * @param {boolean} atCreation Whether this is the regular DOM-update check, which sees a new
+     *   surface as it appears (a first look from the dialog can't tell when it appeared).
+     */
+    function noteSurface(atCreation) {
+        const video = getVideo();
+        if (atCreation) watchSubtitleChanges(video);
+        const surface = video ? drawnSurface(video) : null;
+        if (surface === surfaceSeen.surface) return;
+        if (atCreation) subtitlesChangedAt = Date.now();
+        surfaceSeen = { surface, slider: currentOffset(), writes: offsetWrites(), atCreation };
+    }
+
+    /**
+     * The offset the dialog shows and jumps with. jellyfin-web's hidden slider keeps an earlier
+     * track's value after a track switch, while the player resets the offset to 0. With cues it
+     * is measured from them; on a drawn surface whose slider value hasn't changed since the
+     * surface appeared (and JE hasn't set it since), it is 0; otherwise the slider's.
      * @param {DialogState} state
      * @returns {number|null} null when the player has no subtitle offset.
      */
@@ -354,7 +432,25 @@
             const measured = measureOffset(state.lines, cueSample(state.video));
             if (typeof measured === 'number') return measured;
         }
+        noteSurface(false);
+        const surface = drawnSurface(state.video);
+        if (surface && surface === surfaceSeen.surface && surfaceSeen.atCreation
+            && slider === surfaceSeen.slider && offsetWrites() === surfaceSeen.writes) {
+            return 0;
+        }
         return slider;
+    }
+
+    /**
+     * Whether the listed lines are still the subtitles on screen: the drawn surface they were
+     * loaded with is still there, and the cues (when jellyfin-web uses them) match their text.
+     * @param {DialogState} state
+     * @returns {boolean}
+     */
+    function linesStillShown(state) {
+        if (!state.lines) return false;
+        if (state.drawn && drawnSurface(state.video) !== state.drawn) return false;
+        return measureOffset(state.lines, cueSample(state.video)) !== 'mismatch';
     }
 
     /**
@@ -429,6 +525,8 @@
      * @property {Array<() => void>} cleanup
      * @property {*} searchTimer
      * @property {boolean} supportShown Whether the hint currently says choosing a line syncs it.
+     * @property {string|null} sessionId This device's session, for a seek the element can't do.
+     * @property {Element|null} drawn The drawn subtitle surface when the lines loaded.
      */
 
     /** @type {DialogState|null} */
@@ -695,23 +793,58 @@
     }
 
     /**
-     * This device's session once the server shows playback paused. jellyfin-web reports its
-     * whole state, subtitle track included, when playback pauses, but otherwise only every few
-     * seconds, so a track chosen just before the dialog opened is only known after that report.
-     * Gives up waiting after SESSION_WAIT_MS and returns the last answer.
+     * Resolves with a lookup's answer, or with `fallback` when it fails or `ms` pass without an
+     * answer (ApiClient lookups can't be aborted; a late answer is ignored).
+     * @template T
+     * @param {Promise<T>|T} promise
+     * @param {number} ms
+     * @param {T} fallback
+     * @returns {Promise<T>}
+     */
+    function withTimeout(promise, ms, fallback) {
+        return new Promise(resolve => {
+            const timer = setTimeout(() => resolve(fallback), ms);
+            Promise.resolve(promise).then(
+                value => { clearTimeout(timer); resolve(value); },
+                () => { clearTimeout(timer); resolve(fallback); });
+        });
+    }
+
+    /**
+     * This device's session, once it is known to describe what is on screen. A pause makes
+     * jellyfin-web report its whole state, so when the dialog paused playback a session that
+     * shows it paused is current. When playback was already paused, the last report is at most
+     * ten seconds old: it is current unless the subtitles on screen changed since (a track shown,
+     * switched or turned off, see watchSubtitleChanges), in which case the dialog waits for the
+     * next report (LastPlaybackCheckIn moves). Null when no current answer came in time.
      * @param {DialogState} state
      * @returns {Promise<object|null>}
      */
     async function probeFreshSession(state) {
         const probe = JE.internals?.player?.probeOwnSession;
         if (typeof probe !== 'function') return null;
-        const deadline = Date.now() + SESSION_WAIT_MS;
+        const deadline = Date.now() + TIMEOUTS.sessionWait;
+        const awaitReport = !state.pausedByUs && subtitlesChangedAt > 0
+            && Date.now() - subtitlesChangedAt < REPORT_INTERVAL_MS;
+        /** @type {string|null|undefined} undefined until a session has been seen. */
+        let baseline;
         for (;;) {
-            const session = await probe();
+            const session = await withTimeout(probe(), Math.max(1, deadline - Date.now()), null);
             if (!isCurrent(state)) return null;
-            const fresh = !!(session && session.PlayState && session.PlayState.IsPaused === true);
-            if (fresh || Date.now() >= deadline || !state.video.paused) return session;
-            await new Promise(resolve => setTimeout(resolve, SESSION_POLL_MS));
+            if (session) {
+                const checkIn = session.LastPlaybackCheckIn || null;
+                if (state.pausedByUs) {
+                    if (session.PlayState && session.PlayState.IsPaused === true) return session;
+                } else if (!awaitReport) {
+                    return session;
+                } else if (baseline === undefined) {
+                    baseline = checkIn;
+                } else if (checkIn !== baseline) {
+                    return session;
+                }
+            }
+            if (Date.now() >= deadline) return null;
+            await new Promise(resolve => setTimeout(resolve, TIMEOUTS.sessionPoll));
             if (!isCurrent(state)) return null;
         }
     }
@@ -720,7 +853,7 @@
      * Resolves which subtitle track is playing: the server's view of this device's session,
      * checked against the item the page is playing.
      * @param {DialogState} state
-     * @returns {Promise<null|{error: 'session'|'none'|'image', stream?: object}|{itemId: string, mediaSourceId: string, index: number, stream: object|null}>}
+     * @returns {Promise<null|{error: 'session'|'none'|'image', stream?: object}|{itemId: string, mediaSourceId: string, index: number, stream: object|null, sessionId: string|null}>}
      */
     async function resolveTrack(state) {
         const session = await probeFreshSession(state);
@@ -736,7 +869,9 @@
         let stream = null;
         try {
             const userId = currentUserId();
-            const item = userId && window.ApiClient ? await window.ApiClient.getItem(userId, itemId) : null;
+            const item = userId && window.ApiClient
+                ? await withTimeout(window.ApiClient.getItem(userId, itemId), TIMEOUTS.lookup, null)
+                : null;
             if (!isCurrent(state)) return null;
             const source = (item && Array.isArray(item.MediaSources) ? item.MediaSources : [])
                 .find(s => s && normalizeId(s.Id) === normalizeId(mediaSourceId));
@@ -753,7 +888,7 @@
                 .find(s => s && s.Type === 'Subtitle' && s.Index === index) || null;
         }
         if (stream && stream.IsTextSubtitleStream === false) return { error: 'image', stream };
-        return { itemId, mediaSourceId, index, stream };
+        return { itemId, mediaSourceId, index, stream, sessionId: session.Id || null };
     }
 
     /**
@@ -833,15 +968,30 @@
             return;
         }
         if (measureOffset(lines, cueSample(state.video)) === 'mismatch') {
-            // The server still names the track from before a change made while paused.
-            setStatus(state, tr('subtitle_search_stale', 'These lines don\'t match the subtitles on screen. Play for a moment, then try again.'), 'error', {
-                label: tr('subtitle_search_retry', 'Try again'), run: () => populate(state)
-            });
+            showStale(state);
             return;
         }
         setStatus(state, '');
+        state.sessionId = track.sessionId;
+        state.drawn = drawnSurface(state.video);
         state.lines = lines;
         renderLines(state);
+    }
+
+    /**
+     * Says the listed lines no longer match the subtitles on screen and offers to reload them;
+     * the rows are cleared so none of them can be used.
+     * @param {DialogState} state
+     */
+    function showStale(state) {
+        state.lines = null;
+        state.rows = new Map();
+        state.overlay.querySelector('.je-subsearch-list').replaceChildren();
+        state.overlay.querySelector('.je-subsearch-foot').textContent = '';
+        refreshMeta(state);
+        setStatus(state, tr('subtitle_search_stale', 'These lines don\'t match the subtitles on screen.'), 'error', {
+            label: tr('subtitle_search_reload', 'Reload'), run: () => populate(state)
+        });
     }
 
     /**
@@ -853,6 +1003,10 @@
     function chooseLine(state, line) {
         if (!isCurrent(state)) {
             closeDialog({ resume: false });
+            return;
+        }
+        if (!linesStillShown(state)) {
+            showStale(state);
             return;
         }
         const support = syncSupport(state.video);
@@ -892,10 +1046,56 @@
             closeDialog({ resume: false });
             return;
         }
+        if (!linesStillShown(state)) {
+            showStale(state);
+            return;
+        }
         const offset = effectiveOffset(state) || 0;
         const target = Math.max(0, line.start - offset);
+        if (isProgressiveTranscode(videoSrc(state.video)) && state.sessionId) {
+            // The element only holds what the server has produced from where this stream
+            // started; jellyfin-web's own seek restarts the transcode at the target.
+            closeDialog({ resume: false });
+            seekThroughSession(state.sessionId, target).catch(err => {
+                console.warn('🪼 Jellyfin Enhanced: subtitle search seek failed', err);
+                JE.toast?.(tr('subtitle_search_jump_failed', 'Couldn\'t jump to that line.'));
+            });
+            return;
+        }
         state.video.currentTime = Math.max(0, target - transcodeOffsetSeconds(state.video));
         closeDialog();
+    }
+
+    /**
+     * Whether a source is a progressive transcode: a server stream URL that is neither direct
+     * play (Static=true) nor an HLS playlist (hls.js plays from a blob: URL).
+     * @param {string} src
+     * @returns {boolean}
+     */
+    function isProgressiveTranscode(src) {
+        if (!/^https?:/i.test(src || '')) return false;
+        const q = src.indexOf('?');
+        const path = (q === -1 ? src : src.slice(0, q)).toLowerCase();
+        if (!path.includes('/videos/') || path.endsWith('.m3u8')) return false;
+        for (const [name, value] of new URLSearchParams(q === -1 ? '' : src.slice(q + 1))) {
+            if (name.toLowerCase() === 'static' && String(value).toLowerCase() === 'true') return false;
+        }
+        return true;
+    }
+
+    /**
+     * Seeks this device's playback through the server's remote-control channel, which hands
+     * the position to jellyfin-web's playbackManager (serverNotifications Playstate Seek).
+     * @param {string} sessionId
+     * @param {number} seconds Media time.
+     * @returns {Promise<void>}
+     */
+    async function seekThroughSession(sessionId, seconds) {
+        const ac = window.ApiClient;
+        await ac.ajax({
+            type: 'POST',
+            url: ac.getUrl(`/Sessions/${encodeURIComponent(sessionId)}/Playing/Seek?SeekPositionTicks=${Math.round(seconds * TICKS_PER_SECOND)}`)
+        });
     }
 
     /**
@@ -933,6 +1133,26 @@
     }
 
     /**
+     * TV remote and gamepad key codes, named the way jellyfin-web's keyboardNavigation names
+     * them (with its aliases applied), so its Back, D-pad and select keys work in the dialog.
+     */
+    const KEY_CODE_NAMES = {
+        13: 'Enter', 27: 'Escape', 38: 'ArrowUp', 40: 'ArrowDown',
+        138: 'ArrowUp', 139: 'ArrowDown', 195: 'GamepadA', 196: 'Escape',
+        203: 'ArrowUp', 204: 'ArrowDown', 211: 'ArrowUp', 212: 'ArrowDown',
+        461: 'Back', 10009: 'Back'
+    };
+
+    /**
+     * The key a keydown means in the dialog.
+     * @param {KeyboardEvent} e
+     * @returns {string}
+     */
+    function dialogKeyName(e) {
+        return KEY_CODE_NAMES[e.keyCode] || e.key || '';
+    }
+
+    /**
      * Keys inside the dialog: Escape closes, arrows move between lines, Tab stays inside. No
      * key reaches jellyfin-web's player keys (Space would pause) or JE's other shortcuts.
      * @param {DialogState} state
@@ -942,18 +1162,24 @@
         e.stopPropagation();
         if (e.type !== 'keydown') return;
         const target = /** @type {Element} */ (e.target);
-        if (e.key === 'Escape' || e.key === 'BrowserBack' || e.key === 'GoBack') {
+        const key = dialogKeyName(e);
+        if (key === 'Escape' || key === 'Back' || key === 'BrowserBack' || key === 'GoBack') {
             e.preventDefault();
             closeDialog();
             return;
         }
-        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-            if (moveFocus(state, target, e.key === 'ArrowDown' ? 1 : -1)) e.preventDefault();
+        if (key === 'ArrowDown' || key === 'ArrowUp') {
+            if (moveFocus(state, target, key === 'ArrowDown' ? 1 : -1)) e.preventDefault();
             return;
         }
-        if (e.key === 'Enter' && target.classList.contains('je-subsearch-input')) {
+        if ((key === 'Enter' || key === 'GamepadA') && target.classList.contains('je-subsearch-input')) {
             e.preventDefault();
             moveFocus(state, target, 1);
+            return;
+        }
+        if (key === 'GamepadA' && target instanceof window.HTMLButtonElement) {
+            e.preventDefault();
+            target.click();
             return;
         }
         if (e.key === 'Tab') {
@@ -1016,7 +1242,9 @@
             rows: new Map(),
             cleanup: [],
             searchTimer: null,
-            supportShown: false
+            supportShown: false,
+            sessionId: null,
+            drawn: null
         };
         dialog = state;
 
@@ -1071,7 +1299,9 @@
         // jellyfin-web shows a cue track once it has loaded it, which can make these subtitles
         // shiftable after the dialog opened.
         const onTracks = () => {
-            if (dialog === state && state.lines) refreshMeta(state);
+            if (dialog !== state || !state.lines) return;
+            if (linesStillShown(state)) refreshMeta(state);
+            else showStale(state);
         };
         const textTracks = video.textTracks;
         textTracks?.addEventListener?.('change', onTracks);
@@ -1131,10 +1361,12 @@
 
     /**
      * Adds the Subtitle search button after jellyfin-web's Subtitles button in the player, or
-     * removes it when the setting is off. It hides with the Subtitles button (items without
-     * subtitles) through CSS. Called on every video-page DOM update.
+     * removes it when the setting is off. It hides with the Subtitles button through CSS.
+     * Called on every video-page DOM update, which also notes subtitle changes on screen as they
+     * happen (see effectiveOffset and probeFreshSession), whether or not the button is shown.
      */
     JE.addSubtitleSearchButton = () => {
+        noteSurface(true);
         const existing = document.getElementById(BUTTON_ID);
         if (JE.currentSettings?.subtitleSearchButtonEnabled !== true) {
             existing?.remove();
@@ -1178,6 +1410,8 @@
         offsetInRange,
         lineIndexAt,
         measureOffset,
+        isProgressiveTranscode,
+        timeouts: TIMEOUTS,
         formatTime,
         formatOffset,
         clientRendersSubtitles,

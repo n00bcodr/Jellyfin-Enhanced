@@ -555,7 +555,7 @@ List every line of the subtitles that are playing, find the one you just heard, 
 | A line | Syncs the subtitles so this line shows at **Heard at**, then closes the list. |
 | Arrow button | Jumps to where this line shows, then closes the list. |
 
-Search ignores case, accents and punctuation; a line must contain every word you type. ++down++ moves from the search box into the list, ++up++ and ++down++ move between lines, ++enter++ chooses one, and ++esc++ or ++shift+s++ closes the list. Playback resumes on close only if the list paused it.
+Search ignores case, accents and punctuation; a line must contain every word you type. ++down++ moves from the search box into the list, ++up++ and ++down++ move between lines, ++enter++ chooses one, and ++esc++ (or a TV remote's Back) or ++shift+s++ closes the list. Remote D-pads and gamepads move and choose the same way. Playback resumes on close only if the list paused it.
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -571,9 +571,9 @@ Search ignores case, accents and punctuation; a line must contain every word you
 
 ??? info "Details"
 
-    The lines come from the server's copy of the track. The list waits until the server knows playback is paused, because Jellyfin's player only reports which track it shows from time to time; if you changed track while already paused, the list may not match the subtitles on screen and says so. Play for a moment and open it again.
+    The lines come from the server's copy of the track. Jellyfin's player tells the server which track it shows when it pauses and every ten seconds, so right after you change track the list can take a few seconds to load. If the track changes while the list is open, it says the lines no longer match and offers **Reload**.
 
-    Jellyfin's offset belongs to the current track: it goes back to 0 when you change track or video. A jump is a local seek, like Auto-Skip's: progressive transcodes can stall beyond what the server has produced, and SyncPlay peers do not follow it.
+    Jellyfin's offset belongs to the current track: it goes back to 0 when you change track or video. A jump on a progressive (non-HLS) transcode goes through Jellyfin's own seek, which restarts the stream there; other jumps are local seeks, like Auto-Skip's, so SyncPlay peers do not follow them.
 
 ### Player Ratings
 
