@@ -56,6 +56,10 @@ theme:
     - announce.dismiss
 extra:
   404_page: true
+  # Versioned docs (mike): version switcher in the header, released versions plus "dev" for main
+  version:
+    provider: mike
+    default: latest
   social:
     - icon: fontawesome/brands/github
       link: https://github.com/n00bcodr/Jellyfin-Enhanced

@@ -319,6 +319,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             }
         }
 
+        /// <summary>
+        /// Moves a per-user file whose content does not parse aside to <c>.corrupt-{ts}</c>, as the
+        /// strict read does, for callers that read with <c>quarantineCorrupt: false</c> and decide
+        /// themselves. Callers hold <see cref="GetUserFileLock"/>.
+        /// </summary>
+        public void QuarantineUserConfiguration(string userId, string fileName)
+        {
+            var configPath = ResolveUserFile(userId, fileName);
+            if (File.Exists(configPath)) BackupCorruptFile(configPath);
+        }
+
         private void BackupCorruptFile(string filePath)
         {
             try

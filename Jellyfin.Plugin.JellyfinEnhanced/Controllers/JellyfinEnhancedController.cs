@@ -965,9 +965,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                 return StatusCode(403, new { code = "no_issue_view_permission", message = "You do not have permission to view issues in Seerr." });
                         }
 
-                        // GET /api/v1/service/sonarr|radarr, /api/v1/service/{type}/{id},
-                        // /api/v1/overrideRule, Seerr does not gate this route
-                        // behind REQUEST_ADVANCED, so require just the ability to request.
+                        // GET /api/v1/service/sonarr|radarr, /api/v1/service/{type}/{id}:
+                        // Seerr does not gate these behind REQUEST_ADVANCED, so require just
+                        // the ability to request. /api/v1/overrideRule needs it too; Seerr
+                        // itself lets only its admins read that one (answered below).
                         if (method == HttpMethod.Get && (
                             apiPath.StartsWith("/api/v1/service/", StringComparison.OrdinalIgnoreCase)
                             || apiPath.StartsWith("/api/v1/overrideRule", StringComparison.OrdinalIgnoreCase)))
@@ -979,6 +980,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         }
                     }
                 }
+            }
+
+            // Only Seerr admins may read the override rules (Permission.ADMIN in Seerr 3.x and
+            // Jellyseerr 2.x), and Seerr applies them itself when a request is created. The proxy
+            // acts as the linked Seerr user, so anyone else has none to read here, not Seerr's 403.
+            if (method == HttpMethod.Get
+                && string.Equals(apiPath, "/api/v1/overrideRule", StringComparison.OrdinalIgnoreCase)
+                && seerrUser != null
+                && !JellyseerrPermissionHelper.HasPermission(seerrUser.Permissions, JellyseerrPermission.ADMIN))
+            {
+                return Content("[]", "application/json");
             }
 
             // Check server-side response cache for cacheable endpoints.
@@ -1967,7 +1979,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         public Task<IActionResult> GetJellyseerrRequests([FromQuery] int take = 500, [FromQuery] int skip = 0, [FromQuery] string filter = "all")
         {
-            return ProxyJellyseerrRequest($"/api/v1/request?take={take}&skip={skip}&filter={filter}", HttpMethod.Get);
+            // Escaped, so a filter value cannot add query parameters of its own to the Seerr call.
+            return ProxyJellyseerrRequest($"/api/v1/request?take={take}&skip={skip}&filter={Uri.EscapeDataString(filter ?? string.Empty)}", HttpMethod.Get);
         }
 
         // Returns the user's Seerr quota with a nextResetAt added per side.
@@ -2100,6 +2113,94 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// The streaming region Seerr itself shows watch providers for: the caller's
+        /// own Seerr "Streaming Region" when set, otherwise Seerr's global one, otherwise
+        /// US (what Seerr itself falls back to). Null only when Seerr can't be read.
+        /// Response: { "region": "IN" | null, "source": "user" | "seerr" | "default" | null }.
+        /// </summary>
+        [HttpGet("jellyseerr/streaming-region")]
+        [Authorize]
+        public async Task<IActionResult> GetSeerrStreamingRegion()
+        {
+            Response.Headers["Cache-Control"] = "no-store";
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null || !config.JellyseerrEnabled || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.JellyseerrApiKey))
+            {
+                return StatusCode(503, "Seerr integration is not configured or enabled.");
+            }
+
+            var callerId = UserHelper.GetCurrentUserId(User)?.ToString();
+            if (string.IsNullOrEmpty(callerId))
+            {
+                return Forbid();
+            }
+
+            var seerrUser = await GetJellyseerrUser(callerId);
+            var aborted = HttpContext.RequestAborted;
+            var httpClient = Helpers.Jellyseerr.SeerrHttpHelper.CreateClient(_httpClientFactory);
+
+            // (reachable, region): region is null when Seerr answered but has none set.
+            async Task<(bool Ok, string? Region)> ReadRegionAsync(string baseUrl, string path)
+            {
+                var requestUri = $"{baseUrl.TrimEnd('/')}{path}";
+                using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(HttpMethod.Get, requestUri, config.JellyseerrApiKey);
+                using var response = await httpClient.SendAsync(request, aborted).ConfigureAwait(false);
+                var (body, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
+                if (error != null || body == null)
+                {
+                    return (false, null);
+                }
+
+                using var doc = JsonDocument.Parse(body);
+                if (doc.RootElement.ValueKind == JsonValueKind.Object
+                    && doc.RootElement.TryGetProperty("streamingRegion", out var el) && el.ValueKind == JsonValueKind.String)
+                {
+                    var code = el.GetString()?.Trim().ToUpperInvariant();
+                    return (true, Services.WatchProvidersBatch.IsValidRegion(code) ? code : null);
+                }
+
+                return (true, null);
+            }
+
+            foreach (var url in config.JellyseerrUrls.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                try
+                {
+                    var trimmed = url.Trim();
+                    if (seerrUser != null)
+                    {
+                        var own = await ReadRegionAsync(trimmed, $"/api/v1/user/{seerrUser.Id}/settings/main").ConfigureAwait(false);
+                        if (own.Region != null)
+                        {
+                            return Ok(new { region = own.Region, source = "user" });
+                        }
+                    }
+
+                    var global = await ReadRegionAsync(trimmed, "/api/v1/settings/main").ConfigureAwait(false);
+                    if (!global.Ok)
+                    {
+                        continue;
+                    }
+
+                    // Seerr itself shows US when neither the user nor the server sets one.
+                    return global.Region != null
+                        ? Ok(new { region = global.Region, source = "seerr" })
+                        : Ok(new { region = "US", source = "default" });
+                }
+                catch (OperationCanceledException) when (aborted.IsCancellationRequested)
+                {
+                    return StatusCode(499);
+                }
+                catch (Exception ex) when (ex is HttpRequestException or JsonException or OperationCanceledException or IOException)
+                {
+                    _logger.Warning($"Could not read the Seerr streaming region from a Seerr URL: {ex.Message}");
+                }
+            }
+
+            return Ok(new { region = (string?)null, source = (string?)null });
         }
 
         [HttpGet("jellyseerr/tv/{tmdbId}")]
@@ -2449,7 +2550,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
-            Response.Headers["Cache-Control"] = "private, max-age=300";
+            Response.Headers["Cache-Control"] = "no-store";
             return Ok(new { source = snapshot.Source, movies = snapshot.Movies, series = snapshot.Series });
         }
 
@@ -2569,13 +2670,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return ProxyJellyseerrRequest(AppendDiscoverFilters($"/api/v1/discover/tv/upcoming?page={page}"), HttpMethod.Get);
         }
 
+        /// <summary>
+        /// The item behind <paramref name="id"/> when the caller may see it, as Jellyfin decides:
+        /// a studio, genre or person for any signed-in caller (Jellyfin's own /Studios, /Genres and
+        /// /Persons routes answer those to anyone), any other item only within the caller's library
+        /// access and parental rules (Jellyfin's user item routes). Null otherwise, so a hidden item
+        /// is answered exactly as a missing one. Administrators get any item, as before.
+        /// </summary>
+        private BaseItem? GetItemForCaller(Guid id)
+        {
+            var item = _libraryManager.GetItemById(id);
+            if (item == null
+                || item is MediaBrowser.Controller.Entities.Studio or MediaBrowser.Controller.Entities.Genre or MediaBrowser.Controller.Entities.Person
+                || IsAdminUser())
+            {
+                return item;
+            }
+
+            var userId = UserHelper.GetCurrentUserId(User);
+            var user = userId.HasValue ? _userManager.GetUserById(userId.Value) : null;
+            return user == null ? null : _libraryManager.GetItemById<BaseItem>(id, user);
+        }
+
         [HttpGet("studio/{studioId}")]
         [Authorize]
         public IActionResult GetStudioInfo(Guid studioId)
         {
             try
             {
-                var studio = _libraryManager.GetItemById(studioId);
+                var studio = GetItemForCaller(studioId);
                 if (studio == null)
                 {
                     return NotFound(new { message = "Studio not found" });
@@ -2609,7 +2732,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         {
             try
             {
-                var boxset = _libraryManager.GetItemById(boxsetId);
+                var boxset = GetItemForCaller(boxsetId);
                 if (boxset == null || boxset.GetType().Name != "BoxSet")
                 {
                     return NotFound(new { message = "BoxSet not found" });
@@ -2643,7 +2766,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         {
             try
             {
-                var person = _libraryManager.GetItemById(personId);
+                // Any id is accepted, so a title the caller may not see must read as a missing one.
+                var person = GetItemForCaller(personId);
                 if (person == null)
                 {
                     return NotFound(new { message = "Person not found" });
@@ -2999,7 +3123,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         {
             try
             {
-                var genre = _libraryManager.GetItemById(genreId);
+                var genre = GetItemForCaller(genreId);
                 if (genre == null)
                 {
                     return NotFound(new { message = "Genre not found" });
@@ -3912,6 +4036,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.DEFAULT_PROVIDERS,
                 config.IGNORE_PROVIDERS,
                 config.ElsewhereSeasonProviders,
+                config.ElsewhereUseSeerrRegion,
                 config.ElsewhereCustomBrandingText,
                 config.ElsewhereCustomBrandingImageUrl,
                 config.ClearLocalStorageTimestamp,
@@ -4067,6 +4192,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.StatusTagsLeaving,
                 config.StatusTagsDirectPlay,
                 LeavingSoonAvailable = Services.LeavingSoonService.Configured(config),
+                // Whether administrators can mark, keep and postpone removals from the item menu (the actions
+                // switch and a Maintainerr URL); the rows themselves are admin-only on the server.
+                MaintainerrActionsAvailable = Services.MaintainerrActions.Enabled(config),
                 config.StatusTagsOnCollections,
                 config.StatusTagsJustAddedDays,
                 config.StatusTagsNewReleaseDays,
@@ -4338,7 +4466,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 UserSettings = new
                 {
                     Settings = TryLoadUserDocument("settings.json", authorizedUserId, () => LoadUserSettingsDocument(authorizedUserId)),
-                    Shortcuts = TryLoadUserDocument("shortcuts.json", authorizedUserId, () => _userConfigurationManager.GetUserConfiguration<UserShortcuts>(authorizedUserId, "shortcuts.json")),
+                    Shortcuts = TryLoadUserDocument("shortcuts.json", authorizedUserId, () => LoadSavedWholeDocument<UserShortcuts>(authorizedUserId, "shortcuts.json")),
                     Bookmark = TryLoadUserDocument("bookmark.json", authorizedUserId, () => _userConfigurationManager.GetUserConfiguration<UserBookmark>(authorizedUserId, "bookmark.json")),
                     Elsewhere = TryLoadUserDocument("elsewhere.json", authorizedUserId, () => _userConfigurationManager.GetUserConfiguration<ElsewhereSettings>(authorizedUserId, "elsewhere.json")),
                     HiddenContent = TryLoadUserDocument("hidden-content.json", authorizedUserId, () => LoadUserHiddenContentDocument(authorizedUserId)),
@@ -4438,6 +4566,41 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 _logger.Error($"Bootstrap: failed to load {fileName} for {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
                 return null;
+            }
+        }
+
+        /// <summary>
+        /// Reads a per-user document the client saves whole (hidden-content.json, shortcuts.json).
+        /// The lenient read answers an empty document for a file it cannot read, and the client's
+        /// next save would then replace the stored list with that one change, so this read throws
+        /// instead (the bootstrap answers null, the endpoint an error). A read error, such as a
+        /// lock or a network share, leaves the file as it is. Content that does not parse is moved
+        /// aside first, as the save path already does, so the next read starts from the defaults
+        /// instead of failing on every page load.
+        /// </summary>
+        private T LoadSavedWholeDocument<T>(string authorizedUserId, string fileName) where T : new()
+        {
+            try
+            {
+                return _userConfigurationManager.GetUserConfigurationStrict<T>(authorizedUserId, fileName, quarantineCorrupt: false);
+            }
+            catch (Exception ex) when (ex is InvalidDataException || ex is Newtonsoft.Json.JsonException)
+            {
+                // Every writer of these files holds this lock, so a save cannot replace the file
+                // between the read below and moving it aside.
+                lock (_userConfigurationManager.GetUserFileLock(authorizedUserId, fileName))
+                {
+                    try
+                    {
+                        // Read again: a save may have replaced the file since the first read.
+                        return _userConfigurationManager.GetUserConfigurationStrict<T>(authorizedUserId, fileName, quarantineCorrupt: false);
+                    }
+                    catch (Exception again) when (again is InvalidDataException || again is Newtonsoft.Json.JsonException)
+                    {
+                        _userConfigurationManager.QuarantineUserConfiguration(authorizedUserId, fileName);
+                        throw;
+                    }
+                }
             }
         }
 
@@ -4623,9 +4786,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             Response.Headers["Cache-Control"] = "no-store";
 
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null || string.IsNullOrEmpty(config.TMDB_API_KEY))
+            // Without a TMDB key the providers come from Seerr's own title detail.
+            var useSeerr = config != null && string.IsNullOrEmpty(config.TMDB_API_KEY)
+                && config.JellyseerrEnabled && !string.IsNullOrEmpty(config.JellyseerrUrls) && !string.IsNullOrEmpty(config.JellyseerrApiKey);
+            if (config == null || (string.IsNullOrEmpty(config.TMDB_API_KEY) && !useSeerr))
             {
-                return StatusCode(503, "TMDB API key is not configured.");
+                return StatusCode(503, "Neither a TMDB API key nor the Seerr integration is configured.");
             }
 
             if (!Services.WatchProvidersBatch.TryParseItems(items, out var requested, out var itemsError))
@@ -4668,6 +4834,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                 }
                                 break;
                         }
+                    }
+
+                    if (useSeerr)
+                    {
+                        // The caller's Seerr detail: its response cache, Seerr user and
+                        // permission checks. Anything but a readable 200 stays null.
+                        var seerr = await ProxyJellyseerrRequest($"/api/v1/{item.MediaType}/{item.TmdbId}", HttpMethod.Get).ConfigureAwait(false);
+                        if (seerr is ContentResult { StatusCode: null or 200, Content: { } seerrJson })
+                        {
+                            results[item.Key] = Services.WatchProvidersBatch.ExtractSeerrFlatrate(seerrJson, regionCode);
+                        }
+                        return;
                     }
 
                     var response = await _tmdbResponseCache.GetAsync(item.ApiPath, string.Empty, apiKey, aborted).ConfigureAwait(false);
@@ -5546,7 +5724,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 if (firstSeen)
                     _logger.Error("SonarrInstances config is corrupt JSON — instance list is effectively empty. "
                         + "Endpoints will return no Sonarr data until the admin opens the config page and resets it. "
-                        + $"Raw value (first 200 chars): {(config.SonarrInstances ?? "").Substring(0, Math.Min(200, (config.SonarrInstances ?? "").Length))}");
+                        + DescribeCorruptArrInstances(config.SonarrInstances));
             }
             if (config.IsRadarrInstancesCorrupt())
             {
@@ -5556,7 +5734,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 if (firstSeen)
                     _logger.Error("RadarrInstances config is corrupt JSON — instance list is effectively empty. "
                         + "Endpoints will return no Radarr data until the admin opens the config page and resets it. "
-                        + $"Raw value (first 200 chars): {(config.RadarrInstances ?? "").Substring(0, Math.Min(200, (config.RadarrInstances ?? "").Length))}");
+                        + DescribeCorruptArrInstances(config.RadarrInstances));
+            }
+        }
+
+        /// <summary>
+        /// Describes a stored instance list that does not parse by its length and the position where
+        /// parsing stops. The list holds each instance's URL and API key, so its text is never logged.
+        /// </summary>
+        private static string DescribeCorruptArrInstances(string? raw)
+        {
+            raw ??= "";
+            try
+            {
+                JsonSerializer.Deserialize<List<ArrInstance>>(raw);
+                return $"Stored value: {raw.Length} characters.";
+            }
+            catch (JsonException ex)
+            {
+                return $"Stored value: {raw.Length} characters, not valid JSON at line {(ex.LineNumber ?? 0) + 1}, byte {(ex.BytePositionInLine ?? 0) + 1}.";
             }
         }
 
@@ -5765,8 +5961,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return authorizationResult;
             }
 
-            var userConfig = _userConfigurationManager.GetUserConfiguration<UserShortcuts>(authorizedUserId, "shortcuts.json");
-            return Ok(userConfig);
+            try
+            {
+                return Ok(LoadSavedWholeDocument<UserShortcuts>(authorizedUserId, "shortcuts.json"));
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"shortcuts.json could not be read for {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Shortcuts could not be read. Please retry." });
+            }
         }
 
         [HttpGet("user-settings/{userId}/elsewhere.json")]
@@ -6027,7 +6230,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             try
             {
-                _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "shortcuts.json", userConfiguration);
+                // Under the file's lock, like every hidden-content.json writer: the read for the
+                // bootstrap and the GET moves content that does not parse aside under it.
+                lock (_userConfigurationManager.GetUserFileLock(authorizedUserId, "shortcuts.json"))
+                {
+                    _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "shortcuts.json", userConfiguration);
+                }
                 _logger.Info($"Saved user shortcuts for {ResolveUserDisplay(authorizedUserId)} to shortcuts.json");
                 return Ok(new { success = true, file = "shortcuts.json" });
             }
@@ -6218,12 +6426,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return authorizationResult;
             }
 
-            return Ok(LoadUserHiddenContentDocument(authorizedUserId));
+            try
+            {
+                return Ok(LoadUserHiddenContentDocument(authorizedUserId));
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"hidden-content.json could not be read for {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Hidden content could not be read. Please retry." });
+            }
         }
 
         /// <summary>
         /// Loads (seeding defaults on first access) the user's hidden-content.json
         /// document. Shared by the hidden-content.json endpoint and /bootstrap.
+        /// Throws when the stored list cannot be read (see <see cref="LoadSavedWholeDocument{T}"/>).
         /// </summary>
         private UserHiddenContent LoadUserHiddenContentDocument(string authorizedUserId)
         {
@@ -6250,7 +6467,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
-            return _userConfigurationManager.GetUserConfiguration<UserHiddenContent>(authorizedUserId, "hidden-content.json");
+            return LoadSavedWholeDocument<UserHiddenContent>(authorizedUserId, "hidden-content.json");
         }
 
         private static HiddenContentSettings BuildHcDefaultSettings(PluginConfiguration src)
@@ -9253,10 +9470,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [HttpGet("admin/leaving-soon")]
         [Authorize]
         [Produces("application/json")]
-        public IActionResult GetLeavingSoonStatus([FromServices] Services.LeavingSoonService leavingSoon)
+        public IActionResult GetLeavingSoonStatus([FromServices] Services.LeavingSoonService leavingSoon, [FromServices] Services.LeavingSoonHomeSection homeRow)
         {
             if (!IsAdminUser()) return Forbid();
-            return Ok(leavingSoon.Status(JellyfinEnhanced.Instance?.Configuration));
+            return Ok(leavingSoon.Status(JellyfinEnhanced.Instance?.Configuration, homeRow.Status));
         }
 
         /// <summary>Refresh the Leaving soon facts now (the Media Tags tab's Refresh), then answer the status. Admin only.</summary>
@@ -9266,11 +9483,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [HttpPost("admin/leaving-soon/refresh")]
         [Authorize]
         [Produces("application/json")]
-        public async Task<IActionResult> RefreshLeavingSoon([FromServices] Services.LeavingSoonService leavingSoon, CancellationToken cancellationToken)
+        public async Task<IActionResult> RefreshLeavingSoon([FromServices] Services.LeavingSoonService leavingSoon, [FromServices] Services.LeavingSoonHomeSection homeRow, CancellationToken cancellationToken)
         {
             if (!IsAdminUser()) return Forbid();
             await _tagCacheService.RefreshLeavingAsync(force: true, cancellationToken).ConfigureAwait(false);
-            return Ok(leavingSoon.Status(JellyfinEnhanced.Instance?.Configuration));
+            return Ok(leavingSoon.Status(JellyfinEnhanced.Instance?.Configuration, homeRow.Status));
         }
 
         /// <summary>
@@ -13861,6 +14078,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
 
             var itemIds = _itemRepository.GetItemIdsByProviders(providers, includeItemTypes);
+            if (!IsAdminUser())
+            {
+                // Only a title the caller may see, as Jellyfin's own item routes decide, so one held
+                // only in a library they cannot open reads as one the server does not hold.
+                // Administrators get the same answer as before. The checks stop at the first visible match, and
+                // at 100 matches: an untyped lookup of an id stamped on many episodes would otherwise load each.
+                var userId = UserHelper.GetCurrentUserId(User);
+                var user = userId.HasValue ? _userManager.GetUserById(userId.Value) : null;
+                itemIds = itemIds.Take(100).Where(id => user != null && _libraryManager.GetItemById<BaseItem>(id, user) != null).Take(1).ToList();
+            }
 
             if (itemIds.Count == 0)
                 return BadRequest("No provider ids supplied or no items found");

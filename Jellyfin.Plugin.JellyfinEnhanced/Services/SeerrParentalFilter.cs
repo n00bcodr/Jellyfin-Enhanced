@@ -34,8 +34,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     /// exposure is the failure mode that matters here.
     ///
     /// Rating semantics mirror Jellyfin's own <c>BaseItem.IsParentalAllowed</c>
-    /// (see <see cref="ParentalRatingDecision"/>); certifications are resolved only
-    /// for the configured rating country (<see cref="SeerrCertificationExtractor"/>).
+    /// (see <see cref="ParentalRatingDecision"/>); certifications are picked as Jellyfin's
+    /// TMDB providers pick them (<see cref="SeerrCertificationExtractor"/>).
     /// Design adapted from Jellyfin-Canopy's SeerrParentalFilter (GPL-3.0), rating branch only.
     /// </summary>
     public sealed class SeerrParentalFilter
@@ -1010,7 +1010,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             try
             {
-                var score = _localization.GetRatingScore(cert.Certification, cert.Iso ?? region);
+                // Scored in the server's country first, as Jellyfin scores the rating it
+                // stores (a US or first-listed fallback is stored without a country prefix).
+                var score = _localization.GetRatingScore(cert.Certification, region);
                 return score == null
                     ? new Signature(null, null, keywords, genres)
                     : new Signature(score.Score, score.SubScore, keywords, genres);

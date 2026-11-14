@@ -9,7 +9,7 @@
     JE.internals = JE.internals || {};
     const internal = JE.internals.hiddenContent = JE.internals.hiddenContent || {};
 
-    const { getSettings, hideItem, unhideItem } = internal;
+    const { getSettings, hideItem, unhideItem, refuseEditIfNotLoaded } = internal;
 
     /** How long the undo toast stays visible. */
     const UNDO_TOAST_DURATION = 8000;
@@ -362,14 +362,14 @@
      * @param {Object} [dialogOptions] Options passed to showHideConfirmation.
      */
     function confirmAndHide(itemData, onHidden, dialogOptions = {}) {
+        // A list that did not load can't be changed: say so before asking anything.
+        if (refuseEditIfNotLoaded()) return;
         if (!dialogOptions.showEpisodeChoice && !dialogOptions.surface && isConfirmationSuppressed()) {
-            hideItem(itemData);
-            if (onHidden) onHidden();
+            if (hideItem(itemData) && onHidden) onHidden();
             return;
         }
         showHideConfirmation(itemData.name || 'Item', () => {
-            hideItem(itemData);
-            if (onHidden) onHidden();
+            if (hideItem(itemData) && onHidden) onHidden();
         }, dialogOptions);
     }
 

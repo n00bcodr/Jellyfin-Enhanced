@@ -141,6 +141,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 if (!ReferenceEquals(stamped, primary)) dto.ImageTags[ImageType.Primary] = stamped;
             }
 
+            // Landscape cards (e.g. a movie in Continue Watching) draw the item's own Thumb; the composer
+            // picks the landscape layout from the image's aspect.
+            if (dto.ImageTags != null && dto.ImageTags.TryGetValue(ImageType.Thumb, out var thumb) && !string.IsNullOrEmpty(thumb))
+            {
+                var stampedThumb = StampField(dto, thumb, dto.Id, dto.Type.ToString(), null, topRight, session, imageType: ImageType.Thumb);
+                if (!ReferenceEquals(stampedThumb, thumb)) dto.ImageTags[ImageType.Thumb] = stampedThumb;
+            }
+
             if (!string.IsNullOrEmpty(dto.SeriesPrimaryImageTag) && dto.SeriesId is { } seriesId && seriesId != Guid.Empty)
             {
                 dto.SeriesPrimaryImageTag = StampField(dto, dto.SeriesPrimaryImageTag, seriesId, nameof(BaseItemKind.Series), null, topRight, session);
@@ -164,7 +172,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             hint.PrimaryImageTag = StampField(null, hint.PrimaryImageTag, ownerId, hint.Type.ToString(), owner.SeriesIdN, false, session);
         }
 
-        private string StampField(BaseItemDto? dto, string tag, Guid ownerId, string ownerType, string? ownerSeriesIdN, bool topRight, NativePosterTagStampSession session, bool watchedAll = false)
+        private string StampField(BaseItemDto? dto, string tag, Guid ownerId, string ownerType, string? ownerSeriesIdN, bool topRight, NativePosterTagStampSession session, bool watchedAll = false, ImageType imageType = ImageType.Primary)
         {
             // Idempotent: a filter re-entry must not re-mint.
             if (ImageTagDecoration.GetVariant(tag) != null) return tag;
@@ -189,7 +197,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 flags,
                 _data.GetPinnedDataHash(ownerId, session.User, settings.Shows(PosterTagGroup.Status)));
             var stamped = ImageTagDecoration.WithVariant(tag, token, session.Marker);
-            if (dto != null && !ReferenceEquals(stamped, tag)) ReKeyPrimaryBlurhash(dto, tag, stamped);
+            if (dto != null && !ReferenceEquals(stamped, tag)) ReKeyBlurhash(dto, imageType, tag, stamped);
             return stamped;
         }
 
@@ -251,10 +259,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         // (own, series and parent Primary tags share it). The old key may still
         // be the undecorated tag (the strip filter's "sb-" prefix never re-keys),
         // so fall back to the cache-bust-stripped and fully stripped forms.
-        private static void ReKeyPrimaryBlurhash(BaseItemDto dto, string oldTag, string newTag)
+        private static void ReKeyBlurhash(BaseItemDto dto, ImageType imageType, string oldTag, string newTag)
         {
             if (dto.ImageBlurHashes == null) return;
-            if (!dto.ImageBlurHashes.TryGetValue(ImageType.Primary, out var byTag) || byTag == null) return;
+            if (!dto.ImageBlurHashes.TryGetValue(imageType, out var byTag) || byTag == null) return;
             if (byTag.Remove(oldTag, out var hash))
             {
                 byTag[newTag] = hash;

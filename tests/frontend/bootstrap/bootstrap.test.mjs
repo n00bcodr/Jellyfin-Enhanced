@@ -105,7 +105,89 @@ test('wrong-user bootstrap is rejected and endpoint failures retain safe default
   assert.equal(h.plugin.currentSettings.qualityTagsEnabled, false);
   assert.equal(h.plugin.pluginVersion, 'unknown');
   assert.deepEqual(plain(h.plugin.userConfig.bookmark), { bookmarks: {} });
+  // The hidden list and shortcut overrides are saved whole: one that failed to load stays unknown (null),
+  // never an empty list the next change would be saved over.
+  assert.equal(h.plugin.userConfig.hiddenContent, null);
+  assert.equal(h.plugin.userConfig.shortcuts, null);
   assert.equal(h.calls.filter(p => p.includes('/user-settings/user-a/')).length, 5);
+});
+
+// The server answers null for a document it could not load, and Jellyfin's serializer leaves null
+// properties out of the response, so the bootstrap simply lacks that document.
+for (const [label, userSettings] of [['left out', { Settings: {}, Bookmark: {}, Elsewhere: {} }], ['null', { Settings: {}, Shortcuts: null, Bookmark: {}, Elsewhere: {}, HiddenContent: null }]]) {
+  test(`a hidden list or shortcut list the server could not read (${label}) stays unknown`, async t => {
+    const h = setup(t, { data: payload({ UserSettings: userSettings }) });
+    await until(() => h.plugin.initialized);
+    assert.equal(h.plugin.userConfig.hiddenContent, null);
+    assert.equal(h.plugin.userConfig.shortcuts, null);
+  });
+}
+
+test('documents the server loaded are used as they are, empty ones included', async t => {
+  const h = setup(t, { data: payload({ UserSettings: { Settings: {}, Shortcuts: { Shortcuts: [] }, Bookmark: {}, Elsewhere: {}, HiddenContent: { Items: { a: { ItemId: 'a' } }, Settings: {} } } }) });
+  await until(() => h.plugin.initialized);
+  assert.deepEqual(plain(h.plugin.userConfig.hiddenContent), { items: { a: { itemId: 'a' } }, settings: {} });
+  assert.deepEqual(plain(h.plugin.userConfig.shortcuts), { Shortcuts: [] });
+});
+
+// hidden-content.json as the server stores and answers it: the C# model's property names with every
+// property present. A POST is bound to that model (names matched case-insensitively, absent ones at
+// their defaults) and written back out with the model's names.
+const HIDDEN_SETTINGS = { Enabled: true, FilterLibrary: true, FilterDiscovery: true, FilterUpcoming: true, FilterCalendar: true, FilterSearch: false,
+  FilterRecommendations: true, FilterRequests: true, FilterNextUp: true, FilterContinueWatching: true, ShowHideButtons: true,
+  ShowHideConfirmation: true, ShowButtonJellyseerr: true, ShowButtonLibrary: false, ShowButtonDetails: true, ShowButtonCast: false,
+  ExperimentalHideCollections: false };
+const HIDDEN_ITEM = { ItemId: '', Name: '', Type: '', TmdbId: '', HiddenAt: '', PosterPath: '', SeriesId: '', SeriesName: '',
+  SeasonNumber: null, EpisodeNumber: null, HideScope: 'global' };
+const bindTo = (model, body) => Object.fromEntries(Object.entries(model).map(([name, value]) => {
+  const posted = Object.keys(body || {}).find(key => key.toLowerCase() === name.toLowerCase());
+  return [name, posted === undefined ? value : body[posted]];
+}));
+const asStoredHiddenContent = body => ({
+  Items: Object.fromEntries(Object.entries(body.Items ?? body.items ?? {}).map(([key, entry]) => [key, bindTo(HIDDEN_ITEM, entry)])),
+  Settings: bindTo(HIDDEN_SETTINGS, body.Settings ?? body.settings)
+});
+
+test('a hidden list booted and saved in the shape the server answers and stores keeps every change', async t => {
+  const dashed = '01234567-89ab-cdef-0123-456789abcdef', undashed = '0123456789abcdef0123456789abcdef';
+  let stored = asStoredHiddenContent({ items: { a: { itemId: 'a', name: 'A' },
+    [dashed]: { itemId: dashed, name: 'Episode', type: 'Episode', hideScope: 'continuewatching' },
+    [undashed]: { itemId: undashed, name: 'Episode', type: 'Episode' } }, settings: { filterSearch: true } });
+  const requests = [];
+  const h = setup(t, { ajax: async (path, request) => {
+    if (path.endsWith('/bootstrap')) return payload({ UserSettings: { Settings: {}, Shortcuts: { Shortcuts: [] }, Bookmark: {}, Elsewhere: {}, HiddenContent: plain(stored) } });
+    if (path !== '/JellyfinEnhanced/user-settings/user-a/hidden-content.json') throw new Error(`Unexpected endpoint ${path}`);
+    requests.push({ type: request.type, body: request.data && JSON.parse(request.data) });
+    if (request.type === 'GET') return plain(stored);
+    stored = asStoredHiddenContent(JSON.parse(request.data));
+    return { success: true, file: 'hidden-content.json' };
+  } });
+  await until(() => h.plugin.initialized);
+  for (const name of ['data', 'save', 'dialogs', 'filter']) h.load(`enhanced/hiddencontent/hidden-content-${name}.js`);
+  const hc = h.plugin.internals.hiddenContent;
+  hc.resetFromUserConfig();
+  const posts = () => requests.filter(r => r.type === 'POST');
+
+  // Another device hides b and turns the calendar filter off; this tab removes the Continue Watching
+  // entry (not the hide of the same episode), turns the library filter off and hides c.
+  stored.Items.b = asStoredHiddenContent({ items: { b: { itemId: 'b', name: 'B' } } }).Items.b;
+  stored.Settings.FilterCalendar = false;
+  assert.equal(hc.unhideItem(dashed), true);
+  assert.equal(hc.updateSettings({ filterLibrary: false }), true);
+  assert.equal(hc.hideItem({ itemId: 'c', name: 'C', type: 'Movie' }), true);
+  await until(() => posts().length === 1);
+
+  assert.deepEqual(Object.keys(stored.Items).sort(), [undashed, 'a', 'b', 'c']);
+  assert.equal(stored.Items[undashed].Name, 'Episode');
+  assert.deepEqual(stored.Settings, { ...HIDDEN_SETTINGS, FilterSearch: true, FilterCalendar: false, FilterLibrary: false });
+  assert.deepEqual(Object.keys(posts()[0].body).sort(), ['items', 'settings'], 'one spelling of each property is posted');
+  assert.equal(hc.isHidden('b'), true, 'the tab shows what the save read');
+
+  assert.equal(hc.unhideItem('b'), true);
+  await until(() => posts().length === 2);
+  assert.deepEqual(Object.keys(stored.Items).sort(), [undashed, 'a', 'c']);
+  await new Promise(resolve => setTimeout(resolve, 1000));
+  assert.equal(requests.length, 4, 'two saves, one read and one write each; the stored shape is not taken as a change');
 });
 
 for (const installed of [true, false]) test(`delivery plugin flags reflect installed=${installed}`, async t => {

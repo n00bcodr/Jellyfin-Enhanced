@@ -530,10 +530,16 @@
     let filterData = null;
 
     /**
-     * The region whose services and ratings are offered: the admin's default region, else the US.
+     * The region whose services and ratings are offered: the user's Seerr streaming region when the
+     * admin option is on (once known), else the admin's default region, else the US.
      * @returns {string}
      */
     function adminRegion() {
+        if (JE.pluginConfig?.ElsewhereUseSeerrRegion && JE.pluginConfig?.JellyseerrEnabled) {
+            JE.jellyseerrAPI?.getStreamingRegion?.();
+            const seerrRegion = JE.jellyseerrAPI?.streamingRegion;
+            if (seerrRegion) return seerrRegion;
+        }
         const region = String(JE.pluginConfig?.DEFAULT_REGION ?? '').trim().toUpperCase();
         return /^[A-Z]{2}$/.test(region) ? region : 'US';
     }

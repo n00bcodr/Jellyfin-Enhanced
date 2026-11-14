@@ -147,6 +147,10 @@
       "category": "Controllers"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/MaintainerrController.cs",
+      "category": "Controllers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/EventHandlers/ActivityPlaybackConsumer.cs",
       "category": "EventHandlers"
     },
@@ -535,7 +539,19 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/LeavingSoonHomeSection.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/LeavingSoonService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/MaintainerrActions.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/MaintainerrHttp.cs",
       "category": "Services"
     },
     {
@@ -1855,6 +1871,10 @@
       "category": "js"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/tags/maintainerr-item-menu.js",
+      "category": "js"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/tags/peopletags.js",
       "category": "js"
     },
@@ -2125,6 +2145,15 @@
       "verb": "GET",
       "path": "/JellyfinEnhanced/jellyseerr/quota",
       "method": "GetJellyseerrQuota",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/jellyseerr/streaming-region",
+      "method": "GetSeerrStreamingRegion",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
       "following_attributes": [
         "Authorize"
@@ -3824,6 +3853,46 @@
       "method": "GetView",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
       "following_attributes": []
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/maintainerr/item/{itemId}",
+      "method": "GetState",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/MaintainerrController.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/maintainerr/mark",
+      "method": "Mark",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/MaintainerrController.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/maintainerr/unmark",
+      "method": "Unmark",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/MaintainerrController.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/maintainerr/postpone",
+      "method": "Postpone",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/MaintainerrController.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")"
+      ]
     }
   ],
   "configuration_properties": [
@@ -4097,6 +4166,14 @@
       "type": "bool",
       "initializer": null,
       "constructor_assignment": "true",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ElsewhereUseSeerrRegion",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "false",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
     },
     {
@@ -5441,6 +5518,22 @@
       "type": "int",
       "initializer": "6",
       "constructor_assignment": "6",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "LeavingSoonMaintainerrActions",
+      "type": "bool",
+      "initializer": "true",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "LeavingSoonHomeRow",
+      "type": "bool",
+      "initializer": "true",
+      "constructor_assignment": null,
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
     },
     {
@@ -9990,6 +10083,10 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.cs"
     },
     {
+      "literal": "settings.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/RefreshLeavingSoonTagsTask.cs"
+    },
+    {
       "literal": "bookmark.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/AnalyticsReportingService.cs"
     },
@@ -10416,10 +10513,10 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 481,
-    "routes": 203,
-    "configuration_properties": 756,
-    "storage_references": 87,
+    "files": 486,
+    "routes": 208,
+    "configuration_properties": 759,
+    "storage_references": 88,
     "scheduled_tasks": 17,
     "locales": 33
   }

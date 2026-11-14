@@ -107,12 +107,31 @@
     let queuedLookups = [];
     let providerFlushTimer = null;
 
+    // With the admin's "use Seerr streaming region" option the icons follow the
+    // user's Seerr "Streaming Region" (resolved once per session by the first
+    // card); null until known or unset.
+    let seerrStreamingRegion = null;
+    let seerrRegionPromise = null;
+    function followsSeerrRegion() {
+        return !!JE.pluginConfig?.ElsewhereUseSeerrRegion && !!JE.pluginConfig?.JellyseerrEnabled;
+    }
+    function resolveSeerrRegion() {
+        if (!followsSeerrRegion()) return Promise.resolve();
+        if (!seerrRegionPromise) {
+            seerrRegionPromise = JE.core.api.fetch(ApiClient.getUrl('/JellyfinEnhanced/jellyseerr/streaming-region'))
+                .then(data => { seerrStreamingRegion = /^[A-Z]{2}$/.test(data?.region || '') ? data.region : null; })
+                .catch(() => { seerrStreamingRegion = null; });
+        }
+        return seerrRegionPromise;
+    }
+
     /**
-     * The admin's DEFAULT_REGION as a two-letter upper-case code (or 'US').
+     * The region to look providers up in: the user's Seerr streaming region when
+     * when the admin option is on, otherwise the admin's DEFAULT_REGION, as a two-letter upper-case code (or 'US').
      * @returns {string}
      */
     function providerRegion() {
-        const region = String(JE.pluginConfig?.DEFAULT_REGION || 'US').trim().toUpperCase();
+        const region = String((followsSeerrRegion() && seerrStreamingRegion) || JE.pluginConfig?.DEFAULT_REGION || 'US').trim().toUpperCase();
         return /^[A-Z]{2}$/.test(region) ? region : 'US';
     }
 
@@ -273,7 +292,7 @@
 
     /**
      * Fetches streaming provider icons from the TMDB API and adds them to a specified container element on a Seerr poster.
-     * This function is called only if the "Show Elsewhere on Seerr" setting is enabled and a TMDB API key is present.
+     * This function is called only if the "Show Elsewhere on Seerr" setting is enabled and a TMDB API key or the Seerr integration is available.
      * It retrieves the default region's flat-rate providers (batched across cards) and applies the filters configured in the Elsewhere plugin settings.
      *
      * @async
@@ -287,8 +306,9 @@
     async function fetchProviderIcons(container, tmdbId, mediaType, signal) {
         if (!container || !tmdbId || !mediaType) return;
 
-        // Early exit if TMDB is not configured - prevents slow/failing API calls
-        if (!JE.pluginConfig?.TmdbEnabled) {
+        // Early exit if neither TMDB nor Seerr (the batch endpoint's fallback
+        // source) is available - prevents slow/failing API calls
+        if (!JE.pluginConfig?.TmdbEnabled && !JE.pluginConfig?.JellyseerrEnabled) {
             return;
         }
 
@@ -299,6 +319,7 @@
             // Batched with other cards' lookups and cached per title (see
             // getFlatrateProviders); a failed batch is logged there once and
             // resolves to null here, so the card just stays without icons.
+            await resolveSeerrRegion();
             let providers = await getFlatrateProviders(mediaType, tmdbId, signal);
             // A deferred (signalled) lookup only starts for an on-screen card, so a
             // detached container means the card was torn down meanwhile. Unsignalled

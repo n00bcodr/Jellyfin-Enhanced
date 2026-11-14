@@ -642,3 +642,19 @@ test('pagehide drops late schedule answers and pageshow resumes with a fresh lif
   h.window.dispatchEvent(new h.window.Event('pageshow'));
   assert.equal(h.timers.size, 1, 'bfcache return rearms midnight');
 });
+
+// jellyfin-web dispatches a bubbling legacy `pagehide` (a CustomEvent) on each view it leaves during in-app
+// navigation, and window sees it with that view as its target. Only the page's own pagehide is a page exit,
+// and a back/forward-cache hide (persisted) may be shown again.
+for (const [label, hide, stops] of [
+  ['a view jellyfin-web leaves', h => h.hosts[0].dispatchEvent(new h.window.CustomEvent('pagehide', { bubbles: true })), false],
+  ['a back/forward cache hide', h => h.window.dispatchEvent(new h.window.PageTransitionEvent('pagehide', { persisted: true })), false],
+  ['the page being unloaded', h => h.window.dispatchEvent(new h.window.PageTransitionEvent('pagehide', { persisted: false })), true],
+]) test(`status timers ${stops ? 'stop' : 'keep running'} on the pagehide of ${label}`, async t => {
+  const h = setup(t, { captureTimers: true, series: { [SERIES]: { retry: true } } });
+  h.show(show(), h.hosts[0], SERIES);
+  await h.flush();
+  assert.equal(h.timers.size, 2, 'midnight plus one schedule retry');
+  hide(h);
+  assert.equal(h.timers.size, stops ? 0 : 2);
+});

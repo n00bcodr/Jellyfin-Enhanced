@@ -159,7 +159,7 @@ public partial class TagCacheService
         if (changed)
         {
             // Changed entries reach clients as a delta (their LastUpdated); only removals and rebuild swaps change the version.
-            Interlocked.Exchange(ref _lastModified, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+            TouchLastModified();
             ScheduleDebouncedSave();
         }
         if (changedOwners.Count > 0) ScenesRefreshed?.Invoke(changedOwners);

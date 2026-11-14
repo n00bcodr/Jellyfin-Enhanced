@@ -553,7 +553,11 @@
     function syncDeepLink(slider, root) {
         var wantedId = hashParam(DEEP_LINK_PARAM);
         var wantedIndex = parseInt(hashParam('tab'), 10);
-        var entry = wantedId != null ? entries.find(function (e) { return e.id === wantedId; }) : null;
+        // Our links always carry tab=N (N >= 2) next to jeTab. Without it the user is on Home or
+        // Favorites and a header script (KefinTweaks' header tabs) kept the old jeTab in the URL:
+        // honouring it would pull the user back to our tab right after they left it.
+        var linkedToOwnTab = !isNaN(wantedIndex) && wantedIndex >= 2;
+        var entry = wantedId != null && linkedToOwnTab ? entries.find(function (e) { return e.id === wantedId; }) : null;
         if (entry && entry.index != null && entry.index !== wantedIndex) {
             // Rewrite in place rather than navigate: a router navigation builds
             // a new Home page, and Custom Tabs fills its legacy-layout panels
@@ -722,6 +726,48 @@
             removeGroupIfEmpty();
         }
     };
+
+    // Jellyfin treats every Home URL (?tab=N included) as the start page, so the Android app's
+    // back button exits the app from one of our tabs. The app's Back calls
+    // NavigationHelper.goBack(), which calls NativeInterface.exitApp() directly when the router
+    // cannot go back (AppHost.exit is not involved). On one of our tabs we select the Home tab
+    // instead (or close an open overlay), and the app exits as usual from there. NavigationHelper is injected by the app,
+    // so it is wrapped once it exists; other clients never define it.
+    (function wrapAppBack() {
+        var tries = 0;
+        function wrap() {
+            var nav = window.NavigationHelper;
+            if (!nav || typeof nav.goBack !== 'function') return false;
+            if (nav.goBack.__jeTabsBack) return true;
+            var original = nav.goBack;
+            nav.goBack = function () {
+                var active = isOnHomePage() && document.querySelector('.tabContent.pageTabContent.is-active');
+                var home = document.querySelector('.emby-tabs-slider .emby-tab-button[data-index="0"]');
+                var router = window.Emby && window.Emby.Page;
+                var canGoBack = router && typeof router.canGoBack === 'function' && router.canGoBack();
+                // The Recommendations category page and the More Info modal each hold a history
+                // entry and close on popstate, but this Back never reaches history on a Home URL.
+                if (!canGoBack && document.querySelector('.je-more-info-modal, #je-recommendations-category-page:not(.hide)')) {
+                    history.back();
+                    return;
+                }
+                if (!canGoBack && active && home && isOwnSlot(active)) {
+                    // The URL still says ?tab=N. Spend that deep link now: Jellyfin only reports
+                    // the tab change ~120 ms after the click, and syncDeepLink would re-select N.
+                    userPickedHash = window.location.hash;
+                    home.click();
+                    return;
+                }
+                return original.apply(this, arguments);
+            };
+            nav.goBack.__jeTabsBack = true;
+            return true;
+        }
+        if (wrap()) return;
+        var timer = setInterval(function () {
+            if (wrap() || ++tries > 40) clearInterval(timer);
+        }, 500);
+    })();
 
     // A replacement Home root can arrive hidden and be revealed after the
     // view event. Child mutations alone miss that final class-only transition.
