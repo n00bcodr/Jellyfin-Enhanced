@@ -112,7 +112,7 @@
         { id: 'layout', icon: 'view_quilt', nameKey: 'Layout defaults', shortKey: 'Layout', descKey: 'The layout, label density, group order, positions and limits new users start with.', lead: 'card' },
         { id: 'groups', icon: 'label', nameKey: 'Groups', descKey: 'Turn each tag group on or off for new users, and open a group for its server settings.', lead: 'card' },
         { id: 'rules', icon: 'rule', nameKey: 'Rules', descKey: 'Give some cards a different look by library, type, genre or age rating.', lead: 'card' },
-        { id: 'colours', icon: 'palette', nameKey: 'Colours', descKey: 'The colours of the tags, on the web and in native posters, and which tags to hide.', lead: 'card' },
+        { id: 'colours', icon: 'palette', nameKey: 'Colours and text', descKey: 'The colours and words of the tags, on the web and in native posters, and which tags to hide.', lead: 'card' },
         { id: 'badges', icon: 'new_releases', nameKey: 'Status badges', shortKey: 'Badges', descKey: 'Which status badges new users start with, and how long a title counts as new.', lead: 'card' },
         { id: 'server', icon: 'dns', nameKey: 'Server', descKey: 'The tag data the server keeps, and tags drawn into poster images for other apps.', lead: 'card' },
     ];
@@ -1047,7 +1047,7 @@
                 ? `<a class="je-ta-link je-ta-crosslink" href="#" data-je-goto="layout:placement-${esc(s.group.id)}"><span class="je-ta-link-text">${tx('{group} position and limit (Layout defaults)', { group: name })}</span><span class="material-icons" aria-hidden="true">arrow_forward</span></a>` : '';
             // Hidden tags live in the colour editor's tag list (#1043): every group with tags there points to it.
             const hide = JE.core?.tagHidden?.GROUPS?.includes(s.group.id)
-                ? `<a class="je-ta-link je-ta-crosslink" href="#" data-je-goto="colours" data-je-colours-group="${esc(s.group.id)}"><span class="je-ta-link-text">${tx('Hidden {group} tags (Colours)', { group: name })}</span><span class="material-icons" aria-hidden="true">arrow_forward</span></a>` : '';
+                ? `<a class="je-ta-link je-ta-crosslink" href="#" data-je-goto="colours" data-je-colours-group="${esc(s.group.id)}"><span class="je-ta-link-text">${tx('Hidden {group} tags (Colours and text)', { group: name })}</span><span class="material-icons" aria-hidden="true">arrow_forward</span></a>` : '';
             if (!ownControls) {
                 // As every row: name first, the sample, then the switch on the right.
                 return `<div class="je-ta-grow" data-group="${esc(s.group.id)}" data-section="${esc(s.id)}" data-enabled="${on}" data-open="false" data-je-static>`
@@ -1541,7 +1541,7 @@
                 const hiddenText = !hiddenCount ? '' : ages ? fmt(' · {n} ratings hidden', { n: ages }) : fmt(' · {n} {n|tag|tags} hidden', { n: hiddenCount });
                 if (sum) sum.textContent = (s.group.summary ? s.group.summary(ctx) : '') + hiddenText;
                 const hideLink = row.querySelector('[data-je-colours-group] .je-ta-link-text');
-                if (hideLink) hideLink.textContent = fmt(hiddenCount ? 'Hidden {group} tags (Colours)' : 'Hide individual {group} tags (Colours)', { group: fmt(s.title) });
+                if (hideLink) hideLink.textContent = fmt(hiddenCount ? 'Hidden {group} tags (Colours and text)' : 'Hide individual {group} tags (Colours and text)', { group: fmt(s.title) });
                 const sample = row.querySelector('.je-ta-grow-sample');
                 if (sample) sample.innerHTML = (s.group.sample ? s.group.sample(ctx) : []).map(sampleChip).join('');
             }

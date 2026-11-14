@@ -74,6 +74,7 @@ Jellyfin.Plugin.JellyfinEnhanced/
 │   ├── TagLookSettings.cs
 │   ├── CustomTagRuleSet.cs        # Custom tag rules: model, validation and the matcher
 │   ├── TagHiddenValues.cs         # Hidden tags: the hidden Tag Styles labels, validation and each chip's label
+│   ├── TagTextOverrides.cs        # Tag text: the words a Tag Styles label's chips show instead of their own
 │   ├── UserConfigurationManager.cs
 │   ├── configPage.html
 │   ├── mediaTagsPage.html          # Old Media Tags page address: forwards to the Media Tags tab

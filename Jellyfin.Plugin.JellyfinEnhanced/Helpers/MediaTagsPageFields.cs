@@ -75,6 +75,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
         private static readonly Dictionary<string, int> TextLimits = new Dictionary<string, int>(StringComparer.Ordinal)
         {
             ["TagStyleOverrides"] = TagStyleSet.MaxDocumentLength,
+            ["TagTextOverrides"] = TagTextRules.MaxDocumentLength,
             ["NativePosterTagsWebClientNames"] = 4096,
             ["TagCacheExcludedLibraryIds"] = 8192,
             ["LanguageTagsPriority"] = 256,
@@ -224,6 +225,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
                 case "TagStyleOverrides":
                     if (TagStyleSet.TryValidate(value as string, null, out _, out error)) return true;
                     return false;
+                case "TagTextOverrides":
+                    if (!TagTextRules.TryValidate(value as string, out error)) return false;
+                    normalized = TagTextRules.Normalize(value as string);
+                    return true;
                 case "TagStylePreset":
                     // The administrator's preset has no empty "follow" value (only a user's document has one).
                     if (string.IsNullOrWhiteSpace(value as string))

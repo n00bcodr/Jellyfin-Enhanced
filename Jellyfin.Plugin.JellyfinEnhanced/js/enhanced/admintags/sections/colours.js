@@ -20,9 +20,9 @@
         id: 'colours',
         tab: 'colours',
         order: 10,
-        title: 'Tag colours',
-        hint: 'Colours for quality, age rating, rating, genre, status, language, awards, logo and custom tags.',
-        writes: ['TagStyleOverrides', 'TagStylePreset', 'TagHiddenValues'],
+        title: 'Tag colours and text',
+        hint: 'Colours for quality, age rating, rating, genre, status, language, awards, logo and custom tags, and the words of quality, genre, status and awards tags.',
+        writes: ['TagStyleOverrides', 'TagStylePreset', 'TagHiddenValues', 'TagTextOverrides'],
         fields: [
             { id: 'tagStylesEnabled', key: 'TagStylesEnabled', type: 'switch', label: 'Use tag colours', desc: 'Off shows the original colours (custom CSS keeps working). Your edits are kept. Hidden tags apply either way.', master: true },
             { id: 'tagStyleTarget', key: 'TagStyleTarget', type: 'pills', label: 'Apply to', desc: 'Web recolours the overlays and wins over custom CSS colours. Native posters draws the colours into the posters of apps such as Android TV (needs Native Poster Tags; status tags are not drawn there).', options: [['web', 'Web'], ['native', 'Native posters'], ['both', 'Both']], read: (v) => (['web', 'native', 'both'].includes(v) ? v : 'both'), when: (c) => c.TagStylesEnabled === true },
@@ -85,9 +85,34 @@
                     });
                 },
             };
-            editor = A.createTagStylesEditor(ctx.root, () => [...new Set((ctx.config.CustomTagRules || []).map((r) => r.Label || r.label).filter(Boolean))], () => ctx.isCurrent(), hiddenStore);
+            /**
+             * Tag text: the page's TagTextOverrides (a JSON document), saved with its other edits. The posters
+             * and previews on this page follow at once through the public configuration.
+             */
+            const readTexts = () => { try { return JSON.parse(ctx.config.TagTextOverrides || '{}') || {}; } catch { return {}; } };
+            const setTextDoc = (docText) => {
+                ctx.setMany({ TagTextOverrides: docText }, { redraw: false });
+                if (JE.pluginConfig) Object.assign(JE.pluginConfig, { TagTextOverrides: docText });
+                for (const name of ['quality', 'genre', 'status', 'awards']) JE.core?.tagRenderer?.reinitialize?.(name);
+            };
+            const textStore = {
+                get: readTexts,
+                set(group, label, text) {
+                    const before = ctx.config.TagTextOverrides || null;
+                    const doc = readTexts();
+                    const labels = { ...(doc[group] || {}) };
+                    if (text) labels[label.key] = text; else delete labels[label.key];
+                    if (Object.keys(labels).length) doc[group] = labels; else delete doc[group];
+                    setTextDoc(Object.keys(doc).length ? JSON.stringify(doc) : null);
+                    ctx.snack(text ? A.fmt('{name} now reads "{text}"', { name: label.name, text }) : A.fmt('{name} shows its own text again', { name: label.name }), () => {
+                        setTextDoc(before);
+                        editor?.refreshHidden();
+                    });
+                },
+            };
+            editor = A.createTagStylesEditor(ctx.root, () => [...new Set((ctx.config.CustomTagRules || []).map((r) => r.Label || r.label).filter(Boolean))], () => ctx.isCurrent(), hiddenStore, textStore);
             ctx.root.addEventListener('je-custom-labels', () => { if (ctx.isCurrent()) editor.refreshLabels(); }, { signal: ctx.signal });
-            // Groups tab pointers ("Hidden Genre tags (Colours)") open that group's tag list here.
+            // Groups tab pointers ("Hidden Genre tags (Colours and text)") open that group's tag list here.
             ctx.root.addEventListener('click', (e) => {
                 const link = /** @type {HTMLElement|null} */ (/** @type {HTMLElement} */ (e.target).closest?.('[data-je-colours-group]'));
                 if (link && ctx.isCurrent()) setTimeout(() => editor?.openGroup(link.dataset.jeColoursGroup || ''));

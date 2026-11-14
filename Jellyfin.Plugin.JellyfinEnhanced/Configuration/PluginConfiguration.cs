@@ -204,6 +204,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             TagGroupCaps = null;
             TagGroupScopes = null;
             TagHiddenValues = null;
+            TagTextOverrides = null;
             TagLabelDensity = "full";
             TagScale = "default";
             TagGap = "default";
@@ -983,6 +984,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public TagGroupScopes? TagGroupScopes { get; set; }
         /// <summary>Tag Styles labels whose chips never draw, per group (Hidden tags, set on the Colours tab); null hides nothing.</summary>
         public TagHiddenValues? TagHiddenValues { get; set; }
+        /// <summary>Text shown instead of a tag's own, JSON {"status":{"seasonFinale":"End of Season"}} (Tag text, set on the Colours tab); null keeps every tag's own text.</summary>
+        public string? TagTextOverrides { get; set; }
         /// <summary>Starting label density (full or compact).</summary>
         [AnalyticsInclude]
         public string TagLabelDensity { get; set; } = "full";
