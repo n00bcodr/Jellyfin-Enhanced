@@ -614,6 +614,58 @@ test('opening over JE\'s pause screen puts it away first', async t => {
   assert.equal(h.document.activeElement, h.overlay().querySelector('.je-subsearch-input'));
 });
 
+test('subtitles turned off while the lines load are looked up again, not listed as burned in', async t => {
+  for (const renderer of ['cues', 'ass']) {
+    let release;
+    let calls = 0;
+    const h = setup(t, { renderer, jf: () => { calls++; return new Promise(resolve => { release = () => resolve(structuredClone(STREAM)); }); } });
+    h.JE.toggleSubtitleSearch();
+    await flush();
+    if (renderer === 'cues') h.tracks[0].mode = 'disabled';
+    else h.document.querySelector('.libassjs-canvas-parent').remove();
+    h.session.PlayState.SubtitleStreamIndex = -1;
+    h.report();
+    release();
+    await flush(20);
+    assert.equal(calls, 1, renderer);
+    assert.equal(h.overlay().querySelectorAll('.je-subsearch-row').length, 0, renderer);
+    assert.match(h.text('.je-subsearch-status'), /Turn on a subtitle track first/, renderer);
+  }
+});
+
+/** STREAM with every line 5 s later: another file of the same subtitles, retimed. */
+const RETIMED = { TrackEvents: STREAM.TrackEvents.map(e => ({ ...e, StartPositionTicks: e.StartPositionTicks + 5 * TICKS, EndPositionTicks: e.EndPositionTicks + 5 * TICKS })) };
+const retimedCues = () => RETIMED.TrackEvents.map(e => ({ startTime: e.StartPositionTicks / TICKS, text: e.Text.replace(/\\N/g, '\n').replace(/\{\\[^}]*\}/g, '') }));
+
+test('a switch to a retimed file with the same text is a track change, not an offset', async t => {
+  const h = setup(t, { jf: async (path) => { h.requests.push({ path }); return structuredClone(path.includes('/Subtitles/3/') ? RETIMED : STREAM); } });
+  h.setPaused(true);
+  h.JE.addSubtitleSearchButton();
+  // jellyfin-web switches to track 3: new cue objects with the same text, 5 s later.
+  h.tracks[0].cues = retimedCues();
+  h.trackListChanged();
+  h.session.PlayState.SubtitleStreamIndex = 3;
+  h.JE.toggleSubtitleSearch();
+  await flush();
+  assert.deepEqual(h.requests, [], 'waits for the report naming the new track');
+  h.report();
+  await flush();
+  assert.deepEqual(h.requests.map(r => r.path), ['/Videos/item1/src1/Subtitles/3/0/Stream.js']);
+  assert.equal(h.text('.je-subsearch-offset'), 'Offset 0.0 s');
+  h.row('buttering me up').querySelector('.je-subsearch-line').click();
+  assert.deepEqual(h.offsets, [-4]);
+});
+
+test('a retimed same-text switch while the dialog is open makes the lines unusable', async t => {
+  const h = setup(t);
+  h.JE.toggleSubtitleSearch();
+  await flush();
+  h.tracks[0].cues = retimedCues();
+  h.row('buttering me up').querySelector('.je-subsearch-line').click();
+  assert.deepEqual(h.offsets, []);
+  assert.match(h.text('.je-subsearch-status'), /don't match the subtitles on screen/);
+});
+
 // ── Keys, closing and stale answers ──────────────────────────────────────────────────────────
 
 test('keys typed in the dialog never reach the player; Escape closes and resumes', async t => {

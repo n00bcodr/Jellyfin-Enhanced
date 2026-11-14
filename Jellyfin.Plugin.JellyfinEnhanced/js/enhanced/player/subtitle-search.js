@@ -403,24 +403,24 @@
     /** Counts subtitle changes on screen; a load spanning a change can't trust what it read. */
     let subtitleGeneration = 0;
 
-    /** The cue track's content last seen (see cueSignature). */
-    let cueSignatureSeen = 'none';
+    /** The cue track's first cue last seen (see firstCue). */
+    let firstCueSeen = null;
 
     /** The text track list watched for subtitle changes. */
     let watchedTrackList = null;
 
     /**
-     * What the cue track shows, without times: jellyfin-web refills it on a track switch and
-     * empties or hides it when subtitles go off, while an offset change only moves cue times (and
-     * on Firefox flips the mode for a moment).
+     * The first cue object of the shown cue track, which identifies the track it holds:
+     * jellyfin-web replaces every cue with new ones on a track switch (even one with the same
+     * text) and removes or hides them when subtitles go off, while an offset change only moves
+     * the existing cues' times (and on Firefox flips the mode for a moment).
      * @param {HTMLVideoElement|null} video
-     * @returns {string}
+     * @returns {TextTrackCue|null}
      */
-    function cueSignature(video) {
+    function firstCue(video) {
         const track = video ? shownCueTrack(video) : null;
         const cues = track && track.cues;
-        if (!cues || !cues.length) return 'none';
-        return cues.length + '|' + searchKey(cleanLineText(/** @type {VTTCue} */ (cues[0]).text));
+        return cues && cues.length ? cues[0] : null;
     }
 
     /** Records a subtitle change on screen. */
@@ -437,11 +437,11 @@
         setTimeout(noteCueChange, 50);
     }
 
-    /** Records a subtitle change when the cue track's content differs from the last seen. */
+    /** Records a subtitle change when the cue track holds other cues than last seen. */
     function noteCueChange() {
-        const signature = cueSignature(getVideo());
-        if (signature === cueSignatureSeen) return;
-        cueSignatureSeen = signature;
+        const cue = firstCue(getVideo());
+        if (cue === firstCueSeen) return;
+        firstCueSeen = cue;
         noteSubtitleChange();
     }
 
@@ -466,7 +466,7 @@
             watchedTrackList.removeEventListener('change', onTrackListChange);
         }
         watchedTrackList = list;
-        cueSignatureSeen = cueSignature(video);
+        firstCueSeen = firstCue(video);
         list.addEventListener('change', onTrackListChange);
     }
 
@@ -512,35 +512,40 @@
     /**
      * Which of jellyfin-web's renderers shows the primary subtitles, and what it draws with.
      * @param {HTMLVideoElement} video
-     * @returns {{kind: 'cues', track: TextTrack}|{kind: 'drawn', el: Element}|{kind: 'none'}}
+     * @returns {{kind: 'cues', track: TextTrack, cue: TextTrackCue|null}|{kind: 'drawn', el: Element}|{kind: 'none'}}
      */
     function rendererOf(video) {
         const track = shownCueTrack(video);
-        if (track) return { kind: 'cues', track };
+        if (track) return { kind: 'cues', track, cue: firstCue(video) };
         const el = drawnSurface(video);
         return el ? { kind: 'drawn', el } : { kind: 'none' };
     }
 
     /**
-     * Whether the listed lines are still the subtitles on screen. Cues prove it by their text;
-     * a drawn surface (libass, custom element) must be the one the lines were checked against,
-     * as jellyfin-web replaces it for another track. Lines listed while nothing was drawn
-     * (burned in, or still loading) stay usable until something else appears, unless it is a cue
-     * track with their text.
+     * Whether two renderer readings are the same subtitles: the same cue track holding the same
+     * cues, the same drawn element, or nothing drawn both times.
+     * @param {ReturnType<typeof rendererOf>} a
+     * @param {ReturnType<typeof rendererOf>} b
+     * @returns {boolean}
+     */
+    function sameRenderer(a, b) {
+        if (a.kind !== b.kind) return false;
+        if (a.kind === 'cues') return a.track === b.track && a.cue === b.cue;
+        if (a.kind === 'drawn') return a.el === b.el;
+        return true;
+    }
+
+    /**
+     * Whether the listed lines are still the subtitles on screen: jellyfin-web still draws them
+     * with what it drew them with when they loaded (see sameRenderer), and cues, if any, carry
+     * their text. A track switch, subtitles going off or another renderer appearing all fail it.
      * @param {DialogState} state
      * @returns {boolean}
      */
     function linesStillShown(state) {
         if (!state.lines || !state.renderer) return false;
-        const now = rendererOf(state.video);
-        const was = state.renderer;
-        if (was.kind === 'cues') {
-            return now.kind === 'cues' && now.track === was.track
-                && measureOffset(state.lines, cueSample(state.video)) !== 'mismatch';
-        }
-        if (was.kind === 'drawn') return now.kind === 'drawn' && now.el === was.el;
-        if (now.kind === 'drawn') return false;
-        return now.kind === 'none' || measureOffset(state.lines, cueSample(state.video)) !== 'mismatch';
+        if (!sameRenderer(state.renderer, rendererOf(state.video))) return false;
+        return measureOffset(state.lines, cueSample(state.video)) !== 'mismatch';
     }
 
     /**
@@ -616,7 +621,7 @@
      * @property {*} searchTimer
      * @property {boolean} supportShown Whether the hint currently says choosing a line syncs it.
      * @property {string|null} sessionId This device's session, for a seek the element can't do.
-     * @property {{kind: string, track?: TextTrack, el?: Element}|null} renderer What drew the subtitles when the lines were checked.
+     * @property {{kind: string, track?: TextTrack, cue?: TextTrackCue|null, el?: Element}|null} renderer What drew the subtitles when the lines were checked.
      * @property {boolean} [relooked] Whether the lines were looked up again after the surface changed during a load.
      */
 
@@ -1068,12 +1073,10 @@
             setStatus(state, tr('subtitle_search_empty', 'This subtitle track has no lines.'), 'info');
             return;
         }
-        // Cue text proves which track the lines are. A drawn surface (libass, custom element) can't
-        // be compared, so it must be the one that was there before the lookup, with no subtitle
-        // change since; one that appeared or changed meanwhile gets one more lookup.
+        // The answer describes the subtitles that were on screen when the lookup started. If they
+        // changed meanwhile (switched, turned off, another renderer), look once more.
         const now = rendererOf(state.video);
-        const unproven = now.kind === 'drawn' && (startRenderer.kind !== 'drawn' || startRenderer.el !== now.el
-            || subtitleGeneration !== startGeneration);
+        const unproven = !sameRenderer(startRenderer, now) || subtitleGeneration !== startGeneration;
         if (unproven && !state.relooked) {
             state.relooked = true;
             populate(state);
