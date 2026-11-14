@@ -644,6 +644,20 @@ test('closing while the cues are hidden waits: Firefox\'s offset flip resumes, s
   off.overlay().querySelector('.je-subsearch-close').click();
   await new Promise(done => setTimeout(done, 100));
   assert.equal(off.isPaused(), true);
+
+  // A seek elsewhere, or leaving the page, while that decision waits still stops the resume.
+  for (const [what, act] of [['seek', h => h.video.dispatchEvent(new h.window.Event('seeking'))],
+    ['page change', h => h.document.dispatchEvent(new h.window.Event('viewshow'))]]) {
+    const h = setup(t);
+    h.JE.toggleSubtitleSearch();
+    await flush();
+    h.tracks[0].mode = 'disabled';
+    h.overlay().querySelector('.je-subsearch-close').click();
+    h.tracks[0].mode = 'showing';
+    act(h);
+    await new Promise(done => setTimeout(done, 100));
+    assert.equal(h.isPaused(), true, what);
+  }
 });
 
 test('switching from cues to ASS, or turning subtitles off, while open makes the lines unusable', async t => {

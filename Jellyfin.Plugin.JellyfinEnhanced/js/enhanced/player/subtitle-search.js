@@ -1507,8 +1507,18 @@
         if (!(opts && opts.resume === false) && state.pausedByUs) {
             // Cues that are not showing at this moment may be Firefox's brief mode flip on an
             // offset change (the same cues come back), or subtitles turned off: decide once settled.
-            if (rendererKey(video) === null && rendererKeySeen) setTimeout(() => resumeIfOwned(state), 60);
-            else resumeIfOwned(state);
+            if (rendererKey(video) === null && rendererKeySeen) {
+                // Anything that would have stopped the resume while open still stops it until then.
+                const cancel = () => { state.pausedByUs = false; };
+                const triggers = [[video, 'seeking'], [video, 'emptied'], [document, 'viewshow'], [window, 'hashchange']];
+                for (const [target, name] of triggers) target.addEventListener(name, cancel);
+                setTimeout(() => {
+                    for (const [target, name] of triggers) target.removeEventListener(name, cancel);
+                    resumeIfOwned(state);
+                }, 60);
+            } else {
+                resumeIfOwned(state);
+            }
         }
         const back = /** @type {HTMLElement|null} */ (state.returnFocus);
         if (back && back.isConnected && typeof back.focus === 'function') {
@@ -1518,9 +1528,9 @@
 
     /**
      * Resumes playback the closed dialog paused, unless something else changed it while the
-     * dialog was open: a seek (clears pausedByUs), a subtitle change on screen (including one
-     * too recent for the settle delay to have recorded yet), another video, another user, or a
-     * dialog open again.
+     * dialog was open or since: a seek or leaving the page (clears pausedByUs), a subtitle change
+     * on screen (including one too recent for the settle delay to have recorded yet), another
+     * video, another user, another page, or a dialog open again.
      * @param {DialogState} state
      */
     function resumeIfOwned(state) {
@@ -1528,6 +1538,7 @@
         catchUpSubtitleChanges();
         if (dialog === null && state.pausedByUs && subtitleGeneration === state.generationAtOpen
             && (!JE.session || JE.session.isCurrent(state.epoch))
+            && (typeof JE.isVideoPage !== 'function' || JE.isVideoPage())
             && video.isConnected && getVideo() === video && videoSrc(video) === state.src && video.paused) {
             const played = video.play();
             if (played && typeof played.catch === 'function') played.catch(() => {});
