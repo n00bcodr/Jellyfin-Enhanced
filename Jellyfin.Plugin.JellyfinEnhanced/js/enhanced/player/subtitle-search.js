@@ -628,7 +628,6 @@
      * @property {number} epoch
      * @property {number} anchor Media time when the dialog opened, seconds.
      * @property {boolean} pausedByUs
-     * @property {number} openedAt When the dialog opened (and paused playback), by this page's clock.
      * @property {AbortController} abort
      * @property {Element|null} returnFocus
      * @property {HTMLElement} overlay
@@ -930,14 +929,15 @@
     }
 
     /**
-     * This device's session, once it is known to describe what is on screen. A pause makes
-     * jellyfin-web report its whole state, so when the dialog paused playback a session that
-     * shows it paused where the dialog opened (isPauseReport) is current, unless the subtitles
-     * changed after that. Otherwise the last
-     * report is at most ten seconds old: it is current unless the subtitles on screen changed
-     * since (a track shown, switched or turned off, see noteRenderer), in which case the dialog
-     * waits for the next report (LastPlaybackCheckIn moves). Null when no current answer came in
-     * time.
+     * This device's session, once it is known to describe what is on screen. jellyfin-web
+     * reports its whole state on pause and at least every ten seconds. After a subtitle change on
+     * screen in the last REPORT_INTERVAL_MS (a track shown, switched or turned off, see
+     * noteRenderer), before or after the dialog opened, nothing already on the server can be shown
+     * to be newer than the change, so the dialog waits for the next report (LastPlaybackCheckIn
+     * moves past the first value it sees). Without one, the server's last report came after the
+     * last change; when the dialog paused playback it still waits for that pause's report
+     * (isPauseReport), which also covers a change it could not see (image subtitles). Null when
+     * no current answer came in time.
      * @param {DialogState} state
      * @returns {Promise<object|null>}
      */
@@ -945,11 +945,7 @@
         const probe = JE.internals?.player?.probeOwnSession;
         if (typeof probe !== 'function') return null;
         const deadline = Date.now() + TIMEOUTS.sessionWait;
-        // A recent subtitle change needs a report sent after it, unless it came before the
-        // dialog's own pause (whose report already includes it).
-        const recentChange = subtitlesChangedAt > 0 && Date.now() - subtitlesChangedAt < REPORT_INTERVAL_MS;
-        const coveredByPause = state.pausedByUs && subtitlesChangedAt <= state.openedAt;
-        const awaitReport = recentChange && !coveredByPause;
+        const awaitReport = subtitlesChangedAt > 0 && Date.now() - subtitlesChangedAt < REPORT_INTERVAL_MS;
         /** @type {string|null|undefined} undefined until a session has been seen. */
         let baseline;
         for (;;) {
@@ -1206,9 +1202,11 @@
         const target = Math.max(0, line.start - offset);
         if (isProgressiveTranscode(videoSrc(state.video)) && state.sessionId) {
             // The element only holds what the server has produced from where this stream
-            // started; jellyfin-web's own seek restarts the transcode at the target.
+            // started; jellyfin-web's own seek restarts the transcode at the target, and plays it.
+            const stopKeepingPaused = state.pausedByUs ? () => {} : keepPausedAfterRestart(state);
             closeDialog({ resume: false });
             seekThroughSession(state.sessionId, target).catch(err => {
+                stopKeepingPaused();
                 console.warn('🪼 Jellyfin Enhanced: subtitle search seek failed', err);
                 JE.toast?.(tr('subtitle_search_jump_failed', 'Couldn\'t jump to that line.'));
             });
@@ -1216,6 +1214,31 @@
         }
         state.video.currentTime = Math.max(0, target - transcodeOffsetSeconds(state.video));
         closeDialog();
+    }
+
+    /**
+     * Playback was paused before the dialog opened: pauses the stream jellyfin-web restarts for
+     * a jump (it plays it from the new position) once it starts, if it is still this player and
+     * user, within 20 s.
+     * @param {DialogState} state
+     * @returns {() => void} Stops waiting.
+     */
+    function keepPausedAfterRestart(state) {
+        const video = state.video;
+        let timer = null;
+        const stop = () => {
+            clearTimeout(timer);
+            video.removeEventListener('playing', onPlaying);
+        };
+        const onPlaying = () => {
+            stop();
+            if (video.isConnected && getVideo() === video && (!JE.session || JE.session.isCurrent(state.epoch))) {
+                video.pause();
+            }
+        };
+        video.addEventListener('playing', onPlaying);
+        timer = setTimeout(stop, 20000);
+        return stop;
     }
 
     /**
@@ -1392,7 +1415,6 @@
             epoch: JE.session ? JE.session.getEpoch() : 0,
             anchor: mediaTime(video),
             pausedByUs: wasPlaying,
-            openedAt: Date.now(),
             abort: new AbortController(),
             returnFocus: document.activeElement,
             overlay,

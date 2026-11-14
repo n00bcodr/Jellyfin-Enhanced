@@ -34,6 +34,9 @@ const plain = v => JSON.parse(JSON.stringify(v));
 
 const flush = async (n = 12) => { for (let i = 0; i < n; i++) await new Promise(done => setTimeout(done, 5)); };
 
+/** Opens the dialog right after a subtitle change: it waits for jellyfin-web's next report. */
+const openReported = async (h) => { h.JE.toggleSubtitleSearch(); await flush(); h.report(); await flush(); };
+
 /**
  * A player page with jellyfin-web's OSD buttons, its hidden subtitle sync control, a video at
  * `time` and (optionally) the cue track jellyfin-web fills.
@@ -299,6 +302,27 @@ test('a jump on a progressive transcode goes through jellyfin-web\'s own seek', 
   assert.equal(h.video.currentTime, 4.98);
   assert.equal(h.overlay(), null);
   assert.equal(h.isPaused(), true, 'jellyfin-web restarts the stream itself');
+  // jellyfin-web plays the restarted stream: the dialog paused playback, so it stays playing.
+  h.setPaused(false);
+  h.video.dispatchEvent(new h.window.Event('playing'));
+  assert.equal(h.isPaused(), false);
+});
+
+test('a progressive jump from paused playback stays paused after jellyfin-web restarts the stream', async t => {
+  const h = setup(t, { renderer: 'none', src: 'http://jellyfin.test/Videos/item1/stream.mp4?StartTimeTicks=600000000', time: 4.98 });
+  h.setPaused(true);
+  h.JE.toggleSubtitleSearch();
+  await flush();
+  h.row('outcome was never').querySelector('.je-subsearch-jump').click();
+  await flush(2);
+  assert.equal(h.ajaxCalls.filter(c => c.type === 'POST').length, 1);
+  h.setPaused(false); // the restarted stream plays
+  h.video.dispatchEvent(new h.window.Event('playing'));
+  assert.equal(h.isPaused(), true);
+  // Only that once: playing again later is the user's.
+  h.setPaused(false);
+  h.video.dispatchEvent(new h.window.Event('playing'));
+  assert.equal(h.isPaused(), false);
 });
 
 test('only progressive transcodes count as needing the server seek', t => {
@@ -520,15 +544,13 @@ test('after an ASS track switch the slider\'s old value is not taken as the offs
   h.JE.addSubtitleSearchButton(); // a page update before the surface exists
   h.video.parentElement.append(surface);
   h.JE.addSubtitleSearchButton(); // the page update that sees it appear
-  h.JE.toggleSubtitleSearch();
-  await flush();
+  await openReported(h);
   assert.equal(h.text('.je-subsearch-offset'), 'Offset 0.0 s');
   h.row('Aah!').querySelector('.je-subsearch-jump').click();
   assert.ok(Math.abs(h.video.currentTime - 110.3) < 1e-9);
   // Once the offset is set again (here by JE), the slider is right again.
   h.JE.setSubtitleOffset(-2);
-  h.JE.toggleSubtitleSearch();
-  await flush();
+  await openReported(h);
   assert.equal(h.text('.je-subsearch-offset'), 'Offset -2.0 s');
 });
 
@@ -615,8 +637,7 @@ test('jellyfin-web\'s own offset keys count as setting the offset', async t => {
   // G then H: jellyfin-web's update() goes through the slider's updateOffset.
   h.sliderEl.updateOffset(-10.9);
   h.sliderEl.updateOffset(-10.8);
-  h.JE.toggleSubtitleSearch();
-  await flush();
+  await openReported(h);
   assert.equal(h.text('.je-subsearch-offset'), 'Offset -10.8 s');
   h.row('Aah!').querySelector('.je-subsearch-jump').click();
   assert.ok(Math.abs(h.video.currentTime - 121.1) < 1e-9);
@@ -737,21 +758,20 @@ test('with too few cues to measure, a new cue track counts as offset 0 until the
   h.JE.addSubtitleSearchButton(); // a page update before the cues are shown
   h.tracks[0].mode = 'showing';
   h.JE.addSubtitleSearchButton(); // the page update that sees the new cues
-  h.JE.toggleSubtitleSearch();
-  await flush();
+  await openReported(h);
   assert.equal(h.text('.je-subsearch-offset'), 'Offset 0.0 s');
   h.row('Buttering me up').querySelector('.je-subsearch-jump').click();
   assert.equal(h.video.currentTime, 56);
   h.JE.setSubtitleOffset(-2);
-  h.JE.toggleSubtitleSearch();
-  await flush();
+  await openReported(h);
   assert.equal(h.text('.je-subsearch-offset'), 'Offset -2.0 s');
 });
 
-test('an earlier pause still on the server is not taken for the dialog\'s own pause report', async t => {
-  // The server holds a pause at 30 s on track 2; since then the player switched to track 3
-  // (same text, 5 s later) and resumed, and those reports have not arrived.
-  const h = setup(t, { before: { IsPaused: true, PositionTicks: 30 * TICKS }, pauseReports: false,
+for (const earlier of [30, 64.88]) test(`an earlier pause still on the server (at ${earlier} s) is not taken for the dialog's own pause report`, async t => {
+  // The server holds a pause on track 2; since then the player switched to track 3 (same text,
+  // 5 s later) and resumed, and those reports have not arrived. Even a pause close to where the
+  // dialog opens can't stand in for a report sent after the switch.
+  const h = setup(t, { before: { IsPaused: true, PositionTicks: Math.round(earlier * TICKS) }, pauseReports: false,
     jf: async (path) => { h.requests.push({ path }); return structuredClone(path.includes('/Subtitles/3/') ? RETIMED : STREAM); } });
   h.JE.addSubtitleSearchButton(); // the page update before the switch
   h.tracks[0].cues = retimedCues();
@@ -774,8 +794,7 @@ test('an offset set before the page noticed a new renderer still counts as set',
   h.JE.addSubtitleSearchButton();
   h.video.parentElement.append(surface); // a new ASS track, not yet seen by a page update
   h.JE.setSubtitleOffset(-2);
-  h.JE.toggleSubtitleSearch();
-  await flush();
+  await openReported(h);
   assert.equal(h.text('.je-subsearch-offset'), 'Offset -2.0 s');
   h.row('Aah!').querySelector('.je-subsearch-jump').click();
   assert.ok(Math.abs(h.video.currentTime - 112.3) < 1e-9);
