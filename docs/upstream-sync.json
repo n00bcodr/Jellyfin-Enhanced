@@ -1452,6 +1452,101 @@
       ],
       "notes": "Re-implemented. Server: Features/MediaTags/Services/MaintainerrHttp.cs, MaintainerrActions.cs and LeavingSoonHomeSection.cs (upstream's files in this tree's namespaces), LeavingSoonService.cs (the shared client, the collection each member came from, CollectionOf, MaintainerrItems, Status's Actions and HomeRow), Shared/MediaTags/LeavingSoonSources.cs (NormalizeSource, MaintainerrActionsEnabled, HomeRowWanted), PluginConfiguration (LeavingSoonMaintainerrActions, LeavingSoonHomeRow, both on), JellyfinEnhanced.cs (NormalizeSource on every full save), MediaTagsPageFields/PluginConfigurationPatch/MediaTagsPortable as upstream (the Maintainerr URL, key and refresh hours leave the Media Tags patch; the key is write-only there), BootstrapConfig.MaintainerrActionsAvailable, and the four admin routes in JeMediaTagsController.Maintainerr.cs. Client: features/media-tags/editor/maintainerr-item-menu.ts (+ .css), core/ui/runtime.ts (a toast's action button), the Media Tags page's Leaving soon section, the configuration page's *arr Maintainerr card with its Services copy (sections/arr.ts, about.ts, the template) and its status, Refresh and Overview card (page/service-status.ts), the 19 en.json strings and scripts/tag-translation-coverage.mjs. Docs and the eight screenshots as upstream. Differences from upstream: (1) One controller per feature: the routes are a partial of JeMediaTagsController (GetMaintainerrItemState, MarkForMaintainerrRemoval, KeepFromMaintainerrRemoval, PostponeMaintainerrRemoval) with the same paths, verbs, [Authorize] and admin check (JeControllerBase.IsAdminUser, the rule upstream's IsAdmin copies); MaintainerrActions comes [FromServices]; the body type is Features/MediaTags/Models/MaintainerrActionRequest.cs. (2) The home row's state reaches GET admin/leaving-soon and POST admin/leaving-soon/refresh through LeavingSoonService.HomeRowStatus, which LeavingSoonHomeSection sets, not through a new [FromServices] parameter, so those two routes' contract lines stay as they are. The status says off whenever the row is not wanted and unknown until the service's first look (upstream says off for the first seconds after a start, and keeps the previous state until its next minute-long loop after a switch changes). (3) LeavingSoonHomeSection keeps ft-missing after registering (upstream's next loop replaces it with registered although File Transformation is still missing; filed), calls HSS's RegisterSection once per process and retries only the missing section entry when adding it failed. It is registered with AddHostedService<T> (no factory, so the base-anchored factory snapshot is unchanged) and last of all (AddJeMediaTagsLateHostedServices), so every existing hosted service keeps its start order. (4) The pure rules live in Shared/MediaTags/LeavingSoonSources, so the bootstrap (Platform) and the configuration save read them without crossing into MediaTags; MaintainerrActions.Enabled and LeavingSoonHomeSection.Wanted forward to them. (5) MaintainerrHttp reads an empty success body as {} only for an action (not a GET): upstream's helper would read an empty first page of members as a source without the paged route and fall back to the embedded members, which this tree's stricter paging (LeavingSoonTests, the failed-page cases) refuses as a failed refresh. The paged route's 404 fallback reads MaintainerrException 404. (6) The item-menu rows are bundled into js/tags/tag-item-menu.js (component-scripts.json is pinned) and take each ⋮ press from the Media Tags row's own capture listener, so the page keeps one pair of document listeners for both (the leak guard's L2 ratchet); an action's toast is not shown when another user signed in while it ran (a session lease). (7) In this tree section modules declare markup and page modules wire it, so upstream's JEAdmin.maintainerr is part of page/service-status.ts. The Maintainerr card carries data-dep-setup like Bazarr's and Shoko's: upstream's card is locked in the *arr tab (its fields and Refresh disabled) whenever no Sonarr or Radarr is set up, although Maintainerr needs neither (filed). (8) Docs with this tree's paths; api.md counts 210 routes (206 + 4). Two corrections to upstream's text: LeavingSoonCollections stays a Media Tags field (upstream's api.md and admin-media-tags.md give it to the Services form, its code does not), and the key is a text field like the TMDB key (upstream's tags.md says a password field). Tests: upstream's backend tests at their moved paths (LeavingSoonSources.NormalizeSource; the home row's state through HomeRowStatus), two route-level tests (administrators only, 404 while off, 400 for an unknown item or a refusal, 502 with Maintainerr's reason and never the address or key); upstream's frontend tests at moved paths, loading tags/tag-item-menu.js, plus a user-switch case; the configuration page's old Maintainerr card test replaced by two tests of the new card. Records: tests/fixtures/admin-config-baseline.json (the five settings, the card's ids and section, their defaults), tests/frontend/features/media-tags/admin/admin-tags-rewrite.declarations.json and tests/fixtures/admin-tags-page-fields.json (the three fields that left the Media Tags page), docs/advanced/config-flag-groups.json regenerated (identical to upstream's change); the rewrite's own wide-box test no longer names the moved fields. Contract: four routes, MaintainerrActions (singleton) and LeavingSoonHomeSection (hosted service, appended to the IHostedService order) are added by the branch's last commit, contract: upstream sync additions. No cached-output version moves: leaving-soon.json keeps schema 2, and an older snapshot without the collection ids is read again when an action needs them (as upstream). Outbound: as upstream, the server now writes to the administrator's Maintainerr and, when one library has several manual collections, asks the Radarr or Sonarr servers Maintainerr lists (their addresses and keys from Maintainerr's settings API) whether they hold the item, through ArrUrlGuard; nothing new reaches the browser.",
       "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p44-*"
+    },
+    {
+      "sha": "dbaf4729fcdac1c0251283556cd7a174f98ea9f8",
+      "date": "2026-11-13T19:35:59+00:00",
+      "subject": "chore(docs): version the docs with mike (dev for main, latest for releases)",
+      "class": "ci",
+      "features": [],
+      "issues": [],
+      "release": null,
+      "size": {
+        "files": 4,
+        "insertions": 81,
+        "deletions": 22
+      },
+      "paths": [
+        ".github/docs/requirements.in",
+        ".github/docs/requirements.txt",
+        ".github/workflows/docs.yml",
+        "mkdocs.yml"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "f708c41a54a48ce8c2c12d7e9b7c598ecee9887c"
+      ],
+      "notes": "Applied as is (git show dbaf4729 | git apply --3way, clean): .github/workflows/docs.yml, .github/docs/requirements.in and .github/docs/requirements.txt are byte-identical to upstream's at dbaf4729, and mkdocs.yml gains the same extra.version block (provider mike, default latest). The docs workflow publishes with mike to the gh-pages branch (dev on a push to main, major.minor plus the latest alias on a tag push or a manual run with release set) instead of uploading a Pages artifact. This tree's mkdocs.yml keeps its own exclude of upstream-sync*. Nothing the plugin ships changes; this tree is never pushed, so the workflow only runs where upstream's does."
+    },
+    {
+      "sha": "3e7bb92228827abe9c3bd42cc27c7cb7f844f7d0",
+      "date": "2026-11-13T19:38:21+00:00",
+      "subject": "Translated using Weblate (Korean)",
+      "class": "translation",
+      "features": [
+        "platform",
+        "media-tags",
+        "details-providers"
+      ],
+      "issues": [],
+      "release": null,
+      "size": {
+        "files": 32,
+        "insertions": 672,
+        "deletions": 32
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/js/locales/ (32 files)"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "2fdbb8fa91a8038d862e3d78cea95f4a12356918"
+      ],
+      "notes": "Applied as is (git show 3e7bb922 | git apply --3way, clean): the 32 locale files under Jellyfin.Plugin.JellyfinEnhanced/js/locales/ are byte-identical to upstream's at 3e7bb922. It adds 20 keys to each (1,437 to 1,457 keys), and every value is the English source text (Weblate seeding new keys), so nothing a user reads changes. Nineteen are the maintainerr_* strings of the Maintainerr item-menu actions (upstream 481a10ee, ported here as row 44), all in this tree's en.json with the same text. One, elsewhere_settings_seerr_region, belongs to the Seerr streaming providers port (79a90422, row 42), deferred for a contract review: this tree's en.json gains it when that port lands (branch sync/contract-79a90422 adds it with the same text), and until then nothing reads it (scripts/validate-translations.js lists it as an extra key, a warning). No key changes or goes; every value has the same {placeholders} as its source. No key the server reads for poster tag captions changes, so no resolver version moves. No difference from upstream."
+    },
+    {
+      "sha": "85c994478dc2c39b8a70bbfec6ca5897960f21c6",
+      "date": "2026-11-13T19:43:35+00:00",
+      "subject": "chore(docs): allow back filling released docs versions from older tags",
+      "class": "ci",
+      "features": [],
+      "issues": [],
+      "release": null,
+      "size": {
+        "files": 1,
+        "insertions": 39,
+        "deletions": 11
+      },
+      "paths": [
+        ".github/workflows/docs.yml"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "fb4b9fdefd9083b7894da8aa0fdbfb022924fa44"
+      ],
+      "notes": "Applied as is (git show 85c99447 | git apply --3way, clean): .github/workflows/docs.yml is byte-identical to upstream's at 85c99447. A manual run can build an older tag or branch (ref) and publish it without moving the latest alias (latest off); the tooling always comes from the requirements on the repository's main branch, the npm and flag-group steps are skipped where the built ref lacks them, and a ref whose mkdocs.yml has no mike provider is built with an extra config that inherits it and adds the version switcher. Nothing the plugin ships changes."
+    },
+    {
+      "sha": "9eb07d86c538255df5aa9a3ab47a94215702d5a9",
+      "date": "2026-11-13T20:01:03+00:00",
+      "subject": "chore(docs): title the docs versions main and latest in the version picker",
+      "class": "ci",
+      "features": [],
+      "issues": [],
+      "release": null,
+      "size": {
+        "files": 1,
+        "insertions": 10,
+        "deletions": 10
+      },
+      "paths": [
+        ".github/workflows/docs.yml"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "18c926f13783281d279f68b8af231e989518d175"
+      ],
+      "notes": "Applied as is (git show 9eb07d86 | git apply --3way, clean): .github/workflows/docs.yml is byte-identical to upstream's at 9eb07d86. The workflow's default token permission is read and only the deploy job may write; the unused cache step goes; dev is titled main in the version picker, and a release deployed as latest is titled latest (12.15) while the release it replaces gets its plain version title back (mike retitle). Nothing the plugin ships changes."
     }
   ]
 }
