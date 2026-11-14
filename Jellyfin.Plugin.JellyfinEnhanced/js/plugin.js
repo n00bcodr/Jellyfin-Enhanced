@@ -2,6 +2,16 @@
 (function() {
     'use strict';
 
+    // replaceChildren() is Chrome 86+ (older Tizen/webOS TVs); every JE module, including the admin page's, loads after this.
+    for (const proto of [Element.prototype, Document.prototype, DocumentFragment.prototype]) {
+        if (!proto.replaceChildren) {
+            Object.defineProperty(proto, 'replaceChildren', { configurable: true, writable: true, value(...nodes) {
+                while (this.lastChild) this.removeChild(this.lastChild);
+                this.append(...nodes);
+            } });
+        }
+    }
+
     // Create the global namespace immediately with placeholders
     window.JellyfinEnhanced = {
         // Shared core layer, populated by js/core/*.js (navigation, lifecycle,

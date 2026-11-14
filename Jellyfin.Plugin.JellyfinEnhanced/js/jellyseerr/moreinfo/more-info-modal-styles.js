@@ -129,6 +129,7 @@ const css = `
 
         .je-more-info-modal .modal-backdrop {
             position: relative;
+            height: 360px;
             height: clamp(200px, 34vw, 360px);
             background-size: cover;
             background-position: center 22%;
