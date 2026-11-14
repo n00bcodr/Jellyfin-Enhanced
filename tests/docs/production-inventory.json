@@ -10058,6 +10058,10 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.cs"
     },
     {
+      "literal": "settings.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/RefreshLeavingSoonTagsTask.cs"
+    },
+    {
       "literal": "bookmark.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/AnalyticsReportingService.cs"
     },
@@ -10482,7 +10486,7 @@
     "files": 484,
     "routes": 207,
     "configuration_properties": 758,
-    "storage_references": 87,
+    "storage_references": 88,
     "scheduled_tasks": 16,
     "locales": 33
   }
