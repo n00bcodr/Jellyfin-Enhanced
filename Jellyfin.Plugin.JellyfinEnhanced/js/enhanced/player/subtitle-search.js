@@ -1504,18 +1504,33 @@
         }
         state.overlay.remove();
         const video = state.video;
-        const resume = !(opts && opts.resume === false);
-        // Nor after a subtitle change on screen while it was open (a track switched elsewhere),
-        // including one too recent for the settle delay to have recorded yet.
-        catchUpSubtitleChanges();
-        if (resume && state.pausedByUs && subtitleGeneration === state.generationAtOpen
-            && video.isConnected && getVideo() === video && videoSrc(video) === state.src && video.paused) {
-            const played = video.play();
-            if (played && typeof played.catch === 'function') played.catch(() => {});
+        if (!(opts && opts.resume === false) && state.pausedByUs) {
+            // Cues that are not showing at this moment may be Firefox's brief mode flip on an
+            // offset change (the same cues come back), or subtitles turned off: decide once settled.
+            if (rendererKey(video) === null && rendererKeySeen) setTimeout(() => resumeIfOwned(state), 60);
+            else resumeIfOwned(state);
         }
         const back = /** @type {HTMLElement|null} */ (state.returnFocus);
         if (back && back.isConnected && typeof back.focus === 'function') {
             try { back.focus({ preventScroll: true }); } catch (err) { /* focus is best effort */ }
+        }
+    }
+
+    /**
+     * Resumes playback the closed dialog paused, unless something else changed it while the
+     * dialog was open: a seek (clears pausedByUs), a subtitle change on screen (including one
+     * too recent for the settle delay to have recorded yet), another video, another user, or a
+     * dialog open again.
+     * @param {DialogState} state
+     */
+    function resumeIfOwned(state) {
+        const video = state.video;
+        catchUpSubtitleChanges();
+        if (dialog === null && state.pausedByUs && subtitleGeneration === state.generationAtOpen
+            && (!JE.session || JE.session.isCurrent(state.epoch))
+            && video.isConnected && getVideo() === video && videoSrc(video) === state.src && video.paused) {
+            const played = video.play();
+            if (played && typeof played.catch === 'function') played.catch(() => {});
         }
     }
 

@@ -627,6 +627,25 @@ test('a seek or a track switch made elsewhere while open leaves playback paused 
   assert.equal(quick.isPaused(), true);
 });
 
+test('closing while the cues are hidden waits: Firefox\'s offset flip resumes, subtitles turned off do not', async t => {
+  const flip = setup(t);
+  flip.JE.toggleSubtitleSearch();
+  await flush();
+  flip.tracks[0].mode = 'disabled'; // jellyfin-web's debounced offset task hides the cues…
+  flip.overlay().querySelector('.je-subsearch-close').click();
+  flip.tracks[0].mode = 'showing'; // …and its 0 ms task brings the same cues back
+  await new Promise(done => setTimeout(done, 100));
+  assert.equal(flip.isPaused(), false);
+
+  const off = setup(t);
+  off.JE.toggleSubtitleSearch();
+  await flush();
+  off.tracks[0].mode = 'disabled'; // subtitles turned off elsewhere
+  off.overlay().querySelector('.je-subsearch-close').click();
+  await new Promise(done => setTimeout(done, 100));
+  assert.equal(off.isPaused(), true);
+});
+
 test('switching from cues to ASS, or turning subtitles off, while open makes the lines unusable', async t => {
   for (const change of ['ass', 'off']) {
     const h = setup(t);
