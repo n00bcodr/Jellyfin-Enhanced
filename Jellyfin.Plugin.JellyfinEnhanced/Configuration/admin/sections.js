@@ -122,7 +122,7 @@ JEAdmin.define({
                 + '<dl class="je-media-tags-card-facts" id="jeMediaTagsCardFacts" aria-live="polite"></dl></div>'
                 + '<a class="jea-btn jea-btn-primary je-media-tags-open" href="#/configurationpage?name=Jellyfin%20Enhanced&amp;jeSection=media-tags"><i class="material-icons" aria-hidden="true">sell</i><span>Open Media Tags</span></a>'
                 + '<div class="je-media-tags-card-links">'
-                + [['layout', 'Layout defaults'], ['groups', 'Groups'], ['rules', 'Rules'], ['colours', 'Colours'], ['badges', 'Status badges'], ['server', 'Tag cache &amp; native posters']]
+                + [['layout', 'Layout defaults'], ['groups', 'Groups'], ['rules', 'Rules'], ['colours', 'Colours and text'], ['badges', 'Status badges'], ['server', 'Tag cache &amp; native posters']]
                     .map(([section, label]) => '<a class="je-media-tags-card-link" href="#/configurationpage?name=Jellyfin%20Enhanced&amp;jeSection=media-tags&amp;tab=' + section + '">' + label + '</a>').join('')
                 + '</div></div>' }]
         },

@@ -120,7 +120,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
 
             if (On(PosterTagGroup.Status) && StatusRules.Resolve(entry, settings, context.Status ?? new PosterStatusContext(DateTimeOffset.UtcNow)) is { } status
                 && !settings.Hidden.Hides(TagStyleKeys.Status, status.StyleKey))
-                groups.Add(Group(PosterTagGroup.Status, settings, new List<PosterTag>(1) { status }));
+                groups.Add(Group(PosterTagGroup.Status, settings, new List<PosterTag>(1) { status with { Text = settings.Texts.Of(TagStyleKeys.Status, status.StyleKey) ?? status.Text } }));
             if (On(PosterTagGroup.Custom) && ResolveCustom(entry, settings) is { } custom)
             {
                 groups.Add(Group(PosterTagGroup.Custom, settings, custom));
@@ -149,6 +149,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 if (settings.AwardsEmmy && awards.EmmyWinner) tags.Add(new AwardTag("emmy", Caption("awards_tags_emmy")));
                 if (settings.AwardsLetterboxd && awards.LetterboxdRank is > 0 and <= 250) tags.Add(new AwardTag("letterboxdTop250", Caption("awards_tags_label_imdbTop250")));
                 if (settings.Hidden.Any(TagStyleKeys.Awards)) tags.RemoveAll(t => t is AwardTag award && settings.Hidden.Hides(TagStyleKeys.Awards, award.Id));
+                // Tag text (#1063): the administrator's text replaces the caption.
+                if (settings.Texts.Any(TagStyleKeys.Awards)) tags = tags.ConvertAll(t => t is AwardTag award && settings.Texts.Of(TagStyleKeys.Awards, award.Id) is { } text ? award with { Text = text } : t);
                 if (tags.Count > 0) groups.Add(Group(PosterTagGroup.Awards, settings, tags));
             }
             if (groups.Count == 0) return null;
@@ -272,6 +274,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 if (group == PosterTagGroup.Rating && list.OfType<RatingTag>().Any(t => t.Source == PosterRatingSource.Community))
                     list.RemoveAll(t => t is RatingTag { Source: PosterRatingSource.Critic });
             }
+            // Tag text (#1063): the administrator's text replaces the chip's whole text, density included.
+            if (group == PosterTagGroup.Quality && settings.Texts.Any(TagStyleKeys.Quality))
+            {
+                list = list.Select(t => t is QualityTag q && settings.Texts.Of(TagStyleKeys.Quality, TagHiddenRules.QualityLabel(q)) is { } text ? q with { DisplayText = text } : t).ToList();
+            }
+
             var cap = settings.CapOf(group);
             if (cap > 0 && list.Count > cap) list.RemoveRange(cap, list.Count - cap);
             return new PosterTagGroupLayout(group, PosterTagSettings.CornerOf(settings.PositionOf(group)), list);

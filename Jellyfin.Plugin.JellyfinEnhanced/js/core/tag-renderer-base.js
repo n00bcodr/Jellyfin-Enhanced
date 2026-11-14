@@ -1088,6 +1088,33 @@
         },
     };
 
+    // ── Tag text ────────────────────────────────────────────────────────
+    // The text an administrator set instead of a tag's own (#1063), from the
+    // public configuration's TagTextOverrides (JSON {"status":{"seasonFinale":
+    // "End of Season"}}), keyed by the Tag Styles label that colours the chip.
+    // core/tag-layout.js applies it to quality, genre, status and awards chips.
+    // Mirrors TagTextRules / TagTextSet (server), which native posters use.
+    let textMemo = { doc: undefined, map: {} };
+
+    JE.core.tagText = {
+        /**
+         * The text for chips of this Tag Styles label, or null to keep their own.
+         * @param {string} group
+         * @param {*} label
+         * @returns {string|null}
+         */
+        of(group, label) {
+            const doc = JE.pluginConfig?.TagTextOverrides;
+            if (textMemo.doc !== doc) {
+                let map = {};
+                try { map = doc ? JSON.parse(doc) : {}; } catch { /* a bad document overrides nothing */ }
+                textMemo = { doc, map: map && typeof map === 'object' ? map : {} };
+            }
+            const text = label === null || label === undefined ? null : textMemo.map[group]?.[String(label)];
+            return typeof text === 'string' && text ? text : null;
+        },
+    };
+
     // ── Settings matrix ─────────────────────────────────────────────────
     // The common controls every tag group offers, per settings surface: the
     // admin Media Tags page, the personal Media Tags hub and the item editor.

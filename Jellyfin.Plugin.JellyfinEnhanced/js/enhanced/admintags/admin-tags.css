@@ -937,6 +937,7 @@ body.je-hide-descriptions .je-tag-admin .je-ta-intro { display: none; }
 .je-tag-admin .je-ts-hide-box .je-ta-switch { padding: 0; }
 .je-tag-admin .je-ts-hide-box .je-ta-switch-name { font-size: 14px; font-weight: 600; }
 .je-tag-admin .je-ts-hide-scope { display: block; max-width: 80ch; font-size: 13px; line-height: 1.45; color: var(--je-ta-muted); }
+.je-tag-admin .je-ts-text-row { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; max-width: 420px; }
 .je-tag-admin .je-ts-hide-none { margin: 0; font-size: 13px; line-height: 1.45; color: var(--je-ta-muted); }
 .je-tag-admin .je-ts-hide-ratings { margin-top: 6px; font-size: 13px; color: var(--je-ta-muted); }
 .je-tag-admin .je-ts-hide-ratings > summary { cursor: pointer; min-height: 32px; display: flex; align-items: center; gap: 4px; list-style: none; font-weight: 500; color: var(--je-ta-text); }

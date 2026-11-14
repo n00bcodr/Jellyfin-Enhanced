@@ -1421,11 +1421,15 @@ The editor shows every tag of the selected group in its current colours, so you 
 
 A tag's colours are worked out field by field: its own colour if you set one, else the group colour, else the preset. **Default** on a row removes that one colour from what you are editing, so it falls back to the group or the preset.
 
+#### Tag text
+
+Quality, genre, status and awards tags also have a **Text** field under their **Hide** switch: choose a tag and type the words its chips should show (for example **Season Finale** becomes **End of Season**). The text replaces the whole chip text for every user, on web posters and on native posters (native genre chips draw only an icon, so a genre text shows on the web only). Leave the field empty to go back to the tag's own words; it saves when you leave the field and offers Undo. Texts are up to 32 characters, apply in Full and Compact density alike, and are not translated: every language shows what you typed. A tile renames every chip it colours, so renaming **Dolby Digital+** replaces **Dolby Digital+ 5.1** and **Dolby Digital+ 2.0** alike.
+
 #### Hidden tags
 
 Any tag in the editor's tag list can also be hidden: choose it and turn on its **Hide** switch (named after the tag, for example **Hide Drama**). Its chips then never show, on web posters and native posters, for every user. Hidden tiles are dimmed, outlined and marked; the group's tab shows how many it hides; and a **Hidden** line under the list names them, each a shortcut to its switch (with more than four, **Show only the hidden tags** narrows the list to them). **Undo** in the confirmation brings a tag back, as does turning the switch off again. Hidden tags work whether **Use tag colours** is on or off; with colours off the editor stays open for hiding and its colour controls are dimmed.
 
-Each group on the **Groups** tab says how many of its tags are hidden and links to them (**Hidden Genre tags (Colours)**). Turning a group off there only changes what new users start with; hiding a tag applies to everyone.
+Each group on the **Groups** tab says how many of its tags are hidden and links to them (**Hidden Genre tags (Colours and text)**). Turning a group off there only changes what new users start with; hiding a tag applies to everyone.
 
 A tag hides exactly the chips its colours apply to:
 

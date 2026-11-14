@@ -58,7 +58,7 @@
      * @param {HTMLElement} root - Holds the editor markup (and #tagStylesEnabled).
      * @returns {{load: Function, serialize: Function, settings: Function, snapshot: Function}}
      */
-    function createTagStylesEditor(root, customLabels = () => [], isCurrent = () => true, hiddenStore = null) {
+    function createTagStylesEditor(root, customLabels = () => [], isCurrent = () => true, hiddenStore = null, textStore = null) {
 
         const GROUPS = [
             { key: 'quality', title: T('Quality') }, { key: 'ageRating', title: T('Age Rating') }, { key: 'rating', title: T('Rating') },
@@ -687,6 +687,50 @@
             setTimeout(() => now?.setAttribute('aria-live', 'polite'), 250);
         }
 
+        // ── Tag text (#1063) ──
+        // A tile can show other words than its own ("Season Finale" -> "End of Season"): the chips it colours
+        // take the text (web and native posters). The texts live in TagTextOverrides ({ status: { seasonFinale:
+        // 'End of Season' } }), kept by the Colours section through textStore ({ get(): doc, set(g, key, text) }).
+        // Only groups whose chips are plain words take one.
+        const TEXT_GROUPS = ['quality', 'genre', 'status', 'awards'];
+        /** @param {string} g @param {string} l @returns {boolean} */
+        const renamable = (g, l) => !!textStore && l !== ALL && TEXT_GROUPS.includes(g);
+        /** @param {string} g @param {string} l @returns {string} The tag's own text from the administrator, or ''. */
+        const textOf = (g, l) => (textStore && (textStore.get()[g] || {})[l]) || '';
+        /** @returns {string} What the tag list invites you to do with a pick. */
+        const pickHint = () => tr(!hiddenStore ? 'Choose a tag to change only its colours.'
+            : textStore && TEXT_GROUPS.includes(current) ? 'Choose a tag to change its colours or text, or hide it.' : 'Choose a tag to change its colours or hide it.');
+
+        /**
+         * The picked tag's Text field: empty keeps the tag's own words (its placeholder).
+         * @param {string} g
+         * @param {{key: string, name: string}} picked
+         * @returns {HTMLElement}
+         */
+        function buildTextRow(g, picked) {
+            const row = el('div', 'je-ts-text-row');
+            const label = el('label', 'je-ta-switch-name', T('Text'));
+            label.htmlFor = 'tagStyleText';
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.id = 'tagStyleText';
+            input.maxLength = 32;
+            input.placeholder = picked.name;
+            input.value = (textStore.get()[g] || {})[picked.key] || '';
+            input.setAttribute('aria-describedby', 'tagStyleTextHint');
+            // Saved when the field is left (or Enter is pressed): the row itself is not redrawn, so typing keeps focus.
+            input.addEventListener('change', () => {
+                textStore.set(g, picked, input.value.trim());
+                renderTargets();
+                renderSample();
+                renderPreview();
+            });
+            const hint = el('span', 'je-ts-hide-scope', T('Replaces the whole chip text for everyone. Leave empty to keep "{name}".', { name: picked.name }));
+            hint.id = 'tagStyleTextHint';
+            row.append(label, input, hint);
+            return row;
+        }
+
         /** @param {string} g @returns {number} How many of a group's tags are hidden. */
         function hiddenCountOf(g) {
             return labelsOf(g).filter((l) => isHidden(g, l.key)).length;
@@ -798,7 +842,7 @@
             const targetBox = root.querySelector('#tagStyleTargetBox');
             if (targetBox) targetBox.hidden = !targetsOpen;
             const hint = root.querySelector('#tagStyleTargetHint');
-            if (hint) hint.textContent = tr(hiddenStore ? 'Choose a tag to change its colours or hide it.' : 'Choose a tag to change only its colours.');
+            if (hint) hint.textContent = pickHint();
             const search = root.querySelector('#tagStyleTargetFilter');
             if (search) {
                 // Any group with more labels than a glance takes gets the filter (genres name the box after themselves).
@@ -851,6 +895,15 @@
                     mark.setAttribute('aria-hidden', 'true');
                     wrap.appendChild(mark);
                     cell.appendChild(wrap);
+                } else if (textOf(current, label.key)) {
+                    // A renamed tile says so: the pencil mark, and the new words in its tooltip.
+                    cell.title = T('{name} shows as "{text}"', { name: cell.title, text: textOf(current, label.key) });
+                    const wrap = el('span', 'je-ts-chip-wrap');
+                    wrap.appendChild(sample);
+                    const mark = el('i', 'material-icons je-ts-hidden-mark je-ts-renamed-mark', 'edit');
+                    mark.setAttribute('aria-hidden', 'true');
+                    wrap.appendChild(mark);
+                    cell.appendChild(wrap);
                 } else cell.appendChild(sample);
                 // Tiles carry their name too (shown where there is room; the tooltip always has it).
                 if (tiles) cell.appendChild(el('span', 'je-ts-target-name', label.name));
@@ -872,7 +925,7 @@
                 const count = labelsOf(current).length;
                 const scrolls = targetsOpen && box.scrollHeight > box.clientHeight + 2;
                 const shownHidden = hiddenOnly ? labelsOf(current).filter((l) => isHidden(current, l.key)).length : 0;
-                hint.textContent = tr(hiddenStore ? 'Choose a tag to change its colours or hide it.' : 'Choose a tag to change only its colours.')
+                hint.textContent = pickHint()
                     + (hiddenOnly ? ' ' + T('Showing the {count} hidden tags only.', { count: shownHidden })
                         : scrolls ? ' ' + T('{count} tags; scroll for more.', { count: Number(count) }) : '');
             }
@@ -935,6 +988,7 @@
                     back.dataset.jeGoto = 'groups:' + current;
                     line.append(T('Hiding works per tag. To turn the whole group off for new users, see '), back, '.');
                     box.appendChild(line);
+                    if (textStore && TEXT_GROUPS.includes(current)) box.appendChild(el('p', 'je-ts-hide-none', T('To change the words a tag shows, choose it in the list: its Text field is at the top of its settings.')));
                     return;
                 }
                 // Hidden only through the Dual and Multi badges tag: a way to that tag's switch. (Hidden on its own
@@ -979,6 +1033,7 @@
                 sw.appendChild(text);
                 box.appendChild(sw);
                 if (coveredBy(current, picked.key)) box.appendChild(coveredLine());
+                if (renamable(current, picked.key)) box.appendChild(buildTextRow(current, picked));
                 // An age board's every rating, on request (the switch reads only the short sentence).
                 const ratings = current === 'ageRating' ? (((cat.age || []).find((a) => a.id === picked.key) || {}).ratings || []) : [];
                 if (ratings.length > 3) {

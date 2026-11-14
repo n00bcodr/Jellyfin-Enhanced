@@ -1303,9 +1303,40 @@
                 }
             }
         }
+        applyTextOverrides(group, node);
         const cap = conf.caps[group];
         if (cap > 0) {
             while (node.children.length > cap) node.lastElementChild?.remove();
+        }
+    }
+
+    /**
+     * Tag text (JE.core.tagText): chips whose Tag Styles label has a text from the administrator show it
+     * instead of their own, in every density. Quality, genre, status and awards chips only.
+     * @param {string} group
+     * @param {HTMLElement} node - A group display copy.
+     */
+    function applyTextOverrides(group, node) {
+        const T = JE.core.tagText;
+        if (!T) return;
+        for (const chip of /** @type {HTMLElement[]} */ (Array.from(node.children))) {
+            let target = null;
+            let text = null;
+            if (group === 'quality') {
+                text = T.of(group, chip.dataset.quality);
+                target = chip;
+            } else if (group === 'genre') {
+                text = T.of(group, chip.dataset.jeGenre);
+                target = chip.querySelector('.genre-text');
+            } else if (group === 'status') {
+                text = T.of(group, chip.dataset.jeStatus);
+                target = chip;
+                delete chip.dataset.jeCompact;
+            } else if (group === 'awards') {
+                text = T.of(group, chip.dataset.jeAward);
+                target = chip.lastElementChild;
+            }
+            if (text && target) target.textContent = text;
         }
     }
 
