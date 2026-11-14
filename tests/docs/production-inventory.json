@@ -103,6 +103,10 @@
       "category": "Configuration"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagTextOverrides.cs",
+      "category": "Configuration"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs",
       "category": "Configuration"
     },
@@ -5573,6 +5577,14 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "TagTextOverrides",
+      "type": "string?",
+      "initializer": null,
+      "constructor_assignment": "null",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "TagLabelDensity",
       "type": "string",
       "initializer": "\"full\"",
@@ -10567,9 +10579,9 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 485,
+    "files": 486,
     "routes": 207,
-    "configuration_properties": 768,
+    "configuration_properties": 769,
     "storage_references": 88,
     "scheduled_tasks": 16,
     "locales": 33
