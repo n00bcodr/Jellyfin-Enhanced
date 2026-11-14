@@ -1436,6 +1436,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#auto-request-removal" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Auto Request Removal
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2696,6 +2707,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#auto-request-removal" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Auto Request Removal
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -3542,6 +3564,30 @@
 <p>Start-only stores <code>OnStart</code>; both trigger choices store <code>Both</code>. The default trigger mode is <code>OnMinutesWatched</code>.</p>
 <p>The unset starting values are <code>-1</code> for <strong>Radarr Server:</strong> and <code>0</code> for <strong>Quality Profile:</strong>.</p>
 </details>
+<h3 id="auto-request-removal">Auto Request Removal<a class="headerlink" href="#auto-request-removal" title="Permanent link">¶</a></h3>
+<p>Delete a Seerr request once the user who made it has watched it.</p>
+<p><strong>How to use:</strong> Open <strong>Seerr</strong> → <strong>Auto Request Removal</strong> and enable the feature. The <strong>Remove watched requests from Seerr</strong> scheduled task runs daily at 04:30 and removes each request on the first run after its requester has watched it; run it from <strong>Dashboard</strong> → <strong>Scheduled Tasks</strong> to apply it at once.</p>
+<div class="admonition warning">
+<p class="admonition-title">Destructive: use with caution</p>
+<p>A deleted request cannot be restored, and its history is gone from Seerr. If request quotas are enabled in Seerr, removing a request also gives that quota back to the user, because Seerr counts quota from the requests that still exist. The same applies to the <strong>Remove request</strong> button on the Requests page.</p>
+</div>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Remove Watched Requests</strong></td>
+<td>Off</td>
+<td><code>AutoRequestRemovalEnabled</code>; deletes approved or completed requests once their requester has watched them. Only the request is deleted, never the media.</td>
+</tr>
+</tbody>
+</table>
+<p>See <a href="../seerr-features/#auto-request-removal">Auto Request Removal</a> for how movies and series are judged watched.</p>
 <h2 id="recently-added-sync-to-seerr">Recently Added Sync to Seerr<a class="headerlink" href="#recently-added-sync-to-seerr" title="Permanent link">¶</a></h2>
 <p>Help Seerr discover availability after Jellyfin library additions by triggering its recently-added scan.</p>
 <p><strong>How to use:</strong> Open <strong>Seerr</strong> → <strong>Recently Added Sync to Seerr</strong>, enable the automatic scan, and save. For an administrator test, press <strong>Trigger scan now</strong>.</p>
