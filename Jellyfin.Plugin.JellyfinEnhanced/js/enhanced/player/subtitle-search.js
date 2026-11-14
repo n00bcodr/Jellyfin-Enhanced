@@ -505,7 +505,8 @@
     }
 
     /**
-     * The offset the dialog shows and jumps with. jellyfin-web's hidden slider keeps an earlier
+     * The offset the dialog shows and jumps with: 0 for subtitles jellyfin-web doesn't draw
+     * itself. jellyfin-web's hidden slider keeps an earlier
      * track's value after a track switch, while the player resets the offset to 0. With enough
      * cues it is measured from them; otherwise, when nobody has written the offset since the
      * current renderer appeared, it is 0; otherwise the slider's.
@@ -515,6 +516,8 @@
     function effectiveOffset(state) {
         const slider = currentOffset();
         if (slider === null) return null;
+        // Subtitles jellyfin-web doesn't draw itself (burned into the picture) never move with it.
+        if (!clientRendersSubtitles(state.video)) return 0;
         if (state.lines) {
             const measured = measureOffset(state.lines, cueSample(state.video));
             if (typeof measured === 'number') return measured;
@@ -813,8 +816,9 @@
         state.overlay.querySelector('.je-subsearch-anchor').textContent =
             tr('subtitle_search_sync_point', 'Heard at {time}', { time: formatTime(state.anchor) });
         const offsetEl = state.overlay.querySelector('.je-subsearch-offset');
-        // Only with a track listed: without one the slider may still hold an earlier track's value.
-        const showOffset = offset !== null && !!(state.lines && state.lines.length);
+        // Only with a track listed that the offset moves: without one the slider may still hold an
+        // earlier track's value, and burned-in subtitles don't move with it.
+        const showOffset = offset !== null && !!(state.lines && state.lines.length) && syncSupport(state.video).ok;
         offsetEl.textContent = showOffset ? tr('subtitle_search_offset', 'Offset {offset}', { offset: formatOffset(o) }) : '';
         const reset = /** @type {HTMLButtonElement} */ (state.overlay.querySelector('.je-subsearch-reset'));
         reset.hidden = !showOffset || roundOffset(o) === 0;

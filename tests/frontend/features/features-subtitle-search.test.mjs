@@ -342,6 +342,18 @@ test('burned-in subtitles list lines but choosing one jumps, as the hint says', 
   assert.ok(Math.abs(h.video.currentTime - 110.3) < 1e-9);
 });
 
+test('burned-in subtitles ignore a slider value: times, highlight and jumps are the file\'s', async t => {
+  // The slider still says +5 s (an earlier track, or the [ ] keys), but the picture never moves.
+  const h = setup(t, { renderer: 'none', slider: '5' });
+  h.JE.toggleSubtitleSearch();
+  await flush();
+  assert.equal(h.text('.je-subsearch-offset'), '');
+  assert.equal(h.row('Aah!').querySelector('.je-subsearch-time').textContent, '1:50');
+  assert.match(h.overlay().querySelector('.is-current').textContent, /These tickets/);
+  h.row('Aah!').querySelector('.je-subsearch-line').click(); // choosing a line jumps here
+  assert.ok(Math.abs(h.video.currentTime - 110.3) < 1e-9);
+});
+
 test('ASS subtitles drawn by libass can be synced', async t => {
   const h = setup(t, { renderer: 'ass' });
   h.JE.toggleSubtitleSearch();
