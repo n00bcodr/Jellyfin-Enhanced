@@ -76,10 +76,10 @@
         </div>
       `;
 
-      // No History API involvement for this page (see showCategoryPage) so
-      // there's no browser Back-button support - this is the only way out.
+      // With a history entry open, the button goes through Back so the entry is consumed.
       page.querySelector('#je-recommendations-category-back').addEventListener('click', () => {
-        hideCategoryPage();
+        if (categoryHistoryActive) history.back();
+        else hideCategoryPage();
       });
 
       const mainContent = document.querySelector(".mainAnimatedPages");
@@ -366,6 +366,19 @@
   // Stops the sticky-bar tracking (P.trackStickyBar) for the open category page.
   let stopStickyTracking = null;
 
+  // An open category page owns one same-URL history entry, so Back (and the Android back
+  // button) closes it instead of leaving the page underneath. Same pattern as the More Info
+  // modal; the URL never changes, so the router has nothing to re-resolve.
+  let categoryHistoryActive = false;
+  // Our entry carries { jeCategory: true }, so a pop that lands back on it (the More Info modal
+  // above the page closing) leaves the page open, and any other pop closes it. This does not
+  // depend on whether the modal's own popstate listener ran first.
+  window.addEventListener('popstate', (e) => {
+    if (!categoryHistoryActive || e.state?.jeCategory) return;
+    categoryHistoryActive = false;
+    hideCategoryPage();
+  });
+
   async function showCategoryPage(categoryKey) {
     const category = resolveCategory(categoryKey);
     if (!category) return;
@@ -419,15 +432,13 @@
       });
     }));
 
-    // Deliberately does NOT touch the History API at all (no pushState,
-    // no URL change) - jellyfin-web's React router intercepts every
-    // history.pushState call and re-resolves its own route table against
-    // whatever URL it's given, and this page's URL was never one of its
-    // registered routes. That produced a "not found" flash that even a
-    // hard refresh couldn't reliably recover from. The category page is
-    // shown/hidden purely as in-memory UI state instead; navigating away
-    // (sidebar link, another tab, etc.) or the explicit back button below
-    // closes it via hideCategoryPage().
+    // The page is in-memory UI state with no route of its own: pushing a new URL made
+    // jellyfin-web's router look for a route that does not exist ("not found" flash). So the
+    // only history entry is a copy of the CURRENT url, which the router resolves as it was.
+    if (!categoryHistoryActive) {
+      history.pushState({ jeCategory: true }, '', location.href);
+      categoryHistoryActive = true;
+    }
 
     const activePage = document.querySelector(".mainAnimatedPage:not(.hide):not(#je-recommendations-category-page)");
     if (activePage) {
@@ -471,6 +482,8 @@
 
     state.categoryPageVisible = false;
     state.categoryPreviousPage = null;
+    // Closed by navigating away: the entry stays in history but is no longer ours to pop.
+    categoryHistoryActive = false;
   }
 
   P.createCategoryPageContainer = createCategoryPageContainer;

@@ -73,17 +73,20 @@
       .je-recommendations-section .emby-scroller::-webkit-scrollbar {
         display: none;
       }
-      .je-recommendations-section .emby-scroller.je-fade-r {
-        -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - var(--je-fade)), transparent);
-        mask-image: linear-gradient(90deg, #000 calc(100% - var(--je-fade)), transparent);
-      }
-      .je-recommendations-section .emby-scroller.je-fade-l {
-        -webkit-mask-image: linear-gradient(90deg, transparent, #000 var(--je-fade));
-        mask-image: linear-gradient(90deg, transparent, #000 var(--je-fade));
-      }
-      .je-recommendations-section .emby-scroller.je-fade-l.je-fade-r {
-        -webkit-mask-image: linear-gradient(90deg, transparent, #000 var(--je-fade), #000 calc(100% - var(--je-fade)), transparent);
-        mask-image: linear-gradient(90deg, transparent, #000 var(--je-fade), #000 calc(100% - var(--je-fade)), transparent);
+      /* Touch screens: Android WebView drops whole rows of posters while scrolling under a mask. */
+      @media (hover: hover) {
+        .je-recommendations-section .emby-scroller.je-fade-r {
+          -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - var(--je-fade)), transparent);
+          mask-image: linear-gradient(90deg, #000 calc(100% - var(--je-fade)), transparent);
+        }
+        .je-recommendations-section .emby-scroller.je-fade-l {
+          -webkit-mask-image: linear-gradient(90deg, transparent, #000 var(--je-fade));
+          mask-image: linear-gradient(90deg, transparent, #000 var(--je-fade));
+        }
+        .je-recommendations-section .emby-scroller.je-fade-l.je-fade-r {
+          -webkit-mask-image: linear-gradient(90deg, transparent, #000 var(--je-fade), #000 calc(100% - var(--je-fade)), transparent);
+          mask-image: linear-gradient(90deg, transparent, #000 var(--je-fade), #000 calc(100% - var(--je-fade)), transparent);
+        }
       }
       .je-scroll-btn {
         position: absolute;

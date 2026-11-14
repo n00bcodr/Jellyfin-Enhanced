@@ -113,11 +113,10 @@
     function tryMount() {
       if (!isOnHomePage()) return;
 
+      // A rendered container that is only hidden (another Home tab, or the category page over
+      // #indexPage) keeps its content; remounting wiped it and reloaded every row on return.
       var container = findActiveContainer();
-      if (!container) {
-        lastMountedContainer = null;
-        return;
-      }
+      if (!container) return;
 
       var shouldMount = container !== lastMountedContainer
         || !container.hasChildNodes()
