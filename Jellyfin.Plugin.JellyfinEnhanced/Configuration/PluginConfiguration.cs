@@ -358,6 +358,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             AutoMovieRequestCustomRootFolder = ""; // Root folder path for "custom" mode
             AutoMovieRequestFallbackOn4k = true; // When original mode finds a 4K profile, fall back to default instead
 
+            // Auto Request Removal Settings
+            AutoRequestRemovalEnabled = false; // Delete a Seerr request once its requester has watched it
+
             // Watchlist Settings
             AddRequestedMediaToWatchlist = false;
             SyncJellyseerrWatchlist = false;
@@ -1160,6 +1163,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public int AutoMovieRequestCustomProfileId { get; set; } // Quality profile ID for "custom" mode
         public string AutoMovieRequestCustomRootFolder { get; set; } // Root folder path for "custom" mode
         public bool AutoMovieRequestFallbackOn4k { get; set; } // When original mode finds a 4K profile, fall back to default
+
+        // Auto Request Removal Settings
+        public bool AutoRequestRemovalEnabled { get; set; } // Delete a Seerr request once its requester has watched it
 
         // Watchlist Settings
         public bool AddRequestedMediaToWatchlist { get; set; }
