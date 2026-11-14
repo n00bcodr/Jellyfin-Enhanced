@@ -2019,6 +2019,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#subtitle-sync-list" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Subtitle sync list
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#other-styling-hooks" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2864,6 +2875,17 @@
     <span class="md-ellipsis">
       
         Player rating surfaces
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#subtitle-sync-list" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Subtitle sync list
       
     </span>
   </a>
@@ -4378,7 +4400,7 @@
 </tr>
 <tr>
 <td>Subtitle position and status</td>
-<td><code>#subtitlePositionGrid</code>, <code>#subtitlePositionPreview</code>, <code>#subtitlePositionReset</code>, <code>#disableCustomSubtitleStyles</code>, <code>#je-subtitle-format-warning</code>, <code>#je-subtitle-position-note</code></td>
+<td><code>#subtitlePositionGrid</code>, <code>#subtitlePositionPreview</code>, <code>#subtitlePositionReset</code>, <code>#disableCustomSubtitleStyles</code>, <code>#subtitleSyncButtonEnabled</code>, <code>#je-subtitle-format-warning</code>, <code>#je-subtitle-position-note</code></td>
 </tr>
 <tr>
 <td>Random selection</td>
@@ -4567,6 +4589,44 @@
 </span><span id="__span-36-7"><a id="__codelineno-36-7" name="__codelineno-36-7" href="#__codelineno-36-7"></a><span class="p">}</span>
 </span></code></pre></div>
 <p>Keep <code>.je-visible</code> and the timed visibility behavior intact. See <a href="../../enhanced/enhanced-features/#playback-controls">Enhanced Features</a> for playback features.</p>
+<h2 id="subtitle-sync-list">Subtitle sync list<a class="headerlink" href="#subtitle-sync-list" title="Permanent link">¶</a></h2>
+<p>The <a href="../../enhanced/enhanced-features/#subtitle-sync">Subtitle Sync</a> button is <code>#je-subtitle-sync-btn</code>, placed right after the player's <code>.btnSubtitles</code>. The list is <code>#je-subtitle-sync</code> (the backdrop) around <code>.je-subsync-dialog</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Part</th>
+<th>Hooks</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Header</td>
+<td><code>.je-subsync-title</code>, <code>.je-subsync-track</code>, <code>.je-subsync-close</code></td>
+</tr>
+<tr>
+<td>Sync point and offset</td>
+<td><code>.je-subsync-meta</code>, <code>.je-subsync-anchor</code>, <code>.je-subsync-offset</code>, <code>.je-subsync-reset</code></td>
+</tr>
+<tr>
+<td>Search and messages</td>
+<td><code>.je-subsync-input</code>, <code>.je-subsync-hint</code>, <code>.je-subsync-status</code> (<code>[data-kind="error"]</code> for errors), <code>.je-subsync-empty</code>, <code>.je-subsync-foot</code></td>
+</tr>
+<tr>
+<td>Lines</td>
+<td><code>.je-subsync-row</code> (<code>.is-current</code> for the line on screen at the sync point, <code>[data-index]</code>), <code>.je-subsync-line</code>, <code>.je-subsync-time</code>, <code>.je-subsync-text</code>, <code>.je-subsync-jump</code></td>
+</tr>
+</tbody>
+</table>
+<p>The accent comes from the theme's primary accent through <code>--je-subsync-accent</code> on <code>#je-subtitle-sync</code>.</p>
+<div class="language-css highlight"><pre><span></span><code><span id="__span-37-1"><a id="__codelineno-37-1" name="__codelineno-37-1" href="#__codelineno-37-1"></a><span class="p">#</span><span class="nn">je-subtitle-sync</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-37-2"><a id="__codelineno-37-2" name="__codelineno-37-2" href="#__codelineno-37-2"></a><span class="w">    </span><span class="nv">--je-subsync-accent</span><span class="p">:</span><span class="w"> </span><span class="kc">gold</span><span class="p">;</span>
+</span><span id="__span-37-3"><a id="__codelineno-37-3" name="__codelineno-37-3" href="#__codelineno-37-3"></a><span class="p">}</span>
+</span><span id="__span-37-4"><a id="__codelineno-37-4" name="__codelineno-37-4" href="#__codelineno-37-4"></a>
+</span><span id="__span-37-5"><a id="__codelineno-37-5" name="__codelineno-37-5" href="#__codelineno-37-5"></a><span class="p">#</span><span class="nn">je-subtitle-sync</span><span class="w"> </span><span class="p">.</span><span class="nc">je-subsync-dialog</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-37-6"><a id="__codelineno-37-6" name="__codelineno-37-6" href="#__codelineno-37-6"></a><span class="w">    </span><span class="k">max-width</span><span class="p">:</span><span class="w"> </span><span class="mi">900</span><span class="kt">px</span><span class="p">;</span>
+</span><span id="__span-37-7"><a id="__codelineno-37-7" name="__codelineno-37-7" href="#__codelineno-37-7"></a><span class="p">}</span>
+</span></code></pre></div>
+<p>Keep rows' <code>hidden</code> attribute working: searching hides rows with it.</p>
 <h2 id="other-styling-hooks">Other styling hooks<a class="headerlink" href="#other-styling-hooks" title="Permanent link">¶</a></h2>
 <p>These surfaces appear outside the Enhanced panel. Follow the linked feature guides for setup, then inspect the actual elements before applying styles.</p>
 <p>Turn on the relevant per-user setting in <strong>Random Button Settings</strong> or <strong>UI Settings</strong>.</p>
@@ -4653,17 +4713,17 @@
 </tr>
 </tbody>
 </table>
-<div class="language-css highlight"><pre><span></span><code><span id="__span-37-1"><a id="__codelineno-37-1" name="__codelineno-37-1" href="#__codelineno-37-1"></a><span class="p">#</span><span class="nn">randomItemButton</span><span class="w"> </span><span class="p">.</span><span class="nc">je-dice-spin</span><span class="w"> </span><span class="p">{</span>
-</span><span id="__span-37-2"><a id="__codelineno-37-2" name="__codelineno-37-2" href="#__codelineno-37-2"></a><span class="w">    </span><span class="k">animation</span><span class="p">:</span><span class="w"> </span><span class="kc">none</span><span class="w"> </span><span class="cp">!important</span><span class="p">;</span>
-</span><span id="__span-37-3"><a id="__codelineno-37-3" name="__codelineno-37-3" href="#__codelineno-37-3"></a><span class="p">}</span>
-</span><span id="__span-37-4"><a id="__codelineno-37-4" name="__codelineno-37-4" href="#__codelineno-37-4"></a>
-</span><span id="__span-37-5"><a id="__codelineno-37-5" name="__codelineno-37-5" href="#__codelineno-37-5"></a><span class="p">#</span><span class="nn">itemDetailPage</span><span class="w"> </span><span class="p">.</span><span class="nc">mediaInfoItem-fileSize</span><span class="w"> </span><span class="p">{</span>
-</span><span id="__span-37-6"><a id="__codelineno-37-6" name="__codelineno-37-6" href="#__codelineno-37-6"></a><span class="w">    </span><span class="k">color</span><span class="p">:</span><span class="w"> </span><span class="kc">gold</span><span class="w"> </span><span class="cp">!important</span><span class="p">;</span>
-</span><span id="__span-37-7"><a id="__codelineno-37-7" name="__codelineno-37-7" href="#__codelineno-37-7"></a><span class="p">}</span>
-</span><span id="__span-37-8"><a id="__codelineno-37-8" name="__codelineno-37-8" href="#__codelineno-37-8"></a>
-</span><span id="__span-37-9"><a id="__codelineno-37-9" name="__codelineno-37-9" href="#__codelineno-37-9"></a><span class="p">.</span><span class="nc">jellyseerr-radio-input</span><span class="p">:</span><span class="nd">checked</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="p">.</span><span class="nc">jellyseerr-radio-option</span><span class="w"> </span><span class="p">{</span>
-</span><span id="__span-37-10"><a id="__codelineno-37-10" name="__codelineno-37-10" href="#__codelineno-37-10"></a><span class="w">    </span><span class="k">border-color</span><span class="p">:</span><span class="w"> </span><span class="kc">gold</span><span class="w"> </span><span class="cp">!important</span><span class="p">;</span>
-</span><span id="__span-37-11"><a id="__codelineno-37-11" name="__codelineno-37-11" href="#__codelineno-37-11"></a><span class="p">}</span>
+<div class="language-css highlight"><pre><span></span><code><span id="__span-38-1"><a id="__codelineno-38-1" name="__codelineno-38-1" href="#__codelineno-38-1"></a><span class="p">#</span><span class="nn">randomItemButton</span><span class="w"> </span><span class="p">.</span><span class="nc">je-dice-spin</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-38-2"><a id="__codelineno-38-2" name="__codelineno-38-2" href="#__codelineno-38-2"></a><span class="w">    </span><span class="k">animation</span><span class="p">:</span><span class="w"> </span><span class="kc">none</span><span class="w"> </span><span class="cp">!important</span><span class="p">;</span>
+</span><span id="__span-38-3"><a id="__codelineno-38-3" name="__codelineno-38-3" href="#__codelineno-38-3"></a><span class="p">}</span>
+</span><span id="__span-38-4"><a id="__codelineno-38-4" name="__codelineno-38-4" href="#__codelineno-38-4"></a>
+</span><span id="__span-38-5"><a id="__codelineno-38-5" name="__codelineno-38-5" href="#__codelineno-38-5"></a><span class="p">#</span><span class="nn">itemDetailPage</span><span class="w"> </span><span class="p">.</span><span class="nc">mediaInfoItem-fileSize</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-38-6"><a id="__codelineno-38-6" name="__codelineno-38-6" href="#__codelineno-38-6"></a><span class="w">    </span><span class="k">color</span><span class="p">:</span><span class="w"> </span><span class="kc">gold</span><span class="w"> </span><span class="cp">!important</span><span class="p">;</span>
+</span><span id="__span-38-7"><a id="__codelineno-38-7" name="__codelineno-38-7" href="#__codelineno-38-7"></a><span class="p">}</span>
+</span><span id="__span-38-8"><a id="__codelineno-38-8" name="__codelineno-38-8" href="#__codelineno-38-8"></a>
+</span><span id="__span-38-9"><a id="__codelineno-38-9" name="__codelineno-38-9" href="#__codelineno-38-9"></a><span class="p">.</span><span class="nc">jellyseerr-radio-input</span><span class="p">:</span><span class="nd">checked</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="p">.</span><span class="nc">jellyseerr-radio-option</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-38-10"><a id="__codelineno-38-10" name="__codelineno-38-10" href="#__codelineno-38-10"></a><span class="w">    </span><span class="k">border-color</span><span class="p">:</span><span class="w"> </span><span class="kc">gold</span><span class="w"> </span><span class="cp">!important</span><span class="p">;</span>
+</span><span id="__span-38-11"><a id="__codelineno-38-11" name="__codelineno-38-11" href="#__codelineno-38-11"></a><span class="p">}</span>
 </span></code></pre></div>
 <p>The animation override stops both random-button hover and loading animation. Keep loading and disabled actions identifiable.</p>
 <p>In the Seerr form, the radio input must remain immediately before its option span. Checked/focus styles use that sibling relationship and consume <code>--primary-accent-color</code> with a fallback.</p>
@@ -4691,10 +4751,10 @@
 </tbody>
 </table>
 <p>Both fall back to <code>1</code> in the stylesheet. Version-0 posters retain their original sizing expressions for exact legacy pixels; a layout-setting edit promotes the document and enables the multipliers. The same values reach live preview samples, including shape overrides. Caption height reserves a size/gap-adjusted two-row budget. These hooks do not change edge inset. For a web-only custom override, include both the host and caption because the caption is a sibling, not a descendant:</p>
-<div class="language-css highlight"><pre><span></span><code><span id="__span-38-1"><a id="__codelineno-38-1" name="__codelineno-38-1" href="#__codelineno-38-1"></a><span class="p">.</span><span class="nc">je-tag-host</span><span class="o">,</span><span class="w"> </span><span class="p">.</span><span class="nc">je-tag-caption</span><span class="w"> </span><span class="p">{</span>
-</span><span id="__span-38-2"><a id="__codelineno-38-2" name="__codelineno-38-2" href="#__codelineno-38-2"></a><span class="w">    </span><span class="nv">--je-tag-scale</span><span class="p">:</span><span class="w"> </span><span class="mf">1.15</span><span class="w"> </span><span class="cp">!important</span><span class="p">;</span>
-</span><span id="__span-38-3"><a id="__codelineno-38-3" name="__codelineno-38-3" href="#__codelineno-38-3"></a><span class="w">    </span><span class="nv">--je-tag-gap</span><span class="p">:</span><span class="w"> </span><span class="mf">0.75</span><span class="w"> </span><span class="cp">!important</span><span class="p">;</span>
-</span><span id="__span-38-4"><a id="__codelineno-38-4" name="__codelineno-38-4" href="#__codelineno-38-4"></a><span class="p">}</span>
+<div class="language-css highlight"><pre><span></span><code><span id="__span-39-1"><a id="__codelineno-39-1" name="__codelineno-39-1" href="#__codelineno-39-1"></a><span class="p">.</span><span class="nc">je-tag-host</span><span class="o">,</span><span class="w"> </span><span class="p">.</span><span class="nc">je-tag-caption</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-39-2"><a id="__codelineno-39-2" name="__codelineno-39-2" href="#__codelineno-39-2"></a><span class="w">    </span><span class="nv">--je-tag-scale</span><span class="p">:</span><span class="w"> </span><span class="mf">1.15</span><span class="w"> </span><span class="cp">!important</span><span class="p">;</span>
+</span><span id="__span-39-3"><a id="__codelineno-39-3" name="__codelineno-39-3" href="#__codelineno-39-3"></a><span class="w">    </span><span class="nv">--je-tag-gap</span><span class="p">:</span><span class="w"> </span><span class="mf">0.75</span><span class="w"> </span><span class="cp">!important</span><span class="p">;</span>
+</span><span id="__span-39-4"><a id="__codelineno-39-4" name="__codelineno-39-4" href="#__codelineno-39-4"></a><span class="p">}</span>
 </span></code></pre></div>
 <p>Saved size and gap choices also affect native posters; custom web CSS does not affect composited images. Prefer the built-in controls when the same appearance is needed in both.</p>
 <h3 id="awards-chips">Awards chips<a class="headerlink" href="#awards-chips" title="Permanent link">¶</a></h3>

@@ -3169,12 +3169,17 @@
 <tr>
 <td><strong>Decrease Subtitle Offset</strong></td>
 <td>++left-bracket++</td>
-<td>Shifts subtitles 0.1 s earlier (lowers the offset) and briefly shows Jellyfin's subtitle offset panel.</td>
+<td>Shifts subtitles 0.1 s later (lowers the offset) and briefly shows Jellyfin's subtitle offset panel.</td>
 </tr>
 <tr>
 <td><strong>Increase Subtitle Offset</strong></td>
 <td>++right-bracket++</td>
-<td>Shifts subtitles 0.1 s later (raises the offset) and briefly shows Jellyfin's subtitle offset panel.</td>
+<td>Shifts subtitles 0.1 s earlier (raises the offset) and briefly shows Jellyfin's subtitle offset panel.</td>
+</tr>
+<tr>
+<td><strong>Sync Subtitles</strong></td>
+<td><span class="keys"><kbd class="key-shift">Shift</kbd><span>+</span><kbd class="key-s">S</kbd></span></td>
+<td>Opens or closes <a href="../enhanced-features/#subtitle-sync">Subtitle Sync</a>: choose the line you just heard to sync the subtitles, or search and jump to a line.</td>
 </tr>
 <tr>
 <td><strong>Jump to Last Position</strong></td>
@@ -3305,6 +3310,11 @@
 <td><strong>Disable Custom Styles</strong></td>
 <td>Off</td>
 <td>Uses Jellyfin's subtitle styling instead of JE's overrides. Refresh after changing it.</td>
+</tr>
+<tr>
+<td><strong>Subtitle Sync Button</strong></td>
+<td>Off</td>
+<td>Adds a button next to <strong>Subtitles</strong> in the player that syncs the subtitles to the line you just heard. Its list of lines can also be searched and jumped through. See <a href="../enhanced-features/#subtitle-sync">Subtitle Sync</a>.</td>
 </tr>
 <tr>
 <td><strong>Style</strong></td>
@@ -4147,6 +4157,11 @@
 <td><strong>Disable Custom Subtitle Styles by default</strong></td>
 <td>Off</td>
 <td>Starts <strong>Disable Custom Styles</strong> enabled. Users can override it.</td>
+</tr>
+<tr>
+<td><strong>Show Subtitle Sync Button in the Player</strong></td>
+<td>Off</td>
+<td>Starts <strong>Subtitle Sync Button</strong> enabled. Users can override it.</td>
 </tr>
 <tr>
 <td><strong>Default Subtitle Style</strong></td>
