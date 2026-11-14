@@ -95,6 +95,7 @@ JEAdmin.setPerUser([
     'StatusTagsSchedule',
     'StatusTagsSeriesStatus',
     'StatusTagsTrending',
+    'SubtitleSearchButtonEnabled',
     'TagsHideOnHover',
     'VersionsTagOrder',
     'VideoCodecTagOrder'

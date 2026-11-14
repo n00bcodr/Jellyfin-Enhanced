@@ -1505,6 +1505,7 @@
             { Name: "DecreaseSubtitleOffset", Key: "[", Label: "Decrease Subtitle Offset", Category: "Player" },
             { Name: "IncreaseSubtitleOffset", Key: "]", Label: "Increase Subtitle Offset", Category: "Player" },
             { Name: "JumpToLastPosition", Key: "Z", Label: "Jump to Last Position", Category: "Player" },
+            { Name: "SubtitleSearch", Key: "Shift+S", Label: "Search Subtitle Lines", Category: "Player" },
             { Name: "JumpToPercentage", Key: "0-9", Label: "Jump to % of video", Category: "Player" }
         ];
 
@@ -5992,6 +5993,7 @@
             feat('Custom Pause Screen', bool('pauseScreenEnabled'), 'playback', 'Enabled');
             feat('Age Rating on Playback Start', bool('showPlaybackRatingBadge'), 'playback', 'Enabled');
             feat('Long press for 2x speed', bool('longPress2xEnabled'), 'playback', 'Enabled (touch devices)');
+            feat('Subtitle search button', bool('subtitleSearchButtonEnabled'), 'playback', 'Enabled');
             var autoSkip = bool('autoSkipIntro') || bool('autoSkipOutro');
             var autoSkipWarn = autoSkip && hasIntroSkipper !== true;
             feat('Auto-skip Intro/Outro', autoSkip, 'playback',

@@ -71,6 +71,7 @@
     "enhanced/player/now-playing.js",
     "// auto-skip.js consumes JE.internals.player (exported by playback.js)",
     "enhanced/player/auto-skip.js",
+    "enhanced/player/subtitle-search.js",
     "// hidden-content modules — order matters: -data.js owns the",
     "// store + lookup sets that the later files consume via",
     "// JE.internals.hiddenContent; -init.js exposes the frozen",

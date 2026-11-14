@@ -18,7 +18,8 @@
         'BookmarkCurrentTime', 'CycleAspectRatio', 'ShowPlaybackInfo', 'SubtitleMenu',
         'CycleSubtitleTracks', 'CycleAudioTracks', 'ResetPlaybackSpeed', 'IncreasePlaybackSpeed',
         'DecreasePlaybackSpeed', 'OpenEpisodePreview', 'SkipIntroOutro', 'FrameStepBack',
-        'FrameStepForward', 'DecreaseSubtitleOffset', 'IncreaseSubtitleOffset', 'JumpToLastPosition'
+        'FrameStepForward', 'DecreaseSubtitleOffset', 'IncreaseSubtitleOffset', 'JumpToLastPosition',
+        'SubtitleSearch'
     ]);
 
     // Keys Jellyfin's built-in player handles natively (combo format matches JE.keyListener).

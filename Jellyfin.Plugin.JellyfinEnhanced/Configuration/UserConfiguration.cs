@@ -10,6 +10,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool AutoResumeEnabled { get; set; }
         public bool AutoPipEnabled { get; set; }
         public bool LongPress2xEnabled { get; set; }
+        /// <summary>Subtitle search button in the player; null (never chosen) follows the administrator's default.</summary>
+        public bool? SubtitleSearchButtonEnabled { get; set; }
         public bool PauseScreenEnabled { get; set; }
         public int PauseScreenDelaySeconds { get; set; } = 5;
         public bool AutoSkipIntro { get; set; }

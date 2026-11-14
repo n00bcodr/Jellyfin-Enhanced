@@ -64,6 +64,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             AutoSkipIntro = false;
             AutoSkipOutro = false;
             LongPress2xEnabled = false;
+            SubtitleSearchButtonEnabled = false;
             RandomButtonEnabled = true;
             RandomIncludeMovies = true;
             RandomIncludeShows = true;
@@ -246,6 +247,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 new Shortcut { Name = "DecreaseSubtitleOffset", Key = "[", Label = "Decrease Subtitle Offset", Category = "Player" },
                 new Shortcut { Name = "IncreaseSubtitleOffset", Key = "]", Label = "Increase Subtitle Offset", Category = "Player" },
                 new Shortcut { Name = "JumpToLastPosition", Key = "Z", Label = "Jump to Last Position", Category = "Player" },
+                new Shortcut { Name = "SubtitleSearch", Key = "Shift+S", Label = "Search Subtitle Lines", Category = "Player" },
                 new Shortcut { Name = "JumpToPercentage", Key = "0-9", Label = "Jump to % of video", Category = "Player" }
             };
 
@@ -619,6 +621,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool AutoSkipIntro { get; set; }
         public bool AutoSkipOutro { get; set; }
         public bool LongPress2xEnabled { get; set; }
+
+        /// <summary>Default for the player's Subtitle search button (lists the subtitle lines to search, jump to or sync).</summary>
+        public bool SubtitleSearchButtonEnabled { get; set; }
         public bool RandomButtonEnabled { get; set; }
         public bool RandomIncludeMovies { get; set; }
         public bool RandomIncludeShows { get; set; }

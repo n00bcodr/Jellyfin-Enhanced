@@ -66,6 +66,8 @@
      */
     JE.keyListener = (e) => {
         if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
+        // A JE dialog that handles its own keys (subtitle search) is focused.
+        if (e.target && typeof e.target.closest === 'function' && e.target.closest('[data-je-own-keys]')) return;
         // A key recorder (admin shortcut grid) is capturing the next press; don't also run it.
         if (document.activeElement.hasAttribute('data-je-key-recorder')) return;
 
@@ -223,6 +225,12 @@
                 e.stopImmediatePropagation();
                 JE.jumpToLastPosition();
                 break;
+            case activeShortcuts.SubtitleSearch:
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                if (e.repeat) break;
+                JE.toggleSubtitleSearch?.();
+                break;
         }
 
         if (activeShortcuts.JumpToPercentage !== '' && !e.altKey && !e.ctrlKey && !e.metaKey && key.match(/^[0-9]$/)) {
@@ -237,6 +245,7 @@
         const runPageSpecificFunctions = () => {
             if (JE.isVideoPage()) {
                 JE.addOsdSettingsButton();
+                JE.addSubtitleSearchButton?.();
                 JE.initializeAutoSkipObserver();
                 JE.applySavedStylesWhenReady();
                 // Attach seek tracker to the video element as soon as it exists
