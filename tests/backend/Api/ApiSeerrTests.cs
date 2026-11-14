@@ -568,4 +568,109 @@ public class ApiSeerrTests
         f.SetUser(f.OtherUserId, admin: true);
         Assert.Equal("2099-01-01", Rows(await f.Controller.GetRequests(), "requests")[0].GetProperty("nextAirDate").GetString());
     }
+
+    // Seerr request 5 belongs to Seerr user 27 (f.UserId); request 6 to user 38 (f.OtherUserId).
+    private static Func<HttpRequestMessage, HttpResponseMessage> RequestOwners(int getStatus = 200, int deleteStatus = 204) => request =>
+    {
+        if (request.Method == HttpMethod.Delete) return new HttpResponseMessage((System.Net.HttpStatusCode)deleteStatus);
+        if (getStatus != 200) return IntegrationTransport.Response("{\"message\":\"Request not found.\"}", getStatus);
+        var owner = request.RequestUri!.AbsolutePath.EndsWith("/5") ? 27 : 38;
+        return IntegrationTransport.Response(JsonSerializer.Serialize(new { id = 1, status = 2, requestedBy = new { id = owner } }));
+    };
+
+    private static int Status(IActionResult result) => result switch
+    {
+        OkObjectResult => 200,
+        ObjectResult o => o.StatusCode ?? 200,
+        StatusCodeResult s => s.StatusCode,
+        _ => 0
+    };
+
+    [Fact]
+    public async Task ARequesterRemovesTheirOwnApprovedRequestWithoutManagePermission()
+    {
+        using var f = new SeerrFixture { Permissions = JellyseerrPermission.REQUEST, Reply = RequestOwners() };
+        Assert.Equal(200, Status(await f.Controller.RemoveRequest(5)));
+        var delete = Assert.Single(f.Calls, c => c.Method == "DELETE");
+        Assert.Equal("/api/v1/request/5", delete.Path);
+        // Sent as the Seerr admin: Seerr itself would refuse an owner's approved request.
+        Assert.Null(delete.User);
+    }
+
+    [Fact]
+    public async Task SomeoneElsesRequestNeedsManagePermission()
+    {
+        using var f = new SeerrFixture { Permissions = JellyseerrPermission.REQUEST, Reply = RequestOwners() };
+        Assert.Equal(403, Status(await f.Controller.RemoveRequest(6)));
+        Assert.DoesNotContain(f.Calls, c => c.Method == "DELETE");
+
+        f.Permissions = JellyseerrPermission.REQUEST | JellyseerrPermission.MANAGE_REQUESTS;
+        JellyfinEnhancedController.ClearAllSeerrCachesOnConfigChange();
+        Assert.Equal(200, Status(await f.Controller.RemoveRequest(6)));
+        Assert.Single(f.Calls, c => c.Method == "DELETE" && c.Path == "/api/v1/request/6");
+    }
+
+    [Fact]
+    public async Task AJellyfinAdminRemovesAnyRequest()
+    {
+        using var f = new SeerrFixture { Permissions = JellyseerrPermission.NONE, Reply = RequestOwners() };
+        f.SetUser(f.UserId, admin: true);
+        Assert.Equal(200, Status(await f.Controller.RemoveRequest(6)));
+        Assert.Single(f.Calls, c => c.Method == "DELETE");
+    }
+
+    [Fact]
+    public async Task ARequestDeletedBetweenTheReadAndTheDeleteCountsAsRemoved()
+    {
+        using var f = new SeerrFixture { Permissions = JellyseerrPermission.REQUEST, Reply = RequestOwners(deleteStatus: 404) };
+        Assert.Equal(200, Status(await f.Controller.RemoveRequest(5)));
+    }
+
+    [Fact]
+    public async Task AMissingRequestCountsAsRemovedForManagersOnly()
+    {
+        using var f = new SeerrFixture { Permissions = JellyseerrPermission.REQUEST | JellyseerrPermission.MANAGE_REQUESTS, Reply = RequestOwners(getStatus: 404) };
+        Assert.Equal(200, Status(await f.Controller.RemoveRequest(5)));
+
+        // A plain user gets the answer they would get for someone else's request, so the ids
+        // of existing requests cannot be probed.
+        f.Permissions = JellyseerrPermission.REQUEST;
+        JellyfinEnhancedController.ClearAllSeerrCachesOnConfigChange();
+        Assert.Equal(403, Status(await f.Controller.RemoveRequest(5)));
+        Assert.DoesNotContain(f.Calls, c => c.Method == "DELETE");
+    }
+
+    [Fact]
+    public async Task AFailedDeleteIsReported()
+    {
+        using var f = new SeerrFixture { Reply = RequestOwners(deleteStatus: 500) };
+        Assert.NotEqual(200, Status(await f.Controller.RemoveRequest(5)));
+    }
+
+    [Fact]
+    public async Task AnUnlinkedUserCannotRemoveRequests()
+    {
+        using var f = new SeerrFixture { Reply = RequestOwners() };
+        f.SetUser(Guid.NewGuid());
+        Assert.Equal(404, Status(await f.Controller.RemoveRequest(5)));
+        Assert.DoesNotContain(f.Calls, c => c.Method == "DELETE");
+    }
+
+    [Theory]
+    [InlineData(JellyseerrPermission.REQUEST, false, true, false)]
+    [InlineData(JellyseerrPermission.REQUEST | JellyseerrPermission.MANAGE_REQUESTS, false, true, true)]
+    [InlineData(JellyseerrPermission.NONE, true, true, true)]
+    public async Task RequestRowsSayWhichRequestsTheCallerMayRemove(JellyseerrPermission permissions, bool admin, bool own, bool others)
+    {
+        using var f = GuardedSeerr(out _);
+        f.Permissions = permissions;
+        const string Requests = "{\"pageInfo\":{\"results\":2},\"results\":["
+            + "{\"id\":5,\"type\":\"movie\",\"status\":2,\"media\":{\"tmdbId\":603,\"status\":5},\"requestedBy\":{\"id\":27,\"displayName\":\"Me\"}},"
+            + "{\"id\":6,\"type\":\"movie\",\"status\":2,\"media\":{\"tmdbId\":604,\"status\":5},\"requestedBy\":{\"id\":38,\"displayName\":\"Them\"}}]}";
+        f.Reply = request => IntegrationTransport.Response(request.RequestUri!.AbsolutePath == "/api/v1/request" ? Requests : TmdbBody);
+        f.SetUser(f.UserId, admin);
+        var rows = Rows(await f.Controller.GetRequests(), "requests").EnumerateArray().ToList();
+        Assert.Equal(own, rows.Single(r => r.GetProperty("id").GetInt32() == 5).GetProperty("canRemove").GetBoolean());
+        Assert.Equal(others, rows.Single(r => r.GetProperty("id").GetInt32() == 6).GetProperty("canRemove").GetBoolean());
+    }
 }

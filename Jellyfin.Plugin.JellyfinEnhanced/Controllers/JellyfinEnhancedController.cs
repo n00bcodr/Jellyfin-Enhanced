@@ -12485,6 +12485,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     JellyseerrPermission.ADMIN | JellyseerrPermission.MANAGE_REQUESTS | JellyseerrPermission.REQUEST_VIEW
                 ));
 
+                // Managers can approve, decline and remove anyone's request; everyone else may
+                // only remove their own (see RemoveRequest).
+                var canApproveRequests = IsAdminUser() || JellyseerrPermissionHelper.HasAnyPermission(
+                    jellyseerrUser.Permissions,
+                    JellyseerrPermission.ADMIN | JellyseerrPermission.MANAGE_REQUESTS
+                );
+
                 // Build filter parameter
                 // "comingsoon" is a custom filter - fetch processing items and filter server-side
                 var isComingSoonFilter = string.Equals(filter, "comingsoon", StringComparison.OrdinalIgnoreCase);
@@ -12740,7 +12747,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             initialAirDate = initialAirDate,
                             nextAirDate = nextAirDate,
                             isComingSoon = isComingSoon,
-                            isOrphaned = isOrphaned
+                            isOrphaned = isOrphaned,
+                            // Whether this caller may remove the request: managers always, others
+                            // only their own. Only the flag is sent, never the requester's ids.
+                            canRemove = canApproveRequests || requestedBy?["id"]?.Value<int?>() == jellyseerrUser.Id
                         };
                     }).ToList();
 
@@ -12795,11 +12805,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 var pageInfo = data["pageInfo"] as JObject;
                 var totalResults = splitsProcessing ? (splitTotal ?? 0) : (pageInfo?["results"]?.Value<int>() ?? 0);
                 var totalPages = (int)Math.Ceiling((double)totalResults / take);
-
-                var canApproveRequests = IsAdminUser() || JellyseerrPermissionHelper.HasAnyPermission(
-                    jellyseerrUser.Permissions,
-                    JellyseerrPermission.ADMIN | JellyseerrPermission.MANAGE_REQUESTS
-                );
 
                 return Ok(new
                 {
@@ -12927,6 +12932,93 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     IsAdminUser() ? error.ToAdminResponseShape() : error.ToResponseShape());
             }
 
+            return Ok(new { success = true });
+        }
+
+        /// <summary>
+        /// Deletes a Seerr request from the Requests page. The requester may remove their own
+        /// request in any status; Jellyfin admins and Seerr managers may remove anyone's. Only the
+        /// request record is deleted, never the media.
+        /// </summary>
+        /// <remarks>
+        /// Seerr itself only lets a non-manager delete their own request while it is pending, so
+        /// ownership is checked here and the delete is sent with the API key alone.
+        /// </remarks>
+        [HttpDelete("arr/requests/{requestId}")]
+        [Authorize]
+        public async Task<IActionResult> RemoveRequest([FromRoute] int requestId)
+        {
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null || string.IsNullOrWhiteSpace(config.JellyseerrUrls) || string.IsNullOrWhiteSpace(config.JellyseerrApiKey))
+                return StatusCode(503, new { error = true, message = "Seerr not configured." });
+
+            var jellyfinUserId = UserHelper.GetCurrentUserId(User)?.ToString();
+            if (string.IsNullOrEmpty(jellyfinUserId))
+                return BadRequest(new { message = "Jellyfin User ID not found." });
+
+            var jellyseerrUser = await GetJellyseerrUser(jellyfinUserId);
+            if (jellyseerrUser == null)
+                return NotFound(new { message = "Current user is not linked to a Seerr account." });
+
+            var jellyseerrUrl = config.JellyseerrUrls
+                .Split(new[] { '\r', '\n', ',' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(u => u.Trim().TrimEnd('/'))
+                .FirstOrDefault(u => !string.IsNullOrWhiteSpace(u));
+
+            if (string.IsNullOrEmpty(jellyseerrUrl))
+                return StatusCode(503, new { error = true, message = "No valid Seerr URL configured." });
+
+            var requestUri = $"{jellyseerrUrl}/api/v1/request/{requestId}";
+            var client = Helpers.Jellyseerr.SeerrHttpHelper.CreateClient(_httpClientFactory);
+
+            var isManager = IsAdminUser() || JellyseerrPermissionHelper.HasAnyPermission(
+                jellyseerrUser.Permissions,
+                JellyseerrPermission.ADMIN | JellyseerrPermission.MANAGE_REQUESTS
+            );
+
+            // Read the request first to learn who made it.
+            int? requesterId;
+            using (var getRequest = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(HttpMethod.Get, requestUri, config.JellyseerrApiKey))
+            using (var getResponse = await client.SendAsync(getRequest))
+            {
+                if ((int)getResponse.StatusCode == 404)
+                {
+                    // Already gone: the outcome a manager asked for. Anyone else gets the same
+                    // answer as for another user's request, so request ids cannot be probed.
+                    return isManager
+                        ? Ok(new { success = true })
+                        : StatusCode(403, new { error = true, message = "You can only remove your own requests." });
+                }
+
+                var (json, getError) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(getResponse, requestUri);
+                if (getError != null)
+                {
+                    _logger.Warning($"[Request-Removal] Reading request {requestId} failed: {getError.Code} {getError.HttpStatus}");
+                    return StatusCode(getError.HttpStatus > 0 ? getError.HttpStatus : 502,
+                        IsAdminUser() ? getError.ToAdminResponseShape() : getError.ToResponseShape());
+                }
+
+                requesterId = JObject.Parse(json!)["requestedBy"]?["id"]?.Value<int?>();
+            }
+
+            var isOwner = requesterId.HasValue && requesterId.Value == jellyseerrUser.Id;
+            if (!isManager && !isOwner)
+                return StatusCode(403, new { error = true, message = "You can only remove your own requests." });
+
+            // No X-Api-User: the plugin made the ownership check, and Seerr's own rule would
+            // refuse an owner's approved request.
+            using var deleteRequest = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(HttpMethod.Delete, requestUri, config.JellyseerrApiKey);
+            using var deleteResponse = await client.SendAsync(deleteRequest);
+            if (!deleteResponse.IsSuccessStatusCode && (int)deleteResponse.StatusCode != 404)
+            {
+                var (_, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(deleteResponse, requestUri);
+                _logger.Warning($"[Request-Removal] Removing request {requestId} failed: {error?.Code} {(int)deleteResponse.StatusCode}");
+                if (error == null) return StatusCode(502, new { error = true, message = "Seerr refused to remove the request." });
+                return StatusCode(error.HttpStatus > 0 ? error.HttpStatus : 502,
+                    IsAdminUser() ? error.ToAdminResponseShape() : error.ToResponseShape());
+            }
+
+            _logger.Info($"[Request-Removal] Request {requestId} removed by {ResolveUserDisplay(jellyfinUserId)} ({(isOwner ? "owner" : "manager")})");
             return Ok(new { success = true });
         }
 
