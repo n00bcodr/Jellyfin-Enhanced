@@ -44,6 +44,8 @@
      * can be this much older than what is on screen.
      */
     const REPORT_INTERVAL_MS = 11000;
+    /** How close (seconds) a paused report's position must be to the dialog's to be its pause. */
+    const PAUSE_POSITION_TOLERANCE = 0.25;
 
     /**
      * Translates a key, falling back to English text when the key is missing.
@@ -383,10 +385,19 @@
         watchedSliders.add(slider);
         const original = slider.updateOffset;
         slider.updateOffset = function () {
-            sliderWrites++;
+            countSliderWrite();
             return original.apply(this, arguments);
         };
-        slider.addEventListener('change', () => { sliderWrites++; });
+        slider.addEventListener('change', countSliderWrite);
+    }
+
+    /**
+     * Counts one offset write. A renderer that appeared since the last look is recorded first,
+     * so this write counts as made after it (see effectiveOffset).
+     */
+    function countSliderWrite() {
+        noteRenderer();
+        sliderWrites++;
     }
 
     /** When the subtitles on screen last changed (shown, switched or turned off), by this page's clock. */
@@ -921,7 +932,8 @@
     /**
      * This device's session, once it is known to describe what is on screen. A pause makes
      * jellyfin-web report its whole state, so when the dialog paused playback a session that
-     * shows it paused is current, unless the subtitles changed after that. Otherwise the last
+     * shows it paused where the dialog opened (isPauseReport) is current, unless the subtitles
+     * changed after that. Otherwise the last
      * report is at most ten seconds old: it is current unless the subtitles on screen changed
      * since (a track shown, switched or turned off, see noteRenderer), in which case the dialog
      * waits for the next report (LastPlaybackCheckIn moves). Null when no current answer came in
@@ -949,7 +961,7 @@
                     if (baseline === undefined) baseline = checkIn;
                     else if (checkIn !== baseline) return session;
                 } else if (state.pausedByUs) {
-                    if (session.PlayState && session.PlayState.IsPaused === true) return session;
+                    if (isPauseReport(session, state)) return session;
                 } else {
                     return session;
                 }
@@ -958,6 +970,21 @@
             await new Promise(resolve => setTimeout(resolve, TIMEOUTS.sessionPoll));
             if (!isCurrent(state)) return null;
         }
+    }
+
+    /**
+     * Whether a session's state is the report of the dialog's own pause: paused at the position
+     * the dialog opened at (jellyfin-web reports the position it paused at). An earlier pause's
+     * report still on the server would show another position.
+     * @param {object} session
+     * @param {DialogState} state
+     * @returns {boolean}
+     */
+    function isPauseReport(session, state) {
+        const playState = session && session.PlayState;
+        if (!playState || playState.IsPaused !== true) return false;
+        const position = Number(playState.PositionTicks) / TICKS_PER_SECOND;
+        return Number.isFinite(position) && Math.abs(position - state.anchor) <= PAUSE_POSITION_TOLERANCE;
     }
 
     /**

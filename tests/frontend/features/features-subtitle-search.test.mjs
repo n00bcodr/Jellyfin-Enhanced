@@ -40,7 +40,7 @@ const flush = async (n = 12) => { for (let i = 0; i < n; i++) await new Promise(
  */
 function setup(t, {
   enabled = true, playState = {}, nowPlaying = {}, stream = { Type: 'Subtitle', Index: 2, DisplayTitle: 'English - SRT', IsTextSubtitleStream: true },
-  data = STREAM, cues = 'match', time = 64.98, slider = '0', before, renderer = 'cues', jf, src = '', getItem
+  data = STREAM, cues = 'match', time = 64.98, slider = '0', before, renderer = 'cues', jf, src = '', getItem, pauseReports = true
 } = {}) {
   const toasts = [];
   const requests = [];
@@ -100,7 +100,13 @@ function setup(t, {
   const video = document.querySelector('video');
   Object.defineProperty(video, 'paused', { get: () => paused });
   Object.defineProperty(video, 'currentSrc', { get: () => src });
-  video.pause = () => { paused = true; report(); };
+  // jellyfin-web reports its state, with the position it paused at, when playback pauses.
+  video.pause = () => {
+    paused = true;
+    const start = /StartTimeTicks=(\d+)/.exec(src);
+    session.PlayState.PositionTicks = Math.round(video.currentTime * TICKS) + (start ? Number(start[1]) : 0);
+    if (pauseReports) report();
+  };
   video.play = () => { paused = false; return Promise.resolve(); };
   video.currentTime = time;
 
@@ -740,6 +746,39 @@ test('with too few cues to measure, a new cue track counts as offset 0 until the
   h.JE.toggleSubtitleSearch();
   await flush();
   assert.equal(h.text('.je-subsearch-offset'), 'Offset -2.0 s');
+});
+
+test('an earlier pause still on the server is not taken for the dialog\'s own pause report', async t => {
+  // The server holds a pause at 30 s on track 2; since then the player switched to track 3
+  // (same text, 5 s later) and resumed, and those reports have not arrived.
+  const h = setup(t, { before: { IsPaused: true, PositionTicks: 30 * TICKS }, pauseReports: false,
+    jf: async (path) => { h.requests.push({ path }); return structuredClone(path.includes('/Subtitles/3/') ? RETIMED : STREAM); } });
+  h.JE.addSubtitleSearchButton(); // the page update before the switch
+  h.tracks[0].cues = retimedCues();
+  h.session.PlayState.SubtitleStreamIndex = 3;
+  h.JE.addSubtitleSearchButton(); // the page update that sees the new cues
+  h.JE.toggleSubtitleSearch(); // pauses at 64.98 s; its report is on its way
+  await flush();
+  assert.deepEqual(h.requests, []);
+  h.report();
+  await flush();
+  assert.deepEqual(h.requests.map(r => r.path), ['/Videos/item1/src1/Subtitles/3/0/Stream.js']);
+  h.row('buttering me up').querySelector('.je-subsearch-line').click();
+  assert.deepEqual(h.offsets, [-4]);
+});
+
+test('an offset set before the page noticed a new renderer still counts as set', async t => {
+  const h = setup(t, { renderer: 'ass', slider: '-6.7' });
+  const surface = h.document.querySelector('.libassjs-canvas-parent');
+  surface.remove();
+  h.JE.addSubtitleSearchButton();
+  h.video.parentElement.append(surface); // a new ASS track, not yet seen by a page update
+  h.JE.setSubtitleOffset(-2);
+  h.JE.toggleSubtitleSearch();
+  await flush();
+  assert.equal(h.text('.je-subsearch-offset'), 'Offset -2.0 s');
+  h.row('Aah!').querySelector('.je-subsearch-jump').click();
+  assert.ok(Math.abs(h.video.currentTime - 112.3) < 1e-9);
 });
 
 // ── Keys, closing and stale answers ──────────────────────────────────────────────────────────
