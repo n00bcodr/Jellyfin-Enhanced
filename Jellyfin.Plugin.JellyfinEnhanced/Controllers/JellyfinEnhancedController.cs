@@ -4204,6 +4204,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 TagGroupOrder = TagLayoutRules.NormalizeOrder(config.TagGroupOrder),
                 TagGroupCaps = TagLayoutRules.NormalizeCaps(config.TagGroupCaps),
                 TagGroupScopes = TagLayoutRules.NormalizeScopes(config.TagGroupScopes),
+                // Hidden tags: Tag Styles labels whose chips never draw (normalized; null = none), and the
+                // ratings on hidden age rating boards, which the web matches badges by
+                TagHiddenValues = TagHiddenRules.Normalize(config.TagHiddenValues),
+                TagHiddenAgeRatings = TagHiddenRules.HiddenAgeRatings(TagHiddenRules.Normalize(config.TagHiddenValues)),
+                // Tag text: the chip text an administrator set instead of a tag's own (canonical JSON; null = none)
+                TagTextOverrides = TagTextRules.Normalize(config.TagTextOverrides),
                 TagLabelDensity = TagLayoutRules.NormalizeDensity(config.TagLabelDensity),
                 TagScale = TagLayoutRules.NormalizeScale(config.TagScale),
                 TagGap = TagLayoutRules.NormalizeGap(config.TagGap),

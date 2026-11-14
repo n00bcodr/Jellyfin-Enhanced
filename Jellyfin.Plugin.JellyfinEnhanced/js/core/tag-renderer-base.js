@@ -1028,6 +1028,93 @@
         for (const scope of SCOPE_IDS) setScopeOwn(group, scope, null, settings, plugin);
     }
 
+    // ── Hidden tags ─────────────────────────────────────────────────────
+    // Per group, the Tag Styles labels (tiles of the admin Colours tag list)
+    // whose chips never draw (#1043), from the public configuration's
+    // TagHiddenValues ({ Genre: ['drama'], ... }). A label hides exactly the
+    // chips it colours; age rating boards come expanded as the ratings on them
+    // (TagHiddenAgeRatings). core/tag-layout.js drops hidden chips before each
+    // group's limit; languages and logos are dropped by their renderers, before
+    // their own grouping and limit. Mirrors TagHiddenRules / TagHiddenSet
+    // (server), which native posters use.
+    const HIDDEN_GROUPS = ['quality', 'ageRating', 'rating', 'genre', 'status', 'language', 'awards', 'logos', 'custom'];
+    let hiddenMemo = { doc: undefined, ages: undefined, sets: new Map(), ratings: new Set() };
+
+    /**
+     * The hidden labels of a group (read fresh when the configuration is replaced).
+     * @param {string} group
+     * @returns {Set<string>}
+     */
+    function hiddenLabels(group) {
+        const doc = JE.pluginConfig?.TagHiddenValues;
+        const ages = JE.pluginConfig?.TagHiddenAgeRatings;
+        if (hiddenMemo.doc !== doc || hiddenMemo.ages !== ages) {
+            hiddenMemo = { doc, ages, sets: new Map(), ratings: new Set(Array.isArray(ages) ? ages.map(String) : []) };
+        }
+        let set = hiddenMemo.sets.get(group);
+        if (!set) {
+            const list = either(doc, group);
+            set = new Set(Array.isArray(list) ? list.map(String) : []);
+            hiddenMemo.sets.set(group, set);
+        }
+        return set;
+    }
+
+    JE.core.tagHidden = {
+        GROUPS: HIDDEN_GROUPS,
+        /**
+         * Whether chips of this Tag Styles label are hidden.
+         * @param {string} group
+         * @param {*} label
+         * @returns {boolean}
+         */
+        hides(group, label) {
+            group = SCOPE_GROUP_ALIASES[group] || group;
+            return label !== null && label !== undefined && hiddenLabels(group).has(String(label));
+        },
+        /** @param {string} group @returns {boolean} Whether a group hides anything. */
+        any(group) {
+            group = SCOPE_GROUP_ALIASES[group] || group;
+            return hiddenLabels(group).size > 0 || (group === 'ageRating' && hiddenMemo.ratings.size > 0);
+        },
+        /**
+         * Whether an age rating badge (its normalized rating) is on a hidden board.
+         * @param {*} rating
+         * @returns {boolean}
+         */
+        hidesAgeRating(rating) {
+            hiddenLabels('ageRating');
+            return rating !== null && rating !== undefined && hiddenMemo.ratings.has(String(rating));
+        },
+    };
+
+    // ── Tag text ────────────────────────────────────────────────────────
+    // The text an administrator set instead of a tag's own (#1063), from the
+    // public configuration's TagTextOverrides (JSON {"status":{"seasonFinale":
+    // "End of Season"}}), keyed by the Tag Styles label that colours the chip.
+    // core/tag-layout.js applies it to quality, genre, status and awards chips.
+    // Mirrors TagTextRules / TagTextSet (server), which native posters use.
+    let textMemo = { doc: undefined, map: {} };
+
+    JE.core.tagText = {
+        /**
+         * The text for chips of this Tag Styles label, or null to keep their own.
+         * @param {string} group
+         * @param {*} label
+         * @returns {string|null}
+         */
+        of(group, label) {
+            const doc = JE.pluginConfig?.TagTextOverrides;
+            if (textMemo.doc !== doc) {
+                let map = {};
+                try { map = doc ? JSON.parse(doc) : {}; } catch { /* a bad document overrides nothing */ }
+                textMemo = { doc, map: map && typeof map === 'object' ? map : {} };
+            }
+            const text = label === null || label === undefined ? null : textMemo.map[group]?.[String(label)];
+            return typeof text === 'string' && text ? text : null;
+        },
+    };
+
     // ── Settings matrix ─────────────────────────────────────────────────
     // The common controls every tag group offers, per settings surface: the
     // admin Media Tags page, the personal Media Tags hub and the item editor.

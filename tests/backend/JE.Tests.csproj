@@ -35,6 +35,7 @@
     <EmbeddedResource Include="../fixtures/custom-tag-labels.json" LogicalName="CustomTagLabels.json" />
     <EmbeddedResource Include="../fixtures/language-chip-styles.json" LogicalName="LanguageChipStyles.json" />
     <EmbeddedResource Include="../fixtures/genre-styles.json" LogicalName="GenreStyles.json" />
+    <EmbeddedResource Include="../fixtures/hidden-tag-labels.json" LogicalName="HiddenTagLabels.json" />
     <EmbeddedResource Include="../fixtures/admin-tags-page-fields.json" LogicalName="AdminTagsPageFields.json" />
     <ProjectReference Include="../../Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.csproj" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />

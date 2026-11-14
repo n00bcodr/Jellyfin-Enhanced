@@ -233,7 +233,7 @@ Open a row to change it:
 - **Where to show:** every group has the same six switches: **Movies**, **Series**, **Seasons**, **Episodes**, **Continue Watching row** and **Next Up row**. Turn one off to keep that group off those cards, for example genres off episodes or the age rating off the Next Up row. Each switch you have not changed follows the administrator's choice, and **Follow server** puts the whole group back on the administrator's choices. The item types also apply to [Native Poster Tags](#native-poster-tags-experimental). The two home rows are a web setting, because an app's image request does not say which row a poster is in. The live preview applies the switches to its sample movie, series and episode. People Tags appear on cast cards, not on media cards, so they have no switches. The item editor does not have them either, since they are set for all titles here. Collections and other videos always show the group. Rating works the same way: a Rating switch you turned off before this release stays off, and the others follow the administrator.
 - **Show up to** reads **Always one tag** for Status, Age rating and a one-logo Logos group, on the hub and in the item editor.
 
-The limit applies after each group's own filtering (quality categories, language grouping and priority, each group's **Where to show** switches). **Reset to defaults** restores the administrator's layout, density, positions, order and limits; your group switches and include choices stay.
+The limit applies after each group's own filtering (quality categories, language grouping and priority, [hidden tags](#hidden-tags), each group's **Where to show** switches). **Reset to defaults** restores the administrator's layout, density, positions, order and limits; your group switches and include choices stay.
 
 **Show up to** appears only for groups that can show multiple chips. Status (including Leaving soon and direct play) and Age rating always have a limit of one. Logos hides the control when the administrator permits only one logo, and shows it when the maximum is two. Saved higher limits cannot increase these single-chip groups. The hub and administrator Layout defaults / Groups panels follow the same rule.
 
@@ -611,6 +611,7 @@ Genre Tags show up to three genres (the genre limit of your [layout](#layouts)) 
 | Setting | Default | What it does |
 |---|---|---|
 | Admin: **Enable Genre Tags** / personal: **Genre** switch | Off | Shows genre icons on supported cards (three by default; see [Layouts](#layouts)) |
+| Admin: **Hide** switch of a genre (Colours tab) | Off | Hides a genre, in every spelling, from every poster; the next genres take its place (see [Hidden tags](#hidden-tags)) |
 
 ??? info "Genre sources and hover behavior"
     Genres come from Jellyfin metadata. Unfamiliar names use a generic icon.
@@ -1419,6 +1420,32 @@ The editor shows every tag of the selected group in its current colours, so you 
 | **Custom** | Each label of the **Custom tag rules** | The labels follow the rules table as you edit it; rules that share a label share its colours. The icon takes the text colour |
 
 A tag's colours are worked out field by field: its own colour if you set one, else the group colour, else the preset. **Default** on a row removes that one colour from what you are editing, so it falls back to the group or the preset.
+
+#### Tag text
+
+Quality, genre, status and awards tags also have a **Text** field under their **Hide** switch: choose a tag and type the words its chips should show (for example **Season Finale** becomes **End of Season**). The text replaces the whole chip text for every user, on web posters and on native posters (native genre chips draw only an icon, so a genre text shows on the web only). Leave the field empty to go back to the tag's own words; it saves when you leave the field and offers Undo. Texts are up to 32 characters, apply in Full and Compact density alike, and are not translated: every language shows what you typed. A tile renames every chip it colours, so renaming **Dolby Digital+** replaces **Dolby Digital+ 5.1** and **Dolby Digital+ 2.0** alike.
+
+#### Hidden tags
+
+Any tag in the editor's tag list can also be hidden: choose it and turn on its **Hide** switch (named after the tag, for example **Hide Drama**). Its chips then never show, on web posters and native posters, for every user. Hidden tiles are dimmed, outlined and marked; the group's tab shows how many it hides; and a **Hidden** line under the list names them, each a shortcut to its switch (with more than four, **Show only the hidden tags** narrows the list to them). **Undo** in the confirmation brings a tag back, as does turning the switch off again. Hidden tags work whether **Use tag colours** is on or off; with colours off the editor stays open for hiding and its colour controls are dimmed.
+
+Each group on the **Groups** tab says how many of its tags are hidden and links to them (**Hidden Genre tags (Colours and text)**). Turning a group off there only changes what new users start with; hiding a tag applies to everyone.
+
+A tag hides exactly the chips its colours apply to:
+
+| Tab | Hiding a tag hides |
+|---|---|
+| **Quality** | That label, whatever its channels (**Dolby Digital+** hides *Dolby Digital+ 5.1*). Hiding a resolution such as **4K** never shows a lower resolution in its place. |
+| **Age** | Every rating on that colour board (hover the tile for the list). |
+| **Rating** | That score (Community, Critic, User review or a named source). |
+| **Genre** | That genre in every spelling and translation (**Drama** hides *Drame* and *Драма*). **Other** hides every genre without an icon of its own, such as *Reality*, *Talk* or *Anime*. The next genres take the hidden ones' places within **Show up to**. |
+| **Status** | That badge. |
+| **Awards** | That ribbon. |
+| **Language** | A language code hides that language's audio and subtitle chips (the Dual/Multi badge still counts it); **Subtitles**, **Dual / Multi**, **Dual** and **Multi** hide those chips. **Flag image** and **Language codes** colour every flag or code and cannot be hidden. |
+| **Logos** | Every logo of that kind: **Provider logo** (streaming services), **Network / studio logo**, or **Name chip** (logos without an image). The next logo takes their place. |
+| **Custom** | Every chip with that label. A hidden label whose rule was removed keeps its tile (*Kids (no rule)*) until it is shown again, so it never silently hides a later rule with the same label. |
+
+![The Genre tab of the colour editor with Drama hidden](../images/tags/tag-hidden-tags.webp)
 
 #### Genre colours
 

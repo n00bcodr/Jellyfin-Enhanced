@@ -87,6 +87,10 @@
       "category": "Configuration"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagHiddenValues.cs",
+      "category": "Configuration"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLayoutSettings.cs",
       "category": "Configuration"
     },
@@ -96,6 +100,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagShapeSettings.cs",
+      "category": "Configuration"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagTextOverrides.cs",
       "category": "Configuration"
     },
     {
@@ -5578,6 +5586,22 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "TagHiddenValues",
+      "type": "TagHiddenValues?",
+      "initializer": null,
+      "constructor_assignment": "null",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "TagTextOverrides",
+      "type": "string?",
+      "initializer": null,
+      "constructor_assignment": "null",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "TagLabelDensity",
       "type": "string",
       "initializer": "\"full\"",
@@ -7591,6 +7615,78 @@
       "initializer": null,
       "constructor_assignment": "0",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "TagHiddenValues",
+      "name": "Quality",
+      "type": "string[]?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagHiddenValues.cs"
+    },
+    {
+      "class": "TagHiddenValues",
+      "name": "AgeRating",
+      "type": "string[]?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagHiddenValues.cs"
+    },
+    {
+      "class": "TagHiddenValues",
+      "name": "Rating",
+      "type": "string[]?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagHiddenValues.cs"
+    },
+    {
+      "class": "TagHiddenValues",
+      "name": "Genre",
+      "type": "string[]?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagHiddenValues.cs"
+    },
+    {
+      "class": "TagHiddenValues",
+      "name": "Status",
+      "type": "string[]?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagHiddenValues.cs"
+    },
+    {
+      "class": "TagHiddenValues",
+      "name": "Language",
+      "type": "string[]?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagHiddenValues.cs"
+    },
+    {
+      "class": "TagHiddenValues",
+      "name": "Awards",
+      "type": "string[]?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagHiddenValues.cs"
+    },
+    {
+      "class": "TagHiddenValues",
+      "name": "Logos",
+      "type": "string[]?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagHiddenValues.cs"
+    },
+    {
+      "class": "TagHiddenValues",
+      "name": "Custom",
+      "type": "string[]?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagHiddenValues.cs"
     },
     {
       "class": "TagLayoutGroupSlot",
@@ -10515,7 +10611,7 @@
     "build_targets": 2,
     "files": 486,
     "routes": 208,
-    "configuration_properties": 759,
+    "configuration_properties": 769,
     "storage_references": 88,
     "scheduled_tasks": 17,
     "locales": 33

@@ -733,7 +733,7 @@
             /** The tab's sections (JE.adminTags.TABS): id and its name. */
             var JE_MT_SECTIONS = [
                 ['overview', 'Overview'], ['layout', 'Layout defaults'],
-                ['groups', 'Groups'], ['rules', 'Rules'], ['colours', 'Colours'],
+                ['groups', 'Groups'], ['rules', 'Rules'], ['colours', 'Colours and text'],
                 ['badges', 'Status badges'], ['server', 'Server']
             ];
             var _jeMtLoaded = null;
@@ -5512,7 +5512,7 @@
                 var group = at.tab === 'groups' && at.group ? at.group : null;
                 var key = at.tab + ':' + (group || '');
                 if (!entries[key]) {
-                    var tabName = ({overview:'Overview',layout:'Layout defaults',groups:'Groups',rules:'Rules',colours:'Colours',badges:'Status badges',server:'Server'})[at.tab] || jeHumanizeSettingId(at.tab);
+                    var tabName = ({overview:'Overview',layout:'Layout defaults',groups:'Groups',rules:'Rules',colours:'Colours and text',badges:'Status badges',server:'Server'})[at.tab] || jeHumanizeSettingId(at.tab);
                     entries[key] = {
                         tab: 'media-tags',
                         tabLabel: 'Media Tags',
