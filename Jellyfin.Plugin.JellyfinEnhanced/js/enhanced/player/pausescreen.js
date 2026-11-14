@@ -515,7 +515,7 @@
             this.overlayContent.focus();
             return true;
           }
-          if (e.key === 'Escape' || e.key === 'BrowserBack' || e.keyCode === 10009 || e.keyCode === 461) {
+          if (JE.core.ui.isTvBackKey(e)) {
             swallow();
             this.hideOverlay(true);
             return true;
