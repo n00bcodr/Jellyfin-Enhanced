@@ -645,6 +645,12 @@
         const accent = JE.themer?.getThemeVariables?.()?.primaryAccent || '#00a4dc';
         const css = `
             .btnSubtitles.hide + #${BUTTON_ID} { display: none !important; }
+            /* JE's Material Symbols subset (declared in ui-styles.js), at the size of the player's own icons. */
+            #${BUTTON_ID} .je-msym-rounded {
+                font-family: 'JE Material Symbols Rounded'; font-weight: normal; font-style: normal; font-size: 1.67em;
+                line-height: 1; letter-spacing: normal; text-transform: none; display: inline-block; white-space: nowrap;
+                word-wrap: normal; direction: ltr; font-feature-settings: 'liga'; -webkit-font-smoothing: antialiased;
+            }
             #${OVERLAY_ID} {
                 position: fixed; inset: 0; z-index: 10000; display: flex; align-items: center; justify-content: center;
                 padding: 16px; box-sizing: border-box; background: rgba(0,0,0,0.6);
@@ -1499,7 +1505,7 @@
         button.className = 'autoSize paper-icon-button-light';
         button.title = label;
         button.setAttribute('aria-label', label);
-        button.innerHTML = '<span class="xlargePaperIconButton material-icons manage_search" aria-hidden="true"></span>';
+        button.innerHTML = '<span class="xlargePaperIconButton je-msym-rounded" aria-hidden="true">subtitles_gear</span>';
         button.addEventListener('click', (e) => {
             e.stopPropagation();
             openDialog();

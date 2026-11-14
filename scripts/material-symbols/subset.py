@@ -83,6 +83,8 @@ ICONS = {
         'playlist_add_check', 'warning', 'history',
         # jellyseerr/recommendations/recommendations-render.js row scroll arrows
         'chevron_left', 'chevron_right',
+        # enhanced/player/subtitle-search.js (the player's Subtitle search button)
+        'subtitles_gear',
     },
     # tags/genre-icons.json (genretags.js's table): read from the source, nothing to list.
     'outlined': set(),
