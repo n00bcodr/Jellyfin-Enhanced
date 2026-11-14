@@ -133,6 +133,29 @@ public sealed class LeavingSoonTests : IDisposable
         => new() { LeavingSoonMaintainerrUrl = url ?? string.Empty, LeavingSoonMaintainerrApiKey = key, LeavingSoonCollections = names, LeavingSoonRefreshHours = hours };
 
     [Fact]
+    public void Leaving_facts_are_consumed_only_while_a_source_is_set_and_something_uses_them()
+    {
+        var url = "http://maintainerr:6246";
+        PluginConfiguration With(string? u, string names, bool badge, bool row, bool actions)
+        {
+            var c = Config(url: u, names: names);
+            c.StatusTagsLeaving = badge; c.LeavingSoonHomeRow = row; c.LeavingSoonMaintainerrActions = actions;
+            return c;
+        }
+
+        // No source: never, even with everything on.
+        Assert.False(LeavingSoonService.Consumed(With(null, "", true, true, true), () => true));
+        // A source but nothing uses it: skipped; a user with the badge on counts.
+        Assert.False(LeavingSoonService.Consumed(With(url, "", false, false, false), () => false));
+        Assert.True(LeavingSoonService.Consumed(With(url, "", false, false, false), () => true));
+        // The badge default, or the home row / actions with a Maintainerr URL, count; the row and actions need that URL.
+        Assert.True(LeavingSoonService.Consumed(With(null, "Leaving", true, false, false), () => false));
+        Assert.True(LeavingSoonService.Consumed(With(url, "", false, true, false), () => false));
+        Assert.True(LeavingSoonService.Consumed(With(url, "", false, false, true), () => false));
+        Assert.False(LeavingSoonService.Consumed(With(null, "Leaving", false, true, true), () => false));
+    }
+
+    [Fact]
     public void Parses_dated_undated_inactive_wrapped_and_numeric_type_answers()
     {
         var a = Guid.NewGuid(); var b = Guid.NewGuid(); var c = Guid.NewGuid();

@@ -104,6 +104,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public static bool Configured(PluginConfiguration? config)
             => config != null && (IsMaintainerrUrl(config.LeavingSoonMaintainerrUrl) || CollectionNames(config.LeavingSoonCollections).Count > 0);
 
+        /// <summary>
+        /// Whether anything reads the leaving facts: a source is set and the badge default, the home row or the
+        /// Maintainerr actions use it, or (checked last, it reads each user's settings) some user has the badge on.
+        /// </summary>
+        public static bool Consumed(PluginConfiguration? config, Func<bool> anyUserShowsBadge)
+        {
+            if (!Configured(config)) return false;
+            var maintainerr = IsMaintainerrUrl(config!.LeavingSoonMaintainerrUrl);
+            return config.StatusTagsLeaving
+                || (maintainerr && (config.LeavingSoonHomeRow || config.LeavingSoonMaintainerrActions))
+                || anyUserShowsBadge();
+        }
+
         /// <summary>An absolute http(s) base URL without credentials, query or fragment (empty is not one).</summary>
         public static bool IsMaintainerrUrl(string? url)
         {
