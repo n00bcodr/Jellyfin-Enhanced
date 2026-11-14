@@ -24,6 +24,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // Seerr media status meaning every requested file is in the library (MediaStatus.AVAILABLE).
         public const int MediaAvailable = 5;
 
+        /// <summary>Only approved and completed requests can ever be removed.</summary>
+        public static bool IsRemovableStatus(int requestStatus)
+            => requestStatus == RequestApproved || requestStatus == RequestCompleted;
+
         /// <summary>Whether the feature has anything to do with this configuration.</summary>
         public static bool IsActive(PluginConfiguration? config)
             => config != null && config.JellyseerrEnabled && config.AutoRequestRemovalEnabled;
@@ -59,7 +63,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             IReadOnlyCollection<bool>? movieVersionsPlayed,
             IReadOnlyDictionary<int, IReadOnlyCollection<bool>>? episodesPlayedBySeason)
         {
-            if (candidate.RequestStatus != RequestApproved && candidate.RequestStatus != RequestCompleted)
+            if (!IsRemovableStatus(candidate.RequestStatus))
             {
                 return Decision.Keep($"request status {candidate.RequestStatus} is not approved or completed");
             }

@@ -896,6 +896,10 @@ Delete a request from Seerr once the person who asked for it has watched it.
 
 **How to use:** Open **Seerr** → **Auto Request Removal** and enable **Remove Watched Requests**. The **Remove watched requests from Seerr** scheduled task does the removal once a day: a request goes on the first run after its requester has watched it.
 
+!!! warning "Destructive: use with caution"
+
+    A deleted request cannot be restored, and its history is gone from Seerr. If request quotas are enabled in Seerr, removing a request also gives that quota back to the user, because Seerr counts quota from the requests that still exist. The same applies to the **Remove request** button on the Requests page.
+
 Admin settings ([full reference](seerr-settings.md#auto-request-removal)):
 
 | Setting | Default | What it does |
@@ -907,5 +911,7 @@ Admin settings ([full reference](seerr-settings.md#auto-request-removal)):
     Only the request record is deleted. The media stays available in Seerr and in the Jellyfin library, and nothing is removed from Radarr/Sonarr. Pending, declined and failed requests are never removed.
 
     Only the requester's own viewing counts. A movie counts once any library version is watched. A series request counts once every requested season is available in Seerr (for the request's quality, 4K or not), is present in the library, and every episode of it is watched.
+
+    Each request is judged on its own. When several people asked for the same title, every request is removed only after the person who made it has watched it, and removing one never touches the others. A series can have separate requests for different seasons, and each one is checked against its own seasons.
 
     The task reads the whole Seerr request list before deleting anything and stops without changes if any page fails. Requests from users on the **Blocked Users** list are skipped. Deletes use the Seerr API key, so no Seerr permission is needed from the requester.

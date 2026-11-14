@@ -123,6 +123,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
             }
 
             var byKey = BuildLibraryIndex();
+            var episodeCache = new Dictionary<(Guid UserId, string LibraryKey), Dictionary<int, IReadOnlyCollection<bool>>>();
             var processed = 0;
             var removed = 0;
 
@@ -132,8 +133,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                 processed++;
                 try
                 {
+                    // Cheapest checks first: a pending, declined or failed request is never removed, so
+                    // it must not cost a library query.
+                    if (!RequestRemovalPlanner.IsRemovableStatus(request.Candidate.RequestStatus)) continue;
                     if (!usersById.TryGetValue(request.RequesterJellyfinId, out var user)) continue;
-                    if (!byKey.TryGetValue(LibraryKey(request.Candidate.IsTv, request.TmdbId), out var items)) continue;
+                    var libraryKey = LibraryKey(request.Candidate.IsTv, request.TmdbId);
+                    if (!byKey.TryGetValue(libraryKey, out var items)) continue;
 
                     RequestRemovalPlanner.Decision decision;
                     if (!request.Candidate.IsTv)
@@ -142,7 +147,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                     }
                     else
                     {
-                        var episodes = CollectEpisodesPlayed(user, items);
+                        // Several requests for one series by one user share the same episode scan.
+                        if (!episodeCache.TryGetValue((user.Id, libraryKey), out var episodes))
+                        {
+                            episodes = CollectEpisodesPlayed(user, items);
+                            episodeCache[(user.Id, libraryKey)] = episodes;
+                        }
                         var candidate = request.Candidate;
                         if (candidate.SeasonStatuses.Count == 0)
                         {

@@ -619,13 +619,25 @@ public class ApiSeerrTests
         Assert.Single(f.Calls, c => c.Method == "DELETE");
     }
 
-    [Theory]
-    [InlineData(404, 204)]
-    [InlineData(200, 404)]
-    public async Task ARequestThatIsAlreadyGoneCountsAsRemoved(int getStatus, int deleteStatus)
+    [Fact]
+    public async Task ARequestDeletedBetweenTheReadAndTheDeleteCountsAsRemoved()
     {
-        using var f = new SeerrFixture { Reply = RequestOwners(getStatus, deleteStatus) };
+        using var f = new SeerrFixture { Permissions = JellyseerrPermission.REQUEST, Reply = RequestOwners(deleteStatus: 404) };
         Assert.Equal(200, Status(await f.Controller.RemoveRequest(5)));
+    }
+
+    [Fact]
+    public async Task AMissingRequestCountsAsRemovedForManagersOnly()
+    {
+        using var f = new SeerrFixture { Permissions = JellyseerrPermission.REQUEST | JellyseerrPermission.MANAGE_REQUESTS, Reply = RequestOwners(getStatus: 404) };
+        Assert.Equal(200, Status(await f.Controller.RemoveRequest(5)));
+
+        // A plain user gets the answer they would get for someone else's request, so the ids
+        // of existing requests cannot be probed.
+        f.Permissions = JellyseerrPermission.REQUEST;
+        JellyfinEnhancedController.ClearAllSeerrCachesOnConfigChange();
+        Assert.Equal(403, Status(await f.Controller.RemoveRequest(5)));
+        Assert.DoesNotContain(f.Calls, c => c.Method == "DELETE");
     }
 
     [Fact]

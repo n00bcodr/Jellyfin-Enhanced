@@ -12965,6 +12965,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var requestUri = $"{jellyseerrUrl}/api/v1/request/{requestId}";
             var client = Helpers.Jellyseerr.SeerrHttpHelper.CreateClient(_httpClientFactory);
 
+            var isManager = IsAdminUser() || JellyseerrPermissionHelper.HasAnyPermission(
+                jellyseerrUser.Permissions,
+                JellyseerrPermission.ADMIN | JellyseerrPermission.MANAGE_REQUESTS
+            );
+
             // Read the request first to learn who made it.
             int? requesterId;
             using (var getRequest = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(HttpMethod.Get, requestUri, config.JellyseerrApiKey))
@@ -12972,8 +12977,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 if ((int)getResponse.StatusCode == 404)
                 {
-                    // Already gone: the outcome the caller asked for.
-                    return Ok(new { success = true });
+                    // Already gone: the outcome a manager asked for. Anyone else gets the same
+                    // answer as for another user's request, so request ids cannot be probed.
+                    return isManager
+                        ? Ok(new { success = true })
+                        : StatusCode(403, new { error = true, message = "You can only remove your own requests." });
                 }
 
                 var (json, getError) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(getResponse, requestUri);
@@ -12987,10 +12995,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 requesterId = JObject.Parse(json!)["requestedBy"]?["id"]?.Value<int?>();
             }
 
-            var isManager = IsAdminUser() || JellyseerrPermissionHelper.HasAnyPermission(
-                jellyseerrUser.Permissions,
-                JellyseerrPermission.ADMIN | JellyseerrPermission.MANAGE_REQUESTS
-            );
             var isOwner = requesterId.HasValue && requesterId.Value == jellyseerrUser.Id;
             if (!isManager && !isOwner)
                 return StatusCode(403, new { error = true, message = "You can only remove your own requests." });

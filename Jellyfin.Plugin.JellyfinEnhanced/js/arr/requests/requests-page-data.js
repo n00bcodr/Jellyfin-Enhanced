@@ -449,7 +449,7 @@
     const title = btn.getAttribute('data-request-title') || '';
     const dialogTitle = JE.t?.('requests_remove_request') || 'Remove request';
     const question = (JE.t?.('requests_remove_request_confirm') || 'Remove the request for "{title}"? The media itself is not deleted.')
-      .replace('{title}', title);
+      .replace('{title}', () => title);
     if (!(await confirmRemoval(question, dialogTitle))) return;
 
     btn.disabled = true;

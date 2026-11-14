@@ -424,6 +424,10 @@ Delete a Seerr request once the user who made it has watched it.
 
 **How to use:** Open **Seerr** → **Auto Request Removal** and enable the feature. The **Remove watched requests from Seerr** scheduled task runs daily at 04:30 and removes each request on the first run after its requester has watched it; run it from **Dashboard** → **Scheduled Tasks** to apply it at once.
 
+!!! warning "Destructive: use with caution"
+
+    A deleted request cannot be restored, and its history is gone from Seerr. If request quotas are enabled in Seerr, removing a request also gives that quota back to the user, because Seerr counts quota from the requests that still exist. The same applies to the **Remove request** button on the Requests page.
+
 | Setting | Default | What it does |
 | --- | --- | --- |
 | **Remove Watched Requests** | Off | `AutoRequestRemovalEnabled`; deletes approved or completed requests once their requester has watched them. Only the request is deleted, never the media. |

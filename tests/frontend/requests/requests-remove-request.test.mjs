@@ -86,3 +86,10 @@ test('a refused removal re-enables the button and tells the user', async t => {
   assert.equal(h.button.querySelector('.material-icons').textContent, 'delete');
   assert.equal(h.toasts.length, 1);
 });
+
+test('a title with replacement patterns is shown as written in the confirmation', async t => {
+  const h = data(t);
+  h.button.dataset.requestTitle = "Cats $& Dogs $' $1";
+  await h.P.handleRemoveRequest(h.button);
+  assert.ok(h.calls[0][2].includes("Cats $& Dogs $' $1"), h.calls[0][2]);
+});
