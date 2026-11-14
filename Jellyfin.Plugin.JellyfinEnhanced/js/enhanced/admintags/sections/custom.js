@@ -25,7 +25,7 @@
             let last = '';
             this.loadEditor = () => {
                 const next = JSON.stringify(ctx.config.CustomTagRules || []);
-                if (next === last) return;
+                if (next === last || editor.matches(ctx.config)) { last = next; return; }
                 last = next;
                 editor.load(ctx.config);
             };
