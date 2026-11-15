@@ -439,6 +439,34 @@ test('without a <video>, a key seek while a timeline seek is still landing start
   assert.ok(Math.abs(h.seeks.at(-1) - (500 / 1200) * 100) < 0.01, 'back to 8:20, before the key seek');
 });
 
+test('without a <video>, an old-time reading after a key seek during a landing confirms nothing', async t => {
+  const h = setup(t, { clock: true });
+  h.JE.watchOsdPosition();
+  h.show(100); await flush();
+  h.player.moveOnSeek = false;
+  h.dragTo(500); await flush();
+  h.document.body.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'ArrowRight', code: 'ArrowRight', bubbles: true }));
+  h.advance(500); h.show(101); await flush(); // still the old time
+  h.advance(500); h.show(504); await flush(); // the click and a 3 s skip, shown together
+  h.player.moveOnSeek = true;
+  h.JE.jumpToLastPosition();
+  assert.ok(Math.abs(h.seeks.at(-1) - (500 / 1200) * 100) < 0.01, 'back to 8:20, not 1:41');
+});
+
+test('without a <video>, a jump back that shows up after more than 15 s records nothing', async t => {
+  const h = setup(t, { clock: true });
+  h.JE.watchOsdPosition();
+  h.show(100); await flush();
+  h.dragTo(500); await flush();
+  h.advance(700); h.show(501); await flush();
+  h.player.moveOnSeek = false;
+  h.JE.jumpToLastPosition(); // to 1:40
+  h.advance(16000); h.show(100); await flush();
+  h.player.moveOnSeek = true;
+  h.JE.jumpToLastPosition();
+  assert.match(h.toasts.at(-1), /No previous position saved/);
+});
+
 test('without a <video>, autoplay right after a timeline click near the end uses no saved position', async t => {
   const h = setup(t, { clock: true });
   h.JE.watchOsdPosition();

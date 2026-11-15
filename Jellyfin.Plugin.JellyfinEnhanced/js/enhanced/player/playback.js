@@ -460,31 +460,31 @@
             _lastPositionBeforeSeek = null;
             _osdHistoryItem = null;
         }
-        if (_osdJump && _osdIntent && _osdIntent.at >= _osdJump.at && confirmOsdIntent(reading)) {
-            // A seek key used while an earlier seek was still landing: that landing is superseded.
-            _osdJump = null;
-            _osdLastReading = reading;
-            return;
-        }
         if (_osdJump) {
             // JE's own jump back or a recorded slider seek. Up to `played` (what could have played since;
-            // buffering or a pause means less) past the target is the landing and becomes the baseline; the
-            // same past the old position means the player hasn't moved yet and is skipped; anything else
-            // (another seek, the next item) is judged as usual. A slow landing is waited for up to 15 s.
+            // buffering or a pause means less) past the old position means the player hasn't moved yet:
+            // skipped. A seek key used meanwhile is judged next, then the same past the target is the
+            // landing and becomes the baseline. After 15 s without one, the wait ends with a fresh baseline
+            // and nothing recorded. Anything else (another seek, the next item) is judged as usual.
             const jump = _osdJump;
-            if (!osd.sameItem(reading, jump) || reading.at >= jump.until) {
-                _osdJump = null;
-            } else {
+            if (osd.sameItem(reading, jump)) {
                 const played = Math.max(0, reading.at - jump.at) / 1000 * _osdRate;
                 const near = (origin) => reading.position >= origin - OSD_JUMP_ARRIVED_SECONDS
                     && reading.position <= origin + played + OSD_JUMP_ARRIVED_SECONDS;
-                if (near(jump.position)) {
-                    _osdJump = null;
+                const landed = near(jump.position);
+                if (!landed && near(jump.from) && reading.at < jump.until) return;
+                _osdJump = null;
+                if (_osdIntent && _osdIntent.at >= jump.at && confirmOsdIntent(reading)) {
+                    // The key seek superseded the landing.
+                    _osdLastReading = reading;
+                    return;
+                }
+                if (landed || reading.at >= jump.until) {
                     _osdLastReading = reading;
                     _osdRun = null;
                     return;
                 }
-                if (near(jump.from)) return;
+            } else {
                 _osdJump = null;
             }
         }
