@@ -93,6 +93,18 @@
     }
 
     /**
+     * Whether the OSD shows playback paused: its play/pause button shows the play icon then.
+     * @returns {boolean|null} Null when the OSD shows neither icon.
+     */
+    function isPaused() {
+        const icon = osdElement('.btnPause .material-icons');
+        if (!icon) return null;
+        if (icon.classList.contains('play_arrow')) return true;
+        if (icon.classList.contains('pause')) return false;
+        return null;
+    }
+
+    /**
      * Seeks through the OSD's position slider, which calls the playback manager's seekPercent.
      * @param {number} seconds Target position in seconds of the item.
      * @returns {boolean} False when the OSD has no slider or no duration to place the target on.
@@ -125,6 +137,7 @@
         durationSeconds,
         itemKey,
         sameItem,
+        isPaused,
         seekTo,
         seekToPercent,
     };
