@@ -384,7 +384,7 @@
     const OSD_JUMP_ARRIVED_SECONDS = 3;
     let _osdLastReading = null;   // { key, duration, position, at, playing } of the latest OSD reading
     let _osdHistoryItem = null;   // { key, duration } the saved position belongs to
-    let _osdJump = null;          // { key, duration, position, until } while JE's jump back or a slider seek lands
+    let _osdJump = null;          // landingFor(): while JE's jump back or a recorded slider seek lands
     let _osdOwnJump = false;      // true while JE's jump back moves the slider
     let _osdIntent = null;        // the reading taken when a jellyfin-web seek key or button was used
     let _osdPendingSeek = null;   // { from, until }: a jump away from an item's end, until its identity settles
@@ -420,6 +420,24 @@
     }
 
     /**
+     * What to wait for after a seek from a reading to a target (see noteOsdPosition).
+     * @param {{key: string, duration: number, position: number, at: number, playing: boolean}} reading
+     * @param {number} target
+     * @returns {{key: string, duration: number, position: number, from: number, at: number, playing: boolean, until: number}}
+     */
+    function landingFor(reading, target) {
+        return {
+            key: reading.key,
+            duration: reading.duration,
+            position: target,
+            from: reading.position,
+            at: reading.at,
+            playing: reading.playing,
+            until: reading.at + OSD_JUMP_SETTLE_MS,
+        };
+    }
+
+    /**
      * Sets the rate JE's own speed change chose for a player without a <video>.
      * @param {number} rate
      */
@@ -443,15 +461,22 @@
             _osdHistoryItem = null;
         }
         if (_osdJump) {
-            // JE's own jump back or a recorded slider seek: readings of the old position may still arrive;
-            // wait for the target.
-            const sameAsJump = osd.sameItem(reading, _osdJump);
-            const landed = sameAsJump && Math.abs(reading.position - _osdJump.position) <= OSD_JUMP_ARRIVED_SECONDS;
-            if (!landed && sameAsJump && reading.at < _osdJump.until) return;
-            _osdJump = null;
-            if (landed) {
-                _osdLastReading = reading;
-                return;
+            // JE's own jump back or a recorded slider seek. Readings that still show the old position (the
+            // player hasn't moved yet) are skipped; the target, plus what has played since, is the landing
+            // and becomes the baseline; anything else (another seek, the next item) is judged as usual.
+            const jump = _osdJump;
+            if (!osd.sameItem(reading, jump) || reading.at >= jump.until) {
+                _osdJump = null;
+            } else {
+                const played = jump.playing ? Math.max(0, reading.at - jump.at) / 1000 * _osdRate : 0;
+                if (Math.abs(reading.position - (jump.position + played)) <= OSD_JUMP_ARRIVED_SECONDS) {
+                    _osdJump = null;
+                    _osdLastReading = reading;
+                    _osdRun = null;
+                    return;
+                }
+                if (Math.abs(reading.position - (jump.from + played)) <= OSD_JUMP_ARRIVED_SECONDS) return;
+                _osdJump = null;
             }
         }
         const previous = _osdLastReading;
@@ -551,7 +576,7 @@
         _osdLastReading = reading;
         // Its landing is this seek, not another one (nor autoplay, near an item's end): wait for it the way
         // JE's own jump back is waited for. It also supersedes a jump back still landing.
-        _osdJump = { key: reading.key, duration: reading.duration, position: target, until: reading.at + OSD_JUMP_SETTLE_MS };
+        _osdJump = landingFor(reading, target);
     }
 
     /**
@@ -610,8 +635,7 @@
             return;
         }
         const targetTime = _lastPositionBeforeSeek;
-        const key = osd.itemKey();
-        const duration = osd.durationSeconds();
+        const before = readOsd();
         _osdOwnJump = true;
         let moved;
         try {
@@ -627,9 +651,8 @@
         _osdHistoryItem = null;
         _osdPendingSeek = null;
         _osdRun = null;
-        // The jump itself is not a seek to remember: ignore readings until it lands.
-        _osdJump = key === null || duration === null
-            ? null : { key, duration, position: targetTime, until: Date.now() + OSD_JUMP_SETTLE_MS };
+        // The jump itself is not a seek to remember: wait for it to land.
+        _osdJump = before ? landingFor(before, targetTime) : null;
 
         const mins = Math.floor(targetTime / 60);
         const secs = Math.floor(targetTime % 60).toString().padStart(2, '0');

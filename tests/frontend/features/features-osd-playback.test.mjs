@@ -365,6 +365,33 @@ test('without a <video>, a timeline click from an item\'s last 30 s is undone at
   assert.ok(Math.abs(h.seeks.at(-1) - (1186 / 1200) * 100) < 0.01, 'back to 19:46');
 });
 
+test('without a <video>, a slider seek that shows up late still lands, and a key seek after it counts', async t => {
+  const h = setup(t, { clock: true });
+  h.JE.watchOsdPosition();
+  h.show(100); await flush();
+  h.player.moveOnSeek = false;
+  h.dragTo(500); await flush();
+  h.advance(4000); h.show(504); await flush(); // the first update after the seek, 4 s of playback later
+  h.document.body.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'ArrowRight', code: 'ArrowRight', bubbles: true }));
+  h.advance(700); h.show(514); await flush(); // jellyfin-web's +10 s
+  h.player.moveOnSeek = true;
+  h.JE.jumpToLastPosition();
+  assert.ok(Math.abs(h.seeks.at(-1) - (504 / 1200) * 100) < 0.01, 'back to 8:24, before the key seek');
+});
+
+test('without a <video>, autoplay right after a timeline click near the end uses no saved position', async t => {
+  const h = setup(t, { clock: true });
+  h.JE.watchOsdPosition();
+  h.show(1180); await flush();
+  h.player.moveOnSeek = false;
+  h.dragTo(1199); await flush(); // 19:40 is saved
+  h.advance(3000); h.show(2, 1199); await flush(); // the next item, still with this item's id
+  h.player.moveOnSeek = true;
+  h.JE.jumpToLastPosition();
+  assert.match(h.toasts.at(-1), /No previous position saved/);
+  assert.equal(h.seeks.length, 1, 'only the timeline click');
+});
+
 test('without a <video>, a seek away from an item\'s end is kept once the item stays the same', async t => {
   const h = setup(t, { clock: true });
   h.JE.watchOsdPosition();
