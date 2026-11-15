@@ -380,7 +380,7 @@
     const OSD_SEEK_SLACK_SECONDS = 2.5;
     const OSD_SEEK_BACK_SECONDS = 1.5;
     const OSD_SLIDER_SEEK_MIN_SECONDS = 1;
-    const OSD_JUMP_SETTLE_MS = 5000;
+    const OSD_JUMP_SETTLE_MS = 15000;
     const OSD_JUMP_ARRIVED_SECONDS = 3;
     let _osdLastReading = null;   // { key, duration, position, at, playing } of the latest OSD reading
     let _osdHistoryItem = null;   // { key, duration } the saved position belongs to
@@ -460,16 +460,22 @@
             _lastPositionBeforeSeek = null;
             _osdHistoryItem = null;
         }
+        if (_osdJump && _osdIntent && _osdIntent.at >= _osdJump.at && confirmOsdIntent(reading)) {
+            // A seek key used while an earlier seek was still landing: that landing is superseded.
+            _osdJump = null;
+            _osdLastReading = reading;
+            return;
+        }
         if (_osdJump) {
-            // JE's own jump back or a recorded slider seek. Up to `played` (what could have played since,
-            // if playing then; buffering or a pause means less) past the target is the landing and becomes
-            // the baseline; the same past the old position means the player hasn't moved yet and is skipped;
-            // anything else (another seek, the next item) is judged as usual.
+            // JE's own jump back or a recorded slider seek. Up to `played` (what could have played since;
+            // buffering or a pause means less) past the target is the landing and becomes the baseline; the
+            // same past the old position means the player hasn't moved yet and is skipped; anything else
+            // (another seek, the next item) is judged as usual. A slow landing is waited for up to 15 s.
             const jump = _osdJump;
             if (!osd.sameItem(reading, jump) || reading.at >= jump.until) {
                 _osdJump = null;
             } else {
-                const played = jump.playing ? Math.max(0, reading.at - jump.at) / 1000 * _osdRate : 0;
+                const played = Math.max(0, reading.at - jump.at) / 1000 * _osdRate;
                 const near = (origin) => reading.position >= origin - OSD_JUMP_ARRIVED_SECONDS
                     && reading.position <= origin + played + OSD_JUMP_ARRIVED_SECONDS;
                 if (near(jump.position)) {
@@ -496,18 +502,7 @@
             _osdRun = null;
             return;
         }
-        const intent = _osdIntent;
-        if (intent && (reading.at - intent.at > OSD_INTENT_WINDOW_MS || !osd.sameItem(intent, reading))) {
-            _osdIntent = null;
-        } else if (intent) {
-            const playedSinceIntent = intent.playing ? Math.max(0, reading.at - intent.at) / 1000 : 0;
-            const expected = intent.position + playedSinceIntent * _osdRate;
-            if (Math.abs(reading.position - expected) >= OSD_INTENT_MOVED_SECONDS + playedSinceIntent * OSD_INTENT_RATE_TOLERANCE) {
-                _osdIntent = null;
-                rememberOsdPosition(intent);
-                return;
-            }
-        }
+        if (confirmOsdIntent(reading)) return;
         const delta = reading.position - previous.position;
         const played = previous.playing ? Math.max(0, reading.at - previous.at) / 1000 : 0;
         if (delta < -OSD_SEEK_BACK_SECONDS || delta > played * OSD_SEEK_RATE_ALLOWANCE + OSD_SEEK_SLACK_SECONDS) {
@@ -535,6 +530,42 @@
     }
 
     /**
+     * Checks a reading against a pending seek intent: a move away from where playback would be since
+     * the intent confirms it, and the intent's position becomes the one to return to. A stale intent
+     * (over 3 s old, another item) is dropped.
+     * @param {{key: string, duration: number, position: number, at: number}} reading
+     * @returns {boolean} True when the reading confirmed a seek.
+     */
+    function confirmOsdIntent(reading) {
+        const intent = _osdIntent;
+        if (!intent) return false;
+        if (reading.at - intent.at > OSD_INTENT_WINDOW_MS || !JE.internals.osdPlayback.sameItem(intent, reading)) {
+            _osdIntent = null;
+            return false;
+        }
+        const playedSinceIntent = intent.playing ? Math.max(0, reading.at - intent.at) / 1000 : 0;
+        const expected = intent.position + playedSinceIntent * _osdRate;
+        if (Math.abs(reading.position - expected) < OSD_INTENT_MOVED_SECONDS + playedSinceIntent * OSD_INTENT_RATE_TOLERANCE) {
+            return false;
+        }
+        _osdIntent = null;
+        rememberOsdPosition(intent);
+        return true;
+    }
+
+    /**
+     * The reading a seek intent starts from. While an earlier seek is still landing the OSD shows the old
+     * time, so the intent starts from that seek's target plus what has played since.
+     * @returns {{key: string, duration: number, position: number, at: number, playing: boolean}|null}
+     */
+    function intentReading() {
+        const reading = readOsd();
+        if (!reading || !_osdJump || !JE.internals.osdPlayback.sameItem(reading, _osdJump)) return reading;
+        const played = reading.playing ? Math.max(0, reading.at - _osdJump.at) / 1000 * _osdRate : 0;
+        return { ...reading, position: _osdJump.position + played };
+    }
+
+    /**
      * Notes the position as a seek intent when one of jellyfin-web's seek keys is pressed (its OSD handles
      * them after JE's listener, and seeks only on unmodified ones; JE's own shortcuts stop the key first).
      * @param {KeyboardEvent} e
@@ -546,7 +577,7 @@
         if (target && (target.tagName === 'TEXTAREA' || (target.tagName === 'INPUT' && target.type !== 'range'))) return;
         const code = e.code || '';
         if (OSD_SEEK_KEYS.has(code) || OSD_SEEK_KEYS.has(e.key || '') || /^(Digit|Numpad)\d$/.test(code)) {
-            _osdIntent = readOsd();
+            _osdIntent = intentReading();
         }
     }
 
@@ -558,7 +589,7 @@
         if (getVideo()) return;
         const btn = e.target && typeof e.target.closest === 'function' ? e.target.closest(OSD_SEEK_BUTTONS) : null;
         const page = btn && JE.internals.osdPlayback.activeOsdPage();
-        if (page && page.contains(btn)) _osdIntent = readOsd();
+        if (page && page.contains(btn)) _osdIntent = intentReading();
     }
 
     /**

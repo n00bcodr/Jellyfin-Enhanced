@@ -396,6 +396,49 @@ test('without a <video>, a landing delayed by buffering or a pause still counts 
   assert.match(h.toasts.at(-1), /No previous position saved/, 'the jump back was consumed, not taken for a new seek');
 });
 
+test('without a <video>, a jump back that shows up only after slow buffering is still consumed', async t => {
+  const h = setup(t, { clock: true });
+  h.JE.watchOsdPosition();
+  h.show(100); await flush();
+  h.dragTo(500); await flush();
+  h.advance(700); h.show(501); await flush();
+  h.player.moveOnSeek = false;
+  h.JE.jumpToLastPosition(); // to 1:40
+  h.advance(6000); h.show(100); await flush(); // buffering: the first update 6 s later
+  h.player.moveOnSeek = true;
+  h.JE.jumpToLastPosition();
+  assert.match(h.toasts.at(-1), /No previous position saved/);
+});
+
+test('without a <video>, resuming while a jump back lands still counts as its landing', async t => {
+  const h = setup(t, { clock: true });
+  h.JE.watchOsdPosition();
+  h.show(100); await flush();
+  h.setPaused(true); await flush();
+  h.dragTo(500); await flush();
+  h.advance(700); h.show(500); await flush();
+  h.player.moveOnSeek = false;
+  h.JE.jumpToLastPosition(); // to 1:40, made while paused
+  h.setPaused(false); await flush(); // resumed before it shows
+  h.advance(4000); h.show(104); await flush();
+  h.player.moveOnSeek = true;
+  h.JE.jumpToLastPosition();
+  assert.match(h.toasts.at(-1), /No previous position saved/);
+});
+
+test('without a <video>, a key seek while a timeline seek is still landing starts from that landing', async t => {
+  const h = setup(t, { clock: true });
+  h.JE.watchOsdPosition();
+  h.show(100); await flush();
+  h.player.moveOnSeek = false;
+  h.dragTo(500); await flush();
+  h.document.body.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'ArrowRight', code: 'ArrowRight', bubbles: true }));
+  h.advance(700); h.show(503); await flush(); // a 3 s skip on top of the click, shown together
+  h.player.moveOnSeek = true;
+  h.JE.jumpToLastPosition();
+  assert.ok(Math.abs(h.seeks.at(-1) - (500 / 1200) * 100) < 0.01, 'back to 8:20, before the key seek');
+});
+
 test('without a <video>, autoplay right after a timeline click near the end uses no saved position', async t => {
   const h = setup(t, { clock: true });
   h.JE.watchOsdPosition();
