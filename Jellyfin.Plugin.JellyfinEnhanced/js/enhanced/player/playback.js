@@ -358,18 +358,24 @@
     //    jump in the position text. Between two readings, playback explains at most the seconds played
     //    since the first (none while the OSD showed paused) x 4, jellyfin-web's top speed, + 2.5 s forward,
     //    and nothing backward beyond the text's whole-second rounding; any other move is a seek.
-    //  * jellyfin-web's own seek keys and buttons (rewind, fast-forward, chapters, Home/End, digits) mark a
-    //    seek intent; a move of 1.5 s or more past normal playback within 3 s confirms it, so short skips
-    //    count too.
-    // Play/pause changes are readings too, so a pause starts a reading with nothing played since.
-    // When an item ends, autoplay replaces the time before the OSD shows the next item's id, so a jump in
-    // the text away from an item's last 30 s isn't taken as a seek (a timeline click there still is).
+    //  * jellyfin-web's own seek keys and buttons (rewind, fast-forward, chapters, Home/End, digits; unmodified,
+    //    as jellyfin-web only seeks on those) mark a seek intent. A move of 1.5 s (plus half the time since)
+    //    or more away from where playback at the observed rate would be within 3 s confirms it, so short
+    //    skips count too.
+    // Play/pause changes are readings too, so a pause starts a reading with nothing played since. The rate is
+    // measured over stretches of 3 s or more of plain playback (1x until then; JE's own speed changes set it).
+    // When an item ends, autoplay replaces the time before the OSD shows the next item's id. So a jump in the
+    // text away from an item's last 30 s clears the saved position and is held for 5 s: if the item changes
+    // it was autoplay, otherwise it is recorded then.
     const OSD_SEEK_RATE_ALLOWANCE = 4;
     const OSD_ITEM_END_SECONDS = 30;
+    const OSD_IDENTITY_SETTLE_MS = 5000;
     const OSD_INTENT_WINDOW_MS = 3000;
     const OSD_INTENT_MOVED_SECONDS = 1.5;
+    const OSD_INTENT_RATE_TOLERANCE = 0.5;
+    const OSD_RATE_WINDOW_MS = 3000;
     const OSD_SEEK_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'Left', 'Right', 'Home', 'End', 'PageUp', 'PageDown',
-        'KeyJ', 'KeyL', 'Comma', 'Period']);
+        'KeyJ', 'KeyL']);
     const OSD_SEEK_BUTTONS = '.btnRewind, .btnFastForward, .btnPreviousChapter, .btnNextChapter';
     const OSD_SEEK_SLACK_SECONDS = 2.5;
     const OSD_SEEK_BACK_SECONDS = 1.5;
@@ -381,6 +387,9 @@
     let _osdJump = null;          // { key, duration, position, until } while JE's own jump back lands
     let _osdOwnJump = false;      // true while JE's jump back moves the slider
     let _osdIntent = null;        // the reading taken when a jellyfin-web seek key or button was used
+    let _osdPendingSeek = null;   // { from, until }: a jump away from an item's end, until its identity settles
+    let _osdRate = 1;             // playback rate observed (or set by JE) for the current item
+    let _osdRun = null;           // reading where the current stretch of plain playback began
     let _osdWatchedText = null;   // the .osdPositionText being observed
     let _osdObserver = null;
     let _osdSliderListening = false;
@@ -406,6 +415,17 @@
     function rememberOsdPosition(reading) {
         _lastPositionBeforeSeek = reading.position;
         _osdHistoryItem = { key: reading.key, duration: reading.duration };
+        _osdPendingSeek = null; // a newer seek decides where to return to
+        _osdRun = null;
+    }
+
+    /**
+     * Sets the rate JE's own speed change chose for a player without a <video>.
+     * @param {number} rate
+     */
+    function noteOsdRate(rate) {
+        if (Number.isFinite(rate) && rate > 0) _osdRate = rate;
+        _osdRun = null;
     }
 
     /**
@@ -435,33 +455,63 @@
         }
         const previous = _osdLastReading;
         _osdLastReading = reading;
+        if (_osdPendingSeek) {
+            if (!osd.sameItem(_osdPendingSeek.from, reading)) {
+                _osdPendingSeek = null; // the next item: it was autoplay
+            } else if (reading.at >= _osdPendingSeek.until) {
+                rememberOsdPosition(_osdPendingSeek.from); // still the same item: it was a seek
+            }
+        }
+        if (!previous || !osd.sameItem(previous, reading)) {
+            _osdRate = 1;
+            _osdRun = null;
+            return;
+        }
         const intent = _osdIntent;
         if (intent && (reading.at - intent.at > OSD_INTENT_WINDOW_MS || !osd.sameItem(intent, reading))) {
             _osdIntent = null;
         } else if (intent) {
             const playedSinceIntent = intent.playing ? Math.max(0, reading.at - intent.at) / 1000 : 0;
-            if (Math.abs(reading.position - intent.position - playedSinceIntent) >= OSD_INTENT_MOVED_SECONDS) {
+            const expected = intent.position + playedSinceIntent * _osdRate;
+            if (Math.abs(reading.position - expected) >= OSD_INTENT_MOVED_SECONDS + playedSinceIntent * OSD_INTENT_RATE_TOLERANCE) {
                 _osdIntent = null;
                 rememberOsdPosition(intent);
                 return;
             }
         }
-        if (!previous || !osd.sameItem(previous, reading)) return;
-        if (previous.duration - previous.position <= OSD_ITEM_END_SECONDS) return; // maybe the next item
         const delta = reading.position - previous.position;
         const played = previous.playing ? Math.max(0, reading.at - previous.at) / 1000 : 0;
         if (delta < -OSD_SEEK_BACK_SECONDS || delta > played * OSD_SEEK_RATE_ALLOWANCE + OSD_SEEK_SLACK_SECONDS) {
+            _osdRun = null;
+            if (previous.duration - previous.position <= OSD_ITEM_END_SECONDS) {
+                // Maybe autoplay of the next item, still showing this one's id: decide once identity settles.
+                _lastPositionBeforeSeek = null;
+                _osdHistoryItem = null;
+                _osdPendingSeek = { from: previous, until: reading.at + OSD_IDENTITY_SETTLE_MS };
+                return;
+            }
             rememberOsdPosition(previous);
+            return;
+        }
+        // Plain playback: measure the rate over stretches of a few seconds.
+        if (!previous.playing || !reading.playing) {
+            _osdRun = null;
+        } else if (!_osdRun) {
+            _osdRun = reading;
+        } else if (reading.at - _osdRun.at >= OSD_RATE_WINDOW_MS) {
+            const rate = (reading.position - _osdRun.position) / ((reading.at - _osdRun.at) / 1000);
+            _osdRate = Math.min(OSD_SEEK_RATE_ALLOWANCE, Math.max(0.25, rate));
+            _osdRun = reading;
         }
     }
 
     /**
      * Notes the position as a seek intent when one of jellyfin-web's seek keys is pressed (its OSD handles
-     * them after JE's listener; unmodified, as jellyfin-web requires).
+     * them after JE's listener, and seeks only on unmodified ones; JE's own shortcuts stop the key first).
      * @param {KeyboardEvent} e
      */
     function onOsdSeekKey(e) {
-        if (getVideo() || e.ctrlKey || e.altKey || e.metaKey || !isOnVideoPage()) return;
+        if (getVideo() || e.ctrlKey || e.altKey || e.metaKey || e.shiftKey || !isOnVideoPage()) return;
         const target = e.target;
         // The position slider is a range input that seeks with keys; text fields don't.
         if (target && (target.tagName === 'TEXTAREA' || (target.tagName === 'INPUT' && target.type !== 'range'))) return;
@@ -538,6 +588,8 @@
         _osdWatchedText = null;
         _osdLastReading = null;
         _osdIntent = null;
+        _osdPendingSeek = null;
+        _osdRun = null;
     };
 
     /**
@@ -570,6 +622,8 @@
         }
         _lastPositionBeforeSeek = null; // consume it so repeated presses don't loop
         _osdHistoryItem = null;
+        _osdPendingSeek = null;
+        _osdRun = null;
         // The jump itself is not a seek to remember: ignore readings until it lands.
         _osdJump = key === null || duration === null
             ? null : { key, duration, position: targetTime, until: Date.now() + OSD_JUMP_SETTLE_MS };
@@ -1028,18 +1082,22 @@
         .map(id => `button[data-id="${id}"]`).join(', ');
 
     /**
-     * Whether a sheet's options are the settings submenu asked for: speeds are numbers including 1;
-     * aspect ratios are named (track menus list numeric stream indexes).
+     * Whether a sheet is the settings submenu asked for: its checked option is the current value the
+     * settings menu showed beside the item (jellyfin-web renders both from the same name), and speeds are
+     * numbers including 1. Track and repeat menus fail one or the other.
      * @param {string} menuId
-     * @param {Array<{id: string}>} options
+     * @param {Array<{id: string, name: string, selected: boolean}>} options
+     * @param {string} current The value shown beside the settings item ('' if none).
      * @returns {boolean}
      */
-    function isSettingsSubmenu(menuId, options) {
+    function isSettingsSubmenu(menuId, options, current) {
         if (options.length < 2) return false;
-        const numeric = options.map(option => /^\d+(\.\d+)?$/.test(option.id || ''));
-        if (menuId === 'playbackrate') return numeric.every(Boolean) && options.some(option => Number(option.id) === 1);
-        if (menuId === 'aspectratio') return !numeric.some(Boolean);
-        return false;
+        if (!current || !options.some(option => option.selected && option.name === current)) return false;
+        if (menuId === 'playbackrate') {
+            return options.every(option => /^\d+(\.\d+)?$/.test(option.id || ''))
+                && options.some(option => Number(option.id) === 1);
+        }
+        return menuId === 'aspectratio';
     }
 
     /**
@@ -1089,6 +1147,9 @@
                 closeActionSheet(main);
                 return false;
             }
+            // The settings menu shows the current value beside the item; the submenu checks that same option.
+            const aside = item.querySelector('.actionSheetItemAsideText');
+            const current = aside ? (aside.textContent || '').trim() : '';
             const before = new Set(document.querySelectorAll('.dialogContainer'));
             activate(item);
             // The submenu has no title (track menus do).
@@ -1110,7 +1171,7 @@
                 // Every row has a check icon; only the current option's is visible.
                 selected: Array.from(btn.querySelectorAll('.check')).some(icon => icon.style.visibility !== 'hidden'),
             }));
-            if (!isSettingsSubmenu(menuId, options)) return null; // not the list asked for: leave it alone
+            if (!isSettingsSubmenu(menuId, options, current)) return null; // not the list asked for: leave it alone
             const choice = pick(options.map(({ id, name, selected }) => ({ id, name, selected })));
             const row = choice && options.find(option => option.id === choice.id);
             if (!row) {
@@ -1145,6 +1206,7 @@
                 return;
             }
             const speed = Number(result.id);
+            noteOsdRate(speed);
             JE.toast(speed === 1 ? JE.t('toast_speed_normal') : JE.t('toast_speed', { speed }));
         }).catch((err) => {
             console.warn('🪼 Jellyfin Enhanced: playback speed through the settings menu failed', err);

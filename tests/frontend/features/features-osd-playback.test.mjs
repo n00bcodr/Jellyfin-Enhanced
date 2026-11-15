@@ -128,8 +128,10 @@ function installSettingsMenu(h, chosen) {
     document.body.append(container);
     return container;
   };
+  const nameOf = (menu) => lists[menu].find(([id]) => id === current[menu])[1];
+  const row = (id, text, aside) => `<button data-id="${id}"><div class="actionSheetItemText">${text}</div>${aside ? `<div class="actionSheetItemAsideText">${aside}</div>` : ''}</button>`;
   document.querySelector('.btnVideoOsdSettings').addEventListener('click', () => {
-    const main = sheet('<button data-id="aspectratio">Aspect Ratio</button><button data-id="playbackrate">Playback Speed</button><button data-id="stats">Playback Info</button>');
+    const main = sheet(row('aspectratio', 'Aspect Ratio', nameOf('aspectratio')) + row('playbackrate', 'Playback Speed', nameOf('playbackrate')) + row('repeatmode', 'Repeat Mode', 'None') + row('stats', 'Playback Info'));
     main.querySelectorAll('button').forEach(btn => btn.addEventListener('click', () => {
       const menu = btn.getAttribute('data-id');
       main.remove();
@@ -329,6 +331,44 @@ test('without a <video>, the time leaving an item\'s last 30 s is not taken as a
   assert.deepEqual(h.seeks, []);
 });
 
+test('without a <video>, a saved position is held back while the time leaves an item\'s end', async t => {
+  const h = setup(t, { clock: true });
+  h.JE.watchOsdPosition();
+  h.show(100); await flush();
+  h.dragTo(1185); await flush(); // a seek: 1:40 is saved
+  h.advance(700); h.show(1186); await flush();
+  // Autoplay: the next item's time with this item's id (similar duration).
+  h.advance(700); h.show(2, 1199); await flush();
+  h.JE.jumpToLastPosition();
+  assert.match(h.toasts.at(-1), /No previous position saved/, 'not 1:40 of the previous item');
+  assert.equal(h.seeks.length, 1, 'only the timeline click');
+});
+
+test('without a <video>, a seek away from an item\'s end is kept once the item stays the same', async t => {
+  const h = setup(t, { clock: true });
+  h.JE.watchOsdPosition();
+  h.show(1180); await flush();
+  h.advance(700); h.show(1181); await flush();
+  h.advance(700); h.show(100); await flush(); // a remote seek, no slider or key here
+  for (let i = 1; i <= 7; i++) { h.advance(1000); h.show(100 + i); await flush(); }
+  h.JE.jumpToLastPosition();
+  assert.ok(Math.abs(h.seeks.at(-1) - (1181 / 1200) * 100) < 0.01, 'back to 19:41');
+});
+
+test('without a <video>, seek keys are confirmed at the observed rate; modified keys are no intent', async t => {
+  const h = setup(t, { clock: true });
+  h.JE.watchOsdPosition();
+  // Playing at 4x for a few seconds.
+  let pos = 100;
+  h.show(pos); await flush();
+  for (let i = 0; i < 6; i++) { h.advance(1000); pos += 4; h.show(pos); await flush(); }
+  h.document.body.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'L', code: 'KeyL', shiftKey: true, bubbles: true }));
+  h.document.body.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'l', code: 'KeyL', bubbles: true })); // no seek follows
+  for (let i = 0; i < 3; i++) { h.advance(700); pos += 3; h.show(pos); await flush(); }
+  h.JE.jumpToLastPosition();
+  assert.match(h.toasts.at(-1), /No previous position saved/, 'plain 4x playback is not a seek');
+});
+
 test('the <video> path keeps its own history and ignores the OSD', async t => {
   const h = setup(t, { video: true });
   const video = h.document.querySelector('video');
@@ -387,6 +427,26 @@ test('without a <video>, aspect ratio cycles through jellyfin-web\'s list; speed
   for (let i = 0; i < 5; i++) { h.JE.adjustPlaybackSpeed('decrease'); }
   await flush(80);
   assert.deepEqual(h.chosen.slice(2).map(c => c[1]), ['0.75', '0.5', '0.5', '0.5', '0.5']);
+});
+
+test('without a <video>, aspect ratio leaves jellyfin-web\'s untitled repeat menu alone', async t => {
+  const h = setup(t);
+  h.show(10);
+  let foreignClicks = 0;
+  h.document.querySelector('.btnVideoOsdSettings').addEventListener('click', () => {
+    setTimeout(() => {
+      // The repeat submenu: untitled, named options, like the aspect list.
+      const repeat = h.document.createElement('div');
+      repeat.className = 'dialogContainer';
+      repeat.innerHTML = '<div class="actionSheet"><div class="actionSheetContent"><button data-id="RepeatAll"><span class="material-icons check" style="visibility:hidden;"></span><div class="actionSheetItemText">Repeat all</div></button><button data-id="RepeatNone"><span class="material-icons check"></span><div class="actionSheetItemText">None</div></button></div></div>';
+      repeat.querySelectorAll('button').forEach(b => b.addEventListener('click', () => foreignClicks++));
+      h.document.body.append(repeat);
+    }, 2);
+  });
+  h.JE.cycleAspect();
+  await flush(40);
+  assert.equal(foreignClicks, 0);
+  assert.deepEqual(h.toasts, []);
 });
 
 test('without a <video>, speed leaves a track menu that opens meanwhile alone', async t => {
