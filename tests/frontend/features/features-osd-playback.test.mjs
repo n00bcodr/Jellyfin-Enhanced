@@ -344,6 +344,27 @@ test('without a <video>, a saved position is held back while the time leaves an 
   assert.equal(h.seeks.length, 1, 'only the timeline click');
 });
 
+test('without a <video>, a timeline click from an item\'s last 30 s is undone at once', async t => {
+  const h = setup(t, { clock: true });
+  h.JE.watchOsdPosition();
+  h.show(1180); await flush();
+  h.advance(700); h.show(1181); await flush();
+  h.player.moveOnSeek = false;
+  h.dragTo(100); await flush(); // an accidental click from 19:41 back to 1:40
+  h.advance(300); h.show(1181); await flush(); // one more update of the old time
+  h.advance(400); h.show(100); await flush(); // it lands
+  h.player.moveOnSeek = true;
+  h.JE.jumpToLastPosition();
+  assert.ok(Math.abs(h.seeks.at(-1) - (1181 / 1200) * 100) < 0.01, 'back to 19:41');
+  // The same for JE's own jump to a percentage from the credits.
+  h.advance(700); h.show(1185); await flush();
+  h.advance(700); h.show(1186); await flush();
+  h.JE.jumpToPercentage(10);
+  h.advance(700); h.show(121); await flush();
+  h.JE.jumpToLastPosition();
+  assert.ok(Math.abs(h.seeks.at(-1) - (1186 / 1200) * 100) < 0.01, 'back to 19:46');
+});
+
 test('without a <video>, a seek away from an item\'s end is kept once the item stays the same', async t => {
   const h = setup(t, { clock: true });
   h.JE.watchOsdPosition();

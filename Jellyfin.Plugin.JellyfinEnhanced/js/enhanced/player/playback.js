@@ -384,7 +384,7 @@
     const OSD_JUMP_ARRIVED_SECONDS = 3;
     let _osdLastReading = null;   // { key, duration, position, at, playing } of the latest OSD reading
     let _osdHistoryItem = null;   // { key, duration } the saved position belongs to
-    let _osdJump = null;          // { key, duration, position, until } while JE's own jump back lands
+    let _osdJump = null;          // { key, duration, position, until } while JE's jump back or a slider seek lands
     let _osdOwnJump = false;      // true while JE's jump back moves the slider
     let _osdIntent = null;        // the reading taken when a jellyfin-web seek key or button was used
     let _osdPendingSeek = null;   // { from, until }: a jump away from an item's end, until its identity settles
@@ -443,7 +443,8 @@
             _osdHistoryItem = null;
         }
         if (_osdJump) {
-            // JE's own jump back: readings of the old position may still arrive; wait for the target.
+            // JE's own jump back or a recorded slider seek: readings of the old position may still arrive;
+            // wait for the target.
             const sameAsJump = osd.sameItem(reading, _osdJump);
             const landed = sameAsJump && Math.abs(reading.position - _osdJump.position) <= OSD_JUMP_ARRIVED_SECONDS;
             if (!landed && sameAsJump && reading.at < _osdJump.until) return;
@@ -548,7 +549,9 @@
         if (!Number.isFinite(target) || Math.abs(target - reading.position) < OSD_SLIDER_SEEK_MIN_SECONDS) return;
         rememberOsdPosition(reading);
         _osdLastReading = reading;
-        _osdJump = null; // a seek of the user's supersedes JE's jump still landing
+        // Its landing is this seek, not another one (nor autoplay, near an item's end): wait for it the way
+        // JE's own jump back is waited for. It also supersedes a jump back still landing.
+        _osdJump = { key: reading.key, duration: reading.duration, position: target, until: reading.at + OSD_JUMP_SETTLE_MS };
     }
 
     /**
