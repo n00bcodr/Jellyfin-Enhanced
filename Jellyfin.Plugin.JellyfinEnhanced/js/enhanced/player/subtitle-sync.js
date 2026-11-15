@@ -1387,8 +1387,13 @@
             closeDialog({ resume: false });
         }
         const video = getVideo();
-        if (!video || (typeof JE.isVideoPage === 'function' && !JE.isVideoPage())) {
-            JE.toast?.(tr('toast_no_video_found', 'No video found'));
+        const onVideoPage = typeof JE.isVideoPage !== 'function' || JE.isVideoPage();
+        if (!video || !onVideoPage) {
+            // On the player page without a <video> the player draws its own subtitles (mpv in Jellyfin
+            // Desktop): there are no cues to check the lines against and no element to seek.
+            JE.toast?.(video || !onVideoPage
+                ? tr('toast_no_video_found', 'No video found')
+                : tr('toast_player_unsupported', '{{icon:info}} Not available with this player'));
             return;
         }
         injectStyles();
@@ -1593,12 +1598,17 @@
             existing?.remove();
             return;
         }
+        // A player without a <video> (mpv in Jellyfin Desktop) draws its own subtitles: nothing to sync.
+        if (!getVideo()) {
+            existing?.remove();
+            return;
+        }
         const subtitlesButton = document.querySelector('.videoOsdBottom .btnSubtitles');
         if (!subtitlesButton) return;
         if (existing && existing.previousElementSibling === subtitlesButton) return;
         existing?.remove();
         injectStyles();
-        const label = tr('subtitle_sync_button', 'Search subtitles');
+        const label = tr('subtitle_sync_button', 'Sync subtitles');
         const button = document.createElement('button');
         button.id = BUTTON_ID;
         button.type = 'button';

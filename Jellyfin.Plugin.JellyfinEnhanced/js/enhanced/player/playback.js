@@ -30,7 +30,7 @@
     JE.adjustPlaybackSpeed = (direction) => {
         const video = getVideo();
         if (!video) {
-            JE.toast(JE.t('toast_no_video_found'));
+            stepPlaybackRateInMenu(direction === 'increase' ? 'increase' : 'decrease');
             return;
         }
         const speeds = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
@@ -54,7 +54,7 @@
     JE.resetPlaybackSpeed = () => {
         const video = getVideo();
         if (!video) {
-            JE.toast(JE.t('toast_no_video_found'));
+            stepPlaybackRateInMenu('reset');
             return;
         }
         video.playbackRate = 1.0;
@@ -67,7 +67,16 @@
      */
     JE.jumpToPercentage = (percentage) => {
         const video = getVideo();
-        if (!video || !video.duration) {
+        if (!video) {
+            // A player without a <video> (mpv in Jellyfin Desktop): jellyfin-web's position slider.
+            if (JE.internals.osdPlayback.seekToPercent(percentage)) {
+                JE.toast(JE.t('toast_jumped_to', { percent: percentage }));
+            } else {
+                JE.toast(playerUnsupportedText());
+            }
+            return;
+        }
+        if (!video.duration) {
             JE.toast(JE.t('toast_no_video_found'));
             return;
         }
@@ -212,6 +221,23 @@
         return result;
     }
 
+    /**
+     * Whether the player page is showing (true when JE.isVideoPage is not available).
+     * @returns {boolean}
+     */
+    function isOnVideoPage() {
+        return typeof JE.isVideoPage !== 'function' || JE.isVideoPage();
+    }
+
+    /**
+     * The toast for a player action that needs a <video> element the current player does not have
+     * and that jellyfin-web offers no other way to do.
+     * @returns {string}
+     */
+    function playerUnsupportedText() {
+        return tWithFallback('toast_player_unsupported', '{{icon:info}} Not available with this player');
+    }
+
     function showFrameOverlay(text) {
         if (!_frameOverlay) {
             _frameOverlay = document.createElement('div');
@@ -251,7 +277,8 @@
       try {
         const video = getVideo();
         if (!video) {
-            JE.toast(JE.t('toast_no_video_found'));
+            // jellyfin-web offers no frame step for other players (mpv in Jellyfin Desktop).
+            JE.toast(playerUnsupportedText());
             return;
         }
         if (!video.paused) {
@@ -323,13 +350,124 @@
         video._jeSeekTrackerAttached = true;
     };
 
+    // Players without a <video> (mpv in Jellyfin Desktop) fire no seeking event, so the same history is
+    // kept from the positions jellyfin-web's OSD shows (osd-playback.js). Between two readings taken dt
+    // apart, playback explains at most min(dt, 1.5 s) x 2 + 2.5 s forward (the text is whole seconds and
+    // updates every 0.7 s or so) and nothing backward beyond the text's rounding; any other move is a seek.
+    const OSD_SEEK_GAP_CAP_SECONDS = 1.5;
+    const OSD_SEEK_RATE_ALLOWANCE = 2;
+    const OSD_SEEK_SLACK_SECONDS = 2.5;
+    const OSD_SEEK_BACK_SECONDS = 1.5;
+    const OSD_JUMP_SETTLE_MS = 5000;
+    const OSD_JUMP_ARRIVED_SECONDS = 3;
+    let _osdLastReading = null;   // { key, duration, position, at } of the latest OSD reading
+    let _osdJump = null;          // { key, duration, position, until } while JE's own jump back lands
+    let _osdWatchedText = null;   // the .osdPositionText being observed
+    let _osdTextObserver = null;
+
+    /**
+     * Records one OSD position reading for a player without a <video>. A move that playback can't
+     * explain since the previous reading is a seek, and the previous reading becomes the position to
+     * jump back to. A reading of another item starts a new history.
+     */
+    function noteOsdPosition() {
+        if (getVideo()) return; // the element's own listeners keep the history
+        const osd = JE.internals.osdPlayback;
+        const position = osd.positionSeconds();
+        const key = osd.itemKey();
+        const duration = osd.durationSeconds();
+        if (position === null || key === null || duration === null) return;
+        const now = Date.now();
+        const reading = { key, duration, position, at: now };
+        if (_osdJump) {
+            // JE's own jump back: readings of the old position may still arrive; wait for the target.
+            const sameAsJump = osd.sameItem(reading, _osdJump);
+            const landed = sameAsJump && Math.abs(position - _osdJump.position) <= OSD_JUMP_ARRIVED_SECONDS;
+            if (!landed && sameAsJump && now < _osdJump.until) return;
+            _osdJump = null;
+            if (landed) {
+                _osdLastReading = reading;
+                return;
+            }
+        }
+        const previous = _osdLastReading;
+        _osdLastReading = reading;
+        if (!previous) return;
+        if (!osd.sameItem(previous, reading)) {
+            _lastPositionBeforeSeek = null;
+            return;
+        }
+        const delta = position - previous.position;
+        const elapsed = Math.min(Math.max(0, now - previous.at) / 1000, OSD_SEEK_GAP_CAP_SECONDS);
+        if (delta < -OSD_SEEK_BACK_SECONDS || delta > elapsed * OSD_SEEK_RATE_ALLOWANCE + OSD_SEEK_SLACK_SECONDS) {
+            _lastPositionBeforeSeek = previous.position;
+        }
+    }
+
+    /**
+     * Keeps the seek history of a player without a <video> by watching the OSD's position text.
+     * Safe to call on every page update: it only (re)attaches when the showing OSD's text element changed.
+     */
+    JE.watchOsdPosition = () => {
+        const page = JE.internals.osdPlayback.activeOsdPage();
+        const text = page && !getVideo() ? page.querySelector('.osdPositionText') : null;
+        if (text === _osdWatchedText) return;
+        if (_osdTextObserver) _osdTextObserver.disconnect();
+        _osdTextObserver = null;
+        _osdWatchedText = text;
+        if (!text) return;
+        _osdTextObserver = new MutationObserver(noteOsdPosition);
+        _osdTextObserver.observe(text, { childList: true, characterData: true, subtree: true });
+        noteOsdPosition();
+    };
+
+    /**
+     * Stops watching the OSD's position text (leaving the player).
+     */
+    JE.stopWatchingOsdPosition = () => {
+        if (_osdTextObserver) _osdTextObserver.disconnect();
+        _osdTextObserver = null;
+        _osdWatchedText = null;
+    };
+
+    /**
+     * Jump to Last Position for a player without a <video>: seeks through the OSD's position slider.
+     */
+    function jumpToLastOsdPosition() {
+        const osd = JE.internals.osdPlayback;
+        if (osd.positionSeconds() === null) {
+            JE.toast(playerUnsupportedText());
+            return;
+        }
+        noteOsdPosition(); // a seek since the text last changed still counts
+        if (_lastPositionBeforeSeek === null) {
+            JE.toast(tWithFallback('toast_no_last_position', '{{icon:rewind}} No previous position saved'));
+            return;
+        }
+        const targetTime = _lastPositionBeforeSeek;
+        const key = osd.itemKey();
+        const duration = osd.durationSeconds();
+        if (!osd.seekTo(targetTime)) {
+            JE.toast(playerUnsupportedText());
+            return;
+        }
+        _lastPositionBeforeSeek = null; // consume it so repeated presses don't loop
+        // The jump itself is not a seek to remember: ignore readings until it lands.
+        _osdJump = key === null || duration === null
+            ? null : { key, duration, position: targetTime, until: Date.now() + OSD_JUMP_SETTLE_MS };
+
+        const mins = Math.floor(targetTime / 60);
+        const secs = Math.floor(targetTime % 60).toString().padStart(2, '0');
+        JE.toast(tWithFallback('toast_jumped_back', '{{icon:rewind}} Jumped back to {time}', { time: `${mins}:${secs}` }));
+    }
+
     /**
      * Jumps back to the position captured just before the last seek.
      */
     JE.jumpToLastPosition = () => {
         const video = getVideo();
         if (!video) {
-            JE.toast(JE.t('toast_no_video_found'));
+            jumpToLastOsdPosition();
             return;
         }
         if (_lastPositionBeforeSeek === null) {
@@ -451,9 +589,13 @@
      */
     JE.skipIntroOutro = () => {
         const video = getVideo();
+        if (!video) {
+            skipIntroOutroViaOsd();
+            return;
+        }
         const itemId = getCurrentVideoItemId()
             || parseItemIdFromVideosSrc((video && (video.currentSrc || video.src)) || '');
-        if (!video || !itemId) {
+        if (!itemId) {
             if (!clickSkipButton()) JE.toast(JE.t('toast_no_skip_button'));
             return;
         }
@@ -494,6 +636,62 @@
             if (!clickSkipButton()) JE.toast(JE.t('toast_no_skip_button'));
         });
     };
+
+    /**
+     * Skip intro/outro for a player without a <video> (mpv in Jellyfin Desktop): the same segment data,
+     * with the position read from and the seek sent through jellyfin-web's OSD. The skip button stays
+     * the fallback.
+     */
+    function skipIntroOutroViaOsd() {
+        const osd = JE.internals.osdPlayback;
+        const reading = () => {
+            const key = osd.itemKey();
+            const duration = osd.durationSeconds();
+            return key === null || duration === null ? null : { key, duration };
+        };
+        const atPress = reading();
+        const fallback = () => { if (!clickSkipButton()) JE.toast(JE.t('toast_no_skip_button')); };
+        if (atPress === null) {
+            fallback();
+            return;
+        }
+        const routeId = getCurrentVideoItemId();
+        // The session's item, accepted only when its runtime matches the duration the OSD shows.
+        const shown = { duration: atPress.duration };
+        const lookup = routeId
+            ? Promise.resolve(routeId)
+            : Promise.resolve(JE.internals.nowPlaying?.itemIdFromSession?.(shown) || null);
+        lookup.then(itemId => (itemId ? fetchMediaSegments(itemId) : null)).then(segments => {
+            // The lookups are async: only act on the item the press was for.
+            if (!isOnVideoPage() || getVideo() || !osd.sameItem(reading(), atPress)) {
+                fallback();
+                return;
+            }
+            const now = osd.positionSeconds();
+            const nowTicks = now === null ? null : now * TICKS_PER_SECOND;
+            const seg = nowTicks === null || !Array.isArray(segments) ? null : segments.find(s => s
+                && typeof s.StartTicks === 'number' && typeof s.EndTicks === 'number'
+                && s.StartTicks <= nowTicks && s.EndTicks > nowTicks);
+            if (seg) {
+                const duration = osd.durationSeconds();
+                const target = Math.min(seg.EndTicks / TICKS_PER_SECOND, duration || Infinity);
+                if (target > now && osd.seekTo(target)) {
+                    if (seg.Type === 'Intro') {
+                        JE.toast(JE.t('toast_skipped_intro'));
+                    } else if (seg.Type === 'Outro') {
+                        JE.toast(JE.t('toast_skipped_outro'));
+                    } else {
+                        JE.toast(`${JE.icons.wrapEmoji('⏭️')} Skipped`);
+                    }
+                    return;
+                }
+            }
+            fallback();
+        }).catch(err => {
+            console.warn('🪼 Jellyfin Enhanced: segment skip failed', err);
+            fallback();
+        });
+    }
 
     // ── Native OSD track menus ───────────────────────────────────────────────
     //
@@ -691,6 +889,138 @@
                 const t = el.querySelector('.actionSheetTitle');
                 return !!t && (t.textContent || '').trim() === expectedTitle;
             }
+        });
+    }
+
+    // ── jellyfin-web's player settings menu (players without a <video>) ──────
+    //
+    // Speed and aspect ratio belong to the player. With a <video> JE sets them on the element; without
+    // one (mpv in Jellyfin Desktop) the only way in is the OSD's settings menu: Playback Speed and Aspect
+    // Ratio open a second sheet listing the options, the current one marked by a visible check icon, and
+    // choosing one calls the playback manager when that sheet closes. The sheets are kept invisible, as
+    // for Playback Info, and presses are handled one after another so each reads the result of the last.
+    let _settingsMenuQueue = Promise.resolve();
+
+    /**
+     * Waits until a dialog container has left the page (its sheet's choice is applied on close).
+     * @param {Element} container
+     * @param {number} timeoutMs
+     * @returns {Promise<void>}
+     */
+    async function waitUntilRemoved(container, timeoutMs) {
+        const t0 = Date.now();
+        while (container.isConnected && Date.now() - t0 < timeoutMs) {
+            await new Promise(r => setTimeout(r, 50));
+        }
+    }
+
+    /**
+     * Chooses an option in one of jellyfin-web's player settings submenus without showing the sheets.
+     * @param {string} menuId The settings item: 'playbackrate' or 'aspectratio'.
+     * @param {function(Array<{id: string, name: string, selected: boolean}>): ({id: string, name: string}|null)} pick
+     * @returns {Promise<{id: string, name: string}|null|false>} The option chosen, null when pick chose
+     *   none, false when the menu or the item is not there (or the player page was left).
+     */
+    function chooseInSettingsMenu(menuId, pick) {
+        const run = _settingsMenuQueue.then(() => runSettingsMenu(menuId, pick));
+        _settingsMenuQueue = run.catch(() => {});
+        return run;
+    }
+
+    /**
+     * One settings-menu choice (see chooseInSettingsMenu).
+     * @param {string} menuId
+     * @param {function(Array<{id: string, name: string, selected: boolean}>): ({id: string, name: string}|null)} pick
+     * @returns {Promise<{id: string, name: string}|null|false>}
+     */
+    async function runSettingsMenu(menuId, pick) {
+        if (!isOnVideoPage()) return false;
+        const style = document.createElement('style');
+        style.textContent = '.dialogContainer, .dialogBackdrop, .actionSheet { opacity:0 !important; transition:none !important; }';
+        document.head.appendChild(style);
+        try {
+            const main = await openOsdMenu('#videoOsdPage:not(.hide) .btnVideoOsdSettings');
+            if (!main) return false;
+            const item = main.querySelector(`button[data-id="${menuId}"]`);
+            if (!item || !isOnVideoPage()) {
+                closeActionSheet(main);
+                return false;
+            }
+            const before = new Set(document.querySelectorAll('.dialogContainer'));
+            activate(item);
+            const sub = await JE.core.dom.waitForElement('.dialogContainer', {
+                timeout: 3000,
+                quiet: true,
+                predicate: (el) => !before.has(el) && !!el.querySelector('.actionSheetContent'),
+            });
+            if (!sub) return false;
+            if (!isOnVideoPage()) {
+                closeActionSheet(sub);
+                return false;
+            }
+            const options = Array.from(sub.querySelectorAll('button[data-id]')).map(btn => ({
+                btn,
+                id: btn.getAttribute('data-id'),
+                name: ((btn.querySelector('.actionSheetItemText') || btn).textContent || '').trim(),
+                // Every row has a check icon; only the current option's is visible.
+                selected: Array.from(btn.querySelectorAll('.check')).some(icon => icon.style.visibility !== 'hidden'),
+            }));
+            const choice = options.length ? pick(options.map(({ id, name, selected }) => ({ id, name, selected }))) : null;
+            const row = choice && options.find(option => option.id === choice.id);
+            if (!row) {
+                closeActionSheet(sub);
+                return null;
+            }
+            activate(row.btn);
+            await waitUntilRemoved(sub, 1500);
+            return { id: row.id, name: row.name };
+        } finally {
+            setTimeout(() => style.remove(), 400);
+        }
+    }
+
+    /**
+     * Steps the playback speed through jellyfin-web's own list (players without a <video>).
+     * @param {'increase'|'decrease'|'reset'} direction
+     */
+    function stepPlaybackRateInMenu(direction) {
+        chooseInSettingsMenu('playbackrate', (options) => {
+            const normal = options.find(option => Number(option.id) === 1) || null;
+            const current = options.findIndex(option => option.selected);
+            if (direction === 'reset' || current === -1) return normal;
+            const next = direction === 'increase'
+                ? Math.min(current + 1, options.length - 1)
+                : Math.max(current - 1, 0);
+            return options[next];
+        }).then((result) => {
+            if (!isOnVideoPage() || result === null) return;
+            if (result === false) {
+                JE.toast(playerUnsupportedText());
+                return;
+            }
+            const speed = Number(result.id);
+            JE.toast(speed === 1 ? JE.t('toast_speed_normal') : JE.t('toast_speed', { speed }));
+        }).catch((err) => {
+            console.warn('🪼 Jellyfin Enhanced: playback speed through the settings menu failed', err);
+        });
+    }
+
+    /**
+     * Moves to the next aspect ratio in jellyfin-web's own list (players without a <video>).
+     */
+    function cycleAspectInMenu() {
+        chooseInSettingsMenu('aspectratio', (options) => {
+            const current = options.findIndex(option => option.selected);
+            return options[(current + 1) % options.length];
+        }).then((result) => {
+            if (!isOnVideoPage() || result === null) return;
+            if (result === false) {
+                JE.toast(playerUnsupportedText());
+                return;
+            }
+            JE.toast(JE.t('toast_aspect_ratio', { ratio: result.name }));
+        }).catch((err) => {
+            console.warn('🪼 Jellyfin Enhanced: aspect ratio through the settings menu failed', err);
         });
     }
 
@@ -1164,7 +1494,7 @@
     JE.cycleAspect = () => {
         const video = getVideo();
         if (!video) {
-            JE.toast(JE.t('toast_no_video_found'));
+            cycleAspectInMenu();
             return;
         }
         let stored = null;
@@ -1391,7 +1721,7 @@
         }
         const video = getVideo();
         if (!video) {
-            JE.toast(JE.t('toast_no_video_found'));
+            JE.toast(playerUnsupportedText());
             return;
         }
         const overlay = document.createElement('div');

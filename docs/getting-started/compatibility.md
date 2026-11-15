@@ -51,7 +51,7 @@ For the panel, tags, and browser playback tools, open the web interface served b
 | --- | --- |
 | Jellyfin web served by your server | The injected panel, page navigation, tags, search integration, and browser playback tools are available when their settings and requirements are met. |
 | Official Android and iOS apps using the embedded web interface | Web enhancements can run when the app loads the server's injected web page. Playback tools need browser playback. |
-| Jellyfin Desktop and other desktop web wrappers | Web enhancements depend on loading the server's web interface. JE's browser playback tools aren't available in an external or native player. |
+| Jellyfin Desktop and other desktop web wrappers | Web enhancements depend on loading the server's web interface. With Jellyfin Desktop's built-in mpv player, player shortcuts and bookmarks work through Jellyfin's own player controls (frame stepping and Subtitle Sync excepted); JE's other browser playback tools aren't available in an external or native player. |
 | Android TV, Roku, Swiftfin, and other native clients | JE's injected panel, pages, buttons, and shortcuts aren't added to their native interface. Enabled server features can still affect their Jellyfin requests, images, and saved user data. |
 | Independently hosted web clients | Connecting to a JE server alone doesn't add JE's web enhancements to a separately hosted client. |
 
