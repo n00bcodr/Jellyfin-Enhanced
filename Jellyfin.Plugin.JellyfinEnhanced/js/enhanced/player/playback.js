@@ -461,21 +461,24 @@
             _osdHistoryItem = null;
         }
         if (_osdJump) {
-            // JE's own jump back or a recorded slider seek. Readings that still show the old position (the
-            // player hasn't moved yet) are skipped; the target, plus what has played since, is the landing
-            // and becomes the baseline; anything else (another seek, the next item) is judged as usual.
+            // JE's own jump back or a recorded slider seek. Up to `played` (what could have played since,
+            // if playing then; buffering or a pause means less) past the target is the landing and becomes
+            // the baseline; the same past the old position means the player hasn't moved yet and is skipped;
+            // anything else (another seek, the next item) is judged as usual.
             const jump = _osdJump;
             if (!osd.sameItem(reading, jump) || reading.at >= jump.until) {
                 _osdJump = null;
             } else {
                 const played = jump.playing ? Math.max(0, reading.at - jump.at) / 1000 * _osdRate : 0;
-                if (Math.abs(reading.position - (jump.position + played)) <= OSD_JUMP_ARRIVED_SECONDS) {
+                const near = (origin) => reading.position >= origin - OSD_JUMP_ARRIVED_SECONDS
+                    && reading.position <= origin + played + OSD_JUMP_ARRIVED_SECONDS;
+                if (near(jump.position)) {
                     _osdJump = null;
                     _osdLastReading = reading;
                     _osdRun = null;
                     return;
                 }
-                if (Math.abs(reading.position - (jump.from + played)) <= OSD_JUMP_ARRIVED_SECONDS) return;
+                if (near(jump.from)) return;
                 _osdJump = null;
             }
         }

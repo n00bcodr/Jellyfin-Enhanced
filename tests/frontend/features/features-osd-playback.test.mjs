@@ -379,6 +379,23 @@ test('without a <video>, a slider seek that shows up late still lands, and a key
   assert.ok(Math.abs(h.seeks.at(-1) - (504 / 1200) * 100) < 0.01, 'back to 8:24, before the key seek');
 });
 
+test('without a <video>, a landing delayed by buffering or a pause still counts as the landing', async t => {
+  const h = setup(t, { clock: true });
+  h.JE.watchOsdPosition();
+  h.show(1179); await flush();
+  h.advance(1000); h.show(1180); await flush();
+  h.player.moveOnSeek = false;
+  h.dragTo(100); await flush();
+  h.advance(4000); h.show(100); await flush(); // buffering: the first update 4 s later, still at 1:40
+  h.JE.jumpToLastPosition(); // back to 19:40
+  assert.ok(Math.abs(h.seeks.at(-1) - (1180 / 1200) * 100) < 0.01);
+  h.setPaused(true); await flush(); // paused before the jump back shows
+  h.advance(4000); h.show(1180); await flush();
+  h.player.moveOnSeek = true;
+  h.JE.jumpToLastPosition();
+  assert.match(h.toasts.at(-1), /No previous position saved/, 'the jump back was consumed, not taken for a new seek');
+});
+
 test('without a <video>, autoplay right after a timeline click near the end uses no saved position', async t => {
   const h = setup(t, { clock: true });
   h.JE.watchOsdPosition();
