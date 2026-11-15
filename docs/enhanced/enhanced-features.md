@@ -317,6 +317,10 @@ Navigate Jellyfin and control local video playback without opening menus. Admin 
 | **Jump to Last Position** | ++z++ | Returns once to the position saved before the last seek. |
 | **Jump to % of video** | ++0++–++9++ | Seeks to 0%, 10%, … 90%. Can be disabled but not rebound. |
 
+!!! note "Jellyfin Desktop and Jellyfin Media Player"
+
+    These apps play video with their built-in mpv player instead of in the page, so JE works through Jellyfin's own player controls there. Jump to Last Position, Jump to %, Skip Intro/Outro and bookmarks use the position bar. Speed and aspect ratio go through the player's settings menu, so they step through the speeds and aspect ratios that player offers. Frame stepping and Subtitle Sync aren't available, and say so when pressed.
+
 | Setting | Default | What it does |
 |---|---|---|
 | **Disable Keyboard Shortcuts** — admin **Keyboard** | Off | Disables ordinary JE shortcuts and hides **Shortcuts**. The ++question++ panel shortcut still works outside text fields. |

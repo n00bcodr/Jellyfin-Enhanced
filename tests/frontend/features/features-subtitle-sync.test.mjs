@@ -235,12 +235,25 @@ test('the button sits after Subtitles only while the setting is on', t => {
   const buttons = h.document.querySelectorAll('#je-subtitle-sync-btn');
   assert.equal(buttons.length, 1);
   assert.equal(buttons[0].previousElementSibling.className.includes('btnSubtitles'), true);
-  assert.equal(buttons[0].getAttribute('aria-label'), 'Search subtitles');
+  assert.equal(buttons[0].getAttribute('aria-label'), 'Sync subtitles');
   // It hides with jellyfin-web's Subtitles button (items without subtitles).
   assert.match(h.document.getElementById('je-subtitle-sync-style').textContent, /\.btnSubtitles\.hide \+ #je-subtitle-sync-btn/);
   h.JE.currentSettings.subtitleSyncButtonEnabled = false;
   h.JE.addSubtitleSyncButton();
   assert.equal(h.document.getElementById('je-subtitle-sync-btn'), null);
+});
+
+test('a player without a <video> gets no button, and the shortcut says the dialog is not available', t => {
+  // Jellyfin Desktop plays through mpv, which draws its own subtitles: no cues to check, no element to seek.
+  const h = setup(t);
+  h.JE.addSubtitleSyncButton();
+  assert.ok(h.document.getElementById('je-subtitle-sync-btn'));
+  h.video.remove();
+  h.JE.addSubtitleSyncButton();
+  assert.equal(h.document.getElementById('je-subtitle-sync-btn'), null);
+  h.JE.toggleSubtitleSync();
+  assert.equal(h.overlay(), null);
+  assert.match(h.toasts.at(-1), /Not available with this player/);
 });
 
 // ── Sync, jump and the cases that can't sync ─────────────────────────────────────────────────

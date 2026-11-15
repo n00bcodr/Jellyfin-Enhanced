@@ -30,7 +30,7 @@
     JE.adjustPlaybackSpeed = (direction) => {
         const video = getVideo();
         if (!video) {
-            JE.toast(JE.t('toast_no_video_found'));
+            stepPlaybackRateInMenu(direction === 'increase' ? 'increase' : 'decrease');
             return;
         }
         const speeds = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
@@ -54,7 +54,7 @@
     JE.resetPlaybackSpeed = () => {
         const video = getVideo();
         if (!video) {
-            JE.toast(JE.t('toast_no_video_found'));
+            stepPlaybackRateInMenu('reset');
             return;
         }
         video.playbackRate = 1.0;
@@ -67,7 +67,16 @@
      */
     JE.jumpToPercentage = (percentage) => {
         const video = getVideo();
-        if (!video || !video.duration) {
+        if (!video) {
+            // A player without a <video> (mpv in Jellyfin Desktop): jellyfin-web's position slider.
+            if (JE.internals.osdPlayback.seekToPercent(percentage)) {
+                JE.toast(JE.t('toast_jumped_to', { percent: percentage }));
+            } else {
+                JE.toast(playerUnsupportedText());
+            }
+            return;
+        }
+        if (!video.duration) {
             JE.toast(JE.t('toast_no_video_found'));
             return;
         }
@@ -212,6 +221,23 @@
         return result;
     }
 
+    /**
+     * Whether the player page is showing (true when JE.isVideoPage is not available).
+     * @returns {boolean}
+     */
+    function isOnVideoPage() {
+        return typeof JE.isVideoPage !== 'function' || JE.isVideoPage();
+    }
+
+    /**
+     * The toast for a player action that needs a <video> element the current player does not have
+     * and that jellyfin-web offers no other way to do.
+     * @returns {string}
+     */
+    function playerUnsupportedText() {
+        return tWithFallback('toast_player_unsupported', '{{icon:info}} Not available with this player');
+    }
+
     function showFrameOverlay(text) {
         if (!_frameOverlay) {
             _frameOverlay = document.createElement('div');
@@ -251,7 +277,8 @@
       try {
         const video = getVideo();
         if (!video) {
-            JE.toast(JE.t('toast_no_video_found'));
+            // jellyfin-web offers no frame step for other players (mpv in Jellyfin Desktop).
+            JE.toast(playerUnsupportedText());
             return;
         }
         if (!video.paused) {
@@ -323,13 +350,356 @@
         video._jeSeekTrackerAttached = true;
     };
 
+    // Players without a <video> (mpv in Jellyfin Desktop) fire no seeking event, so the same history is
+    // kept from jellyfin-web's OSD (osd-playback.js), two ways:
+    //  * A change of the OSD's position slider (a click or drag on the timeline, or JE's own jump to %,
+    //    skip or bookmark) is a seek of any length: the OSD still shows where playback was.
+    //  * Other seeks (jellyfin-web's keys and rewind/forward buttons, chapters, remote control) show as a
+    //    jump in the position text. Between two readings, playback explains at most the seconds played
+    //    since the first (none while the OSD showed paused) x 4, jellyfin-web's top speed, + 2.5 s forward,
+    //    and nothing backward beyond the text's whole-second rounding; any other move is a seek.
+    //  * jellyfin-web's own seek keys and buttons (rewind, fast-forward, chapters, Home/End, digits; unmodified,
+    //    as jellyfin-web only seeks on those) mark a seek intent. A move of 1.5 s (plus half the time since)
+    //    or more away from where playback at the observed rate would be within 3 s confirms it, so short
+    //    skips count too.
+    // Play/pause changes are readings too, so a pause starts a reading with nothing played since. The rate is
+    // measured over stretches of 3 s or more of plain playback (1x until then; JE's own speed changes set it).
+    // When an item ends, autoplay replaces the time before the OSD shows the next item's id. So a jump in the
+    // text away from an item's last 30 s clears the saved position and is held for 5 s: if the item changes
+    // it was autoplay, otherwise it is recorded then.
+    const OSD_SEEK_RATE_ALLOWANCE = 4;
+    const OSD_ITEM_END_SECONDS = 30;
+    const OSD_IDENTITY_SETTLE_MS = 5000;
+    const OSD_INTENT_WINDOW_MS = 3000;
+    const OSD_INTENT_MOVED_SECONDS = 1.5;
+    const OSD_INTENT_RATE_TOLERANCE = 0.5;
+    const OSD_RATE_WINDOW_MS = 3000;
+    const OSD_SEEK_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'Left', 'Right', 'Home', 'End', 'PageUp', 'PageDown',
+        'KeyJ', 'KeyL']);
+    const OSD_SEEK_BUTTONS = '.btnRewind, .btnFastForward, .btnPreviousChapter, .btnNextChapter';
+    const OSD_SEEK_SLACK_SECONDS = 2.5;
+    const OSD_SEEK_BACK_SECONDS = 1.5;
+    const OSD_SLIDER_SEEK_MIN_SECONDS = 1;
+    const OSD_JUMP_SETTLE_MS = 15000;
+    const OSD_JUMP_ARRIVED_SECONDS = 3;
+    let _osdLastReading = null;   // { key, duration, position, at, playing } of the latest OSD reading
+    let _osdHistoryItem = null;   // { key, duration } the saved position belongs to
+    let _osdJump = null;          // landingFor(): while JE's jump back or a recorded slider seek lands
+    let _osdOwnJump = false;      // true while JE's jump back moves the slider
+    let _osdIntent = null;        // the reading taken when a jellyfin-web seek key or button was used
+    let _osdPendingSeek = null;   // { from, until }: a jump away from an item's end, until its identity settles
+    let _osdRate = 1;             // playback rate observed (or set by JE) for the current item
+    let _osdRun = null;           // reading where the current stretch of plain playback began
+    let _osdWatchedText = null;   // the .osdPositionText being observed
+    let _osdObserver = null;
+    let _osdSliderListening = false;
+
+    /**
+     * One reading of the OSD for a player without a <video>.
+     * @returns {{key: string, duration: number, position: number, at: number, playing: boolean}|null}
+     */
+    function readOsd() {
+        const osd = JE.internals.osdPlayback;
+        const position = osd.positionSeconds();
+        const key = osd.itemKey();
+        const duration = osd.durationSeconds();
+        if (position === null || key === null || duration === null) return null;
+        // Unknown play state counts as playing: the larger allowance can only miss a seek, never invent one.
+        return { key, duration, position, at: Date.now(), playing: osd.isPaused() !== true };
+    }
+
+    /**
+     * Saves the position to jump back to, for the item it belongs to.
+     * @param {{key: string, duration: number, position: number}} reading
+     */
+    function rememberOsdPosition(reading) {
+        _lastPositionBeforeSeek = reading.position;
+        _osdHistoryItem = { key: reading.key, duration: reading.duration };
+        _osdPendingSeek = null; // a newer seek decides where to return to
+        _osdRun = null;
+    }
+
+    /**
+     * What to wait for after a seek from a reading to a target (see noteOsdPosition).
+     * @param {{key: string, duration: number, position: number, at: number, playing: boolean}} reading
+     * @param {number} target
+     * @returns {{key: string, duration: number, position: number, from: number, at: number, playing: boolean, until: number}}
+     */
+    function landingFor(reading, target) {
+        return {
+            key: reading.key,
+            duration: reading.duration,
+            position: target,
+            from: reading.position,
+            at: reading.at,
+            playing: reading.playing,
+            until: reading.at + OSD_JUMP_SETTLE_MS,
+        };
+    }
+
+    /**
+     * Sets the rate JE's own speed change chose for a player without a <video>.
+     * @param {number} rate
+     */
+    function noteOsdRate(rate) {
+        if (Number.isFinite(rate) && rate > 0) _osdRate = rate;
+        _osdRun = null;
+    }
+
+    /**
+     * Records one OSD reading for a player without a <video>. A move that playback can't explain since
+     * the previous reading is a seek, and the previous reading becomes the position to jump back to. A
+     * saved position of another item is dropped.
+     */
+    function noteOsdPosition() {
+        if (getVideo()) return; // the element's own listeners keep the history
+        const osd = JE.internals.osdPlayback;
+        const reading = readOsd();
+        if (!reading) return;
+        if (_osdHistoryItem && !osd.sameItem(_osdHistoryItem, reading)) {
+            _lastPositionBeforeSeek = null;
+            _osdHistoryItem = null;
+        }
+        if (_osdJump) {
+            // JE's own jump back or a recorded slider seek. Up to `played` (what could have played since;
+            // buffering or a pause means less) past the old position means the player hasn't moved yet:
+            // skipped. A seek key used meanwhile is judged next, then the same past the target is the
+            // landing and becomes the baseline. After 15 s without one, the wait ends with a fresh baseline
+            // and nothing recorded. Anything else (another seek, the next item) is judged as usual.
+            const jump = _osdJump;
+            if (osd.sameItem(reading, jump)) {
+                const played = Math.max(0, reading.at - jump.at) / 1000 * _osdRate;
+                const near = (origin) => reading.position >= origin - OSD_JUMP_ARRIVED_SECONDS
+                    && reading.position <= origin + played + OSD_JUMP_ARRIVED_SECONDS;
+                const landed = near(jump.position);
+                if (!landed && near(jump.from) && reading.at < jump.until) return;
+                _osdJump = null;
+                if (_osdIntent && _osdIntent.at >= jump.at && confirmOsdIntent(reading)) {
+                    // The key seek superseded the landing.
+                    _osdLastReading = reading;
+                    return;
+                }
+                if (landed || reading.at >= jump.until) {
+                    _osdLastReading = reading;
+                    _osdRun = null;
+                    return;
+                }
+            } else {
+                _osdJump = null;
+            }
+        }
+        const previous = _osdLastReading;
+        _osdLastReading = reading;
+        if (_osdPendingSeek) {
+            if (!osd.sameItem(_osdPendingSeek.from, reading)) {
+                _osdPendingSeek = null; // the next item: it was autoplay
+            } else if (reading.at >= _osdPendingSeek.until) {
+                rememberOsdPosition(_osdPendingSeek.from); // still the same item: it was a seek
+            }
+        }
+        if (!previous || !osd.sameItem(previous, reading)) {
+            _osdRate = 1;
+            _osdRun = null;
+            return;
+        }
+        if (confirmOsdIntent(reading)) return;
+        const delta = reading.position - previous.position;
+        const played = previous.playing ? Math.max(0, reading.at - previous.at) / 1000 : 0;
+        if (delta < -OSD_SEEK_BACK_SECONDS || delta > played * OSD_SEEK_RATE_ALLOWANCE + OSD_SEEK_SLACK_SECONDS) {
+            _osdRun = null;
+            if (previous.duration - previous.position <= OSD_ITEM_END_SECONDS) {
+                // Maybe autoplay of the next item, still showing this one's id: decide once identity settles.
+                _lastPositionBeforeSeek = null;
+                _osdHistoryItem = null;
+                _osdPendingSeek = { from: previous, until: reading.at + OSD_IDENTITY_SETTLE_MS };
+                return;
+            }
+            rememberOsdPosition(previous);
+            return;
+        }
+        // Plain playback: measure the rate over stretches of a few seconds.
+        if (!previous.playing || !reading.playing) {
+            _osdRun = null;
+        } else if (!_osdRun) {
+            _osdRun = reading;
+        } else if (reading.at - _osdRun.at >= OSD_RATE_WINDOW_MS) {
+            const rate = (reading.position - _osdRun.position) / ((reading.at - _osdRun.at) / 1000);
+            _osdRate = Math.min(OSD_SEEK_RATE_ALLOWANCE, Math.max(0.25, rate));
+            _osdRun = reading;
+        }
+    }
+
+    /**
+     * Checks a reading against a pending seek intent: a move away from where playback would be since
+     * the intent confirms it, and the intent's position becomes the one to return to. A stale intent
+     * (over 3 s old, another item) is dropped.
+     * @param {{key: string, duration: number, position: number, at: number}} reading
+     * @returns {boolean} True when the reading confirmed a seek.
+     */
+    function confirmOsdIntent(reading) {
+        const intent = _osdIntent;
+        if (!intent) return false;
+        if (reading.at - intent.at > OSD_INTENT_WINDOW_MS || !JE.internals.osdPlayback.sameItem(intent, reading)) {
+            _osdIntent = null;
+            return false;
+        }
+        const playedSinceIntent = intent.playing ? Math.max(0, reading.at - intent.at) / 1000 : 0;
+        const expected = intent.position + playedSinceIntent * _osdRate;
+        if (Math.abs(reading.position - expected) < OSD_INTENT_MOVED_SECONDS + playedSinceIntent * OSD_INTENT_RATE_TOLERANCE) {
+            return false;
+        }
+        _osdIntent = null;
+        rememberOsdPosition(intent);
+        return true;
+    }
+
+    /**
+     * The reading a seek intent starts from. While an earlier seek is still landing the OSD shows the old
+     * time, so the intent starts from that seek's target plus what has played since.
+     * @returns {{key: string, duration: number, position: number, at: number, playing: boolean}|null}
+     */
+    function intentReading() {
+        const reading = readOsd();
+        if (!reading || !_osdJump || !JE.internals.osdPlayback.sameItem(reading, _osdJump)) return reading;
+        const played = reading.playing ? Math.max(0, reading.at - _osdJump.at) / 1000 * _osdRate : 0;
+        return { ...reading, position: _osdJump.position + played };
+    }
+
+    /**
+     * Notes the position as a seek intent when one of jellyfin-web's seek keys is pressed (its OSD handles
+     * them after JE's listener, and seeks only on unmodified ones; JE's own shortcuts stop the key first).
+     * @param {KeyboardEvent} e
+     */
+    function onOsdSeekKey(e) {
+        if (getVideo() || e.ctrlKey || e.altKey || e.metaKey || e.shiftKey || !isOnVideoPage()) return;
+        const target = e.target;
+        // The position slider is a range input that seeks with keys; text fields don't.
+        if (target && (target.tagName === 'TEXTAREA' || (target.tagName === 'INPUT' && target.type !== 'range'))) return;
+        const code = e.code || '';
+        if (OSD_SEEK_KEYS.has(code) || OSD_SEEK_KEYS.has(e.key || '') || /^(Digit|Numpad)\d$/.test(code)) {
+            _osdIntent = intentReading();
+        }
+    }
+
+    /**
+     * Notes the position as a seek intent when the OSD's rewind, fast-forward or chapter button is used.
+     * @param {Event} e
+     */
+    function onOsdSeekButton(e) {
+        if (getVideo()) return;
+        const btn = e.target && typeof e.target.closest === 'function' ? e.target.closest(OSD_SEEK_BUTTONS) : null;
+        const page = btn && JE.internals.osdPlayback.activeOsdPage();
+        if (page && page.contains(btn)) _osdIntent = intentReading();
+    }
+
+    /**
+     * A change of the OSD's position slider is a seek (see above): the position the OSD shows at that
+     * moment is the one to return to.
+     * @param {Event} e
+     */
+    function onOsdSliderChange(e) {
+        const slider = e.target;
+        if (_osdOwnJump || getVideo() || !slider || !slider.classList || !slider.classList.contains('osdPositionSlider')) return;
+        const page = JE.internals.osdPlayback.activeOsdPage();
+        if (!page || !page.contains(slider)) return;
+        const reading = readOsd();
+        if (!reading) return;
+        const target = (parseFloat(slider.value) / 100) * reading.duration;
+        if (!Number.isFinite(target) || Math.abs(target - reading.position) < OSD_SLIDER_SEEK_MIN_SECONDS) return;
+        rememberOsdPosition(reading);
+        _osdLastReading = reading;
+        // Its landing is this seek, not another one (nor autoplay, near an item's end): wait for it the way
+        // JE's own jump back is waited for. It also supersedes a jump back still landing.
+        _osdJump = landingFor(reading, target);
+    }
+
+    /**
+     * Keeps the seek history of a player without a <video> by watching the OSD's position text, its
+     * play/pause button and its position slider. Safe to call on every page update: it only (re)attaches
+     * when the showing OSD's text element changed.
+     */
+    JE.watchOsdPosition = () => {
+        if (!_osdSliderListening) {
+            // Capture phase: runs before jellyfin-web's own handlers start the seek.
+            document.addEventListener('change', onOsdSliderChange, true);
+            document.addEventListener('keydown', onOsdSeekKey, true);
+            document.addEventListener('click', onOsdSeekButton, true);
+            _osdSliderListening = true;
+        }
+        const page = JE.internals.osdPlayback.activeOsdPage();
+        const text = page && !getVideo() ? page.querySelector('.osdPositionText') : null;
+        if (text === _osdWatchedText) return;
+        if (_osdObserver) _osdObserver.disconnect();
+        _osdObserver = null;
+        _osdWatchedText = text;
+        _osdLastReading = null; // a new view: measure afresh (a saved position stays tied to its item)
+        if (!text) return;
+        _osdObserver = new MutationObserver(noteOsdPosition);
+        _osdObserver.observe(text, { childList: true, characterData: true, subtree: true });
+        const playPause = page.querySelector('.btnPause');
+        if (playPause) _osdObserver.observe(playPause, { attributes: true, attributeFilter: ['class'], subtree: true });
+        noteOsdPosition();
+    };
+
+    /**
+     * Stops watching the OSD (leaving the player).
+     */
+    JE.stopWatchingOsdPosition = () => {
+        if (_osdObserver) _osdObserver.disconnect();
+        _osdObserver = null;
+        _osdWatchedText = null;
+        _osdLastReading = null;
+        _osdIntent = null;
+        _osdPendingSeek = null;
+        _osdRun = null;
+    };
+
+    /**
+     * Jump to Last Position for a player without a <video>: seeks through the OSD's position slider.
+     */
+    function jumpToLastOsdPosition() {
+        const osd = JE.internals.osdPlayback;
+        if (osd.positionSeconds() === null) {
+            JE.toast(playerUnsupportedText());
+            return;
+        }
+        noteOsdPosition(); // a seek since the text last changed still counts; another item's position goes
+        if (_lastPositionBeforeSeek === null) {
+            JE.toast(tWithFallback('toast_no_last_position', '{{icon:rewind}} No previous position saved'));
+            return;
+        }
+        const targetTime = _lastPositionBeforeSeek;
+        const before = readOsd();
+        _osdOwnJump = true;
+        let moved;
+        try {
+            moved = osd.seekTo(targetTime);
+        } finally {
+            _osdOwnJump = false;
+        }
+        if (!moved) {
+            JE.toast(playerUnsupportedText());
+            return;
+        }
+        _lastPositionBeforeSeek = null; // consume it so repeated presses don't loop
+        _osdHistoryItem = null;
+        _osdPendingSeek = null;
+        _osdRun = null;
+        // The jump itself is not a seek to remember: wait for it to land.
+        _osdJump = before ? landingFor(before, targetTime) : null;
+
+        const mins = Math.floor(targetTime / 60);
+        const secs = Math.floor(targetTime % 60).toString().padStart(2, '0');
+        JE.toast(tWithFallback('toast_jumped_back', '{{icon:rewind}} Jumped back to {time}', { time: `${mins}:${secs}` }));
+    }
+
     /**
      * Jumps back to the position captured just before the last seek.
      */
     JE.jumpToLastPosition = () => {
         const video = getVideo();
         if (!video) {
-            JE.toast(JE.t('toast_no_video_found'));
+            jumpToLastOsdPosition();
             return;
         }
         if (_lastPositionBeforeSeek === null) {
@@ -451,9 +821,13 @@
      */
     JE.skipIntroOutro = () => {
         const video = getVideo();
+        if (!video) {
+            skipIntroOutroViaOsd();
+            return;
+        }
         const itemId = getCurrentVideoItemId()
             || parseItemIdFromVideosSrc((video && (video.currentSrc || video.src)) || '');
-        if (!video || !itemId) {
+        if (!itemId) {
             if (!clickSkipButton()) JE.toast(JE.t('toast_no_skip_button'));
             return;
         }
@@ -494,6 +868,67 @@
             if (!clickSkipButton()) JE.toast(JE.t('toast_no_skip_button'));
         });
     };
+
+    /**
+     * Skip intro/outro for a player without a <video> (mpv in Jellyfin Desktop): the same segment data,
+     * with the position read from and the seek sent through jellyfin-web's OSD. The skip button stays
+     * the fallback. The item is the route's or this device's session's, and it must be the one the OSD
+     * names (its rating button's id) when the OSD names one; a press whose item changed while the
+     * lookups ran does nothing.
+     */
+    function skipIntroOutroViaOsd() {
+        const osd = JE.internals.osdPlayback;
+        const reading = () => {
+            const key = osd.itemKey();
+            const duration = osd.durationSeconds();
+            return key === null || duration === null ? null : { key, duration };
+        };
+        const atPress = reading();
+        const fallback = () => { if (!clickSkipButton()) JE.toast(JE.t('toast_no_skip_button')); };
+        if (atPress === null) {
+            fallback();
+            return;
+        }
+        const stillSame = () => isOnVideoPage() && !getVideo() && osd.sameItem(reading(), atPress);
+        const normalize = id => (id ? String(id).replace(/-/g, '').toLowerCase() : '');
+        const routeId = getCurrentVideoItemId();
+        // The session's item, accepted only when its runtime matches the duration the OSD shows.
+        const shown = { duration: atPress.duration };
+        const lookup = routeId
+            ? Promise.resolve(routeId)
+            : Promise.resolve(JE.internals.nowPlaying?.itemIdFromSession?.(shown) || null);
+        lookup.then((itemId) => {
+            if (!stillSame()) return null;
+            // Duration alone doesn't identify an item: it must agree with the OSD's item id.
+            const usable = itemId && (!atPress.key || normalize(itemId) === normalize(atPress.key));
+            return Promise.resolve(usable ? fetchMediaSegments(itemId) : []).then(segments => ({ segments }));
+        }).then((result) => {
+            if (!result || !stillSame()) return; // another item now: this press is stale
+            const now = osd.positionSeconds();
+            const nowTicks = now === null ? null : now * TICKS_PER_SECOND;
+            const seg = nowTicks === null || !Array.isArray(result.segments) ? null : result.segments.find(s => s
+                && typeof s.StartTicks === 'number' && typeof s.EndTicks === 'number'
+                && s.StartTicks <= nowTicks && s.EndTicks > nowTicks);
+            if (seg) {
+                const duration = osd.durationSeconds();
+                const target = Math.min(seg.EndTicks / TICKS_PER_SECOND, duration || Infinity);
+                if (target > now && osd.seekTo(target)) {
+                    if (seg.Type === 'Intro') {
+                        JE.toast(JE.t('toast_skipped_intro'));
+                    } else if (seg.Type === 'Outro') {
+                        JE.toast(JE.t('toast_skipped_outro'));
+                    } else {
+                        JE.toast(`${JE.icons.wrapEmoji('⏭️')} Skipped`);
+                    }
+                    return;
+                }
+            }
+            fallback();
+        }).catch((err) => {
+            console.warn('🪼 Jellyfin Enhanced: segment skip failed', err);
+            if (stillSame()) fallback();
+        });
+    }
 
     // ── Native OSD track menus ───────────────────────────────────────────────
     //
@@ -691,6 +1126,169 @@
                 const t = el.querySelector('.actionSheetTitle');
                 return !!t && (t.textContent || '').trim() === expectedTitle;
             }
+        });
+    }
+
+    // ── jellyfin-web's player settings menu (players without a <video>) ──────
+    //
+    // Speed and aspect ratio belong to the player. With a <video> JE sets them on the element; without
+    // one (mpv in Jellyfin Desktop) the only way in is the OSD's settings menu: Playback Speed and Aspect
+    // Ratio open a second sheet listing the options, the current one marked by a visible check icon, and
+    // choosing one calls the playback manager when that sheet closes. The sheets are kept invisible, as
+    // for Playback Info, and presses are handled one after another so each reads the result of the last.
+    let _settingsMenuQueue = Promise.resolve();
+
+    const SETTINGS_MENU_ITEMS = ['stats', 'aspectratio', 'playbackrate', 'quality', 'repeatmode', 'suboffset']
+        .map(id => `button[data-id="${id}"]`).join(', ');
+
+    /**
+     * Whether a sheet is the settings submenu asked for: its checked option is the current value the
+     * settings menu showed beside the item (jellyfin-web renders both from the same name), and speeds are
+     * numbers including 1. Track and repeat menus fail one or the other.
+     * @param {string} menuId
+     * @param {Array<{id: string, name: string, selected: boolean}>} options
+     * @param {string} current The value shown beside the settings item ('' if none).
+     * @returns {boolean}
+     */
+    function isSettingsSubmenu(menuId, options, current) {
+        if (options.length < 2) return false;
+        if (!current || !options.some(option => option.selected && option.name === current)) return false;
+        if (menuId === 'playbackrate') {
+            return options.every(option => /^\d+(\.\d+)?$/.test(option.id || ''))
+                && options.some(option => Number(option.id) === 1);
+        }
+        return menuId === 'aspectratio';
+    }
+
+    /**
+     * Waits until a dialog container has left the page (its sheet's choice is applied on close).
+     * @param {Element} container
+     * @param {number} timeoutMs
+     * @returns {Promise<void>}
+     */
+    async function waitUntilRemoved(container, timeoutMs) {
+        const t0 = Date.now();
+        while (container.isConnected && Date.now() - t0 < timeoutMs) {
+            await new Promise(r => setTimeout(r, 50));
+        }
+    }
+
+    /**
+     * Chooses an option in one of jellyfin-web's player settings submenus without showing the sheets.
+     * @param {string} menuId The settings item: 'playbackrate' or 'aspectratio'.
+     * @param {function(Array<{id: string, name: string, selected: boolean}>): ({id: string, name: string}|null)} pick
+     * @returns {Promise<{id: string, name: string}|null|false>} The option chosen, null when pick chose
+     *   none, false when the menu or the item is not there (or the player page was left).
+     */
+    function chooseInSettingsMenu(menuId, pick) {
+        const run = _settingsMenuQueue.then(() => runSettingsMenu(menuId, pick));
+        _settingsMenuQueue = run.catch(() => {});
+        return run;
+    }
+
+    /**
+     * One settings-menu choice (see chooseInSettingsMenu).
+     * @param {string} menuId
+     * @param {function(Array<{id: string, name: string, selected: boolean}>): ({id: string, name: string}|null)} pick
+     * @returns {Promise<{id: string, name: string}|null|false>}
+     */
+    async function runSettingsMenu(menuId, pick) {
+        if (!isOnVideoPage()) return false;
+        const style = document.createElement('style');
+        style.textContent = '.dialogContainer, .dialogBackdrop, .actionSheet { opacity:0 !important; transition:none !important; }';
+        document.head.appendChild(style);
+        try {
+            const main = await openOsdMenu('#videoOsdPage:not(.hide) .btnVideoOsdSettings');
+            if (!main) return false;
+            // Another sheet opened at the same moment (a track menu) is left alone.
+            if (!main.querySelector(SETTINGS_MENU_ITEMS)) return null;
+            const item = main.querySelector(`button[data-id="${menuId}"]`);
+            if (!item || !isOnVideoPage()) {
+                closeActionSheet(main);
+                return false;
+            }
+            // The settings menu shows the current value beside the item; the submenu checks that same option.
+            const aside = item.querySelector('.actionSheetItemAsideText');
+            const current = aside ? (aside.textContent || '').trim() : '';
+            const before = new Set(document.querySelectorAll('.dialogContainer'));
+            activate(item);
+            // The submenu has no title (track menus do).
+            const sub = await JE.core.dom.waitForElement('.dialogContainer', {
+                timeout: 3000,
+                quiet: true,
+                predicate: (el) => !before.has(el) && !!el.querySelector('.actionSheetContent')
+                    && !Array.from(el.querySelectorAll('.actionSheetTitle')).some(t => (t.textContent || '').trim()),
+            });
+            if (!sub) return false;
+            if (!isOnVideoPage()) {
+                closeActionSheet(sub);
+                return false;
+            }
+            const options = Array.from(sub.querySelectorAll('button[data-id]')).map(btn => ({
+                btn,
+                id: btn.getAttribute('data-id'),
+                name: ((btn.querySelector('.actionSheetItemText') || btn).textContent || '').trim(),
+                // Every row has a check icon; only the current option's is visible.
+                selected: Array.from(btn.querySelectorAll('.check')).some(icon => icon.style.visibility !== 'hidden'),
+            }));
+            if (!isSettingsSubmenu(menuId, options, current)) return null; // not the list asked for: leave it alone
+            const choice = pick(options.map(({ id, name, selected }) => ({ id, name, selected })));
+            const row = choice && options.find(option => option.id === choice.id);
+            if (!row) {
+                closeActionSheet(sub);
+                return null;
+            }
+            activate(row.btn);
+            await waitUntilRemoved(sub, 1500);
+            return { id: row.id, name: row.name };
+        } finally {
+            setTimeout(() => style.remove(), 400);
+        }
+    }
+
+    /**
+     * Steps the playback speed through jellyfin-web's own list (players without a <video>).
+     * @param {'increase'|'decrease'|'reset'} direction
+     */
+    function stepPlaybackRateInMenu(direction) {
+        chooseInSettingsMenu('playbackrate', (options) => {
+            const normal = options.find(option => Number(option.id) === 1) || null;
+            const current = options.findIndex(option => option.selected);
+            if (direction === 'reset' || current === -1) return normal;
+            const next = direction === 'increase'
+                ? Math.min(current + 1, options.length - 1)
+                : Math.max(current - 1, 0);
+            return options[next];
+        }).then((result) => {
+            if (!isOnVideoPage() || result === null) return;
+            if (result === false) {
+                JE.toast(playerUnsupportedText());
+                return;
+            }
+            const speed = Number(result.id);
+            noteOsdRate(speed);
+            JE.toast(speed === 1 ? JE.t('toast_speed_normal') : JE.t('toast_speed', { speed }));
+        }).catch((err) => {
+            console.warn('🪼 Jellyfin Enhanced: playback speed through the settings menu failed', err);
+        });
+    }
+
+    /**
+     * Moves to the next aspect ratio in jellyfin-web's own list (players without a <video>).
+     */
+    function cycleAspectInMenu() {
+        chooseInSettingsMenu('aspectratio', (options) => {
+            const current = options.findIndex(option => option.selected);
+            return options[(current + 1) % options.length];
+        }).then((result) => {
+            if (!isOnVideoPage() || result === null) return;
+            if (result === false) {
+                JE.toast(playerUnsupportedText());
+                return;
+            }
+            JE.toast(JE.t('toast_aspect_ratio', { ratio: result.name }));
+        }).catch((err) => {
+            console.warn('🪼 Jellyfin Enhanced: aspect ratio through the settings menu failed', err);
         });
     }
 
@@ -1164,7 +1762,7 @@
     JE.cycleAspect = () => {
         const video = getVideo();
         if (!video) {
-            JE.toast(JE.t('toast_no_video_found'));
+            cycleAspectInMenu();
             return;
         }
         let stored = null;
@@ -1391,7 +1989,7 @@
         }
         const video = getVideo();
         if (!video) {
-            JE.toast(JE.t('toast_no_video_found'));
+            JE.toast(playerUnsupportedText());
             return;
         }
         const overlay = document.createElement('div');

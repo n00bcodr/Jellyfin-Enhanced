@@ -1327,6 +1327,10 @@
       "category": "js"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/player/osd-playback.js",
+      "category": "js"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/player/osd-rating.js",
       "category": "js"
     },
@@ -10629,7 +10633,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 489,
+    "files": 490,
     "routes": 208,
     "configuration_properties": 772,
     "storage_references": 88,

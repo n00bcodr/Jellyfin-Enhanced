@@ -74,7 +74,6 @@
         const key = e.key;
         const combo = JE.keyCombo(e);
 
-        const video = document.querySelector('video');
         const activeShortcuts = canonicalShortcuts();
 
         // --- Global Shortcuts ---
@@ -101,7 +100,10 @@
         }
 
         // --- Player-Only Shortcuts ---
-        if (!JE.isVideoPage() || !video) return;
+        // Not gated on a <video> element: Jellyfin Desktop and Jellyfin Media Player play through mpv and
+        // have none. Each action uses the element when there is one and jellyfin-web's own OSD controls
+        // otherwise, or says it isn't available with this player.
+        if (!JE.isVideoPage()) return;
 
         switch (combo) {
             case activeShortcuts.BookmarkCurrentTime:
@@ -248,11 +250,14 @@
                 JE.addSubtitleSyncButton?.();
                 JE.initializeAutoSkipObserver();
                 JE.applySavedStylesWhenReady();
-                // Attach seek tracker to the video element as soon as it exists
+                // Attach seek tracker to the video element as soon as it exists; a player
+                // without one (mpv in Jellyfin Desktop) is tracked through the OSD's position text.
                 const video = document.querySelector('video');
                 if (video) JE.attachSeekTracker(video);
+                JE.watchOsdPosition?.();
             } else {
                 JE.stopAutoSkip();
+                JE.stopWatchingOsdPosition?.();
             }
         };
 
