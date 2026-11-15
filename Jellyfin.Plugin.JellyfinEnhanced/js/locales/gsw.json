@@ -1491,5 +1491,6 @@
     "panel_settings_subtitle_sync_button": "Subtitle Sync Button",
     "subtitle_sync_synced": "{{icon:subtitles}} Subtitles synced ({offset})",
     "subtitle_sync_choose_track": "Choose subtitles",
-    "panel_settings_subtitle_sync_button_desc": "Adds a button next to Subtitles in the player to sync the subtitles: choose the line you just heard and the subtitles shift to match. You can also search the lines and jump to one"
+    "panel_settings_subtitle_sync_button_desc": "Adds a button next to Subtitles in the player to sync the subtitles: choose the line you just heard and the subtitles shift to match. You can also search the lines and jump to one",
+    "toast_player_unsupported": "{{icon:info}} Not available with this player"
 }
