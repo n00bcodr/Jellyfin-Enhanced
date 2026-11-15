@@ -61,7 +61,7 @@ Browser playback tools include the pause screen, subtitle styling, long-press sp
 
 ??? note "Playback limits"
 
-    JE's playback tools control a browser video element. External and native players don't provide that element. Independently hosted web clients don't automatically pass through JE's injection middleware; connecting to a JE server alone doesn't install JE's client scripts in a separately served web shell.
+    JE's browser playback tools (the ones listed above) control a browser video element, which external and native players don't provide. Player shortcuts and bookmarks are the exception for Jellyfin Desktop's built-in mpv player: they work through Jellyfin's own player controls instead. Independently hosted web clients don't automatically pass through JE's injection middleware; connecting to a JE server alone doesn't install JE's client scripts in a separately served web shell.
 
     Auto-skip seeks a browser video element. Progressive transcoding can limit seeking, and the seek isn't synchronized to other SyncPlay members.
 
