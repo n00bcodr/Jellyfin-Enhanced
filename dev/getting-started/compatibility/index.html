@@ -2357,7 +2357,7 @@
 </tr>
 <tr>
 <td>Jellyfin Desktop and other desktop web wrappers</td>
-<td>Web enhancements depend on loading the server's web interface. JE's browser playback tools aren't available in an external or native player.</td>
+<td>Web enhancements depend on loading the server's web interface. With Jellyfin Desktop's built-in mpv player, player shortcuts and bookmarks work through Jellyfin's own player controls (frame stepping and Subtitle Sync excepted); JE's other browser playback tools aren't available in an external or native player.</td>
 </tr>
 <tr>
 <td>Android TV, Roku, Swiftfin, and other native clients</td>
@@ -2373,7 +2373,7 @@
 <p><a class="glightbox" data-type="image" data-width="100%" data-height="auto" href="../../images/enhanced/phone-detail.webp" data-desc-position="bottom"><img alt="Enhanced movie details in a phone browser: the top of the page and further down" src="../../images/enhanced/phone-detail.webp"></a></p>
 <details class="note">
 <summary>Playback limits</summary>
-<p>JE's playback tools control a browser video element. External and native players don't provide that element. Independently hosted web clients don't automatically pass through JE's injection middleware; connecting to a JE server alone doesn't install JE's client scripts in a separately served web shell.</p>
+<p>JE's browser playback tools (the ones listed above) control a browser video element, which external and native players don't provide. Player shortcuts and bookmarks are the exception for Jellyfin Desktop's built-in mpv player: they work through Jellyfin's own player controls instead. Independently hosted web clients don't automatically pass through JE's injection middleware; connecting to a JE server alone doesn't install JE's client scripts in a separately served web shell.</p>
 <p>Auto-skip seeks a browser video element. Progressive transcoding can limit seeking, and the seek isn't synchronized to other SyncPlay members.</p>
 </details>
 <h3 id="what-works-for-native-clients">What works for native clients<a class="headerlink" href="#what-works-for-native-clients" title="Permanent link">¶</a></h3>

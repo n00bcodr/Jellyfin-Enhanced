@@ -2882,7 +2882,7 @@
 <h2 id="client-delivery-and-initialization">Client delivery and initialization<a class="headerlink" href="#client-delivery-and-initialization" title="Permanent link">¶</a></h2>
 <p>This section follows the client from loader injection through initialization and user switches.</p>
 <p><code>Services/ScriptInjectionStartupFilter.cs</code> injects the loader into web responses. <code>GET /JellyfinEnhanced/script</code> serves <code>js/plugin.js</code>; it is separate from the component bundle. <code>JellyfinEnhanced.csproj</code> embeds <code>js/**</code>, and <code>GetScript</code> in <code>Controllers/JellyfinEnhancedController.cs</code> serves individual resources at <code>/JellyfinEnhanced/js/{path}</code>.</p>
-<p>The ordered module list lives in <code>js/component-scripts.json</code>: 191 component modules, with paths relative to <code>js/</code>. Entries starting with <code>//</code> are ordering notes.</p>
+<p>The ordered module list lives in <code>js/component-scripts.json</code>: 192 component modules, with paths relative to <code>js/</code>. Entries starting with <code>//</code> are ordering notes.</p>
 <p><strong>Modules execute in manifest order.</strong> Place a module after every producer whose exports it reads at load time. A consumer loaded too early can capture <code>undefined</code>.</p>
 <p>The initialization stages and user-switch behavior are:</p>
 <table>
@@ -3326,7 +3326,7 @@
 </tr>
 <tr>
 <td><code>player/</code></td>
-<td><code>playback.js</code> supplies speed, seeking and track cycling; <code>auto-skip.js</code> consumes its player state for media-segment skipping; <code>subtitles.js</code> handles styles/presets; <code>pausescreen.js</code> supplies the pause overlay; <code>osd-rating.js</code> shows Jellyfin community/critic scores; <code>playback-rating-badge.js</code> supplies the playback-start age-rating/genre card; <code>subtitle-sync.js</code> syncs subtitles to a chosen line: it lists the playing subtitle track's lines (the server's <code>Stream.js</code> JSON) to search, jump to, or sync through jellyfin-web's subtitle offset control (<code>JE.setSubtitleOffset</code> in <code>playback.js</code>).</td>
+<td><code>playback.js</code> supplies speed, seeking and track cycling; <code>osd-playback.js</code> reads the position and seeks through jellyfin-web's OSD for players without a <code>&lt;video&gt;</code> (Jellyfin Desktop's mpv); <code>auto-skip.js</code> consumes its player state for media-segment skipping; <code>subtitles.js</code> handles styles/presets; <code>pausescreen.js</code> supplies the pause overlay; <code>osd-rating.js</code> shows Jellyfin community/critic scores; <code>playback-rating-badge.js</code> supplies the playback-start age-rating/genre card; <code>subtitle-sync.js</code> syncs subtitles to a chosen line: it lists the playing subtitle track's lines (the server's <code>Stream.js</code> JSON) to search, jump to, or sync through jellyfin-web's subtitle offset control (<code>JE.setSubtitleOffset</code> in <code>playback.js</code>).</td>
 </tr>
 <tr>
 <td><code>admintags/</code></td>
