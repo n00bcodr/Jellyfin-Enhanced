@@ -2092,6 +2092,66 @@
       ],
       "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p63-*",
       "notes": "placeSection in client/src/features/seerr/discovery/section.ts gives a detail page's section the inline order 99, as upstream's does, and the fallback placement in section-chassis.ts (used when the section module has not loaded) does the same. A list page's section still takes no inline style. Test: one new case in tests/frontend/pages/pages-discovery.test.mjs (the person section's order), failing before and passing after; upstream's commit has no test. Lab (p63-detail-section-order.mjs, the mock Seerr answering one person's credits): with the stock stylesheet the primary column is a block and the section is last on every build; with a theme's rules added (the column a flex column, order 3 on its own children) the section is above the page's two own lists before the port and after them on upstream's build and on the port."
+    },
+    {
+      "sha": "06837783bc7450d64bf69fb736c7c4c4bb78ff4e",
+      "date": "2026-11-16T10:26:22+00:00",
+      "subject": "fix(maintainerr): pick the collection by the version selected on the item page",
+      "class": "fix",
+      "features": [
+        "media-tags"
+      ],
+      "issues": [],
+      "release": null,
+      "size": {
+        "files": 4,
+        "insertions": 42,
+        "deletions": 7
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Controllers/MaintainerrController.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/MaintainerrActions.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/tags/maintainerr-item-menu.js",
+        "tests/backend/Integrations/IntegrationMaintainerrActionsTests.cs"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "1b7e53c806cdcf1c64ba7a13089cb278719ae481"
+      ],
+      "unmappedPaths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Controllers/MaintainerrController.cs"
+      ],
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p64-65-*",
+      "notes": "Re-implemented. Server: MaintainerrActionRequest (Features/MediaTags/Models) gains mediaSourceId; the controller partial JeMediaTagsController.Maintainerr.cs passes it to MaintainerrActions.MarkAsync, which finds the movie's version among its media sources (ids compared without dashes, any case) and, when one library has several manual movie collections, asks each Radarr whether one of its movies has a file with that version's file name (FileMatchesVersion: true when Radarr or the version gives no file name; Radarr and Jellyfin may mount the library at different paths). No version, an unknown id, a series or the lookup failing: the probe is as before. Client (features/media-tags/editor/maintainerr-item-menu.ts): Mark sends the value of the detail page's version picker (select.selectSource), read when the row is pressed. Differences from upstream: (1) only from the detail page's own ⋮ (the opener is that page's .btnMoreCommands); upstream reads the visible detail page's picker for any menu, so a card's ⋮ in that page's More like this sent the page's version for another item (the server then found no such version and ignored it, so nothing went wrong). (2) Keep's Undo, which marks again, sends the version too; upstream's sends only the item, so on a library with a 4K and a 1080p collection Undo after Keep was refused as \"more than one Radarr/Sonarr server has it\". (3) The version lookup catches failures other than a cancellation, the file's pattern, where upstream catches everything. (4) docs/advanced/api.md (the mark body and the rule) and docs/enhanced/tags.md (the 4K/1080p paragraph) describe it; upstream changed no docs. Tests: upstream's FileMatchesVersion test at its moved path, plus two that drive the real entry points and failed before the port: the controller's MarkForMaintainerrRemoval with the body as the client sends it, against a loopback Maintainerr and two Radarrs that hold the movie with different files (the 4K and the 1080p version go to their own collection; no version or an unknown one is refused as before), and the item menu on a detail page with a version picker (the body carries the picked version, read on press; Keep's Undo carries it; a More like this card's menu does not). Lab (p64-65-*): a movie both Radarrs hold, one with the lab's own file: before the port Mark is refused (\"more than one Radarr/Sonarr server has it\"); on upstream's build and on the port the page sends mediaSourceId and the movie goes to \"Leaving Soon (Movies)\", the collection of the Radarr with that file. No route, verb, authorization or registration changes (the body type is not in the snapshots); no cached-output version moves."
+    },
+    {
+      "sha": "8f902bf73f29a12a06d145c0fd930f6951adb3aa",
+      "date": "2026-11-16T10:29:52+00:00",
+      "subject": "feat(maintainerr): mark, keep and postpone seasons from the item menu",
+      "class": "feature",
+      "features": [
+        "media-tags"
+      ],
+      "issues": [
+        "#1071"
+      ],
+      "release": null,
+      "size": {
+        "files": 3,
+        "insertions": 21,
+        "deletions": 9
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/MaintainerrActions.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/tags/maintainerr-item-menu.js",
+        "tests/backend/Integrations/IntegrationMaintainerrActionsTests.cs"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "bc24ba8dea386fd94053d4ed72633c726d3811fc"
+      ],
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p64-65-*",
+      "notes": "Re-implemented. Server (Features/MediaTags/Services/MaintainerrActions.cs): MediaType answers \"season\" for a season, so the item state says Supported and mark, keep and postpone take seasons; the refusals read \"Only movies, series and seasons can be marked/kept/postponed.\" and the no-collection reasons name the type (\"for seasons\", \"the season collections\"; movies and shows read as before); when one library has several manual season collections, each Sonarr is asked by the season's series' TVDB id (ProbeArrAsync reads the series through the library manager, falling back to the season, which has no TVDB id, so the server cannot say). Maintainerr gets what upstream sends: mediaId and context id the season's id, context type \"season\". Client (features/media-tags/editor/maintainerr-item-menu.ts): Season joins the item kinds that get the rows, from a card and from the season's own page; episodes still get none. Differences from upstream: docs/enhanced/tags.md (the menu applies to seasons, the type list, the series' TVDB id, \"Episodes get no rows\" where it said seasons and episodes) and docs/advanced/api.md (Supported, the 400 reason, the probe) describe it; upstream changed no docs. Tests: upstream's MatchAsync case at its moved path and its changed message expectation (\"Only movies, series and seasons\"), plus two that failed before the port: the controller's routes for a season against a loopback Maintainerr and two Sonarrs of which only the first has the series (Supported, the body Maintainerr gets, the collection of the Sonarr that holds the series, both asked by the series' TVDB id; an episode still unsupported and refused with the new reason), and the item menu (a season card's rows and Mark, a marked season's page rows, no rows and no request for an episode). Lab (p64-65-*): Season 1 of a lab series, two season collections on the Shows library: no rows before the port; on upstream's build and on the port the season is marked into \"Leaving Soon (Seasons)\" after the same probes. No route, verb, authorization or registration changes; no cached-output version moves (the Leaving soon facts already cover seasons)."
     }
   ]
 }

@@ -36,7 +36,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags
         }
 
         /// <summary>Mark the item for removal: add it to the Maintainerr manual collection that fits it. Admin only.</summary>
-        /// <param name="request">The item.</param>
+        /// <param name="request">The item, and the version picked on its page when there is one.</param>
         /// <param name="actions">The Maintainerr actions.</param>
         /// <param name="token">The request's cancellation.</param>
         /// <returns>The item's state after the change.</returns>
@@ -44,7 +44,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags
         [Authorize]
         [Produces("application/json")]
         public Task<IActionResult> MarkForMaintainerrRemoval([FromBody] MaintainerrActionRequest request, [FromServices] MaintainerrActions actions, CancellationToken token)
-            => RunMaintainerrAction(request, (item, config) => actions.MarkAsync(item, config, token));
+            => RunMaintainerrAction(request, (item, config) => actions.MarkAsync(item, config, token, request?.MediaSourceId));
 
         /// <summary>Keep the item: remove it from its Maintainerr collection. Admin only.</summary>
         /// <param name="request">The item.</param>

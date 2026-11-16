@@ -4,7 +4,7 @@
 
 What the rewrite has taken from [upstream](https://github.com/n00bcodr/Jellyfin-Enhanced) (`main`) since it branched at `2e0f9251bf`. The source of truth is [`upstream-sync.json`](upstream-sync.json); the procedure is [upstream-sync-procedure.md](upstream-sync-procedure.md).
 
-63 upstream commits: 61 ported, 1 already-present, 1 deferred.
+65 upstream commits: 63 ported, 1 already-present, 1 deferred.
 
 | # | Upstream | Date | Class | Features | Subject | Status | Rewrite commit | Note |
 |---|---|---|---|---|---|---|---|---|
@@ -71,3 +71,5 @@ What the rewrite has taken from [upstream](https://github.com/n00bcodr/Jellyfin-
 | 61 | [`321701ae`](https://github.com/n00bcodr/Jellyfin-Enhanced/commit/321701aeb2f27eee5d9514a8ec8ce87b90074247) | 2026-11-15 (12.16.0.0) | release |  | v12.16.0.0 | ported | `a8f33bf6` | AssemblyVersion and FileVersion 12.16.0.0, as upstream main. docs/advanced/api.md names the same version. |
 | 62 | [`4c10732a`](https://github.com/n00bcodr/Jellyfin-Enhanced/commit/4c10732a6250fc731a7189bf0066f6b2b833daac) | 2026-11-15 | release |  | v12.16.0.0 - Jellyfin Enhanced (synced from jellyfin-plugins) | ported | `a8f33bf6` | manifest.json is byte-identical to upstream's at 4c10732a: the two catalog entries the release workflow added for 12.16.0.0 (the Jellyfin 12 and the Jellyfin 10.11 build). They are release data about artifacts upstream published, not code; the rewrite builds for Jellyfin 12 only, and nothing is built or published by this commit. |
 | 63 | [`ff75fbfa`](https://github.com/n00bcodr/Jellyfin-Enhanced/commit/ff75fbfaefe83726f09bcfa20e2f1c19fb688db7) | 2026-11-15 | fix | seerr | fix(discovery): keep detail-page discovery section after native lists when a theme sets flex order | ported | `63452c52` | artifacts/restructure-plan/step-logs/upstream-sync-evidence/p63-* |
+| 64 | [`06837783`](https://github.com/n00bcodr/Jellyfin-Enhanced/commit/06837783bc7450d64bf69fb736c7c4c4bb78ff4e) | 2026-11-16 | fix | media-tags | fix(maintainerr): pick the collection by the version selected on the item page | ported | `1b7e53c8` | artifacts/restructure-plan/step-logs/upstream-sync-evidence/p64-65-* |
+| 65 | [`8f902bf7`](https://github.com/n00bcodr/Jellyfin-Enhanced/commit/8f902bf73f29a12a06d145c0fd930f6951adb3aa) | 2026-11-16 | feature | media-tags | feat(maintainerr): mark, keep and postpone seasons from the item menu | ported | `bc24ba8d` | artifacts/restructure-plan/step-logs/upstream-sync-evidence/p64-65-* |

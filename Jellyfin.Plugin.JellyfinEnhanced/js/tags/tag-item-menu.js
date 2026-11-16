@@ -175,7 +175,7 @@
   function createMaintainerrMenu(JE) {
     const ROWS = Object.freeze({ mark: "je-maintainerr-mark", keep: "je-maintainerr-keep", postpone: "je-maintainerr-postpone" });
     const ROW_SELECTOR = Object.values(ROWS).map((id) => `[data-id="${id}"]`).join(", ");
-    const TYPES = /* @__PURE__ */ new Set(["Movie", "Series"]);
+    const TYPES = /* @__PURE__ */ new Set(["Movie", "Series", "Season"]);
     const CONTEXT_TTL_MS = 5e3;
     const DAY_MS = 864e5;
     const QUICK_DAYS = [7, 14, 30, 90];
@@ -237,6 +237,11 @@
         if (el && (el.offsetParent !== null || el.getClientRects().length)) return el;
       }
       return scrollers[scrollers.length - 1] || null;
+    }
+    function pickedVersion(opener) {
+      const page = opener?.matches(".btnMoreCommands") ? opener.closest("#itemDetailPage") : null;
+      const value = page?.querySelector("select.selectSource")?.value;
+      return value ? { mediaSourceId: value } : {};
     }
     function buildRow(scroller, dataId, icon, label) {
       const shared3 = featureCtx.peer("homeRemoval")?.buildNativeActionSheetItem;
@@ -445,7 +450,7 @@
         const keep = buildRow(scroller, ROWS.keep, "restore", JE.t("maintainerr_keep"));
         keep.addEventListener("click", () => {
           setTimeout(() => {
-            void act("unmark", { itemId }, "maintainerr_kept", { path: "mark", body: { itemId }, doneKey: "maintainerr_marked" });
+            void act("unmark", { itemId }, "maintainerr_kept", { path: "mark", body: { itemId, ...pickedVersion(opener) }, doneKey: "maintainerr_marked" });
           }, 0);
         });
         const later = buildRow(scroller, ROWS.postpone, "more_time", JE.t("maintainerr_postpone"));
@@ -457,7 +462,7 @@
         const mark = buildRow(scroller, ROWS.mark, "auto_delete", JE.t("maintainerr_mark"));
         mark.addEventListener("click", () => {
           setTimeout(() => {
-            void act("mark", { itemId }, "maintainerr_marked", { path: "unmark", body: { itemId }, doneKey: "maintainerr_kept" });
+            void act("mark", { itemId, ...pickedVersion(opener) }, "maintainerr_marked", { path: "unmark", body: { itemId }, doneKey: "maintainerr_kept" });
           }, 0);
         });
         rows.push(mark);

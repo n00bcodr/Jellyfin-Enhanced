@@ -966,7 +966,7 @@ Cards never ask Maintainerr: the **Refresh Leaving Soon Tags** scheduled task (h
 
 #### Marking, keeping and postponing from the item menu
 
-With **Mark, keep and postpone from the item menu** on (and a Maintainerr URL), an administrator's ⋮ menu on a movie or series (the detail page's or a card's) gets:
+With **Mark, keep and postpone from the item menu** on (and a Maintainerr URL), an administrator's ⋮ menu on a movie, series or season (the detail page's or a card's) gets:
 
 | Item | Row | What happens |
 |---|---|---|
@@ -978,7 +978,7 @@ With **Mark, keep and postpone from the item menu** on (and a Maintainerr URL), 
 
 ![The ⋮ menu of a movie Maintainerr lists: Keep and Postpone removal](../images/tags/maintainerr-menu-marked.webp) ![The postpone chooser](../images/tags/maintainerr-postpone.webp)
 
-Maintainerr is set up first, as today, with a rule per library that uses a **manual collection** (its "Use manual collection" option); the plugin never creates collections. An item is matched to the one active manual collection of its type (movie or show) on its Jellyfin library. When one library has several (say a 4K and an HD list, each tied to its own Radarr), the plugin asks each collection's Radarr or Sonarr server, as Maintainerr lists them, whether it holds the item (by TMDB id for movies, TVDB id for series) and uses the one that does. When nothing fits, or more than one does, the toast says so and names Maintainerr's collections. Every change reads Maintainerr again at once, so the badge, the row and the next menu follow without waiting for the scheduled refresh. The rows are only offered to administrators, and the server refuses everyone else regardless; the Maintainerr address and key, and the *arr addresses and keys Maintainerr holds, never reach the browser. Seasons and episodes get no rows.
+Maintainerr is set up first, as today, with a rule per library that uses a **manual collection** (its "Use manual collection" option); the plugin never creates collections. An item is matched to the one active manual collection of its type (movie, show or season) on its Jellyfin library. When one library has several (say a 4K and an HD list, each tied to its own Radarr), the plugin asks each collection's Radarr or Sonarr server, as Maintainerr lists them, whether it holds the item (by TMDB id for movies, by the series' TVDB id for series and seasons) and uses the one that does. Marked from a movie's own page, the version picked there decides: the collection whose Radarr has that version's file (the same file name) is used, so the 4K and the 1080p copy of one movie each go to their own list. When nothing fits, or more than one does, the toast says so and names Maintainerr's collections. Every change reads Maintainerr again at once, so the badge, the row and the next menu follow without waiting for the scheduled refresh. The rows are only offered to administrators, and the server refuses everyone else regardless; the Maintainerr address and key, and the *arr addresses and keys Maintainerr holds, never reach the browser. Episodes get no rows.
 
 The rows are added to Jellyfin's item menu the same way as **Media Tags**, so they share its dependence on jellyfin-web's private menu behaviour (see [One item's look](#one-items-look)).
 

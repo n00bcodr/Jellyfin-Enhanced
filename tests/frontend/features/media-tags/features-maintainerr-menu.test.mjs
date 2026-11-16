@@ -5,6 +5,7 @@ import { createHarness } from '../../helpers/harness.mjs';
 const MOVIE = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const SERIES = 'cccccccccccccccccccccccccccccccc';
 const EPISODE = 'dddddddddddddddddddddddddddddddd';
+const SEASON = 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
 
 /** A Jellyfin 12 card with its ⋮ button. */
 const card = (id, type) => `<div class="card" data-id="${id}" data-type="${type}"><div class="cardBox"><button is="paper-icon-button-light" data-action="menu" class="cardOverlayButton">⋮</button><div class="cardText">t</div></div></div>`;
@@ -14,11 +15,12 @@ const card = (id, type) => `<div class="card" data-id="${id}" data-type="${type}
  * current user, and the plugin's /maintainerr routes (state per item, and the actions). The rows ship inside
  * tags/tag-item-menu.js here (the bundle's load order is pinned), after the Media Tags row.
  */
-function setup(t, { admin = true, available = true, html = '', states = {}, fail = null } = {}) {
+function setup(t, { admin = true, available = true, html = '', states = {}, fail = null, url } = {}) {
   const requests = [];
   const userChange = [];
   const io = { epoch: 0 };
   const h = createHarness({
+    ...(url ? { url } : {}),
     html: html + '<div id="sheets"></div>',
     JE: {
       pluginConfig: { MaintainerrActionsAvailable: available, ToastDuration: 1500 },
@@ -61,18 +63,19 @@ function setup(t, { admin = true, available = true, html = '', states = {}, fail
     $('#sheets').appendChild(sheet);
     return sheet;
   };
-  /** Press a card's ⋮, open Jellyfin's sheet and let the rows arrive. */
-  const open = async (id, rows = ['addtocollection', 'share']) => {
-    click($(`.card[data-id="${id}"] [data-action="menu"]`));
+  /** Press a ⋮ (a card's, or the element `selector` names), open Jellyfin's sheet and let the rows arrive. */
+  const openFrom = async (selector, rows = ['addtocollection', 'share']) => {
+    click($(selector));
     openSheet(rows);
     await frame();
     await settle();
   };
+  const open = (id, rows) => openFrom(`.card[data-id="${id}"] [data-action="menu"]`, rows);
   const rowIds = () => $$('.actionSheetScroller [data-id^="je-maintainerr-"]').map((el) => el.dataset.id);
   const toasts = () => $$('.jellyfin-enhanced-toast').map((el) => el.textContent);
   /** Another user signs in (the session's reset callbacks run, and earlier leases stop being current). */
   const switchUser = () => { io.epoch++; for (const fn of userChange) fn({ epoch: io.epoch }); };
-  return { ...h, requests, settle, frame, $, $$, click, open, rowIds, toasts, switchUser };
+  return { ...h, requests, settle, frame, $, $$, click, open, openFrom, rowIds, toasts, switchUser };
 }
 
 test('an administrator gets Mark for removal on an unlisted movie, before Share; Mark posts and offers Undo, which posts the opposite', async t => {
@@ -147,6 +150,76 @@ test('a listed item gets Keep and Postpone; Postpone opens a chooser whose day b
   await h.settle();
   assert.deepEqual(h.requests.at(-1), { type: 'POST', path: 'unmark', body: { itemId: SERIES } });
   assert.ok(h.toasts().at(-1).startsWith('maintainerr_kept'));
+});
+
+const VERSION_4K = '44444444444444444444444444444444';
+const VERSION_HD = '55555555555555555555555555555555';
+/** Jellyfin 12's detail page of MOVIE: its ⋮, the version picker (`.selectSource`, one option per media source) and other cards (More like this). */
+const detailPage = (selected, cards = '') => '<div id="itemDetailPage" class="page"><div class="detailButtons"><button is="emby-button" class="btnMoreCommands detailButton">⋮</button></div>'
+  + `<div class="trackSelections"><div class="selectContainer selectSourceContainer"><select is="emby-select" class="selectSource detailTrackSelect"><option value="${VERSION_4K}"${selected === VERSION_4K ? ' selected' : ''}>4K</option><option value="${VERSION_HD}"${selected === VERSION_HD ? ' selected' : ''}>1080p</option></select></div></div>`
+  + `<div class="moreLikeThis">${cards}</div></div>`;
+
+test('Mark from the detail page sends the version picked there (and so does Keep\'s Undo); a card\'s menu sends none', async t => {
+  const h = setup(t, {
+    url: `http://jellyfin.test/web/index.html#/details?id=${MOVIE}`,
+    html: detailPage(VERSION_HD, card(SERIES, 'Series')),
+    states: { [MOVIE]: { Marked: false }, [SERIES]: { Marked: false } },
+  });
+  await h.openFrom('#itemDetailPage .btnMoreCommands');
+  assert.deepEqual(h.rowIds(), ['je-maintainerr-mark']);
+  h.click(h.$('[data-id="je-maintainerr-mark"]'));
+  await h.settle();
+  assert.deepEqual(h.requests.at(-1), { type: 'POST', path: 'mark', body: { itemId: MOVIE, mediaSourceId: VERSION_HD } });
+
+  // The version is read when the row is pressed: the one picked on the page then.
+  h.$('.selectSource').value = VERSION_4K;
+  h.$('#sheets').textContent = '';
+  await h.openFrom('#itemDetailPage .btnMoreCommands');
+  h.click(h.$('[data-id="je-maintainerr-mark"]'));
+  await h.settle();
+  assert.deepEqual(h.requests.at(-1), { type: 'POST', path: 'mark', body: { itemId: MOVIE, mediaSourceId: VERSION_4K } });
+
+  // A card's menu on the same page (More like this) is about another item: no version.
+  h.$('#sheets').textContent = '';
+  await h.open(SERIES);
+  h.click(h.$('[data-id="je-maintainerr-mark"]'));
+  await h.settle();
+  assert.deepEqual(h.requests.at(-1), { type: 'POST', path: 'mark', body: { itemId: SERIES } });
+
+  // Keep's Undo marks the movie again, with the version picked on the page.
+  const k = setup(t, {
+    url: `http://jellyfin.test/web/index.html#/details?id=${MOVIE}`,
+    html: detailPage(VERSION_4K),
+    states: { [MOVIE]: { Marked: true, CollectionId: 2 } },
+  });
+  await k.openFrom('#itemDetailPage .btnMoreCommands');
+  k.click(k.$('[data-id="je-maintainerr-keep"]'));
+  await k.settle();
+  assert.deepEqual(k.requests.at(-1), { type: 'POST', path: 'unmark', body: { itemId: MOVIE } });
+  k.click(k.$('.jellyfin-enhanced-toast-action'));
+  await k.settle();
+  assert.deepEqual(k.requests.at(-1), { type: 'POST', path: 'mark', body: { itemId: MOVIE, mediaSourceId: VERSION_4K } });
+});
+
+test('a season gets the rows too, from its card and from its own page; an episode still gets none', async t => {
+  const h = setup(t, { html: card(SEASON, 'Season') + card(EPISODE, 'Episode'), states: { [SEASON]: { Marked: false }, [EPISODE]: { Marked: false } } });
+  await h.open(SEASON);
+  assert.deepEqual(h.rowIds(), ['je-maintainerr-mark']);
+  h.click(h.$('[data-id="je-maintainerr-mark"]'));
+  await h.settle();
+  assert.deepEqual(h.requests.at(-1), { type: 'POST', path: 'mark', body: { itemId: SEASON } });
+  h.$('#sheets').textContent = '';
+  const asked = h.requests.length;
+  await h.open(EPISODE);
+  assert.deepEqual(h.rowIds(), []);
+  assert.equal(h.requests.length, asked, 'an episode is not asked about');
+
+  // The season's own detail page (its type comes from the item read when ⋮ is pressed).
+  const page = '<div id="itemDetailPage" class="page"><div class="detailButtons"><button is="emby-button" class="btnMoreCommands detailButton">⋮</button></div></div>';
+  const p = setup(t, { url: `http://jellyfin.test/web/index.html#/details?id=${SEASON}`, html: page, states: { [SEASON]: { Marked: true, CollectionId: 10 } } });
+  p.window.ApiClient.getItem = async (userId, id) => ({ Id: id, Type: 'Season' });
+  await p.openFrom('#itemDetailPage .btnMoreCommands');
+  assert.deepEqual(p.rowIds(), ['je-maintainerr-keep', 'je-maintainerr-postpone']);
 });
 
 test('no rows for non-administrators, with the actions off, on unsupported items, on other menus, or when the server does not know the item', async t => {
