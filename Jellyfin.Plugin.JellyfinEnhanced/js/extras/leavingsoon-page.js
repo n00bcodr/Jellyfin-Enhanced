@@ -139,7 +139,7 @@
     async function review(id, approve, button) {
         button.disabled = true;
         try {
-            await ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl(`JellyfinEnhanced/leaving-soon/requests/${id}/${approve ? 'approve' : 'deny'}`), data: JSON.stringify({}), contentType: 'application/json', dataType: 'json' });
+            await ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl(`JellyfinEnhanced/reclaimerr/requests/${id}/${approve ? 'approve' : 'deny'}`), data: JSON.stringify({}), contentType: 'application/json', dataType: 'json' });
             JE.toast?.(esc(t(approve ? 'leavingsoon_approved' : 'leavingsoon_denied')));
             refresh();
         } catch (err) {

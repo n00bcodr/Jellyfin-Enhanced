@@ -3914,26 +3914,6 @@
       ]
     },
     {
-      "verb": "POST",
-      "path": "/JellyfinEnhanced/leaving-soon/requests/{requestId:int}/approve",
-      "method": "Approve",
-      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/LeavingSoonController.cs",
-      "following_attributes": [
-        "Authorize",
-        "Produces(\"application/json\")"
-      ]
-    },
-    {
-      "verb": "POST",
-      "path": "/JellyfinEnhanced/leaving-soon/requests/{requestId:int}/deny",
-      "method": "Deny",
-      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/LeavingSoonController.cs",
-      "following_attributes": [
-        "Authorize",
-        "Produces(\"application/json\")"
-      ]
-    },
-    {
       "verb": "GET",
       "path": "/JellyfinEnhanced/maintainerr/item/{itemId}",
       "method": "GetState",
@@ -4017,6 +3997,26 @@
       "verb": "POST",
       "path": "/JellyfinEnhanced/reclaimerr/request",
       "method": "RequestRemoval",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ReclaimerrController.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/reclaimerr/requests/{requestId:int}/approve",
+      "method": "Approve",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ReclaimerrController.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/reclaimerr/requests/{requestId:int}/deny",
+      "method": "Deny",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ReclaimerrController.cs",
       "following_attributes": [
         "Authorize",

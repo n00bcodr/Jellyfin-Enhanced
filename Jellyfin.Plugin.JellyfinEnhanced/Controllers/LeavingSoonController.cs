@@ -30,16 +30,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [property: JsonPropertyName("itemId")] string? ItemId,
         [property: JsonPropertyName("posterPath")] string? PosterPath);
 
-    /// <summary>Body of the request review routes.</summary>
-    public class LeavingSoonReviewRequest
-    {
-        [JsonPropertyName("note")] public string? Note { get; set; }
-    }
-
     /// <summary>
     /// Backend of the Leaving soon page: what is leaving (the facts of whichever removal tool is on) for the items the
     /// signed-in user can see, soonest first, and for Reclaimerr the deletion requests (every pending one for an
-    /// administrator, the caller's own for anyone else), which administrators approve or deny here. Answers
+    /// administrator, the caller's own for anyone else), which administrators approve or deny through <c>reclaimerr/requests</c>. Answers
     /// <c>404</c> while the page is off or no removal tool is set up.
     /// </summary>
     [ApiController]
@@ -193,43 +187,5 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             year = item.ProductionYear,
             deleteAt,
         };
-
-        /// <summary>Approve a pending Reclaimerr deletion request. Administrators only.</summary>
-        [HttpPost("requests/{requestId:int}/approve")]
-        [Authorize]
-        [Produces("application/json")]
-        public Task<IActionResult> Approve([FromRoute] int requestId, [FromBody] LeavingSoonReviewRequest? body, CancellationToken token) => ReviewAsync(requestId, true, body, token);
-
-        /// <summary>Deny a pending Reclaimerr deletion request. Administrators only.</summary>
-        [HttpPost("requests/{requestId:int}/deny")]
-        [Authorize]
-        [Produces("application/json")]
-        public Task<IActionResult> Deny([FromRoute] int requestId, [FromBody] LeavingSoonReviewRequest? body, CancellationToken token) => ReviewAsync(requestId, false, body, token);
-
-        private async Task<IActionResult> ReviewAsync(int requestId, bool approve, LeavingSoonReviewRequest? body, CancellationToken token)
-        {
-            if (!IsAdmin()) return Forbid();
-            var config = JellyfinEnhanced.Instance?.Configuration;
-            if (!PageOn(config) || !ReclaimerrActions.Enabled(config)) return NotFound();
-            var userId = UserHelper.GetCurrentUserId(User);
-            var name = userId.HasValue && userId.Value != Guid.Empty ? _userManager.GetUserById(userId.Value)?.Username : null;
-            try
-            {
-                await _reclaimerr.ReviewRequestAsync(requestId, approve, body?.Note, name, config!, token).ConfigureAwait(false);
-                return Ok(new { id = requestId, approved = approve });
-            }
-            catch (MaintainerrActions.ActionException ex)
-            {
-                return BadRequest(new { error = ex.Message });
-            }
-            catch (OperationCanceledException) when (HttpContext.RequestAborted.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(502, new { error = "Reclaimerr: " + MaintainerrHttp.Describe(ex) });
-            }
-        }
     }
 }

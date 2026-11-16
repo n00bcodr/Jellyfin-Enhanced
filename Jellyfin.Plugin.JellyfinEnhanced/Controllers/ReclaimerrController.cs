@@ -21,6 +21,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [JsonPropertyName("adminPassword")] public string? AdminPassword { get; set; }
     }
 
+    /// <summary>Body of the request review routes.</summary>
+    public class ReclaimerrReviewRequest
+    {
+        [JsonPropertyName("note")] public string? Note { get; set; }
+    }
+
     /// <summary>Body of the Reclaimerr item actions.</summary>
     public class ReclaimerrItemRequest
     {
@@ -108,6 +114,42 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 var (state, existing) = await _reclaimerr.RequestRemovalAsync(item, name, request!.Reason, config!, token).ConfigureAwait(false);
                 // An earlier request still waiting is an answer, not an error: AlreadyRequested says whose it is ("mine" or "other").
                 return Ok(new { state.ItemId, state.Marked, state.CollectionId, state.CollectionName, state.DeleteAt, state.Supported, AlreadyRequested = existing });
+            }
+            catch (MaintainerrActions.ActionException ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
+            catch (OperationCanceledException) when (HttpContext.RequestAborted.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(502, new { error = "Reclaimerr: " + MaintainerrHttp.Describe(ex) });
+            }
+        }
+
+        /// <summary>Approve a pending Reclaimerr deletion request. Administrators only.</summary>
+        [HttpPost("requests/{requestId:int}/approve")]
+        [Authorize]
+        [Produces("application/json")]
+        public Task<IActionResult> Approve([FromRoute] int requestId, [FromBody] ReclaimerrReviewRequest? body, CancellationToken token) => ReviewAsync(requestId, true, body, token);
+
+        /// <summary>Deny a pending Reclaimerr deletion request. Administrators only.</summary>
+        [HttpPost("requests/{requestId:int}/deny")]
+        [Authorize]
+        [Produces("application/json")]
+        public Task<IActionResult> Deny([FromRoute] int requestId, [FromBody] ReclaimerrReviewRequest? body, CancellationToken token) => ReviewAsync(requestId, false, body, token);
+
+        private async Task<IActionResult> ReviewAsync(int requestId, bool approve, ReclaimerrReviewRequest? body, CancellationToken token)
+        {
+            if (!IsAdmin()) return Forbid();
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null || !config.LeavingSoonPageEnabled || !ReclaimerrActions.Enabled(config)) return NotFound();
+            try
+            {
+                await _reclaimerr.ReviewRequestAsync(requestId, approve, body?.Note, CurrentUserName(), config, token).ConfigureAwait(false);
+                return Ok(new { id = requestId, approved = approve });
             }
             catch (MaintainerrActions.ActionException ex)
             {

@@ -110,7 +110,7 @@ test('an administrator gets Keep and the date change on each card, and approves 
   // Approving deletes now, so it asks first: nothing is sent until "Delete now".
   approve.click();
   await h.settle();
-  assert.equal(h.calls.some(c => c.path.startsWith('leaving-soon/requests')), false, 'no request yet');
+  assert.equal(h.calls.some(c => c.path.startsWith('reclaimerr/requests')), false, 'no request yet');
   assert.equal(row.querySelector('.je-ls-warn').textContent, 'leavingsoon_confirm_delete');
   // Cancel goes back to the two buttons.
   Array.from(row.querySelectorAll('.je-ls-btn')).find(b => b.textContent === 'maintainerr_cancel').click();
@@ -118,7 +118,7 @@ test('an administrator gets Keep and the date change on each card, and approves 
   row.querySelector('.je-ls-icon-btn.approve').click();
   row.querySelector('.je-ls-btn.danger').click();
   await h.settle();
-  assert.deepEqual(h.calls.find(c => c.path.startsWith('leaving-soon/requests')), { type: 'POST', path: 'leaving-soon/requests/7/approve', body: {} });
+  assert.deepEqual(h.calls.find(c => c.path.startsWith('reclaimerr/requests')), { type: 'POST', path: 'reclaimerr/requests/7/approve', body: {} });
 
   // Deny keeps the title, so it needs no confirmation.
   const again = setup(t, list({ admin: true, actions: true, requests: [{ id: 8, title: 'Crash', year: 2004, mediaType: 'movie', requestedBy: 'x', status: 'pending' }] }));
@@ -126,7 +126,7 @@ test('an administrator gets Keep and the date change on each card, and approves 
   await again.settle();
   again.$('.je-ls-reqcard .je-ls-icon-btn.deny').click();
   await again.settle();
-  assert.ok(again.calls.some(c => c.path === 'leaving-soon/requests/8/deny'));
+  assert.ok(again.calls.some(c => c.path === 'reclaimerr/requests/8/deny'));
 });
 
 test('a regular user sees their own requests with their state, and Maintainerr says postpone', async t => {
