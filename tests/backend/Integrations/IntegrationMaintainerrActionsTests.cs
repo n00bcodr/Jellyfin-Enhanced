@@ -117,6 +117,16 @@ public sealed class IntegrationMaintainerrActionsTests : IDisposable
         => MaintainerrActions.MatchAsync(item, library, collections.ToList(), _ => Task.FromResult<IReadOnlyList<MaintainerrArrServer>>(servers), (s, _) => Task.FromResult(holds?.Invoke(s)));
 
     [Fact]
+    public void A_radarr_file_matches_only_the_selected_version()
+    {
+        var v4k = new MediaBrowser.Model.Dto.MediaSourceInfo { Path = "/media/Film (2024)/Film.2160p.mkv", MediaStreams = new List<MediaStream> { new() { Type = MediaStreamType.Video, Height = 2160 } } };
+        var fhd = new MediaBrowser.Model.Dto.MediaSourceInfo { Path = "/media/Film (2024)/Film.1080p.mkv", MediaStreams = new List<MediaStream> { new() { Type = MediaStreamType.Video, Height = 1080 } } };
+        using var radarr4k = JsonDocument.Parse("{\"movieFile\":{\"path\":\"/data/Film.2160p.mkv\",\"quality\":{\"quality\":{\"resolution\":2160}}}}");
+        Assert.True(MaintainerrActions.FileMatchesVersion(radarr4k.RootElement, v4k));
+        Assert.False(MaintainerrActions.FileMatchesVersion(radarr4k.RootElement, fhd));
+    }
+
+    [Fact]
     public async Task An_item_goes_to_the_one_manual_collection_of_its_type_on_its_library()
     {
         var movie = new Movie { Id = Guid.NewGuid(), Name = "Film" };

@@ -345,7 +345,7 @@
             rows.push(keep, later);
         } else {
             const mark = buildRow(scroller, ROWS.mark, 'auto_delete', JE.t('maintainerr_mark'));
-            mark.addEventListener('click', () => { setTimeout(() => { act('mark', { itemId }, 'maintainerr_marked', { path: 'unmark', body: { itemId }, doneKey: 'maintainerr_kept' }); }, 0); });
+            mark.addEventListener('click', () => { setTimeout(() => { act('mark', { itemId, mediaSourceId: document.querySelector('#itemDetailPage:not(.hide) .selectSource')?.value || undefined }, 'maintainerr_marked', { path: 'unmark', body: { itemId }, doneKey: 'maintainerr_kept' }); }, 0); });
             rows.push(mark);
         }
         const anchor = scroller.querySelector('[data-id="je-media-tags"], [data-id="share"]');

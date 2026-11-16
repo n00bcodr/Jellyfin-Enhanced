@@ -17,6 +17,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
     {
         [JsonPropertyName("itemId")] public Guid? ItemId { get; set; }
         [JsonPropertyName("days")] public int? Days { get; set; }
+        /// <summary>The version picked on the item page; tells apart the 4K and 1080p copies of one movie.</summary>
+        [JsonPropertyName("mediaSourceId")] public string? MediaSourceId { get; set; }
     }
 
     /// <summary>
@@ -73,7 +75,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         [Produces("application/json")]
         public Task<IActionResult> Mark([FromBody] MaintainerrActionRequest request, CancellationToken token)
-            => RunAsync(request, (item, config) => _actions.MarkAsync(item, config, token));
+            => RunAsync(request, (item, config) => _actions.MarkAsync(item, config, token, request.MediaSourceId));
 
         /// <summary>Keep the item: remove it from its Maintainerr collection. Admin only.</summary>
         [HttpPost("unmark")]
