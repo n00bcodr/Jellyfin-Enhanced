@@ -155,7 +155,8 @@
         const el = document.createElement('div');
         el.className = 'je-ls-card';
         el.dataset.type = item.type;
-        const sub = [item.detail, item.year].filter(Boolean).join(' · ');
+        // One file of a movie kept in several versions is leaving; the title and its other versions stay.
+        const sub = [item.detail, item.year, item.versionOnly ? t('leavingsoon_one_version') : null].filter(Boolean).join(' · ');
         el.innerHTML = `<div class="je-ls-poster" role="link" tabindex="0"><span class="je-ls-fallback material-icons" aria-hidden="true">movie</span>`
             + `<img alt="" loading="lazy" src="${esc(ApiClient.getUrl(`Items/${item.id}/Images/Primary`, { maxHeight: 420, quality: 90 }))}"/>`
             + `<span class="je-ls-chip ${c.level}">${esc(c.text)}</span></div>`

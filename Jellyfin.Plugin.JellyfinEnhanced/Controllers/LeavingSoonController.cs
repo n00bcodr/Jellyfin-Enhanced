@@ -92,7 +92,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 var item = _libraryManager.GetItemById(id);
                 if (item == null || !item.IsVisible(user)) continue;
-                items.Add(Describe(item, deleteAt));
+                items.Add(Describe(item, deleteAt, _leaving.IsVersionOnly(id, config)));
                 if (items.Count >= MaxItems) break;
             }
 
@@ -178,7 +178,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         }
 
         /// <summary>The page's view of one item.</summary>
-        internal static object Describe(BaseItem item, long? deleteAt) => new
+        internal static object Describe(BaseItem item, long? deleteAt, bool versionOnly = false) => new
         {
             id = item.Id.ToString("N"),
             name = item is Episode episode ? (episode.SeriesName ?? item.Name) : item is Season season ? (season.SeriesName ?? item.Name) : item.Name,
@@ -186,6 +186,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             type = item.GetBaseItemKind().ToString(),
             year = item.ProductionYear,
             deleteAt,
+            versionOnly,
         };
     }
 }

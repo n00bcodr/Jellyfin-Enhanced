@@ -228,6 +228,13 @@ public sealed class LeavingSoonTests : IDisposable
         var items = LeavingSoonService.ToItems(file, Lookup, out var owners, id => paths[id]);
         Assert.Equal(new[] { uhd.ToString("N") }, items.Keys);
         Assert.Equal(-7, owners[uhd.ToString("N")]);
+        // Only that file is leaving, so the item is flagged as one version; a whole-title schedule is not.
+        var oneVersion = new HashSet<string>();
+        LeavingSoonService.ToItems(file, Lookup, out _, id => paths[id], null, oneVersion);
+        Assert.Equal(new[] { uhd.ToString("N") }, oneVersion);
+        var wholeFlags = new HashSet<string>();
+        LeavingSoonService.ToItems(wholeTitle, Lookup, out _, id => paths[id], null, wholeFlags);
+        Assert.Empty(wholeFlags);
         // A path no item holds, with several copies, marks none (it could be the staying copy).
         var unknown = new[] { new LeavingSoonService.MaintainerrMember(null, "1234139", "movie", 1000, -7, "/elsewhere.mkv") };
         Assert.Empty(LeavingSoonService.ToItems(unknown, Lookup, out _, id => paths[id]));

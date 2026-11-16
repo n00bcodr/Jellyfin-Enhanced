@@ -298,7 +298,22 @@
         if (days === null) dialog.querySelector('.je-mt-hint')?.remove();
         text('.je-mt-label', JE.t('maintainerr_postpone_days_label'));
         text('.je-mt-apply', JE.t('maintainerr_postpone_apply'));
-        try { const accent = JE?.themer?.getThemeVariables?.()?.primaryAccent; if (accent) dialog.style.setProperty('--je-mt-accent', accent); } catch { /* default accent */ }
+        try {
+            const accent = JE?.themer?.getThemeVariables?.()?.primaryAccent;
+            if (accent) {
+                dialog.style.setProperty('--je-mt-accent', accent);
+                // Text on the accent: dark on a light accent (a pale theme colour made white text unreadable), white on a dark one.
+                const probe = document.createElement('span');
+                probe.style.color = accent;
+                document.body.appendChild(probe);
+                const rgb = getComputedStyle(probe).color.match(/\d+(\.\d+)?/g);
+                probe.remove();
+                if (rgb && rgb.length >= 3) {
+                    const lum = (0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]) / 255;
+                    dialog.style.setProperty('--je-mt-on-accent', lum > 0.55 ? '#10151a' : '#fff');
+                }
+            }
+        } catch { /* default accent */ }
         const resetEl = dialog.querySelector('.je-mt-reset');
         if (resetEl) { resetEl.innerHTML = '<i class="material-icons" aria-hidden="true">restart_alt</i><span></span>'; const label = resetEl.querySelector('span'); if (label) label.textContent = JE.t('maintainerr_reset_timer'); }
         text('.je-mt-cancel', JE.t('maintainerr_cancel'));
@@ -470,7 +485,7 @@
 .je-mt-button:active{transform:scale(.97)}
 .je-mt-day{border-radius:999px;padding:9px 6px;font-weight:600;background:color-mix(in srgb,var(--je-mt-accent) 18%,transparent);border-color:color-mix(in srgb,var(--je-mt-accent) 45%,transparent)}
 .je-mt-day:hover,.je-mt-day:focus-visible{background:color-mix(in srgb,var(--je-mt-accent) 38%,transparent)}
-.je-mt-primary{background:var(--je-mt-accent);border-color:transparent;color:#fff;font-weight:600;padding:9px 16px}
+.je-mt-primary{background:var(--je-mt-accent);border-color:transparent;color:var(--je-mt-on-accent,#fff);font-weight:600;padding:9px 16px}
 .je-mt-primary:hover,.je-mt-primary:focus-visible{filter:brightness(1.12);background:var(--je-mt-accent)}
 .je-mt-ghost{background:none;border-color:transparent;opacity:.8}
 .je-mt-custom{display:flex;align-items:flex-end;gap:10px}

@@ -385,9 +385,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     try
                     {
-                        (next.Api, next.ApiCollections) = UsesReclaimerr(config)
+                        var read = UsesReclaimerr(config)
                             ? await FetchReclaimerrAsync(config, token).ConfigureAwait(false)
                             : await FetchMaintainerrAsync(config, token).ConfigureAwait(false);
+                        (next.Api, next.ApiCollections, next.ApiVersions) = (read.Items, read.Collections, read.Versions.Order(StringComparer.Ordinal).ToList());
                     }
                     catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
                     catch (Exception ex)
@@ -397,6 +398,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         _logger.Warning($"[LeavingSoon] {(UsesReclaimerr(config) ? "Reclaimerr" : "Maintainerr")} refresh failed ({error}); keeping the previous answer.");
                         next.Api = sameSource ? before.Api : new Dictionary<string, long?>();
                         next.ApiCollections = sameSource ? before.ApiCollections : new Dictionary<string, int>(StringComparer.Ordinal);
+                        next.ApiVersions = sameSource ? before.ApiVersions : new List<string>();
                     }
                 }
 
@@ -464,7 +466,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             ? "HTTP " + m.Status.ToString(CultureInfo.InvariantCulture)
             : MaintainerrHttp.Describe(ex);
 
-        private async Task<(Dictionary<string, long?> Items, Dictionary<string, int> Collections)> FetchMaintainerrAsync(PluginConfiguration config, CancellationToken token)
+        private async Task<(Dictionary<string, long?> Items, Dictionary<string, int> Collections, HashSet<string> Versions)> FetchMaintainerrAsync(PluginConfiguration config, CancellationToken token)
         {
             var baseUrl = config.LeavingSoonMaintainerrUrl.Trim().TrimEnd('/');
             using var document = await GetJsonAsync(config, baseUrl + "/api/collections", token).ConfigureAwait(false);
@@ -517,7 +519,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         ? docs.SelectMany(d => d.RootElement.ValueKind == JsonValueKind.Object && d.RootElement.TryGetProperty("items", out var i) && i.ValueKind == JsonValueKind.Array ? i.EnumerateArray() : Enumerable.Empty<JsonElement>()).ToList()
                         : null);
                 var resolved = ToItems(parsed, TmdbLookup, out var collections);
-                return (resolved, collections);
+                return (resolved, collections, new HashSet<string>(StringComparer.Ordinal));
             }
             finally
             {
@@ -534,7 +536,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// the day it was postponed to). The candidate's id stands in for the collection, so postpone and keep
         /// address the candidate that governs the badge.
         /// </summary>
-        private async Task<(Dictionary<string, long?> Items, Dictionary<string, int> Collections)> FetchReclaimerrAsync(PluginConfiguration config, CancellationToken token)
+        private async Task<(Dictionary<string, long?> Items, Dictionary<string, int> Collections, HashSet<string> Versions)> FetchReclaimerrAsync(PluginConfiguration config, CancellationToken token)
         {
             var baseUrl = config.ReclaimerrUrl.Trim().TrimEnd('/');
             var members = new List<MaintainerrMember>();
@@ -565,9 +567,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
             }
 
+            var versions = new HashSet<string>(StringComparer.Ordinal);
             var resolved = ToItems(members, TmdbLookup, out var collections, id => _library?.GetItemById(id)?.Path,
-                PrimaryVersionOf);
-            return (resolved, collections);
+                PrimaryVersionOf, versions);
+            return (resolved, collections, versions);
         }
 
         /// <summary>
@@ -800,24 +803,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// giving the Maintainerr collection each item was found in (<paramref name="collections"/>, the one whose
         /// delete time won, so a postpone or removal addresses the collection that governs the badge).
         /// </summary>
-        internal static Dictionary<string, long?> ToItems(IReadOnlyList<MaintainerrMember> members, Func<string, string, IReadOnlyList<Guid>>? tmdbLookup, out Dictionary<string, int> collections, Func<Guid, string?>? pathOf = null, Func<Guid, Guid?>? primaryOf = null)
+        internal static Dictionary<string, long?> ToItems(IReadOnlyList<MaintainerrMember> members, Func<string, string, IReadOnlyList<Guid>>? tmdbLookup, out Dictionary<string, int> collections, Func<Guid, string?>? pathOf = null, Func<Guid, Guid?>? primaryOf = null, HashSet<string>? versionOnly = null)
         {
             var items = new Dictionary<string, long?>(StringComparer.Ordinal);
             var owners = new Dictionary<string, int>(StringComparer.Ordinal);
-            void Add(Guid id, long? at, int? collection)
+            void Add(Guid id, long? at, int? collection, bool oneVersion)
             {
                 var key = id.ToString("N");
                 if (!items.TryGetValue(key, out var old) || Earliest(new TagLeaving { DeleteAt = old }, new TagLeaving { DeleteAt = at })!.DeleteAt != old)
                 {
                     items[key] = at;
                     if (collection is { } c) owners[key] = c; else owners.Remove(key);
+                    // Only one file of the title is scheduled (Reclaimerr names its path); the soonest member decides.
+                    if (oneVersion) versionOnly?.Add(key); else versionOnly?.Remove(key);
                 }
                 else if (collection is { } c && !owners.ContainsKey(key)) owners[key] = c;
             }
 
             foreach (var member in members)
             {
-                if (member.ItemId is { } id) { Add(id, member.DeleteAt, member.CollectionId); continue; }
+                if (member.ItemId is { } id) { Add(id, member.DeleteAt, member.CollectionId, false); continue; }
                 if (tmdbLookup == null || member.TmdbId == null || member.Type is not ("movie" or "show")) continue;
                 var matches = tmdbLookup(member.Type, member.TmdbId);
                 // One file of a movie (Reclaimerr names its path): only the library item holding that file, when it can be told apart.
@@ -830,10 +835,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                 foreach (var found in matches)
                 {
-                    Add(found, member.DeleteAt, member.CollectionId);
+                    Add(found, member.DeleteAt, member.CollectionId, member.Path != null);
                     // A hidden alternate version (the 4K of a merged movie): the card the library shows is its primary version, so
                     // that one carries the fact too (a version of the title is leaving).
-                    if (primaryOf?.Invoke(found) is { } primary && primary != Guid.Empty && primary != found) Add(primary, member.DeleteAt, member.CollectionId);
+                    if (primaryOf?.Invoke(found) is { } primary && primary != Guid.Empty && primary != found) Add(primary, member.DeleteAt, member.CollectionId, member.Path != null);
                 }
             }
 
@@ -875,6 +880,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                 return list;
             }
+        }
+
+        /// <summary>Whether only one version of the item's title is leaving (a scheduled deletion of one movie file) as of the last read.</summary>
+        public bool IsVersionOnly(Guid itemId, PluginConfiguration? config)
+        {
+            if (itemId == Guid.Empty || config == null || !ApiConfigured(config)) return false;
+            var signature = Signature(config);
+            lock (_sync) return _snapshot.Signature == signature && _snapshot.ApiVersions.Contains(itemId.ToString("N"));
         }
 
         private Dictionary<string, List<Guid>>? _tmdbIndex;
@@ -965,6 +978,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             public Dictionary<string, long?> Api { get; set; } = new(StringComparer.Ordinal);
             /// <summary>Maintainerr members (N format) → the Maintainerr collection (id) whose delete time governs them. Absent in older snapshots until the next read.</summary>
             public Dictionary<string, int> ApiCollections { get; set; } = new(StringComparer.Ordinal);
+            /// <summary>Members (N format) where only one version of the title is leaving (a scheduled deletion of one movie file); the other versions stay. Absent in older snapshots until the next read.</summary>
+            public List<string> ApiVersions { get; set; } = new();
             /// <summary>Collection members (N format) → the ids of the leaving collections holding them (sorted, comma-separated).</summary>
             public Dictionary<string, string> Named { get; set; } = new(StringComparer.Ordinal);
             /// <summary>The ids (N format) of the leaving collections the last read found.</summary>
