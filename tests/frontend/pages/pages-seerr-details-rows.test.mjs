@@ -24,7 +24,7 @@ const TWO={item:id=>({...MOVIE,ProviderIds:{Tmdb:id==='movie-1'?'1':'2'}}),data:
 function setup(t,{html=page(),config={},status={active:true},card,item=()=>MOVIE,data,prebuild=false,background=false,real=false,je={}}={}){
  const frames=new Map(),timers=new Map(),navs=[],views=[],teardowns=[],ends=[],idles=new Map(),tasks=[],made=[],releases=[];
  const network={similar:0,recommended:0},waiting={similar:[],recommended:[]},cache={};
- const counts={status:0,item:0,cards:0,released:0};let timerId=0,epoch=0,idleId=0,frameId=0;
+ const counts={status:0,item:0,cards:0,released:0,tvDetails:0},asked=[];let timerId=0,epoch=0,idleId=0,frameId=0;
  // What the cards and rows are built from, changed by the tests: titles, hidden TMDB ids, the card inputs.
  const titles={jellyseerr_recommended_title:'Recommended',jellyseerr_similar_title:'Similar'},hidden=new Set(),inputs={key:'cards'};
  const globals={
@@ -38,7 +38,8 @@ function setup(t,{html=page(),config={},status={active:true},card,item=()=>MOVIE
   tasks.push({fn,options,resolve});options.signal?.addEventListener('abort',()=>reject(options.signal.reason));})};
  // A client cache in front of the Seerr requests: a response is reused, a request is counted once.
  // With `data`, each title's answers are already in it.
- const related=kind=>tmdb=>{
+ const related=(kind,media='movie')=>tmdb=>{
+  asked.push(`${media} ${kind} ${tmdb}`);
   if(data)return Promise.resolve(data(kind,tmdb));
   if(cache[kind])return Promise.resolve(cache[kind]);
   network[kind]++;const d=deferred();waiting[kind].push(d);return d.promise;
@@ -55,7 +56,9 @@ function setup(t,{html=page(),config={},status={active:true},card,item=()=>MOVIE
    requestManager:{metrics:{enabled:true},startMeasurement:()=>{},endMeasurement:name=>ends.push({name,marker:!!h.document.querySelector(`.${MARKER}`),cards:counts.cards})},
    helpers:{getItemCached:async id=>{counts.item++;return item(id);},onBodyMutation:()=>({unsubscribe(){}})},
    jellyseerrAPI:{checkUserStatus:async()=>{counts.status++;return status;},resolveJellyseerrBaseUrl:()=>'https://seerr.test',
-    fetchSimilarMovies:related('similar'),fetchRecommendedMovies:related('recommended')},
+    fetchSimilarMovies:related('similar'),fetchRecommendedMovies:related('recommended'),
+    fetchSimilarTvShows:related('similar','tv'),fetchRecommendedTvShows:related('recommended','tv'),
+    fetchTvShowDetails:async()=>{counts.tvDetails++;return null;}},
    jellyseerrUI:real?undefined:{releasePosters:()=>{},cardInputsKey:()=>inputs.key,
     createJellyseerrCard:item=>{if(card)card(item);const el=h.document.createElement('div');el.className='card';el.textContent=item.title;return el;}},
    core:{lifecycle:{register:()=>({onTeardown:fn=>teardowns.push(fn),teardownOn:()=>{}})},
@@ -69,7 +72,7 @@ function setup(t,{html=page(),config={},status={active:true},card,item=()=>MOVIE
  ui.releasePosters=root=>{counts.released++;releases.push(root);releasePosters(root);};
  h.load('jellyseerr/item-details.js');
  const view=h.document.querySelector('.libraryPage');
- return {...h,counts,network,timers,ends,view,made,releases,titles,hidden,inputs,
+ return {...h,counts,network,timers,ends,view,made,releases,titles,hidden,inputs,asked,
   anchor:(v=view)=>v.querySelector('#similarCollapsible'),
   marker:()=>h.document.querySelector(`.${MARKER}`),
   /** Element siblings after More Like This: the marker, the rows by title, anything else by id. */
@@ -693,4 +696,75 @@ test('where the browser has background tasks the cards are built in short ones, 
  const early=setup(t,{prebuild:true,background:true});await early.start();await early.render();
  assert.deepEqual(early.tasks(),[{priority:'background',live:false}]);assert.equal(early.counts.cards,40);
  early.background();assert.equal(early.counts.cards,40);
+});
+
+// Season and Episode pages show their series' rows: Seerr knows TV media only by the series' TMDB ID, while a
+// Season or Episode carries its own TMDB season/episode ID. The series is loaded as the current user.
+const SERIES={Type:'Series',Name:'Series',ProviderIds:{Tmdb:'387'}};
+const EPISODE={Type:'Episode',Name:'Episode',SeriesId:'series-1',ParentId:'season-1',ProviderIds:{Tmdb:'9001'}};
+const SEASON={Type:'Season',Name:'Season 1',ParentId:'series-1',ProviderIds:{Tmdb:'8001'}};
+const library=entries=>id=>entries[id]??null;
+const SERIES_ROWS=['tv similar 387','tv recommended 387'];
+
+test('an Episode or Season page shows its series\' rows, asking Seerr only by the series\' TMDB ID',async t=>{
+ for(const shown of [EPISODE,SEASON]){
+  const h=setup(t,{item:library({'movie-1':shown,'series-1':SERIES})});await h.start();
+  assert.deepEqual(h.after(),['marker'],`${shown.Type}: waits for Jellyfin's render as on a series page`);
+  await h.render();
+  assert.deepEqual(h.after(),['Recommended','Similar'],shown.Type);assert.deepEqual(h.cards(),[20,20]);
+  // Nothing about the episode or season (its TMDB ID, name) reaches Seerr or the rows.
+  assert.deepEqual(h.asked,SERIES_ROWS);assert.equal(h.counts.item,2,'the item, then its series');
+  assert.ok(h.rows().flat().every(text=>!text.includes(shown.Name)));
+  await h.viewshow();assert.equal(h.counts.cards,40,'a viewshow builds nothing again');
+ }
+ // Movies and series are looked up as before.
+ const movie=setup(t);await movie.start();await movie.render();
+ assert.deepEqual(movie.asked,['movie similar 42','movie recommended 42']);assert.equal(movie.counts.item,1);
+ const series=setup(t,{item:()=>SERIES});await series.start();await series.render();
+ assert.deepEqual(series.asked,SERIES_ROWS);assert.equal(series.counts.item,1);assert.deepEqual(series.after(),['Recommended','Similar']);
+});
+
+test('no series, no series TMDB ID or no access to the series: no rows, no marker, no request, no error',async t=>{
+ const denied=()=>Promise.reject(Object.assign(new Error('Forbidden'),{status:403}));
+ const cases={
+  'no SeriesId (an episode\'s ParentId is its season)':library({'movie-1':{...EPISODE,SeriesId:undefined},'season-1':SEASON,'series-1':SERIES}),
+  'series without TMDB ID':library({'movie-1':EPISODE,'series-1':{...SERIES,ProviderIds:{Tvdb:'1'}}}),
+  'series not visible to the user':id=>id==='series-1'?denied():EPISODE,
+  'series not found':library({'movie-1':EPISODE}),
+  'SeriesId pointing at something else':library({'movie-1':EPISODE,'series-1':{Type:'Folder',Name:'Folder',ProviderIds:{Tmdb:'387'}}})
+ };
+ for(const [name,item] of Object.entries(cases)){
+  const h=setup(t,{item});await h.start();await h.render();
+  assert.deepEqual(h.asked,[],name);assert.equal(h.marker(),null,name);assert.deepEqual(h.after(),[],name);
+ }
+});
+
+test('Request More stays on series pages: an episode does not look up the show for it',async t=>{
+ const episode=setup(t,{config:{JellyseerrEnabled:true},item:library({'movie-1':EPISODE,'series-1':SERIES})});
+ await episode.start();await episode.render();
+ assert.equal(episode.counts.tvDetails,0);assert.deepEqual(episode.after(),['Recommended','Similar']);
+ const series=setup(t,{config:{JellyseerrEnabled:true},item:()=>SERIES});await series.start();
+ assert.equal(series.counts.tvDetails,1,'the series page still checks for unrequested seasons');
+});
+
+test('episode to episode to series: the rows are replaced in place, never doubled, from the cached Seerr answers',async t=>{
+ const h=setup(t,{item:library({'movie-1':EPISODE,'episode-2':{...EPISODE,Name:'Episode 2'},'series-1':SERIES})});
+ await h.start();await h.render();assert.deepEqual(h.after(),['Recommended','Similar']);
+ for(const id of ['episode-2','series-1']){
+  h.navigate(`#!/details?id=${id}`);h.frame();await h.flush();
+  assert.deepEqual(h.after(),['Recommended','Similar'],id);
+  assert.equal(h.document.querySelectorAll('.jellyseerr-details-section').length,2,id);
+ }
+ assert.deepEqual(h.network,{similar:1,recommended:1});assert.deepEqual(h.asked,[...SERIES_ROWS,...SERIES_ROWS,...SERIES_ROWS]);
+ assert.equal(h.counts.cards,120);
+});
+
+test('a user switch while the series loads shows no rows; the next user\'s lookup decides for them',async t=>{
+ const series=deferred();let access=true;
+ const h=setup(t,{item:id=>id==='series-1'?(access?series.promise:Promise.reject(new Error('Forbidden'))):EPISODE});
+ h.frame();await h.flush();h.bumpEpoch();access=false;series.resolve(SERIES);await h.respond();await h.render();
+ assert.deepEqual(h.after(),[],'not for the user who signed in meanwhile');assert.equal(h.counts.cards,0);
+ // The new user cannot see the series: still nothing, and Seerr is not asked for them.
+ const asked=h.asked.length;await h.viewshow();await h.render();
+ assert.deepEqual(h.after(),[]);assert.equal(h.asked.length,asked);
 });
