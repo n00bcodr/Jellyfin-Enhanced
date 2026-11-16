@@ -465,7 +465,7 @@
     "leavingsoon_today": "Leaves today",
     "leavingsoon_tomorrow": "Leaves tomorrow",
     "leavingsoon_in_days": "Leaves in {days}d",
-    "leavingsoon_one_version": "One version only",
+    "leavingsoon_one_version": "Version",
     "leavingsoon_requests_title": "Removal requests waiting ({count})",
     "leavingsoon_my_requests": "Your removal requests",
     "leavingsoon_requested_by": "Requested by {name}",

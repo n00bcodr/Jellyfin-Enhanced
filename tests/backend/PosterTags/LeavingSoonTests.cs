@@ -178,6 +178,30 @@ public sealed class LeavingSoonTests : IDisposable
     }
 
     [Fact]
+    public void A_cleanup_candidate_of_one_movie_file_is_flagged_as_one_version()
+    {
+        var json = "[{\"id\":8,\"scope\":\"version\",\"tmdb_id\":1234139,\"auto_delete_state\":\"eligible\",\"auto_delete_eligible_at\":\"2026-12-01T00:00:00Z\"},"
+            + "{\"id\":9,\"scope\":\"movie\",\"tmdb_id\":550,\"auto_delete_state\":\"eligible\",\"auto_delete_eligible_at\":\"2026-12-01T00:00:00Z\"}]";
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        var members = LeavingSoonService.ParseReclaimerrCandidates(doc.RootElement, new DateTimeOffset(2026, 11, 16, 0, 0, 0, TimeSpan.Zero));
+        Assert.Equal(new[] { true, false }, members.Select(m => m.OneVersion).ToArray());
+        var jailer = Guid.NewGuid(); var fightClub = Guid.NewGuid();
+        var flagged = new HashSet<string>();
+        LeavingSoonService.ToItems(members, (type, tmdb) => tmdb == "1234139" ? new[] { jailer } : new[] { fightClub }, out _, null, null, flagged);
+        Assert.Equal(new[] { jailer.ToString("N") }, flagged.ToArray());
+    }
+
+    [Fact]
+    public void A_scheduled_version_is_flagged_as_one_version_even_without_its_path()
+    {
+        var json = "[{\"id\":7,\"state\":\"scheduled\",\"scheduled_at\":\"2026-12-15T12:00:00Z\",\"target\":{\"media_type\":\"movie\",\"scope\":\"version\",\"tmdb_id\":1234139}},"
+            + "{\"id\":8,\"state\":\"scheduled\",\"scheduled_at\":\"2026-12-15T12:00:00Z\",\"target\":{\"media_type\":\"movie\",\"scope\":\"movie\",\"tmdb_id\":550}}]";
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        var members = LeavingSoonService.ParseReclaimerrSchedules(doc.RootElement, new DateTimeOffset(2026, 11, 16, 0, 0, 0, TimeSpan.Zero));
+        Assert.Equal(new[] { true, false }, members.Select(m => m.OneVersion).ToArray());
+    }
+
+    [Fact]
     public void Reclaimerr_scheduled_deletions_keep_whole_titles_still_scheduled_and_negate_the_id()
     {
         var json = """

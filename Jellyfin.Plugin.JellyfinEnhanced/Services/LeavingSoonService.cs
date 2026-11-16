@@ -600,7 +600,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 if (s.TryGetProperty("scheduled_at", out var when) && when.ValueKind == JsonValueKind.String && TryReadDate(when, out var date)) at = date.ToUnixTimeMilliseconds();
                 if (at is { } ms && Math.Abs(ms - today.ToUnixTimeMilliseconds()) > MaxDateDistanceMs) continue;
                 var path = scope == "version" && t.TryGetProperty("version_path", out var vp) && vp.ValueKind == JsonValueKind.String ? vp.GetString() : null;
-                members.Add(new MaintainerrMember(null, tmdbId.ToString(CultureInfo.InvariantCulture), type == "series" ? "show" : "movie", at, -id, path));
+                // Scope "version" is one movie file whether or not the answer names its path.
+                members.Add(new MaintainerrMember(null, tmdbId.ToString(CultureInfo.InvariantCulture), type == "series" ? "show" : "movie", at, -id, path, scope == "version"));
             }
 
             return members;
@@ -633,7 +634,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
 
                 if (at is { } ms && Math.Abs(ms - today.ToUnixTimeMilliseconds()) > MaxDateDistanceMs) throw new DateRangeException();
-                members.Add(new MaintainerrMember(null, tmdbId.ToString(CultureInfo.InvariantCulture), scope == "series" ? "show" : "movie", at, id));
+                // A candidate of scope "version" is one movie file; the title's other versions are not candidates.
+                members.Add(new MaintainerrMember(null, tmdbId.ToString(CultureInfo.InvariantCulture), scope == "series" ? "show" : "movie", at, id, null, scope == "version"));
             }
 
             return members;
@@ -666,7 +668,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         /// <summary>One Maintainerr collection member: its Jellyfin id (when the answer has one), TMDB id and type, delete time, and the Maintainerr collection (id) listing it.</summary>
-        internal sealed record MaintainerrMember(Guid? ItemId, string? TmdbId, string Type, long? DeleteAt, int? CollectionId = null, string? Path = null);
+        internal sealed record MaintainerrMember(Guid? ItemId, string? TmdbId, string Type, long? DeleteAt, int? CollectionId = null, string? Path = null, bool OneVersion = false);
 
         /// <summary>
         /// Read <c>GET /api/collections</c>: an array of collections (or one wrapped in
@@ -835,10 +837,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                 foreach (var found in matches)
                 {
-                    Add(found, member.DeleteAt, member.CollectionId, member.Path != null);
+                    Add(found, member.DeleteAt, member.CollectionId, member.Path != null || member.OneVersion);
                     // A hidden alternate version (the 4K of a merged movie): the card the library shows is its primary version, so
                     // that one carries the fact too (a version of the title is leaving).
-                    if (primaryOf?.Invoke(found) is { } primary && primary != Guid.Empty && primary != found) Add(primary, member.DeleteAt, member.CollectionId, member.Path != null);
+                    if (primaryOf?.Invoke(found) is { } primary && primary != Guid.Empty && primary != found) Add(primary, member.DeleteAt, member.CollectionId, member.Path != null || member.OneVersion);
                 }
             }
 
