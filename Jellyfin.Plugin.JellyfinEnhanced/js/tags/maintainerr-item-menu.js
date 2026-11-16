@@ -26,7 +26,7 @@
 
     const ROWS = { mark: 'je-maintainerr-mark', keep: 'je-maintainerr-keep', postpone: 'je-maintainerr-postpone' };
     const ROW_SELECTOR = Object.values(ROWS).map((id) => `[data-id="${id}"]`).join(', ');
-    const TYPES = new Set(['Movie', 'Series']);
+    const TYPES = new Set(['Movie', 'Series', 'Season']);
     const CONTEXT_TTL_MS = 5000;
     const DAY_MS = 86400000;
     const QUICK_DAYS = [7, 14, 30, 90];

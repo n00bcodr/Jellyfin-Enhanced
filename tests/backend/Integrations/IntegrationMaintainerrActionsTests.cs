@@ -117,6 +117,15 @@ public sealed class IntegrationMaintainerrActionsTests : IDisposable
         => MaintainerrActions.MatchAsync(item, library, collections.ToList(), _ => Task.FromResult<IReadOnlyList<MaintainerrArrServer>>(servers), (s, _) => Task.FromResult(holds?.Invoke(s)));
 
     [Fact]
+    public async Task A_season_goes_to_the_season_collection_on_its_library()
+    {
+        var season = new Season { Id = Guid.NewGuid(), Name = "S1", SeriesId = Guid.NewGuid() };
+        var all = new[] { C(1, "Leaving Soon (Shows)", LibShows, "show", sonarr: 1), C(2, "Leaving Soon (Seasons)", LibShows, "season", sonarr: 1) };
+        Assert.Equal("season", MaintainerrActions.MediaType(season));
+        Assert.Equal(2, (await Match(season, LibShows, all)).Collection!.Id);
+    }
+
+    [Fact]
     public void A_radarr_file_matches_only_the_selected_version()
     {
         var v4k = new MediaBrowser.Model.Dto.MediaSourceInfo { Path = "/media/Film (2024)/Film.2160p.mkv", MediaStreams = new List<MediaStream> { new() { Type = MediaStreamType.Video, Height = 2160 } } };
@@ -138,7 +147,7 @@ public sealed class IntegrationMaintainerrActionsTests : IDisposable
         // Without a library id of its own, the item's type alone picks when that leaves one.
         Assert.Equal(2, (await Match(new Series { Id = Guid.NewGuid() }, null, all)).Collection!.Id);
 
-        Assert.Contains("Only movies and series", (await Match(new Episode { Id = Guid.NewGuid() }, LibShows, all)).Error);
+        Assert.Contains("Only movies, series and seasons", (await Match(new Episode { Id = Guid.NewGuid() }, LibShows, all)).Error);
         Assert.Contains("no active manual collection", (await Match(movie, LibMovies, new[] { C(3, "Rule list", LibMovies, "movie", manual: false) })).Error);
         var noMovies = await Match(movie, LibMovies, new[] { C(2, "Leaving Soon (Shows)", LibShows, "show") });
         Assert.Contains("no manual collection for movies", noMovies.Error);

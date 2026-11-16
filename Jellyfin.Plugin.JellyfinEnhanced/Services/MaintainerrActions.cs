@@ -92,6 +92,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             Movie => "movie",
             Series => "show",
+            Season => "season",
             _ => null,
         };
 
@@ -122,13 +123,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         internal static async Task<MaintainerrMatch> MatchAsync(BaseItem item, string? libraryId, IReadOnlyList<MaintainerrCollection> collections, Func<string, Task<IReadOnlyList<MaintainerrArrServer>>> servers, Func<MaintainerrArrServer, string, Task<bool?>> holds)
         {
             var type = MediaType(item);
-            if (type == null) return MaintainerrMatch.Fail("Only movies and series can be marked.");
+            if (type == null) return MaintainerrMatch.Fail("Only movies, series and seasons can be marked.");
             var manual = collections.Where(c => c.IsActive && c.Manual).ToList();
             if (manual.Count == 0) return MaintainerrMatch.Fail("Maintainerr has no active manual collection. Create one (a rule with 'Use manual collection') and try again.");
             var typed = manual.Where(c => c.Type == type).ToList();
-            if (typed.Count == 0) return MaintainerrMatch.Fail($"Maintainerr has no manual collection for {(type == "movie" ? "movies" : "shows")} (it has: {Names(manual)}).");
+            if (typed.Count == 0) return MaintainerrMatch.Fail($"Maintainerr has no manual collection for {type}s (it has: {Names(manual)}).");
             var inLibrary = libraryId == null ? typed : typed.Where(c => c.LibraryId != null && string.Equals(c.LibraryId.Replace("-", string.Empty), libraryId, StringComparison.OrdinalIgnoreCase)).ToList();
-            if (inLibrary.Count == 0) return MaintainerrMatch.Fail($"No Maintainerr manual collection is on this item's library (the {(type == "movie" ? "movie" : "show")} collections are: {Names(typed)}).");
+            if (inLibrary.Count == 0) return MaintainerrMatch.Fail($"No Maintainerr manual collection is on this item's library (the {type} collections are: {Names(typed)}).");
             if (inLibrary.Count == 1) return MaintainerrMatch.Of(inLibrary[0]);
 
             // Several collections on one library: the one whose *arr server has the item.
@@ -176,7 +177,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <summary>Add the item to the manual collection that fits it, then refresh the facts.</summary>
         public async Task<MaintainerrItemState> MarkAsync(BaseItem item, PluginConfiguration config, CancellationToken token, string? mediaSourceId = null)
         {
-            var type = MediaType(item) ?? throw new ActionException("Only movies and series can be marked.");
+            var type = MediaType(item) ?? throw new ActionException("Only movies, series and seasons can be marked.");
             var collections = await GetCollectionsAsync(config, token).ConfigureAwait(false);
             var existing = await MembershipAsync(item, config, token).ConfigureAwait(false);
             if (existing != null && collections.Any(c => c.Id == existing)) throw new ActionException("This item is already marked for removal.");
@@ -192,7 +193,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <summary>Remove the item from its Maintainerr collection (Keep), then refresh the facts.</summary>
         public async Task<MaintainerrItemState> UnmarkAsync(BaseItem item, PluginConfiguration config, CancellationToken token)
         {
-            var type = MediaType(item) ?? throw new ActionException("Only movies and series can be kept.");
+            var type = MediaType(item) ?? throw new ActionException("Only movies, series and seasons can be kept.");
             var collections = await GetCollectionsAsync(config, token).ConfigureAwait(false);
             var collectionId = await MembershipAsync(item, config, token).ConfigureAwait(false);
             if (collectionId == null) throw new ActionException("This item is not marked for removal.");
@@ -208,7 +209,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         public async Task<MaintainerrItemState> PostponeAsync(BaseItem item, int? days, PluginConfiguration config, CancellationToken token)
         {
-            if (MediaType(item) == null) throw new ActionException("Only movies and series can be postponed.");
+            if (MediaType(item) == null) throw new ActionException("Only movies, series and seasons can be postponed.");
             if (days is { } d && (d < 1 || d > MaxPostponeDays)) throw new ActionException($"Days must be between 1 and {MaxPostponeDays}.");
             var collections = await GetCollectionsAsync(config, token).ConfigureAwait(false);
             var collectionId = await MembershipAsync(item, config, token).ConfigureAwait(false);
@@ -294,7 +295,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         private async Task<bool?> ProbeArrAsync(MaintainerrArrServer server, string kind, BaseItem item, MediaSourceInfo? version, CancellationToken token)
         {
-            var providerId = kind == "movie" ? item.GetProviderId(MetadataProvider.Tmdb) : item.GetProviderId(MetadataProvider.Tvdb);
+            // A season is held by the *arr server that holds its series.
+            var source = item is Season season ? _library.GetItemById(season.SeriesId) ?? item : item;
+            var providerId = kind == "movie" ? source.GetProviderId(MetadataProvider.Tmdb) : source.GetProviderId(MetadataProvider.Tvdb);
             if (string.IsNullOrWhiteSpace(providerId) || !providerId.All(char.IsAsciiDigit) || server.Url.Length == 0) return null;
             var url = server.Url + (kind == "movie" ? "/api/v3/movie?tmdbId=" : "/api/v3/series?tvdbId=") + providerId;
             try
