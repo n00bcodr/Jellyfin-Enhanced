@@ -120,7 +120,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         public static bool Consumed(PluginConfiguration? config, Func<bool> anyUserShowsBadge)
         {
-            if (!Configured(config)) return false;
+            if (config == null || !Configured(config)) return false;
             var maintainerr = ApiConfigured(config);
             return config.StatusTagsLeaving || config.LeavingSoonPageEnabled
                 || (maintainerr && (config.LeavingSoonHomeRow || config.LeavingSoonMaintainerrActions))
