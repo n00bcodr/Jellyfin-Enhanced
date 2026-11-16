@@ -2152,6 +2152,30 @@
       ],
       "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p64-65-*",
       "notes": "Re-implemented. Server (Features/MediaTags/Services/MaintainerrActions.cs): MediaType answers \"season\" for a season, so the item state says Supported and mark, keep and postpone take seasons; the refusals read \"Only movies, series and seasons can be marked/kept/postponed.\" and the no-collection reasons name the type (\"for seasons\", \"the season collections\"; movies and shows read as before); when one library has several manual season collections, each Sonarr is asked by the season's series' TVDB id (ProbeArrAsync reads the series through the library manager, falling back to the season, which has no TVDB id, so the server cannot say). Maintainerr gets what upstream sends: mediaId and context id the season's id, context type \"season\". Client (features/media-tags/editor/maintainerr-item-menu.ts): Season joins the item kinds that get the rows, from a card and from the season's own page; episodes still get none. Differences from upstream: docs/enhanced/tags.md (the menu applies to seasons, the type list, the series' TVDB id, \"Episodes get no rows\" where it said seasons and episodes) and docs/advanced/api.md (Supported, the 400 reason, the probe) describe it; upstream changed no docs. Tests: upstream's MatchAsync case at its moved path and its changed message expectation (\"Only movies, series and seasons\"), plus two that failed before the port: the controller's routes for a season against a loopback Maintainerr and two Sonarrs of which only the first has the series (Supported, the body Maintainerr gets, the collection of the Sonarr that holds the series, both asked by the series' TVDB id; an episode still unsupported and refused with the new reason), and the item menu (a season card's rows and Mark, a marked season's page rows, no rows and no request for an episode). Lab (p64-65-*): Season 1 of a lab series, two season collections on the Shows library: no rows before the port; on upstream's build and on the port the season is marked into \"Leaving Soon (Seasons)\" after the same probes. No route, verb, authorization or registration changes; no cached-output version moves (the Leaving soon facts already cover seasons)."
+    },
+    {
+      "sha": "bf6f14c56f998a1bff4c927ad0f2cbfbff087056",
+      "date": "2026-11-16T21:08:49+00:00",
+      "subject": "chore(ci)(deps): bump trufflesecurity/trufflehog from 3.99.8 to 3.99.9 in the github-actions group (#1073)",
+      "class": "deps",
+      "features": [],
+      "issues": [
+        "#1073"
+      ],
+      "release": null,
+      "size": {
+        "files": 1,
+        "insertions": 1,
+        "deletions": 1
+      },
+      "paths": [
+        ".github/workflows/security-scan.yml"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "2b5b4e60bbe0c362ef9df14d01c0818f0c51201c"
+      ],
+      "notes": "Applied as is: the same trufflesecurity/trufflehog pin (3.99.9, commit 3bd2b588) in .github/workflows/security-scan.yml. No workflow that only the rewrite has pins TruffleHog; dependency-review.yml names it in a licence allow-list without a version, so nothing else changes."
     }
   ]
 }
