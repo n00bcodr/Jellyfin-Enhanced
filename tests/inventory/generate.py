@@ -62,7 +62,7 @@ def inventory():
                 method = re.search(r'\bpublic\s+(?:async\s+)?[^\n]+?\s+(\w+)\s*\(', tail)
                 attributes = tail[:method.start()] if method else ''
                 prefix = next((route for start, route in reversed(controllers) if start < match.start()), 'JellyfinEnhanced')
-                result['routes'].append({'verb': match[1].upper(), 'path': '/' + prefix.strip('/') + '/' + match[2],
+                result['routes'].append({'verb': match[1].upper(), 'path': ('/' + match[2][2:]) if match[2].startswith('~/') else '/' + prefix.strip('/') + '/' + match[2],
                                          'method': method[1] if method else None, 'file': relative,
                                          'following_attributes': re.findall(r'\[([^\n]+)\]', attributes)})
         if category == 'Configuration' and path.suffix == '.cs':

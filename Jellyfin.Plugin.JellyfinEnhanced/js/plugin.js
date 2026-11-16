@@ -526,6 +526,7 @@
             JE.pluginConfig.RecommendationsUseCustomTabs = false;
             JE.pluginConfig.ActivityFeedUseCustomTabs = false;
             JE.pluginConfig.CatchUpUseCustomTabs = false;
+            JE.pluginConfig.LeavingSoonPageUseCustomTabs = false;
         }
         if (!hasPluginPages) {
             JE.pluginConfig.BookmarksUsePluginPages = false;

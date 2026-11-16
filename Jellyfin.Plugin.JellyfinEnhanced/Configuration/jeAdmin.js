@@ -144,13 +144,14 @@
         document.querySelectorAll('[data-jea-showif]').forEach((w) => {
             const el = document.getElementById(w.dataset.jeaShowif);
             const on = !el ? true : (w.dataset.jeaEquals !== undefined ? el.value === w.dataset.jeaEquals : (el.type === 'checkbox' ? el.checked : !!el.value));
-            w.classList.toggle('jea-dep-hidden', !on);
+            w.classList.toggle('jea-dep-hidden', !on || !!(el && el.closest('.jea-dep-hidden')));
         });
         all().forEach((f) => {
             if (!f.showIf) return;
             const cond = typeof f.showIf === 'string' ? { id: f.showIf } : f.showIf;
             const el = document.getElementById(cond.id);
-            const on = !el ? true : (cond.equals !== undefined ? el.value === String(cond.equals) : (el.type === 'checkbox' ? el.checked : !!el.value));
+            // A controller that is itself hidden counts as off, so a field depending on it hides with it.
+            const on = !el ? true : (cond.equals !== undefined ? el.value === String(cond.equals) : (el.type === 'checkbox' ? el.checked : !!el.value)) && !el.closest('.jea-dep-hidden');
             const ctl = document.getElementById(f.id);
             const row = ctl && ctl.closest('.jea-row');
             if (row) row.classList.toggle('jea-dep-hidden', !on);

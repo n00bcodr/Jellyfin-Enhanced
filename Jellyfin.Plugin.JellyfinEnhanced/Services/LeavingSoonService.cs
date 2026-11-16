@@ -100,9 +100,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public static IHttpClientBuilder AddHttpClient(IServiceCollection services)
             => services.AddHttpClient(ClientName).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 
-        /// <summary>Whether a source is set: a usable Maintainerr URL or at least one collection name.</summary>
+        /// <summary>Whether Reclaimerr is the chosen provider (the only other choice is Maintainerr).</summary>
+        public static bool UsesReclaimerr(PluginConfiguration? config)
+            => config != null && config.ReclaimerrEnabled;
+
+        /// <summary>The chosen provider has an address (and, for Reclaimerr, a token): it can be read.</summary>
+        public static bool ApiConfigured(PluginConfiguration? config)
+            => config != null && (UsesReclaimerr(config)
+                ? IsMaintainerrUrl(config.ReclaimerrUrl) && !string.IsNullOrWhiteSpace(config.ReclaimerrToken)
+                : config.LeavingSoonMaintainerrEnabled && IsMaintainerrUrl(config.LeavingSoonMaintainerrUrl));
+
+        /// <summary>Whether a source is set: the chosen provider's address or at least one collection name.</summary>
         public static bool Configured(PluginConfiguration? config)
-            => config != null && (IsMaintainerrUrl(config.LeavingSoonMaintainerrUrl) || CollectionNames(config.LeavingSoonCollections).Count > 0);
+            => config != null && (ApiConfigured(config) || CollectionNames(config.LeavingSoonCollections).Count > 0);
 
         /// <summary>
         /// Whether anything reads the leaving facts: a source is set and the badge default, the home row or the
@@ -111,8 +121,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public static bool Consumed(PluginConfiguration? config, Func<bool> anyUserShowsBadge)
         {
             if (!Configured(config)) return false;
-            var maintainerr = IsMaintainerrUrl(config!.LeavingSoonMaintainerrUrl);
-            return config.StatusTagsLeaving
+            var maintainerr = ApiConfigured(config);
+            return config.StatusTagsLeaving || config.LeavingSoonPageEnabled
                 || (maintainerr && (config.LeavingSoonHomeRow || config.LeavingSoonMaintainerrActions))
                 || anyUserShowsBadge();
         }
@@ -170,14 +180,41 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (IsCollectionList(names) && names.Length <= 4096) incoming.LeavingSoonCollections = names.Trim();
             else { incoming.LeavingSoonCollections = current?.LeavingSoonCollections ?? string.Empty; problems.Add($"Leaving collections are over {MaxCollectionNames} names of {MaxCollectionNameLength} characters"); }
 
+            // At most one tool is on. Both on (a restored backup, an API call) keeps the one switched on last:
+            // Reclaimerr when it was off before, else Maintainerr.
+            if (incoming.ReclaimerrEnabled && incoming.LeavingSoonMaintainerrEnabled)
+            {
+                if (current?.ReclaimerrEnabled == true) incoming.ReclaimerrEnabled = false;
+                else incoming.LeavingSoonMaintainerrEnabled = false;
+                problems.Add("Maintainerr and Reclaimerr cannot both be on; kept the one switched on last");
+            }
+
+            var reclaimerr = (incoming.ReclaimerrUrl ?? string.Empty).Trim();
+            if (reclaimerr.Length == 0 || IsMaintainerrUrl(reclaimerr)) incoming.ReclaimerrUrl = reclaimerr;
+            else { incoming.ReclaimerrUrl = current?.ReclaimerrUrl ?? string.Empty; problems.Add("Reclaimerr URL is not an http(s) address without credentials, query or fragment"); }
+
+            var token = (incoming.ReclaimerrToken ?? string.Empty).Trim();
+            if (token.Length <= 256 && token.All(c => c > ' ' && c < '\u007f')) incoming.ReclaimerrToken = token;
+            else { incoming.ReclaimerrToken = current?.ReclaimerrToken ?? string.Empty; problems.Add("Reclaimerr token is not printable ASCII without spaces (256 characters at most)"); }
+
+            var account = (incoming.ReclaimerrUsername ?? string.Empty).Trim();
+            if (account.Length <= 64 && account.All(c => c >= ' ' && c != '\u007f')) incoming.ReclaimerrUsername = account;
+            else { incoming.ReclaimerrUsername = current?.ReclaimerrUsername ?? string.Empty; problems.Add("Reclaimerr username is over 64 characters or has control characters"); }
+
+            var password = incoming.ReclaimerrPassword ?? string.Empty;
+            if (password.Length <= 256 && password.All(c => c >= ' ' && c != '\u007f')) incoming.ReclaimerrPassword = password;
+            else { incoming.ReclaimerrPassword = current?.ReclaimerrPassword ?? string.Empty; problems.Add("Reclaimerr password is over 256 characters or has control characters"); }
+
             incoming.LeavingSoonRefreshHours = Math.Clamp(incoming.LeavingSoonRefreshHours, 1, 168);
             return problems;
         }
 
         /// <summary>What the facts depend on: the URL, key and names. Only a digest is kept.</summary>
         internal static string Signature(PluginConfiguration config) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
-            (IsMaintainerrUrl(config.LeavingSoonMaintainerrUrl) ? config.LeavingSoonMaintainerrUrl.Trim().TrimEnd('/') : string.Empty)
-            + "\n" + (config.LeavingSoonMaintainerrApiKey ?? string.Empty).Trim()
+            (UsesReclaimerr(config) ? "reclaimerr\n" + (IsMaintainerrUrl(config.ReclaimerrUrl) ? config.ReclaimerrUrl.Trim().TrimEnd('/') : string.Empty) : string.Empty)
+            + (!UsesReclaimerr(config) && IsMaintainerrUrl(config.LeavingSoonMaintainerrUrl) ? config.LeavingSoonMaintainerrUrl.Trim().TrimEnd('/') : string.Empty)
+            + (!UsesReclaimerr(config) && !config.LeavingSoonMaintainerrEnabled ? "\nmaintainerr-off" : string.Empty)
+            + "\n" + (UsesReclaimerr(config) ? (config.ReclaimerrToken ?? string.Empty).Trim() : (config.LeavingSoonMaintainerrApiKey ?? string.Empty).Trim())
             + "\n" + string.Join("\n", CollectionNames(config.LeavingSoonCollections).Select(n => n.ToLowerInvariant()).Order(StringComparer.Ordinal)))));
 
         /// <summary>Only a source change needs a refresh on an admin save.</summary>
@@ -300,8 +337,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return new LeavingSoonStatus
                 {
                     Configured = Configured(config),
-                    Maintainerr = config != null && IsMaintainerrUrl(config.LeavingSoonMaintainerrUrl),
-                    Actions = MaintainerrActions.Enabled(config),
+                    Maintainerr = ApiConfigured(config),
+                    Provider = UsesReclaimerr(config) ? "reclaimerr" : "maintainerr",
+                    Actions = MaintainerrActions.Enabled(config) || ReclaimerrActions.Enabled(config),
                     HomeRow = homeRow ?? (LeavingSoonHomeSection.Wanted(config) ? "unknown" : "off"),
                     Collections = config == null ? 0 : CollectionNames(config.LeavingSoonCollections).Count,
                     Items = merged.Count,
@@ -343,18 +381,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                 var next = new Snapshot { Signature = signature, LastAttempt = now, Failures = sameSource ? before.Failures : 0, Revision = before.Revision, PublishedRevision = before.PublishedRevision };
                 string? error = null;
-                if (IsMaintainerrUrl(config.LeavingSoonMaintainerrUrl))
+                if (ApiConfigured(config))
                 {
                     try
                     {
-                        (next.Api, next.ApiCollections) = await FetchMaintainerrAsync(config, token).ConfigureAwait(false);
+                        (next.Api, next.ApiCollections) = UsesReclaimerr(config)
+                            ? await FetchReclaimerrAsync(config, token).ConfigureAwait(false)
+                            : await FetchMaintainerrAsync(config, token).ConfigureAwait(false);
                     }
                     catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
                     catch (Exception ex)
                     {
                         error = Describe(ex);
                         // Never log the request: the URL may carry a token-bearing path and the key is in a header.
-                        _logger.Warning($"[LeavingSoon] Maintainerr refresh failed ({error}); keeping the previous answer.");
+                        _logger.Warning($"[LeavingSoon] {(UsesReclaimerr(config) ? "Reclaimerr" : "Maintainerr")} refresh failed ({error}); keeping the previous answer.");
                         next.Api = sameSource ? before.Api : new Dictionary<string, long?>();
                         next.ApiCollections = sameSource ? before.ApiCollections : new Dictionary<string, int>(StringComparer.Ordinal);
                     }
@@ -485,6 +525,117 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
         }
 
+        private const int ReclaimerrPageSize = 200;
+        private const int ReclaimerrMaxPages = 50;
+
+        /// <summary>
+        /// Reclaimerr's cleanup candidates through its token API (<c>GET /api/v1/candidates</c>, paged): each
+        /// whole movie or series whose automatic deletion is running, dated by the end of its review period (or
+        /// the day it was postponed to). The candidate's id stands in for the collection, so postpone and keep
+        /// address the candidate that governs the badge.
+        /// </summary>
+        private async Task<(Dictionary<string, long?> Items, Dictionary<string, int> Collections)> FetchReclaimerrAsync(PluginConfiguration config, CancellationToken token)
+        {
+            var baseUrl = config.ReclaimerrUrl.Trim().TrimEnd('/');
+            var members = new List<MaintainerrMember>();
+            for (var page = 1; page <= ReclaimerrMaxPages; page++)
+            {
+                using var doc = await GetJsonAsync(config, baseUrl + "/api/v1/candidates?per_page=" + ReclaimerrPageSize.ToString(CultureInfo.InvariantCulture) + "&page=" + page.ToString(CultureInfo.InvariantCulture), token).ConfigureAwait(false);
+                var root = doc.RootElement;
+                if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array) throw new FormatException("Not a Reclaimerr candidates answer.");
+                members.AddRange(ParseReclaimerrCandidates(items, Now()));
+                var pages = root.TryGetProperty("total_pages", out var total) && total.TryGetInt32(out var count) ? count : page;
+                if (items.GetArrayLength() == 0 || page >= pages) break;
+            }
+
+            // Manual deletions scheduled from Jellyfin (or Reclaimerr itself) are not candidates: read them with the
+            // service account when there is one. A failure keeps the candidates (they are the main answer).
+            if (ReclaimerrSession.HasAccount(config))
+            {
+                try
+                {
+                    using var schedules = await ReclaimerrSession.SendAsync(_http, config, HttpMethod.Get, "/api/media/scheduled-deletions", null, Timeout, LogRedirect, token).ConfigureAwait(false);
+                    members.AddRange(ParseReclaimerrSchedules(schedules.RootElement, Now()));
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // Not a full answer: failing the read keeps the last facts and retries on the usual back-off, instead of dropping every scheduled deletion.
+                    _logger.Warning($"[LeavingSoon] Reclaimerr scheduled deletions could not be read ({Describe(ex)}); keeping the previous list.");
+                    throw;
+                }
+            }
+
+            var resolved = ToItems(members, TmdbLookup, out var collections, id => _library?.GetItemById(id)?.Path,
+                PrimaryVersionOf);
+            return (resolved, collections);
+        }
+
+        /// <summary>
+        /// The primary version of a hidden alternate version of a movie, or null. <c>Video.PrimaryVersionId</c> is a <c>Guid?</c> on
+        /// Jellyfin 12 and a <c>string</c> on 10.11, so it is read through its text.
+        /// </summary>
+        private Guid? PrimaryVersionOf(Guid id)
+            => _library?.GetItemById(id) is MediaBrowser.Controller.Entities.Video v && Guid.TryParse(v.PrimaryVersionId?.ToString(), out var primary) && primary != Guid.Empty ? primary : null;
+
+        /// <summary>Scheduled manual deletions of a whole movie or series that have not run, as members (the id negated).</summary>
+        internal static IReadOnlyList<MaintainerrMember> ParseReclaimerrSchedules(JsonElement list, DateTimeOffset? now = null)
+        {
+            var members = new List<MaintainerrMember>();
+            if (list.ValueKind != JsonValueKind.Array) return members;
+            var today = now ?? DateTimeOffset.UtcNow;
+            foreach (var s in list.EnumerateArray())
+            {
+                if (s.ValueKind != JsonValueKind.Object) continue;
+                if (!s.TryGetProperty("state", out var state) || state.ValueKind != JsonValueKind.String || state.GetString() != "scheduled") continue;
+                if (!s.TryGetProperty("id", out var idProp) || idProp.ValueKind != JsonValueKind.Number || !idProp.TryGetInt32(out var id) || id <= 0) continue;
+                if (!s.TryGetProperty("target", out var t) || t.ValueKind != JsonValueKind.Object) continue;
+                var scope = t.TryGetProperty("scope", out var sc) && sc.ValueKind == JsonValueKind.String ? sc.GetString() : null;
+                var type = t.TryGetProperty("media_type", out var mt) && mt.ValueKind == JsonValueKind.String ? mt.GetString() : null;
+                if (scope is not ("movie" or "version" or "series") || type is not ("movie" or "series")) continue;
+                if (!t.TryGetProperty("tmdb_id", out var tmdb) || tmdb.ValueKind != JsonValueKind.Number || !tmdb.TryGetInt64(out var tmdbId) || tmdbId <= 0) continue;
+                long? at = null;
+                if (s.TryGetProperty("scheduled_at", out var when) && when.ValueKind == JsonValueKind.String && TryReadDate(when, out var date)) at = date.ToUnixTimeMilliseconds();
+                if (at is { } ms && Math.Abs(ms - today.ToUnixTimeMilliseconds()) > MaxDateDistanceMs) continue;
+                var path = scope == "version" && t.TryGetProperty("version_path", out var vp) && vp.ValueKind == JsonValueKind.String ? vp.GetString() : null;
+                members.Add(new MaintainerrMember(null, tmdbId.ToString(CultureInfo.InvariantCulture), type == "series" ? "show" : "movie", at, -id, path));
+            }
+
+            return members;
+        }
+
+        /// <summary>
+        /// Candidates to members: a whole movie or series, or one of a movie's files (Reclaimerr's own Leaving Soon
+        /// collection lists the movie then, so the row does too; a season or episode would mark a whole series for
+        /// part of it), one whose automatic deletion is scheduled, eligible or postponed (not disabled or
+        /// canceled). The delete time is the postponed-until day when there is one, else the end of the review period.
+        /// </summary>
+        internal static IReadOnlyList<MaintainerrMember> ParseReclaimerrCandidates(JsonElement items, DateTimeOffset? now = null)
+        {
+            var members = new List<MaintainerrMember>();
+            if (items.ValueKind != JsonValueKind.Array) return members;
+            var today = now ?? DateTimeOffset.UtcNow;
+            foreach (var c in items.EnumerateArray())
+            {
+                if (c.ValueKind != JsonValueKind.Object) continue;
+                var scope = c.TryGetProperty("scope", out var s) && s.ValueKind == JsonValueKind.String ? s.GetString() : null;
+                if (scope is not ("movie" or "version" or "series")) continue;
+                var state = c.TryGetProperty("auto_delete_state", out var st) && st.ValueKind == JsonValueKind.String ? st.GetString() : null;
+                if (state is not ("scheduled" or "eligible" or "postponed")) continue;
+                if (!c.TryGetProperty("tmdb_id", out var tmdb) || tmdb.ValueKind != JsonValueKind.Number || !tmdb.TryGetInt64(out var tmdbId) || tmdbId <= 0) continue;
+                if (!c.TryGetProperty("id", out var idProp) || idProp.ValueKind != JsonValueKind.Number || !idProp.TryGetInt32(out var id)) continue;
+                long? at = null;
+                foreach (var name in new[] { "auto_delete_postponed_until", "auto_delete_eligible_at" })
+                {
+                    if (c.TryGetProperty(name, out var d) && d.ValueKind == JsonValueKind.String && TryReadDate(d, out var date)) { at = date.ToUnixTimeMilliseconds(); break; }
+                }
+
+                if (at is { } ms && Math.Abs(ms - today.ToUnixTimeMilliseconds()) > MaxDateDistanceMs) throw new DateRangeException();
+                members.Add(new MaintainerrMember(null, tmdbId.ToString(CultureInfo.InvariantCulture), scope == "series" ? "show" : "movie", at, id));
+            }
+
+            return members;
+        }
+
         private const int PageSize = 500;
         private const int MaxMemberPages = 40;
 
@@ -512,7 +663,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         /// <summary>One Maintainerr collection member: its Jellyfin id (when the answer has one), TMDB id and type, delete time, and the Maintainerr collection (id) listing it.</summary>
-        internal sealed record MaintainerrMember(Guid? ItemId, string? TmdbId, string Type, long? DeleteAt, int? CollectionId = null);
+        internal sealed record MaintainerrMember(Guid? ItemId, string? TmdbId, string Type, long? DeleteAt, int? CollectionId = null, string? Path = null);
 
         /// <summary>
         /// Read <c>GET /api/collections</c>: an array of collections (or one wrapped in
@@ -649,7 +800,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// giving the Maintainerr collection each item was found in (<paramref name="collections"/>, the one whose
         /// delete time won, so a postpone or removal addresses the collection that governs the badge).
         /// </summary>
-        internal static Dictionary<string, long?> ToItems(IReadOnlyList<MaintainerrMember> members, Func<string, string, IReadOnlyList<Guid>>? tmdbLookup, out Dictionary<string, int> collections)
+        internal static Dictionary<string, long?> ToItems(IReadOnlyList<MaintainerrMember> members, Func<string, string, IReadOnlyList<Guid>>? tmdbLookup, out Dictionary<string, int> collections, Func<Guid, string?>? pathOf = null, Func<Guid, Guid?>? primaryOf = null)
         {
             var items = new Dictionary<string, long?>(StringComparer.Ordinal);
             var owners = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -668,7 +819,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 if (member.ItemId is { } id) { Add(id, member.DeleteAt, member.CollectionId); continue; }
                 if (tmdbLookup == null || member.TmdbId == null || member.Type is not ("movie" or "show")) continue;
-                foreach (var found in tmdbLookup(member.Type, member.TmdbId)) Add(found, member.DeleteAt, member.CollectionId);
+                var matches = tmdbLookup(member.Type, member.TmdbId);
+                // One file of a movie (Reclaimerr names its path): only the library item holding that file, when it can be told apart.
+                if (member.Path != null && pathOf != null)
+                {
+                    var same = matches.Where(m => string.Equals(pathOf(m), member.Path, StringComparison.OrdinalIgnoreCase)).ToList();
+                    if (same.Count > 0) matches = same;
+                    else if (matches.Count > 1) continue; // several copies and none is the scheduled file: marking all would cancel the wrong one
+                }
+
+                foreach (var found in matches)
+                {
+                    Add(found, member.DeleteAt, member.CollectionId);
+                    // A hidden alternate version (the 4K of a merged movie): the card the library shows is its primary version, so
+                    // that one carries the fact too (a version of the title is leaving).
+                    if (primaryOf?.Invoke(found) is { } primary && primary != Guid.Empty && primary != found) Add(primary, member.DeleteAt, member.CollectionId);
+                }
             }
 
             collections = owners;
@@ -696,7 +862,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         public IReadOnlyList<(Guid ItemId, long? DeleteAt)> MaintainerrItems(PluginConfiguration? config)
         {
-            if (config == null || !IsMaintainerrUrl(config.LeavingSoonMaintainerrUrl) || !Configured(config)) return Array.Empty<(Guid, long?)>();
+            if (config == null || !ApiConfigured(config)) return Array.Empty<(Guid, long?)>();
             var signature = Signature(config);
             lock (_sync)
             {
@@ -821,6 +987,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     {
         public bool Configured { get; init; }
         public bool Maintainerr { get; init; }
+        /// <summary>The chosen removal tool: <c>maintainerr</c> or <c>reclaimerr</c>.</summary>
+        public string Provider { get; init; } = "maintainerr";
         /// <summary>Whether administrators' Maintainerr actions are on (switch and URL).</summary>
         public bool Actions { get; init; }
         /// <summary>The Home Screen Sections row: off, registered, hss-missing, ft-missing, failed or unknown.</summary>
