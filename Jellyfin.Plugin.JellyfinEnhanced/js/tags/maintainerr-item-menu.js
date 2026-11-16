@@ -191,8 +191,8 @@
         try {
             return await ApiClient.ajax({
                 type: method,
-                // The removal actions are neutral (leaving-soon/); Reclaimerr-only routes (reclaimerr/) are addressed in full.
-                url: ApiClient.getUrl(path.startsWith('reclaimerr/') ? `JellyfinEnhanced/${path}` : `JellyfinEnhanced/leaving-soon/${path}`),
+                // Each tool has its own routes: JellyfinEnhanced/reclaimerr/... or JellyfinEnhanced/maintainerr/..., whichever is in use.
+                url: ApiClient.getUrl(`JellyfinEnhanced/${exactDates() ? 'reclaimerr' : 'maintainerr'}/${path}`),
                 data: body ? JSON.stringify(body) : undefined,
                 contentType: body ? 'application/json' : undefined,
                 dataType: 'json',
