@@ -49,11 +49,21 @@ interface TabsElement extends HTMLElement {
     refresh?(): void;
 }
 interface AppliedDeepLink { hash: string; root: HTMLElement; panel: HTMLElement; tabs: TabsElement; btn: Element | null }
-interface NativeWindow extends Window { CustomElements?: { upgradeSubtree?(element: Element): void } }
+interface NativeWindow extends Window {
+    CustomElements?: { upgradeSubtree?(element: Element): void };
+    /** Injected by the Jellyfin Android app only: its Back button calls goBack(). */
+    NavigationHelper?: { goBack?: AppBack };
+    Emby?: { Page?: { canGoBack?(): boolean } };
+}
+type AppBack = ((this: unknown, ...args: unknown[]) => unknown) & { jeTabsBack?: boolean };
 
 const OWN_ID_PREFIX = 'je-native-tab-';
 const RESERVED_ID_PREFIX = 'je-native-tab-reserved-';
 const DEEP_LINK_PARAM = 'jeTab';
+/** Overlays that hold a same-URL history entry and close on popstate (Seerr's More Info, a Recommendations category). */
+const HISTORY_OVERLAY = '.je-more-info-modal, #je-recommendations-category-page:not(.hide)';
+const APP_BACK_POLL_MS = 500;
+const APP_BACK_MAX_POLLS = 40;
 const LOG = '🪼 Jellyfin Enhanced: [native-tabs]';
 
 export function isHomeHash(hash: string): boolean {
@@ -438,7 +448,11 @@ export function createNativeTabs(JE: NativeTabsBridge, readClient: () => NativeT
     function syncDeepLink(slider: HTMLElement, root: HTMLElement): void {
         const wantedId = hashParam(hash(), DEEP_LINK_PARAM);
         let wantedIndex = parseInt(hashParam(hash(), 'tab') ?? '', 10);
-        const entry = wantedId != null ? entries.find(e => e.id === wantedId) : undefined;
+        // Our links always carry tab=N (N >= 2) beside jeTab. Without it the user is on Home or Favorites and
+        // a header script (KefinTweaks' header tabs) kept the old jeTab in the URL: following it would pull
+        // them back to the tab they just left.
+        const linkedToOwnTab = !isNaN(wantedIndex) && wantedIndex >= 2;
+        const entry = wantedId != null && linkedToOwnTab ? entries.find(e => e.id === wantedId) : undefined;
         if (entry && entry.index != null && entry.index !== wantedIndex) {
             // Rewrite rather than navigate: a router navigation builds a new Home page.
             const staleHash = hash();
@@ -584,6 +598,43 @@ export function createNativeTabs(JE: NativeTabsBridge, readClient: () => NativeT
         }
     };
 
+    /**
+     * Jellyfin treats every Home URL (`?tab=N` included) as the start page, so the Android app's Back
+     * exits the app from one of our tabs: it calls NavigationHelper.goBack(), which exits by itself when
+     * the router cannot go back. On one of our tabs Back selects the Home tab instead, or closes an open
+     * overlay, and the app exits as usual from there. The app injects NavigationHelper; no other client has it.
+     */
+    function wrapAppBack(): boolean {
+        const nav = host.NavigationHelper;
+        const original = nav?.goBack;
+        if (!nav || typeof original !== 'function') return false;
+        if (original.jeTabsBack) return true;
+        const back: AppBack = function (this: unknown, ...args: unknown[]): unknown {
+            const active = isHomeHash(hash()) ? document.querySelector('.tabContent.pageTabContent.is-active') : null;
+            const home = document.querySelector<HTMLElement>('.emby-tabs-slider .emby-tab-button[data-index="0"]');
+            const router = host.Emby?.Page;
+            const canGoBack = typeof router?.canGoBack === 'function' && router.canGoBack();
+            // These overlays close on popstate, but this Back never reaches history on a Home URL.
+            if (!canGoBack && document.querySelector(HISTORY_OVERLAY)) { history.back(); return undefined; }
+            if (!canGoBack && active && home && isOwnSlot(active)) {
+                // The URL still says ?tab=N. Spend that deep link now: Jellyfin reports the tab change
+                // only ~120 ms after the click, and syncDeepLink would select N again.
+                userPickedHash = hash();
+                home.click();
+                return undefined;
+            }
+            return original.apply(this, args);
+        };
+        back.jeTabsBack = true;
+        nav.goBack = back;
+        return true;
+    }
+    /** The app may define NavigationHelper after its page scripts: no event announces it, so look again for a bounded while. */
+    function watchAppBack(attempt = 0): void {
+        if (wrapAppBack()) return;
+        if (attempt < APP_BACK_MAX_POLLS) setTimeout(() => watchAppBack(attempt + 1), APP_BACK_POLL_MS);
+    }
+
     function noteTabStripInput(event: Event): void {
         if (event.isTrusted && event.target instanceof Element && event.target.closest('[is="emby-tabs"]')) lastTabStripInput = Date.now();
     }
@@ -591,6 +642,7 @@ export function createNativeTabs(JE: NativeTabsBridge, readClient: () => NativeT
     function start(): void {
         document.addEventListener('pointerdown', noteTabStripInput, { capture: true, passive: true });
         document.addEventListener('keydown', noteTabStripInput, { capture: true, passive: true });
+        watchAppBack();
         // A replacement Home root can arrive hidden and be revealed after the view event.
         JE.helpers.observeTabContainers('native-tabs', '.tabContent.pageTabContent[data-index="0"]', scheduleInject);
         // Every navigation (hashchange, popstate and pushState).

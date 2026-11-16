@@ -146,6 +146,9 @@ export function createDiscoverySection(JE: SeerrDiscoveryHost): DiscoverySection
      */
     function placeSection(anchor: HTMLElement, section: HTMLElement, page: SectionPage): boolean {
         if (page === 'detail') {
+            // Detail sections are flex children; some themes give Jellyfin's own lists a positive
+            // `order`, which would put this section above them. Keep it last.
+            section.style.order = '99';
             const view = anchor.closest<HTMLElement>('.itemDetailPage') ?? anchor;
             (view.querySelector<HTMLElement>('.detailPagePrimaryContent .detailSection') ?? anchor).appendChild(section);
             attachJoin(section, false);

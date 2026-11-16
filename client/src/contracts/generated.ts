@@ -362,6 +362,7 @@ export interface BootstrapPublicConfig {
   "StatusTagsSchedule": boolean;
   "StatusTagsSeriesStatus": boolean;
   "StatusTagsTrending": boolean;
+  "SubtitleSyncButtonEnabled": boolean;
   "SyncJellyseerrWatchlist": boolean;
   "TagCacheServerMode": boolean;
   "TagEdgeSpacing": string;
@@ -369,6 +370,8 @@ export interface BootstrapPublicConfig {
   "TagGroupCaps": TagGroupCaps | null;
   "TagGroupOrder": Array<string> | null;
   "TagGroupScopes": TagGroupScopes | null;
+  "TagHiddenAgeRatings": Array<string>;
+  "TagHiddenValues": TagHiddenValues | null;
   "TagKindLooks": Array<TagKindLook> | null;
   "TagLabelDensity": string;
   "TagLayout": string;
@@ -380,6 +383,7 @@ export interface BootstrapPublicConfig {
   "TagStylePreset": string;
   "TagStyleWebActive": boolean;
   "TagStylesAllowUserPreset": boolean;
+  "TagTextOverrides": string | null;
   "TagsCacheTtlDays": number;
   "TagsHideOnHover": boolean;
   "ThemeSelectorEnabled": boolean;
@@ -513,6 +517,7 @@ export interface BootstrapSettings {
   "StatusTagsSeriesStatus": boolean;
   "StatusTagsTrending": boolean;
   "SubtitleHorizontalPosition": number;
+  "SubtitleSyncButtonEnabled": boolean;
   "SubtitleVerticalPosition": number;
   "TagEdgeSpacing": string | null;
   "TagGap": string | null;
@@ -697,6 +702,7 @@ export interface JellyfinEnhancedUserSettings {
   "StatusTagsSeriesStatus": boolean;
   "StatusTagsTrending": boolean;
   "SubtitleHorizontalPosition": number;
+  "SubtitleSyncButtonEnabled": boolean;
   "SubtitleVerticalPosition": number;
   "TagEdgeSpacing": string | null;
   "TagGap": string | null;
@@ -806,6 +812,18 @@ export interface TagGroupScopes {
   "Quality": TagScopeSet | null;
   "Rating": TagScopeSet | null;
   "Status": TagScopeSet | null;
+}
+
+export interface TagHiddenValues {
+  "AgeRating": Array<string> | null;
+  "Awards": Array<string> | null;
+  "Custom": Array<string> | null;
+  "Genre": Array<string> | null;
+  "Language": Array<string> | null;
+  "Logos": Array<string> | null;
+  "Quality": Array<string> | null;
+  "Rating": Array<string> | null;
+  "Status": Array<string> | null;
 }
 
 export interface TagKindLook {

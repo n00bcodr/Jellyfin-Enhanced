@@ -28,9 +28,11 @@ export interface EventsBridge {
     resetPlaybackSpeed?(): void; adjustPlaybackSpeed?(direction: 'increase' | 'decrease'): void;
     skipIntroOutro?(): void; frameStep?(direction: 'back' | 'forward'): void;
     adjustSubtitleOffset?(deltaSeconds: number): void;
+    toggleSubtitleSync?(): void; addSubtitleSyncButton?(): void;
     jumpToLastPosition?(): void; jumpToPercentage?(percent: number): void;
     addOsdSettingsButton?(): void; initializeAutoSkipObserver?(): void; applySavedStylesWhenReady?(): void;
     attachSeekTracker?(video: HTMLVideoElement): void; stopAutoSkip?(): void;
+    watchOsdPosition?(): void; stopWatchingOsdPosition?(): void;
     addRandomButton?(): void; addUserPreferencesLink?(): void;
     injectGlobalStyles?(): void; addPluginMenuButton?(): void; addUserMenuLink?(): void;
     addRemoveButton?(): void; addMultiSelectRemoveButton?(): void;
@@ -136,18 +138,20 @@ export function createEvents(ctx: EventsContext) {
             ['FrameStepForward', () => JE.frameStep?.('forward')],
             ['DecreaseSubtitleOffset', () => JE.adjustSubtitleOffset?.(-0.1)],
             ['IncreaseSubtitleOffset', () => JE.adjustSubtitleOffset?.(0.1)],
-            ['JumpToLastPosition', () => JE.jumpToLastPosition?.()]
+            ['JumpToLastPosition', () => JE.jumpToLastPosition?.()],
+            ['SubtitleSync', () => { if (!event.repeat) JE.toggleSubtitleSync?.(); }]
         ];
     }
 
     /** The main shortcut listener; JE.keyListener keeps this identity for add/remove callers. */
     function keyListener(event: KeyboardEvent): void {
         if (isTyping()) return;
+        // A JE dialog that handles its own keys (subtitle sync) is focused.
+        if (event.target instanceof Element && event.target.closest('[data-je-own-keys]')) return;
         // A key recorder (admin shortcut grid) is capturing the next press.
         if (document.activeElement?.hasAttribute('data-je-key-recorder')) return;
         const key = event.key;
         const combo = JE.keyCombo(event);
-        const video = document.querySelector('video');
         const shortcuts = canonicalShortcuts(JE.state.activeShortcuts);
 
         if (combo === shortcuts.OpenSearch) {
@@ -172,7 +176,10 @@ export function createEvents(ctx: EventsContext) {
             document.getElementById('randomItemButton')?.click();
         }
 
-        if (!JE.isVideoPage() || !video) return;
+        // Not gated on a <video> element: Jellyfin Desktop and Jellyfin Media Player play through mpv and have
+        // none. Each action uses the element when there is one and jellyfin-web's own OSD controls otherwise,
+        // or says it isn't available with this player.
+        if (!JE.isVideoPage()) return;
         const action = playerActions(event).find(([name]) => combo === shortcuts[name]);
         if (action) {
             event.preventDefault();
@@ -188,12 +195,16 @@ export function createEvents(ctx: EventsContext) {
         const runPageSpecificFunctions = (): void => {
             if (JE.isVideoPage()) {
                 JE.addOsdSettingsButton?.();
+                JE.addSubtitleSyncButton?.();
                 JE.initializeAutoSkipObserver?.();
                 JE.applySavedStylesWhenReady?.();
+                // A player without a <video> (mpv in Jellyfin Desktop) is tracked through the OSD's position text.
                 const video = document.querySelector('video');
                 if (video) JE.attachSeekTracker?.(video);
+                JE.watchOsdPosition?.();
             } else {
                 JE.stopAutoSkip?.();
+                JE.stopWatchingOsdPosition?.();
             }
         };
         JE.helpers.createObserver('dom-observer', JE.helpers.throttle(() => {

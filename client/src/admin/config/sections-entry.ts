@@ -96,6 +96,7 @@ import { defineAllSections } from './sections';
  *  { id: 'autoSkipIntro', type: 'toggle' }
  *  { id: 'autoSkipOutro', type: 'toggle' }
  *  { id: 'disableCustomSubtitleStyles', type: 'toggle' }
+ *  { id: 'subtitleSyncButtonEnabled', type: 'toggle' }
  *  { id: 'DefaultSubtitleStyle', type: 'select' }
  *  { id: 'DefaultSubtitleSize', type: 'select' }
  *  { id: 'DefaultSubtitleFont', type: 'select' }
@@ -196,6 +197,7 @@ import { defineAllSections } from './sections';
  *  { id: 'autoMovieRequestCheckReleaseDate', type: 'toggle' }
  *  { id: 'autoMovieRequestQualityMode', type: 'select' }
  *  { id: 'autoMovieRequestFallbackOn4k', type: 'toggle' }
+ *  { id: 'autoRequestRemovalEnabled', type: 'toggle' }
  *  { id: 'triggerSeerrScanOnItemAdded', type: 'toggle' }
  *  { id: 'seerrScanDebounceSeconds', type: 'number' }
  *  { id: 'addRequestedMediaToWatchlist', type: 'toggle' }

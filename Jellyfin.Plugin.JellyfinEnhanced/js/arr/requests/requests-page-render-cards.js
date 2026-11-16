@@ -148,6 +148,11 @@
         <button class="je-request-decline-btn" data-request-id="${escapeHtml(String(item.id))}" title="Decline"><span class="material-icons">close</span></button>
       `;
       }
+      let removeButton = "";
+      if (item.canRemove === true && item.id) {
+        const removeLabel = JE.t?.("requests_remove_request") || "Remove request";
+        removeButton = `<button class="je-request-remove-btn" data-request-id="${escapeHtml(String(item.id))}" data-request-title="${escapeHtml(item.title || "")}" title="${escapeHtml(removeLabel)}" aria-label="${escapeHtml(removeLabel)}"><span class="material-icons">delete</span></button>`;
+      }
       let releaseDateHtml = "";
       if (releaseDateLabel) {
         const dateText = typeof releaseDateLabel === "object" ? releaseDateLabel.label : releaseDateLabel;
@@ -191,7 +196,7 @@
                         ${item.createdAt ? `<span>&#8226;</span><span>${escapeHtml(formatRelativeDate(item.createdAt))}</span>` : ""}
                       </div>
                     </div>
-                    ${watchButton || approvalButtons ? `<div class="je-request-actions">${watchButton}${approvalButtons}</div>` : ""}
+                    ${watchButton || approvalButtons || removeButton ? `<div class="je-request-actions">${watchButton}${approvalButtons}${removeButton}</div>` : ""}
                 </div>
             </div>
         `;

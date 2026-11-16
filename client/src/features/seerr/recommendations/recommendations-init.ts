@@ -13,6 +13,9 @@ import { CATEGORY_PAGE_ID, LOG_PREFIX, PAGE_ID, part, PLUGIN_PAGE_LINK, recommen
 
     function handleNavigation(): void {
         part(P, 'sweepRenders')();
+        // A pop that lands back on the open category's own entry is not a navigation away. The first
+        // pop after a load is reported as one even on an unchanged URL, which closed the page here.
+        if (state.categoryPageVisible && part(P, 'categoryOnOwnEntry')()) return;
         if (state.categoryPageVisible) hideCategoryPage();
         if (window.location.hash === '#/recommendations') showPage();
         else if (state.pageVisible) hidePage();

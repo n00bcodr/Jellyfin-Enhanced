@@ -12,6 +12,8 @@ const layout = createTagLayout({
         dom: { afterNextPaint: callback => bridge.core?.dom?.afterNextPaint ? bridge.core.dom.afterNextPaint(callback) : requestAnimationFrame(callback) },
         tagRenderer: { isIgnoredContext: element => bridge.core?.tagRenderer?.isIgnoredContext(element) ?? false },
         tagScopes: { excludes: (group, element) => bridge.core?.tagScopes?.excludes(group, element) ?? false },
+        get tagHidden() { return bridge.core?.tagHidden; },
+        get tagText() { return bridge.core?.tagText; },
     },
     // Resolve these services at call time: their ordered entries follow the layout.
     tagPosterColours: {

@@ -9,6 +9,7 @@ import type { TagPreview } from '../settings/ui-panel-tag-preview';
 import { activeElement, all, allAs, closest, find, focus, isDisabled, must, targetOf } from './dom';
 import { controlValue, fieldValue, fieldsHtml, type TextKit } from './fields';
 import { fmt, word, WORDS } from './format';
+import { hiddenLinkHtml, syncHiddenRow } from './hidden-rows';
 import type { SaveStore, StoreEvent } from './save-store';
 import type { OpenTabOptions, PageApi, PageContext, PageOptions, SampleChip, SectionDef, SetOptions, TabDef, Target } from './types';
 import { copy, own, sameValue, type Config } from './values';
@@ -178,8 +179,8 @@ export function createPage(deps: PageDeps, root: HTMLElement, initial: Config, o
         // Edit only opens something worth opening: a group with settings of its own. Otherwise the
         // row's description and its position-and-limit link sit in the row itself.
         const ownControls = hasOwnControls(s, groupId);
-        const placement = JE().core?.tagLayout?.GROUPS?.some((g) => g === groupId)
-            ? `<a class="je-ta-link je-ta-crosslink" href="#" data-je-goto="layout:placement-${esc(groupId)}"><span class="je-ta-link-text">${tx('{group} position and limit (Layout defaults)', { group: name })}</span><span class="material-icons" aria-hidden="true">arrow_forward</span></a>` : '';
+        const placement = (JE().core?.tagLayout?.GROUPS?.some((g) => g === groupId)
+            ? `<a class="je-ta-link je-ta-crosslink" href="#" data-je-goto="layout:placement-${esc(groupId)}"><span class="je-ta-link-text">${tx('{group} position and limit (Layout defaults)', { group: name })}</span><span class="material-icons" aria-hidden="true">arrow_forward</span></a>` : '') + hiddenLinkHtml(JE().core?.tagHidden?.GROUPS, groupId, name, kit);
         const mark = enable ? ` ${perUserMark()}` : '';
         if (!ownControls) {
             // As every row: name first, the sample, then the switch on the right.
@@ -201,7 +202,7 @@ export function createPage(deps: PageDeps, root: HTMLElement, initial: Config, o
             + `<button type="button" class="je-ta-expand" aria-expanded="false" aria-controls="jeTaGroup-${esc(groupId)}" aria-label="${tx('Edit {name} settings', { name })}"><span class="je-ta-expand-text">${tx('Edit')}</span><span class="material-icons" aria-hidden="true">expand_more</span></button>`
             + '</div>'
             + `<div class="je-ta-grow-body" id="jeTaGroup-${esc(groupId)}" role="region" aria-labelledby="jeTaSec-${esc(s.id)}" hidden>${s.hint ? `<p class="je-ta-hint">${tx(s.hint)}</p>` : ''}`
-            // Where it goes and how many show live on Layout defaults: say so, and go there.
+            // Where it goes and how many show (Layout defaults) and its hidden tags (Colours): say so, and go there.
             + placement
             + `${fieldsHtml(kit, s.fields, config)}${scopesHtml(groupId)}<div class="je-ta-section-body"></div></div></div>`;
     }
@@ -639,8 +640,7 @@ export function createPage(deps: PageDeps, root: HTMLElement, initial: Config, o
             if (!row) continue;
             const enable = (s.fields || []).find((f) => f.type === 'enable');
             row.dataset.enabled = String(enable ? config[enable.key] === true : true);
-            const sum = row.querySelector('.je-ta-grow-sum');
-            if (sum) sum.textContent = s.group.summary ? s.group.summary(ctx) : '';
+            syncHiddenRow(row, s.group.summary ? s.group.summary(ctx) : '', config, s.group.id, fmt(s.title), JE().pluginConfig?.TagHiddenAgeRatings);
             const sample = row.querySelector('.je-ta-grow-sample');
             if (sample) sample.innerHTML = (s.group.sample ? s.group.sample(ctx) : []).map(sampleChip).join('');
         }

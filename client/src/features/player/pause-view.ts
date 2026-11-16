@@ -1,4 +1,5 @@
 import type { PlayerBridge } from './host';
+import { record } from './wire';
 type Translate = PlayerBridge['t'];
 export function renderPauseProgress(progressBar: HTMLElement, progressMeta: HTMLElement, current: number, duration: number, t: Translate) {
           const fill = progressBar.firstElementChild;
@@ -46,4 +47,30 @@ function formatClock(sec: number) {
  */
 export function continuesPlayback(JE: Pick<PlayerBridge, 'isVideoPage'>, video: HTMLVideoElement | null): boolean {
     return !!video?.isConnected && !!JE.isVideoPage?.();
+}
+
+/** A JE dialog that handles its own keys (subtitle sync's): the pause screen leaves its keys and its focus to it. */
+export const OWN_KEYS_DIALOG = '[data-je-own-keys]';
+
+/**
+ * The signed-in user's id and token from jellyfin-web's stored credentials, for the active server.
+ * @param activeServerId - The active server's id, when the client knows it (it may throw before sign-in).
+ */
+export function storedCredentials(activeServerId: () => string | null): { token: string; userId: string } | null {
+    const creds = localStorage.getItem("jellyfin_credentials");
+    if (!creds) return null;
+    try {
+        const parsed = record(JSON.parse(creds));
+        const servers = Array.isArray(parsed.Servers) ? parsed.Servers.map(record) : [];
+        // Prefer the ACTIVE server's entry — with multiple stored servers
+        // Servers[0] may hold another server's user id/token.
+        let active = null;
+        try { active = activeServerId(); } catch { active = null; }
+        // Fail closed: when the active server is known but has no stored
+        // entry, do NOT fall back to another server's token/user id.
+        const server = active ? servers.find(s => s.Id === active) : servers[0];
+        return server && typeof server.AccessToken === 'string' && typeof server.UserId === 'string' ? { token: server.AccessToken, userId: server.UserId } : null;
+    } catch {
+        return null;
+    }
 }

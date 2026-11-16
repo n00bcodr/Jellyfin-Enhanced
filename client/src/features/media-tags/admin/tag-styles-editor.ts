@@ -14,11 +14,12 @@
  */
 import type { JsonValue } from '../../../contracts/generated';
 import { adminBridge, apiClient, cdnUrl } from './host';
-import type { RatingSourceId } from '../types/ratings/rating-data';
 import { allAs, activeElement, find, findAs } from './dom';
-import { fmt } from './format';
+import { escapeText, fmt } from './format';
+import { createHiddenTags } from './tag-hidden-editor';
 import { contrastLevel, contrastRatio, compositeOver, luminance, rgbaOf, type Rgba } from './tag-style-contrast';
 import { decodeCatalog, emptyState, ownOf, type Catalog, type ColourField, type Colours, type Label, type StyleState } from './tag-styles-model';
+import { ALL, CONTAINERS, el, GENRE_SAMPLES, GROUPS, LOGO_SAMPLES, NOTES, POSTER_NOTE, PRESET_TITLES, RATING_IDS, RATING_SAMPLES, STATUS_SAMPLES } from './tag-styles-parts';
 import type { CreateTagStylesEditor, TagStylesEditor } from './types';
 
 const T = fmt;
@@ -39,9 +40,12 @@ const EDITOR_HTML = `
                 <div id="tagStyleContrast" class="je-ts-contrast" role="status" aria-live="polite"></div>
                 <div class="je-ts-target-box" id="tagStyleTargetBox" hidden>
                 <p class="je-ts-target-hint" id="tagStyleTargetHint"></p>
+                <p class="je-ts-hidden-line" id="tagStyleHiddenLine" hidden></p>
                 <input id="tagStyleTargetFilter" class="je-ts-target-filter" type="search" autocomplete="off" hidden>
                 <div id="tagStyleTargets" class="je-ts-targets" role="radiogroup" aria-labelledby="tagStyleTargetsLabel"></div>
                 </div>
+                <div id="tagStyleHideRow" class="je-ts-hide-box"></div>
+                <p id="tagStyleOffRowNote" class="je-ts-off-row" hidden></p>
                 <div id="tagStyleGroupNote" class="je-ts-note"></div>
                 <div id="tagStyleRows" class="je-ts-rows"></div>
             </div>
@@ -49,76 +53,36 @@ const EDITOR_HTML = `
             <div id="tagStylePreview" class="je-ts-preview" aria-hidden="true" hidden></div>
         </div>`;
 
-const GROUPS: ReadonlyArray<{ key: string; title: string }> = [
-    { key: 'quality', title: T('Quality') }, { key: 'ageRating', title: T('Age Rating') }, { key: 'rating', title: T('Rating') },
-    { key: 'genre', title: T('Genre') }, { key: 'status', title: T('Status') }, { key: 'language', title: T('Language') }, { key: 'awards', title: T('Awards') },
-    { key: 'logos', title: T('Logos') },
-    { key: 'custom', title: T('Custom') },
-];
-const PRESET_TITLES: Readonly<Record<string, string>> = {
-    default: T('Default'), glass: T('Glass'), outline: T('Outline'), dark: T('Dark'), light: T('Light'), mono: T('Mono'), poster: T('Poster'),
-};
 const FIELDS: ReadonlyArray<readonly [ColourField, string]> = [['background', T('Background')], ['border', T('Border')], ['text', T('Text')]];
 // The same names inside a sentence ("Reset border"), as the language writes them there.
 const IN_SENTENCE: Readonly<Record<string, string>> = { background: T('background'), border: T('border'), text: T('text'), icon: T('icon') };
 const SWATCHES = ['#1e88e5', '#ef6c00', '#2e7d32', '#546e7a', '#8e24aa', '#ffd166', '#ff6b6b', '#111111', '#ffffff', '#e0e0e0'];
 const OPACITIES = [40, 60, 80, 100];
-const POSTER_NOTE = T('Poster: each tag takes its background from the artwork it sits on (white or black text, whichever reads better). Colours set here stay on top; Default falls back to the artwork. The preview shows a red poster.');
-const NOTES: Readonly<Record<string, string>> = {
-    genre: 'Each genre has its own colours (spellings and translations of a genre share them); Text colours the icon. Genres without an icon of their own use Other.',
-    status: 'Status badges use the same colours on web cards and native posters.',
-    language: 'Language chips use Background, Border and Text, including per-language colours and Dual/Multi. Flag images keep only their border ring; partial flags keep their dashed outline.',
-    logos: 'Colours the pill behind a logo, or the name chip a logo without an image shows (Text colours the name).',
-    custom: 'One target per label of the Custom tag rules above (labels shared by several rules share their colours). The icon takes the text colour.',
-};
-const LOGO_SAMPLES: Readonly<Record<string, string>> = { provider: T('Stream'), company: T('Studio'), text: 'HBO' };
-const RATING_SAMPLES: Readonly<Record<string, readonly [string | null, string]>> = { community: ['star', '8.1'], critic: [null, '85%'], userReview: ['favorite', '9'], imdb: [null, '8.1'], tmdb: [null, '81%'], rtCritic: [null, '92%'], rtAudience: [null, '88%'], metacritic: [null, '74'], letterboxd: [null, '4.1'], trakt: [null, '85%'], myAnimeList: [null, '8.4'], aniList: [null, '82%'], metacriticUser: [null, '7.9'], rogerEbert: [null, '3.5'], mdblist: [null, '78%'] };
-const STATUS_SAMPLES: Readonly<Record<string, string>> = { added: T('Just Added'), newMovie: T('New Movie'), newSeries: T('New Series'), newEpisode: T('New Episode'), trending: T('#{rank} Today', { rank: 3 }) };
-const RATING_IDS: readonly RatingSourceId[] = ['community', 'critic', 'imdb', 'tmdb', 'rtCritic', 'rtAudience', 'metacritic', 'letterboxd', 'trakt', 'myAnimeList', 'aniList', 'metacriticUser', 'rogerEbert', 'mdblist'];
-const ALL = '*';
 // The one genre label documents held before each genre had its own.
 const LEGACY_GENRE = 'genre:genre';
 // Groups whose labels are icon tiles with their names, and how many labels bring a filter box.
 const TILE_GROUPS = ['genre'];
 const FILTER_MIN = 12;
-// Preview samples: a few genres in their own colours.
-const GENRE_SAMPLES = { movie: ['horror', 'comedy'], episode: ['animation'] };
-// The container class each group's chips sit in on a poster.
-const CONTAINERS: Readonly<Record<string, string>> = {
-    quality: 'quality-overlay-container', ageRating: 'age-rating-overlay-container', rating: 'rating-overlay-container',
-    genre: 'genre-overlay-container', status: 'status-overlay-container', language: 'language-overlay-container', awards: 'awards-overlay-container', logos: 'logo-overlay-container', custom: 'custom-overlay-container',
-};
 
 const toHex = (c: Rgba): string => '#' + [c.r, c.g, c.b].map((n) => Math.round(n).toString(16).padStart(2, '0')).join('');
 const toCss = (c: Rgba): string => 'rgba(' + Math.round(c.r) + ', ' + Math.round(c.g) + ', ' + Math.round(c.b) + ', ' + (Math.round(c.a * 1000) / 1000) + ')';
-
-/**
- * Creates an element with an optional class and text.
- * @param tag
- * @param cls
- * @param text
- * @returns {HTMLElement}
- */
-function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: string): HTMLElementTagNameMap[K] {
-    const n = document.createElement(tag);
-    if (cls) n.className = cls;
-    if (text !== undefined) n.textContent = text;
-    return n;
-}
 
 /**
  * Build the Tag Styles editor over its markup (EDITOR_HTML) inside `root`.
  * @param root - Holds the editor markup.
  * @param customLabels - The Custom rules table's labels (unsaved edits included).
  * @param isCurrent - Whether the page that built it is still the live one.
+ * @param hiddenStore, textStore - Where Hidden tags and Tag text are kept (tag-hidden-editor.ts); without one no tag can be hidden or renamed.
  */
-const createTagStylesEditor: CreateTagStylesEditor = (root, customLabels = () => [], isCurrent = () => true): TagStylesEditor => {
+const createTagStylesEditor: CreateTagStylesEditor = (root, customLabels = () => [], isCurrent = () => true, hiddenStore = null, textStore = null): TagStylesEditor => {
     let cat: Catalog | null = null;
     let state: StyleState = emptyState();
     let current = 'quality';
     let target = ALL;
     // The label filter's text (tile groups with many labels); cleared on a group change.
     let filter = '';
+    // Hidden tags: the list shows only the hidden tags of the group (cleared on a group change).
+    let hiddenOnly = false;
     /** The colour property whose palette is open (one at a time), or null. */
     let openField: ColourField | null = null;
     /** Whether the tag list (pick one tag of the group) is open. */
@@ -169,7 +133,7 @@ const createTagStylesEditor: CreateTagStylesEditor = (root, customLabels = () =>
 
     // Custom labels are the rules table's, unsaved edits included.
     const labelsOf = (g: string): Label[] => {
-        if (g === 'custom') return customLabels().map((l) => ({ key: l, name: l }));
+        if (g === 'custom') return hidden.withOrphans(customLabels().map((l) => ({ key: l, name: l })));
         const labels = ((cat ? ownOf(cat.groups, g) : undefined) || []).slice();
         if (g === 'language') {
             for (const key of Object.keys(state.labels).filter((k) => k.startsWith('language:')).map((k) => k.slice(9))) {
@@ -179,6 +143,16 @@ const createTagStylesEditor: CreateTagStylesEditor = (root, customLabels = () =>
         return labels;
     };
     const labelKey = (g: string, l: string): string => g + ':' + l;
+    const hidden = createHiddenTags({
+        root, store: hiddenStore, texts: textStore, customLabels, labelsOf, rebuildKeepingFocus, renderTabs, renderTargets, renderGroup, renderSample, renderPreview,
+        ages: () => cat?.age || [],
+        current: () => current,
+        target: () => target,
+        hiddenOnly: () => hiddenOnly,
+        setHiddenOnly(on) { hiddenOnly = on; },
+        pick(next) { target = next; renderGroup(); },
+        open(group, next) { current = group; filter = ''; targetsOpen = true; target = next; if (cat) { renderTabs(); renderGroup(); } },
+    });
     const fieldsOf = (g: string) => (g === 'language' && target === 'flag' ? FIELDS.filter(([f]) => f === 'border') : FIELDS);
     const labelColours = (key: string): Colours | undefined => ownOf(state.labels, key);
     const groupColours = (g: string): Colours | undefined => ownOf(state.groups, g);
@@ -280,7 +254,8 @@ const createTagStylesEditor: CreateTagStylesEditor = (root, customLabels = () =>
     /** A real language-chip class and style label for one colour-editor sample. */
     function languageSample(label: Label): HTMLElement {
         const count = ['dual', 'multi', 'countBadge'].includes(label.key);
-        const sample = label.key === 'subtitles' ? 'CC EN' : count ? label.key === 'dual' ? T('Dual') : T('Multi') : label.key === 'code' ? 'EN' : label.key.toUpperCase();
+        // The style targets read as what they cover, so none looks like one language or the other badge.
+        const sample = label.key === 'subtitles' ? 'CC EN' : count ? label.key === 'dual' ? T('Dual') : label.key === 'multi' ? T('Multi') : T('Dual') + ' · ' + T('Multi') : label.key === 'code' ? 'ABC' : label.key.toUpperCase();
         const n = el('span', 'je-ts-chip language-chip ' + (count ? 'language-count-badge' : 'language-code'), sample);
         n.dataset.jeLanguage = count ? 'countBadge' : label.key === 'subtitles' ? 'subtitles' : 'flag';
         n.dataset.jeLanguageLabel = count ? label.key === 'dual' ? 'dual' : 'multi' : label.key === 'code' || label.key === 'subtitles' ? 'en' : label.key;
@@ -428,6 +403,7 @@ const createTagStylesEditor: CreateTagStylesEditor = (root, customLabels = () =>
             tabs.textContent = '';
             GROUPS.forEach((g) => {
                 const b = el('button', 'je-ts-tab' + (g.key === current ? ' active' : ''), g.title);
+                hidden.markTab(b, g);
                 b.type = 'button';
                 b.setAttribute('role', 'tab');
                 b.setAttribute('aria-selected', String(g.key === current));
@@ -435,7 +411,7 @@ const createTagStylesEditor: CreateTagStylesEditor = (root, customLabels = () =>
                 b.dataset.tsKey = 'tab:' + g.key;
                 b.id = 'tagStyleTab-' + g.key;
                 b.setAttribute('aria-controls', 'tagStyleGroupPanel');
-                b.addEventListener('click', () => { current = g.key; target = ALL; filter = ''; renderTabs(); renderGroup(); });
+                b.addEventListener('click', () => { current = g.key; target = ALL; filter = ''; hiddenOnly = false; renderTabs(); renderGroup(); });
                 tabs.appendChild(b);
             });
         });
@@ -443,7 +419,7 @@ const createTagStylesEditor: CreateTagStylesEditor = (root, customLabels = () =>
         // A phone shows the groups as one select (the tabs wrap into rows there).
         const select = findAs(root, '#tagStyleGroupSelect', HTMLSelectElement);
         if (select) {
-            select.innerHTML = GROUPS.map((g) => '<option value="' + g.key + '"' + (g.key === current ? ' selected' : '') + '>' + g.title + '</option>').join('');
+            select.innerHTML = GROUPS.map((g) => '<option value="' + g.key + '"' + (g.key === current ? ' selected' : '') + '>' + g.title + escapeText(hidden.optionSuffix(g.key)) + '</option>').join('');
             select.onchange = () => find(tabs, '.je-ts-tab[data-group="' + select.value + '"]')?.click();
             const label = need('#tagStyleGroupSelectLabel');
             if (label) label.textContent = T('Tag group');
@@ -457,7 +433,8 @@ const createTagStylesEditor: CreateTagStylesEditor = (root, customLabels = () =>
         allAs(root, '#tagStyleTargets .je-ts-target', HTMLElement).forEach((cell) => {
             const label = cell.dataset.label;
             const name = (cell.getAttribute('aria-label') || '').toLocaleLowerCase();
-            cell.hidden = !!needle && label !== ALL && label !== target && !name.includes(needle);
+            cell.hidden = (!!needle && label !== ALL && label !== target && !name.includes(needle))
+                || (hiddenOnly && label !== undefined && label !== ALL && label !== target && !hidden.isHidden(current, label));
         });
     }
 
@@ -486,6 +463,8 @@ const createTagStylesEditor: CreateTagStylesEditor = (root, customLabels = () =>
     function renderTargets(): void {
         const box = need('#tagStyleTargets');
         if (!box) return;
+        // The hidden-only view ends with the group's last hidden tag (before the list is filtered by it).
+        if (hiddenOnly && !hidden.countOf(current)) hiddenOnly = false;
         // Rebuilding drops focus: a keyboard user keeps it on the selected tile.
         const focused = box.contains(document.activeElement);
         box.textContent = '';
@@ -503,7 +482,7 @@ const createTagStylesEditor: CreateTagStylesEditor = (root, customLabels = () =>
         const targetBox = need('#tagStyleTargetBox');
         if (targetBox) targetBox.hidden = !targetsOpen;
         const hint = need('#tagStyleTargetHint');
-        if (hint) hint.textContent = T('Choose a tag to change only its colours.');
+        if (hint) hint.textContent = hidden.hint(false);
         const search = findAs(root, '#tagStyleTargetFilter', HTMLInputElement);
         if (search) {
             // Any group with more labels than a glance takes gets the filter (genres name the box after themselves).
@@ -521,6 +500,7 @@ const createTagStylesEditor: CreateTagStylesEditor = (root, customLabels = () =>
             const label = target === ALL ? null : labelsOf(current).find((l) => l.key === target);
             // The group part is dropped on a phone, where the group select above names it.
             now.replaceChildren(el('span', 'je-ts-now-group', groupTitle + ' · '), document.createTextNode(label ? label.name : T('Whole group')));
+            hidden.markNow(now, label);
         }
         const all = radio('je-ts-target je-ts-target-all' + (groupColours(current) ? ' changed' : ''), target === ALL, () => { target = ALL; renderGroup(); });
         all.textContent = T('Whole group');
@@ -533,8 +513,9 @@ const createTagStylesEditor: CreateTagStylesEditor = (root, customLabels = () =>
             cell.title = current === 'ageRating'
                 ? T('Applies to: {ratings}', { ratings: (cat?.age.find((a) => a.id === label.key)?.ratings || []).join(', ') })
                 : label.name;
-            cell.setAttribute('aria-label', current === 'ageRating' ? T('{name} board', { name: label.name }) : label.name);
-            cell.appendChild(chip(current, label, effective(current, label.key)));
+            const boardSize = current === 'ageRating' ? (cat?.age.find((a) => a.id === label.key)?.ratings || []).length : 0;
+            cell.setAttribute('aria-label', boardSize > 1 ? T('{name} and {count} more ratings', { name: label.name, count: boardSize - 1 }) : label.name);
+            hidden.tile(cell, chip(current, label, effective(current, label.key)), label);
             // Tiles carry their name too (shown where there is room; the tooltip always has it).
             if (tiles) cell.appendChild(el('span', 'je-ts-target-name', label.name));
             box.appendChild(cell);
@@ -551,10 +532,8 @@ const createTagStylesEditor: CreateTagStylesEditor = (root, customLabels = () =>
         if (chosen) chosen.tabIndex = 0;
         if (focused && chosen) chosen.focus();
         // Say when the list scrolls inside its box.
-        if (hint) {
-            const count = labelsOf(current).length;
-            hint.textContent = T('Choose a tag to change only its colours.') + (targetsOpen && box.scrollHeight > box.clientHeight + 2 ? ' ' + T('{count} tags; scroll for more.', { count: Number(count) }) : '');
-        }
+        if (hint) hint.textContent = hidden.hint(targetsOpen && box.scrollHeight > box.clientHeight + 2);
+        hidden.renderLine();
         // A long strip scrolls inside its box: keep the selected label in view there (never the page).
         if (chosen && box.scrollHeight > box.clientHeight) {
             const top = chosen.offsetTop - box.offsetTop;
@@ -768,11 +747,14 @@ const createTagStylesEditor: CreateTagStylesEditor = (root, customLabels = () =>
             // The first label is not the typical one (R18+ sits in the plain unrated colour group, 1080i comes before
             // 1080p), so the group sample shows PG-13 and 1080p.
             const typical = ownOf<string>({ ageRating: 'PG-13', quality: '1080p' }, current);
-            label = weak && lowest ? lowest.l : (typical && labels.find((l) => l.name === typical)) || labels[0];
+            const shown = labels.filter((l) => !hidden.isHidden(current, l.key));
+            label = weak && lowest ? lowest.l : (typical && shown.find((l) => l.name === typical)) || shown[0] || labels[0];
         }
         if (!label) return;
+        const picked = target !== ALL && labels.some((l) => l.key === target);
+        box.classList.toggle('je-ts-sample-hidden', target !== ALL && hidden.shownHidden(current, label.key));
         box.appendChild(chip(current, label, effective(current, label.key)));
-        box.appendChild(el('span', 'je-ts-sample-note', target !== ALL ? T('Editing this tag') : T(weak ? 'Lowest-contrast sample' : 'Sample tag')));
+        box.appendChild(el('span', 'je-ts-sample-note', target !== ALL ? (picked ? T('Editing this tag') : T('Sample tag')) : T(weak ? 'Lowest-contrast sample' : 'Sample tag')));
     }
 
     /** The select that gives the open group a preset of its own. */
@@ -795,6 +777,7 @@ const createTagStylesEditor: CreateTagStylesEditor = (root, customLabels = () =>
     function renderGroup(): void {
         renderGroupPreset();
         renderTargets();
+        hidden.renderHideRow();
         const noteKey = ownOf(NOTES, current);
         const note = noteKey ? T(noteKey) : '';
         const noteBox = need('#tagStyleGroupNote');
@@ -898,7 +881,8 @@ const createTagStylesEditor: CreateTagStylesEditor = (root, customLabels = () =>
             let box: HTMLElement | null = null;
             (ownOf(corners, corner) || []).forEach(([g, l]) => {
                 const label = labelsOf(g).find((x) => x.key === l || x.name === l);
-                if (!label) return;
+                // Hidden tags never show on posters, the preview's included.
+                if (!label || hidden.previewHides(g, label)) return;
                 if (!box || box.dataset.group !== g) {
                     box = el('div', (ownOf(CONTAINERS, g) || 'undefined') + ' je-ts-corner-group');
                     box.dataset.group = g;
@@ -933,7 +917,7 @@ const createTagStylesEditor: CreateTagStylesEditor = (root, customLabels = () =>
         }
         type Pick2 = readonly [string, string];
         const custom: Pick2[] = labelsOf('custom').slice(0, 2).map((l): Pick2 => ['custom', l.key]);
-        const genres = (list: readonly string[]): Pick2[] => list.map((l): Pick2 => ['genre', l]);
+        const genres = (list: readonly string[]): Pick2[] => hidden.previewGenres(list).map((l): Pick2 => ['genre', l]);
         const movieQuality: Pick2[] = [['quality', '4K'], ['quality', 'Dolby Vision'], ['quality', 'ATMOS']];
         const movieStatus: Pick2[] = [['status', 'trending']];
         const episodeStatus: Pick2[] = [['status', 'newEpisode']];
@@ -1108,6 +1092,9 @@ const createTagStylesEditor: CreateTagStylesEditor = (root, customLabels = () =>
     return {
         load, serialize, snapshot,
         settings: () => ({ preset: state.preset }),
+        refreshHidden() { if (cat) hidden.refreshViews(); },
+        setColoursOffNote: hidden.setColoursOffNote,
+        openGroup: hidden.openGroup,
         refreshLabels() { if (current === 'custom' && target !== ALL && !labelsOf('custom').some((l) => l.key === target)) target = ALL; render(); },
     };
 };

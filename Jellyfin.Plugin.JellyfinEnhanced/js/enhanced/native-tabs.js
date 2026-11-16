@@ -73,6 +73,9 @@
   var OWN_ID_PREFIX = "je-native-tab-";
   var RESERVED_ID_PREFIX = "je-native-tab-reserved-";
   var DEEP_LINK_PARAM = "jeTab";
+  var HISTORY_OVERLAY = ".je-more-info-modal, #je-recommendations-category-page:not(.hide)";
+  var APP_BACK_POLL_MS = 500;
+  var APP_BACK_MAX_POLLS = 40;
   var LOG = "🪼 Jellyfin Enhanced: [native-tabs]";
   function isHomeHash(hash) {
     return hash === "" || hash === "#/home" || hash === "#/home.html" || hash.includes("#/home?") || hash.includes("#/home.html?");
@@ -420,7 +423,8 @@
     function syncDeepLink(slider, root) {
       const wantedId = hashParam(hash(), DEEP_LINK_PARAM);
       let wantedIndex = parseInt(hashParam(hash(), "tab") ?? "", 10);
-      const entry = wantedId != null ? entries.find((e) => e.id === wantedId) : void 0;
+      const linkedToOwnTab = !isNaN(wantedIndex) && wantedIndex >= 2;
+      const entry = wantedId != null && linkedToOwnTab ? entries.find((e) => e.id === wantedId) : void 0;
       if (entry && entry.index != null && entry.index !== wantedIndex) {
         const staleHash = hash();
         const freshHash = deepLinkHash(staleHash, entry.index, entry.id);
@@ -552,12 +556,42 @@
         removeGroupIfEmpty();
       }
     };
+    function wrapAppBack() {
+      const nav = host.NavigationHelper;
+      const original = nav?.goBack;
+      if (!nav || typeof original !== "function") return false;
+      if (original.jeTabsBack) return true;
+      const back = function(...args) {
+        const active = isHomeHash(hash()) ? document.querySelector(".tabContent.pageTabContent.is-active") : null;
+        const home = document.querySelector('.emby-tabs-slider .emby-tab-button[data-index="0"]');
+        const router = host.Emby?.Page;
+        const canGoBack = typeof router?.canGoBack === "function" && router.canGoBack();
+        if (!canGoBack && document.querySelector(HISTORY_OVERLAY)) {
+          history.back();
+          return void 0;
+        }
+        if (!canGoBack && active && home && isOwnSlot(active)) {
+          userPickedHash = hash();
+          home.click();
+          return void 0;
+        }
+        return original.apply(this, args);
+      };
+      back.jeTabsBack = true;
+      nav.goBack = back;
+      return true;
+    }
+    function watchAppBack(attempt = 0) {
+      if (wrapAppBack()) return;
+      if (attempt < APP_BACK_MAX_POLLS) setTimeout(() => watchAppBack(attempt + 1), APP_BACK_POLL_MS);
+    }
     function noteTabStripInput(event) {
       if (event.isTrusted && event.target instanceof Element && event.target.closest('[is="emby-tabs"]')) lastTabStripInput = Date.now();
     }
     function start() {
       document.addEventListener("pointerdown", noteTabStripInput, { capture: true, passive: true });
       document.addEventListener("keydown", noteTabStripInput, { capture: true, passive: true });
+      watchAppBack();
       JE2.helpers.observeTabContainers("native-tabs", '.tabContent.pageTabContent[data-index="0"]', scheduleInject);
       JE2.core.navigation.onNavigate(() => {
         if (hash() !== rewrittenHash) {

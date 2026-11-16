@@ -49,7 +49,7 @@ export function loadSettings(JE: SettingsBridge): SettingsDocument {
             displayLanguage: '',
             calendarDisplayMode: 'list',
             calendarDefaultViewMode: 'agenda',
-            disableAllShortcuts: false, longPress2xEnabled: false, lastOpenedTab: 'shortcuts'
+            disableAllShortcuts: false, longPress2xEnabled: false, subtitleSyncButtonEnabled: false, lastOpenedTab: 'shortcuts'
         };
 
         // Aliases mapping camelCase client settings keys to potential server plugin default keys

@@ -7,8 +7,11 @@ function setup(t,html='<video></video>'){
 test('playback speed steps, clamps at supported limits and resets',t=>{
  const h=setup(t);h.JE.adjustPlaybackSpeed('increase');assert.equal(h.video.playbackRate,1.25);h.JE.adjustPlaybackSpeed('decrease');assert.equal(h.video.playbackRate,1);h.video.playbackRate=2;h.JE.adjustPlaybackSpeed('increase');assert.equal(h.video.playbackRate,2);h.video.playbackRate=0.25;h.JE.adjustPlaybackSpeed('decrease');assert.equal(h.video.playbackRate,0.25);h.JE.resetPlaybackSpeed();assert.equal(h.video.playbackRate,1);
 });
-test('playback controls without a video show translated feedback',t=>{
- const h=setup(t,'');h.JE.adjustPlaybackSpeed('increase');h.JE.resetPlaybackSpeed();h.JE.jumpToPercentage(50);assert.deepEqual(h.toasts,['toast_no_video_found','toast_no_video_found','toast_no_video_found']);
+test('playback controls without a video or an OSD say they are not available with this player',async t=>{
+ // No <video> (a native-shell player such as Jellyfin Desktop's mpv) and no OSD to drive instead.
+ const h=setup(t,'');h.JE.adjustPlaybackSpeed('increase');h.JE.resetPlaybackSpeed();h.JE.jumpToPercentage(50);
+ for(let i=0;i<20&&h.toasts.length<3;i++)await new Promise(done=>setTimeout(done,5));
+ assert.deepEqual(h.toasts,Array(3).fill('{{icon:info}} Not available with this player'));
 });
 test('percentage seek uses actual duration and last-position tracker is consumed once',t=>{
  const h=setup(t);Object.defineProperty(h.video,'duration',{value:200});h.JE.jumpToPercentage(25);assert.equal(h.video.currentTime,50);h.JE.attachSeekTracker(h.video);h.JE.attachSeekTracker(h.video);h.video.dispatchEvent(new h.window.Event('timeupdate'));h.video.currentTime=100;h.video.dispatchEvent(new h.window.Event('seeking'));h.JE.jumpToLastPosition();assert.equal(h.video.currentTime,50);h.video.currentTime=80;h.JE.jumpToLastPosition();assert.equal(h.video.currentTime,80);

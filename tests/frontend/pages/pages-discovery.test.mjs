@@ -175,6 +175,16 @@ test('a person\'s section begins in the page\'s primary column, after the page\'
   await until(() => !h.document.querySelector('.jellyseerr-join-jump'), 'the line goes');
 });
 
+test('a detail page\'s section is ordered last, so a theme that orders Jellyfin\'s own lists can\'t lift it above them', async t => {
+  // Detail sections are flex children under some themes; a positive `order` on the native lists would put a
+  // section left at the default above them. A list page's section takes no inline style (the test above).
+  const h = setup(t, PERSON);
+  h.load('jellyseerr/discovery/person-discovery.js');
+  await until(() => h.section('person'), 'person section');
+  assert.equal(h.section('person').style.order, '99');
+  assert.equal(h.section('person').previousElementSibling.id, 'filmography');
+});
+
 test('the header is the title, then one row: what the titles are, in words, and filter and sort together', async t => {
   const totals = (list, mediaType, totalResults, totalPages = 3) => ({ ...feed(list, mediaType, totalPages), totalResults });
   const h = loadGenre(t, { html: NATIVE_LIST, config: { JellyseerrExcludeLibraryItems: true }, routes: [

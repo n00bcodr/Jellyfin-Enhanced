@@ -42,7 +42,7 @@ export function mediaTagsWhatsNewEntries(ids: readonly string[], locations: Read
         var key = at.tab + ':' + (group || '');
         let entry = entries[key];
         if (!entry) {
-            const tabNames: Readonly<Record<string, string>> = {overview:'Overview',layout:'Layout defaults',groups:'Groups',rules:'Rules',colours:'Colours',badges:'Status badges',server:'Server'};
+            const tabNames: Readonly<Record<string, string>> = {overview:'Overview',layout:'Layout defaults',groups:'Groups',rules:'Rules',colours:'Colours and text',badges:'Status badges',server:'Server'};
             var tabName = tabNames[at.tab] || humanizeSettingId(at.tab);
             entry = entries[key] = {
                 tab: 'media-tags',

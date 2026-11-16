@@ -201,6 +201,9 @@ const createCustomTagRules: CreateCustomRules = (root, onChange = () => {}, isCu
     }
 
     /** Load the stored rules into the table. */
+    /** Whether the stored rules are what the table already holds (incomplete rows excluded). */
+    const matches = (config: Config): boolean => JSON.stringify(collectRules(readRows(config.CustomTagRules))) === JSON.stringify(collectRules(rows));
+
     function load(config: Config): void {
         rows = readRows(config.CustomTagRules);
         render();
@@ -227,6 +230,7 @@ const createCustomTagRules: CreateCustomRules = (root, onChange = () => {}, isCu
 
     return {
         load,
+        matches,
         collect,
         labels,
         snapshot: () => JSON.stringify(collectRules(rows)),

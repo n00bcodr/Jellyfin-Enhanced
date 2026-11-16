@@ -1,6 +1,6 @@
 # shared
 
-Pure helpers every feature may import (feature-boundaries rule 1): DOM and settings-value readers, item, locale and URL helpers, the response decoders and session lease shared by activity and catchup (`wire.ts`), the settings panels' reads of the panel bridge and ApiClient shared by settings-panel, media-tags and hidden-content (`panel-host.ts`), plus the shared helpers, icons, themer and translations scripts.
+Pure helpers every feature may import (feature-boundaries rule 1): DOM and settings-value readers, item, locale and URL helpers, the response decoders and session lease shared by activity and catchup (`wire.ts`), the settings panels' reads of the panel bridge and ApiClient shared by settings-panel, media-tags and hidden-content (`panel-host.ts`), jellyfin-web's video OSD read and driven for players without a `<video>`, shared by player and bookmarks (`osd-playback.ts`), plus the shared helpers, icons, themer and translations scripts.
 
 Owner: Jellyfin Enhanced maintainers. Backend counterpart: none (part of Platform; not the backend `Shared/` layer) (PLAN.md canonical feature list).
 

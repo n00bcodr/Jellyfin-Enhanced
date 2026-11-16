@@ -77,6 +77,8 @@ export interface TagRuntimeCore {
     tagLook?: TagLook;
     tagRenderer: RendererApi;
     tagScopes?: TagScopes;
+    tagHidden?: import('./pipeline/tag-hidden').TagHidden;
+    tagText?: import('./pipeline/tag-text').TagText;
     tagSettingsMatrix?: TagSettingsMatrix;
     languageTags?: import('./types/language/languagetags').LanguageTagsApi;
 }

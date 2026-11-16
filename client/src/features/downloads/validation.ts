@@ -35,7 +35,7 @@ tmdbId:number(r.tmdbId),
 tvdbId:number(r.tvdbId),
 episodeCount:number(r.episodeCount),
 importedCount:number(r.importedCount),
-id:id(r.id),instanceId:id(r.instanceId),isOrphaned:boolean(r.isOrphaned)};});}
+id:id(r.id),instanceId:id(r.instanceId),isOrphaned:boolean(r.isOrphaned),canRemove:boolean(r.canRemove)};});}
 export function readMedia(v:unknown,depth=0):Media {const r=response(v);return {id:number(r.id),tmdbId:number(r.tmdbId),
 title:text(r.title),
 name:text(r.name),

@@ -214,6 +214,7 @@ Use the signed-in web client's network panel to inspect responses when the check
     | `GET arr/history?take=…&skip=…` | Signed-in viewer; applies History enablement, administrator restriction, and ownership gates. `take` defaults 20, capped at 50; `skip` defaults 0 and cannot be negative. |
     | `GET arr/requests?take=…&skip=…&filter=…&userOnly=…` | Signed-in linked viewer with configured Seerr for data; `take` defaults 20, capped at 200, `skip` defaults 0/nonnegative, `userOnly` defaults false. See Seerr features for visibility permissions. |
     | `POST arr/requests/{requestId}/approve`, `POST arr/requests/{requestId}/decline` | Linked Jellyfin administrator or Seerr user with `ADMIN`/`MANAGE_REQUESTS`; missing identity/link/permission can fail separately. |
+    | `DELETE arr/requests/{requestId}` | Linked user who made the request, or a linked Jellyfin administrator or Seerr user with `ADMIN`/`MANAGE_REQUESTS`; others get `403`. Deletes only the request record. |
     | `GET arr/calendar?start=…&end=…` | Signed-in viewer; library filtering applies. Defaults to today UTC through 90 days; invalid dates keep defaults, reversed ranges swap, and ranges over 365 days are capped. |
     | `POST arr/calendar/user-data` | Signed-in viewer; reads caller-specific watchlist/watched flags for supplied events, without saving preferences. |
 

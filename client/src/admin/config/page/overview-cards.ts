@@ -159,6 +159,7 @@ export function createOverviewCards(m: OverviewCardsDeps) {
             feat('Custom Pause Screen', bool('pauseScreenEnabled'), 'playback', 'Enabled');
             feat('Age Rating on Playback Start', bool('showPlaybackRatingBadge'), 'playback', 'Enabled');
             feat('Long press for 2x speed', bool('longPress2xEnabled'), 'playback', 'Enabled (touch devices)');
+            feat('Subtitle sync button', bool('subtitleSyncButtonEnabled'), 'playback', 'Enabled');
             var autoSkip = bool('autoSkipIntro') || bool('autoSkipOutro');
             var autoSkipWarn = autoSkip && m.plugins.hasIntroSkipper !== true;
             feat('Auto-skip Intro/Outro', autoSkip, 'playback',

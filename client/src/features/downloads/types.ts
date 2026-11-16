@@ -9,6 +9,8 @@ export interface Item {
  nextAirDate?: string | undefined; digitalReleaseDate?: string | undefined; theatricalReleaseDate?: string | undefined; eventType?: string | undefined;
  progress?: number | undefined; seasonNumber?: number | undefined; episodeNumber?: number | undefined; totalSize?: number | undefined; sizeRemaining?: number | undefined;
  year?: number | undefined; tmdbId?: number | undefined; tvdbId?: number | undefined; episodeCount?: number | undefined; importedCount?: number | undefined; isOrphaned?: boolean | undefined;
+ /** Whether this caller may remove the request (GET arr/requests): managers always, others only their own. */
+ canRemove?: boolean | undefined;
 }
 export interface Media {
  id?: number | undefined; tmdbId?: number | undefined; title?: string | undefined; name?: string | undefined; originalTitle?: string | undefined; originalName?: string | undefined;
@@ -45,6 +47,7 @@ export interface Page {
  clearAvatarObjectUrlCache(force?:boolean):void; hydrateAvatarImages(container:Element):void; hydrateExternalLinks(container:Element):Promise<void>;
  fetchRequests():Promise<unknown>;fetchIssues():Promise<unknown>;fetchHistory():Promise<unknown>;loadAllData():Promise<void>;
  handleRequestAction(button:HTMLButtonElement,action:'approve'|'decline'):Promise<void>;
+ handleRemoveRequest(button:HTMLButtonElement):Promise<void>;
  getIssueMediaType(issue:Issue):string;getIssueTmdbId(issue:Issue):number|null;
  getStatusColors():Record<string,string>;translateStatus(status:string|undefined):string;getDownloadStatuses():[string,number][];getFilteredDownloads():Item[];
  formatTimeRemaining(value:string|null|undefined):string;formatRelativeDate(value:string|undefined):string;

@@ -1,6 +1,7 @@
 {
   "anchor": "restructure-base 837635b9 (Jellyfin.Plugin.JellyfinEnhanced.dll, Release, jf12)",
   "routes": {
+    "DELETE JellyfinEnhanced/arr/requests/{requestId}": {"IsAdminUser":3,"User":1,"UserHelper.GetCurrentUserId":1},
     "DELETE JellyfinEnhanced/continue-watching/hide/{itemId}": {"User":1,"UserHelper.GetCurrentUserId":1},
     "DELETE JellyfinEnhanced/next-up/hide/{itemId}": {"User":1,"UserHelper.GetCurrentUserId":1},
     "DELETE JellyfinEnhanced/reviews/admin/{userIdN}/{mediaType}/{tmdbId}": {"IsAdminUser":1},

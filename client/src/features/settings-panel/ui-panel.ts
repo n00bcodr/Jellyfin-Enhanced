@@ -427,6 +427,10 @@ export function installUiPanel(JE: Deps, featureCtx = settingsPanelContext(JE)):
         };
 
         help.innerHTML = internal.buildPanelHtml ? internal.buildPanelHtml(ctx) : '';
+        // The theme's box and toggle colours as custom properties, for markup that names them instead of writing the
+        // values into its style text (the Subtitle Sync toggle's box).
+        help.style.setProperty('--je-panel-box', ctx.presetBoxBackground ?? null);
+        help.style.setProperty('--je-panel-toggle-accent', ctx.toggleAccentColor ?? null);
 
         document.body.appendChild(help);
         closeOpenPanel = closePanel;

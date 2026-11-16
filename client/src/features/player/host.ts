@@ -1,10 +1,11 @@
 import type { Session } from '../../core/session';
 import type { Lifecycle } from '../../core/lifecycle';
-import type { MediaSegment } from './wire';
+import type { MediaSegment, PlayingSession } from './wire';
+import type { OsdPlayback } from '../shared/osd-playback';
 import { featureContext, type FeatureContext } from '../../host/context';
 export interface Subscription { unsubscribe(): void }
 export interface PlayerSettings {
-    longPress2xEnabled?: boolean; autoSkipIntro?: boolean; autoSkipOutro?: boolean;
+    longPress2xEnabled?: boolean; autoSkipIntro?: boolean; autoSkipOutro?: boolean; subtitleSyncButtonEnabled?: boolean;
     pauseScreenEnabled?: boolean; pauseScreenDelaySeconds?: number;
     disableCustomSubtitleStyles?: boolean; subtitleHorizontalPosition?: number; subtitleVerticalPosition?: number;
     selectedTextEffectPresetIndex?: number; selectedFontSizePresetIndex?: number; selectedFontFamilyPresetIndex?: number;
@@ -14,7 +15,8 @@ export interface NowPlaying {
     normalizeId(id: unknown): string | null;
     itemIdFromSource(video?: HTMLVideoElement | null): string | null;
     itemIdFromRoute(): string | null;
-    itemIdFromSession(video?: HTMLVideoElement | null): Promise<string | null>;
+    /** `video` may be a player without an element (mpv): the duration its OSD shows. */
+    itemIdFromSession(video?: HTMLVideoElement | { duration: number } | null): Promise<string | null>;
     resolveItemId(video?: HTMLVideoElement | null): Promise<string | null>;
 }
 export interface AutoSkipDependencies {
@@ -30,14 +32,14 @@ export interface PressEvent { button?: number; clientX?: number; clientY?: numbe
 export interface PlayerBridge {
     currentSettings: PlayerSettings;
     pluginConfig?: { ShowRatingInPlayer?: boolean; ShowPlaybackRatingBadge?: boolean };
-    state: { pauseScreenClickTimer?: number | null };
+    state: { pauseScreenClickTimer?: number | null; activeShortcuts?: Record<string, unknown> };
     session?: Session;
     lifecycle?: Lifecycle;
     core: {
-        api?: { jf(path: string, options: { skipCache: boolean }): Promise<unknown> };
+        api?: { jf(path: string, options: { skipCache?: boolean; signal?: AbortSignal; timeoutMs?: number }): Promise<unknown> };
         navigation?: { onNavigate(callback: () => void): () => void };
         dom: { waitForElement(selector: string, options: { timeout: number; quiet: boolean; predicate(el: Element): boolean; signal?: AbortSignal }): Promise<Element | null> };
-        ui: { isTvLayout(): boolean };
+        ui: { isTvLayout(): boolean; injectCss?(id: string, css: string): unknown };
     };
     helpers: { onBodyMutation(name: string, callback: (records: MutationRecord[]) => void): Subscription };
     t(key: string, params?: Record<string, string | number>): string;
@@ -48,15 +50,26 @@ export interface PlayerBridge {
     IconName: { FAST_FORWARD: string; PLAY: string };
     isVideoPage(): boolean;
     internals: {
-        player?: { getVideo(): HTMLVideoElement | null; getCurrentVideoItemId(): string | null };
+        player?: { getVideo(): HTMLVideoElement | null; getCurrentVideoItemId(): string | null; probeOwnSession?(): Promise<PlayingSession | null> };
         nowPlaying: NowPlaying;
         autoSkip?: { TICKS_PER_SECOND: number; MIN_SEGMENT_TICKS: number; createAutoSkipEngine(deps: AutoSkipDependencies): SkipEngine; createSessionItemResolver(options: ResolverOptions): (video: HTMLVideoElement) => string | null; parseTranscodeOffsetTicksFromSrc(src: string): number; parseItemIdFromVideosSrc(src: string): string | null; segmentTypeEnabled(type: string | undefined): boolean };
+        /** jellyfin-web's OSD read and driven for a player without a `<video>` (shared/osd-playback.ts). */
+        osdPlayback?: OsdPlayback;
+        /** Subtitle sync's pure rules and waits (subtitle-sync/dialog.ts), for unit tests. */
+        subtitleSync?: import('./subtitle-sync/dialog').SubtitleSyncInternals;
     };
     openSettings(callback: () => void): void;
     adjustPlaybackSpeed(direction: string): void; resetPlaybackSpeed(): void; jumpToPercentage(percentage: number): void;
     frameStep(direction: string): Promise<void>; attachSeekTracker(video: HTMLVideoElement): void; jumpToLastPosition(): void;
+    /** Keep, and stop keeping, the seek history of a player without a `<video>` from jellyfin-web's OSD. */
+    watchOsdPosition(): void; stopWatchingOsdPosition(): void;
     skipIntroOutro(): void; cycleSubtitleTrack(): void; cycleAudioTrack(): void; cycleAspect(): void; togglePlaybackInfo(): Promise<void>;
     adjustSubtitleOffset(deltaSeconds: number): void;
+    /** Sets jellyfin-web's subtitle offset through its sync control; false when the player has none. */
+    setSubtitleOffset(seconds: number): boolean;
+    toggleSubtitleSync(): void; addSubtitleSyncButton(): void;
+    keyCombo?(event: KeyboardEvent): string;
+    themer?: { getThemeVariables?(): { primaryAccent?: string } | undefined };
     handleLongPressDown(event: PressEvent): void; handleLongPressUp(event: PressEvent): void; handleLongPressCancel(): void; handleLongPressMove(event: PressEvent): void; handleLongPressClick(event: PressEvent): void;
     initializeAutoSkipObserver(): void; stopAutoSkip(): void;
     subtitlePresets: { name: string; textColor: string; bgColor: string; previewText: string }[];
@@ -69,7 +82,7 @@ export interface PlayerBridge {
     applySubtitleStyles(textColor: string, bgColor: string, fontSize: number, fontFamily: string, textShadow?: string): void;
     applySavedStylesWhenReady(): void;
     initializeOsdRating(): void; initializePauseScreen(): void; initializePlaybackRatingBadge(): void;
-    pauseScreenInstance?: { overlay: HTMLElement; destroy(): void };
+    pauseScreenInstance?: { overlay: HTMLElement; destroy(): void; hideOverlay?(): void };
 }
 interface AjaxOptions { type: string; url: string; dataType?: string; contentType?: string; data?: string }
 interface PlayerApi {
@@ -81,7 +94,11 @@ interface PlayerApi {
 /** player's own `JE.internals` slots (frontend.md §2.3). Its `JE.<name>` facades stay on the typed bridge. */
 export type PlayerOwn = PlayerBridge['internals'];
 /** Other features' facades player reads (details-providers' colored ratings polling; it may load later or not at all). */
-export interface PlayerPeers { resumeRatingsPolling(): void; pauseRatingsPolling(): void }
+export interface PlayerPeers {
+    resumeRatingsPolling(): void; pauseRatingsPolling(): void;
+    /** chrome's facade: a stored shortcut in the shortcut editor's modifier order (features/chrome/events.ts). */
+    canonicalCombo(combo: unknown): unknown;
+}
 export type PlayerFeatureContext = FeatureContext<PlayerOwn, PlayerPeers, PlayerBridge>;
 /** Structural bridge confined to the fields the player actually consumes. */
 export function playerHost() {
@@ -89,7 +106,7 @@ export function playerHost() {
     const JE = host.JellyfinEnhanced;
     if (!JE) throw new Error('Player loaded before Jellyfin Enhanced');
     const ctx: PlayerFeatureContext = featureContext<PlayerOwn, PlayerPeers, PlayerBridge>('player', JE, {
-        internalSlots: ['player', 'nowPlaying', 'autoSkip'],
+        internalSlots: ['player', 'nowPlaying', 'autoSkip', 'subtitleSync', 'osdPlayback'],
         internalsObject: () => JE.internals = JE.internals || {} as PlayerBridge['internals'],
     });
     // Read the active API for every operation; Jellyfin replaces it on server changes.

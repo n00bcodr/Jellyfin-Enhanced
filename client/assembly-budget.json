@@ -1,7 +1,7 @@
 {
   "description": "Budget for what the plugin assembly, Jellyfin.Plugin.JellyfinEnhanced.dll, embeds (client assets, pages, tag assets). embeddedBytes: the summed length of its manifest resources as embedded (a packed one at its packed length). The DLL is these plus about 3.1 MB of code. The budget counts the resources, not the DLL file, because gate T runs with coverage and the file on disk is then the instrumented copy (0.65 MB longer); the resources are the same bytes either way. Checked by tests/backend/Api/PackedResourcesTests.cs (gate T). It is a ratchet: lowering the limit needs no reason; a history entry that raises it must give one. `limits` is always the last history entry's.",
   "limits": {
-    "embeddedBytes": 11593913
+    "embeddedBytes": 11761386
   },
   "history": [
     {
@@ -26,6 +26,17 @@
         "embeddedBytes": 11593913
       },
       "reason": "Raised by exactly what the port adds, so the headroom left before it stays as it was: upstream's discovery section join, Filters menu, role lines, busy state and their four stylesheets, bundled into discovery-filter-utils.js (its script, minified twin and both source maps, packed). Measured with PackedResourcesTests: 11,310,283 bytes on adfefdcf, 11,474,196 with the port, so +163,913 on the previous limit 11,430,000. The new limit stays below what upstream's release 2e0f9251 embeds (11,701,908)."
+    },
+    {
+      "date": "2026-11-16",
+      "change": "upstream sync: ports of upstream c165a07b to ff75fbfa (release 12.16.0.0 and the fix after it), branch sync/auto-20261116-0700",
+      "measured": {
+        "embeddedBytes": 11725053
+      },
+      "limits": {
+        "embeddedBytes": 11761386
+      },
+      "reason": "Raised by exactly what the ports add, so the headroom left before them stays as it was. Measured with PackedResourcesTests on each commit: 11,557,580 bytes on ab0cb833, 11,725,053 with the ports, so +167,473 on the previous limit 11,593,913. By port: subtitle sync (9d1d5e8f: its five modules and stylesheet in auto-skip.js, 32 strings, the icon font subset) +63,808; hiding individual tags (e907396d) +32,526; player shortcuts without a <video> (3f8e4724: the OSD reader in playback.js and bookmarks.js, the seek history, the settings menu) +31,811; Weblate #1067 (36 keys in 32 locales) +22,439; tag text (25a168ae, 186121ed) +7,073; removing watched requests (6916b31b) +5,039; the Recommendations Back fixes (c165a07b) +3,789; Weblate #1070 +732; the discovery section's order (ff75fbfa) +228; incomplete custom rules (90c721ef) +28. A script counts with its minified twin and both source maps, packed. The new limit stays below what upstream's own build of ff75fbfa embeds, 12,663,961 bytes."
     }
   ]
 }

@@ -18,6 +18,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.Settings
                 AutoResumeEnabled = defaultConfig.AutoResumeEnabled,
                 AutoPipEnabled = defaultConfig.AutoPipEnabled,
                 LongPress2xEnabled = defaultConfig.LongPress2xEnabled,
+                SubtitleSyncButtonEnabled = defaultConfig.SubtitleSyncButtonEnabled,
                 PauseScreenEnabled = defaultConfig.PauseScreenEnabled,
                 PauseScreenDelaySeconds = defaultConfig.PauseScreenDelaySeconds,
                 AutoSkipIntro = defaultConfig.AutoSkipIntro,

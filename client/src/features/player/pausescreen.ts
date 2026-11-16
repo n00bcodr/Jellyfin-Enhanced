@@ -1,8 +1,8 @@
-import { continuesPlayback, renderPauseProgress } from './pause-view';
+import { continuesPlayback, OWN_KEYS_DIALOG, renderPauseProgress, storedCredentials } from './pause-view';
 import { createPlayerLifetime } from './lifetime';
 import { pauseStyles } from './pause-styles';
 import { playerHost } from './host';
-import { decodeItem, decodeItems, decodeSessions, decodeSegments, type Item, type Stream, type PlayingSession, type MediaSegment, record } from './wire';
+import { decodeItem, decodeItems, decodeSessions, decodeSegments, type Item, type Stream, type PlayingSession, type MediaSegment } from './wire';
 const { JE, ApiClient, ctx } = playerHost();
 const lifetime = createPlayerLifetime(JE, 'pause-screen');
 const MAX_KEPT_IMAGES = 6; // two titles' artwork, so what the overlay shows is never released
@@ -99,26 +99,7 @@ JE.initializePauseScreen = function() {
         }
 
         getCredentials() {
-          const creds = localStorage.getItem("jellyfin_credentials");
-          if (!creds) return null;
-          try {
-            const parsed = record(JSON.parse(creds));
-            const servers = Array.isArray(parsed.Servers) ? parsed.Servers.map(record) : [];
-            // Prefer the ACTIVE server's entry — with multiple stored servers
-            // Servers[0] may hold another server's user id/token.
-            let activeServerId = null;
-            try {
-              activeServerId = (typeof ApiClient.serverId === 'function' ? ApiClient.serverId() : ApiClient.serverId) || null;
-            } catch { activeServerId = null; }
-            // Fail closed: when the active server is known but has no stored
-            // entry, do NOT fall back to another server's token/user id.
-            const server = activeServerId
-              ? servers.find(s => s.Id === activeServerId)
-              : servers[0];
-            return server && typeof server.AccessToken === 'string' && typeof server.UserId === 'string' ? { token: server.AccessToken, userId: server.UserId } : null;
-          } catch {
-            return null;
-          }
+          return storedCredentials(() => (typeof ApiClient.serverId === 'function' ? ApiClient.serverId() : ApiClient.serverId) || null);
         }
 
         injectStyles() {
@@ -269,6 +250,8 @@ JE.initializePauseScreen = function() {
         setupKeyboardAccessibility() {
           // Space/Enter resumes when overlay visible
           this.keyboardListener = (e) => {
+            // Keys typed in a JE dialog that handles its own keys (subtitle sync) are its own.
+            if (e.target instanceof Element && e.target.closest(OWN_KEYS_DIALOG)) return;
             if (this.overlay.getAttribute('aria-hidden') === 'false') {
               if (JE.core.ui.isTvLayout() && this.handleRemoteKey(e)) return;
               if (e.code === 'Space' || e.code === 'Enter') {
@@ -321,6 +304,13 @@ JE.initializePauseScreen = function() {
             const video = this.currentVideo;
             if (!video || !video.paused || video.ended) {
               this.pauseScreenTimer = null;
+              return;
+            }
+
+            // A JE dialog that handles its own keys is open (subtitle sync): showing the pause screen would
+            // take its focus. Try again once it has closed.
+            if (document.querySelector(OWN_KEYS_DIALOG)) {
+              this.pauseScreenTimer = setTimeout(tryShowWhenIdle, 500);
               return;
             }
 

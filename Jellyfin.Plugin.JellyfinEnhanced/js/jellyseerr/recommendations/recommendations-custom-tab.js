@@ -85,9 +85,13 @@
       return all.reverse().find((element) => JE.helpers?.isActiveTabContainer?.(element)) ?? null;
     }
     function reconcile() {
-      const container = isOnHomePage() ? findActiveContainer() : null;
-      if (!container) {
+      if (!isOnHomePage()) {
         unmount();
+        return;
+      }
+      const container = findActiveContainer();
+      if (!container) {
+        if (!mounted?.container.isConnected) unmount();
         return;
       }
       if (container === mounted?.container && mounted.child.isConnected) return;

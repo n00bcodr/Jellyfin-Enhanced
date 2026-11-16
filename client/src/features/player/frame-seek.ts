@@ -1,7 +1,12 @@
-import type { PlayerContext, TrackKind } from './context';
+import { playerUnsupportedText, type PlayerContext, type TrackKind } from './context';
+import type { SeekHistory } from './osd-seek-history';
 import { decodeItem, decodeSegments, decodeSessions, type MediaSegment, type Stream, type PlayingSession } from './wire';
 import { normalizeItemId, parseItemIdFromVideosSrc } from './identity';
-export function installFrameSeek(context: PlayerContext) {
+/**
+ * @param history The position Jump to Last Position returns to, shared with the OSD's history.
+ * @param jumpToLastOsdPosition Jump to Last Position for a player without a `<video>` (osd-seek-history.ts).
+ */
+export function installFrameSeek(context: PlayerContext, history: SeekHistory, jumpToLastOsdPosition: () => void) {
  const { JE, ApiClient, lifetime, getVideo, getCurrentVideoItemId, tWithFallback } = context;
     // Frame Step (YouTube-style , / .). FPS cached per (itemId + media source) so series
     // auto-play swaps don't cross-pollute. Transient failures fall back to 24 without caching.
@@ -151,7 +156,8 @@ export function installFrameSeek(context: PlayerContext) {
       try {
         const video = getVideo();
         if (!video) {
-            JE.toast(JE.t('toast_no_video_found'));
+            // jellyfin-web offers no frame step for other players (mpv in Jellyfin Desktop).
+            JE.toast(playerUnsupportedText(context));
             return;
         }
         if (!video.paused) {
@@ -194,7 +200,7 @@ export function installFrameSeek(context: PlayerContext) {
     // video.currentTime inside the seeking event
     // A guard flag prevents the jump-back action itself from overwriting the saved position.
     let _lastStablePosition: number | null = null;   // updated continuously during normal playback
-    let _lastPositionBeforeSeek: number | null = null; // snapshotted at seek start
+    // history.position is snapshotted from it at seek start.
     let _jumpingBack = false;
     const seekTracked = new Map<HTMLVideoElement, () => void>();
 
@@ -207,7 +213,7 @@ export function installFrameSeek(context: PlayerContext) {
     JE.attachSeekTracker = (video) => {
         if (!video || seekTracked.has(video)) return;
         for (const release of seekTracked.values()) release();
-        seekTracked.clear(); _lastStablePosition = _lastPositionBeforeSeek = null; _jumpingBack = false;
+        seekTracked.clear(); _lastStablePosition = history.position = null; _jumpingBack = false;
 
         // Keep a rolling record of where we actually are during normal playback
         const timeupdate = () => {
@@ -220,7 +226,7 @@ export function installFrameSeek(context: PlayerContext) {
         const seeking = () => {
             if (_jumpingBack) return;
             if (_lastStablePosition !== null) {
-                _lastPositionBeforeSeek = _lastStablePosition;
+                history.position = _lastStablePosition;
             }
         };
         video.addEventListener('timeupdate', timeupdate);
@@ -234,15 +240,15 @@ export function installFrameSeek(context: PlayerContext) {
     JE.jumpToLastPosition = () => {
         const video = getVideo();
         if (!video) {
-            JE.toast(JE.t('toast_no_video_found'));
+            jumpToLastOsdPosition();
             return;
         }
-        if (_lastPositionBeforeSeek === null) {
+        if (history.position === null) {
             JE.toast(tWithFallback('toast_no_last_position', '{{icon:rewind}} No previous position saved'));
             return;
         }
-        const targetTime = _lastPositionBeforeSeek;
-        _lastPositionBeforeSeek = null; // consume it so repeated presses don't loop
+        const targetTime = history.position;
+        history.position = null; // consume it so repeated presses don't loop
         _jumpingBack = true;
         _lastStablePosition = null;    // reset so it re-accumulates after the jump
         video.currentTime = targetTime;
@@ -257,7 +263,7 @@ export function installFrameSeek(context: PlayerContext) {
 lifetime.onReset(() => {
  _frameOverlay?.remove(); _frameOverlay = null; _frameOverlayHideTimer = _frameOverlayFadeTimer = null;
  for (const release of seekTracked.values()) release(); seekTracked.clear();
- _lastStablePosition = _lastPositionBeforeSeek = null; _jumpingBack = false;
+ _lastStablePosition = history.position = null; _jumpingBack = false;
  _fpsCache.clear(); _fpsInflight.clear(); _fallbackFpsWarned.clear();
 });
 }

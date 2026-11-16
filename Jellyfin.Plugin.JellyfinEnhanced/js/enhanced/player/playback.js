@@ -46,7 +46,7 @@
   function stream(v) {
     const r = record(v);
     const fps = (v2) => typeof v2 === "string" ? v2 : number(v2);
-    return { Type: text(r.Type), Index: number(r.Index), ReferenceFrameRate: fps(r.ReferenceFrameRate), RealFrameRate: fps(r.RealFrameRate), AverageFrameRate: fps(r.AverageFrameRate), DisplayTitle: text(r.DisplayTitle), Title: text(r.Title), Language: text(r.Language), Codec: text(r.Codec) };
+    return { Type: text(r.Type), Index: number(r.Index), ReferenceFrameRate: fps(r.ReferenceFrameRate), RealFrameRate: fps(r.RealFrameRate), AverageFrameRate: fps(r.AverageFrameRate), DisplayTitle: text(r.DisplayTitle), Title: text(r.Title), Language: text(r.Language), Codec: text(r.Codec), IsTextSubtitleStream: typeof r.IsTextSubtitleStream === "boolean" ? r.IsTextSubtitleStream : void 0 };
   }
   function decodeItem(v) {
     const r = record(v);
@@ -59,7 +59,7 @@
   function decodeSessions(v) {
     return list(v).map((v2) => {
       const r = record(v2), p = record(r.PlayState), t = record(r.TranscodingInfo);
-      return { Id: text(r.Id), DeviceId: text(r.DeviceId), NowPlayingItem: decodeItem(r.NowPlayingItem), PlayState: { PlayMethod: text(p.PlayMethod), MediaSourceId: text(p.MediaSourceId), AudioStreamIndex: number(p.AudioStreamIndex), SubtitleStreamIndex: number(p.SubtitleStreamIndex) }, TranscodingInfo: r.TranscodingInfo ? { CompletionPercentage: number(t.CompletionPercentage), Container: text(t.Container), VideoCodec: text(t.VideoCodec), AudioCodec: text(t.AudioCodec), Bitrate: number(t.Bitrate), TranscodeReasons: typeof t.TranscodeReasons === "string" ? [t.TranscodeReasons] : strings(t.TranscodeReasons) } : null };
+      return { Id: text(r.Id), DeviceId: text(r.DeviceId), NowPlayingItem: decodeItem(r.NowPlayingItem), LastPlaybackCheckIn: text(r.LastPlaybackCheckIn), PlayState: { PlayMethod: text(p.PlayMethod), MediaSourceId: text(p.MediaSourceId), AudioStreamIndex: number(p.AudioStreamIndex), SubtitleStreamIndex: number(p.SubtitleStreamIndex), IsPaused: typeof p.IsPaused === "boolean" ? p.IsPaused : void 0, PositionTicks: number(p.PositionTicks) }, TranscodingInfo: r.TranscodingInfo ? { CompletionPercentage: number(t.CompletionPercentage), Container: text(t.Container), VideoCodec: text(t.VideoCodec), AudioCodec: text(t.AudioCodec), Bitrate: number(t.Bitrate), TranscodeReasons: typeof t.TranscodeReasons === "string" ? [t.TranscodeReasons] : strings(t.TranscodeReasons) } : null };
     });
   }
   function decodeSegments(v) {
@@ -145,7 +145,7 @@
     const JE2 = host.JellyfinEnhanced;
     if (!JE2) throw new Error("Player loaded before Jellyfin Enhanced");
     const ctx2 = featureContext("player", JE2, {
-      internalSlots: ["player", "nowPlaying", "autoSkip"],
+      internalSlots: ["player", "nowPlaying", "autoSkip", "subtitleSync", "osdPlayback"],
       internalsObject: () => JE2.internals = JE2.internals || {}
     });
     const requireApi = () => {
@@ -191,8 +191,11 @@
     return m?.[1] ?? null;
   }
 
+  // client/src/features/player/context.ts
+  var playerUnsupportedText = (context2) => context2.tWithFallback("toast_player_unsupported", "{{icon:info}} Not available with this player");
+
   // client/src/features/player/frame-seek.ts
-  function installFrameSeek(context2) {
+  function installFrameSeek(context2, history, jumpToLastOsdPosition) {
     const { JE: JE2, ApiClient: ApiClient2, lifetime: lifetime2, getVideo: getVideo2, getCurrentVideoItemId: getCurrentVideoItemId2, tWithFallback: tWithFallback2 } = context2;
     const FRAME_STEP_FALLBACK_FPS = 24;
     const _fpsCache = /* @__PURE__ */ new Map();
@@ -325,7 +328,7 @@
       try {
         const video = getVideo2();
         if (!video) {
-          JE2.toast(JE2.t("toast_no_video_found"));
+          JE2.toast(playerUnsupportedText(context2));
           return;
         }
         if (!video.paused) {
@@ -359,14 +362,13 @@
       }
     };
     let _lastStablePosition = null;
-    let _lastPositionBeforeSeek = null;
     let _jumpingBack = false;
     const seekTracked = /* @__PURE__ */ new Map();
     JE2.attachSeekTracker = (video) => {
       if (!video || seekTracked.has(video)) return;
       for (const release of seekTracked.values()) release();
       seekTracked.clear();
-      _lastStablePosition = _lastPositionBeforeSeek = null;
+      _lastStablePosition = history.position = null;
       _jumpingBack = false;
       const timeupdate = () => {
         if (_jumpingBack) return;
@@ -377,7 +379,7 @@
       const seeking = () => {
         if (_jumpingBack) return;
         if (_lastStablePosition !== null) {
-          _lastPositionBeforeSeek = _lastStablePosition;
+          history.position = _lastStablePosition;
         }
       };
       video.addEventListener("timeupdate", timeupdate);
@@ -390,15 +392,15 @@
     JE2.jumpToLastPosition = () => {
       const video = getVideo2();
       if (!video) {
-        JE2.toast(JE2.t("toast_no_video_found"));
+        jumpToLastOsdPosition();
         return;
       }
-      if (_lastPositionBeforeSeek === null) {
+      if (history.position === null) {
         JE2.toast(tWithFallback2("toast_no_last_position", "{{icon:rewind}} No previous position saved"));
         return;
       }
-      const targetTime = _lastPositionBeforeSeek;
-      _lastPositionBeforeSeek = null;
+      const targetTime = history.position;
+      history.position = null;
       _jumpingBack = true;
       _lastStablePosition = null;
       video.currentTime = targetTime;
@@ -415,7 +417,7 @@
       _frameOverlayHideTimer = _frameOverlayFadeTimer = null;
       for (const release of seekTracked.values()) release();
       seekTracked.clear();
-      _lastStablePosition = _lastPositionBeforeSeek = null;
+      _lastStablePosition = history.position = null;
       _jumpingBack = false;
       _fpsCache.clear();
       _fpsInflight.clear();
@@ -423,8 +425,68 @@
     });
   }
 
+  // client/src/features/shared/osd-playback.ts
+  function activeOsdPage() {
+    return Array.from(document.querySelectorAll("#videoOsdPage")).find((page) => !page.classList.contains("hide")) || null;
+  }
+  function osdElement(selector) {
+    const page = activeOsdPage();
+    return page ? page.querySelector(selector) : null;
+  }
+  function parseRunningTime(text2) {
+    const s = String(text2 == null ? "" : text2).replace(/\s+/g, "");
+    const match = /^(-)?(\d+(?::\d{1,2}){1,2})$/.exec(s);
+    if (!match || !match[2]) return null;
+    const seconds = match[2].split(":").reduce((total, part) => total * 60 + Number(part), 0);
+    return match[1] ? -seconds : seconds;
+  }
+  function positionSeconds() {
+    const el = osdElement(".osdPositionText");
+    if (!el || el.classList.contains("hide")) return null;
+    const seconds = parseRunningTime(el.textContent);
+    return seconds !== null && seconds >= 0 ? seconds : null;
+  }
+  function durationSeconds() {
+    const el = osdElement(".osdDurationText");
+    if (!el || el.classList.contains("hide")) return null;
+    const shown = parseRunningTime(el.textContent);
+    if (shown === null) return null;
+    if (shown >= 0) return shown > 0 ? shown : null;
+    const position = positionSeconds();
+    return position === null ? null : position - shown;
+  }
+  function itemKey() {
+    if (durationSeconds() === null) return null;
+    const btn = osdElement(".btnUserRating[data-id]");
+    return btn && btn.getAttribute("data-id") || "";
+  }
+  function sameItem(a, b) {
+    return !!a && !!b && a.key === b.key && Math.abs(a.duration - b.duration) <= 3;
+  }
+  function isPaused() {
+    const icon = osdElement(".btnPause .material-icons");
+    if (!icon) return null;
+    if (icon.classList.contains("play_arrow")) return true;
+    if (icon.classList.contains("pause")) return false;
+    return null;
+  }
+  function seekToPercent(percent) {
+    const slider = osdElement(".osdPositionSlider");
+    if (!slider || slider.disabled || !Number.isFinite(percent) || durationSeconds() === null) return false;
+    slider.value = String(Math.min(100, Math.max(0, percent)));
+    slider.dispatchEvent(new Event("change", { bubbles: true }));
+    return true;
+  }
+  function seekTo(seconds) {
+    const slider = osdElement(".osdPositionSlider");
+    const duration = durationSeconds();
+    if (!slider || slider.disabled || !duration || !Number.isFinite(seconds)) return false;
+    return seekToPercent(Math.max(0, seconds) / duration * 100);
+  }
+  var osdPlayback = { activeOsdPage, parseRunningTime, positionSeconds, durationSeconds, itemKey, sameItem, isPaused, seekTo, seekToPercent };
+
   // client/src/features/player/segment-controls.ts
-  function installSegmentControls(context2) {
+  function installSegmentControls(context2, sessionItemId) {
     const { JE: JE2, ApiClient: ApiClient2, lifetime: lifetime2, getVideo: getVideo2, getCurrentVideoItemId: getCurrentVideoItemId2, tWithFallback: tWithFallback2 } = context2;
     const TICKS_PER_SECOND = 1e7;
     const segmentCache = /* @__PURE__ */ new Map();
@@ -490,8 +552,12 @@
     JE2.skipIntroOutro = () => {
       const lease = lifetime2.lease(getVideo2());
       const video = getVideo2();
-      const itemId = getCurrentVideoItemId2() || parseItemIdFromVideosSrc(video && (video.currentSrc || video.src) || "");
-      if (!video || !itemId) {
+      if (!video) {
+        skipIntroOutroViaOsd();
+        return;
+      }
+      const itemId = getCurrentVideoItemId2() || parseItemIdFromVideosSrc(video.currentSrc || video.src || "");
+      if (!itemId) {
         if (!clickSkipButton()) JE2.toast(JE2.t("toast_no_skip_button"));
         return;
       }
@@ -530,6 +596,52 @@
         if (!clickSkipButton()) JE2.toast(JE2.t("toast_no_skip_button"));
       });
     };
+    function skipIntroOutroViaOsd() {
+      const lease = lifetime2.lease();
+      const reading = () => {
+        const key = osdPlayback.itemKey();
+        const duration = osdPlayback.durationSeconds();
+        return key === null || duration === null ? null : { key, duration };
+      };
+      const atPress = reading();
+      const fallback = () => {
+        if (!clickSkipButton()) JE2.toast(JE2.t("toast_no_skip_button"));
+      };
+      if (atPress === null) {
+        fallback();
+        return;
+      }
+      const stillSame = () => lease.current() && (typeof JE2.isVideoPage !== "function" || JE2.isVideoPage()) && !getVideo2() && osdPlayback.sameItem(reading(), atPress);
+      const routeId = getCurrentVideoItemId2();
+      const lookup = routeId ? Promise.resolve(routeId) : sessionItemId({ duration: atPress.duration });
+      lookup.then(async (itemId) => {
+        if (!stillSame()) return null;
+        const usable = !!itemId && (!atPress.key || normalizeItemId(itemId) === normalizeItemId(atPress.key));
+        return { segments: usable && itemId ? await fetchMediaSegments(itemId) : [] };
+      }).then((result) => {
+        if (!result || !stillSame()) return;
+        const now = osdPlayback.positionSeconds();
+        const nowTicks = now === null ? null : now * TICKS_PER_SECOND;
+        const seg = nowTicks === null ? void 0 : result.segments.find((s) => s && typeof s.StartTicks === "number" && typeof s.EndTicks === "number" && s.StartTicks <= nowTicks && s.EndTicks > nowTicks);
+        if (seg && seg.EndTicks !== void 0 && now !== null) {
+          const target = Math.min(seg.EndTicks / TICKS_PER_SECOND, osdPlayback.durationSeconds() || Infinity);
+          if (target > now && osdPlayback.seekTo(target)) {
+            if (seg.Type === "Intro") {
+              JE2.toast(JE2.t("toast_skipped_intro"));
+            } else if (seg.Type === "Outro") {
+              JE2.toast(JE2.t("toast_skipped_outro"));
+            } else {
+              JE2.toast(JE2.t("toast_skipped"));
+            }
+            return;
+          }
+        }
+        fallback();
+      }).catch((err) => {
+        console.warn("🪼 Jellyfin Enhanced: segment skip failed", err);
+        if (stillSame()) fallback();
+      });
+    }
     lifetime2.onReset(() => segmentCache.clear());
   }
 
@@ -857,18 +969,23 @@
       offsetPanel?.classList.add("hide");
       offsetPanel = offsetPanelTimer = null;
     };
-    JE2.adjustSubtitleOffset = (deltaSeconds) => {
-      const slider = document.querySelector(".subtitleSyncSlider");
+    const syncSlider = () => document.querySelector(".subtitleSyncSlider");
+    JE2.setSubtitleOffset = (seconds) => {
+      const slider = syncSlider();
       const box = document.querySelector(".subtitleSyncContainer");
-      if (!slider || !box || typeof slider.updateOffset !== "function") {
-        JE2.toast(tWithFallback2("toast_subtitle_offset_unavailable", "Subtitle offset is not available"));
-        return;
-      }
-      slider.updateOffset(Math.round(((parseFloat(slider.value) || 0) + deltaSeconds) * 10) / 10);
+      if (!slider || !box || typeof slider.updateOffset !== "function") return false;
+      slider.updateOffset(Math.round(seconds * 10) / 10);
       hideOffsetPanel();
       box.classList.remove("hide");
       offsetPanel = box;
       offsetPanelTimer = lifetime2.timeout(hideOffsetPanel, 2e3);
+      return true;
+    };
+    JE2.adjustSubtitleOffset = (deltaSeconds) => {
+      const slider = syncSlider();
+      if (!slider || !JE2.setSubtitleOffset((parseFloat(slider.value) || 0) + deltaSeconds)) {
+        JE2.toast(tWithFallback2("toast_subtitle_offset_unavailable", "Subtitle offset is not available"));
+      }
     };
     lifetime2.onReset(() => {
       hideOffsetPanel();
@@ -880,7 +997,7 @@
   }
 
   // client/src/features/player/normal-aspect.ts
-  function installAspect(context2) {
+  function installAspect(context2, cycleAspectInMenu) {
     const { JE: JE2, ApiClient: ApiClient2, lifetime: lifetime2, getVideo: getVideo2, getCurrentVideoItemId: getCurrentVideoItemId2, tWithFallback: tWithFallback2 } = context2;
     const ASPECT_MODES = ["auto", "cover", "fill"];
     function aspectModeLabel(mode) {
@@ -891,7 +1008,7 @@
     JE2.cycleAspect = () => {
       const video = getVideo2();
       if (!video) {
-        JE2.toast(JE2.t("toast_no_video_found"));
+        cycleAspectInMenu();
         return;
       }
       let stored = null;
@@ -925,17 +1042,17 @@
   // client/src/features/player/playback-info.ts
   function installPlaybackInfo(context2, probeOwnSession, trackDisplayName, menu2) {
     const { JE: JE2, ApiClient: ApiClient2, lifetime: lifetime2, getVideo: getVideo2, getCurrentVideoItemId: getCurrentVideoItemId2, tWithFallback: tWithFallback2 } = context2;
-    const SETTINGS_BUTTON = "button.btnVideoOsdSettings";
+    const SETTINGS_BUTTON2 = "button.btnVideoOsdSettings";
     const NATIVE_MENU_TIMEOUT_MS = 1500;
-    const HIDDEN_DIALOGS_MS = 400;
+    const HIDDEN_DIALOGS_MS2 = 400;
     let pendingNative = null;
     async function toggleNativePlaybackInfo() {
-      if (!document.querySelector(SETTINGS_BUTTON)) return false;
+      if (!document.querySelector(SETTINGS_BUTTON2)) return false;
       const style = document.createElement("style");
       style.textContent = ".dialogContainer, .dialogBackdrop, .actionSheet { opacity:0 !important; transition:none !important; }";
       document.head.appendChild(style);
       try {
-        const container = await menu2.openOsdMenu(SETTINGS_BUTTON, "", NATIVE_MENU_TIMEOUT_MS);
+        const container = await menu2.openOsdMenu(SETTINGS_BUTTON2, "", NATIVE_MENU_TIMEOUT_MS);
         const entry = container?.querySelector('button[data-id="stats"]');
         if (!entry) {
           if (container) menu2.closeActionSheet(container);
@@ -944,7 +1061,7 @@
         menu2.activate(entry);
         return true;
       } finally {
-        window.setTimeout(() => style.remove(), HIDDEN_DIALOGS_MS);
+        window.setTimeout(() => style.remove(), HIDDEN_DIALOGS_MS2);
       }
     }
     const PLAYBACK_INFO_REFRESH_MS = 1e3;
@@ -1091,7 +1208,7 @@
       if (toggled || !lease.current() || playbackInfoOverlay) return;
       const video = getVideo2();
       if (!video) {
-        JE2.toast(JE2.t("toast_no_video_found"));
+        JE2.toast(playerUnsupportedText(context2));
         return;
       }
       const overlay = document.createElement("div");
@@ -1256,6 +1373,367 @@
     });
   }
 
+  // client/src/features/player/osd-seek-history.ts
+  var OSD_SEEK_RATE_ALLOWANCE = 4;
+  var OSD_ITEM_END_SECONDS = 30;
+  var OSD_IDENTITY_SETTLE_MS = 5e3;
+  var OSD_INTENT_WINDOW_MS = 3e3;
+  var OSD_INTENT_MOVED_SECONDS = 1.5;
+  var OSD_INTENT_RATE_TOLERANCE = 0.5;
+  var OSD_RATE_WINDOW_MS = 3e3;
+  var OSD_SEEK_KEYS = /* @__PURE__ */ new Set(["ArrowLeft", "ArrowRight", "Left", "Right", "Home", "End", "PageUp", "PageDown", "KeyJ", "KeyL"]);
+  var OSD_SEEK_BUTTONS = ".btnRewind, .btnFastForward, .btnPreviousChapter, .btnNextChapter";
+  var OSD_SEEK_SLACK_SECONDS = 2.5;
+  var OSD_SEEK_BACK_SECONDS = 1.5;
+  var OSD_SLIDER_SEEK_MIN_SECONDS = 1;
+  var OSD_JUMP_SETTLE_MS = 15e3;
+  var OSD_JUMP_ARRIVED_SECONDS = 3;
+  function installOsdSeekHistory(context2, history) {
+    const { JE: JE2, lifetime: lifetime2, getVideo: getVideo2, tWithFallback: tWithFallback2 } = context2;
+    let lastReading = null;
+    let historyItem = null;
+    let jump = null;
+    let ownJump = false;
+    let intent = null;
+    let pendingSeek = null;
+    let rate = 1;
+    let run = null;
+    let watchedText = null;
+    let observer = null;
+    let listening = null;
+    const isOnVideoPage = () => typeof JE2.isVideoPage !== "function" || JE2.isVideoPage();
+    function readOsd() {
+      const position = osdPlayback.positionSeconds();
+      const key = osdPlayback.itemKey();
+      const duration = osdPlayback.durationSeconds();
+      if (position === null || key === null || duration === null) return null;
+      return { key, duration, position, at: Date.now(), playing: osdPlayback.isPaused() !== true };
+    }
+    function rememberPosition(reading) {
+      history.position = reading.position;
+      historyItem = { key: reading.key, duration: reading.duration };
+      pendingSeek = null;
+      run = null;
+    }
+    function landingFor(reading, target) {
+      return { key: reading.key, duration: reading.duration, position: target, from: reading.position, at: reading.at, playing: reading.playing, until: reading.at + OSD_JUMP_SETTLE_MS };
+    }
+    function noteRate(value) {
+      if (Number.isFinite(value) && value > 0) rate = value;
+      run = null;
+    }
+    function confirmIntent(reading) {
+      const pending = intent;
+      if (!pending) return false;
+      if (reading.at - pending.at > OSD_INTENT_WINDOW_MS || !osdPlayback.sameItem(pending, reading)) {
+        intent = null;
+        return false;
+      }
+      const playedSinceIntent = pending.playing ? Math.max(0, reading.at - pending.at) / 1e3 : 0;
+      const expected = pending.position + playedSinceIntent * rate;
+      if (Math.abs(reading.position - expected) < OSD_INTENT_MOVED_SECONDS + playedSinceIntent * OSD_INTENT_RATE_TOLERANCE) return false;
+      intent = null;
+      rememberPosition(pending);
+      return true;
+    }
+    function notePosition() {
+      if (getVideo2()) return;
+      const reading = readOsd();
+      if (!reading) return;
+      if (historyItem && !osdPlayback.sameItem(historyItem, reading)) {
+        history.position = null;
+        historyItem = null;
+      }
+      if (jump) {
+        const landing = jump;
+        if (osdPlayback.sameItem(reading, landing)) {
+          const played2 = Math.max(0, reading.at - landing.at) / 1e3 * rate;
+          const near = (origin) => reading.position >= origin - OSD_JUMP_ARRIVED_SECONDS && reading.position <= origin + played2 + OSD_JUMP_ARRIVED_SECONDS;
+          const landed = near(landing.position);
+          if (!landed && near(landing.from) && reading.at < landing.until) return;
+          jump = null;
+          if (intent && intent.at >= landing.at && confirmIntent(reading)) {
+            lastReading = reading;
+            return;
+          }
+          if (landed || reading.at >= landing.until) {
+            lastReading = reading;
+            run = null;
+            return;
+          }
+        } else {
+          jump = null;
+        }
+      }
+      const previous = lastReading;
+      lastReading = reading;
+      if (pendingSeek) {
+        if (!osdPlayback.sameItem(pendingSeek.from, reading)) {
+          pendingSeek = null;
+        } else if (reading.at >= pendingSeek.until) {
+          rememberPosition(pendingSeek.from);
+        }
+      }
+      if (!previous || !osdPlayback.sameItem(previous, reading)) {
+        rate = 1;
+        run = null;
+        return;
+      }
+      if (confirmIntent(reading)) return;
+      const delta = reading.position - previous.position;
+      const played = previous.playing ? Math.max(0, reading.at - previous.at) / 1e3 : 0;
+      if (delta < -OSD_SEEK_BACK_SECONDS || delta > played * OSD_SEEK_RATE_ALLOWANCE + OSD_SEEK_SLACK_SECONDS) {
+        run = null;
+        if (previous.duration - previous.position <= OSD_ITEM_END_SECONDS) {
+          history.position = null;
+          historyItem = null;
+          pendingSeek = { from: previous, until: reading.at + OSD_IDENTITY_SETTLE_MS };
+          return;
+        }
+        rememberPosition(previous);
+        return;
+      }
+      if (!previous.playing || !reading.playing) {
+        run = null;
+      } else if (!run) {
+        run = reading;
+      } else if (reading.at - run.at >= OSD_RATE_WINDOW_MS) {
+        const measured = (reading.position - run.position) / ((reading.at - run.at) / 1e3);
+        rate = Math.min(OSD_SEEK_RATE_ALLOWANCE, Math.max(0.25, measured));
+        run = reading;
+      }
+    }
+    function intentReading() {
+      const reading = readOsd();
+      if (!reading || !jump || !osdPlayback.sameItem(reading, jump)) return reading;
+      const played = reading.playing ? Math.max(0, reading.at - jump.at) / 1e3 * rate : 0;
+      return { ...reading, position: jump.position + played };
+    }
+    function onSeekKey(e) {
+      if (getVideo2() || e.ctrlKey || e.altKey || e.metaKey || e.shiftKey || !isOnVideoPage()) return;
+      const target = e.target;
+      if (target instanceof HTMLTextAreaElement || target instanceof HTMLInputElement && target.type !== "range") return;
+      const code = e.code || "";
+      if (OSD_SEEK_KEYS.has(code) || OSD_SEEK_KEYS.has(e.key || "") || /^(Digit|Numpad)\d$/.test(code)) intent = intentReading();
+    }
+    function onSeekButton(e) {
+      if (getVideo2()) return;
+      const btn = e.target instanceof Element ? e.target.closest(OSD_SEEK_BUTTONS) : null;
+      const page = btn && osdPlayback.activeOsdPage();
+      if (page && page.contains(btn)) intent = intentReading();
+    }
+    function onSliderChange(e) {
+      const slider = e.target;
+      if (ownJump || getVideo2() || !(slider instanceof HTMLInputElement) || !slider.classList.contains("osdPositionSlider")) return;
+      const page = osdPlayback.activeOsdPage();
+      if (!page || !page.contains(slider)) return;
+      const reading = readOsd();
+      if (!reading) return;
+      const target = parseFloat(slider.value) / 100 * reading.duration;
+      if (!Number.isFinite(target) || Math.abs(target - reading.position) < OSD_SLIDER_SEEK_MIN_SECONDS) return;
+      rememberPosition(reading);
+      lastReading = reading;
+      jump = landingFor(reading, target);
+    }
+    JE2.watchOsdPosition = () => {
+      if (!listening) {
+        listening = new AbortController();
+        const { signal } = listening;
+        document.addEventListener("change", onSliderChange, { capture: true, signal });
+        document.addEventListener("keydown", onSeekKey, { capture: true, signal });
+        document.addEventListener("click", onSeekButton, { capture: true, signal });
+      }
+      const page = osdPlayback.activeOsdPage();
+      const text2 = page && !getVideo2() ? page.querySelector(".osdPositionText") : null;
+      if (text2 === watchedText) return;
+      observer?.disconnect();
+      observer = null;
+      watchedText = text2;
+      lastReading = null;
+      if (!text2 || !page) return;
+      observer = new MutationObserver(notePosition);
+      observer.observe(text2, { childList: true, characterData: true, subtree: true });
+      const playPause = page.querySelector(".btnPause");
+      if (playPause) observer.observe(playPause, { attributes: true, attributeFilter: ["class"], subtree: true });
+      notePosition();
+    };
+    JE2.stopWatchingOsdPosition = () => {
+      observer?.disconnect();
+      observer = null;
+      watchedText = null;
+      lastReading = null;
+      intent = null;
+      pendingSeek = null;
+      run = null;
+      listening?.abort();
+      listening = null;
+    };
+    function jumpToLast() {
+      if (osdPlayback.positionSeconds() === null) {
+        JE2.toast(playerUnsupportedText(context2));
+        return;
+      }
+      notePosition();
+      if (history.position === null) {
+        JE2.toast(tWithFallback2("toast_no_last_position", "{{icon:rewind}} No previous position saved"));
+        return;
+      }
+      const targetTime = history.position;
+      const before = readOsd();
+      ownJump = true;
+      let moved;
+      try {
+        moved = osdPlayback.seekTo(targetTime);
+      } finally {
+        ownJump = false;
+      }
+      if (!moved) {
+        JE2.toast(playerUnsupportedText(context2));
+        return;
+      }
+      history.position = null;
+      historyItem = null;
+      pendingSeek = null;
+      run = null;
+      jump = before ? landingFor(before, targetTime) : null;
+      const mins = Math.floor(targetTime / 60);
+      const secs = Math.floor(targetTime % 60).toString().padStart(2, "0");
+      JE2.toast(tWithFallback2("toast_jumped_back", "{{icon:rewind}} Jumped back to {time}", { time: `${mins}:${secs}` }));
+    }
+    function jumpToPercent(percentage) {
+      if (osdPlayback.seekToPercent(percentage)) JE2.toast(JE2.t("toast_jumped_to", { percent: Number(percentage) }));
+      else JE2.toast(playerUnsupportedText(context2));
+    }
+    lifetime2.onReset(() => {
+      JE2.stopWatchingOsdPosition();
+      historyItem = null;
+      jump = null;
+      ownJump = false;
+      rate = 1;
+    });
+    return { jumpToLast, jumpToPercent, noteRate };
+  }
+
+  // client/src/features/player/osd-settings-menu.ts
+  var SETTINGS_BUTTON = "#videoOsdPage:not(.hide) .btnVideoOsdSettings";
+  var SETTINGS_MENU_ITEMS = ["stats", "aspectratio", "playbackrate", "quality", "repeatmode", "suboffset"].map((id) => `button[data-id="${id}"]`).join(", ");
+  var HIDDEN_DIALOGS_MS = 400;
+  function isSettingsSubmenu(menuId, options, current) {
+    if (options.length < 2) return false;
+    if (!current || !options.some((option) => option.selected && option.name === current)) return false;
+    if (menuId === "playbackrate") {
+      return options.every((option) => /^\d+(\.\d+)?$/.test(option.id || "")) && options.some((option) => Number(option.id) === 1);
+    }
+    return menuId === "aspectratio";
+  }
+  async function waitUntilRemoved(container, timeoutMs) {
+    const t0 = Date.now();
+    while (container.isConnected && Date.now() - t0 < timeoutMs) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  }
+  function createOsdSettingsMenu(context2, menu2, noteRate) {
+    const { JE: JE2, lifetime: lifetime2 } = context2;
+    let queue = Promise.resolve();
+    const isOnVideoPage = () => typeof JE2.isVideoPage !== "function" || JE2.isVideoPage();
+    async function runSettingsMenu(menuId, pick) {
+      if (!isOnVideoPage()) return false;
+      const lease = lifetime2.lease();
+      const gone = () => !isOnVideoPage() || !lease.current();
+      const style = document.createElement("style");
+      style.textContent = ".dialogContainer, .dialogBackdrop, .actionSheet { opacity:0 !important; transition:none !important; }";
+      document.head.appendChild(style);
+      try {
+        const main = await menu2.openOsdMenu(SETTINGS_BUTTON, "");
+        if (!main) return false;
+        if (!main.querySelector(SETTINGS_MENU_ITEMS)) return null;
+        const item = main.querySelector(`button[data-id="${menuId}"]`);
+        if (!item || gone()) {
+          menu2.closeActionSheet(main);
+          return gone() ? null : false;
+        }
+        const current = (item.querySelector(".actionSheetItemAsideText")?.textContent || "").trim();
+        const before = new Set(document.querySelectorAll(".dialogContainer"));
+        menu2.activate(item);
+        const sub = await JE2.core.dom.waitForElement(".dialogContainer", {
+          timeout: 3e3,
+          quiet: true,
+          signal: lease.signal,
+          predicate: (el) => !before.has(el) && !!el.querySelector(".actionSheetContent") && !Array.from(el.querySelectorAll(".actionSheetTitle")).some((title) => (title.textContent || "").trim())
+        });
+        if (!sub) return gone() ? null : false;
+        if (gone()) {
+          menu2.closeActionSheet(sub);
+          return null;
+        }
+        const rows = Array.from(sub.querySelectorAll("button[data-id]")).map((btn) => ({
+          btn,
+          id: btn.getAttribute("data-id") || "",
+          name: ((btn.querySelector(".actionSheetItemText") || btn).textContent || "").trim(),
+          // Every row has a check icon; only the current option's is visible.
+          selected: Array.from(btn.querySelectorAll(".check")).some((icon) => icon.style.visibility !== "hidden")
+        }));
+        const options = rows.map(({ id, name, selected }) => ({ id, name, selected }));
+        if (!isSettingsSubmenu(menuId, options, current)) return null;
+        const choice = pick(options);
+        const row = choice && rows.find((option) => option.id === choice.id);
+        if (!row) {
+          menu2.closeActionSheet(sub);
+          return null;
+        }
+        menu2.activate(row.btn);
+        await waitUntilRemoved(sub, 1500);
+        return { id: row.id, name: row.name };
+      } finally {
+        window.setTimeout(() => style.remove(), HIDDEN_DIALOGS_MS);
+      }
+    }
+    function chooseInSettingsMenu(menuId, pick) {
+      const run = queue.then(() => runSettingsMenu(menuId, pick));
+      queue = run.catch(() => void 0);
+      return run;
+    }
+    function stepPlaybackRate(direction) {
+      chooseInSettingsMenu("playbackrate", (options) => {
+        const normal = options.find((option) => Number(option.id) === 1) || null;
+        const current = options.findIndex((option) => option.selected);
+        if (direction === "reset" || current === -1) return normal;
+        const next = direction === "increase" ? Math.min(current + 1, options.length - 1) : Math.max(current - 1, 0);
+        return options[next];
+      }).then((result) => {
+        if (!isOnVideoPage() || result === null) return;
+        if (result === false) {
+          JE2.toast(playerUnsupportedText(context2));
+          return;
+        }
+        const speed = Number(result.id);
+        noteRate(speed);
+        JE2.toast(speed === 1 ? JE2.t("toast_speed_normal") : JE2.t("toast_speed", { speed }));
+      }).catch((err) => {
+        console.warn("🪼 Jellyfin Enhanced: playback speed through the settings menu failed", err);
+      });
+    }
+    function cycleAspect() {
+      chooseInSettingsMenu("aspectratio", (options) => {
+        const current = options.findIndex((option) => option.selected);
+        return options[(current + 1) % options.length];
+      }).then((result) => {
+        if (!isOnVideoPage() || result === null) return;
+        if (result === false) {
+          JE2.toast(playerUnsupportedText(context2));
+          return;
+        }
+        JE2.toast(JE2.t("toast_aspect_ratio", { ratio: JE2.escapeHtml(result.name) }));
+      }).catch((err) => {
+        console.warn("🪼 Jellyfin Enhanced: aspect ratio through the settings menu failed", err);
+      });
+    }
+    lifetime2.onReset(() => {
+      queue = Promise.resolve();
+    });
+    return { stepPlaybackRate, cycleAspect };
+  }
+
   // client/src/features/player/playback.ts
   var { JE, ApiClient, ctx } = playerHost();
   var lifetime = createPlayerLifetime(JE, "playback");
@@ -1294,7 +1772,7 @@
   JE.adjustPlaybackSpeed = (direction) => {
     const video = getVideo();
     if (!video) {
-      JE.toast(JE.t("toast_no_video_found"));
+      osdMenu.stepPlaybackRate(direction === "increase" ? "increase" : "decrease");
       return;
     }
     const speeds = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
@@ -1314,7 +1792,7 @@
   JE.resetPlaybackSpeed = () => {
     const video = getVideo();
     if (!video) {
-      JE.toast(JE.t("toast_no_video_found"));
+      osdMenu.stepPlaybackRate("reset");
       return;
     }
     video.playbackRate = 1;
@@ -1322,7 +1800,11 @@
   };
   JE.jumpToPercentage = (percentage) => {
     const video = getVideo();
-    if (!video || !video.duration) {
+    if (!video) {
+      osdSeek.jumpToPercent(percentage);
+      return;
+    }
+    if (!video.duration) {
       JE.toast(JE.t("toast_no_video_found"));
       return;
     }
@@ -1330,14 +1812,18 @@
     JE.toast(JE.t("toast_jumped_to", { percent: percentage }));
   };
   var context = { JE, ApiClient, lifetime, getVideo, getCurrentVideoItemId, tWithFallback };
-  installFrameSeek(context);
-  installSegmentControls(context);
+  ctx.own.osdPlayback = osdPlayback;
+  var seekHistory = { position: null };
   var menu = createTrackMenu(context);
+  var osdSeek = installOsdSeekHistory(context, seekHistory);
+  var osdMenu = createOsdSettingsMenu(context, menu, osdSeek.noteRate);
+  installFrameSeek(context, seekHistory, osdSeek.jumpToLast);
+  installSegmentControls(context, async (shown) => await ctx.own.nowPlaying?.itemIdFromSession?.(shown) ?? null);
   var tracks = installTrackControls(context, menu.cycleTrackMenu);
-  installAspect(context);
+  installAspect(context, osdMenu.cycleAspect);
   installPlaybackInfo(context, tracks.probeOwnSession, tracks.trackDisplayName, menu);
   installLongPress(context);
-  ctx.own.player = Object.assign(ctx.own.player || {}, { getVideo, getCurrentVideoItemId });
+  ctx.own.player = Object.assign(ctx.own.player || {}, { getVideo, getCurrentVideoItemId, probeOwnSession: tracks.probeOwnSession });
 })();
 })();
 //# sourceMappingURL=playback.js.map

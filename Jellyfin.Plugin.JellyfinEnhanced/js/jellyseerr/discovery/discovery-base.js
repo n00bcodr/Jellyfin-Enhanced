@@ -168,6 +168,7 @@
     function placeInPage(anchor, section) {
       if (JE.discoverySection?.placeSection) return JE.discoverySection.placeSection(anchor, section, page);
       if (page === "detail") {
+        section.style.order = "99";
         const view = anchor.closest(".itemDetailPage") ?? anchor;
         (view.querySelector(".detailPagePrimaryContent .detailSection") ?? anchor).appendChild(section);
         return true;

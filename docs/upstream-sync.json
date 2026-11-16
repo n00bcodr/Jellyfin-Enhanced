@@ -1596,6 +1596,502 @@
       ],
       "with": "c8b464cf5a21f269e32179bc1af64d671d2658e8",
       "notes": "Upstream's bot regenerating its production inventory for c8b464cf. This tree's tests/docs/production-inventory.json is generated (je12 regen) in the commit of c8b464cf, with the same change: the task's \"settings.json\" literal, storage_references 96 to 97."
+    },
+    {
+      "sha": "c165a07b4251daa6056f52edb64adda78f51096e",
+      "date": "2026-11-14T13:42:06+00:00",
+      "subject": "fix(recommendations): keep tab content, fix Back handling on mobile, drop row masks on touch",
+      "class": "fix",
+      "features": [
+        "chrome",
+        "seerr"
+      ],
+      "issues": [
+        "#1064"
+      ],
+      "release": "12.16.0.0",
+      "size": {
+        "files": 4,
+        "insertions": 89,
+        "deletions": 28
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/native-tabs.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/recommendations/recommendations-category.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/recommendations/recommendations-custom-tab.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/recommendations/recommendations-styles.js"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "45539fb5cf1a9535c0a7689cb14cf61ca9325456"
+      ],
+      "notes": "Re-implemented in client/src/features/seerr/recommendations and client/src/features/chrome/native-tabs.ts. (1) recommendations-custom-tab.ts: a mounted tab that is only hidden (another Home tab selected, or the category page over #indexPage) keeps its rows, so coming back neither rebuilds nor reloads them. (2) recommendations-category.ts: an open category page pushes one copy of the current URL as its history entry ({ jeCategory: true }); its Back button goes through history.back() while the entry is held; a pop closes the page unless it lands back on that entry; closing by navigating away gives the entry up. (3) native-tabs.ts: the Android app's NavigationHelper.goBack is wrapped once it exists: when the router cannot go back it closes an open More Info modal or category page through history.back(), or selects the Home tab from a JE tab and spends the URL's deep link, and otherwise calls the app's own goBack. (4) native-tabs.ts: a jeTab without tab=N (N >= 2) beside it is not followed. (5) recommendation-tiles.css: the row edge masks sit inside @media (hover: hover). Differences from upstream: the rewrite still disposes the tab's render when the user leaves Home or its container is dropped (its DISCOVERY-RECOMMENDATIONS-003 rule; upstream never disposes), so two existing tests that expected a hidden tab to be emptied now expect upstream's behaviour; the popstate listener exists only while the category page is open (leak guard); Back from a category opened on the standalone page still returns to that page, on a pop as well as on the button; the wrapper looks for NavigationHelper with a capped retry (40 tries, 500 ms apart, as upstream) built on setTimeout instead of setInterval (performance guard R5); and one upstream fault is not ported: in upstream's build the first pop after a page load is reported as a navigation and closes the category even when it lands on the category's own entry (More Info closing above it right after a reload), which handleNavigation here leaves alone (filed: je12 found-bug NEW-20261116-071714). Upstream has no tests for this commit; here 11 node tests fail before the port (tests/frontend/bootstrap/bootstrap-native-tabs.test.mjs, tests/frontend/pages/pages-recommendations-boundaries.test.mjs) and pass after. Lab parity (je12 lab, Jellyfin 12.4, Recommendations native tab on): one je12 browse script prints the same result on upstream's build of c165a07b and on this port, and the faults on the tree before the port.",
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p51-*"
+    },
+    {
+      "sha": "e907396d513a2d45773355083d6c59777966c9eb",
+      "date": "2026-11-14T16:00:15+00:00",
+      "subject": "feat(tags): hide individual tags from the Colours tag list",
+      "class": "feature",
+      "features": [
+        "media-tags",
+        "platform"
+      ],
+      "issues": [
+        "#1043"
+      ],
+      "release": "12.16.0.0",
+      "size": {
+        "files": 27,
+        "insertions": 1396,
+        "deletions": 48
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagHiddenValues.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Helpers/MediaTagsPageFields.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/PosterTagResolver.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/PosterTagSettings.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Resolution/LanguageFlagRules.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/core/tag-layout.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/core/tag-renderer-base.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/admin-tags.css",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/admin-tags.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/tag-styles-editor.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/sections/colours.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/tags/languagetags.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/tags/logotags.js",
+        "docs/advanced/admin-media-tags.md",
+        "docs/advanced/api.md",
+        "docs/advanced/project-structure.md",
+        "docs/enhanced/tags.md",
+        "docs/images/tags/tag-hidden-tags.webp",
+        "tests/backend/Core/CoreTagHiddenValuesTests.cs",
+        "tests/backend/JE.Tests.csproj",
+        "tests/docs/production-inventory.json",
+        "tests/fixtures/admin-tags-page-fields.json",
+        "tests/fixtures/hidden-tag-labels.json",
+        "tests/frontend/features/features-admin-tags-page-colours-status.test.mjs",
+        "tests/frontend/features/features-tag-hidden.test.mjs"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "b6bb8b54f44891d4c85164d6af6f9846d2187f4b"
+      ],
+      "unmappedPaths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/admin-tags.css"
+      ],
+      "notes": "Server side applied at the moved paths (git show e907396d, Services/PosterTags/ to Shared/MediaTags/PosterTags/ and Features/MediaTags/PosterTags/, Helpers/MediaTagsPageFields.cs to Shared/MediaTags/, git apply --3way; two conflicts, both from rewrite-only neighbours: the resolver's usings and the TagKindLooks line of the page-fields fixture): PluginConfiguration.TagHiddenValues, the page-field allowlist and its normalizer, the native resolver (hidden genres and logos leave before the limit, quality after the best resolution is chosen, hidden languages leave the flags while Dual/Multi still counts them, rating sources, age boards, status, awards and Custom by their label) and the settings digest (hidden.<group> only for a shown group that hides something, so a configuration without a list keeps every poster URL; no cached-output version moves, as upstream). Differences from upstream on the server: the TagHiddenValues model stays in Configuration/TagHiddenValues.cs, while TagHiddenRules and TagHiddenSet live in Shared/MediaTags/PosterTags/TagHiddenRules.cs (folder = namespace; tools/ClientContracts compiles the configuration model without the poster-tag rules); the public configuration is typed here, so Transport/BootstrapConfig.cs gains TagHiddenValues and TagHiddenAgeRatings, set in Features/Platform/JePlatformController.Bootstrap.cs, and the generated client contracts follow (je12 regen --contracts). Client re-implemented in client/src/features/media-tags: pipeline/tag-hidden.ts (JE.core.tagHidden, installed by the tag-renderer-base entry because tag-renderer-base.ts is at its size cap), layout/present.ts (hidden chips leave before density and the limit), types/language/languagetags.ts and types/logo/logotags.ts (every valid logo is cached, hidden styles leave before the two-logo limit), and on the admin tab admin/tag-hidden-editor.ts (the Hide switch, the hidden line and view, tile and tab marks, the words for what a tile hides, the colours-off note, openGroup), hooks in admin/tag-styles-editor.ts, admin/sections/colours.ts (writes TagHiddenValues, Undo, redraws this dashboard's tags, the editor stays open with tag colours off) and admin/hidden-rows.ts (each Groups row's link to its tags on the Colours tab and its hidden count; page.ts is at its size cap). To stay under the editor's size ratchet its fixed tables and element helper moved to admin/tag-styles-parts.ts (a pure move); the editor shrank from 1119 to 1106 lines and its size-baseline entry is lowered. Two strings are built with esc(fmt(…)) and escapeText(…) instead of tx(…) and a bare count, for the escape guard; the output is the same. js/enhanced/admintags/admin-tags.css is hand-written here too and takes upstream's hunk as is. Docs applied as is (docs/advanced/admin-media-tags.md, api.md, project-structure.md, docs/enhanced/tags.md, the screenshot), with project-structure naming the rewrite's TagHiddenRules.cs. Tests: upstream's CoreTagHiddenValuesTests (tests/backend/Features/MediaTags, 23 cases), features-tag-hidden.test.mjs, the three Colours page tests and the fixtures, with paths and namespaces adjusted; the admin-tags declarations record and the page-fields fixture gain TagHiddenValues. Nine of upstream's frontend tests fail on the tree before the port; the backend tests need the new types. Lab parity (je12 lab, Jellyfin 12.4): one je12 browse script hides the most common genre (Animation) from the Colours tag list as an administrator does and prints the same switch name and scope, confirmation, tile, tab and Groups-row texts, stored and public TagHiddenValues, and movie-page chips (292 genre chips with 82 Animation before; 268 with none after, the next genres in their places) on upstream's build of e907396d and on this port.",
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p52-*"
+    },
+    {
+      "sha": "25a168aeecae9e36cc5c79ee8dd4cff02497d0c6",
+      "date": "2026-11-14T16:00:15+00:00",
+      "subject": "feat(tags): set the text of quality, genre, status and awards tags from the Colours and text tab (#1063)",
+      "class": "feature",
+      "features": [
+        "media-tags",
+        "platform",
+        "admin"
+      ],
+      "issues": [
+        "#1063"
+      ],
+      "release": "12.16.0.0",
+      "size": {
+        "files": 19,
+        "insertions": 510,
+        "deletions": 16
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagTextOverrides.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/configPage.html",
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/admin/sections.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Helpers/MediaTagsPageFields.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/PosterTagResolver.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/PosterTagSettings.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/core/tag-layout.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/core/tag-renderer-base.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/admin-tags.css",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/admin-tags.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/tag-styles-editor.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/sections/colours.js",
+        "docs/advanced/project-structure.md",
+        "docs/enhanced/tags.md",
+        "tests/backend/Core/CoreTagTextOverridesTests.cs",
+        "tests/fixtures/admin-tags-page-fields.json",
+        "tests/frontend/features/features-tag-text.test.mjs"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "77a4d597be13dccf2f253aa43a5c94690d8f10ec"
+      ],
+      "unmappedPaths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/admin-tags.css"
+      ],
+      "notes": "Server side applied at the moved paths (git show 25a168ae, same path map as e907396d, git apply --3way; one conflict, the project-structure line this tree had already reworded): PluginConfiguration.TagTextOverrides (a JSON document, {\"status\":{\"seasonFinale\":\"End of Season\"}}), the page field with its length limit, validation and canonical form, the native resolver (a quality chip's whole text, status and awards captions) and the settings digest (text.<group> only for a shown group with overrides; no cached-output version moves, as upstream). Differences from upstream on the server: TagTextRules and TagTextSet live in Shared/MediaTags/PosterTags/TagTextRules.cs, beside TagHiddenRules (upstream: Configuration/TagTextOverrides.cs); the typed public configuration (Transport/BootstrapConfig.cs, Features/Platform/JePlatformController.Bootstrap.cs) gains TagTextOverrides and the generated client contracts follow. Client re-implemented in client/src/features/media-tags: pipeline/tag-text.ts (JE.core.tagText, installed by the tag-renderer-base entry; it reads only own keys of the document), layout/present.ts (the text replaces quality, genre, status and awards chip text after density and before the limit), admin/tag-hidden-editor.ts (the Text field under the Hide switch, the pencil mark and tooltip of a renamed tile, the list hint and the Whole group pointer), admin/sections/colours.ts (the section is Tag colours and text, writes TagTextOverrides, confirmation with Undo, redraws this dashboard's tags), admin/admin-tags.ts and admin/hidden-rows.ts (the tab is Colours and text), and the tab's name on the configuration page (client/src/admin/config: media-tags-tab.ts, sections/display.ts, domain/whats-new.ts, which build Configuration/configPage.html and Configuration/admin/sections.js here). js/enhanced/admintags/admin-tags.css takes upstream's line as is. Docs applied as is (docs/enhanced/tags.md), with project-structure naming the rewrite's TagTextRules.cs. Tests: upstream's CoreTagTextOverridesTests (tests/backend/Features/MediaTags, 13 cases) and features-tag-text.test.mjs with paths and namespaces adjusted, and the page-fields fixture; the three frontend tests fail on the tree before the port, the backend tests need the new types. Lab parity (je12 lab, Jellyfin 12.4): one je12 browse script renames the most common genre and quality label from the tag list as an administrator does (Animation to Cartoons, 1080p to Sharp) and prints the same tab and section names, field placeholder and hint, confirmations, tile tooltips, stored and public TagTextOverrides, and movie-page chips (82 genre chips reading Cartoons, 97 quality chips reading Sharp, the other labels unchanged) on upstream's build of 186121ed and on this port.",
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p53-54-*"
+    },
+    {
+      "sha": "186121ed49db5fb60c547fee68ad0c4df5840d93",
+      "date": "2026-11-14T16:00:15+00:00",
+      "subject": "chore(tags): regenerate the inventory and config flag groups for tag text",
+      "class": "test",
+      "features": [],
+      "issues": [],
+      "release": "12.16.0.0",
+      "size": {
+        "files": 3,
+        "insertions": 18,
+        "deletions": 6
+      },
+      "paths": [
+        "docs/advanced/admin-media-tags.md",
+        "docs/advanced/config-flag-groups.json",
+        "tests/docs/production-inventory.json"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "77a4d597be13dccf2f253aa43a5c94690d8f10ec"
+      ],
+      "with": "25a168aeecae9e36cc5c79ee8dd4cff02497d0c6",
+      "notes": "With `25a168ae`. Upstream regenerating what the tag text commit moves. Here, in the commit of 25a168ae: docs/advanced/admin-media-tags.md takes upstream's sentence as is (the allowlist count with TagTextOverrides); docs/advanced/config-flag-groups.json is regenerated by scripts/generate_config_flag_groups.py with the same three lines as upstream's (TagStyleTarget, TagStylesAllowUserPreset and TagStylesEnabled now under \"Tag colours and text\"); tests/docs/production-inventory.json is generated (je12 regen); and the admin-tags declarations record (tests/frontend/features/media-tags/admin/admin-tags-rewrite.declarations.json) gains TagTextOverrides and the section's new name.",
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p53-54-*"
+    },
+    {
+      "sha": "90c721efd25cd9086a9b38987e743a432a47a7f5",
+      "date": "2026-11-14T17:17:17+00:00",
+      "subject": "fix(tags): keep incomplete custom rules when the editor auto-saves",
+      "class": "fix",
+      "features": [
+        "media-tags"
+      ],
+      "issues": [
+        "#1066"
+      ],
+      "release": "12.16.0.0",
+      "size": {
+        "files": 2,
+        "insertions": 15,
+        "deletions": 5
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/custom-rules-editor.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/sections/custom.js"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "6fbe205ebc8aaa935db7c27570d5a6d1da753fdc"
+      ],
+      "notes": "Re-implemented in client/src/features/media-tags/admin: custom-rules-editor.ts gains matches(config) (the stored rules, read and collected as the table's rows are, equal the table's complete rules) and sections/custom.ts skips the editor reload when it holds. The rewrite had its own guard for this (input and change listeners that remembered the stored rules as text), and it did not work: the server stores a rule without its Icon member when it has none, while the table collects every rule with one, so the two texts never matched and the first keystroke in a new row saved, reloaded the table and dropped the half-filled rule, exactly upstream's #1066. That guard is removed; upstream's comparison of collected rules does not depend on how the server writes a rule. Upstream has no test; here one page test (tests/frontend/features/media-tags/admin/features-admin-tags-page-server.test.mjs, with a server stand-in that leaves the Icon member out as the real one does) types only a name into a new rule, renames a complete rule so it auto-saves, and still finds the half-filled rule, then checks that rules changed elsewhere do reload the table; it fails on the tree before the port. Lab parity (je12 lab, Jellyfin 12.4): one je12 browse script does the same on Media Tags > Groups > Custom; the tree before the port loses the half-filled rule on the first keystroke, upstream's build of 90c721ef and this port keep it through the auto-save, with the same table and stored rules.",
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p55-*"
+    },
+    {
+      "sha": "6916b31b23b2ed4bbc35c4b81fa02552e3fe23e8",
+      "date": "2026-11-14T17:39:39+00:00",
+      "subject": "feat(seerr): remove watched requests automatically and add a Remove request button (#1050)",
+      "class": "feature",
+      "features": [
+        "seerr",
+        "downloads",
+        "admin"
+      ],
+      "issues": [
+        "#1050"
+      ],
+      "release": "12.16.0.0",
+      "size": {
+        "files": 23,
+        "insertions": 1365,
+        "deletions": 20
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/configPage.html",
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/admin/sections.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/PluginServiceRegistrator.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/AutoRequestRemovalTask.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/RequestRemovalPlanner.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/arr/requests/requests-page-data.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/arr/requests/requests-page-render-cards.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/arr/requests/requests-page-render.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/arr/requests/requests-page-styles.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/locales/en.json",
+        "docs/advanced/api.md",
+        "docs/advanced/config-flag-groups.json",
+        "docs/arr/troubleshooting-support.md",
+        "docs/seerr/seerr-features.md",
+        "docs/seerr/seerr-settings.md",
+        "tests/backend/Api/ApiSeerrTests.cs",
+        "tests/backend/ScheduledTasks/AutoRequestRemovalTests.cs",
+        "tests/backend/ScheduledTasks/TaskVisibilityTests.cs",
+        "tests/docs/coverage-matrix.md",
+        "tests/docs/production-inventory.json",
+        "tests/frontend/requests/requests-remove-request.test.mjs"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "809c2d4b91f6be4a8ef81217ab4458426331e25f"
+      ],
+      "unmappedPaths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/AutoRequestRemovalTask.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/RequestRemovalPlanner.cs"
+      ],
+      "notes": "Server: AutoRequestRemovalTask is upstream's file in Features/Seerr/Tasks (the ScheduledTasks namespace and the key JellyfinEnhancedAutoRequestRemoval as upstream, so its schedule is the same task), RequestRemovalPlanner in Features/Seerr/Services, registered in Features/Seerr/SeerrServiceRegistration.cs beside the other Seerr tasks; PluginConfiguration.AutoRequestRemovalEnabled (off). The route DELETE arr/requests/{requestId} (RemoveRequest) and the rows' canRemove flag are in Features/Downloads/JeDownloadsController.Requests.cs, where GET arr/requests lives in this tree: upstream's code with this tree's helpers (the Seerr user lookup and display-name services, Shared/Seerr). canApproveRequests is computed earlier in GetRequests, as upstream moved it; the action's auth-helper calls are unchanged. Admin: the Auto Request Removal section in client/src/admin/config/sections/seerr.ts with its place in client/html/admin-config/configPage.html, its What's New index line (sections-entry.ts) and tests/fixtures/admin-config-baseline.json (the control, its section, main toggle and default), as docs/rewrite/admin-config.md prescribes; docs/advanced/config-flag-groups.json regenerated (the same four lines as upstream's). Client re-implemented in client/src/features/downloads (data.ts, render-cards.ts, render.ts, downloads.css, validation.ts, types.ts, host.ts) with upstream's four en.json strings. Differences from upstream on the page: the handler follows this tree's rules for a request action, as Approve and Decline do: it asks and sends only for a request this account's loaded list says it may remove (upstream trusts the clicked button), checks again after the confirmation (a sign-in change, or a refresh that no longer lists the request, while Jellyfin's dialog is open, sends nothing), records the mutation so a second click while the DELETE is on its way does not send it again, and a poll does not redraw the list under a pointer or focus resting on Remove. Docs as upstream (docs/seerr/seerr-features.md, seerr-settings.md, docs/arr/troubleshooting-support.md, api.md with this tree's count, 211 method/path entries, and tests/docs/coverage-matrix.md with this tree's paths). Tests: upstream's AutoRequestRemovalTests (tests/backend/Features/Seerr, 27 cases) and the TaskVisibilityTests line as they are with namespaces changed; upstream's eight route tests are in tests/backend/Features/Downloads/ApiDownloadsTests.cs, on the Downloads controller; upstream's frontend file tests/frontend/requests/requests-remove-request.test.mjs keeps its two card tests and has its four handler tests on a loaded list, plus three for the differences above; all nine fail on the tree before the port. Contract: one route, one action and one registration are added (DELETE JellyfinEnhanced/arr/requests/{requestId}, RemoveRequest, AutoRequestRemovalTask transient); their snapshot lines are the branch's last commit, contract: upstream sync additions; no existing line changes. Lab parity (je12 lab, Jellyfin 12.4, mock Seerr): one je12 browse script (the card's button, Jellyfin's confirmation, Cancel sending nothing, OK sending one DELETE and the toast, the admin section) and one shell script (a viewer refused with 403 and nothing sent to Seerr, the administrator's delete, the task hidden until the setting is on, a run that deletes the request of the user who watched the movie and keeps the other user's) print the same on upstream's build of 6916b31b and on this port. Outbound: the server now sends DELETE /api/v1/request/{id} to the administrator's Seerr, from the button and, when the setting is on, from the daily task; nothing new reaches the browser.",
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p56-*"
+    },
+    {
+      "sha": "9d1d5e8fe3105d85b985df4803968afd887da34a",
+      "date": "2026-11-14T23:28:51+00:00",
+      "subject": "feat(player): sync subtitles to the line you just heard (#1068)",
+      "class": "feature",
+      "features": [
+        "player",
+        "settings-panel",
+        "chrome",
+        "settings",
+        "admin",
+        "platform"
+      ],
+      "issues": [
+        "#1061",
+        "#1068"
+      ],
+      "release": "12.16.0.0",
+      "size": {
+        "files": 42,
+        "insertions": 2869,
+        "deletions": 35
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/configPage.html",
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/admin/per-user.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/admin/sections.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/component-scripts.json",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/config.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/events.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/player/pausescreen.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/player/playback.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/player/subtitle-sync.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/settingspanel/ui-panel-settings.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/settingspanel/ui-panel-shortcut-editor.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/settingspanel/ui-panel-template.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/fonts/materialsymbolsrounded-subset.woff2",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/locales/en.json",
+        "README.md",
+        "docs/advanced/api.md",
+        "docs/advanced/config-flag-groups.json",
+        "docs/advanced/css-customization.md",
+        "docs/advanced/project-structure.md",
+        "docs/enhanced/enhanced-features.md",
+        "docs/enhanced/enhanced-settings.md",
+        "docs/images/admin/subtitle-defaults.webp",
+        "docs/images/enhanced/panel-subtitles.webp",
+        "docs/images/enhanced/subtitle-sync.mp4",
+        "docs/images/enhanced/subtitle-sync.webp",
+        "scripts/material-symbols/subset.py",
+        "tests/browser/helpers/settings-surfaces.cjs",
+        "tests/docs/production-inventory.json",
+        "tests/frontend/bootstrap/ (7 files)",
+        "tests/frontend/features/features-pause.test.mjs",
+        "tests/frontend/features/features-subtitle-sync.test.mjs",
+        "tests/frontend/features/features-tag-styles.test.mjs",
+        "tests/poster/parity/PosterTagParity/Program.cs"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "aab2b636b97d765a20a0031c1e008413b58abf0a"
+      ],
+      "unmappedPaths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/component-scripts.json",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/fonts/materialsymbolsrounded-subset.woff2"
+      ],
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p57-*",
+      "notes": "Client re-implemented in TypeScript in client/src/features/player/subtitle-sync: lines.ts (the pure rules: the lines, the search, the offset arithmetic), watch.ts (what draws the subtitles and the offset jellyfin-web applied), track.ts (which track plays, from this device's session once it describes the screen, and its lines from Stream.js), view.ts (the dialog's markup and what it shows), dialog.ts (opening, choosing a line, jumping, the OSD button) and subtitle-sync.css (upstream's rules as written). component-scripts.json is pinned, so upstream's new script entry is not added: the module is bundled into enhanced/player/auto-skip.js, which calls installSubtitleSync. JE.toggleSubtitleSync, JE.addSubtitleSyncButton, JE.setSubtitleOffset (track-controls.ts) and JE.internals.subtitleSync are the same surface as upstream's (tests/frontend/architecture/internals-owners.json names the owner); probeOwnSession is shared on ctx.own.player. chrome/events.ts has the SubtitleSync shortcut (not on key repeat), the data-je-own-keys guard and the button call on a video-page update; pausescreen.ts leaves keys and focus to a dialog with data-je-own-keys (the stored-credentials parse moved to pause-view.ts to keep the file under its line cap). The personal toggle is in the settings panel (ui-panel-template.ts, ui-panel-settings.ts through the player's addSubtitleSyncButton peer), the shortcut in settings/defaults.ts and shortcut-rules.ts; SubtitleSyncButtonEnabled is in PluginConfiguration, UserConfiguration, Transport/BootstrapConfig.cs, the platform bootstrap, the settings controller and Shared/Settings/SettingsDefaults.cs; the admin control is in client/src/admin/config/sections/playback.ts with its shortcut row, What's New index line, per-user badge (per-user-props.ts regenerated) and tests/fixtures/admin-config-baseline.json; docs/advanced/config-flag-groups.json regenerated. Differences from upstream: the three toasts go through JE.t with the offset escaped, because this tree's toast renders markup; the accent colour reaches the stylesheet only when it is a plain CSS colour (isSafeCssColor), else the stylesheet's own fallback applies; the dialog's listeners are removed through AbortSignals; the panel toggle's box colours are CSS custom properties set from ui-panel.ts (CSS guard) rather than template interpolations; the session is read through the typed decoders in player/wire.ts. en.json (32 strings), the Material Symbols subset font and scripts/material-symbols/subset.py, README.md and the docs are upstream's (docs/advanced/api.md keeps this tree's rows, docs/advanced/project-structure.md says where the module is in this tree). Tests: upstream's features-subtitle-sync.test.mjs (54 cases) in tests/frontend/features/player with the import paths of this tree and an escapeHtml stub, upstream's pause-screen test appended to features-pause.test.mjs, its settings-panel test in bootstrap-settings-panel.test.mjs, the other fixture lines as upstream. Lab (p57-subtitle-sync.mjs, one external SRT uploaded to the lab movie): the panel toggle and the button beside Subtitles, the dialog with subtitles off and its Choose subtitles action, the seven lines with their times, the search, arrow keys, choosing a line (+7.0 s on jellyfin-web's slider, the toast), the offset and Reset on the next open, the jump and the button going away are the same on upstream's build and on the port, step for step. The session reads while a dialog waits for jellyfin-web's next report vary from run to run on both builds (38 to 79 on upstream's)."
+    },
+    {
+      "sha": "65cc4ba9654191f32df27c8e39439ba740fc0dd9",
+      "date": "2026-11-15T10:52:41+00:00",
+      "subject": "Translations update from Hosted Weblate (#1067)",
+      "class": "translation",
+      "features": [
+        "platform"
+      ],
+      "issues": [
+        "#1067"
+      ],
+      "release": "12.16.0.0",
+      "size": {
+        "files": 32,
+        "insertions": 1184,
+        "deletions": 32
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/js/locales/ (32 files)"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "2208101488fdc393b4dd7eba218776c159420467"
+      ],
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p58-*",
+      "notes": "Applied as is: the 32 locale files are byte for byte upstream's at this commit. Each gains 36 keys (the subtitle sync strings of row 57 and the Remove request strings of row 56), all with the English source text, so nothing a user reads changes; every key is in this tree's en.json. No key changes or goes."
+    },
+    {
+      "sha": "3f8e472435ad61f0a665d2eb5162a4ae97caae11",
+      "date": "2026-11-15T10:59:50+00:00",
+      "subject": "fix(player): run player shortcuts in Jellyfin Desktop's mpv player (#1069)",
+      "class": "fix",
+      "features": [
+        "player",
+        "bookmarks",
+        "chrome",
+        "shared",
+        "platform"
+      ],
+      "issues": [
+        "#835",
+        "#1062",
+        "#1069"
+      ],
+      "release": "12.16.0.0",
+      "size": {
+        "files": 15,
+        "insertions": 1621,
+        "deletions": 35
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/js/component-scripts.json",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/bookmarks/bookmarks.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/events.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/player/osd-playback.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/player/playback.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/player/subtitle-sync.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/locales/en.json",
+        "docs/advanced/project-structure.md",
+        "docs/enhanced/enhanced-features.md",
+        "docs/getting-started/compatibility.md",
+        "tests/docs/production-inventory.json",
+        "tests/frontend/features/features-bookmarks.test.mjs",
+        "tests/frontend/features/features-osd-playback.test.mjs",
+        "tests/frontend/features/features-playback.test.mjs",
+        "tests/frontend/features/features-subtitle-sync.test.mjs"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "ae9a6458a27684f5812d8fb203f3c6239d290893"
+      ],
+      "unmappedPaths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/js/component-scripts.json"
+      ],
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p59-*",
+      "notes": "Client re-implemented in TypeScript. Upstream's new osd-playback.js is client/src/features/shared/osd-playback.ts (stateless reads of jellyfin-web's OSD and seeks through its position slider): component-scripts.json is pinned, so there is no new script entry; the module is bundled into enhanced/player/playback.js, which publishes it as JE.internals.osdPlayback as upstream does (tests/frontend/architecture/internals-owners.json names player as its owner), and into enhanced/bookmarks/bookmarks.js, which imports it instead of reading another feature's internals slot. Upstream's additions to playback.js are split by what they do: player/osd-seek-history.ts (the seek history kept from the OSD, JE.watchOsdPosition, JE.stopWatchingOsdPosition, Jump to Last Position and Jump to % through the slider), player/osd-settings-menu.ts (speed and aspect ratio through jellyfin-web's settings menu, one press after another), skipIntroOutroViaOsd in player/segment-controls.ts, and the no-<video> branches in playback.ts, frame-seek.ts, normal-aspect.ts and playback-info.ts; the toast text is playerUnsupportedText in player/context.ts. The position to jump back to is one object shared by the <video> history and the OSD's, as upstream's one variable is. now-playing.ts takes the OSD's duration in place of an element for the session lookup. chrome/events.ts no longer needs a <video> for player shortcuts and starts and stops the OSD watch; subtitle-sync/dialog.ts keeps its button off and says the dialog is not available; bookmarks use bookmarks/player-surface.ts (position, duration, seek and the OSD key) so bookmarks.ts shrinks (849 to 842 lines, baseline lowered). en.json gains toast_player_unsupported; docs as upstream (docs/advanced/project-structure.md says where the module is in this tree). Differences from upstream: the document listeners that watch for seeks are added when the OSD watch starts and removed when it stops, and the kept state is dropped on a navigation or an account change, as this tree's player state is; the aspect ratio's name is escaped before it goes into a toast; a skip of a segment that is neither intro nor outro says toast_skipped as the <video> path does here; a settings-menu press that outlives its page or account does nothing. Deleting the last bookmark removes its marker here and leaves it on upstream's build, which this tree did before the port too (found bug NEW-20261116-092505). Tests: upstream's features-osd-playback.test.mjs (38 cases) in tests/frontend/features/player with this tree's import path, no load of the separate script and an escapeHtml stub; its two bookmark tests, its playback test and its subtitle sync test and label change as they are; one bookmark test of this tree now has a <video>, since a player whose position can't be read is offered no bookmark. Lab (p59-mpv-player.mjs): Jellyfin Desktop's mpv can't run in the lab's browser, so the page's document.querySelector never returns a <video> while jellyfin-web plays its own; before the port no shortcut does anything; with it, jump back after a timeline seek and after jellyfin-web's own key seek, jump to 50 %, speed 1.25 / 1.5 / 1.25 / normal and aspect Zoom / Stretch / Auto through the settings menu with no sheet left behind, the not-available toasts for frame step and Subtitle Sync, the skip fallback, and a bookmark added at the OSD's time, shown on the timeline, jumped to and deleted are the same on upstream's build and on the port."
+    },
+    {
+      "sha": "005c5b459eee16c20bebaf6be32f282341878308",
+      "date": "2026-11-15T11:05:42+00:00",
+      "subject": "Translations update from Hosted Weblate (#1070)",
+      "class": "translation",
+      "features": [
+        "platform"
+      ],
+      "issues": [
+        "#1070"
+      ],
+      "release": "12.16.0.0",
+      "size": {
+        "files": 32,
+        "insertions": 64,
+        "deletions": 32
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/js/locales/ (32 files)"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "5cb55407ea394a6b1f1154ed536400fec33ea7cc"
+      ],
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p60-*",
+      "notes": "Applied as is: the 32 locale files are byte for byte upstream's at this commit. Each gains one key, toast_player_unsupported (row 59), with the English source text, so nothing a user reads changes. No key changes or goes."
+    },
+    {
+      "sha": "321701aeb2f27eee5d9514a8ec8ce87b90074247",
+      "date": "2026-11-15T11:16:04+00:00",
+      "subject": "v12.16.0.0",
+      "class": "release",
+      "features": [],
+      "issues": [],
+      "release": "12.16.0.0",
+      "size": {
+        "files": 1,
+        "insertions": 2,
+        "deletions": 2
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.csproj"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "a8f33bf6269a756e8f5ffd26044294a47ce9cf4f"
+      ],
+      "notes": "AssemblyVersion and FileVersion 12.16.0.0, as upstream main. docs/advanced/api.md names the same version."
+    },
+    {
+      "sha": "4c10732a6250fc731a7189bf0066f6b2b833daac",
+      "date": "2026-11-15T11:43:50+00:00",
+      "subject": "v12.16.0.0 - Jellyfin Enhanced (synced from jellyfin-plugins)",
+      "class": "release",
+      "features": [],
+      "issues": [],
+      "release": null,
+      "size": {
+        "files": 1,
+        "insertions": 16,
+        "deletions": 0
+      },
+      "paths": [
+        "manifest.json"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "a8f33bf6269a756e8f5ffd26044294a47ce9cf4f"
+      ],
+      "notes": "manifest.json is byte-identical to upstream's at 4c10732a: the two catalog entries the release workflow added for 12.16.0.0 (the Jellyfin 12 and the Jellyfin 10.11 build). They are release data about artifacts upstream published, not code; the rewrite builds for Jellyfin 12 only, and nothing is built or published by this commit."
+    },
+    {
+      "sha": "ff75fbfaefe83726f09bcfa20e2f1c19fb688db7",
+      "date": "2026-11-15T23:11:04+00:00",
+      "subject": "fix(discovery): keep detail-page discovery section after native lists when a theme sets flex order",
+      "class": "fix",
+      "features": [
+        "seerr"
+      ],
+      "issues": [],
+      "release": null,
+      "size": {
+        "files": 1,
+        "insertions": 3,
+        "deletions": 0
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/discovery/discovery-section.js"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "63452c52e03d8ae104fdfa8abe4650527b4773ae"
+      ],
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p63-*",
+      "notes": "placeSection in client/src/features/seerr/discovery/section.ts gives a detail page's section the inline order 99, as upstream's does, and the fallback placement in section-chassis.ts (used when the section module has not loaded) does the same. A list page's section still takes no inline style. Test: one new case in tests/frontend/pages/pages-discovery.test.mjs (the person section's order), failing before and passing after; upstream's commit has no test. Lab (p63-detail-section-order.mjs, the mock Seerr answering one person's credits): with the stock stylesheet the primary column is a block and the section is last on every build; with a theme's rules added (the column a flex column, order 3 on its own children) the section is above the page's two own lists before the port and after them on upstream's build and on the port."
     }
   ]
 }

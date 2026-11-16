@@ -6,11 +6,11 @@ const text = (v: unknown): string | undefined => typeof v === 'string' ? v : und
 const number = (v: unknown): number | undefined => typeof v === 'number' && Number.isFinite(v) ? v : undefined;
 const strings = (v: unknown): string[] => Array.isArray(v) ? v.filter((s: unknown): s is string => typeof s === 'string') : [];
 const list = (v: unknown): unknown[] => Array.isArray(v) ? v : [];
-export interface Stream { Type?: string | undefined; Index?: number | undefined; ReferenceFrameRate?: number | string | undefined; RealFrameRate?: number | string | undefined; AverageFrameRate?: number | string | undefined; DisplayTitle?: string | undefined; Title?: string | undefined; Language?: string | undefined; Codec?: string | undefined }
+export interface Stream { Type?: string | undefined; Index?: number | undefined; ReferenceFrameRate?: number | string | undefined; RealFrameRate?: number | string | undefined; AverageFrameRate?: number | string | undefined; DisplayTitle?: string | undefined; Title?: string | undefined; Language?: string | undefined; Codec?: string | undefined; IsTextSubtitleStream?: boolean | undefined }
 function stream(v: unknown): Stream {
     const r = record(v);
     const fps = (v: unknown) => typeof v === 'string' ? v : number(v);
-    return { Type: text(r.Type), Index: number(r.Index), ReferenceFrameRate: fps(r.ReferenceFrameRate), RealFrameRate: fps(r.RealFrameRate), AverageFrameRate: fps(r.AverageFrameRate), DisplayTitle: text(r.DisplayTitle), Title: text(r.Title), Language: text(r.Language), Codec: text(r.Codec) };
+    return { Type: text(r.Type), Index: number(r.Index), ReferenceFrameRate: fps(r.ReferenceFrameRate), RealFrameRate: fps(r.RealFrameRate), AverageFrameRate: fps(r.AverageFrameRate), DisplayTitle: text(r.DisplayTitle), Title: text(r.Title), Language: text(r.Language), Codec: text(r.Codec), IsTextSubtitleStream: typeof r.IsTextSubtitleStream === 'boolean' ? r.IsTextSubtitleStream : undefined };
 }
 export interface Item {
     Id?: string | undefined; Type?: string | undefined; SeriesId?: string | undefined; ParentId?: string | undefined; RunTimeTicks?: number | undefined; ProductionYear?: number | undefined;
@@ -24,13 +24,15 @@ export function decodeItem(v: unknown): Item {
 export const decodeItems = (v: unknown): Item[] => list(record(v).Items).map(decodeItem);
 export interface PlayingSession {
     Id?: string | undefined; DeviceId?: string | undefined; NowPlayingItem: Item;
-    PlayState: { PlayMethod?: string | undefined; MediaSourceId?: string | undefined; AudioStreamIndex?: number | undefined; SubtitleStreamIndex?: number | undefined };
+    /** When the client last reported its playback state (it does on pause, and at least every ten seconds). */
+    LastPlaybackCheckIn?: string | undefined;
+    PlayState: { PlayMethod?: string | undefined; MediaSourceId?: string | undefined; AudioStreamIndex?: number | undefined; SubtitleStreamIndex?: number | undefined; IsPaused?: boolean | undefined; PositionTicks?: number | undefined };
     TranscodingInfo: { CompletionPercentage?: number | undefined; Container?: string | undefined; VideoCodec?: string | undefined; AudioCodec?: string | undefined; Bitrate?: number | undefined; TranscodeReasons: string[] } | null;
 }
 export function decodeSessions(v: unknown): PlayingSession[] {
     return list(v).map(v => {
         const r = record(v), p = record(r.PlayState), t = record(r.TranscodingInfo);
-        return { Id: text(r.Id), DeviceId: text(r.DeviceId), NowPlayingItem: decodeItem(r.NowPlayingItem), PlayState: { PlayMethod: text(p.PlayMethod), MediaSourceId: text(p.MediaSourceId), AudioStreamIndex: number(p.AudioStreamIndex), SubtitleStreamIndex: number(p.SubtitleStreamIndex) }, TranscodingInfo: r.TranscodingInfo ? { CompletionPercentage: number(t.CompletionPercentage), Container: text(t.Container), VideoCodec: text(t.VideoCodec), AudioCodec: text(t.AudioCodec), Bitrate: number(t.Bitrate), TranscodeReasons: typeof t.TranscodeReasons === 'string' ? [t.TranscodeReasons] : strings(t.TranscodeReasons) } : null };
+        return { Id: text(r.Id), DeviceId: text(r.DeviceId), NowPlayingItem: decodeItem(r.NowPlayingItem), LastPlaybackCheckIn: text(r.LastPlaybackCheckIn), PlayState: { PlayMethod: text(p.PlayMethod), MediaSourceId: text(p.MediaSourceId), AudioStreamIndex: number(p.AudioStreamIndex), SubtitleStreamIndex: number(p.SubtitleStreamIndex), IsPaused: typeof p.IsPaused === 'boolean' ? p.IsPaused : undefined, PositionTicks: number(p.PositionTicks) }, TranscodingInfo: r.TranscodingInfo ? { CompletionPercentage: number(t.CompletionPercentage), Container: text(t.Container), VideoCodec: text(t.VideoCodec), AudioCodec: text(t.AudioCodec), Bitrate: number(t.Bitrate), TranscodeReasons: typeof t.TranscodeReasons === 'string' ? [t.TranscodeReasons] : strings(t.TranscodeReasons) } : null };
     });
 }
 export interface MediaSegment { Id?: string | undefined; Type?: string | undefined; StartTicks?: number | undefined; EndTicks?: number | undefined }

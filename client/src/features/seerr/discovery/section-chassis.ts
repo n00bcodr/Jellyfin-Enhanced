@@ -38,6 +38,7 @@ export function createSectionChassis(JE: SeerrDiscoveryHost, { key, page, person
         if (JE.discoverySection?.placeSection) return JE.discoverySection.placeSection(anchor, section, page);
         // (Without the section module: the same place, with no join.)
         if (page === 'detail') {
+            section.style.order = '99'; // after Jellyfin's own lists under a theme that orders them (section.ts)
             const view = anchor.closest<HTMLElement>('.itemDetailPage') ?? anchor;
             (view.querySelector<HTMLElement>('.detailPagePrimaryContent .detailSection') ?? anchor).appendChild(section);
             return true;

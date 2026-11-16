@@ -324,24 +324,37 @@ export function installTrackControls(context: PlayerContext, cycleTrackMenu: (se
         offsetPanel = offsetPanelTimer = null;
     };
 
+    const syncSlider = () => document.querySelector<HTMLInputElement & { updateOffset?: unknown }>('.subtitleSyncSlider');
+
     /**
-     * Nudges the subtitle offset through jellyfin-web's own subtitle sync slider (its
+     * Sets the subtitle offset through jellyfin-web's own subtitle sync slider (its
      * updateOffset() applies the value) and shows that panel until two seconds pass
-     * without another nudge, so the new value can be read.
-     * @param deltaSeconds Seconds to add (negative = subtitles earlier).
+     * without another write, so the new value can be read. The slider's range keeps the
+     * value within ±30 s.
+     * @param seconds The offset, rounded to the slider's 0.1 s step.
+     * @returns False when the player has no subtitle sync control.
      */
-    JE.adjustSubtitleOffset = (deltaSeconds) => {
-        const slider = document.querySelector<HTMLInputElement & { updateOffset?: unknown }>('.subtitleSyncSlider');
+    JE.setSubtitleOffset = (seconds) => {
+        const slider = syncSlider();
         const box = document.querySelector('.subtitleSyncContainer');
-        if (!slider || !box || typeof slider.updateOffset !== 'function') {
-            JE.toast(tWithFallback('toast_subtitle_offset_unavailable', 'Subtitle offset is not available'));
-            return;
-        }
-        slider.updateOffset(Math.round(((parseFloat(slider.value) || 0) + deltaSeconds) * 10) / 10);
+        if (!slider || !box || typeof slider.updateOffset !== 'function') return false;
+        slider.updateOffset(Math.round(seconds * 10) / 10);
         hideOffsetPanel();
         box.classList.remove('hide');
         offsetPanel = box;
         offsetPanelTimer = lifetime.timeout(hideOffsetPanel, 2000);
+        return true;
+    };
+
+    /**
+     * Nudges the subtitle offset through jellyfin-web's own subtitle sync slider (see JE.setSubtitleOffset).
+     * @param deltaSeconds Seconds to add (negative = subtitles later).
+     */
+    JE.adjustSubtitleOffset = (deltaSeconds) => {
+        const slider = syncSlider();
+        if (!slider || !JE.setSubtitleOffset((parseFloat(slider.value) || 0) + deltaSeconds)) {
+            JE.toast(tWithFallback('toast_subtitle_offset_unavailable', 'Subtitle offset is not available'));
+        }
     };
 
 lifetime.onReset(() => {

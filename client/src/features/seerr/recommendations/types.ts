@@ -87,6 +87,8 @@ export interface RecommendationsInternals {
         isStale?: () => boolean): Promise<ScrollResult>;
     showCategoryPage(categoryKey: string): Promise<void>;
     hideCategoryPage(): void;
+    /** True while the open category page's own history entry is the current one. */
+    categoryOnOwnEntry(): boolean;
     handleNavigation(): void;
     handleViewShow(event: Event): void;
     injectNavigation(): void;

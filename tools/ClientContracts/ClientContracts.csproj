@@ -18,6 +18,7 @@
     <Compile Include="../../Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs" Link="Configuration/UserConfiguration.cs" />
     <Compile Include="../../Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs" Link="Configuration/PluginConfiguration.cs" />
     <Compile Include="../../Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLayoutSettings.cs" Link="Configuration/TagLayoutSettings.cs" />
+    <Compile Include="../../Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagHiddenValues.cs" Link="Configuration/TagHiddenValues.cs" />
     <Compile Include="../../Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLookSettings.cs" Link="Configuration/TagLookSettings.cs" />
     <Compile Include="../../Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagShapeSettings.cs" Link="Configuration/TagShapeSettings.cs" />
     <Compile Include="../../Jellyfin.Plugin.JellyfinEnhanced/Configuration/NativePosterDateContext.cs" Link="Configuration/NativePosterDateContext.cs" />

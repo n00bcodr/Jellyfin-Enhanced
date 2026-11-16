@@ -176,8 +176,14 @@
     function buildGroup(languages, cap = 3, flagSource = JE.core.mediaLanguage.flagSrc) {
       const data = Array.isArray(languages) ? { audio: languages } : export10(languages);
       const conf = readSettings();
-      const audio = conf.audio ? resolveChips(data.audio, conf.style) : [];
-      const subtitles = conf.subtitles ? resolveChips(data.subtitles, conf.style) : [];
+      const hidden = JE.core.tagHidden;
+      const labelOf = (entry) => {
+        const code = typeof entry === "string" ? entry : export42(entry) ? entry.code ?? entry.Code : null;
+        return code ? baseOf(String(code)) || null : null;
+      };
+      const shown = (list) => Array.isArray(list) && hidden?.any("language") ? list.filter((entry) => !hidden.hides("language", labelOf(entry))) : list;
+      const audio = conf.audio ? resolveChips(shown(data.audio), conf.style) : [];
+      const subtitles = conf.subtitles ? resolveChips(shown(data.subtitles), conf.style) : [];
       const counted = conf.audio && conf.badge !== "off" ? resolveChips(data.audio, "codes").filter((chip) => baseOf(chip.code) !== "zxx") : [];
       const count = new Set(counted.map((chip) => baseOf(chip.code))).size;
       const badge = conf.badge !== "off" && count >= 2;

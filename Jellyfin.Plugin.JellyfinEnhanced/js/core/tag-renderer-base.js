@@ -16,9 +16,9 @@
     return shared(feature, core, slots);
   }
   function publishSharedModules(modules) {
-    const JE = window.JellyfinEnhanced;
-    if (!JE) return;
-    const core = JE.core ?? (JE.core = {});
+    const JE2 = window.JellyfinEnhanced;
+    if (!JE2) return;
+    const core = JE2.core ?? (JE2.core = {});
     let registry = core.sharedModules;
     if (!registry) {
       registry = /* @__PURE__ */ Object.create(null);
@@ -108,15 +108,15 @@
     bridge.core ?? (bridge.core = {});
     return bridge;
   }
-  function mediaTagsContext(JE = tagRuntimeHost()) {
-    return featureContext("media-tags", JE, {
+  function mediaTagsContext(JE2 = tagRuntimeHost()) {
+    return featureContext("media-tags", JE2, {
       internalSlots: ["peopleTags"],
       // Same expression the modules used before (`JE.internals = JE.internals || {}`).
-      internalsObject: () => JE.internals = JE.internals || {}
+      internalsObject: () => JE2.internals = JE2.internals || {}
     });
   }
-  function settingsUi(JE) {
-    return JE.internals?.enhancedUi;
+  function settingsUi(JE2) {
+    return JE2.internals?.enhancedUi;
   }
   function hasApiClient() {
     const host = window;
@@ -131,6 +131,38 @@
   // client/generated-shared/publish/js/core/tag-renderer-base.js.ts
   publishSharedModules({ "features/media-tags/pipeline/dto": dto_exports, "features/media-tags/host": host_exports });
 
+  // client/src/features/media-tags/pipeline/tag-hidden.ts
+  var HIDDEN_GROUPS = ["quality", "ageRating", "rating", "genre", "status", "language", "awards", "logos", "custom"];
+  var GROUP_ALIASES = { agerating: "ageRating" };
+  var groupId = (group) => (Object.prototype.hasOwnProperty.call(GROUP_ALIASES, group) ? GROUP_ALIASES[group] : void 0) ?? group;
+  function createTagHidden(plugin) {
+    let memo = { doc: void 0, ages: void 0, sets: /* @__PURE__ */ new Map(), ratings: /* @__PURE__ */ new Set() };
+    function labels(group) {
+      const doc = plugin()?.TagHiddenValues;
+      const ages = plugin()?.TagHiddenAgeRatings;
+      if (memo.doc !== doc || memo.ages !== ages) memo = { doc, ages, sets: /* @__PURE__ */ new Map(), ratings: new Set(Array.isArray(ages) ? ages.map(String) : []) };
+      let set = memo.sets.get(group);
+      if (!set) {
+        const list = either(doc, group);
+        set = new Set(Array.isArray(list) ? list.map(String) : []);
+        memo.sets.set(group, set);
+      }
+      return set;
+    }
+    return {
+      GROUPS: HIDDEN_GROUPS,
+      hides: (group, label) => label !== null && label !== void 0 && labels(groupId(group)).has(String(label)),
+      any(group) {
+        const id = groupId(group);
+        return labels(id).size > 0 || id === "ageRating" && memo.ratings.size > 0;
+      },
+      hidesAgeRating(rating) {
+        labels("ageRating");
+        return rating !== null && rating !== void 0 && memo.ratings.has(String(rating));
+      }
+    };
+  }
+
   // client/src/features/media-tags/pipeline/scopes.ts
   var SCOPE_IDS = ["movies", "series", "seasons", "episodes", "continueWatching", "nextUp"];
   var SCOPED_GROUPS = ["quality", "genre", "language", "ageRating", "status", "awards", "logos", "custom"];
@@ -138,7 +170,7 @@
   var ROW_SCOPES = { continuewatching: "continueWatching", nextup: "nextUp" };
   var SCOPE_GROUP_ALIASES = { agerating: "ageRating" };
   var RATING_SCOPE_KEYS = { movies: "Movies", series: "Series", seasons: "Seasons", episodes: "Episodes", continueWatching: "ContinueWatching", nextUp: "NextUp" };
-  var groupId = (group) => (Object.prototype.hasOwnProperty.call(SCOPE_GROUP_ALIASES, group) ? SCOPE_GROUP_ALIASES[group] : void 0) ?? group;
+  var groupId2 = (group) => (Object.prototype.hasOwnProperty.call(SCOPE_GROUP_ALIASES, group) ? SCOPE_GROUP_ALIASES[group] : void 0) ?? group;
   var scopedType = (type) => type && Object.prototype.hasOwnProperty.call(TYPE_SCOPES, type) ? TYPE_SCOPES[type] ?? null : null;
   function scopeDefaultOf(group, scope, plugin) {
     if (group === "rating") return plugin?.[`RatingTagsOn${RATING_SCOPE_KEYS[scope]}`] !== false;
@@ -154,12 +186,12 @@
     const scopeDefault = (group, scope, plugin = host.plugin()) => scopeDefaultOf(group, scope, plugin);
     const scopeOwn = (group, scope, settings = host.settings()) => scopeOwnOf(group, scope, settings);
     function allows(groupName, scope, settings = host.settings(), plugin = host.plugin()) {
-      const group = groupId(groupName);
+      const group = groupId2(groupName);
       if (group !== "rating" && !SCOPED_GROUPS.includes(group)) return true;
       return scopeOwn(group, scope, settings) ?? scopeDefault(group, scope, plugin);
     }
     function excludes(groupName, el, type) {
-      const group = groupId(groupName);
+      const group = groupId2(groupName);
       if (group !== "rating" && !SCOPED_GROUPS.includes(group)) return false;
       const itemType = el?.closest?.("[data-type]")?.getAttribute("data-type") || type || null;
       const typeScope = scopedType(itemType);
@@ -174,7 +206,7 @@
     }
     function setOwn(groupName, scope, value, settings = host.settings()) {
       if (!settings) throw new TypeError("A settings document is required");
-      const group = groupId(groupName);
+      const group = groupId2(groupName);
       if (group === "rating") settings[`ratingTagsOn${RATING_SCOPE_KEYS[scope]}`] = value !== false;
       const camel = (key) => key.charAt(0).toLowerCase() + key.slice(1);
       const source = isRecord(settings.tagGroupScopes) ? settings.tagGroupScopes : {};
@@ -223,7 +255,7 @@
   function isHostList(value) {
     return Array.isArray(value);
   }
-  function createTagRenderer(JE) {
+  function createTagRenderer(JE2) {
     const STANDARD_IGNORE_SELECTORS = [
       "#itemDetailPage .infoWrapper .cardImageContainer",
       "#itemDetailPage #castCollapsible .cardImageContainer",
@@ -247,7 +279,7 @@
     let standardIgnoreSearch = null;
     function isIgnoredContext(el) {
       if (!el) return true;
-      const search = JE.pluginConfig?.DisableTagsOnSearchPage === true;
+      const search = JE2.pluginConfig?.DisableTagsOnSearchPage === true;
       if (standardIgnoreSelector === null || standardIgnoreSearch !== search) {
         standardIgnoreSearch = search;
         standardIgnoreSelector = STANDARD_IGNORE_SELECTORS.concat(search ? ["#searchPage .cardImageContainer"] : []).join(", ");
@@ -260,11 +292,11 @@
       }
     }
     function layoutFor(name) {
-      const layout = JE.core.tagLayout;
+      const layout = JE2.core.tagLayout;
       return layout && layout.normalizeGroup(name) ? layout : null;
     }
     function resolvePosition(userKey, pluginKey, fallback) {
-      const configured = JE.currentSettings?.[userKey] || JE.pluginConfig?.[pluginKey] || fallback;
+      const configured = JE2.currentSettings?.[userKey] || JE2.pluginConfig?.[pluginKey] || fallback;
       const pos = typeof configured === "string" ? configured : fallback;
       const isTop = pos.includes("top");
       const isLeft = pos.includes("left");
@@ -371,13 +403,13 @@
       const ENVELOPE_VERSION = 1;
       function revision() {
         try {
-          return text(JE.tagPipeline?.tagStripRevision?.());
+          return text(JE2.tagPipeline?.tagStripRevision?.());
         } catch {
           return null;
         }
       }
       function dirty() {
-        JE._cacheManager?.markDirty();
+        JE2._cacheManager?.markDirty();
       }
       function discard(itemId) {
         delete state.cache[itemId];
@@ -439,7 +471,7 @@
       }
       function buildIgnoreSelectors() {
         const list = [...spec.ignoreSelectors || STANDARD_IGNORE_SELECTORS];
-        if (JE.pluginConfig?.DisableTagsOnSearchPage === true) {
+        if (JE2.pluginConfig?.DisableTagsOnSearchPage === true) {
           list.push(spec.searchPageIgnoreSelector || "#searchPage .cardImageContainer");
         }
         return list;
@@ -483,8 +515,8 @@
         if (!spec.cache || !state.localStorageEnabled) return;
         try {
           const ownerKey = `${spec.cache.key}:identity-owner`;
-          const userId = JE.session?.getUserId() || (hasApiClient() ? apiClient().getCurrentUserId?.() : null) || "";
-          const expected = `${JE.session?.getServerId() || ""}:${userId}`;
+          const userId = JE2.session?.getUserId() || (hasApiClient() ? apiClient().getCurrentUserId?.() : null) || "";
+          const expected = `${JE2.session?.getServerId() || ""}:${userId}`;
           if (localStorage.getItem(ownerKey) !== expected) {
             localStorage.removeItem(spec.cache.key);
             localStorage.setItem(ownerKey, expected);
@@ -494,8 +526,8 @@
         }
       }
       function loadCacheSettings() {
-        state.localStorageEnabled = JE.pluginConfig?.TagCacheServerMode === false || JE.pluginConfig?.EnableTagsLocalStorageFallback === true;
-        state.cacheTtl = Number(JE.pluginConfig?.TagsCacheTtlDays || 30) * 24 * 60 * 60 * 1e3;
+        state.localStorageEnabled = JE2.pluginConfig?.TagCacheServerMode === false || JE2.pluginConfig?.EnableTagsLocalStorageFallback === true;
+        state.cacheTtl = Number(JE2.pluginConfig?.TagsCacheTtlDays || 30) * 24 * 60 * 60 * 1e3;
         if (!spec.cache) return;
         enforceCacheOwnership();
         state.cache = {};
@@ -508,7 +540,7 @@
           }
         }
         if (spec.cache.hotBucket) {
-          const Hot = JE._hotCache = JE._hotCache || { ttl: state.cacheTtl };
+          const Hot = JE2._hotCache = JE2._hotCache || { ttl: state.cacheTtl };
           const bucket = Hot[spec.cache.hotBucket];
           const shared = typeof bucket === "object" ? bucket : /* @__PURE__ */ new Map();
           Hot[spec.cache.hotBucket] = shared;
@@ -547,7 +579,7 @@
           console.log(`${logPrefix} Removing old cache: ${key}`);
           localStorage.removeItem(key);
         }
-        const serverClearTimestamp = Number(JE.pluginConfig?.ClearLocalStorageTimestamp || 0);
+        const serverClearTimestamp = Number(JE2.pluginConfig?.ClearLocalStorageTimestamp || 0);
         const localCacheTimestamp = parseInt(localStorage.getItem(TIMESTAMP_KEY) || "0", 10);
         if (serverClearTimestamp > localCacheTimestamp) {
           console.log(`${logPrefix} Server triggered cache clear (${new Date(serverClearTimestamp).toISOString()})`);
@@ -560,13 +592,13 @@
       function injectCss() {
         if (!spec.styleId || typeof spec.buildCss !== "function") return;
         const css = spec.buildCss(ctx);
-        const text2 = JE.core.tagLayout?.preserveLegacySizing?.(css) || css;
+        const text2 = JE2.core.tagLayout?.preserveLegacySizing?.(css) || css;
         const existing = document.getElementById(spec.styleId);
         if (existing && previewStyles.delete(existing)) {
           delete existing.dataset.jeTagPreviewOwned;
           existing.textContent = text2;
         } else {
-          JE.core.ui.injectCss(spec.styleId, text2);
+          JE2.core.ui.injectCss(spec.styleId, text2);
         }
       }
       const ctx = {
@@ -626,7 +658,7 @@
          */
         commitOverlay(el, overlay) {
           const layout = layoutFor(name);
-          if (name !== "rating" && JE.core.tagScopes?.excludes(name, el)) {
+          if (name !== "rating" && JE2.core.tagScopes?.excludes(name, el)) {
             if (layout) layout.removeGroup(el, name);
             return false;
           }
@@ -645,7 +677,7 @@
           return true;
         }
       };
-      JE.session?.onUserChange(`tag-cache-${name}`, (change) => {
+      JE2.session?.onUserChange(`tag-cache-${name}`, (change) => {
         state.cache = {};
         if (state.hot) state.hot.clear();
         if (!spec.cache) return;
@@ -665,8 +697,8 @@
         state.ignoreSelector = null;
         cleanupOldCaches();
         if (spec.cache && state.localStorageEnabled) {
-          if (JE._cacheManager && !state.saveRegistered) {
-            JE._cacheManager.register(saveCache);
+          if (JE2._cacheManager && !state.saveRegistered) {
+            JE2._cacheManager.register(saveCache);
             state.saveRegistered = true;
           }
           if (spec.cache.saveOnUnload !== false && !state.unloadRegistered) {
@@ -676,7 +708,7 @@
         }
         const p = spec.pipeline;
         if (!p) return;
-        if (!JE.tagPipeline) {
+        if (!JE2.tagPipeline) {
           console.warn(`${logPrefix} Tag pipeline not available, tags will not render.`);
           return;
         }
@@ -697,13 +729,13 @@
             p.onServerCacheRefresh?.(ctx, updatedIds, info);
           },
           cleanup: cleanup ? () => cleanup.call(p, ctx) : void 0,
-          isEnabled: () => !!JE.currentSettings?.[spec.settingKey],
+          isEnabled: () => !!JE2.currentSettings?.[spec.settingKey],
           needsFirstEpisode: !!p.needsFirstEpisode,
           needsParentSeries: !!p.needsParentSeries,
           needsLatestEpisode: !!p.needsLatestEpisode,
           injectCss
         };
-        JE.tagPipeline.registerRenderer(name, config);
+        JE2.tagPipeline.registerRenderer(name, config);
         console.log(`${logPrefix} Registered with unified tag pipeline.`);
       }
       function reinitialize2() {
@@ -718,15 +750,15 @@
         document.querySelectorAll(`[data-${toKebab(TAGGED_ATTR)}]`).forEach((el) => {
           delete el.dataset[TAGGED_ATTR];
         });
-        const renderer = JE.tagPipeline?.getRenderer?.(name);
+        const renderer = JE2.tagPipeline?.getRenderer?.(name);
         if (renderer?.injectCss) renderer.injectCss();
         else injectCss();
-        if (!JE.currentSettings?.[spec.settingKey]) {
+        if (!JE2.currentSettings?.[spec.settingKey]) {
           console.log(`${logPrefix} Feature is disabled after reinit.`);
           return;
         }
-        JE.tagPipeline?.clearProcessed();
-        JE.tagPipeline?.scheduleScan();
+        JE2.tagPipeline?.clearProcessed();
+        JE2.tagPipeline?.scheduleScan();
       }
       return { ctx, initialize, reinitialize: reinitialize2 };
     }
@@ -761,7 +793,7 @@
         }
         if (typeof spec.buildCss !== "function") continue;
         const css = spec.buildCss();
-        JE.core.ui.injectCss(spec.styleId, JE.core.tagLayout?.preserveLegacySizing?.(css) || css);
+        JE2.core.ui.injectCss(spec.styleId, JE2.core.tagLayout?.preserveLegacySizing?.(css) || css);
         const sheet = document.getElementById(spec.styleId);
         if (sheet) {
           sheet.dataset.jeTagPreviewOwned = "";
@@ -836,15 +868,15 @@
         return `${rule}{${padding};}`;
       }) : css;
     }
-    JE.core.tagSettingsMatrix = createSettingsMatrix((name) => {
-      const layout = JE.core.tagLayout;
+    JE2.core.tagSettingsMatrix = createSettingsMatrix((name) => {
+      const layout = JE2.core.tagLayout;
       const group = layout?.normalizeGroup(name);
       return group ? layout?.singleChipGroup?.(group) ?? false : false;
     });
-    JE.core.tagScopes = createTagScopes({
-      settings: () => JE.currentSettings,
-      plugin: () => JE.pluginConfig,
-      detectRow: () => typeof JE.detectCardRowSurface === "function" ? JE.detectCardRowSurface : null
+    JE2.core.tagScopes = createTagScopes({
+      settings: () => JE2.currentSettings,
+      plugin: () => JE2.pluginConfig,
+      detectRow: () => typeof JE2.detectCardRowSurface === "function" ? JE2.detectCardRowSurface : null
     });
     const tagRenderer = {
       chipBaseCss,
@@ -858,12 +890,37 @@
       applyCornerStacking,
       scheduleCornerStacking
     };
-    JE.core.tagRenderer = tagRenderer;
+    JE2.core.tagRenderer = tagRenderer;
     console.log("🪼 Jellyfin Enhanced: Tag renderer core initialized");
   }
 
+  // client/src/features/media-tags/pipeline/tag-text.ts
+  function createTagText(plugin) {
+    let memo = { doc: void 0, map: {} };
+    return {
+      of(group, label) {
+        const doc = plugin()?.TagTextOverrides;
+        if (memo.doc !== doc) {
+          let map = {};
+          try {
+            map = typeof doc === "string" && doc ? JSON.parse(doc) : {};
+          } catch {
+          }
+          memo = { doc, map: isRecord(map) ? map : {} };
+        }
+        if (label === null || label === void 0) return null;
+        const labels = own(memo.map, group);
+        const text2 = isRecord(labels) ? own(labels, String(label)) : null;
+        return typeof text2 === "string" && text2 ? text2 : null;
+      }
+    };
+  }
+
   // client/src/features/media-tags/pipeline/tag-renderer-base-entry.ts
-  createTagRenderer(tagRuntimeHost());
+  var JE = tagRuntimeHost();
+  createTagRenderer(JE);
+  JE.core.tagHidden = createTagHidden(() => JE.pluginConfig);
+  JE.core.tagText = createTagText(() => JE.pluginConfig);
 })();
 })();
 //# sourceMappingURL=tag-renderer-base.js.map

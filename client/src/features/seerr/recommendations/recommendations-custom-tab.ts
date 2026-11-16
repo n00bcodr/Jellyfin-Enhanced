@@ -2,8 +2,9 @@
 // Mounts into <div class="jellyfinenhanced recommendations"></div>, inside a tab panel managed by the
 // external Custom Tabs plugin (RecommendationsUseCustomTabs) or one JE creates through the shared
 // native-tabs registry (RecommendationsUseNativeTab). Nothing below depends on which created it.
-// The watcher remounts whenever the home page DOM is rebuilt, and a mount that stops being the active
-// container is disposed: it holds no requests, observers or cards while nobody can see it.
+// The watcher remounts whenever the home page DOM is rebuilt. A mount that is only hidden (another Home
+// tab, or the category page over #indexPage) keeps its rows, so coming back does not reload them; one
+// whose page is gone or left is disposed: it holds no requests, observers or cards after that.
 import { translate } from '../host-discovery';
 import { part, recommendationsHost } from './stage';
 
@@ -48,8 +49,12 @@ const READY_MAX_POLLS = 300;
         return all.reverse().find(element => JE.helpers?.isActiveTabContainer?.(element)) ?? null;
     }
     function reconcile(): void {
-        const container = isOnHomePage() ? findActiveContainer() : null;
-        if (!container) { unmount(); return; }
+        if (!isOnHomePage()) { unmount(); return; }
+        const container = findActiveContainer();
+        if (!container) {
+            if (!mounted?.container.isConnected) unmount();
+            return;
+        }
         if (container === mounted?.container && mounted.child.isConnected) return;
         unmount();
         container.classList.remove('hide');

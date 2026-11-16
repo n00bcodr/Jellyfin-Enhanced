@@ -41,7 +41,7 @@
     return normalizeId(ctx.own.player?.getCurrentVideoItemId?.());
   }
   async function itemIdFromSession(video) {
-    const lease = lifetime.lease(video);
+    const lease = lifetime.lease(video instanceof HTMLVideoElement ? video : null);
     try {
       const userId = ApiClient.getCurrentUserId?.();
       const deviceId = ApiClient.deviceId?.();

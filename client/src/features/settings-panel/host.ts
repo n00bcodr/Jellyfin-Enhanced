@@ -188,6 +188,8 @@ export interface PanelBridge {
     initializePeopleTags?(): void; initializeTagStyles?(): void;
     reinitializeQualityTags?(): void; reinitializeGenreTags?(): void; reinitializeLanguageTags?(): void;
     reinitializeRatingTags?(): void; reinitializeStatusTags?(): void; reinitializeLogoTags?(): void;
+    /** player's facade: adds or removes the player's Subtitle Sync button for the current setting. */
+    addSubtitleSyncButton?(): void;
     reinitializeTagLayout?(): void;
     reinitializeAgeRatingTags?(): void; reinitializeAwardsTags?(): void; reinitializeCustomTags?(): void;
 
@@ -229,7 +231,7 @@ export type SettingsPanelOwn = Pick<Internals, 'enhancedUi'>;
 export type SettingsPanelPeers = Required<Pick<PanelBridge, 'hiddenContent' | 'tagPipeline'
     | 'initializeQualityTags' | 'initializeGenreTags' | 'initializeLanguageTags' | 'initializeRatingTags' | 'initializeAgeRatingTags'
     | 'initializeLogoTags' | 'initializeStatusTags' | 'initializeAwardsTags' | 'initializeCustomTags' | 'initializePeopleTags' | 'initializeTagStyles'
-    | 'reinitializeQualityTags' | 'reinitializeRatingTags' | 'reinitializeStatusTags' | 'reinitializeLogoTags' | 'reinitializeTagLayout'>>
+    | 'reinitializeQualityTags' | 'reinitializeRatingTags' | 'reinitializeStatusTags' | 'reinitializeLogoTags' | 'reinitializeTagLayout' | 'addSubtitleSyncButton'>>
     & { spoilerBlur: SpoilerGuardSettings; canonicalCombo(value: string): string };
 export type SettingsPanelContext<Core extends Pick<PanelBridge, 'internals'> = PanelBridge> = FeatureContext<SettingsPanelOwn, SettingsPanelPeers, Core>;
 /** The context a panel module gets (step C3): `core` is the bridge `panelHost()` returned. */

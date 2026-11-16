@@ -15,9 +15,11 @@
   "jellyseerrUi": ["seerr"],
   "moreInfoModal": ["seerr"],
   "nowPlaying": ["player"],
+  "osdPlayback": ["player"],
   "peopleTags": ["media-tags"],
   "player": ["player"],
   "recommendationsPage": ["seerr"],
   "requestsPage": ["downloads"],
-  "spoilerGuard": ["spoiler-guard"]
+  "spoilerGuard": ["spoiler-guard"],
+  "subtitleSync": ["player"]
 }

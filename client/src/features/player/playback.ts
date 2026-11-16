@@ -8,6 +8,9 @@ import { installTrackControls } from './track-controls';
 import { installAspect } from './normal-aspect';
 import { installPlaybackInfo } from './playback-info';
 import { installLongPress } from './long-press';
+import { installOsdSeekHistory, type SeekHistory } from './osd-seek-history';
+import { createOsdSettingsMenu } from './osd-settings-menu';
+import { osdPlayback } from '../shared/osd-playback';
 const { JE, ApiClient, ctx } = playerHost();
 const lifetime = createPlayerLifetime(JE, 'playback');
 const getVideo = () => document.querySelector('video');
@@ -55,7 +58,7 @@ const _tFallbackWarned = new Set<string>();
     JE.adjustPlaybackSpeed = (direction) => {
         const video = getVideo();
         if (!video) {
-            JE.toast(JE.t('toast_no_video_found'));
+            osdMenu.stepPlaybackRate(direction === 'increase' ? 'increase' : 'decrease');
             return;
         }
         const speeds = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
@@ -79,7 +82,7 @@ const _tFallbackWarned = new Set<string>();
     JE.resetPlaybackSpeed = () => {
         const video = getVideo();
         if (!video) {
-            JE.toast(JE.t('toast_no_video_found'));
+            osdMenu.stepPlaybackRate('reset');
             return;
         }
         video.playbackRate = 1.0;
@@ -92,7 +95,12 @@ const _tFallbackWarned = new Set<string>();
      */
     JE.jumpToPercentage = (percentage) => {
         const video = getVideo();
-        if (!video || !video.duration) {
+        if (!video) {
+            // A player without a <video> (mpv in Jellyfin Desktop): jellyfin-web's position slider.
+            osdSeek.jumpToPercent(percentage);
+            return;
+        }
+        if (!video.duration) {
             JE.toast(JE.t('toast_no_video_found'));
             return;
         }
@@ -102,11 +110,18 @@ const _tFallbackWarned = new Set<string>();
 
 
 const context = { JE, ApiClient, lifetime, getVideo, getCurrentVideoItemId, tWithFallback };
-installFrameSeek(context);
-installSegmentControls(context);
+// A player without a <video> (mpv in Jellyfin Desktop) is read and driven through jellyfin-web's OSD.
+ctx.own.osdPlayback = osdPlayback;
+const seekHistory: SeekHistory = { position: null };
 const menu = createTrackMenu(context);
+const osdSeek = installOsdSeekHistory(context, seekHistory);
+const osdMenu = createOsdSettingsMenu(context, menu, osdSeek.noteRate);
+installFrameSeek(context, seekHistory, osdSeek.jumpToLast);
+installSegmentControls(context, async shown => await ctx.own.nowPlaying?.itemIdFromSession?.(shown) ?? null);
 const tracks = installTrackControls(context, menu.cycleTrackMenu);
-installAspect(context);
+installAspect(context, osdMenu.cycleAspect);
 installPlaybackInfo(context, tracks.probeOwnSession, tracks.trackDisplayName, menu);
 installLongPress(context);
-ctx.own.player = Object.assign(ctx.own.player || {}, { getVideo, getCurrentVideoItemId });
+// Shared with the sibling player modules (auto-skip.ts, subtitle-sync/) so the video-element lookup, the
+// video-page item-id parse and the own-session probe live in exactly one place.
+ctx.own.player = Object.assign(ctx.own.player || {}, { getVideo, getCurrentVideoItemId, probeOwnSession: tracks.probeOwnSession });

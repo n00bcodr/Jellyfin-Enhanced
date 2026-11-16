@@ -45,13 +45,12 @@ installSection((A) => {
             let last = '';
             loadEditor = () => {
                 const next = JSON.stringify(ctx.config.CustomTagRules || []);
-                if (next === last) return;
+                // The stored rules leave out incomplete rows: reloading them after an auto-save would drop a
+                // half-filled rule, so the table is kept while its complete rules are what is stored.
+                if (next === last || editor.matches(ctx.config)) { last = next; return; }
                 last = next;
                 editor.load(ctx.config);
             };
-            // Keep incomplete local rows while their complete siblings auto-save.
-            body.addEventListener('input', () => { last = JSON.stringify(ctx.config.CustomTagRules || []); });
-            body.addEventListener('change', () => { last = JSON.stringify(ctx.config.CustomTagRules || []); });
             loadEditor();
         },
         load() { loadEditor?.(); },

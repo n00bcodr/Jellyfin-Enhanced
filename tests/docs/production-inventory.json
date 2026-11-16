@@ -82,6 +82,10 @@
       "category": "Configuration"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagHiddenValues.cs",
+      "category": "Configuration"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLayoutSettings.cs",
       "category": "Configuration"
     },
@@ -690,6 +694,10 @@
       "category": "Features"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Features/Seerr/Services/RequestRemovalPlanner.cs",
+      "category": "Features"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Features/Seerr/Services/SeerrCsrfHandler.cs",
       "category": "Features"
     },
@@ -711,6 +719,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Features/Seerr/Services/WatchlistSyncPlanner.cs",
+      "category": "Features"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Features/Seerr/Tasks/AutoRequestRemovalTask.cs",
       "category": "Features"
     },
     {
@@ -1038,11 +1050,19 @@
       "category": "Shared"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Shared/MediaTags/PosterTags/TagHiddenRules.cs",
+      "category": "Shared"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Shared/MediaTags/PosterTags/TagStylePalettes.cs",
       "category": "Shared"
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Shared/MediaTags/PosterTags/TagStyles.cs",
+      "category": "Shared"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Shared/MediaTags/PosterTags/TagTextRules.cs",
       "category": "Shared"
     },
     {
@@ -2801,6 +2821,15 @@
       ]
     },
     {
+      "verb": "DELETE",
+      "path": "/JellyfinEnhanced/arr/requests/{requestId}",
+      "method": "RemoveRequest",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Features/Downloads/JeDownloadsController.Requests.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
       "verb": "GET",
       "path": "/JellyfinEnhanced/arr/queue",
       "method": "GetDownloadQueue",
@@ -4537,6 +4566,14 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "SubtitleSyncButtonEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "false",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "RandomButtonEnabled",
       "type": "bool",
       "initializer": null,
@@ -5857,6 +5894,22 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "TagHiddenValues",
+      "type": "TagHiddenValues?",
+      "initializer": null,
+      "constructor_assignment": "null",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "TagTextOverrides",
+      "type": "string?",
+      "initializer": null,
+      "constructor_assignment": "null",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "TagLabelDensity",
       "type": "string",
       "initializer": "\"full\"",
@@ -6709,6 +6762,14 @@
       "type": "bool",
       "initializer": null,
       "constructor_assignment": "true",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "AutoRequestRemovalEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "false",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
     },
     {
@@ -7872,6 +7933,78 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
     },
     {
+      "class": "TagHiddenValues",
+      "name": "Quality",
+      "type": "string[]?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagHiddenValues.cs"
+    },
+    {
+      "class": "TagHiddenValues",
+      "name": "AgeRating",
+      "type": "string[]?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagHiddenValues.cs"
+    },
+    {
+      "class": "TagHiddenValues",
+      "name": "Rating",
+      "type": "string[]?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagHiddenValues.cs"
+    },
+    {
+      "class": "TagHiddenValues",
+      "name": "Genre",
+      "type": "string[]?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagHiddenValues.cs"
+    },
+    {
+      "class": "TagHiddenValues",
+      "name": "Status",
+      "type": "string[]?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagHiddenValues.cs"
+    },
+    {
+      "class": "TagHiddenValues",
+      "name": "Language",
+      "type": "string[]?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagHiddenValues.cs"
+    },
+    {
+      "class": "TagHiddenValues",
+      "name": "Awards",
+      "type": "string[]?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagHiddenValues.cs"
+    },
+    {
+      "class": "TagHiddenValues",
+      "name": "Logos",
+      "type": "string[]?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagHiddenValues.cs"
+    },
+    {
+      "class": "TagHiddenValues",
+      "name": "Custom",
+      "type": "string[]?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagHiddenValues.cs"
+    },
+    {
       "class": "TagLayoutGroupSlot",
       "name": "Group",
       "type": "string",
@@ -8418,6 +8551,14 @@
     {
       "class": "JellyfinEnhancedUserSettings",
       "name": "LongPress2xEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "SubtitleSyncButtonEnabled",
       "type": "bool",
       "initializer": null,
       "constructor_assignment": null,
@@ -10727,6 +10868,11 @@
       "key": "JellyfinEnhancedRefreshCdnAssets"
     },
     {
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Features/Seerr/Tasks/AutoRequestRemovalTask.cs",
+      "class": "AutoRequestRemovalTask",
+      "key": "JellyfinEnhancedAutoRequestRemoval"
+    },
+    {
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Features/Seerr/Tasks/JellyfinToSeerrWatchlistSyncTask.cs",
       "class": "JellyfinToSeerrWatchlistSyncTask",
       "key": "JellyfinEnhancedJellyfinToSeerrWatchlistSync"
@@ -10855,11 +11001,11 @@
   ],
   "counts": {
     "build_targets": 1,
-    "files": 554,
-    "routes": 210,
-    "configuration_properties": 762,
+    "files": 559,
+    "routes": 211,
+    "configuration_properties": 776,
     "storage_references": 97,
-    "scheduled_tasks": 16,
+    "scheduled_tasks": 17,
     "locales": 33
   }
 }

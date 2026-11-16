@@ -24,6 +24,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Seerr
             serviceCollection.AddTransient<JellyseerrWatchlistSyncTask>();
             serviceCollection.AddTransient<JellyfinToSeerrWatchlistSyncTask>();
             serviceCollection.AddTransient<WatchlistRemovalSyncTask>();
+            serviceCollection.AddTransient<AutoRequestRemovalTask>();
             serviceCollection.AddTransient<JellyseerrUserImportTask>();
             return serviceCollection;
         }

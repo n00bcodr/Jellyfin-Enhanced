@@ -9,6 +9,7 @@
     "AudioLanguageTagsSyncTask | AudioLanguageTagsSyncTask | Transient",
     "AutoMovieRequestMonitor | AutoMovieRequestMonitor | Singleton",
     "AutoMovieRequestService | AutoMovieRequestService | Singleton",
+    "AutoRequestRemovalTask | AutoRequestRemovalTask | Transient",
     "AutoSeasonRequestMonitor | AutoSeasonRequestMonitor | Singleton",
     "AutoSeasonRequestService | AutoSeasonRequestService | Singleton",
     "AwardTagsService | AwardTagsService | Singleton",

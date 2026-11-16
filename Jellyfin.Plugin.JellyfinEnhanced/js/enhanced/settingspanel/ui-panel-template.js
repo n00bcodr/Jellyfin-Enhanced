@@ -73,6 +73,7 @@
     "FrameStepForward",
     "DecreaseSubtitleOffset",
     "IncreaseSubtitleOffset",
+    "SubtitleSync",
     "JumpToLastPosition",
     "JumpToPercentage"
   ];
@@ -341,6 +342,12 @@
                                 <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
                                     <input type="checkbox" id="disableCustomSubtitleStyles" ${JE.currentSettings.disableCustomSubtitleStyles ? "checked" : ""} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
                                     <div><div style="font-weight:500;">${JE.t("panel_settings_disable_custom_styles")}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t("panel_settings_disable_custom_styles_desc")}</div></div>
+                                </label>
+                            </div>
+                            <div style="margin-bottom: 16px; padding: 12px; background: var(--je-panel-box); border-radius: 6px; border-left: 3px solid var(--je-panel-toggle-accent);">
+                                <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
+                                    <input type="checkbox" id="subtitleSyncButtonEnabled" ${JE.currentSettings.subtitleSyncButtonEnabled ? "checked" : ""} style="width:18px; height:18px; accent-color:var(--je-panel-toggle-accent); cursor:pointer;">
+                                    <div><div style="font-weight:500;">${JE.t("panel_settings_subtitle_sync_button")}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t("panel_settings_subtitle_sync_button_desc")}</div></div>
                                 </label>
                             </div>
                             <div id="je-subtitle-format-warning" style="display:none; margin-bottom: 16px; padding: 10px 12px; background: rgba(102,179,255,0.1); border: 1px solid rgba(102,179,255,0.3); border-radius: 6px; font-size: 12px; color: rgba(255,255,255,0.8); align-items: flex-start; gap: 8px;">

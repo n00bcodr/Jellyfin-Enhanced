@@ -111,6 +111,7 @@
     "StatusTagsSchedule",
     "StatusTagsSeriesStatus",
     "StatusTagsTrending",
+    "SubtitleSyncButtonEnabled",
     "TagsHideOnHover",
     "VersionsTagOrder",
     "VideoCodecTagOrder"

@@ -59,6 +59,7 @@
     const hideCategoryPage = () => part(P, "hideCategoryPage")();
     function handleNavigation() {
       part(P, "sweepRenders")();
+      if (state.categoryPageVisible && part(P, "categoryOnOwnEntry")()) return;
       if (state.categoryPageVisible) hideCategoryPage();
       if (window.location.hash === "#/recommendations") showPage();
       else if (state.pageVisible) hidePage();

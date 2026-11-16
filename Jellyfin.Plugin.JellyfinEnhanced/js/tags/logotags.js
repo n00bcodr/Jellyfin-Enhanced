@@ -56,7 +56,7 @@
       const route = `JellyfinEnhanced/logo/w92${path}`;
       return export1() && typeof export0().getUrl === "function" ? export0().getUrl(route) : `/${route}`;
     }
-    function readLogos(raw) {
+    function validLogos(raw) {
       if (!Array.isArray(raw)) return [];
       const out = [];
       for (const entry of raw) {
@@ -66,9 +66,12 @@
         if (!KINDS.has(kind) || !name) continue;
         const logo = fact.logo ?? fact.Logo;
         out.push({ kind, name, logo: typeof logo === "string" && LOGO_PATH.test(logo) ? logo : null });
-        if (out.length === 2) break;
       }
       return out;
+    }
+    function readLogos(raw) {
+      const style = (l) => !l.logo ? "text" : l.kind === "provider" ? "provider" : "company";
+      return validLogos(raw).filter((l) => !JE.core.tagHidden?.hides("logos", style(l))).slice(0, 2);
     }
     function asText(chip, name) {
       chip.textContent = shortName(name);
@@ -207,11 +210,10 @@
           if (ctx.shouldIgnore(el)) return;
           if (ctx.isTagged(el)) return;
           if (el.closest(".je-hidden")) return;
-          const logos = readLogos(item.Logos);
-          const entry = { l: logos };
+          const entry = { l: validLogos(item.Logos) };
           ctx.setPersistent(String(item.Id), entry);
           ctx.hot?.set(String(item.Id), entry);
-          applyLogoTags(ctx, el, logos);
+          applyLogoTags(ctx, el, readLogos(entry.l));
         },
         renderFromCache(ctx, el, itemId) {
           if (ctx.isTagged(el)) return true;

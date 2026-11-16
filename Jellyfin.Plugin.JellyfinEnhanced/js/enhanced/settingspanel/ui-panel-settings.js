@@ -326,6 +326,7 @@
           }
           JE.toast(toastMessage);
           if (id === "randomButtonToggle") JE.addRandomButton();
+          else if (id === "subtitleSyncButtonEnabled") featureCtx.peer("addSubtitleSyncButton")?.();
           if (id === "showWatchProgressToggle" && !checked) document.querySelectorAll(".mediaInfoItem-watchProgress").forEach((el) => el.remove());
           if (id === "showFileSizesToggle" && !checked) document.querySelectorAll(".mediaInfoItem-fileSize").forEach((el) => el.remove());
           if (id === "showAudioLanguagesToggle" && !checked) document.querySelectorAll(".mediaInfoItem-audioLanguage").forEach((el) => el.remove());
@@ -610,7 +611,7 @@
         }
       );
       addSettingToggleListener("disableCustomSubtitleStyles", "disableCustomSubtitleStyles", "feature_disable_custom_subtitle_styles", true);
-      addSettingToggleListener("longPress2xEnabled", "longPress2xEnabled", "feature_long_press_2x_speed");
+      for (const [id, feature] of [["longPress2xEnabled", "feature_long_press_2x_speed"], ["subtitleSyncButtonEnabled", "feature_subtitle_sync_button"]]) addSettingToggleListener(id, id, feature);
       (function wireSubtitleStylingWarnings() {
         const positionNote = document.getElementById("je-subtitle-position-note");
         const formatWarning = document.getElementById("je-subtitle-format-warning");

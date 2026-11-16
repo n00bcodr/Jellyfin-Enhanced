@@ -105,6 +105,7 @@
     "TagGroupCaps",
     "TagGroupOrder",
     "TagGroupScopes",
+    "TagHiddenValues",
     "TagKindLooks",
     "TagLabelDensity",
     "TagLayout",
@@ -119,6 +120,7 @@
     "TagStyleTarget",
     "TagStylesAllowUserPreset",
     "TagStylesEnabled",
+    "TagTextOverrides",
     "TagsCacheTtlDays",
     "TagsHideOnHover",
     "VersionsTagOrder",
@@ -1110,17 +1112,17 @@
     "colours.js": [
       [
         "TagStylesEnabled",
-        "Tag colours",
+        "Tag colours and text",
         "Use tag colours"
       ],
       [
         "TagStyleTarget",
-        "Tag colours",
+        "Tag colours and text",
         "Apply to"
       ],
       [
         "TagStylesAllowUserPreset",
-        "Tag colours",
+        "Tag colours and text",
         "Let users pick their own preset"
       ]
     ],

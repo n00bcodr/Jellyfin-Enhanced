@@ -430,9 +430,9 @@ export function install(deps: Dependencies) {
     if(!lease.current())return;
     state.isLoading = false;
     loaded = true;
-    // A list that moved under a pointer or focus resting on Approve or Decline would take the click to another
-    // request: leave the page as it is until the next poll or refresh.
-    if (document.querySelector('.je-request-approve-btn:hover, .je-request-decline-btn:hover, .je-request-approve-btn:focus, .je-request-decline-btn:focus')) return;
+    // A list that moved under a pointer or focus resting on Approve, Decline or Remove would take the click to
+    // another request: leave the page as it is until the next poll or refresh.
+    if (document.querySelector(':is(.je-request-approve-btn, .je-request-decline-btn, .je-request-remove-btn):is(:hover, :focus)')) return;
     renderPage();
   }
 
@@ -473,6 +473,76 @@ export function install(deps: Dependencies) {
     }
   }
 
+  /**
+   * Asks for confirmation with Jellyfin's own dialog, falling back to window.confirm on clients that do
+   * not expose Dashboard.confirm.
+   */
+  function confirmRemoval(text: string, title: string): Promise<boolean> {
+    return new Promise(resolve => {
+      const dashboard = host.Dashboard;
+      if (dashboard && typeof dashboard.confirm === 'function') {
+        try {
+          dashboard.confirm(text, title, ok => resolve(!!ok));
+          return;
+        } catch (err) {
+          console.warn(`${logPrefix} Dashboard.confirm threw, falling back:`, err);
+        }
+      }
+      resolve(host.confirm(title ? `${title}\n\n${text}` : text));
+    });
+  }
+
+  /**
+   * Deletes a request in Seerr after the user confirms. The server checks that the caller made the
+   * request or may manage requests; the media itself is never deleted.
+   * @param btn - The clicked remove button (carries data-request-id).
+   */
+  async function handleRemoveRequest(btn: HTMLButtonElement) {
+    const requestId = btn.getAttribute('data-request-id');
+    if (!requestId || !/^\d+$/.test(requestId) || !btn.isConnected || btn.disabled) return;
+    JE.session?.checkNow?.('requests-remove');
+    const lease=life.capture();
+    // The button must be this account's: only a request its own list says it may remove is asked about.
+    const removable=()=>lease.current() && !!requestsOwner?.current() && state.requests.some(item=>String(item.id)===requestId && item.canRemove===true);
+    if(!removable())return;
+
+    const title = btn.getAttribute('data-request-title') || '';
+    const dialogTitle = JE.t?.('requests_remove_request') || 'Remove request';
+    const question = (JE.t?.('requests_remove_request_confirm') || 'Remove the request for "{title}"? The media itself is not deleted.')
+      .replace('{title}', () => title);
+    if (!(await confirmRemoval(question, dialogTitle))) return;
+    // The dialog can stay open across a sign-in change, or a refresh that no longer lists the request.
+    if(!removable())return;
+    const mutationKey=JSON.stringify([JE.session?.getEpoch(),host.ApiClient?.serverAddress?.(),host.ApiClient?.getCurrentUserId(),requestId,'remove']);
+    if(life.mutations.get(mutationKey)==='pending')return;
+    for(const [key,outcome] of life.mutations){if(life.mutations.size<100)break;if(outcome!=='pending')life.mutations.delete(key);}
+    life.mutations.set(mutationKey,'pending');
+
+    btn.disabled = true;
+    const icon = btn.querySelector('.material-icons');
+    if (icon) icon.textContent = 'hourglass_empty';
+
+    try {
+      // skipRetry: never repeat a delete on its own.
+      await JE.core.api.plugin(`/arr/requests/${requestId}`, {
+        method: 'DELETE',
+        skipRetry: true,
+      });
+      life.mutations.set(mutationKey,'succeeded');
+      if(!lease.current())return;
+      JE.toast?.(JE.escapeHtml(JE.t?.('requests_remove_request_success') || 'Request removed'), 3000);
+      await fetchRequests();
+      if(lease.current())renderPage();
+    } catch (err) {
+      console.error(`${logPrefix} Failed to remove request ${requestId}:`, err);
+      life.mutations.set(mutationKey,record(err) && typeof err.status==='number' && err.status>=400 && err.status<500 ? 'failed' : 'uncertain');
+      if(!lease.current())return;
+      JE.toast?.(JE.escapeHtml(JE.t?.('requests_remove_request_failed') || 'Could not remove the request'), 4000);
+      btn.disabled = false;
+      if (icon) icon.textContent = 'delete';
+    }
+  }
+
   P.state = state;
   P.clearAvatarObjectUrlCache = JE.helpers.clearAvatarObjectUrlCache;
   P.hydrateAvatarImages = JE.helpers.hydrateAvatarImages;
@@ -483,5 +553,6 @@ export function install(deps: Dependencies) {
   P.getIssueTmdbId = getIssueTmdbId;
   P.loadAllData = loadAllData;
   P.handleRequestAction = handleRequestAction;
+  P.handleRemoveRequest = handleRemoveRequest;
 
 }

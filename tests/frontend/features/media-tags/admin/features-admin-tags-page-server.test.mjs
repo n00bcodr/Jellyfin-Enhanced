@@ -973,6 +973,36 @@ test('the TMDB and MDBList card links keep keyboard focus when their section is 
 
 // ── Focus sweep: the custom rules table redrawn under focus ──────────
 
+// Upstream 90c721ef (#1066): the table reloaded from the stored rules after each auto-save; those leave out
+// incomplete rows, so a half-filled rule vanished on the first edit.
+test('Custom rules: a half-filled rule stays in the table while the editor auto-saves, and rules changed elsewhere still reload it', async t => {
+  // The server leaves a rule's Icon out when it has none, in what it stores and in the field patch's answer;
+  // the table collects every rule with an Icon member.
+  const asStored = (rules) => rules.map(({ Icon, ...rule }) => (Icon ? { ...rule, Icon } : rule));
+  let h;
+  const patch = async (body) => serverPatch(h.server, { ...body, Changes: Array.isArray(body.Changes.CustomTagRules) ? { ...body.Changes, CustomTagRules: asStored(body.Changes.CustomTagRules) } : body.Changes });
+  h = setup(t, { config: { CustomTagsEnabled: true, CustomTagRules: [{ Match: 'tag', Value: 'Kids', Label: 'Kids' }] }, patch });
+  await settleMany(h, 4);
+  h.ctx.openTab('groups');
+  const rows = () => h.$$('#customTagRuleRows .je-ct-row').map((row) => [row.querySelector('.je-ct-value input').value, row.querySelector('.je-ct-label input').value]);
+  const type = (selector, value) => { const el = h.$(selector); el.value = value; el.dispatchEvent(new h.window.Event('input', { bubbles: true })); el.dispatchEvent(new h.window.Event('change', { bubbles: true })); };
+  h.$('#customTagRuleAdd').click();
+  // Only a name yet: the rule is incomplete and is not saved.
+  type('#customTagRuleRows .je-ct-row[data-index="1"] .je-ct-value input', 'Classic');
+  await h.save();
+  await settleMany(h, 4);
+  assert.deepEqual(rows(), [['Kids', 'Kids'], ['Classic', '']], 'the half-filled rule is still in the table');
+  // A complete sibling auto-saves: the stored rules come back without the half-filled one.
+  type('#customTagRuleRows .je-ct-row[data-index="0"] .je-ct-label input', 'Kids films');
+  await h.save();
+  await settleMany(h, 4);
+  assert.deepEqual(h.server.CustomTagRules.map((r) => r.Label), ['Kids films']);
+  assert.deepEqual(rows(), [['Kids', 'Kids films'], ['Classic', '']], 'still there after the save');
+  // Rules another administrator changed are not what the table holds: it reloads.
+  h.ctx.reload({ ...structuredClone(h.server), CustomTagRules: [{ Match: 'tag', Value: 'Kids', Label: 'Children', Icon: null }] });
+  assert.deepEqual(rows(), [['Kids', 'Children']]);
+});
+
 test('Custom rules: rules changed elsewhere redraw the table with keyboard focus (and caret) on the same control of the same row', async t => {
   const rules = [{ Match: 'tag', Value: '4K Remaster', Label: 'Remaster', Icon: null }, { Match: 'collection', Value: 'Marvel', Label: 'MCU', Icon: null }];
   const h = setup(t, { config: { CustomTagsEnabled: true, CustomTagRules: rules } });

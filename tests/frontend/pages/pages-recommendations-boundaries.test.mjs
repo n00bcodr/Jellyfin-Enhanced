@@ -211,6 +211,8 @@ function customTab(t, config, options = {}) {
   return h;
 }
 const marker = h => h.document.querySelector('#tab .jellyfinenhanced.recommendations');
+/** Two after-paint turns: the tab observer and the reconciliation it schedules have run. */
+const settled = h => new Promise(resolve => h.JE.core.dom.afterNextPaint(() => h.JE.core.dom.afterNextPaint(resolve)));
 
 test('custom tab mounts into the active container and keeps the sidebar link out of the way', async t => {
   const h = customTab(t);
@@ -220,16 +222,37 @@ test('custom tab mounts into the active container and keeps the sidebar link out
   assert.equal(h.document.querySelector('.je-nav-recommendations-item'), null);
 });
 
-test('DISCOVERY-RECOMMENDATIONS-003: an inactive tab holds no work and remounts when active again', async t => {
+// Upstream c165a07b (#1064): selecting another Home tab and coming back reloaded every row.
+test('a tab hidden behind another Home tab keeps its rows and does not load them again', async t => {
   const h = customTab(t);
   await until(() => marker(h).querySelector('.je-recommendations-section'), 'first mount');
   const P = h.JE.internals.recommendationsPage;
   const tab = h.document.querySelector('#tab');
+  const child = marker(h).firstElementChild;
+  const requests = h.calls.length;
   tab.classList.remove('is-active');
-  await until(() => marker(h).children.length === 0, 'inactive tab disposed');
-  assert.equal(P.state.renders.size, 0);
-  assert.equal(h.observers.filter(observer => observer.connected).length, 0);
+  await settled(h);
+  assert.equal(marker(h).firstElementChild, child);
+  assert.ok(child.querySelector('.je-recommendations-section'), 'rows stay in the hidden tab');
+  assert.equal(P.state.renders.size, 1);
   tab.classList.add('is-active');
+  await settled(h);
+  assert.equal(marker(h).firstElementChild, child);
+  assert.equal(h.document.querySelectorAll('#je-recommendations-container-tab').length, 1);
+  assert.equal(h.calls.length, requests, 'no row is requested again');
+});
+
+test('DISCOVERY-RECOMMENDATIONS-003: a tab whose page was dropped holds no work, and a new page mounts again', async t => {
+  const h = customTab(t);
+  await until(() => marker(h).querySelector('.je-recommendations-section'), 'first mount');
+  const P = h.JE.internals.recommendationsPage;
+  const old = marker(h);
+  const tab = h.document.querySelector('#tab');
+  old.remove();
+  await until(() => P.state.renders.size === 0, 'dropped tab disposed');
+  assert.equal(old.children.length, 0);
+  assert.equal(h.observers.filter(observer => observer.connected).length, 0);
+  tab.innerHTML = '<div class="jellyfinenhanced recommendations hide"></div>';
   await until(() => marker(h).querySelector('.je-recommendations-section'), 'remount');
   assert.equal(h.document.querySelectorAll('#je-recommendations-container-tab').length, 1);
 });
@@ -246,15 +269,22 @@ test('DISCOVERY-RECOMMENDATIONS-003: leaving home ends a tab render still in fli
   assert.equal(h.document.querySelector('[data-id="5"]'), null);
 });
 
-test('a category opened from a tab hides the tab, and Back mounts it again', async t => {
+test('a category opened from a tab keeps the tab rows behind it, and Back shows them without loading again', async t => {
   const h = customTab(t, {}, { routes: [[`${DISCOVER}/trending?page=1`, feed([1], 'movie', 1)]] });
   await until(() => marker(h).querySelector('.je-recommendations-section'), 'first mount');
   const P = h.JE.internals.recommendationsPage;
+  const child = marker(h).firstElementChild;
   await P.showCategoryPage('trending');
-  await until(() => marker(h).children.length === 0, 'tab disposed behind the category');
+  await settled(h);
+  assert.equal(h.document.querySelector('#indexPage').classList.contains('hide'), true);
+  assert.equal(marker(h).firstElementChild, child);
+  const requests = h.calls.length;
   h.document.querySelector('#je-recommendations-category-back').click();
-  await until(() => marker(h).querySelector('.je-recommendations-section'), 'tab mounted after Back');
-  assert.equal(h.document.querySelector('#indexPage').classList.contains('hide'), false);
+  await until(() => !h.document.querySelector('#indexPage').classList.contains('hide'), 'home shown after Back');
+  await settled(h);
+  assert.equal(marker(h).firstElementChild, child);
+  assert.ok(child.querySelector('.je-recommendations-section'));
+  assert.equal(h.calls.length, requests, 'no row is requested again');
 });
 
 test('a tab mounted for one account remounts for the next', async t => {
@@ -584,7 +614,7 @@ test('DISCOVERY-RECOMMENDATIONS-012: Back from a category returns to the page it
   await P.showCategoryPage('trending');
   assert.equal(h.page().classList.contains('hide'), true);
   h.document.querySelector('#je-recommendations-category-back').click();
-  assert.equal(P.state.categoryPageVisible, false);
+  await until(() => !P.state.categoryPageVisible, 'category closed by Back');
   assert.equal(P.state.pageVisible, true);
   assert.equal(h.page().classList.contains('hide'), false);
   assert.equal(h.document.querySelector('#indexPage').classList.contains('hide'), true);
@@ -599,11 +629,70 @@ test('Back from a category opened on home returns home, and closing it leaves no
   assert.equal(h.document.querySelector('#indexPage').classList.contains('hide'), true);
   assert.deepEqual(h.categoryCards(), [1]);
   h.document.querySelector('#je-recommendations-category-back').click();
+  await until(() => !P.state.categoryPageVisible, 'category closed by Back');
   assert.equal(h.document.querySelector('#indexPage').classList.contains('hide'), false);
   assert.equal(h.category().classList.contains('hide'), true);
   assert.deepEqual(h.categoryCards(), []);
   assert.equal(P.state.pageVisible, false);
   assert.equal(h.window.location.hash, '#/home');
+});
+
+// Upstream c165a07b: the category page holds one history entry, so Back (the Android back button too) closes it.
+test('an open category page holds one same-URL history entry, and Back closes it', async t => {
+  const h = setup(t, { routes: [[`${DISCOVER}/trending?page=1`, feed([1], 'movie', 1)], [`${DISCOVER}/movies?page=1`, feed([2], 'movie', 1)]] });
+  const P = h.load();
+  const entries = h.window.history.length;
+  await P.showCategoryPage('trending');
+  assert.equal(h.window.history.length, entries + 1);
+  assert.deepEqual(plain(h.window.history.state), { jeCategory: true });
+  assert.equal(h.window.location.hash, '#/home');
+  // Another category opened over the first reuses the entry.
+  await P.showCategoryPage('movies');
+  assert.equal(h.window.history.length, entries + 1);
+  h.window.history.back();
+  await until(() => !P.state.categoryPageVisible, 'category closed by Back');
+  assert.equal(h.document.querySelector('#indexPage').classList.contains('hide'), false);
+  assert.equal(h.category().classList.contains('hide'), true);
+  assert.equal(h.window.location.hash, '#/home');
+});
+
+test('a pop that lands back on the category entry (More Info closing above it) keeps the page open', async t => {
+  const h = setup(t, { routes: [[`${DISCOVER}/trending?page=1`, feed([1], 'movie', 1)]] });
+  const P = h.load();
+  await P.showCategoryPage('trending');
+  h.window.history.pushState({ jeMoreInfo: 1 }, '', h.window.location.href);
+  let popped = 0;
+  h.window.addEventListener('popstate', () => popped++);
+  h.window.history.back();
+  await until(() => popped === 1, 'popstate');
+  assert.equal(P.state.categoryPageVisible, true);
+  assert.equal(h.category().classList.contains('hide'), false);
+  h.window.history.back();
+  await until(() => !P.state.categoryPageVisible, 'category closed by the second Back');
+});
+
+test('a category closed by navigating away gives up its history entry: its button no longer goes Back', async t => {
+  const h = setup(t, { routes: [[`${DISCOVER}/trending?page=1`, feed([1], 'movie', 1)]] });
+  const P = h.load();
+  await P.showCategoryPage('trending');
+  h.document.querySelector('#indexPage').dispatchEvent(new h.window.CustomEvent('viewshow', { bubbles: true }));
+  assert.equal(P.state.categoryPageVisible, false);
+  let backs = 0;
+  h.window.history.back = () => { backs++; };
+  h.document.querySelector('#je-recommendations-category-back').click();
+  assert.equal(backs, 0);
+});
+
+test('the row edge masks apply only where the pointer can hover (touch scrolling dropped rows under a mask)', async t => {
+  const h = setup(t);
+  h.load();
+  const css = h.document.getElementById('je-recommendations-tile-styles').textContent;
+  const masked = [...css.matchAll(/mask-image/g)].map(match => match.index);
+  assert.ok(masked.length >= 6);
+  const start = css.indexOf('@media (hover: hover) {\n        .je-recommendations-section .emby-scroller.je-fade-r');
+  assert.ok(start >= 0, 'the fade rules sit in a hover media block');
+  const end = css.indexOf('.je-scroll-btn {', start);
+  for (const index of masked) assert.ok(index > start && index < end, 'no mask outside the hover block');
 });
 
 test('navigating and another view showing close both pages', async t => {

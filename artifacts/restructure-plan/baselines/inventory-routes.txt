@@ -31,6 +31,7 @@ GET /JellyfinEnhanced/arr/links
 GET /JellyfinEnhanced/arr/movie-instances
 GET /JellyfinEnhanced/arr/queue
 GET /JellyfinEnhanced/arr/requests
+DELETE /JellyfinEnhanced/arr/requests/{requestId}
 POST /JellyfinEnhanced/arr/requests/{requestId}/approve
 POST /JellyfinEnhanced/arr/requests/{requestId}/decline
 GET /JellyfinEnhanced/arr/series-slug

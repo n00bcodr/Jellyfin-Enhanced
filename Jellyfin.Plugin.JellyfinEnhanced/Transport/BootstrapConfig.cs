@@ -27,6 +27,7 @@ public sealed class BootstrapPublicConfig
     public required bool AutoSkipIntro { get; init; }
     public required bool AutoSkipOutro { get; init; }
     public required bool LongPress2xEnabled { get; init; }
+    public required bool SubtitleSyncButtonEnabled { get; init; }
     public required bool RandomButtonEnabled { get; init; }
     public required bool RandomIncludeMovies { get; init; }
     public required bool RandomIncludeShows { get; init; }
@@ -167,6 +168,9 @@ public sealed class BootstrapPublicConfig
     public required List<string>? TagGroupOrder { get; init; }
     public required TagGroupCaps? TagGroupCaps { get; init; }
     public required TagGroupScopes? TagGroupScopes { get; init; }
+    public required TagHiddenValues? TagHiddenValues { get; init; }
+    public required string[] TagHiddenAgeRatings { get; init; }
+    public required string? TagTextOverrides { get; init; }
     public required string TagLabelDensity { get; init; }
     public required string TagScale { get; init; }
     public required string TagGap { get; init; }

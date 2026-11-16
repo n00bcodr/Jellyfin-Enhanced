@@ -14,7 +14,7 @@ export interface DownloadsHost {
  nativeTabs:{register(name:string,title:string,callback:(panel:HTMLElement)=>void,icon:string):void};
  core:{api:{plugin(path:string,options?:{method?:string;skipRetry?:boolean;signal?:AbortSignal;priority?:string}):Promise<unknown>};ui:{isTvLayout():boolean;skeletonGridHtml(count:number):string;injectCss(id:string,css:string):void};lifecycle:{register(name:string):{track<T extends number|AbortController|(()=>void)>(resource:T):T;untrack(resource:number|AbortController|(()=>void)):void}}};
 }
-export interface DownloadsWindow extends Window {JellyfinEnhanced?:DownloadsHost;ApiClient?:DownloadsApi;Emby?:{Page?:{showItem(id:string):void}}}
+export interface DownloadsWindow extends Window {JellyfinEnhanced?:DownloadsHost;ApiClient?:DownloadsApi;Emby?:{Page?:{showItem(id:string):void}};Dashboard?:{confirm?(text:string,title:string,callback:(ok:boolean)=>void):void}}
 /** downloads' own slots (frontend.md §2.3): the facades it publishes on JE and its JE.internals slot. */
 export type DownloadsOwn = Pick<DownloadsHost,'downloadsPage'|'initializeDownloadsPage'> & DownloadsHost['internals'];
 /** Other features' facades downloads reads, read at call time (their owners may load later or not at all). */

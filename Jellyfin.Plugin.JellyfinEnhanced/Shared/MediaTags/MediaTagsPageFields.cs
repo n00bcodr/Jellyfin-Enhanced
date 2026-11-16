@@ -77,6 +77,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags
         private static readonly Dictionary<string, int> TextLimits = new Dictionary<string, int>(StringComparer.Ordinal)
         {
             ["TagStyleOverrides"] = TagStyleSet.MaxDocumentLength,
+            ["TagTextOverrides"] = TagTextRules.MaxDocumentLength,
             ["NativePosterTagsWebClientNames"] = 4096,
             ["TagCacheExcludedLibraryIds"] = 8192,
             ["LanguageTagsPriority"] = 256,
@@ -226,6 +227,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags
                 case "TagStyleOverrides":
                     if (TagStyleSet.TryValidate(value as string, null, out _, out error)) return true;
                     return false;
+                case "TagTextOverrides":
+                    if (!TagTextRules.TryValidate(value as string, out error)) return false;
+                    normalized = TagTextRules.Normalize(value as string);
+                    return true;
                 case "TagStylePreset":
                     // The administrator's preset has no empty "follow" value (only a user's document has one).
                     if (string.IsNullOrWhiteSpace(value as string))
@@ -273,6 +278,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags
                     return true;
                 case "TagGroupScopes":
                     normalized = TagLayoutRules.NormalizeScopes((TagGroupScopes?)value);
+                    return true;
+                case "TagHiddenValues":
+                    normalized = TagHiddenRules.Normalize((TagHiddenValues?)value);
                     return true;
                 case "TagShapeOverrides":
                     normalized = TagShapeRules.Normalize((TagShapeOverrides?)value);

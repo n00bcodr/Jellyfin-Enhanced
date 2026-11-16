@@ -32,6 +32,7 @@
   {"verb":"GET","route":"JellyfinEnhanced/arr/movie-instances","requiresAuth":true,"auth":"","action":"GetMovieInstances","apiBehavior":true,"parameters":["tmdbId:Query"]},
   {"verb":"GET","route":"JellyfinEnhanced/arr/queue","requiresAuth":true,"auth":"","action":"GetDownloadQueue","apiBehavior":true,"parameters":[]},
   {"verb":"GET","route":"JellyfinEnhanced/arr/requests","requiresAuth":true,"auth":"","action":"GetRequests","apiBehavior":true,"parameters":["take:Query","skip:Query","filter:Query","userOnly:Query"]},
+  {"verb":"DELETE","route":"JellyfinEnhanced/arr/requests/{requestId}","requiresAuth":true,"auth":"","action":"RemoveRequest","apiBehavior":true,"parameters":["requestId:Path"]},
   {"verb":"POST","route":"JellyfinEnhanced/arr/requests/{requestId}/approve","requiresAuth":true,"auth":"","action":"ActOnRequest","apiBehavior":true,"parameters":["requestId:Path"]},
   {"verb":"POST","route":"JellyfinEnhanced/arr/requests/{requestId}/decline","requiresAuth":true,"auth":"","action":"ActOnRequest","apiBehavior":true,"parameters":["requestId:Path"]},
   {"verb":"GET","route":"JellyfinEnhanced/arr/series-slug","requiresAuth":true,"auth":"","action":"GetSeriesSlug","apiBehavior":true,"parameters":["tvdbId:Query"]},

@@ -22,9 +22,12 @@ const logPrefix = '🪼 Jellyfin Enhanced: Now Playing:';
     return normalizeId(ctx.own.player?.getCurrentVideoItemId?.());
   }
 
-  /** Item the server reports for this device; null unless one session matches and its runtime fits the video. */
-  async function itemIdFromSession(video?: HTMLVideoElement | null) {
-    const lease = lifetime.lease(video);
+  /**
+   * Item the server reports for this device; null unless one session matches and its runtime fits the video.
+   * A player without an element (mpv) passes the duration its OSD shows instead.
+   */
+  async function itemIdFromSession(video?: HTMLVideoElement | { duration: number } | null) {
+    const lease = lifetime.lease(video instanceof HTMLVideoElement ? video : null);
     try {
       const userId = ApiClient.getCurrentUserId?.();
       const deviceId = ApiClient.deviceId?.();

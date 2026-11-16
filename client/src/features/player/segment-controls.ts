@@ -1,7 +1,12 @@
 import type { PlayerContext, TrackKind } from './context';
 import { decodeItem, decodeSegments, decodeSessions, type MediaSegment, type Stream, type PlayingSession } from './wire';
 import { normalizeItemId, parseItemIdFromVideosSrc } from './identity';
-export function installSegmentControls(context: PlayerContext) {
+import { osdPlayback as osd, type OsdItem } from '../shared/osd-playback';
+/**
+ * @param sessionItemId The item this device's session plays, when its runtime matches the duration given
+ *   (now-playing.ts; that script loads after this one, so it is looked up on each press).
+ */
+export function installSegmentControls(context: PlayerContext, sessionItemId: (shown: { duration: number }) => Promise<string | null>) {
  const { JE, ApiClient, lifetime, getVideo, getCurrentVideoItemId, tWithFallback } = context;
     // ── Segment-data skip (primary), skip-button click (fallback) ───────────
     //
@@ -108,9 +113,13 @@ export function installSegmentControls(context: PlayerContext) {
     JE.skipIntroOutro = () => {
         const lease = lifetime.lease(getVideo());
         const video = getVideo();
+        if (!video) {
+            skipIntroOutroViaOsd();
+            return;
+        }
         const itemId = getCurrentVideoItemId()
-            || parseItemIdFromVideosSrc((video && (video.currentSrc || video.src)) || '');
-        if (!video || !itemId) {
+            || parseItemIdFromVideosSrc(video.currentSrc || video.src || '');
+        if (!itemId) {
             if (!clickSkipButton()) JE.toast(JE.t('toast_no_skip_button'));
             return;
         }
@@ -154,6 +163,60 @@ export function installSegmentControls(context: PlayerContext) {
         });
     };
 
+    /**
+     * Skip intro/outro for a player without a `<video>` (mpv in Jellyfin Desktop): the same segment data, with
+     * the position read from and the seek sent through jellyfin-web's OSD. The skip button stays the fallback.
+     * The item is the route's or this device's session's, and it must be the one the OSD names (its rating
+     * button's id) when the OSD names one; a press whose item changed while the lookups ran does nothing.
+     */
+    function skipIntroOutroViaOsd() {
+        const lease = lifetime.lease();
+        const reading = (): OsdItem | null => {
+            const key = osd.itemKey();
+            const duration = osd.durationSeconds();
+            return key === null || duration === null ? null : { key, duration };
+        };
+        const atPress = reading();
+        const fallback = () => { if (!clickSkipButton()) JE.toast(JE.t('toast_no_skip_button')); };
+        if (atPress === null) {
+            fallback();
+            return;
+        }
+        const stillSame = () => lease.current() && (typeof JE.isVideoPage !== 'function' || JE.isVideoPage()) && !getVideo() && osd.sameItem(reading(), atPress);
+        const routeId = getCurrentVideoItemId();
+        // The session's item, accepted only when its runtime matches the duration the OSD shows.
+        const lookup = routeId ? Promise.resolve(routeId) : sessionItemId({ duration: atPress.duration });
+        lookup.then(async itemId => {
+            if (!stillSame()) return null;
+            // Duration alone doesn't identify an item: it must agree with the OSD's item id.
+            const usable = !!itemId && (!atPress.key || normalizeItemId(itemId) === normalizeItemId(atPress.key));
+            return { segments: usable && itemId ? await fetchMediaSegments(itemId) : [] };
+        }).then(result => {
+            if (!result || !stillSame()) return; // another item now: this press is stale
+            const now = osd.positionSeconds();
+            const nowTicks = now === null ? null : now * TICKS_PER_SECOND;
+            const seg = nowTicks === null ? undefined : result.segments.find(s => s
+                && typeof s.StartTicks === 'number' && typeof s.EndTicks === 'number'
+                && s.StartTicks <= nowTicks && s.EndTicks > nowTicks);
+            if (seg && seg.EndTicks !== undefined && now !== null) {
+                const target = Math.min(seg.EndTicks / TICKS_PER_SECOND, osd.durationSeconds() || Infinity);
+                if (target > now && osd.seekTo(target)) {
+                    if (seg.Type === 'Intro') {
+                        JE.toast(JE.t('toast_skipped_intro'));
+                    } else if (seg.Type === 'Outro') {
+                        JE.toast(JE.t('toast_skipped_outro'));
+                    } else {
+                        JE.toast(JE.t('toast_skipped'));
+                    }
+                    return;
+                }
+            }
+            fallback();
+        }).catch(err => {
+            console.warn('🪼 Jellyfin Enhanced: segment skip failed', err);
+            if (stillSame()) fallback();
+        });
+    }
 
 lifetime.onReset(() => segmentCache.clear());
 }

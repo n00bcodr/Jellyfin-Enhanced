@@ -55,7 +55,8 @@
     "FrameStepForward",
     "DecreaseSubtitleOffset",
     "IncreaseSubtitleOffset",
-    "JumpToLastPosition"
+    "JumpToLastPosition",
+    "SubtitleSync"
   ]);
   var JELLYFIN_PLAYER_KEYS = /* @__PURE__ */ new Set([
     " ",

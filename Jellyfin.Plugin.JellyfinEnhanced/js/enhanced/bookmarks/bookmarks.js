@@ -820,6 +820,86 @@
     return { addBookmark, updateBookmark, deleteBookmark, deleteAllBookmarks, syncBookmarks, backfillEpisodeMetadata, cleanupOrphanedBookmarks, findBookmarksForItem, fetchItemDetails, formatTimestamp, adjustOffsets };
   }
 
+  // client/src/features/shared/osd-playback.ts
+  function activeOsdPage() {
+    return Array.from(document.querySelectorAll("#videoOsdPage")).find((page) => !page.classList.contains("hide")) || null;
+  }
+  function osdElement(selector) {
+    const page = activeOsdPage();
+    return page ? page.querySelector(selector) : null;
+  }
+  function parseRunningTime(text) {
+    const s = String(text == null ? "" : text).replace(/\s+/g, "");
+    const match = /^(-)?(\d+(?::\d{1,2}){1,2})$/.exec(s);
+    if (!match || !match[2]) return null;
+    const seconds = match[2].split(":").reduce((total, part) => total * 60 + Number(part), 0);
+    return match[1] ? -seconds : seconds;
+  }
+  function positionSeconds() {
+    const el = osdElement(".osdPositionText");
+    if (!el || el.classList.contains("hide")) return null;
+    const seconds = parseRunningTime(el.textContent);
+    return seconds !== null && seconds >= 0 ? seconds : null;
+  }
+  function durationSeconds() {
+    const el = osdElement(".osdDurationText");
+    if (!el || el.classList.contains("hide")) return null;
+    const shown = parseRunningTime(el.textContent);
+    if (shown === null) return null;
+    if (shown >= 0) return shown > 0 ? shown : null;
+    const position = positionSeconds();
+    return position === null ? null : position - shown;
+  }
+  function itemKey() {
+    if (durationSeconds() === null) return null;
+    const btn = osdElement(".btnUserRating[data-id]");
+    return btn && btn.getAttribute("data-id") || "";
+  }
+  function sameItem(a, b) {
+    return !!a && !!b && a.key === b.key && Math.abs(a.duration - b.duration) <= 3;
+  }
+  function isPaused() {
+    const icon = osdElement(".btnPause .material-icons");
+    if (!icon) return null;
+    if (icon.classList.contains("play_arrow")) return true;
+    if (icon.classList.contains("pause")) return false;
+    return null;
+  }
+  function seekToPercent(percent) {
+    const slider = osdElement(".osdPositionSlider");
+    if (!slider || slider.disabled || !Number.isFinite(percent) || durationSeconds() === null) return false;
+    slider.value = String(Math.min(100, Math.max(0, percent)));
+    slider.dispatchEvent(new Event("change", { bubbles: true }));
+    return true;
+  }
+  function seekTo(seconds) {
+    const slider = osdElement(".osdPositionSlider");
+    const duration = durationSeconds();
+    if (!slider || slider.disabled || !duration || !Number.isFinite(seconds)) return false;
+    return seekToPercent(Math.max(0, seconds) / duration * 100);
+  }
+  var osdPlayback = { activeOsdPage, parseRunningTime, positionSeconds, durationSeconds, itemKey, sameItem, isPaused, seekTo, seekToPercent };
+
+  // client/src/features/bookmarks/player-surface.ts
+  var playerVideo = () => document.querySelector(".videoPlayerContainer video");
+  function playerPositionSeconds(video) {
+    return video ? video.currentTime || 0 : osdPlayback.positionSeconds();
+  }
+  function playerDurationSeconds(video) {
+    return video ? video.duration : osdPlayback.durationSeconds();
+  }
+  function seekPlayer(video, seconds) {
+    if (!video) return osdPlayback.seekTo(seconds);
+    video.currentTime = seconds;
+    return true;
+  }
+  function osdKey() {
+    const video = playerVideo();
+    if (video) return video.currentSrc || video.src || window.location.href;
+    const osdItem = osdPlayback.itemKey();
+    return osdItem === null ? null : `${window.location.href}|${osdItem}`;
+  }
+
   // client/src/features/bookmarks/bookmarks.ts
   var { ctx, host, getApi } = bookmarksHost();
   function install(JE) {
@@ -849,10 +929,6 @@
     function createBookmarkMarkers(video, bookmarksList) {
       const isCurrent = lifetime.current();
       console.log(`${logPrefix} createBookmarkMarkers called - video:`, !!video, "bookmarks:", bookmarksList.length);
-      if (!video) {
-        console.log(`${logPrefix} Early return - no video or no bookmarks`);
-        return;
-      }
       const osdBottom = document.querySelector(".videoOsdBottom");
       if (!osdBottom) {
         console.log(`${logPrefix} No .videoOsdBottom found`);
@@ -875,7 +951,7 @@
       const existingMarkers = sliderContainer.querySelectorAll(".je-bookmark-marker");
       console.log(`${logPrefix} Removing ${existingMarkers.length} existing markers`);
       existingMarkers.forEach((el) => el.remove());
-      const duration = video.duration;
+      const duration = playerDurationSeconds(video);
       if (!duration || !isFinite(duration)) {
         console.log(`${logPrefix} Invalid duration:`, duration);
         return;
@@ -912,9 +988,9 @@
         const versionNote = !bookmark.exactMatch ? ` ${JE.t("bookmark_file_changed")}` : "";
         marker.title = `${labelText} - ${formatTimestamp2(bookmark.timestamp)}${versionNote}`;
         marker.addEventListener("click", (e) => {
-          if (!isCurrent() || !video.isConnected) return;
+          if (!isCurrent() || video && !video.isConnected) return;
           e.stopPropagation();
-          video.currentTime = bookmark.timestamp;
+          if (!seekPlayer(playerVideo() || video, bookmark.timestamp)) return;
           JE.toast(`${JE.t("toast_jumped_to_bookmark")}: ${formatTimestamp2(bookmark.timestamp)}`, 2e3);
         });
         sliderContainer.appendChild(marker);
@@ -924,9 +1000,9 @@
     async function updateBookmarkMarkersForCurrentVideo() {
       const isCurrent = lifetime.current();
       console.log(`${logPrefix} updateBookmarkMarkersForCurrentVideo called`);
-      const video = document.querySelector(".videoPlayerContainer video");
-      if (!video) {
-        console.log(`${logPrefix} No video element found`);
+      const video = playerVideo();
+      if (!video && playerDurationSeconds(null) === null) {
+        console.log(`${logPrefix} No video element or OSD duration found`);
         return;
       }
       const itemData = getCurrentItemData();
@@ -955,8 +1031,12 @@
     }
     async function showBookmarkModal(mode = "add", existingBookmark = null) {
       const isCurrent = lifetime.current();
-      const video = document.querySelector(".videoPlayerContainer video");
-      const currentTime = video?.currentTime || 0;
+      const video = playerVideo();
+      const currentTime = playerPositionSeconds(video);
+      if (mode === "add" && currentTime === null) {
+        JE.toast(JE.t("toast_player_unsupported"), 3e3);
+        return;
+      }
       const itemData = getCurrentItemData();
       if (!itemData) {
         if (isCurrent()) JE.toast(JE.t("toast_bookmark_no_item"), 3e3);
@@ -977,7 +1057,7 @@
       );
       const isEdit = mode === "edit" && existingBookmark;
       const title = isEdit ? JE.t("bookmark_edit_title") : mode === "view" ? "Your Bookmarks" : JE.t("bookmark_add_title");
-      const timestamp = isEdit ? existingBookmark.timestamp : currentTime;
+      const timestamp = isEdit ? existingBookmark.timestamp : currentTime ?? 0;
       const label = isEdit ? existingBookmark.label : "";
       const formHtml = `
       <style>
@@ -1378,8 +1458,7 @@
           const bookmarkId = btn.dataset.bookmarkId;
           if (!bookmarkId) return;
           const bookmark = existingBookmarks.find((bm) => bm.id === bookmarkId);
-          if (bookmark && video) {
-            video.currentTime = bookmark.timestamp;
+          if (bookmark && seekPlayer(playerVideo() || video, bookmark.timestamp)) {
             if (isCurrent()) JE.toast(`${JE.t("toast_jumped_to_bookmark")}: ${formatTimestamp2(bookmark.timestamp)}`, 2e3);
             closeDialog();
           }
@@ -1456,10 +1535,6 @@
         let lastInjectedOsdKey = null;
         const osdObserverId = "je-bookmarks-osd";
         const videoObserverId = "je-bookmarks-video-changes";
-        function getOsdKey() {
-          const video = document.querySelector(".videoPlayerContainer video");
-          return video?.currentSrc || video?.src || window.location.href;
-        }
         function debounce(callback, delay) {
           let timer;
           const cancel = () => {
@@ -1479,9 +1554,8 @@
         const debouncedOsdInjection = debounce(() => {
           if (!JE.isVideoPage()) return;
           const osdBottom = document.querySelector(".videoOsdBottom");
-          const video = document.querySelector(".videoPlayerContainer video");
-          const currentOsdKey = getOsdKey();
-          if (osdBottom && video && currentOsdKey !== lastInjectedOsdKey) {
+          const currentOsdKey = osdKey();
+          if (osdBottom && (playerVideo() || currentOsdKey) && currentOsdKey !== lastInjectedOsdKey) {
             updateBookmarkMarkersForCurrentVideo();
             addOsdBookmarkButton();
             lastInjectedOsdKey = currentOsdKey;

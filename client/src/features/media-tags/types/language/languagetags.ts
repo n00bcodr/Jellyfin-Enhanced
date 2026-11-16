@@ -267,8 +267,17 @@ export function createLanguageTags(JE: TagRuntimeBridge) {
     function buildGroup(languages: unknown, cap: number = 3, flagSource: (code: string) => string = JE.core.mediaLanguage.flagSrc): HTMLElement {
         const data: LanguageData = Array.isArray(languages) ? { audio: languages } : record(languages);
         const conf = readSettings();
-        const audio = conf.audio ? resolveChips(data.audio, conf.style) : [];
-        const subtitles = conf.subtitles ? resolveChips(data.subtitles, conf.style) : [];
+        // Hidden languages (Hidden tags: a language's colour label, its canonical code) leave the flags and
+        // codes before they group; the Dual/Multi count below still counts every audio language
+        // (LanguageFlagRules.ResolveGroup). The layout drops hidden Subtitles and Dual/Multi chips by their kind.
+        const hidden = JE.core.tagHidden;
+        const labelOf = (entry: unknown): string | null => {
+            const code = typeof entry === 'string' ? entry : isRecord(entry) ? entry.code ?? entry.Code : null;
+            return code ? baseOf(String(code)) || null : null;
+        };
+        const shown = (list: unknown): unknown => (Array.isArray(list) && hidden?.any('language') ? list.filter((entry) => !hidden.hides('language', labelOf(entry))) : list);
+        const audio = conf.audio ? resolveChips(shown(data.audio), conf.style) : [];
+        const subtitles = conf.subtitles ? resolveChips(shown(data.subtitles), conf.style) : [];
         // Count languages rather than countries: Hindi and Tamil share a flag.
         const counted = conf.audio && conf.badge !== 'off' ? resolveChips(data.audio, 'codes')
             .filter(chip => baseOf(chip.code) !== 'zxx') : [];

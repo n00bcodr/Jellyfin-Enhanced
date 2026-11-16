@@ -337,12 +337,27 @@
       page.setAttribute("data-type", "custom");
       page.innerHTML = PAGE_MARKUP;
       page.querySelector("#je-recommendations-category-back")?.addEventListener("click", () => {
-        const returnToPage = state().categoryReturnsToPage && window.location.hash === RETURN_HASH;
-        hideCategoryPage();
-        if (returnToPage) part(P, "showPage")();
+        if (historyEntryActive) history.back();
+        else closeCategoryPage();
       });
       (document.querySelector(".mainAnimatedPages") ?? document.body).appendChild(page);
       return page;
+    }
+    function closeCategoryPage() {
+      const returnToPage = state().categoryReturnsToPage && window.location.hash === RETURN_HASH;
+      hideCategoryPage();
+      if (returnToPage) part(P, "showPage")();
+    }
+    let historyEntryActive = false;
+    const isOwnEntry = (entry) => isRecord(entry) && entry.jeCategory === true;
+    function onHistoryPop(event) {
+      if (!historyEntryActive || isOwnEntry(event.state)) return;
+      releaseHistoryEntry();
+      closeCategoryPage();
+    }
+    function releaseHistoryEntry() {
+      historyEntryActive = false;
+      window.removeEventListener("popstate", onHistoryPop);
     }
     async function showCategoryPage(categoryKey) {
       const category = part(P, "resolveCategory")(categoryKey);
@@ -378,6 +393,11 @@
           if (!sortStale()) armScroll(container);
         }).catch((error) => console.error(`${LOG_PREFIX} Failed to re-sort category`, error));
       }));
+      if (!historyEntryActive) {
+        history.pushState({ jeCategory: true }, "", window.location.href);
+        historyEntryActive = true;
+        window.addEventListener("popstate", onHistoryPop);
+      }
       const activePage = document.querySelector(`.mainAnimatedPage:not(.hide):not(#${CATEGORY_PAGE_ID})`);
       if (activePage) {
         pageState.categoryPreviousPage = activePage;
@@ -398,6 +418,7 @@
       if (!pageState.categoryPageVisible) return;
       pageState.categoryPageVisible = false;
       pageState.categoryReturnsToPage = false;
+      releaseHistoryEntry();
       retire(pageState.categoryState);
       stopStickyTracking?.();
       stopStickyTracking = null;
@@ -419,6 +440,7 @@
     P.loadMoreCategoryItems = loadMoreCategoryItems;
     P.showCategoryPage = showCategoryPage;
     P.hideCategoryPage = hideCategoryPage;
+    P.categoryOnOwnEntry = () => historyEntryActive && isOwnEntry(history.state);
   })();
 })();
 })();

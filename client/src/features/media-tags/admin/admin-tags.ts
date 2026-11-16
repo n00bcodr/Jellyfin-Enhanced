@@ -92,7 +92,7 @@ const TABS: readonly TabDef[] = [
     { id: 'layout', icon: 'view_quilt', nameKey: 'Layout defaults', shortKey: 'Layout', descKey: 'The layout, label density, group order, positions and limits new users start with.', lead: 'card' },
     { id: 'groups', icon: 'label', nameKey: 'Groups', descKey: 'Turn each tag group on or off for new users, and open a group for its server settings.', lead: 'card' },
     { id: 'rules', icon: 'rule', nameKey: 'Rules', descKey: 'Give some cards a different look by library, type, genre or age rating.', lead: 'card' },
-    { id: 'colours', icon: 'palette', nameKey: 'Colours', descKey: 'The colours of the tags, on the web and in native posters.', lead: 'card' },
+    { id: 'colours', icon: 'palette', nameKey: 'Colours and text', descKey: 'The colours and words of the tags, on the web and in native posters, and which tags to hide.', lead: 'card' },
     { id: 'badges', icon: 'new_releases', nameKey: 'Status badges', shortKey: 'Badges', descKey: 'Which status badges new users start with, and how long a title counts as new.', lead: 'card' },
     { id: 'server', icon: 'dns', nameKey: 'Server', descKey: 'The tag data the server keeps, and tags drawn into poster images for other apps.', lead: 'card' },
 ];

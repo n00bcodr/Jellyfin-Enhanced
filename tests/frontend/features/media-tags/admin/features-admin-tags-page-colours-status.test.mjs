@@ -24,10 +24,62 @@ test('Colours: editor edits save the Tag Styles document; Reset all asks, saves 
   await h.save();
   assert.equal(JSON.parse(h.server.TagStyleOverrides).groups.quality.background, 'rgba(255, 0, 0, 1)');
   assert.equal(h.server.TagStylePreset, 'glass');
-  // Off hides the editor; Apply to is disabled with it.
+  // Off keeps the editor (its tag list is also where tags are hidden) and says colours wait; Apply to is disabled.
+  assert.equal(h.$('#tagStyleOffRowNote').hidden, true);
   h.change(h.$('#tagStylesEnabled'), false);
-  assert.equal(h.$('#tagStylesBody').style.display, 'none');
+  assert.notEqual(h.$('#tagStylesBody').style.display, 'none');
+  assert.equal(h.$('#tagStyleOffRowNote').hidden, false);
+  assert.match(h.$('#tagStyleOffRowNote').textContent, /Use tag colours/);
   assert.ok([...h.$$('#tagStyleTarget input')].every((r) => r.disabled));
+});
+
+test('Colours: Hide this tag writes TagHiddenValues for the picked tile, marks it, and Undo puts it back', async t => {
+  const h = setup(t);
+  await h.settle(); await h.settle();
+  h.$('#jeTaTab-colours').click();
+  h.$('#tagStyleTabs .je-ts-tab[data-group="quality"]').click();
+  h.$('#tagStyleTargetToggle').click();
+  assert.equal(h.$('#tagStyleHide'), null, 'Whole group has no Hide switch');
+  h.$('#tagStyleTargets .je-ts-target[data-label="4K"]').click();
+  const sw = h.$('#tagStyleHide');
+  assert.ok(sw, 'a picked tag has the switch');
+  sw.click();
+  await h.save();
+  assert.deepEqual(h.server.TagHiddenValues, { Quality: ['4K'] });
+  const tile = h.$('#tagStyleTargets .je-ts-target[data-label="4K"]');
+  assert.ok(tile.classList.contains('je-ts-target-hidden'));
+  assert.match(tile.getAttribute('aria-label'), /hidden/);
+  h.$('.je-ta-snack .je-ta-button').click();
+  await h.save();
+  assert.equal(h.server.TagHiddenValues, null);
+  assert.equal(h.$('#tagStyleTargets .je-ts-target[data-label="4K"]').classList.contains('je-ts-target-hidden'), false);
+  // Language: the flag and code styles colour every flag or code, so they cannot be hidden.
+  h.$('#tagStyleTabs .je-ts-tab[data-group="language"]').click();
+  h.$('#tagStyleTargets .je-ts-target[data-label="flag"]')?.click();
+  assert.equal(h.$('#tagStyleHide'), null);
+});
+
+test('Colours: the hidden-only view lists the hidden tags and ends with the last one shown again', async t => {
+  const names = ['Kids', 'Classic', 'Anime', 'Holiday', 'Cult'];
+  const h = setup(t, { config: { CustomTagRules: names.map((label) => ({ Match: 'tag', Value: label.toLowerCase(), Label: label })), TagHiddenValues: { Custom: names.slice() } } });
+  await h.settle(); await h.settle();
+  h.$('#jeTaTab-colours').click();
+  h.$('#tagStyleTabs .je-ts-tab[data-group="custom"]').click();
+  h.$('#tagStyleTargetToggle').click();
+  const visible = () => [...h.$$('#tagStyleTargets .je-ts-target')].filter((c) => !c.hidden).map((c) => c.dataset.label);
+  assert.match(h.$('#tagStyleHiddenLine').textContent, /Hidden \(5\)/);
+  h.$('[data-ts-hidden-view]').click();
+  assert.deepEqual(visible(), ['*', ...names], 'only the hidden tags (and Whole group)');
+  assert.match(h.$('#tagStyleTargetHint').textContent, /Showing the 5 hidden tags only/);
+  for (const name of names) {
+    h.$(`#tagStyleTargets .je-ts-target[data-label="${name}"]`).click();
+    h.$('#tagStyleHide').click();
+  }
+  await h.save();
+  assert.equal(h.server.TagHiddenValues, null);
+  assert.equal(h.$('#tagStyleHiddenLine').hidden, true);
+  assert.deepEqual(visible(), ['*', ...names], 'the full list is back once nothing is hidden');
+  assert.doesNotMatch(h.$('#tagStyleTargetHint').textContent, /hidden tags only/);
 });
 
 test('Status badges: family switches and windows (clamped to 1-365)', async t => {

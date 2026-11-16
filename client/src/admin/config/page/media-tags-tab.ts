@@ -22,7 +22,7 @@ export function createMediaTagsTab(m: MediaTagsTabDeps) {
             /** The tab's sections (JE.adminTags.TABS): id and its name. */
             var JE_MT_SECTIONS: ReadonlyArray<readonly [string, string]> = [
                 ['overview', 'Overview'], ['layout', 'Layout defaults'],
-                ['groups', 'Groups'], ['rules', 'Rules'], ['colours', 'Colours'],
+                ['groups', 'Groups'], ['rules', 'Rules'], ['colours', 'Colours and text'],
                 ['badges', 'Status badges'], ['server', 'Server']
             ];
 

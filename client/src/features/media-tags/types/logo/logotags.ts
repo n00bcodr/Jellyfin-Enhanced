@@ -74,10 +74,11 @@ export function createLogoTags(JE: TagRuntimeBridge) {
     }
 
     /**
-     * Valid logos from a cache entry or batch item, at most two.
+     * Valid logos from a cache entry or batch item, in order (none dropped for Hidden tags or the limit:
+     * what the card caches).
      * @param raw - `Logos` as the server sends it.
      * */
-    function readLogos(raw: unknown): LogoFact[] {
+    function validLogos(raw: unknown): LogoFact[] {
         if (!Array.isArray(raw)) return [];
         const out: LogoFact[] = [];
         for (const entry of raw) {
@@ -87,9 +88,19 @@ export function createLogoTags(JE: TagRuntimeBridge) {
             if (!KINDS.has(kind) || !name) continue;
             const logo = fact.logo ?? fact.Logo;
             out.push({ kind, name, logo: typeof logo === 'string' && LOGO_PATH.test(logo) ? logo : null });
-            if (out.length === 2) break;
         }
         return out;
+    }
+
+    /**
+     * The logos a card shows: the valid ones whose style is not hidden (Hidden tags: provider, company or
+     * text, as Tag Styles colours them), at most two. A hidden one leaves before the limit, so the next
+     * logo shows (LogoRules.Resolve on native posters).
+     * @param raw - `Logos` as the server sends it.
+     * */
+    function readLogos(raw: unknown): LogoFact[] {
+        const style = (l: LogoFact): string => (!l.logo ? 'text' : l.kind === 'provider' ? 'provider' : 'company');
+        return validLogos(raw).filter((l) => !JE.core.tagHidden?.hides('logos', style(l))).slice(0, 2);
     }
 
     /**
@@ -264,11 +275,11 @@ export function createLogoTags(JE: TagRuntimeBridge) {
                 if (ctx.shouldIgnore(el)) return;
                 if (ctx.isTagged(el)) return;
                 if (el.closest('.je-hidden')) return;
-                const logos = readLogos(item.Logos);
-                const entry = { l: logos };
+                // Every valid logo is cached, so changing Hidden tags needs no refetch.
+                const entry = { l: validLogos(item.Logos) };
                 ctx.setPersistent(String(item.Id), entry);
                 ctx.hot?.set(String(item.Id), entry);
-                applyLogoTags(ctx, el, logos);
+                applyLogoTags(ctx, el, readLogos(entry.l));
             },
             renderFromCache(ctx: TagCtx, el, itemId) {
                 if (ctx.isTagged(el)) return true;

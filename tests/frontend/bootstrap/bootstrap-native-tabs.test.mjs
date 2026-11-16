@@ -8,11 +8,13 @@ async function until(fn) {
   assert.ok(fn(), 'native tab reconciliation did not finish');
 }
 const home = `<div class="page" id="home"><div class="tabContent pageTabContent is-active" data-index="0"></div><div class="tabContent pageTabContent" data-index="1"></div></div>`;
-function setup(t, { count = 0, hash = '#/home', configRequest } = {}) {
+function setup(t, { count = 0, hash = '#/home', configRequest, appBack, canGoBack = false } = {}) {
   const h = createHarness({ url: `http://jellyfin.test/web/index.html${hash}`, html: `<div is="emby-tabs"><div class="emby-tabs-slider"><button class="emby-tab-button emby-tab-button-active" data-index="0"></button><button class="emby-tab-button" data-index="1"></button></div></div>${home}`,
     JE: { pluginConfig: {}, hasCustomTabs: count > 0 || !!configRequest }, apiClient: { fetch: configRequest || (async () => Array(count).fill({})) } });
   t.after(() => h.close());
   Object.defineProperty(h.window.HTMLElement.prototype, 'offsetParent', { configurable: true, get() { return this.parentElement; } });
+  // The Android app's shell: Back calls NavigationHelper.goBack(), which exits when the router cannot go back.
+  if (appBack) { h.window.NavigationHelper = { goBack: appBack }; h.window.Emby = { Page: { canGoBack: () => canGoBack } }; }
   for (const file of ['core/navigation.js', 'core/lifecycle.js', 'core/dom-observer.js', 'core/ui-kit.js', 'enhanced/helpers.js', 'enhanced/native-tabs.js']) h.load(file);
   const tabs = h.document.querySelector('[is="emby-tabs"]');
   let refreshes = 0, selections = 0;
@@ -139,4 +141,89 @@ test('a Custom Tabs count that arrives late relabels the mounted JE tab without 
   assert.equal(h.panel(), panel); assert.equal(panel.dataset.index, '5'); assert.equal(h.mountCounts.requests, 1);
   assert.equal(h.document.querySelectorAll('[id^="je-native-tab-reserved-btn-"]').length, 3);
   assertAligned(h);
+});
+
+// Upstream c165a07b: header scripts (KefinTweaks' header tabs) keep the old jeTab in the URL after the user left our tab.
+for (const hash of ['#/home?jeTab=requests', '#/home?tab=1&jeTab=requests', '#/home?tab=0&jeTab=requests']) {
+  test(`a jeTab left in ${hash} without our tab index is not a deep link`, async t => {
+    const h = setup(t, { hash }); h.register();
+    await until(() => h.panel());
+    await settled(h);
+    assert.equal(h.window.location.hash, hash);
+    assert.equal(h.selections, 0);
+    assert.equal(h.panel().classList.contains('is-active'), false);
+  });
+}
+
+test("the Android app's Back on a JE tab selects the Home tab instead of exiting the app", async t => {
+  let exits = 0;
+  const h = setup(t, { hash: '#/home?tab=2&jeTab=requests', appBack: () => { exits++; return 'exit'; } }); h.register();
+  await until(() => h.panel()?.classList.contains('is-active'));
+  await settled(h);
+  const home = h.document.querySelector('.emby-tab-button[data-index="0"]');
+  let homeClicks = 0;
+  // Jellyfin's own click handler selects the tab; the URL keeps ?tab=2 as on the real client.
+  home.addEventListener('click', () => {
+    homeClicks++;
+    h.document.querySelectorAll('.tabContent.is-active').forEach(el => el.classList.remove('is-active'));
+    h.document.querySelector('#home .tabContent[data-index="0"]').classList.add('is-active');
+    h.tabs.selectedTabIndex = 0;
+  });
+  const selectionsBefore = h.selections;
+  assert.equal(h.window.NavigationHelper.goBack(), undefined);
+  assert.equal(exits, 0); assert.equal(homeClicks, 1);
+  // The spent deep link is not followed again by later reconciliations.
+  h.panel().appendChild(h.document.createElement('span'));
+  await settled(h);
+  assert.equal(h.selections, selectionsBefore);
+  assert.equal(h.panel().classList.contains('is-active'), false);
+  // On Jellyfin's own Home tab the app's Back is untouched.
+  assert.equal(h.window.NavigationHelper.goBack(), 'exit');
+  assert.equal(exits, 1); assert.equal(homeClicks, 1);
+});
+
+test("the Android app's Back closes an open category page or More Info modal through history, and is left alone when the router can go back", async t => {
+  let exits = 0;
+  const h = setup(t, { appBack: () => { exits++; } }); h.register();
+  await until(() => h.panel());
+  let backs = 0;
+  h.window.history.back = () => { backs++; };
+  const category = h.document.createElement('div');
+  category.id = 'je-recommendations-category-page'; category.className = 'hide';
+  h.document.body.appendChild(category);
+  h.window.NavigationHelper.goBack();
+  assert.deepEqual([backs, exits], [0, 1], 'a hidden category page is not an overlay');
+  category.classList.remove('hide');
+  h.window.NavigationHelper.goBack();
+  assert.deepEqual([backs, exits], [1, 1]);
+  category.remove();
+  const modal = h.document.createElement('div');
+  modal.className = 'je-more-info-modal';
+  h.document.body.appendChild(modal);
+  h.window.NavigationHelper.goBack();
+  assert.deepEqual([backs, exits], [2, 1]);
+});
+
+test("the Android app's Back goes through the router when it can go back, even on a JE tab", async t => {
+  let backs = 0;
+  const h = setup(t, { hash: '#/home?tab=2&jeTab=requests', appBack: () => { backs++; }, canGoBack: true }); h.register();
+  await until(() => h.panel()?.classList.contains('is-active'));
+  let homeClicks = 0;
+  h.document.querySelector('.emby-tab-button[data-index="0"]').addEventListener('click', () => homeClicks++);
+  h.window.NavigationHelper.goBack();
+  assert.deepEqual([backs, homeClicks], [1, 0]);
+});
+
+test('the app Back wrapper finds a NavigationHelper that the app defines after the page scripts', async t => {
+  const h = setup(t, { hash: '#/home?tab=2&jeTab=requests' }); h.register();
+  await until(() => h.panel()?.classList.contains('is-active'));
+  let exits = 0;
+  const original = () => { exits++; };
+  h.window.NavigationHelper = { goBack: original };
+  h.window.Emby = { Page: { canGoBack: () => false } };
+  await until(() => h.window.NavigationHelper.goBack !== original);
+  let homeClicks = 0;
+  h.document.querySelector('.emby-tab-button[data-index="0"]').addEventListener('click', () => homeClicks++);
+  h.window.NavigationHelper.goBack();
+  assert.deepEqual([exits, homeClicks], [0, 1]);
 });

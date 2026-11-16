@@ -1,6 +1,21 @@
 (() => {
 "use strict";
 (() => {
+  // client/src/host/context.ts
+  function sharedModule(id) {
+    const namespace = window.JellyfinEnhanced?.core?.sharedModules?.[id];
+    if (!namespace) throw new Error(`${id} is not in JE.core.sharedModules: load its provider first (client/shared-modules.json)`);
+    return namespace;
+  }
+  function sharedExport(namespace, name) {
+    return namespace[name];
+  }
+
+  // client/generated-shared/stub/client/src/features/player/wire.ts
+  var shared = /* @__PURE__ */ sharedModule("features/player/wire");
+  var export0 = /* @__PURE__ */ sharedExport(shared, "decodeItem");
+  var export4 = /* @__PURE__ */ sharedExport(shared, "record");
+
   // client/src/features/player/pause-view.ts
   function renderPauseProgress(progressBar, progressMeta, current, duration, t) {
     const fill = progressBar.firstElementChild;
@@ -36,20 +51,29 @@
   function continuesPlayback(JE2, video) {
     return !!video?.isConnected && !!JE2.isVideoPage?.();
   }
-
-  // client/src/host/context.ts
-  function sharedModule(id) {
-    const namespace = window.JellyfinEnhanced?.core?.sharedModules?.[id];
-    if (!namespace) throw new Error(`${id} is not in JE.core.sharedModules: load its provider first (client/shared-modules.json)`);
-    return namespace;
-  }
-  function sharedExport(namespace, name) {
-    return namespace[name];
+  var OWN_KEYS_DIALOG = "[data-je-own-keys]";
+  function storedCredentials(activeServerId) {
+    const creds = localStorage.getItem("jellyfin_credentials");
+    if (!creds) return null;
+    try {
+      const parsed = export4(JSON.parse(creds));
+      const servers = Array.isArray(parsed.Servers) ? parsed.Servers.map(export4) : [];
+      let active = null;
+      try {
+        active = activeServerId();
+      } catch {
+        active = null;
+      }
+      const server = active ? servers.find((s) => s.Id === active) : servers[0];
+      return server && typeof server.AccessToken === "string" && typeof server.UserId === "string" ? { token: server.AccessToken, userId: server.UserId } : null;
+    } catch {
+      return null;
+    }
   }
 
   // client/generated-shared/stub/client/src/features/player/lifetime.ts
-  var shared = /* @__PURE__ */ sharedModule("features/player/lifetime");
-  var export0 = /* @__PURE__ */ sharedExport(shared, "createPlayerLifetime");
+  var shared2 = /* @__PURE__ */ sharedModule("features/player/lifetime");
+  var export02 = /* @__PURE__ */ sharedExport(shared2, "createPlayerLifetime");
 
   // client/src/features/player/pause-screen.css
   var pause_screen_default = `
@@ -322,17 +346,12 @@
   var pauseStyles = pause_screen_default;
 
   // client/generated-shared/stub/client/src/features/player/host.ts
-  var shared2 = /* @__PURE__ */ sharedModule("features/player/host");
-  var export02 = /* @__PURE__ */ sharedExport(shared2, "playerHost");
-
-  // client/generated-shared/stub/client/src/features/player/wire.ts
-  var shared3 = /* @__PURE__ */ sharedModule("features/player/wire");
-  var export03 = /* @__PURE__ */ sharedExport(shared3, "decodeItem");
-  var export4 = /* @__PURE__ */ sharedExport(shared3, "record");
+  var shared3 = /* @__PURE__ */ sharedModule("features/player/host");
+  var export03 = /* @__PURE__ */ sharedExport(shared3, "playerHost");
 
   // client/src/features/player/pausescreen.ts
-  var { JE, ApiClient, ctx } = export02();
-  var lifetime = export0(JE, "pause-screen");
+  var { JE, ApiClient, ctx } = export03();
+  var lifetime = export02(JE, "pause-screen");
   var MAX_KEPT_IMAGES = 6;
   JE.initializePauseScreen = function() {
     if (!JE.currentSettings.pauseScreenEnabled) {
@@ -416,22 +435,7 @@
         this.setupInteractionListeners();
       }
       getCredentials() {
-        const creds = localStorage.getItem("jellyfin_credentials");
-        if (!creds) return null;
-        try {
-          const parsed = export4(JSON.parse(creds));
-          const servers = Array.isArray(parsed.Servers) ? parsed.Servers.map(export4) : [];
-          let activeServerId = null;
-          try {
-            activeServerId = (typeof ApiClient.serverId === "function" ? ApiClient.serverId() : ApiClient.serverId) || null;
-          } catch {
-            activeServerId = null;
-          }
-          const server = activeServerId ? servers.find((s) => s.Id === activeServerId) : servers[0];
-          return server && typeof server.AccessToken === "string" && typeof server.UserId === "string" ? { token: server.AccessToken, userId: server.UserId } : null;
-        } catch {
-          return null;
-        }
+        return storedCredentials(() => (typeof ApiClient.serverId === "function" ? ApiClient.serverId() : ApiClient.serverId) || null);
       }
       injectStyles() {
         const style = document.createElement("style");
@@ -553,6 +557,7 @@
       }
       setupKeyboardAccessibility() {
         this.keyboardListener = (e) => {
+          if (e.target instanceof Element && e.target.closest(OWN_KEYS_DIALOG)) return;
           if (this.overlay.getAttribute("aria-hidden") === "false") {
             if (JE.core.ui.isTvLayout() && this.handleRemoteKey(e)) return;
             if (e.code === "Space" || e.code === "Enter") {
@@ -596,6 +601,10 @@
           const video = this.currentVideo;
           if (!video || !video.paused || video.ended) {
             this.pauseScreenTimer = null;
+            return;
+          }
+          if (document.querySelector(OWN_KEYS_DIALOG)) {
+            this.pauseScreenTimer = setTimeout(tryShowWhenIdle, 500);
             return;
           }
           const idleFor = Date.now() - this.lastUserInteractionAt;
@@ -819,7 +828,7 @@
           try {
             const response = await fetch(url, options);
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            return export03(await response.json());
+            return export0(await response.json());
           } catch (error) {
             if (i === maxRetries || options.signal?.aborted) throw error;
             const signal = options.signal ?? lifetime.lease().signal;

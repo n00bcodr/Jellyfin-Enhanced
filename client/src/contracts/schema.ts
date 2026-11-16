@@ -769,6 +769,140 @@ export const bootstrapSchema = {
       ],
       "additionalProperties": false
     },
+    "TagHiddenValues": {
+      "type": "object",
+      "properties": {
+        "AgeRating": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "Awards": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "Custom": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "Genre": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "Language": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "Logos": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "Quality": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "Rating": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "Status": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "AgeRating",
+        "Awards",
+        "Custom",
+        "Genre",
+        "Language",
+        "Logos",
+        "Quality",
+        "Rating",
+        "Status"
+      ],
+      "additionalProperties": false
+    },
     "TagKindLook": {
       "type": "object",
       "properties": {
@@ -2065,6 +2199,9 @@ export const bootstrapSchema = {
         "StatusTagsTrending": {
           "type": "boolean"
         },
+        "SubtitleSyncButtonEnabled": {
+          "type": "boolean"
+        },
         "SyncJellyseerrWatchlist": {
           "type": "boolean"
         },
@@ -2104,6 +2241,22 @@ export const bootstrapSchema = {
           "anyOf": [
             {
               "$ref": "#/$defs/TagGroupScopes"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "TagHiddenAgeRatings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "TagHiddenValues": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TagHiddenValues"
             },
             {
               "type": "null"
@@ -2186,6 +2339,16 @@ export const bootstrapSchema = {
         },
         "TagStylesAllowUserPreset": {
           "type": "boolean"
+        },
+        "TagTextOverrides": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "TagsCacheTtlDays": {
           "type": "integer"
@@ -2498,6 +2661,7 @@ export const bootstrapSchema = {
         "StatusTagsSchedule",
         "StatusTagsSeriesStatus",
         "StatusTagsTrending",
+        "SubtitleSyncButtonEnabled",
         "SyncJellyseerrWatchlist",
         "TagCacheServerMode",
         "TagEdgeSpacing",
@@ -2505,6 +2669,8 @@ export const bootstrapSchema = {
         "TagGroupCaps",
         "TagGroupOrder",
         "TagGroupScopes",
+        "TagHiddenAgeRatings",
+        "TagHiddenValues",
         "TagKindLooks",
         "TagLabelDensity",
         "TagLayout",
@@ -2516,6 +2682,7 @@ export const bootstrapSchema = {
         "TagStylePreset",
         "TagStyleWebActive",
         "TagStylesAllowUserPreset",
+        "TagTextOverrides",
         "TagsCacheTtlDays",
         "TagsHideOnHover",
         "ThemeSelectorEnabled",
@@ -3447,6 +3614,9 @@ export const bootstrapSchema = {
         "SubtitleHorizontalPosition": {
           "type": "integer"
         },
+        "SubtitleSyncButtonEnabled": {
+          "type": "boolean"
+        },
         "SubtitleVerticalPosition": {
           "type": "integer"
         },
@@ -3743,6 +3913,7 @@ export const bootstrapSchema = {
         "StatusTagsSeriesStatus",
         "StatusTagsTrending",
         "SubtitleHorizontalPosition",
+        "SubtitleSyncButtonEnabled",
         "SubtitleVerticalPosition",
         "TagEdgeSpacing",
         "TagGap",
@@ -4457,6 +4628,9 @@ export const bootstrapSchema = {
         "SubtitleHorizontalPosition": {
           "type": "integer"
         },
+        "SubtitleSyncButtonEnabled": {
+          "type": "boolean"
+        },
         "SubtitleVerticalPosition": {
           "type": "integer"
         },
@@ -4752,6 +4926,7 @@ export const bootstrapSchema = {
         "StatusTagsSeriesStatus",
         "StatusTagsTrending",
         "SubtitleHorizontalPosition",
+        "SubtitleSyncButtonEnabled",
         "SubtitleVerticalPosition",
         "TagEdgeSpacing",
         "TagGap",

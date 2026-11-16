@@ -1,7 +1,8 @@
 import type { PlayerContext, TrackKind } from './context';
 import { decodeItem, decodeSegments, decodeSessions, type MediaSegment, type Stream, type PlayingSession } from './wire';
 import { normalizeItemId, parseItemIdFromVideosSrc } from './identity';
-export function installAspect(context: PlayerContext) {
+/** @param cycleAspectInMenu The same for a player without a `<video>`: jellyfin-web's own list (osd-settings-menu.ts). */
+export function installAspect(context: PlayerContext, cycleAspectInMenu: () => void) {
  const { JE, ApiClient, lifetime, getVideo, getCurrentVideoItemId, tWithFallback } = context;
     // ── DOM-free aspect ratio cycling ────────────────────────────────────────
     //
@@ -34,7 +35,7 @@ export function installAspect(context: PlayerContext) {
     JE.cycleAspect = () => {
         const video = getVideo();
         if (!video) {
-            JE.toast(JE.t('toast_no_video_found'));
+            cycleAspectInMenu();
             return;
         }
         let stored = null;

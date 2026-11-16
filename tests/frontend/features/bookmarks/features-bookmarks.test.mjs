@@ -260,7 +260,8 @@ test('player bookmark modal reports a failed edit or delete instead of success',
 
 test('player bookmark modal adds one bookmark when Add is clicked again while the first save is pending',async t=>{
   const saves=controlledSaves();const h=setup(t,{},saves.save);
-  h.document.body.innerHTML='<div class="videoOsdBottom"><button class="btnUserRating" data-id="item"></button></div>';
+  // With a <video>: a player without one, whose position can't be read, is offered no bookmark (see the end of this file).
+  h.document.body.innerHTML='<div class="videoOsdBottom"><button class="btnUserRating" data-id="item"></button></div><div class="videoPlayerContainer"><video></video></div>';
   h.routes.items=async()=>({Items:[{Id:'item',Name:'Movie',Type:'Movie'}]});
   await h.api.showModal('add');
   const add=h.document.querySelector('.je-bookmark-btn-submit');
@@ -394,4 +395,38 @@ test('library title links to the item in the current web client, not the server 
   const h=setup(t,{a:{itemId:'one',mediaType:'movie',timestamp:1}});
   const container=await renderLibrary(h);
   assert.equal(container.querySelector('.je-bookmark-item-title').getAttribute('href'),'#/details?id=one');
+});
+
+// Jellyfin Desktop and Jellyfin Media Player play through mpv: the player page has jellyfin-web's OSD but
+// no <video>, so the time comes from the OSD's position text and seeks go through its position slider
+// (shared/osd-playback.ts, bundled into bookmarks.js in this tree).
+const osdWithoutVideo=position=>`<div id="videoOsdPage" class="page"><div class="videoOsdBottom">
+  <div class="osdPositionText">${position}</div><input type="range" step=".01" min="0" max="100" value="0" class="osdPositionSlider">
+  <div class="osdDurationText">${position?'-18:55':''}</div><button class="btnUserRating" data-id="item"></button></div></div>
+  <div class="videoPlayerContainer"></div>`;
+test('without a <video> a player bookmark is placed at, and jumped to through, the OSD position',async t=>{
+  const saved=[];
+  const h=setup(t,{one:{itemId:'item',timestamp:300,label:'mark'}},async(file,data)=>{saved.push(data);});
+  h.document.body.innerHTML=osdWithoutVideo('1:05');
+  h.routes.items=async()=>({Items:[{Id:'item',Name:'Movie',Type:'Movie'}]});
+  const slider=h.document.querySelector('.osdPositionSlider');const seeks=[];
+  slider.addEventListener('change',()=>seeks.push(parseFloat(slider.value)));
+  await h.api.showModal('add');
+  assert.equal(h.document.getElementById('bookmark-time').value,'1:05');
+  h.document.querySelector('.je-bookmark-btn-jump[data-bookmark-id="one"]').click();
+  assert.ok(Math.abs(seeks.at(-1)-(300/1200)*100)<0.01);
+  assert.equal(h.toasts.at(-1),'toast_jumped_to_bookmark: 5:00');
+  await h.api.showModal('add');
+  h.document.querySelector('.je-bookmark-btn-submit').click();
+  await settle(()=>saved.length===1);
+  const added=Object.values(saved[0].bookmarks).find(bm=>bm.label!=='mark');
+  assert.equal(added.timestamp,65);
+});
+test('without a <video> and no position on the OSD, no bookmark is offered at 0:00',async t=>{
+  const h=setup(t);
+  h.document.body.innerHTML=osdWithoutVideo('');
+  h.routes.items=async()=>({Items:[{Id:'item',Name:'Movie',Type:'Movie'}]});
+  await h.api.showModal('add');
+  assert.equal(h.document.getElementById('bookmark-time'),null);
+  assert.deepEqual(h.toasts,['toast_player_unsupported']);
 });

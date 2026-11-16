@@ -63,6 +63,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             AutoSkipIntro = false;
             AutoSkipOutro = false;
             LongPress2xEnabled = false;
+            SubtitleSyncButtonEnabled = false;
             RandomButtonEnabled = true;
             RandomIncludeMovies = true;
             RandomIncludeShows = true;
@@ -202,6 +203,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             TagGroupOrder = null;
             TagGroupCaps = null;
             TagGroupScopes = null;
+            TagHiddenValues = null;
+            TagTextOverrides = null;
             TagLabelDensity = "full";
             TagScale = "default";
             TagGap = "default";
@@ -244,6 +247,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 new Shortcut { Name = "DecreaseSubtitleOffset", Key = "[", Label = "Decrease Subtitle Offset", Category = "Player" },
                 new Shortcut { Name = "IncreaseSubtitleOffset", Key = "]", Label = "Increase Subtitle Offset", Category = "Player" },
                 new Shortcut { Name = "JumpToLastPosition", Key = "Z", Label = "Jump to Last Position", Category = "Player" },
+                new Shortcut { Name = "SubtitleSync", Key = "Shift+S", Label = "Sync Subtitles", Category = "Player" },
                 new Shortcut { Name = "JumpToPercentage", Key = "0-9", Label = "Jump to % of video", Category = "Player" }
             };
 
@@ -355,6 +359,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             AutoMovieRequestCustomProfileId = 0; // Quality profile ID for "custom" mode
             AutoMovieRequestCustomRootFolder = ""; // Root folder path for "custom" mode
             AutoMovieRequestFallbackOn4k = true; // When original mode finds a 4K profile, fall back to default instead
+
+            // Auto Request Removal Settings
+            AutoRequestRemovalEnabled = false; // Delete a Seerr request once its requester has watched it
 
             // Watchlist Settings
             AddRequestedMediaToWatchlist = false;
@@ -613,6 +620,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool AutoSkipIntro { get; set; }
         public bool AutoSkipOutro { get; set; }
         public bool LongPress2xEnabled { get; set; }
+
+        /// <summary>Default for the player's Subtitle Sync button (lists the subtitle lines to sync to, search or jump to).</summary>
+        public bool SubtitleSyncButtonEnabled { get; set; }
         public bool RandomButtonEnabled { get; set; }
         public bool RandomIncludeMovies { get; set; }
         public bool RandomIncludeShows { get; set; }
@@ -979,6 +989,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public TagGroupCaps? TagGroupCaps { get; set; }
         /// <summary>Where each tag group shows by default (item types and home rows); null shows every group everywhere.</summary>
         public TagGroupScopes? TagGroupScopes { get; set; }
+        /// <summary>Tag Styles labels whose chips never draw, per group (Hidden tags, set on the Colours tab); null hides nothing.</summary>
+        public TagHiddenValues? TagHiddenValues { get; set; }
+        /// <summary>Text shown instead of a tag's own, JSON {"status":{"seasonFinale":"End of Season"}} (Tag text, set on the Colours tab); null keeps every tag's own text.</summary>
+        public string? TagTextOverrides { get; set; }
         /// <summary>Starting label density (full or compact).</summary>
         [AnalyticsInclude]
         public string TagLabelDensity { get; set; } = "full";
@@ -1155,6 +1169,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public int AutoMovieRequestCustomProfileId { get; set; } // Quality profile ID for "custom" mode
         public string AutoMovieRequestCustomRootFolder { get; set; } // Root folder path for "custom" mode
         public bool AutoMovieRequestFallbackOn4k { get; set; } // When original mode finds a 4K profile, fall back to default
+
+        // Auto Request Removal Settings
+        public bool AutoRequestRemovalEnabled { get; set; } // Delete a Seerr request once its requester has watched it
 
         // Watchlist Settings
         public bool AddRequestedMediaToWatchlist { get; set; }

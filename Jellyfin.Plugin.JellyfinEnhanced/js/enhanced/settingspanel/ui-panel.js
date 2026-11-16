@@ -450,6 +450,8 @@
         ...theme
       };
       help.innerHTML = internal.buildPanelHtml ? internal.buildPanelHtml(ctx) : "";
+      help.style.setProperty("--je-panel-box", ctx.presetBoxBackground ?? null);
+      help.style.setProperty("--je-panel-toggle-accent", ctx.toggleAccentColor ?? null);
       document.body.appendChild(help);
       closeOpenPanel = closePanel;
       holdBackground();

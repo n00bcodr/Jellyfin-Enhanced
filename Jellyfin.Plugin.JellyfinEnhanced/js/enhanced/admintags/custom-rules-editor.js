@@ -303,6 +303,7 @@
       const status = byId("customTagRulesStatus");
       if (status) status.textContent = tr("{count} of {max} rules", { count: rows.length, max: MAX_RULES });
     }
+    const matches = (config) => JSON.stringify(collectRules(readRows(config.CustomTagRules))) === JSON.stringify(collectRules(rows));
     function load(config) {
       rows = readRows(config.CustomTagRules);
       render();
@@ -325,6 +326,7 @@
     });
     return {
       load,
+      matches,
       collect,
       labels,
       snapshot: () => JSON.stringify(collectRules(rows)),

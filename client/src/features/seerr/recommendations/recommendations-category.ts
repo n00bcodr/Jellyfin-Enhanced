@@ -4,7 +4,7 @@
 // feed and a series feed (interleaved into one list) and offers All | Movies | Series once both have
 // answered with results.
 import { bindToSession, filterOf, translate } from '../host-discovery';
-import { clampPages, decodeFeedPage, estimateYield, isAbortError, resultKey, sortResults, unseenResults } from '../discovery/domain';
+import { clampPages, decodeFeedPage, estimateYield, isAbortError, isRecord, resultKey, sortResults, unseenResults } from '../discovery/domain';
 import type { FeedPage, FilterMode, ScrollHint, ScrollResult, SeerrResult } from '../discovery/types';
 import { CATEGORY_PAGE_ID, FILTER_MODULE, LOG_PREFIX, OTHER_PAGE, part, recommendationsHost, SORT_MODULE } from './stage';
 import type { CategoryFeed, CategoryState, ResolvedCategory } from './types';
@@ -243,15 +243,36 @@ const nextPages = (feed: CategoryFeed, ahead: number): number[] => {
         page.setAttribute('data-backbutton', 'true');
         page.setAttribute('data-type', 'custom');
         page.innerHTML = PAGE_MARKUP;
-        // This page takes no part in the History API (see showCategoryPage), so there's no browser
-        // Back support and this button is the way out, to wherever the page was opened from.
+        // With the page's history entry open the button goes through Back, so the entry is consumed.
         page.querySelector('#je-recommendations-category-back')?.addEventListener('click', () => {
-            const returnToPage = state().categoryReturnsToPage && window.location.hash === RETURN_HASH;
-            hideCategoryPage();
-            if (returnToPage) part(P, 'showPage')();
+            if (historyEntryActive) history.back();
+            else closeCategoryPage();
         });
         (document.querySelector('.mainAnimatedPages') ?? document.body).appendChild(page);
         return page;
+    }
+    /** Closes the page to wherever it was opened from. */
+    function closeCategoryPage(): void {
+        const returnToPage = state().categoryReturnsToPage && window.location.hash === RETURN_HASH;
+        hideCategoryPage();
+        if (returnToPage) part(P, 'showPage')();
+    }
+    // An open category page owns one same-URL history entry, so Back (and the Android back button)
+    // closes it instead of leaving the page underneath. Same pattern as the More Info modal.
+    let historyEntryActive = false;
+    const isOwnEntry = (entry: unknown): boolean => isRecord(entry) && entry.jeCategory === true;
+    /**
+     * Our entry carries `jeCategory`: a pop that lands back on it (the More Info modal above the page
+     * closing) keeps the page open, and any other pop closes it.
+     */
+    function onHistoryPop(event: PopStateEvent): void {
+        if (!historyEntryActive || isOwnEntry(event.state)) return;
+        releaseHistoryEntry();
+        closeCategoryPage();
+    }
+    function releaseHistoryEntry(): void {
+        historyEntryActive = false;
+        window.removeEventListener('popstate', onHistoryPop);
     }
     async function showCategoryPage(categoryKey: string): Promise<void> {
         const category = part(P, 'resolveCategory')(categoryKey);
@@ -295,10 +316,14 @@ const nextPages = (feed: CategoryFeed, ahead: number): number[] => {
                 .then(() => { if (!sortStale()) armScroll(container); })
                 .catch(error => console.error(`${LOG_PREFIX} Failed to re-sort category`, error));
         }));
-        // Deliberately does NOT touch the History API: jellyfin-web's router intercepts every pushState
-        // and re-resolves its own routes against the URL, and this page was never one of them, which
-        // produced a "not found" flash even a hard refresh couldn't recover from. The page is shown and
-        // hidden purely as in-memory UI state; navigating away or the back button closes it.
+        // The page is in-memory UI state with no route of its own: pushing a new URL made jellyfin-web's
+        // router look for a route that does not exist (a "not found" flash). So its only history entry
+        // is a copy of the current URL, which the router resolves as it was.
+        if (!historyEntryActive) {
+            history.pushState({ jeCategory: true }, '', window.location.href);
+            historyEntryActive = true;
+            window.addEventListener('popstate', onHistoryPop);
+        }
         const activePage = document.querySelector(`.mainAnimatedPage:not(.hide):not(#${CATEGORY_PAGE_ID})`);
         if (activePage) {
             pageState.categoryPreviousPage = activePage;
@@ -319,6 +344,8 @@ const nextPages = (feed: CategoryFeed, ahead: number): number[] => {
         if (!pageState.categoryPageVisible) return;
         pageState.categoryPageVisible = false;
         pageState.categoryReturnsToPage = false;
+        // Closed by navigating away: the entry stays in history but is no longer ours to pop.
+        releaseHistoryEntry();
         retire(pageState.categoryState);
         stopStickyTracking?.();
         stopStickyTracking = null;
@@ -340,4 +367,5 @@ const nextPages = (feed: CategoryFeed, ahead: number): number[] => {
     P.loadMoreCategoryItems = loadMoreCategoryItems;
     P.showCategoryPage = showCategoryPage;
     P.hideCategoryPage = hideCategoryPage;
+    P.categoryOnOwnEntry = () => historyEntryActive && isOwnEntry(history.state);
 })();

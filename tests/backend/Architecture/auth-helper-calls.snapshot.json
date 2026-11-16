@@ -179,6 +179,7 @@
   "ProxyTmdbRequest": {"User":1,"UserHelper.GetCurrentUserId":1},
   "RebuildTagCache": {"IsAdminUser":1},
   "RefreshLeavingSoon": {"IsAdminUser":1},
+  "RemoveRequest": {"IsAdminUser":3,"User":1,"UserHelper.GetCurrentUserId":1},
   "RemoveUserBookmark": {"AuthorizeUserConfigAccess":1},
   "ReportJellyseerrIssue": {"IsAdminUser":5,"User":1,"UserHelper.GetCurrentUserId":1},
   "RequestTvSeasons": {"IsAdminUser":5,"User":1,"UserHelper.GetCurrentUserId":1},

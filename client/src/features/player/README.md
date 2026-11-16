@@ -1,6 +1,6 @@
 # player
 
-Video player: auto-skip, pause screen, playback rating badge, subtitles, track controls, frame seek and long press.
+Video player: auto-skip, pause screen, playback rating badge, subtitles, subtitle sync, track controls, frame seek and long press. A player without a `<video>` (Jellyfin Desktop's mpv) is read and driven through jellyfin-web's OSD (`osd-seek-history.ts`, `osd-settings-menu.ts`, on `../shared/osd-playback.ts`).
 
 Owner: Jellyfin Enhanced maintainers. Backend counterpart: none (client-only) (PLAN.md canonical feature list).
 
@@ -23,7 +23,7 @@ Sources are relative to this folder; outputs are relative to `Jellyfin.Plugin.Je
 `public-api.ts` is the only module another feature may import, and only with `import type` (feature-boundaries rule 1). It holds types only, no runtime code.
 
 - Facades this feature publishes on `window.JellyfinEnhanced`: none.
-- `JE.internals` slots it owns (`tests/frontend/architecture/internals-owners.json`): `autoSkip`, `nowPlaying`, `player`.
+- `JE.internals` slots it owns (`tests/frontend/architecture/internals-owners.json`): `autoSkip`, `nowPlaying`, `osdPlayback`, `player`, `subtitleSync`.
 
 ## Settings / admin UI
 

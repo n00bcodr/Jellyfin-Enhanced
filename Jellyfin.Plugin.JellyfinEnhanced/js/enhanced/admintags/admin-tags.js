@@ -471,6 +471,23 @@
     if (again instanceof HTMLElement && !isDisabled(again)) again.focus({ preventScroll: true });
   }
 
+  // client/src/features/media-tags/admin/hidden-rows.ts
+  function hiddenLinkHtml(groups, groupId, name, { esc: esc2 }) {
+    if (!groups?.includes(groupId)) return "";
+    return `<a class="je-ta-link je-ta-crosslink" href="#" data-je-goto="colours" data-je-colours-group="${esc2(groupId)}"><span class="je-ta-link-text">${esc2(fmt("Hidden {group} tags (Colours and text)", { group: name }))}</span><span class="material-icons" aria-hidden="true">arrow_forward</span></a>`;
+  }
+  function syncHiddenRow(row, summary, config, groupId, title, ageRatings) {
+    const lists = config.TagHiddenValues;
+    const list2 = lists && typeof lists === "object" ? Reflect.get(lists, groupId.charAt(0).toUpperCase() + groupId.slice(1)) ?? Reflect.get(lists, groupId) : null;
+    const count = Array.isArray(list2) ? list2.length : 0;
+    const ages = groupId === "ageRating" && Array.isArray(ageRatings) ? ageRatings.length : 0;
+    const hidden = !count ? "" : ages ? fmt(" · {n} ratings hidden", { n: ages }) : fmt(" · {n} {n|tag|tags} hidden", { n: count });
+    const sum = row.querySelector(".je-ta-grow-sum");
+    if (sum) sum.textContent = summary + hidden;
+    const link = find(row, "[data-je-colours-group] .je-ta-link-text");
+    if (link) link.textContent = fmt(count ? "Hidden {group} tags (Colours and text)" : "Hide individual {group} tags (Colours and text)", { group: title });
+  }
+
   // client/src/features/media-tags/admin/page.ts
   function fieldName(sections2, key) {
     for (const s of sections2) {
@@ -569,7 +586,7 @@
       const on = enable ? config[enable.key] === true : true;
       const name = fmt(s.title);
       const ownControls = hasOwnControls(s, groupId);
-      const placement = JE2().core?.tagLayout?.GROUPS?.some((g) => g === groupId) ? `<a class="je-ta-link je-ta-crosslink" href="#" data-je-goto="layout:placement-${esc2(groupId)}"><span class="je-ta-link-text">${tx2("{group} position and limit (Layout defaults)", { group: name })}</span><span class="material-icons" aria-hidden="true">arrow_forward</span></a>` : "";
+      const placement = (JE2().core?.tagLayout?.GROUPS?.some((g) => g === groupId) ? `<a class="je-ta-link je-ta-crosslink" href="#" data-je-goto="layout:placement-${esc2(groupId)}"><span class="je-ta-link-text">${tx2("{group} position and limit (Layout defaults)", { group: name })}</span><span class="material-icons" aria-hidden="true">arrow_forward</span></a>` : "") + hiddenLinkHtml(JE2().core?.tagHidden?.GROUPS, groupId, name, kit2);
       const mark = enable ? ` ${perUserMark2()}` : "";
       if (!ownControls) {
         return `<div class="je-ta-grow" data-group="${esc2(groupId)}" data-section="${esc2(s.id)}" data-enabled="${on}" data-open="false" data-je-static><div class="je-ta-grow-head"><div class="je-ta-grow-text"><span class="je-ta-grow-name" id="jeTaSec-${esc2(s.id)}">${esc2(name)}${mark}</span><span class="je-ta-grow-sum"></span>${scopesHtml(groupId)}${placement}</div><span class="je-ta-grow-sample" aria-hidden="true"></span>` + (enable ? `<label class="je-ta-grow-check"><input type="checkbox" id="${esc2(enable.id)}" data-je-field="${esc2(enable.key)}" data-je-setting-id="${esc2(enable.id)}" ${on ? "checked" : ""} aria-label="${tx2(enable.label)}"></label>` : "") + "</div></div>";
@@ -932,8 +949,7 @@
         if (!row) continue;
         const enable = (s.fields || []).find((f) => f.type === "enable");
         row.dataset.enabled = String(enable ? config[enable.key] === true : true);
-        const sum = row.querySelector(".je-ta-grow-sum");
-        if (sum) sum.textContent = s.group.summary ? s.group.summary(ctx) : "";
+        syncHiddenRow(row, s.group.summary ? s.group.summary(ctx) : "", config, s.group.id, fmt(s.title), JE2().pluginConfig?.TagHiddenAgeRatings);
         const sample = row.querySelector(".je-ta-grow-sample");
         if (sample) sample.innerHTML = (s.group.sample ? s.group.sample(ctx) : []).map(sampleChip).join("");
       }
@@ -1549,7 +1565,7 @@
     { id: "layout", icon: "view_quilt", nameKey: "Layout defaults", shortKey: "Layout", descKey: "The layout, label density, group order, positions and limits new users start with.", lead: "card" },
     { id: "groups", icon: "label", nameKey: "Groups", descKey: "Turn each tag group on or off for new users, and open a group for its server settings.", lead: "card" },
     { id: "rules", icon: "rule", nameKey: "Rules", descKey: "Give some cards a different look by library, type, genre or age rating.", lead: "card" },
-    { id: "colours", icon: "palette", nameKey: "Colours", descKey: "The colours of the tags, on the web and in native posters.", lead: "card" },
+    { id: "colours", icon: "palette", nameKey: "Colours and text", descKey: "The colours and words of the tags, on the web and in native posters, and which tags to hide.", lead: "card" },
     { id: "badges", icon: "new_releases", nameKey: "Status badges", shortKey: "Badges", descKey: "Which status badges new users start with, and how long a title counts as new.", lead: "card" },
     { id: "server", icon: "dns", nameKey: "Server", descKey: "The tag data the server keeps, and tags drawn into poster images for other apps.", lead: "card" }
   ];

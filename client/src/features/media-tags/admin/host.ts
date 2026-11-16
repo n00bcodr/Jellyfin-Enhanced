@@ -31,6 +31,9 @@ export interface AdminTagsCoreSurface {
     tagLayout?: AdminTagLayout;
     tagLook?: AdminTagLook;
     tagScopes?: Pick<TagScopes, 'SCOPE_IDS' | 'SCOPED_GROUPS' | 'scopeDefault'>;
+    /** Hidden tags (pipeline/tag-hidden.ts): the groups whose tags can be hidden. */
+    tagHidden?: Pick<import('../pipeline/tag-hidden').TagHidden, 'GROUPS'>;
+    tagRenderer?: { reinitialize?(name: string): unknown };
     tagSettingsMatrix?: Pick<TagSettingsMatrix, 'offers'>;
     ui: { injectCss(id: string, css: string): unknown; removeCss(id: string): unknown };
     mediaLanguage?: { uiLocale?(): string | null | undefined };
@@ -52,6 +55,8 @@ export interface AdminTagsBridge {
     session?: { onUserChange?(name: string, callback: (change: SessionChangeView | null | undefined) => void): unknown };
     saveUserSettings?(file: string, settings: SettingsDocument, options?: SaveOptions): Promise<void>;
     currentSettings?: SettingsDocument;
+    /** The public configuration this dashboard's own posters and previews read. */
+    pluginConfig?: Record<string, unknown>;
 }
 
 /** An ApiClient request the tab sends; answers are unknown until decoded. */

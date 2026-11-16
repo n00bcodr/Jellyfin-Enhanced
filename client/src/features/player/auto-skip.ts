@@ -5,6 +5,7 @@ import { createPlayerLifetime } from './lifetime';
 const { JE, ApiClient, ctx } = playerHost();
 const lifetime = createPlayerLifetime(JE, 'auto-skip');
 import { TICKS_PER_SECOND, MIN_SEGMENT_TICKS, parseTranscodeOffsetTicksFromSrc, createSessionItemResolver, createAutoSkipEngine } from './auto-skip-engine';
+import { installSubtitleSync } from './subtitle-sync/dialog';
     // ── DOM glue ─────────────────────────────────────────────────────────────
 
     /**
@@ -184,3 +185,7 @@ import { TICKS_PER_SECOND, MIN_SEGMENT_TICKS, parseTranscodeOffsetTicksFromSrc, 
     };
 
 lifetime.onReset(() => { _engine?.detach(); _engine = null; _engineEpoch = null; });
+
+// Subtitle sync is upstream's next component script (enhanced/player/subtitle-sync.js). The component list is
+// pinned here, so this entry carries it: it reads the primitives published above at call time.
+installSubtitleSync({ JE, ApiClient, ctx });

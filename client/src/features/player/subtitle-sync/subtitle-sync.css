@@ -1,0 +1,66 @@
+/* Subtitle sync: the player's Subtitle Sync button and its dialog. dialog.ts adds one rule after these, setting
+   --je-subsync-accent to the theme's accent (the value here is the fallback). */
+.btnSubtitles.hide + #je-subtitle-sync-btn { display: none !important; }
+/* JE's Material Symbols subset (declared in ui-styles.js), at the size of the player's own icons. */
+#je-subtitle-sync-btn .je-msym-rounded {
+    font-family: 'JE Material Symbols Rounded'; font-weight: normal; font-style: normal; font-size: 1.67em;
+    line-height: 1; letter-spacing: normal; text-transform: none; display: inline-block; white-space: nowrap;
+    word-wrap: normal; direction: ltr; font-feature-settings: 'liga'; -webkit-font-smoothing: antialiased;
+}
+#je-subtitle-sync {
+    position: fixed; inset: 0; z-index: 10000; display: flex; align-items: center; justify-content: center;
+    padding: 16px; box-sizing: border-box; background: rgba(0,0,0,0.6);
+    --je-subsync-accent: #00a4dc;
+}
+#je-subtitle-sync .je-subsync-dialog {
+    display: flex; flex-direction: column; width: min(680px, 100%); max-height: min(80vh, 760px);
+    background: rgba(24,24,24,0.97); color: #fff; border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 12px; box-shadow: 0 16px 48px rgba(0,0,0,0.6); overflow: hidden; font-size: 15px;
+}
+#je-subtitle-sync .je-subsync-head { display: flex; align-items: flex-start; gap: 12px; padding: 16px 16px 8px 20px; }
+#je-subtitle-sync .je-subsync-titles { flex: 1; min-width: 0; }
+#je-subtitle-sync .je-subsync-title { margin: 0; font-size: 1.15em; font-weight: 600; }
+#je-subtitle-sync .je-subsync-track { margin-top: 2px; font-size: 0.85em; color: rgba(255,255,255,0.65); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#je-subtitle-sync .je-subsync-icon-btn {
+    flex: none; display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px;
+    border: 0; border-radius: 50%; background: transparent; color: inherit; cursor: pointer; padding: 0;
+}
+#je-subtitle-sync .je-subsync-icon-btn:hover, #je-subtitle-sync .je-subsync-icon-btn:focus-visible { background: rgba(255,255,255,0.12); outline: none; }
+#je-subtitle-sync .je-subsync-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; padding: 0 20px 10px; font-size: 0.85em; color: rgba(255,255,255,0.75); }
+#je-subtitle-sync .je-subsync-meta b { color: #fff; font-variant-numeric: tabular-nums; }
+#je-subtitle-sync .je-subsync-reset {
+    border: 1px solid rgba(255,255,255,0.25); background: transparent; color: inherit; border-radius: 999px;
+    padding: 2px 10px; font: inherit; cursor: pointer;
+}
+#je-subtitle-sync .je-subsync-reset:hover, #je-subtitle-sync .je-subsync-reset:focus-visible { border-color: var(--je-subsync-accent); outline: none; }
+#je-subtitle-sync .je-subsync-reset[hidden] { display: none; }
+#je-subtitle-sync .je-subsync-search { padding: 0 16px 8px; }
+#je-subtitle-sync .je-subsync-input {
+    width: 100%; box-sizing: border-box; padding: 10px 12px; border-radius: 8px; font: inherit; color: #fff;
+    background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.18);
+}
+#je-subtitle-sync .je-subsync-input:focus { outline: none; border-color: var(--je-subsync-accent); }
+#je-subtitle-sync .je-subsync-hint { padding: 0 20px 8px; font-size: 0.8em; color: rgba(255,255,255,0.6); }
+#je-subtitle-sync .je-subsync-status { padding: 4px 20px 8px; font-size: 0.85em; }
+#je-subtitle-sync .je-subsync-status:empty { display: none; }
+#je-subtitle-sync .je-subsync-status[data-kind="error"] { color: #ff8a80; }
+#je-subtitle-sync .je-subsync-status button { margin-left: 8px; }
+#je-subtitle-sync .je-subsync-list { list-style: none; margin: 0; padding: 0 8px 8px; overflow-y: auto; flex: 1; min-height: 0; overscroll-behavior: contain; }
+#je-subtitle-sync .je-subsync-row { display: flex; align-items: stretch; border-radius: 8px; }
+#je-subtitle-sync .je-subsync-row[hidden] { display: none; }
+#je-subtitle-sync .je-subsync-row.is-current { background: rgba(255,255,255,0.07); box-shadow: inset 3px 0 0 var(--je-subsync-accent); }
+#je-subtitle-sync .je-subsync-line {
+    flex: 1; min-width: 0; display: flex; gap: 12px; align-items: baseline; text-align: left; padding: 8px 10px;
+    border: 0; border-radius: 8px; background: transparent; color: inherit; font: inherit; cursor: pointer;
+}
+#je-subtitle-sync .je-subsync-line:hover, #je-subtitle-sync .je-subsync-line:focus-visible { background: rgba(255,255,255,0.12); outline: none; }
+#je-subtitle-sync .je-subsync-time { flex: none; min-width: 4.2em; font-size: 0.85em; color: rgba(255,255,255,0.6); font-variant-numeric: tabular-nums; }
+#je-subtitle-sync .je-subsync-text { flex: 1; min-width: 0; white-space: pre-line; overflow-wrap: anywhere; }
+#je-subtitle-sync .je-subsync-jump { align-self: center; color: rgba(255,255,255,0.7); }
+#je-subtitle-sync .je-subsync-empty { padding: 24px 20px; text-align: center; color: rgba(255,255,255,0.6); }
+#je-subtitle-sync .je-subsync-foot { padding: 8px 20px 12px; font-size: 0.8em; color: rgba(255,255,255,0.55); border-top: 1px solid rgba(255,255,255,0.08); }
+#je-subtitle-sync .material-icons { font-size: 22px; }
+@media (max-width: 600px) {
+    #je-subtitle-sync { padding: 16px; align-items: flex-end; }
+    #je-subtitle-sync .je-subsync-dialog { max-height: 85vh; }
+}

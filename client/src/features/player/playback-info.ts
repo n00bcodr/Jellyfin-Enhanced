@@ -1,4 +1,4 @@
-import type { PlayerContext, TrackKind } from './context';
+import { playerUnsupportedText, type PlayerContext, type TrackKind } from './context';
 import { decodeItem, decodeSegments, decodeSessions, type MediaSegment, type Stream, type PlayingSession } from './wire';
 import { normalizeItemId, parseItemIdFromVideosSrc } from './identity';
 import type { TrackMenu } from './native-track-menu';
@@ -213,7 +213,7 @@ export function installPlaybackInfo(context: PlayerContext, probeOwnSession: () 
         if (toggled || !lease.current() || playbackInfoOverlay) return;
         const video = getVideo();
         if (!video) {
-            JE.toast(JE.t('toast_no_video_found'));
+            JE.toast(playerUnsupportedText(context));
             return;
         }
         const overlay = document.createElement('div');

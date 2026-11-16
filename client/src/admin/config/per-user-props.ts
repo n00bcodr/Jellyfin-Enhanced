@@ -95,6 +95,7 @@ export const PER_USER_PROPS: readonly string[] = [
     'StatusTagsSchedule',
     'StatusTagsSeriesStatus',
     'StatusTagsTrending',
+    'SubtitleSyncButtonEnabled',
     'TagsHideOnHover',
     'VersionsTagOrder',
     'VideoCodecTagOrder',

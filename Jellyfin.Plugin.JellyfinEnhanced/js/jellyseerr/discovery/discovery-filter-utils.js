@@ -2251,6 +2251,7 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
     const joins = /* @__PURE__ */ new Map();
     function placeSection(anchor, section, page) {
       if (page === "detail") {
+        section.style.order = "99";
         const view = anchor.closest(".itemDetailPage") ?? anchor;
         (view.querySelector(".detailPagePrimaryContent .detailSection") ?? anchor).appendChild(section);
         attachJoin(section, false);

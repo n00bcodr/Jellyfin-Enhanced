@@ -161,7 +161,7 @@ const TOGGLES = ['autoPauseToggle', 'autoResumeToggle', 'autoPipToggle', 'autoSk
   'randomButtonToggle', 'randomUnwatchedOnly', 'randomScopeCurrentContainer', 'showWatchProgressToggle', 'showFileSizesToggle',
   'showAudioLanguagesToggle', 'removeContinueWatchingToggle', 'qualityTagsToggle', 'genreTagsToggle', 'pauseScreenToggle',
   'languageTagsToggle', 'ratingTagsToggle', 'ageRatingTagsToggle', 'statusTagsToggle', 'logoTagsToggle', 'customTagsToggle', 'peopleTagsToggle',
-  'tagsHideOnHoverToggle', 'disableCustomSubtitleStyles', 'longPress2xEnabled'];
+  'tagsHideOnHoverToggle', 'disableCustomSubtitleStyles', 'longPress2xEnabled', 'subtitleSyncButtonEnabled'];
 
 /** The real Settings-tab wiring over the real save path, with document listener bookkeeping. */
 function settingsHarness(t, { settings = {}, html = '' } = {}) {
@@ -295,8 +295,9 @@ test('the panel lists the subtitle offset shortcuts in the Player column with th
   tpl.innerHTML = h.JE.internals.enhancedUi.buildPanelHtml({});
   const rows = [...tpl.content.querySelectorAll('.shortcut-key')].map(key => [key.dataset.action, key.textContent, key.parentElement.parentElement.lastElementChild.textContent.trim()]);
   const at = rows.findIndex(row => row[0] === 'FrameStepForward');
-  assert.deepEqual(rows.slice(at, at + 4), [['FrameStepForward', '.', 'Step Forward One Frame'], ['DecreaseSubtitleOffset', '[', 'Decrease Subtitle Offset'],
-    ['IncreaseSubtitleOffset', ']', 'Increase Subtitle Offset'], ['JumpToLastPosition', 'Z', 'Jump to Last Position']]);
+  // Upstream 9d1d5e8f lists Sync Subtitles after them (it has no binding in this fixture, so it shows its name).
+  assert.deepEqual(rows.slice(at, at + 5), [['FrameStepForward', '.', 'Step Forward One Frame'], ['DecreaseSubtitleOffset', '[', 'Decrease Subtitle Offset'],
+    ['IncreaseSubtitleOffset', ']', 'Increase Subtitle Offset'], ['SubtitleSync', '', 'SubtitleSync'], ['JumpToLastPosition', 'Z', 'Jump to Last Position']]);
 });
 
 /** The subtitle preset grids the template renders, with the real preset lists' shape. */
