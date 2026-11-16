@@ -291,9 +291,9 @@
         const logo = /** @type {HTMLImageElement|null} */ (dialog.querySelector('.je-mt-logo'));
         if (logo) { try { logo.src = JE.cdn.selfhst(`svg/${tool}.svg`); } catch { logo.remove(); } logo.title = tool === 'reclaimerr' ? 'Reclaimerr' : 'Maintainerr'; }
         // Reclaimerr takes any future day, earlier or later, so it is a date change; Maintainerr only moves a removal later.
-        text('.je-mt-titletext', JE.t(mode === 'mark' ? 'maintainerr_schedule_title' : (exactDates() ? 'maintainerr_change_date' : 'maintainerr_postpone_title')));
-        text('.je-mt-datelabel', JE.t('maintainerr_pick_date'));
-        text('.je-mt-applydate', JE.t('maintainerr_apply_date'));
+        text('.je-mt-titletext', JE.t(mode === 'mark' ? 'reclaimerr_schedule_title' : (exactDates() ? 'reclaimerr_change_date' : 'maintainerr_postpone_title')));
+        text('.je-mt-datelabel', JE.t('reclaimerr_pick_date'));
+        text('.je-mt-applydate', JE.t('reclaimerr_apply_date'));
         text('.je-mt-hint', days === null ? '' : JE.t('maintainerr_postpone_hint', { days }));
         if (days === null) dialog.querySelector('.je-mt-hint')?.remove();
         text('.je-mt-label', JE.t('maintainerr_postpone_days_label'));
@@ -312,7 +312,7 @@
         let armed = false;
         const previewEl = /** @type {HTMLElement} */ (dialog.querySelector('.je-mt-preview'));
         /** Show the day an action would set, or nothing. @param {number|null} ms */
-        const preview = (ms) => { previewEl.textContent = ms === null ? '' : JE.t('maintainerr_new_date', { date: shortDate(ms) }); };
+        const preview = (ms) => { previewEl.textContent = ms === null ? '' : JE.t('reclaimerr_new_date', { date: shortDate(ms) }); };
         const close = () => {
             backdrop.remove();
             document.removeEventListener('keydown', onKey, true);
@@ -418,14 +418,14 @@
         const rows = [];
         if (!admin) {
             if (state.Marked || /** @type {any} */ (state).canRequest !== true) return;
-            const ask = buildRow(scroller, ROWS.request, 'delete_sweep', JE.t('maintainerr_request'));
-            ask.addEventListener('click', () => { setTimeout(() => { act('request', { itemId }, 'maintainerr_requested', null); }, 0); });
+            const ask = buildRow(scroller, ROWS.request, 'delete_sweep', JE.t('reclaimerr_request'));
+            ask.addEventListener('click', () => { setTimeout(() => { act('request', { itemId }, 'reclaimerr_requested', null); }, 0); });
             rows.push(ask);
         } else if (state.Marked) {
             const keep = buildRow(scroller, ROWS.keep, 'restore', JE.t('maintainerr_keep'));
             keep.addEventListener('click', () => { setTimeout(() => { // Reclaimerr's Keep cannot be undone by marking again (a candidate stays protected, a schedule would restart at 30 days): no Undo.
                 act('unmark', { itemId }, 'maintainerr_kept', exactDates() ? null : { path: 'mark', body: { itemId }, doneKey: 'maintainerr_marked' }); }, 0); });
-            const later = buildRow(scroller, ROWS.postpone, exactDates() ? 'event' : 'more_time', JE.t(exactDates() ? 'maintainerr_change_date' : 'maintainerr_postpone'));
+            const later = buildRow(scroller, ROWS.postpone, exactDates() ? 'event' : 'more_time', JE.t(exactDates() ? 'reclaimerr_change_date' : 'maintainerr_postpone'));
             later.addEventListener('click', () => { setTimeout(() => postpone(itemId, /** @type {ItemState} */ (state), opener), 0); });
             rows.push(keep, later);
         } else {

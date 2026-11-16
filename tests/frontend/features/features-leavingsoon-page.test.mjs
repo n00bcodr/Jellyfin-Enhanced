@@ -85,7 +85,7 @@ test('an administrator gets Keep and the date change on each card, and approves 
   const keep = first.querySelector('.je-ls-icon-btn.keep');
   const change = first.querySelector('.je-ls-icon-btn.date');
   assert.equal(keep.title, 'maintainerr_keep');
-  assert.equal(change.title, 'maintainerr_change_date', 'Reclaimerr can set any day');
+  assert.equal(change.title, 'reclaimerr_change_date', 'Reclaimerr can set any day');
   assert.equal(keep.textContent.trim(), 'shield', 'icons, not text');
   keep.click();
   assert.equal(h.acted[0], 'unmark');

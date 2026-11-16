@@ -178,7 +178,7 @@
             };
             const keep = iconButton('keep', 'shield', t('maintainerr_keep'));
             keep.addEventListener('click', () => JE.removalMenu?.act?.('unmark', { itemId: item.id }, 'maintainerr_kept', data.provider === 'reclaimerr' ? null : { path: 'mark', body: { itemId: item.id }, doneKey: 'maintainerr_marked' }));
-            const when = iconButton('date', 'event', t(data.provider === 'reclaimerr' ? 'maintainerr_change_date' : 'maintainerr_postpone'));
+            const when = iconButton('date', 'event', t(data.provider === 'reclaimerr' ? 'reclaimerr_change_date' : 'maintainerr_postpone'));
             when.addEventListener('click', () => JE.removalMenu?.postpone?.(item.id, { Marked: true, DeleteAt: item.deleteAt ?? null }, when));
             actions.append(keep, when);
         }
