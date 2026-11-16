@@ -361,6 +361,34 @@ test('returning to details restores the remembered picker option and cancels an 
   assert.equal(h.document.querySelector('.selectSource').value, 'first');
 });
 
+test('a refresh of the item page that refills the picker goes back to the remembered pick, and a pick made meanwhile stays', async t => {
+  const h = setup(t); h.window.location.hash = `#/details?id=${movieId}`;
+  h.window.localStorage.setItem(SRC_KEY, JSON.stringify({ [movieId]: 'second' }));
+  // jellyfin-web's renderTrackSelections: the options again, the first source selected, no change event.
+  const OPTIONS = '<option value="first" selected>First</option><option value="second">Second</option>';
+  h.document.body.insertAdjacentHTML('beforeend', `<div id="itemDetailPage"><select class="selectSource">${OPTIONS}</select></div>`);
+  const select = h.document.querySelector('.selectSource');
+  const changes = [];
+  select.addEventListener('change', () => changes.push(select.value));
+  const sleep = ms => new Promise(resolve => h.window.setTimeout(resolve, ms));
+  const until = async (check, ms = 3000) => { for (const end = Date.now() + ms; !check() && Date.now() < end;) await sleep(25); };
+  h.document.dispatchEvent(new h.window.Event('viewshow'));
+  await until(() => select.value === 'second');
+  assert.equal(select.value, 'second', 'the page opens on the remembered pick');
+  // The item is refreshed: Jellyfin fills the picker again, on its first source.
+  select.innerHTML = OPTIONS;
+  assert.equal(select.value, 'first');
+  await until(() => select.value === 'second');
+  assert.equal(select.value, 'second', 'the picker follows the pick again, as the poster does');
+  assert.deepEqual(changes, ['second', 'second'], 'each restore tells the page (and the poster) with a change event');
+  // The user picks the first version while the window is still open: it is remembered and never undone.
+  select.value = 'first'; select.dispatchEvent(new h.window.Event('change', { bubbles: true }));
+  assert.deepEqual(JSON.parse(h.window.localStorage.getItem(SRC_KEY)), { [movieId]: 'first' });
+  await sleep(700);
+  assert.equal(select.value, 'first');
+  h.window.location.hash = '#/details?id=another';
+});
+
 
 const audioCases = JSON.parse(readFileSync(new URL('../../../fixtures/audio-stream-labels.json', import.meta.url)));
 for (const row of audioCases) for (const density of ['full', 'compact']) {

@@ -1289,24 +1289,19 @@
       document.addEventListener("viewshow", () => {
         clearInterval(versionPickerTimer);
         const id = detailId();
-        const want = id && selectedSourceFor(id);
-        if (!want) return;
+        if (!id || !selectedSourceFor(id)) return;
         const owner = sourcePrefKey();
         let tries = 0;
         const timer = versionPickerTimer = setInterval(() => {
-          if (detailId() !== id || sourcePrefKey() !== owner) {
+          if (detailId() !== id || sourcePrefKey() !== owner || ++tries > 30) {
             clearInterval(timer);
             return;
           }
+          const want = selectedSourceFor(id);
           const select = document.querySelector("#itemDetailPage:not(.hide) .selectSource");
-          if (select && select.options.length > 1) {
-            clearInterval(timer);
-            if (select.value !== want && [...select.options].some((o) => o.value === want)) {
-              select.value = want;
-              select.dispatchEvent(new Event("change", { bubbles: true }));
-            }
-          } else if (++tries > 20) {
-            clearInterval(timer);
+          if (want && select && select.options.length > 1 && select.value !== want && [...select.options].some((o) => o.value === want)) {
+            select.value = want;
+            select.dispatchEvent(new Event("change", { bubbles: true }));
           }
         }, 300);
       });

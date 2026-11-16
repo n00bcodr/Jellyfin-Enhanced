@@ -2176,6 +2176,31 @@
         "2b5b4e60bbe0c362ef9df14d01c0818f0c51201c"
       ],
       "notes": "Applied as is: the same trufflesecurity/trufflehog pin (3.99.9, commit 3bd2b588) in .github/workflows/security-scan.yml. No workflow that only the rewrite has pins TruffleHog; dependency-review.yml names it in a licence allow-list without a version, so nothing else changes."
+    },
+    {
+      "sha": "bfe4ba232f0f3e76f42cb3303c542257d30562c4",
+      "date": "2026-11-16T21:18:56+00:00",
+      "subject": "fix(tags): keep the version picker on the remembered pick when the item page refreshes it",
+      "class": "fix",
+      "features": [
+        "media-tags"
+      ],
+      "issues": [],
+      "release": null,
+      "size": {
+        "files": 1,
+        "insertions": 10,
+        "deletions": 12
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/js/tags/qualitytags.js"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "273529d9226c1b95c5488b1add3061a802b3fc65"
+      ],
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p67-*",
+      "notes": "Re-implemented in watchVersionPicker (client/src/features/media-tags/types/quality/qualitytags.ts) with upstream's logic: after a details page shows an item with a remembered version, a 300 ms check runs for 30 ticks (9 s), reads the pick on every tick and, whenever the picker lists that version but shows another, selects it again with a change event (so the page and the poster follow); it no longer stops at the first filled picker, and a version the user picks meanwhile is the pick it then keeps. It still ends on leaving the page or when another user signs in. Where it shows: Jellyfin 12.4's own refreshes keep the picker's current version (renderTrackSelections keeps the current value since jellyfin-web #7984, in 12.0), so on the lab the picker and the poster already agree after opening the page and after returning to it, on every build; the refill this guards against is Jellyfin 10.11's (renderTrackSelections selects the first version on every refresh of the item, with no change event) or any other that fires no change event. Test: one new case in tests/frontend/features/media-tags/features-quality-display.test.mjs (that refill, then a pick made inside the window), failing before the port and passing after; upstream's commit has no test. Lab (p67-version-picker.mjs: Abominable with 101 Dalmatians II's file merged in as a second version, the second one remembered): the same refill done in the page leaves the picker on the first version while the poster shows the remembered one before the port; on upstream's build and on the port the picker is back on the remembered version 1.5 s later, after one change event. No difference from upstream."
     }
   ]
 }
