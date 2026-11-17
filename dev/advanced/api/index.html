@@ -6017,6 +6017,12 @@
 </tr>
 <tr>
 <td>GET</td>
+<td><code>leaving-soon/items</code></td>
+<td>Signed-in user</td>
+<td>Optional <code>limit</code> → a standard item list <code>{Items, TotalRecordCount}</code> of the movies and series that are leaving, soonest first, as the user may see them. For home screen plugins such as KefinTweaks. 404 when no removal tool has an address.</td>
+</tr>
+<tr>
+<td>GET</td>
 <td><code>leaving-soon/list</code></td>
 <td>Signed-in user</td>
 <td>No body → <code>{provider, admin, canRequest, actions, items[], requests[], mine[]}</code>: what the removal tool that is on will remove (each item has <code>versionOnly: true</code> when only one version of a movie is scheduled and the others stay), soonest first (undated last), limited to the items the caller can see and to 500. An item is <code>{id, name, detail, type, year, deleteAt}</code>. <code>requests</code> is every pending Reclaimerr deletion request (administrators only), <code>mine</code> the caller's own requests (Reclaimerr, acting as the user). <code>404</code> while the Leaving Soon page is off or no removal tool is set up</td>

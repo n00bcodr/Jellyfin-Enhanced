@@ -4163,6 +4163,29 @@
 <li>Administrators get <strong>Keep</strong> and <strong>Change removal date</strong> on each card, and with Reclaimerr the waiting requests as cards with <strong>Approve</strong> and <strong>Deny</strong>. Approving deletes the title at once (it asks you to confirm first).</li>
 </ul>
 <p>Open it through the configured Home tab, Plugin Pages entry or Custom Tabs entry. Placement and options are in <a href="../enhanced-settings/#leaving-soon">Enhanced settings</a>.</p>
+<details class="info">
+<summary>Leaving soon row in KefinTweaks</summary>
+<p><a href="https://github.com/ranaldsgift/KefinTweaks">KefinTweaks</a> builds its home sections from Jellyfin queries, and its section editor can point a query at any path that answers like <code>/Items</code>. JE answers at <code>/JellyfinEnhanced/leaving-soon/items</code> with the titles that are leaving, soonest first, limited to what the signed-in user can see.</p>
+<p>In the KefinTweaks configuration, go to <strong>Enhanced Home Screen</strong> → <strong>New Section</strong> → <strong>Advanced</strong>, then use either way:</p>
+<ul>
+<li><strong>Import:</strong> paste the JSON below into <strong>Import</strong>. JE's admin settings have a <strong>Copy KefinTweaks section</strong> button next to the Leaving soon home row option that copies it for you.</li>
+<li><strong>By hand:</strong> keep <strong>Item Source</strong> on <strong>Jellyfin Server</strong>, set the query's <strong>Endpoint</strong> to <strong>Custom</strong> and <strong>Custom Endpoint Path</strong> to <code>/JellyfinEnhanced/leaving-soon/items</code>, then name the section, pick a card format and save.</li>
+</ul>
+<div class="language-json highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="p">{</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span><span class="nt">"id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"leaving-soon"</span><span class="p">,</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"home"</span><span class="p">,</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Leaving Soon"</span><span class="p">,</span>
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">  </span><span class="nt">"enabled"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">  </span><span class="nt">"order"</span><span class="p">:</span><span class="w"> </span><span class="mi">72</span><span class="p">,</span>
+</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">  </span><span class="nt">"cardFormat"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Poster"</span><span class="p">,</span>
+</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="w">  </span><span class="nt">"userConfigurable"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+</span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="w">  </span><span class="nt">"queries"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+</span><span id="__span-3-10"><a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"/JellyfinEnhanced/leaving-soon/items"</span><span class="p">,</span><span class="w"> </span><span class="nt">"queryOptions"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">"Limit"</span><span class="p">:</span><span class="w"> </span><span class="mi">20</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="p">}</span>
+</span><span id="__span-3-11"><a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="w">  </span><span class="p">]</span>
+</span><span id="__span-3-12"><a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="p">}</span>
+</span></code></pre></div>
+<p>The list needs a removal tool with an address set (Maintainerr, or Reclaimerr with its token). It stays current while something reads the leaving facts: the Leaving Soon page, the Maintainerr item menu actions, the home row, or the Leaving badge. It does not need the Home Screen Sections plugin.</p>
+</details>
 <h3 id="catch-up">Catch Up<a class="headerlink" href="#catch-up" title="Permanent link">¶</a></h3>
 <p>Sort unwatched movies and shows with a card deck. Touch, mouse, and keyboard actions update your own Jellyfin account.</p>
 <p><strong>How to use:</strong></p>
@@ -4265,7 +4288,7 @@
 <details class="info">
 <summary>Deck selection, browser preferences, and rewind</summary>
 <p>Plugin Pages uses <code>/JellyfinEnhanced/catchUpPage</code>. For manual Custom Tabs setup, use:</p>
-<div class="language-html highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="p">&lt;</span><span class="nt">div</span> <span class="na">class</span><span class="o">=</span><span class="s">"jellyfinenhanced catchup"</span><span class="p">&gt;&lt;/</span><span class="nt">div</span><span class="p">&gt;</span>
+<div class="language-html highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="p">&lt;</span><span class="nt">div</span> <span class="na">class</span><span class="o">=</span><span class="s">"jellyfinenhanced catchup"</span><span class="p">&gt;&lt;/</span><span class="nt">div</span><span class="p">&gt;</span>
 </span></code></pre></div>
 <p>Decks use random batches of 40 unwatched accessible items, filtering dismissed, already-seen, and imageless cards. <strong>Nothing more to show here.</strong> can mean the sample yielded no new eligible cards.</p>
 <p>Dismissals and the <strong>Movies</strong>/<strong>Shows</strong> choice are browser-local per-user preferences, separate from Hidden Content. Reloading retains dismissals; rewind or clearing the relevant browser storage removes them. Switching/restarting a deck clears its queue, seen set, and undo history.</p>
@@ -4518,7 +4541,7 @@
 <details class="note">
 <summary>Custom sidebar link format</summary>
 <p>Enter one decoded exact configuration-page name and Material icon per line, for example:</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>Configuration Page Name | Material Icon Name
+<div class="language-text highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>Configuration Page Name | Material Icon Name
 </span></code></pre></div>
 <p>Preview requires the icon script to have initialized after enabling it.</p>
 </details>
