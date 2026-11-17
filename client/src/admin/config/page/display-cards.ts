@@ -89,7 +89,6 @@ export function createDisplayCards(m: DisplayCardsDeps) {
             { key: 'letterboxd', label: 'Letterboxd', logo: 'letterboxd.png' },
             { key: 'rogerebert', label: 'Roger Ebert', logo: 'rogerebert.png' },
             { key: 'myanimelist', label: 'MAL', logo: 'myanimelist.png' },
-            { key: 'anilist', label: 'AniList', logo: 'anilist.png' },
             { key: 'master', label: 'Master', logo: 'master.png' },
         ];
 

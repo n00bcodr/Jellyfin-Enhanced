@@ -44,7 +44,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags.PosterTags
 
         /// <summary>Average of this server's user reviews (person_heart chip).</summary>
         UserReview,
-        Imdb, Tmdb, RtCritic, RtAudience, Metacritic, Letterboxd, Trakt, MyAnimeList, AniList, MetacriticUser, RogerEbert, Mdblist,
+        Imdb, Tmdb, RtCritic, RtAudience, Metacritic, Letterboxd, Trakt, MyAnimeList, MetacriticUser, RogerEbert, Mdblist,
     }
 
     /// <summary>One resolved tag. Carries meaning, not visuals; the renderer owns colours, icons and sizes.</summary>
@@ -93,7 +93,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags.PosterTags
         {
             PosterRatingSource.UserReview => "userReview", PosterRatingSource.RtCritic => "rtCritic",
             PosterRatingSource.RtAudience => "rtAudience", PosterRatingSource.MyAnimeList => "myAnimeList",
-            PosterRatingSource.AniList => "aniList", PosterRatingSource.MetacriticUser => "metacriticUser",
+            PosterRatingSource.MetacriticUser => "metacriticUser",
             PosterRatingSource.RogerEbert => "rogerEbert", PosterRatingSource.Mdblist => "mdblist", _ => Source.ToString().ToLowerInvariant()
         };
         public bool IsSource => Source is not (PosterRatingSource.Community or PosterRatingSource.Critic or PosterRatingSource.UserReview);

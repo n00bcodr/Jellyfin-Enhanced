@@ -119,6 +119,7 @@
   {"verb":"POST","route":"JellyfinEnhanced/jellyseerr/watchlist","requiresAuth":true,"auth":"","action":"AddJellyseerrWatchlist","apiBehavior":true,"parameters":["requestBody:Body"]},
   {"verb":"GET","route":"JellyfinEnhanced/jellyseerr/{type}/{serverId}","requiresAuth":true,"auth":"","action":"GetServiceDetails","apiBehavior":true,"parameters":["type:Path","serverId:Path"]},
   {"verb":"GET","route":"JellyfinEnhanced/js/{**path}","requiresAuth":false,"auth":"","action":"GetScript","apiBehavior":true,"parameters":["path:Path"]},
+  {"verb":"GET","route":"JellyfinEnhanced/leaving-soon/items","requiresAuth":true,"auth":"","action":"GetLeavingSoonItems","apiBehavior":true,"parameters":["leaving:Services","dtoService:Services","limit:Query"]},
   {"verb":"GET","route":"JellyfinEnhanced/leaving-soon/list","requiresAuth":true,"auth":"","action":"GetLeavingSoonList","apiBehavior":true,"parameters":["leaving:Services","reclaimerr:Services","token:Special"]},
   {"verb":"GET","route":"JellyfinEnhanced/locales","requiresAuth":true,"auth":"","action":"GetAvailableLocales","apiBehavior":true,"parameters":[]},
   {"verb":"GET","route":"JellyfinEnhanced/locales/{lang}.json","requiresAuth":false,"auth":"","action":"GetLocale","apiBehavior":true,"parameters":["lang:Path"]},

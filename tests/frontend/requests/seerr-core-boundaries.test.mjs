@@ -69,7 +69,9 @@ test('SEERR-CORE-08: malformed search results are dropped and a malformed page i
 });
 
 // Firefox with no configured locale reports navigator.language as the string "undefined"; Seerr then got language=undefined.
-test('the search language falls back to English when the browser language is not a language tag', async t => {
+// TMDB reads a bare "pt" as Portugal and "zh" as simplified Chinese, so the region is kept (upstream d33904bc): a Brazilian
+// browser got Portuguese (Portugal) titles, "Sacanas Sem Lei" instead of "Bastardos Inglórios".
+test('search asks Seerr for titles in the browser language, region included, and English when it is not a language tag', async t => {
   const h = setup(t, { get: async () => ({ page: 1, totalPages: 1, results: [] }) });
   const searchLanguage = async (value, query) => {
     Object.defineProperty(h.window.navigator, 'language', { value, configurable: true });
@@ -77,7 +79,10 @@ test('the search language falls back to English when the browser language is not
     return new URL(h.gets.at(-1), 'http://jellyfin.test').searchParams.get('language');
   };
   assert.equal(await searchLanguage('undefined', 'a'), 'en');
-  assert.equal(await searchLanguage('de-AT', 'b'), 'de', 'a real browser language is still sent');
+  assert.equal(await searchLanguage('pt-BR', 'Bastardos'), 'pt-BR', 'the region is kept');
+  assert.equal(await searchLanguage('zh-Hant-TW', 'c'), 'zh-Hant-TW');
+  assert.equal(await searchLanguage('de', 'd'), 'de');
+  assert.equal(await searchLanguage('en-US&page=9', 'e'), 'en', 'not a language tag');
 });
 
 test('SEERR-CORE-08: a malformed status, quota or settings answer is not trusted', async t => {

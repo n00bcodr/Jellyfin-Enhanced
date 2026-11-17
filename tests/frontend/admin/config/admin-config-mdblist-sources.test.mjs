@@ -29,7 +29,7 @@ async function boot(t, saved) {
 }
 
 const SAVED = { MdblistRatingsEnabled: true, MdblistRatingsSources: 'imdb,tmdb' };
-const EXPECTED = ['imdb*', 'tmdb*', 'tomatoes', 'popcorn', 'trakt', 'metacritic', 'metacriticuser', 'letterboxd', 'rogerebert', 'myanimelist', 'anilist', 'master'];
+const EXPECTED = ['imdb*', 'tmdb*', 'tomatoes', 'popcorn', 'trakt', 'metacritic', 'metacriticuser', 'letterboxd', 'rogerebert', 'myanimelist', 'master'];
 
 test('MDBList ratings list: the Services tab copy shows the saved ticks and order, like the card', async t => {
   const { list, read } = await boot(t, SAVED);

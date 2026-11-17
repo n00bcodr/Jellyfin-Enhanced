@@ -3068,6 +3068,17 @@
     },
     {
       "verb": "GET",
+      "path": "/JellyfinEnhanced/leaving-soon/items",
+      "method": "GetLeavingSoonItems",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Features/MediaTags/JeMediaTagsController.LeavingSoon.cs",
+      "following_attributes": [
+        "Authorize",
+        "ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "GET",
       "path": "/JellyfinEnhanced/maintainerr/item/{itemId}",
       "method": "GetMaintainerrItemState",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Features/MediaTags/JeMediaTagsController.Maintainerr.cs",
@@ -6066,6 +6077,14 @@
       "name": "LeavingSoonHomeRow",
       "type": "bool",
       "initializer": "true",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "LeavingSoonHideWatched",
+      "type": "bool",
+      "initializer": null,
       "constructor_assignment": null,
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
     },
@@ -11267,8 +11286,8 @@
   "counts": {
     "build_targets": 1,
     "files": 566,
-    "routes": 222,
-    "configuration_properties": 792,
+    "routes": 223,
+    "configuration_properties": 793,
     "storage_references": 97,
     "scheduled_tasks": 17,
     "locales": 33

@@ -118,6 +118,7 @@ GET /JellyfinEnhanced/jellyseerr/watchlist
 POST /JellyfinEnhanced/jellyseerr/watchlist
 GET /JellyfinEnhanced/jellyseerr/{type}/{serverId}
 GET /JellyfinEnhanced/js/{**path}
+GET /JellyfinEnhanced/leaving-soon/items
 GET /JellyfinEnhanced/leaving-soon/list
 GET /JellyfinEnhanced/locales
 GET /JellyfinEnhanced/locales/{lang}.json

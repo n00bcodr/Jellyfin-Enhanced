@@ -127,14 +127,14 @@ export const MDBLIST_LABELS: Readonly<Record<string, string>> = {
     master: 'Master', imdb: 'IMDb', tmdb: 'TMDB', trakt: 'Trakt',
     letterboxd: 'Letterboxd', tomatoes: 'RT Critic', popcorn: 'RT Audience',
     metacritic: 'Metascore', metacriticuser: 'Metacritic User',
-    rogerebert: 'Roger Ebert', myanimelist: 'MAL', anilist: 'AniList',
+    rogerebert: 'Roger Ebert', myanimelist: 'MAL',
 };
 // Logo files served via the "mdblist-logos" CDN source (CdnAssetService.cs).
 export const MDBLIST_LOGOS: Readonly<Record<string, string>> = {
     master: 'master.png', imdb: 'imdb.png', tmdb: 'tmdb.png', trakt: 'trakt.png',
     letterboxd: 'letterboxd.png', tomatoes: 'rottentomatoes.png', popcorn: 'rottentomatoes_audience.png',
     metacritic: 'metacritic.png', metacriticuser: 'metacritic_audience.png',
-    rogerebert: 'rogerebert.png', myanimelist: 'myanimelist.png', anilist: 'anilist.png',
+    rogerebert: 'rogerebert.png', myanimelist: 'myanimelist.png',
 };
 // Only 'tomatoes' (RT Critic) has a Fresh/Rotten splat.
 const TOMATOES_STATUS_LOGOS: Readonly<Record<number, string>> = { 1: 'rottentomatoes_fresh.png', 0: 'rottentomatoes_rotten.png' };
@@ -165,7 +165,6 @@ export function mdblistLink(sourceKey: string, ids: Readonly<Record<string, stri
         case 'popcorn':
             if (sLink.startsWith('/')) return `https://www.rottentomatoes.com${sLink}`;
             return sLink.length > 2 ? `https://www.rottentomatoes.com/m/${sLink}` : null;
-        case 'anilist': { const v = id('anilist'); return v ? `https://anilist.co/anime/${path(v)}` : (title ? `https://anilist.co/search/anime?search=${safeTitle}` : null); }
         case 'myanimelist': { const v = id('mal'); return v ? `https://myanimelist.net/anime/${path(v)}` : (title ? `https://myanimelist.net/anime.php?q=${safeTitle}` : null); }
         case 'rogerebert': return sLink.length > 2 ? `https://www.rogerebert.com/reviews/${sLink}` : (title ? `https://duckduckgo.com/?q=!ducky+site:rogerebert.com/reviews+${safeTitle}` : null);
         default: return null; // e.g. "master" (MDBList's own aggregate) has no source site

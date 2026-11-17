@@ -389,6 +389,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags.PosterTags
             return o;
         }
 
+        /// <summary>Labels dropped from the catalogue (AniList: MDBList has no such rating). Saved overrides for them are ignored, not rejected, so a stale entry cannot block saving.</summary>
+        private static bool IsRetiredLabel(string group, string label) => group == TagStyleKeys.Rating && label == "aniList";
+
         /// <summary>
         /// Version 1: per-section label maps holding only what differs from the built-in colours. The old editor
         /// baked its presets into those differences (leaving out every field a preset kept, such as Glass's text
@@ -419,6 +422,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags.PosterTags
                     problem = strict ? $"more than {MaxEntries} labels" : null;
                     return !strict;
                 }
+
+                if (IsRetiredLabel(group, label)) return true;
 
                 if (label.Length is 0 or > MaxKeyLength || IsReservedKey(label) || (group != TagStyleKeys.Genre && !IsV1Label(group, label)))
                 {
@@ -593,6 +598,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags.PosterTags
                             if (error is not null) return null;
                             continue;
                         }
+
+                        if (IsRetiredLabel(group, label)) continue;
 
                         if (entry.Name.Length > MaxKeyLength || !TagStyleCatalog.IsLabel(group, label))
                         {

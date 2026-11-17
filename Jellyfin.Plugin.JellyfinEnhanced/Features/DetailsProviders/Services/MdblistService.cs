@@ -304,8 +304,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.DetailsProviders.Services
             {
                 lock (_accountStatusLock)
                 {
+                    var nowUtc = DateTimeOffset.UtcNow;
                     if (_accountStatus != null &&
-                        DateTimeOffset.UtcNow - DateTimeOffset.FromUnixTimeMilliseconds(_accountStatus.FetchedAtUnixMs) < AccountStatusTtl)
+                        (nowUtc - DateTimeOffset.FromUnixTimeMilliseconds(_accountStatus.FetchedAtUnixMs) < AccountStatusTtl
+                            // Kept current by response headers, until the daily reset passes.
+                            || (nowUtc - DateTimeOffset.FromUnixTimeMilliseconds(_statusFedByHeadersUnixMs) < HeaderStatusTtl
+                                && nowUtc.ToUnixTimeSeconds() < _accountStatus.RateLimitResetUnixSeconds)))
                     {
                         return _accountStatus;
                     }
@@ -395,6 +399,51 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.DetailsProviders.Services
             }
         }
 
+        // Set after a 429: no request is sent before this instant (Retry-After).
+        private long _pausedUntilUnixMs;
+        // When the cached status was last refreshed from response headers.
+        private long _statusFedByHeadersUnixMs;
+        private static readonly TimeSpan HeaderStatusTtl = TimeSpan.FromMinutes(15);
+        private static readonly TimeSpan DefaultRetryAfter = TimeSpan.FromSeconds(60);
+        private static readonly TimeSpan MaxRetryAfter = TimeSpan.FromHours(6);
+
+        /// <summary>Reads MDBList's own rate-limit answer off a response: the
+        /// X-RateLimit-* headers replace the locally counted quota (so /user is
+        /// polled far less), and a 429 pauses every call for Retry-After.</summary>
+        private void ObserveRateLimit(HttpResponseMessage response)
+        {
+            var headers = response.Headers;
+            lock (_accountStatusLock)
+            {
+                if (_accountStatus != null)
+                {
+                    if (headers.TryGetValues("X-RateLimit-Remaining", out var rem) && int.TryParse(rem.FirstOrDefault(), out var remaining))
+                    {
+                        _accountStatus.RateLimitRemaining = Math.Max(0, remaining);
+                        _statusFedByHeadersUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                    }
+                    if (headers.TryGetValues("X-RateLimit-Limit", out var lim) && int.TryParse(lim.FirstOrDefault(), out var limit)) _accountStatus.RateLimit = limit;
+                    if (headers.TryGetValues("X-RateLimit-Reset", out var rst) && long.TryParse(rst.FirstOrDefault(), out var reset)) _accountStatus.RateLimitResetUnixSeconds = reset;
+                }
+
+                if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+                {
+                    var wait = response.Headers.RetryAfter?.Delta
+                        ?? (response.Headers.RetryAfter?.Date is { } at ? at - DateTimeOffset.UtcNow : DefaultRetryAfter);
+                    if (wait < TimeSpan.FromSeconds(1)) wait = DefaultRetryAfter;
+                    if (wait > MaxRetryAfter) wait = MaxRetryAfter;
+                    _pausedUntilUnixMs = DateTimeOffset.UtcNow.Add(wait).ToUnixTimeMilliseconds();
+                    _logger.Warning($"[MDBList] Rate limited (429), pausing requests for {(int)wait.TotalSeconds}s");
+                }
+            }
+        }
+
+        /// <summary>True while a 429's Retry-After has not elapsed yet.</summary>
+        private bool IsPaused()
+        {
+            lock (_accountStatusLock) return DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() < _pausedUntilUnixMs;
+        }
+
         private async Task<MdblistCacheEntry> FetchFromMdblistAsync(string mediaType, string tmdbId, CancellationToken cancellationToken, bool quotaGateHeld = false)
         {
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
@@ -407,6 +456,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.DetailsProviders.Services
             // Fail OPEN if account status is unknown (e.g. the one /user probe
             // itself failed); a defensive check layered on top of the real
             // request, not a hard requirement to proceed.
+            if (IsPaused())
+            {
+                return new MdblistCacheEntry { Found = false, Confirmed = false, FetchedAtUnixMs = now };
+            }
+
             var status = await GetAccountStatusCoreAsync(cancellationToken, false, null, quotaGateHeld).ConfigureAwait(false);
             if (status != null && status.RateLimitRemaining <= SafetyMargin)
             {
@@ -431,6 +485,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.DetailsProviders.Services
                 // same AccountStatusTtl window should still throttle correctly
                 // rather than all reading the same stale "remaining" value.
                 RecordQuotaSpent();
+                ObserveRateLimit(response);
 
                 if (!response.IsSuccessStatusCode)
                 {
@@ -481,6 +536,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.DetailsProviders.Services
             var apiKey = JellyfinEnhanced.Instance?.Configuration?.MdblistApiKey;
             if (string.IsNullOrWhiteSpace(apiKey)) return null;
 
+            if (IsPaused()) return null;
+
             var status = await GetAccountStatusCoreAsync(cancellationToken, false, null, quotaGateHeld: true).ConfigureAwait(false);
             if (status != null && status.RateLimitRemaining <= SafetyMargin)
             {
@@ -508,6 +565,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.DetailsProviders.Services
                 // The request was made either way; see the matching comment in
                 // FetchFromMdblistAsync for why this decrements immediately.
                 RecordQuotaSpent();
+                ObserveRateLimit(response);
 
                 var responseBody = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 
@@ -623,6 +681,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.DetailsProviders.Services
             await _backgroundQuotaGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
+                if (IsPaused()) return null;
                 if (await GetAccountStatusCoreAsync(cancellationToken, false, null, quotaGateHeld: true).ConfigureAwait(false) == null)
                     return null;
                 var remaining = RemainingQuota();
@@ -634,6 +693,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.DetailsProviders.Services
                 using var request = new HttpRequestMessage(HttpMethod.Get, uri);
                 using var response = await _httpClientFactory.CreateClient().SendAsync(request, timeout.Token).ConfigureAwait(false);
                 RecordQuotaSpent();
+                ObserveRateLimit(response);
                 response.EnsureSuccessStatusCode();
                 await using var stream = await response.Content.ReadAsStreamAsync(timeout.Token).ConfigureAwait(false);
                 using var json = await JsonDocument.ParseAsync(stream, cancellationToken: timeout.Token).ConfigureAwait(false);
@@ -781,10 +841,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.DetailsProviders.Services
                 ratings.Add(new MdblistRatingSource { Source = "master", Value = masterScore, Score = masterScore });
             }
 
-            // Cross-provider IDs (imdb/tmdb/trakt/mal/anilist/...) so the display
+            // Cross-provider IDs (imdb/tmdb/trakt/mal/...) so the display
             // module can link each badge to its own site (see MdblistCacheEntry.Ids).
             // Values can be a string (imdb's "tt1234567") or a number (tmdb/trakt/
-            // mal/anilist) in MDBList's JSON; normalized to string either way.
+            // mal) in MDBList's JSON; normalized to string either way.
             var ids = new Dictionary<string, string>();
             if (item.TryGetProperty("ids", out var idsEl) && idsEl.ValueKind == JsonValueKind.Object)
             {

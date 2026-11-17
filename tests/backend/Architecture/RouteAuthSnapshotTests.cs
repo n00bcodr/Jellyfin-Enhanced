@@ -18,7 +18,7 @@ namespace JE.Tests.Architecture;
 public class RouteAuthSnapshotTests(ITestOutputHelper output)
 {
     public const string SnapshotFile = "route-auth.snapshot.json";
-    public const int ExpectedRoutes = 222;
+    public const int ExpectedRoutes = 223;
     public const int ExpectedAnonymous = 13;
 
     public sealed record RouteEntry(string Verb, string Route, bool RequiresAuth, string Auth, string Action, bool ApiBehavior, string[] Parameters);

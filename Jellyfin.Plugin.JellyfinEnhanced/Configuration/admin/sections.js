@@ -228,7 +228,6 @@
       ["metacriticuser", "Metacritic User"],
       ["letterboxd", "Letterboxd"],
       ["myanimelist", "MAL"],
-      ["anilist", "AniList"],
       ["master", "Master"]
     ];
     const RSN = [["", "None"], ...RS];
@@ -2075,6 +2074,51 @@
   }
 
   // client/src/admin/config/sections/arr.ts
+  var KEFIN_LEAVING_SOON_SECTION = JSON.stringify({
+    id: "leaving-soon",
+    type: "home",
+    name: "Leaving Soon",
+    enabled: true,
+    order: 72,
+    cardFormat: "Poster",
+    userConfigurable: true,
+    queries: [{ path: "/JellyfinEnhanced/leaving-soon/items", queryOptions: { Limit: 20 } }]
+  }, null, 2);
+  var KEFIN_COPY_LABEL = "Copy KefinTweaks section";
+  function wireKefinCopy(root) {
+    const button = root.getElementById("leavingSoonCopyKefinBtn");
+    if (!button || button.dataset.wired) return;
+    button.dataset.wired = "1";
+    const label = button.querySelector("span");
+    const done = (ok) => {
+      if (!label) return;
+      label.textContent = ok ? "Copied" : "Copy failed";
+      setTimeout(() => {
+        label.textContent = KEFIN_COPY_LABEL;
+      }, 2e3);
+    };
+    const legacy = () => {
+      const area = root.createElement("textarea");
+      area.value = KEFIN_LEAVING_SOON_SECTION;
+      area.style.position = "fixed";
+      area.style.opacity = "0";
+      root.body.appendChild(area);
+      area.select();
+      let ok = false;
+      try {
+        ok = root.execCommand("copy");
+      } catch {
+        ok = false;
+      }
+      area.remove();
+      done(ok);
+    };
+    button.addEventListener("click", () => {
+      const clipboard = root.defaultView?.navigator.clipboard;
+      if (clipboard?.writeText) clipboard.writeText(KEFIN_LEAVING_SOON_SECTION).then(() => done(true), legacy);
+      else legacy();
+    });
+  }
   function defineArr(define) {
     define({
       "arr-sonarr": {
@@ -2322,6 +2366,19 @@
             default: true,
             label: "Leaving soon home row",
             desc: 'A <strong>Leaving soon</strong> row on the <a class="sectionTitle" href="https://github.com/IAmParadox27/jellyfin-plugin-home-sections/" target="_blank" rel="noopener">Home Screen Sections</a> home page, soonest removal first. Needs the Home Screen Sections and File Transformation plugins. It is added enabled for everyone; users with their own section list can turn it on or off there.'
+          },
+          {
+            type: "custom",
+            html: '<div class="inputContainer jea-row"><button type="button" id="leavingSoonCopyKefinBtn" class="jea-btn"><i class="material-icons" aria-hidden="true" style="font-size:1.1em;vertical-align:middle;margin-right:4px">content_copy</i><span>' + KEFIN_COPY_LABEL + '</span></button><div class="jea-hint">Copies a Leaving soon section for KefinTweaks. In KefinTweaks, open Enhanced Home Screen, New Section, Advanced, Import and paste it.</div></div>',
+            init: wireKefinCopy
+          },
+          {
+            id: "LeavingSoonHideWatched",
+            prop: "LeavingSoonHideWatched",
+            type: "toggle",
+            default: false,
+            label: "Hide watched titles in the home row",
+            desc: "Leaves out of the <strong>Leaving soon</strong> row what the user has already watched (a series counts once every episode is watched). Use this instead of the Hide Watched checkbox in Home Screen Sections, which that plugin keeps disabled for sections added by other plugins."
           },
           {
             id: "LeavingSoonRefreshHours",
@@ -2869,6 +2926,7 @@
    *  { id: 'ReclaimerrPassword', type: 'text' }
    *  { id: 'LeavingSoonMaintainerrActions', type: 'toggle' }
    *  { id: 'LeavingSoonHomeRow', type: 'toggle' }
+   *  { id: 'LeavingSoonHideWatched', type: 'toggle' }
    *  { id: 'LeavingSoonRefreshHours', type: 'number' }
    *  { id: 'arrLinksEnabled', type: 'toggle' }
    *  { id: 'showArrLinksAsText', type: 'toggle' }

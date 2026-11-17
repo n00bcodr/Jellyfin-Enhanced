@@ -25,9 +25,9 @@ export const NOTES: Readonly<Record<string, string>> = {
     custom: 'One target per label of the Custom tag rules above (labels shared by several rules share their colours). The icon takes the text colour.',
 };
 export const LOGO_SAMPLES: Readonly<Record<string, string>> = { provider: T('Stream'), company: T('Studio'), text: 'HBO' };
-export const RATING_SAMPLES: Readonly<Record<string, readonly [string | null, string]>> = { community: ['star', '8.1'], critic: [null, '85%'], userReview: ['favorite', '9'], imdb: [null, '8.1'], tmdb: [null, '81%'], rtCritic: [null, '92%'], rtAudience: [null, '88%'], metacritic: [null, '74'], letterboxd: [null, '4.1'], trakt: [null, '85%'], myAnimeList: [null, '8.4'], aniList: [null, '82%'], metacriticUser: [null, '7.9'], rogerEbert: [null, '3.5'], mdblist: [null, '78%'] };
+export const RATING_SAMPLES: Readonly<Record<string, readonly [string | null, string]>> = { community: ['star', '8.1'], critic: [null, '85%'], userReview: ['favorite', '9'], imdb: [null, '8.1'], tmdb: [null, '81%'], rtCritic: [null, '92%'], rtAudience: [null, '88%'], metacritic: [null, '74'], letterboxd: [null, '4.1'], trakt: [null, '85%'], myAnimeList: [null, '8.4'], metacriticUser: [null, '7.9'], rogerEbert: [null, '3.5'], mdblist: [null, '78%'] };
 export const STATUS_SAMPLES: Readonly<Record<string, string>> = { added: T('Just Added'), newMovie: T('New Movie'), newSeries: T('New Series'), newEpisode: T('New Episode'), trending: T('#{rank} Today', { rank: 3 }) };
-export const RATING_IDS: readonly RatingSourceId[] = ['community', 'critic', 'imdb', 'tmdb', 'rtCritic', 'rtAudience', 'metacritic', 'letterboxd', 'trakt', 'myAnimeList', 'aniList', 'metacriticUser', 'rogerEbert', 'mdblist'];
+export const RATING_IDS: readonly RatingSourceId[] = ['community', 'critic', 'imdb', 'tmdb', 'rtCritic', 'rtAudience', 'metacritic', 'letterboxd', 'trakt', 'myAnimeList', 'metacriticUser', 'rogerEbert', 'mdblist'];
 export const ALL = '*';
 // Preview samples: a few genres in their own colours.
 export const GENRE_SAMPLES = { movie: ['horror', 'comedy'], episode: ['animation'] };

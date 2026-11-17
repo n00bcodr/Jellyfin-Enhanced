@@ -1,5 +1,49 @@
 import type { DefineSections } from '../engine/schema';
 
+/**
+ * A KefinTweaks custom home section that reads the Leaving soon item list (GET leaving-soon/items, upstream
+ * 6c922d10), as KefinTweaks' Import takes it.
+ */
+export const KEFIN_LEAVING_SOON_SECTION = JSON.stringify({
+    id: 'leaving-soon', type: 'home', name: 'Leaving Soon', enabled: true, order: 72, cardFormat: 'Poster', userConfigurable: true,
+    queries: [{ path: '/JellyfinEnhanced/leaving-soon/items', queryOptions: { Limit: 20 } }],
+}, null, 2);
+
+const KEFIN_COPY_LABEL = 'Copy KefinTweaks section';
+
+/**
+ * Copies {@link KEFIN_LEAVING_SOON_SECTION} on a click of the Leaving soon card's button (the engine forwards a click
+ * on its Services tab copy here), then says "Copied" or "Copy failed" for two seconds.
+ */
+function wireKefinCopy(root: Document): void {
+    const button = root.getElementById('leavingSoonCopyKefinBtn');
+    if (!button || button.dataset.wired) return;
+    button.dataset.wired = '1';
+    const label = button.querySelector('span');
+    const done = (ok: boolean): void => {
+        if (!label) return;
+        label.textContent = ok ? 'Copied' : 'Copy failed';
+        setTimeout(() => { label.textContent = KEFIN_COPY_LABEL; }, 2000);
+    };
+    const legacy = (): void => {
+        const area = root.createElement('textarea');
+        area.value = KEFIN_LEAVING_SOON_SECTION;
+        area.style.position = 'fixed';
+        area.style.opacity = '0';
+        root.body.appendChild(area);
+        area.select();
+        let ok = false;
+        try { ok = root.execCommand('copy'); } catch { ok = false; }
+        area.remove();
+        done(ok);
+    };
+    button.addEventListener('click', () => {
+        const clipboard = root.defaultView?.navigator.clipboard;
+        if (clipboard?.writeText) clipboard.writeText(KEFIN_LEAVING_SOON_SECTION).then(() => done(true), legacy);
+        else legacy();
+    });
+}
+
 export function defineArr(define: DefineSections): void {
 /* *arr tab sections. Sonarr/Radarr instance editors are custom items; their JS in configPage.html binds by id.
  * See jeAdmin.js for the field spec. */
@@ -126,6 +170,11 @@ define({
               desc: 'Administrators get <strong>Mark for removal</strong>, <strong>Keep</strong> and <strong>Postpone removal</strong> in a movie or series\' &#8942; menu (with Reclaimerr, each takes an exact day). Maintainerr: items are added to or removed from its existing manual collection for their library. Marking applies at once, with an Undo.' },
             { id: 'LeavingSoonHomeRow', prop: 'LeavingSoonHomeRow', type: 'toggle', default: true, label: 'Leaving soon home row',
               desc: 'A <strong>Leaving soon</strong> row on the <a class="sectionTitle" href="https://github.com/IAmParadox27/jellyfin-plugin-home-sections/" target="_blank" rel="noopener">Home Screen Sections</a> home page, soonest removal first. Needs the Home Screen Sections and File Transformation plugins. It is added enabled for everyone; users with their own section list can turn it on or off there.' },
+            { type: 'custom', html: '<div class="inputContainer jea-row"><button type="button" id="leavingSoonCopyKefinBtn" class="jea-btn"><i class="material-icons" aria-hidden="true" style="font-size:1.1em;vertical-align:middle;margin-right:4px">content_copy</i><span>' + KEFIN_COPY_LABEL + '</span></button>'
+                + '<div class="jea-hint">Copies a Leaving soon section for KefinTweaks. In KefinTweaks, open Enhanced Home Screen, New Section, Advanced, Import and paste it.</div></div>',
+              init: wireKefinCopy },
+            { id: 'LeavingSoonHideWatched', prop: 'LeavingSoonHideWatched', type: 'toggle', default: false, label: 'Hide watched titles in the home row',
+              desc: 'Leaves out of the <strong>Leaving soon</strong> row what the user has already watched (a series counts once every episode is watched). Use this instead of the Hide Watched checkbox in Home Screen Sections, which that plugin keeps disabled for sections added by other plugins.' },
             { id: 'LeavingSoonRefreshHours', prop: 'LeavingSoonRefreshHours', type: 'number', min: 1, max: 168, default: 6, label: 'Refresh every (hours)',
               desc: 'How often the server reads the removal tool again (1&ndash;168 hours). A failed request is retried sooner. Each mark, keep or postpone reads it again at once.' }
         ]

@@ -23,18 +23,19 @@ test('Groups › Quality: reordering writes every order key, and the saved audio
   assert.equal(h.$('.je-ta-grow[data-group="quality"]').dataset.enabled, 'false');
 });
 
-test('Groups › Rating: the five further MDBList sources are offered after the first nine and save in the order chosen', async t => {
+test('Groups › Rating: the four further MDBList sources are offered after the first nine and save in the order chosen', async t => {
   const h = setup(t, { config: { RatingTagsSources: ['imdb'] } });
   const rows = () => h.$$('#ratingTagsSourceRows [data-source]');
-  const added = ['myAnimeList', 'aniList', 'metacriticUser', 'rogerEbert', 'mdblist'];
+  const added = ['myAnimeList', 'metacriticUser', 'rogerEbert', 'mdblist'];
   assert.deepEqual(rows().map((r) => r.dataset.source), ['imdb', 'community', 'critic', 'tmdb', 'rtCritic', 'rtAudience', 'metacritic', 'letterboxd', 'trakt', ...added]);
   for (const id of ['mdblist', 'rogerEbert']) h.change(rows().find((r) => r.dataset.source === id).querySelector('input'), true);
   await h.save();
   assert.deepEqual(plain(h.server.RatingTagsSources), ['imdb', 'rogerEbert', 'mdblist']);
-  // A saved list that leads with one of them is read back as chosen, in its order.
+  // A saved list that leads with one of them is read back as chosen, in its order; AniList (MDBList has no such
+  // rating) is dropped like an unknown id.
   const stored = setup(t, { config: { RatingTagsSources: ['aniList', 'bogus', 'myAnimeList'] } });
   const chosen = stored.$$('#ratingTagsSourceRows [data-source]').filter((r) => r.querySelector('input').checked).map((r) => r.dataset.source);
-  assert.deepEqual(chosen, ['aniList', 'myAnimeList']);
+  assert.deepEqual(chosen, ['myAnimeList']);
 });
 
 test('Groups › Rating: sources keep their order and an empty choice, legacy switches seed the list, MDBList state shows', async t => {

@@ -740,7 +740,7 @@ Admin settings below are under **Display**; the row's default is in **UI Prefere
 
 ## Rating Tags
 
-Rating Tags show an ordered selection of Community, Critic, IMDb, TMDb, Rotten Tomatoes critic and audience, Metacritic, Metacritic user, Letterboxd, Trakt, MyAnimeList, AniList, Roger Ebert and MDBList scores. Each named source has a bundled logo. MyAnimeList and AniList only have scores for anime, and Roger Ebert's only for films he reviewed, so on other titles those chips simply do not appear. Choose which item types and home rows show them. The scores come from the server tag cache, which the **Fetch Ratings from MDBList** task refreshes after each run, so a source appears once that task has covered a title.
+Rating Tags show an ordered selection of Community, Critic, IMDb, TMDb, Rotten Tomatoes critic and audience, Metacritic, Metacritic user, Letterboxd, Trakt, MyAnimeList, Roger Ebert and MDBList scores. Each named source has a bundled logo. MyAnimeList only has scores for anime, and Roger Ebert's only for films he reviewed, so on other titles those chips simply do not appear. Choose which item types and home rows show them. The scores come from the server tag cache, which the **Fetch Ratings from MDBList** task refreshes after each run, so a source appears once that task has covered a title.
 
 ![Numeric community, critic and average user rating chips](../images/tags/rating-tags.webp)
 
@@ -788,7 +788,6 @@ Named sources use the server's existing MDBList service when its API key is conf
 | Trakt | 85% | /100 |
 | Metacritic user | 7.9 | /10 |
 | MyAnimeList | 8.4 | /10 |
-| AniList | 82% | /100 |
 | Roger Ebert | 3.5 | /4 |
 | MDBList | 78% | /100 |
 

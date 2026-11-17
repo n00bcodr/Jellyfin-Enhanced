@@ -88,6 +88,7 @@
   "GetJellyseerrUserStatus": {"IsAdminUser":2,"User":1,"UserHelper.GetCurrentUserId":1},
   "GetJellyseerrUsers": {"IsAdminUser":6,"User":1,"UserHelper.GetCurrentUserId":1},
   "GetJellyseerrWatchlist": {"IsAdminUser":5,"User":1,"UserHelper.GetCurrentUserId":1},
+  "GetLeavingSoonItems": {"User":1,"UserHelper.GetCurrentUserId":1},
   "GetLeavingSoonList": {"IsAdminUser":1,"User":1,"UserHelper.GetCurrentUserId":1},
   "GetLeavingSoonStatus": {"IsAdminUser":1},
   "GetLocale": {},

@@ -7,8 +7,11 @@ using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Models;
 using Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services;
 using Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags;
+using MediaBrowser.Controller.Dto;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.TV;
+using MediaBrowser.Model.Dto;
+using MediaBrowser.Model.Querying;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -83,6 +86,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags
                 requests,
                 mine,
             });
+        }
+
+        /// <summary>
+        /// The leaving titles as a standard Jellyfin item list (<c>{Items, TotalRecordCount}</c>), for other home screen
+        /// plugins such as KefinTweaks, whose custom sections read any path that answers like <c>/Items</c> (upstream
+        /// 6c922d10): the home row's items (movies and series the user can see, a leaving season or episode as its
+        /// series, soonest removal first, at most <see cref="LeavingSoonHomeSection.Limit"/>), cut to
+        /// <paramref name="limit"/> when one is given. Needs neither the home row nor the page switch, only a removal
+        /// tool with an address; 404 without one.
+        /// </summary>
+        /// <param name="leaving">The Leaving soon facts.</param>
+        /// <param name="dtoService">Jellyfin's item DTOs.</param>
+        /// <param name="limit">The most items to list (none or not positive: the row's limit).</param>
+        /// <returns>The item list.</returns>
+        [HttpGet("leaving-soon/items")]
+        [Authorize]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+        [Produces("application/json")]
+        public ActionResult<QueryResult<BaseItemDto>> GetLeavingSoonItems([FromServices] LeavingSoonService leaving, [FromServices] IDtoService dtoService, [FromQuery] int? limit)
+        {
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null || !LeavingSoonSources.ApiConfigured(config)) return NotFound();
+            var user = CallerUser();
+            if (user == null) return Forbid();
+
+            var items = LeavingSoonSectionResults.Order(leaving.MaintainerrItems(config), id => _libraryManager.GetItemById(id), item => item.IsVisibleStandalone(user));
+            if (limit is > 0) items = items.Take(limit.Value).ToList();
+            return new QueryResult<BaseItemDto>(dtoService.GetBaseItemDtos(items, new DtoOptions(), user));
         }
 
         /// <summary>

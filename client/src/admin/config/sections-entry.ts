@@ -238,6 +238,7 @@ import { defineAllSections } from './sections';
  *  { id: 'ReclaimerrPassword', type: 'text' }
  *  { id: 'LeavingSoonMaintainerrActions', type: 'toggle' }
  *  { id: 'LeavingSoonHomeRow', type: 'toggle' }
+ *  { id: 'LeavingSoonHideWatched', type: 'toggle' }
  *  { id: 'LeavingSoonRefreshHours', type: 'number' }
  *  { id: 'arrLinksEnabled', type: 'toggle' }
  *  { id: 'showArrLinksAsText', type: 'toggle' }

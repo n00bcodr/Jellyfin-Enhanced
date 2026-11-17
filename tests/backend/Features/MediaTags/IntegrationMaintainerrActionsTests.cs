@@ -8,10 +8,12 @@ using Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags;
 using Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Models;
 using Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services;
 using Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags;
+using MediaBrowser.Controller.Dto;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
+using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Globalization;
 using Microsoft.AspNetCore.Mvc;
@@ -458,6 +460,103 @@ public sealed class IntegrationMaintainerrActionsTests : IDisposable
         var many = Enumerable.Range(0, LeavingSoonHomeSection.Limit + 5).Select(i => new Movie { Id = Guid.NewGuid(), Name = "M" + i }).ToList();
         _items.AddRange(many);
         Assert.Equal(LeavingSoonHomeSection.Limit, LeavingSoonSectionResults.Order(many.Select(m => (m.Id, (long?)1L)).ToList(), id => _items.SingleOrDefault(i => i.Id == id), _ => true).Count);
+    }
+
+    private sealed class HiddenSeries : Series
+    {
+        public override bool IsVisible(User user, bool skipAllowedTagsCheck = false) => false;
+    }
+
+    // upstream 6c922d10: GET leaving-soon/items answers like /Items for home screen plugins such as KefinTweaks.
+    [Fact]
+    public async Task The_item_list_route_answers_like_Items_soonest_first_as_the_user_may_see_them()
+    {
+        // Series: a movie's visibility check needs Jellyfin's Live TV manager, which a unit test does not have.
+        var soon = new Series { Id = Guid.NewGuid(), Name = "Soon" };
+        var later = new Series { Id = Guid.NewGuid(), Name = "Later" };
+        var hidden = new HiddenSeries { Id = Guid.NewGuid(), Name = "Hidden" };
+        _items.AddRange(new BaseItem[] { soon, later, hidden });
+        string Ago(int days) => DateTimeOffset.UtcNow.Date.AddDays(-days).ToString("yyyy-MM-dd HH:mm:ss");
+        // Removal is 30 days after the date added: the one added longest ago leaves first.
+        var media = new[] { (later.Id.ToString("N"), Ago(1)), (hidden.Id.ToString("N"), Ago(20)), (soon.Id.ToString("N"), Ago(10)) };
+        var content = "{\"items\":[" + string.Join(",", media.Select(m => "{\"mediaServerId\":\"" + m.Item1 + "\",\"addDate\":\"" + m.Item2 + "\"}")) + "],\"totalSize\":3}";
+        using var server = new Server();
+        server.Answer = (method, path, body) => path == "/api/collections" ? (200, Collections((2, "Leaving Soon (Shows)", LibShows, "show", null, 1, true, media)))
+            : path.StartsWith("/api/collections/media/2/content/") ? (200, content)
+            : path.Contains("/content/") ? (200, "{\"items\":[],\"totalSize\":0}") : (404, "{}");
+        var (_, leaving, cache) = Services(server);
+        using (cache)
+        {
+            Assert.True(await leaving.RefreshAsync(_f.Plugin.Configuration, force: true, CancellationToken.None));
+            var viewer = new User("viewer", "default", "default") { Id = Guid.NewGuid() };
+            var users = new Mock<IUserManager>();
+            users.Setup(u => u.GetUserById(viewer.Id)).Returns(viewer);
+            var dto = new Mock<IDtoService>();
+            dto.Setup(d => d.GetBaseItemDtos(It.IsAny<IReadOnlyList<BaseItem>>(), It.IsAny<DtoOptions>(), It.IsAny<User?>(), It.IsAny<BaseItem?>()))
+                .Returns(new InvocationFunc(call => ((IReadOnlyList<BaseItem>)call.Arguments[0]).Select(i => new BaseItemDto { Id = i.Id, Name = i.Name }).ToList()));
+            var controller = (JeMediaTagsController)ApiAssetTests.Controller(typeof(JeMediaTagsController), _f.Core, users.Object, _library.Object, cache);
+            controller.HttpContext.User = global::JE.Tests.Features.SpoilerGuard.PrivacyPolicyTests.Principal(viewer.Id);
+            string[] Names(int? limit) => controller.GetLeavingSoonItems(leaving, dto.Object, limit).Value!.Items.Select(i => i.Name!).ToArray();
+
+            // Soonest removal first, without what the user cannot see, as {Items, TotalRecordCount}; a limit cuts it.
+            var answer = controller.GetLeavingSoonItems(leaving, dto.Object, null).Value!;
+            Assert.Equal(new[] { "Soon", "Later" }, answer.Items.Select(i => i.Name));
+            Assert.Equal(2, answer.TotalRecordCount);
+            Assert.Equal(new[] { "Soon" }, Names(1));
+            Assert.Equal(new[] { "Soon", "Later" }, Names(0));
+            // Neither the home row nor the page has to be on.
+            _f.Plugin.Configuration.LeavingSoonHomeRow = false;
+            _f.Plugin.Configuration.LeavingSoonPageEnabled = false;
+            Assert.Equal(new[] { "Soon", "Later" }, Names(null));
+            // No signed-in Jellyfin user: refused. No removal tool with an address: 404.
+            controller.HttpContext.User = global::JE.Tests.Features.SpoilerGuard.PrivacyPolicyTests.Principal(Guid.NewGuid());
+            Assert.IsType<ForbidResult>(controller.GetLeavingSoonItems(leaving, dto.Object, null).Result);
+            _f.Plugin.Configuration.LeavingSoonMaintainerrUrl = string.Empty;
+            Assert.IsType<NotFoundResult>(controller.GetLeavingSoonItems(leaving, dto.Object, null).Result);
+        }
+    }
+
+    /// <summary>A series the user has (or has not) watched to the end, without Jellyfin's user data store.</summary>
+    private sealed class WatchedSeries : Series
+    {
+        public bool Played { get; init; }
+
+        public override bool IsPlayed(User user, UserItemData? userItemData) => Played;
+    }
+
+    // upstream c6437f16: Home Screen Sections keeps its Hide Watched checkbox disabled for a plugin's section, so the
+    // row has its own switch, and it leaves out what the user has watched only when it is on.
+    [Fact]
+    public async Task The_home_row_leaves_out_watched_titles_only_while_its_switch_is_on()
+    {
+        var fresh = new WatchedSeries { Id = Guid.NewGuid(), Name = "Fresh", Played = false };
+        var seen = new WatchedSeries { Id = Guid.NewGuid(), Name = "Seen", Played = true };
+        _items.AddRange(new BaseItem[] { fresh, seen });
+        string Ago(int days) => DateTimeOffset.UtcNow.Date.AddDays(-days).ToString("yyyy-MM-dd HH:mm:ss");
+        var media = new[] { (seen.Id.ToString("N"), Ago(10)), (fresh.Id.ToString("N"), Ago(1)) };
+        var content = "{\"items\":[" + string.Join(",", media.Select(m => "{\"mediaServerId\":\"" + m.Item1 + "\",\"addDate\":\"" + m.Item2 + "\"}")) + "],\"totalSize\":2}";
+        using var server = new Server();
+        server.Answer = (method, path, body) => path == "/api/collections" ? (200, Collections((2, "Leaving Soon (Shows)", LibShows, "show", null, 1, true, media)))
+            : path.StartsWith("/api/collections/media/2/content/") ? (200, content)
+            : path.Contains("/content/") ? (200, "{\"items\":[],\"totalSize\":0}") : (404, "{}");
+        var (_, leaving, cache) = Services(server);
+        using (cache)
+        {
+            Assert.True(await leaving.RefreshAsync(_f.Plugin.Configuration, force: true, CancellationToken.None));
+            var viewer = new User("viewer", "default", "default") { Id = Guid.NewGuid() };
+            var users = new Mock<IUserManager>();
+            users.Setup(u => u.GetUserById(viewer.Id)).Returns(viewer);
+            var dto = new Mock<IDtoService>();
+            dto.Setup(d => d.GetBaseItemDtos(It.IsAny<IReadOnlyList<BaseItem>>(), It.IsAny<DtoOptions>(), It.IsAny<User?>(), It.IsAny<BaseItem?>()))
+                .Returns(new InvocationFunc(call => ((IReadOnlyList<BaseItem>)call.Arguments[0]).Select(i => new BaseItemDto { Id = i.Id, Name = i.Name }).ToList()));
+            var row = new LeavingSoonSectionResults(_library.Object, users.Object, dto.Object, leaving);
+            string[] Row() => row.GetResults(new LeavingSoonSectionResults.Request { UserId = viewer.Id }).Items.Select(i => i.Name!).ToArray();
+
+            Assert.False(new PluginConfiguration().LeavingSoonHideWatched);
+            Assert.Equal(new[] { "Seen", "Fresh" }, Row());
+            _f.Plugin.Configuration.LeavingSoonHideWatched = true;
+            Assert.Equal(new[] { "Fresh" }, Row());
+        }
     }
 
     [Fact]

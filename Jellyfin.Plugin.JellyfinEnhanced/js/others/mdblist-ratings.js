@@ -97,8 +97,7 @@
     metacritic: "Metascore",
     metacriticuser: "Metacritic User",
     rogerebert: "Roger Ebert",
-    myanimelist: "MAL",
-    anilist: "AniList"
+    myanimelist: "MAL"
   };
   var MDBLIST_LOGOS = {
     master: "master.png",
@@ -111,8 +110,7 @@
     metacritic: "metacritic.png",
     metacriticuser: "metacritic_audience.png",
     rogerebert: "rogerebert.png",
-    myanimelist: "myanimelist.png",
-    anilist: "anilist.png"
+    myanimelist: "myanimelist.png"
   };
   var TOMATOES_STATUS_LOGOS = { 1: "rottentomatoes_fresh.png", 0: "rottentomatoes_rotten.png" };
   var MDBLIST_DEFAULT_ORDER = ["tmdb", "tomatoes", "popcorn", "imdb", "trakt", "metacritic"];
@@ -147,10 +145,6 @@
       case "popcorn":
         if (sLink.startsWith("/")) return `https://www.rottentomatoes.com${sLink}`;
         return sLink.length > 2 ? `https://www.rottentomatoes.com/m/${sLink}` : null;
-      case "anilist": {
-        const v = id("anilist");
-        return v ? `https://anilist.co/anime/${path(v)}` : title ? `https://anilist.co/search/anime?search=${safeTitle}` : null;
-      }
       case "myanimelist": {
         const v = id("mal");
         return v ? `https://myanimelist.net/anime/${path(v)}` : title ? `https://myanimelist.net/anime.php?q=${safeTitle}` : null;

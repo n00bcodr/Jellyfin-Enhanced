@@ -107,6 +107,7 @@
     "GET JellyfinEnhanced/jellyseerr/watchlist": {"IsAdminUser":5,"User":1,"UserHelper.GetCurrentUserId":1},
     "GET JellyfinEnhanced/jellyseerr/{type}/{serverId}": {"IsAdminUser":5,"User":1,"UserHelper.GetCurrentUserId":1},
     "GET JellyfinEnhanced/js/{**path}": {},
+    "GET JellyfinEnhanced/leaving-soon/items": {"User":1,"UserHelper.GetCurrentUserId":1},
     "GET JellyfinEnhanced/leaving-soon/list": {"IsAdminUser":1,"User":1,"UserHelper.GetCurrentUserId":1},
     "GET JellyfinEnhanced/locales": {},
     "GET JellyfinEnhanced/locales/{lang}.json": {},

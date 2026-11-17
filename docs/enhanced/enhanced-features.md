@@ -715,6 +715,31 @@ See what is about to be removed from the library, and when, without leaving Jell
 
 Open it through the configured Home tab, Plugin Pages entry or Custom Tabs entry. Placement and options are in [Enhanced settings](enhanced-settings.md#leaving-soon).
 
+??? info "Leaving soon row in KefinTweaks"
+    [KefinTweaks](https://github.com/ranaldsgift/KefinTweaks) builds its home sections from Jellyfin queries, and its section editor can point a query at any path that answers like `/Items`. JE answers at `/JellyfinEnhanced/leaving-soon/items` with the titles that are leaving, soonest first, limited to what the signed-in user can see.
+
+    In the KefinTweaks configuration, go to **Enhanced Home Screen** → **New Section** → **Advanced**, then use either way:
+
+    - **Import:** paste the JSON below into **Import**. JE's admin settings have a **Copy KefinTweaks section** button next to the Leaving soon home row option that copies it for you.
+    - **By hand:** keep **Item Source** on **Jellyfin Server**, set the query's **Endpoint** to **Custom** and **Custom Endpoint Path** to `/JellyfinEnhanced/leaving-soon/items`, then name the section, pick a card format and save.
+
+    ```json
+    {
+      "id": "leaving-soon",
+      "type": "home",
+      "name": "Leaving Soon",
+      "enabled": true,
+      "order": 72,
+      "cardFormat": "Poster",
+      "userConfigurable": true,
+      "queries": [
+        { "path": "/JellyfinEnhanced/leaving-soon/items", "queryOptions": { "Limit": 20 } }
+      ]
+    }
+    ```
+
+    The list needs a removal tool with an address set (Maintainerr, or Reclaimerr with its token). It stays current while something reads the leaving facts: the Leaving Soon page, the Maintainerr item menu actions, the home row, or the Leaving badge. It does not need the Home Screen Sections plugin.
+
 ### Catch Up
 
 Sort unwatched movies and shows with a card deck. Touch, mouse, and keyboard actions update your own Jellyfin account.

@@ -33,7 +33,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.PosterTags.Renderi
         {
             ["imdb"] = "imdb.png", ["tmdb"] = "tmdb.png", ["trakt"] = "trakt.png", ["letterboxd"] = "letterboxd.png",
             ["metacritic"] = "metacritic.png", ["rtAudience"] = "rottentomatoes_audience.png",
-            ["myAnimeList"] = "myanimelist.png", ["aniList"] = "anilist.png", ["metacriticUser"] = "metacritic_audience.png",
+            ["myAnimeList"] = "myanimelist.png", ["metacriticUser"] = "metacritic_audience.png",
             ["rogerEbert"] = "rogerebert.png", ["mdblist"] = "master.png",
         };
         private readonly ConcurrentDictionary<string, CachedLogo> _logos = new(StringComparer.Ordinal);

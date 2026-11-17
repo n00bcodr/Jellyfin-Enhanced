@@ -84,7 +84,7 @@ define({
     const tog = (id: string, label: string, desc: string | null, extra?: Partial<ToggleField>): ToggleField => ({ id, type: 'toggle', manual: true, label, desc, ...extra });
     const sel = (id: string, label: string, options: SelectField['options'], desc: string, extra?: Partial<SelectField>): SelectField => ({ id, type: 'select', manual: true, label, options, desc, ...extra });
     const RS: ReadonlyArray<readonly [string, string]> = [['tmdb', 'TMDB'], ['tomatoes', 'RT Critic'], ['popcorn', 'RT Audience'], ['imdb', 'IMDb'], ['trakt', 'Trakt'],
-        ['metacritic', 'Metascore'], ['metacriticuser', 'Metacritic User'], ['letterboxd', 'Letterboxd'], ['myanimelist', 'MAL'], ['anilist', 'AniList'], ['master', 'Master']];
+        ['metacritic', 'Metascore'], ['metacriticuser', 'Metacritic User'], ['letterboxd', 'Letterboxd'], ['myanimelist', 'MAL'], ['master', 'Master']];
     const RSN: ReadonlyArray<readonly [string, string]> = [['', 'None'], ...RS];
     const arrow = (d: string): string => '<i class="material-icons je-cat-arrow-icon" aria-hidden="true">arrow_' + d + 'ward</i>';
 

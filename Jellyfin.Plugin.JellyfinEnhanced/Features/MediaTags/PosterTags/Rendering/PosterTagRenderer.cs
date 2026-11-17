@@ -640,7 +640,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.PosterTags.Renderi
             private static string SourceColor(string id) => id switch
             {
                 "community" => "#ffc107", "imdb" => "#f5c518", "tmdb" => "#01b4a4", "rtAudience" => "#ffeab0",
-                "metacritic" => "#ffcc33", "letterboxd" => "#00e054", "myAnimeList" => "#2e51a2", "aniList" => "#02a9ff",
+                "metacritic" => "#ffcc33", "letterboxd" => "#00e054", "myAnimeList" => "#2e51a2",
                 "metacriticUser" => "#00ce7a", "rogerEbert" => "#e8a33d", "mdblist" => "#4aa3df", _ => "#ed1c24"
             };
 
