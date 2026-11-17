@@ -10914,7 +10914,7 @@
   "counts": {
     "build_targets": 2,
     "files": 498,
-    "routes": 219,
+    "routes": 220,
     "configuration_properties": 788,
     "storage_references": 88,
     "scheduled_tasks": 17,
