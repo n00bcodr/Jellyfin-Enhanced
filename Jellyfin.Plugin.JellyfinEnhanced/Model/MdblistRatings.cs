@@ -53,7 +53,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
         /// <see cref="FetchedAtUnixMs"/> still says how old they are) and the title is tried again
         /// from this time on (MdblistService.RetryTtl after the failure). Null otherwise.</summary>
         public long? RetryAfterUnixMs { get; set; }
-        /// <summary>Cross-provider IDs (imdb, tmdb, trakt, mal, anilist, ...)
+        /// <summary>Cross-provider IDs (imdb, tmdb, trakt, mal, ...)
         /// from the top-level "ids" object, used by the display module to
         /// build direct links to each rating's source site. Populated by both
         /// the single-item endpoint and MdblistService.GetMediaBatchAsync's

@@ -85,7 +85,7 @@ JEAdmin.define({
     const tog = (id, label, desc, extra) => Object.assign({ id, type: 'toggle', manual: true, label, desc }, extra);
     const sel = (id, label, options, desc, extra) => Object.assign({ id, type: 'select', manual: true, label, options, desc }, extra);
     const RS = [['tmdb', 'TMDB'], ['tomatoes', 'RT Critic'], ['popcorn', 'RT Audience'], ['imdb', 'IMDb'], ['trakt', 'Trakt'],
-        ['metacritic', 'Metascore'], ['metacriticuser', 'Metacritic User'], ['letterboxd', 'Letterboxd'], ['myanimelist', 'MAL'], ['anilist', 'AniList'], ['master', 'Master']];
+        ['metacritic', 'Metascore'], ['metacriticuser', 'Metacritic User'], ['letterboxd', 'Letterboxd'], ['myanimelist', 'MAL'], ['master', 'Master']];
     const RSN = [['', 'None']].concat(RS);
     const arrow = (d) => '<i class="material-icons je-cat-arrow-icon" aria-hidden="true">arrow_' + d + 'ward</i>';
 
@@ -202,8 +202,12 @@ JEAdmin.define({
                     + '<div class="je-setting-description" data-desc-for="mdblistApiKey"><div class="fieldDescription">Your API key from <a class="sectionTitle" href="https://mdblist.com/preferences/#api" target="_blank">mdblist.com</a>.</div></div>' },
                 tog('mdblistRatingsShowOnItemDetails', 'Show Ratings Row on Item Details', 'Displays the MDBList ratings row on item-details pages.'),
                 tog('mdblistRatingsShowPercentSymbol', 'Show % Symbol', 'Appends "%" after each rating badge\'s number.'),
-                { type: 'custom', html: '<details id="mdblistSourcesAdminDetails" class="je-details-section"><summary>Configure ratings shown</summary><div class="je-details-body"><div class="fieldDescription je-field-desc-sm">Pick which ratings appear on the item-details row, and the order they\'re shown in. Use the '
-                    + arrow('up') + ' / ' + arrow('down') + ' buttons to reorder. All checked by default.</div><div id="mdblistRatingsSourcesAdmin"></div></div></details>' },
+                { type: 'group', title: 'Configure ratings shown', items: [
+                    { type: 'note', html: 'Pick which ratings appear on the item-details row, and the order they\'re shown in. Use the '
+                        + arrow('up') + ' / ' + arrow('down') + ' buttons to reorder. All checked by default.' },
+                    // Filled by renderMdblistSourcesAdmin in configPage.html (the Services tab copy gets its own list, kept in step there).
+                    { type: 'custom', html: '<div id="mdblistRatingsSourcesAdmin"></div>' }
+                ] },
                 { type: 'group', title: 'Fetch ratings (scheduled task)', items: [
                     tog('mdblistRatingsFetchEnabled', 'Fetch Ratings from MDBList', 'Enables the <strong>Fetch Ratings from MDBList</strong> scheduled task (Dashboard, Scheduled Tasks):' + UL(
                         'Looks up MDBList data for any movie/series whose cached ratings are missing or stale, and saves it. Doesn\'t touch Jellyfin\'s own rating fields',
@@ -264,8 +268,21 @@ JEAdmin.define({
             { type: 'group', title: 'Custom Branding', items: [
                 { id: 'ElsewhereCustomBrandingText', prop: 'ElsewhereCustomBrandingText', type: 'text', label: 'Custom Branding Message', placeholder: 'e.g., Only available on My Server',
                   desc: 'Custom message to display when content is not available on any streaming providers. Leave blank to disable custom branding.' },
-                { id: 'ElsewhereCustomBrandingImageUrl', prop: 'ElsewhereCustomBrandingImageUrl', type: 'text', label: 'Custom Branding Icon URL', placeholder: '/web/assets/img/icon.png',
-                  desc: 'Optional URL for an icon to display next to the custom message. Leave blank for no icon.' }
+                { id: 'ElsewhereCustomBrandingImageUrl', prop: 'ElsewhereCustomBrandingImageUrl', type: 'text', label: 'Custom Branding Icon URL', placeholder: 'e.g., https://example.com/logo.png',
+                  desc: 'Optional icon shown next to the custom message, at 24 × 24. Each viewer\'s browser loads it, so use a web address such as <code>https://example.com/logo.png</code> or a path Jellyfin serves such as <code>/web/favicons/touchicon.png</code>, not a file path on the server. Any image type browsers show works (PNG, SVG, WebP). To use an image from your computer, upload it below instead; an uploaded icon is used in place of this URL. Leave both blank for no icon.' },
+                { type: 'custom', html: '<div class="jea-note jea-note-warn" id="je-elsewhere-icon-warning" style="display:none;"></div>' },
+                { type: 'custom', html: '<div class="je-branding-grid"><div class="je-branding-card">'
+                    + '<label class="je-branding-label-bold">Upload Icon</label>'
+                    + '<label class="je-branding-label">Stored on the server and used instead of the URL above. Takes effect on the next page load.</label>'
+                    + '<div class="je-branding-size-hint">Shown at 24×24px &nbsp;·&nbsp; PNG, JPG, GIF, WebP or SVG</div>'
+                    + '<div class="je-branding-dropzone" id="elsewhereIconDropZone">'
+                    + '<input type="file" id="elsewhereIconInput" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" class="je-branding-file-input" />'
+                    + '<div id="elsewhereIconPlaceholder" class="je-branding-placeholder"><i class="material-icons je-branding-placeholder-icon">image</i></div>'
+                    + '<img id="elsewhereIconPreview" class="je-branding-preview" style="display:none;" />'
+                    + '<div id="elsewhereIconDimensions" class="je-branding-dimensions" style="display:none;"></div>'
+                    + '<div id="elsewhereIconStatus" class="je-branding-status"></div>'
+                    + '<button type="button" class="je-branding-delete" id="elsewhereIconDelete" style="display:none;"><i class="material-icons">delete</i></button>'
+                    + '</div></div></div>' }
             ] }
         ]
     },
@@ -1286,7 +1303,34 @@ JEAdmin.define({
             { id: 'LeavingSoonMaintainerrActions', prop: 'LeavingSoonMaintainerrActions', type: 'toggle', default: true, label: 'Mark, keep and postpone from the item menu',
               desc: 'Administrators get <strong>Mark for removal</strong>, <strong>Keep</strong> and <strong>Postpone removal</strong> in a movie or series\' &#8942; menu (with Reclaimerr, each takes an exact day). Maintainerr: items are added to or removed from its existing manual collection for their library. Marking applies at once, with an Undo.' },
             { id: 'LeavingSoonHomeRow', prop: 'LeavingSoonHomeRow', type: 'toggle', default: true, label: 'Leaving soon home row',
-              desc: 'A <strong>Leaving soon</strong> row on the <a class="sectionTitle" href="https://github.com/IAmParadox27/jellyfin-plugin-home-sections/" target="_blank" rel="noopener">Home Screen Sections</a> home page, soonest removal first. Needs the Home Screen Sections and File Transformation plugins. It is added enabled for everyone; users with their own section list can turn it on or off there.' },
+              desc: 'A <strong>Leaving soon</strong> row on the <a class="sectionTitle" href="https://github.com/IAmParadox27/jellyfin-plugin-home-sections/" target="_blank" rel="noopener">Home Screen Sections</a> home page, soonest removal first. Needs the Home Screen Sections and File Transformation plugins. It is added enabled for everyone; users with their own section list can turn it on or off there.<br>Using <a class="sectionTitle" href="https://github.com/ranaldsgift/KefinTweaks" target="_blank" rel="noopener">KefinTweaks</a> instead? Its home sections can read the same list from <code>/JellyfinEnhanced/leaving-soon/items</code>, without Home Screen Sections. See the <a class="sectionTitle" href="https://n00bcodr.github.io/Jellyfin-Enhanced/enhanced/enhanced-features/#leaving-soon" target="_blank" rel="noopener">documentation</a> for the steps.' },
+            { type: 'custom', html: '<div class="inputContainer jea-row"><button type="button" id="leavingSoonCopyKefinBtn" class="jea-btn"><i class="material-icons" aria-hidden="true" style="font-size:1.1em;vertical-align:middle;margin-right:4px">content_copy</i><span>Copy KefinTweaks section</span></button>'
+                + '<div class="jea-hint">Copies a Leaving soon section for KefinTweaks. In KefinTweaks, open Enhanced Home Screen, New Section, Advanced, Import and paste it.</div></div>',
+              init: () => {
+                  const btn = document.getElementById('leavingSoonCopyKefinBtn');
+                  if (!btn || btn.dataset.wired) return;
+                  btn.dataset.wired = '1';
+                  const section = JSON.stringify({
+                      id: 'leaving-soon', type: 'home', name: 'Leaving Soon', enabled: true, order: 72, cardFormat: 'Poster', userConfigurable: true,
+                      queries: [{ path: '/JellyfinEnhanced/leaving-soon/items', queryOptions: { Limit: 20 } }]
+                  }, null, 2);
+                  const label = btn.querySelector('span');
+                  const done = (ok) => { label.textContent = ok ? 'Copied' : 'Copy failed'; setTimeout(() => { label.textContent = 'Copy KefinTweaks section'; }, 2000); };
+                  btn.addEventListener('click', () => {
+                      const legacy = () => {
+                          const t = document.createElement('textarea');
+                          t.value = section; t.style.position = 'fixed'; t.style.opacity = '0';
+                          document.body.appendChild(t); t.select();
+                          let ok = false;
+                          try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+                          t.remove(); done(ok);
+                      };
+                      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(section).then(() => done(true), legacy);
+                      else legacy();
+                  });
+              } },
+            { id: 'LeavingSoonHideWatched', prop: 'LeavingSoonHideWatched', type: 'toggle', default: false, label: 'Hide watched titles in the home row',
+              desc: 'Leaves out of the <strong>Leaving soon</strong> row what the user has already watched (a series counts once every episode is watched). Use this instead of the Hide Watched checkbox in Home Screen Sections, which that plugin keeps disabled for sections added by other plugins.' },
             { id: 'LeavingSoonRefreshHours', prop: 'LeavingSoonRefreshHours', type: 'number', min: 1, max: 168, default: 6, label: 'Refresh every (hours)',
               desc: 'How often the server reads the removal tool again (1&ndash;168 hours). A failed request is retried sooner. Each mark, keep or postpone reads it again at once.' }
         ]

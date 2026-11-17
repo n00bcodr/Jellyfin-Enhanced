@@ -52,6 +52,7 @@ Follow [Setup](#setup) to apply these server settings, then use the sections bel
 | **Per-season providers** | On | Enables automatic season lookup for default/aired-order series; users can opt out. |
 | **Custom Branding Message** | Empty | Replaces the unavailable heading when no filtered automatic providers or season groups remain. |
 | **Custom Branding Icon URL** | Empty | Adds an optional icon beside a nonempty custom message. |
+| **Upload Icon** | None | An icon stored on the server, used in place of the icon URL. |
 
 ### Default Region
 
@@ -213,13 +214,17 @@ Show your own heading when no filtered automatic providers or season groups rema
 ### How to use
 
 1. Expand **Custom Branding** in **Elsewhere & Reviews**.
-2. Enter a message and optional icon URL. Use an image viewers can access, such as an HTTPS URL or a root-relative path like `/web/assets/img/icon.png`.
-3. Click **Save Settings** and reload the client.
+2. Enter a message.
+3. Optionally add an icon, either way:
+    - **Upload Icon:** drop or pick a PNG, JPG, GIF, WebP or SVG file. It is stored on the server straight away and used instead of the icon URL; the bin button removes it.
+    - **Custom Branding Icon URL:** each viewer's browser loads the icon, so use a web address it can open, such as `https://example.com/logo.png`, or a path Jellyfin serves, such as `/web/favicons/touchicon.png`. A file path on the server, such as `/config/logo.png`, doesn't work. If the admin page can't load the image, a warning appears under the field.
+4. Click **Save Settings** and reload the client.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
 | **Custom Branding Message** | Empty | Replaces only the automatic unavailable heading. Empty keeps the standard unavailable heading. |
-| **Custom Branding Icon URL** | Empty | Adds a 24 × 24 CSS-pixel icon beside the custom message. Empty supplies no icon. |
+| **Custom Branding Icon URL** | Empty | Adds a 24 × 24 CSS-pixel icon beside the custom message. Any image type browsers show works, such as PNG, SVG or WebP. Ignored while an icon is uploaded. Empty supplies no icon. |
+| **Upload Icon** | None | An icon stored on the server, used in place of the icon URL. |
 
 !!! tip "Check your touch devices"
 
@@ -227,7 +232,7 @@ Show your own heading when no filtered automatic providers or season groups rema
 
 ??? info "Icons, headings, and hidden controls"
 
-    An icon URL without a message has no effect. Failed icons are hidden. There is no default branding logo. Manual-country results retain their own availability headings.
+    An icon without a message has no effect. Failed icons are hidden, and the browser console logs a warning naming the URL. Paths starting with `/web/` or `/JellyfinEnhanced/` are resolved against your server address, so they keep working when Jellyfin runs under a base path such as `/jellyfin`; other root-relative paths are used as entered. There is no default branding logo. Manual-country results retain their own availability headings.
 
     With a custom message in the unavailable automatic state, search and settings controls initially have zero opacity. Pointer entry reveals them and pointer exit hides them; their click handlers remain.
 
@@ -538,7 +543,7 @@ Check the country and filters before assuming a title has no subscription provid
 
 1. Check your effective default country and both admin lists. **Default Providers** can remove everything through unmatched names or capitalization; **Ignore Providers** can exclude all matches.
 2. Try a manual search with an empty personal provider list to compare unfiltered subscription data in another country.
-3. If names show without logos, check browser access to `image.tmdb.org`. For a missing branding icon, check the configured image host.
+3. If names show without logos, check browser access to `image.tmdb.org`. For a missing branding icon, check the warning under **Custom Branding Icon URL** and the browser console; the URL must be a web address, not a server file path. An uploaded icon replaces the URL.
 
 ??? note "Subscription categories"
 

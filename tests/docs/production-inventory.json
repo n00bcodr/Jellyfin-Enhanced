@@ -3721,6 +3721,15 @@
       ]
     },
     {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/ElsewhereBrandingIcon",
+      "method": "GetElsewhereBrandingIcon",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "AllowAnonymous"
+      ]
+    },
+    {
       "verb": "POST",
       "path": "/JellyfinEnhanced/DeleteBrandingImage",
       "method": "DeleteBrandingImage",
@@ -3941,6 +3950,17 @@
       "method": "GetView",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
       "following_attributes": []
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/leaving-soon/items",
+      "method": "Items",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/LeavingSoonController.cs",
+      "following_attributes": [
+        "Authorize",
+        "ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)",
+        "Produces(\"application/json\")"
+      ]
     },
     {
       "verb": "GET",
@@ -5792,6 +5812,14 @@
       "name": "LeavingSoonHomeRow",
       "type": "bool",
       "initializer": "true",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "LeavingSoonHideWatched",
+      "type": "bool",
+      "initializer": null,
       "constructor_assignment": null,
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
     },
@@ -10921,8 +10949,8 @@
   "counts": {
     "build_targets": 2,
     "files": 500,
-    "routes": 220,
-    "configuration_properties": 787,
+    "routes": 222,
+    "configuration_properties": 788,
     "storage_references": 89,
     "scheduled_tasks": 17,
     "locales": 33

@@ -4,7 +4,7 @@ Use Jellyfin Enhanced (JE)'s API to manage bookmarks, reviews, and personal sett
 
 To use these APIs from a custom Jellyfin client, you need an HTTP client and a Jellyfin credential. You do not need the injected JE scripts.
 
-This reference covers the 220 method/path entries in plugin version **12.14.0.0**. Use the endpoint tables to check access requirements, inputs, responses, and limits.
+This reference covers the 222 method/path entries in plugin version **12.14.0.0**. Use the endpoint tables to check access requirements, inputs, responses, and limits.
 
 Paths in endpoint tables are relative to `/JellyfinEnhanced/`. Braces mark path parameters; replace them before making a request. The catch-all routes serve only the resources described below.
 
@@ -1186,6 +1186,7 @@ Use these own/admin routes to retrieve data visible to the target account. Missi
 | POST | `maintainerr/mark` | Administrator | `{itemId, mediaSourceId?}` → the state above after the change. Adds the item to the one active **manual** Maintainerr collection of its type on its library (`POST /api/collections/media/add`, `action 0`); two collections on one library are told apart by asking each one's Radarr/Sonarr server (as Maintainerr lists them, `GET /api/settings/radarr|sonarr`) whether it holds the item (`/api/v3/movie?tmdbId=`, `/api/v3/series?tvdbId=`, same address guard). Then the facts are read again and published, so badges and the home row follow at once. `400` `{error}` when no collection fits (the reason names Maintainerr's collections), the item is already marked or is not a movie or series; `502` `{error}` with Maintainerr's reason (or a short one: `not reachable`, `timed out`, `redirected (redirects are not followed)`) when the request failed. Never the address or key. |
 | POST | `maintainerr/unmark` | Administrator | `{itemId}` → the state after the change. Removes the item from the Maintainerr collection holding it (`action 1`), then reads again. `400` when it is not marked. |
 | POST | `maintainerr/postpone` | Administrator | `{itemId, days?}` → the state after the change. `days` 1-3650 moves the removal that much later (`POST /api/collections/media/postpone`); without `days` the timer restarts from today. Maintainerr only moves a removal later. `400` when the item is not marked or `days` is out of range. |
+| GET | `leaving-soon/items` | Signed-in user | Optional `limit` → a standard item list `{Items, TotalRecordCount}` of the movies and series that are leaving, soonest first, as the user may see them. For home screen plugins such as KefinTweaks. 404 when no removal tool has an address. |
 | GET | `leaving-soon/list` | Signed-in user | No body → `{provider, admin, canRequest, actions, items[], requests[], mine[]}`: what the removal tool that is on will remove (each item has `versionOnly: true` when only one version of a movie is scheduled and the others stay), soonest first (undated last), limited to the items the caller can see and to 500. An item is `{id, name, detail, type, year, deleteAt}`. `requests` is every pending Reclaimerr deletion request (administrators only), `mine` the caller's own requests (Reclaimerr, acting as the user). `404` while the Leaving Soon page is off or no removal tool is set up |
 | POST | `reclaimerr/requests/{requestId}/approve` | Administrator | `{note?}` → `{id, approved: true}`. Approves a pending Reclaimerr deletion request as the administrator who clicked (the service account is the fallback). `404` without Reclaimerr, `400`/`502` with Reclaimerr's reason |
 | POST | `reclaimerr/requests/{requestId}/deny` | Administrator | `{note?}` → `{id, approved: false}`. Denies it, otherwise as above |
@@ -1576,6 +1577,7 @@ Neither configuration endpoint exposes provider API keys. `TmdbEnabled` and `Mdb
     | `TagLookItemOverrides` | Nullable array of server-wide item looks `{ItemId,Layout,Density,ColourPreset,Slots,Shapes,Caps,TagScale,TagGap,EdgeSpacing,Scope,LockedAt}` (the `TagLayoutLocks` document with its item id), normalized, newest first, at most 500; only targets visible to the caller through Jellyfin library and parental access checks (including scoped series targets), `null` for anonymous callers or when none are visible. Public config and bootstrap are not cached across users |
     | `CalendarFirstDayOfWeek`, `CalendarTimeFormat`, `MaintenanceModeMessage`, `MaintenanceModeAction`, `MaintenanceModeAffectedUsers` | String |
     | `ClearLocalStorageTimestamp`, `ClearTranslationCacheTimestamp` | Integer |
+    | `ElsewhereCustomBrandingIconVersion` | String: last-write ticks and size of the uploaded Elsewhere icon, empty when none is uploaded; clients use it to choose and cache-bust `ElsewhereBrandingIcon` |
     | `Shortcuts` | Array of `{Name,Key,Label,Category}` |
     | `MaintenanceModeEndsAt` | Nullable ISO timestamp |
 
@@ -1917,13 +1919,14 @@ For non-administrators the match is limited to items the caller can see (library
 
 Upload, retrieve, and remove custom branding assets. No enable toggle is required for storage operations.
 
-Valid slots are `icon-transparent.png`, `banner-light.png`, `banner-dark.png`, `favicon.ico`, `apple-touch-icon.png`; names normalize to lowercase.
+Valid slots are `icon-transparent.png`, `banner-light.png`, `banner-dark.png`, `favicon.ico`, `apple-touch-icon.png`, `elsewhere-icon.png`; names normalize to lowercase. `elsewhere-icon.png` is the Elsewhere custom branding icon: it isn't swapped into a jellyfin-web asset, accepts only `image/png`, `image/jpeg`, `image/gif`, `image/webp` and `image/svg+xml` uploads whose bytes are a recognisable PNG, JPEG, GIF, WebP or UTF-8 SVG with `<svg` in the first 64 KB (anything else, including an empty file, returns `400`), and is served by its content rather than its name. Both `BrandingImage` and `ElsewhereBrandingIcon` send a sandboxing `Content-Security-Policy` and `nosniff` for it.
 
 | Method | Path | Access | Request → response |
 |---|---|---|---|
 | POST | `UploadBrandingImage` | Administrator | Multipart first file plus form `fileName` → success string `File uploaded successfully`. |
-| GET | `BrandingStatus` | Authenticated | Filename-to-existence boolean map for all five slots. |
-| GET | `BrandingImage` | Authenticated | Query `fileName` → stored bytes with extension-derived MIME. |
+| GET | `BrandingStatus` | Authenticated | Filename-to-existence boolean map for all six slots. |
+| GET | `BrandingImage` | Authenticated | Query `fileName` → stored bytes with extension-derived MIME (content-derived for `elsewhere-icon.png`). |
+| GET | `ElsewhereBrandingIcon` | Anonymous | Uploaded Elsewhere icon with content-derived MIME, `Cache-Control: public, max-age=86400`, and a sandboxing `Content-Security-Policy`; `404` when none is uploaded. Anonymous because viewers load it with a plain `<img>`; an optional `v` query only busts caches. |
 | POST | `DeleteBrandingImage` | Administrator | Form `fileName` → success string `File deleted successfully`. |
 
 ```bash
@@ -2017,7 +2020,7 @@ These are resource URLs, separate from Jellyfin web hash navigation or placement
 
 ## Full Endpoint Index
 
-The endpoint tables above enumerate all 220 controller method/path entries, including the three catch-all templates. Each group documents effective access, inputs, response shape, and limits; shared proxy rows intentionally retain the configured upstream service's JSON contract.
+The endpoint tables above enumerate all 222 controller method/path entries, including the three catch-all templates. Each group documents effective access, inputs, response shape, and limits; shared proxy rows intentionally retain the configured upstream service's JSON contract.
 
 For implementation details, [JellyfinEnhancedController.cs](https://github.com/n00bcodr/Jellyfin-Enhanced/blob/main/Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs) implements all indexed routes except `catchup/*`, which is in [CatchUpController.cs](https://github.com/n00bcodr/Jellyfin-Enhanced/blob/main/Jellyfin.Plugin.JellyfinEnhanced/Controllers/CatchUpController.cs). These upstream source links may advance beyond this versioned reference.
 

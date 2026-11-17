@@ -78,13 +78,14 @@ Give the unavailable-provider heading your own message and optional icon. It app
 #### How to use
 
 1. As an admin, open **Custom Branding** in the **Elsewhere & Reviews** tab.
-2. Enter a message and optional image URL, then click **Save Settings**.
+2. Enter a message, then click **Save Settings**. For an icon, upload an image under **Upload Icon** or enter an image URL; an uploaded icon is used in place of the URL.
 3. Reload the detail page.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
 | **Custom Branding Message** | Empty (admin) | Replaces the automatic unavailable heading; empty keeps the standard heading. |
 | **Custom Branding Icon URL** | Empty (admin) | Adds an optional icon beside a nonempty custom message; empty supplies no icon. |
+| **Upload Icon** | None (admin) | An icon stored on the server, used in place of the icon URL. |
 
 ??? note "Country, filters, and controls"
 

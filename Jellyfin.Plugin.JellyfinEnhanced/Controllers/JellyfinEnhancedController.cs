@@ -187,7 +187,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             "banner-light.png",
             "banner-dark.png",
             "favicon.ico",
-            "apple-touch-icon.png"
+            "apple-touch-icon.png",
+            ElsewhereBrandingIconFileName
+        }, StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// Upload slot for the Elsewhere custom branding icon. Unlike the other slots it
+        /// isn't swapped into a jellyfin-web asset; viewers load it from
+        /// <c>/JellyfinEnhanced/ElsewhereBrandingIcon</c>. The name is fixed, but the
+        /// bytes may be PNG, JPEG, GIF, WebP or SVG, so it's served by content.
+        /// </summary>
+        private const string ElsewhereBrandingIconFileName = "elsewhere-icon.png";
+
+        private static readonly HashSet<string> ElsewhereIconContentTypes = new(new[]
+        {
+            "image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml"
         }, StringComparer.OrdinalIgnoreCase);
 
         public JellyfinEnhancedController(
@@ -4039,6 +4053,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.ElsewhereUseSeerrRegion,
                 config.ElsewhereCustomBrandingText,
                 config.ElsewhereCustomBrandingImageUrl,
+                ElsewhereCustomBrandingIconVersion = GetElsewhereBrandingIconVersion(),
                 config.ClearLocalStorageTimestamp,
                 config.ClearTranslationCacheTimestamp,
 
@@ -10973,6 +10988,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 if (!uploadedFile.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
                     return BadRequest("Only image files are allowed");
 
+                if (string.Equals(normalizedFileName, ElsewhereBrandingIconFileName, StringComparison.OrdinalIgnoreCase)
+                    && !ElsewhereIconContentTypes.Contains(uploadedFile.ContentType))
+                    return BadRequest("The Elsewhere icon must be a PNG, JPEG, GIF, WebP or SVG image");
+
+                // The Elsewhere icon is served by its content, so only store bytes that
+                // are recognisably one of those formats; anything else would be served
+                // with the wrong type and never display.
+                if (string.Equals(normalizedFileName, ElsewhereBrandingIconFileName, StringComparison.OrdinalIgnoreCase))
+                {
+                    string? sniffed;
+                    using (var head = uploadedFile.OpenReadStream())
+                    {
+                        sniffed = SniffImageContentType(head);
+                    }
+
+                    if (sniffed == null)
+                        return BadRequest("The Elsewhere icon file isn't a readable PNG, JPEG, GIF, WebP or SVG image (an SVG must be UTF-8 and have its <svg> tag in the first 64 KB)");
+                }
+
                 const long maxFileSize = 10 * 1024 * 1024; // 10MB
                 if (uploadedFile.Length > maxFileSize)
                     return BadRequest($"File too large (max 10MB)");
@@ -11040,13 +11074,134 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (!System.IO.File.Exists(filePath))
                 return NotFound();
 
-            var provider = new FileExtensionContentTypeProvider();
-            if (!provider.TryGetContentType(filePath, out var contentType))
+            string? contentType = null;
+            if (filePath.EndsWith(ElsewhereBrandingIconFileName, StringComparison.OrdinalIgnoreCase))
+            {
+                if (!TrySniffImageFile(filePath, out contentType))
+                {
+                    return NotFound();
+                }
+
+                SetUploadedImageSandboxHeaders();
+            }
+
+            if (contentType == null && !new FileExtensionContentTypeProvider().TryGetContentType(filePath, out contentType))
             {
                 contentType = "application/octet-stream";
             }
 
             return PhysicalFile(filePath, contentType);
+        }
+
+        /// <summary>
+        /// The uploaded Elsewhere custom branding icon, for every viewer's
+        /// <c>&lt;img&gt;</c>. Anonymous because an image tag can't send Jellyfin's
+        /// auth header; it exposes nothing beyond what the stock branding images
+        /// (served publicly by BrandingAssetStartupFilter) already do.
+        /// </summary>
+        [HttpGet("ElsewhereBrandingIcon")]
+        [AllowAnonymous]
+        public IActionResult GetElsewhereBrandingIcon()
+        {
+            if (!TryResolveBrandingFilePath(ElsewhereBrandingIconFileName, out _, out var filePath)
+                || !System.IO.File.Exists(filePath)
+                || !TrySniffImageFile(filePath, out var contentType))
+            {
+                return NotFound();
+            }
+
+            SetUploadedImageSandboxHeaders();
+            // Clients add ?v=<upload time>, so a re-upload gets a new URL.
+            Response.Headers["Cache-Control"] = "public, max-age=86400";
+            return PhysicalFile(filePath, contentType ?? "image/png");
+        }
+
+        /// <summary>
+        /// Headers for serving an admin-uploaded image that may be an SVG: it must never
+        /// run script or load anything if its URL is opened directly.
+        /// </summary>
+        private void SetUploadedImageSandboxHeaders()
+        {
+            Response.Headers["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox";
+            Response.Headers["X-Content-Type-Options"] = "nosniff";
+        }
+
+        /// <summary>
+        /// Sniffs a stored image's type. Returns false when the file vanished or can't be
+        /// read (e.g. deleted mid-request); <paramref name="contentType"/> is null when
+        /// the content isn't recognised.
+        /// </summary>
+        private static bool TrySniffImageFile(string filePath, out string? contentType)
+        {
+            contentType = null;
+            try
+            {
+                using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                contentType = SniffImageContentType(stream);
+                return true;
+            }
+            catch (IOException)
+            {
+                return false;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Changes whenever the Elsewhere branding icon is uploaded or deleted: the
+        /// file's last-write ticks and size, or an empty string when no icon is uploaded.
+        /// </summary>
+        private static string GetElsewhereBrandingIconVersion()
+        {
+            try
+            {
+                var brandingDir = JellyfinEnhanced.BrandingDirectory;
+                if (string.IsNullOrWhiteSpace(brandingDir))
+                {
+                    return string.Empty;
+                }
+
+                var info = new FileInfo(Path.Combine(brandingDir, ElsewhereBrandingIconFileName));
+                // Size as well as time, so a replacement on a coarse-mtime filesystem
+                // (or restored with its old mtime) still gets a new URL.
+                return info.Exists && info.Length > 0
+                    ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{info.LastWriteTimeUtc.Ticks}-{info.Length}")
+                    : string.Empty;
+            }
+            catch (Exception)
+            {
+                return string.Empty;
+            }
+        }
+
+        /// <summary>
+        /// Identifies an image by its first bytes (PNG, JPEG, GIF, WebP or UTF-8 SVG), so a
+        /// file stored under a fixed name is served with its real type. Upload uses the
+        /// same window, so every stored Elsewhere icon is recognised when served.
+        /// Returns null when the content isn't recognised.
+        /// </summary>
+        private static string? SniffImageContentType(Stream stream)
+        {
+            // SVGs can open with an XML prolog, comments, metadata or a DOCTYPE before <svg.
+            var head = new byte[64 * 1024];
+            var read = 0;
+            int n;
+            while (read < head.Length && (n = stream.Read(head, read, head.Length - read)) > 0)
+            {
+                read += n;
+            }
+
+            if (read >= 8 && head[0] == 0x89 && head[1] == 0x50 && head[2] == 0x4E && head[3] == 0x47) return "image/png";
+            if (read >= 3 && head[0] == 0xFF && head[1] == 0xD8 && head[2] == 0xFF) return "image/jpeg";
+            if (read >= 6 && head[0] == 0x47 && head[1] == 0x49 && head[2] == 0x46 && head[3] == 0x38) return "image/gif";
+            if (read >= 12 && head[0] == 0x52 && head[1] == 0x49 && head[2] == 0x46 && head[3] == 0x46
+                && head[8] == 0x57 && head[9] == 0x45 && head[10] == 0x42 && head[11] == 0x50) return "image/webp";
+            var text = Encoding.UTF8.GetString(head, 0, read);
+            if (text.Contains("<svg", StringComparison.OrdinalIgnoreCase)) return "image/svg+xml";
+            return null;
         }
 
         [HttpPost("DeleteBrandingImage")]
