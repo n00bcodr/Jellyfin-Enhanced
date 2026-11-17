@@ -1071,6 +1071,7 @@
             /* On a TV the half the remote is on is the inverted pill the Filters button uses; the half in use keeps its ring. */
             .layout-tv .jellyseerr-menu-match-btn:focus { outline: none; background: var(--jf-palette-text-primary, #fff); color: var(--jellyseerr-menu-ground, #101010); }
             .layout-tv .jellyseerr-menu-match { font-size: 1rem; }
+            .layout-tv .jellyseerr-menu-match-btn { padding: .45em 1.1em; }
             /* On a touch screen, as wide as the search field above it and a finger's height. */
             @media (pointer: coarse), (max-width: 600px) {
                 html:not(.layout-tv) .jellyseerr-menu-match-track { display: flex; flex: 1 1 12em; }
