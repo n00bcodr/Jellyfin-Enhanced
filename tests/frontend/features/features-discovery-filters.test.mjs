@@ -622,12 +622,16 @@ test('the Filters menu offers all or any for keywords, genres and services; "or"
   search.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
   await until(() => bodyOf(h, 'keywords').querySelectorAll('.actionSheetMenuItem').length === 2, 'keywords found');
   tickRow(h, 'keywords', 'sheep');
+  // One ticked: the choice is shown (it can be made first) but idle, not in the accent.
+  assert.equal(bodyOf(h, 'keywords').querySelector('.jellyseerr-menu-match').hasAttribute('data-idle'), true);
   search.value = 'sheep';
   search.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
   await until(() => [...bodyOf(h, 'keywords').querySelectorAll('.actionSheetItemText')].some(node => node.textContent === 'sheep farm'), 'more found');
   tickRow(h, 'keywords', 'sheep farm');
   assert.equal(String(s.shown()), '2');
   const choice = bodyOf(h, 'keywords').querySelector('.jellyseerr-menu-match');
+  // Two ticked: the choice changes the list, so it is not idle (with one it was: see above).
+  assert.equal(choice.hasAttribute('data-idle'), false);
   same([...choice.querySelectorAll('button')].map(button => [button.textContent, button.getAttribute('aria-checked')]), [['all ticked', 'true'], ['any ticked', 'false']]);
   choice.querySelector('[data-match="any"]').click();
   assert.equal(String(s.shown()), '3,13');

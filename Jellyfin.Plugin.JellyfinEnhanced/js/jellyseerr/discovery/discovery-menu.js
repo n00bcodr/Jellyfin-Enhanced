@@ -174,8 +174,13 @@
                 el.title = words;
             }
         };
+        // (Measured again only when the menu's width changed: placing it follows the page's scrolling.)
+        let fittedWidth = -1;
         /** Every group's value again, at the menu's size now. */
         const fitValues = () => {
+            const width = sheet.offsetWidth;
+            if (width === fittedWidth) return;
+            fittedWidth = width;
             for (const el of content.querySelectorAll('.jellyseerr-menu-group-value')) {
                 showValue(/** @type {HTMLElement} */ (el), el.dataset.whole ?? el.textContent ?? '', el.dataset.short || undefined);
             }

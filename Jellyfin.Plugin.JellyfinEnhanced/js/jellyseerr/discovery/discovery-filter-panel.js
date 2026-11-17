@@ -279,15 +279,20 @@
             // (On a genre's page its own genre is always applied: what is said is about the others.)
             const own = id === 'genres' ? options.ownGenre?.trim().toLocaleLowerCase() ?? '' : '';
             const picked = own && ticked.length > 1 ? ticked.filter(item => item.name.toLocaleLowerCase() !== own) : ticked;
-            // A list where all or any can be chosen says which: "Action and Comedy", "Any of 3".
+            // A list where all or any can be chosen says which, the names joined as the page's language joins them:
+            // "Action, Comedy and Animation", "Family or Kids". (Where they don't fit, the row says it short: see shortList.)
             if (picked.length >= 2 && logic().MATCH_DEFAULTS?.[id] !== undefined) {
                 const any = logic().matchOf(options.selection(), id) === 'any';
+                const names = picked.map(item => item.name);
+                let joined = null;
+                try { joined = new Intl.ListFormat(locale || 'en', { style: 'long', type: any ? 'disjunction' : 'conjunction' }).format(names); } catch (_) { joined = null; }
+                if (joined) return joined;
                 if (picked.length > 2) return any ? say('discovery_filter_any_of', 'Any of {count}', { count: picked.length })
                     : say('discovery_filter_all_of', 'All of {count}', { count: picked.length });
-                const names = { first: picked[0].name, second: picked[1].name };
-                return any ? say('discovery_filter_either', '{first} or {second}', names) : say('discovery_filter_both', '{first} and {second}', names);
+                const two = { first: names[0], second: names[1] };
+                return any ? say('discovery_filter_either', '{first} or {second}', two) : say('discovery_filter_both', '{first} and {second}', two);
             }
-            return picked.length > 2 ? say('discovery_filter_count', '{count} chosen', { count: picked.length }) : picked.map(item => item.name).join(', ');
+            return picked.map(item => item.name).join(', ');
         };
         /**
          * The same, short, for a row too narrow for the names: "Any of 2", "2 chosen" (none for a single tick).
@@ -315,6 +320,20 @@
                 : id === 'language' ? say('discovery_filter_search_languages', 'Search languages') : say('discovery_filter_search', 'Search');
         /** Whether the viewer chooses how several ticks in a list count (not where the page names that list). */
         const matchable = id => logic().MATCH_DEFAULTS?.[id] !== undefined && !(options.fixedAll ?? []).includes(id);
+        // Each list's all / any choice, to be marked idle while fewer than two are ticked (it changes nothing then).
+        const matchLines = new Map();
+        /**
+         * How many of a list's ticks the choice is about (on a genre's page, not its own genre).
+         * @param {object[]} ticked
+         * @param {string} id
+         * @returns {number}
+         */
+        const choiceCount = (ticked, id) => {
+            const own = id === 'genres' ? options.ownGenre?.trim().toLocaleLowerCase() ?? '' : '';
+            return own ? ticked.filter(item => item.name.toLocaleLowerCase() !== own).length : ticked.length;
+        };
+        /** Marks a list's choice idle or not, by its ticks now. */
+        const markIdle = (id, ticked) => matchLines.get(id)?.toggleAttribute('data-idle', choiceCount(ticked, id) < 2);
         /**
          * How several ticks in a list count, said under the list. Where a title can have several of them, a
          * choice: all of the ones ticked, or any of them (each said as Seerr's own rule where it can't be chosen).
@@ -367,6 +386,8 @@
                 button.tabIndex = on ? 0 : -1;
             });
             paint(logic().matchOf(options.selection(), id));
+            matchLines.set(id, line);
+            markIdle(id, pickedOf(id));
             // Left and right move between the two and choose, as in any radio group (up and down are the menu's rows);
             // on a TV they only move, and OK chooses, so passing over the choice never reloads the list.
             track.addEventListener('keydown', event => {
@@ -411,6 +432,7 @@
                 const tick = row.querySelector('.actionsheetMenuItemIcon');
                 if (tick) { tick.classList.remove(box(!chosen)); tick.classList.add(box(chosen)); }
                 handle.say(sayList(next, id), next.length > 0, shortList(next, id));
+                markIdle(id, next);
                 options.change({ ...options.selection(), [id]: next.length > 0 ? next : undefined });
                 onToggle?.(chosen, row);
             });
@@ -1231,14 +1253,26 @@
             /* The theme's own grounds; the choice in use in the accent, as everything set in this menu is. */
             .jellyseerr-menu-match { display: flex; flex-flow: row wrap; align-items: center; gap: .35em .6em; }
             .jellyseerr-menu-searchbar .jellyseerr-menu-note { padding: 6px 0 0; }
-            .jellyseerr-menu-match-track { display: inline-flex; gap: 2px; padding: 2px; border-radius: 999px; background: var(--jf-palette-action-hover, rgba(255,255,255,.08)); }
+            .jellyseerr-menu-match-track { display: inline-flex; gap: 2px; padding: 2px; border-radius: 999px; background: var(--jf-palette-action-hover, rgba(255,255,255,.08)); box-shadow: inset 0 0 0 1px var(--jf-palette-divider, rgba(255,255,255,.12)); }
             .jellyseerr-menu-match-btn { font: inherit; color: var(--jf-palette-text-secondary, rgba(255,255,255,.7)); white-space: nowrap; background: none; border: 0; border-radius: 999px; padding: .3em .8em; cursor: pointer; }
             /* The half in use on the sheet's own ground, in the accent with its ring (readable on any theme). */
-            .jellyseerr-menu-match-btn[aria-checked="true"] { background-color: var(--jellyseerr-menu-ground, transparent); background-image: var(--jellyseerr-menu-shade, none); color: var(--jellyseerr-accent); box-shadow: inset 0 0 0 1px var(--jellyseerr-accent); }
+            .jellyseerr-menu-match-btn[aria-checked="true"] { background-color: var(--jellyseerr-menu-ground, transparent); background-image: var(--jellyseerr-menu-shade, none); color: var(--jellyseerr-accent); box-shadow: inset 0 0 0 1px var(--jellyseerr-accent); font-weight: 600; }
+            /* The other half can be pressed: it answers the pointer. */
+            .jellyseerr-menu-match-btn:not([aria-checked="true"]):hover { background: var(--jf-palette-action-hover, rgba(255,255,255,.08)); color: var(--jf-palette-text-primary, #fff); }
+            /* Below two ticks the choice changes nothing: shown, but not in the accent that says the list is narrowed. */
+            .jellyseerr-menu-match[data-idle] .jellyseerr-menu-match-btn[aria-checked="true"] { color: var(--jf-palette-text-primary, #fff); box-shadow: inset 0 0 0 1px var(--jf-palette-divider, rgba(255,255,255,.24)); font-weight: 500; }
             .jellyseerr-menu-match-btn:focus-visible { outline: 2px solid var(--jf-palette-text-primary, #fff); outline-offset: 1px; }
-            @media (forced-colors: active) { .jellyseerr-menu-match-btn[aria-checked="true"] { outline: 2px solid Highlight; outline-offset: -2px; } }
+            @media (forced-colors: active) {
+                .jellyseerr-menu-match-btn[aria-checked="true"] { outline: 2px solid Highlight; outline-offset: -2px; }
+                .jellyseerr-menu-match-btn:focus-visible { outline: 3px solid CanvasText; outline-offset: 1px; }
+            }
             /* On a TV the half the remote is on is the inverted pill the Filters button uses; the half in use keeps its ring. */
             .layout-tv .jellyseerr-menu-match-btn:focus { outline: none; background: var(--jf-palette-text-primary, #fff); color: var(--jellyseerr-menu-ground, #101010); }
+            /* Under the remote, the half in use keeps its mark: an accent ring outside the pill. */
+            .layout-tv .jellyseerr-menu-match-btn[aria-checked="true"]:focus { box-shadow: 0 0 0 3px var(--jellyseerr-accent); }
+            /* An open group's list sits in from its row on a TV too. */
+            .layout-tv .jellyseerr-sort-menu .jellyseerr-menu-choices > .actionSheetMenuItem,
+            .layout-tv .jellyseerr-sort-menu .jellyseerr-menu-choices .jellyseerr-menu-list > .actionSheetMenuItem { padding-inline-start: 2.2em; }
             .layout-tv .jellyseerr-menu-match { font-size: 1rem; }
             .layout-tv .jellyseerr-menu-match-btn { padding: .45em 1.1em; }
             /* On a touch screen, as wide as the search field above it and a finger's height. */
