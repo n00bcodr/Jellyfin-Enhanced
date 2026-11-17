@@ -4475,6 +4475,24 @@
             });
         }
 
+        /**
+         * The message from a failed branding request: ASP.NET sends BadRequest(string)
+         * as a JSON string, so unwrap it rather than showing quotes and \u escapes.
+         * @param {Response} response - The failed fetch response.
+         * @returns {Promise<string>} The plain message, or '' when there is none.
+         */
+        async function brandingErrorText(response) {
+            const text = await response.text();
+            try {
+                const parsed = JSON.parse(text);
+                return typeof parsed === 'string' ? parsed : text;
+            } catch (e) {
+                return text;
+            }
+        }
+
+        // No template literals here: the dashboard treats ${...} in this page as
+        // translation keys, so they render as their source text.
         async function uploadBrandingImage(file, config, statusDiv) {
             // Validate that it's an image file
             if (!file.type || !file.type.startsWith('image/')) {
@@ -4497,7 +4515,7 @@
 
             const maxFileSize = 10 * 1024 * 1024; // 10MB
             if (file.size > maxFileSize) {
-                statusDiv.textContent = `✗ File too large (max ${maxFileSize / (1024 * 1024)}MB)`;
+                statusDiv.textContent = '✗ File too large (max ' + (maxFileSize / (1024 * 1024)) + 'MB)';
                 statusDiv.style.color = '#ff6b6b';
                 return;
             }
@@ -4518,7 +4536,7 @@
                     const img = new Image();
                     img.onload = function() {
                         if (dimensionsDiv) {
-                            dimensionsDiv.textContent = `${img.width} × ${img.height}px`;
+                            dimensionsDiv.textContent = img.width + ' × ' + img.height + 'px';
                             dimensionsDiv.style.display = 'block';
                         }
                         URL.revokeObjectURL(objectUrl);
@@ -4554,15 +4572,15 @@
                     await refreshBrandingPreview(config);
                     setTimeout(() => { statusDiv.textContent = ''; }, 3000);
                 } else {
-                    const error = await response.text();
-                    statusDiv.textContent = `✗ ${error || 'Upload failed'}`;
+                    const error = await brandingErrorText(response);
+                    statusDiv.textContent = '✗ ' + (error || 'Upload failed');
                     statusDiv.style.color = '#ff6b6b';
                     // Show what is actually stored, not the rejected file.
                     await refreshBrandingPreview(config);
                 }
             } catch (error) {
                 console.error('Upload exception:', error);
-                statusDiv.textContent = `✗ ${error.message || 'Upload error'}`;
+                statusDiv.textContent = '✗ ' + (error.message || 'Upload error');
                 statusDiv.style.color = '#ff6b6b';
                 await refreshBrandingPreview(config);
             }
@@ -4643,12 +4661,12 @@
                     await refreshBrandingPreview(config);
                     setTimeout(() => { statusDiv.textContent = ''; }, 2000);
                 } else {
-                    const error = await response.text();
-                    statusDiv.textContent = `✗ ${error || 'Delete failed'}`;
+                    const error = await brandingErrorText(response);
+                    statusDiv.textContent = '✗ ' + (error || 'Delete failed');
                     statusDiv.style.color = '#ff6b6b';
                 }
             } catch (err) {
-                statusDiv.textContent = `✗ ${err.message || 'Delete error'}`;
+                statusDiv.textContent = '✗ ' + (err.message || 'Delete error');
                 statusDiv.style.color = '#ff6b6b';
             }
         }
