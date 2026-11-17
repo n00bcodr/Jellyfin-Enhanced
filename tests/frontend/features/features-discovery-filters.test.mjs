@@ -638,7 +638,9 @@ test('the Filters menu offers all or any for keywords, genres and services; "or"
   const choice = bodyOf(h, 'keywords').querySelector('.jellyseerr-menu-match');
   // Two ticked: the choice changes the list, so it is not idle (with one it was: see above).
   assert.equal(choice.hasAttribute('data-idle'), false);
-  same([...choice.querySelectorAll('button')].map(button => [button.textContent, button.getAttribute('aria-checked')]), [['all ticked', 'true'], ['any ticked', 'false']]);
+  same([...choice.querySelectorAll('button')].map(button => [button.firstChild.textContent, button.getAttribute('aria-checked')]), [['all ticked', 'true'], ['any ticked', 'false']]);
+  // (Each half holds its words again, bold and out of sight, so it is as wide chosen or not; a reader hears them once.)
+  same([...choice.querySelectorAll('.jellyseerr-menu-match-reserve')].map(copy => [copy.textContent, copy.getAttribute('aria-hidden')]), [['all ticked', 'true'], ['any ticked', 'true']]);
   choice.querySelector('[data-match="any"]').click();
   assert.equal(String(s.shown()), '3,13');
   assert.equal(groupOf(h, 'keywords').textContent, 'Keywordssheep or sheep farm');
@@ -744,16 +746,30 @@ test('saved filters: the user\'s profiles first in the menu, saved under a name,
   same([...body.querySelectorAll('.jellyseerr-menu-profile')].map(row => row.textContent), ['Kids']);
   // What is set now, under a name.
   const field = body.querySelector('.jellyseerr-menu-profile-form input');
+  const save = body.querySelector('.jellyseerr-menu-profile-save');
+  // (Save is there to press once there is a name.)
+  assert.equal(save.disabled, true);
+  field.value = '  ';
+  field.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  assert.equal(save.disabled, true, 'not for spaces');
   field.value = 'Top rated';
-  body.querySelector('.jellyseerr-menu-profile-save').click();
+  field.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  assert.equal(save.disabled, false);
+  save.click();
   await until(() => body.querySelectorAll('.jellyseerr-menu-profile').length === 2, 'saved');
   same(stored[1], { id: 'b2', name: 'Top rated', filters: 'jeScore=7..' });
   assert.equal(groups()[0].textContent, 'Saved filtersTop rated', 'the one that is set now is named');
   assert.match(body.querySelector('.jellyseerr-menu-note').textContent, /Saved as “Top rated”/);
-  // Deleting one asks the server, and it goes.
-  body.querySelector('.jellyseerr-menu-profile-row:last-child .jellyseerr-menu-profile-delete').click();
+  // Deleting one (a bin, not the page's cross) asks the server, and it goes; the keys go to the one before, and it is said.
+  const last = body.querySelector('.jellyseerr-menu-profile-row:last-child .jellyseerr-menu-profile-delete');
+  assert.equal(last.querySelector('.material-icons').classList.contains('delete_outline'), true);
+  assert.equal(last.getAttribute('aria-label'), 'Delete Top rated');
+  last.focus();
+  last.click();
   await until(() => body.querySelectorAll('.jellyseerr-menu-profile').length === 1, 'deleted');
   assert.deepEqual(asked.at(-1), ['DELETE', '/JellyfinEnhanced/user-settings/user-a/discovery-filter-profiles/b2']);
+  assert.equal(h.document.activeElement, body.querySelector('.jellyseerr-menu-profile-delete'));
+  assert.match(body.querySelector('.jellyseerr-menu-note').textContent, /Deleted “Top rated”/);
   // Choosing one: the page applies it and the menu is done.
   body.querySelector('.jellyseerr-menu-profile').click();
   same(applied, ['jeType=series&jeGenres=16/16:Animation']);

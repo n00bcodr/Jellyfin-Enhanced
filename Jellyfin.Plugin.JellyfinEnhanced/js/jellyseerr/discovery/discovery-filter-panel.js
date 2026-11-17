@@ -383,7 +383,13 @@
                 button.className = 'jellyseerr-menu-match-btn';
                 button.setAttribute('role', 'radio');
                 button.dataset.match = value;
-                button.textContent = words;
+                // (Under its words, the same words as the half in use has them, out of sight: each half is as wide as it
+                // is when chosen, so choosing, or ticking a second, never moves the choice or the list under it.)
+                const reserve = document.createElement('span');
+                reserve.className = 'jellyseerr-menu-match-reserve';
+                reserve.setAttribute('aria-hidden', 'true');
+                reserve.textContent = words;
+                button.append(words, reserve);
                 button.addEventListener('click', () => {
                     const now = options.selection();
                     if (logic().matchOf(now, id) === value) return;
@@ -792,16 +798,26 @@
                         const removeLabel = say('discovery_filter_profile_delete', 'Delete {name}', { name: profile.name });
                         remove.setAttribute('aria-label', removeLabel);
                         remove.title = removeLabel;
-                        const cross = document.createElement('span');
-                        cross.className = 'material-icons close';
-                        cross.setAttribute('aria-hidden', 'true');
-                        remove.appendChild(cross);
+                        // (A bin, not the cross that takes a filter away on the page: this deletes what is kept.)
+                        const bin = document.createElement('span');
+                        bin.className = 'material-icons delete_outline';
+                        bin.setAttribute('aria-hidden', 'true');
+                        remove.appendChild(bin);
                         remove.addEventListener('click', event => {
                             event.stopPropagation();
                             remove.disabled = true;
+                            const at = list.indexOf(profile);
+                            const keyed = document.activeElement === remove;
                             deleteProfile(profile.id).then(() => {
                                 list = list.filter(p => p.id !== profile.id);
                                 draw();
+                                // (Deleted with the keys on it, they go to the next one's delete, the one before, or the name field.)
+                                if (keyed) {
+                                    const deletes = rows.querySelectorAll('.jellyseerr-menu-profile-delete');
+                                    const head = body.previousElementSibling instanceof HTMLElement ? body.previousElementSibling : null;
+                                    (/** @type {HTMLElement|undefined} */ (deletes[Math.min(at, deletes.length - 1)]) ?? (field.disabled ? head : field))?.focus();
+                                }
+                                sayStatus(say('discovery_filter_profile_deleted', 'Deleted “{name}”.', { name: profile.name }));
                                 handle.say(sayRow(list), list.some(p => p.filters === host.read()));
                                 handle.placed();
                             }).catch(() => { remove.disabled = false; sayStatus(say('discovery_filter_profile_error', 'Could not save that. Try again.'), true); });
@@ -813,9 +829,13 @@
                     }));
                     // (Nothing set: nothing to save.)
                     const empty = now === '';
-                    field.disabled = save.disabled = empty;
+                    field.disabled = empty;
+                    canSave();
                     if (empty) sayStatus(say('discovery_filter_profile_nothing', 'Set a filter to save it here.'));
                 };
+                /** Save is there to press once there is something set and a name for it. */
+                const canSave = () => { save.disabled = host.read() === '' || field.value.trim() === ''; };
+                field.addEventListener('input', canSave);
                 const store = async () => {
                     const words = field.value.trim();
                     if (!words) { field.focus(); return; }
@@ -832,7 +852,7 @@
                         sayStatus(reason === 'full' ? say('discovery_filter_profile_full', 'Delete a saved one first: you have the most there can be.')
                             : say('discovery_filter_profile_error', 'Could not save that. Try again.'), true);
                     } finally {
-                        save.disabled = host.read() === '';
+                        canSave();
                         handle.placed();
                     }
                 };
@@ -1293,7 +1313,7 @@
             .jellyseerr-menu-match { display: flex; flex-flow: row wrap; align-items: center; gap: .35em .6em; }
             .jellyseerr-menu-searchbar .jellyseerr-menu-note { padding: 6px 0 0; }
             .jellyseerr-menu-match-track { display: inline-flex; gap: 2px; padding: 2px; border-radius: 999px; background: var(--jf-palette-action-hover, rgba(255,255,255,.08)); box-shadow: inset 0 0 0 1px var(--jf-palette-divider, rgba(255,255,255,.12)); }
-            .jellyseerr-menu-match-btn { font: inherit; color: var(--jf-palette-text-secondary, rgba(255,255,255,.7)); white-space: nowrap; background: none; border: 0; border-radius: 999px; padding: .3em .8em; cursor: pointer; }
+            .jellyseerr-menu-match-btn { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; font: inherit; color: var(--jf-palette-text-secondary, rgba(255,255,255,.7)); white-space: nowrap; background: none; border: 0; border-radius: 999px; padding: .3em .8em; cursor: pointer; }
             /* The half in use on the sheet's own ground, in the accent with its ring (readable on any theme). */
             .jellyseerr-menu-match-btn[aria-checked="true"] { background-color: var(--jellyseerr-menu-ground, transparent); background-image: var(--jellyseerr-menu-shade, none); color: var(--jellyseerr-accent); box-shadow: inset 0 0 0 1px var(--jellyseerr-accent); font-weight: 600; }
             /* The other half can be pressed: it answers the pointer. */
@@ -1301,6 +1321,7 @@
             /* Below two ticks the choice changes nothing: shown, but not in the accent that says the list is narrowed. */
             .jellyseerr-menu-match[data-idle] .jellyseerr-menu-match-btn[aria-checked="true"] { color: var(--jf-palette-text-primary, #fff); box-shadow: inset 0 0 0 1px var(--jf-palette-divider, rgba(255,255,255,.24)); font-weight: 500; }
             .jellyseerr-menu-match-btn:focus-visible { outline: 2px solid var(--jf-palette-text-primary, #fff); outline-offset: 1px; }
+            .jellyseerr-menu-match-reserve { display: block; height: 0; overflow: hidden; visibility: hidden; font-weight: 600; }
             @media (forced-colors: active) {
                 .jellyseerr-menu-match-btn[aria-checked="true"] { outline: 2px solid Highlight; outline-offset: -2px; }
                 .jellyseerr-menu-match-btn:focus-visible { outline: 3px solid CanvasText; outline-offset: 1px; }
@@ -1322,8 +1343,13 @@
             /* Saved filters: each profile a row with its delete button at the end; the form a field and Save. */
             .jellyseerr-menu-profile-row { display: flex; align-items: center; }
             .jellyseerr-menu-profile-row > .actionSheetMenuItem { flex: 1 1 auto; min-width: 0; }
-            .jellyseerr-menu-profile-delete { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; margin-inline-end: 8px; border: 0; border-radius: 50%; background: none; color: var(--jf-palette-text-secondary, rgba(255,255,255,.7)); cursor: pointer; }
+            .jellyseerr-menu-profile-delete { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; margin-inline-end: 8px; border: 0; border-radius: 50%; background: none; color: var(--jf-palette-text-secondary, rgba(255,255,255,.7)); cursor: pointer; }
             .jellyseerr-menu-profile-delete:hover, .jellyseerr-menu-profile-delete:focus-visible { background: var(--jf-palette-action-hover, rgba(255,255,255,.08)); color: var(--jf-palette-text-primary, #fff); outline: none; }
+            /* The keys on it: ringed as the all / any choice is. */
+            html:not(.layout-tv) .jellyseerr-menu-profile-delete:focus-visible { outline: 2px solid var(--jf-palette-text-primary, #fff); outline-offset: -2px; }
+            @media (forced-colors: active) { .jellyseerr-menu-profile-delete:focus-visible { outline: 3px solid CanvasText; } }
+            /* Saved filters stand apart from the filters under them: a quiet line between, open or not. */
+            .jellyseerr-menu-group[data-toggle="profiles"] + .jellyseerr-menu-choices + .jellyseerr-menu-group { border-top: 1px solid var(--jf-palette-divider, rgba(255,255,255,.12)); }
             .layout-tv .jellyseerr-menu-profile-delete:focus { background: var(--jf-palette-text-primary, #fff); color: var(--jellyseerr-menu-ground, #101010); }
             .jellyseerr-menu-profile-save { flex: none; margin: 0; }
             .jellyseerr-filters-run { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .15em .5em; max-width: 100%; }

@@ -319,6 +319,8 @@
         const reveal = (head) => {
             const body = head.nextElementSibling;
             if (!(body instanceof HTMLElement)) return;
+            // (Measured at the height the list has once cut, which is less than the menu's room.)
+            cutInARow();
             const view = scroller.getBoundingClientRect();
             const top = head.getBoundingClientRect().top - view.top;
             const over = body.getBoundingClientRect().bottom - view.bottom;
@@ -499,6 +501,17 @@
             .map(row => ({ row, box: row.getBoundingClientRect() })).filter(entry => entry.box.height > 0);
         const below = () => scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
         /**
+         * What the open group's body holds that is not a row (a field, a button, a note), as laid out.
+         * @returns {DOMRect[]}
+         */
+        const unrowed = () => {
+            const body = heads().find(head => head.getAttribute('aria-expanded') === 'true')?.nextElementSibling;
+            if (!(body instanceof HTMLElement)) return [];
+            return Array.from(body.querySelectorAll('input, button:not(.actionSheetMenuItem), .jellyseerr-menu-note, .jellyseerr-menu-match'))
+                .filter(el => !el.closest('[hidden]') && !el.closest('.actionSheetMenuItem'))
+                .map(el => el.getBoundingClientRect()).filter(box => box.height > 0);
+        };
+        /**
          * Where a row is cut: through the last line of its name (a long name has two), a little under that line's middle.
          * @param {{row: HTMLElement, box: DOMRect}} entry
          * @returns {number}
@@ -542,9 +555,18 @@
             const held = heads().find(head => head.getAttribute('aria-expanded') === 'true');
             const top = scroller.getBoundingClientRect().top;
             if (scroller.scrollTop > 2 && below() > 2 && !(held && held.getBoundingClientRect().top - top < 2)) {
-                const over = shownRows().map(entry => entry.box).filter(box => box.top < top - 1).pop();
+                const boxes = shownRows().map(entry => entry.box);
+                const over = boxes.filter(box => box.top < top - 1).pop();
                 // (Hidden: the row's upper part, down to a little above the middle of its name.)
-                if (over) scroller.scrollTop -= Math.round((top - over.top) - over.height * (1 - CUT_AT));
+                const up = over ? Math.round((top - over.top) - over.height * (1 - CUT_AT)) : 0;
+                // (Not by moving the rows down, if that puts the foot of an open group that fits in sight out of it again: the
+                // next row is cut instead, the rows moving up.)
+                const body = open?.nextElementSibling;
+                const bottom = scroller.getBoundingClientRect().bottom;
+                const fits = body instanceof HTMLElement && open && body.getBoundingClientRect().bottom - open.getBoundingClientRect().top <= bottom - top;
+                const next = boxes.find(box => box.top >= top - 1);
+                if (up > 0 && fits && next && body.getBoundingClientRect().bottom + up > bottom + 1) scroller.scrollTop += Math.round(next.top - top + next.height * (1 - CUT_AT));
+                else if (over) scroller.scrollTop -= up;
             }
             const view = scroller.getBoundingClientRect();
             const rows = shownRows().filter(entry => entry.box.top > view.top + 1);
@@ -564,6 +586,9 @@
                 if (whole >= 1) { scroller.style.maxHeight = `${Math.round(heldDeep + whole * pitch + depth)}px`; return; }
             }
             const cut = view.bottom >= cutOf(next) ? cutOf(next) : last ? cutOf(last) : 0;
+            // (Never over what the open group has under its rows that is not a row, such as Keywords' all / any choice
+            // and search field under the keywords chosen, or a range's fields: the cut would hide them.)
+            if (cut < view.bottom - 1 && unrowed().some(box => box.bottom > cut + 1 && box.top < view.bottom)) return;
             if (cut > view.top + 40 && Math.abs(cut - view.bottom) > 1) scroller.style.maxHeight = `${Math.round(cut - view.top)}px`;
         };
         /**
