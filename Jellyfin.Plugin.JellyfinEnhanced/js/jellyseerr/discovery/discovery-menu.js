@@ -401,11 +401,50 @@
             for (const type of ['popstate', 'hashchange']) window.removeEventListener(type, close);
             window.removeEventListener('resize', resized);
             watcher?.disconnect();
+            window.removeEventListener('focusin', keepHeldFocus, true);
+            window.clearTimeout(holding);
             backdrop.remove();
             container.remove();
             onClose?.();
             if (anchor.isConnected) anchor.focus();
         }
+        /**
+         * Puts the keys on a row or a field. What is held in sight over the list (an open group's row, its search field
+         * and all / any choice) takes them where it stands: the browser would otherwise scroll the list back to where
+         * it stands among the rows.
+         * @param {HTMLElement|undefined} target
+         */
+        function focusInPlace(target) {
+            if (!target) return;
+            target.focus({ preventScroll: heldInSight(target) });
+        }
+        /**
+         * Whether a row or field is one held in sight over the list (an open group's row, its search field and all /
+         * any choice), and in sight now.
+         * @param {Element} target
+         * @returns {boolean}
+         */
+        function heldInSight(target) {
+            if (!(target instanceof HTMLElement) || !scroller.contains(target)) return false;
+            const held = !!target.closest('.jellyseerr-menu-searchbar') || (target.classList.contains('jellyseerr-menu-group') && target.getAttribute('aria-expanded') === 'true');
+            if (!held) return false;
+            const view = scroller.getBoundingClientRect();
+            const box = target.getBoundingClientRect();
+            return box.top >= view.top - 1 && box.bottom <= view.bottom + 1;
+        }
+        // On a TV Jellyfin scrolls every element that takes focus into place a moment later (a focus listener of its own
+        // on the window, then a timer), by where it stands among the rows: what is held over the list would have the
+        // list scrolled back to its start. For that moment after what is held in sight takes focus, the list takes no
+        // scroll to a place (only then: a row's focus is still Jellyfin's to bring into sight).
+        let holding = 0;
+        /** @param {FocusEvent} event */
+        const keepHeldFocus = event => {
+            if (!heldInSight(/** @type {Element} */ (event.target))) return;
+            window.clearTimeout(holding);
+            scroller.scrollTo = () => {};
+            holding = window.setTimeout(() => { delete scroller.scrollTo; }, 60);
+        };
+        if (tv) window.addEventListener('focusin', keepHeldFocus, true);
         /**
          * The keys (and a remote's) while the menu is open.
          * @param {KeyboardEvent} event
@@ -418,7 +457,7 @@
                 event.preventDefault(); event.stopPropagation();
                 keyed = true;
                 keyWay = to >= index ? 1 : -1;
-                list[(to + list.length) % list.length]?.focus();
+                focusInPlace(list[(to + list.length) % list.length]);
                 cutAgain();
             };
             // In a field, Home and End are the field's own.
@@ -446,7 +485,7 @@
                 return;
             }
             if (event.key === out && body && head && !(active instanceof HTMLInputElement && (active.selectionStart ?? 0) > 0)) {
-                event.preventDefault(); event.stopPropagation(); keyed = true; keyWay = -1; head.focus(); cutAgain();
+                event.preventDefault(); event.stopPropagation(); keyed = true; keyWay = -1; focusInPlace(head); cutAgain();
                 return;
             }
             // Escape, or a remote's Back: the menu closes and the key goes no further, so the page stays.
