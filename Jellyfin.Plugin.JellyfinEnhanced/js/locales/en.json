@@ -954,7 +954,7 @@
     "discovery_filter_minutes": "min",
     "discovery_filter_year_hint": "A year, a month (2015‑06) or a day (2015‑06‑30).",
     "discovery_filter_year_error": "Type a year (2015), a month (2015‑06) or a day (2015‑06‑30).",
-    "discovery_filter_score_hint": "From 0 to 10; one decimal, such as 7.5.",
+    "discovery_filter_score_hint": "Between 0 and 10, one decimal at most, such as 7.5.",
     "discovery_filter_score_error": "Type a score from 0 to 10, such as 7.5.",
     "discovery_filter_votes_hint": "How many people have scored it: a whole number.",
     "discovery_filter_runtime_hint": "In whole minutes.",

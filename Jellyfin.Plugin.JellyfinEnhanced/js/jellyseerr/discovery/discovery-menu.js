@@ -619,6 +619,23 @@
                 .map(el => el.getBoundingClientRect()).filter(box => box.height > 0);
         };
         /**
+         * Where a row is cut at the top: through the first line of its name, a little above its middle (what is hidden
+         * above runs down to there).
+         * @param {{row: HTMLElement, box: DOMRect}} entry
+         * @returns {number}
+         */
+        const topCutOf = ({ row, box }) => {
+            const name = row.querySelector('.actionSheetItemText');
+            /** @type {DOMRect|undefined} */
+            let line;
+            if (name && typeof document.createRange === 'function') {
+                const range = document.createRange();
+                range.selectNodeContents(name);
+                line = Array.from(range.getClientRects?.() ?? []).find(rect => rect.height > 0);
+            }
+            return line ? line.top + line.height * (1 - CUT_AT) : box.top + box.height * (1 - CUT_AT);
+        };
+        /**
          * Where a row is cut: through the last line of its name (a long name has two), a little under that line's middle.
          * @param {{row: HTMLElement, box: DOMRect}} entry
          * @returns {number}
@@ -662,17 +679,19 @@
             const held = heads().find(head => head.getAttribute('aria-expanded') === 'true');
             const top = scroller.getBoundingClientRect().top;
             if (scroller.scrollTop > 2 && below() > 2 && !(held && Math.abs(held.getBoundingClientRect().top - top) < 2)) {
-                const boxes = shownRows().map(entry => entry.box);
-                const over = boxes.filter(box => box.top < top - 1).pop();
-                // (Hidden: the row's upper part, down to a little above the middle of its name.)
-                const up = over ? Math.round((top - over.top) - over.height * (1 - CUT_AT)) : 0;
+                const entries = shownRows();
+                const overEntry = entries.filter(entry => entry.box.top < top - 1).pop();
+                const over = overEntry?.box;
+                // (Hidden: the row's upper part, down to a little above the middle of its name: by the name, so the edge
+                // never falls in a row's padding, two rules with nothing between.)
+                const up = overEntry ? Math.round((top - over.top) - (topCutOf(overEntry) - over.top)) : 0;
                 // (Not by moving the rows down, if that puts the foot of an open group that fits in sight out of it again: the
                 // next row is cut instead, the rows moving up.)
                 const body = open?.nextElementSibling;
                 const bottom = scroller.getBoundingClientRect().bottom;
                 const fits = body instanceof HTMLElement && open && body.getBoundingClientRect().bottom - open.getBoundingClientRect().top <= bottom - top;
-                const next = boxes.find(box => box.top >= top - 1);
-                if (up > 0 && fits && next && body.getBoundingClientRect().bottom + up > bottom + 1) scroller.scrollTop += Math.round(next.top - top + next.height * (1 - CUT_AT));
+                const nextEntry = entries.find(entry => entry.box.top >= top - 1);
+                if (up > 0 && fits && nextEntry && body.getBoundingClientRect().bottom + up > bottom + 1) scroller.scrollTop += Math.round(topCutOf(nextEntry) - top);
                 else if (over) scroller.scrollTop -= up;
             }
             const view = scroller.getBoundingClientRect();
@@ -778,7 +797,16 @@
             // (More above only where a row is hidden there, not a few pixels of the list's own padding.)
             let firstRow = null;
             for (const row of rows) if (!row.closest('[hidden]') && row.getBoundingClientRect().height > 0) { firstRow = row; break; }
-            const hiddenAbove = (firstRow?.getBoundingClientRect().top ?? top) < top - 4;
+            // (By its name: a row whose name is whole in sight, only its padding gone, hides nothing.)
+            const firstName = firstRow?.querySelector('.actionSheetItemText');
+            let nameTop = firstRow?.getBoundingClientRect().top ?? top;
+            if (firstName && typeof document.createRange === 'function') {
+                const range = document.createRange();
+                range.selectNodeContents(firstName);
+                const line = Array.from(range.getClientRects?.() ?? []).find(rect => rect.height > 0);
+                if (line) nameTop = line.top;
+            }
+            const hiddenAbove = nameTop < top - 1;
             content.toggleAttribute('data-above', scroller.scrollTop > 2 && hiddenAbove && !heldAtTop);
         };
         scroller.addEventListener('scroll', edges, { passive: true });

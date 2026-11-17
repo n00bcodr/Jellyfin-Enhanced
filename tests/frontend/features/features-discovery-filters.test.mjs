@@ -292,6 +292,20 @@ test('what is set is said piece by piece: a range once, in the viewer\'s numbers
   same(tokens[3].without({ language: [{ id: 'fr' }] }), { language: undefined });
 });
 
+test('each open group keeps the rule that closes it; only the menu\'s last group goes without one', { skip: !hasMenu && 'the menu module is not there yet' }, t => {
+  const h = setup(t, { lists: FILTER_LISTS, genres: COMEDY });
+  h.load('jellyseerr/discovery/discovery-styles.js');
+  h.JE.discoveryStyles?.inject?.();
+  const s = section(h, { name: 'network', feeds: { tv: [1], movie: [11] } });
+  s.button.click();
+  // (Each group is a box of its own, its body that box's last child: a rule on "the last body" would take every group's.)
+  const css = h.document.getElementById('jellyseerr-discovery-styles')?.textContent ?? '';
+  assert.match(css, /\.jellyseerr-menu-groupbox:last-child > \.jellyseerr-menu-choices \{ border-bottom: 0; \}/);
+  assert.doesNotMatch(css, /\.jellyseerr-menu-choices:last-child/);
+  const boxes = [...menuOf(h).querySelectorAll('.jellyseerr-menu-groupbox')];
+  assert.ok(boxes.length > 2 && boxes.every(box => box.firstElementChild.classList.contains('jellyseerr-menu-group') && box.lastElementChild.classList.contains('jellyseerr-menu-choices')));
+});
+
 test('Undo says what the last change did: the piece it set, as said alone; a rule it switched; a piece it took away', t => {
   const { F, JE } = setup(t);
   const offered = F.offeredFilters('feed', {});
@@ -368,7 +382,7 @@ test('a list page\'s further filters are typed or ticked, and asked of Seerr: ra
   assert.equal(menuOf(h).querySelectorAll('.jellyseerr-menu-choices:not([hidden])').length, 0);
   // A score is typed, decimals and all; what cannot be a score is marked and asks nothing.
   const hintOf = id => bodyOf(h, id).querySelector('.jellyseerr-menu-note');
-  assert.equal(hintOf('score').textContent, 'From 0 to 10; one decimal, such as 7.5.');
+  assert.equal(hintOf('score').textContent, 'Between 0 and 10, one decimal at most, such as 7.5.');
   typeRange(h, 'score', 'high', null);
   assert.equal(bodyOf(h, 'score').querySelector('.jellyseerr-menu-input').getAttribute('aria-invalid'), 'true');
   // What cannot be used is said in words where the hint was, and the field points to it.
@@ -378,7 +392,7 @@ test('a list page\'s further filters are typed or ticked, and asked of Seerr: ra
   assert.equal(button.hasAttribute('data-on'), false);
   assert.equal(s.queries.length, 2);
   typeRange(h, 'score', '', null);
-  assert.equal(hintOf('score').textContent, 'From 0 to 10; one decimal, such as 7.5.');
+  assert.equal(hintOf('score').textContent, 'Between 0 and 10, one decimal at most, such as 7.5.');
   typeRange(h, 'score', '7.5', null);
   assert.equal(shown(), '3,13');
   assert.equal(bodyOf(h, 'score').querySelector('.jellyseerr-menu-input').hasAttribute('aria-invalid'), false);

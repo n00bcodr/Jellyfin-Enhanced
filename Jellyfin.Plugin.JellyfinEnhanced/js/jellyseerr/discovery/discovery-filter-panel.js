@@ -31,7 +31,7 @@
     const HINTS = Object.freeze({
         // (The example dates are written with the hyphen and the space that do not break, so a date is never split, nor left alone on a line.)
         year: ['discovery_filter_year_hint', 'A year, a month (2015‑06) or a day (2015‑06‑30).', 'discovery_filter_year_error', 'Type a year (2015), a month (2015‑06) or a day (2015‑06‑30).'],
-        score: ['discovery_filter_score_hint', 'From 0 to 10; one decimal, such as 7.5.', 'discovery_filter_score_error', 'Type a score from 0 to 10, such as 7.5.'],
+        score: ['discovery_filter_score_hint', 'Between 0 and 10, one decimal at most, such as 7.5.', 'discovery_filter_score_error', 'Type a score from 0 to 10, such as 7.5.'],
         votes: ['discovery_filter_votes_hint', 'How many people have scored it: a whole number.', 'discovery_filter_number_error', 'Type a whole number, such as 500.'],
         runtime: ['discovery_filter_runtime_hint', 'In whole minutes.', 'discovery_filter_number_error', 'Type a whole number, such as 500.']
     });
@@ -961,7 +961,10 @@
                             handle.placed();
                         }).catch(() => { undo.disabled = false; sayStatus(say('discovery_filter_profile_error', 'Could not save that. Try again.'), true); });
                     });
-                    status.replaceChildren(say('discovery_filter_profile_deleted', 'Deleted “{name}”.', { name: profile.name }), undo);
+                    const sentence = document.createElement('span');
+                    sentence.className = 'jellyseerr-menu-profile-said';
+                    sentence.textContent = say('discovery_filter_profile_deleted', 'Deleted “{name}”.', { name: profile.name });
+                    status.replaceChildren(sentence, ' ', undo);
                     status.hidden = false;
                     status.removeAttribute('data-error');
                 };
@@ -1611,7 +1614,7 @@
             html:not(.layout-tv) .jellyseerr-menu-profile .actionsheetMenuItemIcon { display: none !important; }
             html:not(.layout-tv) .jellyseerr-menu-profile[aria-current] .actionSheetItemText { color: var(--jellyseerr-accent); font-weight: 500; }
             /* (Hung into the row's inset, so the name stays on the column the others and its summary share.) */
-            .jellyseerr-menu-profile-mark { font-size: 1.15em; vertical-align: -.2em; width: 1em; margin-inline: -1.3em .3em; }
+            .jellyseerr-menu-profile-mark { font-size: 1em; vertical-align: -.15em; width: 1em; margin-inline: -1.21em .21em; }
             html .jellyseerr-sort-menu .jellyseerr-menu-group[data-toggle="profiles"][data-set] { align-items: flex-start; }
             html .jellyseerr-sort-menu .jellyseerr-menu-profile[aria-current] .actionsheetListItemBody,
             html .jellyseerr-sort-menu .jellyseerr-menu-profile[aria-current] .actionSheetItemText { overflow: visible; }
@@ -1625,7 +1628,7 @@
             @media (pointer: coarse) { .jellyseerr-menu-profile-undo { min-height: 44px; padding-inline: .75em; } }
             html .jellyseerr-sort-menu .jellyseerr-menu-profile-says { font-size: .85em; line-height: 1.4; white-space: normal; overflow-wrap: anywhere; color: var(--jellyseerr-quiet, rgba(255,255,255,.7)) !important; opacity: 1; }
             .jellyseerr-menu-profile-part { display: inline-block; max-width: 100%; }
-            .jellyseerr-menu-profile-undo { font: inherit; margin-inline-start: .5em; padding: .2em .5em; border: 0; border-radius: 4px; background: none; color: var(--jellyseerr-accent); text-decoration: underline; cursor: pointer; }
+            .jellyseerr-menu-profile-undo { font: inherit; margin-inline-start: 0; padding: .1em 0; border: 0; border-radius: 4px; background: none; color: var(--jellyseerr-accent); text-decoration: underline; cursor: pointer; }
             .jellyseerr-menu-profile-undo:focus-visible { outline: 2px solid var(--jf-palette-text-primary, #fff); outline-offset: 1px; }
             .layout-tv .jellyseerr-menu-profile-undo:focus { outline: none; background: var(--jf-palette-text-primary, #fff); color: var(--jellyseerr-menu-ground, #101010); text-decoration: none; }
             .jellyseerr-filters-run { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .15em .4em; max-width: 100%; }
@@ -1647,8 +1650,8 @@
             .jellyseerr-sort-menu .jellyseerr-menu-outcome[hidden] { display: none; }
             /* (Undo right after its sentence, as a deleted set's is: the band's words run on, and wrap as words do.) */
             .jellyseerr-sort-menu .jellyseerr-menu-outcome { display: block; line-height: 1.6; }
-            .jellyseerr-menu-outcome > span { margin-inline-end: .35em; }
-            .jellyseerr-menu-outcome-undo { display: inline; position: relative; margin: 0; font: inherit; padding: .1em 0; border: 0; border-radius: 6px; background: none; color: var(--jellyseerr-accent); text-decoration: underline; cursor: pointer; }
+            .jellyseerr-menu-outcome > span, .jellyseerr-menu-profile-said { margin-inline-end: .35em; }
+            .jellyseerr-menu-outcome-undo { display: inline-block; position: relative; margin: 3px 0 0; font: inherit; padding: .1em 0; border: 0; border-radius: 6px; background: none; color: var(--jellyseerr-accent); text-decoration: underline; cursor: pointer; }
             .jellyseerr-menu-outcome-undo:focus-visible { outline: 2px solid var(--jf-palette-text-primary, #fff); outline-offset: 0; border-radius: 3px; }
             .layout-tv .jellyseerr-menu-outcome-undo:focus { outline: none; background: var(--jf-palette-text-primary, #fff); color: var(--jellyseerr-menu-ground, #101010); text-decoration: none; }
             /* (On touch, a 44px target reaching past the band's words without making the band taller.) */
@@ -1669,7 +1672,7 @@
             .jellyseerr-menu-list:empty { display: none; }
             /* (A phone's browser zooms into a field whose type is under 16px.) */
             @media (max-width: 600px) { .jellyseerr-menu-input { font-size: max(1em, 16px); min-height: 44px; } }
-            @media (max-width: 600px) { html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-note, html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-profile-says { font-size: .92em; } }
+            @media (max-width: 600px) { html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-note, html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-profile-says, html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-bound { font-size: .92em; } }
             @supports (color: color-mix(in srgb, red, blue)) { .layout-tv .jellyseerr-sort-menu { --jellyseerr-quiet: color-mix(in srgb, currentColor 82%, transparent); } }
             .jellyseerr-menu-group .listItemBody { display: flex; flex-direction: row; align-items: baseline; justify-content: space-between; gap: 1.5em; }
             /* The filter's name is never cut: a long value gives way, with an ellipsis. */

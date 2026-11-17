@@ -174,7 +174,7 @@
             /* Where rows go on beyond what is in sight the script cuts the list inside a row, through its name; the edge itself is softened over a few pixels only, so that name stays at full strength. */
             .jellyseerr-sort-menu .actionSheetContent[data-more] > .actionSheetScroller { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - .5em), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - .5em), transparent); }
             /* Rows above what is in sight: the menu's top has an edge too (not on a TV, where the title is the top; nor where an open group's row is held there). */
-            html:not(.layout-tv) .jellyseerr-sort-menu .actionSheetContent[data-above]::before { content: ''; flex: none; position: relative; z-index: 3; height: 1px; margin-bottom: -1px; background: var(--jf-palette-divider, rgba(255,255,255,.12)); box-shadow: 0 6px 6px -6px rgba(0,0,0,.5); }
+            html .jellyseerr-sort-menu .actionSheetContent[data-above]::before { content: ''; flex: none; position: relative; z-index: 3; height: 1px; margin-bottom: -1px; background: var(--jf-palette-divider, rgba(255,255,255,.12)); box-shadow: 0 6px 6px -6px rgba(0,0,0,.5); }
             /* (And the foot has an upper edge then, wherever the rows happen to be cut.) */
             .jellyseerr-sort-menu .actionSheetContent[data-more] > .jellyseerr-menu-foot { box-shadow: 0 -6px 6px -6px rgba(0,0,0,.5); }
             .jellyseerr-sort-menu .actionSheetContent[data-above] > .actionSheetScroller { -webkit-mask-image: linear-gradient(to bottom, transparent, #000 .5em); mask-image: linear-gradient(to bottom, transparent, #000 .5em); }
@@ -219,7 +219,9 @@
             .layout-tv .jellyseerr-sort-menu .actionSheetContent[data-more] > .jellyseerr-menu-foot { border-top-color: rgba(128,128,128,.6); }
             /* On a TV's near-black ground a shadow does not show: the rows themselves fade into the foot over the cut row. */
             .layout-tv .jellyseerr-sort-menu .actionSheetContent[data-more] > .actionSheetScroller { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 2.2em), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 2.2em), transparent); }
-            .layout-tv .jellyseerr-sort-menu .actionSheetContent[data-above][data-more] > .actionSheetScroller { -webkit-mask-image: linear-gradient(to bottom, transparent, #000 .5em, #000 calc(100% - 2.2em), transparent); mask-image: linear-gradient(to bottom, transparent, #000 .5em, #000 calc(100% - 2.2em), transparent); }
+            .layout-tv .jellyseerr-sort-menu .actionSheetContent[data-above][data-more] > .actionSheetScroller { -webkit-mask-image: linear-gradient(to bottom, transparent, #000 2.2em, #000 calc(100% - 2.2em), transparent); mask-image: linear-gradient(to bottom, transparent, #000 2.2em, #000 calc(100% - 2.2em), transparent); }
+            /* (And rows above, under the title: the same fade, and the rule under the title.) */
+            .layout-tv .jellyseerr-sort-menu .actionSheetContent[data-above]:not([data-more]) > .actionSheetScroller { -webkit-mask-image: linear-gradient(to bottom, transparent, #000 2.2em); mask-image: linear-gradient(to bottom, transparent, #000 2.2em); }
             @media (prefers-reduced-motion: reduce) { .jellyseerr-menu-group .actionsheetMenuItemIcon { transition: none; } }
             /* On a phone the rows are as tall as the rows of Jellyfin's menus there. */
             @media (max-width: 600px) { html:not(.layout-tv) .jellyseerr-sort-menu .actionSheetMenuItem { min-height: 48px; } }
