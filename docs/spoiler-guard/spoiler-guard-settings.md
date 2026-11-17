@@ -1,12 +1,14 @@
 # Spoiler Guard Settings
 
-Open Dashboard → Plugins → **Jellyfin Enhanced** → **Display** → **Spoiler Guard** to set server-wide policy. Users can relax individual metadata policies and seek previews in [Per-user overrides](#per-user-overrides). See [Spoiler Guard features](spoiler-guard-features.md) for title toggles, supported clients, collection inheritance, and browsing examples.
+Open Dashboard → Plugins → **Jellyfin Enhanced** → [**Display**](../open-in-jellyfin.md?tab=display) → [**Spoiler Guard**](../open-in-jellyfin.md?tab=display&card=spoiler-guard) to set server-wide policy. Users can relax individual metadata policies and seek previews in [Per-user overrides](#per-user-overrides). See [Spoiler Guard features](spoiler-guard-features.md) for title toggles, supported clients, collection inheritance, and browsing examples.
 
 !!! note "A title must be protected"
 
     Protection needs a user's direct series/movie entry or applicable collection membership. The relevant item eligibility rules also apply.
 
 ## Master switch
+
+[Display > Spoiler Guard](../open-in-jellyfin.md?tab=display&card=spoiler-guard){ .je-open }
 
 Turn on Spoiler Guard to let users protect individual titles. You can also add protection through automatic modes.
 

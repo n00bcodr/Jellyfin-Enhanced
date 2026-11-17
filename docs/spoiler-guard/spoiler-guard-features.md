@@ -10,6 +10,8 @@ Protect the titles you want to browse without spoilers. Your choices apply to yo
 
     Your admin must turn on **Enable Spoiler Guard** to make protection and the JE controls available.
 
+    Admins: [Display > Spoiler Guard](../open-in-jellyfin.md?tab=display&card=spoiler-guard){ .je-open }
+
 ### Per series (TV shows)
 
 Protect a series to cover its unwatched episodes and eligible later seasons.
@@ -400,7 +402,7 @@ If protection does not look right, start with the checks that match what you see
 
 ### The toggle is missing
 
-1. Have your admin enable **Enable Spoiler Guard** under **Display** → **Spoiler Guard**.
+1. Have your admin enable **Enable Spoiler Guard** under [**Display** → **Spoiler Guard**](../open-in-jellyfin.md?tab=display&card=spoiler-guard).
 2. Open a series, movie, or collection detail page in the injected JE web interface.
 3. Confirm that Spoiler Guard state loaded successfully. [Store problems](spoiler-guard-settings.md#health-spoiler-state-corruption-recovery) can affect the controls.
 

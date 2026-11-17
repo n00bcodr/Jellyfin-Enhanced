@@ -6,7 +6,7 @@ JE adds seven pages for bookmarks, upcoming releases, requests, and more. Choose
 
 Native Home tabs are a quick way to make pages easy to reach. They need no companion plugin and work on Jellyfin 12 and 10.11.
 
-1. Open admin **Dashboard → Plugins → Jellyfin Enhanced → Pages**.
+1. Open admin **Dashboard → Plugins → Jellyfin Enhanced →** [**Pages**](../open-in-jellyfin.md?tab=pages).
 2. Enable the feature and its **Add … as a native Home tab** option.
 3. Click **Save Settings** and refresh the user's web client.
 
@@ -51,7 +51,7 @@ Use **Series** for episode bookmarks; each episode has its own card.
 
 For library maintenance, see [Enhanced features](../enhanced/enhanced-features.md#playback-controls).
 
-Admin **Pages → Bookmarks**:
+Admin [**Pages → Bookmarks**](../open-in-jellyfin.md?tab=pages&card=bookmarks):
 
 | Setting | Default | What it does |
 | --- | --- | --- |
@@ -85,7 +85,7 @@ Keep titles or other supported items off selected surfaces, then review or unhid
 
 See [content management](../enhanced/enhanced-features.md#content-management) and [Enhanced settings](../enhanced/enhanced-settings.md).
 
-Admin **Pages → Hidden Content**:
+Admin [**Pages → Hidden Content**](../open-in-jellyfin.md?tab=pages&card=hidden-content):
 
 | Setting | Default | What it does |
 | --- | --- | --- |
@@ -128,7 +128,7 @@ Admin **Pages → Hidden Content**:
 
 See [*arr features](../arr/arr-features.md), [*arr settings](../arr/arr-settings.md), and [Seerr permissions](../seerr/permission-audit.md).
 
-Admin **Pages → Requests Page**:
+Admin [**Pages → Requests Page**](../open-in-jellyfin.md?tab=pages&card=requests-page):
 
 | Setting | Default | What it does |
 | --- | --- | --- |
@@ -163,7 +163,7 @@ Browse upcoming movies and episodes from your configured Sonarr, Radarr, or Shok
 
 See [*arr features](../arr/arr-features.md) and [*arr settings](../arr/arr-settings.md) for source setup and access filters.
 
-Admin **Pages → Calendar Page**:
+Admin [**Pages → Calendar Page**](../open-in-jellyfin.md?tab=pages&card=calendar-page):
 
 | Setting | Default | What it does |
 | --- | --- | --- |
@@ -202,7 +202,7 @@ Find something to watch in trending, popular, and upcoming feeds, or browse stud
 
 See [Seerr features](../seerr/seerr-features.md).
 
-Admin **Pages → Seerr Recommendations Page**:
+Admin [**Pages → Seerr Recommendations Page**](../open-in-jellyfin.md?tab=pages&card=seerr-recommendations-page):
 
 | Setting | Default | What it does |
 | --- | --- | --- |
@@ -232,7 +232,7 @@ See recent watched, favorited, and reviewed activity from people on your server.
 
 Open **Activity** from a configured tab or Plugin Pages entry. See [Enhanced features](../enhanced/enhanced-features.md) and [Enhanced settings](../enhanced/enhanced-settings.md).
 
-Admin **Pages → Activity Feed**:
+Admin [**Pages → Activity Feed**](../open-in-jellyfin.md?tab=pages&card=activity-feed):
 
 | Setting | Default | What it does |
 | --- | --- | --- |
@@ -271,7 +271,7 @@ Work through unwatched titles as a card deck. You'll see only titles you can acc
 
 See [Enhanced features](../enhanced/enhanced-features.md) for the deck and its actions.
 
-Admin **Pages → Catch Up**:
+Admin [**Pages → Catch Up**](../open-in-jellyfin.md?tab=pages&card=catch-up):
 
 | Setting | Default | What it does |
 | --- | --- | --- |

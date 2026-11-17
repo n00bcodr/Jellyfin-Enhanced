@@ -66,7 +66,7 @@ The userscript is discontinued. An [archived userscript](https://github.com/n00b
 
 Usage reporting is opt-in and off by default.
 
-1. As an administrator, open **Admin** → **Usage Statistics**.
+1. As an administrator, open [**Admin** → **Usage Statistics**](../open-in-jellyfin.md?tab=admin&card=usage-statistics).
 2. Turn on **Share Anonymous Usage Statistics** if you want to participate.
 3. Use **Preview** to see what you would share before you save.
 
@@ -283,7 +283,7 @@ Use the built-in tag settings first. For selectors and CSS examples, see [Media 
 
 Upload images to replace Jellyfin's branding assets.
 
-1. As an administrator, open **Jellyfin Enhanced** → **Extras** → **Custom Image Assets**.
+1. As an administrator, open **Jellyfin Enhanced** → **Extras** → [**Custom Image Assets**](../open-in-jellyfin.md?tab=extras&card=custom-image-assets).
 2. Select or drop an image into a slot.
 3. Check its preview, reported dimensions, and upload status.
 4. Refresh the web client.
@@ -409,7 +409,7 @@ Check [Compatibility](../getting-started/compatibility.md) for layout and compan
 
 **Catch Up** is a page for marking titles watched, dismissing them, or adding them to your watchlist.
 
-1. As an administrator, enable it under **Pages** → **Catch Up** and choose its placement.
+1. As an administrator, enable it under [**Pages** → **Catch Up**](../open-in-jellyfin.md?tab=pages&card=catch-up) and choose its placement.
 2. Open it from the chosen location. For Plugin Pages, use its registered entry.
 
 Catch Up can record activity. You need administrator access to view its activity feed and summary. See [Enhanced features](../enhanced/enhanced-features.md) for the workflow, [Enhanced settings](../enhanced/enhanced-settings.md) for settings and logging limits, and [JE Pages & Tabs](../getting-started/pages-and-tabs.md) for navigation.

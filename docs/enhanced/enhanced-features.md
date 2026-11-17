@@ -80,7 +80,7 @@ Personal settings in **Random Button Settings**:
 | **Use the playlist or collection I'm viewing** | Off | Gives the open playlist/collection detail page priority over a pinned source. |
 | **Everywhere else, pick from** | **Whole library** | Under **Random Source**, pins an accessible playlist or collection for other pages. This choice is personal only. |
 
-Matching initial defaults are under admin **Display → Random Button**:
+Matching initial defaults are under admin [**Display → Random Button**](../open-in-jellyfin.md?tab=display&card=random-button):
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -110,7 +110,7 @@ Hide titles from the browsing lists whose filters you enable. Your hidden list f
 
 **How to hide:**
 
-1. Ask an administrator to enable **Pages → Hidden Content → Enable Hidden Content**.
+1. Ask an administrator to enable [**Pages → Hidden Content → Enable Hidden Content**](../open-in-jellyfin.md?tab=pages&card=hidden-content).
 2. Open a movie, series, season, or episode detail page and click the open-eye **Hide** button. Movies, series, and seasons use a standard confirmation. An episode with a known series offers **Hide this episode everywhere** or **Hide entire show everywhere**.
 
 ![Detail-page Hide confirmation with a global hide and a 15-minute confirmation bypass](../images/enhanced/hide-confirm.webp)
@@ -138,7 +138,7 @@ An already-hidden item shows a crossed-out eye; use it to **Unhide**. After a hi
 - **Unhide** restores an entry; **Add back to Continue Watching** restores a Continue Watching-only entry. **Unhide All for This Show** clears a series group.
 - **Unhide All** clears every entry on the page, even if search or **Scoped only** currently shows a subset. Entries hidden elsewhere since the page last loaded or saved your list stay.
 
-Personal settings in the Enhanced panel's **Hidden Content** section start from admin **Pages → Hidden Content** defaults. The table includes matching admin labels. Button visibility and filtering are separate:
+Personal settings in the Enhanced panel's **Hidden Content** section start from admin [**Pages → Hidden Content**](../open-in-jellyfin.md?tab=pages&card=hidden-content) defaults. The table includes matching admin labels. Button visibility and filtering are separate:
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -160,7 +160,7 @@ Personal settings in the Enhanced panel's **Hidden Content** section start from 
 | **Filter Requests** | On | Filters JE's Requests page. Admin: **Filter Requests page**. |
 | **Hide Collections & Libraries** | Off | Experimental: allows hiding My Media libraries, collections, and playlists with library-card buttons enabled, without recursively hiding every child. Admin: **Allow hiding collections, libraries, and playlists (experimental)**. |
 
-Admin settings in **Pages → Hidden Content**:
+Admin settings in [**Pages → Hidden Content**](../open-in-jellyfin.md?tab=pages&card=hidden-content):
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -246,7 +246,7 @@ As an administrator, you can review and manage other users' hidden lists from th
 3. Click **Hide** to add a global hide. **Already hidden** entries are skipped, preserving the user's existing hide.
 4. Choose **Done** to return to read-only mode. **Unhide All** in edit mode clears the selected user's entire list.
 
-Admin **Pages → Hidden Content → Admin Controls**:
+Admin [**Pages → Hidden Content → Admin Controls**](../open-in-jellyfin.md?tab=pages&card=hidden-content):
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -330,7 +330,7 @@ Navigate Jellyfin and control local video playback without opening menus. Admin 
 
     Modifier-only presses are ignored. Conflicts and reserved native player bindings are rejected with a red shake; a dot marks personal overrides. Changes save in your server-side `shortcuts.json`. If your overrides could not be loaded when the page opened, the keys are shown read-only until you reload.
 
-    Administrators can set server bindings in **Keyboard → Keyboard Shortcuts** using its recorder, then **Save Settings**. While recording there, ++delete++ disables an action and ++backspace++ restores its stock binding. Existing personal overrides still take precedence.
+    Administrators can set server bindings in [**Keyboard → Keyboard Shortcuts**](../open-in-jellyfin.md?tab=keyboard&card=keyboard-shortcuts) using its recorder, then **Save Settings**. While recording there, ++delete++ disables an action and ++backspace++ restores its stock binding. Existing personal overrides still take precedence.
 
     Held ++c++ or ++v++ does not repeatedly cycle tracks. Frame stepping uses media frame-rate metadata. When it is missing, JE falls back to 24 fps and shows a notice.
 
@@ -358,7 +358,7 @@ Save moments in a video and return to them from timeline markers or a library-wi
   <figcaption>Saving a bookmark and jumping back to it during playback.</figcaption>
 </figure>
 
-Admin **Pages → Bookmarks**:
+Admin [**Pages → Bookmarks**](../open-in-jellyfin.md?tab=pages&card=bookmarks):
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -417,7 +417,7 @@ After you pause and stop interacting, JE can display artwork and media informati
 
 | Setting | Default | What it does |
 |---|---|---|
-| **Enable Custom Pause Screen** — admin **Playback → Player Behaviour** | On | Supplies the initial personal default. |
+| **Enable Custom Pause Screen** — admin [**Playback → Player Behaviour**](../open-in-jellyfin.md?tab=playback&card=player-behaviour) | On | Supplies the initial personal default. |
 | **Custom Pause Screen** — personal **Playback Settings** | On | Enables the overlay; reload after changing enablement. |
 | **Delay before showing (seconds):** — personal **Playback Settings** | 5 | Idle delay while paused; accepts integers from 1–60 and updates the running delay. |
 
@@ -436,7 +436,7 @@ Manage tab-switch playback, temporary speed boosts, and automatic intro/outro sk
 ![Playing movie with Enhanced player controls](../images/enhanced/player-osd.webp)
 *The player also shows rating chips, a bookmark button, and the optional Playback Info overlay.*
 
-**How to use:** Open **Playback Settings** for tab-switch and hold controls, or **Auto-Skip Settings** for intros/outros. Admin defaults are under **Playback → Player Behaviour** and **Playback → Auto-Skip**.
+**How to use:** Open **Playback Settings** for tab-switch and hold controls, or **Auto-Skip Settings** for intros/outros. Admin defaults are under [**Playback → Player Behaviour**](../open-in-jellyfin.md?tab=playback&card=player-behaviour) and [**Playback → Auto-Skip**](../open-in-jellyfin.md?tab=playback&card=auto-skip).
 
 - For continuous Picture-in-Picture playback, turn off **Auto-pause**.
 - For temporary 2× speed, hold the video background with the left mouse button or touch for 500 ms. Release or cancel to restore the previous speed. Hold only on the video background.
@@ -489,7 +489,7 @@ Style text subtitles with presets, colors, effects, and a live position preview.
 
 ![Subtitle style, color and position controls with a preview](../images/enhanced/subtitle-preview.webp)
 
-Personal **Subtitle Settings**, with initial defaults from admin **Playback → Subtitles**:
+Personal **Subtitle Settings**, with initial defaults from admin [**Playback → Subtitles**](../open-in-jellyfin.md?tab=playback&card=subtitles):
 
 ![Administrator subtitle style defaults](../images/admin/subtitle-defaults.webp)
 
@@ -585,7 +585,7 @@ See Jellyfin's community/critic scores in the player or briefly show age-rating 
 
 **How to use:** Start playback to see the optional startup badge; reveal the player controls to see score chips beside the time information.
 
-Admin **Display → Media Tags** and **Playback → Player Behaviour**, respectively:
+Admin [**Display → Media Tags**](../open-in-jellyfin.md?tab=display&card=media-tags) and [**Playback → Player Behaviour**](../open-in-jellyfin.md?tab=playback&card=player-behaviour), respectively:
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -606,7 +606,7 @@ Search and request missing media from Jellyfin with Seerr.
 
 **How to use:**
 
-1. Turn on admin **Seerr → Enable Seerr integration** (off by default).
+1. Turn on admin [**Seerr → Enable Seerr integration**](../open-in-jellyfin.md?tab=seerr&card=enable-seerr-integration) (off by default).
 2. Configure and **Test** the connection, then link/import users.
 
 ![Seerr connection setup and successful test](../images/admin/seerr.webp)
@@ -670,7 +670,7 @@ See recently watched, favorited, and reviewed titles across the server, with an 
 2. Click titles/artwork to open details, or read stars/text previews. **Watch History** shows progress for partial watches and **completed watching** for completed ones. Favorites and reviews share the **Reviews** section.
 3. Use **Refresh** for an update.
 
-Admin **Pages → Activity Feed**:
+Admin [**Pages → Activity Feed**](../open-in-jellyfin.md?tab=pages&card=activity-feed):
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -685,7 +685,7 @@ Admin **Pages → Activity Feed**:
 | **Use Custom Tabs** | Off | Uses Custom Tabs instead of a native tab. |
 | **Add the Custom Tabs entry for me** | Off | Manages the entry on save. |
 
-The live section also requires admin **Extras → Active Streams → Active Streams Header Widget**. Non-admins need **Show widget to non-admins**.
+The live section also requires admin [**Extras → Active Streams → Active Streams Header Widget**](../open-in-jellyfin.md?tab=extras&card=active-streams). Non-admins need **Show widget to non-admins**.
 
 ??? info "Activity collection, access, and refresh"
 
@@ -769,7 +769,7 @@ For a show with at least two regular seasons, swiping right opens a season picke
 
 ![Catch Up season picker with earlier seasons selected automatically](../images/enhanced/catchup-season-picker.webp)
 
-Admin **Pages → Catch Up**:
+Admin [**Pages → Catch Up**](../open-in-jellyfin.md?tab=pages&card=catch-up):
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -890,10 +890,10 @@ Expand an awards banner on detail pages to see Wikidata wins and nominations wit
 
 **How to use:**
 
-1. Enable **Show Awards Banner** in admin **Display → Awards**, save, and reload.
+1. Enable **Show Awards Banner** in admin [**Display → Awards**](../open-in-jellyfin.md?tab=display&card=awards), save, and reload.
 2. Click the banner to expand it. Reviews do not need to be enabled.
 
-Admin **Display → Awards**:
+Admin [**Display → Awards**](../open-in-jellyfin.md?tab=display&card=awards):
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -911,7 +911,7 @@ Admin **Display → Awards**:
 
 These optional extras are bundled with Jellyfin Enhanced, so you do not need a separate script installation. Despite this section's name, they are server switches.
 
-**How to use:** As an administrator, enable them under **Extras → UI Tweaks**, save, and reload. See [Other Features](../other/other-features.md) and [Other Settings](../other/other-settings.md) for the broader extras guide.
+**How to use:** As an administrator, enable them under [**Extras → UI Tweaks**](../open-in-jellyfin.md?tab=extras&card=ui-tweaks), save, and reload. See [Other Features](../other/other-features.md) and [Other Settings](../other/other-settings.md) for the broader extras guide.
 
 ### Active Streams Widget
 
@@ -927,7 +927,7 @@ Add predefined colors and icons to the Activity list on Jellyfin's dashboard hom
 
 | Setting | Default | What it does |
 |---|---|---|
-| **Colored Dashboard Icons** — admin **Extras → UI Tweaks** | Off | Styles supported dashboard events. |
+| **Colored Dashboard Icons** — admin [**Extras → UI Tweaks**](../open-in-jellyfin.md?tab=extras&card=ui-tweaks) | Off | Styles supported dashboard events. |
 
 ??? note "Dashboard icon limits"
 
@@ -943,7 +943,7 @@ Color official parental/age classifications on detail pages, including supported
 
 | Setting | Default | What it does |
 |---|---|---|
-| **Colored Ratings Backgrounds** — admin **Extras → UI Tweaks** | Off | Applies predefined classification colors. |
+| **Colored Ratings Backgrounds** — admin [**Extras → UI Tweaks**](../open-in-jellyfin.md?tab=extras&card=ui-tweaks) | Off | Applies predefined classification colors. |
 
 ??? note "Classification colors"
 
@@ -962,7 +962,7 @@ Show a public user's avatar above the password field on the manual-login form. W
 
 | Setting | Default | What it does |
 |---|---|---|
-| **Profile Picture on Login** — admin **Extras → UI Tweaks** | Off | Adds the avatar to the manual-login form. |
+| **Profile Picture on Login** — admin [**Extras → UI Tweaks**](../open-in-jellyfin.md?tab=extras&card=ui-tweaks) | Off | Adds the avatar to the manual-login form. |
 
 ??? note "When no avatar appears"
 
@@ -982,8 +982,8 @@ Add Material icons and image logos to supported dashboard plugin links, plus opt
 
 | Setting | Default | What it does |
 |---|---|---|
-| **Custom Plugin Menu Icons** — admin **Extras → UI Tweaks** | Off | Enables bundled plugin icon mappings and custom links. |
-| **Sidebar Custom Links** — admin **Extras → External Links** | Empty | Adds configuration-page links using the format below. |
+| **Custom Plugin Menu Icons** — admin [**Extras → UI Tweaks**](../open-in-jellyfin.md?tab=extras&card=ui-tweaks) | Off | Enables bundled plugin icon mappings and custom links. |
+| **Sidebar Custom Links** — admin [**Extras → External Links**](../open-in-jellyfin.md?tab=extras&card=external-links) | Empty | Adds configuration-page links using the format below. |
 
 ??? note "Custom sidebar link format"
 
@@ -1015,7 +1015,7 @@ Choose a Jellyfish color variant from the **Theme** row in Jellyfin user prefere
 
 | Setting | Default | What it does |
 |---|---|---|
-| **Theme Selector (Jellyfish)** — admin **Extras → UI Tweaks** | Off | Adds the Theme row. |
+| **Theme Selector (Jellyfish)** — admin [**Extras → UI Tweaks**](../open-in-jellyfin.md?tab=extras&card=ui-tweaks) | Off | Adds the Theme row. |
 | **Random daily theme** — user preferences **Theme** | Off | Enables daily variant selection. |
 
 ??? note "Theme storage and daily timing"

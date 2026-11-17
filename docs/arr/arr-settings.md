@@ -1,6 +1,6 @@
 # *arr Settings
 
-Use **Jellyfin Enhanced** → **\*arr** for connections, item links, and tag sync, and **Pages** → **Calendar Page** or **Requests Page** for page controls.
+Use **Jellyfin Enhanced** → [**\*arr**](../open-in-jellyfin.md?tab=arr) for connections, item links, and tag sync, and **Pages** → [**Calendar Page**](../open-in-jellyfin.md?tab=pages&card=calendar-page) or [**Requests Page**](../open-in-jellyfin.md?tab=pages&card=requests-page) for page controls.
 
 Administrator settings apply server-wide unless marked personal. For workflows, see [*arr features](arr-features.md); for missing links, data, or navigation, see [troubleshooting](troubleshooting-support.md).
 
@@ -31,7 +31,9 @@ See [tag-link styling](arr-features.md#custom-styling) and [CSS customization](.
 
 ## Multi-Instance Configuration
 
-Add one card per Sonarr or Radarr server so you can manage each connection separately. Open **\*arr** → **Sonarr** or **Radarr** to get started.
+[\*arr > Sonarr](../open-in-jellyfin.md?tab=arr&card=sonarr){ .je-open }
+
+Add one card per Sonarr or Radarr server so you can manage each connection separately. Open [**\*arr** → **Sonarr**](../open-in-jellyfin.md?tab=arr&card=sonarr) or **Radarr** to get started.
 
 ### Adding an Instance
 
@@ -110,6 +112,8 @@ http://192.168.1.10:8096|http://sonarr:8989
 
 ## Link Behaviour
 
+[\*arr > \*arr UI Links](../open-in-jellyfin.md?tab=arr&card=arr-ui-links){ .je-open }
+
 Add service links so you can open a title in Sonarr, Radarr, or Bazarr from Jellyfin. These links are for administrators.
 
 1. Open **\*arr** → **\*arr UI Links**.
@@ -156,9 +160,11 @@ JE keeps older connection fields for compatibility. Restoring an older configura
 
 ## Bazarr
 
+[\*arr > Bazarr](../open-in-jellyfin.md?tab=arr&card=bazarr){ .je-open }
+
 Bazarr adds links to its movie and series overviews so you can manage subtitles. You can configure one Bazarr connection.
 
-1. Open **\*arr** → **Bazarr**.
+1. Open [**\*arr** → **Bazarr**](../open-in-jellyfin.md?tab=arr&card=bazarr).
 2. Enter **Bazarr URL** and, if needed, **Bazarr URL Mappings**.
 3. Click **Save Settings**.
 
@@ -172,6 +178,8 @@ Bazarr adds links to its movie and series overviews so you can manage subtitles.
 
 ## Shoko
 
+[\*arr > Shoko](../open-in-jellyfin.md?tab=arr&card=shoko){ .je-open }
+
 Connect Shoko to include anime events in Calendar. You can use Shoko as the only Calendar source.
 
 !!! note "Enter both Shoko connection fields"
@@ -184,7 +192,7 @@ Connect Shoko to include anime events in Calendar. You can use Shoko as the only
 
 ### Setup
 
-1. Open **\*arr** → **Shoko** and enter **Shoko URL** and **Shoko API Key**.
+1. Open [**\*arr** → **Shoko**](../open-in-jellyfin.md?tab=arr&card=shoko) and enter **Shoko URL** and **Shoko API Key**.
 2. Optionally configure **Shoko URL Mappings**.
 3. Click **Save Settings**.
 4. Enable Calendar under **Pages**. No Sonarr/Radarr connection is needed for a Shoko-only Calendar.
@@ -212,9 +220,11 @@ The six type switches are under **Episode Types to Show on Calendar**.
 
 ## Tag synchronization
 
+[\*arr > Tags Sync](../open-in-jellyfin.md?tab=arr&card=tags-sync){ .je-open }
+
 Copy Sonarr/Radarr tags into Jellyfin metadata and show them as clickable links. Run the scheduled task to sync them.
 
-1. Open **\*arr** → **Tags Sync** and turn on **Enable Tags Sync**.
+1. Open [**\*arr** → **Tags Sync**](../open-in-jellyfin.md?tab=arr&card=tags-sync) and turn on **Enable Tags Sync**.
 2. Choose a nonempty **Tag Prefix** and review cleanup. Filters are under **Tag Filters**.
 3. Click **Save Settings**.
 4. Run **Sync Tags from \*arr to Jellyfin** from **Scheduled Tasks**.
@@ -240,9 +250,11 @@ Copy Sonarr/Radarr tags into Jellyfin metadata and show them as clickable links.
 
 ## Calendar Page Settings
 
+[Pages > Calendar Page](../open-in-jellyfin.md?tab=pages&card=calendar-page){ .je-open }
+
 Choose how Calendar looks and which releases it shows. These are admin (server) settings.
 
-1. Open **Pages** → **Calendar Page** and turn on **Enable Calendar Page**.
+1. Open [**Pages** → **Calendar Page**](../open-in-jellyfin.md?tab=pages&card=calendar-page) and turn on **Enable Calendar Page**.
 2. Choose page placement and display options.
 3. Click **Save Settings** and reload the web client.
 
@@ -274,9 +286,11 @@ Standalone address: `/web/index.html#/calendar`, including your Jellyfin base pa
 
 ## Requests Page Settings
 
+[Pages > Requests Page](../open-in-jellyfin.md?tab=pages&card=requests-page){ .je-open }
+
 Use one shared Requests page to follow downloads, requests, and import results. Sonarr/Radarr supply Downloads and History; Seerr supplies Requests and optional Issues.
 
-1. Open **Pages** → **Requests Page** and turn on **Enable Requests Page**.
+1. Open [**Pages** → **Requests Page**](../open-in-jellyfin.md?tab=pages&card=requests-page) and turn on **Enable Requests Page**.
 2. Choose sections, access rules, placement, and refresh options.
 3. Click **Save Settings** and reload the web client.
 
@@ -352,7 +366,7 @@ Choose your preferred Calendar view and presentation directly in Calendar. These
 
 Hide matching items from Calendar, Downloads, and Requests. The administrator sets starting values, and you can change your personal filters.
 
-1. As an administrator, enable **Enable Hidden Content** and review defaults under **Pages** → **Hidden Content** → **More Settings**.
+1. As an administrator, enable **Enable Hidden Content** and review defaults under [**Pages** → **Hidden Content**](../open-in-jellyfin.md?tab=pages&card=hidden-content) → **More Settings**.
 2. In your personal **Hidden Content** settings, enable **Enable Content Hiding** and choose the surface filters.
 
 Admin (server) settings:

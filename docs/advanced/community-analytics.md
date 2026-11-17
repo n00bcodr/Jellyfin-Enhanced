@@ -12,7 +12,7 @@ JE can share installation statistics to help you see how the community uses the 
 
 Choose the categories you want to share, and use **Preview** to check the statistics before saving.
 
-1. Open **Dashboard → Plugins → Jellyfin Enhanced → Admin → Usage Statistics**.
+1. Open **Dashboard → Plugins → Jellyfin Enhanced → Admin → Usage Statistics** ([open it on your server](../open-in-jellyfin.md?tab=admin&card=usage-statistics)).
 2. Turn on **Share Anonymous Usage Statistics** to show the category, interval, and **Preview** controls. Uncheck any categories you do not want to share.
 3. Optionally click **Preview** to inspect your selections.
 4. Save. JE queues the first reporting attempt automatically; you do not need to use **Preview** first.
@@ -137,7 +137,7 @@ JE checks whether a report is due at startup and through the **Send Anonymous Us
 
 To stop reporting:
 
-1. Open **Admin → Usage Statistics** in the plugin configuration.
+1. Open [**Admin → Usage Statistics**](../open-in-jellyfin.md?tab=admin&card=usage-statistics) in the plugin configuration.
 2. Turn off **Share Anonymous Usage Statistics** and save.
 
 !!! note "Opting out and remote history"

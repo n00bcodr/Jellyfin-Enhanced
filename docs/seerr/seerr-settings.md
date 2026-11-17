@@ -10,6 +10,8 @@ All settings here are **admin (server) settings** unless marked as per-user.
 
 ## Setup
 
+[Seerr > Seerr Connection Setup](../open-in-jellyfin.md?tab=seerr&card=seerr-connection-setup){ .je-open }
+
 Connect Seerr to search and request media from Jellyfin. Follow the setup steps below.
 
 !!! note "Before you start"
@@ -63,7 +65,7 @@ Enter your connection details in JE to enable Seerr features.
 
 **How to use:**
 
-1. Open **Dashboard** → **Plugins** → **Jellyfin Enhanced** → **Seerr**.
+1. Open **Dashboard** → **Plugins** → **Jellyfin Enhanced** → [**Seerr**](../open-in-jellyfin.md?tab=seerr).
 2. Under **Seerr Connection Setup**, turn on **Enable Seerr integration**.
 3. Enter **Seerr URL(s) (One per line)** and **Seerr API Key**. The configuration help points to Seerr's **Settings** → **General Settings** → **API Key** for the key.
 4. Press **Test** beside the Seerr key.
@@ -98,7 +100,7 @@ Let JE create missing Seerr accounts automatically, or import users when you cho
 
 **How to use:**
 
-1. Open **Seerr** → **Users**.
+1. Open [**Seerr** → **Users**](../open-in-jellyfin.md?tab=seerr&card=users).
 2. For automatic import, enable **Auto import Jellyfin users to Seerr** and save.
 3. For an immediate import, press **Import Users Now**. This saves the current configuration and imports unblocked users.
 4. Read the imported/total counts and any returned errors. Reaching Seerr does not mean every account was imported.
@@ -128,9 +130,11 @@ For conflicting-email errors, inspect Seerr for an old or duplicate account befo
 
 ### Search and collection results
 
+[Seerr > Search & Requests](../open-in-jellyfin.md?tab=seerr&card=search-requests){ .je-open }
+
 Add requestable titles and collections to Jellyfin search.
 
-**How to use:** Open **Seerr** → **Search & Requests** and choose the options below. See [Search Integration](seerr-features.md#search-integration) and [collection requests](seerr-features.md#collection-requests).
+**How to use:** Open [**Seerr** → **Search & Requests**](../open-in-jellyfin.md?tab=seerr&card=search-requests) and choose the options below. See [Search Integration](seerr-features.md#search-integration) and [collection requests](seerr-features.md#collection-requests).
 
 ![Seerr search, request and discovery switches](../images/admin/seerr-discovery.webp)
 
@@ -152,7 +156,7 @@ Add requestable titles and collections to Jellyfin search.
 
 Show 4K movie request actions.
 
-**How to use:** Open **Seerr** → **Search & Requests** and turn on **Enable 4K Requests**.
+**How to use:** Open [**Seerr** → **Search & Requests**](../open-in-jellyfin.md?tab=seerr&card=search-requests) and turn on **Enable 4K Requests**.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
@@ -166,7 +170,7 @@ Show 4K movie request actions.
 
 Show 4K season requests alongside normal-quality requests.
 
-**How to use:** Open **Seerr** → **Search & Requests** and turn on **Enable 4K TV Requests**. See [4K TV Requesting](seerr-features.md#4k-tv-requesting).
+**How to use:** Open [**Seerr** → **Search & Requests**](../open-in-jellyfin.md?tab=seerr&card=search-requests) and turn on **Enable 4K TV Requests**. See [4K TV Requesting](seerr-features.md#4k-tv-requesting).
 
 | Setting | Default | What it does |
 | --- | --- | --- |
@@ -184,7 +188,7 @@ Let authorized users choose **Destination Server**, **Quality Profile**, and **R
 
 For movies, choose **Request in 4K** before opening the dialog; its title remains **Request Movie**, and matching 4K destination defaults are selected when supplied.
 
-**How to use:** Open **Seerr** → **Search & Requests** and choose the options below. See [advanced request options](seerr-features.md#advanced-request-options) and [request quotas](seerr-features.md#request-quotas).
+**How to use:** Open [**Seerr** → **Search & Requests**](../open-in-jellyfin.md?tab=seerr&card=search-requests) and choose the options below. See [advanced request options](seerr-features.md#advanced-request-options) and [request quotas](seerr-features.md#request-quotas).
 
 | Setting | Default | What it does |
 | --- | --- | --- |
@@ -201,7 +205,7 @@ For movies, choose **Request in 4K** before opening the dialog; its title remain
 
 Choose how result posters and Seerr detail links open.
 
-**How to use:** Open **Seerr** → **Discovery & UI Extras** and choose the options below. See [More Info](seerr-features.md#more-info) and [Item Details](seerr-features.md#item-details).
+**How to use:** Open [**Seerr** → **Discovery & UI Extras**](../open-in-jellyfin.md?tab=seerr&card=discovery-ui-extras) and choose the options below. See [More Info](seerr-features.md#more-info) and [Item Details](seerr-features.md#item-details).
 
 | Setting | Default | What it does |
 | --- | --- | --- |
@@ -218,7 +222,7 @@ Choose how result posters and Seerr detail links open.
 
 Let users report media problems from Jellyfin detail pages.
 
-**How to use:** Open **Seerr** → **Discovery & UI Extras** and enable the report button. See [Issue Reporting](seerr-features.md#issue-reporting) for item eligibility, permissions, and the report form.
+**How to use:** Open [**Seerr** → **Discovery & UI Extras**](../open-in-jellyfin.md?tab=seerr&card=discovery-ui-extras) and enable the report button. See [Issue Reporting](seerr-features.md#issue-reporting) for item eligibility, permissions, and the report form.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
@@ -237,7 +241,7 @@ Let users report media problems from Jellyfin detail pages.
 
 Show subscription-provider icons on Seerr posters.
 
-**How to use:** Open **Seerr** → **Discovery & UI Extras** and turn on **Show Streaming Providers on Posters**.
+**How to use:** Open [**Seerr** → **Discovery & UI Extras**](../open-in-jellyfin.md?tab=seerr&card=discovery-ui-extras) and turn on **Show Streaming Providers on Posters**.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
@@ -255,9 +259,11 @@ Show subscription-provider icons on Seerr posters.
 
 ### Item Pages Discovery
 
+[Seerr > Discovery & UI Extras](../open-in-jellyfin.md?tab=seerr&card=discovery-ui-extras){ .je-open }
+
 Add related titles and follow-up season requests to item detail pages.
 
-**How to use:** Open **Seerr** → **Discovery & UI Extras** → **Item Pages Discovery** and choose the options below. See [Item Details](seerr-features.md#item-details).
+**How to use:** Open [**Seerr** → **Discovery & UI Extras**](../open-in-jellyfin.md?tab=seerr&card=discovery-ui-extras) → **Item Pages Discovery** and choose the options below. See [Item Details](seerr-features.md#item-details).
 
 | Setting | Default | What it does |
 | --- | --- | --- |
@@ -279,7 +285,7 @@ Add related titles and follow-up season requests to item detail pages.
 
 Find titles beyond your library from genre, studio, tag, person, and collection pages.
 
-**How to use:** Open **Seerr** → **Discovery & UI Extras** → **"More" Discovery** and enable the types you want. See [Discovery Pages](seerr-features.md#discovery-pages) for routes and matching requirements.
+**How to use:** Open [**Seerr** → **Discovery & UI Extras**](../open-in-jellyfin.md?tab=seerr&card=discovery-ui-extras) → **"More" Discovery** and enable the types you want. See [Discovery Pages](seerr-features.md#discovery-pages) for routes and matching requirements.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
@@ -293,7 +299,7 @@ Find titles beyond your library from genre, studio, tag, person, and collection 
 
 Choose which filters the **Filters** button of a "More" section offers. A filter turned off is never offered, to anyone. Viewers have no per-user setting for these.
 
-**How to use:** Open **Seerr** → **Discovery & UI Extras** → **Filters in the "More" sections** and turn off the filters you don't want. See [Filters, sort and roles](seerr-features.md#filters-sort-and-roles) for how viewers use them.
+**How to use:** Open [**Seerr** → **Discovery & UI Extras**](../open-in-jellyfin.md?tab=seerr&card=discovery-ui-extras) → **Filters in the "More" sections** and turn off the filters you don't want. See [Filters, sort and roles](seerr-features.md#filters-sort-and-roles) for how viewers use them.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
@@ -312,11 +318,13 @@ The tabs (**All**, **Movies**, **Series**) and the sort have no switch. The filt
 
 ### Add Requested Media to Watchlist
 
+[Seerr > Watchlist](../open-in-jellyfin.md?tab=seerr&card=watchlist){ .je-open }
+
 Add requested titles to the requester's Jellyfin watchlist as they reach the library, or sync watchlist entries between Seerr and Jellyfin.
 
 **How to use:**
 
-1. Open **Seerr** → **Watchlist** and enable the options you want.
+1. Open [**Seerr** → **Watchlist**](../open-in-jellyfin.md?tab=seerr&card=watchlist) and enable the options you want.
 2. Save your settings.
 3. After enabling requested-media monitoring, restart Jellyfin or run **Jellyfin Enhanced Startup** once to start watching for library additions and updates.
 
@@ -356,6 +364,8 @@ Choose whose removals are copied to the other watchlist: **Jellyfin decides** (d
 
 ### Auto Import Jellyfin Users to Seerr
 
+[Seerr > Users](../open-in-jellyfin.md?tab=seerr&card=users){ .je-open }
+
 Let JE create missing Seerr accounts for Jellyfin users.
 
 **How to use:** Follow [Configure User Import](#step-4-configure-user-import-optional) for the controls and manual action. Use [Permission Audit](permission-audit.md) after linking accounts or changing their permissions.
@@ -373,9 +383,11 @@ See [Auto-Request Settings](seerr-features.md#auto-request-settings) for trigger
 
 ### Auto Season Requests
 
+[Seerr > Auto Season Requests](../open-in-jellyfin.md?tab=seerr&card=auto-season-requests){ .je-open }
+
 Request the next numeric season near the end of the current one.
 
-**How to use:** Open **Seerr** → **Auto Season Requests**. Enable the feature and choose the threshold below.
+**How to use:** Open [**Seerr** → **Auto Season Requests**](../open-in-jellyfin.md?tab=seerr&card=auto-season-requests). Enable the feature and choose the threshold below.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
@@ -389,9 +401,11 @@ Request the next numeric season near the end of the current one.
 
 ### Auto Movie Requests
 
+[Seerr > Auto Movie Requests](../open-in-jellyfin.md?tab=seerr&card=auto-movie-requests){ .je-open }
+
 Request the next collection movie based on playback.
 
-**How to use:** Open **Seerr** → **Auto Movie Requests**. Enable the feature, choose playback triggers, and select a quality profile mode.
+**How to use:** Open [**Seerr** → **Auto Movie Requests**](../open-in-jellyfin.md?tab=seerr&card=auto-movie-requests). Enable the feature, choose playback triggers, and select a quality profile mode.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
@@ -420,9 +434,11 @@ Request the next collection movie based on playback.
 
 ### Auto Request Removal
 
+[Seerr > Auto Request Removal](../open-in-jellyfin.md?tab=seerr&card=auto-request-removal){ .je-open }
+
 Delete a Seerr request once the user who made it has watched it.
 
-**How to use:** Open **Seerr** → **Auto Request Removal** and enable the feature. The **Remove watched requests from Seerr** scheduled task runs daily at 04:30 and removes each request on the first run after its requester has watched it; run it from **Dashboard** → **Scheduled Tasks** to apply it at once.
+**How to use:** Open [**Seerr** → **Auto Request Removal**](../open-in-jellyfin.md?tab=seerr&card=auto-request-removal) and enable the feature. The **Remove watched requests from Seerr** scheduled task runs daily at 04:30 and removes each request on the first run after its requester has watched it; run it from **Dashboard** → **Scheduled Tasks** to apply it at once.
 
 !!! warning "Destructive: use with caution"
 
@@ -436,9 +452,11 @@ See [Auto Request Removal](seerr-features.md#auto-request-removal) for how movie
 
 ## Recently Added Sync to Seerr
 
+[Seerr > Recently Added Sync to Seerr](../open-in-jellyfin.md?tab=seerr&card=recently-added-sync-to-seerr){ .je-open }
+
 Help Seerr discover availability after Jellyfin library additions by triggering its recently-added scan.
 
-**How to use:** Open **Seerr** → **Recently Added Sync to Seerr**, enable the automatic scan, and save. For an administrator test, press **Trigger scan now**.
+**How to use:** Open [**Seerr** → **Recently Added Sync to Seerr**](../open-in-jellyfin.md?tab=seerr&card=recently-added-sync-to-seerr), enable the automatic scan, and save. For an administrator test, press **Trigger scan now**.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
@@ -459,6 +477,8 @@ Help Seerr discover availability after Jellyfin library additions by triggering 
 
 ## Requests Page Management
 
+[Pages > Requests Page](../open-in-jellyfin.md?tab=pages&card=requests-page){ .je-open }
+
 The shared [Requests page](seerr-features.md#requests-page) brings Seerr requests and optional issues together with *arr downloads/history. Download connection and visibility details also appear in [*arr settings](../arr/arr-settings.md).
 
 ### Enable Requests Page
@@ -467,7 +487,7 @@ Choose how users open Requests in Jellyfin.
 
 **How to use:**
 
-1. Open **Pages** → **Requests Page** and turn on **Enable Requests Page**.
+1. Open [**Pages** → **Requests Page**](../open-in-jellyfin.md?tab=pages&card=requests-page) and turn on **Enable Requests Page**.
 2. Choose a navigation option below, or leave the navigation modes off for built-in navigation.
 3. Save your settings.
 
@@ -485,7 +505,7 @@ For routes, layout limits, Plugin Pages restart rules, and Custom Tabs setup, se
 
 Show active downloads and recent import history alongside requests.
 
-**How to use:** Open **Pages** → **Requests Page** and choose the download visibility options below.
+**How to use:** Open [**Pages** → **Requests Page**](../open-in-jellyfin.md?tab=pages&card=requests-page) and choose the download visibility options below.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
@@ -504,7 +524,7 @@ Request visibility has its own Seerr permission rules. For progress, import outc
 
 Let authorized users browse Seerr issues on Requests.
 
-**How to use:** Open **Pages** → **Requests Page** and turn on **Show Seerr Issues Section**.
+**How to use:** Open [**Pages** → **Requests Page**](../open-in-jellyfin.md?tab=pages&card=requests-page) and turn on **Show Seerr Issues Section**.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
@@ -518,7 +538,7 @@ Let authorized users browse Seerr issues on Requests.
 
 Refresh Requests automatically while users browse.
 
-**How to use:** Open **Pages** → **Requests Page** and choose whether and how often to refresh.
+**How to use:** Open [**Pages** → **Requests Page**](../open-in-jellyfin.md?tab=pages&card=requests-page) and choose whether and how often to refresh.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
@@ -535,7 +555,7 @@ Give users a dedicated page for discovering movies and series.
 
 **How to use:**
 
-1. Open **Pages** → **Seerr Recommendations Page**.
+1. Open [**Pages** → **Seerr Recommendations Page**](../open-in-jellyfin.md?tab=pages&card=seerr-recommendations-page).
 2. Enable the page and choose a navigation option below.
 3. Save your settings.
 
@@ -561,9 +581,11 @@ For routes, layout limits, Plugin Pages restart rules, and Custom Tabs setup, se
 
 ## Debug and caching
 
+[Seerr > Debug & Caching](../open-in-jellyfin.md?tab=seerr&card=debug-caching){ .je-open }
+
 Use these controls to investigate stale status or permissions.
 
-**How to use:** Open **Seerr** → **Debug & Caching** and adjust the cache settings below. Reload other clients as needed.
+**How to use:** Open [**Seerr** → **Debug & Caching**](../open-in-jellyfin.md?tab=seerr&card=debug-caching) and adjust the cache settings below. Reload other clients as needed.
 
 | Setting | Default | What it does |
 | --- | --- | --- |

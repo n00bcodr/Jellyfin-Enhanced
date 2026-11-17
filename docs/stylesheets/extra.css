@@ -1817,3 +1817,45 @@ body {
     scroll-behavior: auto !important;
   }
 }
+
+/* "Open in Jellyfin" links (open-in-jellyfin.md) open the setting on the reader's own server, in a new tab.
+   Inline: a small split chip (icon block, text, arrow). Standalone (.je-open): a card with the same split. */
+.md-typeset a[href*="open-in-jellyfin/?"] {
+  --je-blue: #00a4dc;
+  color: var(--je-blue); text-decoration: none;
+  border: 1px solid var(--je-blue); overflow: hidden;
+}
+.md-typeset a[href*="open-in-jellyfin/?"] strong { color: inherit; font-weight: 600; }
+.md-typeset a[href*="open-in-jellyfin/?"]::after {
+  content: ""; width: .85em; height: .85em; background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M19 19H5V5h7V3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z'/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M19 19H5V5h7V3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+/* Chip */
+.md-typeset a[href*="open-in-jellyfin/?"]:not(.je-open) {
+  display: inline-flex; align-items: center; vertical-align: middle; gap: .35em;
+  padding: 0 .6em 0 0; border-radius: .4em; font-size: .9em; line-height: 1.6;
+}
+.md-typeset a[href*="open-in-jellyfin/?"]:not(.je-open)::before {
+  content: ""; align-self: stretch; width: 1.7em; margin-right: .2em;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='8' rx='3'/%3E%3Crect x='3' y='12' width='18' height='8' rx='3'/%3E%3Cpath d='M7 8v.01M7 16v.01M11 8h6M11 16h6'/%3E%3C/svg%3E") no-repeat center / 1em, var(--je-blue);
+}
+
+/* Badge card */
+.md-typeset a.je-open {
+  display: grid; grid-template-columns: 1fr auto; align-items: center; column-gap: .8em;
+  max-width: 21rem; margin: .3em 0 .8em; padding: .45rem .8rem .45rem 3.4rem;
+  border-radius: .5em; line-height: 1.3; font-size: .68rem; color: var(--md-default-fg-color--light);
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='8' rx='3'/%3E%3Crect x='3' y='12' width='18' height='8' rx='3'/%3E%3Cpath d='M7 8v.01M7 16v.01M11 8h6M11 16h6'/%3E%3C/svg%3E") no-repeat .7rem center / 1.2rem, linear-gradient(var(--je-blue), var(--je-blue)) no-repeat left / 2.6rem 100%;
+}
+.md-typeset a.je-open::before {
+  content: "Open on your Jellyfin server"; grid-column: 1; font-size: .78rem; font-weight: 600; color: var(--md-default-fg-color);
+}
+.md-typeset a.je-open::after { grid-column: 2; grid-row: 1 / span 2; width: .9rem; height: .9rem; color: var(--je-blue); }
+.md-typeset a.je-open:hover { background-color: color-mix(in srgb, var(--je-blue) 8%, transparent); }
+
+/* Page title of open-in-jellyfin.md: the same icon block as the links. */
+.md-typeset h1.je-title::before {
+  content: ""; display: inline-block; vertical-align: -.2em; margin-right: .5em; width: 1.4em; height: 1.4em; border-radius: .35em;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='8' rx='3'/%3E%3Crect x='3' y='12' width='18' height='8' rx='3'/%3E%3Cpath d='M7 8v.01M7 16v.01M11 8h6M11 16h6'/%3E%3C/svg%3E") no-repeat center / .85em, #00a4dc;
+}

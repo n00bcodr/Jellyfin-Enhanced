@@ -1,6 +1,6 @@
 # Elsewhere & Reviews Settings
 
-Configure providers, TMDB reviews, release dates, and local reviews in **Dashboard** → **Plugins** → **Jellyfin Enhanced** → **Elsewhere & Reviews**. Settings on this page are admin settings for the server unless marked per user. The **TMDB** and **AniList** cards also appear on the **Services** tab as linked copies, so changing one changes the other. For viewer workflows, see [Elsewhere Integration](elsewhere-features.md).
+Configure providers, TMDB reviews, release dates, and local reviews in **Dashboard** → **Plugins** → **Jellyfin Enhanced** → [**Elsewhere & Reviews**](../open-in-jellyfin.md?tab=elsewhere). Settings on this page are admin settings for the server unless marked per user. The **TMDB** and **AniList** cards also appear on the **Services** tab as linked copies, so changing one changes the other. For viewer workflows, see [Elsewhere Integration](elsewhere-features.md).
 
 ## Prerequisites
 
@@ -34,6 +34,8 @@ Set up the shared TMDB key first, then choose the Elsewhere features you want. T
     **Enable Elsewhere** ships on, but providers cannot work until a key is configured. Its checkbox depends on that key requirement. The server's configured-key flag only means the key is nonempty and non-whitespace; it does not mean the key passed **Test**.
 
 ## Configuration Options
+
+[Elsewhere & Reviews > Elsewhere (Streaming Providers)](../open-in-jellyfin.md?tab=elsewhere&card=elsewhere-streaming-providers){ .je-open }
 
 Use **Elsewhere (Streaming Providers)** to choose what appears in automatic detail-page results. The country and provider filters also affect logos on JE's Seerr cards.
 
@@ -238,6 +240,8 @@ Show your own heading when no filtered automatic providers or season groups rema
 
 ## TMDB Reviews
 
+[Elsewhere & Reviews > TMDB Reviews](../open-in-jellyfin.md?tab=elsewhere&card=tmdb-reviews){ .je-open }
+
 Read TMDB community reviews on movie and series pages. See [TMDB Reviews](elsewhere-features.md#tmdb-reviews) for card behavior and limits.
 
 ### How to use
@@ -261,6 +265,8 @@ Opening or closing **Reviews ({count})** saves your expansion choice, including 
 
 ## AniList Reviews
 
+[Elsewhere & Reviews > AniList](../open-in-jellyfin.md?tab=elsewhere&card=anilist){ .je-open }
+
 Show the top AniList user reviews for anime on movie and series pages. See [AniList Reviews](elsewhere-features.md#anilist-reviews) for card behavior and limits.
 
 ### How to use
@@ -281,6 +287,8 @@ Show the top AniList user reviews for anime on movie and series pages. See [AniL
     Your Jellyfin server sends the item's AniList ID to AniList's public GraphQL API (`graphql.anilist.co`) and caches the response in memory. No user information is sent.
 
 ## Review Translation
+
+[Elsewhere & Reviews > Review Translation](../open-in-jellyfin.md?tab=elsewhere&card=review-translation){ .je-open }
 
 Add a **Translate** button to English TMDB and AniList reviews. See [Review Translation](elsewhere-features.md#review-translation) for how it behaves.
 
@@ -311,6 +319,8 @@ Add a **Translate** button to English TMDB and AniList reviews. See [Review Tran
     The browser's built-in translator is limited to desktop Chromium browsers (such as Chrome and Edge) on HTTPS or `localhost`. Firefox, Safari, most mobile browsers and the Jellyfin apps do not have it, so set a **LibreTranslate URL** if those users should be able to translate. See [the browser translator's limits](elsewhere-features.md#review-translation).
 
 ## User Reviews
+
+[Elsewhere & Reviews > User Reviews](../open-in-jellyfin.md?tab=elsewhere&card=user-reviews){ .je-open }
 
 Let viewers share text reviews and/or star ratings on your server. Local reviews need no TMDB API key or enabled provider panel.
 
@@ -405,6 +415,8 @@ See [Spoiler Guard settings](../spoiler-guard/spoiler-guard-settings.md).
     If Spoiler Guard state fails to load, reviews are hidden before your personal override is checked. Hiding the panel is a web-client behavior; it does not make local reviews inaccessible through the review API.
 
 ## Release Dates
+
+[Elsewhere & Reviews > Release Dates](../open-in-jellyfin.md?tab=elsewhere&card=release-dates){ .je-open }
 
 Show movie release dates and television air dates beside detail-page metadata. See [Release Dates](elsewhere-features.md#release-dates) for how each item's date is chosen.
 

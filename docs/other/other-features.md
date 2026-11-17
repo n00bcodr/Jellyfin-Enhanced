@@ -34,7 +34,7 @@ Replace Jellyfin's logos, banners, browser favicon, and touch icon with your own
 
 ### Asset slots
 
-All slots are administrator uploads under **Extras** → **Custom Image Assets**.
+All slots are administrator uploads under [**Extras** → **Custom Image Assets**](../open-in-jellyfin.md?tab=extras&card=custom-image-assets).
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -76,7 +76,7 @@ Choose the icons you see in JE's panel headings and ordinary toast notifications
 
 ### How to use
 
-1. Open admin **Display** → **Icons & Theme** and enable **Use Icons in UI**.
+1. Open admin [**Display** → **Icons & Theme**](../open-in-jellyfin.md?tab=display&card=icons-theme) and enable **Use Icons in UI**.
 2. Choose **Icon Style**.
 3. Click **Save Settings** and reload.
 
@@ -93,11 +93,11 @@ Choose the icons you see in JE's panel headings and ordinary toast notifications
 
 Customize the dashboard, login screen, and user-preferences menu with these optional enhancements.
 
-**How to use:** Most switches are under admin **Extras** → **UI Tweaks**. Turn on the switch you want, click **Save Settings**, and reload the affected page.
+**How to use:** Most switches are under admin [**Extras** → **UI Tweaks**](../open-in-jellyfin.md?tab=extras&card=ui-tweaks). Turn on the switch you want, click **Save Settings**, and reload the affected page.
 
 ??? note "Details"
 
-    The user Activity Feed is a separate feature under **Pages** → **Activity Feed**. See [Enhanced Features](../enhanced/enhanced-features.md) and [Enhanced Settings](../enhanced/enhanced-settings.md) for its watch, favorite, review, and page-delivery controls. Dashboard icon coloring does not change that feed.
+    The user Activity Feed is a separate feature under [**Pages** → **Activity Feed**](../open-in-jellyfin.md?tab=pages&card=activity-feed). See [Enhanced Features](../enhanced/enhanced-features.md) and [Enhanced Settings](../enhanced/enhanced-settings.md) for its watch, favorite, review, and page-delivery controls. Dashboard icon coloring does not change that feed.
 
     Its Active Streams section needs the stream-widget switch and, for non-admins, the viewer-access switch. It polls every 15 seconds while its container and document are visible. The header widget described below refreshes on demand.
 
@@ -108,7 +108,7 @@ Give matching events in the dashboard Home activity list predefined Material ico
 ![Color-coded icons in Jellyfin dashboard activity](../images/other/activity-icons.webp)
 *These icons belong to dashboard activity, separate from the JE Activity Feed.*
 
-**How to use:** Enable **Colored Dashboard Icons** under admin **Extras** → **UI Tweaks**, save, and open the dashboard Home page. The full **Activity** page is unchanged.
+**How to use:** Enable **Colored Dashboard Icons** under admin [**Extras** → **UI Tweaks**](../open-in-jellyfin.md?tab=extras&card=ui-tweaks), save, and open the dashboard Home page. The full **Activity** page is unchanged.
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -124,7 +124,7 @@ Color official age/content classifications, including PG-13, TV-MA, and supporte
 
 ![Green G, orange PG-13, and dark-red R classification badges on movie detail pages](../images/other/classification-colors.webp)
 
-**How to use:** Enable **Colored Ratings Backgrounds** under admin **Extras** → **UI Tweaks**, save, and open a detail page with an official rating.
+**How to use:** Enable **Colored Ratings Backgrounds** under admin [**Extras** → **UI Tweaks**](../open-in-jellyfin.md?tab=extras&card=ui-tweaks), save, and open a detail page with an official rating.
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -142,7 +142,7 @@ Select a user card on the login screen to show that user's profile picture above
 
 ![Selected user's avatar above the Jellyfin password field](../images/other/login-avatar.webp)
 
-**How to use:** Enable **Profile Picture on Login** under admin **Extras** → **UI Tweaks**, save, and reload the signed-out login page. Select a user with a profile picture.
+**How to use:** Enable **Profile Picture on Login** under admin [**Extras** → **UI Tweaks**](../open-in-jellyfin.md?tab=extras&card=ui-tweaks), save, and reload the signed-out login page. Select a user with a profile picture.
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -160,8 +160,8 @@ Replace supported dashboard plugin-menu icons with a mixture of Material icons a
 
 **How to use:**
 
-1. Enable **Custom Plugin Menu Icons** under admin **Extras** → **UI Tweaks**.
-2. To add a configuration-page link, open **Extras** → **External Links** → **Sidebar Custom Links**. Enter one pair per line, using the exact decoded page name, including spaces:
+1. Enable **Custom Plugin Menu Icons** under admin [**Extras** → **UI Tweaks**](../open-in-jellyfin.md?tab=extras&card=ui-tweaks).
+2. To add a configuration-page link, open [**Extras** → **External Links**](../open-in-jellyfin.md?tab=extras&card=external-links) → **Sidebar Custom Links**. Enter one pair per line, using the exact decoded page name, including spaces:
 
     ```text
     Configuration Page Name | Material Icon Name
@@ -179,7 +179,7 @@ Replace supported dashboard plugin-menu icons with a mixture of Material icons a
 | Setting | Default | What it does |
 |---|---|---|
 | **Custom Plugin Menu Icons** | Off | Replaces matching plugin-link icons and enables saved custom configuration-page links. |
-| **Sidebar Custom Links** | Empty | Under **Extras** → **External Links**; adds one configuration-page name/icon pair per line. |
+| **Sidebar Custom Links** | Empty | Under [**Extras** → **External Links**](../open-in-jellyfin.md?tab=extras&card=external-links); adds one configuration-page name/icon pair per line. |
 
 ??? info "How it works"
 
@@ -221,7 +221,7 @@ Choose a color palette from Jellyfin's user-preferences menu. Install the Jellyf
 
 **How to use:**
 
-1. Enable **Theme Selector (Jellyfish)** under admin **Extras** → **UI Tweaks**, click **Save Settings**, and reload.
+1. Enable **Theme Selector (Jellyfish)** under admin [**Extras** → **UI Tweaks**](../open-in-jellyfin.md?tab=extras&card=ui-tweaks), click **Save Settings**, and reload.
 2. Open Jellyfin's user-preferences menu and choose a palette under **Theme**. Choosing one fades and reloads the page.
 3. For a daily random palette, use the shuffle button with the tooltip **Random daily theme**. It shows **Daily** while daily randomization is enabled. Enabling it can immediately choose a palette and reload the page.
 
@@ -252,7 +252,7 @@ See who is watching, what they are playing or have paused, and how Jellyfin is d
 
 **How to use:**
 
-1. Enable **Active Streams Header Widget** under admin **Extras** → **Active Streams**, click **Save Settings**, and reload.
+1. Enable **Active Streams Header Widget** under admin [**Extras** → **Active Streams**](../open-in-jellyfin.md?tab=extras&card=active-streams), click **Save Settings**, and reload.
 2. Click the stream icon in the Jellyfin header to open the panel. Its title shows the active-stream count, or **No Active Streams** when none are playing.
 3. Click the **Refresh sessions** icon with the tooltip **Refresh** for current data. The footer shows the last update time.
 
@@ -314,7 +314,7 @@ Adjust how long the Enhanced panel and ordinary JE toasts remain visible.
 
 ### How to use
 
-1. Open admin **Playback** → **Shortcuts Panel & Toast Timing**.
+1. Open admin [**Playback** → **Shortcuts Panel & Toast Timing**](../open-in-jellyfin.md?tab=playback&card=shortcuts-panel-toast-timing).
 2. Enter durations in milliseconds and try **Preview autoclose** or **Preview toast**.
 3. Click **Save Settings** and reload to use the new durations.
 
@@ -337,7 +337,7 @@ Add a **Letterboxd** external link to supported movie and person detail pages.
 
 ### How to use
 
-1. Open admin **Extras** → **External Links** and turn on **Enable Letterboxd Links**.
+1. Open admin [**Extras** → **External Links**](../open-in-jellyfin.md?tab=extras&card=external-links) and turn on **Enable Letterboxd Links**.
 2. Optionally enable **Show link as text**, then click **Save Settings** and reload.
 3. Open a movie with an IMDb ID, or a person detail page, and click **Letterboxd**.
 
@@ -362,7 +362,7 @@ Show supported item metadata and external links as icons using Druidblack's meta
 
 ### How to use
 
-1. Open admin **Extras** → **External Links** and turn on **Enable Metadata Icons (Druidblack)**.
+1. Open admin [**Extras** → **External Links**](../open-in-jellyfin.md?tab=extras&card=external-links) and turn on **Enable Metadata Icons (Druidblack)**.
 2. Click **Save Settings** and reload.
 3. Open an item detail page to see its metadata and external links.
 
@@ -381,7 +381,7 @@ Show ratings from multiple sources on detail pages. You can also fill Jellyfin's
 ### How to use
 
 1. Get an API key from [MDBList preferences](https://mdblist.com/preferences/#api).
-2. Open admin **Display** → **MDBList Ratings** and turn on **Enable MDBList Ratings**.
+2. Open admin [**Display** → **MDBList Ratings**](../open-in-jellyfin.md?tab=display&card=mdblist-ratings) and turn on **Enable MDBList Ratings**.
 3. Enter **MDBList API Key** and click **Check** to test it and inspect quota/reset information. This works before saving.
 4. Leave **Show Ratings Row on Item Details** on for badges. Expand **Configure ratings shown** to choose sources and reorder them with the arrows.
 5. Click **Save Settings**, reload, and open a supported item with a TMDB ID.
@@ -394,7 +394,7 @@ Show ratings from multiple sources on detail pages. You can also fill Jellyfin's
 | **Configure ratings shown** | All returned sources (empty list) | Selects and orders detail-page badges independently of synchronization sources. |
 | **Show % Symbol** | Off | Adds `%` only to normalized badge scores. |
 
-These controls apply server-wide under admin **Display** → **MDBList Ratings**. They are not personal settings.
+These controls apply server-wide under admin [**Display** → **MDBList Ratings**](../open-in-jellyfin.md?tab=display&card=mdblist-ratings). They are not personal settings.
 
 ??? info "How it works"
 
@@ -426,7 +426,7 @@ Fill Jellyfin's Community/Critic Rating fields from MDBList data. Fetching ratin
 
 **How to use:**
 
-1. Under admin **Display** → **MDBList Ratings**, enable the MDBList master and the matching task switches.
+1. Under admin [**Display** → **MDBList Ratings**](../open-in-jellyfin.md?tab=display&card=mdblist-ratings), enable the MDBList master and the matching task switches.
 2. Choose your sources, fallbacks, reserve, and overwrite behavior below, then click **Save Settings**.
 3. For initial library-wide synchronization, open **Dashboard** → **Scheduled Tasks**. Run **Fetch Ratings from MDBList**, then **Sync Ratings from MDBList to Jellyfin**.
 4. Add your own triggers for recurring runs; neither task has a default trigger.
@@ -436,7 +436,7 @@ Fill Jellyfin's Community/Critic Rating fields from MDBList data. Fetching ratin
 | **Fetch Ratings from MDBList** | None | Fetches missing/stale movie/series data into the MDBList cache. Makes API calls, without changing Jellyfin rating fields. |
 | **Sync Ratings from MDBList to Jellyfin** | None | Writes Jellyfin rating fields from available cache data. Makes no MDBList API calls. |
 
-All controls below are under admin **Display** → **MDBList Ratings**.
+All controls below are under admin [**Display** → **MDBList Ratings**](../open-in-jellyfin.md?tab=display&card=mdblist-ratings).
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -501,7 +501,7 @@ Show community-voted content warnings, such as "a dog dies", gore or flashing li
 ### How to use
 
 1. Create a DoesTheDogDie account and copy the API key from your profile page.
-2. Open admin **Display** → **Content Warnings (DoesTheDogDie)** and turn on **Show Content Warnings**.
+2. Open admin [**Display** → **Content Warnings (DoesTheDogDie)**](../open-in-jellyfin.md?tab=display&card=content-warnings-doesthedogdie) and turn on **Show Content Warnings**.
 3. Paste the key into **DoesTheDogDie API Key**, click **Save Settings**, and reload the web client.
 4. Open a movie or series that DoesTheDogDie knows about. A **Content Warnings** section appears above Reviews.
 5. Click the gear icon on the section to choose your own triggers.
@@ -569,7 +569,7 @@ Show your logo on a black full-screen loading overlay while Jellyfin starts. The
 
 ### How to use
 
-1. Open admin **Extras** → **Custom Image Assets** and turn on **Enable Splash Screen Override**.
+1. Open admin [**Extras** → **Custom Image Assets**](../open-in-jellyfin.md?tab=extras&card=custom-image-assets) and turn on **Enable Splash Screen Override**.
 2. Enter **Splash Screen Image URL** and check that the URL opens an image in your browser.
 3. Click **Save Settings** and reload.
 
@@ -592,7 +592,7 @@ Use community translations for JE's interface, with an administrator default and
 
 ### How to use
 
-- **Administrator default:** Open **Display** → **Default Language**, choose **Default UI Language**, and click **Save Settings**.
+- **Administrator default:** Open [**Display** → **Default Language**](../open-in-jellyfin.md?tab=display&card=default-language), choose **Default UI Language**, and click **Save Settings**.
 - **Personal choice:** Open **Enhanced Panel** from the sidebar. Under **Language Settings** → **Display Language**, select a language or **Auto**. Your choice saves to the server and browser language key, then reloads the page.
 
 ![Display Language choices and Clear Translation Cache](../images/enhanced/panel-language.webp)
@@ -656,7 +656,7 @@ Warn users during server work, optionally restrict non-admin accounts or remote 
 
 ### How to use
 
-1. Open admin **Admin** → **Maintenance Mode**.
+1. Open admin [**Admin** → **Maintenance Mode**](../open-in-jellyfin.md?tab=admin&card=maintenance-mode).
 2. Enter **Login Page Banner Message** and **Active Session Notification**.
 3. Under **Action**, choose **Disable user accounts**, **Disable remote connections**, both, or neither.
 4. Choose **Affected Users**: **All non-admin users** or **Select specific users**.
@@ -670,7 +670,7 @@ Warn users during server work, optionally restrict non-admin accounts or remote 
 
 ### Settings
 
-All settings are server controls under admin **Admin** → **Maintenance Mode**.
+All settings are server controls under admin [**Admin** → **Maintenance Mode**](../open-in-jellyfin.md?tab=admin&card=maintenance-mode).
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -806,8 +806,8 @@ Choose the action below that matches the data you need refreshed. Confirm **Clea
 
 | Action | Location | What it does |
 |---|---|---|
-| **Clear All Client Caches** | Admin **Media Tags** → **Server**, with **Server-Side Tag Cache** off; **Overview** → **Quick Actions** labels the shortcut **Clear all client tag caches** | Clears targeted JE client caches on the next load, after confirmation. |
-| **Rebuild Server Tag Cache** | Admin **Admin** → **Tag Cache**, with **Server-Side Tag Cache** on | Rebuilds library tag data on the server. |
+| **Clear All Client Caches** | Admin [**Media Tags** → **Server**](../open-in-jellyfin.md?jeSection=media-tags&tab=server), with **Server-Side Tag Cache** off; **Overview** → **Quick Actions** labels the shortcut **Clear all client tag caches** | Clears targeted JE client caches on the next load, after confirmation. |
+| **Rebuild Server Tag Cache** | Admin [**Admin** → **Tag Cache**](../open-in-jellyfin.md?tab=admin&card=tag-cache), with **Server-Side Tag Cache** on | Rebuilds library tag data on the server. |
 | **Clear Translation Cache** | Per-user Enhanced panel → **Language Settings** | Clears this browser's translation entries and reloads. |
 
 Cache actions do not wipe unrelated browser storage, reset server-stored personal settings, or delete the MDBList server cache. Clearing/rebuilding tag data can make the next load slower. For tag-cache setup and defaults, see [Tags & Badges](../enhanced/tags.md).
@@ -824,7 +824,7 @@ Choose whether your server shares usage statistics. Reporting is off by default.
 
 ### How to use
 
-1. Open admin **Admin** → **Usage Statistics** and turn on **Share Anonymous Usage Statistics**.
+1. Open admin [**Admin** → **Usage Statistics**](../open-in-jellyfin.md?tab=admin&card=usage-statistics) and turn on **Share Anonymous Usage Statistics**.
 2. On first enabling it, the form selects feature-toggle states, usage counts, and data-file sizes. Adjust the categories you want to share.
 3. Use **Preview**, then click **Save Settings** to opt in.
 

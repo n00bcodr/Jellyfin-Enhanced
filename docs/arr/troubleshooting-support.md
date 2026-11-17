@@ -9,7 +9,7 @@ Start with the symptom you see, then work through the checks. See [*arr settings
 Service links let you open a title in Sonarr, Radarr, or Bazarr. Check your account, connection, and detail page if they are missing.
 
 1. Sign in as a Jellyfin administrator. Sonarr/Radarr/Bazarr links and request-card service icons are administrator-only.
-2. Under **Jellyfin Enhanced** → **\*arr** → **\*arr UI Links**, turn on **Enable \*arr Links on Detail Pages** and click **Save Settings**.
+2. Under **Jellyfin Enhanced** → **\*arr** → [**\*arr UI Links**](../open-in-jellyfin.md?tab=arr&card=arr-ui-links), turn on **Enable \*arr Links on Detail Pages** and click **Save Settings**.
 3. Check that the relevant Sonarr/Radarr card is enabled and has both **URL** and **API Key**. Use **Test** to check the current connection.
 4. Open a movie or series detail page with a visible TMDB external link. Season and episode pages do not get these service links.
 5. Confirm the title exists in that upstream instance. Instances without a matching title are omitted.
@@ -58,7 +58,7 @@ If settings show an unreadable Sonarr/Radarr instance list, ordinary **Save Sett
 
 Tag sync copies source tags into Jellyfin metadata. Check the task first, then distinguish missing metadata from missing tag links.
 
-1. Under **\*arr** → **Tags Sync**, turn on **Enable Tags Sync**, configure complete enabled Sonarr/Radarr instances, then click **Save Settings**.
+1. Under [**\*arr** → **Tags Sync**](../open-in-jellyfin.md?tab=arr&card=tags-sync), turn on **Enable Tags Sync**, configure complete enabled Sonarr/Radarr instances, then click **Save Settings**.
 2. Run **Sync Tags from \*arr to Jellyfin** from **Scheduled Tasks**. Saving alone does not run it, and the task has no default triggers. Add your own trigger for recurring runs.
 3. Check that source tags exist.
 4. If **Sync to Jellyfin Filter** is set, use comma- or semicolon-separated source names without the prefix. Putting each name on a new line does not work for sync, even though the form suggests it.
@@ -85,7 +85,7 @@ Seeing existing tag links does not require administrator status or **Enable Tags
 
 A blank Calendar page and a Calendar with no events need different checks. Start by confirming the page is enabled and opens from the right place.
 
-1. Under **Pages** → **Calendar Page**, turn on **Enable Calendar Page**, click **Save Settings**, and reload the web client.
+1. Under [**Pages** → **Calendar Page**](../open-in-jellyfin.md?tab=pages&card=calendar-page), turn on **Enable Calendar Page**, click **Save Settings**, and reload the web client.
 2. Verify at least one source: a complete enabled Sonarr/Radarr instance, or both **Shoko URL** and **Shoko API Key**. A Shoko-only Calendar needs neither Sonarr nor Radarr. **Enable \*arr Links on Detail Pages** is not required.
 3. Check how you are opening it: standalone, Plugin Pages, native Home tab, or Custom Tabs. Use the matching entry point; see [page placement](arr-settings.md#page-placement).
 4. Distinguish a blank/unready page from **No upcoming releases**. The former points to client injection or placement; the latter can be successful loading with no visible events.
@@ -135,7 +135,7 @@ There is no independently enabled second Seerr Requests page.
 
 Check the queue source and your access rules if Downloads is empty. Administrators and viewers can get different results.
 
-1. Under **Pages** → **Requests Page**, enable **Enable Requests Page** and **Show Downloads in Requests Page**, then save and reload.
+1. Under [**Pages** → **Requests Page**](../open-in-jellyfin.md?tab=pages&card=requests-page), enable **Enable Requests Page** and **Show Downloads in Requests Page**, then save and reload.
 2. Verify complete enabled Sonarr/Radarr cards and use **Test**. Confirm the upstream queue contains records.
 3. Compare administrator and viewer results. With **Filter Downloads by User Requests** on, administrators bypass filtering. Viewers need enabled/configured Seerr, a linked account, and requested titles.
 4. Clear download search/status selections and check Hidden Content filtering.

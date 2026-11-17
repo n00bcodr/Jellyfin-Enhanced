@@ -191,14 +191,14 @@ Server and saved user properties use PascalCase. Resolved client settings use ca
 
 Users can change **Hide tags on hover** later in their personal **Media Tags** section (**Layout** tab).
 
-If tag data is stale or missing, also check the server's cache configuration under **Media Tags** → **Server**:
+If tag data is stale or missing, also check the server's cache configuration under [**Media Tags** → **Server**](../open-in-jellyfin.md?jeSection=media-tags&tab=server):
 
 | Setting (admin) | Default | What it does |
 | --- | --- | --- |
 | **Exclude libraries from the tag cache** | Off | `TagCacheExcludeLibraries`: enables library exclusions. |
 | **Libraries to exclude** | Empty | `TagCacheExcludedLibraryIds`: selected libraries to skip; an empty selection excludes nothing. |
 
-Exclusion changes affect the next cache rebuild. Click **Save Settings**, then open **Admin** → **Tag Cache** and click **Rebuild Server Tag Cache**. Confirm the full rebuild. See [Tags & Badges](../enhanced/tags.md) for cache operation; CSS only styles the resulting elements.
+Exclusion changes affect the next cache rebuild. Click **Save Settings**, then open [**Admin** → **Tag Cache**](../open-in-jellyfin.md?tab=admin&card=tag-cache) and click **Rebuild Server Tag Cache**. Confirm the full rebuild. See [Tags & Badges](../enhanced/tags.md) for cache operation; CSS only styles the resulting elements.
 
 Use the **Position** pills on the **Groups** tab and the layout tiles on the **Layout** tab of **Media Tags** to move tag containers.
 
@@ -498,7 +498,7 @@ Using `.rating-tag-critic` without the exclusion also hides user-review chips.
 
 These chips show the aggregate 1–5 review average converted to a /10 score.
 
-They require a resolvable TMDB item key, personal **Show Rating Tags**, and the following admin settings under **Elsewhere & Reviews** → **User Reviews**:
+They require a resolvable TMDB item key, personal **Show Rating Tags**, and the following admin settings under [**Elsewhere & Reviews** → **User Reviews**](../open-in-jellyfin.md?tab=elsewhere&card=user-reviews):
 
 | Setting | Default | What it does |
 | --- | --- | --- |
@@ -560,7 +560,7 @@ The attribute holds a normalized rating, not necessarily the raw metadata spelli
 
 Poster badges independently reuse rating-specific colors from the Colored Ratings stylesheet, stripping its important flags. The TV-MA rule beats those shipped colors but loses to a more specific important admin age Tag Style. The fallback is blue-grey.
 
-Detail/player certifications use `.mediaInfoOfficialRating`, a separate surface. The administrator controls their colors under **Extras** → **UI Tweaks**.
+Detail/player certifications use `.mediaInfoOfficialRating`, a separate surface. The administrator controls their colors under [**Extras** → **UI Tweaks**](../open-in-jellyfin.md?tab=extras&card=ui-tweaks).
 
 | Setting | Default | What it does |
 | --- | --- | --- |
@@ -677,7 +677,7 @@ Deceased image treatment and the cross can be styled separately:
 
 ### *arr Tag Links
 
-Enable **Show synced tags as links** under the admin **\*arr** → **Tags Sync** section. Matching tags already present on an item become links in `.itemExternalLinks` on its detail page. Importing tags is a separate operation; see [*arr Features](../arr/arr-features.md).
+Enable **Show synced tags as links** under the admin [**\*arr** → **Tags Sync**](../open-in-jellyfin.md?tab=arr&card=tags-sync) section. Matching tags already present on an item become links in `.itemExternalLinks` on its detail page. Importing tags is a separate operation; see [*arr Features](../arr/arr-features.md).
 
 | Setting (admin) | Default | What it does |
 | --- | --- | --- |

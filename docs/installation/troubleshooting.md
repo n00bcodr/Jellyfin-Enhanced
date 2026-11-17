@@ -75,7 +75,7 @@ Check the script requests for a failed download or a response that contains the 
 2. Check the status, response type, and response body of the script request and `/JellyfinEnhanced/bundle.js?v=…`.
 3. Check browser messages for blocked scripts, browser extensions, content-security-policy errors, or failed assets.
 
-Administrator diagnostic setting, under **Admin** → **Developer Settings**:
+Administrator diagnostic setting, under [**Admin** → **Developer Settings**](../open-in-jellyfin.md?tab=admin&card=developer-settings):
 
 ![Developer Settings with the Dev Mode switch](../images/admin/developer.webp)
 
@@ -205,8 +205,8 @@ Use the action that matches the stale or missing content. Clearing all browser s
 | --- | --- |
 | Old scripts after an update | Hard-refresh; inspect the script version and proxy cache using [Scripts Not Loading](#scripts-not-loading). |
 | Stale translation strings | Personal **Language Settings** → **Clear Translation Cache** reloads this browser. **Refresh Translation Cache** signals clients to refresh translations on their next page load. See [Translation Updates](../faq-support/contributing-translations.md#translation-updates) for bundled-locale limits. |
-| Stale browser tag data | With **Server-Side Tag Cache** off, use administrator **Overview** → **Quick Actions** → **Clear all client tag caches**, or **Display** → **Clear All Client Caches**, then reload affected clients. |
-| Stale server tag data | **Refresh Tag Cache** updates changed entries and rebuilds the cache when needed. **Admin** → **Tag Cache** → **Rebuild Server Tag Cache** starts a full rebuild. |
+| Stale browser tag data | With **Server-Side Tag Cache** off, use administrator **Overview** → **Quick Actions** → **Clear all client tag caches**, or [**Display** → **Clear All Client Caches**](../open-in-jellyfin.md?tab=display&card=clear-all-client-caches), then reload affected clients. |
+| Stale server tag data | **Refresh Tag Cache** updates changed entries and rebuilds the cache when needed. [**Admin** → **Tag Cache**](../open-in-jellyfin.md?tab=admin&card=tag-cache) → **Rebuild Server Tag Cache** starts a full rebuild. |
 | Missing locally mirrored icons or other CDN assets | Check asset requests and server logs; run **Refresh CDN Assets** after repairing upstream connectivity. See the details below for the request path. |
 
 The admin **Display** controls for tag caching are:

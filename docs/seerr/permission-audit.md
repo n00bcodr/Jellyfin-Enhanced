@@ -14,7 +14,7 @@ The audit checks account linkage and selected permission gaps. It does not show 
 
 Run the check from JE's Seerr settings.
 
-**How to use:** Open **Dashboard** → **Plugins** → **Jellyfin Enhanced** → **Seerr** → **Permission Audit**, then press **Run Audit**.
+**How to use:** Open **Dashboard** → **Plugins** → **Jellyfin Enhanced** → [**Seerr**](../open-in-jellyfin.md?tab=seerr) → [**Permission Audit**](../open-in-jellyfin.md?tab=seerr&card=permission-audit), then press **Run Audit**.
 
 ## Quick steps
 
@@ -24,7 +24,7 @@ Use the audit after connecting Seerr or changing feature access.
 
 1. Configure and enable Seerr with saved URLs and API key. Use **Test** under **Seerr Connection Setup** to check connectivity with the entered credentials.
 2. Save changes to feature switches and **Blocked Users**.
-3. Open **Seerr** → **Permission Audit**, press **Run Audit**, and wait.
+3. Open [**Seerr** → **Permission Audit**](../open-in-jellyfin.md?tab=seerr&card=permission-audit), press **Run Audit**, and wait.
 4. Review missing-permission cards against your intended access policy. Adjust permissions in Seerr, or use [user import](seerr-settings.md#step-4-configure-user-import-optional) if an account is genuinely missing.
 5. Run the audit again after changes, then verify the relevant request/issue workflow as that user.
 

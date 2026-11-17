@@ -126,6 +126,7 @@ nav:
   - Home: index.md
 
   - Getting Started:
+    - Open in Jellyfin: open-in-jellyfin.md
     - Quick Start: getting-started/index.md
     - Installation: installation/installation.md
     - Compatibility: getting-started/compatibility.md

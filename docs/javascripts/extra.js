@@ -233,3 +233,13 @@
     init();
   }
 })();
+
+// "Open in Jellyfin" links open in a new tab (the page there sends the visitor on to their own server).
+// Delegated so it also works after Material's instant navigation swaps the page content.
+document.addEventListener("click", function (e) {
+    var a = e.target.closest && e.target.closest('.md-content a[href*="open-in-jellyfin/?"]');
+    if (!a || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    e.stopPropagation(); // keep instant navigation from handling it
+    window.open(a.href, "_blank", "noopener");
+}, true);

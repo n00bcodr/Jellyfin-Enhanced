@@ -17,7 +17,7 @@ You can choose tags for your own account. If you administer the server, you can 
 
 **How to use — admin defaults:**
 
-1. Open **Dashboard** → **Plugins** → **Jellyfin Enhanced** and select the **Media Tags** tab in the sidebar (under **Appearance**, after **Display**). Its sections are listed under it: **Overview**, **Layout defaults**, **Groups**, **Rules**, **Colours**, **Status badges** and **Server**. On a phone, open the page's menu, or use the row of section chips at the top of the tab. The **Media Tags** card on the **Display** tab opens it too. A link can open a section directly: `#/configurationpage?name=Jellyfin%20Enhanced&jeSection=media-tags&tab=<id>` (`overview`, `layout`, `groups`, `rules`, `colours`, `badges`, `server`; on Groups add `&group=quality` and so on). The old address `#/configurationpage?name=JellyfinEnhancedMediaTags&tab=<id>` still works and goes there.
+1. Open **Dashboard** → **Plugins** → **Jellyfin Enhanced** and select the [**Media Tags**](../open-in-jellyfin.md?jeSection=media-tags) tab in the sidebar (under **Appearance**, after **Display**). Its sections are listed under it: [**Overview**](../open-in-jellyfin.md?jeSection=media-tags&tab=overview), [**Layout defaults**](../open-in-jellyfin.md?jeSection=media-tags&tab=layout), [**Groups**](../open-in-jellyfin.md?jeSection=media-tags&tab=groups), [**Rules**](../open-in-jellyfin.md?jeSection=media-tags&tab=rules), [**Colours**](../open-in-jellyfin.md?jeSection=media-tags&tab=colours), [**Status badges**](../open-in-jellyfin.md?jeSection=media-tags&tab=badges) and [**Server**](../open-in-jellyfin.md?jeSection=media-tags&tab=server). On a phone, open the page's menu, or use the row of section chips at the top of the tab. The **Media Tags** card on the **Display** tab opens it too.
 2. Choose your settings. Each change saves on its own, so the tab needs no **Save Settings**. The line on the first card's header (on a phone, at the end of the section chips) says **Saving…**, then **All changes saved**. If a save fails, a bar at the bottom of the settings says **Not saved** with the settings it could not save and **Retry**. Those changes stay waiting while you move between sections, other tabs and links; the tab's sidebar entry shows a dot until they are saved. If they still cannot be saved when you leave the settings, it offers to take you back. Saving the other tabs (**Save Settings**, **Apply to all users**) waits for these changes and never undoes them. Signing out, or switching to another server, drops changes that were not saved; the next administrator to sign in never sees them, and an answer to that offer given after the switch takes no one back. Only the settings you change are saved, so another administrator's changes elsewhere are kept. If someone else changed the same setting since you opened the page, the bar says **Changed elsewhere** with both values of each setting and offers **Keep mine** or **Take theirs** (for one setting, **Keep <yours>** or **Use <theirs>**).
 3. Refresh affected web clients to load the changes.
 
@@ -156,7 +156,7 @@ At left centre or right centre, a group can use the poster's width when the oppo
 
 #### Tag size and spacing
 
-On **Media Tags** → **Layout**, below **Label density**, choose **Tag size** and **Gap**. The live preview and the cards already on screen update immediately; the choices save to your account.
+On [**Media Tags** → **Layout**](../open-in-jellyfin.md?jeSection=media-tags), below **Label density**, choose **Tag size** and **Gap**. The live preview and the cards already on screen update immediately; the choices save to your account.
 
 | Setting | Choices | Default |
 |---|---|---|
@@ -500,7 +500,7 @@ Under **Groups → Quality**, below the categories, choose a separate **Sound di
 
 Sound chooses the preferred language's tracks before extracting labels, including tracks with no displayable sound label. For example, English AAC stereo plus German Atmos shows no sound chip with English preferred; it does not fall back to German. Exact-region matches take priority over base-language matches. Only an absent language falls back to all available tracks; with no preference, all tracks are eligible.
 
-Each personal control also offers **Server default**, which follows future administrator changes. Administrators set starting values under **Media Tags → Groups → Quality**. New accounts and **Apply defaults to all users** copy those defaults. Existing preferences keep their appearance until a mode or default changes; editing these controls does not migrate a legacy layout.
+Each personal control also offers **Server default**, which follows future administrator changes. Administrators set starting values under [**Media Tags → Groups → Quality**](../open-in-jellyfin.md?jeSection=media-tags&tab=groups). New accounts and **Apply defaults to all users** copy those defaults. Existing preferences keep their appearance until a mode or default changes; editing these controls does not migrate a legacy layout.
 
 The resolution threshold is inclusive: **1080p** keeps 1080p and higher; **4K** hides the 1080p chips in a mostly 1080p library while keeping 4K and 8K standouts. Other quality categories remain eligible. Category switches and order apply first, then the Quality group's **Show up to** limit. Compact density shortens every additional chip as usual. Chips omitted by layout fitting count toward **+N**; chips intentionally removed by category filtering, thresholds or the group limit do not.
 
@@ -522,7 +522,7 @@ Categories left on Highest only keep their existing aggregation semantics. Sourc
 
 ![Technical quality, SDH subtitle and Post-credits chips on a 420px movie grid](../images/tags/technical-chips-mobile.webp)
 
-Under **Media Tags → Groups → Quality → Include**, enable **Runtime**, **Aspect ratio** or **Frame rate**. All three start off. Administrators choose defaults and stacking order on the Media Tags admin tab’s **Groups → Quality** section; existing personal choices remain in effect.
+Under [**Media Tags → Groups → Quality → Include**](../open-in-jellyfin.md?jeSection=media-tags&tab=groups), enable **Runtime**, **Aspect ratio** or **Frame rate**. All three start off. Administrators choose defaults and stacking order on the Media Tags admin tab’s **Groups → Quality** section; existing personal choices remain in effect.
 
 | Category | Full / Compact example | Source |
 |---|---|---|
@@ -536,7 +536,7 @@ Series and seasons use the representative episode for these three facts under Re
 
 ### Series policy and detection details
 
-Series and seasons share the **Series and seasons show:** setting in **Media Tags** → **Groups** → **Quality**. The administrator sets its starting default on the Media Tags admin tab under **Groups** → **Quality** → **Series and season quality**. **Follow server (…)**, the starting choice, follows the administrator's later changes. Each user can instead choose one of these, which then stays theirs even when it matches the administrator's:
+Series and seasons share the **Series and seasons show:** setting in [**Media Tags** → **Groups**](../open-in-jellyfin.md?jeSection=media-tags&tab=groups) → **Quality**. The administrator sets its starting default on the Media Tags admin tab under **Groups** → **Quality** → **Series and season quality**. **Follow server (…)**, the starting choice, follows the administrator's later changes. Each user can instead choose one of these, which then stays theirs even when it matches the administrator's:
 
 | Policy | What appears |
 |---|---|
@@ -710,7 +710,7 @@ The detail-page audio-language row shows language names and flags. You can also 
 **How to use:**
 
 1. Keep **Show Audio Languages** on in **UI Settings** to display the row.
-2. As an administrator, open **Display** → **Audio Language Tags** and turn on **Enable Audio Language Tags Sync** and **Link audio languages to their tag page**. Click **Save Settings**.
+2. As an administrator, open [**Display** → **Audio Language Tags**](../open-in-jellyfin.md?tab=display&card=audio-language-tags) and turn on **Enable Audio Language Tags Sync** and **Link audio languages to their tag page**. Click **Save Settings**.
 3. Run **Sync Audio Language Tags to Jellyfin** under **Dashboard** → **Scheduled Tasks** → **Jellyfin Enhanced** to tag existing movies and series.
 
 ![Clickable audio-language tags on a detail page and the resulting library list](../images/tags/audio-language-links.webp)
@@ -750,7 +750,7 @@ Rating Tags show an ordered selection of Community, Critic, IMDb, TMDb, Rotten T
 2. Under **Include**, tick sources and move them up or down. Set **Minimum score** and **Colour by score** if desired.
 3. Keep or change the item types and home rows under **Choose where to show**.
 
-Administrators set defaults on the Media Tags admin tab under **Groups** → **Rating**. MDBList itself (key, quota, fetch task) stays under **Elsewhere & Reviews** → **MDBList Ratings**; the Rating group shows whether it is set up.
+Administrators set defaults on the Media Tags admin tab under **Groups** → **Rating**. MDBList itself (key, quota, fetch task) stays under [**Elsewhere & Reviews** → **MDBList Ratings**](../open-in-jellyfin.md?tab=elsewhere&card=mdblist-ratings); the Rating group shows whether it is set up.
 
 ![Ordered rating source controls and the live preview](../images/tags/rating-sources-hub.png)
 
@@ -804,7 +804,7 @@ A pink person-with-heart chip shows the average star rating from reviews visible
 
 **How to use:**
 
-1. As an administrator, open **Elsewhere & Reviews** → **User Reviews**.
+1. As an administrator, open [**Elsewhere & Reviews** → **User Reviews**](../open-in-jellyfin.md?tab=elsewhere&card=user-reviews).
 2. Turn on **Enable User Written Reviews** and **Show average user rating on poster cards**, then click **Save Settings**.
 3. Each viewer must also turn on the **Rating** group. There is no separate personal review-chip switch.
 
@@ -844,7 +844,7 @@ Age Rating Tags show the official parental/content classification Jellyfin alrea
 | Setting | Default | What it does |
 |---|---|---|
 | Admin: **Enable Age Rating Tags** / personal: **Age Rating** switch | Off | Shows the item's official classification on supported cards |
-| Admin: **Colored Ratings Backgrounds** | Off | Under **Extras** → **UI Tweaks**, colors official classification boxes on detail pages and applicable player elements |
+| Admin: **Colored Ratings Backgrounds** | Off | Under [**Extras** → **UI Tweaks**](../open-in-jellyfin.md?tab=extras&card=ui-tweaks), colors official classification boxes on detail pages and applicable player elements |
 
 The default bottom-right position stacks with Rating Tags. Seasons and episodes normally show their own nonblank classification, or their series' classification if they have none.
 
@@ -920,7 +920,7 @@ With **Compact** density, Season Premiere becomes **Premiere**; Season Finale an
 ![Native poster with runtime, aspect ratio, frame rate, SDH subtitles and a Post-credits badge](../images/tags/technical-chips-native.webp)
 *Administrator native-poster preview using cached Jellyfin streams and TMDB keywords; not a physical-client capture.*
 
-On **Media Tags → Status badges**, **Scenes** enables **Post-credits** and **Mid-credits** for movies. It starts off for both administrators and users. An administrator must enable the family on the Media Tags admin tab’s **Status badges** tab and configure the existing TMDB key. Then users can enable Scenes for their account. The movie in both the personal and admin live previews carries a Post-credits sample, shown when Scenes is enabled and no higher-priority family is selected.
+On [**Media Tags → Status badges**](../open-in-jellyfin.md?jeSection=media-tags&tab=badges), **Scenes** enables **Post-credits** and **Mid-credits** for movies. It starts off for both administrators and users. An administrator must enable the family on the Media Tags admin tab’s **Status badges** tab and configure the existing TMDB key. Then users can enable Scenes for their account. The movie in both the personal and admin live previews carries a Post-credits sample, shown when Scenes is enabled and no higher-priority family is selected.
 
 TMDB’s exact `aftercreditsstinger` and `duringcreditsstinger` keywords supply the facts. The server resolves them daily through its shared response cache and keeps the result in the tag cache; no browser or native poster request contacts TMDB per card. A failed lookup omits an unknown marker and keeps previously confirmed facts for later retry. No keyword is not a guarantee that a movie has no extra scene. Scenes follows the usual one-badge priority, after Just Added; Post-credits wins when both keywords exist. Native posters and the batch fallback use the same facts and switches.
 
@@ -1052,7 +1052,7 @@ Awards adds **IMDb Top 250**, **Rotten Tomatoes Certified Fresh**, **Oscar Winne
 1. An administrator enables **Media Tags settings → Groups → Awards**, then selects the ribbons. Each edit saves automatically.
 2. For chart membership and Certified Fresh, configure the existing server **MDBList API Key**. Without a key these three ribbons are off; Oscar/Emmy use Wikidata without a key.
 3. Run **Refresh Awards Tags** in **Dashboard → Scheduled Tasks → Jellyfin Enhanced**. Its default daily trigger is 04:00, and the first refresh starts on its own when you turn Awards on. The task also works with Server-Side Tag Cache off. Under **Groups → Awards**, **What it needs** shows whether the MDBList key is set and when the task last ran.
-4. Each existing user enables **Awards** in **Media Tags → Groups**. New users take the admin default. Set its position, priority and **Show up to** limit like other groups (two by default, or All).
+4. Each existing user enables **Awards** in [**Media Tags → Groups**](../open-in-jellyfin.md?jeSection=media-tags&tab=groups). New users take the admin default. Set its position, priority and **Show up to** limit like other groups (two by default, or All).
 
 | Administrator setting | Default | Behavior |
 |---|---|---|
@@ -1137,7 +1137,7 @@ People Tags add age and birthplace facts to cast and guest-cast cards on item de
 
 **How to use:**
 
-1. Turn on **Show People Tags** in **Media Tags** → **Layout**.
+1. Turn on **Show People Tags** in [**Media Tags** → **Layout**](../open-in-jellyfin.md?jeSection=media-tags).
 2. Open a title's detail page and view its cast.
 
 Administrators can set the starting value in **Media Tags**.
@@ -1172,7 +1172,7 @@ You can show scores in the web video player's controls and an age-classification
 **How to use:**
 
 1. Configure score chips on the Media Tags admin tab (**Groups** → **Rating**, which also holds **Show the rating in the video player**).
-2. Configure the playback-start classification badge under **Playback** → **Player Behaviour**.
+2. Configure the playback-start classification badge under [**Playback** → **Player Behaviour**](../open-in-jellyfin.md?tab=playback&card=player-behaviour).
 3. Save the playback setting on the main page; Media Tags edits save automatically. Refresh the web client.
 
 | Setting | Default | What it does |
@@ -1320,7 +1320,7 @@ Native Poster Tags add your enabled poster groups to images shown in eligible na
 
 1. Enable suitable tag groups and ensure the items have the required metadata.
 2. On the Media Tags admin tab → **Server**, turn on **Native poster tags (experimental)**.
-3. Each user can opt out with **Show Tags in Native Clients (Experimental)** in **Media Tags** → **Layout**.
+3. Each user can opt out with **Show Tags in Native Clients (Experimental)** in [**Media Tags** → **Layout**](../open-in-jellyfin.md?jeSection=media-tags).
 4. Reopen the native app's library or restart the app to pick up changed poster addresses.
 
 ![Native poster tag master switch and client exclusions](../images/admin/native-tags.webp)

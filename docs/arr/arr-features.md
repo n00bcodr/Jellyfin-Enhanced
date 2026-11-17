@@ -7,7 +7,7 @@ Connect Sonarr and Radarr for item links, metadata tags, upcoming releases, and 
 !!! note "Who can use these features"
     Service links are available to Jellyfin administrators. Signed-in viewers can use tag links and enabled **Calendar** and **Requests** pages. What they see depends on library access, request ownership, section settings, and Seerr permissions.
 
-Configure connections under **Jellyfin Enhanced** → **\*arr**. Configure the pages under **Pages**. See [*arr settings](arr-settings.md) for every control and its default, or [troubleshooting](troubleshooting-support.md) if results are missing.
+Configure connections under **Jellyfin Enhanced** → [**\*arr**](../open-in-jellyfin.md?tab=arr). Configure the pages under **Pages**. See [*arr settings](arr-settings.md) for every control and its default, or [troubleshooting](troubleshooting-support.md) if results are missing.
 
 ## ARR Links
 
@@ -15,7 +15,7 @@ Open a movie or series in Sonarr, Radarr, or Bazarr from its Jellyfin detail pag
 
 ### Setup
 
-1. Open **Jellyfin Enhanced** → **\*arr**.
+1. Open **Jellyfin Enhanced** → [**\*arr**](../open-in-jellyfin.md?tab=arr).
 2. Use **+ Add Sonarr instance** or **+ Add Radarr instance** and enter **URL** and **API Key**. The URL must be reachable from the Jellyfin server.
 3. Optionally enter **Bazarr URL**.
 4. Turn on **Enable \*arr Links on Detail Pages** and choose the link presentation below.
@@ -237,7 +237,7 @@ See upcoming episodes and cinema, digital, and physical movie releases in one Ca
 ### Setup
 
 1. Configure an enabled Sonarr or Radarr instance, or enter **Shoko URL** and **Shoko API Key**, under **\*arr**.
-2. Open **Pages** → **Calendar Page** and turn on **Enable Calendar Page**.
+2. Open [**Pages** → **Calendar Page**](../open-in-jellyfin.md?tab=pages&card=calendar-page) and turn on **Enable Calendar Page**.
 3. Choose a navigation mode, then click **Save Settings** and reload the web client.
 
 !!! note "Calendar data needs no companion plugin"
@@ -332,7 +332,7 @@ To show watchlisted episodes on a phone, expand the filter panel, select **Episo
 
 Shoko adds pink **Anime** events from its server collection. Use it to include anime in Calendar.
 
-1. Configure the one supported Shoko connection under **\*arr** → **Shoko**.
+1. Configure the one supported Shoko connection under [**\*arr** → **Shoko**](../open-in-jellyfin.md?tab=arr&card=shoko).
 2. Enable Calendar under **Pages**.
 3. Under **Episode Types to Show on Calendar**, enable the types you want.
 
@@ -359,7 +359,7 @@ Downloads are part of the shared **Requests** page, alongside Seerr **Requests**
 ### Setup
 
 1. Configure complete, enabled Sonarr/Radarr instances under **\*arr**.
-2. Open **Pages** → **Requests Page** and turn on **Enable Requests Page**.
+2. Open [**Pages** → **Requests Page**](../open-in-jellyfin.md?tab=pages&card=requests-page) and turn on **Enable Requests Page**.
 3. Keep **Show Downloads in Requests Page** on and review ownership and History controls below.
 4. Choose standalone, native Home tab, Plugin Pages, or Custom Tabs placement, then click **Save Settings** and reload.
 
