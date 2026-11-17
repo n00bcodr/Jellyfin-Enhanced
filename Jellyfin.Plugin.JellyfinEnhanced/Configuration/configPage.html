@@ -5019,6 +5019,52 @@
             banner.style.display = checkbox.checked ? '' : 'none';
         }
 
+        var elsewhereIconCheckSeq = 0;
+        var elsewhereIconCheckTimer = null;
+
+        /**
+         * Test-loads the Elsewhere Custom Branding Icon URL in the admin's browser
+         * (the same way viewers' browsers load it) and shows a warning under the
+         * field when it can't be loaded, e.g. because a server file path was entered.
+         */
+        function updateElsewhereIconWarning() {
+            var input = document.getElementById('ElsewhereCustomBrandingImageUrl');
+            var banner = document.getElementById('je-elsewhere-icon-warning');
+            if (!input || !banner) return;
+            var url = (input.value || '').trim();
+            var seq = ++elsewhereIconCheckSeq;
+            banner.style.display = 'none';
+            banner.textContent = '';
+            if (!url) return;
+            var looksLikeFilePath = /^(file:|[a-z]:[\\/]|\\\\)/i.test(url)
+                || /^\/(config|data|mnt|media|usr|home|srv|opt|var|volume\d*|share)\//i.test(url);
+            var img = new Image();
+            img.onload = function() {
+                if (seq !== elsewhereIconCheckSeq) return;
+                banner.style.display = 'none';
+            };
+            img.onerror = function() {
+                if (seq !== elsewhereIconCheckSeq) return;
+                var strong = document.createElement('strong');
+                strong.textContent = 'This icon can\'t be loaded. ';
+                banner.textContent = '';
+                banner.appendChild(strong);
+                banner.appendChild(document.createTextNode(
+                    (looksLikeFilePath ? 'It looks like a file path on the server. ' : '')
+                    + 'Viewers\' browsers load the icon over the web, so it has to be an address a browser can open, such as https://example.com/logo.png, or a path Jellyfin serves, such as /web/favicons/touchicon.png. Files elsewhere on the server can\'t be used; host the image on a web server or image host instead.'));
+                banner.style.display = '';
+            };
+            img.src = url;
+        }
+
+        /**
+         * Debounced wrapper so typing in the icon URL field doesn't fire a request per key.
+         */
+        function scheduleElsewhereIconWarning() {
+            clearTimeout(elsewhereIconCheckTimer);
+            elsewhereIconCheckTimer = setTimeout(updateElsewhereIconWarning, 400);
+        }
+
         /**
          * Adds a dependency tag to an element's comma-separated data-dep-disabled attribute.
          * @param {HTMLElement} el - The element to tag
@@ -6279,6 +6325,7 @@
             INDIVIDUAL_DEPS.forEach(updateIndividualDep);
             CUSTOM_TABS_V12_HINTS.forEach(updateCustomTabsV12Hint);
             updateSearchExcludeLibraryWarning();
+            scheduleElsewhereIconWarning();
             PARENT_DEPS.forEach(updateParentDep);
             updateRegionSourceNote();
             updateClearTagCachesQuickBtnVisibility();
@@ -6709,6 +6756,8 @@
         });
         var searchExcludeLibraryCheckbox = document.getElementById('jellyseerrSearchExcludeLibraryItems');
         if (searchExcludeLibraryCheckbox) searchExcludeLibraryCheckbox.addEventListener('change', updateSearchExcludeLibraryWarning);
+        var elsewhereIconInput = document.getElementById('ElsewhereCustomBrandingImageUrl');
+        if (elsewhereIconInput) elsewhereIconInput.addEventListener('input', scheduleElsewhereIconWarning);
 
         var originalTestTmdb = testTmdbConnection;
         testTmdbConnection = async function(event) {

@@ -899,10 +899,6 @@
 
                 // Add custom icon if URL is provided
                 if (ELSEWHERE_CUSTOM_BRANDING_IMAGE_URL) {
-                    title.style.display = 'flex';
-                    title.style.alignItems = 'center';
-                    title.style.gap = '8px';
-
                     const icon = document.createElement('img');
                     icon.src = ELSEWHERE_CUSTOM_BRANDING_IMAGE_URL;
                     icon.alt = 'Custom Branding';
@@ -913,7 +909,10 @@
                         object-fit: contain;
                         margin-left: 4px;
                     `;
-                    icon.onerror = () => icon.style.display = 'none';
+                    icon.onerror = () => {
+                        icon.style.display = 'none';
+                        console.warn(`🪼 Jellyfin Enhanced: Elsewhere custom branding icon failed to load from "${ELSEWHERE_CUSTOM_BRANDING_IMAGE_URL}". It must be a web address the browser can open, not a server file path.`);
+                    };
                     title.appendChild(icon);
                 }
             } else {
@@ -932,6 +931,13 @@
                 display: flex;
                 align-items: flex-end;
             `;
+
+            // The cssText above replaces every inline style, so centre the
+            // custom branding icon against the message after it.
+            if (title.querySelector('.elsewhere-custom-branding-icon')) {
+                title.style.alignItems = 'center';
+                title.style.gap = '8px';
+            }
 
             // Add JustWatch link if available and has filtered services
             if (hasFilteredServices && linkUrl) {

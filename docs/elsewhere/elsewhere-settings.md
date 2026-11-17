@@ -213,13 +213,13 @@ Show your own heading when no filtered automatic providers or season groups rema
 ### How to use
 
 1. Expand **Custom Branding** in **Elsewhere & Reviews**.
-2. Enter a message and optional icon URL. Use an image viewers can access, such as an HTTPS URL or a root-relative path like `/web/assets/img/icon.png`.
+2. Enter a message and optional icon URL. Each viewer's browser loads the icon, so use a web address it can open, such as `https://example.com/logo.png`, or a path Jellyfin serves, such as `/web/favicons/touchicon.png`. A file path on the server, such as `/config/logo.png`, doesn't work. If the admin page can't load the image, a warning appears under the field.
 3. Click **Save Settings** and reload the client.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
 | **Custom Branding Message** | Empty | Replaces only the automatic unavailable heading. Empty keeps the standard unavailable heading. |
-| **Custom Branding Icon URL** | Empty | Adds a 24 × 24 CSS-pixel icon beside the custom message. Empty supplies no icon. |
+| **Custom Branding Icon URL** | Empty | Adds a 24 × 24 CSS-pixel icon beside the custom message. Any image type browsers show works, such as PNG, SVG or WebP. Empty supplies no icon. |
 
 !!! tip "Check your touch devices"
 

@@ -264,8 +264,9 @@ JEAdmin.define({
             { type: 'group', title: 'Custom Branding', items: [
                 { id: 'ElsewhereCustomBrandingText', prop: 'ElsewhereCustomBrandingText', type: 'text', label: 'Custom Branding Message', placeholder: 'e.g., Only available on My Server',
                   desc: 'Custom message to display when content is not available on any streaming providers. Leave blank to disable custom branding.' },
-                { id: 'ElsewhereCustomBrandingImageUrl', prop: 'ElsewhereCustomBrandingImageUrl', type: 'text', label: 'Custom Branding Icon URL', placeholder: '/web/assets/img/icon.png',
-                  desc: 'Optional URL for an icon to display next to the custom message. Leave blank for no icon.' }
+                { id: 'ElsewhereCustomBrandingImageUrl', prop: 'ElsewhereCustomBrandingImageUrl', type: 'text', label: 'Custom Branding Icon URL', placeholder: 'e.g., https://example.com/logo.png',
+                  desc: 'Optional icon shown next to the custom message, at 24 × 24. Each viewer\'s browser loads it, so use a web address such as <code>https://example.com/logo.png</code> or a path Jellyfin serves such as <code>/web/favicons/touchicon.png</code>, not a file path on the server. Any image type browsers show works (PNG, SVG, WebP). Leave blank for no icon.' },
+                { type: 'custom', html: '<div class="jea-note jea-note-warn" id="je-elsewhere-icon-warning" style="display:none;"></div>' }
             ] }
         ]
     },
