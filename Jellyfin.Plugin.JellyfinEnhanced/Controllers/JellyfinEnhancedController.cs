@@ -10893,6 +10893,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     && !ElsewhereIconContentTypes.Contains(uploadedFile.ContentType))
                     return BadRequest("The Elsewhere icon must be a PNG, JPEG, GIF, WebP or SVG image");
 
+                // The Elsewhere icon is served by its content, so only store bytes that
+                // are recognisably one of those formats; anything else would be served
+                // with the wrong type and never display.
+                if (string.Equals(normalizedFileName, ElsewhereBrandingIconFileName, StringComparison.OrdinalIgnoreCase))
+                {
+                    string? sniffed;
+                    using (var head = uploadedFile.OpenReadStream())
+                    {
+                        sniffed = SniffImageContentType(head);
+                    }
+
+                    if (sniffed == null)
+                        return BadRequest("The Elsewhere icon file isn't a readable PNG, JPEG, GIF, WebP or SVG image (an SVG must be UTF-8 and have its <svg> tag in the first 64 KB)");
+                }
+
                 const long maxFileSize = 10 * 1024 * 1024; // 10MB
                 if (uploadedFile.Length > maxFileSize)
                     return BadRequest($"File too large (max 10MB)");
@@ -10963,7 +10978,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             string? contentType = null;
             if (filePath.EndsWith(ElsewhereBrandingIconFileName, StringComparison.OrdinalIgnoreCase))
             {
-                contentType = SniffImageContentType(filePath);
+                if (!TrySniffImageFile(filePath, out contentType))
+                {
+                    return NotFound();
+                }
+
+                SetUploadedImageSandboxHeaders();
             }
 
             if (contentType == null && !new FileExtensionContentTypeProvider().TryGetContentType(filePath, out contentType))
@@ -10985,17 +11005,50 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         public IActionResult GetElsewhereBrandingIcon()
         {
             if (!TryResolveBrandingFilePath(ElsewhereBrandingIconFileName, out _, out var filePath)
-                || !System.IO.File.Exists(filePath))
+                || !System.IO.File.Exists(filePath)
+                || !TrySniffImageFile(filePath, out var contentType))
             {
                 return NotFound();
             }
 
-            // An admin-uploaded SVG must never run script if the URL is opened directly.
-            Response.Headers["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox";
-            Response.Headers["X-Content-Type-Options"] = "nosniff";
+            SetUploadedImageSandboxHeaders();
             // Clients add ?v=<upload time>, so a re-upload gets a new URL.
             Response.Headers["Cache-Control"] = "public, max-age=86400";
-            return PhysicalFile(filePath, SniffImageContentType(filePath) ?? "image/png");
+            return PhysicalFile(filePath, contentType ?? "image/png");
+        }
+
+        /// <summary>
+        /// Headers for serving an admin-uploaded image that may be an SVG: it must never
+        /// run script or load anything if its URL is opened directly.
+        /// </summary>
+        private void SetUploadedImageSandboxHeaders()
+        {
+            Response.Headers["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox";
+            Response.Headers["X-Content-Type-Options"] = "nosniff";
+        }
+
+        /// <summary>
+        /// Sniffs a stored image's type. Returns false when the file vanished or can't be
+        /// read (e.g. deleted mid-request); <paramref name="contentType"/> is null when
+        /// the content isn't recognised.
+        /// </summary>
+        private static bool TrySniffImageFile(string filePath, out string? contentType)
+        {
+            contentType = null;
+            try
+            {
+                using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                contentType = SniffImageContentType(stream);
+                return true;
+            }
+            catch (IOException)
+            {
+                return false;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return false;
+            }
         }
 
         /// <summary>
@@ -11024,18 +11077,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         }
 
         /// <summary>
-        /// Identifies an image by its first bytes (PNG, JPEG, GIF, WebP or SVG), so a
-        /// file stored under a fixed name is served with its real type. Returns null
-        /// when the content isn't recognised.
+        /// Identifies an image by its first bytes (PNG, JPEG, GIF, WebP or UTF-8 SVG), so a
+        /// file stored under a fixed name is served with its real type. Upload uses the
+        /// same window, so every stored Elsewhere icon is recognised when served.
+        /// Returns null when the content isn't recognised.
         /// </summary>
-        private static string? SniffImageContentType(string filePath)
+        private static string? SniffImageContentType(Stream stream)
         {
-            // SVGs can open with an XML prolog, comments or a DOCTYPE before <svg.
-            var head = new byte[4096];
-            int read;
-            using (var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            // SVGs can open with an XML prolog, comments, metadata or a DOCTYPE before <svg.
+            var head = new byte[64 * 1024];
+            var read = 0;
+            int n;
+            while (read < head.Length && (n = stream.Read(head, read, head.Length - read)) > 0)
             {
-                read = stream.Read(head, 0, head.Length);
+                read += n;
             }
 
             if (read >= 8 && head[0] == 0x89 && head[1] == 0x50 && head[2] == 0x4E && head[3] == 0x47) return "image/png";

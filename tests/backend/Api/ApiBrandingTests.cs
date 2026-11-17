@@ -1,4 +1,11 @@
+using System.Reflection;
 using System.Security.Claims;
+using System.Text.Json;
+using Jellyfin.Plugin.JellyfinEnhanced.Services;
+using MediaBrowser.Controller.Library;
+using MediaBrowser.Controller.Session;
+using Microsoft.AspNetCore.Authorization;
+using Moq;
 using Jellyfin.Plugin.JellyfinEnhanced.Controllers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -51,6 +58,38 @@ public class ApiBrandingTests
     }
 
     [Fact]
+    public void ElsewhereIconRouteNeedsNoLoginBecauseImgTagsSendNoAuthHeader()
+    {
+        var method = typeof(JellyfinEnhancedController).GetMethod(nameof(JellyfinEnhancedController.GetElsewhereBrandingIcon))!;
+        Assert.NotNull(method.GetCustomAttribute<AllowAnonymousAttribute>());
+        Assert.Null(method.GetCustomAttribute<AuthorizeAttribute>());
+    }
+
+    [Fact]
+    public async Task PublicConfigIconVersionTracksUploadReuploadAndDelete()
+    {
+        using var f = new ApiPluginFixture();
+        var c = ApiAssetTests.Controller(f.Core, f.Core.Manager,
+            new MaintenanceModeService(Mock.Of<IUserManager>(), Mock.Of<ISessionManager>(), f.Core.Paths.Object, f.Core.Logger));
+        c.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Role, "Administrator")], "test"));
+        string Version() => JsonSerializer.SerializeToElement(Assert.IsType<JsonResult>(c.GetPublicConfig()).Value)
+            .GetProperty("ElsewhereCustomBrandingIconVersion").GetString()!;
+
+        Assert.Equal(string.Empty, Version());
+        Form(c, "elsewhere-icon.png");
+        Assert.IsType<OkObjectResult>(await c.UploadBrandingImage());
+        var first = Version();
+        Assert.NotEqual(string.Empty, first);
+        File.SetLastWriteTimeUtc(Path.Combine(Plugin.BrandingDirectory, "elsewhere-icon.png"), DateTime.UtcNow.AddMinutes(-5));
+        Form(c, "elsewhere-icon.png");
+        Assert.IsType<OkObjectResult>(await c.UploadBrandingImage());
+        Assert.NotEqual(first, Version());
+        Form(c, "elsewhere-icon.png", withFile: false);
+        Assert.IsType<OkObjectResult>(c.DeleteBrandingImage());
+        Assert.Equal(string.Empty, Version());
+    }
+
+    [Fact]
     public void ElsewhereIconIsAbsentUntilUploaded()
     {
         using var f = new ApiPluginFixture();
@@ -89,6 +128,21 @@ public class ApiBrandingTests
         Assert.Equal("nosniff", viewer.Response.Headers["X-Content-Type-Options"].ToString());
         // The admin preview gets the real type too, not the slot name's.
         Assert.Equal("image/svg+xml", Assert.IsType<PhysicalFileResult>(c.GetBrandingImage("elsewhere-icon.png")).ContentType);
+    }
+
+    [Theory]
+    [InlineData("image/png", "not an image at all")]
+    [InlineData("image/svg+xml", "PAD")] // <svg> beyond the 64 KB sniff window
+    public async Task ElsewhereIconRejectsContentThatWouldNotBeServedAsAnImage(string mime, string kind)
+    {
+        using var f = new ApiPluginFixture();
+        var c = Controller(f);
+        var body = kind == "PAD"
+            ? System.Text.Encoding.UTF8.GetBytes("<?xml version=\"1.0\"?><!--" + new string('x', 70 * 1024) + "--><svg xmlns=\"http://www.w3.org/2000/svg\"/>")
+            : System.Text.Encoding.UTF8.GetBytes(kind);
+        Form(c, "elsewhere-icon.png", mime, bytes: body);
+        Assert.IsType<BadRequestObjectResult>(await c.UploadBrandingImage());
+        Assert.False(File.Exists(Path.Combine(Plugin.BrandingDirectory, "elsewhere-icon.png")));
     }
 
     [Theory]

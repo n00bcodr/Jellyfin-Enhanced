@@ -26,16 +26,21 @@
          */
         function resolveBrandingIconUrl(configuredUrl, uploadVersion) {
             const api = window.ApiClient;
-            if (uploadVersion && api && typeof api.getUrl === 'function') {
-                return api.getUrl('/JellyfinEnhanced/ElsewhereBrandingIcon', { v: uploadVersion });
+            const serverUrl = (path, params) => {
+                if (!api || typeof api.getUrl !== 'function') return null;
+                try {
+                    return api.getUrl(path, params);
+                } catch (e) {
+                    return null;
+                }
+            };
+            if (uploadVersion) {
+                const uploaded = serverUrl('/JellyfinEnhanced/ElsewhereBrandingIcon', { v: uploadVersion });
+                if (uploaded) return uploaded;
             }
             const url = String(configuredUrl || '').trim();
-            if (/^\/(web|JellyfinEnhanced)\//i.test(url) && api && typeof api.getUrl === 'function') {
-                try {
-                    return api.getUrl(url);
-                } catch (e) {
-                    return url;
-                }
+            if (/^\/(web|JellyfinEnhanced)\//i.test(url)) {
+                return serverUrl(url) || url;
             }
             return url;
         }
@@ -939,7 +944,9 @@
                     `;
                     icon.onerror = () => {
                         icon.style.display = 'none';
-                        console.warn(`🪼 Jellyfin Enhanced: Elsewhere custom branding icon failed to load from "${ELSEWHERE_CUSTOM_BRANDING_IMAGE_URL}". It must be a web address the browser can open, not a server file path.`);
+                        console.warn(JE.pluginConfig.ElsewhereCustomBrandingIconVersion
+                            ? `🪼 Jellyfin Enhanced: the uploaded Elsewhere custom branding icon failed to load from "${ELSEWHERE_CUSTOM_BRANDING_IMAGE_URL}". Re-upload it in the plugin settings.`
+                            : `🪼 Jellyfin Enhanced: Elsewhere custom branding icon failed to load from "${ELSEWHERE_CUSTOM_BRANDING_IMAGE_URL}". It must be a web address the browser can open, not a server file path.`);
                     };
                     title.appendChild(icon);
                 }

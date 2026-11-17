@@ -4463,6 +4463,7 @@
 
                 // Known-empty slots skip the network probe entirely.
                 if (brandingStatus && brandingStatus[config.fileName] === false) {
+                    setElsewhereIconUploaded(config, false);
                     const previewImg = document.getElementById(config.previewId);
                     const placeholder = document.getElementById(config.placeholderId);
                     if (previewImg) previewImg.style.display = 'none';
@@ -4478,6 +4479,18 @@
             // Validate that it's an image file
             if (!file.type || !file.type.startsWith('image/')) {
                 statusDiv.textContent = '✗ Only image files allowed';
+                statusDiv.style.color = '#ff6b6b';
+                return;
+            }
+
+            // A slot that lists exact types in its input's accept attribute (the
+            // Elsewhere icon) only takes those; dropped files bypass the picker filter.
+            const slotInput = document.getElementById(config.inputId);
+            const accepted = slotInput && slotInput.accept && slotInput.accept !== 'image/*'
+                ? slotInput.accept.split(',').map(t => t.trim().toLowerCase())
+                : null;
+            if (accepted && accepted.indexOf(file.type.toLowerCase()) === -1) {
+                statusDiv.textContent = '✗ Use a PNG, JPG, GIF, WebP or SVG image';
                 statusDiv.style.color = '#ff6b6b';
                 return;
             }
@@ -4544,11 +4557,14 @@
                     const error = await response.text();
                     statusDiv.textContent = `✗ ${error || 'Upload failed'}`;
                     statusDiv.style.color = '#ff6b6b';
+                    // Show what is actually stored, not the rejected file.
+                    await refreshBrandingPreview(config);
                 }
             } catch (error) {
                 console.error('Upload exception:', error);
                 statusDiv.textContent = `✗ ${error.message || 'Upload error'}`;
                 statusDiv.style.color = '#ff6b6b';
+                await refreshBrandingPreview(config);
             }
         }
 
@@ -4572,6 +4588,7 @@
                     if (placeholder) placeholder.style.display = 'block';
                     if (deleteButton) deleteButton.style.display = 'none';
                     if (dimensionsDiv) dimensionsDiv.style.display = 'none';
+                    setElsewhereIconUploaded(config, false);
                     return;
                 }
 
@@ -4581,6 +4598,7 @@
                 previewImg.style.display = 'block';
                 if (placeholder) placeholder.style.display = 'none';
                 if (deleteButton) deleteButton.style.display = 'inline-block';
+                setElsewhereIconUploaded(config, true);
 
                 // Show dimensions for existing images
                 if (dimensionsDiv) {
@@ -5022,6 +5040,21 @@
 
         var elsewhereIconCheckSeq = 0;
         var elsewhereIconCheckTimer = null;
+        var elsewhereIconLastChecked = null;
+        var elsewhereIconUploaded = false;
+
+        /**
+         * Records whether an Elsewhere icon is uploaded (the URL setting is then unused)
+         * and re-checks the URL warning when that changes.
+         * @param {Object} config - The branding upload slot config.
+         * @param {boolean} uploaded - Whether the slot now holds an image.
+         */
+        function setElsewhereIconUploaded(config, uploaded) {
+            if (!config || config.fileName !== 'elsewhere-icon.png' || elsewhereIconUploaded === uploaded) return;
+            elsewhereIconUploaded = uploaded;
+            elsewhereIconLastChecked = null;
+            scheduleElsewhereIconWarning();
+        }
 
         /**
          * Test-loads the Elsewhere Custom Branding Icon URL in the admin's browser
@@ -5033,10 +5066,17 @@
             var banner = document.getElementById('je-elsewhere-icon-warning');
             if (!input || !banner) return;
             var url = (input.value || '').trim();
+            // An uploaded icon replaces the URL, so a stale URL needs no warning.
+            var key = elsewhereIconUploaded ? '' : url;
+            // Unrelated dependency updates call this too; don't re-fetch or flicker.
+            if (key === elsewhereIconLastChecked) return;
+            elsewhereIconLastChecked = key;
             var seq = ++elsewhereIconCheckSeq;
-            banner.style.display = 'none';
-            banner.textContent = '';
-            if (!url) return;
+            if (!key) {
+                banner.style.display = 'none';
+                banner.textContent = '';
+                return;
+            }
             var looksLikeFilePath = /^(file:|[a-z]:[\\/]|\\\\)/i.test(url)
                 || /^\/(config|data|mnt|media|usr|home|srv|opt|var|volume\d*|share)\//i.test(url);
             var img = new Image();
