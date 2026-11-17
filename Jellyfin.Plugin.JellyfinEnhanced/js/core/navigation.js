@@ -72,7 +72,7 @@
         };
     }
 
-    // On a jellyfin-web dialog's own history entry (see dispatchNavigate).
+    // A jellyfin-web dialog is open over the page, on the entry it pushed (see dispatchNavigate).
     let onDialogEntry = false;
 
     /**
@@ -103,13 +103,14 @@
      */
     function dispatchNavigate(event) {
         if (window.location.href === lastDispatchedHref) return;
-        // A jellyfin-web dialog opened on the page (an item's "…" menu) adds an entry at the address its
-        // router last saw, without the page's own fragment, and Back closes it: neither is a navigation,
-        // the page is still there showing what it did.
-        const dialog = isDialogEntry();
-        if ((dialog || onDialogEntry) && lastDispatchedHref !== null
-            && routerPart(window.location.href) === routerPart(lastDispatchedHref)) {
-            onDialogEntry = dialog;
+        // A jellyfin-web dialog opened on the page (an item's "…" menu) pushes an entry at the address its
+        // router last saw, without the page's own fragment, and Back off it closes it: neither is a
+        // navigation, the page is still there showing what it did. (Back or Forward onto such an entry
+        // left behind, with no dialog open, is one: it moves between the page's own entries.)
+        const samePage = lastDispatchedHref !== null && routerPart(window.location.href) === routerPart(lastDispatchedHref);
+        const opened = samePage && event?.type === 'je:navigate' && isDialogEntry();
+        if (opened || (samePage && onDialogEntry && !isDialogEntry())) {
+            onDialogEntry = opened;
             lastDispatchedHref = window.location.href;
             return;
         }
@@ -137,6 +138,7 @@
         const change = push ? (unpatchedPush || history.pushState.bind(history)) : (unpatchedReplace || history.replaceState.bind(history));
         change(state, '', url);
         lastDispatchedHref = window.location.href;
+        onDialogEntry = false;
     }
 
     /**

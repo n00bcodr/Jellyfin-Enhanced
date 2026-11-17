@@ -133,3 +133,25 @@ test('unknown Custom Tabs state waits for response and recovers from provider fa
   response.reject(new Error('plugin unavailable'));
   await until(() => h.panel()); assert.equal(h.button().dataset.index, '2'); assertAligned(h);
 });
+
+for (const fragment of ['', '#jeType=movies']) {
+  test(`a tab the user picked stays picked when a jellyfin-web dialog opens over it (the deep link${fragment ? " with the filters' fragment" : ''})`, async t => {
+    const link = '#/home?tab=2&jeTab=requests';
+    const h = setup(t, { hash: link + fragment }); h.register();
+    await until(() => h.panel()?.classList.contains('is-active'));
+    const paints = async () => { for (let i = 0; i < 4; i++) await new Promise(resolve => h.JE.core.dom.afterNextPaint(resolve)); };
+    await paints();
+    // The user clicks Home (tab 0): the address stays as it was.
+    h.tabs.selectedIndex(0);
+    await paints();
+    assert.equal(h.tabs.selectedIndex(), 0);
+    // dialogHelper: an entry at the router's address (no fragment), the open dialogs in the router's state, and its DOM.
+    h.window.history.pushState({ usr: { dialogs: ['dlg1'] }, key: 'k1', idx: 1 }, '', `http://jellyfin.test/web/index.html${link}`);
+    const dialog = h.document.createElement('div');
+    dialog.className = 'dialogContainer';
+    h.document.body.appendChild(dialog);
+    await paints();
+    assert.equal(h.tabs.selectedIndex(), 0, 'still on the tab the user picked');
+  });
+}
+

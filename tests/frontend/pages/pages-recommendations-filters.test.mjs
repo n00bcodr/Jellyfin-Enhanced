@@ -401,3 +401,24 @@ test("a saved set chosen on Trending takes only what Trending offers: its titles
   assert.deepEqual(Object.keys(plain(h.JE.discoveryFilter.getFilters('recommendations'))), ['score'], 'no services, which Trending cannot check');
   assert.equal(h.hash(), at('jeCategory=trending&jeScore=7..'));
 });
+
+test("Back and Forward onto a dialog's entry left behind are navigations: Back from a category opened after it closes the category", async t => {
+  const h = setup(t, { hash: at('jeType=movies'), routes: [[`${DISCOVER}/trending?page=1`, scored([[1, 'movie']])], [`${DISCOVER}/movies?page=1`, scored([[2, 'movie']])]] });
+  const P = h.load();
+  P.renderInto(h.tab());
+  await until(() => loaded(h), 'rows');
+  // A jellyfin-web dialog: its entry at the router's address, without the fragment; closed by Back.
+  h.window.history.pushState({ usr: { dialogs: ['dlg1'] }, key: 'k1', idx: 1 }, '', `${ORIGIN}/web/index.html${TAB}`);
+  h.window.history.back();
+  await until(() => h.hash() === at('jeType=movies'), 'closed');
+  // Forward lands on its entry again, with no dialog open; a category opened there.
+  h.window.history.forward();
+  await until(() => h.hash() === TAB, 'Forward onto the entry');
+  await new Promise(resolve => setTimeout(resolve, 30));
+  await P.showCategoryPage('trending');
+  assert.equal(P.state.categoryPageVisible, true);
+  h.window.history.back();
+  await until(() => h.hash() === TAB, 'Back');
+  await until(() => !P.state.categoryPageVisible, 'Back closes the category');
+});
+
