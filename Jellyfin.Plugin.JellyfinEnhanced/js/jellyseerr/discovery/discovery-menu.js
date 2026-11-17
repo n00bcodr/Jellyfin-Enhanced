@@ -244,10 +244,10 @@
         /** @returns {HTMLElement[]} */
         // (The choice is one stop: the half with the keys on it, else the one in use. Left and right move inside it; on a
         // TV they only move, and OK takes one.)
-        const items = () => Array.from(content.querySelectorAll('.actionSheetMenuItem, .jellyseerr-menu-input, .jellyseerr-menu-match-btn'))
+        const items = () => Array.from(content.querySelectorAll('.actionSheetMenuItem, .jellyseerr-menu-input, .jellyseerr-menu-match-btn, .jellyseerr-menu-profile-delete, .jellyseerr-menu-profile-save'))
             .filter(item => !item.classList.contains('jellyseerr-menu-match-btn') || (item.parentElement?.contains(document.activeElement)
                 ? item === document.activeElement : item.getAttribute('aria-checked') === 'true'))
-            .filter(item => !item.closest('[hidden]') && !item.hidden && item.getAttribute('aria-disabled') !== 'true'
+            .filter(item => !item.closest('[hidden]') && !item.hidden && item.getAttribute('aria-disabled') !== 'true' && !(item instanceof HTMLButtonElement && item.disabled && !item.classList.contains('actionSheetMenuItem'))
                 && !(item.dataset.done !== undefined && getComputedStyle(item).display === 'none'));
         /** @returns {HTMLElement[]} */
         const heads = () => Array.from(scroller.querySelectorAll('.jellyseerr-menu-group'));
@@ -277,7 +277,9 @@
                     weighClear();
                 },
                 // (What a body does to its own size, a search narrowing a list, never makes the menu shorter: what is under the pointer stays there.)
-                placed: () => { place(true); const head = headOf(group.id); if (head?.getAttribute('aria-expanded') === 'true') reveal(head); }
+                placed: () => { place(true); const head = headOf(group.id); if (head?.getAttribute('aria-expanded') === 'true') reveal(head); },
+                // (A choice that is done with the menu, such as a saved profile applied.)
+                close: () => close()
             });
         };
         /**

@@ -288,6 +288,23 @@
     }
 
     /**
+     * Filters in the address form (a page's own pairs, or a saved profile's), as a page takes them: only the filters it
+     * offers (those of its scope that the admin has not turned off), and their lists' match.
+     * @param {string} text - `name=value` pairs joined by `&` (a whole hash is read as its query)
+     * @param {string} [scope='feed'] - 'feed', 'person' or 'loaded' (see discovery-filters.js)
+     * @returns {{mode: string, selection: object, sort: string}}
+     */
+    function filtersOf(text, scope = 'feed') {
+        const source = String(text ?? '');
+        const said = filtersOfHash(source.includes('?') ? source : `#?${source}`);
+        const offered = JE.discoveryFilters?.offeredFilters?.(scope, JE.pluginConfig) ?? [];
+        const selection = Object.fromEntries(Object.entries(said.selection).filter(([id]) => offered.includes(id)));
+        const match = Object.fromEntries(Object.entries(said.selection.match || {}).filter(([id]) => offered.includes(id)));
+        if (Object.keys(match).length > 0) selection.match = match;
+        return { mode: said.mode, selection, sort: said.sort };
+    }
+
+    /**
      * Makes what the address says the module's: true when that changed anything. Only the filters the
      * page offers are taken: those of its scope that the admin has not turned off.
      * @param {string} filterModule - Where All / Movies / Series and the further filters are kept
@@ -301,12 +318,8 @@
         const withType = options.withType !== false;
         const withSort = options.withSort ?? !!sortModule;
         const now = current(filterModule, withSort ? sortModule : null);
-        const said = filtersOfHash(window.location.hash);
-        const offered = JE.discoveryFilters?.offeredFilters?.(options.scope || 'feed', JE.pluginConfig) ?? [];
-        const selection = Object.fromEntries(Object.entries(said.selection).filter(([id]) => offered.includes(id)));
-        const match = Object.fromEntries(Object.entries(said.selection.match || {}).filter(([id]) => offered.includes(id)));
-        if (Object.keys(match).length > 0) selection.match = match;
-        const wanted = { mode: withType ? said.mode : now.mode, selection, sort: withSort ? said.sort : '' };
+        const said = filtersOf(window.location.hash, options.scope || 'feed');
+        const wanted = { mode: withType ? said.mode : now.mode, selection: said.selection, sort: withSort ? said.sort : '' };
         if (filterPairs(wanted, withSort).join('&') === filterPairs(now, withSort).join('&')) return false;
         JE.discoveryFilter?.setFilterMode?.(filterModule, wanted.mode);
         JE.discoveryFilters?.setSelection?.(filterModule, wanted.selection);
@@ -349,6 +362,7 @@
         isHomeHash,
         isRecommendationsHash,
         filtersOfHash,
+        filtersOf,
         filterPairs,
         categoryOfHash,
         addressWith,

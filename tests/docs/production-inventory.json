@@ -215,6 +215,10 @@
       "category": "Helpers"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/DiscoveryFilterProfiles.cs",
+      "category": "Helpers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/Jellyseerr/JellyseerrPermissionHelper.cs",
       "category": "Helpers"
     },
@@ -3013,6 +3017,38 @@
       "verb": "DELETE",
       "path": "/JellyfinEnhanced/user-settings/{userId}/media-tags/presets/{presetId}",
       "method": "DeleteMediaTagsPreset",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/user-settings/{userId}/discovery-filter-profiles",
+      "method": "GetDiscoveryFilterProfiles",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize",
+        "ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/user-settings/{userId}/discovery-filter-profiles",
+      "method": "SaveDiscoveryFilterProfile",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize",
+        "RequestSizeLimit(DiscoveryFilterProfiles.MaxRequestBytes)",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "DELETE",
+      "path": "/JellyfinEnhanced/user-settings/{userId}/discovery-filter-profiles/{profileId}",
+      "method": "DeleteDiscoveryFilterProfile",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
       "following_attributes": [
         "Authorize",
@@ -10438,6 +10474,10 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/EventHandlers/ContinueWatchingPlaybackEvents.cs"
     },
     {
+      "literal": "discovery-filter-profiles.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/DiscoveryFilterProfiles.cs"
+    },
+    {
       "literal": "matroska-languages.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/MatroskaLanguageCache.cs"
     },
@@ -10880,10 +10920,10 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 499,
-    "routes": 217,
+    "files": 500,
+    "routes": 220,
     "configuration_properties": 787,
-    "storage_references": 88,
+    "storage_references": 89,
     "scheduled_tasks": 17,
     "locales": 33
   }

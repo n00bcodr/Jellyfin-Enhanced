@@ -633,6 +633,169 @@
         return groups;
     }
 
+    // ---- Saved filters (profiles) ------------------------------------------------------------------
+
+    const PROFILES_API = 'discovery-filter-profiles';
+    /** The user's profiles as last read, kept for the visit (per user): a request, or its answer. */
+    let profilesOf = null;
+    /** @returns {boolean} Whether this client can reach the user's saved filters. */
+    const profilesReachable = () => typeof ApiClient?.ajax === 'function' && !!ApiClient.getCurrentUserId?.();
+    /** @returns {string} The user's profiles' address. */
+    const profilesUrl = (path = '') => ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${ApiClient.getCurrentUserId()}/${PROFILES_API}${path}`);
+    /**
+     * The user's saved filter profiles, asked of the server once per visit and user.
+     * @returns {Promise<{max: number, profiles: {id: string, name: string, filters: string}[]}>}
+     */
+    function loadProfiles() {
+        const user = ApiClient.getCurrentUserId();
+        if (profilesOf?.user === user) return profilesOf.asked;
+        const asked = ApiClient.ajax({ type: 'GET', url: profilesUrl(), dataType: 'json' })
+            .then(answer => ({ max: Number(answer?.max) || 0, profiles: Array.isArray(answer?.profiles) ? answer.profiles.filter(p => p && typeof p.id === 'string' && typeof p.name === 'string' && typeof p.filters === 'string') : [] }));
+        const held = { user, asked, list: null };
+        profilesOf = held;
+        // (Kept as answered, so a menu opened later says at once which profile is set.)
+        asked.then(answer => { held.list = answer.profiles; }, () => {});
+        asked.catch(() => { if (profilesOf?.asked === asked) profilesOf = null; });
+        return asked;
+    }
+    /**
+     * Saves the filters under a name (a profile of that name, in any case, takes them).
+     * @param {string} name
+     * @param {string} filters - In the address form
+     * @returns {Promise<{id: string, name: string, filters: string}>}
+     */
+    async function saveProfile(name, filters) {
+        const answer = await ApiClient.ajax({ type: 'POST', url: profilesUrl(), data: JSON.stringify({ name, filters }), contentType: 'application/json', dataType: 'json' });
+        profilesOf = null;
+        return answer.profile;
+    }
+    /**
+     * Deletes one of the user's profiles.
+     * @param {string} id
+     * @returns {Promise<void>}
+     */
+    async function deleteProfile(id) {
+        await ApiClient.ajax({ type: 'DELETE', url: profilesUrl(`/${encodeURIComponent(id)}`) });
+        profilesOf = null;
+    }
+    JE.session?.onUserChange?.('discovery-filter-profiles', () => { profilesOf = null; });
+
+    /**
+     * The Saved filters group: the user's profiles, each applied by choosing it (the menu then closes, and the list
+     * behind reloads with them), a way to delete one, and a field to save what is set under a name.
+     * @param {object} options
+     * @param {Function} options.label - The string lookup
+     * @param {{read: function(): string, apply: function(string): void}} options.host - What is set now in the address
+     *   form, and how a profile's filters are applied by the page they narrow
+     * @returns {object} The group
+     */
+    function profilesGroup({ label: say, host }) {
+        const name = say('discovery_filter_profiles', 'Saved filters');
+        const none = say('discovery_filter_profiles_none', 'None');
+        /** What the row says: the profile that is what is set now, else how many there are. */
+        const sayRow = list => list.find(p => p.filters === host.read())?.name
+            ?? (list.length > 0 ? say('discovery_filter_profiles_count', '{count} saved', { count: list.length }) : none);
+        // (The list as last answered, when there is one: the row then says which profile is set as the menu opens.)
+        const known = profilesOf?.user === ApiClient.getCurrentUserId() ? profilesOf.list : null;
+        const now = known ? known.find(p => p.filters === host.read()) : null;
+        return {
+            id: 'profiles', name, any: known ? sayRow(known) : none, set: !!now, value: now?.name ?? none,
+            build(body, handle) {
+                const rows = document.createElement('div');
+                rows.className = 'jellyseerr-menu-list';
+                const status = document.createElement('div');
+                status.className = 'jellyseerr-menu-note';
+                status.setAttribute('aria-live', 'polite');
+                const sayStatus = (words, error = false) => { status.textContent = words; status.hidden = words === ''; status.toggleAttribute('data-error', error); };
+                // The form: a name, and Save (what is set now, under that name).
+                const form = document.createElement('div');
+                form.className = 'jellyseerr-menu-range jellyseerr-menu-profile-form';
+                const field = document.createElement('input');
+                field.type = 'text';
+                field.className = 'jellyseerr-menu-input';
+                field.maxLength = 60;
+                field.autocomplete = 'off';
+                field.placeholder = say('discovery_filter_profile_name', 'Name these filters');
+                field.setAttribute('aria-label', field.placeholder);
+                const save = document.createElement('button');
+                save.type = 'button';
+                save.className = 'jellyseerr-menu-profile-save emby-button raised';
+                save.textContent = say('discovery_filter_profile_save', 'Save');
+                form.append(field, save);
+                let list = [];
+                /** Draws the profiles, the one that is what is set now ticked. */
+                const draw = () => {
+                    const now = host.read();
+                    rows.replaceChildren(...list.map(profile => {
+                        const { item } = JE.discoveryMenu.menuRow(profile.name, 'check', profile.filters !== now);
+                        item.classList.add('jellyseerr-menu-profile');
+                        item.addEventListener('click', () => { handle.close?.(); host.apply(profile.filters); });
+                        const remove = document.createElement('button');
+                        remove.type = 'button';
+                        remove.className = 'jellyseerr-menu-profile-delete';
+                        const removeLabel = say('discovery_filter_profile_delete', 'Delete {name}', { name: profile.name });
+                        remove.setAttribute('aria-label', removeLabel);
+                        remove.title = removeLabel;
+                        const cross = document.createElement('span');
+                        cross.className = 'material-icons close';
+                        cross.setAttribute('aria-hidden', 'true');
+                        remove.appendChild(cross);
+                        remove.addEventListener('click', event => {
+                            event.stopPropagation();
+                            remove.disabled = true;
+                            deleteProfile(profile.id).then(() => {
+                                list = list.filter(p => p.id !== profile.id);
+                                draw();
+                                handle.say(sayRow(list), list.some(p => p.filters === host.read()));
+                                handle.placed();
+                            }).catch(() => { remove.disabled = false; sayStatus(say('discovery_filter_profile_error', 'Could not save that. Try again.'), true); });
+                        });
+                        const wrap = document.createElement('div');
+                        wrap.className = 'jellyseerr-menu-profile-row';
+                        wrap.append(item, remove);
+                        return wrap;
+                    }));
+                    // (Nothing set: nothing to save.)
+                    const empty = now === '';
+                    field.disabled = save.disabled = empty;
+                    if (empty) sayStatus(say('discovery_filter_profile_nothing', 'Set a filter to save it here.'));
+                };
+                const store = async () => {
+                    const words = field.value.trim();
+                    if (!words) { field.focus(); return; }
+                    save.disabled = true;
+                    try {
+                        const saved = await saveProfile(words, host.read());
+                        list = [...list.filter(p => p.id !== saved.id), saved];
+                        field.value = '';
+                        draw();
+                        sayStatus(say('discovery_filter_profile_saved', 'Saved as “{name}”.', { name: saved.name }));
+                        handle.say(sayRow(list), true);
+                    } catch (error) {
+                        const reason = error?.responseJSON?.error ?? error?.error;
+                        sayStatus(reason === 'full' ? say('discovery_filter_profile_full', 'Delete a saved one first: you have the most there can be.')
+                            : say('discovery_filter_profile_error', 'Could not save that. Try again.'), true);
+                    } finally {
+                        save.disabled = host.read() === '';
+                        handle.placed();
+                    }
+                };
+                save.addEventListener('click', store);
+                field.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); store(); } });
+                sayStatus(say('discovery_filter_loading', 'Loading…'));
+                body.append(rows, form, status);
+                loadProfiles().then(answer => {
+                    if (!body.isConnected) return;
+                    list = answer.profiles;
+                    sayStatus('');
+                    draw();
+                    handle.say(sayRow(list), list.some(p => p.filters === host.read()));
+                    handle.placed();
+                }).catch(() => { sayStatus(say('discovery_filter_unavailable', 'Could not load these.'), true); handle.placed(); });
+            }
+        };
+    }
+
     // ---- A section's further filters ------------------------------------------------------------
 
     // The further filters set in a section (see discovery-filters.js), by module name.
@@ -749,9 +912,11 @@
      *   section (a page of its own, such as the Recommendations page): it holds the line of what is set, after the header
      * @param {string[]} [fixedAll] - The lists matched by all of what is ticked, with no choice (a tag's page: keywords,
      *   which its own request names and a title can't be checked against)
+     * @param {{read: function(): string, apply: function(string): void}} [profiles] - Offers the user's saved filters:
+     *   what is set now in the address form, and how the page applies a profile's
      * @returns {HTMLButtonElement}
      */
-    function createFiltersControl(header, moduleName, scope, onChange, ownGenre, place, fixedAll = []) {
+    function createFiltersControl(header, moduleName, scope, onChange, ownGenre, place, fixedAll = [], profiles = null) {
         injectStyles();
         /** The section the header is in, or the page the button narrows. */
         const sectionOf = place ?? (() => header.closest('.jellyseerr-discovery-section'));
@@ -894,6 +1059,8 @@
             paintSet(focusAt);
         };
         wiring.set(header, { paint: (at = -1) => paint(at), reload: onChange });
+        // (Asked for once per visit, so the menu can name the profile that is set when it opens.)
+        if (profiles && profilesReachable()) loadProfiles().catch(() => {});
         paint();
         /**
          * Takes a new selection: redraws, keeps the list's place while it is rebuilt, and reloads it.
@@ -913,6 +1080,8 @@
             const typeInMenu = !!type && !type.tabsShowing();
             // Where the tabs are out of sight the viewer may have come for them: that group is open.
             const groups = type && typeInMenu ? [{ ...type.groupOf(), open: true }] : [];
+            // The user's saved filters first, where the page can apply them.
+            if (profiles && profilesReachable()) groups.push(profilesGroup({ label, host: profiles }));
             groups.push(...filterMenuGroups({
                 offered, data: dataOf(), locale: localeOf(), label,
                 selection: () => selectionOf(moduleName), change, fixedAll, ...(ownGenre ? { ownGenre } : {}),
@@ -1077,6 +1246,13 @@
                 html:not(.layout-tv) .jellyseerr-menu-match-track { display: flex; flex: 1 1 12em; }
                 html:not(.layout-tv) .jellyseerr-menu-match-btn { flex: 1 1 0; min-height: 44px; }
             }
+            /* Saved filters: each profile a row with its delete button at the end; the form a field and Save. */
+            .jellyseerr-menu-profile-row { display: flex; align-items: center; }
+            .jellyseerr-menu-profile-row > .actionSheetMenuItem { flex: 1 1 auto; min-width: 0; }
+            .jellyseerr-menu-profile-delete { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; margin-inline-end: 8px; border: 0; border-radius: 50%; background: none; color: var(--jf-palette-text-secondary, rgba(255,255,255,.7)); cursor: pointer; }
+            .jellyseerr-menu-profile-delete:hover, .jellyseerr-menu-profile-delete:focus-visible { background: var(--jf-palette-action-hover, rgba(255,255,255,.08)); color: var(--jf-palette-text-primary, #fff); outline: none; }
+            .layout-tv .jellyseerr-menu-profile-delete:focus { background: var(--jf-palette-text-primary, #fff); color: var(--jellyseerr-menu-ground, #101010); }
+            .jellyseerr-menu-profile-save { flex: none; margin: 0; }
             .jellyseerr-filters-run { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .15em .5em; max-width: 100%; }
             .jellyseerr-filters-token > .jellyseerr-filters-or { flex: none; overflow: visible; margin-inline-end: .35em; color: var(--jf-palette-text-secondary, rgba(255,255,255,.7)); }
             /* An open group's row reads as the heading of what is under it; a long value is cut with an ellipsis. */

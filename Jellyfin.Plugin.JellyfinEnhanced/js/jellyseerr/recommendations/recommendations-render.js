@@ -419,12 +419,13 @@
    * @param {HTMLElement} bar - The title bar
    * @param {() => (HTMLElement|null)} place - The page the filters narrow
    * @param {() => void} onChange - Fills the rows again
+   * @param {{read: function(): string, apply: function(string): void}} [profiles] - The page's side of the saved filters
    * @returns {HTMLElement[]}
    */
-  function toolbarControls(bar, place, onChange) {
+  function toolbarControls(bar, place, onChange, profiles) {
     const filter = JE.discoveryFilter;
     const type = filter.createFilterControl(P.FILTER_MODULE, () => onChange());
-    const button = filter.createFiltersButton?.(bar, P.FILTER_MODULE, 'feed', onChange, { place });
+    const button = filter.createFiltersButton?.(bar, P.FILTER_MODULE, 'feed', onChange, { place, profiles });
     return button ? [type, button] : [type];
   }
 
@@ -581,8 +582,20 @@
     const refill = () => {
       fill().catch(error => console.error(`${logPrefix} Failed to filter`, error));
     };
+    const address = JE.discoveryAddress;
+    // The saved filters: what is set now (no order on this page), and a profile's applied as the address would be.
+    const profiles = address ? {
+      read: () => address.filterPairs(address.current(P.FILTER_MODULE, null), false).join('&'),
+      apply(text) {
+        const wanted = address.filtersOf(text, 'feed');
+        JE.discoveryFilter.setFilterMode(P.FILTER_MODULE, wanted.mode);
+        JE.discoveryFilter.setFilters?.(P.FILTER_MODULE, wanted.selection);
+        paintTools();
+        changed();
+      }
+    } : undefined;
     const paintTools = () => {
-      tools.replaceChildren(...toolbarControls(bar, () => container, changed));
+      tools.replaceChildren(...toolbarControls(bar, () => container, changed, profiles));
     };
     // A change made here: the address says it first (a reload or a link shows the same), then the rows follow.
     function changed() {

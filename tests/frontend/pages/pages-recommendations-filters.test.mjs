@@ -340,3 +340,23 @@ test("a genre's category keeps its genre and takes the other genres ticked as an
   const row = [...h.document.querySelectorAll('.jellyseerr-sort-menu .jellyseerr-menu-group')].find(group => group.textContent.startsWith('Genres'));
   assert.equal(row.querySelector('.jellyseerr-menu-group-value').textContent, 'Family or Kids');
 });
+
+test("a saved profile chosen on the tab sets its filters, its address and its rows at once", async t => {
+  const h = setup(t, { routes: [[`${DISCOVER}/tv?page=1&genre=16`, scored([[41, 'tv']])], [`${DISCOVER}/tv?page=1`, scored([[42, 'tv']])]] });
+  h.window.ApiClient.ajax = async ({ type }) => type === 'GET'
+    ? { max: 30, profiles: [{ id: 'a1', name: 'Kids', filters: 'jeType=series&jeGenres=16/16:Animation' }] } : {};
+  const P = h.load();
+  P.renderInto(h.tab());
+  await until(() => loaded(h), 'rows');
+  h.tab().querySelector('.je-reco-tools .jellyseerr-filters-btn').click();
+  const saved = [...h.document.querySelectorAll('.jellyseerr-sort-menu .jellyseerr-menu-group')][0];
+  assert.match(saved.textContent, /^Saved filters/);
+  saved.click();
+  await until(() => h.document.querySelector('.jellyseerr-sort-menu .jellyseerr-menu-profile'), 'the profiles');
+  h.document.querySelector('.jellyseerr-sort-menu .jellyseerr-menu-profile').click();
+  assert.equal(h.document.querySelector('.jellyseerr-sort-menu'), null, 'the menu is done');
+  assert.equal(h.hash(), `${TAB}&jeType=series&jeGenres=16/16:Animation`);
+  await until(() => loaded(h) && h.cards(h.tab()).includes(41), 'its rows');
+  assert.equal(h.tab().querySelector('.je-reco-tools .emby-tab-button-active').dataset.mode, 'tv');
+  assert.deepEqual(h.said(h.tab()), ['Animation']);
+});

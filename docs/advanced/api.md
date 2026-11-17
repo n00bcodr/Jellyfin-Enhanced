@@ -549,6 +549,24 @@ The table below gives the `UserSettings` **model defaults** used when properties
 
 The web client keeps these nullable fields null while they inherit: the settings panel shows the administrator's current value for `ShowEditionTag`, `ShowLowQualitySourceTag`, the three technical category switches (`ShowRuntimeTag`, `ShowAspectRatioTag`, `ShowFrameRateTag`), `ShowVersionsTag`, the three display modes, minimum resolution, Hide SDR, the eleven `*TagOrder` fields and `SeriesQualityAggregation`, and saves `null` for each one the user has not changed, so a save, an import or its **Undo** never pins today's administrator default. Inheriting is a state, not a value comparison: any change through a panel control (even back to the administrator's value), an imported value (even one equal to the default) and a reorder of the quality categories (all ten orders) are saved as the user's own. Only **Follow server** in the series policy, **Follow server settings** in the Quality group, or an import or **Undo** of a null value makes a field inherit again.
 
+### Seerr filter profiles
+
+A user's saved Seerr filter profiles: named sets of the discovery Filters menu's filters, each user's own, kept in
+`discovery-filter-profiles.json` in the user's directory (`Helpers/DiscoveryFilterProfiles.cs`) and read-modify-written
+under the user's file lock. A profile's `filters` are the address form the discovery pages read and write
+(`js/jellyseerr/discovery/discovery-address.js`), for example `jeType=movies&jeScore=7..&jeKeywords=10468:bear,12554:dragon&jeAny=keywords`.
+The server checks their shape only: `name=value` pairs joined by `&`, each name once and one of `jeType`, `jeSort`,
+`jeReleased`, `jeScore`, `jeVotes`, `jeRuntime`, `jeRole`, `jeGenres`, `jeLanguage`, `jeRating`, `jeServices`, `jeKeywords`,
+`jeWithout`, `jeAny`, `jeAll`, each value of plain address characters (`A-Z a-z 0-9 % . _ ~ : , / - ! * ' ( )`), at most
+4000 characters in all. The page reads each value as it reads its own address and leaves out anything not of its
+filter's shape, or not offered on that page.
+
+| Method | Path | Access | Request → response |
+|---|---|---|---|
+| GET | `user-settings/{userId}/discovery-filter-profiles` | Own/admin | No body → `{max:30, profiles:[{id, name, filters}]}`, oldest first. |
+| POST | `user-settings/{userId}/discovery-filter-profiles` | Own/admin | `{name, filters}` (16 KB limit) → `{profile}`. A profile of the same name (ignoring case) takes the new filters and keeps its id and place; otherwise it is added with a new id. `400 {error}`: `name` (empty, over 60 characters, or with control characters), `empty`, `filters`, or `full` with `max` (30 per user). |
+| DELETE | `user-settings/{userId}/discovery-filter-profiles/{profileId}` | Own/admin | No body → `{success:true}`; `404 {error:"missing"}` for an unknown id. |
+
 ### Media Tags import, export and presets
 
 A user's Media Tags settings travel as a versioned document with the same PascalCase field names as `settings.json`:

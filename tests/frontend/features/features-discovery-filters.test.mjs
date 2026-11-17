@@ -691,3 +691,54 @@ test('all / any chosen before anything is ticked is kept; the keys and a remote 
   press('ArrowLeft');
   assert.equal(h.document.activeElement, groupOf(h, 'keywords'), 'out to the group row');
 });
+
+test('saved filters: the user\'s profiles first in the menu, saved under a name, applied by the page, deleted', { skip: !hasMenu && 'the menu module is not there yet' }, async t => {
+  const h = setup(t, { lists: FILTER_LISTS, genres: COMEDY });
+  // The server's side, as the endpoints answer (Helpers/DiscoveryFilterProfiles.cs).
+  const stored = [{ id: 'a1', name: 'Kids', filters: 'jeType=series&jeGenres=16/16:Animation' }];
+  const asked = [];
+  h.window.ApiClient.ajax = async ({ type, url, data }) => {
+    asked.push([type, url.replace('http://jellyfin.test', '')]);
+    if (type === 'GET') return { max: 30, profiles: structuredClone(stored) };
+    if (type === 'POST') { const body = JSON.parse(data); const one = { id: 'b2', ...body }; stored.push(one); return { profile: one }; }
+    if (type === 'DELETE') { stored.splice(stored.findIndex(p => url.endsWith(p.id)), 1); return {}; }
+  };
+  let now = 'jeScore=7..';
+  const applied = [];
+  const host = { read: () => now, apply: text => { applied.push(text); now = text; } };
+  const header = h.document.createElement('div');
+  h.document.body.appendChild(header);
+  const button = h.F.createFiltersControl(header, 'network', 'feed', () => {}, undefined, undefined, [], host);
+  h.document.body.appendChild(button);
+  await until(() => asked.length === 1, 'asked once for the visit');
+  // (Its answer is kept once its callbacks have run: a turn of the event loop.)
+  await new Promise(resolve => setTimeout(resolve, 0));
+  button.click();
+  const groups = () => [...menuOf(h).querySelectorAll('.jellyseerr-menu-group')];
+  assert.equal(groups()[0].textContent, 'Saved filters1 saved', 'first, saying how many there are');
+  const body = bodyOf(h, 'profiles');
+  await until(() => body.querySelector('.jellyseerr-menu-profile'), 'the profiles');
+  same([...body.querySelectorAll('.jellyseerr-menu-profile')].map(row => row.textContent), ['Kids']);
+  // What is set now, under a name.
+  const field = body.querySelector('.jellyseerr-menu-profile-form input');
+  field.value = 'Top rated';
+  body.querySelector('.jellyseerr-menu-profile-save').click();
+  await until(() => body.querySelectorAll('.jellyseerr-menu-profile').length === 2, 'saved');
+  same(stored[1], { id: 'b2', name: 'Top rated', filters: 'jeScore=7..' });
+  assert.equal(groups()[0].textContent, 'Saved filtersTop rated', 'the one that is set now is named');
+  assert.match(body.querySelector('.jellyseerr-menu-note').textContent, /Saved as “Top rated”/);
+  // Deleting one asks the server, and it goes.
+  body.querySelector('.jellyseerr-menu-profile-row:last-child .jellyseerr-menu-profile-delete').click();
+  await until(() => body.querySelectorAll('.jellyseerr-menu-profile').length === 1, 'deleted');
+  assert.deepEqual(asked.at(-1), ['DELETE', '/JellyfinEnhanced/user-settings/user-a/discovery-filter-profiles/b2']);
+  // Choosing one: the page applies it and the menu is done.
+  body.querySelector('.jellyseerr-menu-profile').click();
+  same(applied, ['jeType=series&jeGenres=16/16:Animation']);
+  assert.equal(menuOf(h), null);
+  // Nothing set: nothing to save.
+  now = '';
+  button.click();
+  const again = bodyOf(h, 'profiles');
+  await until(() => again.querySelector('.jellyseerr-menu-profile'), 'the profiles again');
+  assert.equal(again.querySelector('.jellyseerr-menu-profile-save').disabled, true);
+});

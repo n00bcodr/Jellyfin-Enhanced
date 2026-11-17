@@ -387,6 +387,8 @@ The section's header holds its title, then one row: what the list shows, the **A
 
 What is set shows on a line under the header, each with a button to remove it (a list matched by any of what is ticked says **or** between them), and **Clear filters** removes them all. If nothing matches, the section says so and offers **Clear filters**.
 
+**Saved filters**, the menu's first group, keeps sets of filters under a name: type a name and press **Save** to keep what is set now (the type, the sort, every filter and how each list matches), and choose a saved set to apply it at once, on any discovery page or the Recommendations page (each page takes the filters it offers). The **×** beside one deletes it. They are your own, kept on the server, so they follow you to every device; you can keep up to 30.
+
 The tabs, the sort and the filters are kept in the page's address (for example `#/details?id=…&jeType=movies&jeScore=7..&jeSort=vote_average.desc`, with `&jeAny=keywords` where keywords are matched by any of them), so reloading the page, coming **Back** to it or opening a copied link shows the same list. A change replaces the address rather than adding a step to **Back**. A page opened without them starts with no filters, on **All** and **Popular**.
 
 On list pages (genre, studio/network and tag), Seerr applies the filters to its feeds. A person page already has the person's titles, so it filters them in the browser and offers only **Role**, **Released**, **Score**, **Votes**, **Genres** and **Original language**. There, a title with no date is outside every period, and one with no score or votes is under every minimum.

@@ -20,6 +20,8 @@
     ];
     // Per header's tabs: the All / Movies / Series choice, for the Filters menu to offer where the tabs are out of sight.
     const typePickers = new WeakMap();
+    // Per sort button: redraws it after its order was set from elsewhere (a saved profile).
+    const sortPainters = new WeakMap();
 
     /**
      * A translated string, in English where the key has no translation, with its {placeholders} filled.
@@ -254,6 +256,8 @@
                 choices: buttons.map(entry => ({ id: entry.mode, name: entry.label, selected: entry.mode === getFilterMode(moduleName) }))
             }),
             choose,
+            // Redraws the tabs after the type was set from elsewhere (a saved profile).
+            paint,
             // (Known from what puts them out of sight, a held header at a phone's width, as the stylesheet has
             // it: their own style is no guide while they are still fading.)
             tabsShowing: () => !(container.closest('.jellyseerr-discovery-header')?.hasAttribute('data-stuck')
@@ -305,6 +309,7 @@
             button.setAttribute('aria-label', `${sortLabel}: ${current}`);
         };
         paint();
+        sortPainters.set(button, paint);
         button.addEventListener('click', () => {
             const current = getSortMode(moduleName);
             button.setAttribute('aria-expanded', 'true');
@@ -390,7 +395,7 @@
             // request, and a title can't be checked for keywords, so its keywords are matched by all of what is ticked.)
             const filters = JE.discoveryFilters?.createFiltersControl?.(header, moduleName, scope,
                 () => onSortChange(getSortMode(moduleName)), moduleName === 'genre' ? subject : undefined,
-                undefined, moduleName === 'tag' ? ['keywords'] : undefined);
+                undefined, moduleName === 'tag' ? ['keywords'] : [], sectionProfiles(header, moduleName, scope, onFilterChange, onSortChange));
             if (filters) bar.appendChild(filters);
             bar.appendChild(createSortControl(moduleName, onSortChange));
         }
@@ -407,12 +412,15 @@
      * @param {string} moduleName - Module name for the runtime state
      * @param {'feed'|'person'|'loaded'} scope - Which further filters the page can offer
      * @param {Function} onChange - Reloads the page
-     * @param {{ownGenre?: string, place?: function(): (HTMLElement|null), fixedAll?: string[]}} [options] - A genre's
-     *   page names its genre; `place` is the page the button narrows; `fixedAll`: the lists its request names itself
+     * @param {{ownGenre?: string, place?: function(): (HTMLElement|null), fixedAll?: string[],
+     *   profiles?: {read: function(): string, apply: function(string): void}}} [options] - A genre's page names its
+     *   genre; `place` is the page the button narrows; `fixedAll`: the lists its request names itself; `profiles`: the
+     *   page's side of the saved filters
      * @returns {HTMLElement|null}
      */
     function createFiltersButton(header, moduleName, scope, onChange, options = {}) {
-        return JE.discoveryFilters?.createFiltersControl?.(header, moduleName, scope, onChange, options.ownGenre, options.place, options.fixedAll) ?? null;
+        return JE.discoveryFilters?.createFiltersControl?.(header, moduleName, scope, onChange, options.ownGenre, options.place,
+            options.fixedAll ?? [], options.profiles ?? null) ?? null;
     }
 
     /**
@@ -439,6 +447,36 @@
      */
     function clearFilters(moduleName) {
         JE.discoveryFilters?.setSelection?.(moduleName, {});
+    }
+
+    /**
+     * A section's side of the saved filters: what is set now, in the address form, and applying a profile's (its type
+     * where the tabs are offered, its order and its further filters), then the section's own reload.
+     * @param {HTMLElement} header - The section's header
+     * @param {string} moduleName
+     * @param {'feed'|'person'} scope
+     * @param {Function} [onFilterChange] - The section's type change
+     * @param {Function} onSortChange - The section's reload
+     * @returns {{read: function(): string, apply: function(string): void}|null}
+     */
+    function sectionProfiles(header, moduleName, scope, onFilterChange, onSortChange) {
+        const address = JE.discoveryAddress;
+        if (!address) return null;
+        return {
+            read: () => address.filterPairs(address.current(moduleName, moduleName), true).join('&'),
+            apply(text) {
+                const wanted = address.filtersOf(text, scope);
+                const tabs = header.querySelector('[data-type-group]');
+                if (tabs) setFilterMode(moduleName, wanted.mode);
+                if (wanted.sort) setSortMode(moduleName, wanted.sort); else resetSortMode(moduleName);
+                JE.discoveryFilters?.setSelection?.(moduleName, wanted.selection);
+                typePickers.get(tabs)?.paint?.();
+                sortPainters.get(header.querySelector('.jellyseerr-sort-btn'))?.();
+                JE.discoveryFilters?.repaint?.(header);
+                onSortChange(getSortMode(moduleName));
+                if (tabs) onFilterChange?.(getFilterMode(moduleName));
+            }
+        };
     }
 
     /**

@@ -190,3 +190,26 @@ test("a genre's page keeps its genre and takes the others ticked as any of them:
   await until(() => h.document.querySelector('.jellyseerr-sort-menu .jellyseerr-menu-match'), 'the choice');
   assert.equal(h.document.querySelector('.jellyseerr-sort-menu .jellyseerr-menu-match-lead').textContent, 'Titles in Comedy and');
 });
+
+test("a saved profile chosen in a section sets its type, order and filters, its address, and asks Seerr again", async t => {
+  const h = setup(t, { hash: '#/list?genreId=g1&serverId=s', routes: [...GENRE,
+    [`${API}/jellyseerr/discover/tv/genre/35?page=1`, feed([1], 'tv')], [`${API}/jellyseerr/discover/movies/genre/36?page=1`, feed([11], 'movie')],
+    [`${API}/jellyseerr/discover/tv/genre/35?page=1&sortBy=vote_count.desc&voteAverageGte=7`, feed([2], 'tv')],
+    [`${API}/jellyseerr/discover/movies/genre/36?page=1&sortBy=vote_count.desc&voteAverageGte=7`, feed([12], 'movie')]] });
+  h.window.ApiClient.ajax = async ({ type }) => type === 'GET'
+    ? { max: 30, profiles: [{ id: 'a1', name: 'Best movies', filters: 'jeType=movies&jeScore=7..&jeSort=vote_count.desc' }] } : {};
+  h.load('jellyseerr/discovery/genre-discovery.js');
+  await until(() => ids(h.section('genre')).length === 2, 'first page');
+  const section = h.section('genre');
+  section.querySelector('.jellyseerr-filters-btn').click();
+  [...h.document.querySelectorAll('.jellyseerr-sort-menu .jellyseerr-menu-group')][0].click();
+  await until(() => h.document.querySelector('.jellyseerr-sort-menu .jellyseerr-menu-profile'), 'the profiles');
+  h.document.querySelector('.jellyseerr-sort-menu .jellyseerr-menu-profile').click();
+  assert.equal(h.document.querySelector('.jellyseerr-sort-menu'), null);
+  assert.equal(h.hash(), '#/list?genreId=g1&serverId=s&jeType=movies&jeScore=7..&jeSort=vote_count.desc');
+  await until(() => ids(section).includes(12), 'asked again');
+  assert.equal(section.querySelector('.jellyseerr-sort-btn').textContent, 'Most votes');
+  assert.equal(section.querySelector('.jellyseerr-discovery-filter .emby-tab-button-active').dataset.mode, 'movies');
+  assert.equal(section.querySelector('.itemsContainer').classList.contains('filter-movies'), true);
+  assert.deepEqual(h.said(section), ['Score from 7']);
+});

@@ -536,9 +536,23 @@
     const filtersContainer = document.getElementById('je-recommendations-category-filters');
     const header = document.getElementById('je-recommendations-category-header');
     const scope = st.feeds.some(f => !f.kind) ? 'loaded' : 'feed';
+    const address = JE.discoveryAddress;
     const button = filter.createFiltersButton?.(header, FILTER_MODULE, scope, () => { writeAddress(); reload(container); }, {
       place: () => document.querySelector('#je-recommendations-category-page .content-primary'),
-      ...(categoryKey.startsWith('genre-') ? { ownGenre: category.title } : {})
+      ...(categoryKey.startsWith('genre-') ? { ownGenre: category.title } : {}),
+      // The saved filters: what is set now with the page's order, and a profile's applied as the address would be.
+      ...(address ? { profiles: {
+        read: () => address.filterPairs(address.current(FILTER_MODULE, SORT_MODULE), true).join('&'),
+        apply(text) {
+          const wanted = address.filtersOf(text, 'feed');
+          filter.setFilterMode(FILTER_MODULE, wanted.mode);
+          if (wanted.sort) filter.setSortMode(SORT_MODULE, wanted.sort); else filter.resetSortMode(SORT_MODULE);
+          filter.setFilters?.(FILTER_MODULE, wanted.selection);
+          showControls(categoryKey, category, container);
+          writeAddress();
+          reload(container);
+        }
+      } } : {})
     });
     filtersContainer.replaceChildren(...(button ? [button] : []));
 
