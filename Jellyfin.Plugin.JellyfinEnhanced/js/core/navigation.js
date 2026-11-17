@@ -311,6 +311,11 @@
             notifyViewHandlers(getCurrentView() || undefined, viewEl, window.location.hash, rawEvent);
         });
 
+        // The address the page opened at is already where it is: a popstate or hashchange that lands on it
+        // again (a dialog's own history entry popped by Back, such as the Seerr More Info modal's) is not a
+        // navigation. Unseeded, the first one after a reload or an opened link would tear every page feature down.
+        lastDispatchedHref = window.location.href;
+
         // Navigation sources → single deduplicated dispatch
         window.addEventListener('je:navigate', dispatchNavigate);
         window.addEventListener('hashchange', dispatchNavigate);

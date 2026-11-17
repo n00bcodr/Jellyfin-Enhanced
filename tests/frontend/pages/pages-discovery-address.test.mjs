@@ -109,6 +109,28 @@ test("a choice on a section replaces its page's address: no history entry, no na
   assert.equal(h.hash(), '#/list?genreId=g1&serverId=s&jeSort=vote_average.desc');
 });
 
+test("a page opened straight from its link keeps its section when a dialog's own history entry is popped (More Info's Back)", async t => {
+  const h = setup(t, { hash: '#/list?genreId=g1&serverId=s&jeScore=7..', routes: [...GENRE,
+    [`${API}/jellyseerr/discover/tv/genre/35?page=1&voteAverageGte=7`, feed([1], 'tv')],
+    [`${API}/jellyseerr/discover/movies/genre/36?page=1&voteAverageGte=7`, feed([11], 'movie')]] });
+  h.load('jellyseerr/discovery/genre-discovery.js');
+  await until(() => ids(h.section('genre')).length === 2, 'first page');
+  const section = h.section('genre');
+  let navigated = 0;
+  h.JE.core.navigation.onNavigate(() => { navigated++; });
+  // The More Info modal adds an entry at the same address when it opens, and goes Back to it when it closes.
+  h.window.history.pushState(null, '', h.window.location.href);
+  h.window.dispatchEvent(new h.window.PopStateEvent('popstate', { state: null }));
+  h.window.dispatchEvent(new h.window.HashChangeEvent('hashchange'));
+  await new Promise(resolve => setTimeout(resolve, 50));
+  assert.equal(navigated, 0, 'the address the page opened at is not a navigation');
+  assert.equal(h.section('genre'), section, 'the section was not taken down');
+  assert.deepEqual(ids(section), [1, 11]);
+  // A real move still is one.
+  h.window.history.pushState(null, '', `${ORIGIN}/web/index.html#/home`);
+  assert.equal(navigated, 1);
+});
+
 test("a person's link: the type and further filters from the address, and taking one away writes it back", async t => {
   const h = setup(t, { hash: '#/details?id=p1&jeType=movies&jeScore=7..', html: DETAIL('detail'),
     items: { p1: { Id: 'p1', Type: 'Person' } }, routes: PERSON_ROUTES });
