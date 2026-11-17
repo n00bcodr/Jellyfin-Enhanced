@@ -743,8 +743,20 @@
                 const down = view.bottom >= cutOf(next) ? Math.round(view.bottom - cutOf(next)) : 0;
                 const up = down === 0 ? Math.round(cutOf(next) - view.bottom) : 0;
                 const headTop = open?.getBoundingClientRect().top ?? view.top;
-                if (down > 0 && scroller.scrollTop >= down) { scroller.scrollTop -= down; return; }
-                if (up > 0 && up < next.box.height && below() >= up && headTop - up >= view.top - 1) { scroller.scrollTop += up; return; }
+                // (Kept only where the top then still falls through a name or a row's edge, not in a row's padding with its
+                // name gone above: else the list is cut at the foot as elsewhere.)
+                const topTrue = () => {
+                    const edge = scroller.getBoundingClientRect().top;
+                    return !shownRows().some(entry => entry.box.top < edge - 1 && entry.box.bottom > edge + 1 && topCutOf(entry) < edge - 1
+                        && (entry.row.querySelector('.actionSheetItemText')?.getBoundingClientRect().bottom ?? entry.box.bottom) <= edge + 1);
+                };
+                const was = scroller.scrollTop;
+                if (down > 0 && scroller.scrollTop >= down) scroller.scrollTop -= down;
+                else if (up > 0 && up < next.box.height && below() >= up && headTop - up >= view.top - 1) scroller.scrollTop += up;
+                if (scroller.scrollTop !== was) {
+                    if (topTrue()) return;
+                    scroller.scrollTop = was;
+                }
             }
             if (cut > view.top + 40 && Math.abs(cut - view.bottom) > 1) scroller.style.maxHeight = `${Math.round(cut - view.top)}px`;
         };

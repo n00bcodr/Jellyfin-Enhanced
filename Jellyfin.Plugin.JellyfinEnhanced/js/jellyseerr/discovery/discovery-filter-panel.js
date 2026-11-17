@@ -1537,6 +1537,8 @@
             .jellyseerr-menu-input { box-sizing: border-box; flex: 1 1 0; width: 100%; min-width: 0; padding: 6px 10px; border: 1px solid var(--jf-palette-divider, rgba(255,255,255,.12)); border-color: color-mix(in srgb, currentColor 45%, transparent); border-radius: var(--jf-shape-borderRadius, 4px); background: var(--jf-palette-action-hover, rgba(255,255,255,.08)); color: inherit; font: inherit; }
             .jellyseerr-menu-input::placeholder { color: var(--jellyseerr-quiet, var(--jf-palette-text-secondary, rgba(255,255,255,.7))); opacity: 1; }
             .jellyseerr-menu-input:focus { outline: none; border-color: var(--jellyseerr-accent, #00a4dc); box-shadow: 0 0 0 1px var(--jellyseerr-accent, #00a4dc); }
+            /* (Forced colours drop the box shadow: a field with the keys in it has an outline there.) */
+            @media (forced-colors: active) { .jellyseerr-menu-input:focus { outline: 2px solid Highlight; outline-offset: 1px; } }
             .jellyseerr-sort-menu { --jellyseerr-error: var(--jf-palette-error-light, #e57373); --jellyseerr-quiet: var(--jf-palette-text-secondary, rgba(255,255,255,.7)); }
             /* (Quiet on every theme: the text the theme draws, at 70%. A theme's secondary text can be as strong as its text.) */
             @supports (color: color-mix(in srgb, red, blue)) { .jellyseerr-sort-menu { --jellyseerr-quiet: color-mix(in srgb, currentColor 70%, transparent); } }
