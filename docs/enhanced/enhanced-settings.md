@@ -607,7 +607,7 @@ The editable action labels and stock keys match the [Shortcuts table](#shortcuts
 
 ### Page entry points
 
-Enable the page under **Pages**, choose its placement, and click **Save Settings**. Bookmarks, Hidden Content, Activity, and Catch Up controls are listed below. Follow [JE Pages & Tabs](../getting-started/pages-and-tabs.md) for native Home links, Plugin Pages registration, and automatic or manual Custom Tabs setup.
+Enable the page under **Pages**, choose its placement, and click **Save Settings**. Bookmarks, Hidden Content, Activity, Leaving Soon, and Catch Up controls are listed below. Follow [JE Pages & Tabs](../getting-started/pages-and-tabs.md) for native Home links, Plugin Pages registration, and automatic or manual Custom Tabs setup.
 
 ### Bookmarks
 
@@ -723,6 +723,31 @@ Stored watched/favorite/review entries respect viewer library access. Active Str
     **Elsewhere & Reviews** → **User Reviews** → **Hide reviews from hidden users** and **Hide reviews from disabled users** both default to On. They also filter activity authors, with admin/self exceptions. User Reviews runs independently. Disabling Activity Feed stops watched/favorite collection, but reviews written while it is off can appear when the feed returns. See [Elsewhere & Reviews Settings](../elsewhere/elsewhere-settings.md) for those shared review controls.
 
     **Active Streams Header Widget** enables the Active Streams data endpoint as well as the header widget. The feed's live section refreshes every 15 seconds while the document is visible. Stored history does not use that polling. The header widget refreshes on initialization, opening, and manual refresh.
+
+### Leaving Soon
+
+The Leaving Soon page lists everything the removal tool that is on ([Maintainerr or Reclaimerr](tags.md#leaving-soon-maintainerr-or-reclaimerr)) will remove, with the days left. Everyone sees the items they can access, soonest first, and can filter **Movies** and **Shows**. It needs a removal tool set up first.
+
+1. Set up and turn on a removal tool in the **\*arr** tab (the Maintainerr or Reclaimerr card).
+2. Enable the page under **Pages** → **Leaving Soon** and configure an entry point.
+3. Open **Leaving Soon**. Click a poster or title to open the item.
+
+What each person gets:
+
+- **Everyone:** the list, with a chip for the day it leaves (**Leaves in 5d**, **Leaves tomorrow**, **Leaves today**, or **Leaving soon** when no date is known). With Reclaimerr, their own removal requests and whether each is waiting, approved or denied.
+- **Administrators:** **Keep** and **Change removal date** (**Postpone** with Maintainerr) on each card, the same actions as the item menu, and with Reclaimerr the waiting removal requests as cards (poster, title, who asked with their Jellyfin name and avatar, and their note) with **Approve** and **Deny**. **Approving deletes the title from the library at once**, because Reclaimerr acts on an approval right away (with its default setting the files are deleted and the Radarr or Sonarr entry is kept unmonitored), so Approve asks you to confirm with **Delete now**; **Deny** keeps the title and needs no confirmation. Approving or denying is done as the administrator who clicked, so Reclaimerr records who reviewed it (the service account is the fallback).
+
+All settings below are admin server settings.
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| **Enable the Leaving Soon page** | Off | Turns the page on. It lists nothing until a removal tool is set up. |
+| **Add Leaving Soon as a native Home tab** | Off | Adds the built-in Leaving Soon Home tab. |
+| **Use Plugin Pages** | Off | Exposes the page through Plugin Pages. |
+| **Use Custom Tabs** | Off | Enables the Leaving Soon Custom Tabs embed (`<div class="jellyfinenhanced leavingsoon"></div>`). |
+| **Add the Custom Tabs entry for me** | Off | Creates the matching managed Custom Tabs entry on save. |
+
+The page reads the server's last read of the removal tool (the **Leaving soon** card's refresh interval) and reloads itself every five minutes and after any Keep or date change made from the item menu or the page. See [API reference](../advanced/api.md) for the `leaving-soon` routes.
 
 ### Catch Up
 

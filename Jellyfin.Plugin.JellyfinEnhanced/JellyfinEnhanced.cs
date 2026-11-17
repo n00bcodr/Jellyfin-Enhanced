@@ -623,6 +623,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
 
             bool catchUpExists = config.Value<JArray>("pages")!
                 .Any(x => x.Value<string>("Id") == $"{namespaceName}.CatchUpPage");
+            bool leavingSoonExists = config.Value<JArray>("pages")!
+                .Any(x => x.Value<string>("Id") == $"{namespaceName}.LeavingSoonPage");
 
             bool recommendationsExists = config.Value<JArray>("pages")!
                 .Any(x => x.Value<string>("Id") == $"{namespaceName}.RecommendationsPage");
@@ -765,6 +767,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 }
             }
 
+            // The Leaving soon page: added when enabled and using Plugin Pages, removed otherwise.
+            if (!leavingSoonExists && pluginConfig.LeavingSoonPageEnabled && pluginConfig.LeavingSoonPageUsePluginPages)
+            {
+                config.Value<JArray>("pages")!.Add(new JObject
+                {
+                    { "Id", $"{namespaceName}.LeavingSoonPage" },
+                    { "Url", $"{(supportsSubUrls ? "" : rootUrl)}/JellyfinEnhanced/leavingSoonPage" },
+                    { "DisplayText", "Leaving Soon" },
+                    { "Icon", "auto_delete" },
+                    { "Version", pluginPageConfigVersion }
+                });
+            }
+            else if (leavingSoonExists && (!pluginConfig.LeavingSoonPageEnabled || !pluginConfig.LeavingSoonPageUsePluginPages))
+            {
+                var leavingSoonPage = config.Value<JArray>("pages")!
+                    .FirstOrDefault(x => x.Value<string>("Id") == $"{namespaceName}.LeavingSoonPage");
+                if (leavingSoonPage != null)
+                {
+                    config.Value<JArray>("pages")!.Remove(leavingSoonPage);
+                }
+            }
+
             // Only add the catch up page if it's enabled and using plugin pages
             if (!catchUpExists && pluginConfig.CatchUpEnabled && pluginConfig.CatchUpUsePluginPages)
             {
@@ -803,7 +827,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             {
                 try
                 {
-                    foreach (var suffix in new[] { "CalendarPage", "DownloadsPage", "BookmarksPage", "HiddenContentPage", "ActivityPage", "CatchUpPage", "RecommendationsPage" })
+                    foreach (var suffix in new[] { "CalendarPage", "DownloadsPage", "BookmarksPage", "HiddenContentPage", "ActivityPage", "CatchUpPage", "LeavingSoonPage", "RecommendationsPage" })
                     {
                         var id = $"{namespaceName}.{suffix}";
                         removePage.Invoke(null, new object[] { id });
@@ -927,6 +951,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 new PluginPageInfo {
                     Name = "catchUpPage",
                     EmbeddedResourcePath = $"{GetType().Namespace}.PluginPages.CatchUpPage.html"
+                },
+                new PluginPageInfo {
+                    Name = "leavingSoonPage",
+                    EmbeddedResourcePath = $"{GetType().Namespace}.PluginPages.LeavingSoonPage.html"
                 }
             };
         }

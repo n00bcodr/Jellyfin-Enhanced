@@ -263,6 +263,10 @@
     "extras/activity-page.js",
     "extras/activity-custom-tab.js",
 
+    "// leaving soon page (after tags/maintainerr-item-menu.js, whose actions it reuses)",
+    "extras/leavingsoon-page.js",
+    "extras/leavingsoon-custom-tab.js",
+
     "// others",
     "others/letterboxd-links.js"
 ]

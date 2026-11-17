@@ -11,6 +11,7 @@ using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
+using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services
@@ -70,7 +71,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// Whether a Radarr/Sonarr server of Maintainerr's holds the item: by the movie's TMDB id or the series'
         /// TVDB id. Null when it could not say (unreachable, refused). Tests replace it.
         /// </summary>
-        internal Func<MaintainerrArrServer, string, BaseItem, CancellationToken, Task<bool?>> ArrHolds { get; set; }
+        internal Func<MaintainerrArrServer, string, BaseItem, MediaSourceInfo?, CancellationToken, Task<bool?>> ArrHolds { get; set; }
 
         public MaintainerrActions(IHttpClientFactory http, ILibraryManager library, LeavingSoonService leaving, TagCacheService cache, Logger logger)
         {
@@ -84,13 +85,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         /// <summary>Whether the actions are on: the switch and a Maintainerr URL.</summary>
         public static bool Enabled(PluginConfiguration? config)
-            => config != null && config.LeavingSoonMaintainerrActions && LeavingSoonService.IsMaintainerrUrl(config.LeavingSoonMaintainerrUrl);
+            => config != null && config.LeavingSoonMaintainerrActions && config.LeavingSoonMaintainerrEnabled && !LeavingSoonService.UsesReclaimerr(config) && LeavingSoonService.IsMaintainerrUrl(config.LeavingSoonMaintainerrUrl);
 
         /// <summary>Maintainerr's type word for an item, or null for a kind the actions do not handle.</summary>
         public static string? MediaType(BaseItem item) => item switch
         {
             Movie => "movie",
             Series => "show",
+            Season => "season",
             _ => null,
         };
 
@@ -121,13 +123,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         internal static async Task<MaintainerrMatch> MatchAsync(BaseItem item, string? libraryId, IReadOnlyList<MaintainerrCollection> collections, Func<string, Task<IReadOnlyList<MaintainerrArrServer>>> servers, Func<MaintainerrArrServer, string, Task<bool?>> holds)
         {
             var type = MediaType(item);
-            if (type == null) return MaintainerrMatch.Fail("Only movies and series can be marked.");
+            if (type == null) return MaintainerrMatch.Fail("Only movies, series and seasons can be marked.");
             var manual = collections.Where(c => c.IsActive && c.Manual).ToList();
             if (manual.Count == 0) return MaintainerrMatch.Fail("Maintainerr has no active manual collection. Create one (a rule with 'Use manual collection') and try again.");
             var typed = manual.Where(c => c.Type == type).ToList();
-            if (typed.Count == 0) return MaintainerrMatch.Fail($"Maintainerr has no manual collection for {(type == "movie" ? "movies" : "shows")} (it has: {Names(manual)}).");
+            if (typed.Count == 0) return MaintainerrMatch.Fail($"Maintainerr has no manual collection for {type}s (it has: {Names(manual)}).");
             var inLibrary = libraryId == null ? typed : typed.Where(c => c.LibraryId != null && string.Equals(c.LibraryId.Replace("-", string.Empty), libraryId, StringComparison.OrdinalIgnoreCase)).ToList();
-            if (inLibrary.Count == 0) return MaintainerrMatch.Fail($"No Maintainerr manual collection is on this item's library (the {(type == "movie" ? "movie" : "show")} collections are: {Names(typed)}).");
+            if (inLibrary.Count == 0) return MaintainerrMatch.Fail($"No Maintainerr manual collection is on this item's library (the {type} collections are: {Names(typed)}).");
             if (inLibrary.Count == 1) return MaintainerrMatch.Of(inLibrary[0]);
 
             // Several collections on one library: the one whose *arr server has the item.
@@ -150,17 +152,38 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 : $"Several Maintainerr collections fit this item ({Names(inLibrary)}) but none of their Radarr/Sonarr servers has it.");
         }
 
+        /// <summary>The version (media source) the admin has selected on the item page, or null when none or unknown.</summary>
+        internal static MediaSourceInfo? FindVersion(BaseItem item, string? mediaSourceId)
+        {
+            if (string.IsNullOrWhiteSpace(mediaSourceId) || item is not Movie movie) return null;
+            try { return movie.GetMediaSources(false).FirstOrDefault(s => string.Equals(s.Id?.Replace("-", string.Empty), mediaSourceId.Replace("-", string.Empty), StringComparison.OrdinalIgnoreCase)); }
+            catch { return null; }
+        }
+
+        private static string FileName(string? path) => (path ?? string.Empty).Split('/', '\\').LastOrDefault() ?? string.Empty;
+
+        /// <summary>Whether a Radarr movie's file is the selected version: same file name. True when Radarr or Jellyfin gives no file name to compare.</summary>
+        internal static bool FileMatchesVersion(JsonElement movie, MediaSourceInfo version)
+        {
+            if (!movie.TryGetProperty("movieFile", out var file) || file.ValueKind != JsonValueKind.Object) return true;
+            var path = file.TryGetProperty("path", out var p) && p.ValueKind == JsonValueKind.String ? p.GetString() : null;
+            var wanted = FileName(version.Path);
+            if (string.IsNullOrEmpty(path) || wanted.Length == 0) return true;
+            return string.Equals(FileName(path), wanted, StringComparison.OrdinalIgnoreCase);
+        }
+
         private static string Names(IEnumerable<MaintainerrCollection> collections) => string.Join(", ", collections.Select(c => c.Title));
 
         /// <summary>Add the item to the manual collection that fits it, then refresh the facts.</summary>
-        public async Task<MaintainerrItemState> MarkAsync(BaseItem item, PluginConfiguration config, CancellationToken token)
+        public async Task<MaintainerrItemState> MarkAsync(BaseItem item, PluginConfiguration config, CancellationToken token, string? mediaSourceId = null)
         {
-            var type = MediaType(item) ?? throw new ActionException("Only movies and series can be marked.");
+            var type = MediaType(item) ?? throw new ActionException("Only movies, series and seasons can be marked.");
             var collections = await GetCollectionsAsync(config, token).ConfigureAwait(false);
             var existing = await MembershipAsync(item, config, token).ConfigureAwait(false);
             if (existing != null && collections.Any(c => c.Id == existing)) throw new ActionException("This item is already marked for removal.");
             var libraryId = ItemLibraryResolver.Resolve(_library, item);
-            var match = await MatchAsync(item, libraryId, collections, kind => GetArrServersAsync(config, kind, token), (server, kind) => ArrHolds(server, kind, item, token)).ConfigureAwait(false);
+            var version = FindVersion(item, mediaSourceId);
+            var match = await MatchAsync(item, libraryId, collections, kind => GetArrServersAsync(config, kind, token), (server, kind) => ArrHolds(server, kind, item, version, token)).ConfigureAwait(false);
             if (match.Collection == null) throw new ActionException(match.Error ?? "No Maintainerr collection fits this item.");
             await SendAsync(config, HttpMethod.Post, "/api/collections/media/add", new { action = 0, mediaId = item.Id.ToString("N"), context = new { id = item.Id.ToString("N"), type }, collectionId = match.Collection.Id }, token).ConfigureAwait(false);
             _logger.Info($"[Maintainerr] Marked '{item.Name}' for removal in collection '{match.Collection.Title}'.");
@@ -170,7 +193,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <summary>Remove the item from its Maintainerr collection (Keep), then refresh the facts.</summary>
         public async Task<MaintainerrItemState> UnmarkAsync(BaseItem item, PluginConfiguration config, CancellationToken token)
         {
-            var type = MediaType(item) ?? throw new ActionException("Only movies and series can be kept.");
+            var type = MediaType(item) ?? throw new ActionException("Only movies, series and seasons can be kept.");
             var collections = await GetCollectionsAsync(config, token).ConfigureAwait(false);
             var collectionId = await MembershipAsync(item, config, token).ConfigureAwait(false);
             if (collectionId == null) throw new ActionException("This item is not marked for removal.");
@@ -186,7 +209,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         public async Task<MaintainerrItemState> PostponeAsync(BaseItem item, int? days, PluginConfiguration config, CancellationToken token)
         {
-            if (MediaType(item) == null) throw new ActionException("Only movies and series can be postponed.");
+            if (MediaType(item) == null) throw new ActionException("Only movies, series and seasons can be postponed.");
             if (days is { } d && (d < 1 || d > MaxPostponeDays)) throw new ActionException($"Days must be between 1 and {MaxPostponeDays}.");
             var collections = await GetCollectionsAsync(config, token).ConfigureAwait(false);
             var collectionId = await MembershipAsync(item, config, token).ConfigureAwait(false);
@@ -270,9 +293,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <c>GET /api/v3/series?tvdbId=</c>), with the key Maintainerr gave. The address goes through the same guard
         /// as every *arr address. Null when the item has no such id or the server could not be asked.
         /// </summary>
-        private async Task<bool?> ProbeArrAsync(MaintainerrArrServer server, string kind, BaseItem item, CancellationToken token)
+        private async Task<bool?> ProbeArrAsync(MaintainerrArrServer server, string kind, BaseItem item, MediaSourceInfo? version, CancellationToken token)
         {
-            var providerId = kind == "movie" ? item.GetProviderId(MetadataProvider.Tmdb) : item.GetProviderId(MetadataProvider.Tvdb);
+            // A season is held by the *arr server that holds its series.
+            var source = item is Season season ? _library.GetItemById(season.SeriesId) ?? item : item;
+            var providerId = kind == "movie" ? source.GetProviderId(MetadataProvider.Tmdb) : source.GetProviderId(MetadataProvider.Tvdb);
             if (string.IsNullOrWhiteSpace(providerId) || !providerId.All(char.IsAsciiDigit) || server.Url.Length == 0) return null;
             var url = server.Url + (kind == "movie" ? "/api/v3/movie?tmdbId=" : "/api/v3/series?tvdbId=") + providerId;
             try
@@ -287,7 +312,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, limit.Token).ConfigureAwait(false);
                 if (!response.IsSuccessStatusCode) return null;
                 using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(limit.Token).ConfigureAwait(false));
-                return doc.RootElement.ValueKind == JsonValueKind.Array ? doc.RootElement.GetArrayLength() > 0 : doc.RootElement.ValueKind == JsonValueKind.Object;
+                var movies = doc.RootElement.ValueKind == JsonValueKind.Array ? doc.RootElement.EnumerateArray().ToList() : doc.RootElement.ValueKind == JsonValueKind.Object ? new List<JsonElement> { doc.RootElement } : new List<JsonElement>();
+                return version == null || kind != "movie" ? movies.Count > 0 : movies.Any(m => FileMatchesVersion(m, version));
             }
             catch (Exception ex) when (ex is not OperationCanceledException || !token.IsCancellationRequested)
             {
@@ -310,7 +336,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private async Task<MaintainerrItemState> AfterAsync(BaseItem item, PluginConfiguration config, IReadOnlyList<MaintainerrCollection> collections, CancellationToken token)
         {
-            try { await _cache.RefreshLeavingAsync(force: true, token).ConfigureAwait(false); }
+            // The facts are read again now (the answer needs them); stamping the tag cache happens in the background, so the
+            // answer never waits for the cache's rebuild lock (a rebuild after a restart can hold it for minutes).
+            try { await _leaving.RefreshAsync(config, force: true, token).ConfigureAwait(false); _cache.QueueLeavingPublish(); }
             catch (Exception ex) when (ex is not OperationCanceledException) { _logger.Warning($"[Maintainerr] The refresh after an action failed: {ex.Message}"); }
             return State(item, config, collections);
         }

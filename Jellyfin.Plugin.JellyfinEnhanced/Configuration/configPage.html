@@ -214,6 +214,7 @@
                     <div data-je-section="pages-recommendations"></div>
                     <div data-je-section="pages-activity"></div>
                     <div data-je-section="pages-catchup"></div>
+                    <div data-je-section="pages-leaving-soon"></div>
                 </div>
 
                 <div id="seerr" class="jellyfin-tab-content">
@@ -235,7 +236,7 @@
                     <div class="je-info-banner je-fieldset-wide je-tab-intro">
                         <i class="material-icons je-info-icon">download_for_offline</i>
                         <div>
-                            Connect Jellyfin Enhanced to your <strong>Sonarr</strong>, <strong>Radarr</strong>, <strong>Bazarr</strong>, <strong>Shoko</strong> and <strong>Maintainerr</strong> instances.<br/>Each service gets its own box below; add as many Sonarr/Radarr instances as you want (one per quality profile / library), plus a single Bazarr endpoint and a single Shoko endpoint. Each instance can be enabled, disabled, or removed independently.
+                            Connect Jellyfin Enhanced to your <strong>Sonarr</strong>, <strong>Radarr</strong>, <strong>Bazarr</strong>, <strong>Shoko</strong>, <strong>Maintainerr</strong> and <strong>Reclaimerr</strong> instances.<br/>Each service gets its own box below; add as many Sonarr/Radarr instances as you want (one per quality profile / library), plus a single Bazarr endpoint and a single Shoko endpoint. Maintainerr and Reclaimerr are alternatives: only one of them feeds Leaving soon at a time. Each instance can be enabled, disabled, or removed independently.
                         </div>
                     </div>
 
@@ -245,6 +246,8 @@
                     <div data-je-section="arr-bazarr"></div>
                     <div data-je-section="arr-shoko"></div>
                     <div data-je-section="arr-maintainerr"></div>
+                    <div data-je-section="arr-reclaimerr"></div>
+                    <div data-je-section="arr-leaving-soon"></div>
                     <div data-je-section="arr-links"></div>
                     <div data-je-section="arr-tags"></div>
                 </div>
@@ -273,6 +276,8 @@
                     <div data-je-section="svc-mdblist"></div>
                     <div data-je-section="svc-ddd"></div>
                     <div data-je-section="svc-maintainerr"></div>
+                    <div data-je-section="svc-reclaimerr"></div>
+                    <div data-je-section="svc-leaving-soon"></div>
                 </div>
 
                 <div id="extras" class="jellyfin-tab-content">
@@ -1938,6 +1943,7 @@
             { masterKey: 'CalendarPageEnabled',   parentKey: 'CalendarUseCustomTabs',      autoKey: 'CalendarAutoCreateCustomTab',      ownedKey: 'CalendarCustomTabJeOwned',      title: 'Calendar',       html: '<div class="jellyfinenhanced calendar"></div>' },
             { masterKey: 'RecommendationsPageEnabled', parentKey: 'RecommendationsUseCustomTabs', autoKey: 'RecommendationsAutoCreateCustomTab', ownedKey: 'RecommendationsCustomTabJeOwned', title: 'Recommendations', html: '<div class="jellyfinenhanced recommendations"></div>' },
             { masterKey: 'ActivityFeedEnabled',   parentKey: 'ActivityFeedUseCustomTabs',   autoKey: 'ActivityFeedAutoCreateCustomTab',   ownedKey: 'ActivityFeedCustomTabJeOwned',  title: 'Activity',       html: '<div class="jellyfinenhanced activity"></div>' },
+            { masterKey: 'LeavingSoonPageEnabled', parentKey: 'LeavingSoonPageUseCustomTabs', autoKey: 'LeavingSoonPageAutoCreateCustomTab', ownedKey: 'LeavingSoonPageCustomTabJeOwned', title: 'Leaving Soon', html: '<div class="jellyfinenhanced leavingsoon"></div>' },
             { masterKey: 'CatchUpEnabled',      parentKey: 'CatchUpUseCustomTabs',        autoKey: 'CatchUpAutoCreateCustomTab',        ownedKey: 'CatchUpCustomTabJeOwned',       title: 'Catch Up',       html: '<div class="jellyfinenhanced catchup"></div>' }
         ];
 
@@ -3565,6 +3571,12 @@
                 var __cuAuto = document.querySelector('#catchUpAutoCreateCustomTab');
                 if (__cuAuto) __cuAuto.checked = config.CatchUpAutoCreateCustomTab === true;
                 document.querySelector('#activityFeedUseCustomTabs').checked = config.ActivityFeedUseCustomTabs === true;
+                document.querySelector('#leavingSoonPageEnabled').checked = config.LeavingSoonPageEnabled === true;
+                document.querySelector('#leavingSoonPageUseNativeTab').checked = config.LeavingSoonPageUseNativeTab === true;
+                document.querySelector('#leavingSoonPageUsePluginPages').checked = config.LeavingSoonPageUsePluginPages === true;
+                document.querySelector('#leavingSoonPageUseCustomTabs').checked = config.LeavingSoonPageUseCustomTabs === true;
+                var __lsAuto = document.querySelector('#leavingSoonPageAutoCreateCustomTab');
+                if (__lsAuto) __lsAuto.checked = config.LeavingSoonPageAutoCreateCustomTab === true;
                 var __aAuto = document.querySelector('#activityFeedAutoCreateCustomTab');
                 if (__aAuto) __aAuto.checked = config.ActivityFeedAutoCreateCustomTab === true;
 
@@ -3866,6 +3878,12 @@
             var __cuAutoSave = document.querySelector('#catchUpAutoCreateCustomTab');
             config.CatchUpAutoCreateCustomTab = !!(__cuAutoSave && __cuAutoSave.checked);
             config.ActivityFeedUseCustomTabs = document.querySelector('#activityFeedUseCustomTabs').checked;
+            config.LeavingSoonPageEnabled = document.querySelector('#leavingSoonPageEnabled').checked;
+            config.LeavingSoonPageUseNativeTab = document.querySelector('#leavingSoonPageUseNativeTab').checked;
+            config.LeavingSoonPageUsePluginPages = document.querySelector('#leavingSoonPageUsePluginPages').checked;
+            config.LeavingSoonPageUseCustomTabs = document.querySelector('#leavingSoonPageUseCustomTabs').checked;
+            var __lsAutoSave = document.querySelector('#leavingSoonPageAutoCreateCustomTab');
+            config.LeavingSoonPageAutoCreateCustomTab = !!(__lsAutoSave && __lsAutoSave.checked);
             var __aAutoSave = document.querySelector('#activityFeedAutoCreateCustomTab');
             config.ActivityFeedAutoCreateCustomTab = !!(__aAutoSave && __aAutoSave.checked);
 
@@ -4949,6 +4967,7 @@
             { id: 'calendarUsePluginPages',        checkFn: function() { return hasPluginPages !== false; }, hint: 'Install Plugin Pages plugin to enable', icon: 'extension' },
             { id: 'recommendationsUsePluginPages', checkFn: function() { return hasPluginPages !== false; }, hint: 'Install Plugin Pages plugin to enable', icon: 'extension' },
             { id: 'activityFeedUsePluginPages',    checkFn: function() { return hasPluginPages !== false; }, hint: 'Install Plugin Pages plugin to enable', icon: 'extension' },
+            { id: 'leavingSoonPageUsePluginPages',    checkFn: function() { return hasPluginPages !== false; }, hint: 'Install Plugin Pages plugin to enable', icon: 'extension' },
             { id: 'catchUpUsePluginPages',           checkFn: function() { return hasPluginPages !== false; }, hint: 'Install Plugin Pages plugin to enable', icon: 'extension' },
             { id: 'bookmarksUseCustomTabs',        checkFn: function() { return hasCustomTabs !== false; }, hint: 'Install Custom Tabs plugin to enable', icon: 'extension' },
             { id: 'hiddenContentUseCustomTabs',    checkFn: function() { return hasCustomTabs !== false; }, hint: 'Install Custom Tabs plugin to enable', icon: 'extension' },
@@ -4956,6 +4975,7 @@
             { id: 'calendarUseCustomTabs',         checkFn: function() { return hasCustomTabs !== false; }, hint: 'Install Custom Tabs plugin to enable', icon: 'extension' },
             { id: 'recommendationsUseCustomTabs',  checkFn: function() { return hasCustomTabs !== false; }, hint: 'Install Custom Tabs plugin to enable', icon: 'extension' },
             { id: 'activityFeedUseCustomTabs',     checkFn: function() { return hasCustomTabs !== false; }, hint: 'Install Custom Tabs plugin to enable', icon: 'extension' },
+            { id: 'leavingSoonPageUseCustomTabs',     checkFn: function() { return hasCustomTabs !== false; }, hint: 'Install Custom Tabs plugin to enable', icon: 'extension' },
             { id: 'catchUpUseCustomTabs',          checkFn: function() { return hasCustomTabs !== false; }, hint: 'Install Custom Tabs plugin to enable', icon: 'extension' },
             { id: 'showLetterboxdLinkAsText', checkFn: function() { return !isMetadataIconsEnabled(); }, hint: 'Forced to icon mode while Metadata Icons (Druidblack) is enabled', icon: 'block' },
             { id: 'showArrLinksAsText',       checkFn: function() { return !isMetadataIconsEnabled(); }, hint: 'Forced to icon mode while Metadata Icons (Druidblack) is enabled', icon: 'block' }
@@ -4970,6 +4990,7 @@
             { customId: 'calendarUseCustomTabs',        nativeId: 'calendarUseNativeTab',        bannerId: 'je-v12-hint-calendar' },
             { customId: 'recommendationsUseCustomTabs', nativeId: 'recommendationsUseNativeTab', bannerId: 'je-v12-hint-recommendations' },
             { customId: 'activityFeedUseCustomTabs',    nativeId: 'activityFeedUseNativeTab',     bannerId: 'je-v12-hint-activityFeed' },
+            { customId: 'leavingSoonPageUseCustomTabs',  nativeId: 'leavingSoonPageUseNativeTab',  bannerId: 'je-v12-hint-leavingSoonPage' },
             { customId: 'catchUpUseCustomTabs',         nativeId: 'catchUpUseNativeTab',         bannerId: 'je-v12-hint-catchUp' }
         ];
 
@@ -5179,6 +5200,7 @@
             { parent: 'calendarPageEnabled', label: 'Enable Calendar Page', children: ['calendarUsePluginPages', 'calendarUseNativeTab', 'calendarUseCustomTabs', 'calendarFirstDayOfWeek', 'calendarTimeFormat', 'calendarHighlightFavorites', 'calendarHighlightWatchedSeries', 'calendarFilterByLibraryAccess', 'calendarShowOnlyRequested', 'calendarForceOnlyRequested'] },
             { parent: 'recommendationsPageEnabled', label: 'Enable Recommendations Page', children: ['recommendationsUseNativeTab', 'recommendationsUsePluginPages', 'recommendationsUseCustomTabs', 'recommendationsAutoCreateCustomTab'] },
             { parent: 'activityFeedEnabled', label: 'Enable Activity Feed', children: ['activityFeedShowWatched', 'activityFeedShowFavorited', 'activityFeedShowReviewed', 'activityFeedOwnOnlyForNonAdmins', 'activityFeedShowActiveStreams', 'activityFeedUseNativeTab', 'activityFeedUsePluginPages', 'activityFeedUseCustomTabs', 'activityFeedAutoCreateCustomTab'] },
+            { parent: 'leavingSoonPageEnabled', label: 'Enable the Leaving Soon page', children: ['leavingSoonPageUseNativeTab', 'leavingSoonPageUsePluginPages', 'leavingSoonPageUseCustomTabs', 'leavingSoonPageAutoCreateCustomTab'] },
             { parent: 'catchUpEnabled', label: 'Enable Catch Up', children: ['catchUpLogEnabled', 'catchUpUseNativeTab', 'catchUpUsePluginPages', 'catchUpUseCustomTabs', 'catchUpAutoCreateCustomTab'] },
             { parent: 'autoMovieRequestEnabled', label: 'Enable Automatic Movie Requests', children: ['autoMovieRequestTriggerOnStart', 'autoMovieRequestTriggerOnMinutesWatched', 'autoMovieRequestMinutesWatched', 'autoMovieRequestCheckReleaseDate', 'autoMovieRequestQualityMode', 'autoMovieRequestFallbackOn4k'] },
             { parent: 'autoSeasonRequestEnabled', label: 'Enable Automatic Season Requests', children: ['autoSeasonRequestRequireAllWatched', 'autoSeasonRequestThresholdValue'] },
@@ -6214,7 +6236,7 @@
 
         // A page can use the native Home tab or Custom Tabs, never both: the two
         // would register competing tabs for the same page.
-        var TAB_EXCLUSIVE_PAIRS = ['bookmarks', 'hiddenContent', 'downloads', 'calendar', 'recommendations', 'activityFeed', 'catchUp'].map(function(p) {
+        var TAB_EXCLUSIVE_PAIRS = ['bookmarks', 'hiddenContent', 'downloads', 'calendar', 'recommendations', 'activityFeed', 'catchUp', 'leavingSoonPage'].map(function(p) {
             return { native: p + 'UseNativeTab', custom: p + 'UseCustomTabs' };
         });
 
@@ -6490,8 +6512,11 @@
             }
 
             // Maintainerr: always listed. With an address, the server's last read of it (admin/leaving-soon) is the state.
-            var maintainerrUrl = readFieldValue('#LeavingSoonMaintainerrUrl');
-            var maintainerrCard = { id: 'maintainerr', name: 'Maintainerr', tab: 'arr', icon: 'auto_delete', scrollTo: '#LeavingSoonMaintainerrUrl' };
+            // The card follows the removal tool that is on (Reclaimerr or Maintainerr); neither on is "not set up".
+            var reclaimerrOn = !!(document.querySelector('#ReclaimerrEnabled') || {}).checked;
+            var maintainerrOn = !reclaimerrOn && !!(document.querySelector('#LeavingSoonMaintainerrEnabled') || {}).checked;
+            var maintainerrUrl = reclaimerrOn ? readFieldValue('#ReclaimerrUrl') : (maintainerrOn ? readFieldValue('#LeavingSoonMaintainerrUrl') : '');
+            var maintainerrCard = { id: 'maintainerr', name: reclaimerrOn ? 'Reclaimerr' : 'Maintainerr', tab: 'arr', icon: 'auto_delete', scrollTo: reclaimerrOn ? '#ReclaimerrUrl' : '#LeavingSoonMaintainerrUrl' };
             if (!maintainerrUrl) {
                 maintainerrCard.state = 'off';
                 maintainerrCard.detail = 'Not set up';
