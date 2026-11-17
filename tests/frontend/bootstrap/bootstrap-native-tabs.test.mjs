@@ -89,6 +89,12 @@ test('stable JE deep link rewrites stale index and clears partially selected hos
   assert.equal(h.document.querySelectorAll('.emby-tab-button-active').length, 1);
 });
 
+test("a stale index is corrected without the address's other pairs (a Recommendations category, its filters) being lost", async t => {
+  const h = setup(t, { count: 2, hash: '#/home?tab=2&jeTab=requests&jeCategory=trending&jeType=movies' }); h.register();
+  await until(() => h.panel()?.classList.contains('is-active'));
+  assert.equal(h.window.location.hash, '#/home?tab=4&jeTab=requests&jeCategory=trending&jeType=movies');
+});
+
 test('user selection consumes deep link so later mutations do not steal the chosen tab', async t => {
   const h = setup(t, { hash: '#/home?tab=2&jeTab=requests' }); h.register();
   await until(() => h.panel()?.classList.contains('is-active'));

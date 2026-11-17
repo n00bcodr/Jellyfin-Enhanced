@@ -414,7 +414,122 @@
   }
 
   /**
-   * Renders the recommendations content (title + rows) into container.
+   * The page's filters at the end of its title bar: All | Movies | Series, then the "More from"
+   * sections' Filters button with its menu (the line of what is set goes after the bar).
+   * @param {HTMLElement} bar - The title bar
+   * @param {() => (HTMLElement|null)} place - The page the filters narrow
+   * @param {() => void} onChange - Fills the rows again
+   * @returns {HTMLElement[]}
+   */
+  function toolbarControls(bar, place, onChange) {
+    const filter = JE.discoveryFilter;
+    const type = filter.createFilterControl(P.FILTER_MODULE, () => onChange());
+    const button = filter.createFiltersButton?.(bar, P.FILTER_MODULE, 'feed', onChange, { place });
+    return button ? [type, button] : [type];
+  }
+
+  // Per rendered page: redraws its filters and, when they changed since its rows were filled, fills
+  // them again (the filters are the category pages' too, which can change them).
+  const syncs = new Map();
+
+  /** After the filters changed elsewhere (a category page): every page shows them, with rows to match. */
+  function syncFilters() {
+    for (const [container, sync] of [...syncs]) {
+      if (container.isConnected) sync(); else syncs.delete(container);
+    }
+  }
+
+  /**
+   * Says that the filters leave the page nothing, with the way back to everything.
+   * @param {HTMLElement} box - Where the rows would be
+   * @param {() => void} onClear - Takes the filters away and fills the rows again
+   */
+  function appendNothingMatches(box, onClear) {
+    const note = JE.discoverySection?.buildMessageRow?.({
+      message: JE.t('discovery_filters_none'),
+      actionLabel: JE.t('discovery_filters_clear'),
+      onAction: onClear,
+    });
+    if (!note) return;
+    note.classList.add('je-recommendations-empty', 'je-reco-filters-none', 'je-pad-left', 'je-pad-right');
+    box.appendChild(note);
+  }
+
+  /**
+   * Fills the rows box under the page's filters: the rows of the kinds All | Movies | Series shows,
+   * each asked with the filters, then the genre, studio and network tiles of those kinds.
+   * @param {HTMLElement} box
+   * @param {AbortSignal} signal - Ends with the next fill and with the page's render
+   * @param {() => void} onClear - Clear filters, from the note when they leave nothing
+   */
+  async function fillRows(box, signal, onClear) {
+    JE.jellyseerrUI?.releasePosters?.(box);
+    box.textContent = '';
+    const mode = JE.discoveryFilter.getFilterMode(P.FILTER_MODULE);
+    const shows = kind => P.shownForType(kind, mode);
+
+    const loading = JE.core.ui.createSkeletonRows([
+      ...P.ROWS.filter(row => shows(row.kind)).map(row => JE.t(row.titleKey)),
+      ...(shows('movie') ? [JE.t('recommendations_movie_genres')] : []),
+      ...(shows('tv') ? [JE.t('recommendations_tv_genres')] : []),
+      ...(shows('movie') ? [JE.t('recommendations_studios')] : []),
+      ...(shows('tv') ? [JE.t('recommendations_networks')] : []),
+    ]);
+    loading.className = 'je-pad-left je-pad-right';
+    loading.setAttribute('aria-label', JE.t('recommendations_loading'));
+    box.appendChild(loading);
+
+    let rows;
+    try {
+      const [rowsResult, movieGenres, tvGenres] = await Promise.all([
+        fetchAllRows(signal),
+        fetchGenreSlider('movie'),
+        fetchGenreSlider('tv'),
+      ]);
+      rows = rowsResult;
+      P.MOVIE_GENRES = movieGenres || [];
+      P.TV_GENRES = tvGenres || [];
+    } catch (error) {
+      if (error?.name === 'AbortError') return;
+      console.error(`${logPrefix} Failed to load rows`, error);
+      rows = [];
+    }
+
+    if (signal.aborted) return;
+
+    loading.remove();
+
+    const nonEmptyRows = rows.filter(entry => entry.results.length > 0);
+    if (nonEmptyRows.length === 0) {
+      if (P.isNarrowed()) {
+        appendNothingMatches(box, onClear);
+        return;
+      }
+      const empty = document.createElement('div');
+      empty.className = 'je-recommendations-empty je-pad-left je-pad-right';
+      empty.textContent = JE.t('recommendations_empty');
+      box.appendChild(empty);
+      return;
+    }
+
+    nonEmptyRows.forEach(({ row, results }) => {
+      box.appendChild(createMediaRow(JE.t(row.titleKey), results, row.key));
+    });
+
+    if (P.MOVIE_GENRES.length && shows('movie')) {
+      box.appendChild(createGenreTileRow(JE.t('recommendations_movie_genres'), P.MOVIE_GENRES, 'movie'));
+    }
+    if (P.TV_GENRES.length && shows('tv')) {
+      box.appendChild(createGenreTileRow(JE.t('recommendations_tv_genres'), P.TV_GENRES, 'tv'));
+    }
+
+    if (shows('movie')) box.appendChild(createTileRow(JE.t('recommendations_studios'), P.STUDIOS, 'studio'));
+    if (shows('tv')) box.appendChild(createTileRow(JE.t('recommendations_networks'), P.NETWORKS, 'network'));
+  }
+
+  /**
+   * Renders the recommendations content into container: the title bar with the page's filters, then
+   * the rows, in a box of their own that fills again whenever the filters change.
    * @param {HTMLElement} container
    */
   async function renderInto(container) {
@@ -428,8 +543,14 @@
     JE.jellyseerrUI?.releasePosters?.(container);
     container.textContent = '';
 
+    // Where the address holds the filters (Home's tab, the page of its own), a link, a reload or
+    // Back opens the page with what it says.
+    if (P.addressHoldsFilters()) JE.discoveryAddress?.adopt?.(P.FILTER_MODULE, null, { withSort: false });
+
+    const bar = document.createElement('div');
+    bar.className = 'je-recommendations-title je-reco-header je-pad-left je-pad-right';
     const heading = document.createElement('h1');
-    heading.className = 'je-recommendations-title je-pad-left je-pad-right';
+    heading.className = 'je-reco-heading';
     const logo = document.createElement('img');
     logo.className = 'je-reco-logo';
     logo.alt = '';
@@ -437,63 +558,56 @@
     const titleText = document.createElement('span');
     titleText.textContent = JE.t('recommendations_title');
     heading.append(logo, titleText);
-    container.appendChild(heading);
+    const tools = document.createElement('div');
+    tools.className = 'je-reco-tools';
+    bar.append(heading, tools);
+    container.appendChild(bar);
     if (stopTitleTracking) stopTitleTracking();
-    stopTitleTracking = trackStickyBar(heading);
+    stopTitleTracking = trackStickyBar(bar);
 
-    const loading = JE.core.ui.createSkeletonRows([
-      ...P.ROWS.map(row => JE.t(row.titleKey)),
-      JE.t('recommendations_movie_genres'),
-      JE.t('recommendations_tv_genres'),
-      JE.t('recommendations_studios'),
-      JE.t('recommendations_networks'),
-    ]);
-    loading.className = 'je-pad-left je-pad-right';
-    loading.setAttribute('aria-label', JE.t('recommendations_loading'));
-    container.appendChild(loading);
+    const rowsBox = document.createElement('div');
+    rowsBox.className = 'je-reco-rows';
+    container.appendChild(rowsBox);
 
-    let rows;
-    try {
-      const [rowsResult, movieGenres, tvGenres] = await Promise.all([
-        fetchAllRows(abortController.signal),
-        fetchGenreSlider('movie'),
-        fetchGenreSlider('tv'),
-      ]);
-      rows = rowsResult;
-      P.MOVIE_GENRES = movieGenres || [];
-      P.TV_GENRES = tvGenres || [];
-    } catch (error) {
-      if (error?.name === 'AbortError') return;
-      console.error(`${logPrefix} Failed to load rows`, error);
-      rows = [];
+    let filled = '';
+    let rowsController = null;
+    const fill = () => {
+      filled = P.filterSignature();
+      if (rowsController) rowsController.abort();
+      const controller = rowsController = new AbortController();
+      abortController.signal.addEventListener('abort', () => controller.abort(), { once: true, signal: controller.signal });
+      return fillRows(rowsBox, controller.signal, clear);
+    };
+    const refill = () => {
+      fill().catch(error => console.error(`${logPrefix} Failed to filter`, error));
+    };
+    const paintTools = () => {
+      tools.replaceChildren(...toolbarControls(bar, () => container, changed));
+    };
+    // A change made here: the address says it first (a reload or a link shows the same), then the rows follow.
+    function changed() {
+      if (P.addressHoldsFilters()) JE.discoveryAddress?.write?.(P.FILTER_MODULE, null, false);
+      refill();
     }
-
-    if (abortController.signal.aborted) return;
-
-    loading.remove();
-
-    const nonEmptyRows = rows.filter(entry => entry.results.length > 0);
-    if (nonEmptyRows.length === 0) {
-      const empty = document.createElement('div');
-      empty.className = 'je-recommendations-empty je-pad-left je-pad-right';
-      empty.textContent = JE.t('recommendations_empty');
-      container.appendChild(empty);
-      return;
+    // Clear filters, from the note that they leave nothing: the controls are drawn again with them.
+    function clear() {
+      const keyed = rowsBox.contains(document.activeElement);
+      P.clearFilters();
+      paintTools();
+      changed();
+      // (The note goes with the rows: the keys go to the Filters button, which the bar keeps.)
+      if (keyed) tools.querySelector('.jellyseerr-filters-btn')?.focus({ preventScroll: true });
     }
-
-    nonEmptyRows.forEach(({ row, results }) => {
-      container.appendChild(createMediaRow(JE.t(row.titleKey), results, row.key));
+    syncs.set(container, () => {
+      paintTools();
+      if (P.filterSignature() !== filled) refill();
     });
-
-    if (P.MOVIE_GENRES.length) {
-      container.appendChild(createGenreTileRow(JE.t('recommendations_movie_genres'), P.MOVIE_GENRES, 'movie'));
-    }
-    if (P.TV_GENRES.length) {
-      container.appendChild(createGenreTileRow(JE.t('recommendations_tv_genres'), P.TV_GENRES, 'tv'));
-    }
-
-    container.appendChild(createTileRow(JE.t('recommendations_studios'), P.STUDIOS, 'studio'));
-    container.appendChild(createTileRow(JE.t('recommendations_networks'), P.NETWORKS, 'network'));
+    abortController.signal.addEventListener('abort', () => {
+      syncs.delete(container);
+      if (rowsController) rowsController.abort();
+    }, { once: true });
+    paintTools();
+    await fill();
   }
 
   // --- Custom tab entry point ---
@@ -506,5 +620,6 @@
   P.createTileRow = createTileRow;
   P.createGenreTileRow = createGenreTileRow;
   P.renderInto = renderInto;
+  P.syncFilters = syncFilters;
   P.renderForCustomTab = renderForCustomTab;
 })();

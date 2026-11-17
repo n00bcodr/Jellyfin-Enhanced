@@ -12,7 +12,8 @@
 // there holds a title.
 //
 // Shapes (as the rewrite typed them):
-// - scope: 'feed' (a list page's section, filtered by Seerr) or 'person' (a person's titles, filtered here).
+// - scope: 'feed' (a list page's section, filtered by Seerr), 'person' (a person's titles, filtered here) or
+//   'loaded' (titles of a feed that takes no filters, such as Trending, filtered here by what each title says of itself).
 // - Picked: { id, name }: one thing picked from a list: what it is to Seerr (see each list below), and its name for the eye.
 // - Range: [from, to]: what was typed as the lower and the upper bound; '' for none.
 // - FilterSelection: { role?, year?, score?, votes?, runtime?, genres?, language?, rating?, services?, keywords?, without? }
@@ -29,6 +30,8 @@
     const FEED_FILTERS = ['year', 'score', 'votes', 'runtime', 'genres', 'language', 'rating', 'services', 'keywords', 'without'];
     /** A person's credits carry no runtime, rating, services or keywords: those are not offered there. */
     const PERSON_FILTERS = ['role', 'year', 'score', 'votes', 'genres', 'language'];
+    /** What a loaded title says of itself, and so can be checked here (keepByFilters). */
+    const LOADED_FILTERS = ['year', 'score', 'votes', 'genres', 'language'];
     /** The admin's switch for each filter (the two keyword filters share one). */
     const FILTER_SWITCHES = Object.freeze({
         role: 'JellyseerrFilterRole', year: 'JellyseerrFilterYear', score: 'JellyseerrFilterScore', votes: 'JellyseerrFilterVotes',
@@ -41,12 +44,13 @@
 
     /**
      * The filters a section of this scope offers, in the order they are shown, less the ones the admin turned off.
-     * @param {'feed'|'person'} scope - A list page's section, or a person's titles
+     * @param {'feed'|'person'|'loaded'} scope - A list page's section, a person's titles, or titles already loaded
      * @param {object|null|undefined} config - The plugin's public config (a missing switch means on)
      * @returns {string[]} The filter ids offered
      */
     function offeredFilters(scope, config) {
-        return (scope === 'person' ? PERSON_FILTERS : FEED_FILTERS).filter(id => config?.[FILTER_SWITCHES[id]] !== false);
+        const ids = scope === 'person' ? PERSON_FILTERS : scope === 'loaded' ? LOADED_FILTERS : FEED_FILTERS;
+        return ids.filter(id => config?.[FILTER_SWITCHES[id]] !== false);
     }
 
     /**
@@ -65,6 +69,18 @@
         const chosen = selection || {};
         return RANGE_IDS.map(id => chosen[id]).filter(isRangeSet).length
             + LIST_IDS.map(id => chosen[id]).filter(list => !!list && list.length > 0).length;
+    }
+
+    /**
+     * Whether every filter set can be checked on loaded titles (keepByFilters): none of runtime, rating,
+     * services, keywords or role is set.
+     * @param {object} selection - The section's FilterSelection
+     * @returns {boolean}
+     */
+    function checkableOnLoaded(selection) {
+        const chosen = selection || {};
+        return !isRangeSet(chosen.runtime)
+            && [chosen.role, chosen.rating, chosen.services, chosen.keywords, chosen.without].every(list => !list || list.length === 0);
     }
 
     /**
@@ -393,6 +409,7 @@
         FILTER_SWITCHES,
         offeredFilters,
         activeFilterCount,
+        checkableOnLoaded,
         dayOf,
         numberOf,
         isBound,

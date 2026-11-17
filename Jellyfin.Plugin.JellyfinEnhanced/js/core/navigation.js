@@ -28,6 +28,13 @@
     // the same URL change. Only dispatch when the URL actually moved.
     let lastDispatchedHref = null;
 
+    // History's own methods as they were before the patch below, for an address
+    // change that is not a navigation (setAddressQuietly).
+    /** @type {Function|null} */
+    let unpatchedPush = null;
+    /** @type {Function|null} */
+    let unpatchedReplace = null;
+
     /**
      * Patch history.pushState / history.replaceState to emit a 'je:navigate'
      * event. Jellyfin's SPA router calls pushState for some transitions
@@ -41,6 +48,8 @@
 
         const _push = history.pushState.bind(history);
         const _replace = history.replaceState.bind(history);
+        unpatchedPush = _push;
+        unpatchedReplace = _replace;
 
         // Some host pages (e.g. third-party custom-tabs plugins reacting to DOM
         // mutations) call pushState repeatedly for a URL that hasn't changed.
@@ -78,6 +87,21 @@
                 console.error(`${logPrefix} Error in onNavigate callback:`, err);
             }
         }
+    }
+
+    /**
+     * Changes the address without it being a navigation for the plugin: no 'je:navigate', and the
+     * address counts as already seen, so its features keep what they show. For what a page keeps in
+     * its own address (a Seerr section's filters, the Recommendations category page), which must not
+     * tear that page's features down. The browser's Back and Forward to and from it still navigate.
+     * @param {*} state - The history entry's state (keep `history.state` when replacing: the router's own is in it)
+     * @param {string} url - The new address
+     * @param {boolean} [push=false] - Add a history entry (else the current one is replaced)
+     */
+    function setAddressQuietly(state, url, push = false) {
+        const change = push ? (unpatchedPush || history.pushState.bind(history)) : (unpatchedReplace || history.replaceState.bind(history));
+        change(state, '', url);
+        lastDispatchedHref = window.location.href;
     }
 
     /**
@@ -307,6 +331,7 @@
         offNavigate,
         onViewPage,
         getCurrentView,
+        setAddressQuietly,
         /** @returns {number} Number of registered onViewPage handlers. */
         getViewHandlerCount: () => viewHandlers.length,
         /** @returns {number} Number of registered onNavigate callbacks. */

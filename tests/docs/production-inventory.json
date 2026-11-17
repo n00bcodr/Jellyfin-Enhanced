@@ -1547,6 +1547,10 @@
       "category": "js"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/discovery/discovery-address.js",
+      "category": "js"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/discovery/discovery-base.js",
       "category": "js"
     },
@@ -10876,7 +10880,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 498,
+    "files": 499,
     "routes": 217,
     "configuration_properties": 787,
     "storage_references": 88,

@@ -195,6 +195,7 @@
     "jellyseerr/discovery/discovery-filters.js",
     "jellyseerr/discovery/discovery-filter-panel.js",
     "jellyseerr/discovery/discovery-filter-utils.js",
+    "jellyseerr/discovery/discovery-address.js",
     "jellyseerr/discovery/discovery-base.js",
     "jellyseerr/discovery/network-discovery.js",
     "jellyseerr/discovery/person-discovery.js",

@@ -566,7 +566,12 @@
             var staleHash = window.location.hash;
             // Local copy: replaceState notifies JE's navigation listeners
             // synchronously, and ours clears rewrittenHash once it has seen it.
-            var freshHash = deepLinkHash(entry);
+            // Only the tab's own pairs are corrected: the others (the
+            // Recommendations category open on it, its filters) stay.
+            var others = (staleHash.split('?')[1] || '').split('&').filter(function (pair) {
+                return pair !== '' && !/^(?:tab|jeTab)=/.test(pair);
+            });
+            var freshHash = deepLinkHash(entry) + others.map(function (pair) { return '&' + pair; }).join('');
             rewrittenHash = freshHash;
             history.replaceState(history.state, '', window.location.pathname + window.location.search + freshHash);
             wantedIndex = entry.index;

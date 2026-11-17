@@ -615,13 +615,17 @@
      * set is said in words on a line under the header, each piece with the way to take it away.
      * @param {HTMLElement} header - The section's header
      * @param {string} moduleName - The section's module name
-     * @param {'feed'|'person'} scope - A list page's section, or a person's titles
+     * @param {'feed'|'person'|'loaded'} scope - A list page's section, a person's titles, or titles already loaded
      * @param {() => void} onChange - Reloads the list
      * @param {string} [ownGenre] - On a genre's page: that genre's name
+     * @param {() => (HTMLElement|null)} [place] - What the button narrows where that is not the header's discovery
+     *   section (a page of its own, such as the Recommendations page): it holds the line of what is set, after the header
      * @returns {HTMLButtonElement}
      */
-    function createFiltersControl(header, moduleName, scope, onChange, ownGenre) {
+    function createFiltersControl(header, moduleName, scope, onChange, ownGenre, place) {
         injectStyles();
+        /** The section the header is in, or the page the button narrows. */
+        const sectionOf = place ?? (() => header.closest('.jellyseerr-discovery-section'));
         const { offeredFilters, activeFilterCount, rolesOf } = logic();
         const filtersLabel = label('discovery_filters', 'Filters');
         const clearLabel = label('discovery_filters_clear', 'Clear filters');
@@ -657,7 +661,7 @@
          * @param {number} [focusAt] - Where the keys go after a piece is taken away (-1: they stay)
          */
         const paintSet = (focusAt = -1) => {
-            const section = header.closest('.jellyseerr-discovery-section');
+            const section = sectionOf();
             let line = section?.querySelector('.jellyseerr-filters-set') ?? null;
             const tokens = filterTokens({ offered, label, locale: localeOf(), selection: selectionOf(moduleName) });
             // (Redrawn with the keys on one of its buttons, as after the list it narrowed is in: they stay at that place.)
@@ -728,8 +732,9 @@
             name.textContent = set > 0 ? `${filtersLabel}: ${set}` : filtersLabel;
             // Asked for by a job (Directing) and not for acting, a title's jobs come before its part on the card.
             const roles = selectionOf(moduleName).role ?? [];
-            const section = header.closest('.jellyseerr-discovery-section');
-            JE.discoveryBusy?.mark?.(section);
+            const section = sectionOf();
+            // (A page of its own shows its own placeholders while it reloads.)
+            if (section?.classList.contains('jellyseerr-discovery-section')) JE.discoveryBusy?.mark?.(section);
             section?.toggleAttribute('data-jobs-first', roles.length > 0 && !roles.some(role => role.id === 'cast'));
             // And among the jobs, the ones asked for lead ("Director, Writer" for Directing): a line that does not fit loses jobs from its end.
             if (section) {
@@ -751,8 +756,6 @@
             JE.discoveryBusy?.hold?.(button);
             onChange();
         }
-        /** The section the header is in. */
-        const sectionOf = () => header.closest('.jellyseerr-discovery-section');
         /** Opens the Filters menu under the button. */
         const open = () => {
             const menu = JE.discoveryMenu;
@@ -959,6 +962,15 @@
          * @returns {boolean}
          */
         active: name => logic().activeFilterCount(selectionOf(name)) > 0,
+        /**
+         * Sets a module's further filters as a whole (from its page's address); the caller redraws and reloads.
+         * @param {string} name - The module name
+         * @param {object} selection - The FilterSelection
+         */
+        setSelection(name, selection) {
+            if (logic().activeFilterCount(selection) > 0) moreFilters.set(name, selection);
+            else moreFilters.delete(name);
+        },
         /**
          * A section starts with nothing narrowing it: its further filters and the titles seen go.
          * @param {string} name - The module name

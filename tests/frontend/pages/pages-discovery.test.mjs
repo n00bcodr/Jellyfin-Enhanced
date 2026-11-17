@@ -561,11 +561,8 @@ test('the Recommendations category sorts through the same button and menu, "Most
   const h = createHarness({ html: '<div class="page mainAnimatedPage" id="home"></div>', JE: {
     t: englishT, pluginConfig: { RecommendationsPageEnabled: true },
     internals: { recommendationsPage: {
-      state: {}, hidePage() {}, trackStickyBar: () => () => {},
-      resolveCategory: key => key === 'popular' ? { title: 'Popular', feeds: [{ path: '/feed' }] } : null,
-      fetchWithManagedRequest: async () => ({ totalPages: 1, results: [
-        { id: 1, mediaType: 'movie', voteCount: 5 }, { id: 2, mediaType: 'movie', voteCount: 50 }, { id: 3, mediaType: 'movie', jeSortVotes: 20 }
-      ] })
+      hidePage() {}, trackStickyBar: () => () => {},
+      resolveCategory: key => key === 'popular' ? { title: 'Popular', feeds: [{ path: '/feed' }] } : null
     } }
   } });
   t.after(() => h.close());
@@ -573,6 +570,10 @@ test('the Recommendations category sorts through the same button and menu, "Most
   h.JE.jellyseerrUI = { createJellyseerrCard(item) { const card = h.document.createElement('div'); card.className = 'card'; card.dataset.id = String(item.id); return card; } };
   h.JE.discoveryFilter.setupInfiniteScroll = () => {};
   h.JE.discoveryFilter.cleanupScrollObserver = () => {};
+  h.JE.discoveryFilter.fetchWithManagedRequest = async () => ({ totalPages: 1, results: [
+    { id: 1, mediaType: 'movie', voteCount: 5 }, { id: 2, mediaType: 'movie', voteCount: 50 }, { id: 3, mediaType: 'movie', jeSortVotes: 20 }
+  ] });
+  h.load('jellyseerr/recommendations/recommendations-data.js');
   h.load('jellyseerr/recommendations/recommendations-category.js');
   const P = h.JE.internals.recommendationsPage;
   await P.showCategoryPage('popular');
