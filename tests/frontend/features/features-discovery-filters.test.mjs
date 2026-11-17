@@ -698,7 +698,7 @@ test('the Filters menu offers all or any for keywords, genres and services; "or"
   const search = bodyOf(h, 'keywords').querySelector('.jellyseerr-menu-search');
   // At rest, nothing chosen and nothing typed: the line says what a keyword is; one letter, that two are needed.
   const line = () => bodyOf(h, 'keywords').querySelector('.jellyseerr-menu-note[aria-live]');
-  same([line().hidden, line().textContent], [false, 'Words a title is tagged with, such as heist or time travel.']);
+  same([line().hidden, line().textContent], [false, 'Words a title is tagged with, such as “heist” or “time travel”.']);
   search.value = 's';
   search.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
   assert.equal(line().textContent, 'Type two letters or more.');

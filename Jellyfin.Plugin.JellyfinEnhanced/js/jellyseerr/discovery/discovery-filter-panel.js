@@ -709,7 +709,7 @@
                     const sayStatus = words => { sayIn(status, words); status.hidden = words === ''; };
                     // (At rest, with nothing chosen and nothing typed, the line says what a keyword is.)
                     const hint = id === 'without' ? say('discovery_filter_without_hint', 'Titles tagged with these words are left out.')
-                        : say('discovery_filter_keywords_hint', 'Words a title is tagged with, such as heist or time travel.');
+                        : say('discovery_filter_keywords_hint', 'Words a title is tagged with, such as “heist” or “time travel”.');
                     /** What the line says with no search under way. */
                     const resting = () => search.value.trim().length === 1 ? say('discovery_filter_two_letters', 'Type two letters or more.')
                         : search.value.trim() === '' && chosen.childElementCount === 0 ? hint : '';
@@ -1643,7 +1643,7 @@
             html .jellyseerr-sort-menu .jellyseerr-menu-tick[aria-disabled="true"] .actionSheetItemText,
             html .jellyseerr-sort-menu .jellyseerr-menu-tick[aria-disabled="true"] .jellyseerr-menu-given { color: inherit !important; opacity: 1 !important; }
             /* The foot's line when nothing matches: over "Clear filters", the way out. */
-            .jellyseerr-sort-menu .jellyseerr-menu-outcome { flex: 0 0 calc(100% - 16px); box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; gap: .75em; margin: 8px 8px 4px; padding: 6px 6px 6px calc(var(--jellyseerr-menu-text, 16px) - 8px); border-radius: 8px; color: var(--jf-palette-text-primary, #fff); background: rgba(0,164,220,.14); background: color-mix(in srgb, var(--jellyseerr-accent, #00a4dc) 16%, transparent); }
+            .jellyseerr-sort-menu .jellyseerr-menu-outcome { flex: 0 0 calc(100% - 16px); box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; gap: .75em; margin: 8px 8px 4px; padding: 8px 6px 8px calc(var(--jellyseerr-menu-text, 16px) - 8px); border-radius: 8px; color: var(--jf-palette-text-primary, #fff); background: rgba(0,164,220,.14); background: color-mix(in srgb, var(--jellyseerr-accent, #00a4dc) 16%, transparent); }
             .jellyseerr-sort-menu .jellyseerr-menu-outcome[hidden] { display: none; }
             /* (Undo right after its sentence, as a deleted set's is: the band's words run on, and wrap as words do.) */
             .jellyseerr-sort-menu .jellyseerr-menu-outcome { display: block; line-height: 1.6; }
