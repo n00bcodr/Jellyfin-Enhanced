@@ -943,7 +943,14 @@
                         const current = isNow(profile);
                         const { item } = JE.discoveryMenu.menuRow(profile.name, 'check', !current);
                         item.classList.add('jellyseerr-menu-profile');
-                        if (current) item.setAttribute('aria-current', 'true');
+                        if (current) {
+                            item.setAttribute('aria-current', 'true');
+                            // (Marked as the sort menu marks its order, with a check: here before the name, in its line.)
+                            const mark = document.createElement('span');
+                            mark.className = 'material-icons check jellyseerr-menu-profile-mark';
+                            mark.setAttribute('aria-hidden', 'true');
+                            item.querySelector('.actionSheetItemText')?.prepend(mark);
+                        }
                         // Under its name, what it sets, in the page's words ("Movies · Score from 7 · Animation and Fantasy").
                         const says = summaryOf(profile.filters);
                         if (says.length > 0) {
@@ -1492,7 +1499,7 @@
                a long one; a search. The fields are the menu's own ground a shade lighter, ringed in the
                theme's colour while typed in and in its error colour while what is typed cannot be used. */
             .jellyseerr-menu-range { display: flex; align-items: center; gap: .5em; padding: 4px 16px 8px 32px; }
-            .jellyseerr-menu-input { box-sizing: border-box; flex: 1 1 0; width: 100%; min-width: 0; padding: 6px 10px; border: 1px solid var(--jf-palette-divider, rgba(255,255,255,.12)); border-radius: var(--jf-shape-borderRadius, 4px); background: var(--jf-palette-action-hover, rgba(255,255,255,.08)); color: inherit; font: inherit; }
+            .jellyseerr-menu-input { box-sizing: border-box; flex: 1 1 0; width: 100%; min-width: 0; padding: 6px 10px; border: 1px solid var(--jf-palette-divider, rgba(255,255,255,.12)); border-color: color-mix(in srgb, currentColor 45%, transparent); border-radius: var(--jf-shape-borderRadius, 4px); background: var(--jf-palette-action-hover, rgba(255,255,255,.08)); color: inherit; font: inherit; }
             .jellyseerr-menu-input::placeholder { color: var(--jellyseerr-quiet, var(--jf-palette-text-secondary, rgba(255,255,255,.7))); opacity: 1; }
             .jellyseerr-menu-input:focus { outline: none; border-color: var(--jf-palette-primary-main, #00a4dc); box-shadow: 0 0 0 1px var(--jf-palette-primary-main, #00a4dc); }
             .jellyseerr-sort-menu { --jellyseerr-error: var(--jf-palette-error-light, #e57373); --jellyseerr-quiet: var(--jf-palette-text-secondary, rgba(255,255,255,.7)); }
@@ -1571,6 +1578,8 @@
             /* A profile not in use keeps no room for the tick it does not show (on a TV the tick is the row's first column: kept). */
             html:not(.layout-tv) .jellyseerr-menu-profile .actionsheetMenuItemIcon { display: none !important; }
             html:not(.layout-tv) .jellyseerr-menu-profile[aria-current] .actionSheetItemText { color: var(--jellyseerr-accent); font-weight: 500; }
+            .jellyseerr-menu-profile-mark { font-size: 1.15em; vertical-align: -.2em; margin-inline-end: .3em; }
+            .layout-tv .jellyseerr-menu-profile-mark { display: none; }
             @media (forced-colors: active) {
                 html:not(.layout-tv) .jellyseerr-menu-profile[aria-current] .actionSheetItemText { forced-color-adjust: none; color: LinkText; }
                 html .jellyseerr-sort-menu .jellyseerr-menu-profile-save { border: 1px solid ButtonBorder; }
@@ -1608,6 +1617,11 @@
             /* (On touch, a 44px target reaching past the band's words without making the band taller.) */
             @media (pointer: coarse) { .jellyseerr-menu-outcome-undo::after { content: ''; position: absolute; inset: -12px -8px; } }
             @media (forced-colors: active) { .jellyseerr-sort-menu .jellyseerr-menu-outcome { border: 1px solid CanvasText; } }
+            /* TV: the band's words and a set's summary at the rows' size (read from across the room); Undo a pill the remote lands on. */
+            .layout-tv .jellyseerr-sort-menu .jellyseerr-menu-outcome { font-size: 1.1rem; padding-block: .5em; }
+            .layout-tv .jellyseerr-menu-outcome-undo { display: block; width: fit-content; padding: .3em .6em; margin: .2em 0 0 -.6em; border-radius: 999px; }
+            [dir="rtl"] .layout-tv .jellyseerr-menu-outcome-undo, .layout-tv [dir="rtl"] .jellyseerr-menu-outcome-undo { margin: .2em -.6em 0 0; }
+            html.layout-tv .jellyseerr-sort-menu .jellyseerr-menu-profile-says { font-size: 1rem; }
             /* What a search has narrowed away is gone (a row's own display would otherwise keep it). */
             .jellyseerr-sort-menu .actionSheetMenuItem[hidden], .jellyseerr-menu-note[hidden], .jellyseerr-menu-label[hidden] { display: none !important; }
             .jellyseerr-menu-label { padding: 8px 16px 2px 32px; font-size: .86em; }

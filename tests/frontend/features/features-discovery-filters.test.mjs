@@ -890,6 +890,8 @@ test('saved filters: the user\'s profiles first in the menu, saved under a name,
   assert.match(status.textContent, /Restored “Top rated”/);
   assert.equal(groups()[0].textContent, 'Saved filtersTop rated');
   assert.equal(body.querySelector('.jellyseerr-menu-profile[aria-current="true"] .actionSheetItemText').textContent, 'Top rated');
+  // (Marked with a check before its name, as the sort menu marks its order; the others have none.)
+  same([...body.querySelectorAll('.jellyseerr-menu-profile')].map(row => !!row.querySelector('.jellyseerr-menu-profile-mark')), [false, true]);
   // The keys: a profile's delete is beside its row, not a stop on the way down (right reaches it, left goes back).
   const press = key => h.document.activeElement.dispatchEvent(new h.window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
   const [kids, top] = body.querySelectorAll('.jellyseerr-menu-profile');
