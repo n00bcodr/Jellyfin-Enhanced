@@ -217,7 +217,7 @@ Status labels help you see whether a title is available or a request needs atten
 
 ### Item Details
 
-Find more to watch in **Similar** and **Recommended** rows on movie and series detail pages. You can open details and request titles just as you do in search.
+Find more to watch in **Similar** and **Recommended** rows on movie and series detail pages. Season and episode pages show the rows of their series. You can open details and request titles just as you do in search.
 
 ![Recommended and Similar rows on a movie detail page](../images/seerr/detail-recommendations.webp)
 
