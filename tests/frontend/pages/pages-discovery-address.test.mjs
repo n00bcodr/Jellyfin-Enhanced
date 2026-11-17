@@ -117,7 +117,7 @@ test("a link leaving out genres and a language: Seerr is asked as without them, 
   await until(() => ids(h.section('genre')).length > 0 && h.section('genre').querySelector('.jellyseerr-filters-set'), 'first page');
   const section = h.section('genre');
   assert.deepEqual(ids(section).sort((a, b) => a - b), [3, 11]);
-  assert.deepEqual(h.said(section), ['Without Horror', 'Not originally in Japanese']);
+  assert.deepEqual(h.said(section), ['Not Horror', 'Not originally in Japanese']);
   // (Asked of Seerr as the page alone: nothing it would not understand.)
   assert.equal(h.calls.some(path => /without|exclude/i.test(path)), false);
   // Taken away, the address says so and the list has them again.

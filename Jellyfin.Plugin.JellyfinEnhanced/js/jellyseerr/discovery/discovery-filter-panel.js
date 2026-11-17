@@ -46,14 +46,19 @@
     });
     /** The lists matched by any of what is ticked, with no choice (Seerr's own rule for them). */
     const ANY_OF = new Set(['role', 'language', 'rating']);
+    /** The lists a title must have none of. */
+    const NONE_OF = new Set(['without', 'withoutGenres', 'withoutLanguage']);
+    /** A list and the one that leaves the same things out: a thing is in one of them at most. */
+    const PARTNERS = Object.freeze({ genres: 'withoutGenres', withoutGenres: 'genres', language: 'withoutLanguage', withoutLanguage: 'language', keywords: 'without', without: 'keywords' });
     /**
-     * How several ticks in a list count: 'all', 'any' (chosen, or Seerr's own rule for the list), or '' where each is
-     * said on its own (Without keywords: none of them).
+     * How several ticks in a list count: 'all', 'any' (chosen, or Seerr's own rule for the list), or 'none' (the
+     * Without lists: a title has none of them).
      * @param {object} selection - A FilterSelection
      * @param {string} id - The list filter
-     * @returns {'all'|'any'|''}
+     * @returns {'all'|'any'|'none'|''}
      */
-    const listRule = (selection, id) => logic().MATCH_DEFAULTS?.[id] !== undefined ? logic().matchOf(selection, id) : ANY_OF.has(id) ? 'any' : '';
+    const listRule = (selection, id) => logic().MATCH_DEFAULTS?.[id] !== undefined ? logic().matchOf(selection, id)
+        : ANY_OF.has(id) ? 'any' : NONE_OF.has(id) ? 'none' : '';
     /** Whether a filter is a typed range (else a list). */
     const isRangeId = id => id === 'year' || id === 'score' || id === 'votes' || id === 'runtime';
 
@@ -131,14 +136,18 @@
             // (The page's own genre is in its heading: the line says only what was chosen beside it.)
             const items = (selection[id] ?? []).filter(item => !isOwn(item));
             for (const [index, item] of items.entries()) {
-                const join = rule !== '' && index > 0 ? (rule === 'any' ? 'or' : 'and') : undefined;
+                // ("and" for all of them; "or" for any, and for none of them: "Without gore or horror".)
+                const join = rule !== '' && index > 0 ? (rule === 'all' ? 'and' : 'or') : undefined;
                 tokens.push({
                     join,
                     or: join === 'or',
                     list: id,
                     // A keyword and a language need a word to be read on their own ("With robot", "Originally in Japanese"); a genre, a rating, a service and a role say what they are.
-                    words: id === 'without' || id === 'withoutGenres' ? say('discovery_filter_set_without', 'Without {name}', { name: item.name })
-                        : id === 'withoutLanguage' ? say('discovery_filter_set_not_language', 'Not originally in {name}', { name: item.name })
+                    // (A Without list says what it leaves out once, at its start: "Without gore or horror", "Not Horror or
+                    // Thriller", a genre told from a keyword by its capital no more.)
+                    words: id === 'without' ? (join ? item.name : say('discovery_filter_set_without', 'Without {name}', { name: item.name }))
+                        : id === 'withoutGenres' ? (join ? item.name : say('discovery_filter_set_not', 'Not {name}', { name: item.name }))
+                        : id === 'withoutLanguage' ? (join ? item.name : say('discovery_filter_set_not_language', 'Not originally in {name}', { name: item.name }))
                         // ("With bear or dragon": after the word joining them the keyword's own name is enough.)
                         : id === 'keywords' ? (join ? item.name : say('discovery_filter_set_with', 'With {name}', { name: item.name }))
                             : id === 'language' && !join ? say('discovery_filter_set_language', 'Originally in {name}', { name: item.name })
@@ -170,6 +179,8 @@
     function filterMenuGroups(options) {
         const { label: say, data, locale } = options;
         const any = say('discovery_filter_any', 'Any');
+        /** What a group's row says with nothing set: "Any", and for a Without list "None" (it leaves nothing out). */
+        const anyOf = id => NONE_OF.has(id) ? say('discovery_filter_none', 'None') : any;
         /** A filter's name for the eye. */
         const nameOf = id => say(NAMES[id][0], NAMES[id][1]);
         /** A row in Jellyfin's own item markup (JE.discoveryMenu's). */
@@ -303,11 +314,13 @@
             // it short: see shortList.)
             const rule = listRule(options.selection(), id);
             if (picked.length >= 2 && rule !== '') {
-                const any = rule === 'any';
+                // (None of them is said as "or" under its Without heading: "gore or horror".)
+                const any = rule !== 'all';
                 const names = picked.map(item => item.name);
                 let joined = null;
                 try { joined = new Intl.ListFormat(locale || 'en', { style: 'long', type: any ? 'disjunction' : 'conjunction' }).format(names); } catch (_) { joined = null; }
                 if (joined) return joined;
+                if (picked.length > 2 && rule === 'none') return say('discovery_filter_none_of', 'None of {count}', { count: picked.length });
                 if (picked.length > 2) return any ? say('discovery_filter_any_of', 'Any of {count}', { count: picked.length })
                     : say('discovery_filter_all_of', 'All of {count}', { count: picked.length });
                 const two = { first: names[0], second: names[1] };
@@ -327,6 +340,7 @@
             if (picked.length < 2) return undefined;
             const rule = listRule(options.selection(), id);
             if (rule === '') return say('discovery_filter_count', '{count} chosen', { count: picked.length });
+            if (rule === 'none') return say('discovery_filter_none_of', 'None of {count}', { count: picked.length });
             return rule === 'any' ? say('discovery_filter_any_of', 'Any of {count}', { count: picked.length })
                 : say('discovery_filter_all_of', 'All of {count}', { count: picked.length });
         };
@@ -416,6 +430,12 @@
                 button.tabIndex = on ? 0 : -1;
             });
             paint(logic().matchOf(options.selection(), id));
+            // (Each half as wide as the wider, measured once the line is in the menu: "any" is wider than "all".)
+            requestAnimationFrame(() => {
+                if (!track.isConnected) return;
+                const widest = Math.max(...buttons.map(button => button.getBoundingClientRect().width));
+                if (widest > 0) for (const button of buttons) button.style.minWidth = `${Math.ceil(widest)}px`;
+            });
             matchLines.set(id, line);
             markIdle(id, pickedOf(id));
             // Left and right move between the two and choose, as in any radio group (up and down are the menu's rows);
@@ -472,7 +492,16 @@
                 if (tick) { tick.classList.remove(box(!chosen)); tick.classList.add(box(chosen)); }
                 handle.say(sayList(next, id), next.length > 0, shortList(next, id));
                 markIdle(id, next);
-                options.change({ ...options.selection(), [id]: next.length > 0 ? next : undefined });
+                let selection = { ...options.selection(), [id]: next.length > 0 ? next : undefined };
+                // (A genre wanted is not left out too, nor the other way round: ticked here, it leaves the partner list.)
+                const partner = PARTNERS[id];
+                const other = partner ? pickedOf(partner) : [];
+                if (chosen && other.some(entry => entry.id === item.id)) {
+                    const rest = other.filter(entry => entry.id !== item.id);
+                    selection = { ...selection, [partner]: rest.length > 0 ? rest : undefined };
+                    handle.other?.(partner, sayList(rest, partner), rest.length > 0, shortList(rest, partner));
+                }
+                options.change(selection);
                 onToggle?.(chosen, row);
             });
             return row;
@@ -509,7 +538,7 @@
         function listGroup(id, load, first = [], given = () => false) {
             const picked = pickedOf(id);
             return {
-                id, name: nameOf(id), any, set: picked.length > 0, value: sayList(picked, id), short: shortList(picked, id),
+                id, name: nameOf(id), any: anyOf(id), set: picked.length > 0, value: sayList(picked, id), short: shortList(picked, id),
                 build(host, handle) {
                     const waiting = note(say('discovery_filter_loading', 'Loading…'));
                     host.appendChild(waiting);
@@ -599,7 +628,7 @@
         function keywordGroup(id) {
             const picked = pickedOf(id);
             return {
-                id, name: nameOf(id), any, set: picked.length > 0, value: sayList(picked, id), short: shortList(picked, id),
+                id, name: nameOf(id), any: anyOf(id), set: picked.length > 0, value: sayList(picked, id), short: shortList(picked, id),
                 build(host, handle) {
                     // The keywords chosen stay listed (ticked) above the field; what the search finds comes under it.
                     const chosen = document.createElement('div');
@@ -1480,7 +1509,12 @@
             .layout-tv .jellyseerr-menu-profile-delete:focus { background: var(--jf-palette-text-primary, #fff); color: var(--jellyseerr-menu-ground, #101010); }
             .jellyseerr-menu-profile-save { flex: none; align-self: stretch; height: auto; min-height: 0; margin: 0; padding: 0 1em; }
             /* A profile not in use keeps no room for the tick it does not show (on a TV the tick is the row's first column: kept). */
-            html:not(.layout-tv) .jellyseerr-menu-profile:not([aria-current]) .actionsheetMenuItemIcon { display: none !important; }
+            html:not(.layout-tv) .jellyseerr-menu-profile .actionsheetMenuItemIcon { display: none !important; }
+            html:not(.layout-tv) .jellyseerr-menu-profile[aria-current] .actionSheetItemText { color: var(--jellyseerr-accent); font-weight: 500; }
+            @media (forced-colors: active) {
+                html:not(.layout-tv) .jellyseerr-menu-profile[aria-current] .actionSheetItemText { forced-color-adjust: none; color: LinkText; }
+                .jellyseerr-menu-profile-save:disabled { opacity: 1; color: GrayText; }
+            }
             .jellyseerr-menu-profile-save:disabled { opacity: .45; cursor: default; box-shadow: none; }
             @media (pointer: coarse) { .jellyseerr-menu-profile-undo { min-height: 44px; padding-inline: .75em; } }
             html .jellyseerr-sort-menu .jellyseerr-menu-profile-says { font-size: .85em; white-space: normal; overflow-wrap: anywhere; color: var(--jellyseerr-quiet, rgba(255,255,255,.7)) !important; opacity: 1; }
@@ -1500,7 +1534,7 @@
             html .jellyseerr-sort-menu .jellyseerr-menu-tick[aria-disabled="true"] .actionSheetItemText,
             html .jellyseerr-sort-menu .jellyseerr-menu-tick[aria-disabled="true"] .jellyseerr-menu-given { color: inherit !important; opacity: 1 !important; }
             /* The foot's line when nothing matches: over "Clear filters", the way out. */
-            .jellyseerr-sort-menu .jellyseerr-menu-outcome { padding: 8px 16px 0; color: var(--jf-palette-text-primary, #fff); }
+            .jellyseerr-sort-menu .jellyseerr-menu-outcome { flex: 0 0 100%; box-sizing: border-box; padding: 8px 16px 0; color: var(--jf-palette-text-primary, #fff); }
             /* What a search has narrowed away is gone (a row's own display would otherwise keep it). */
             .jellyseerr-sort-menu .actionSheetMenuItem[hidden], .jellyseerr-menu-note[hidden], .jellyseerr-menu-label[hidden] { display: none !important; }
             .jellyseerr-menu-label { padding: 8px 16px 2px 32px; font-size: .86em; }
@@ -1519,7 +1553,7 @@
             html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-choices .actionSheetMenuItem { padding-inline-start: 32px; }
             /* "Clear filters" is the menu's foot, always in reach; at full strength only while something is set. */
             html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-foot { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--jf-palette-divider, rgba(255,255,255,.12)); }
-            html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-foot { display: flex; }
+            html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-foot { display: flex; flex-wrap: wrap; }
             html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-foot > .actionSheetMenuItem { width: auto; }
             html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 auto; }
             /* On a touch screen the menu can fill the screen: its foot then ends with the way out, said (nothing waits for it; what is set has taken effect). */

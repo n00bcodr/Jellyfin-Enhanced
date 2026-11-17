@@ -341,7 +341,7 @@ test('a list page\'s further filters are typed or ticked, and asked of Seerr: ra
   assert.equal(menuOf(h).querySelector('.jellyseerr-menu-foot > .jellyseerr-menu-clear').getAttribute('aria-disabled'), 'true');
   // Every filter is a group that says nothing is set; none is open.
   same([...menuOf(h).querySelectorAll('.jellyseerr-menu-group')].map(group => group.textContent),
-    ['ReleasedAny', 'ScoreAny', 'VotesAny', 'RuntimeAny', 'GenresAny', 'Without genresAny', 'Original languageAny', 'Without languageAny', 'Content ratingAny', 'Streaming servicesAny', 'KeywordsAny', 'Without keywordsAny']);
+    ['ReleasedAny', 'ScoreAny', 'VotesAny', 'RuntimeAny', 'GenresAny', 'Without genresNone', 'Original languageAny', 'Without languageNone', 'Content ratingAny', 'Streaming servicesAny', 'KeywordsAny', 'Without keywordsNone']);
   assert.equal(menuOf(h).querySelectorAll('.jellyseerr-menu-choices:not([hidden])').length, 0);
   // A score is typed, decimals and all; what cannot be a score is marked and asks nothing.
   const hintOf = id => bodyOf(h, id).querySelector('.jellyseerr-menu-note');
@@ -704,6 +704,31 @@ test('the Filters menu offers all or any for keywords, genres and services; "or"
   tag.click();
   assert.equal(bodyOf(h, 'keywords').querySelector('.jellyseerr-menu-match'), null);
   assert.equal(bodyOf(h, 'keywords').querySelector('.jellyseerr-menu-note').textContent, 'All of the keywords ticked.');
+});
+
+test('a Without list: none of what is ticked, said once at its start; a thing wanted and left out at once leaves the other list', { skip: !hasMenu && 'the menu module is not there yet' }, async t => {
+  const h = setup(t, { lists: FILTER_LISTS, genres: { movie: [{ id: 36, name: 'Comedy' }, { id: 27, name: 'Horror' }, { id: 53, name: 'Thriller' }], tv: [{ id: 35, name: 'Comedy' }] } });
+  const s = section(h, { name: 'network', feeds: { tv: [1], movie: [11] } });
+  s.button.click();
+  await until(() => bodyOf(h, 'withoutGenres').querySelectorAll('.actionSheetMenuItem').length === 3, 'the genres to leave out');
+  tickRow(h, 'withoutGenres', 'Horror');
+  tickRow(h, 'withoutGenres', 'Thriller');
+  // On the row, "or" under its Without heading; on the page, "Not" once, then the names joined by "or", one run.
+  assert.equal(groupOf(h, 'withoutGenres').textContent, 'Without genresHorror or Thriller');
+  const setLine = s.root.querySelector('.jellyseerr-filters-set');
+  same([...setLine.querySelectorAll('.jellyseerr-filters-token')].map(piece => piece.textContent), ['Not Horror', 'or Thriller']);
+  same([setLine.firstElementChild.className, setLine.firstElementChild.getAttribute('aria-label')], ['jellyseerr-filters-run', 'Without genres']);
+  // Horror wanted after all: ticked under Genres, it leaves Without genres (its row says so, its body is built anew).
+  await until(() => bodyOf(h, 'genres').querySelectorAll('.actionSheetMenuItem').length === 3, 'the genres');
+  tickRow(h, 'genres', 'Horror');
+  same(plain(h.F.selectionOf('network')).genres.map(genre => genre.name), ['Horror']);
+  same(plain(h.F.selectionOf('network')).withoutGenres.map(genre => genre.name), ['Thriller']);
+  assert.equal(groupOf(h, 'withoutGenres').textContent, 'Without genresThriller');
+  await until(() => bodyOf(h, 'withoutGenres').querySelectorAll('.actionSheetMenuItem').length === 3, 'built anew');
+  same([...bodyOf(h, 'withoutGenres').querySelectorAll('.actionSheetMenuItem[aria-checked="true"] .actionSheetItemText')].map(node => node.textContent), ['Thriller']);
+  // And the last one out: the row says None again.
+  tickRow(h, 'withoutGenres', 'Thriller');
+  assert.equal(groupOf(h, 'withoutGenres').textContent, 'Without genresNone');
 });
 
 test('all / any chosen before anything is ticked is kept; the keys and a remote reach it and switch it', { skip: !hasMenu && 'the menu module is not there yet' }, async t => {

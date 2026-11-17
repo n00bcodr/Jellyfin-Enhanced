@@ -241,10 +241,10 @@
                     outcome.className = 'jellyseerr-menu-note jellyseerr-menu-outcome';
                     outcome.setAttribute('role', 'status');
                     outcome.hidden = true;
-                    content.appendChild(outcome);
                 }
                 const foot = document.createElement('div');
                 foot.className = 'jellyseerr-menu-foot';
+                if (outcome) foot.appendChild(outcome);
                 clear = menuRow(clearLabel, 'check', true).item;
                 clear.classList.add('jellyseerr-menu-clear');
                 clear.dataset.clear = '';
@@ -309,7 +309,19 @@
                 // (What a body does to its own size, a search narrowing a list, never makes the menu shorter: what is under the pointer stays there.)
                 placed: () => { place(true); const head = headOf(group.id); if (head?.getAttribute('aria-expanded') === 'true') reveal(head); },
                 // (A choice that is done with the menu, such as a saved profile applied.)
-                close: () => close()
+                close: () => close(),
+                // (Another group's value changed by this one, a genre ticked here leaving its Without list: its row says
+                // it, and its body is built anew when next opened.)
+                other(groupId, value, set, short) {
+                    const head = headOf(groupId);
+                    const words = head?.querySelector('.jellyseerr-menu-group-value');
+                    const otherGroup = groups?.find(entry => entry.id === groupId);
+                    if (words) showValue(words, set ? value : (value || otherGroup?.any) ?? '', set ? short : undefined);
+                    head?.toggleAttribute('data-set', set);
+                    const body = head?.nextElementSibling;
+                    if (body instanceof HTMLElement && built.has(body) && head?.getAttribute('aria-expanded') !== 'true') { body.replaceChildren(); built.delete(body); }
+                    weighClear();
+                }
             });
         };
         /**
