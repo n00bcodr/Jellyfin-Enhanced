@@ -132,6 +132,7 @@ public class ApiBrandingTests
 
     [Theory]
     [InlineData("image/png", "not an image at all")]
+    [InlineData("image/png", "")]
     [InlineData("image/svg+xml", "PAD")] // <svg> beyond the 64 KB sniff window
     public async Task ElsewhereIconRejectsContentThatWouldNotBeServedAsAnImage(string mime, string kind)
     {

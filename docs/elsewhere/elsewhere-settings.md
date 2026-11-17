@@ -52,6 +52,7 @@ Follow [Setup](#setup) to apply these server settings, then use the sections bel
 | **Per-season providers** | On | Enables automatic season lookup for default/aired-order series; users can opt out. |
 | **Custom Branding Message** | Empty | Replaces the unavailable heading when no filtered automatic providers or season groups remain. |
 | **Custom Branding Icon URL** | Empty | Adds an optional icon beside a nonempty custom message. |
+| **Upload Icon** | None | An icon stored on the server, used in place of the icon URL. |
 
 ### Default Region
 
@@ -542,7 +543,7 @@ Check the country and filters before assuming a title has no subscription provid
 
 1. Check your effective default country and both admin lists. **Default Providers** can remove everything through unmatched names or capitalization; **Ignore Providers** can exclude all matches.
 2. Try a manual search with an empty personal provider list to compare unfiltered subscription data in another country.
-3. If names show without logos, check browser access to `image.tmdb.org`. For a missing branding icon, check the configured image host.
+3. If names show without logos, check browser access to `image.tmdb.org`. For a missing branding icon, check the warning under **Custom Branding Icon URL** and the browser console; the URL must be a web address, not a server file path. An uploaded icon replaces the URL.
 
 ??? note "Subscription categories"
 

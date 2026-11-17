@@ -5066,8 +5066,10 @@
             var banner = document.getElementById('je-elsewhere-icon-warning');
             if (!input || !banner) return;
             var url = (input.value || '').trim();
-            // An uploaded icon replaces the URL, so a stale URL needs no warning.
-            var key = elsewhereIconUploaded ? '' : url;
+            // An uploaded icon replaces the URL, and with Elsewhere off it isn't shown,
+            // so neither case needs a warning.
+            var enabledBox = document.getElementById('elsewhereEnabled');
+            var key = elsewhereIconUploaded || (enabledBox && !enabledBox.checked) ? '' : url;
             // Unrelated dependency updates call this too; don't re-fetch or flicker.
             if (key === elsewhereIconLastChecked) return;
             elsewhereIconLastChecked = key;

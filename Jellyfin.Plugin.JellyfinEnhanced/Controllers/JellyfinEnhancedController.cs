@@ -11053,7 +11053,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         /// <summary>
         /// Changes whenever the Elsewhere branding icon is uploaded or deleted: the
-        /// file's last-write ticks, or an empty string when no icon is uploaded.
+        /// file's last-write ticks and size, or an empty string when no icon is uploaded.
         /// </summary>
         private static string GetElsewhereBrandingIconVersion()
         {
@@ -11066,8 +11066,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
 
                 var info = new FileInfo(Path.Combine(brandingDir, ElsewhereBrandingIconFileName));
+                // Size as well as time, so a replacement on a coarse-mtime filesystem
+                // (or restored with its old mtime) still gets a new URL.
                 return info.Exists && info.Length > 0
-                    ? info.LastWriteTimeUtc.Ticks.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                    ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{info.LastWriteTimeUtc.Ticks}-{info.Length}")
                     : string.Empty;
             }
             catch (Exception)

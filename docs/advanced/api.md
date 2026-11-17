@@ -1558,7 +1558,7 @@ Neither configuration endpoint exposes provider API keys. `TmdbEnabled` and `Mdb
     | `TagLookItemOverrides` | Nullable array of server-wide item looks `{ItemId,Layout,Density,ColourPreset,Slots,Shapes,Caps,TagScale,TagGap,EdgeSpacing,Scope,LockedAt}` (the `TagLayoutLocks` document with its item id), normalized, newest first, at most 500; only targets visible to the caller through Jellyfin library and parental access checks (including scoped series targets), `null` for anonymous callers or when none are visible. Public config and bootstrap are not cached across users |
     | `CalendarFirstDayOfWeek`, `CalendarTimeFormat`, `MaintenanceModeMessage`, `MaintenanceModeAction`, `MaintenanceModeAffectedUsers` | String |
     | `ClearLocalStorageTimestamp`, `ClearTranslationCacheTimestamp` | Integer |
-    | `ElsewhereCustomBrandingIconVersion` | String: last-write ticks of the uploaded Elsewhere icon, empty when none is uploaded; clients use it to choose and cache-bust `ElsewhereBrandingIcon` |
+    | `ElsewhereCustomBrandingIconVersion` | String: last-write ticks and size of the uploaded Elsewhere icon, empty when none is uploaded; clients use it to choose and cache-bust `ElsewhereBrandingIcon` |
     | `Shortcuts` | Array of `{Name,Key,Label,Category}` |
     | `MaintenanceModeEndsAt` | Nullable ISO timestamp |
 
