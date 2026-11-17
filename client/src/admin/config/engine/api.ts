@@ -37,4 +37,10 @@ export interface AdminEngine {
     collect(config: AdminConfig): AdminConfig;
     markApplied(): void;
     setPerUser(properties: readonly string[]): void;
+    /** Set one parameter of the page's address (tab, card, jeSection), or remove it with no value, without navigating. */
+    setHash(key: string, value: string | null | undefined): void;
+    /** Show the card an address names on the tab of this sidebar button. */
+    openCard(button: Element | null | undefined, slug: string | null | undefined): void;
+    /** Put the analytics icon on every setting whose property the usage report carries (GET usage/fields). */
+    markAnalytics(properties: readonly string[]): void;
 }

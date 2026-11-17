@@ -26,8 +26,10 @@ export const settle = async (window, rounds = 40) => { for (let i = 0; i < round
  * @param {(request: object) => unknown} [options.ajax] Answers ApiClient.ajax first.
  * @param {(body: object) => void} [options.onPut] Runs once a configuration write has landed.
  * @param {object} [options.globals] Further browser globals, such as JellyfinEnhanced.
+ * @param {string} [options.hash] The address the page opens at (default: the page itself, nothing more).
+ * @param {object} [options.session] sessionStorage entries the browser kept, such as the tab shown last.
  */
-export function bootGenerated({ engine = 'ok', saved = {}, getConfig, ajax, onPut, globals = {} } = {}) {
+export function bootGenerated({ engine = 'ok', saved = {}, getConfig, ajax, onPut, globals = {}, hash = '#/configurationpage?name=Jellyfin%20Enhanced', session = {} } = {}) {
     const logged = [];
     const virtualConsole = new VirtualConsole();
     virtualConsole.on('jsdomError', e => logged.push(String(e?.detail?.stack || e?.stack || e)));
@@ -49,7 +51,7 @@ export function bootGenerated({ engine = 'ok', saved = {}, getConfig, ajax, onPu
         else window.setTimeout(run, 0);
     };
     const dom = new JSDOM(pageHtml(), {
-        url: 'http://jf.test/web/#/configurationpage?name=Jellyfin%20Enhanced',
+        url: 'http://jf.test/web/' + hash,
         runScripts: 'dangerously', pretendToBeVisual: true, virtualConsole,
         beforeParse(window) {
             const append = window.Node.prototype.appendChild;
@@ -58,6 +60,7 @@ export function bootGenerated({ engine = 'ok', saved = {}, getConfig, ajax, onPu
                 return append.call(this, node);
             };
             Object.assign(window, globals);
+            for (const [key, value] of Object.entries(session)) window.sessionStorage.setItem(key, value);
             window.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} };
             window.scrollTo = () => {};
             window.HTMLElement.prototype.scrollIntoView = function () {};

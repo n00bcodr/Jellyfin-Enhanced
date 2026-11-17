@@ -144,3 +144,28 @@ test('generated discovery and recommendations page, filter, sort, paginate, clos
   expect(await page.evaluate(() => window.JellyfinEnhanced.internals.recommendationsPage.state.renders.size)).toBe(0);
   expect(errors).toEqual([]);
 });
+
+// Upstream 6b8c9218: themes such as ElegantFin make the details page's .detailSection a four-column grid, and a discovery
+// section placed in it (section-chassis.ts appends it there) sat in the first column only, its cards in a quarter of the page.
+test('a discovery section spans the whole details section when a theme lays that out as a grid', async ({ page }) => {
+  await boot(page);
+  const widths = await page.evaluate(() => {
+    const detail = document.createElement('div');
+    detail.className = 'detailSection';
+    detail.style.cssText = 'display:grid;grid-template-columns:repeat(4,minmax(0,1fr));width:800px';
+    const overview = document.createElement('div');
+    overview.textContent = 'Overview';
+    const section = document.createElement('div');
+    section.className = 'verticalSection jellyseerr-discovery-section';
+    // A row of cards wider than the page: it scrolls inside the section instead of widening it.
+    const row = document.createElement('div');
+    row.className = 'itemsContainer';
+    row.style.cssText = 'display:flex;width:2000px';
+    section.append(row);
+    detail.append(overview, section);
+    document.body.append(detail);
+    return { detail: detail.getBoundingClientRect().width, section: section.getBoundingClientRect().width };
+  });
+  expect(widths.detail).toBe(800);
+  expect(widths.section).toBe(800);
+});

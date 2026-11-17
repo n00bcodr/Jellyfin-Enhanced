@@ -19,6 +19,22 @@
     window.JEAdmin = value;
   }
 
+  // client/src/admin/config/engine/address.ts
+  var PAGE_NAME = "Jellyfin Enhanced";
+  function slugOf(text) {
+    return String(text ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  }
+  function setHash(key, value) {
+    const [path = "", query = ""] = window.location.hash.split("?");
+    if (!path.includes("configurationpage")) return;
+    const params = new URLSearchParams(query);
+    if (params.get("name") !== PAGE_NAME) return;
+    if ((params.get(key) ?? "") === (value ?? "")) return;
+    if (value) params.set(key, value);
+    else params.delete(key);
+    window.history.replaceState(window.history.state, "", path + "?" + params.toString());
+  }
+
   // client/src/admin/config/engine/schema.ts
   var NON_FIELD = ["note", "html", "button", "custom", "group"];
   function isField(item) {
@@ -457,6 +473,7 @@
     const button = document.querySelector('.jellyfin-tab-button[data-tab="' + tab.id + '"]');
     if (button && button.nextElementSibling) button.nextElementSibling.querySelectorAll(".jea-nav-leaf.on").forEach((leaf) => leaf.classList.remove("on"));
     tab.classList.remove("jea-focused");
+    setHash("card", null);
     tab.querySelectorAll(":scope > fieldset.jea-focus").forEach((fieldset) => fieldset.classList.remove("jea-focus"));
   }
   function focusCard(tab, card, group) {
@@ -504,6 +521,7 @@
           open(() => {
             focusCard(tab, card);
             mark(link);
+            setHash("card", slugOf(link.textContent));
           });
         }, { signal });
         tree.appendChild(link);
@@ -521,6 +539,7 @@
               open(() => {
                 focusCard(tab, card, group);
                 mark(link, subLink);
+                setHash("card", slugOf(link.textContent));
               });
             }, { signal });
             sub.appendChild(subLink);
@@ -536,6 +555,11 @@
         if (search.value) document.querySelectorAll(".jellyfin-tab-content.jea-focused").forEach(showAll);
       }, { signal });
     }
+  }
+  function openCard(button, slug) {
+    const tree = button?.nextElementSibling;
+    if (!slug || !tree || !tree.classList.contains("jea-nav-tree")) return;
+    Array.from(tree.querySelectorAll(":scope > .jea-nav-leaf")).find((leaf) => slugOf(leaf.textContent) === slug)?.click();
   }
   function mountShell(lifecycle) {
     const { signal } = lifecycle;
@@ -645,6 +669,7 @@
   }
 
   // client/src/admin/config/engine/index.ts
+  var ANALYTICS_BADGE = '<a class="material-icons jea-badge jea-analytics" href="#/configurationpage?name=Jellyfin%20Enhanced&tab=admin&card=usage-statistics" aria-label="Shared in Analytics if opted in" title="Shared in Analytics if opted in">insights</a>';
   function controlOf(id) {
     const element = document.getElementById(id);
     return element instanceof HTMLInputElement || element instanceof HTMLSelectElement || element instanceof HTMLTextAreaElement ? element : null;
@@ -838,6 +863,17 @@
       },
       setPerUser(properties) {
         properties.forEach((property) => perUserProps.add(property));
+      },
+      setHash,
+      openCard,
+      // The list comes from the server's own reporting rules, so nothing here names a setting by hand.
+      markAnalytics(properties) {
+        const reported = new Set(properties);
+        allFields(sections).filter((field) => field.id && reported.has(propOf(field))).forEach((field) => {
+          const control = document.getElementById(field.id);
+          const label = control && (control.closest("label") ?? document.querySelector('label[for="' + field.id + '"]'));
+          if (label && !label.querySelector(".jea-analytics")) label.insertAdjacentHTML("beforeend", ANALYTICS_BADGE);
+        });
       }
     };
     return engine2;

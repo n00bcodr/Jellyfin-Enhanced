@@ -2640,6 +2640,89 @@
       "status": "already-present",
       "rewriteCommits": [],
       "evidence": "Upstream's commit brings its own docs up to date with its commits 6c922d10 and c6437f16 (ledger entries 76 and 77); the rewrite made the same updates when it ported those two. docs/advanced/config-flag-groups.json already has upstream's four LeavingSoonHideWatched lines (group \"Leaving soon\", label \"Hide watched titles in the home row\", tab \"*arr\", default false), added by ddae985d; every LeavingSoon* key in every section is identical to upstream main's file, and scripts/generate_config_flag_groups.py --check reports the file current. docs/advanced/api.md already counts the leaving-soon/items route in both totals, added by 48e490ae with that route's row: here the totals are 223 (this tree's route inventory, ExpectedRoutes 223) where upstream's are 219, so upstream's two hunks do not apply as text and are not needed. The tests that check both files pass on this tree (bae882bb): features-api-routes-docs.test.mjs (api.md states the inventory's route total in both places; a row for every route) and features-config-flag-check.test.mjs: artifacts/restructure-plan/step-logs/upstream-sync-evidence/p80.tests.txt."
+    },
+    {
+      "sha": "b0a8a96326c27069b7267b8ac99a0eb0507ca598",
+      "date": "2026-11-17T22:35:21+00:00",
+      "subject": "feat(admin): analytics icon on reported settings and tab/card in the config page address",
+      "class": "feature",
+      "features": [
+        "admin",
+        "platform"
+      ],
+      "issues": [],
+      "release": null,
+      "size": {
+        "files": 7,
+        "insertions": 75,
+        "deletions": 7
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/configPage.html",
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/jeAdmin.css",
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/jeAdmin.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/AnalyticsReportingService.cs",
+        "docs/advanced/api.md",
+        "tests/docs/production-inventory.json"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "885764c4a86f2501f4f83ed6dc76c23b11b68b2b"
+      ],
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p81-*",
+      "notes": "Server: GET usage/fields in the platform feature’s controller (Features/Platform/JePlatformController.cs, action GetUsageReportedFields), [Authorize] and administrators only (IsAdminUser, else Forbid), as upstream; AnalyticsReportingService.GetReportedSettingNames with upstream’s IsReportedFlag, which GetBooleanFeatureFlags now shares. Difference: the settings the report carries in a reduced shape are one list (DerivedSettingNames) and it includes LanguageTagsPriority, which GetStringSettings reports (codes only) and upstream’s list leaves out; on the same lab upstream’s route answers 319 names and this one 320. No field of the configuration form binds LanguageTagsPriority (the Media Tags tab draws it), so the page shows the same 228 icons on the same settings as upstream’s build. Client: the engine (window.JEAdmin, client/src/admin/config/engine) gains setHash and slugOf (new engine/address.ts), openCard (shell.ts) and markAnalytics (index.ts, upstream’s icon markup); a sidebar card click writes card=, a whole tab clears it; activateTab (page/tabs.ts) writes jeSection=media-tags or tab=; links.ts opens the address’s card after its tab and writes the Media Tags section into tab=; load.ts reads usage/fields once as the page starts; jeAdmin.css gains upstream’s rule. Differences: (1) at page start the tab kept in the session is restored before the address is read, and that restore now rewrites the address, so upstream then followed the rewritten one: with another tab saved in the session, a reload of or a link to jeSection=media-tags&tab=… or jeSection=<setting> opens the saved tab instead (lab rows H, I and K on upstream’s build). Here the page follows the address it opened at. (2) openCard looks only at the cards of the tab the address names (upstream: the first card of that name on any tab), so tab=display&card=usage-statistics opens no card instead of switching tabs. (3) A group in the sidebar writes its card too (upstream left the card clicked before). (4) setHash writes only this page’s address (name=Jellyfin Enhanced), skips a write that changes nothing, and keeps the router’s history.state (upstream replaces it with null); Back after leaving the page returns to the rewritten address on the same tab. (5) The Media Tags section is written only while that tab is shown, and the listener is released with the view. (6) A usage/fields answer that is not a list draws no icon; a failed read draws none, as upstream. Tests: tests/frontend/admin/config/admin-config-address.test.mjs (5 tests: the icons and their link, no icon on a failed or odd answer, the address after tab, card and group clicks, a tab-and-card address with and without a saved tab and a card named for another tab, a setting link with a saved tab), two tests in features-admin-config-media-tags-tab.test.mjs (the address follows the Media Tags tab and section; a Media Tags link with a saved tab), IntegrationAnalyticsTests.ReportedSettingNamesAreExactlyTheSettingsAFullReportCarries and .UsageFieldsRouteAnswersAdministratorsAndRefusesOthers; bootGenerated (tests/frontend/helpers/admin-config-page.mjs) takes a starting address and session entries. Two existing tests took “the address did not change” as proof that a link opened in place, which this change makes untrue on purpose: they now check that no hashchange fired and no history entry was added (both happen when a link is followed) and that the address names what is shown. Docs: docs/advanced/api.md gains upstream’s row; its route count goes 223 → 224. Records: the production inventory regenerated. Contract: a new route, so its route/auth, auth-helper and auth-read lines, ExpectedRoutes 223 → 224 and its line in baselines/inventory-routes.txt are added, additions only, in the branch’s contract commit."
+    },
+    {
+      "sha": "19ac2bcb0b06abc817b7b136b2446356869fa56f",
+      "date": "2026-11-17T22:35:54+00:00",
+      "subject": "chore(tests): regenerate production inventory",
+      "class": "test",
+      "features": [
+        "admin",
+        "platform"
+      ],
+      "issues": [],
+      "release": null,
+      "size": {
+        "files": 1,
+        "insertions": 1,
+        "deletions": 1
+      },
+      "paths": [
+        "tests/docs/production-inventory.json"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "885764c4a86f2501f4f83ed6dc76c23b11b68b2b"
+      ],
+      "with": "b0a8a96326c27069b7267b8ac99a0eb0507ca598",
+      "notes": "Upstream’s bot regenerating its production inventory for b0a8a963 (routes 219 → 220). This tree’s tests/docs/production-inventory.json is generated (je12 regen) in that entry’s commit, with the same change: the route GET /JellyfinEnhanced/usage/fields (routes 223 → 224)."
+    },
+    {
+      "sha": "6b8c9218aaedb75a5208e54fbdd48b55b6e89b62",
+      "date": "2026-11-17T23:02:03+00:00",
+      "subject": "fix(seerr): let the discovery section span the full width on themes that grid .detailSection",
+      "class": "fix",
+      "features": [
+        "seerr"
+      ],
+      "issues": [],
+      "release": null,
+      "size": {
+        "files": 1,
+        "insertions": 2,
+        "deletions": 0
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/discovery/discovery-styles.js"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "825a86e380e7a197a550fa4593d21d60cf2a882e"
+      ],
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p83-*",
+      "notes": "Upstream’s rule goes as is into the discovery sections’ stylesheet, client/src/features/seerr/discovery/discovery.css (after the cards’ scroll margin, as upstream places it in discovery-styles.js): .detailSection > .jellyseerr-discovery-section spans every column (grid-column: 1 / -1) and may shrink below its cards’ width (min-width: 0). Here the person and collection discovery sections are appended to .detailPagePrimaryContent .detailSection (section-chassis.ts, section.ts), so the rule reaches them; no other difference. Test: tests/browser/discovery-recommendations-rewrite.spec.cjs, “a discovery section spans the whole details section when a theme lays that out as a grid” (a four-column .detailSection 800 px wide, a 2000 px row of cards: the section was 200 px in chromium, mobile-chromium and firefox, and is 800). Lab, a person page with a theme rule like ElegantFin’s: the section was 225 of 900 px on this tree before the port, 900 on upstream’s build and 900 after."
     }
   ]
 }

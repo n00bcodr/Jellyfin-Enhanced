@@ -1,11 +1,11 @@
 import type { PageModules } from './modules';
-import { asAnchor, asHtml, closestTo } from './dom';
+import { asAnchor, asHtml, closestTo, eventDetail } from './dom';
 
 /** Dependencies this module calls; members are resolved lazily, after every module exists. */
 export type LinksDeps = Pick<PageModules, 'context' | 'mediaTagsTab' | 'tabs'>;
 
 export function createLinks(m: LinksDeps) {
-    const { lifecycle, page } = m.context;
+    const { JEAdmin, lifecycle, page } = m.context;
 
             /**
              * Open what a link to this page asks for, in place: `jeSection=media-tags` (with `tab`/`group`, one of the
@@ -33,7 +33,7 @@ export function createLinks(m: LinksDeps) {
                 }
                 var tabId = id ? null : params.get('tab');
                 var tabBtn = tabId ? Array.from(page.querySelectorAll<HTMLElement>('.jellyfin-tab-button')).find(function (b) { return b.dataset.tab === tabId; }) : null;
-                if (tabBtn) { tabBtn.click(); return true; }
+                if (tabBtn) { tabBtn.click(); JEAdmin.openCard(tabBtn, params.get('card')); return true; }
                 return false;
             }
 
@@ -55,20 +55,27 @@ export function createLinks(m: LinksDeps) {
 
             let _jeOpenedAddress: string | null = null;
 
-            function jeOpenRequestedSection() : void {
+            /** @param {string} [address] The address to follow: the current one unless the page has rewritten it since it opened. */
+            function jeOpenRequestedSection(address: string = window.location.hash) : void {
                 let params;
-                try { params = new URLSearchParams(window.location.hash.split('?')[1] || ''); } catch (e) { return; }
-                if (window.location.hash === _jeOpenedAddress) {
+                try { params = new URLSearchParams(address.split('?')[1] || ''); } catch (e) { return; }
+                if (address === _jeOpenedAddress) {
                     // The same address shown again: the Media Tags tab, if it is the one open, reloads its settings.
                     if (page && page.classList.contains('je-mt-active')) m.mediaTagsTab.jeMountMediaTags();
                     return;
                 }
-                _jeOpenedAddress = window.location.hash;
+                _jeOpenedAddress = address;
                 jeOpenLinkTarget(params, false);
             }
 
     /** Runs this module's start-up work, in the page's original order. */
     function wire(): void {
+            // The Media Tags section shown goes into the address as `tab`, while that tab is the one shown.
+            document.addEventListener('je-media-tags-section', function (e) {
+                const section = eventDetail(e).section;
+                if (page.classList.contains('je-mt-active') && typeof section === 'string') JEAdmin.setHash('tab', section);
+            }, { signal: lifecycle.signal });
+
             // Links to this page itself (the Display card, the Media Tags tab's own links, What's New, the Enhanced panel's
             // pointers to the Media Tags tab) open in place: navigating would rebuild the whole page (leaving an older view
             // behind) and drop unsaved changes on its other tabs. Only while this view is the one shown.
@@ -87,6 +94,10 @@ export function createLinks(m: LinksDeps) {
                 e.preventDefault();
                 if (!jeOpenLinkTarget(params, true)) m.mediaTagsTab.jeOpenMediaTags(null, null, true);
             }, { signal: lifecycle.signal });
+
+            // The address the page opened at. Restoring the session's tab below writes the address (activateTab), and the
+            // link that opened the page must still decide what is shown (upstream b0a8a963 followed the rewritten one).
+            const requestedAddress = window.location.hash;
 
             // Restore tab from sessionStorage on page load
             try {
@@ -109,9 +120,9 @@ export function createLinks(m: LinksDeps) {
                 // sessionStorage unavailable (private mode / quota / security) — skip restore.
             }
 
-            jeOpenRequestedSection();
+            jeOpenRequestedSection(requestedAddress);
 
-            page.addEventListener('pageshow', jeOpenRequestedSection);
+            page.addEventListener('pageshow', () => jeOpenRequestedSection());
     }
 
     return {

@@ -5,7 +5,7 @@ import { asHtml, closestTo, needHtml, plainLabel } from './dom';
 export type TabsDeps = Pick<PageModules, 'context' | 'mediaTagsTab'>;
 
 export function createTabs(m: TabsDeps) {
-    const { form, lifecycle, page } = m.context;
+    const { form, JEAdmin, lifecycle, page } = m.context;
 
             const tabs = document.querySelectorAll<HTMLElement>('.jellyfin-tab-button');
 
@@ -42,6 +42,10 @@ export function createTabs(m: TabsDeps) {
             }
 
             function activateTab(tabId: string) : void {
+                // The address names the tab shown. Media Tags keeps its own section in `tab` (jeSection names the
+                // tab), so the two never share the key (upstream b0a8a963).
+                JEAdmin.setHash('jeSection', tabId === m.mediaTagsTab.JE_MT_TAB ? tabId : null);
+                JEAdmin.setHash('tab', tabId === m.mediaTagsTab.JE_MT_TAB ? null : tabId);
                 if (_jePrevTabId && _jePrevTabId !== tabId) {
                     _jeTabScroll[_jePrevTabId] = _jeGetScrollTop();
                 }

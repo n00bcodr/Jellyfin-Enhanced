@@ -305,13 +305,42 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Platform.Services
         /// TmdbEnabled/MdblistEnabled. The actual keys are strings and must
         /// never be reflected in GetStringSettings, only whether one is present.
         /// </summary>
+        private static bool IsReportedFlag(PropertyInfo p) =>
+            p.PropertyType == typeof(bool)
+            && !p.Name.StartsWith("Analytics", StringComparison.Ordinal)
+            && p.GetCustomAttribute<Features.Platform.Models.AnalyticsExcludeAttribute>() == null;
+
+        /// <summary>
+        /// The text settings GetStringSettings reports in a reduced shape instead of verbatim (no [AnalyticsInclude]).
+        /// A new derived entry there belongs here too; IntegrationAnalyticsTests compares the two.
+        /// </summary>
+        private static readonly string[] DerivedSettingNames =
+        {
+            nameof(PluginConfiguration.MaintenanceModeAffectedUsers),
+            nameof(PluginConfiguration.LanguageTagsPriority),
+            nameof(PluginConfiguration.NativePosterTagsWebClientNames),
+        };
+
+        /// <summary>
+        /// Names of the PluginConfiguration properties the report carries, derived from the same rules as the
+        /// payload so the config page can mark them without a hand-kept list (upstream b0a8a963, which leaves out
+        /// LanguageTagsPriority). The two derived presence flags (TmdbEnabled, MdblistEnabled) are not properties
+        /// and are left out.
+        /// </summary>
+        public static IEnumerable<string> GetReportedSettingNames() =>
+            typeof(PluginConfiguration)
+                .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+                .Where(p => IsReportedFlag(p)
+                    || (p.PropertyType == typeof(string) && p.GetCustomAttribute<Features.Platform.Models.AnalyticsIncludeAttribute>() != null))
+                .Select(p => p.Name)
+                .Concat(DerivedSettingNames)
+                .Distinct();
+
         private static Dictionary<string, bool> GetBooleanFeatureFlags(PluginConfiguration config)
         {
             var flags = typeof(PluginConfiguration)
                 .GetProperties(BindingFlags.Public | BindingFlags.Instance)
-                .Where(p => p.PropertyType == typeof(bool)
-                    && !p.Name.StartsWith("Analytics", StringComparison.Ordinal)
-                    && p.GetCustomAttribute<Features.Platform.Models.AnalyticsExcludeAttribute>() == null)
+                .Where(IsReportedFlag)
                 .ToDictionary(p => p.Name, p => (bool)p.GetValue(config)!);
 
             flags["TmdbEnabled"] = !string.IsNullOrWhiteSpace(config.TMDB_API_KEY);

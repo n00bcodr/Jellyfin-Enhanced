@@ -1,7 +1,11 @@
+using System.Reflection;
 using System.Text.Json;
+using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using MediaBrowser.Controller;
+using Microsoft.AspNetCore.Mvc;
 using Moq;
 using Jellyfin.Plugin.JellyfinEnhanced.Shared.Host;
+using Jellyfin.Plugin.JellyfinEnhanced.Features.Platform.Models;
 using Jellyfin.Plugin.JellyfinEnhanced.Features.Platform.Services;
 using Jellyfin.Plugin.JellyfinEnhanced.Shared.Analytics;
 
@@ -168,5 +172,46 @@ public class IntegrationAnalyticsTests
         Assert.Equal("server-secret", f.Plugin.Configuration.AnalyticsInstallSecret);
         Assert.Equal(1, transport.Calls);
         Assert.DoesNotContain("server-secret", JsonSerializer.Serialize(service.BuildPayload(f.Plugin.Configuration, false, false, false)));
+    }
+
+    // Upstream b0a8a963: GET usage/fields names the settings the report carries, so the configuration page can mark
+    // them. A report with feature flags on and every reported text setting filled carries exactly these names (the two
+    // "is a key set" flags, TmdbEnabled and MdblistEnabled, are not settings): the derived ones included, among them
+    // LanguageTagsPriority, which upstream's list leaves out.
+    [Fact]
+    public void ReportedSettingNamesAreExactlyTheSettingsAFullReportCarries()
+    {
+        using var f = new ApiPluginFixture();
+        var config = f.Plugin.Configuration;
+        foreach (var p in typeof(PluginConfiguration).GetProperties(BindingFlags.Public | BindingFlags.Instance)
+                     .Where(p => p.PropertyType == typeof(string) && p.CanWrite && p.GetCustomAttribute<AnalyticsIncludeAttribute>() != null))
+        {
+            if (string.IsNullOrEmpty(p.GetValue(config) as string)) p.SetValue(config, "x");
+        }
+        config.LanguageTagsPriority = "en,ja";
+        config.NativePosterTagsWebClientNames = "Some App";
+        using var counters = new UsageEventCounterService(f.Core.Paths.Object, f.Core.Logger);
+        using var transport = new IntegrationTransport((_, _) => throw new InvalidOperationException("Listing the reported settings must not make HTTP calls"));
+        var payload = Service(f, counters, transport).BuildPayload(config, true, false, false);
+        var carried = payload.Config!.Keys.Except(new[] { "TmdbEnabled", "MdblistEnabled" }).Concat(payload.Settings!.Keys);
+        Assert.Contains("LanguageTagsPriority", carried);
+        Assert.Equal(carried.OrderBy(k => k, StringComparer.Ordinal), AnalyticsReportingService.GetReportedSettingNames().OrderBy(k => k, StringComparer.Ordinal));
+        Assert.Equal(0, transport.Calls);
+    }
+
+    // The list is the configuration's shape, so like the report preview it is for administrators only.
+    [Fact]
+    public void UsageFieldsRouteAnswersAdministratorsAndRefusesOthers()
+    {
+        using var f = new ApiPluginFixture();
+        var controller = ApiAssetTests.Controller(f.Core, f.Core.Manager);
+        controller.HttpContext.User = global::JE.Tests.Features.SpoilerGuard.PrivacyPolicyTests.Principal(Guid.NewGuid(), admin: true);
+        var names = Assert.IsAssignableFrom<IEnumerable<string>>(Assert.IsType<JsonResult>(controller.GetUsageReportedFields()).Value);
+        Assert.Equal(AnalyticsReportingService.GetReportedSettingNames(), names);
+        Assert.Contains("ShowWatchProgress", names);
+        Assert.DoesNotContain(names, n => n.StartsWith("Analytics", StringComparison.Ordinal) || n == "TMDB_API_KEY" || n == "MdblistApiKey");
+
+        controller.HttpContext.User = global::JE.Tests.Features.SpoilerGuard.PrivacyPolicyTests.Principal(Guid.NewGuid(), admin: false);
+        Assert.IsType<ForbidResult>(controller.GetUsageReportedFields());
     }
 }

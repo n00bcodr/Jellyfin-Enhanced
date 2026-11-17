@@ -146,6 +146,7 @@
     "GET JellyfinEnhanced/tmdb/validate": {"IsAdminUser":1},
     "GET JellyfinEnhanced/tmdb/{**apiPath}": {"User":1,"UserHelper.GetCurrentUserId":1},
     "GET JellyfinEnhanced/translate/languages": {},
+    "GET JellyfinEnhanced/usage/fields": {"IsAdminUser":1},
     "GET JellyfinEnhanced/user-settings/{userId}/bookmark-document": {"AuthorizeUserConfigAccess":1},
     "GET JellyfinEnhanced/user-settings/{userId}/bookmark.json": {"AuthorizeUserConfigAccess":1},
     "GET JellyfinEnhanced/user-settings/{userId}/ddd-triggers.json": {"AuthorizeUserConfigAccess":1},

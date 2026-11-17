@@ -188,6 +188,7 @@ GET /JellyfinEnhanced/tmdb/validate
 GET /JellyfinEnhanced/tmdb/{**apiPath}
 POST /JellyfinEnhanced/translate
 GET /JellyfinEnhanced/translate/languages
+GET /JellyfinEnhanced/usage/fields
 POST /JellyfinEnhanced/usage/preview
 POST /JellyfinEnhanced/usage/track
 GET /JellyfinEnhanced/user-settings/{userId}/bookmark-document

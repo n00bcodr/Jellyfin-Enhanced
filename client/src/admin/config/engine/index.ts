@@ -1,4 +1,5 @@
 import type { AdminConfig, JsonValue } from '../domain/config';
+import { setHash } from './address';
 import type { AdminEngine, DashboardSource, EngineDashboard, MountOptions } from './api';
 import { alertBox, confirmBox } from './dialogs';
 import { MountLifecycle } from './lifecycle';
@@ -6,9 +7,12 @@ import { initMasonry } from './masonry';
 import { wireMirrors, syncMirrors } from './mirrors';
 import { allFields, boundFields, esc, fieldsOf, isPerUser, propOf, sectionHtml, type RenderState } from './render';
 import type { FieldSpec, SectionSpec, ShowIf, UiValue } from './schema';
-import { mountShell } from './shell';
+import { mountShell, openCard } from './shell';
 
 type ChangedField = { props: string[]; labels: string[] };
+
+/** Fixed markup: the icon links to the Usage Statistics card, where the administrator opts in or out. */
+const ANALYTICS_BADGE = '<a class="material-icons jea-badge jea-analytics" href="#/configurationpage?name=Jellyfin%20Enhanced&tab=admin&card=usage-statistics" aria-label="Shared in Analytics if opted in" title="Shared in Analytics if opted in">insights</a>';
 
 function controlOf(id: string): HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | null {
     const element = document.getElementById(id);
@@ -225,6 +229,17 @@ export function createEngine(): AdminEngine {
         },
         setPerUser(properties) {
             properties.forEach(property => perUserProps.add(property));
+        },
+        setHash,
+        openCard,
+        // The list comes from the server's own reporting rules, so nothing here names a setting by hand.
+        markAnalytics(properties) {
+            const reported = new Set(properties);
+            allFields(sections).filter(field => field.id && reported.has(propOf(field))).forEach(field => {
+                const control = document.getElementById(field.id);
+                const label = control && (control.closest('label') ?? document.querySelector('label[for="' + field.id + '"]'));
+                if (label && !label.querySelector('.jea-analytics')) label.insertAdjacentHTML('beforeend', ANALYTICS_BADGE);
+            });
         },
     };
     return engine;

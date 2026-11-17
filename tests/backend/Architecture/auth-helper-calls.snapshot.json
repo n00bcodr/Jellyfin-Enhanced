@@ -153,6 +153,7 @@
   "GetTvRatingsCombined": {"IsAdminUser":5,"User":1,"UserHelper.GetCurrentUserId":1},
   "GetTvSeason": {"IsAdminUser":5,"User":1,"UserHelper.GetCurrentUserId":1},
   "GetTvShow": {"IsAdminUser":5,"User":1,"UserHelper.GetCurrentUserId":1},
+  "GetUsageReportedFields": {"IsAdminUser":1},
   "GetUserBookmark": {"AuthorizeUserConfigAccess":1},
   "GetUserHiddenContent": {"AuthorizeUserConfigAccess":1},
   "GetUserHiddenContentForAdmin": {"IsAdminUser":1},

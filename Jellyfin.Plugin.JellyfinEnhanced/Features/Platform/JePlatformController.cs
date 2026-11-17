@@ -125,6 +125,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Platform
             return Ok();
         }
 
+        /// <summary>Names of the settings the usage report carries; the config page marks them with an icon.</summary>
+        [HttpGet("usage/fields")]
+        [Authorize]
+        public IActionResult GetUsageReportedFields() =>
+            IsAdminUser() ? new JsonResult(Services.AnalyticsReportingService.GetReportedSettingNames()) : Forbid();
+
         /// <summary>
         /// Returns the exact payload a report would send right now, using the
         /// CURRENTLY DISPLAYED checkbox states from the request body, not

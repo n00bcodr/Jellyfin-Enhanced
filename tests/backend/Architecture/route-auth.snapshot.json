@@ -189,6 +189,7 @@
   {"verb":"GET","route":"JellyfinEnhanced/tmdb/{**apiPath}","requiresAuth":true,"auth":"","action":"ProxyTmdbRequest","apiBehavior":true,"parameters":["apiPath:Path"]},
   {"verb":"POST","route":"JellyfinEnhanced/translate","requiresAuth":true,"auth":"","action":"TranslateReview","apiBehavior":true,"parameters":["request:Body","cancellationToken:Special"]},
   {"verb":"GET","route":"JellyfinEnhanced/translate/languages","requiresAuth":true,"auth":"","action":"GetTranslationLanguages","apiBehavior":true,"parameters":["cancellationToken:Special"]},
+  {"verb":"GET","route":"JellyfinEnhanced/usage/fields","requiresAuth":true,"auth":"","action":"GetUsageReportedFields","apiBehavior":true,"parameters":[]},
   {"verb":"POST","route":"JellyfinEnhanced/usage/preview","requiresAuth":true,"auth":"","action":"PreviewUsageReport","apiBehavior":true,"parameters":["requestBody:Body"]},
   {"verb":"POST","route":"JellyfinEnhanced/usage/track","requiresAuth":true,"auth":"","action":"TrackUsage","apiBehavior":true,"parameters":["requestBody:Body"]},
   {"verb":"GET","route":"JellyfinEnhanced/user-settings/{userId}/bookmark-document","requiresAuth":true,"auth":"","action":"GetBookmarkDocument","apiBehavior":true,"parameters":["userId:Path"]},

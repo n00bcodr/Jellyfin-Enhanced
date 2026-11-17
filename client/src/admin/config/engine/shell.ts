@@ -1,3 +1,4 @@
+import { setHash, slugOf } from './address';
 import type { MountLifecycle } from './lifecycle';
 import { syncMirrors } from './mirrors';
 
@@ -23,6 +24,7 @@ function showAll(tab: Element | null): void {
     const button = document.querySelector('.jellyfin-tab-button[data-tab="' + tab.id + '"]');
     if (button && button.nextElementSibling) button.nextElementSibling.querySelectorAll('.jea-nav-leaf.on').forEach(leaf => leaf.classList.remove('on'));
     tab.classList.remove('jea-focused');
+    setHash('card', null);
     tab.querySelectorAll(':scope > fieldset.jea-focus').forEach(fieldset => fieldset.classList.remove('jea-focus'));
 }
 
@@ -66,7 +68,7 @@ function buildTree(bar: Element, lifecycle: MountLifecycle): void {
             link.textContent = sectionTitle(card);
             link.addEventListener('click', event => {
                 event.preventDefault();
-                open(() => { focusCard(tab, card); mark(link); });
+                open(() => { focusCard(tab, card); mark(link); setHash('card', slugOf(link.textContent)); });
             }, { signal });
             tree.appendChild(link);
             const groups = topGroups(card);
@@ -80,7 +82,7 @@ function buildTree(bar: Element, lifecycle: MountLifecycle): void {
                     subLink.textContent = (group.querySelector(':scope > summary')?.textContent ?? '').trim();
                     subLink.addEventListener('click', event => {
                         event.preventDefault();
-                        open(() => { focusCard(tab, card, group); mark(link, subLink); });
+                        open(() => { focusCard(tab, card, group); mark(link, subLink); setHash('card', slugOf(link.textContent)); });
                     }, { signal });
                     sub.appendChild(subLink);
                 });
@@ -95,6 +97,16 @@ function buildTree(bar: Element, lifecycle: MountLifecycle): void {
             if (search.value) document.querySelectorAll('.jellyfin-tab-content.jea-focused').forEach(showAll);
         }, { signal });
     }
+}
+
+/**
+ * Show the card an address names (by slugOf its title) on the tab of the given sidebar button, as its sidebar entry
+ * does. Only that tab's cards are looked at, so a card named for another tab opens nothing.
+ */
+export function openCard(button: Element | null | undefined, slug: string | null | undefined): void {
+    const tree = button?.nextElementSibling;
+    if (!slug || !tree || !tree.classList.contains('jea-nav-tree')) return;
+    Array.from(tree.querySelectorAll<HTMLElement>(':scope > .jea-nav-leaf')).find(leaf => slugOf(leaf.textContent) === slug)?.click();
 }
 
 /**

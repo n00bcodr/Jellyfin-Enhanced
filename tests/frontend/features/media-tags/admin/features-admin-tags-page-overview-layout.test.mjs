@@ -315,11 +315,17 @@ test('What\'s New on the main page lists new Media Tags settings with a link to 
   assert.deepEqual(chips.map(chip => chip.textContent).sort(), ['Display > UI Preferences', 'Media Tags > Groups › Rating', 'Media Tags > Layout defaults'].sort());
   assert.equal(page.document.querySelector('#media-tags .je-new-badge'), null, 'the tab keeps no badge of the main page');
   assert.ok(page.document.getElementById('showFileSizes').closest('fieldset').querySelector('.je-new-badge'), 'a main-page setting keeps its badge');
-  const address = page.window.location.hash;
+  // Following the chip's link would fire hashchange and add a history entry. The page opens the tab in place instead,
+  // and only rewrites its address to name the tab shown (upstream b0a8a963), which does neither.
+  const navigations = [];
+  page.window.addEventListener('hashchange', () => navigations.push(page.window.location.hash));
+  const historyLength = page.window.history.length;
   chips.find(chip => /Rating/.test(chip.textContent)).click();
   await settle(page.window);
   assert.deepEqual(plain(opened), [['groups', { group: 'rating', focus: true }]], 'the chip opens the tab at its group, with focus');
-  assert.equal(page.window.location.hash, address, 'in place, without navigating');
+  assert.deepEqual(navigations, [], 'in place, without navigating');
+  assert.equal(page.window.history.length, historyLength, 'in place, without a history entry');
+  assert.equal(new URLSearchParams(page.window.location.hash.split('?')[1]).get('jeSection'), 'media-tags', 'the address names the tab shown');
   assert.ok(page.document.getElementById('media-tags').classList.contains('active'));
 });
 

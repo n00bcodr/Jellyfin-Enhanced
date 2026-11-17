@@ -197,30 +197,81 @@ test('addresses open the tab at their section: the tab\'s own, older jeSection i
   assert.equal(display.root.querySelector('.je-ta-tabs'), null, 'Media Tags is not drawn for another tab');
 });
 
+// Upstream b0a8a963: the page's address keeps the tab shown. For Media Tags it is jeSection=media-tags, with the
+// tab's own section in tab=, so a reload or a shared link opens the same section.
+test('the address follows the Media Tags tab and its section, and the next tab replaces both', async (t) => {
+  const h = boot(t);
+  await h.settle();
+  const params = () => new URLSearchParams(h.window.location.hash.split('?')[1] || '');
+  h.tabButton('media-tags').click();
+  await h.until();
+  await h.settle();
+  assert.equal(params().get('jeSection'), 'media-tags');
+  assert.equal(params().get('tab'), h.root.dataset.tab, 'the section shown');
+  h.document.querySelector('[data-je-mt-tree] .jea-nav-leaf[data-je-mt-section="rules"]').click();
+  await h.settle();
+  assert.equal(h.root.dataset.tab, 'rules');
+  assert.equal(params().get('tab'), 'rules');
+  h.root.querySelector('#jeTaTab-colours').click();
+  assert.equal(params().get('tab'), 'colours');
+  assert.equal(params().get('name'), 'Jellyfin Enhanced');
+  h.tabButton('display').click();
+  await h.settle();
+  assert.equal(params().get('jeSection'), null);
+  assert.equal(params().get('tab'), 'display');
+});
+
+test('an address naming a Media Tags section opens it, not the tab the session kept', async (t) => {
+  // Restoring the session's tab writes the address too; the link that opened the page still decides.
+  const h = boot(t, { url: `${PAGE_URL}&jeSection=media-tags&tab=groups&group=rating`, session: { jellyfinEnhancedActiveTab: 'display' } });
+  await h.until(() => h.root.querySelector('.je-ta-grow[data-group="rating"][data-open="true"]'), 'Media Tags › Groups › Rating opened');
+  await h.settle();
+  assert.ok(h.tab.classList.contains('active'));
+  assert.equal(h.document.getElementById('display').classList.contains('active'), false);
+  assert.equal(h.root.dataset.tab, 'groups');
+  const params = new URLSearchParams(h.window.location.hash.split('?')[1] || '');
+  assert.equal(params.get('jeSection'), 'media-tags');
+  assert.equal(params.get('tab'), 'groups');
+});
+
 test('links to the page itself (the Display card, the tab\'s own links) open in place, without navigating', async (t) => {
   const h = boot(t);
   await h.settle();
-  const before = h.window.location.hash;
+  // Following a link fires hashchange and adds a history entry; the page instead opens the target and only rewrites
+  // its address to name what is shown (upstream b0a8a963), which does neither.
+  const navigations = [];
+  h.window.addEventListener('hashchange', () => navigations.push(h.window.location.hash));
+  const historyLength = h.window.history.length;
+  const notNavigated = (what) => {
+    assert.deepEqual(navigations, [], `${what}: the page was not navigated (unsaved changes elsewhere would be lost)`);
+    assert.equal(h.window.history.length, historyLength, `${what}: no history entry was added`);
+  };
+  const address = () => Object.fromEntries(new URLSearchParams(h.window.location.hash.split('?')[1] || ''));
   const link = h.document.querySelector('#mediaTagsCard .je-media-tags-card-link[href$="tab=colours"]');
   assert.ok(link, 'the Display card links to the Colours section');
   link.click();
   await h.until(() => h.root.dataset.tab === 'colours', 'the card link opened Colours');
-  assert.equal(h.window.location.hash, before, 'the page was not navigated (unsaved changes elsewhere would be lost)');
+  await h.settle();
+  notNavigated('the Display card link');
+  assert.deepEqual(address(), { name: 'Jellyfin Enhanced', jeSection: 'media-tags', tab: 'colours' });
   // The tab's link to a main-page setting (Status badges → TMDB key, in Connections › Services) opens there in place too.
   h.root.querySelector('#jeTaTab-badges').click();
   const tmdb = h.root.querySelector('a[href*="tab=services"]');
   assert.ok(tmdb);
   tmdb.click();
   await h.settle();
-  assert.equal(h.window.location.hash, before);
+  notNavigated('the link to a main-page setting');
   assert.ok(h.document.getElementById('services').classList.contains('active'), 'the Services tab opened');
+  assert.deepEqual(address(), { name: 'Jellyfin Enhanced', tab: 'services' });
   // The Enhanced panel's pointer (outside the page, over it): opened in place too.
   const hub = h.document.createElement('a');
   hub.href = 'http://jellyfin.test/web/index.html#/configurationpage?name=Jellyfin%20Enhanced&jeSection=media-tags&tab=server';
   h.document.body.appendChild(hub);
   hub.click();
   await h.until(() => h.root.dataset.tab === 'server', 'the panel pointer opened Server');
-  assert.equal(h.window.location.hash, before);
+  await h.settle();
+  notNavigated('the Enhanced panel pointer');
+  assert.deepEqual(address(), { name: 'Jellyfin Enhanced', jeSection: 'media-tags', tab: 'server' });
   // A link inside another (older) view of a page is that view's business.
   const other = h.document.createElement('div');
   other.dataset.role = 'page';

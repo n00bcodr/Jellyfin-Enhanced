@@ -165,6 +165,8 @@ html:has(.jellyseerr-sort-menu[data-over-list]) .jellyseerr-discovery-section:ha
 }
 /* A card brought into view by the keyboard or a remote stops below the held header, not under it. */
 .jellyseerr-discovery-section .itemsContainer > .card { scroll-margin-top: calc(var(--jellyseerr-sticky-top, 3.5em) + 6.5em); }
+/* Themes such as ElegantFin make .detailSection a multi-column grid; without this the section sits in the first column only. */
+.detailSection > .jellyseerr-discovery-section { grid-column: 1 / -1; min-width: 0; }
 @media (prefers-reduced-motion: reduce) { .jellyseerr-discovery-meta::before, .jellyseerr-discovery-summary, .jellyseerr-filter-held, .jellyseerr-discovery-filter .jellyseerr-filter-btn { transition: none; } }
 
 
