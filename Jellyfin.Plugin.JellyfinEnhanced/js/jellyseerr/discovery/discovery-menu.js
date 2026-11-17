@@ -385,6 +385,8 @@
         let pointerAt = null;
         // Whether the list was last moved by the keys (a remote), and the wait for it to come to rest.
         let keyed = false;
+        // Whether the list was last moved by a finger, a mouse or a wheel (left where it was put), not by focus.
+        let pointered = false;
         let keyWay = 0;
         let settling = 0;
         /** Closes the menu and gives the keys back to its anchor. */
@@ -634,6 +636,13 @@
             const rows = shownRows().filter(entry => entry.box.top > view.top + 1);
             const next = rows.find(entry => entry.box.bottom > view.bottom - 1);
             const last = rows.filter(entry => entry.box.bottom <= view.bottom - 1).pop();
+            if (next && below() > 1 && below() < next.box.height && open) {
+                // (Less than a row left under an open group at the list's end: the rest is brought up, so the list ends
+                // on its last row rather than on blank over it, where the group's row stays in sight.)
+                const rest = below();
+                if (open.getBoundingClientRect().top - rest >= view.top - 1) scroller.scrollTop += rest;
+                return;
+            }
             if (!next || below() < next.box.height) return;
             // On a TV, under an open group held at the top: the list's view is what is held, a whole number of rows, and the
             // cut's depth. Each cut at the foot (made by moving the rows, above) then leaves the top on a row's edge, under
@@ -657,7 +666,14 @@
             const cut = view.bottom >= cutOf(next) ? cutOf(next) : last ? cutOf(last) : 0;
             // (Never over what the open group has under its rows that is not a row, such as Keywords' all / any choice
             // and search field under the keywords chosen, or a range's fields: the cut would hide them.)
-            if (cut < view.bottom - 1 && unrowed().some(box => box.bottom > cut + 1 && box.top < view.bottom)) return;
+            if (cut < view.bottom - 1 && unrowed().some(box => box.bottom > cut + 1 && box.top < view.bottom)) {
+                // (Then, where the next row's name can be brought up to the edge without moving the open group's row
+                // out of sight, the rows move: the list ends through a name, not on blank.)
+                const by = Math.round(cutOf(next) - view.bottom);
+                const headTop = open?.getBoundingClientRect().top ?? view.top;
+                if (by > 0 && by < next.box.height && headTop - by >= view.top - 1 && below() >= by) scroller.scrollTop += by;
+                return;
+            }
             if (cut > view.top + 40 && Math.abs(cut - view.bottom) > 1) scroller.style.maxHeight = `${Math.round(cut - view.top)}px`;
         };
         /**
@@ -695,7 +711,13 @@
         };
         /** Marks whether rows go on below and above what is in sight. */
         const edges = () => {
-            content.toggleAttribute('data-more', scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight > 2);
+            // (More below only where a row or a field is, not a row's own padding.)
+            const bottom = scroller.getBoundingClientRect().bottom;
+            const rows = scroller.querySelectorAll('.actionSheetMenuItem');
+            let lastRow = null;
+            for (let i = rows.length - 1; i >= 0 && !lastRow; i--) if (!rows[i].closest('[hidden]') && rows[i].getBoundingClientRect().height > 0) lastRow = rows[i];
+            const hidden = (lastRow?.getBoundingClientRect().bottom ?? 0) > bottom + 4 || unrowed().some(box => box.bottom > bottom + 4);
+            content.toggleAttribute('data-more', scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight > 2 && hidden);
             // (Above too, unless an open group's row is held there: that row is the edge.)
             const held = heads().find(head => head.getAttribute('aria-expanded') === 'true');
             const heldAtTop = !!held && held.getBoundingClientRect().top - scroller.getBoundingClientRect().top < 2;
@@ -836,7 +858,7 @@
                         // (The keys go to the open group's row, else the first row: the button is going.)
                         if (wasKeyed) (heads().find(head => head.getAttribute('aria-expanded') === 'true') ?? items()[0])?.focus();
                     });
-                    outcome.appendChild(undo);
+                    outcome.append(' ', undo);
                     // (The band made again with the keys on its Undo, after another change: they stay on Undo.)
                     if (keyed) undo.focus();
                 }
@@ -850,13 +872,15 @@
         sayOutcome();
         // Where the pointer (or a finger) last was on the menu, down the screen; nowhere once it has left the menu.
         sheet.addEventListener('pointermove', event => { pointerAt = event.clientY; });
-        sheet.addEventListener('pointerdown', event => { pointerAt = event.clientY; keyed = false; });
-        sheet.addEventListener('wheel', () => { keyed = false; }, { passive: true });
+        sheet.addEventListener('pointerdown', event => { pointerAt = event.clientY; keyed = false; pointered = true; });
+        sheet.addEventListener('wheel', () => { keyed = false; pointered = true; }, { passive: true });
+        sheet.addEventListener('keydown', () => { pointered = false; }, true);
         // The keys' row is brought into sight by the browser, and on a TV by Jellyfin's own focus scrolling, over a
         // moment: the cut is made again once the list has come to rest. (A finger or a wheel leaves it where it was put.)
         scroller.addEventListener('scroll', () => {
             window.clearTimeout(settling);
-            settling = window.setTimeout(() => { if (!closed && keyed) cutAgain(); }, 140);
+            // (Also where focus moved the list without a key, a field or the choice focused by the menu itself.)
+            settling = window.setTimeout(() => { if (!closed && (keyed || !pointered)) cutAgain(); }, 140);
         }, { passive: true });
         sheet.addEventListener('pointerleave', event => { if (event.pointerType === 'mouse') pointerAt = null; });
         // The page scrolling under an open menu (a list reloading, a wheel): the menu stays with its anchor.

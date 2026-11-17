@@ -1039,6 +1039,28 @@
         };
     }
 
+    /**
+     * What Undo says it undoes, from what was set before the last change and what is set now: the first piece it set,
+     * as said alone ("Undo “With dragon”"); else a rule it switched ("Undo “all ticked” in Keywords"); else a piece it
+     * took away ("Put back “Not Thriller”"); else "Undo".
+     * @param {{offered: string[], label: Function, locale: string, ownGenre?: string, before: object, now: object}} options
+     * @returns {string}
+     */
+    function undoWords({ offered, label: say, locale, ownGenre, before, now }) {
+        const words = selection => filterTokens({ offered, label: say, locale, selection, ownGenre }).map(token => token.alone ?? token.words);
+        const had = new Set(words(before));
+        const added = words(now).find(word => !had.has(word));
+        if (added) return say('discovery_filters_undo_what', 'Undo “{change}”', { change: added });
+        const ruled = Object.keys(logic().MATCH_DEFAULTS ?? {}).find(id => logic().matchOf(before, id) !== logic().matchOf(now, id));
+        if (ruled) {
+            const rule = logic().matchOf(now, ruled) === 'any' ? say('discovery_filter_match_any', 'any ticked') : say('discovery_filter_match_all', 'all ticked');
+            return say('discovery_filters_undo_rule', 'Undo “{rule}” in {filter}', { rule, filter: say(NAMES[ruled][0], NAMES[ruled][1]) });
+        }
+        const has = new Set(words(now));
+        const removed = words(before).find(word => !has.has(word));
+        return removed ? say('discovery_filters_undo_back', 'Put back “{piece}”', { piece: removed }) : say('discovery_filters_undo', 'Undo');
+    }
+
     // ---- A section's further filters ------------------------------------------------------------
 
     // The further filters set in a section (see discovery-filters.js), by module name.
@@ -1349,25 +1371,7 @@
             menu.openMenu({
                 anchor: button, title: filtersLabel, groups, clearLabel, doneLabel: label('discovery_filters_done', 'Done'),
                 noneLabel: label('discovery_filters_none', 'Nothing matches these filters.'),
-                undoLabel: () => {
-                    // (What the last change set that was not set before: "Undo Score from 9.9".)
-                    const words = selection => filterTokens({ offered, label, locale: localeOf(), selection, ownGenre }).map(token => token.alone ?? token.words);
-                    const was = undoTo ?? {};
-                    const now = selectionOf(moduleName);
-                    const before = new Set(words(was));
-                    const added = words(now).find(word => !before.has(word));
-                    if (added) return label('discovery_filters_undo_what', 'Undo “{change}”', { change: added });
-                    // (A rule switched: "Undo all ticked in Streaming services".)
-                    const ruled = Object.keys(logic().MATCH_DEFAULTS ?? {}).find(id => logic().matchOf(was, id) !== logic().matchOf(now, id));
-                    if (ruled) {
-                        const rule = logic().matchOf(now, ruled) === 'any' ? label('discovery_filter_match_any', 'any ticked') : label('discovery_filter_match_all', 'all ticked');
-                        return label('discovery_filters_undo_rule', 'Undo “{rule}” in {filter}', { rule, filter: label(NAMES[ruled][0], NAMES[ruled][1]) });
-                    }
-                    // (A piece taken away: "Put back Kids".)
-                    const after = new Set(words(now));
-                    const removed = words(was).find(word => !after.has(word));
-                    return removed ? label('discovery_filters_undo_back', 'Put back “{piece}”', { piece: removed }) : label('discovery_filters_undo', 'Undo');
-                },
+                undoLabel: () => undoWords({ offered, label, locale: localeOf(), ownGenre, before: undoTo ?? {}, now: selectionOf(moduleName) }),
                 canUndo: () => undoTo !== null,
                 // (Back to what was set before the last change; the menu then says every group again.)
                 onUndo() {
@@ -1598,11 +1602,11 @@
             .jellyseerr-sort-menu .jellyseerr-menu-outcome[hidden] { display: none; }
             /* (Undo right after its sentence, as a deleted set's is: the band's words run on, and wrap as words do.) */
             .jellyseerr-sort-menu .jellyseerr-menu-outcome { display: block; }
-            .jellyseerr-menu-outcome-undo { display: inline; margin-inline-start: .35em; font: inherit; padding: .3em .6em; border: 0; border-radius: 6px; background: none; color: var(--jellyseerr-accent); text-decoration: underline; cursor: pointer; }
-            .jellyseerr-menu-outcome-undo:focus-visible { outline: 2px solid var(--jf-palette-text-primary, #fff); outline-offset: 1px; }
+            .jellyseerr-menu-outcome-undo { display: inline; position: relative; margin: 0; font: inherit; padding: .1em 0; border: 0; border-radius: 6px; background: none; color: var(--jellyseerr-accent); text-decoration: underline; cursor: pointer; }
+            .jellyseerr-menu-outcome-undo:focus-visible { outline: 2px solid var(--jf-palette-text-primary, #fff); outline-offset: 0; border-radius: 3px; }
             .layout-tv .jellyseerr-menu-outcome-undo:focus { outline: none; background: var(--jf-palette-text-primary, #fff); color: var(--jellyseerr-menu-ground, #101010); text-decoration: none; }
             /* (On touch, a 44px target reaching past the band's words without making the band taller.) */
-            @media (pointer: coarse) { .jellyseerr-menu-outcome-undo { display: inline-block; min-height: 44px; margin-block: -12px; vertical-align: middle; } }
+            @media (pointer: coarse) { .jellyseerr-menu-outcome-undo::after { content: ''; position: absolute; inset: -12px -8px; } }
             @media (forced-colors: active) { .jellyseerr-sort-menu .jellyseerr-menu-outcome { border: 1px solid CanvasText; } }
             /* What a search has narrowed away is gone (a row's own display would otherwise keep it). */
             .jellyseerr-sort-menu .actionSheetMenuItem[hidden], .jellyseerr-menu-note[hidden], .jellyseerr-menu-label[hidden] { display: none !important; }
@@ -1691,6 +1695,7 @@
         roomUnderMenu,
         filterMenuGroups,
         filterTokens,
+        undoWords,
         /**
          * The section's selection, for tests and the facade.
          * @param {string} name - The module name

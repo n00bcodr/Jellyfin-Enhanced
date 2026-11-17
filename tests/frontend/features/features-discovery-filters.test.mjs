@@ -292,6 +292,29 @@ test('what is set is said piece by piece: a range once, in the viewer\'s numbers
   same(tokens[3].without({ language: [{ id: 'fr' }] }), { language: undefined });
 });
 
+test('Undo says what the last change did: the piece it set, as said alone; a rule it switched; a piece it took away', t => {
+  const { F, JE } = setup(t);
+  const offered = F.offeredFilters('feed', {});
+  const label = (key, fallback, values) => {
+    let said = JE.t(key, values) === key ? fallback : JE.t(key, values);
+    for (const [name, value] of Object.entries(values ?? {})) said = said.replace(`{${name}}`, String(value));
+    return said;
+  };
+  const say = (before, now) => F.undoWords({ offered, label, locale: 'en', before, now });
+  const bear = { id: '10468', name: 'bear' };
+  const dragon = { id: '12554', name: 'dragon' };
+  // A second keyword is said as it is alone, not as the page line's "or dragon".
+  assert.equal(say({ keywords: [bear] }, { keywords: [bear, dragon] }), 'Undo “With dragon”');
+  assert.equal(say({}, { score: ['9.9', ''] }), 'Undo “Score from 9.9”');
+  // A rule switched, nothing added: the rule, in its list.
+  assert.equal(say({ keywords: [bear, dragon], match: { keywords: 'any' } }, { keywords: [bear, dragon] }), 'Undo “all ticked” in Keywords');
+  // A piece taken away: put back, as it is said alone (a Without genre is "Not …", never read as wanted).
+  const horror = { id: '27/', name: 'Horror' };
+  const thriller = { id: '53/', name: 'Thriller' };
+  assert.equal(say({ withoutGenres: [horror, thriller] }, { withoutGenres: [horror] }), 'Put back “Not Thriller”');
+  assert.equal(say({}, {}), 'Undo');
+});
+
 test('the services and the feed ask for the admin\'s region; an unusable region is the US', { skip: !hasMenu && 'the menu module is not there yet' }, async t => {
   const providers = kind => [`${API}/jellyseerr/filters/watchproviders/${kind}?watchRegion=GB`, [{ id: 8, name: 'Netflix', displayPriority: 1 }]];
   const h = setup(t, { config: { DEFAULT_REGION: ' gb ' }, lists: [providers('movie'), providers('tv')] });
