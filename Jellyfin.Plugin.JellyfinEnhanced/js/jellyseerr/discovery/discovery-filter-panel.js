@@ -286,11 +286,16 @@
             if (!matchable(id)) return note(say(RULES[id][0], RULES[id][1]));
             const line = document.createElement('div');
             line.className = 'jellyseerr-menu-note jellyseerr-menu-match';
-            line.setAttribute('role', 'radiogroup');
             const lead = document.createElement('span');
+            lead.className = 'jellyseerr-menu-match-lead';
+            lead.id = `jellyseerr-menu-match-${++hints}`;
             lead.textContent = say('discovery_filter_match', 'Titles with');
-            line.setAttribute('aria-label', lead.textContent);
-            line.appendChild(lead);
+            // One segmented control, as All / Movies / Series is: a radio group, one stop for the keys.
+            const track = document.createElement('div');
+            track.className = 'jellyseerr-menu-match-track';
+            track.setAttribute('role', 'radiogroup');
+            track.setAttribute('aria-labelledby', lead.id);
+            line.append(lead, track);
             const buttons = [['all', say('discovery_filter_match_all', 'all of these')], ['any', say('discovery_filter_match_any', 'any of these')]].map(([value, words]) => {
                 const button = document.createElement('button');
                 button.type = 'button';
@@ -311,10 +316,25 @@
                 });
                 return button;
             });
-            /** Marks the choice in use. */
-            const paint = value => buttons.forEach(button => button.setAttribute('aria-checked', String(button.dataset.match === value)));
+            /** Marks the choice in use; only it takes the keys' stop. */
+            const paint = value => buttons.forEach(button => {
+                const on = button.dataset.match === value;
+                button.setAttribute('aria-checked', String(on));
+                button.tabIndex = on ? 0 : -1;
+            });
             paint(logic().matchOf(options.selection(), id));
-            line.append(...buttons);
+            // Left and right move between the two and choose, as in any radio group (up and down are the menu's rows).
+            track.addEventListener('keydown', event => {
+                if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+                const at = buttons.indexOf(/** @type {HTMLButtonElement} */ (document.activeElement));
+                if (at < 0) return;
+                event.preventDefault();
+                event.stopPropagation();
+                const next = buttons[(at + 1) % buttons.length];
+                next.focus();
+                next.click();
+            });
+            track.append(...buttons);
             return line;
         };
         /**
@@ -569,6 +589,12 @@
      * @returns {object}
      */
     const selectionOf = name => moreFilters.get(name) ?? {};
+    /**
+     * Whether a selection is kept: anything narrowing the list, or a list's all / any chosen before its ticks.
+     * @param {object} selection
+     * @returns {boolean}
+     */
+    const worthKeeping = selection => logic().activeFilterCount(selection) > 0 || Object.keys(selection?.match ?? {}).length > 0;
     // A person's titles as last given to be filtered: what the Role list is made of.
     const credits = new Map();
     // Per header: redraws its Filters button, and reloads its list after a change made outside the menu.
@@ -805,7 +831,7 @@
          * @param {number} [focusAt] - Where the keys go after a piece is taken away (-1: they stay)
          */
         function change(next, focusAt = -1) {
-            if (activeFilterCount(next) > 0) moreFilters.set(moduleName, next); else moreFilters.delete(moduleName);
+            if (worthKeeping(next)) moreFilters.set(moduleName, next); else moreFilters.delete(moduleName);
             paint(focusAt);
             JE.discoveryBusy?.hold?.(button);
             onChange();
@@ -834,7 +860,7 @@
                 },
                 onClear() {
                     if (typeInMenu) type?.choose(MIXED());
-                    if (activeFilterCount(selectionOf(moduleName)) > 0) change({});
+                    if (worthKeeping(selectionOf(moduleName))) change({});
                 }
             });
         };
@@ -963,8 +989,9 @@
             .jellyseerr-menu-note, .jellyseerr-menu-label { color: var(--jf-palette-text-secondary, rgba(255,255,255,.7)); }
             .jellyseerr-menu-note { padding: 2px 16px 8px 32px; font-size: .86em; line-height: 1.4; }
             /* All of what is ticked, or any of it: two small choices on the rule's line, the one in use filled. */
-            .jellyseerr-menu-match { display: flex; flex-wrap: wrap; align-items: center; gap: .35em; }
-            .jellyseerr-menu-match-btn { font: inherit; color: inherit; background: rgba(255,255,255,.08); border: 0; border-radius: 999px; padding: .2em .8em; cursor: pointer; }
+            .jellyseerr-menu-match { display: flex; flex-direction: column; align-items: flex-start; gap: .35em; }
+            .jellyseerr-menu-match-track { display: inline-flex; gap: 2px; padding: 2px; border-radius: 999px; background: rgba(255,255,255,.08); }
+            .jellyseerr-menu-match-btn { font: inherit; color: inherit; white-space: nowrap; background: none; border: 0; border-radius: 999px; padding: .25em .9em; cursor: pointer; }
             .jellyseerr-menu-match-btn[aria-checked="true"] { background: #e8e8e8; color: #101010; }
             .jellyseerr-menu-match-btn:focus-visible { outline: 2px solid var(--jf-palette-primary-main, #00a4dc); outline-offset: 1px; }
             .jellyseerr-filters-or { color: var(--jf-palette-text-secondary, rgba(255,255,255,.7)); margin-inline: -.6em; }
@@ -1028,7 +1055,7 @@
          * @param {object} selection - The FilterSelection
          */
         setSelection(name, selection) {
-            if (logic().activeFilterCount(selection) > 0) moreFilters.set(name, selection);
+            if (worthKeeping(selection)) moreFilters.set(name, selection);
             else moreFilters.delete(name);
         },
         /**

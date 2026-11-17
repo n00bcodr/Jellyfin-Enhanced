@@ -216,9 +216,10 @@
         sheet.appendChild(content);
         container.appendChild(sheet);
 
-        // What the keys move through: the rows and fields showing (a closed group's are not; nor is "clear" with nothing to clear).
+        // What the keys move through: the rows and fields showing (a closed group's are not; nor is "clear" with nothing to
+        // clear), and a list's all / any choice, by the one in use (left and right move between the two).
         /** @returns {HTMLElement[]} */
-        const items = () => Array.from(content.querySelectorAll('.actionSheetMenuItem, .jellyseerr-menu-input'))
+        const items = () => Array.from(content.querySelectorAll('.actionSheetMenuItem, .jellyseerr-menu-input, .jellyseerr-menu-match-btn[aria-checked="true"]'))
             .filter(item => !item.closest('[hidden]') && !item.hidden && item.getAttribute('aria-disabled') !== 'true'
                 && !(item.dataset.done !== undefined && getComputedStyle(item).display === 'none'));
         /** @returns {HTMLElement[]} */
@@ -331,6 +332,8 @@
             // Towards the start of the line, out of a group's body: back on the group's own row (a long list need not be walked to leave it).
             // (In a field the key is the caret's until the caret is at the field's start.)
             const out = getComputedStyle(sheet).direction === 'rtl' ? 'ArrowRight' : 'ArrowLeft';
+            // (On a list's all / any choice, left and right are the choice's own.)
+            if ((event.key === 'ArrowLeft' || event.key === 'ArrowRight') && active?.classList.contains('jellyseerr-menu-match-btn')) return;
             if (event.key === out && body && head && !(active instanceof HTMLInputElement && (active.selectionStart ?? 0) > 0)) {
                 event.preventDefault(); event.stopPropagation(); keyed = true; keyWay = -1; head.focus(); cutAgain();
                 return;

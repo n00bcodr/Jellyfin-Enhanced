@@ -640,3 +640,34 @@ test('the Filters menu offers all or any for keywords, genres and services; "or"
   assert.equal(bodyOf(h, 'keywords').querySelector('.jellyseerr-menu-match'), null);
   assert.equal(bodyOf(h, 'keywords').querySelector('.jellyseerr-menu-note').textContent, 'Titles with all of the ones ticked.');
 });
+
+test('all / any chosen before anything is ticked is kept; the keys and a remote reach it and switch it', { skip: !hasMenu && 'the menu module is not there yet' }, async t => {
+  const h = setup(t, { lists: FILTER_LISTS, genres: COMEDY });
+  const feeds = { tv: [1], movie: [11], 'tv&keywords=3020%7C219906': [3], 'movie&keywords=3020%7C219906': [13] };
+  const s = section(h, { name: 'network', feeds });
+  s.button.click();
+  const body = bodyOf(h, 'keywords');
+  // Any first, then the keywords: they are asked for as any of them.
+  body.querySelector('.jellyseerr-menu-match [data-match="any"]').click();
+  same(plain(h.F.selectionOf('network')).match, { keywords: 'any' });
+  const search = body.querySelector('.jellyseerr-menu-search');
+  for (const name of ['sheep', 'sheep farm']) {
+    search.value = 'sheep';
+    search.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    await until(() => [...body.querySelectorAll('.actionSheetItemText')].some(node => node.textContent === name && !node.closest('[aria-checked="true"]')), name);
+    tickRow(h, 'keywords', name);
+  }
+  assert.equal(String(s.shown()), '3,13');
+  // The keys: down from the search field reaches the choice in use; right switches it; up leaves it.
+  const press = key => h.document.activeElement.dispatchEvent(new h.window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+  search.focus();
+  let steps = 0;
+  while (!h.document.activeElement.classList.contains('jellyseerr-menu-match-btn') && steps++ < 6) press('ArrowDown');
+  assert.equal(h.document.activeElement.dataset.match, 'any');
+  press('ArrowRight');
+  assert.equal(h.document.activeElement.dataset.match, 'all');
+  assert.equal(h.document.activeElement.getAttribute('aria-checked'), 'true');
+  assert.equal(plain(h.F.selectionOf('network')).match, undefined);
+  press('ArrowUp');
+  assert.equal(h.document.activeElement.classList.contains('jellyseerr-menu-match-btn'), false);
+});
