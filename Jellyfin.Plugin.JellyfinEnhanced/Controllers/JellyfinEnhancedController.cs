@@ -11030,7 +11030,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// </summary>
         private static string? SniffImageContentType(string filePath)
         {
-            var head = new byte[512];
+            // SVGs can open with an XML prolog, comments or a DOCTYPE before <svg.
+            var head = new byte[4096];
             int read;
             using (var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
             {

@@ -17,10 +17,11 @@ public class ApiBrandingTests
         c.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Role, admin ? "Administrator" : "User")], "test"));
         return c;
     }
-    private static void Form(JellyfinEnhancedController c, string? name, string mime = "image/png", long? length = null, bool withFile = true)
+    private static void Form(JellyfinEnhancedController c, string? name, string mime = "image/png", long? length = null, bool withFile = true, byte[]? bytes = null)
     {
         var files = new FormFileCollection();
-        if (withFile) files.Add(new FormFile(new MemoryStream(Png), 0, length ?? Png.Length, "file", "client-name.png") { Headers = new HeaderDictionary(), ContentType = mime });
+        var body = bytes ?? Png;
+        if (withFile) files.Add(new FormFile(new MemoryStream(body), 0, length ?? body.Length, "file", "client-name.png") { Headers = new HeaderDictionary(), ContentType = mime });
         c.Request.Form = new FormCollection(name == null ? new() : new Dictionary<string, StringValues> { ["fileName"] = name }, files);
     }
 
@@ -39,7 +40,7 @@ public class ApiBrandingTests
         Assert.Equal(Png, File.ReadAllBytes(canonicalPath));
         var status = Assert.IsType<Dictionary<string, bool>>(Assert.IsType<OkObjectResult>(c.GetBrandingStatus()).Value);
         Assert.True(status["icon-transparent.png"]);
-        Assert.Equal(5, status.Count);
+        Assert.Equal(6, status.Count);
         var image = Assert.IsType<PhysicalFileResult>(c.GetBrandingImage(requestedName));
         Assert.Equal(canonicalPath, image.FileName);
         Assert.Equal("image/png", image.ContentType);
@@ -47,6 +48,60 @@ public class ApiBrandingTests
         Assert.False(File.Exists(canonicalPath));
         Assert.IsType<NotFoundObjectResult>(c.DeleteBrandingImage());
         Assert.IsType<NotFoundResult>(c.GetBrandingImage(requestedName));
+    }
+
+    [Fact]
+    public void ElsewhereIconIsAbsentUntilUploaded()
+    {
+        using var f = new ApiPluginFixture();
+        var c = Controller(f, false);
+        Assert.IsType<NotFoundResult>(c.GetElsewhereBrandingIcon());
+    }
+
+    [Fact]
+    public async Task ElsewhereIconPngIsServedPubliclyAsPng()
+    {
+        using var f = new ApiPluginFixture();
+        var c = Controller(f);
+        Form(c, "elsewhere-icon.png");
+        Assert.IsType<OkObjectResult>(await c.UploadBrandingImage());
+        var icon = Assert.IsType<PhysicalFileResult>(Controller(f, false).GetElsewhereBrandingIcon());
+        Assert.Equal(Path.Combine(Plugin.BrandingDirectory, "elsewhere-icon.png"), icon.FileName);
+        Assert.Equal("image/png", icon.ContentType);
+        Assert.True(Assert.IsType<Dictionary<string, bool>>(Assert.IsType<OkObjectResult>(c.GetBrandingStatus()).Value)["elsewhere-icon.png"]);
+    }
+
+    [Fact]
+    public async Task ElsewhereIconSvgIsServedAsSvgInASandbox()
+    {
+        using var f = new ApiPluginFixture();
+        var c = Controller(f);
+        // A prolog and comment longer than 512 bytes before the <svg> element.
+        var svg = System.Text.Encoding.UTF8.GetBytes("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!--" + new string('x', 1500) + "-->\n"
+            + "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><circle cx=\"12\" cy=\"12\" r=\"10\"/><script>alert(1)</script></svg>");
+        Form(c, "elsewhere-icon.png", "image/svg+xml", bytes: svg);
+        Assert.IsType<OkObjectResult>(await c.UploadBrandingImage());
+        var viewer = Controller(f, false);
+        var icon = Assert.IsType<PhysicalFileResult>(viewer.GetElsewhereBrandingIcon());
+        Assert.Equal("image/svg+xml", icon.ContentType);
+        Assert.Contains("sandbox", viewer.Response.Headers["Content-Security-Policy"].ToString());
+        Assert.Contains("default-src 'none'", viewer.Response.Headers["Content-Security-Policy"].ToString());
+        Assert.Equal("nosniff", viewer.Response.Headers["X-Content-Type-Options"].ToString());
+        // The admin preview gets the real type too, not the slot name's.
+        Assert.Equal("image/svg+xml", Assert.IsType<PhysicalFileResult>(c.GetBrandingImage("elsewhere-icon.png")).ContentType);
+    }
+
+    [Theory]
+    [InlineData("image/x-icon")]
+    [InlineData("image/bmp")]
+    [InlineData("image/tiff")]
+    public async Task ElsewhereIconRejectsTypesBrowsersMayNotShow(string mime)
+    {
+        using var f = new ApiPluginFixture();
+        var c = Controller(f);
+        Form(c, "elsewhere-icon.png", mime);
+        Assert.IsType<BadRequestObjectResult>(await c.UploadBrandingImage());
+        Assert.False(File.Exists(Path.Combine(Plugin.BrandingDirectory, "elsewhere-icon.png")));
     }
 
     [Fact]
