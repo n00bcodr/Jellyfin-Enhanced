@@ -573,7 +573,9 @@
         scroller.addEventListener('scroll', () => {
             for (const head of heads()) {
                 const body = head.nextElementSibling;
-                const over = head.getAttribute('aria-expanded') === 'true' && body instanceof HTMLElement
+                // (Only while it is held: leaving with its group it is a row like any other, its edge gone with it.)
+                const held = Math.abs(head.getBoundingClientRect().top - scroller.getBoundingClientRect().top) < 2;
+                const over = head.getAttribute('aria-expanded') === 'true' && body instanceof HTMLElement && held
                     && body.getBoundingClientRect().top < head.getBoundingClientRect().bottom - 1;
                 head.toggleAttribute('data-over', over);
                 if (!(body instanceof HTMLElement)) continue;
@@ -659,7 +661,7 @@
             // Above: the row at the edge shows the lower part of its name (unless an open group's row is held there: that row is the edge).
             const held = heads().find(head => head.getAttribute('aria-expanded') === 'true');
             const top = scroller.getBoundingClientRect().top;
-            if (scroller.scrollTop > 2 && below() > 2 && !(held && held.getBoundingClientRect().top - top < 2)) {
+            if (scroller.scrollTop > 2 && below() > 2 && !(held && Math.abs(held.getBoundingClientRect().top - top) < 2)) {
                 const boxes = shownRows().map(entry => entry.box);
                 const over = boxes.filter(box => box.top < top - 1).pop();
                 // (Hidden: the row's upper part, down to a little above the middle of its name.)
@@ -771,8 +773,13 @@
             content.toggleAttribute('data-more', scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight > 2 && hidden);
             // (Above too, unless an open group's row is held there: that row is the edge.)
             const held = heads().find(head => head.getAttribute('aria-expanded') === 'true');
-            const heldAtTop = !!held && held.getBoundingClientRect().top - scroller.getBoundingClientRect().top < 2;
-            content.toggleAttribute('data-above', scroller.scrollTop > 2 && !heldAtTop);
+            const top = scroller.getBoundingClientRect().top;
+            const heldAtTop = !!held && Math.abs(held.getBoundingClientRect().top - top) < 2;
+            // (More above only where a row is hidden there, not a few pixels of the list's own padding.)
+            let firstRow = null;
+            for (const row of rows) if (!row.closest('[hidden]') && row.getBoundingClientRect().height > 0) { firstRow = row; break; }
+            const hiddenAbove = (firstRow?.getBoundingClientRect().top ?? top) < top - 4;
+            content.toggleAttribute('data-above', scroller.scrollTop > 2 && hiddenAbove && !heldAtTop);
         };
         scroller.addEventListener('scroll', edges, { passive: true });
         backdrop.addEventListener('click', () => close());

@@ -1610,7 +1610,11 @@
             /* A profile not in use keeps no room for the tick it does not show (on a TV the tick is the row's first column: kept). */
             html:not(.layout-tv) .jellyseerr-menu-profile .actionsheetMenuItemIcon { display: none !important; }
             html:not(.layout-tv) .jellyseerr-menu-profile[aria-current] .actionSheetItemText { color: var(--jellyseerr-accent); font-weight: 500; }
-            .jellyseerr-menu-profile-mark { font-size: 1.15em; vertical-align: -.2em; margin-inline-end: .3em; }
+            /* (Hung into the row's inset, so the name stays on the column the others and its summary share.) */
+            .jellyseerr-menu-profile-mark { font-size: 1.15em; vertical-align: -.2em; width: 1em; margin-inline: -1.3em .3em; }
+            html .jellyseerr-sort-menu .jellyseerr-menu-group[data-toggle="profiles"][data-set] { align-items: flex-start; }
+            html .jellyseerr-sort-menu .jellyseerr-menu-profile[aria-current] .actionsheetListItemBody,
+            html .jellyseerr-sort-menu .jellyseerr-menu-profile[aria-current] .actionSheetItemText { overflow: visible; }
             .layout-tv .jellyseerr-menu-profile-mark { display: none; }
             @media (forced-colors: active) {
                 html:not(.layout-tv) .jellyseerr-menu-profile[aria-current] .actionSheetItemText { forced-color-adjust: none; color: LinkText; }
@@ -1657,7 +1661,8 @@
             html.layout-tv .jellyseerr-sort-menu .jellyseerr-menu-profile-says { font-size: 1rem; }
             /* TV: hints, notes and the given genre's words near the rows' size; the bin as large as the rows' icons. */
             html.layout-tv .jellyseerr-sort-menu .jellyseerr-menu-note, html.layout-tv .jellyseerr-sort-menu .jellyseerr-menu-given { font-size: .95em; }
-            .layout-tv .jellyseerr-menu-profile-delete .material-icons { font-size: 1.6em; }
+            .jellyseerr-menu-profile-delete { font: inherit; }
+            .layout-tv .jellyseerr-menu-profile-delete .material-icons { font-size: 1.5em; }
             /* What a search has narrowed away is gone (a row's own display would otherwise keep it). */
             .jellyseerr-sort-menu .actionSheetMenuItem[hidden], .jellyseerr-menu-note[hidden], .jellyseerr-menu-label[hidden] { display: none !important; }
             .jellyseerr-menu-label { padding: 8px 16px 2px 32px; font-size: .86em; }
