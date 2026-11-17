@@ -922,3 +922,45 @@ test('the Custom Tabs configuration link is relative to the current web client',
   assert.ok(links.length > 0);
   for (const link of links) assert.equal(link.getAttribute('href'), '#/configurationpage?name=Custom%20Tabs');
 });
+
+// Upstream 79a90422 (#1058): Elsewhere and the poster icons run on Seerr's provider data when there is no
+// TMDB key; a new option makes the country each user's Seerr streaming region.
+const depHint = (h, id) => {
+  const box = h.document.getElementById(id);
+  return { disabled: box.disabled, hint: box.closest('label')?.querySelector('.dep-hint-text')?.textContent ?? null };
+};
+const regionNotes = h => [...h.document.querySelectorAll('.je-region-source-note')].map(note => note.style.display);
+const elsewhereCard = h => [...h.document.querySelectorAll('#je-features-dashboard *')].map(el => el.textContent).find(text => /^Elsewhere \(streaming providers\)/.test(text)) ?? '';
+const SEERR = { JellyseerrEnabled: true, JellyseerrUrls: 'http://seerr.test', JellyseerrApiKey: 'k' };
+test('without a TMDB key, Seerr unlocks Elsewhere and the poster icons; per-season providers still need TMDB', async t => {
+  const h = boot(t, { saved: { ...SEERR, TMDB_API_KEY: '', ElsewhereEnabled: true } });
+  await h.ready(); h.show(); await settle(h.window);
+  assert.deepEqual(depHint(h, 'elsewhereEnabled'), { disabled: false, hint: null });
+  assert.deepEqual(depHint(h, 'showElsewhereOnJellyseerr'), { disabled: false, hint: null });
+  assert.deepEqual(depHint(h, 'ElsewhereUseSeerrRegion'), { disabled: false, hint: null });
+  assert.deepEqual(depHint(h, 'ElsewhereSeasonProviders'), { disabled: true, hint: 'Add a TMDB API Key to enable' });
+  // Under Default Region (the TMDB section and its mirror on the services tab) and at the top of Elsewhere.
+  assert.deepEqual(regionNotes(h), ['flex', 'flex', 'flex'], 'every note says providers come from Seerr');
+  assert.doesNotMatch(elsewhereCard(h), /missing|neither/i);
+});
+test('with neither a TMDB key nor Seerr, Elsewhere asks for one of them and the Seerr region asks for Seerr', async t => {
+  const h = boot(t, { saved: { TMDB_API_KEY: '', ElsewhereEnabled: true } });
+  await h.ready(); h.show(); await settle(h.window);
+  assert.deepEqual(depHint(h, 'elsewhereEnabled'), { disabled: true, hint: 'Add a TMDB API Key or enable Seerr to use' });
+  assert.deepEqual(depHint(h, 'showElsewhereOnJellyseerr'), { disabled: true, hint: 'Add a TMDB API Key or enable Seerr to use' });
+  assert.deepEqual(depHint(h, 'ElsewhereUseSeerrRegion'), { disabled: true, hint: 'Enable Seerr to use' });
+  assert.deepEqual(regionNotes(h), ['none', 'none', 'none']);
+  assert.match(elsewhereCard(h), /Enabled but neither a TMDB API key nor Seerr is configured/);
+  // A TMDB key alone: everything TMDB-backed unlocks and the notes stay hidden.
+  const k = boot(t, { saved: { ...SEERR, TMDB_API_KEY: 'key', ElsewhereEnabled: true } });
+  await k.ready(); k.show(); await settle(k.window);
+  assert.deepEqual(depHint(k, 'ElsewhereSeasonProviders'), { disabled: false, hint: null });
+  assert.deepEqual(regionNotes(k), ['none', 'none', 'none']);
+});
+test('the Seerr region switch is off by default, saved with the form, and announced as new', async t => {
+  const h = boot(t, { saved: { ...SEERR, TMDB_API_KEY: 'key', ElsewhereEnabled: true } });
+  await h.ready(); h.show(); await settle(h.window);
+  const box = h.document.getElementById('ElsewhereUseSeerrRegion');
+  assert.equal(box.checked, false);
+  assert.match(box.closest('label').textContent, /Use each user's Seerr streaming region/);
+});

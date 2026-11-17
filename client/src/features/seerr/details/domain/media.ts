@@ -83,17 +83,22 @@ export function contentRating(details: JsonRecord, mediaType: MediaType, region:
 }
 
 /** Up to six flat-rate providers for a region, each once. */
-export function streamingProviders(details: JsonRecord, region: string): JsonRecord[] {
-    if (!Array.isArray(details.watchProviders)) return [];
+/**
+ * A region's subscription providers (unique, at most six) and the region they are for. With
+ * `fallback` a region without a list falls back to the US list, then the first one.
+ */
+export function streamingProviders(details: JsonRecord, region: string, fallback = true): { region: string; providers: JsonRecord[] } {
+    const entries = records(details.watchProviders);
+    const entry = fallback ? pickByRegion(entries, region) : entries.find(candidate => candidate.iso_3166_1 === region);
     const unique: JsonRecord[] = [];
     const seen = new Set<unknown>();
-    for (const provider of records(pickByRegion(records(details.watchProviders), region)?.flatrate)) {
+    for (const provider of records(entry?.flatrate)) {
         if (seen.has(provider.id)) continue;
         seen.add(provider.id);
         unique.push(provider);
         if (unique.length >= 6) break;
     }
-    return unique;
+    return { region: str(entry?.iso_3166_1) || region, providers: unique };
 }
 
 export function formatRuntime(minutes: number): string {

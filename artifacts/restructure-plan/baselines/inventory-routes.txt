@@ -102,6 +102,7 @@ GET /JellyfinEnhanced/jellyseerr/settings/{type}
 GET /JellyfinEnhanced/jellyseerr/sonarr
 GET /JellyfinEnhanced/jellyseerr/sonarr/lookup/{tmdbId}
 GET /JellyfinEnhanced/jellyseerr/status
+GET /JellyfinEnhanced/jellyseerr/streaming-region
 POST /JellyfinEnhanced/jellyseerr/sync-watchlist
 POST /JellyfinEnhanced/jellyseerr/trigger-recently-added-scan
 GET /JellyfinEnhanced/jellyseerr/tv/{tmdbId}

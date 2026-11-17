@@ -334,7 +334,8 @@
         useMoreInfoModal: !!config?.JellyseerrUseMoreInfoModal || isTvLayout(),
         moreInfoLoaded: !!JE.jellyseerrMoreInfo,
         availablePostersLinkToJellyfin: !!config?.JellyseerrAvailablePosterLinksToJellyfin,
-        showProviderIcons: !!(config?.ShowElsewhereOnJellyseerr && config.TmdbEnabled),
+        // TMDB, or Seerr's own watch-provider data when there is no TMDB key.
+        showProviderIcons: !!(config?.ShowElsewhereOnJellyseerr && (config.TmdbEnabled || config.JellyseerrEnabled)),
         posterNotFoundUrl: JE.cdn?.url?.("ibb", "fdbkXQdP/jellyseerr-poster-not-found.png") ?? "",
         seerrIconUrl: JE.cdn?.selfhst?.("svg/seerr.svg") ?? "",
         showHideButtons,

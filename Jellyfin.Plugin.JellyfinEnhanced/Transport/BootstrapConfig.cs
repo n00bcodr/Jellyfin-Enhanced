@@ -17,6 +17,7 @@ public sealed class BootstrapPublicConfig
     public required string DEFAULT_PROVIDERS { get; init; }
     public required string IGNORE_PROVIDERS { get; init; }
     public required bool ElsewhereSeasonProviders { get; init; }
+    public required bool ElsewhereUseSeerrRegion { get; init; }
     public required string ElsewhereCustomBrandingText { get; init; }
     public required string ElsewhereCustomBrandingImageUrl { get; init; }
     public required long ClearLocalStorageTimestamp { get; init; }

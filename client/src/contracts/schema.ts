@@ -1615,6 +1615,9 @@ export const bootstrapSchema = {
         "ElsewhereSeasonProviders": {
           "type": "boolean"
         },
+        "ElsewhereUseSeerrRegion": {
+          "type": "boolean"
+        },
         "EnableCustomSplashScreen": {
           "type": "boolean"
         },
@@ -2491,6 +2494,7 @@ export const bootstrapSchema = {
         "ElsewhereCustomBrandingText",
         "ElsewhereEnabled",
         "ElsewhereSeasonProviders",
+        "ElsewhereUseSeerrRegion",
         "EnableCustomSplashScreen",
         "EnableLoginImage",
         "EnableTagsLocalStorageFallback",

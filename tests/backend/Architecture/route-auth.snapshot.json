@@ -103,6 +103,7 @@
   {"verb":"GET","route":"JellyfinEnhanced/jellyseerr/sonarr","requiresAuth":true,"auth":"","action":"GetSonarrInstances","apiBehavior":true,"parameters":[]},
   {"verb":"GET","route":"JellyfinEnhanced/jellyseerr/sonarr/lookup/{tmdbId}","requiresAuth":true,"auth":"","action":"GetSonarrLookup","apiBehavior":true,"parameters":["tmdbId:Path"]},
   {"verb":"GET","route":"JellyfinEnhanced/jellyseerr/status","requiresAuth":true,"auth":"","action":"GetJellyseerrStatus","apiBehavior":true,"parameters":[]},
+  {"verb":"GET","route":"JellyfinEnhanced/jellyseerr/streaming-region","requiresAuth":true,"auth":"","action":"GetSeerrStreamingRegion","apiBehavior":true,"parameters":[]},
   {"verb":"POST","route":"JellyfinEnhanced/jellyseerr/sync-watchlist","requiresAuth":true,"auth":"","action":"SyncJellyseerrWatchlist","apiBehavior":true,"parameters":[]},
   {"verb":"POST","route":"JellyfinEnhanced/jellyseerr/trigger-recently-added-scan","requiresAuth":true,"auth":"","action":"TriggerJellyseerrRecentlyAddedScan","apiBehavior":true,"parameters":["url:Query","apiKey:Header"]},
   {"verb":"GET","route":"JellyfinEnhanced/jellyseerr/tv/{tmdbId}","requiresAuth":true,"auth":"","action":"GetTvShow","apiBehavior":true,"parameters":["tmdbId:Path"]},

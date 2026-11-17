@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
+using Jellyfin.Plugin.JellyfinEnhanced.Infrastructure.Auth;
 using Jellyfin.Plugin.JellyfinEnhanced.Infrastructure.Extensions;
 using static Jellyfin.Plugin.JellyfinEnhanced.Shared.Seerr.SeerrCaches;
 
@@ -323,6 +324,94 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Seerr
                 code = "unreachable",
                 message = "Could not reach Seerr to read partial-requests setting."
             });
+        }
+
+        /// <summary>
+        /// The streaming region Seerr itself shows watch providers for: the caller's
+        /// own Seerr "Streaming Region" when set, otherwise Seerr's global one, otherwise
+        /// US (what Seerr itself falls back to). Null only when Seerr can't be read.
+        /// Response: { "region": "IN" | null, "source": "user" | "seerr" | "default" | null }.
+        /// </summary>
+        [HttpGet("jellyseerr/streaming-region")]
+        [Authorize]
+        public async Task<IActionResult> GetSeerrStreamingRegion()
+        {
+            Response.Headers["Cache-Control"] = "no-store";
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null || !config.JellyseerrEnabled || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.JellyseerrApiKey))
+            {
+                return StatusCode(503, "Seerr integration is not configured or enabled.");
+            }
+
+            var callerId = UserHelper.GetCurrentUserId(User)?.ToString();
+            if (string.IsNullOrEmpty(callerId))
+            {
+                return Forbid();
+            }
+
+            var seerrUser = await _seerrUserLookup.GetJellyseerrUser(callerId);
+            var aborted = HttpContext.RequestAborted;
+            var httpClient = Shared.Seerr.SeerrHttpHelper.CreateClient(_httpClientFactory);
+
+            // (reachable, region): region is null when Seerr answered but has none set.
+            async Task<(bool Ok, string? Region)> ReadRegionAsync(string baseUrl, string path)
+            {
+                var requestUri = $"{baseUrl.TrimEnd('/')}{path}";
+                using var request = Shared.Seerr.SeerrHttpHelper.BuildRequest(HttpMethod.Get, requestUri, config.JellyseerrApiKey);
+                using var response = await httpClient.SendAsync(request, aborted).ConfigureAwait(false);
+                var (body, error) = await Shared.Seerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
+                if (error != null || body == null)
+                {
+                    return (false, null);
+                }
+
+                using var doc = JsonDocument.Parse(body);
+                if (doc.RootElement.ValueKind == JsonValueKind.Object
+                    && doc.RootElement.TryGetProperty("streamingRegion", out var el) && el.ValueKind == JsonValueKind.String)
+                {
+                    var code = el.GetString()?.Trim().ToUpperInvariant();
+                    return (true, Shared.Tmdb.WatchProvidersBatch.IsValidRegion(code) ? code : null);
+                }
+
+                return (true, null);
+            }
+
+            foreach (var url in config.JellyseerrUrls.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                try
+                {
+                    var trimmed = url.Trim();
+                    if (seerrUser != null)
+                    {
+                        var own = await ReadRegionAsync(trimmed, $"/api/v1/user/{seerrUser.Id}/settings/main").ConfigureAwait(false);
+                        if (own.Region != null)
+                        {
+                            return Ok(new { region = own.Region, source = "user" });
+                        }
+                    }
+
+                    var global = await ReadRegionAsync(trimmed, "/api/v1/settings/main").ConfigureAwait(false);
+                    if (!global.Ok)
+                    {
+                        continue;
+                    }
+
+                    // Seerr itself shows US when neither the user nor the server sets one.
+                    return global.Region != null
+                        ? Ok(new { region = global.Region, source = "seerr" })
+                        : Ok(new { region = "US", source = "default" });
+                }
+                catch (OperationCanceledException) when (aborted.IsCancellationRequested)
+                {
+                    return StatusCode(499);
+                }
+                catch (Exception ex) when (ex is HttpRequestException or JsonException or OperationCanceledException or IOException)
+                {
+                    _logger.Warning($"Could not read the Seerr streaming region from a Seerr URL: {ex.Message}");
+                }
+            }
+
+            return Ok(new { region = (string?)null, source = (string?)null });
         }
 
         [HttpGet("tmdb/validate")]

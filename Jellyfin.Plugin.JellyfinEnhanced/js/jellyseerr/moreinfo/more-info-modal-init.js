@@ -131,6 +131,10 @@
     try {
       const data = await sibling(internal, "fetchMediaDetails")(tmdbId, mediaType);
       if (generation !== openGeneration) return;
+      if (JE.pluginConfig?.ElsewhereUseSeerrRegion && JE.pluginConfig.JellyseerrEnabled) {
+        await JE.jellyseerrAPI?.getStreamingRegion?.();
+        if (generation !== openGeneration) return;
+      }
       if (!isRecord(data)) {
         sibling(internal, "showError")(LOAD_FAILED);
         return;

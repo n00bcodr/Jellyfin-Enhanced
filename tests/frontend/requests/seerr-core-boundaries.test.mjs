@@ -366,3 +366,80 @@ test('the 4K popover states come from the translations', t => {
   assert.equal(label(5), 'jellyseerr_btn_available_4k');
   assert.equal(label(2), 'jellyseerr_btn_requested_4k');
 });
+
+// Upstream 79a90422 (#1058): Seerr's watch-provider data stands in for TMDB on posters, and an
+// admin option makes the provider country each user's Seerr streaming region.
+const regionCalls = h => h.gets.filter(url => String(url).includes('/JellyfinEnhanced/jellyseerr/streaming-region')).length;
+test('the Seerr streaming region is read once per user when the admin option is on, and only then', async t => {
+  let answer = { region: 'DE', source: 'user' };
+  const pending = [];
+  const get = async url => {
+    if (!String(url).includes('streaming-region')) return {};
+    if (answer === 'hold') { const d = deferred(); pending.push(d); return d.promise; }
+    if (answer instanceof Error) throw answer;
+    return answer;
+  };
+  const h = setup(t, { config: { JellyseerrEnabled: true, ElsewhereUseSeerrRegion: true }, get });
+  await flush();
+  assert.equal(regionCalls(h), 1, 'asked as the API loads');
+  assert.equal(await h.api.getStreamingRegion(), 'DE');
+  assert.equal(h.api.streamingRegion, 'DE');
+  assert.equal(regionCalls(h), 1, 'asked once per user');
+  // The next user's region is their own.
+  h.switchUser();
+  assert.equal(h.api.streamingRegion, null);
+  answer = { region: 'FR', source: 'seerr' };
+  assert.equal(await h.api.getStreamingRegion(), 'FR');
+  assert.equal(regionCalls(h), 2);
+  // A failure is no region and is asked again; an answer that is not a country is no region.
+  h.switchUser(); answer = new Error('HTTP 503');
+  assert.equal(await h.api.getStreamingRegion(), null);
+  answer = { region: 'de<script>', source: 'user' };
+  assert.equal(await h.api.getStreamingRegion(), null);
+  assert.equal(regionCalls(h), 4);
+  // An answer for the previous user never becomes the next user's region.
+  h.switchUser(); answer = 'hold';
+  const stale = h.api.getStreamingRegion(); await flush();
+  assert.equal(pending.length, 1);
+  h.switchUser();
+  pending[0].resolve({ region: 'DE', source: 'user' });
+  await stale; await flush();
+  assert.equal(h.api.streamingRegion, null);
+  const off = setup(t, { config: { JellyseerrEnabled: true }, get });
+  await flush();
+  assert.equal(regionCalls(off), 0, 'nothing is asked without the option');
+});
+
+function posterSetup(t, config, region) {
+  const asked = [];
+  const providers = { region: 'GB', results: { 'movie:7': [{ provider_id: 8, provider_name: 'Netflix', logo_path: '/n.png' }] } };
+  const h = setup(t, { files: UI, config: { ShowElsewhereOnJellyseerr: true, DEFAULT_REGION: 'GB', ...config },
+    get: async url => String(url).includes('streaming-region') ? region : ({}),
+    post: async url => { asked.push(url); return String(url).startsWith('/watch-providers') ? providers : { id: 7 }; } });
+  return { ...h, asked };
+}
+const iconsSettle = () => new Promise(resolve => setTimeout(resolve, 120));
+test('poster provider icons come from Seerr when there is no TMDB key', async t => {
+  const h = posterSetup(t, { TmdbEnabled: false, JellyseerrEnabled: true });
+  const card = h.JE.jellyseerrUI.createJellyseerrCard({ id: 7, mediaType: 'movie', title: 'T' }, true, true);
+  h.document.body.append(card);
+  await iconsSettle();
+  assert.deepEqual(h.asked, ['/watch-providers?items=movie:7&region=GB']);
+  assert.equal(card.querySelector('img[title="Netflix"]').getAttribute('src'), 'https://image.tmdb.org/t/p/w92/n.png');
+  // Neither TMDB nor Seerr: no icons are asked for.
+  const none = posterSetup(t, { TmdbEnabled: false, JellyseerrEnabled: false });
+  none.document.body.append(none.JE.jellyseerrUI.createJellyseerrCard({ id: 7, mediaType: 'movie', title: 'T' }, true, true));
+  await iconsSettle();
+  assert.deepEqual(none.asked, []);
+});
+test('poster provider icons follow the user\'s Seerr streaming region when the admin option is on', async t => {
+  const h = posterSetup(t, { TmdbEnabled: true, JellyseerrEnabled: true, ElsewhereUseSeerrRegion: true }, { region: 'DE', source: 'user' });
+  h.document.body.append(h.JE.jellyseerrUI.createJellyseerrCard({ id: 7, mediaType: 'movie', title: 'T' }, true, true));
+  await iconsSettle();
+  assert.deepEqual(h.asked, ['/watch-providers?items=movie:7&region=DE']);
+  // No region from Seerr: the admin's Default Region.
+  const fallback = posterSetup(t, { TmdbEnabled: true, JellyseerrEnabled: true, ElsewhereUseSeerrRegion: true }, { region: null, source: null });
+  fallback.document.body.append(fallback.JE.jellyseerrUI.createJellyseerrCard({ id: 7, mediaType: 'movie', title: 'T' }, true, true));
+  await iconsSettle();
+  assert.deepEqual(fallback.asked, ['/watch-providers?items=movie:7&region=GB']);
+});

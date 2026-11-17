@@ -285,6 +285,26 @@ test('what is set is said piece by piece: a range once, in the viewer\'s numbers
   same(tokens[3].without({ language: [{ id: 'fr' }] }), { language: undefined });
 });
 
+// Upstream 79a90422 (#1058): with "Use each user's Seerr streaming region" the region is the user's own in Seerr.
+test('with the admin option the services and the feed ask for the user\'s Seerr streaming region', { skip: !hasMenu && 'the menu module is not there yet' }, async t => {
+  const providers = kind => [`${API}/jellyseerr/filters/watchproviders/${kind}?watchRegion=DE`, [{ id: 8, name: 'Netflix', displayPriority: 1 }]];
+  const h = setup(t, { config: { DEFAULT_REGION: 'GB', JellyseerrEnabled: true, ElsewhereUseSeerrRegion: true }, lists: [providers('movie'), providers('tv')] });
+  let asked = 0;
+  h.JE.jellyseerrAPI = { streamingRegion: 'DE', getStreamingRegion: async () => { asked++; return 'DE'; } };
+  const s = section(h, { name: 'genre' });
+  s.button.click();
+  await until(() => bodyOf(h, 'services').querySelectorAll('.actionSheetMenuItem').length === 1, 'services');
+  tickRow(h, 'services', 'Netflix');
+  assert.equal(h.F.feedQuery('genre', 'movie'), '&watchProviders=8&watchRegion=DE');
+  assert.ok(asked > 0, 'the region is asked for');
+  // Until Seerr names one, the admin's Default Region; without the option, always that.
+  h.JE.jellyseerrAPI.streamingRegion = null;
+  assert.equal(h.F.feedQuery('genre', 'movie'), '&watchProviders=8&watchRegion=GB');
+  h.JE.jellyseerrAPI.streamingRegion = 'DE';
+  h.JE.pluginConfig.ElsewhereUseSeerrRegion = false;
+  assert.equal(h.F.feedQuery('genre', 'movie'), '&watchProviders=8&watchRegion=GB');
+});
+
 test('the services and the feed ask for the admin\'s region; an unusable region is the US', { skip: !hasMenu && 'the menu module is not there yet' }, async t => {
   const providers = kind => [`${API}/jellyseerr/filters/watchproviders/${kind}?watchRegion=GB`, [{ id: 8, name: 'Netflix', displayPriority: 1 }]];
   const h = setup(t, { config: { DEFAULT_REGION: ' gb ' }, lists: [providers('movie'), providers('tv')] });

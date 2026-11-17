@@ -28,6 +28,7 @@ export interface SeerrPluginConfig {
     AddRequestedMediaToWatchlist?: boolean;
     ShowCollectionsInSearch?: boolean;
     ShowElsewhereOnJellyseerr?: boolean;
+    ElsewhereUseSeerrRegion?: boolean;
     TmdbEnabled?: boolean;
     DEFAULT_REGION?: unknown;
     DEFAULT_PROVIDERS?: unknown;

@@ -17,6 +17,9 @@ export interface DiscoveryConfig extends DiscoverySwitches {
     readonly RecommendationsUseNativeTab?: boolean;
     /** The admin's default region: the region whose streaming services and content ratings the filters offer. */
     readonly DEFAULT_REGION?: string;
+    readonly JellyseerrEnabled?: boolean;
+    /** The region is instead the user's Seerr streaming region, once known. */
+    readonly ElsewhereUseSeerrRegion?: boolean;
 }
 export interface DiscoveryLease { readonly signal: AbortSignal; isCurrent(): boolean }
 export interface DiscoverySession {
@@ -40,6 +43,9 @@ export interface DiscoveryRequestManager {
 }
 export interface DiscoveryApi {
     checkUserStatus?(): Promise<unknown>;
+    /** The user's Seerr streaming region once read (core contract `SeerrApiFacade.streamingRegion`). */
+    streamingRegion?: string | null;
+    getStreamingRegion?(): Promise<string | null>;
     fetchCollectionDetails?(collectionId: number): Promise<unknown>;
     fetchGenreSlider?(mediaType: FeedKind): Promise<unknown>;
 }

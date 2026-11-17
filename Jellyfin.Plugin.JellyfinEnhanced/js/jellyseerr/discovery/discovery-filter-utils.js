@@ -1287,6 +1287,11 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
     const wiring = /* @__PURE__ */ new WeakMap();
     let filterData = null;
     function adminRegion() {
+      if (JE.pluginConfig?.ElsewhereUseSeerrRegion && JE.pluginConfig.JellyseerrEnabled) {
+        void JE.jellyseerrAPI?.getStreamingRegion?.();
+        const seerrRegion = JE.jellyseerrAPI?.streamingRegion;
+        if (seerrRegion) return seerrRegion;
+      }
       const region = String(JE.pluginConfig?.DEFAULT_REGION ?? "").trim().toUpperCase();
       return /^[A-Z]{2}$/.test(region) ? region : "US";
     }

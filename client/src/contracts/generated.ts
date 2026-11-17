@@ -174,6 +174,7 @@ export interface BootstrapPublicConfig {
   "ElsewhereCustomBrandingText": string;
   "ElsewhereEnabled": boolean;
   "ElsewhereSeasonProviders": boolean;
+  "ElsewhereUseSeerrRegion": boolean;
   "EnableCustomSplashScreen": boolean;
   "EnableLoginImage": boolean;
   "EnableTagsLocalStorageFallback": boolean;

@@ -3,7 +3,7 @@ import type { OverviewFeature } from './types';
 import { asControl, asHtml, asInput } from './dom';
 
 /** Dependencies this module calls; members are resolved lazily, after every module exists. */
-export type OverviewCardsDeps = Pick<PageModules, 'context' | 'displayCards' | 'plugins'>;
+export type OverviewCardsDeps = Pick<PageModules, 'context' | 'dependencies' | 'displayCards' | 'plugins'>;
 
 export function createOverviewCards(m: OverviewCardsDeps) {
         /**
@@ -199,9 +199,10 @@ export function createOverviewCards(m: OverviewCardsDeps) {
             feat('Custom splash / branding', splashOn, 'extras', 'Enabled', false);
 
             // Extras
-            var elsewhereWarn = bool('elsewhereEnabled') && !val('TMDB_API_KEY');
+            // Without a TMDB key Elsewhere runs on Seerr's provider data.
+            var elsewhereWarn = bool('elsewhereEnabled') && !val('TMDB_API_KEY') && !m.dependencies.hasJellyseerrConfigured();
             feat('Elsewhere (streaming providers)', bool('elsewhereEnabled'), 'elsewhere',
-                elsewhereWarn ? 'Enabled but TMDB API key is missing' : 'Enabled',
+                elsewhereWarn ? 'Enabled but neither a TMDB API key nor Seerr is configured' : 'Enabled',
                 elsewhereWarn);
 
             // Seerr

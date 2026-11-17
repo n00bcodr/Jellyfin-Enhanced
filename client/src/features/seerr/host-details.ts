@@ -68,6 +68,9 @@ export interface SeerrApiFacade {
     fetchIssueById(id: unknown): Promise<unknown>;
     reportIssue(id: TmdbId, type: MediaType, issueType: string, message: string, season: number, episode: number): Promise<unknown>;
     search?(query: string): Promise<unknown>;
+    /** The user's Seerr streaming region once read (core contract `SeerrApiFacade.streamingRegion`). */
+    streamingRegion?: string | null;
+    getStreamingRegion?(): Promise<string | null>;
 }
 
 export interface SeerrUiFacade {
@@ -96,6 +99,7 @@ export interface SeerrModalOptions {
 
 export interface PluginConfigFacade {
     DEFAULT_REGION?: string;
+    ElsewhereUseSeerrRegion?: boolean;
     ColoredRatingsEnabled?: boolean;
     TmdbEnabled?: boolean;
     JellyseerrEnable4KRequests?: boolean;

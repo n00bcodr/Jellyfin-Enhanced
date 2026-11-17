@@ -23,6 +23,186 @@
   var export10 = /* @__PURE__ */ sharedExport(shared2, "sessionLease");
   var export11 = /* @__PURE__ */ sharedExport(shared2, "visibleDetailPage");
 
+  // client/src/features/details-providers/elsewhere-autocomplete.ts
+  function createAutocompleteInput(helpers, placeholder, options, selectedValues) {
+    const container = document.createElement("div");
+    container.style.cssText = "position: relative; margin-bottom: 6px;";
+    let debounceTimer;
+    const filterOptions = (filterText) => {
+      const value = filterText.toLowerCase();
+      if (value.length === 0) {
+        dropdown.style.display = "none";
+        return;
+      }
+      showDropdown(options.filter((option) => option.toLowerCase().includes(value) && !selectedValues.includes(option)));
+    };
+    const debounce = helpers.debounce;
+    let pendingText = "";
+    const debouncedFilter = debounce ? debounce.call(helpers, () => filterOptions(pendingText), 300) : null;
+    const input = document.createElement("input");
+    input.type = "text";
+    input.placeholder = placeholder;
+    input.style.cssText = `
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #444;
+            border-radius: 6px;
+            box-sizing: border-box;
+            background: #2a2a2a;
+            color: #fff;
+            font-size: 14px;
+        `;
+    const dropdown = document.createElement("div");
+    dropdown.style.cssText = `
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: #1a1a1a;
+            border: 1px solid #444;
+            border-top: none;
+            border-radius: 6px;
+            max-height: 200px;
+            overflow-y: auto;
+            display: none;
+            z-index: 1000;
+        `;
+    const selectedContainer = document.createElement("div");
+    selectedContainer.style.cssText = `
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 6px;
+        `;
+    let selectedIndex = -1;
+    let filteredOptions = [];
+    function updateSelected() {
+      selectedContainer.replaceChildren();
+      for (const value of selectedValues) {
+        const tag = document.createElement("span");
+        tag.className = "selected-tag";
+        tag.style.cssText = `
+                    background: #0078d4;
+                    color: white;
+                    padding: 4px 10px;
+                    border-radius: 16px;
+                    font-size: 12px;
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 6px;
+                `;
+        tag.textContent = value;
+        tag.dataset.value = value;
+        const remove = document.createElement("span");
+        remove.textContent = "×";
+        remove.style.cssText = "cursor: pointer; font-weight: bold; font-size: 14px;";
+        remove.onclick = () => {
+          const index = selectedValues.indexOf(value);
+          if (index > -1) {
+            selectedValues.splice(index, 1);
+            updateSelected();
+          }
+        };
+        tag.appendChild(remove);
+        selectedContainer.appendChild(tag);
+      }
+    }
+    function showDropdown(matches) {
+      dropdown.replaceChildren();
+      dropdown.style.display = "block";
+      filteredOptions = matches;
+      selectedIndex = -1;
+      matches.forEach((option, index) => {
+        const item = document.createElement("div");
+        item.textContent = option;
+        item.style.cssText = `
+                    padding: 10px;
+                    cursor: pointer;
+                    border-bottom: 1px solid #333;
+                    color: #fff;
+                    font-size: 14px;
+                `;
+        item.dataset.index = String(index);
+        item.onmouseenter = () => {
+          clearSelection();
+          item.style.background = "#333";
+          selectedIndex = index;
+        };
+        item.onmouseleave = () => {
+          item.style.background = "#1a1a1a";
+        };
+        item.onclick = () => selectOption(option);
+        dropdown.appendChild(item);
+      });
+    }
+    function clearSelection() {
+      dropdown.querySelectorAll("div").forEach((item) => {
+        item.style.background = "#1a1a1a";
+      });
+    }
+    function updateSelection() {
+      clearSelection();
+      if (selectedIndex >= 0 && selectedIndex < filteredOptions.length) {
+        const item = dropdown.querySelector(`[data-index="${selectedIndex}"]`);
+        if (item) {
+          item.style.background = "#333";
+          item.scrollIntoView({ block: "nearest" });
+        }
+      }
+    }
+    function selectOption(option) {
+      if (!selectedValues.includes(option)) {
+        selectedValues.push(option);
+        updateSelected();
+      }
+      input.value = "";
+      dropdown.style.display = "none";
+      selectedIndex = -1;
+    }
+    input.oninput = () => {
+      if (debouncedFilter) {
+        pendingText = input.value;
+        debouncedFilter();
+      } else {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => filterOptions(input.value), 300);
+      }
+    };
+    input.onkeydown = (event) => {
+      if (dropdown.style.display === "none") return;
+      switch (event.key) {
+        case "ArrowDown":
+          event.preventDefault();
+          selectedIndex = Math.min(selectedIndex + 1, filteredOptions.length - 1);
+          updateSelection();
+          break;
+        case "ArrowUp":
+          event.preventDefault();
+          selectedIndex = Math.max(selectedIndex - 1, -1);
+          updateSelection();
+          break;
+        case "Enter": {
+          event.preventDefault();
+          const option = filteredOptions[selectedIndex];
+          if (selectedIndex >= 0 && option !== void 0) selectOption(option);
+          break;
+        }
+        case "Escape":
+          dropdown.style.display = "none";
+          selectedIndex = -1;
+          break;
+      }
+    };
+    input.onblur = () => {
+      setTimeout(() => {
+        if (!dropdown.contains(document.activeElement)) dropdown.style.display = "none";
+      }, 200);
+    };
+    container.append(input, dropdown, selectedContainer);
+    updateSelected();
+    return container;
+  }
+
   // client/generated-shared/stub/client/src/features/details-providers/links.ts
   var shared3 = /* @__PURE__ */ sharedModule("features/details-providers/links");
   var export02 = /* @__PURE__ */ sharedExport(shared3, "externalLink");
@@ -62,6 +242,22 @@
     const raw = export5(value, "results");
     if (export72(raw)) for (const [code, region] of Object.entries(raw)) results[code] = decodeRegion(region);
     return { results };
+  }
+  function seerrWatchProviders(detail) {
+    const results = {};
+    for (const regional of export8(export5(detail, "watchProviders"))) {
+      const code = export112(export5(regional, "iso_3166_1"));
+      if (!code || !/^[A-Z]{2}$/.test(code)) continue;
+      results[code] = {
+        link: export5(regional, "link"),
+        flatrate: export8(export5(regional, "flatrate")).filter(export72).map((provider) => ({
+          provider_id: export5(provider, "id"),
+          provider_name: export5(provider, "name"),
+          logo_path: export5(provider, "logoPath")
+        }))
+      };
+    }
+    return decodeWatchProviders({ results });
   }
   function regionOf(data, region) {
     return data && Object.prototype.hasOwnProperty.call(data.results, region) ? data.results[region] : void 0;
@@ -209,11 +405,17 @@
     const filters = { defaults: parseProviderList(config.DEFAULT_PROVIDERS), ignore: parseProviderList(config.IGNORE_PROVIDERS) };
     const BRANDING_TEXT = config.ElsewhereCustomBrandingText || "";
     const BRANDING_IMAGE_URL = config.ElsewhereCustomBrandingImageUrl || "";
-    const SEASON_PROVIDERS_ADMIN = config.ElsewhereSeasonProviders !== false;
-    if (!TmdbEnabled) {
-      console.log(`${LOG} TMDB is not configured, skipping initialization`);
+    const UseSeerrProviders = !TmdbEnabled && !!config.JellyseerrEnabled;
+    const SEASON_PROVIDERS_ADMIN = TmdbEnabled && config.ElsewhereSeasonProviders !== false;
+    if (!TmdbEnabled && !UseSeerrProviders) {
+      console.log(`${LOG} Neither TMDB nor Seerr is configured, skipping initialization`);
       return;
     }
+    const FollowSeerrRegion = !!config.ElsewhereUseSeerrRegion && !!config.JellyseerrEnabled;
+    let seerrRegion = null;
+    let regionRequest = 0;
+    const followingSeerrRegion = () => FollowSeerrRegion && seerrRegion !== null;
+    const effectiveRegion = (saved) => FollowSeerrRegion && seerrRegion || saved;
     let userRegion = DEFAULT_REGION;
     let userRegions = [];
     let userServices = [];
@@ -244,184 +446,6 @@
       icon.style.fontSize = size;
       icon.style.lineHeight = "1";
       return icon;
-    }
-    function createAutocompleteInput(placeholder, options, selectedValues) {
-      const container = document.createElement("div");
-      container.style.cssText = "position: relative; margin-bottom: 6px;";
-      let debounceTimer;
-      const filterOptions = (filterText) => {
-        const value = filterText.toLowerCase();
-        if (value.length === 0) {
-          dropdown.style.display = "none";
-          return;
-        }
-        showDropdown(options.filter((option) => option.toLowerCase().includes(value) && !selectedValues.includes(option)));
-      };
-      const debounce = JE.helpers.debounce;
-      let pendingText = "";
-      const debouncedFilter = debounce ? debounce.call(JE.helpers, () => filterOptions(pendingText), 300) : null;
-      const input = document.createElement("input");
-      input.type = "text";
-      input.placeholder = placeholder;
-      input.style.cssText = `
-                width: 100%;
-                padding: 10px;
-                border: 1px solid #444;
-                border-radius: 6px;
-                box-sizing: border-box;
-                background: #2a2a2a;
-                color: #fff;
-                font-size: 14px;
-            `;
-      const dropdown = document.createElement("div");
-      dropdown.style.cssText = `
-                position: absolute;
-                top: 100%;
-                left: 0;
-                right: 0;
-                background: #1a1a1a;
-                border: 1px solid #444;
-                border-top: none;
-                border-radius: 6px;
-                max-height: 200px;
-                overflow-y: auto;
-                display: none;
-                z-index: 1000;
-            `;
-      const selectedContainer = document.createElement("div");
-      selectedContainer.style.cssText = `
-                display: flex;
-                flex-wrap: wrap;
-                gap: 6px;
-                margin-top: 6px;
-            `;
-      let selectedIndex = -1;
-      let filteredOptions = [];
-      function updateSelected() {
-        selectedContainer.replaceChildren();
-        for (const value of selectedValues) {
-          const tag = document.createElement("span");
-          tag.className = "selected-tag";
-          tag.style.cssText = `
-                        background: #0078d4;
-                        color: white;
-                        padding: 4px 10px;
-                        border-radius: 16px;
-                        font-size: 12px;
-                        display: inline-flex;
-                        align-items: center;
-                        gap: 6px;
-                    `;
-          tag.textContent = value;
-          tag.dataset.value = value;
-          const remove = document.createElement("span");
-          remove.textContent = "×";
-          remove.style.cssText = "cursor: pointer; font-weight: bold; font-size: 14px;";
-          remove.onclick = () => {
-            const index = selectedValues.indexOf(value);
-            if (index > -1) {
-              selectedValues.splice(index, 1);
-              updateSelected();
-            }
-          };
-          tag.appendChild(remove);
-          selectedContainer.appendChild(tag);
-        }
-      }
-      function showDropdown(matches) {
-        dropdown.replaceChildren();
-        dropdown.style.display = "block";
-        filteredOptions = matches;
-        selectedIndex = -1;
-        matches.forEach((option, index) => {
-          const item = document.createElement("div");
-          item.textContent = option;
-          item.style.cssText = `
-                        padding: 10px;
-                        cursor: pointer;
-                        border-bottom: 1px solid #333;
-                        color: #fff;
-                        font-size: 14px;
-                    `;
-          item.dataset.index = String(index);
-          item.onmouseenter = () => {
-            clearSelection();
-            item.style.background = "#333";
-            selectedIndex = index;
-          };
-          item.onmouseleave = () => {
-            item.style.background = "#1a1a1a";
-          };
-          item.onclick = () => selectOption(option);
-          dropdown.appendChild(item);
-        });
-      }
-      function clearSelection() {
-        dropdown.querySelectorAll("div").forEach((item) => {
-          item.style.background = "#1a1a1a";
-        });
-      }
-      function updateSelection() {
-        clearSelection();
-        if (selectedIndex >= 0 && selectedIndex < filteredOptions.length) {
-          const item = dropdown.querySelector(`[data-index="${selectedIndex}"]`);
-          if (item) {
-            item.style.background = "#333";
-            item.scrollIntoView({ block: "nearest" });
-          }
-        }
-      }
-      function selectOption(option) {
-        if (!selectedValues.includes(option)) {
-          selectedValues.push(option);
-          updateSelected();
-        }
-        input.value = "";
-        dropdown.style.display = "none";
-        selectedIndex = -1;
-      }
-      input.oninput = () => {
-        if (debouncedFilter) {
-          pendingText = input.value;
-          debouncedFilter();
-        } else {
-          clearTimeout(debounceTimer);
-          debounceTimer = setTimeout(() => filterOptions(input.value), 300);
-        }
-      };
-      input.onkeydown = (event) => {
-        if (dropdown.style.display === "none") return;
-        switch (event.key) {
-          case "ArrowDown":
-            event.preventDefault();
-            selectedIndex = Math.min(selectedIndex + 1, filteredOptions.length - 1);
-            updateSelection();
-            break;
-          case "ArrowUp":
-            event.preventDefault();
-            selectedIndex = Math.max(selectedIndex - 1, -1);
-            updateSelection();
-            break;
-          case "Enter": {
-            event.preventDefault();
-            const option = filteredOptions[selectedIndex];
-            if (selectedIndex >= 0 && option !== void 0) selectOption(option);
-            break;
-          }
-          case "Escape":
-            dropdown.style.display = "none";
-            selectedIndex = -1;
-            break;
-        }
-      };
-      input.onblur = () => {
-        setTimeout(() => {
-          if (!dropdown.contains(document.activeElement)) dropdown.style.display = "none";
-        }, 200);
-      };
-      container.append(input, dropdown, selectedContainer);
-      updateSelected();
-      return container;
     }
     const MODAL_ID = "streaming-settings-modal";
     function closeSettingsForm() {
@@ -488,6 +512,14 @@
       resetRegionBtn.appendChild(createMaterialIcon("restart_alt", "16px"));
       countryHeader.appendChild(resetRegionBtn);
       countryBlock.appendChild(countryHeader);
+      const following = followingSeerrRegion();
+      const seerrNote = element("div", "display: none; margin-bottom: 6px; font-size: 12px; color: #999;");
+      seerrNote.id = "seerr-region-note";
+      if (following && seerrRegion) {
+        seerrNote.textContent = JE.t("elsewhere_settings_seerr_region", { region: regionName(seerrRegion) });
+        seerrNote.style.display = "";
+      }
+      countryBlock.appendChild(seerrNote);
       const regionSelect = element("select", "width: 100%; padding: 12px; border: 1px solid #444; border-radius: 6px; background: #2a2a2a; color: #fff; font-size: 14px;");
       regionSelect.id = "region-select";
       for (const [code, name] of Object.entries(availableRegions)) {
@@ -505,6 +537,7 @@
         regionSelect.appendChild(option);
       }
       regionSelect.value = userRegion;
+      regionSelect.disabled = following;
       countryBlock.appendChild(regionSelect);
       content.appendChild(countryBlock);
       const regionsBlock = element("div", "margin-bottom: 16px;");
@@ -512,6 +545,7 @@
       const regionsContainer = document.createElement("div");
       regionsContainer.id = "regions-autocomplete";
       regionsBlock.appendChild(regionsContainer);
+      if (following) regionsBlock.style.display = "none";
       content.appendChild(regionsBlock);
       const servicesBlock = element("div", "margin-bottom: 16px;");
       servicesBlock.appendChild(element("label", "display: block; margin-bottom: 6px; font-weight: 600; color: #ccc;", JE.t("elsewhere_settings_providers")));
@@ -547,11 +581,13 @@
       };
       const regionOptions = Object.entries(availableRegions).map(([code, name]) => `${name} (${code})`);
       regionsContainer.appendChild(createAutocompleteInput(
+        JE.helpers,
         JE.t("elsewhere_settings_add_countries_placeholder"),
         regionOptions,
         userRegions.map((code) => `${regionName(code)} (${code})`)
       ));
       servicesContainer.appendChild(createAutocompleteInput(
+        JE.helpers,
         JE.t("elsewhere_settings_add_providers_placeholder"),
         availableProviders,
         userServices.slice()
@@ -577,8 +613,9 @@
         const services = selectedServices;
         const seasonProviders = seasonCheckbox?.checked ?? userSeasonProviders;
         const elsewhereSettings = {
+          // The user's own pick stays saved while Seerr's region is shown.
           ...source,
-          Region: region,
+          Region: following ? export13(export5(source, "Region")) ?? "" : region,
           Regions: regions,
           Services: services,
           SeasonProviders: seasonProviders
@@ -634,7 +671,7 @@
         if (!current()) return;
         if (!validPreferenceDocument(response)) throw new Error("Invalid Elsewhere settings document");
         const settings = readUserElsewhere(response, DEFAULT_REGION);
-        userRegion = settings.region;
+        userRegion = effectiveRegion(settings.region);
         userRegions = settings.regions;
         userServices = settings.services;
         userSeasonProviders = settings.seasonProviders;
@@ -666,7 +703,7 @@
     }
     function loadSettings(rebuild = true) {
       const settings = readUserElsewhere(JE.userConfig.elsewhere, DEFAULT_REGION);
-      userRegion = settings.region;
+      userRegion = effectiveRegion(settings.region);
       userRegions = settings.regions;
       userServices = settings.services;
       userSeasonProviders = settings.seasonProviders;
@@ -676,8 +713,23 @@
       invalidateProviderPanels();
       if (rebuild) addStreamingLookup();
     }
-    document.addEventListener("je:user-data-loaded", () => loadSettings());
+    function refreshSeerrRegion() {
+      if (!FollowSeerrRegion) return;
+      const request = ++regionRequest;
+      const sameSession = export10(JE.session);
+      JE.core.api.fetch(export0().getUrl("/JellyfinEnhanced/jellyseerr/streaming-region")).then((data) => export112(export5(data, "region")) ?? null, () => null).then((region) => {
+        if (request !== regionRequest || !sameSession()) return;
+        seerrRegion = region !== null && /^[A-Z]{2}$/.test(region) ? region : null;
+        if (effectiveRegion(readUserElsewhere(JE.userConfig.elsewhere, DEFAULT_REGION).region) !== userRegion) loadSettings();
+      });
+    }
+    document.addEventListener("je:user-data-loaded", () => {
+      loadSettings();
+      refreshSeerrRegion();
+    });
     JE.session?.onUserChange("elsewhere", () => {
+      seerrRegion = null;
+      regionRequest++;
       userRegion = DEFAULT_REGION;
       userRegions = [];
       userServices = [];
@@ -735,6 +787,15 @@
       const sameSession = export10(JE.session);
       const generation = settingsGeneration;
       const current = () => sameSession() && generation === settingsGeneration;
+      if (UseSeerrProviders) {
+        const seerrUrl = export0().getUrl(`/JellyfinEnhanced/jellyseerr/${mediaType}/${export2(tmdbId)}`);
+        JE.core.api.fetch(seerrUrl, { cacheKey: `seerr-providers:${mediaType}:${tmdbId}` }).then((detail) => {
+          if (current()) callback(null, seerrWatchProviders(detail));
+        }).catch((error) => {
+          if (current()) callback(export112(export5(error, "message")) || "Could not load streaming info from Seerr.", null);
+        });
+        return;
+      }
       const path = `/${mediaType}/${export2(tmdbId)}/watch/providers`;
       const url = export0().getUrl(`/JellyfinEnhanced/tmdb${path}`);
       JE.core.api.fetch(url, { cacheKey: `tmdb:${path}` }).then((data) => {
@@ -1038,7 +1099,7 @@
             resultContainer.replaceChildren(element("div", "color: #ff6b6b; font-size: 13px; margin-top: 8px;", JE.t("elsewhere_panel_error", { error: error ?? "" })));
             return;
           }
-          const regionsToSearch = userRegions.length > 0 ? userRegions : [userRegion];
+          const regionsToSearch = !followingSeerrRegion() && userRegions.length > 0 ? userRegions : [userRegion];
           let hasAnyResults = false;
           const unavailableRegions = [];
           regionsToSearch.forEach((region, index) => {
@@ -1206,6 +1267,7 @@
     }
     loadRegionsAndProviders();
     loadSettings(false);
+    refreshSeerrRegion();
     const idle = (callback, timeout, fallbackDelay) => {
       if (typeof requestIdleCallback !== "undefined") requestIdleCallback(callback, { timeout });
       else setTimeout(callback, fallbackDelay);

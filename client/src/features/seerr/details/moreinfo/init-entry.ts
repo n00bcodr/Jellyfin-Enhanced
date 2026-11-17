@@ -38,6 +38,11 @@ async function open(tmdbId: TmdbId, rawType: string): Promise<void> {
     try {
         const data = await sibling(internal, 'fetchMediaDetails')(tmdbId, mediaType);
         if (generation !== openGeneration) return;
+        // The streaming row follows the user's Seerr streaming region (read once per user).
+        if (JE.pluginConfig?.ElsewhereUseSeerrRegion && JE.pluginConfig.JellyseerrEnabled) {
+            await JE.jellyseerrAPI?.getStreamingRegion?.();
+            if (generation !== openGeneration) return;
+        }
         if (!isRecord(data)) {
             sibling(internal, 'showError')(LOAD_FAILED);
             return;

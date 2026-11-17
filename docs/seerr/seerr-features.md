@@ -275,7 +275,7 @@ Admin settings under **Seerr** → **Discovery & UI Extras** ([full reference](s
 | **Link available items' posters straight to Jellyfin** | Off | Makes available posters open Jellyfin directly; available title links already do. |
 | **Show Seerr link on item detail pages** | On | Adds a link for TMDB-identified movies/series. |
 | **Show as text instead of icon** | Off | Changes the enabled detail link to text. |
-| **Show Streaming Providers on Posters** | Off | Adds up to four subscription-provider icons using the admin Elsewhere region/provider filters; requires TMDB configuration. |
+| **Show Streaming Providers on Posters** | Off | Adds up to four subscription-provider icons using the admin Elsewhere region/provider filters (or each user's Seerr streaming region when that Elsewhere option is on); needs a TMDB key or the Seerr integration. |
 
 ??? note "Details"
 

@@ -4041,6 +4041,15 @@
     },
     {
       "verb": "GET",
+      "path": "/JellyfinEnhanced/jellyseerr/streaming-region",
+      "method": "GetSeerrStreamingRegion",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Features/Seerr/JeSeerrController.Users.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
       "path": "/JellyfinEnhanced/tmdb/validate",
       "method": "ValidateTmdb",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Features/Seerr/JeSeerrController.Users.cs",
@@ -4597,6 +4606,14 @@
       "type": "bool",
       "initializer": null,
       "constructor_assignment": "true",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ElsewhereUseSeerrRegion",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "false",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
     },
     {
@@ -11237,8 +11254,8 @@
   "counts": {
     "build_targets": 1,
     "files": 565,
-    "routes": 220,
-    "configuration_properties": 791,
+    "routes": 221,
+    "configuration_properties": 792,
     "storage_references": 97,
     "scheduled_tasks": 17,
     "locales": 33

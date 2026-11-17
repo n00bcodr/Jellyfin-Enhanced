@@ -1,8 +1,8 @@
 {
   "description": "Budget for the served component bundle, GET /JellyfinEnhanced/bundle.js (Features/Platform/Services/ClientScriptBundle.cs), as an identity (uncompressed) body. rawBytes: its length. gzipBytes: its length after gzip at level 9 (zlib level 9; `gzip -9 -n`, .NET CompressionLevel.SmallestSize). Checked by tests/backend/Api/BundleBudgetTests.cs (gate T) and `scripts/restructure-gates.sh size`. It is a ratchet: lowering a limit needs no reason; a history entry that raises either limit must give one. `limits` is always the last history entry's.",
   "limits": {
-    "rawBytes": 2616163,
-    "gzipBytes": 706597
+    "rawBytes": 2618666,
+    "gzipBytes": 707700
   },
   "history": [
     {
@@ -69,6 +69,19 @@
         "gzipBytes": 706597
       },
       "reason": "Raised by exactly what the port adds, so the headroom left before it stays as it was: the series lookup for the Similar and Recommended rows on season and episode pages (item-details.js and its minified twin). Measured with `scripts/restructure-gates.sh size`: 2,591,898 raw / 704,565 gzip-9 bytes on 459e643a, 2,592,384 / 704,688 on d423fb20 (+486 / +123). Gate T's own measure (BundleBudgetTests, .NET SmallestSize) is a little larger on this machine: 706,376 and 706,482 gzip-9 bytes (+106), within the new limit."
+    },
+    {
+      "date": "2026-11-18",
+      "change": "upstream sync: port of upstream 79a90422 (#1058), landed from branch sync/contract-79a90422 on sync/land-79a90422",
+      "measured": {
+        "rawBytes": 2594887,
+        "gzipBytes": 705663
+      },
+      "limits": {
+        "rawBytes": 2618666,
+        "gzipBytes": 707700
+      },
+      "reason": "Raised by exactly what the port adds, so the headroom left before it stays as it was: streaming providers from Seerr when there is no TMDB key (the Elsewhere panel's Seerr source and region, its autocomplete module, the Seerr API's streaming region, the poster icons, the More Info row and the discovery filters' region). Measured with `scripts/restructure-gates.sh size`: 2,592,384 raw / 704,688 gzip-9 bytes on cb1633b2 before the port, 2,594,887 / 705,663 on d89c57eb after it (+2,503 / +975). Gate T's own measure (BundleBudgetTests, .NET SmallestSize), on which the port went over the old limit, is 706,482 before and 707,585 after (+1,103), so the gzip limit rises by that larger figure: gate T keeps the 115 bytes of headroom it had, gzip -9 keeps 2,037. The port fitted the budget when it was written on 2026-11-13; the 12.16.0.0 ports used that room since."
     }
   ]
 }

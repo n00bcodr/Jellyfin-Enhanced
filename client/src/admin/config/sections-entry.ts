@@ -71,6 +71,7 @@ import { defineAllSections } from './sections';
  *  { id: 'elsewhereEnabled', type: 'toggle' }
  *  { id: 'DEFAULT_PROVIDERS', type: 'text' }
  *  { id: 'IGNORE_PROVIDERS', type: 'text' }
+ *  { id: 'ElsewhereUseSeerrRegion', type: 'toggle' }
  *  { id: 'ElsewhereSeasonProviders', type: 'toggle' }
  *  { id: 'ElsewhereCustomBrandingText', type: 'text' }
  *  { id: 'ElsewhereCustomBrandingImageUrl', type: 'text' }

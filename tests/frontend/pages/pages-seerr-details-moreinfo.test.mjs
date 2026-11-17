@@ -552,3 +552,44 @@ test('the stylesheet is installed once, under its id', t => {
   assert.match(css[0][1], /\.je-more-info-modal \{/);
   assert.equal(strictEscape(css[0][1]).length > css[0][1].length, true);
 });
+
+// Upstream 79a90422 (#1058): the streaming row reads Seerr's own detail, so it needs no TMDB key,
+// and it can follow the user's Seerr streaming region.
+const regional = { watchProviders: [
+  { iso_3166_1: 'US', flatrate: [{ id: 1, name: 'US Stream', logoPath: '/us.png' }] },
+  { iso_3166_1: 'DE', flatrate: [{ id: 2, name: 'DE Stream', logoPath: '/de.png' }] }] };
+const streamingRow = h => {
+  const list = h.modal.querySelector('.je-more-info-providers-list');
+  return list ? { region: list.getAttribute('title'), names: [...list.querySelectorAll('img')].map(img => img.getAttribute('alt')) } : null;
+};
+test('the streaming row needs no TMDB key and then shows only the user\'s own region', async t => {
+  const h = moreInfoHarness(t, { config: { TmdbEnabled: false, JellyseerrEnabled: true, DEFAULT_REGION: 'GB' }, details: async id => movie(id, regional) });
+  h.JE.userConfig = { elsewhere: { Region: 'de' } };
+  await h.P.open(1, 'movie');
+  assert.deepEqual(streamingRow(h), { region: 'DE', names: ['DE Stream'] });
+  // A country Seerr lists nothing for shows no other country's services.
+  h.JE.userConfig = { elsewhere: {} };
+  await h.P.open(2, 'movie');
+  assert.equal(streamingRow(h), null);
+  // With TMDB the row still falls back to the US list, and says so.
+  const tmdb = moreInfoHarness(t, { config: { TmdbEnabled: true, DEFAULT_REGION: 'GB' }, details: async id => movie(id, regional) });
+  await tmdb.P.open(1, 'movie');
+  assert.deepEqual(streamingRow(tmdb), { region: 'US', names: ['US Stream'] });
+});
+test('the streaming row follows the user\'s Seerr streaming region when the admin option is on', async t => {
+  let asked = 0;
+  const api = { streamingRegion: null, async getStreamingRegion() { asked++; this.streamingRegion = 'DE'; return 'DE'; } };
+  const h = moreInfoHarness(t, { config: { JellyseerrEnabled: true, ElsewhereUseSeerrRegion: true }, details: async id => movie(id, regional), api });
+  h.JE.userConfig = { elsewhere: { Region: 'US' } };
+  await h.P.open(1, 'movie');
+  assert.equal(asked, 1);
+  assert.deepEqual(streamingRow(h), { region: 'DE', names: ['DE Stream'] });
+  // Without the option the user's own Elsewhere country stays, and Seerr is not asked.
+  let offAsked = 0;
+  const off = moreInfoHarness(t, { config: { JellyseerrEnabled: true }, details: async id => movie(id, regional),
+    api: { streamingRegion: 'DE', async getStreamingRegion() { offAsked++; return 'DE'; } } });
+  off.JE.userConfig = { elsewhere: { Region: 'US' } };
+  await off.P.open(1, 'movie');
+  assert.equal(offAsked, 0);
+  assert.deepEqual(streamingRow(off), { region: 'US', names: ['US Stream'] });
+});

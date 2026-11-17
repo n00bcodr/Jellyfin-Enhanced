@@ -133,9 +133,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Seerr
             Response.Headers["Cache-Control"] = "no-store";
 
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null || string.IsNullOrEmpty(config.TMDB_API_KEY))
+            // Without a TMDB key the providers come from Seerr's own title detail.
+            var useSeerr = config != null && string.IsNullOrEmpty(config.TMDB_API_KEY)
+                && config.JellyseerrEnabled && !string.IsNullOrEmpty(config.JellyseerrUrls) && !string.IsNullOrEmpty(config.JellyseerrApiKey);
+            if (config == null || (string.IsNullOrEmpty(config.TMDB_API_KEY) && !useSeerr))
             {
-                return StatusCode(503, "TMDB API key is not configured.");
+                return StatusCode(503, "Neither a TMDB API key nor the Seerr integration is configured.");
             }
 
             if (!Shared.Tmdb.WatchProvidersBatch.TryParseItems(items, out var requested, out var itemsError))
@@ -178,6 +181,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Seerr
                                 }
                                 break;
                         }
+                    }
+
+                    if (useSeerr)
+                    {
+                        // The caller's Seerr detail: its response cache, Seerr user and
+                        // permission checks. Anything but a readable 200 stays null.
+                        var seerr = await ProxyJellyseerrRequest($"/api/v1/{item.MediaType}/{item.TmdbId}", HttpMethod.Get).ConfigureAwait(false);
+                        if (seerr is ContentResult { StatusCode: null or 200, Content: { } seerrJson })
+                        {
+                            results[item.Key] = Shared.Tmdb.WatchProvidersBatch.ExtractSeerrFlatrate(seerrJson, regionCode);
+                        }
+                        return;
                     }
 
                     var response = await _tmdbResponseCache.GetAsync(item.ApiPath, string.Empty, apiKey, aborted).ConfigureAwait(false);

@@ -203,7 +203,8 @@ export interface DetailsPageBridge {
 
 export interface ElsewhereBridge {
     pluginConfig: Pub<'ElsewhereEnabled' | 'TmdbEnabled' | 'DEFAULT_REGION' | 'DEFAULT_PROVIDERS' | 'IGNORE_PROVIDERS'
-        | 'ElsewhereCustomBrandingText' | 'ElsewhereCustomBrandingImageUrl' | 'ElsewhereSeasonProviders'>;
+        | 'ElsewhereCustomBrandingText' | 'ElsewhereCustomBrandingImageUrl' | 'ElsewhereSeasonProviders' | 'ElsewhereUseSeerrRegion'
+        | 'JellyseerrEnabled'>;
     helpers: ItemCacheHelper & BodyObserverHelper & ViewPageHelper & Partial<DebounceHelper> & { createExternalLink?: ExternalLinkFactory };
     cdn: CdnUrls;
     t: Translate;

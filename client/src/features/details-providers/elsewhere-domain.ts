@@ -32,6 +32,25 @@ export function decodeWatchProviders(value: unknown): WatchProviders {
     if (isRecord(raw)) for (const [code, region] of Object.entries(raw)) results[code] = decodeRegion(region);
     return { results };
 }
+/**
+ * Seerr's movie/tv detail lists `watchProviders` as
+ * `[{ iso_3166_1, link, flatrate: [{ id, name, logoPath }] }]`; read it as TMDB's
+ * `{ results: { REGION: { link, flatrate: [{ provider_id, provider_name, logo_path }] } } }`.
+ */
+export function seerrWatchProviders(detail: unknown): WatchProviders {
+    const results: Record<string, unknown> = {};
+    for (const regional of list(field(detail, 'watchProviders'))) {
+        const code = str(field(regional, 'iso_3166_1'));
+        if (!code || !/^[A-Z]{2}$/.test(code)) continue;
+        results[code] = {
+            link: field(regional, 'link'),
+            flatrate: list(field(regional, 'flatrate')).filter(isRecord).map(provider => ({
+                provider_id: field(provider, 'id'), provider_name: field(provider, 'name'), logo_path: field(provider, 'logoPath')
+            }))
+        };
+    }
+    return decodeWatchProviders({ results });
+}
 export function regionOf(data: WatchProviders | null, region: string): RegionProviders | undefined {
     return data && Object.prototype.hasOwnProperty.call(data.results, region) ? data.results[region] : undefined;
 }

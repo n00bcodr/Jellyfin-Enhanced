@@ -3,12 +3,13 @@ import { api, bridge } from './host';
 import type { ElsewhereBridge } from './host';
 import type { ElsewhereSettings } from '../../contracts/generated';
 import { sessionLease, hashItemId, lookupDetailsItem, visibleDetailPage } from './page';
+import { createAutocompleteInput } from './elsewhere-autocomplete';
 import { externalLink, pathSegment, safeHref } from './links';
-import { field, int, list } from './wire';
+import { field, int, list, str, text } from './wire';
 import {
     FALLBACK_PROVIDERS, FALLBACK_REGIONS, applyProviderFilters, decodeWatchProviders, groupSeasonsByProviders,
     isDefaultSeasonOrder, joinRegionNames, mapWithLimit, parseProviderList, parseProviders, parseRegions,
-    readUserElsewhere, regionOf, seasonLabelParts, streamingErrorMessage
+    readUserElsewhere, regionOf, seasonLabelParts, seerrWatchProviders, streamingErrorMessage
 } from './elsewhere-domain';
 import type { ProviderFilters, SeasonEntry, StreamingService, WatchProviders } from './elsewhere-domain';
 
@@ -18,7 +19,7 @@ const LOG = '🪼 Jellyfin Enhanced: 🎬 Jellyfin Elsewhere:';
 interface SeasonContext { kind: 'series' | 'season'; seriesId: string; tmdbId: string; seasonNumber: number | null }
 interface SeasonView { servicesOverride?: StreamingService[]; link?: string | undefined; groups?: { label: string; services: StreamingService[] }[] }
 
-/** Runs only when the server reports TMDB is configured. */
+/** Runs when the server reports TMDB is configured, or else the Seerr integration (whose title detail has the same data). */
 JE.initializeElsewhereScript = function initializeElsewhereScript() {
     const config = JE.pluginConfig;
     if (!config.ElsewhereEnabled) {
@@ -30,12 +31,25 @@ JE.initializeElsewhereScript = function initializeElsewhereScript() {
     const filters: ProviderFilters = { defaults: parseProviderList(config.DEFAULT_PROVIDERS), ignore: parseProviderList(config.IGNORE_PROVIDERS) };
     const BRANDING_TEXT = config.ElsewhereCustomBrandingText || '';
     const BRANDING_IMAGE_URL = config.ElsewhereCustomBrandingImageUrl || '';
-    const SEASON_PROVIDERS_ADMIN = config.ElsewhereSeasonProviders !== false;
+    // Without a TMDB key, provider data comes from Seerr's movie/tv detail
+    // (its watchProviders field). Seerr has no per-season providers.
+    const UseSeerrProviders = !TmdbEnabled && !!config.JellyseerrEnabled;
+    const SEASON_PROVIDERS_ADMIN = TmdbEnabled && config.ElsewhereSeasonProviders !== false;
 
-    if (!TmdbEnabled) {
-        console.log(`${LOG} TMDB is not configured, skipping initialization`);
+    if (!TmdbEnabled && !UseSeerrProviders) {
+        console.log(`${LOG} Neither TMDB nor Seerr is configured, skipping initialization`);
         return;
     }
+
+    // Admin option: the country is the user's Seerr "Streaming Region" instead of
+    // their own Elsewhere country or the Default Region. Until Seerr names one
+    // (or when it cannot be read) the saved/default country stays.
+    const FollowSeerrRegion = !!config.ElsewhereUseSeerrRegion && !!config.JellyseerrEnabled;
+    let seerrRegion: string | null = null;
+    let regionRequest = 0;
+    /** True once Seerr's streaming region is the one in effect. */
+    const followingSeerrRegion = () => FollowSeerrRegion && seerrRegion !== null;
+    const effectiveRegion = (saved: string) => (FollowSeerrRegion && seerrRegion) || saved;
 
     let userRegion = DEFAULT_REGION;
     let userRegions: string[] = [];
@@ -69,192 +83,6 @@ JE.initializeElsewhereScript = function initializeElsewhereScript() {
         icon.style.fontSize = size;
         icon.style.lineHeight = '1';
         return icon;
-    }
-
-    function createAutocompleteInput(placeholder: string, options: readonly string[], selectedValues: string[]): HTMLDivElement {
-        const container = document.createElement('div');
-        container.style.cssText = 'position: relative; margin-bottom: 6px;';
-
-        let debounceTimer: number | undefined;
-        const filterOptions = (filterText: string) => {
-            const value = filterText.toLowerCase();
-            if (value.length === 0) {
-                dropdown.style.display = 'none';
-                return;
-            }
-            showDropdown(options.filter(option => option.toLowerCase().includes(value) && !selectedValues.includes(option)));
-        };
-        // helpers.debounce when available, for consistent behavior
-        const debounce = JE.helpers.debounce;
-        let pendingText = '';
-        const debouncedFilter = debounce ? debounce.call(JE.helpers, () => filterOptions(pendingText), 300) : null;
-
-        const input = document.createElement('input');
-        input.type = 'text';
-        input.placeholder = placeholder;
-        input.style.cssText = `
-                width: 100%;
-                padding: 10px;
-                border: 1px solid #444;
-                border-radius: 6px;
-                box-sizing: border-box;
-                background: #2a2a2a;
-                color: #fff;
-                font-size: 14px;
-            `;
-
-        const dropdown = document.createElement('div');
-        dropdown.style.cssText = `
-                position: absolute;
-                top: 100%;
-                left: 0;
-                right: 0;
-                background: #1a1a1a;
-                border: 1px solid #444;
-                border-top: none;
-                border-radius: 6px;
-                max-height: 200px;
-                overflow-y: auto;
-                display: none;
-                z-index: 1000;
-            `;
-
-        const selectedContainer = document.createElement('div');
-        selectedContainer.style.cssText = `
-                display: flex;
-                flex-wrap: wrap;
-                gap: 6px;
-                margin-top: 6px;
-            `;
-
-        let selectedIndex = -1;
-        let filteredOptions: string[] = [];
-
-        function updateSelected(): void {
-            selectedContainer.replaceChildren();
-            for (const value of selectedValues) {
-                const tag = document.createElement('span');
-                tag.className = 'selected-tag';
-                tag.style.cssText = `
-                        background: #0078d4;
-                        color: white;
-                        padding: 4px 10px;
-                        border-radius: 16px;
-                        font-size: 12px;
-                        display: inline-flex;
-                        align-items: center;
-                        gap: 6px;
-                    `;
-                tag.textContent = value;
-                tag.dataset.value = value;
-                const remove = document.createElement('span');
-                remove.textContent = '×';
-                remove.style.cssText = 'cursor: pointer; font-weight: bold; font-size: 14px;';
-                remove.onclick = () => {
-                    const index = selectedValues.indexOf(value);
-                    if (index > -1) {
-                        selectedValues.splice(index, 1);
-                        updateSelected();
-                    }
-                };
-                tag.appendChild(remove);
-                selectedContainer.appendChild(tag);
-            }
-        }
-
-        function showDropdown(matches: string[]): void {
-            dropdown.replaceChildren();
-            dropdown.style.display = 'block';
-            filteredOptions = matches;
-            selectedIndex = -1;
-            matches.forEach((option, index) => {
-                const item = document.createElement('div');
-                item.textContent = option;
-                item.style.cssText = `
-                        padding: 10px;
-                        cursor: pointer;
-                        border-bottom: 1px solid #333;
-                        color: #fff;
-                        font-size: 14px;
-                    `;
-                item.dataset.index = String(index);
-                item.onmouseenter = () => {
-                    clearSelection();
-                    item.style.background = '#333';
-                    selectedIndex = index;
-                };
-                item.onmouseleave = () => { item.style.background = '#1a1a1a'; };
-                item.onclick = () => selectOption(option);
-                dropdown.appendChild(item);
-            });
-        }
-        function clearSelection(): void {
-            dropdown.querySelectorAll<HTMLElement>('div').forEach(item => { item.style.background = '#1a1a1a'; });
-        }
-        function updateSelection(): void {
-            clearSelection();
-            if (selectedIndex >= 0 && selectedIndex < filteredOptions.length) {
-                const item = dropdown.querySelector<HTMLElement>(`[data-index="${selectedIndex}"]`);
-                if (item) {
-                    item.style.background = '#333';
-                    item.scrollIntoView({ block: 'nearest' });
-                }
-            }
-        }
-        function selectOption(option: string): void {
-            if (!selectedValues.includes(option)) {
-                selectedValues.push(option);
-                updateSelected();
-            }
-            input.value = '';
-            dropdown.style.display = 'none';
-            selectedIndex = -1;
-        }
-
-        input.oninput = () => {
-            if (debouncedFilter) {
-                pendingText = input.value;
-                debouncedFilter();
-            } else {
-                clearTimeout(debounceTimer);
-                debounceTimer = setTimeout(() => filterOptions(input.value), 300);
-            }
-        };
-        input.onkeydown = event => {
-            if (dropdown.style.display === 'none') return;
-            switch (event.key) {
-                case 'ArrowDown':
-                    event.preventDefault();
-                    selectedIndex = Math.min(selectedIndex + 1, filteredOptions.length - 1);
-                    updateSelection();
-                    break;
-                case 'ArrowUp':
-                    event.preventDefault();
-                    selectedIndex = Math.max(selectedIndex - 1, -1);
-                    updateSelection();
-                    break;
-                case 'Enter': {
-                    event.preventDefault();
-                    const option = filteredOptions[selectedIndex];
-                    if (selectedIndex >= 0 && option !== undefined) selectOption(option);
-                    break;
-                }
-                case 'Escape':
-                    dropdown.style.display = 'none';
-                    selectedIndex = -1;
-                    break;
-            }
-        };
-        input.onblur = () => {
-            // Delay hiding to allow clicks on dropdown items
-            setTimeout(() => {
-                if (!dropdown.contains(document.activeElement)) dropdown.style.display = 'none';
-            }, 200);
-        };
-
-        container.append(input, dropdown, selectedContainer);
-        updateSelected();
-        return container;
     }
 
     const MODAL_ID = 'streaming-settings-modal';
@@ -328,6 +156,15 @@ JE.initializeElsewhereScript = function initializeElsewhereScript() {
         resetRegionBtn.appendChild(createMaterialIcon('restart_alt', '16px'));
         countryHeader.appendChild(resetRegionBtn);
         countryBlock.appendChild(countryHeader);
+        // Following Seerr: the picker is locked and says where the country comes from.
+        const following = followingSeerrRegion();
+        const seerrNote = element('div', 'display: none; margin-bottom: 6px; font-size: 12px; color: #999;');
+        seerrNote.id = 'seerr-region-note';
+        if (following && seerrRegion) {
+            seerrNote.textContent = JE.t('elsewhere_settings_seerr_region', { region: regionName(seerrRegion) });
+            seerrNote.style.display = '';
+        }
+        countryBlock.appendChild(seerrNote);
         const regionSelect = element('select', 'width: 100%; padding: 12px; border: 1px solid #444; border-radius: 6px; background: #2a2a2a; color: #fff; font-size: 14px;');
         regionSelect.id = 'region-select';
         for (const [code, name] of Object.entries(availableRegions)) {
@@ -347,6 +184,7 @@ JE.initializeElsewhereScript = function initializeElsewhereScript() {
             regionSelect.appendChild(option);
         }
         regionSelect.value = userRegion;
+        regionSelect.disabled = following;
         countryBlock.appendChild(regionSelect);
         content.appendChild(countryBlock);
 
@@ -355,6 +193,8 @@ JE.initializeElsewhereScript = function initializeElsewhereScript() {
         const regionsContainer = document.createElement('div');
         regionsContainer.id = 'regions-autocomplete';
         regionsBlock.appendChild(regionsContainer);
+        // "Other Countries" does not apply while Seerr's region is in effect.
+        if (following) regionsBlock.style.display = 'none';
         content.appendChild(regionsBlock);
 
         const servicesBlock = element('div', 'margin-bottom: 16px;');
@@ -390,9 +230,9 @@ JE.initializeElsewhereScript = function initializeElsewhereScript() {
 
         const regionOptions = Object.entries(availableRegions).map(([code, name]) => `${name} (${code})`);
         regionsContainer.appendChild(createAutocompleteInput(
-            JE.t('elsewhere_settings_add_countries_placeholder'), regionOptions, userRegions.map(code => `${regionName(code)} (${code})`)));
+            JE.helpers, JE.t('elsewhere_settings_add_countries_placeholder'), regionOptions, userRegions.map(code => `${regionName(code)} (${code})`)));
         servicesContainer.appendChild(createAutocompleteInput(
-            JE.t('elsewhere_settings_add_providers_placeholder'), availableProviders, userServices.slice()));
+            JE.helpers, JE.t('elsewhere_settings_add_providers_placeholder'), availableProviders, userServices.slice()));
 
         cancel.onclick = () => { modal.style.display = 'none'; };
         save.onclick = async () => {
@@ -413,7 +253,8 @@ JE.initializeElsewhereScript = function initializeElsewhereScript() {
             const services = selectedServices;
             const seasonProviders = seasonCheckbox?.checked ?? userSeasonProviders;
             const elsewhereSettings: ElsewhereSettings = {
-                ...source, Region: region, Regions: regions, Services: services, SeasonProviders: seasonProviders
+                // The user's own pick stays saved while Seerr's region is shown.
+                ...source, Region: following ? text(field(source, 'Region')) ?? '' : region, Regions: regions, Services: services, SeasonProviders: seasonProviders
             };
             try {
                 await JE.saveUserSettings('elsewhere.json', elsewhereSettings, { throwOnError: true, isCurrent: current });
@@ -463,7 +304,7 @@ JE.initializeElsewhereScript = function initializeElsewhereScript() {
             if (!current()) return;
             if (!validPreferenceDocument(response)) throw new Error('Invalid Elsewhere settings document');
             const settings = readUserElsewhere(response, DEFAULT_REGION);
-            userRegion = settings.region;
+            userRegion = effectiveRegion(settings.region);
             userRegions = settings.regions;
             userServices = settings.services;
             userSeasonProviders = settings.seasonProviders;
@@ -490,7 +331,7 @@ JE.initializeElsewhereScript = function initializeElsewhereScript() {
     }
     function loadSettings(rebuild = true): void {
         const settings = readUserElsewhere(JE.userConfig.elsewhere, DEFAULT_REGION);
-        userRegion = settings.region;
+        userRegion = effectiveRegion(settings.region);
         userRegions = settings.regions;
         userServices = settings.services;
         userSeasonProviders = settings.seasonProviders;
@@ -500,8 +341,26 @@ JE.initializeElsewhereScript = function initializeElsewhereScript() {
         invalidateProviderPanels();
         if (rebuild) addStreamingLookup();
     }
-    document.addEventListener('je:user-data-loaded', () => loadSettings());
+    /** Reads the user's Seerr streaming region; the panels are rebuilt only when the country changes. */
+    function refreshSeerrRegion(): void {
+        if (!FollowSeerrRegion) return;
+        const request = ++regionRequest;
+        const sameSession = sessionLease(JE.session);
+        JE.core.api.fetch(api().getUrl('/JellyfinEnhanced/jellyseerr/streaming-region'))
+            .then(data => str(field(data, 'region')) ?? null, () => null)
+            .then(region => {
+                if (request !== regionRequest || !sameSession()) return;
+                seerrRegion = region !== null && /^[A-Z]{2}$/.test(region) ? region : null;
+                if (effectiveRegion(readUserElsewhere(JE.userConfig.elsewhere, DEFAULT_REGION).region) !== userRegion) loadSettings();
+            });
+    }
+    document.addEventListener('je:user-data-loaded', () => {
+        loadSettings();
+        refreshSeerrRegion();
+    });
     JE.session?.onUserChange('elsewhere', () => {
+        seerrRegion = null;
+        regionRequest++;
         userRegion = DEFAULT_REGION;
         userRegions = [];
         userServices = [];
@@ -561,6 +420,13 @@ JE.initializeElsewhereScript = function initializeElsewhereScript() {
         const sameSession = sessionLease(JE.session);
         const generation = settingsGeneration;
         const current = () => sameSession() && generation === settingsGeneration;
+        if (UseSeerrProviders) {
+            const seerrUrl = api().getUrl(`/JellyfinEnhanced/jellyseerr/${mediaType}/${pathSegment(tmdbId)}`);
+            JE.core.api.fetch(seerrUrl, { cacheKey: `seerr-providers:${mediaType}:${tmdbId}` })
+                .then(detail => { if (current()) callback(null, seerrWatchProviders(detail)); })
+                .catch((error: unknown) => { if (current()) callback(str(field(error, 'message')) || 'Could not load streaming info from Seerr.', null); });
+            return;
+        }
         const path = `/${mediaType}/${pathSegment(tmdbId)}/watch/providers`;
         const url = api().getUrl(`/JellyfinEnhanced/tmdb${path}`);
         JE.core.api.fetch(url, { cacheKey: `tmdb:${path}` })
@@ -888,7 +754,7 @@ JE.initializeElsewhereScript = function initializeElsewhereScript() {
                     resultContainer.replaceChildren(element('div', 'color: #ff6b6b; font-size: 13px; margin-top: 8px;', JE.t('elsewhere_panel_error', { error: error ?? '' })));
                     return;
                 }
-                const regionsToSearch = userRegions.length > 0 ? userRegions : [userRegion];
+                const regionsToSearch = !followingSeerrRegion() && userRegions.length > 0 ? userRegions : [userRegion];
                 let hasAnyResults = false;
                 const unavailableRegions: string[] = [];
                 regionsToSearch.forEach((region, index) => {
@@ -1076,6 +942,7 @@ JE.initializeElsewhereScript = function initializeElsewhereScript() {
     // --- Initialization ---
     loadRegionsAndProviders();
     loadSettings(false);
+    refreshSeerrRegion();
     const idle = (callback: () => void, timeout: number, fallbackDelay: number) => {
         if (typeof requestIdleCallback !== 'undefined') requestIdleCallback(callback, { timeout });
         else setTimeout(callback, fallbackDelay);

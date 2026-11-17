@@ -12,7 +12,7 @@ Use a compatible Jellyfin web client with Jellyfin Enhanced loaded. See [Compati
 
 !!! note "TMDB key and internet access"
 
-    Provider lookup, TMDB reviews, and release dates need a TMDB API key and outbound internet access from your Jellyfin server. Get the v3 API key from your [TMDB account's API settings](https://www.themoviedb.org/settings/api). Local reviews need no key, but the item still needs a TMDB identity.
+    TMDB reviews and release dates need a TMDB API key; provider lookup and Seerr poster logos can instead use Seerr's streaming-provider data when no TMDB key is set and the Seerr integration is enabled (per-season providers still need TMDB). TMDB-backed features need outbound internet access from your Jellyfin server. Get the v3 API key from your [TMDB account's API settings](https://www.themoviedb.org/settings/api). Local reviews need no key, but the item still needs a TMDB identity.
 
 ??? info "How items are identified"
 
@@ -43,11 +43,12 @@ Follow [Setup](#setup) to apply these server settings, then use the sections bel
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| **Enable Elsewhere** | On | Enables the detail-page provider panel with a configured TMDB key. |
+| **Enable Elsewhere** | On | Enables the detail-page provider panel with a configured TMDB key or, without one, the Seerr integration. |
 | **TMDB API Key** | Empty | Supplies the server-side key shared by TMDB-backed features. |
 | **Default Region** | `US` | Sets the automatic search country unless the viewer chooses a personal default. Empty falls back to `US`. |
 | **Default Providers** | Empty | Shows all subscription providers when empty; otherwise permits only exact provider names. |
 | **Ignore Providers** | Empty | Hides matching provider names after **Default Providers** is applied. |
+| **Use each user's Seerr streaming region** | Off | Looks providers up in each user's Seerr **Streaming Region** (their own Seerr setting, else Seerr's global one, else US as Seerr does) instead of the Default Region or the user's own Elsewhere country; needs the Seerr integration. Falls back to the Default Region if Seerr gives none. Applies to the Elsewhere panel, Seerr poster logos, and the More Info modal's streaming row. |
 | **Per-season providers** | On | Enables automatic season lookup for default/aired-order series; users can opt out. |
 | **Custom Branding Message** | Empty | Replaces the unavailable heading when no filtered automatic providers or season groups remain. |
 | **Custom Branding Icon URL** | Empty | Adds an optional icon beside a nonempty custom message. |

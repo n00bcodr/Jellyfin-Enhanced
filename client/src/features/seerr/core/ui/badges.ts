@@ -83,8 +83,11 @@ export function installBadges(host: SeerrCoreHost): void {
     const providerLookups = new Map<string, Lookup>();
     let queuedLookups: Lookup[] = [];
     let providerFlushTimer: number | null = null;
+    /** The admin option: icons follow the user's Seerr streaming region (read once per user by the Seerr API). */
+    const followsSeerrRegion = (): boolean => !!JE.pluginConfig?.ElsewhereUseSeerrRegion && !!JE.pluginConfig.JellyseerrEnabled;
+    /** The user's Seerr streaming region when followed and known, else the admin's Default Region, else the US. */
     const providerRegion = (): string => {
-        const region = String(JE.pluginConfig?.DEFAULT_REGION || 'US').trim().toUpperCase();
+        const region = String((followsSeerrRegion() && JE.jellyseerrAPI?.streamingRegion) || JE.pluginConfig?.DEFAULT_REGION || 'US').trim().toUpperCase();
         return /^[A-Z]{2}$/.test(region) ? region : 'US';
     };
     const abortError = (): Error => {
@@ -150,7 +153,7 @@ export function installBadges(host: SeerrCoreHost): void {
             for (const lookup of lookups) settleLookup(lookup, waiter => waiter.resolve(null));
         });
     }
-    /** One title's flat-rate providers for the admin's region (cache, or the next batch). */
+    /** One title's flat-rate providers for the provider region (cache, or the next batch). */
     function getFlatrateProviders(mediaType: string, tmdbId: number, signal?: AbortSignal): Promise<Provider[] | null> {
         const region = providerRegion();
         const key = `${mediaType}:${tmdbId}`;
@@ -183,14 +186,18 @@ export function installBadges(host: SeerrCoreHost): void {
         container.classList.toggle('has-icons', hasIcons);
         container.closest('.cardImageContainer')?.classList.toggle('jellyseerr-has-provider-icons', hasIcons);
     }
-    /** "Elsewhere" streaming icons on a card, filtered by the admin's provider lists. */
+    /**
+     * "Elsewhere" streaming icons on a card, filtered by the admin's provider lists. The batch endpoint
+     * reads TMDB, or Seerr's own title detail when there is no TMDB key.
+     */
     async function fetchProviderIcons(container: HTMLElement, tmdbId: number, mediaType: string, signal?: AbortSignal): Promise<void> {
         if (!container || !tmdbId || !mediaType) return;
         const config = JE.pluginConfig;
-        if (!config?.TmdbEnabled) return;
+        if (!config?.TmdbEnabled && !config?.JellyseerrEnabled) return;
         const defaults = configList(config.DEFAULT_PROVIDERS);
         const ignored = configList(config.IGNORE_PROVIDERS);
         try {
+            if (followsSeerrRegion()) await JE.jellyseerrAPI?.getStreamingRegion();
             let providers = await getFlatrateProviders(mediaType, tmdbId, signal);
             // A signalled lookup starts only for an on-screen card: detached means torn down meanwhile.
             if (signal && !container.isConnected) return;

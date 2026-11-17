@@ -147,8 +147,9 @@
     const providerLookups = /* @__PURE__ */ new Map();
     let queuedLookups = [];
     let providerFlushTimer = null;
+    const followsSeerrRegion = () => !!JE.pluginConfig?.ElsewhereUseSeerrRegion && !!JE.pluginConfig.JellyseerrEnabled;
     const providerRegion = () => {
-      const region = String(JE.pluginConfig?.DEFAULT_REGION || "US").trim().toUpperCase();
+      const region = String(followsSeerrRegion() && JE.jellyseerrAPI?.streamingRegion || JE.pluginConfig?.DEFAULT_REGION || "US").trim().toUpperCase();
       return /^[A-Z]{2}$/.test(region) ? region : "US";
     };
     const abortError = () => {
@@ -248,10 +249,11 @@
     async function fetchProviderIcons(container, tmdbId, mediaType, signal) {
       if (!container || !tmdbId || !mediaType) return;
       const config = JE.pluginConfig;
-      if (!config?.TmdbEnabled) return;
+      if (!config?.TmdbEnabled && !config?.JellyseerrEnabled) return;
       const defaults = configList(config.DEFAULT_PROVIDERS);
       const ignored = configList(config.IGNORE_PROVIDERS);
       try {
+        if (followsSeerrRegion()) await JE.jellyseerrAPI?.getStreamingRegion();
         let providers = await getFlatrateProviders(mediaType, tmdbId, signal);
         if (signal && !container.isConnected) return;
         if (!providers || providers.length === 0) return;

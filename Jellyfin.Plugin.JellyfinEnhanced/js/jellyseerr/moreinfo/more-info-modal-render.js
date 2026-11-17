@@ -123,17 +123,18 @@
   function pickByRegion(entries, region) {
     return entries.find((entry) => entry.iso_3166_1 === region) ?? entries.find((entry) => entry.iso_3166_1 === "US") ?? entries[0];
   }
-  function streamingProviders(details, region) {
-    if (!Array.isArray(details.watchProviders)) return [];
+  function streamingProviders(details, region, fallback = true) {
+    const entries = records(details.watchProviders);
+    const entry = fallback ? pickByRegion(entries, region) : entries.find((candidate) => candidate.iso_3166_1 === region);
     const unique = [];
     const seen = /* @__PURE__ */ new Set();
-    for (const provider of records(pickByRegion(records(details.watchProviders), region)?.flatrate)) {
+    for (const provider of records(entry?.flatrate)) {
       if (seen.has(provider.id)) continue;
       seen.add(provider.id);
       unique.push(provider);
       if (unique.length >= 6) break;
     }
-    return unique;
+    return { region: str(entry?.iso_3166_1) || region, providers: unique };
   }
   function formatRuntime(minutes) {
     return `${minutes >= 60 ? `${Math.floor(minutes / 60)}h ` : ""}${minutes % 60 ? `${minutes % 60}m` : ""}`.trim();
@@ -223,14 +224,16 @@
     `;
   }
   function buildStreamingProviders(rawDetails) {
-    if (!JE.pluginConfig?.TmdbEnabled || !isRecord(rawDetails)) return "";
-    const region = (JE.userConfig?.elsewhere?.Region || JE.pluginConfig?.DEFAULT_REGION || "US").toUpperCase();
-    const providers = streamingProviders(rawDetails, region);
+    if (!isRecord(rawDetails)) return "";
+    const config = JE.pluginConfig;
+    const seerrRegion = config?.ElsewhereUseSeerrRegion && config.JellyseerrEnabled ? JE.jellyseerrAPI?.streamingRegion : null;
+    const region = seerrRegion || String(JE.userConfig?.elsewhere?.Region || "").toUpperCase() || String(config?.DEFAULT_REGION || "US").toUpperCase();
+    const { region: shown, providers } = streamingProviders(rawDetails, region, !!config?.TmdbEnabled);
     if (!providers.length) return "";
     return `
         <div class="je-more-info-stat-row">
             <div class="je-more-info-stat-label">${label("jellyseerr_modal_streaming")}</div>
-            <div class="je-more-info-providers-list">
+            <div class="je-more-info-providers-list" title="${escapeHtml(shown)}">
                 ${providers.map((provider) => {
       const name = escapeHtml(str(provider.name));
       return `<img src="${escapeHtml(tmdbImage("w92", provider.logoPath))}" alt="${name}" title="${name}" />`;

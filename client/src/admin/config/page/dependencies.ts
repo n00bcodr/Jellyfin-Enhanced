@@ -20,6 +20,15 @@ export function createDependencies(m: DependenciesDeps) {
                 || needControl(document.querySelector('#jellyseerr_TMDB_API_KEY')).value.trim().length > 0;
         }
 
+        /**
+         * Elsewhere and the poster provider icons can use either a TMDB key or
+         * the Seerr integration (Seerr exposes the same watch-provider data).
+         * @returns {boolean} True if a TMDB key or a fully configured Seerr exists
+         */
+        function hasTmdbOrSeerr() : boolean {
+            return hasTmdbKey() || hasJellyseerrConfigured();
+        }
+
         function isMetadataIconsEnabled() : boolean {
             var el = asInput(document.getElementById('metadataIconsEnabled'));
             return !!(el && el.checked);
@@ -106,10 +115,12 @@ export function createDependencies(m: DependenciesDeps) {
         ];
 
         var INDIVIDUAL_DEPS: readonly IndividualDep[] = [
-            { id: 'elsewhereEnabled',         checkFn: hasTmdbKey, hint: 'Add a TMDB API Key to enable', icon: 'key' },
+            { id: 'elsewhereEnabled',         checkFn: hasTmdbOrSeerr, hint: 'Add a TMDB API Key or enable Seerr to use', icon: 'key' },
+            { id: 'ElsewhereUseSeerrRegion',  checkFn: hasJellyseerrConfigured, hint: 'Enable Seerr to use', icon: 'link' },
+            { id: 'ElsewhereSeasonProviders', checkFn: hasTmdbKey, hint: 'Add a TMDB API Key to enable', icon: 'key' },
             { id: 'showReviews',              checkFn: hasTmdbKey, hint: 'Add a TMDB API Key to enable', icon: 'key' },
             { id: 'showReleaseDate',          checkFn: hasTmdbKey, hint: 'Add a TMDB API Key to enable', icon: 'key' },
-            { id: 'showElsewhereOnJellyseerr', checkFn: hasTmdbKey, hint: 'Add a TMDB API Key to enable', icon: 'key' },
+            { id: 'showElsewhereOnJellyseerr', checkFn: hasTmdbOrSeerr, hint: 'Add a TMDB API Key or enable Seerr to use', icon: 'key' },
             { id: 'autoMovieRequestEnabled',   checkFn: hasTmdbKey, hint: 'Add a TMDB API Key to enable', icon: 'key' },
             { id: 'autoSkipIntro',                 checkFn: function() { return m.plugins.hasIntroSkipper !== false; }, hint: 'Install Intro Skipper plugin to enable', icon: 'extension' },
             { id: 'autoSkipOutro',                 checkFn: function() { return m.plugins.hasIntroSkipper !== false; }, hint: 'Install Intro Skipper plugin to enable', icon: 'extension' },
@@ -328,7 +339,7 @@ export function createDependencies(m: DependenciesDeps) {
         }
 
         var PARENT_DEPS: readonly ParentDep[] = [
-            { parent: 'elsewhereEnabled', label: 'Enable Elsewhere', children: ['DEFAULT_PROVIDERS', 'IGNORE_PROVIDERS', 'ElsewhereSeasonProviders', 'ElsewhereCustomBrandingText', 'ElsewhereCustomBrandingImageUrl', 'showReviews'] },
+            { parent: 'elsewhereEnabled', label: 'Enable Elsewhere', children: ['DEFAULT_PROVIDERS', 'IGNORE_PROVIDERS', 'ElsewhereUseSeerrRegion', 'ElsewhereSeasonProviders', 'ElsewhereCustomBrandingText', 'ElsewhereCustomBrandingImageUrl', 'showReviews'] },
             { parent: 'doesTheDogDieEnabled', label: 'Show Content Warnings', children: ['doesTheDogDieApiKey'] },
             { parent: 'mdblistRatingsEnabled', label: 'Enable MDBList Ratings', children: ['mdblistApiKey', 'mdblistRatingsShowOnItemDetails', 'mdblistRatingsFetchEnabled', 'mdblistFetchReserve', 'mdblistRatingsAutoSyncEnabled', 'mdblistCommunityRatingSource', 'mdblistCommunityRatingFallbackSource', 'mdblistCriticRatingSource', 'mdblistCriticRatingFallbackSource', 'mdblistRatingsOverwriteExisting', 'mdblistRatingsShowPercentSymbol'] },
             { parent: 'showReviews', anyOf: ['showReviews', 'showUserReviews', 'showAnilistReviews'], label: 'Show TMDB Reviews" / "Enable User Written Reviews" / "Show AniList Reviews', children: ['reviewsExpandedByDefault'] },
@@ -447,6 +458,15 @@ export function createDependencies(m: DependenciesDeps) {
             });
         }
 
+        /**
+         * Shows the notes under Default Region and at the top of Elsewhere when Seerr
+         * is configured and no TMDB key is set: streaming providers then come from Seerr.
+         */
+        function updateRegionSourceNote() : void {
+            var seerrMode = !hasTmdbKey() && hasJellyseerrConfigured();
+            document.querySelectorAll<HTMLElement>('.je-region-source-note').forEach(function(el) { el.style.display = seerrMode ? 'flex' : 'none'; });
+        }
+
     /** Runs this module's start-up work, in the page's original order. */
     function wire(): void {
 
@@ -458,9 +478,11 @@ export function createDependencies(m: DependenciesDeps) {
         INDIVIDUAL_DEPS,
         PARENT_DEPS,
         SECTION_DEPS,
+        hasJellyseerrConfigured,
         updateCustomTabsV12Hint,
         updateIndividualDep,
         updateParentDep,
+        updateRegionSourceNote,
         updateSearchExcludeLibraryWarning,
         updateSectionDep,
         updateWatchlistMemoryVisibility,

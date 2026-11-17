@@ -76,15 +76,20 @@ function buildRightPanel(rawDetails: unknown, mediaType: MediaType, { budget, re
     `;
 }
 
+/** The streaming row, from Seerr's own detail (watchProviders), so it needs no TMDB key. */
 function buildStreamingProviders(rawDetails: unknown): string {
-    if (!JE.pluginConfig?.TmdbEnabled || !isRecord(rawDetails)) return '';
-    const region = (JE.userConfig?.elsewhere?.Region || JE.pluginConfig?.DEFAULT_REGION || 'US').toUpperCase();
-    const providers = streamingProviders(rawDetails, region);
+    if (!isRecord(rawDetails)) return '';
+    // The user's Seerr streaming region when the admin option is on, else their Elsewhere country, else the admin default.
+    const config = JE.pluginConfig;
+    const seerrRegion = config?.ElsewhereUseSeerrRegion && config.JellyseerrEnabled ? JE.jellyseerrAPI?.streamingRegion : null;
+    const region = seerrRegion || String(JE.userConfig?.elsewhere?.Region || '').toUpperCase() || String(config?.DEFAULT_REGION || 'US').toUpperCase();
+    // With TMDB the row falls back to another region's list; on Seerr data alone it shows only the user's region, as Seerr does.
+    const { region: shown, providers } = streamingProviders(rawDetails, region, !!config?.TmdbEnabled);
     if (!providers.length) return '';
     return `
         <div class="je-more-info-stat-row">
             <div class="je-more-info-stat-label">${label('jellyseerr_modal_streaming')}</div>
-            <div class="je-more-info-providers-list">
+            <div class="je-more-info-providers-list" title="${escapeHtml(shown)}">
                 ${providers.map(provider => {
                     const name = escapeHtml(str(provider.name));
                     return `<img src="${escapeHtml(tmdbImage('w92', provider.logoPath))}" alt="${name}" title="${name}" />`;

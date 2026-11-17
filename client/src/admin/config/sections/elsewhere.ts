@@ -14,9 +14,10 @@ define({
                 + '<div class="je-api-row"><input id="TMDB_API_KEY" name="TMDB_API_KEY" type="text" autocomplete="off" class="je-api-input jea-input"/>'
                 + '<span id="tmdbStatusIndicator" class="material-icons"></span>'
                 + '<button type="button" class="testTmdbBtn jea-btn">Test</button></div></div>'
-                + '<div class="je-setting-description" data-desc-for="TMDB_API_KEY"><div class="fieldDescription">Your API key from The Movie DB (TMDB). <a class="sectionTitle" href="https://www.themoviedb.org/settings/api" target="_blank">How to?</a> Shared with Seerr Settings. Needed by Elsewhere, TMDB Reviews and Release Dates.</div></div>' },
+                + '<div class="je-setting-description" data-desc-for="TMDB_API_KEY"><div class="fieldDescription">Your API key from The Movie DB (TMDB). <a class="sectionTitle" href="https://www.themoviedb.org/settings/api" target="_blank">How to?</a> Shared with Seerr Settings. Needed by TMDB Reviews and Release Dates.</div></div>' },
             { id: 'DEFAULT_REGION', prop: 'DEFAULT_REGION', manual: true, type: 'select', options: [], label: 'Default Region',
-                           desc: 'The default region for streaming provider lookup and release dates. Empty defaults to US. <a class="sectionTitle" href="https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfin-Elsewhere/resources/regions.txt" target="_blank">Full List</a>' }
+                           desc: 'The default region for streaming provider lookup and release dates. Empty defaults to US. <a class="sectionTitle" href="https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfin-Elsewhere/resources/regions.txt" target="_blank">Full List</a>' },
+            { type: 'custom', html: '<div class="jea-note je-region-source-note" style="display:none;align-items:flex-start;gap:12px;"><i class="material-icons je-info-icon">info</i><span><strong>Seerr is enabled and no TMDB key is set:</strong> streaming providers come from Seerr. Per-season providers still need a TMDB key.</span></div>' }
         ]
     },
     'elsewhere': {
@@ -24,12 +25,15 @@ define({
         items: [
             { id: 'elsewhereEnabled', prop: 'ElsewhereEnabled', type: 'toggle', main: true, label: 'Enable Elsewhere',
               desc: 'Adds an "Elsewhere" panel to item detail pages showing where the title is available on streaming services in the user\'s region (powered by TMDB watch-provider data).' },
+            { type: 'custom', html: '<div class="jea-note je-region-source-note" style="display:none;align-items:flex-start;gap:12px;"><i class="material-icons je-info-icon">info</i><span><strong>Seerr is enabled and no TMDB key is set:</strong> streaming providers come from Seerr. Per-season providers still need a TMDB key.</span></div>' },
             { id: 'DEFAULT_PROVIDERS', prop: 'DEFAULT_PROVIDERS', type: 'text', label: 'Default Providers', placeholder: 'e.g., Netflix,Hulu',
               desc: 'A list of default streaming providers to show. Leave blank to show all. <a class="sectionTitle" href="https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfin-Elsewhere/resources/providers.txt" target="_blank">Full List</a>' },
             { id: 'IGNORE_PROVIDERS', prop: 'IGNORE_PROVIDERS', type: 'text', label: 'Ignore Providers', placeholder: 'e.g., .*with Ads, Hulu',
               desc: 'A list of providers to ignore from the default region (supports regex). <a class="sectionTitle" href="https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfin-Elsewhere/resources/providers.txt" target="_blank">Full List</a>' },
+            { id: 'ElsewhereUseSeerrRegion', prop: 'ElsewhereUseSeerrRegion', type: 'toggle', default: false, label: 'Use each user\'s Seerr streaming region',
+              desc: 'Look up streaming providers in the Seerr "Streaming Region" of each user (their own Seerr setting, else Seerr\'s global one, else US as Seerr does) and ignore the Default Region and users\' own Elsewhere country for providers. Needs the Seerr integration. If Seerr gives no region, the Default Region is used.' },
             { id: 'ElsewhereSeasonProviders', prop: 'ElsewhereSeasonProviders', type: 'toggle', default: true, label: 'Per-season providers',
-              desc: 'On Series and Season pages, look up streaming providers per season from TMDB. A season is labelled only when seasons differ; seasons TMDB has no data for fall back to the series providers. Only applies when the series uses the default (aired) season order. Users can turn this off for themselves in the Elsewhere search settings.' },
+              desc: 'On Series and Season pages, look up streaming providers per season from TMDB. Requires a TMDB API key (not available when Elsewhere runs on Seerr data). A season is labelled only when seasons differ; seasons TMDB has no data for fall back to the series providers. Only applies when the series uses the default (aired) season order. Users can turn this off for themselves in the Elsewhere search settings.' },
             { type: 'group', title: 'Custom Branding', items: [
                 { id: 'ElsewhereCustomBrandingText', prop: 'ElsewhereCustomBrandingText', type: 'text', label: 'Custom Branding Message', placeholder: 'e.g., Only available on My Server',
                   desc: 'Custom message to display when content is not available on any streaming providers. Leave blank to disable custom branding.' },

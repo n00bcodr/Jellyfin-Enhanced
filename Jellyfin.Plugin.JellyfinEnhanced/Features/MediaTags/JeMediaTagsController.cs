@@ -97,7 +97,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags
                 }
             }
 
-            Response.Headers["Cache-Control"] = "private, max-age=300";
+            Response.Headers["Cache-Control"] = "no-store";
             return Ok(new { source = snapshot.Source, movies = snapshot.Movies, series = snapshot.Series });
         }
 

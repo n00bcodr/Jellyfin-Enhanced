@@ -192,7 +192,8 @@ test('DETAILS-PROVIDERS-009 picks that failed to load are retried and never over
 });
 
 // ── Elsewhere ─────────────────────────────────────────────────────────────
-function elsewhereHarness(t, { html, watch = { results: { GB: { link: 'https://www.justwatch.com/gb', flatrate: [{ provider_id: 8, provider_name: 'Netflix', logo_path: '/n.png' }] } } }, getItem = async () => null } = {}) {
+function elsewhereHarness(t, { html, watch = { results: { GB: { link: 'https://www.justwatch.com/gb', flatrate: [{ provider_id: 8, provider_name: 'Netflix', logo_path: '/n.png' }] } } }, getItem = async () => null,
+  config = {}, elsewhere = { Region: 'GB', Regions: ['DE'], Services: ['Netflix'], SeasonProviders: true }, apiFetch } = {}) {
   const idle = []; const saved = []; const { session, switchUser } = sessionStub();
   const h = createHarness({ url: 'http://jellyfin.test/web/index.html#!/details?id=one',
     html: html ?? '<div id="itemDetailPage"><div class="detailSectionContent"><div class="itemExternalLinks"><a href="https://www.themoviedb.org/movie/7">TMDB</a></div></div></div>',
@@ -201,12 +202,12 @@ function elsewhereHarness(t, { html, watch = { results: { GB: { link: 'https://w
       ? new Response('US\tUnited States\nGB\t<img src=x onerror=alert(1)>\nDE\tGermany')
       : new Response('Netflix\nHulu'),
     globals: { requestIdleCallback: fn => idle.push(fn) },
-    JE: { session, pluginConfig: { ElsewhereEnabled: true, TmdbEnabled: true, DEFAULT_REGION: 'US' },
-      userConfig: { elsewhere: { Region: 'GB', Regions: ['DE'], Services: ['Netflix'], SeasonProviders: true } },
+    JE: { session, pluginConfig: { ElsewhereEnabled: true, TmdbEnabled: true, DEFAULT_REGION: 'US', ...config },
+      userConfig: { elsewhere },
       saveUserSettings: async (file, doc) => { saved.push([file, doc]); },
       t: (key, params) => params ? `${key}:${Object.values(params).join(',')}` : key, cdn: { url: (source, file) => `/cdn/${source}/${file}` },
       helpers: { createObserver() {}, onViewPage() {}, getItemCached: id => getItem('user-a', id) },
-      core: { api: { fetch: async url => { if (String(url).includes('/watch/providers')) return watch; throw new Error(`HTTP 404 ${url}`); } } } } });
+      core: { api: { fetch: apiFetch ?? (async url => { if (String(url).includes('/watch/providers')) return watch; throw new Error(`HTTP 404 ${url}`); }) } } } });
   t.after(() => h.close());
   h.load('elsewhere/elsewhere.js'); h.JE.initializeElsewhereScript();
   return { ...h, saved, switchUser, async runIdle() { await flush(); while (idle.length) { idle.shift()(); await flush(); } } };
@@ -267,6 +268,115 @@ test('Elsewhere manual search lists the chosen regions, unavailable ones first, 
   h.document.querySelector('.elsewhere-search-button').click(); await flush();
   const results = h.document.querySelector('#streaming-result-container');
   assert.deepEqual([...results.children].map(child => child.textContent.trim()), ['elsewhere_panel_not_available_in_regions:Germanyclose', 'elsewhere_panel_available_in_region:<img src=x onerror=alert(1)>closeNetflix']);
+});
+// Upstream 79a90422 (#1058): Seerr's own watch-provider data stands in for TMDB, and an admin
+// option makes the country each user's Seerr streaming region.
+const seerrDetail = { watchProviders: [
+  { iso_3166_1: 'GB', link: 'https://www.themoviedb.org/movie/7/watch?locale=GB',
+    flatrate: [{ id: 8, name: 'Netflix', logoPath: '/n.png' }], buy: [{ id: 2, name: 'Store', logoPath: '/s.png' }] },
+  { iso_3166_1: 'DE', link: 'https://www.themoviedb.org/movie/7/watch?locale=DE', flatrate: [{ id: 9, name: 'Hulu', logoPath: '/h.png' }] }] };
+const regionWatch = { results: {
+  GB: { link: 'https://www.justwatch.com/gb', flatrate: [{ provider_id: 8, provider_name: 'Netflix', logo_path: '/n.png' }] },
+  DE: { link: 'https://www.justwatch.com/de', flatrate: [{ provider_id: 9, provider_name: 'Hulu', logo_path: '/h.png' }] } } };
+function answering(asked, routes) {
+  return async url => {
+    asked.push(String(url));
+    for (const [part, answer] of Object.entries(routes)) {
+      if (String(url).includes(part)) { if (answer instanceof Error) throw answer; return typeof answer === 'function' ? answer() : answer; }
+    }
+    throw new Error(`HTTP 404 ${url}`);
+  };
+}
+test('Elsewhere without a TMDB key reads the providers from Seerr\'s title detail, and offers no per-season lookup', async t => {
+  const asked = [];
+  const h = elsewhereHarness(t, { config: { TmdbEnabled: false, JellyseerrEnabled: true, ElsewhereSeasonProviders: true },
+    apiFetch: answering(asked, { '/JellyfinEnhanced/jellyseerr/movie/7': seerrDetail }) });
+  await h.runIdle();
+  const panel = h.document.querySelector('.streaming-lookup-container');
+  assert.ok(panel, 'the panel is shown without a TMDB key');
+  assert.equal(panel.querySelector('a').textContent, 'elsewhere_panel_available_in:<img src=x onerror=alert(1)>');
+  assert.match(panel.textContent, /Netflix/);
+  assert.doesNotMatch(panel.textContent, /Store/, 'only subscription providers');
+  assert.equal(panel.querySelector('img').getAttribute('src'), 'https://image.tmdb.org/t/p/w92/n.png');
+  assert.ok(asked.some(url => url.includes('/JellyfinEnhanced/jellyseerr/movie/7')));
+  assert.ok(asked.every(url => !url.includes('/JellyfinEnhanced/tmdb/')), 'nothing asks TMDB');
+  // The manual search reads the other regions from the same detail.
+  h.document.querySelector('.elsewhere-search-button').click(); await flush();
+  assert.match(h.document.querySelector('#streaming-result-container').textContent, /elsewhere_panel_not_available_in_regions:Germany/);
+  h.document.querySelector('.elsewhere-settings-button').click(); await flush();
+  assert.ok(h.document.querySelector('#region-select'));
+  assert.equal(h.document.querySelector('#season-providers-checkbox'), null, 'Seerr has no per-season providers');
+});
+test('Elsewhere stays off with neither a TMDB key nor Seerr, and never asks for a Seerr region without Seerr', async t => {
+  const asked = [];
+  const h = elsewhereHarness(t, { config: { TmdbEnabled: false, JellyseerrEnabled: false, ElsewhereUseSeerrRegion: true },
+    apiFetch: answering(asked, { '/jellyseerr/': seerrDetail }) });
+  await h.runIdle();
+  assert.equal(h.document.querySelector('.streaming-lookup-container'), null);
+  assert.deepEqual(asked, []);
+  const tmdbOnly = [];
+  const k = elsewhereHarness(t, { config: { ElsewhereUseSeerrRegion: true, JellyseerrEnabled: false },
+    apiFetch: answering(tmdbOnly, { '/watch/providers': regionWatch }) });
+  await k.runIdle();
+  assert.ok(tmdbOnly.every(url => !url.includes('streaming-region')));
+  assert.equal(k.document.querySelector('.streaming-lookup-container a').textContent, 'elsewhere_panel_available_in:<img src=x onerror=alert(1)>');
+});
+test('Elsewhere follows the user\'s Seerr streaming region when the admin option is on, and keeps the saved country', async t => {
+  const asked = [];
+  const region = deferred();
+  const h = elsewhereHarness(t, { config: { JellyseerrEnabled: true, ElsewhereUseSeerrRegion: true },
+    elsewhere: { Region: 'GB', Regions: ['GB'], Services: [], SeasonProviders: true },
+    apiFetch: answering(asked, { '/JellyfinEnhanced/jellyseerr/streaming-region': () => region.promise, '/watch/providers': regionWatch }) });
+  // Seerr answers after the country names have loaded; the panel then moves to its region.
+  await h.runIdle();
+  assert.equal(h.document.querySelector('.streaming-lookup-container a').textContent, 'elsewhere_panel_available_in:<img src=x onerror=alert(1)>');
+  region.resolve({ region: 'DE', source: 'user' }); await h.runIdle();
+  assert.equal(asked.filter(url => url.includes('streaming-region')).length, 1);
+  const panel = h.document.querySelector('.streaming-lookup-container');
+  assert.equal(panel.querySelector('a').textContent, 'elsewhere_panel_available_in:Germany');
+  assert.match(panel.textContent, /Hulu/);
+  // The manual search shows the Seerr region only; "Other Countries" does not apply.
+  h.document.querySelector('.elsewhere-search-button').click(); await flush();
+  const results = h.document.querySelector('#streaming-result-container');
+  assert.equal(results.children.length, 1);
+  assert.match(results.textContent, /elsewhere_panel_available_in_region:Germany/);
+  // The form says where the country comes from and leaves the saved one alone.
+  h.document.querySelector('.elsewhere-settings-button').click(); await flush();
+  const modal = h.document.getElementById('streaming-settings-modal');
+  const select = modal.querySelector('#region-select');
+  assert.equal(select.disabled, true);
+  assert.equal(select.value, 'DE');
+  const note = modal.querySelector('#seerr-region-note');
+  assert.equal(note.textContent, 'elsewhere_settings_seerr_region:Germany');
+  assert.notEqual(note.style.display, 'none');
+  assert.equal(modal.querySelector('#regions-autocomplete').parentElement.style.display, 'none');
+  modal.querySelector('#save-settings').click(); await flush();
+  assert.deepEqual(plain(h.saved), [['elsewhere.json', { Region: 'GB', Regions: ['GB'], Services: [], SeasonProviders: true }]]);
+});
+test('Elsewhere keeps the saved country when Seerr gives no region, and asks again for the next user', async t => {
+  const asked = [];
+  let answer = new Error('HTTP 503');
+  const h = elsewhereHarness(t, { config: { JellyseerrEnabled: true, ElsewhereUseSeerrRegion: true },
+    apiFetch: answering(asked, { '/jellyseerr/streaming-region': () => { if (answer instanceof Error) throw answer; return answer; }, '/watch/providers': regionWatch }) });
+  await h.runIdle();
+  assert.equal(h.document.querySelector('.streaming-lookup-container a').textContent, 'elsewhere_panel_available_in:<img src=x onerror=alert(1)>');
+  h.document.querySelector('.elsewhere-settings-button').click(); await flush();
+  let modal = h.document.getElementById('streaming-settings-modal');
+  assert.equal(modal.querySelector('#region-select').disabled, false);
+  assert.equal(modal.querySelector('#region-select').value, 'GB');
+  assert.equal(modal.querySelector('#seerr-region-note').style.display, 'none');
+  // A null region (Seerr unreadable) is not a country either.
+  answer = { region: null, source: null };
+  h.switchUser();
+  h.JE.userConfig.elsewhere = { Region: 'GB', Regions: [], Services: [], SeasonProviders: true };
+  h.document.dispatchEvent(new h.window.CustomEvent('je:user-data-loaded')); await h.runIdle();
+  assert.equal(asked.filter(url => url.includes('streaming-region')).length, 2);
+  assert.equal(h.document.querySelector('.streaming-lookup-container a').textContent, 'elsewhere_panel_available_in:<img src=x onerror=alert(1)>');
+  answer = { region: 'DE', source: 'seerr' };
+  h.switchUser();
+  h.document.dispatchEvent(new h.window.CustomEvent('je:user-data-loaded')); await h.runIdle();
+  assert.equal(asked.filter(url => url.includes('streaming-region')).length, 3);
+  assert.equal(h.document.querySelector('.streaming-lookup-container a').textContent, 'elsewhere_panel_available_in:Germany');
 });
 test('DETAILS-PROVIDERS-006 the season-page fallback mounts on the visible page despite a hidden cached view', async t => {
   const html = '<div id="itemDetailPage" class="hide"><div class="detailSectionContent"><div class="streaming-lookup-container"></div></div></div>'

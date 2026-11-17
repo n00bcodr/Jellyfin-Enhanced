@@ -69,6 +69,7 @@ export function installApi(host: SeerrCoreHost): void {
     let cachedOverrideRules: OverrideRule[] | null = null;
     let overrideRulesCachedAt = 0;
     let lastRequestSettings: RequestSettings | null = null;
+    let streamingRegionPromise: Promise<string | null> | null = null;
     const movieCollections = new Map<number, { collection: MovieCollection | null; at: number }>();
 
     const coreApi = () => {
@@ -604,6 +605,28 @@ export function installApi(host: SeerrCoreHost): void {
             }
         },
 
+        streamingRegion: null,
+        getStreamingRegion(): Promise<string | null> {
+            if (streamingRegionPromise) return streamingRegionPromise;
+            // An answer for a user who has since left is nobody's region.
+            const epoch = JE.session?.getEpoch();
+            const current = () => epoch === undefined || !JE.session || JE.session.isCurrent(epoch);
+            const pending: Promise<string | null> = Promise.resolve()
+                .then(() => coreApi().fetch(url('/JellyfinEnhanced/jellyseerr/streaming-region')))
+                .then(data => {
+                    if (!current()) return null;
+                    const region = isRecord(data) && isString(data.region) && /^[A-Z]{2}$/.test(data.region) ? data.region : null;
+                    api.streamingRegion = region;
+                    return region;
+                }, () => {
+                    // Not read: asked again next time.
+                    if (streamingRegionPromise === pending) streamingRegionPromise = null;
+                    return null;
+                });
+            streamingRegionPromise = pending;
+            return pending;
+        },
+
         resolveJellyseerrBaseUrl(): string {
             const config = JE.pluginConfig;
             let baseUrl = '';
@@ -634,8 +657,13 @@ export function installApi(host: SeerrCoreHost): void {
         cachedOverrideRules = null;
         overrideRulesCachedAt = 0;
         lastRequestSettings = null;
+        streamingRegionPromise = null;
+        api.streamingRegion = null;
         // The status banner may surface again for the new user.
         host.window.__JE_userStatusBannerShown = null;
     });
     JE.jellyseerrAPI = api;
+    // Read early when the admin option is on, so the poster icons, the More Info
+    // modal and the discovery filters have the region when they first render.
+    if (JE.pluginConfig?.ElsewhereUseSeerrRegion && JE.pluginConfig.JellyseerrEnabled) void api.getStreamingRegion();
 }

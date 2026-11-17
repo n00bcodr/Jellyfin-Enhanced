@@ -261,6 +261,7 @@
     let cachedOverrideRules = null;
     let overrideRulesCachedAt = 0;
     let lastRequestSettings = null;
+    let streamingRegionPromise = null;
     const movieCollections = /* @__PURE__ */ new Map();
     const coreApi = () => {
       const api2 = JE.core?.api;
@@ -769,6 +770,23 @@
           return [];
         }
       },
+      streamingRegion: null,
+      getStreamingRegion() {
+        if (streamingRegionPromise) return streamingRegionPromise;
+        const epoch = JE.session?.getEpoch();
+        const current = () => epoch === void 0 || !JE.session || JE.session.isCurrent(epoch);
+        const pending = Promise.resolve().then(() => coreApi().fetch(url("/JellyfinEnhanced/jellyseerr/streaming-region"))).then((data) => {
+          if (!current()) return null;
+          const region = export19(data) && export22(data.region) && /^[A-Z]{2}$/.test(data.region) ? data.region : null;
+          api.streamingRegion = region;
+          return region;
+        }, () => {
+          if (streamingRegionPromise === pending) streamingRegionPromise = null;
+          return null;
+        });
+        streamingRegionPromise = pending;
+        return pending;
+      },
       resolveJellyseerrBaseUrl() {
         const config = JE.pluginConfig;
         let baseUrl = "";
@@ -797,9 +815,12 @@
       cachedOverrideRules = null;
       overrideRulesCachedAt = 0;
       lastRequestSettings = null;
+      streamingRegionPromise = null;
+      api.streamingRegion = null;
       host.window.__JE_userStatusBannerShown = null;
     });
     JE.jellyseerrAPI = api;
+    if (JE.pluginConfig?.ElsewhereUseSeerrRegion && JE.pluginConfig.JellyseerrEnabled) void api.getStreamingRegion();
   }
 
   // client/src/features/seerr/core/api-entry.ts

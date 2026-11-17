@@ -189,6 +189,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Platform
                 DEFAULT_PROVIDERS = config.DEFAULT_PROVIDERS,
                 IGNORE_PROVIDERS = config.IGNORE_PROVIDERS,
                 ElsewhereSeasonProviders = config.ElsewhereSeasonProviders,
+                ElsewhereUseSeerrRegion = config.ElsewhereUseSeerrRegion,
                 ElsewhereCustomBrandingText = config.ElsewhereCustomBrandingText,
                 ElsewhereCustomBrandingImageUrl = config.ElsewhereCustomBrandingImageUrl,
                 ClearLocalStorageTimestamp = config.ClearLocalStorageTimestamp,

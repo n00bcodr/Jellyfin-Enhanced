@@ -60,6 +60,10 @@ export interface SeerrApiFacade {
     fetchCollectionDetails(collectionId: number | string): Promise<SeerrDetails | null>;
     fetchGenreSlider(mediaType: string): Promise<unknown[]>;
     resolveJellyseerrBaseUrl(): string;
+    /** The signed-in user's Seerr streaming region once read; null until then, or when Seerr names none. */
+    streamingRegion: string | null;
+    /** Reads it once per user (their own Seerr setting, else Seerr's global one); null when Seerr cannot be read. */
+    getStreamingRegion(): Promise<string | null>;
 }
 
 export type IconName = 'star' | 'available' | 'error' | 'cloud_off' | 'person_off' | 'pending' | 'requested'

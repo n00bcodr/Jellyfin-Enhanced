@@ -1648,6 +1648,9 @@
           "ElsewhereSeasonProviders": {
             "type": "boolean"
           },
+          "ElsewhereUseSeerrRegion": {
+            "type": "boolean"
+          },
           "EnableCustomSplashScreen": {
             "type": "boolean"
           },
@@ -2524,6 +2527,7 @@
           "ElsewhereCustomBrandingText",
           "ElsewhereEnabled",
           "ElsewhereSeasonProviders",
+          "ElsewhereUseSeerrRegion",
           "EnableCustomSplashScreen",
           "EnableLoginImage",
           "EnableTagsLocalStorageFallback",
