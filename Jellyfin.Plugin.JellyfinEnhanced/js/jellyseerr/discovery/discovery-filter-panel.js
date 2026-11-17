@@ -1289,13 +1289,13 @@
         // (Asked for once per visit, so the menu can name the profile that is set when it opens.)
         if (profiles && profilesReachable()) loadProfiles().catch(() => {});
         paint();
+        // What was set before the last change: "Nothing matches" offers to go back to it.
+        let undoTo = null;
         /**
          * Takes a new selection: redraws, keeps the list's place while it is rebuilt, and reloads it.
          * @param {object} next - The new FilterSelection
          * @param {number} [focusAt] - Where the keys go after a piece is taken away (-1: they stay)
          */
-        // What was set before the menu's last change: "Nothing matches" offers to go back to it.
-        let undoTo = null;
         function change(next, focusAt = -1) {
             undoTo = selectionOf(moduleName);
             if (worthKeeping(next)) moreFilters.set(moduleName, next); else moreFilters.delete(moduleName);
@@ -1329,6 +1329,7 @@
                 anchor: button, title: filtersLabel, groups, clearLabel, doneLabel: label('discovery_filters_done', 'Done'),
                 noneLabel: label('discovery_filters_none', 'Nothing matches these filters.'),
                 undoLabel: label('discovery_filters_undo', 'Undo'), undoName: label('discovery_filters_undo_name', 'Undo the last change'),
+                canUndo: () => undoTo !== null,
                 // (Back to what was set before the last change; the menu then says every group again.)
                 onUndo() {
                     if (!undoTo) return false;

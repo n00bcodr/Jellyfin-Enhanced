@@ -468,6 +468,11 @@ test('nothing matches: the section says so and offers the way out; the admin\'s 
   await until(() => menuOf(h).querySelector('.jellyseerr-menu-outcome[hidden]'), 'and stops when something does');
   typeRange(h, 'year', null, '1899');
   h.document.querySelector('.dialogBackdrop').click();
+  // (Opened again on a list that has nothing, with no change made here since: nothing to undo, no Undo offered.)
+  s.button.click();
+  await until(() => menuOf(h).querySelector('.jellyseerr-menu-outcome:not([hidden])'), 'said again');
+  assert.equal(menuOf(h).querySelector('.jellyseerr-menu-outcome-undo') !== null, true, 'the change before the menu closed can still be undone');
+  h.document.querySelector('.dialogBackdrop').click();
   // Pressed with the keys on it, the line's button hands them to the Filters button: the line, and the button with it, goes when the list is back.
   const onLine = none().querySelector('button');
   onLine.focus();

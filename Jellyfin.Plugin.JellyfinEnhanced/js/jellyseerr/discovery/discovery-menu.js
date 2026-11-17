@@ -52,6 +52,7 @@
      * @property {string} [undoLabel] - With noneLabel: a button beside it that undoes the last change (onUndo)
      * @property {string} [undoName] - Its name for a screen reader
      * @property {function(): boolean} [onUndo] - Undoes the last change; false where there is none to undo
+     * @property {function(): boolean} [canUndo] - Whether there is a change to undo (else no Undo is offered)
      * @property {string} [noneLabel] - With groups: said in the foot while the page says nothing matches what is set
      *   (where the menu covers the list, a phone or a TV, the page can't be seen saying it)
      * @property {string} [doneLabel] - With groups: beside it, where the menu is used by touch (it can fill
@@ -142,7 +143,7 @@
      * @param {MenuOptions} options
      * @returns {function(): void} Closes the menu
      */
-    function openMenu({ anchor, title, choices = [], groups, clearLabel, doneLabel, noneLabel, undoLabel, undoName, onUndo, onPick, onClear, onClose }) {
+    function openMenu({ anchor, title, choices = [], groups, clearLabel, doneLabel, noneLabel, undoLabel, undoName, onUndo, canUndo, onPick, onClear, onClose }) {
         closeOpen?.();
         const tv = document.documentElement.classList.contains('layout-tv');
         const backdrop = document.createElement('div');
@@ -792,8 +793,11 @@
         const sayOutcome = () => {
             if (!outcome || closed) return;
             const none = Array.from(scope.querySelectorAll('.jellyseerr-filters-none, .je-reco-filters-none')).some(note => !note.closest('.hide, [hidden]'));
-            if (outcome.hidden === !none) return;
+            // (Undo only for a change made here: a page opened with filters that leave nothing has none to undo.)
+            const undoable = none && !!(undoLabel && onUndo) && (canUndo?.() ?? true);
+            if (outcome.hidden === !none && outcome.hasAttribute('data-undoable') === undoable) return;
             const keyed = outcome.contains(document.activeElement);
+            outcome.toggleAttribute('data-undoable', undoable);
             outcome.hidden = !none;
             outcome.replaceChildren();
             if (none) {
@@ -801,7 +805,7 @@
                 words.textContent = noneLabel ?? '';
                 outcome.appendChild(words);
                 // (The way back from a change that left nothing, short of clearing every filter.)
-                if (undoLabel && onUndo) {
+                if (undoable) {
                     const undo = document.createElement('button');
                     undo.type = 'button';
                     undo.className = 'jellyseerr-menu-outcome-undo';
