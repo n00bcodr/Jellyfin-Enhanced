@@ -15,7 +15,7 @@ const card = (id, type) => `<div class="card" data-id="${id}" data-type="${type}
  * current user, and the plugin's /maintainerr routes (state per item, and the actions). The rows ship inside
  * tags/tag-item-menu.js here (the bundle's load order is pinned), after the Media Tags row.
  */
-function setup(t, { admin = true, available = true, html = '', states = {}, fail = null, url } = {}) {
+function setup(t, { admin = true, available = true, requests: requestsOn = false, provider = 'maintainerr', html = '', states = {}, fail = null, url } = {}) {
   const requests = [];
   const userChange = [];
   const io = { epoch: 0 };
@@ -23,7 +23,7 @@ function setup(t, { admin = true, available = true, html = '', states = {}, fail
     ...(url ? { url } : {}),
     html: html + '<div id="sheets"></div>',
     JE: {
-      pluginConfig: { MaintainerrActionsAvailable: available, ToastDuration: 1500 },
+      pluginConfig: { MaintainerrActionsAvailable: available, RemovalRequestsAvailable: requestsOn, LeavingSoonProvider: provider, ToastDuration: 1500 },
       t: (key, params) => params ? `${key}:${Object.values(params).join('|')}` : key,
       session: {
         onUserChange: (name, fn) => userChange.push(fn),
@@ -35,7 +35,9 @@ function setup(t, { admin = true, available = true, html = '', states = {}, fail
       getItem: async (userId, id) => ({ Id: id, Type: 'Movie' }),
       ajax: async ({ type, url, data }) => {
         const u = new URL(url);
-        requests.push({ type, path: u.pathname.replace('/JellyfinEnhanced/maintainerr/', ''), body: data ? JSON.parse(data) : null });
+        // Each removal tool has its own routes (upstream da0ea773): JellyfinEnhanced/maintainerr/... or /reclaimerr/....
+        const tool = u.pathname.match(/^\/JellyfinEnhanced\/(maintainerr|reclaimerr)\//)?.[1];
+        requests.push({ type, tool, path: u.pathname.replace(/^\/JellyfinEnhanced\/(maintainerr|reclaimerr)\//, ''), body: data ? JSON.parse(data) : null });
         const reject = (status, error) => { throw Object.assign(new Error('HTTP ' + status), { status, json: async () => ({ error }) }); };
         if (type === 'GET') {
           const id = u.pathname.split('/').pop();
@@ -89,14 +91,14 @@ test('an administrator gets Mark for removal on an unlisted movie, before Share;
 
   h.click(row);
   await h.settle();
-  assert.deepEqual(h.requests.at(-1), { type: 'POST', path: 'mark', body: { itemId: MOVIE } });
+  assert.deepEqual(h.requests.at(-1), { type: 'POST', tool: 'maintainerr', path: 'mark', body: { itemId: MOVIE } });
   assert.equal(h.toasts().length, 1);
   assert.ok(h.toasts()[0].startsWith('maintainerr_marked'), h.toasts()[0]);
   const undo = h.$('.jellyfin-enhanced-toast-action');
   assert.equal(undo.textContent, 'maintainerr_undo');
   h.click(undo);
   await h.settle();
-  assert.deepEqual(h.requests.at(-1), { type: 'POST', path: 'unmark', body: { itemId: MOVIE } });
+  assert.deepEqual(h.requests.at(-1), { type: 'POST', tool: 'maintainerr', path: 'unmark', body: { itemId: MOVIE } });
   assert.ok(h.toasts().some(text => text.startsWith('maintainerr_kept')));
 });
 
@@ -115,10 +117,10 @@ test('a listed item gets Keep and Postpone; Postpone opens a chooser whose day b
   h.click(dialog.querySelectorAll('.je-mt-day')[1]);
   await h.settle();
   assert.equal(h.$('.je-mt-dialog'), null, 'the chooser closed');
-  assert.deepEqual(h.requests.at(-1), { type: 'POST', path: 'postpone', body: { itemId: SERIES, days: 14 } });
+  assert.deepEqual(h.requests.at(-1), { type: 'POST', tool: 'maintainerr', path: 'postpone', body: { itemId: SERIES, days: 14 } });
 
   // A custom count: out-of-range values stay in the dialog, a valid one posts.
-  h.JE.maintainerrMenu.postpone(SERIES, { Marked: true, DeleteAt: null }, null);
+  h.JE.removalMenu.postpone(SERIES, { Marked: true, DeleteAt: null }, null);
   const custom = h.$('.je-mt-dialog');
   assert.equal(custom.querySelector('.je-mt-hint'), null, 'no days-left line without a delete date');
   const input = custom.querySelector('.je-mt-input');
@@ -128,18 +130,18 @@ test('a listed item gets Keep and Postpone; Postpone opens a chooser whose day b
   input.value = '45';
   h.click(custom.querySelector('.je-mt-apply'));
   await h.settle();
-  assert.deepEqual(h.requests.at(-1), { type: 'POST', path: 'postpone', body: { itemId: SERIES, days: 45 } });
+  assert.deepEqual(h.requests.at(-1), { type: 'POST', tool: 'maintainerr', path: 'postpone', body: { itemId: SERIES, days: 45 } });
 
   // Reset sends no days; Escape and Cancel close without a request.
-  h.JE.maintainerrMenu.postpone(SERIES, { Marked: true, DeleteAt: soon }, null);
+  h.JE.removalMenu.postpone(SERIES, { Marked: true, DeleteAt: soon }, null);
   h.click(h.$('.je-mt-reset'));
   await h.settle();
-  assert.deepEqual(h.requests.at(-1), { type: 'POST', path: 'postpone', body: { itemId: SERIES } });
+  assert.deepEqual(h.requests.at(-1), { type: 'POST', tool: 'maintainerr', path: 'postpone', body: { itemId: SERIES } });
   const before = h.requests.length;
-  h.JE.maintainerrMenu.postpone(SERIES, { Marked: true, DeleteAt: soon }, null);
+  h.JE.removalMenu.postpone(SERIES, { Marked: true, DeleteAt: soon }, null);
   h.document.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   assert.equal(h.$('.je-mt-dialog'), null);
-  h.JE.maintainerrMenu.postpone(SERIES, { Marked: true, DeleteAt: soon }, null);
+  h.JE.removalMenu.postpone(SERIES, { Marked: true, DeleteAt: soon }, null);
   h.click(h.$('.je-mt-cancel'));
   assert.equal(h.$('.je-mt-dialog'), null);
   assert.equal(h.requests.length, before);
@@ -148,7 +150,7 @@ test('a listed item gets Keep and Postpone; Postpone opens a chooser whose day b
   await h.open(SERIES);
   h.click(h.$('[data-id="je-maintainerr-keep"]'));
   await h.settle();
-  assert.deepEqual(h.requests.at(-1), { type: 'POST', path: 'unmark', body: { itemId: SERIES } });
+  assert.deepEqual(h.requests.at(-1), { type: 'POST', tool: 'maintainerr', path: 'unmark', body: { itemId: SERIES } });
   assert.ok(h.toasts().at(-1).startsWith('maintainerr_kept'));
 });
 
@@ -169,7 +171,7 @@ test('Mark from the detail page sends the version picked there (and so does Keep
   assert.deepEqual(h.rowIds(), ['je-maintainerr-mark']);
   h.click(h.$('[data-id="je-maintainerr-mark"]'));
   await h.settle();
-  assert.deepEqual(h.requests.at(-1), { type: 'POST', path: 'mark', body: { itemId: MOVIE, mediaSourceId: VERSION_HD } });
+  assert.deepEqual(h.requests.at(-1), { type: 'POST', tool: 'maintainerr', path: 'mark', body: { itemId: MOVIE, mediaSourceId: VERSION_HD } });
 
   // The version is read when the row is pressed: the one picked on the page then.
   h.$('.selectSource').value = VERSION_4K;
@@ -177,14 +179,14 @@ test('Mark from the detail page sends the version picked there (and so does Keep
   await h.openFrom('#itemDetailPage .btnMoreCommands');
   h.click(h.$('[data-id="je-maintainerr-mark"]'));
   await h.settle();
-  assert.deepEqual(h.requests.at(-1), { type: 'POST', path: 'mark', body: { itemId: MOVIE, mediaSourceId: VERSION_4K } });
+  assert.deepEqual(h.requests.at(-1), { type: 'POST', tool: 'maintainerr', path: 'mark', body: { itemId: MOVIE, mediaSourceId: VERSION_4K } });
 
   // A card's menu on the same page (More like this) is about another item: no version.
   h.$('#sheets').textContent = '';
   await h.open(SERIES);
   h.click(h.$('[data-id="je-maintainerr-mark"]'));
   await h.settle();
-  assert.deepEqual(h.requests.at(-1), { type: 'POST', path: 'mark', body: { itemId: SERIES } });
+  assert.deepEqual(h.requests.at(-1), { type: 'POST', tool: 'maintainerr', path: 'mark', body: { itemId: SERIES } });
 
   // Keep's Undo marks the movie again, with the version picked on the page.
   const k = setup(t, {
@@ -195,10 +197,10 @@ test('Mark from the detail page sends the version picked there (and so does Keep
   await k.openFrom('#itemDetailPage .btnMoreCommands');
   k.click(k.$('[data-id="je-maintainerr-keep"]'));
   await k.settle();
-  assert.deepEqual(k.requests.at(-1), { type: 'POST', path: 'unmark', body: { itemId: MOVIE } });
+  assert.deepEqual(k.requests.at(-1), { type: 'POST', tool: 'maintainerr', path: 'unmark', body: { itemId: MOVIE } });
   k.click(k.$('.jellyfin-enhanced-toast-action'));
   await k.settle();
-  assert.deepEqual(k.requests.at(-1), { type: 'POST', path: 'mark', body: { itemId: MOVIE, mediaSourceId: VERSION_4K } });
+  assert.deepEqual(k.requests.at(-1), { type: 'POST', tool: 'maintainerr', path: 'mark', body: { itemId: MOVIE, mediaSourceId: VERSION_4K } });
 });
 
 test('a season gets the rows too, from its card and from its own page; an episode still gets none', async t => {
@@ -207,7 +209,7 @@ test('a season gets the rows too, from its card and from its own page; an episod
   assert.deepEqual(h.rowIds(), ['je-maintainerr-mark']);
   h.click(h.$('[data-id="je-maintainerr-mark"]'));
   await h.settle();
-  assert.deepEqual(h.requests.at(-1), { type: 'POST', path: 'mark', body: { itemId: SEASON } });
+  assert.deepEqual(h.requests.at(-1), { type: 'POST', tool: 'maintainerr', path: 'mark', body: { itemId: SEASON } });
   h.$('#sheets').textContent = '';
   const asked = h.requests.length;
   await h.open(EPISODE);
@@ -276,4 +278,154 @@ test('a user switch while an action is on its way shows the next user nothing, a
   await h.open(MOVIE);
   assert.deepEqual(h.rowIds(), []);
   assert.equal(h.requests.length, before, 'a non-administrator never asks the server');
+});
+
+// Reclaimerr (upstream da0ea773): its own routes, exact days, and removal requests for anyone signed in.
+
+test('the removal actions are published as JE.removalMenu, with JE.maintainerrMenu the same object', t => {
+  const h = setup(t, {});
+  assert.ok(h.JE.removalMenu);
+  assert.equal(h.JE.maintainerrMenu, h.JE.removalMenu);
+  assert.equal(typeof h.JE.removalMenu.act, 'function', 'the Leaving soon page runs the same actions');
+  assert.equal(h.JE.removalMenu.ROWS.request, 'je-maintainerr-request');
+});
+
+test('a non-administrator gets Request removal only when removal requests are on and the item is not marked; it posts to request', async t => {
+  const h = setup(t, { admin: false, available: false, requests: true, provider: 'reclaimerr', html: card(MOVIE, 'Movie'), states: { [MOVIE]: { Marked: false, canRequest: true } } });
+  await h.open(MOVIE);
+  assert.deepEqual(h.rowIds(), ['je-maintainerr-request']);
+  assert.equal(h.$('[data-id="je-maintainerr-request"] .actionSheetItemText').textContent, 'reclaimerr_request');
+  h.click(h.$('[data-id="je-maintainerr-request"]'));
+  await h.settle();
+  assert.deepEqual(h.requests.at(-1), { type: 'POST', tool: 'reclaimerr', path: 'request', body: { itemId: MOVIE } });
+  assert.ok(h.toasts().some(text => text.startsWith('reclaimerr_requested')), h.toasts().join(','));
+});
+
+test('a non-administrator gets no row when requests are off, or the item is already marked', async t => {
+  const off = setup(t, { admin: false, available: true, requests: false, html: card(MOVIE, 'Movie'), states: { [MOVIE]: { Marked: false, canRequest: true } } });
+  await off.open(MOVIE);
+  assert.deepEqual(off.rowIds(), []);
+  assert.deepEqual(off.requests, [], 'nothing is asked of the server');
+  const marked = setup(t, { admin: false, available: false, requests: true, provider: 'reclaimerr', html: card(SERIES, 'Series'), states: { [SERIES]: { Marked: true, canRequest: true } } });
+  await marked.open(SERIES);
+  assert.deepEqual(marked.rowIds(), []);
+  const refused = setup(t, { admin: false, available: false, requests: true, provider: 'reclaimerr', html: card(MOVIE, 'Movie'), states: { [MOVIE]: { Marked: false, canRequest: false } } });
+  await refused.open(MOVIE);
+  assert.deepEqual(refused.rowIds(), [], 'the server says this user may not request');
+});
+
+test('with Reclaimerr, Mark opens the schedule chooser: a day button or an exact date posts the date, and there is no reset', async t => {
+  const h = setup(t, { provider: 'reclaimerr', html: card(MOVIE, 'Movie'), states: { [MOVIE]: { Marked: false } } });
+  await h.open(MOVIE);
+  h.click(h.$('[data-id="je-maintainerr-mark"]'));
+  await h.settle();
+  assert.deepEqual(h.requests.map(r => r.path), [`item/${MOVIE}`], 'nothing is marked until a day is chosen');
+  assert.ok(h.requests.every(r => r.tool === 'reclaimerr'), 'Reclaimerr is addressed through its own routes');
+  const dialog = h.$('.je-mt-dialog');
+  assert.equal(dialog.querySelector('.je-mt-titletext').textContent, 'reclaimerr_schedule_title');
+  assert.equal(dialog.querySelector('.je-mt-reset'), null, 'no timer reset when scheduling');
+  const before = Date.now();
+  h.click(dialog.querySelectorAll('.je-mt-day')[2]); // +30
+  await h.settle();
+  const posted = h.requests.at(-1);
+  assert.equal(posted.path, 'mark');
+  assert.equal(posted.body.itemId, MOVIE);
+  const days = (new Date(posted.body.date).getTime() - before) / 86400000;
+  assert.ok(days > 29.9 && days < 30.1, String(days));
+  assert.ok(h.toasts().at(-1).startsWith('maintainerr_marked'));
+  assert.equal(h.$('.jellyfin-enhanced-toast-action')?.textContent, 'maintainerr_undo', 'a schedule can be undone (unmark cancels it)');
+
+  h.JE.removalMenu.postpone(MOVIE, { Marked: false }, null, 'mark');
+  const again = h.$('.je-mt-dialog');
+  again.querySelector('.je-mt-date').value = '2030-01-15';
+  h.click(again.querySelector('.je-mt-applydate'));
+  await h.settle();
+  const exact = h.requests.at(-1);
+  assert.equal(exact.path, 'mark');
+  assert.equal(new Date(exact.body.date).getFullYear(), 2030);
+  assert.equal(new Date(exact.body.date).getMonth(), 0);
+  assert.equal(new Date(exact.body.date).getDate(), 15);
+});
+
+test('with Reclaimerr, Postpone can send an exact date, and Keep offers no Undo', async t => {
+  const h = setup(t, { provider: 'reclaimerr', html: card(SERIES, 'Series'), states: { [SERIES]: { Marked: true, DeleteAt: Date.now() + 5 * 86400000, CollectionId: 2 } } });
+  await h.open(SERIES);
+  h.click(h.$('[data-id="je-maintainerr-postpone"]'));
+  await h.settle();
+  const dialog = h.$('.je-mt-dialog');
+  assert.ok(dialog.querySelector('.je-mt-reset'), 'a timer reset stays for postpone');
+  const date = dialog.querySelector('.je-mt-date');
+  assert.ok(date.min > new Date().toISOString().slice(0, 10), 'a cleanup candidate only moves later than its deadline');
+  date.value = '2031-06-01';
+  h.click(dialog.querySelector('.je-mt-applydate'));
+  await h.settle();
+  const posted = h.requests.at(-1);
+  assert.equal(posted.tool, 'reclaimerr');
+  assert.equal(posted.path, 'postpone');
+  assert.equal(new Date(posted.body.date).getFullYear(), 2031);
+  assert.equal(posted.body.days, undefined);
+
+  h.$('#sheets').textContent = '';
+  await h.open(SERIES);
+  h.click(h.$('[data-id="je-maintainerr-keep"]'));
+  await h.settle();
+  assert.deepEqual(h.requests.at(-1), { type: 'POST', tool: 'reclaimerr', path: 'unmark', body: { itemId: SERIES } });
+  assert.equal(h.$('.jellyfin-enhanced-toast-action'), null, 'marking again would not undo a Reclaimerr keep');
+});
+
+test('with Reclaimerr the postpone row is a date change and the chooser carries the Reclaimerr logo', async t => {
+  const h = setup(t, { provider: 'reclaimerr', html: card(SERIES, 'Series'), states: { [SERIES]: { Marked: true, DeleteAt: Date.now() + 5 * 86400000, CollectionId: 2 } } });
+  h.JE.cdn = { url: (bucket, file) => `https://cdn.test/${bucket}/${file}` };
+  await h.open(SERIES);
+  assert.equal(h.$('[data-id="je-maintainerr-postpone"] .actionSheetItemText').textContent, 'reclaimerr_change_date');
+  h.click(h.$('[data-id="je-maintainerr-postpone"]'));
+  await h.settle();
+  assert.equal(h.$('.je-mt-titletext').textContent, 'reclaimerr_change_date');
+  assert.equal(h.$('.je-mt-logo').getAttribute('src'), 'https://cdn.test/selfhst/svg/reclaimerr.svg');
+});
+
+test('a removal request that is already waiting says so (mine or someone else\'s) instead of failing', async t => {
+  for (const [waiting, key] of [['mine', 'maintainerr_already_requested_mine'], ['other', 'maintainerr_already_requested']]) {
+    const h = setup(t, { admin: false, available: false, requests: true, provider: 'reclaimerr', html: card(MOVIE, 'Movie'), states: { [MOVIE]: { Marked: false, canRequest: true } } });
+    const ajax = h.window.ApiClient.ajax;
+    h.window.ApiClient.ajax = async (opts) => (opts.type === 'POST' ? { ItemId: MOVIE, Supported: true, Marked: false, AlreadyRequested: waiting } : ajax(opts));
+    await h.open(MOVIE);
+    h.click(h.$('[data-id="je-maintainerr-request"]'));
+    await h.settle();
+    assert.deepEqual(h.toasts(), [key], waiting);
+  }
+});
+
+test('the change-date dialog shows the current day and previews the day a choice would set', async t => {
+  const soon = Date.now() + 5 * 86400000;
+  const h = setup(t, { provider: 'reclaimerr', html: card(SERIES, 'Series'), states: { [SERIES]: { Marked: true, DeleteAt: soon, CollectionId: 2 } } });
+  h.JE.removalMenu.postpone(SERIES, { Marked: true, DeleteAt: soon }, null);
+  const dialog = h.$('.je-mt-dialog');
+  assert.ok(dialog.querySelector('.je-mt-when').textContent.length > 0, 'the current day is shown');
+  const preview = dialog.querySelector('.je-mt-preview');
+  assert.equal(preview.textContent, '');
+  const week = dialog.querySelector('.je-mt-day');
+  week.dispatchEvent(new h.window.MouseEvent('mouseenter', { bubbles: true }));
+  assert.match(preview.textContent, /^reclaimerr_new_date:/);
+  week.dispatchEvent(new h.window.MouseEvent('mouseleave', { bubbles: true }));
+  assert.equal(preview.textContent, '');
+  const days = dialog.querySelector('.je-mt-input');
+  days.value = '10';
+  days.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  assert.match(preview.textContent, /^reclaimerr_new_date:/);
+  h.click(dialog.querySelector('.je-mt-x'));
+  assert.equal(h.$('.je-mt-dialog'), null, 'the close button closes it');
+});
+
+test('a done action tells the Leaving soon page to reload; a failed one does not', async t => {
+  const h = setup(t, { html: card(MOVIE, 'Movie'), states: { [MOVIE]: { Marked: false } } });
+  let changed = 0;
+  h.window.addEventListener('je-leaving-soon-changed', () => { changed++; });
+  await h.JE.removalMenu.act('mark', { itemId: MOVIE }, 'maintainerr_marked', null);
+  assert.equal(changed, 1);
+  const failing = setup(t, { html: card(MOVIE, 'Movie'), states: { [MOVIE]: { Marked: false } }, fail: { status: 502, error: 'Maintainerr: timed out' } });
+  let failed = 0;
+  failing.window.addEventListener('je-leaving-soon-changed', () => { failed++; });
+  await failing.JE.removalMenu.act('mark', { itemId: MOVIE }, 'maintainerr_marked', null);
+  assert.equal(failed, 0);
 });

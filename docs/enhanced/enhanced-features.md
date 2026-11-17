@@ -705,6 +705,16 @@ The live section also requires admin **Extras → Active Streams → Active Stre
 
     Turning the feed off hides it and stops watched/favorite collection without deleting history. User Reviews continues independently, so reviews written while the feed is off can appear after re-enabling it.
 
+### Leaving Soon
+
+See what is about to be removed from the library, and when, without leaving Jellyfin. The page shows the movies and shows the removal tool ([Maintainerr or Reclaimerr](tags.md#leaving-soon-maintainerr-or-reclaimerr)) has scheduled, soonest first, each with a **Leaves in 5d** style chip. Everyone sees only items they can access.
+
+- Filter **Movies** or **Shows**; click a poster or title to open it.
+- With Reclaimerr, a regular user also sees **their own removal requests** and whether each is waiting, approved or denied. Requests are made from an item's ⋮ menu (**Request removal**).
+- Administrators get **Keep** and **Change removal date** on each card, and with Reclaimerr the waiting requests as cards with **Approve** and **Deny**. Approving deletes the title at once (it asks you to confirm first).
+
+Open it through the configured Home tab, Plugin Pages entry or Custom Tabs entry. Placement and options are in [Enhanced settings](enhanced-settings.md#leaving-soon).
+
 ### Catch Up
 
 Sort unwatched movies and shows with a card deck. Touch, mouse, and keyboard actions update your own Jellyfin account.

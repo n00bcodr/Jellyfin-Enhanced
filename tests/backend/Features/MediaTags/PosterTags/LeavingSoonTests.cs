@@ -246,6 +246,259 @@ public sealed class LeavingSoonTests : IDisposable
     }
 
     [Fact]
+    public void Reclaimerr_candidates_keep_only_whole_titles_and_movie_files_with_running_auto_delete_and_use_postponed_date_first()
+    {
+        var json = """
+        [
+          {"id":1,"scope":"movie","tmdb_id":550,"auto_delete_state":"scheduled","auto_delete_eligible_at":"2026-12-01T00:00:00Z","auto_delete_postponed_until":null},
+          {"id":2,"scope":"series","tmdb_id":1399,"auto_delete_state":"postponed","auto_delete_eligible_at":"2026-12-01T00:00:00Z","auto_delete_postponed_until":"2026-12-20T00:00:00Z"},
+          {"id":3,"scope":"episode","tmdb_id":551,"auto_delete_state":"scheduled","auto_delete_eligible_at":"2026-12-01T00:00:00Z"},
+          {"id":4,"scope":"movie","tmdb_id":552,"auto_delete_state":"disabled","auto_delete_eligible_at":"2026-12-01T00:00:00Z"},
+          {"id":5,"scope":"movie","tmdb_id":553,"auto_delete_state":"canceled","auto_delete_eligible_at":"2026-12-01T00:00:00Z"},
+          {"id":6,"scope":"movie","tmdb_id":null,"auto_delete_state":"eligible","auto_delete_eligible_at":"2026-12-01T00:00:00Z"}
+        ]
+        """;
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        var members = LeavingSoonService.ParseReclaimerrCandidates(doc.RootElement, new DateTimeOffset(2026, 11, 16, 0, 0, 0, TimeSpan.Zero));
+        Assert.Equal(2, members.Count);
+        Assert.Equal(("550", "movie", 1), (members[0].TmdbId, members[0].Type, members[0].CollectionId));
+        Assert.Equal(new DateTimeOffset(2026, 12, 1, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds(), members[0].DeleteAt);
+        Assert.Equal(("1399", "show", 2), (members[1].TmdbId, members[1].Type, members[1].CollectionId));
+        Assert.Equal(new DateTimeOffset(2026, 12, 20, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds(), members[1].DeleteAt);
+    }
+
+    [Fact]
+    public void A_cleanup_candidate_of_one_movie_file_is_flagged_as_one_version()
+    {
+        var json = "[{\"id\":8,\"scope\":\"version\",\"tmdb_id\":1234139,\"auto_delete_state\":\"eligible\",\"auto_delete_eligible_at\":\"2026-12-01T00:00:00Z\"},"
+            + "{\"id\":9,\"scope\":\"movie\",\"tmdb_id\":550,\"auto_delete_state\":\"eligible\",\"auto_delete_eligible_at\":\"2026-12-01T00:00:00Z\"}]";
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        var members = LeavingSoonService.ParseReclaimerrCandidates(doc.RootElement, new DateTimeOffset(2026, 11, 16, 0, 0, 0, TimeSpan.Zero));
+        Assert.Equal(new[] { true, false }, members.Select(m => m.OneVersion).ToArray());
+        var jailer = Guid.NewGuid(); var fightClub = Guid.NewGuid();
+        var flagged = new HashSet<string>();
+        LeavingSoonService.ToItems(members, (type, tmdb) => tmdb == "1234139" ? new[] { jailer } : new[] { fightClub }, out _, null, null, flagged);
+        Assert.Equal(new[] { jailer.ToString("N") }, flagged.ToArray());
+    }
+
+    [Fact]
+    public void A_scheduled_version_is_flagged_as_one_version_even_without_its_path()
+    {
+        var json = "[{\"id\":7,\"state\":\"scheduled\",\"scheduled_at\":\"2026-12-15T12:00:00Z\",\"target\":{\"media_type\":\"movie\",\"scope\":\"version\",\"tmdb_id\":1234139}},"
+            + "{\"id\":8,\"state\":\"scheduled\",\"scheduled_at\":\"2026-12-15T12:00:00Z\",\"target\":{\"media_type\":\"movie\",\"scope\":\"movie\",\"tmdb_id\":550}}]";
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        var members = LeavingSoonService.ParseReclaimerrSchedules(doc.RootElement, new DateTimeOffset(2026, 11, 16, 0, 0, 0, TimeSpan.Zero));
+        Assert.Equal(new[] { true, false }, members.Select(m => m.OneVersion).ToArray());
+    }
+
+    [Fact]
+    public void Reclaimerr_scheduled_deletions_keep_whole_titles_still_scheduled_and_negate_the_id()
+    {
+        var json = """
+        [
+          {"id":7,"state":"scheduled","scheduled_at":"2026-12-15T12:00:00Z","target":{"media_type":"movie","scope":"version","version_path":"/m/4k.mkv","tmdb_id":1234139}},
+          {"id":8,"state":"scheduled","scheduled_at":"2026-12-15T12:00:00Z","target":{"media_type":"series","scope":"season","tmdb_id":4242}},
+          {"id":9,"state":"canceled","scheduled_at":"2026-12-15T12:00:00Z","target":{"media_type":"series","scope":"series","tmdb_id":1399}},
+          {"id":10,"state":"scheduled","scheduled_at":"2026-12-20T00:00:00Z","target":{"media_type":"series","scope":"series","tmdb_id":1399}}
+        ]
+        """;
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        var members = LeavingSoonService.ParseReclaimerrSchedules(doc.RootElement, new DateTimeOffset(2026, 11, 16, 0, 0, 0, TimeSpan.Zero));
+        Assert.Equal(2, members.Count);
+        Assert.Equal(("1234139", "movie", -7, "/m/4k.mkv"), (members[0].TmdbId, members[0].Type, members[0].CollectionId, members[0].Path));
+        Assert.Equal(("1399", "show", -10), (members[1].TmdbId, members[1].Type, members[1].CollectionId));
+    }
+
+    [Fact]
+    public void Maintainerr_and_Reclaimerr_are_never_both_on_and_either_can_be_off()
+    {
+        var stored = new PluginConfiguration { LeavingSoonMaintainerrEnabled = true, ReclaimerrEnabled = false };
+        // Reclaimerr switched on while Maintainerr was on: Reclaimerr wins.
+        var turnedOnReclaimerr = new PluginConfiguration { LeavingSoonMaintainerrEnabled = true, ReclaimerrEnabled = true };
+        Assert.NotEmpty(LeavingSoonSources.NormalizeSource(turnedOnReclaimerr, stored));
+        Assert.True(turnedOnReclaimerr.ReclaimerrEnabled);
+        Assert.False(turnedOnReclaimerr.LeavingSoonMaintainerrEnabled);
+        // Maintainerr switched back on while Reclaimerr was on: Maintainerr wins.
+        var turnedOnMaintainerr = new PluginConfiguration { LeavingSoonMaintainerrEnabled = true, ReclaimerrEnabled = true };
+        Assert.NotEmpty(LeavingSoonSources.NormalizeSource(turnedOnMaintainerr, turnedOnReclaimerr));
+        Assert.True(turnedOnMaintainerr.LeavingSoonMaintainerrEnabled);
+        Assert.False(turnedOnMaintainerr.ReclaimerrEnabled);
+        // Both off is allowed, and a Maintainerr that is off is not a source even with its URL saved.
+        var neither = new PluginConfiguration { LeavingSoonMaintainerrEnabled = false, ReclaimerrEnabled = false, LeavingSoonMaintainerrUrl = "http://m:6246" };
+        Assert.Empty(LeavingSoonSources.NormalizeSource(neither, stored));
+        Assert.False(LeavingSoonSources.ApiConfigured(neither));
+        Assert.False(MaintainerrActions.Enabled(neither));
+    }
+
+    [Fact]
+    public void A_scheduled_movie_file_marks_only_the_library_item_holding_that_file()
+    {
+        var hd = Guid.NewGuid(); var uhd = Guid.NewGuid();
+        var paths = new Dictionary<Guid, string> { [hd] = "/media/Regional/Jailer 2/Jailer 2 - 1080p.mkv", [uhd] = "/media/Movies4K/Jailer 2/Jailer 2 - 2160p.mkv" };
+        IReadOnlyList<Guid> Lookup(string type, string tmdb) => new[] { hd, uhd };
+        var wholeTitle = new[] { new LeavingSoonService.MaintainerrMember(null, "1234139", "movie", 1000, -7, null) };
+        Assert.Equal(2, LeavingSoonService.ToItems(wholeTitle, Lookup, out _, id => paths[id]).Count);
+        var file = new[] { new LeavingSoonService.MaintainerrMember(null, "1234139", "movie", 1000, -7, "/MEDIA/movies4k/jailer 2/jailer 2 - 2160p.mkv") };
+        var items = LeavingSoonService.ToItems(file, Lookup, out var owners, id => paths[id]);
+        Assert.Equal(new[] { uhd.ToString("N") }, items.Keys);
+        Assert.Equal(-7, owners[uhd.ToString("N")]);
+        // Only that file is leaving, so the item is flagged as one version; a whole-title schedule is not.
+        var oneVersion = new HashSet<string>();
+        LeavingSoonService.ToItems(file, Lookup, out _, id => paths[id], null, oneVersion);
+        Assert.Equal(new[] { uhd.ToString("N") }, oneVersion);
+        var wholeFlags = new HashSet<string>();
+        LeavingSoonService.ToItems(wholeTitle, Lookup, out _, id => paths[id], null, wholeFlags);
+        Assert.Empty(wholeFlags);
+        // A path no item holds, with several copies, marks none (it could be the staying copy).
+        var unknown = new[] { new LeavingSoonService.MaintainerrMember(null, "1234139", "movie", 1000, -7, "/elsewhere.mkv") };
+        Assert.Empty(LeavingSoonService.ToItems(unknown, Lookup, out _, id => paths[id]));
+    }
+
+    [Fact]
+    public void A_Jellyfin_user_maps_to_a_Reclaimerr_user_by_the_list_else_by_the_same_name()
+    {
+        var config = new PluginConfiguration { ReclaimerrUserMap = "Pat = Samuel\n  sam=SamJones \nbroken line\n=nothing\nAmy =" };
+        Assert.Equal("Samuel", ReclaimerrSession.UserFor(config, "Pat"));
+        Assert.Equal("Samuel", ReclaimerrSession.UserFor(config, "pat"));
+        Assert.Equal("SamJones", ReclaimerrSession.UserFor(config, "Sam"));
+        Assert.Equal("Sunil", ReclaimerrSession.UserFor(config, "Sunil"));
+        Assert.Equal("Amy", ReclaimerrSession.UserFor(config, "Amy"));
+        Assert.True(ReclaimerrSession.ActsAsUser(config));
+        config.ReclaimerrActAsUser = false;
+        Assert.False(ReclaimerrSession.ActsAsUser(config));
+    }
+
+    [Fact]
+    public void A_request_row_serializes_with_the_lower_case_names_the_page_reads()
+    {
+        var row = new ReclaimerrRequestRow(7, "12th Fail", 2023, "movie", "sam_user", "why", "pending", "2026-11-16T10:00:00Z", null);
+        using var doc = System.Text.Json.JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(row));
+        var names = doc.RootElement.EnumerateObject().Select(p => p.Name).ToArray();
+        Assert.Equal(new[] { "id", "title", "year", "mediaType", "requestedBy", "reason", "status", "createdAt", "reviewedBy", "mediaId", "posterPath" }, names);
+    }
+
+    [Fact]
+    public void A_leaving_alternate_version_also_marks_the_primary_item_the_library_shows()
+    {
+        var primary = Guid.NewGuid(); var alt = Guid.NewGuid();
+        IReadOnlyList<Guid> Lookup(string type, string tmdb) => new[] { alt };
+        var members = new[] { new LeavingSoonService.MaintainerrMember(null, "1234139", "movie", 1000, -7, null) };
+        var items = LeavingSoonService.ToItems(members, Lookup, out var owners, null, id => id == alt ? primary : null);
+        Assert.Equal(new[] { alt.ToString("N"), primary.ToString("N") }.Order(), items.Keys.Order());
+        Assert.Equal(-7, owners[primary.ToString("N")]);
+    }
+
+    [Theory]
+    [InlineData("Requested by Sam from Jellyfin", "Sam", null)]
+    [InlineData("Requested by Sam Jones from Jellyfin: not my taste", "Sam Jones", "not my taste")]
+    [InlineData("Requested by Pat from Jellyfin:   ", "Pat", null)]
+    [InlineData("just a note", null, "just a note")]
+    [InlineData("Requested by  from Jellyfin", null, "Requested by  from Jellyfin")]
+    [InlineData("", null, null)]
+    public void A_request_reason_names_the_Jellyfin_person_and_keeps_the_note(string reason, string? person, string? note)
+    {
+        var (p, n) = JeMediaTagsController.ParseLeavingSoonReason(reason);
+        Assert.Equal(person, p);
+        Assert.Equal(note, n);
+    }
+
+    [Fact]
+    public void Only_the_chosen_provider_is_configured_and_part_of_the_signature()
+    {
+        var both = new PluginConfiguration { LeavingSoonMaintainerrUrl = "http://m:6246", LeavingSoonMaintainerrApiKey = "mk", ReclaimerrUrl = "http://r:8000", ReclaimerrToken = "rcl_x" };
+        Assert.True(LeavingSoonSources.ApiConfigured(both));
+        Assert.False(LeavingSoonSources.UsesReclaimerr(both));
+        var before = LeavingSoonService.Signature(both);
+        both.ReclaimerrEnabled = true; both.LeavingSoonMaintainerrEnabled = false;
+        Assert.True(LeavingSoonSources.ApiConfigured(both));
+        Assert.NotEqual(before, LeavingSoonService.Signature(both));
+        both.ReclaimerrToken = string.Empty;
+        Assert.False(LeavingSoonSources.ApiConfigured(both));
+        Assert.False(MaintainerrActions.Enabled(both));
+        both.ReclaimerrEnabled = false; both.LeavingSoonMaintainerrEnabled = true;
+        Assert.True(MaintainerrActions.Enabled(both));
+    }
+
+    // The rewrite's own checks on the port of upstream da0ea773.
+
+    [Fact]
+    public void With_Maintainerr_on_the_signature_is_the_one_earlier_versions_kept_so_an_update_reads_nothing_again()
+    {
+        var config = new PluginConfiguration { LeavingSoonMaintainerrUrl = "http://m:6246/", LeavingSoonMaintainerrApiKey = " key ", LeavingSoonCollections = "Leaving\nGone" };
+        var before = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes("http://m:6246" + "\n" + "key" + "\n" + "gone\nleaving")));
+        Assert.Equal(before, LeavingSoonService.Signature(config));
+        // Maintainerr switched off is another source (nothing of its answer may be served).
+        config.LeavingSoonMaintainerrEnabled = false;
+        Assert.NotEqual(before, LeavingSoonService.Signature(config));
+        Assert.False(LeavingSoonSources.ApiConfigured(config));
+        Assert.True(LeavingSoonSources.Configured(config), "the collection names are still a source");
+    }
+
+    [Fact]
+    public void The_page_consumes_the_facts_and_the_switches_follow_the_tool_in_use()
+    {
+        var reclaimerr = new PluginConfiguration { ReclaimerrEnabled = true, LeavingSoonMaintainerrEnabled = false, ReclaimerrUrl = "http://r:8000", ReclaimerrToken = "rcl_x", LeavingSoonHomeRow = false, LeavingSoonMaintainerrActions = false };
+        Assert.False(LeavingSoonService.Consumed(reclaimerr, () => false));
+        reclaimerr.LeavingSoonPageEnabled = true;
+        Assert.True(LeavingSoonService.Consumed(reclaimerr, () => false), "the Leaving soon page reads the facts");
+        reclaimerr.LeavingSoonPageEnabled = false;
+        reclaimerr.LeavingSoonMaintainerrActions = true;
+        Assert.True(LeavingSoonService.Consumed(reclaimerr, () => false), "so do Reclaimerr's item-menu actions");
+        Assert.True(ReclaimerrActions.Enabled(reclaimerr));
+        Assert.False(MaintainerrActions.Enabled(reclaimerr));
+        Assert.False(ReclaimerrActions.RequestsEnabled(reclaimerr), "requests need a service account");
+        reclaimerr.ReclaimerrUsername = "svc";
+        Assert.True(ReclaimerrActions.RequestsEnabled(reclaimerr));
+        reclaimerr.LeavingSoonHomeRow = true;
+        Assert.True(LeavingSoonSources.HomeRowWanted(reclaimerr), "the home row follows Reclaimerr too");
+        reclaimerr.ReclaimerrToken = " ";
+        Assert.False(LeavingSoonSources.HomeRowWanted(reclaimerr));
+        Assert.False(ReclaimerrActions.Enabled(reclaimerr), "no token, no Reclaimerr");
+    }
+
+    [Theory]
+    [InlineData("ftp://r", "rcl_x", "svc", "pw", false, "Reclaimerr URL")]
+    [InlineData("http://r:8000", "has space", "svc", "pw", false, "Reclaimerr token")]
+    [InlineData("http://r:8000", "rcl_x", "bad\u0001name", "pw", false, "Reclaimerr username")]
+    [InlineData("http://r:8000", "rcl_x", "svc", "bad\u0007pw", false, "Reclaimerr password")]
+    [InlineData(" http://r:8000 ", " rcl_x ", " svc ", "p w", true, null)]
+    public void A_save_keeps_the_stored_Reclaimerr_value_for_one_that_breaks_its_contract(string url, string token, string user, string password, bool ok, string? problem)
+    {
+        var stored = new PluginConfiguration { ReclaimerrUrl = "http://stored", ReclaimerrToken = "stored-token", ReclaimerrUsername = "stored-user", ReclaimerrPassword = "stored-pw" };
+        var incoming = new PluginConfiguration { ReclaimerrUrl = url, ReclaimerrToken = token, ReclaimerrUsername = user, ReclaimerrPassword = password };
+        var problems = LeavingSoonSources.NormalizeSource(incoming, stored);
+        if (ok)
+        {
+            Assert.Empty(problems);
+            Assert.Equal(("http://r:8000", "rcl_x", "svc", "p w"), (incoming.ReclaimerrUrl, incoming.ReclaimerrToken, incoming.ReclaimerrUsername, incoming.ReclaimerrPassword));
+            return;
+        }
+
+        var said = Assert.Single(problems);
+        Assert.StartsWith(problem!, said);
+        Assert.DoesNotContain(token, said);
+        Assert.DoesNotContain(password, said);
+        Assert.True(incoming.ReclaimerrUrl == "http://stored" || incoming.ReclaimerrToken == "stored-token" || incoming.ReclaimerrUsername == "stored-user" || incoming.ReclaimerrPassword == "stored-pw");
+    }
+
+    [Fact]
+    public void The_Reclaimerr_token_and_password_are_secrets_of_the_portable_export()
+    {
+        Assert.Contains("ReclaimerrToken", MediaTagsPortable.Secrets);
+        Assert.Contains("ReclaimerrPassword", MediaTagsPortable.Secrets);
+    }
+
+    [Fact]
+    public void A_scheduled_deletion_too_far_away_is_skipped_but_a_candidate_too_far_away_refuses_the_answer()
+    {
+        var now = new DateTimeOffset(2026, 11, 16, 0, 0, 0, TimeSpan.Zero);
+        using var schedules = JsonDocument.Parse("[{\"id\":1,\"state\":\"scheduled\",\"scheduled_at\":\"2099-01-01T00:00:00Z\",\"target\":{\"media_type\":\"movie\",\"scope\":\"movie\",\"tmdb_id\":5}}]");
+        Assert.Empty(LeavingSoonService.ParseReclaimerrSchedules(schedules.RootElement, now));
+        using var candidates = JsonDocument.Parse("[{\"id\":1,\"scope\":\"movie\",\"tmdb_id\":5,\"auto_delete_state\":\"eligible\",\"auto_delete_eligible_at\":\"2099-01-01T00:00:00Z\"}]");
+        Assert.Throws<LeavingSoonService.DateRangeException>(() => LeavingSoonService.ParseReclaimerrCandidates(candidates.RootElement, now));
+    }
+
+    [Fact]
     public void Parses_dated_undated_inactive_wrapped_and_numeric_type_answers()
     {
         var a = Guid.NewGuid(); var b = Guid.NewGuid(); var c = Guid.NewGuid();

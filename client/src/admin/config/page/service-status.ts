@@ -1,7 +1,7 @@
 import type { PageModules } from './modules';
 import { asObject, num, shown, type JsonObject } from '../domain/config';
 import type { ServiceCard, ServiceUsage } from './types';
-import { requestFailure } from '../domain/http';
+import { requestFailure, requestFailureWithBody } from '../domain/http';
 import { asControl, asHtml, asInput } from './dom';
 
 /** Dependencies this module calls; members are resolved lazily, after every module exists. */
@@ -119,7 +119,7 @@ export function createServiceStatus(m: ServiceStatusDeps) {
             if (button) button.disabled = maintainerrBusy || !(s && s.Configured === true);
             var text: string, kind: string;
             if (failed || !s) { text = 'Status unavailable.'; kind = 'warn'; }
-            else if (s.Configured !== true) { text = 'No source set. Enter the Maintainerr address and save.'; kind = 'off'; }
+            else if (s.Configured !== true) { text = 'No source set. Turn on Maintainerr or Reclaimerr, enter its address and save.'; kind = 'off'; }
             else if (s.LastError) { text = 'Last read failed: ' + shown(s.LastError) + '.'; kind = 'error'; }
             else if (s.LastSuccess) { kind = 'ok'; text = num(s.Items) + ' item(s) leaving (' + num(s.Dated) + ' with a date). Last read ' + maintainerrWhen(s.LastSuccess) + ', next ' + maintainerrWhen(s.NextRefresh) + '.'; }
             else { text = 'Not read yet.'; kind = 'warn'; }
@@ -136,7 +136,8 @@ export function createServiceStatus(m: ServiceStatusDeps) {
             if (maintainerrBusy) return Promise.resolve();
             maintainerrBusy = true;
             var pending = asHtml(document.getElementById('maintainerrStatusLine'));
-            if (pending) pending.textContent = refresh ? 'Reading Maintainerr\u2026' : 'Loading status\u2026';
+            var reclaimerr = !!asInput(document.getElementById('ReclaimerrEnabled'))?.checked || (maintainerrLast !== null && maintainerrLast.Provider === 'reclaimerr');
+            if (pending) pending.textContent = refresh ? 'Reading ' + (reclaimerr ? 'Reclaimerr' : 'Maintainerr') + '\u2026' : 'Loading status\u2026';
             var button = asControl(document.getElementById('maintainerrRefreshBtn'));
             if (button) button.disabled = true;
             var url = ApiClient.getUrl('JellyfinEnhanced/admin/leaving-soon' + (refresh ? '/refresh' : ''));
@@ -270,8 +271,11 @@ export function createServiceStatus(m: ServiceStatusDeps) {
             }
 
             // Maintainerr: always listed. With an address, the server's last read of it (admin/leaving-soon) is the state.
-            var maintainerrUrl = readFieldValue('#LeavingSoonMaintainerrUrl');
-            var maintainerrCard: ServiceCard = { id: 'maintainerr', name: 'Maintainerr', tab: 'arr', icon: 'auto_delete', scrollTo: '#LeavingSoonMaintainerrUrl', state: 'off', detail: '' };
+            // The card follows the removal tool that is on (Reclaimerr or Maintainerr); neither on is "not set up".
+            var reclaimerrOn = !!asInput(document.querySelector('#ReclaimerrEnabled'))?.checked;
+            var maintainerrOn = !reclaimerrOn && !!asInput(document.querySelector('#LeavingSoonMaintainerrEnabled'))?.checked;
+            var maintainerrUrl = reclaimerrOn ? readFieldValue('#ReclaimerrUrl') : (maintainerrOn ? readFieldValue('#LeavingSoonMaintainerrUrl') : '');
+            var maintainerrCard: ServiceCard = { id: 'maintainerr', name: reclaimerrOn ? 'Reclaimerr' : 'Maintainerr', tab: 'arr', icon: 'auto_delete', scrollTo: reclaimerrOn ? '#ReclaimerrUrl' : '#LeavingSoonMaintainerrUrl', state: 'off', detail: '' };
             if (!maintainerrUrl) {
                 maintainerrCard.detail = 'Not set up';
             } else {
@@ -405,8 +409,51 @@ export function createServiceStatus(m: ServiceStatusDeps) {
         // to the unified renderer instead of maintaining dead duplicates.
         function updateStatusDashboard() : void { renderServiceStatusDashboard(); }
 
+    /**
+     * Create service account (upstream da0ea773): one Reclaimerr administrator login, used once, makes the plugin's own
+     * Reclaimerr account. The server saves it; the page's fields take the new name and password too, because the page's
+     * Save writes them back.
+     */
+    function wireCreateAccount(): void {
+        var button = asControl(document.getElementById('reclaimerrCreateAccountBtn'));
+        if (!button) return;
+        var target = button;
+        target.addEventListener('click', function() {
+            var line = asHtml(document.getElementById('reclaimerrCreateAccountLine'));
+            var adminUsername = window.prompt('Reclaimerr administrator username (used once, not stored):');
+            if (!adminUsername) return;
+            // Empty is fine: the plugin then acts as that administrator by name (trusted-proxy sign-in), no password needed.
+            var adminPassword = window.prompt('Password for ' + adminUsername + ' (leave empty to sign in by name through Reclaimerr\'s trusted-proxy sign-in; used once, never stored):') || '';
+            target.disabled = true;
+            ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('JellyfinEnhanced/reclaimerr/service-account'), data: JSON.stringify({ adminUsername: adminUsername, adminPassword: adminPassword }), contentType: 'application/json', dataType: 'json' }).then(function(answer) {
+                if (m.context.lifecycle.disposed) return;
+                var created = asObject(answer);
+                var name = typeof created?.username === 'string' ? created.username : '';
+                var user = asInput(document.getElementById('ReclaimerrUsername'));
+                if (user && name) user.value = name;
+                var pass = asInput(document.getElementById('ReclaimerrPassword'));
+                if (pass && typeof created?.password === 'string' && created.password) pass.value = created.password;
+                if (line) line.textContent = 'Created and saved: ' + name + '.';
+            }, function(err: unknown) {
+                return requestFailureWithBody(err).then(function(failure) {
+                    if (m.context.lifecycle.disposed || !line) return;
+                    var reason = typeof failure.body?.error === 'string' ? failure.body.error : '';
+                    line.textContent = 'Could not create it: ' + (reason || failure.status || failure.message || 'request failed');
+                });
+            }).then(function() { target.disabled = false; });
+        }, { signal: m.context.lifecycle.signal });
+    }
+
     /** Runs this module's start-up work, in the page's original order. */
     function wire(): void {
+        // Maintainerr and Reclaimerr are one choice: switching either on switches the other off (upstream da0ea773).
+        document.addEventListener('change', function(e) {
+            var target = asInput(e.target instanceof Element ? e.target : null);
+            if (!target || !target.checked || (target.id !== 'LeavingSoonMaintainerrEnabled' && target.id !== 'ReclaimerrEnabled')) return;
+            var other = asInput(document.getElementById(target.id === 'ReclaimerrEnabled' ? 'LeavingSoonMaintainerrEnabled' : 'ReclaimerrEnabled'));
+            if (other && other.checked) { other.checked = false; other.dispatchEvent(new Event('change', { bubbles: true })); }
+        }, { signal: m.context.lifecycle.signal });
+        wireCreateAccount();
         // The Maintainerr card: Refresh now, and a fresh read whenever the Services tab (its linked copy) is opened,
         // since the server's answer changes while the page is open (schedule, other administrators).
         var refreshButton = asControl(document.getElementById('maintainerrRefreshBtn'));

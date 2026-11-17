@@ -97,7 +97,7 @@
     { id: "statusTagsMilestones", key: "StatusTagsMilestones", type: "switch", place: "section", label: "Milestones", desc: "Season milestones from the library’s episode dates; Season Finale and Series Finale need the TMDB API key." },
     { id: "statusTagsSeriesStatus", key: "StatusTagsSeriesStatus", type: "switch", place: "section", label: "Series status", desc: "The series status, when no other badge applies. Jellyfin supplies Returning and Ended; TMDB can refine Ended to Cancelled. Off by default." },
     { id: "statusTagsScenes", key: "StatusTagsScenes", type: "switch", place: "section", label: "Scenes", desc: "Show a movie’s post-credits or mid-credits marker from TMDB keywords. Requires a TMDB key; refreshed daily." },
-    { id: "statusTagsLeaving", key: "StatusTagsLeaving", type: "switch", place: "section", label: "Leaving soon", desc: "Items in Maintainerr's collections or the leaving collections (set the source under Leaving soon)." },
+    { id: "statusTagsLeaving", key: "StatusTagsLeaving", type: "switch", place: "section", label: "Leaving soon", desc: "Items the removal tool (Maintainerr or Reclaimerr, whichever is on) will remove, or the leaving collections (set the source under Leaving soon)." },
     { id: "statusTagsDirectPlay", key: "StatusTagsDirectPlay", type: "switch", place: "section", label: "Direct-play warning", desc: "Each browser checks the movies and episodes on screen against its own playback support (web only; native posters have no client profile). Items Jellyfin would probe to answer, .strm items and media never probed, are skipped." }
   ];
   function statusOfAnswer(value) {
@@ -232,12 +232,12 @@
       tab: "badges",
       order: 40,
       title: "Leaving soon",
-      hint: "Where the Leaving soon badge comes from: Maintainerr's collections (with the day each item goes), or existing Jellyfin collections by name (no date). Maintainerr's address, key, item-menu actions and home row are set in the *arr tab (also under Services).",
+      hint: "Where the Leaving soon badge comes from: the removal tool that is on, Maintainerr's collections or Reclaimerr's candidates (with the day each item goes), or existing Jellyfin collections by name (no date). The tool, its address, item-menu actions and home row are set in the *arr tab (also under Services).",
       fields: [
-        { id: "leavingSoonCollections", key: "LeavingSoonCollections", type: "textarea", rows: 3, placeholder: "Leaving Soon", label: "Leaving collections", desc: "Existing Jellyfin collection names, one per line, whose items count as leaving soon, without a date. For setups that do not use Maintainerr's address; nothing is created. Up to 20." }
+        { id: "leavingSoonCollections", key: "LeavingSoonCollections", type: "textarea", rows: 3, placeholder: "Leaving Soon", label: "Leaving collections", desc: "Existing Jellyfin collection names, one per line, whose items count as leaving soon, without a date. For setups that use neither Maintainerr nor Reclaimerr; nothing is created. Up to 20." }
       ],
       render(ctx, body) {
-        body.innerHTML = `<div class="je-ta-state-row"><span class="je-ta-state" data-leaving-state></span></div><p class="je-ta-hint" data-leaving-detail></p><p class="je-ta-hint" data-leaving-row></p><div class="je-ta-actions"><button type="button" class="je-ta-button" id="leavingSoonRefreshBtn"><span class="material-icons" aria-hidden="true">refresh</span>${ctx.tx("Refresh now")}</button></div><p class="je-ta-hint">${ctx.tx("Cards never ask Maintainerr: the server reads it on a schedule and keeps the answer in the tag cache.")}</p><a class="je-ta-link" href="${ctx.esc(ctx.mainPageUrl(null, "arr"))}"><span class="je-ta-link-text">${ctx.tx("Maintainerr settings")}</span><span class="material-icons" aria-hidden="true">open_in_new</span></a>`;
+        body.innerHTML = `<div class="je-ta-state-row"><span class="je-ta-state" data-leaving-state></span></div><p class="je-ta-hint" data-leaving-detail></p><p class="je-ta-hint" data-leaving-row></p><div class="je-ta-actions"><button type="button" class="je-ta-button" id="leavingSoonRefreshBtn"><span class="material-icons" aria-hidden="true">refresh</span>${ctx.tx("Refresh now")}</button></div><p class="je-ta-hint">${ctx.tx("Cards never ask the removal tool: the server reads it on a schedule and keeps the answer in the tag cache.")}</p><a class="je-ta-link" href="${ctx.esc(ctx.mainPageUrl(null, "arr"))}"><span class="je-ta-link-text">${ctx.tx(ctx.config.ReclaimerrEnabled ? "Reclaimerr settings" : "Maintainerr settings")}</span><span class="material-icons" aria-hidden="true">open_in_new</span></a>`;
         body.querySelector("#leavingSoonRefreshBtn")?.addEventListener("click", () => {
           void loadLeavingStatus(ctx, true);
         });
@@ -250,7 +250,7 @@
         const row = body.querySelector("[data-leaving-row]");
         const button = findAs(body, "#leavingSoonRefreshBtn", HTMLButtonElement);
         const { status: s, busy } = leavingOf(ctx);
-        const maintainerr = String(ctx.config.LeavingSoonMaintainerrUrl || "").trim() !== "";
+        const maintainerr = ctx.config.ReclaimerrEnabled ? String(ctx.config.ReclaimerrUrl || "").trim() !== "" : ctx.config.LeavingSoonMaintainerrEnabled !== false && String(ctx.config.LeavingSoonMaintainerrUrl || "").trim() !== "";
         const configured = maintainerr || String(ctx.config.LeavingSoonCollections || "").trim() !== "";
         if (button) button.disabled = busy || !configured;
         if (!state || !detail) return;

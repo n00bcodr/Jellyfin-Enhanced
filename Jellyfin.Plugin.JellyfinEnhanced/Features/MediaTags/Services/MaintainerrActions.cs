@@ -86,7 +86,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
             ArrHolds = ProbeArrAsync;
         }
 
-        /// <summary>Whether the actions are on: the switch and a Maintainerr URL.</summary>
+        /// <summary>Whether the actions are on: the switch, Maintainerr as the removal tool, and a Maintainerr URL.</summary>
         public static bool Enabled(PluginConfiguration? config) => LeavingSoonSources.MaintainerrActionsEnabled(config);
 
         /// <summary>Maintainerr's type word for an item, or null for a kind the actions do not handle.</summary>
@@ -157,7 +157,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
         private static string Names(IEnumerable<MaintainerrCollection> collections) => string.Join(", ", collections.Select(c => c.Title));
 
         /// <summary>The movie's version (media source) picked on the item page, or null when none was sent or the movie has no such version.</summary>
-        private static MediaSourceInfo? FindVersion(BaseItem item, string? mediaSourceId)
+        internal static MediaSourceInfo? FindVersion(BaseItem item, string? mediaSourceId)
         {
             if (string.IsNullOrWhiteSpace(mediaSourceId) || item is not Movie movie) return null;
             var wanted = mediaSourceId.Replace("-", string.Empty, StringComparison.Ordinal);
@@ -347,7 +347,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
 
         private async Task<MaintainerrItemState> AfterAsync(BaseItem item, PluginConfiguration config, IReadOnlyList<MaintainerrCollection> collections, CancellationToken token)
         {
-            try { await _cache.RefreshLeavingAsync(force: true, token).ConfigureAwait(false); }
+            // The facts are read again now (the answer needs them); stamping the tag cache happens in the background, so the
+            // answer never waits for the cache's rebuild lock (a rebuild after a restart can hold it for minutes).
+            try { await _leaving.RefreshAsync(config, force: true, token).ConfigureAwait(false); _cache.QueueLeavingPublish(); }
             catch (Exception ex) when (ex is not OperationCanceledException) { _logger.Warning($"[Maintainerr] The refresh after an action failed: {ex.Message}"); }
             return State(item, config, collections);
         }

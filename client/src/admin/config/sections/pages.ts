@@ -209,6 +209,16 @@ export function definePages(define: DefineSections): void {
                     'When enabled, regular users only see their own watched, favorited and reviewed entries. Administrators still see everyone.')
             ]
         },
+        'pages-leaving-soon': {
+            title: 'Leaving Soon', icon: 'auto_delete',
+            items: [
+                note('<strong>Leaving Soon</strong> lists everything the removal tool that is on (Maintainerr or Reclaimerr) will remove, with the days left, for every user: each one only sees items they can see. Administrators can keep an item or change its date from the page, and with Reclaimerr approve or deny removal requests; other users see their own requests. Set a removal tool up first (the Maintainerr and Reclaimerr cards in the *arr tab).'),
+                T('leavingSoonPageEnabled', 'LeavingSoonPageEnabled', 'Enable the Leaving Soon page', 'Turns the page on. It lists nothing until a removal tool is set up.', { main: true }),
+                placement({ p: 'leavingSoonPage', en: 'leavingSoonPageEnabled', name: 'Leaving Soon', ppLabel: 'Use Plugin Pages',
+                    ppIntro: `Adds a "Leaving Soon" link via ${ppLink}.`, ctLabel: 'Use Custom Tabs',
+                    noun: 'Leaving Soon page', hint: 'leavingSoonPage', cls: 'jellyfinenhanced leavingsoon', text: 'Leaving Soon' })
+            ]
+        },
         'pages-catchup': {
             title: 'Catch Up', icon: 'style',
             items: [

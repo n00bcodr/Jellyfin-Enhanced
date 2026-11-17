@@ -185,6 +185,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Platform.Services
             ("selfhst", "svg/shoko-server.svg"),
             ("selfhst", "svg/tmdb.svg"),
             ("selfhst", "svg/maintainerr.svg"),
+            ("selfhst", "svg/reclaimerr.svg"),
             ("jellyfish", "logos/favicon.ico"),
             ("jellyfish", "colors/aurora.css"),
             ("jellyfish", "colors/banana.css"),

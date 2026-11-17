@@ -530,7 +530,8 @@
     "DownloadsUseCustomTabs",
     "RecommendationsUseCustomTabs",
     "ActivityFeedUseCustomTabs",
-    "CatchUpUseCustomTabs"
+    "CatchUpUseCustomTabs",
+    "LeavingSoonPageUseCustomTabs"
   ];
   var PLUGIN_PAGE_FLAGS = ["BookmarksUsePluginPages", "HiddenContentUsePluginPages", "DownloadsUsePluginPages", "CalendarUsePluginPages"];
   var NOT_RUNNING = ["Disabled", "NotSupported", "Malfunctioned"];

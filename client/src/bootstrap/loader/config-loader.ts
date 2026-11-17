@@ -10,7 +10,7 @@ import { buildUserConfigFromBootstrap, fetchUserScopedConfig } from './user-conf
 /** Per-caller public config fields; item looks are projected to what that user can see. */
 const USER_SCOPED_PUBLIC_KEYS = ['TagLookItemOverrides'];
 const CUSTOM_TAB_FLAGS = ['BookmarksUseCustomTabs', 'CalendarUseCustomTabs', 'HiddenContentUseCustomTabs',
-    'DownloadsUseCustomTabs', 'RecommendationsUseCustomTabs', 'ActivityFeedUseCustomTabs', 'CatchUpUseCustomTabs'];
+    'DownloadsUseCustomTabs', 'RecommendationsUseCustomTabs', 'ActivityFeedUseCustomTabs', 'CatchUpUseCustomTabs', 'LeavingSoonPageUseCustomTabs'];
 const PLUGIN_PAGE_FLAGS = ['BookmarksUsePluginPages', 'HiddenContentUsePluginPages', 'DownloadsUsePluginPages', 'CalendarUsePluginPages'];
 const NOT_RUNNING = ['Disabled', 'NotSupported', 'Malfunctioned'];
 

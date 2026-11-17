@@ -89,6 +89,8 @@ export interface TagRuntimeHelpers {
     addCSS?(id: string, css: string): unknown;
     createObserver?: Dom['createObserver'];
     debounce<A extends unknown[]>(callback: (...args: A) => void, wait: number): (...args: A) => void;
+    isActiveTabContainer?(node: HTMLElement): boolean;
+    observeTabContainers?(name: string, selector: string, callback: () => void): unknown;
 }
 /** The legacy global surface this slice reads and installs, and nothing else. */
 export interface TagRuntimeBridge {
@@ -120,6 +122,12 @@ export interface TagRuntimeBridge {
     tagItemEditor?: ItemEditor;
     tagItemMenu?: { inject(): Promise<void>; DATA_ID: string };
     maintainerrMenu?: MaintainerrMenu;
+    /** The removal actions of whichever tool is on (upstream da0ea773); the same object as `maintainerrMenu`. */
+    removalMenu?: MaintainerrMenu;
+    /** The Leaving soon page (upstream da0ea773's extras/leavingsoon-page.js), mounted by its tab, custom tab and plugin page. */
+    leavingSoonPage?: import('./leaving-soon/leaving-soon-page').LeavingSoonPage;
+    nativeTabs?: { register(id: string, title: string, mount: (panel: HTMLElement) => void, icon: string): void };
+    themer?: { getThemeVariables?(): { primaryAccent?: string } | undefined };
     tagStyles?: import('./layout/tag-styles').TagStyles;
     genreTags?: { iconFor(name: string): string; labelFor(name: string): string };
     logoTags?: import('./types/logo/logotags').LogoTags;

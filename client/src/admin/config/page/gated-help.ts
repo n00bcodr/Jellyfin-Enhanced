@@ -59,7 +59,7 @@ export function createGatedHelp(m: GatedHelpDeps) {
 
         // A page can use the native Home tab or Custom Tabs, never both: the two
         // would register competing tabs for the same page.
-        var TAB_EXCLUSIVE_PAIRS = ['bookmarks', 'hiddenContent', 'downloads', 'calendar', 'recommendations', 'activityFeed', 'catchUp'].map(function(p) {
+        var TAB_EXCLUSIVE_PAIRS = ['bookmarks', 'hiddenContent', 'downloads', 'calendar', 'recommendations', 'activityFeed', 'catchUp', 'leavingSoonPage'].map(function(p) {
             return { native: p + 'UseNativeTab', custom: p + 'UseCustomTabs' };
         });
 

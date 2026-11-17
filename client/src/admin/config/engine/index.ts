@@ -32,6 +32,11 @@ function conditionHolds(controlId: string, equals: string | undefined): boolean 
     return element.type === 'checkbox' ? isChecked(element) : !!element.value;
 }
 
+/** Whether a showIf controller is itself hidden by another showIf (then it counts as off). */
+function controlHidden(controlId: string): boolean {
+    return !!controlOf(controlId)?.closest('.jea-dep-hidden');
+}
+
 /** A section whose main toggle is off hides its sub-settings (search mode and the main toggle itself keep them reachable). */
 function syncCollapse(): void {
     document.querySelectorAll('.jea-section').forEach(section => {
@@ -68,12 +73,14 @@ export function createEngine(): AdminEngine {
     /** Per-field showIf: hide the row and its description until the controlling toggle (or select value) matches. */
     function syncShowIf(): void {
         document.querySelectorAll<HTMLElement>('[data-jea-showif]').forEach(wrapper => {
-            wrapper.classList.toggle('jea-dep-hidden', !conditionHolds(wrapper.dataset.jeaShowif ?? '', wrapper.dataset.jeaEquals));
+            const id = wrapper.dataset.jeaShowif ?? '';
+            wrapper.classList.toggle('jea-dep-hidden', !conditionHolds(id, wrapper.dataset.jeaEquals) || controlHidden(id));
         });
         allFields(sections).forEach(field => {
             if (!field.showIf) return;
             const condition = conditionOf(field.showIf);
-            const on = conditionHolds(condition.id, condition.equals === undefined ? undefined : String(condition.equals));
+            // A controller that is itself hidden counts as off, so a field depending on it hides with it (upstream da0ea773).
+            const on = conditionHolds(condition.id, condition.equals === undefined ? undefined : String(condition.equals)) && !controlHidden(condition.id);
             const control = document.getElementById(field.id);
             const row = control && control.closest('.jea-row');
             if (row) row.classList.toggle('jea-dep-hidden', !on);

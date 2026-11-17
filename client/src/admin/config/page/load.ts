@@ -267,6 +267,11 @@ export function createLoad(m: LoadDeps) {
                 var __cuAuto = asInput(document.querySelector('#catchUpAutoCreateCustomTab'));
                 if (__cuAuto) __cuAuto.checked = config.CatchUpAutoCreateCustomTab === true;
                 needInput(document.querySelector('#activityFeedUseCustomTabs')).checked = config.ActivityFeedUseCustomTabs === true;
+                needInput(document.querySelector('#leavingSoonPageUseNativeTab')).checked = config.LeavingSoonPageUseNativeTab === true;
+                needInput(document.querySelector('#leavingSoonPageUsePluginPages')).checked = config.LeavingSoonPageUsePluginPages === true;
+                needInput(document.querySelector('#leavingSoonPageUseCustomTabs')).checked = config.LeavingSoonPageUseCustomTabs === true;
+                var __lsAuto = asInput(document.querySelector('#leavingSoonPageAutoCreateCustomTab'));
+                if (__lsAuto) __lsAuto.checked = config.LeavingSoonPageAutoCreateCustomTab === true;
                 var __aAuto = asInput(document.querySelector('#activityFeedAutoCreateCustomTab'));
                 if (__aAuto) __aAuto.checked = config.ActivityFeedAutoCreateCustomTab === true;
 

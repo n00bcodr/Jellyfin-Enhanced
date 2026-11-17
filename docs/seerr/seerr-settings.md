@@ -261,7 +261,7 @@ Add related titles and follow-up season requests to item detail pages.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| **Show similar items** | On | Adds a **Similar** row to eligible movie/series details. |
+| **Show similar items** | On | Adds a **Similar** row to eligible movie/series details (season and episode pages use their series). |
 | **Show recommended items** | On | Adds a separate **Recommended** row. |
 | **Show "Request More" button on Series** | On | Adds **Request More** beside seasons when additional regular seasons with episodes are requestable. |
 | **Exclude items already in library** | On | Filters shared discovery/recommendation cards; separate from search exclusion. |

@@ -17,9 +17,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags
         /// <summary>Longest collection name the fallback list takes.</summary>
         public const int MaxCollectionNameLength = 200;
 
-        /// <summary>Whether a source is set: a usable Maintainerr URL or at least one collection name.</summary>
+        /// <summary>Whether Reclaimerr is the chosen removal tool (the only other choice is Maintainerr; upstream da0ea773).</summary>
+        public static bool UsesReclaimerr(PluginConfiguration? config)
+            => config != null && config.ReclaimerrEnabled;
+
+        /// <summary>
+        /// The chosen removal tool can be read: Reclaimerr with its address and token, or Maintainerr switched on with its
+        /// address. A Maintainerr URL kept while Maintainerr is off is not a source.
+        /// </summary>
+        public static bool ApiConfigured(PluginConfiguration? config)
+            => config != null && (UsesReclaimerr(config)
+                ? IsMaintainerrUrl(config.ReclaimerrUrl) && !string.IsNullOrWhiteSpace(config.ReclaimerrToken)
+                : config.LeavingSoonMaintainerrEnabled && IsMaintainerrUrl(config.LeavingSoonMaintainerrUrl));
+
+        /// <summary>Whether a source is set: the chosen removal tool's address or at least one collection name.</summary>
         public static bool Configured(PluginConfiguration? config)
-            => config != null && (IsMaintainerrUrl(config.LeavingSoonMaintainerrUrl) || CollectionNames(config.LeavingSoonCollections).Count > 0);
+            => config != null && (ApiConfigured(config) || CollectionNames(config.LeavingSoonCollections).Count > 0);
 
         /// <summary>An absolute http(s) base URL without credentials, query or fragment (empty is not one).</summary>
         public static bool IsMaintainerrUrl(string? url)
@@ -43,15 +56,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags
         }
 
         /// <summary>
-        /// Whether administrators' Maintainerr actions (mark, keep, postpone from the item menu) are on: their switch and
-        /// a Maintainerr URL.
+        /// Whether administrators' Maintainerr actions (mark, keep, postpone from the item menu) are on: their switch,
+        /// Maintainerr as the removal tool, and a Maintainerr URL.
         /// </summary>
         public static bool MaintainerrActionsEnabled(PluginConfiguration? config)
-            => config != null && config.LeavingSoonMaintainerrActions && IsMaintainerrUrl(config.LeavingSoonMaintainerrUrl);
+            => config != null && config.LeavingSoonMaintainerrActions && config.LeavingSoonMaintainerrEnabled && !UsesReclaimerr(config) && IsMaintainerrUrl(config.LeavingSoonMaintainerrUrl);
 
-        /// <summary>Whether the Leaving soon Home Screen Sections row is wanted: its switch and a Maintainerr URL.</summary>
+        /// <summary>Whether the Reclaimerr item-menu actions are on: the actions switch, Reclaimerr chosen with its address and token.</summary>
+        public static bool ReclaimerrActionsEnabled(PluginConfiguration? config)
+            => config != null && config.LeavingSoonMaintainerrActions && UsesReclaimerr(config) && ApiConfigured(config);
+
+        /// <summary>Whether a Reclaimerr service account is set (a username; its password is only for Reclaimerr's local login).</summary>
+        public static bool HasReclaimerrAccount(PluginConfiguration? config)
+            => config != null && !string.IsNullOrWhiteSpace(config.ReclaimerrUsername);
+
+        /// <summary>Whether signed-in users who are not administrators can request removals: the Reclaimerr actions and a service account.</summary>
+        public static bool RemovalRequestsEnabled(PluginConfiguration? config)
+            => ReclaimerrActionsEnabled(config) && HasReclaimerrAccount(config);
+
+        /// <summary>Whether the Leaving soon Home Screen Sections row is wanted: its switch and a removal tool that can be read.</summary>
         public static bool HomeRowWanted(PluginConfiguration? config)
-            => config != null && config.LeavingSoonHomeRow && IsMaintainerrUrl(config.LeavingSoonMaintainerrUrl);
+            => config != null && config.LeavingSoonHomeRow && ApiConfigured(config);
 
         /// <summary>
         /// Check the source fields of a configuration a save brings (the Services tab's Maintainerr card, an API
@@ -75,6 +100,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags
             var names = incoming.LeavingSoonCollections ?? string.Empty;
             if (IsCollectionList(names) && names.Length <= 4096) incoming.LeavingSoonCollections = names.Trim();
             else { incoming.LeavingSoonCollections = current?.LeavingSoonCollections ?? string.Empty; problems.Add($"Leaving collections are over {MaxCollectionNames} names of {MaxCollectionNameLength} characters"); }
+
+            // At most one removal tool is on. Both on (a restored backup, an API call) keeps the one switched on last:
+            // Reclaimerr when it was off before, else Maintainerr.
+            if (incoming.ReclaimerrEnabled && incoming.LeavingSoonMaintainerrEnabled)
+            {
+                if (current?.ReclaimerrEnabled == true) incoming.ReclaimerrEnabled = false;
+                else incoming.LeavingSoonMaintainerrEnabled = false;
+                problems.Add("Maintainerr and Reclaimerr cannot both be on; kept the one switched on last");
+            }
+
+            var reclaimerr = (incoming.ReclaimerrUrl ?? string.Empty).Trim();
+            if (reclaimerr.Length == 0 || IsMaintainerrUrl(reclaimerr)) incoming.ReclaimerrUrl = reclaimerr;
+            else { incoming.ReclaimerrUrl = current?.ReclaimerrUrl ?? string.Empty; problems.Add("Reclaimerr URL is not an http(s) address without credentials, query or fragment"); }
+
+            var token = (incoming.ReclaimerrToken ?? string.Empty).Trim();
+            if (token.Length <= 256 && token.All(c => c > ' ' && c < '\u007f')) incoming.ReclaimerrToken = token;
+            else { incoming.ReclaimerrToken = current?.ReclaimerrToken ?? string.Empty; problems.Add("Reclaimerr token is not printable ASCII without spaces (256 characters at most)"); }
+
+            var account = (incoming.ReclaimerrUsername ?? string.Empty).Trim();
+            if (account.Length <= 64 && account.All(c => c >= ' ' && c != '\u007f')) incoming.ReclaimerrUsername = account;
+            else { incoming.ReclaimerrUsername = current?.ReclaimerrUsername ?? string.Empty; problems.Add("Reclaimerr username is over 64 characters or has control characters"); }
+
+            var password = incoming.ReclaimerrPassword ?? string.Empty;
+            if (password.Length <= 256 && password.All(c => c >= ' ' && c != '\u007f')) incoming.ReclaimerrPassword = password;
+            else { incoming.ReclaimerrPassword = current?.ReclaimerrPassword ?? string.Empty; problems.Add("Reclaimerr password is over 256 characters or has control characters"); }
 
             incoming.LeavingSoonRefreshHours = Math.Clamp(incoming.LeavingSoonRefreshHours, 1, 168);
             return problems;

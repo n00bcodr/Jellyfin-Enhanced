@@ -64,28 +64,70 @@ define({
             ] }
         ]
     },
-    // Maintainerr: the main form owns these fields (saved with the page's Save button). The card lives here, the Services
-    // tab shows a linked copy, and the Media Tags tab (Status badges > Leaving soon) shows the live status and links here.
-    // The status line, Refresh now and the Overview's Service Status card are wired by page/service-status.ts. A setup card
-    // (data-dep-setup), like Bazarr's and Shoko's: Maintainerr needs no Sonarr or Radarr here, so the tab's lock skips it.
+    // Maintainerr and Reclaimerr (upstream da0ea773): the main form owns these fields (saved with the page's Save
+    // button). Exactly one of the two is the removal tool: each card has a Use switch, turning one on turns the other
+    // off (page/service-status.ts), and the settings of the one that is off are kept and collapse. The options both
+    // share (the live state, the item menu, the home row, the refresh interval) are in the Leaving soon card. The cards
+    // live here, the Services tab shows linked copies, and the Media Tags tab (Status badges > Leaving soon) shows the
+    // live status and links here. The status line, Refresh now, Create service account and the Overview's Service Status
+    // card are wired by page/service-status.ts. Setup cards (data-dep-setup), like Bazarr's and Shoko's: neither tool
+    // needs Sonarr or Radarr here, so the tab's lock skips them.
     'arr-maintainerr': {
         title: 'Maintainerr', iconImg: 'selfhst/svg/maintainerr.svg', attrs: { 'data-dep-setup': '' },
         items: [
-            { type: 'note', html: 'Maintainerr decides which items leave your library and when. Jellyfin Enhanced reads its collections to show <strong>days left</strong> on the <strong>Leaving soon</strong> media tag and in a <strong>Leaving soon</strong> home row, and lets administrators <strong>mark, keep and postpone</strong> removals from an item\'s &#8942; menu. Set Maintainerr up first: the plugin never creates collections. It adds items to the <em>manual</em> collection you made for that library.' },
-            { id: 'LeavingSoonMaintainerrUrl', prop: 'LeavingSoonMaintainerrUrl', type: 'text', label: 'Maintainerr URL', placeholder: 'http://maintainerr:6246',
+            { type: 'note', html: 'Maintainerr decides which items leave your library and when. Jellyfin Enhanced reads its collections for the <strong>Leaving soon</strong> tag and home row, and lets administrators <strong>mark, keep and postpone</strong> removals from an item\'s &#8942; menu. Set Maintainerr up first: the plugin never creates collections. It adds items to the <em>manual</em> collection you made for that library. The shared options are in the <strong>Leaving soon</strong> card.' },
+            { id: 'LeavingSoonMaintainerrEnabled', prop: 'LeavingSoonMaintainerrEnabled', type: 'toggle', default: true, label: 'Use Maintainerr',
+              desc: 'Only one of Maintainerr and Reclaimerr feeds <strong>Leaving soon</strong> and the item menu, so they never clash: turning one on turns the other off. The settings of the one that is off are kept.' },
+            { id: 'LeavingSoonMaintainerrUrl', prop: 'LeavingSoonMaintainerrUrl', type: 'text', label: 'Maintainerr URL', placeholder: 'http://maintainerr:6246', showIf: 'LeavingSoonMaintainerrEnabled',
               desc: 'The address this server reaches Maintainerr at (<code>http://</code> or <code>https://</code>, no credentials or query). Redirects are not followed: use the final address. Empty turns the Maintainerr features off.' },
-            { id: 'LeavingSoonMaintainerrApiKey', prop: 'LeavingSoonMaintainerrApiKey', type: 'text', label: 'Maintainerr API key',
-              toConfig: (v) => String(v || '').trim(), fromConfig: (v) => String(v || '') },
+            { id: 'LeavingSoonMaintainerrApiKey', prop: 'LeavingSoonMaintainerrApiKey', type: 'text', label: 'Maintainerr API key', showIf: 'LeavingSoonMaintainerrEnabled',
+              toConfig: (v) => String(v || '').trim(), fromConfig: (v) => String(v || '') }
+        ]
+    },
+    'arr-reclaimerr': {
+        title: 'Reclaimerr', iconImg: 'selfhst/svg/reclaimerr.svg', attrs: { 'data-dep-setup': '' },
+        items: [
+            { type: 'note', html: 'Reclaimerr decides which items leave your library, like Maintainerr. Jellyfin Enhanced reads its cleanup candidates and scheduled deletions for the <strong>Leaving soon</strong> tag and home row. Administrators can <strong>mark, keep and postpone</strong> from an item\'s &#8942; menu (pick an exact day), and any signed-in user can <strong>request a removal</strong>, which lands in Reclaimerr as a deletion request for an administrator to approve. The shared options are in the <strong>Leaving soon</strong> card.' },
+            { id: 'ReclaimerrEnabled', prop: 'ReclaimerrEnabled', type: 'toggle', default: false, label: 'Use Reclaimerr',
+              desc: 'Turning this on turns Maintainerr off (and the other way round). Its settings below are kept either way.' },
+            { id: 'ReclaimerrUrl', prop: 'ReclaimerrUrl', type: 'text', label: 'Reclaimerr URL', placeholder: 'http://reclaimerr:8000', showIf: 'ReclaimerrEnabled',
+              desc: 'The address this server reaches Reclaimerr at (<code>http://</code> or <code>https://</code>, no credentials or query). Redirects are not followed.' },
+            { id: 'ReclaimerrApiKey', prop: 'ReclaimerrToken', type: 'text', label: 'Reclaimerr API token', showIf: 'ReclaimerrEnabled',
+              toConfig: (v) => String(v || '').trim(), fromConfig: (v) => String(v || ''),
+              desc: 'Create it in Reclaimerr under <em>Settings &gt; Integrations</em> with the candidates (manage), protections (manage), media (read) and system (read) scopes. Used for reading and for Keep and Postpone.' },
+            { id: 'ReclaimerrActAsUser', prop: 'ReclaimerrActAsUser', type: 'toggle', default: true, label: 'Act as the Jellyfin user', showIf: 'ReclaimerrEnabled',
+              desc: 'Requests and schedules carry the name of the Jellyfin user who made them (<strong>Request removal</strong>, <strong>Mark for removal</strong>, cancelling or moving a scheduled deletion), through Reclaimerr\'s trusted-proxy sign-in. Turn on <code>FORWARD_AUTH_ENABLED</code> in Reclaimerr with this server\'s address in <code>FORWARD_AUTH_TRUSTED_PROXIES</code>, and the user needs a Reclaimerr account: when they sign in to Reclaimerr with their Jellyfin login (media sign-in), Reclaimerr creates one (for example <code>sam_user</code>) and links it to them, and the plugin finds it through that link, so nothing has to be created or mapped by hand. Where that does not work, the service account below is used instead.' },
+            { id: 'ReclaimerrUserHeader', prop: 'ReclaimerrUserHeader', type: 'text', default: 'Remote-User', label: 'User header', showIf: 'ReclaimerrActAsUser',
+              toConfig: (v) => String(v || '').trim() || 'Remote-User',
+              desc: 'The header Reclaimerr reads the user from: its <code>FORWARD_AUTH_USER_HEADER</code> (default <code>Remote-User</code>).' },
+            { id: 'ReclaimerrUserMap', prop: 'ReclaimerrUserMap', type: 'textarea', rows: 3, placeholder: 'sam = samuel', label: 'Jellyfin user to Reclaimerr user', showIf: 'ReclaimerrActAsUser',
+              toConfig: (v) => String(v || '').trim(),
+              desc: 'Normally empty: the plugin finds each user\'s Reclaimerr account through the link Reclaimerr made when they signed in with Jellyfin (needs the service account to read it), else by the same name. List a user here only to point them at a different Reclaimerr account: one <code>Jellyfin name = Reclaimerr name</code> per line. This wins over the link.' },
+            { id: 'ReclaimerrUsername', prop: 'ReclaimerrUsername', type: 'text', label: 'Service account username (fallback)', showIf: 'ReclaimerrEnabled',
+              toConfig: (v) => String(v || '').trim(),
+              desc: 'A dedicated Reclaimerr admin account, <strong>the fallback</strong> when the plugin cannot act as the user (Reclaimerr\'s trusted-proxy sign-in is off, or the user has no Reclaimerr account), and what reads scheduled deletions. Without acting as the user it is needed for <strong>Mark for removal</strong> and <strong>Request removal</strong>. Use <strong>Create service account</strong> below to make one (it asks for a Reclaimerr administrator\'s name, and a password only if their trusted sign-in is not available). Reading candidates, Keep and Postpone work with the token alone.' },
+            { id: 'ReclaimerrPassword', prop: 'ReclaimerrPassword', type: 'text', label: 'Service account password (only for local login)', showIf: 'ReclaimerrEnabled',
+              toConfig: (v) => String(v || ''), fromConfig: (v) => String(v || ''),
+              desc: 'Optional. With <strong>Act as the Jellyfin user</strong> on and Reclaimerr\'s trusted-proxy sign-in working, the service account signs in by name alone, so this can stay empty (and Reclaimerr\'s local login can be switched off). It is used only when that does not work.' },
+            { type: 'custom', showIf: 'ReclaimerrEnabled', html: '<div class="inputContainer jea-row"><button type="button" id="reclaimerrCreateAccountBtn" class="jea-btn">Create service account</button>'
+                + '<div id="reclaimerrCreateAccountLine" class="jea-hint">Asks for a Reclaimerr administrator\'s name once (and a password only if their trusted sign-in is not available; not stored), creates a <code>jellyfin-enhanced</code> admin account with a random password and saves it here. Save the Reclaimerr URL first.</div></div>' }
+        ]
+    },
+    // Shared by whichever removal tool is on: the live state, the item menu, the home row and the refresh interval.
+    'arr-leaving-soon': {
+        title: 'Leaving soon', icon: 'auto_delete', attrs: { 'data-dep-setup': '' },
+        items: [
+            { type: 'note', html: 'What the <strong>Leaving soon</strong> tag, the item menu and the home row use, whichever of Maintainerr and Reclaimerr is on. Turn one of them on in its card first.' },
             { type: 'custom', html: '<div class="inputContainer jea-row"><div class="je-api-row"><span id="maintainerrStatusIndicator" class="material-icons" aria-hidden="true"></span>'
                 + '<button type="button" id="maintainerrRefreshBtn" class="jea-btn"><i class="material-icons" aria-hidden="true" style="font-size:1.1em;vertical-align:middle;margin-right:4px">refresh</i>Refresh now</button></div>'
                 + '<div id="maintainerrStatusLine" class="jea-hint">&nbsp;</div><div id="maintainerrRowLine" class="jea-hint"></div>'
-                + '<div class="jea-hint">Save first: Refresh uses the saved settings. Cards never ask Maintainerr; the server reads it on the schedule below and keeps the answer in the tag cache.</div></div>' },
-            { id: 'LeavingSoonMaintainerrActions', prop: 'LeavingSoonMaintainerrActions', type: 'toggle', default: true, showIf: 'LeavingSoonMaintainerrUrl', label: 'Mark, keep and postpone from the item menu',
-              desc: 'Administrators get <strong>Mark for removal</strong>, <strong>Keep</strong> and <strong>Postpone removal</strong> in a movie or series\' &#8942; menu. Items are added to or removed from Maintainerr\'s existing manual collection for their library. Marking applies at once, with an Undo.' },
-            { id: 'LeavingSoonHomeRow', prop: 'LeavingSoonHomeRow', type: 'toggle', default: true, showIf: 'LeavingSoonMaintainerrUrl', label: 'Leaving soon home row',
+                + '<div class="jea-hint">Save first: Refresh uses the saved settings. Cards never ask the removal tool; the server reads it on the schedule below and keeps the answer in the tag cache.</div></div>' },
+            { id: 'LeavingSoonMaintainerrActions', prop: 'LeavingSoonMaintainerrActions', type: 'toggle', default: true, label: 'Mark, keep and postpone from the item menu',
+              desc: 'Administrators get <strong>Mark for removal</strong>, <strong>Keep</strong> and <strong>Postpone removal</strong> in a movie or series\' &#8942; menu (with Reclaimerr, each takes an exact day). Maintainerr: items are added to or removed from its existing manual collection for their library. Marking applies at once, with an Undo.' },
+            { id: 'LeavingSoonHomeRow', prop: 'LeavingSoonHomeRow', type: 'toggle', default: true, label: 'Leaving soon home row',
               desc: 'A <strong>Leaving soon</strong> row on the <a class="sectionTitle" href="https://github.com/IAmParadox27/jellyfin-plugin-home-sections/" target="_blank" rel="noopener">Home Screen Sections</a> home page, soonest removal first. Needs the Home Screen Sections and File Transformation plugins. It is added enabled for everyone; users with their own section list can turn it on or off there.' },
             { id: 'LeavingSoonRefreshHours', prop: 'LeavingSoonRefreshHours', type: 'number', min: 1, max: 168, default: 6, label: 'Refresh every (hours)',
-              desc: 'How often the server reads Maintainerr again (1&ndash;168 hours). A failed request is retried sooner. Each mark, keep or postpone reads it again at once.' }
+              desc: 'How often the server reads the removal tool again (1&ndash;168 hours). A failed request is retried sooner. Each mark, keep or postpone reads it again at once.' }
         ]
     },
     'arr-links': {

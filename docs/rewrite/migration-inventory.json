@@ -13,7 +13,7 @@
     "typedOutputs": 210,
     "legacyJavascript": 0,
     "inlineRuntimeScripts": 0,
-    "typedHtmlScripts": 10
+    "typedHtmlScripts": 11
   },
   "missingBaselineScripts": [],
   "missingMappedOutputs": [],
@@ -1733,7 +1733,7 @@
       "source": "client/src/admin/config/page-entry.ts",
       "template": "client/html/admin-config/configPage.html",
       "manifest": "client/html-entries/admin-config.json",
-      "sha256": "7de36e142bf76703037560b051f5aeb9041d9a0247318cb0ee0f7f65b374e18a"
+      "sha256": "3db246fc5f146305e1bf6c8514d96e4eaf3a66976d863ef25b21cf877fce5663"
     },
     {
       "path": "Configuration/mediaTagsPage.html",
@@ -1753,7 +1753,7 @@
       "source": "client/src/pages/activity-page.ts",
       "template": "client/html/bootstrap-pages/ActivityPage.html",
       "manifest": "client/html-entries/bootstrap-pages.json",
-      "sha256": "21410131461ba56d67873ce05353b6ea5a4ee7b6c5da8b62a404221f74461f06"
+      "sha256": "bff0da1a55b1081e4d1fe60dc6ac5f7fe7f2a13d927ce4492ff647099bf6fa9e"
     },
     {
       "path": "PluginPages/BookmarksPage.html",
@@ -1763,7 +1763,7 @@
       "source": "client/src/pages/bookmarks-page.ts",
       "template": "client/html/bootstrap-pages/BookmarksPage.html",
       "manifest": "client/html-entries/bootstrap-pages.json",
-      "sha256": "fb600db94ec0801765ecc48c004d60f97be40e33fd5409c980571640a23a9336"
+      "sha256": "0d5eee3037535545106aec25971924391a272a05cfe9165304b765a28185f38f"
     },
     {
       "path": "PluginPages/CalendarPage.html",
@@ -1773,7 +1773,7 @@
       "source": "client/src/pages/calendar-page.ts",
       "template": "client/html/bootstrap-pages/CalendarPage.html",
       "manifest": "client/html-entries/bootstrap-pages.json",
-      "sha256": "da90b494d242178616a9c4f59cd9e5874b1c5cbb3bc2b1252dd16c93fa42b610"
+      "sha256": "d0014d2daa4c72fe6824dc805f853e6b44870910db3f09f3f8b422faf12dd3a7"
     },
     {
       "path": "PluginPages/CatchUpPage.html",
@@ -1783,7 +1783,7 @@
       "source": "client/src/pages/catchup-page.ts",
       "template": "client/html/bootstrap-pages/CatchUpPage.html",
       "manifest": "client/html-entries/bootstrap-pages.json",
-      "sha256": "9291a50614a148a2e8ba759059127d1d0e070ba35c9cea3b9ef7bb9c643de7cf"
+      "sha256": "64c4e3247949ef7d52a1a7e4134132ec0e4343bc67f73ef80bba7905edcf815f"
     },
     {
       "path": "PluginPages/DownloadsPage.html",
@@ -1793,7 +1793,7 @@
       "source": "client/src/pages/downloads-page.ts",
       "template": "client/html/bootstrap-pages/DownloadsPage.html",
       "manifest": "client/html-entries/bootstrap-pages.json",
-      "sha256": "94023810a5c98b79217c52e7c4038e59c60dc8c1c422708d65fb642227faebff"
+      "sha256": "7cd97398f22fa8a24ee8ced9270b8395ae48361f4f66b458e7c817d3a2e716e8"
     },
     {
       "path": "PluginPages/HiddenContentPage.html",
@@ -1803,7 +1803,17 @@
       "source": "client/src/pages/hidden-content-page.ts",
       "template": "client/html/bootstrap-pages/HiddenContentPage.html",
       "manifest": "client/html-entries/bootstrap-pages.json",
-      "sha256": "c5e51567c67dc8c162ab99dc688d132275e063c9fb9abc2a91ee9a23538a42e8"
+      "sha256": "2aae665c3cb41879ed71cc286550b13d4595133a4daea768abc38ac165ca3bef"
+    },
+    {
+      "path": "PluginPages/LeavingSoonPage.html",
+      "scriptIndex": 0,
+      "status": "typed-generated",
+      "marker": "main",
+      "source": "client/src/pages/leaving-soon-page.ts",
+      "template": "client/html/bootstrap-pages/LeavingSoonPage.html",
+      "manifest": "client/html-entries/bootstrap-pages.json",
+      "sha256": "f7db6d132a53fbf2a619381035e6f81c08c7af3ebb149fa77df7b39b6936319f"
     },
     {
       "path": "PluginPages/RecommendationsPage.html",
@@ -1813,7 +1823,7 @@
       "source": "client/src/pages/recommendations-page.ts",
       "template": "client/html/bootstrap-pages/RecommendationsPage.html",
       "manifest": "client/html-entries/bootstrap-pages.json",
-      "sha256": "82226ef832c06bee59f811d8f5b4fd9de1a4038248652bad3192eae9b143bd1a"
+      "sha256": "e51b677c5d96b3a90d14cc30a1fead9fa60b0c059b5f9b19b874494efdd14a72"
     }
   ]
 }

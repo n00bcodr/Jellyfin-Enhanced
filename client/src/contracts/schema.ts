@@ -1814,6 +1814,21 @@ export const bootstrapSchema = {
         "LeavingSoonAvailable": {
           "type": "boolean"
         },
+        "LeavingSoonPageEnabled": {
+          "type": "boolean"
+        },
+        "LeavingSoonPageUseCustomTabs": {
+          "type": "boolean"
+        },
+        "LeavingSoonPageUseNativeTab": {
+          "type": "boolean"
+        },
+        "LeavingSoonPageUsePluginPages": {
+          "type": "boolean"
+        },
+        "LeavingSoonProvider": {
+          "type": "string"
+        },
         "LetterboxdEnabled": {
           "type": "boolean"
         },
@@ -1984,6 +1999,9 @@ export const bootstrapSchema = {
           "type": "boolean"
         },
         "RecommendationsUseNativeTab": {
+          "type": "boolean"
+        },
+        "RemovalRequestsAvailable": {
           "type": "boolean"
         },
         "RemoveContinueWatchingEnabled": {
@@ -2537,6 +2555,11 @@ export const bootstrapSchema = {
         "LanguageTagsShowSubtitles",
         "LanguageTagsStyle",
         "LeavingSoonAvailable",
+        "LeavingSoonPageEnabled",
+        "LeavingSoonPageUseCustomTabs",
+        "LeavingSoonPageUseNativeTab",
+        "LeavingSoonPageUsePluginPages",
+        "LeavingSoonProvider",
         "LetterboxdEnabled",
         "LogoTagsEnabled",
         "LogoTagsMaxLogos",
@@ -2591,6 +2614,7 @@ export const bootstrapSchema = {
         "RecommendationsPageEnabled",
         "RecommendationsUseCustomTabs",
         "RecommendationsUseNativeTab",
+        "RemovalRequestsAvailable",
         "RemoveContinueWatchingEnabled",
         "ResolutionTagOrder",
         "ReviewTranslationEnabled",

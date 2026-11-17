@@ -182,6 +182,11 @@ export function createSave(m: SaveDeps) {
             var __cuAutoSave = asInput(document.querySelector('#catchUpAutoCreateCustomTab'));
             config.CatchUpAutoCreateCustomTab = !!(__cuAutoSave && __cuAutoSave.checked);
             config.ActivityFeedUseCustomTabs = needInput(document.querySelector('#activityFeedUseCustomTabs')).checked;
+            config.LeavingSoonPageUseNativeTab = needInput(document.querySelector('#leavingSoonPageUseNativeTab')).checked;
+            config.LeavingSoonPageUsePluginPages = needInput(document.querySelector('#leavingSoonPageUsePluginPages')).checked;
+            config.LeavingSoonPageUseCustomTabs = needInput(document.querySelector('#leavingSoonPageUseCustomTabs')).checked;
+            var __lsAutoSave = asInput(document.querySelector('#leavingSoonPageAutoCreateCustomTab'));
+            config.LeavingSoonPageAutoCreateCustomTab = !!(__lsAutoSave && __lsAutoSave.checked);
             var __aAutoSave = asInput(document.querySelector('#activityFeedAutoCreateCustomTab'));
             config.ActivityFeedAutoCreateCustomTab = !!(__aAutoSave && __aAutoSave.checked);
 

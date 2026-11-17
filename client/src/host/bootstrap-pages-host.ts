@@ -175,6 +175,8 @@ export type CalendarPageFacade = {
     handleEventClick(event: Event): void;
 };
 export type CatchUpFacade = { injectStyles(): void; renderPage(container?: HTMLElement): void };
+/** features/media-tags/leaving-soon/leaving-soon-page.ts LeavingSoonPage (upstream da0ea773), the members the page reads. */
+export type LeavingSoonFacade = { injectStyles(): void; renderForCustomTab(host: HTMLElement): void; stopPolling(): void };
 /** The members of the downloads page state (`State`) the page script reads and writes. */
 export interface DownloadsPageState { pageVisible: boolean; _customTabMode?: boolean; _pluginPageVisible?: boolean }
 export type DownloadsPageFacade = { injectStyles(): void; renderPage(target?: HTMLElement): void; refresh(): Promise<void> }
@@ -183,7 +185,7 @@ export type DownloadsPageFacade = { injectStyles(): void; renderPage(target?: HT
 export type HiddenContentPageFacade = { injectStyles?(): void; renderPage?(target?: HTMLElement): void };
 export type RecommendationsPageFacade = { renderForCustomTab(element: HTMLElement | null): void };
 
-/** What the seven page scripts may read; each facade stays owned by its feature. */
+/** What the eight page scripts may read; each facade stays owned by its feature. */
 export interface PagesBridge {
     userConfig?: object;
     pluginConfig?: { DownloadsPagePollingEnabled?: boolean; DownloadsPollIntervalSeconds?: number };
@@ -194,6 +196,7 @@ export interface PagesBridge {
     downloadsPage?: DownloadsPageFacade;
     hiddenContent?: object;
     hiddenContentPage?: HiddenContentPageFacade;
+    leavingSoonPage?: LeavingSoonFacade;
     recommendationsPage?: RecommendationsPageFacade;
 }
 export interface PagesClient { getCurrentUserId?(): unknown; getUrl?(path: string): string; accessToken?(): unknown; serverId?: unknown }

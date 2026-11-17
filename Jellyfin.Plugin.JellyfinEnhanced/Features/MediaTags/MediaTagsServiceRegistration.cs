@@ -28,6 +28,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags
                 serviceCollection.AddSingleton<LeavingSoonService>();
                 // Administrators' Maintainerr actions (mark, keep, postpone) over the same client.
                 serviceCollection.AddSingleton<MaintainerrActions>();
+                // Reclaimerr's actions (upstream da0ea773): mark, keep, postpone, removal requests and their review.
+                serviceCollection.AddSingleton<ReclaimerrActions>();
                 // Server-wide trending list for the Status Tags poster badges (30-minute cache).
                 serviceCollection.AddSingleton<StatusTagsTrendingService>();
                 // TMDB schedule facts for the Status Tags series badges (rate-limited lookups).

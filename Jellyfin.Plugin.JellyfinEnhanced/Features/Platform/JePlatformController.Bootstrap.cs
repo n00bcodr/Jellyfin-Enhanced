@@ -346,8 +346,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Platform
                 StatusTagsDirectPlay = config.StatusTagsDirectPlay,
                 LeavingSoonAvailable = LeavingSoonSources.Configured(config),
                 // Whether administrators can mark, keep and postpone removals from the item menu (the actions
-                // switch and a Maintainerr URL); the rows themselves are admin-only on the server.
-                MaintainerrActionsAvailable = LeavingSoonSources.MaintainerrActionsEnabled(config),
+                // switch and a Maintainerr or Reclaimerr address); the rows themselves are admin-only on the server.
+                MaintainerrActionsAvailable = LeavingSoonSources.MaintainerrActionsEnabled(config) || LeavingSoonSources.ReclaimerrActionsEnabled(config),
+                // Whether anyone signed in can ask for a removal (Reclaimerr with a service account).
+                RemovalRequestsAvailable = LeavingSoonSources.RemovalRequestsEnabled(config),
+                LeavingSoonProvider = LeavingSoonSources.UsesReclaimerr(config) ? "reclaimerr" : "maintainerr",
                 StatusTagsOnCollections = config.StatusTagsOnCollections,
                 StatusTagsJustAddedDays = config.StatusTagsJustAddedDays,
                 StatusTagsNewReleaseDays = config.StatusTagsNewReleaseDays,
@@ -524,6 +527,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Platform
                 CatchUpUsePluginPages = config.CatchUpUsePluginPages,
                 CatchUpUseCustomTabs = config.CatchUpUseCustomTabs,
                 CatchUpUseNativeTab = config.CatchUpUseNativeTab,
+
+                // Leaving soon page placement
+                LeavingSoonPageEnabled = config.LeavingSoonPageEnabled,
+                LeavingSoonPageUsePluginPages = config.LeavingSoonPageUsePluginPages,
+                LeavingSoonPageUseCustomTabs = config.LeavingSoonPageUseCustomTabs,
+                LeavingSoonPageUseNativeTab = config.LeavingSoonPageUseNativeTab,
 
                 // Maintenance Mode
                 MaintenanceModeEnabled = mmActive,

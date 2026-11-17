@@ -1,7 +1,7 @@
 {
   "description": "Budget for what the plugin assembly, Jellyfin.Plugin.JellyfinEnhanced.dll, embeds (client assets, pages, tag assets). embeddedBytes: the summed length of its manifest resources as embedded (a packed one at its packed length). The DLL is these plus about 3.1 MB of code. The budget counts the resources, not the DLL file, because gate T runs with coverage and the file on disk is then the instrumented copy (0.65 MB longer); the resources are the same bytes either way. Checked by tests/backend/Api/PackedResourcesTests.cs (gate T). It is a ratchet: lowering the limit needs no reason; a history entry that raises it must give one. `limits` is always the last history entry's.",
   "limits": {
-    "embeddedBytes": 11761386
+    "embeddedBytes": 11893955
   },
   "history": [
     {
@@ -37,6 +37,17 @@
         "embeddedBytes": 11761386
       },
       "reason": "Raised by exactly what the ports add, so the headroom left before them stays as it was. Measured with PackedResourcesTests on each commit: 11,557,580 bytes on ab0cb833, 11,725,053 with the ports, so +167,473 on the previous limit 11,593,913. By port: subtitle sync (9d1d5e8f: its five modules and stylesheet in auto-skip.js, 32 strings, the icon font subset) +63,808; hiding individual tags (e907396d) +32,526; player shortcuts without a <video> (3f8e4724: the OSD reader in playback.js and bookmarks.js, the seek history, the settings menu) +31,811; Weblate #1067 (36 keys in 32 locales) +22,439; tag text (25a168ae, 186121ed) +7,073; removing watched requests (6916b31b) +5,039; the Recommendations Back fixes (c165a07b) +3,789; Weblate #1070 +732; the discovery section's order (ff75fbfa) +228; incomplete custom rules (90c721ef) +28. A script counts with its minified twin and both source maps, packed. The new limit stays below what upstream's own build of ff75fbfa embeds, 12,663,961 bytes."
+    },
+    {
+      "date": "2026-11-17",
+      "change": "upstream sync: ports of upstream da0ea773, c451730b and 5b92e29f, branch sync/auto-20261117-1650",
+      "measured": {
+        "embeddedBytes": 11858280
+      },
+      "limits": {
+        "embeddedBytes": 11893955
+      },
+      "reason": "Raised by exactly what the ports add, so the headroom left before them stays as it was. Measured with PackedResourcesTests on each commit: 11,725,711 bytes on 5043e2db, 11,858,280 with the ports, so +132,569 on the previous limit 11,761,386. By port: Reclaimerr and the Leaving Soon page (459e643a: the page, its tab and the item menu's Reclaimerr rows in tag-item-menu.js with its minified twin and source maps, the generated Plugin Pages page, the admin cards in sections.js, the strings in en.json; all packed) +116,173; the series' rows on season and episode pages (d423fb20, item-details.js) +1,156; the Weblate translations (09aadd25, 32 locale files) +15,240."
     }
   ]
 }

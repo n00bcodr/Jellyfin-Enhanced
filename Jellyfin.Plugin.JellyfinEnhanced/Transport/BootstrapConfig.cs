@@ -160,6 +160,8 @@ public sealed class BootstrapPublicConfig
     public required bool StatusTagsDirectPlay { get; init; }
     public required bool LeavingSoonAvailable { get; init; }
     public required bool MaintainerrActionsAvailable { get; init; }
+    public required bool RemovalRequestsAvailable { get; init; }
+    public required string LeavingSoonProvider { get; init; }
     public required bool StatusTagsOnCollections { get; init; }
     public required int StatusTagsJustAddedDays { get; init; }
     public required int StatusTagsNewReleaseDays { get; init; }
@@ -298,6 +300,10 @@ public sealed class BootstrapPublicConfig
     public required bool CatchUpUsePluginPages { get; init; }
     public required bool CatchUpUseCustomTabs { get; init; }
     public required bool CatchUpUseNativeTab { get; init; }
+    public required bool LeavingSoonPageEnabled { get; init; }
+    public required bool LeavingSoonPageUsePluginPages { get; init; }
+    public required bool LeavingSoonPageUseCustomTabs { get; init; }
+    public required bool LeavingSoonPageUseNativeTab { get; init; }
     public required bool MaintenanceModeEnabled { get; init; }
     public required string MaintenanceModeMessage { get; init; }
     public required DateTime? MaintenanceModeEndsAt { get; init; }

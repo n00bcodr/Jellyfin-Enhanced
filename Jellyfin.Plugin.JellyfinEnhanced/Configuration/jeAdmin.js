@@ -663,6 +663,9 @@
     if (equals !== void 0) return element.value === equals;
     return element.type === "checkbox" ? isChecked(element) : !!element.value;
   }
+  function controlHidden(controlId) {
+    return !!controlOf(controlId)?.closest(".jea-dep-hidden");
+  }
   function syncCollapse() {
     document.querySelectorAll(".jea-section").forEach((section) => {
       const main = section.querySelector(".je-main-feature input");
@@ -690,12 +693,13 @@
     let loadSettle;
     function syncShowIf() {
       document.querySelectorAll("[data-jea-showif]").forEach((wrapper) => {
-        wrapper.classList.toggle("jea-dep-hidden", !conditionHolds(wrapper.dataset.jeaShowif ?? "", wrapper.dataset.jeaEquals));
+        const id = wrapper.dataset.jeaShowif ?? "";
+        wrapper.classList.toggle("jea-dep-hidden", !conditionHolds(id, wrapper.dataset.jeaEquals) || controlHidden(id));
       });
       allFields(sections).forEach((field) => {
         if (!field.showIf) return;
         const condition = conditionOf(field.showIf);
-        const on = conditionHolds(condition.id, condition.equals === void 0 ? void 0 : String(condition.equals));
+        const on = conditionHolds(condition.id, condition.equals === void 0 ? void 0 : String(condition.equals)) && !controlHidden(condition.id);
         const control = document.getElementById(field.id);
         const row = control && control.closest(".jea-row");
         if (row) row.classList.toggle("jea-dep-hidden", !on);

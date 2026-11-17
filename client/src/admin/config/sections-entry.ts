@@ -131,6 +131,7 @@ import { defineAllSections } from './sections';
  *  { id: 'activityFeedShowReviewed', type: 'toggle' }
  *  { id: 'activityFeedShowActiveStreams', type: 'toggle' }
  *  { id: 'activityFeedOwnOnlyForNonAdmins', type: 'toggle' }
+ *  { id: 'leavingSoonPageEnabled', type: 'toggle' }
  *  { id: 'catchUpEnabled', type: 'toggle' }
  *  { id: 'catchUpLogEnabled', type: 'toggle' }
  *  { id: 'coloredRatingsEnabled', type: 'toggle' }
@@ -223,8 +224,17 @@ import { defineAllSections } from './sections';
  *  { id: 'shokoShowParodies', type: 'toggle' }
  *  { id: 'shokoShowOther', type: 'toggle' }
  *  { id: 'shokoUrlMappings', type: 'textarea' }
+ *  { id: 'LeavingSoonMaintainerrEnabled', type: 'toggle' }
  *  { id: 'LeavingSoonMaintainerrUrl', type: 'text' }
  *  { id: 'LeavingSoonMaintainerrApiKey', type: 'text' }
+ *  { id: 'ReclaimerrEnabled', type: 'toggle' }
+ *  { id: 'ReclaimerrUrl', type: 'text' }
+ *  { id: 'ReclaimerrApiKey', type: 'text' }
+ *  { id: 'ReclaimerrActAsUser', type: 'toggle' }
+ *  { id: 'ReclaimerrUserHeader', type: 'text' }
+ *  { id: 'ReclaimerrUserMap', type: 'textarea' }
+ *  { id: 'ReclaimerrUsername', type: 'text' }
+ *  { id: 'ReclaimerrPassword', type: 'text' }
  *  { id: 'LeavingSoonMaintainerrActions', type: 'toggle' }
  *  { id: 'LeavingSoonHomeRow', type: 'toggle' }
  *  { id: 'LeavingSoonRefreshHours', type: 'number' }

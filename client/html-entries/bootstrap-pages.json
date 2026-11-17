@@ -35,6 +35,12 @@
       "main": "client/src/pages/hidden-content-page.ts"
     }
   },
+  "PluginPages/LeavingSoonPage.html": {
+    "template": "client/html/bootstrap-pages/LeavingSoonPage.html",
+    "scripts": {
+      "main": "client/src/pages/leaving-soon-page.ts"
+    }
+  },
   "PluginPages/RecommendationsPage.html": {
     "template": "client/html/bootstrap-pages/RecommendationsPage.html",
     "scripts": {

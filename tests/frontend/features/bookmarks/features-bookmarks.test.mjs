@@ -430,3 +430,18 @@ test('without a <video> and no position on the OSD, no bookmark is offered at 0:
   assert.equal(h.document.getElementById('bookmark-time'),null);
   assert.deepEqual(h.toasts,['toast_player_unsupported']);
 });
+test('deleting the only bookmark of the playing item removes its seek-bar marker',async t=>{
+  const h=setup(t,{only:{itemId:'item',timestamp:300,label:'scene'}});
+  h.document.body.innerHTML=`<div class="videoPlayerContainer"><video></video></div><div class="videoOsdBottom">
+    <div class="osdPositionSliderContainer"><input type="range" class="osdPositionSlider"></div><button class="btnUserRating" data-id="item"></button></div>`;
+  Object.defineProperty(h.document.querySelector('video'),'duration',{value:1200});
+  h.routes.items=async()=>({Items:[{Id:'item',Name:'Movie',Type:'Movie'}]});
+  const markers=()=>h.document.querySelectorAll('.videoOsdBottom .je-bookmark-marker').length;
+  await h.api.updateMarkers();
+  assert.equal(markers(),1);
+  await h.api.showModal('edit',{id:'only',...h.JE.userConfig.bookmark.bookmarks.only});
+  h.document.querySelector('.je-bookmark-btn-delete[data-bookmark-id="only"]').click();
+  await settle(()=>h.toasts.includes('toast_bookmark_deleted'));
+  assert.deepEqual(h.JE.userConfig.bookmark.bookmarks,{});
+  await settle(()=>markers()===0); // the delete handler's own marker refresh
+});

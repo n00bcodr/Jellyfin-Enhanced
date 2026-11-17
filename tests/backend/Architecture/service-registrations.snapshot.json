@@ -96,6 +96,7 @@
     "PosterTagStatusProvider | PosterTagStatusProvider | Singleton",
     "PosterTagUserCache | PosterTagUserCache | Singleton",
     "PosterTagVariantToken | PosterTagVariantToken | Singleton",
+    "ReclaimerrActions | ReclaimerrActions | Singleton",
     "RefreshAwardTagsTask | RefreshAwardTagsTask | Transient",
     "RefreshCdnAssetsTask | RefreshCdnAssetsTask | Transient",
     "RequestIdentityService | RequestIdentityService | Singleton",

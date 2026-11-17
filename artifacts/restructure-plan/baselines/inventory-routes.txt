@@ -116,6 +116,7 @@ GET /JellyfinEnhanced/jellyseerr/watchlist
 POST /JellyfinEnhanced/jellyseerr/watchlist
 GET /JellyfinEnhanced/jellyseerr/{type}/{serverId}
 GET /JellyfinEnhanced/js/{**path}
+GET /JellyfinEnhanced/leaving-soon/list
 GET /JellyfinEnhanced/locales
 GET /JellyfinEnhanced/locales/{lang}.json
 GET /JellyfinEnhanced/logo/{size}/{file}
@@ -133,6 +134,14 @@ GET /JellyfinEnhanced/person/{personId}
 GET /JellyfinEnhanced/private-config
 GET /JellyfinEnhanced/proxy/avatar
 GET /JellyfinEnhanced/public-config
+GET /JellyfinEnhanced/reclaimerr/item/{itemId}
+POST /JellyfinEnhanced/reclaimerr/mark
+POST /JellyfinEnhanced/reclaimerr/postpone
+POST /JellyfinEnhanced/reclaimerr/request
+POST /JellyfinEnhanced/reclaimerr/requests/{requestId:int}/approve
+POST /JellyfinEnhanced/reclaimerr/requests/{requestId:int}/deny
+POST /JellyfinEnhanced/reclaimerr/service-account
+POST /JellyfinEnhanced/reclaimerr/unmark
 POST /JellyfinEnhanced/reset-all-users-settings
 GET /JellyfinEnhanced/reviews/admin/all
 DELETE /JellyfinEnhanced/reviews/admin/{userIdN}/{mediaType}/{tmdbId}

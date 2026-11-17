@@ -67,7 +67,8 @@ Sources are relative to this folder; outputs are relative to `Jellyfin.Plugin.Je
 
 - Facades this feature publishes on `window.JellyfinEnhanced`: `tagPipeline`, `tagCacheStore`, `tagDirectPlay`, `reinitializeTagLayout`, `reinitializeQualityTags`, `adminTags`, `appendUserRatingToContainer`; `peopleTags` (step C4: the same object as its `JE.internals.peopleTags` slot, for the details page).
 - `JE.internals` slots it owns (`tests/frontend/architecture/internals-owners.json`): `peopleTags`.
-- `js/tags/tag-item-menu.js` also carries `editor/maintainerr-item-menu.ts` (upstream's `tags/maintainerr-item-menu.js`, the administrators' Mark / Keep / Postpone rows in the item menu, `JE.maintainerrMenu` for tests): the load order is pinned, so it has no script of its own, and the Media Tags row's capture listener hands it each ⋮ press.
+- `js/tags/tag-item-menu.js` also carries `editor/maintainerr-item-menu.ts` (upstream's `tags/maintainerr-item-menu.js`, the Mark / Keep / Postpone rows in the item menu for whichever removal tool is on, Maintainerr or Reclaimerr, and Reclaimerr's Request removal for anyone signed in; `JE.removalMenu`, also `JE.maintainerrMenu`): the load order is pinned, so it has no script of its own, and the Media Tags row's capture listener hands it each ⋮ press.
+- The same output carries `leaving-soon/` (upstream da0ea773's `extras/leavingsoon-page.js` and `extras/leavingsoon-custom-tab.js`): the Leaving Soon page (`JE.leavingSoonPage`), its native Home tab and Custom Tabs panel. Its Plugin Pages page is `PluginPages/LeavingSoonPage.html` (`client/src/pages/leaving-soon-page.ts`, `client/html-entries/bootstrap-pages.json`).
 
 ## Settings / admin UI
 

@@ -89,6 +89,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
             finally { _rebuildLock.Release(); }
         }
 
+        /// <summary>
+        /// After an item-menu action: stamp the cache entries with the facts the action already refreshed, in the
+        /// background. The action's answer never waits for the cache's rebuild lock (a rebuild after a restart can
+        /// hold it for minutes); badges and the row follow when the cache is free.
+        /// </summary>
+        internal void QueueLeavingPublish()
+        {
+            _ = Task.Run(async () =>
+            {
+                try { await RefreshLeavingAsync(force: false, CancellationToken.None).ConfigureAwait(false); }
+                catch (Exception ex) { _logger.Warning($"[LeavingSoon] Publishing after an action failed: {ex.Message}"); }
+            });
+        }
+
         /// <summary>After a configuration save that changed the source: refresh in the background.</summary>
         internal void QueueLeavingRefresh()
         {

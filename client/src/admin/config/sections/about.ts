@@ -21,6 +21,9 @@ define({
 define({
     // Maintainerr's card lives in the *arr tab (its fields belong to the main form); this is its linked copy.
     'svc-maintainerr': { mirrorOf: 'arr-maintainerr' },
+    // Reclaimerr's card and the Leaving soon card shared by both tools (upstream da0ea773), as linked copies too.
+    'svc-reclaimerr': { mirrorOf: 'arr-reclaimerr' },
+    'svc-leaving-soon': { mirrorOf: 'arr-leaving-soon' },
     'svc-tmdb': { mirrorOf: 'elsewhere-tmdb' },
     'svc-anilist': { mirrorOf: 'reviews-anilist' },
     'svc-mdblist': { mirrorOf: 'mdblist' },

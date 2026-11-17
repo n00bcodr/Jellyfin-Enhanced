@@ -793,7 +793,7 @@ test('the Custom Tabs copy snippets escape their quotes in the markup and still 
 // Upstream 481a10ee: Maintainerr's card moves to the *arr tab with its fields (address, key, the item-menu actions and
 // home row switches, the refresh interval) saved by the page's Save, a linked copy under Services, a live status line
 // with Refresh now, and a Maintainerr card in the Overview's Service Status.
-test('the *arr tab has the Maintainerr card with its settings, Services has its linked copy, and Refresh reads the server', async t => {
+test('the *arr tab has the Maintainerr, Reclaimerr and Leaving soon cards, Services has their linked copies, and Refresh reads the server', async t => {
   const status = { Configured: true, Maintainerr: true, Actions: true, HomeRow: 'hss-missing', Items: 4, Dated: 3, LastSuccess: Date.UTC(2026, 9, 30, 9), NextRefresh: Date.UTC(2026, 9, 30, 15), LastError: null };
   const refreshed = { ...status, Items: 5, HomeRow: 'registered' };
   const h = await loadedPage(t, {
@@ -801,15 +801,22 @@ test('the *arr tab has the Maintainerr card with its settings, Services has its 
     ajax: (request) => request.url.includes('/admin/leaving-soon') ? (request.url.endsWith('/refresh') ? refreshed : status) : undefined,
   });
   await settle(h.window, 20);
-  const arrCards = [...h.document.querySelectorAll('#arr fieldset.jea-section')].map(c => c.querySelector('legend').textContent.trim());
-  assert.ok(arrCards.indexOf('Maintainerr') === arrCards.indexOf('Shoko') + 1, arrCards.join(', '));
+  // A card's title without its icon (an icon card's legend holds the icon's ligature text).
+  const title = c => [...c.querySelector('legend').childNodes].filter(node => !node.classList?.contains('material-icons')).map(node => node.textContent).join('').trim();
+  const arrCards = [...h.document.querySelectorAll('#arr fieldset.jea-section')].map(title);
+  const shoko = arrCards.indexOf('Shoko');
+  assert.deepEqual(arrCards.slice(shoko + 1, shoko + 4), ['Maintainerr', 'Reclaimerr', 'Leaving soon'], arrCards.join(', '));
   const services = [...h.document.querySelectorAll('#services fieldset.jea-section')];
-  assert.deepEqual(services.map(c => c.querySelector('legend').textContent.trim()), ['TMDB', 'AniList', 'MDBList Ratings', 'Content Warnings (DoesTheDogDie)', 'Maintainerr']);
-  assert.ok(services.at(-1).classList.contains('jea-mirror'), 'the Services card is the linked copy');
-  // No Sonarr or Radarr is set up: the *arr tab locks its feature cards, but Maintainerr's is a setup card like Shoko's.
-  const card = [...h.document.querySelectorAll('#arr fieldset.jea-section')].find(c => c.querySelector('legend').textContent.trim() === 'Maintainerr');
-  assert.ok(card.hasAttribute('data-dep-setup'));
-  assert.equal(card.classList.contains('jea-locked'), false);
+  assert.deepEqual(services.map(title), ['TMDB', 'AniList', 'MDBList Ratings', 'Content Warnings (DoesTheDogDie)', 'Maintainerr', 'Reclaimerr', 'Leaving soon']);
+  assert.ok(services.slice(-3).every(c => c.classList.contains('jea-mirror')), 'the Services cards are the linked copies');
+  // No Sonarr or Radarr is set up: the *arr tab locks its feature cards, but the removal tools' are setup cards like Shoko's.
+  for (const name of ['Maintainerr', 'Reclaimerr', 'Leaving soon']) {
+    const card = [...h.document.querySelectorAll('#arr fieldset.jea-section')].find(c => title(c) === name);
+    assert.ok(card.hasAttribute('data-dep-setup'), name);
+    assert.equal(card.classList.contains('jea-locked'), false, name);
+  }
+  assert.equal(h.document.getElementById('LeavingSoonMaintainerrEnabled').checked, true, 'Maintainerr is the tool by default');
+  assert.equal(h.document.getElementById('ReclaimerrEnabled').checked, false);
   assert.equal(h.document.getElementById('LeavingSoonMaintainerrUrl').disabled, false);
   assert.equal(h.document.getElementById('LeavingSoonMaintainerrUrl').value, 'http://maintainerr:6246');
   assert.equal(h.document.getElementById('LeavingSoonMaintainerrApiKey').value, 'stored-key');
@@ -846,8 +853,65 @@ test('the Overview lists Maintainerr as not set up without an address, and the c
   const dashboard = h.document.querySelector('#je-service-dashboard [data-status-id="maintainerr"]');
   assert.ok(dashboard);
   assert.match(dashboard.textContent, /Not set up/);
-  assert.equal(h.document.getElementById('maintainerrStatusLine').textContent, 'No source set. Enter the Maintainerr address and save.');
+  assert.equal(h.document.getElementById('maintainerrStatusLine').textContent, 'No source set. Turn on Maintainerr or Reclaimerr, enter its address and save.');
   assert.equal(h.document.getElementById('maintainerrRefreshBtn').disabled, true);
+});
+
+test('Maintainerr and Reclaimerr are one choice: turning one on turns the other off, and the one that is off folds its settings', async t => {
+  const h = await loadedPage(t, {
+    saved: { JellyseerrEnabled: true, JellyseerrUrls: 'http://seerr.test', JellyseerrApiKey: 'k', TMDB_API_KEY: 'stored', LeavingSoonMaintainerrUrl: 'http://maintainerr:6246', ReclaimerrUrl: 'http://reclaimerr:8000', ReclaimerrToken: 'rcl_x' },
+    ajax: (request) => request.url.includes('/admin/leaving-soon') ? { Configured: true, Maintainerr: true, Provider: 'maintainerr', HomeRow: 'off', Items: 0, Dated: 0 } : undefined,
+  });
+  await settle(h.window, 20);
+  const $ = id => h.document.getElementById(id);
+  const hidden = id => !!$(id).closest('.jea-dep-hidden');
+  const flip = (id, on) => { $(id).checked = on; $(id).dispatchEvent(new h.window.Event('change', { bubbles: true })); };
+  assert.equal(hidden('LeavingSoonMaintainerrUrl'), false);
+  assert.equal(hidden('ReclaimerrUrl'), true, 'the settings of the tool that is off fold away');
+  assert.equal(hidden('ReclaimerrUserHeader'), true, 'and so do the ones that depend on a folded setting');
+  flip('ReclaimerrEnabled', true);
+  await settle(h.window, 5);
+  assert.equal($('LeavingSoonMaintainerrEnabled').checked, false, 'turning Reclaimerr on turns Maintainerr off');
+  assert.equal(hidden('ReclaimerrUrl'), false);
+  assert.equal(hidden('ReclaimerrUserHeader'), false, 'Act as the Jellyfin user is on by default');
+  assert.equal(hidden('LeavingSoonMaintainerrUrl'), true);
+  assert.equal($('ReclaimerrUrl').value, 'http://reclaimerr:8000');
+  assert.equal($('LeavingSoonMaintainerrUrl').value, 'http://maintainerr:6246', 'the other tool keeps its settings');
+  // The Overview card follows the tool that is on.
+  const dashboard = () => h.document.querySelector('#je-service-dashboard [data-status-id="maintainerr"]');
+  flip('LeavingSoonMaintainerrEnabled', true);
+  await settle(h.window, 5);
+  assert.equal($('ReclaimerrEnabled').checked, false, 'and the other way round');
+  h.submit();
+  await settle(h.window, 40);
+  const saved = h.calls.puts.at(-1);
+  assert.equal(saved.LeavingSoonMaintainerrEnabled, true);
+  assert.equal(saved.ReclaimerrEnabled, false);
+  assert.equal(saved.ReclaimerrToken, 'rcl_x', 'the token field writes ReclaimerrToken');
+  assert.equal(saved.ReclaimerrUserHeader, 'Remote-User');
+  assert.ok(dashboard(), 'the Overview lists the removal tool');
+});
+
+test('Create service account signs in once as the named Reclaimerr administrator and puts the new login in the form', async t => {
+  const h = await loadedPage(t, {
+    saved: { JellyseerrEnabled: true, JellyseerrUrls: 'http://seerr.test', JellyseerrApiKey: 'k', TMDB_API_KEY: 'stored', ReclaimerrEnabled: true, LeavingSoonMaintainerrEnabled: false, ReclaimerrUrl: 'http://reclaimerr:8000', ReclaimerrToken: 'rcl_x' },
+    ajax: (request) => {
+      if (request.url.includes('/admin/leaving-soon')) return { Configured: true, Maintainerr: true, Provider: 'reclaimerr', HomeRow: 'off', Items: 0, Dated: 0 };
+      if (request.url.includes('/reclaimerr/service-account')) return { username: 'jellyfin-enhanced', password: 'new-random' };
+      return undefined;
+    },
+  });
+  await settle(h.window, 20);
+  const answers = ['admin', ''];
+  h.window.prompt = () => answers.shift();
+  h.document.getElementById('reclaimerrCreateAccountBtn').click();
+  await settle(h.window, 20);
+  const call = h.calls.ajax.find(r => r.url.includes('/reclaimerr/service-account'));
+  assert.equal(call.type, 'POST');
+  assert.deepEqual(JSON.parse(call.data), { adminUsername: 'admin', adminPassword: '' });
+  assert.equal(h.document.getElementById('ReclaimerrUsername').value, 'jellyfin-enhanced');
+  assert.equal(h.document.getElementById('ReclaimerrPassword').value, 'new-random', 'Save writes the field back, so it holds the new password');
+  assert.match(h.document.getElementById('reclaimerrCreateAccountLine').textContent, /^Created and saved: jellyfin-enhanced\.$/);
 });
 
 // The Custom Tabs link stays inside the web client, so it keeps a reverse proxy's base path.

@@ -238,6 +238,11 @@ export interface BootstrapPublicConfig {
   "LanguageTagsShowSubtitles": boolean;
   "LanguageTagsStyle": string;
   "LeavingSoonAvailable": boolean;
+  "LeavingSoonPageEnabled": boolean;
+  "LeavingSoonPageUseCustomTabs": boolean;
+  "LeavingSoonPageUseNativeTab": boolean;
+  "LeavingSoonPageUsePluginPages": boolean;
+  "LeavingSoonProvider": string;
   "LetterboxdEnabled": boolean;
   "LogoTagsEnabled": boolean;
   "LogoTagsMaxLogos": number;
@@ -292,6 +297,7 @@ export interface BootstrapPublicConfig {
   "RecommendationsPageEnabled": boolean;
   "RecommendationsUseCustomTabs": boolean;
   "RecommendationsUseNativeTab": boolean;
+  "RemovalRequestsAvailable": boolean;
   "RemoveContinueWatchingEnabled": boolean;
   "ResolutionTagOrder": number;
   "ReviewTranslationEnabled": boolean;

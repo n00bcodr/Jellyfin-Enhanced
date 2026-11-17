@@ -1817,6 +1817,21 @@
           "LeavingSoonAvailable": {
             "type": "boolean"
           },
+          "LeavingSoonPageEnabled": {
+            "type": "boolean"
+          },
+          "LeavingSoonPageUseCustomTabs": {
+            "type": "boolean"
+          },
+          "LeavingSoonPageUseNativeTab": {
+            "type": "boolean"
+          },
+          "LeavingSoonPageUsePluginPages": {
+            "type": "boolean"
+          },
+          "LeavingSoonProvider": {
+            "type": "string"
+          },
           "LetterboxdEnabled": {
             "type": "boolean"
           },
@@ -1987,6 +2002,9 @@
             "type": "boolean"
           },
           "RecommendationsUseNativeTab": {
+            "type": "boolean"
+          },
+          "RemovalRequestsAvailable": {
             "type": "boolean"
           },
           "RemoveContinueWatchingEnabled": {
@@ -2540,6 +2558,11 @@
           "LanguageTagsShowSubtitles",
           "LanguageTagsStyle",
           "LeavingSoonAvailable",
+          "LeavingSoonPageEnabled",
+          "LeavingSoonPageUseCustomTabs",
+          "LeavingSoonPageUseNativeTab",
+          "LeavingSoonPageUsePluginPages",
+          "LeavingSoonProvider",
           "LetterboxdEnabled",
           "LogoTagsEnabled",
           "LogoTagsMaxLogos",
@@ -2594,6 +2617,7 @@
           "RecommendationsPageEnabled",
           "RecommendationsUseCustomTabs",
           "RecommendationsUseNativeTab",
+          "RemovalRequestsAvailable",
           "RemoveContinueWatchingEnabled",
           "ResolutionTagOrder",
           "ReviewTranslationEnabled",
