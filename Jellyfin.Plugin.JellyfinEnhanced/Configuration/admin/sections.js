@@ -85,7 +85,7 @@ JEAdmin.define({
     const tog = (id, label, desc, extra) => Object.assign({ id, type: 'toggle', manual: true, label, desc }, extra);
     const sel = (id, label, options, desc, extra) => Object.assign({ id, type: 'select', manual: true, label, options, desc }, extra);
     const RS = [['tmdb', 'TMDB'], ['tomatoes', 'RT Critic'], ['popcorn', 'RT Audience'], ['imdb', 'IMDb'], ['trakt', 'Trakt'],
-        ['metacritic', 'Metascore'], ['metacriticuser', 'Metacritic User'], ['letterboxd', 'Letterboxd'], ['myanimelist', 'MAL'], ['anilist', 'AniList'], ['master', 'Master']];
+        ['metacritic', 'Metascore'], ['metacriticuser', 'Metacritic User'], ['letterboxd', 'Letterboxd'], ['myanimelist', 'MAL'], ['master', 'Master']];
     const RSN = [['', 'None']].concat(RS);
     const arrow = (d) => '<i class="material-icons je-cat-arrow-icon" aria-hidden="true">arrow_' + d + 'ward</i>';
 
