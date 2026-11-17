@@ -195,6 +195,7 @@
             /* On a TV it is one width whatever is open in it, and stays within the screen. */
             .layout-tv .jellyseerr-menu-grouped { width: min(34em, 92vw); max-height: 84vh; }
             /* The open group's row stays at the top of the menu's scroll, over its own body, and the group ends with a line. */
+            .jellyseerr-sort-menu .actionSheetScroller { overflow-anchor: none; }
             .jellyseerr-sort-menu { --jellyseerr-menu-ground: var(--jf-palette-background-paper, #202020); --jellyseerr-menu-shade: var(--jf-overlays-8, none); --jellyseerr-held-fade: .8; }
             .layout-tv .jellyseerr-sort-menu { --jellyseerr-menu-shade: none; }
             html .jellyseerr-sort-menu .actionSheetMenuItem.jellyseerr-menu-group[aria-expanded="true"] { position: sticky; top: 0; z-index: 2; overflow: visible; background-color: var(--jellyseerr-menu-ground); background-image: var(--jellyseerr-menu-shade); }

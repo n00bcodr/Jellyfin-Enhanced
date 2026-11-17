@@ -460,7 +460,8 @@ test('nothing matches: the section says so and offers the way out; the admin\'s 
   assert.equal(outcome.getAttribute('role'), 'status');
   // With the way back from that change alone: Undo puts the filters as they were, and the menu says every group again.
   const undo = outcome.querySelector('.jellyseerr-menu-outcome-undo');
-  same([undo.textContent, undo.getAttribute('aria-label')], ['Undo', 'Undo the last change']);
+  // (Its words say what it undoes: what the last change set.)
+  same([undo.textContent, undo.getAttribute('aria-label')], ['Undo Released up to 1899', null]);
   undo.click();
   same(s.shown(), [1, 2, 11, 12]);
   assert.equal(groupOf(h, 'year').textContent, 'ReleasedAny');
@@ -732,7 +733,11 @@ test('a Without list: none of what is ticked, said once at its start; a thing wa
   same([setLine.firstElementChild.className, setLine.firstElementChild.getAttribute('aria-label')], ['jellyseerr-filters-run', 'Without genres']);
   // Horror wanted after all: ticked under Genres, it leaves Without genres (its row says so, its body is built anew).
   await until(() => bodyOf(h, 'genres').querySelectorAll('.actionSheetMenuItem').length === 3, 'the genres');
+  // (Its row says where it is ticked, so ticking it here is not a silent move.)
+  const horror = [...bodyOf(h, 'genres').querySelectorAll('.actionSheetMenuItem')].find(row => row.querySelector('.actionSheetItemText').textContent === 'Horror');
+  assert.equal(horror.querySelector('.jellyseerr-menu-elsewhere').textContent, 'Ticked under Without genres');
   tickRow(h, 'genres', 'Horror');
+  assert.equal(horror.querySelector('.jellyseerr-menu-elsewhere'), null);
   same(plain(h.F.selectionOf('network')).genres.map(genre => genre.name), ['Horror']);
   same(plain(h.F.selectionOf('network')).withoutGenres.map(genre => genre.name), ['Thriller']);
   assert.equal(groupOf(h, 'withoutGenres').textContent, 'Without genresThriller');

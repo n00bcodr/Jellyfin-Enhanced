@@ -49,8 +49,8 @@
      * @property {MenuChoice[]} [choices]
      * @property {MenuGroup[]} [groups]
      * @property {string} [clearLabel] - With groups: a last row that puts every group back on its first choice.
-     * @property {string} [undoLabel] - With noneLabel: a button beside it that undoes the last change (onUndo)
-     * @property {string} [undoName] - Its name for a screen reader
+     * @property {string|function(): string} [undoLabel] - With noneLabel: a button beside it that undoes the last change (onUndo),
+     *   its words, or what gives them as the change is now ("Undo Score from 9.9")
      * @property {function(): boolean} [onUndo] - Undoes the last change; false where there is none to undo
      * @property {function(): boolean} [canUndo] - Whether there is a change to undo (else no Undo is offered)
      * @property {string} [noneLabel] - With groups: said in the foot while the page says nothing matches what is set
@@ -143,7 +143,7 @@
      * @param {MenuOptions} options
      * @returns {function(): void} Closes the menu
      */
-    function openMenu({ anchor, title, choices = [], groups, clearLabel, doneLabel, noneLabel, undoLabel, undoName, onUndo, canUndo, onPick, onClear, onClose }) {
+    function openMenu({ anchor, title, choices = [], groups, clearLabel, doneLabel, noneLabel, undoLabel, onUndo, canUndo, onPick, onClear, onClose }) {
         closeOpen?.();
         const tv = document.documentElement.classList.contains('layout-tv');
         const backdrop = document.createElement('div');
@@ -710,9 +710,19 @@
                 sheet.style.marginTop = `${Math.round((window.innerHeight - most) / 2)}px`;
             }
             sheet.style.setProperty('--jellyseerr-menu-ground', getComputedStyle(sheet).backgroundColor);
-            const words = scroller.querySelector('.actionSheetItemText')?.getBoundingClientRect();
-            const box = scroller.getBoundingClientRect();
-            if (words && box.width > 0) sheet.style.setProperty('--jellyseerr-menu-indent', `${Math.round(getComputedStyle(sheet).direction === 'rtl' ? box.right - words.right : words.left - box.left)}px`);
+        }
+        // (The column the rows' words stand on, for what is not a row: a TV's fields and notes, by the words' box; the
+        // foot's band, by the letters themselves.)
+        const name = scroller.querySelector('.actionSheetItemText');
+        const words = name?.getBoundingClientRect();
+        const box = scroller.getBoundingClientRect();
+        const rtl = getComputedStyle(sheet).direction === 'rtl';
+        if (words && box.width > 0) sheet.style.setProperty('--jellyseerr-menu-indent', `${Math.round(rtl ? box.right - words.right : words.left - box.left)}px`);
+        if (name && box.width > 0 && typeof document.createRange === 'function') {
+            const range = document.createRange();
+            range.selectNodeContents(name);
+            const letters = range.getBoundingClientRect?.();
+            if (letters && letters.width > 0) sheet.style.setProperty('--jellyseerr-menu-text', `${Math.round(rtl ? box.right - letters.right : letters.left - box.left)}px`);
         }
         for (const group of groups ?? []) {
             const head = group.open ? headOf(group.id) : undefined;
@@ -795,7 +805,9 @@
             const none = Array.from(scope.querySelectorAll('.jellyseerr-filters-none, .je-reco-filters-none')).some(note => !note.closest('.hide, [hidden]'));
             // (Undo only for a change made here: a page opened with filters that leave nothing has none to undo.)
             const undoable = none && !!(undoLabel && onUndo) && (canUndo?.() ?? true);
-            if (outcome.hidden === !none && outcome.hasAttribute('data-undoable') === undoable) return;
+            const undoWords = undoable ? (typeof undoLabel === 'function' ? undoLabel() : undoLabel) ?? '' : '';
+            if (outcome.hidden === !none && (outcome.dataset.undo ?? '') === undoWords) return;
+            outcome.dataset.undo = undoWords;
             const keyed = outcome.contains(document.activeElement);
             outcome.toggleAttribute('data-undoable', undoable);
             outcome.hidden = !none;
@@ -809,8 +821,7 @@
                     const undo = document.createElement('button');
                     undo.type = 'button';
                     undo.className = 'jellyseerr-menu-outcome-undo';
-                    undo.textContent = undoLabel;
-                    if (undoName) undo.setAttribute('aria-label', undoName);
+                    undo.textContent = undoWords;
                     undo.addEventListener('click', () => {
                         const wasKeyed = document.activeElement === undo;
                         if (!onUndo()) return;

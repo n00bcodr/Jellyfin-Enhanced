@@ -431,12 +431,6 @@
                 button.tabIndex = on ? 0 : -1;
             });
             paint(logic().matchOf(options.selection(), id));
-            // (Each half as wide as the wider, measured once the line is in the menu: "any" is wider than "all".)
-            requestAnimationFrame(() => {
-                if (!track.isConnected) return;
-                const widest = Math.max(...buttons.map(button => button.getBoundingClientRect().width));
-                if (widest > 0) for (const button of buttons) button.style.minWidth = `${Math.ceil(widest)}px`;
-            });
             matchLines.set(id, line);
             markIdle(id, pickedOf(id));
             // Left and right move between the two and choose, as in any radio group (up and down are the menu's rows);
@@ -474,6 +468,14 @@
             row.classList.add('jellyseerr-menu-tick');
             row.setAttribute('role', 'checkbox');
             row.setAttribute('aria-checked', String(chosenNow));
+            // (Ticked in its partner list, "Ticked under Original language": ticking it here moves it.)
+            const partner = PARTNERS[id];
+            if (!given && !chosenNow && partner && pickedOf(partner).some(entry => entry.id === item.id)) {
+                const elsewhere = document.createElement('div');
+                elsewhere.className = 'listItemBodyText secondary jellyseerr-menu-given jellyseerr-menu-elsewhere';
+                elsewhere.textContent = say('discovery_filter_ticked_under', 'Ticked under {list}', { list: nameOf(partner) });
+                row.querySelector('.actionsheetListItemBody')?.appendChild(elsewhere);
+            }
             if (given) {
                 row.setAttribute('aria-disabled', 'true');
                 // (Ticked by the page itself, which the row says under its name: why it can't be unticked here, and why
@@ -487,6 +489,7 @@
             row.addEventListener('click', () => {
                 const before = pickedOf(id);
                 const chosen = !before.some(entry => entry.id === item.id);
+                row.querySelector('.jellyseerr-menu-elsewhere')?.remove();
                 const next = chosen ? [...before, item] : before.filter(entry => entry.id !== item.id);
                 row.setAttribute('aria-checked', String(chosen));
                 const tick = row.querySelector('.actionsheetMenuItemIcon');
@@ -1328,7 +1331,13 @@
             menu.openMenu({
                 anchor: button, title: filtersLabel, groups, clearLabel, doneLabel: label('discovery_filters_done', 'Done'),
                 noneLabel: label('discovery_filters_none', 'Nothing matches these filters.'),
-                undoLabel: label('discovery_filters_undo', 'Undo'), undoName: label('discovery_filters_undo_name', 'Undo the last change'),
+                undoLabel: () => {
+                    // (What the last change set that was not set before: "Undo Score from 9.9".)
+                    const words = selection => filterTokens({ offered, label, locale: localeOf(), selection, ownGenre }).map(token => token.words);
+                    const before = new Set(words(undoTo ?? {}));
+                    const added = words(selectionOf(moduleName)).find(word => !before.has(word));
+                    return added ? label('discovery_filters_undo_what', 'Undo {change}', { change: added }) : label('discovery_filters_undo', 'Undo');
+                },
                 canUndo: () => undoTo !== null,
                 // (Back to what was set before the last change; the menu then says every group again.)
                 onUndo() {
@@ -1488,8 +1497,9 @@
             /* Below two ticks the choice changes nothing: shown, but not in the accent that says the list is narrowed. */
             .jellyseerr-menu-match[data-idle] .jellyseerr-menu-match-btn[aria-checked="true"] { color: var(--jf-palette-text-primary, #fff); box-shadow: inset 0 0 0 1px var(--jf-palette-text-disabled, rgba(255,255,255,.5)); box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 55%, transparent); font-weight: 500; }
             .jellyseerr-menu-match-btn:focus-visible { outline: 2px solid var(--jf-palette-text-primary, #fff); outline-offset: 1px; }
-            html:not(.layout-tv) .jellyseerr-menu-match-track { display: flex; flex: 1 1 auto; }
-            html:not(.layout-tv) .jellyseerr-menu-match-btn { flex: 1 1 0; }
+            /* (Two equal columns wherever there is room for both at the wider's width; never wider than the line, so the
+               choice never moves the list.) */
+            html:not(.layout-tv) .jellyseerr-menu-match-track { display: grid; grid-template-columns: 1fr 1fr; flex: 1 1 auto; }
             .jellyseerr-menu-match-reserve { display: block; height: 0; overflow: hidden; visibility: hidden; font-weight: 600; }
             @media (forced-colors: active) {
                 .jellyseerr-menu-match-track { outline: 1px solid CanvasText; outline-offset: -1px; }
@@ -1509,7 +1519,7 @@
             .layout-tv .jellyseerr-menu-match-btn { padding: .45em 1.1em; }
             /* On a touch screen, as wide as the search field above it and a finger's height. */
             @media (pointer: coarse), (max-width: 600px) {
-                html:not(.layout-tv) .jellyseerr-menu-match-track { display: flex; flex: 1 1 12em; }
+                html:not(.layout-tv) .jellyseerr-menu-match-track { display: grid; grid-template-columns: 1fr 1fr; flex: 1 1 12em; }
                 html:not(.layout-tv) .jellyseerr-menu-match-btn { flex: 1 1 0; min-height: 44px; }
             }
             /* Saved filters: each profile a row with its delete button at the end; the form a field and Save. */
@@ -1529,7 +1539,7 @@
             html:not(.layout-tv) .jellyseerr-menu-profile[aria-current] .actionSheetItemText { color: var(--jellyseerr-accent); font-weight: 500; }
             @media (forced-colors: active) {
                 html:not(.layout-tv) .jellyseerr-menu-profile[aria-current] .actionSheetItemText { forced-color-adjust: none; color: LinkText; }
-                .jellyseerr-menu-profile-save:disabled { opacity: 1; color: GrayText; }
+                html .jellyseerr-sort-menu .jellyseerr-menu-profile-save:disabled { opacity: 1; color: GrayText; }
             }
             .jellyseerr-menu-profile-save:disabled { opacity: .45; cursor: default; box-shadow: none; }
             @media (pointer: coarse) { .jellyseerr-menu-profile-undo { min-height: 44px; padding-inline: .75em; } }
@@ -1547,12 +1557,16 @@
             .jellyseerr-menu-whole { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
             /* Why the page's own genre is ticked and can't be unticked, under its name. */
             .jellyseerr-sort-menu .jellyseerr-menu-given { font-size: .85em; white-space: normal; color: inherit; opacity: 1; }
+            html .jellyseerr-sort-menu .jellyseerr-menu-elsewhere { color: var(--jellyseerr-quiet, rgba(255,255,255,.7)); }
             html .jellyseerr-sort-menu .jellyseerr-menu-tick[aria-disabled="true"] .actionSheetItemText,
             html .jellyseerr-sort-menu .jellyseerr-menu-tick[aria-disabled="true"] .jellyseerr-menu-given { color: inherit !important; opacity: 1 !important; }
             /* The foot's line when nothing matches: over "Clear filters", the way out. */
-            .jellyseerr-sort-menu .jellyseerr-menu-outcome { flex: 0 0 calc(100% - 24px); box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; gap: .75em; margin: 8px 12px 4px; padding: 6px 6px 6px 12px; border-radius: 8px; color: var(--jf-palette-text-primary, #fff); background: rgba(0,164,220,.14); background: color-mix(in srgb, var(--jellyseerr-accent, #00a4dc) 16%, transparent); }
+            .jellyseerr-sort-menu .jellyseerr-menu-outcome { flex: 0 0 calc(100% - 16px); box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; gap: .75em; margin: 8px 8px 4px; padding: 6px 6px 6px calc(var(--jellyseerr-menu-text, 16px) - 8px); border-radius: 8px; color: var(--jf-palette-text-primary, #fff); background: rgba(0,164,220,.14); background: color-mix(in srgb, var(--jellyseerr-accent, #00a4dc) 16%, transparent); }
             .jellyseerr-sort-menu .jellyseerr-menu-outcome[hidden] { display: none; }
-            .jellyseerr-menu-outcome-undo { flex: none; font: inherit; padding: .3em .6em; border: 0; border-radius: 6px; background: none; color: var(--jellyseerr-accent); text-decoration: underline; cursor: pointer; }
+            .jellyseerr-sort-menu .jellyseerr-menu-outcome { flex-wrap: wrap; row-gap: 0; }
+            /* (The words on one line where they can be; Undo beside them, else under them at the end.) */
+            .jellyseerr-menu-outcome > span { flex: 1 1 12em; }
+            .jellyseerr-menu-outcome-undo { flex: none; margin-inline-start: auto; font: inherit; padding: .3em .6em; border: 0; border-radius: 6px; background: none; color: var(--jellyseerr-accent); text-decoration: underline; cursor: pointer; }
             .jellyseerr-menu-outcome-undo:focus-visible { outline: 2px solid var(--jf-palette-text-primary, #fff); outline-offset: 1px; }
             .layout-tv .jellyseerr-menu-outcome-undo:focus { outline: none; background: var(--jf-palette-text-primary, #fff); color: var(--jellyseerr-menu-ground, #101010); text-decoration: none; }
             @media (pointer: coarse) { .jellyseerr-menu-outcome-undo { min-height: 44px; } }
