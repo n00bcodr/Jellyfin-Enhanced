@@ -556,8 +556,8 @@ A user's saved Seerr filter profiles: named sets of the discovery Filters menu's
 under the user's file lock. A profile's `filters` are the address form the discovery pages read and write
 (`js/jellyseerr/discovery/discovery-address.js`), for example `jeType=movies&jeScore=7..&jeKeywords=10468:bear,12554:dragon&jeAny=keywords`.
 The server checks their shape only: `name=value` pairs joined by `&`, each name once and one of `jeType`, `jeSort`,
-`jeReleased`, `jeScore`, `jeVotes`, `jeRuntime`, `jeRole`, `jeGenres`, `jeLanguage`, `jeRating`, `jeServices`, `jeKeywords`,
-`jeWithout`, `jeAny`, `jeAll`, each value of plain address characters (`A-Z a-z 0-9 % . _ ~ : , / - ! * ' ( )`), at most
+`jeReleased`, `jeScore`, `jeVotes`, `jeRuntime`, `jeRole`, `jeGenres`, `jeWithoutGenres`, `jeLanguage`, `jeWithoutLanguage`,
+`jeRating`, `jeServices`, `jeKeywords`, `jeWithout`, `jeAny`, `jeAll`, each value of plain address characters (`A-Z a-z 0-9 % . _ ~ : , / - ! * ' ( )`), at most
 4000 characters in all. The page reads each value as it reads its own address and leaves out anything not of its
 filter's shape, or not offered on that page.
 

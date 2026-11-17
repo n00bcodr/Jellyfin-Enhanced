@@ -2,7 +2,7 @@
 // What a page's address says of its Seerr filters, so a link, a reload, Back and Forward show what was
 // set: All / Movies / Series (`jeType`), the order (`jeSort`), and the further filters (`jeReleased`,
 // `jeScore`, `jeVotes`, `jeRuntime`, `jeRole`, `jeGenres`, `jeLanguage`, `jeRating`, `jeServices`,
-// `jeKeywords`, `jeWithout`), with the lists matched otherwise than by default (`jeAny=genres,keywords`,
+// `jeKeywords`, `jeWithout`, `jeWithoutGenres`, `jeWithoutLanguage`), with the lists matched otherwise than by default (`jeAny=genres,keywords`,
 // `jeAll=services`). The discovery sections ("More from", "More tagged", a genre's, studio's or
 // network's page) keep theirs in their own page's address; the Recommendations page keeps its in Home's
 // address (or its own page's), with the category page open over it (`jeCategory`).
@@ -29,7 +29,9 @@
     const LIST_PARAMS = [
         ['role', 'jeRole', /^(?:cast|[A-Z][A-Za-z]{0,20}(?:[ &-]{1,3}[A-Za-z]{1,20}){0,3})$/, false],
         ['genres', 'jeGenres', /^(?:\d{1,9}\/\d{0,9}|\/\d{1,9})$/, true],
+        ['withoutGenres', 'jeWithoutGenres', /^(?:\d{1,9}\/\d{0,9}|\/\d{1,9})$/, true],
         ['language', 'jeLanguage', /^[a-z]{2}$/, false],
+        ['withoutLanguage', 'jeWithoutLanguage', /^[a-z]{2}$/, false],
         ['rating', 'jeRating', /^(?:movie|tv):[A-Z]{2}:[A-Za-z0-9+\- ]{1,12}$/, false],
         ['services', 'jeServices', /^\d{1,9}$/, true],
         ['keywords', 'jeKeywords', /^\d{1,9}$/, true],
@@ -181,7 +183,7 @@
                 let name = at < 0 ? '' : decode(entry.slice(at + 1)).trim().slice(0, MAX_NAME);
                 if (id === 'role') name = roleName(itemId);
                 if (id === 'rating') name = itemId.split(':')[2] || itemId;
-                if (id === 'language') { try { name = names?.of(itemId) || ''; } catch (_) { name = ''; } }
+                if (id === 'language' || id === 'withoutLanguage') { try { name = names?.of(itemId) || ''; } catch (_) { name = ''; } }
                 items.push({ id: itemId, name: name || itemId });
             }
             if (items.length > 0) selection[id] = items;

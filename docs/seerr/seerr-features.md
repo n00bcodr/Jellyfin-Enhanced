@@ -379,7 +379,9 @@ The section's header holds its title, then one row: what the list shows, the **A
 | **Votes** | A range for the number of TMDB user votes. |
 | **Runtime** | A range in whole minutes. |
 | **Genres** | Titles in all of the genres ticked, or in any of them (chosen under the list). On a genre page, that genre is always applied (its row says **Included by this page**), and the others ticked are added to it as all of them or any of them. |
+| **Without genres** | Titles in none of the genres ticked (a genre page's own genre is not offered). Seerr can't leave genres out, so the titles it returns are narrowed in the browser by the genres each one has. |
 | **Original language** | Titles originally in any of the languages ticked. |
+| **Without language** | Titles originally in none of the languages ticked, narrowed in the browser like **Without genres**. |
 | **Content rating** | Titles with any of the ratings ticked, from the ratings used in the admin's **Default Region** (US ratings where TMDB has none for it). |
 | **Streaming services** | Titles on any of the services ticked, or on all of them (chosen under the list), in the admin's **Default Region**. |
 | **Keywords** / **Without keywords** | Search TMDB keywords; titles must have all of the ones ticked under **Keywords** (or any of them, chosen under the list) and none of the ones under **Without keywords**. On a tag page, its keyword is already applied and the others are added to it as all of them. |
@@ -387,7 +389,7 @@ The section's header holds its title, then one row: what the list shows, the **A
 
 What is set shows on a line under the header, each with a button to remove it (several of a list say their rule between them: **and** for all of them, **or** for any of them), and **Clear filters** removes them all. If nothing matches, the section says so and offers **Clear filters**.
 
-**Saved filters**, the menu's first group, keeps sets of filters under a name: type a name and press **Save** to keep what is set now (the type, the sort, every filter and how each list matches), and choose a saved set to apply it at once, on any discovery page or the Recommendations page (each page takes the filters it offers). The **×** beside one deletes it. They are your own, kept on the server, so they follow you to every device; you can keep up to 30.
+**Saved filters**, the menu's first group, keeps sets of filters under a name: type a name and press **Save** to keep what is set now (the type, the sort, every filter and how each list matches), and choose a saved set to apply it at once, on any discovery page or the Recommendations page (each page takes the filters it offers). Each says what it sets under its name. The bin beside one deletes it, and **Undo** saves it again. They are your own, kept on the server, so they follow you to every device; you can keep up to 30.
 
 The tabs, the sort and the filters are kept in the page's address (for example `#/details?id=…&jeType=movies&jeScore=7..&jeSort=vote_average.desc`, with `&jeAny=keywords` where keywords are matched by any of them), so reloading the page, coming **Back** to it or opening a copied link shows the same list. A change replaces the address rather than adding a step to **Back**. A page opened without them starts with no filters, on **All** and **Popular**.
 

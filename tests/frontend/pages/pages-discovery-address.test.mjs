@@ -109,6 +109,23 @@ test("a choice on a section replaces its page's address: no history entry, no na
   assert.equal(h.hash(), '#/list?genreId=g1&serverId=s&jeSort=vote_average.desc');
 });
 
+test("a link leaving out genres and a language: Seerr is asked as without them, and what has them is kept off the page", async t => {
+  const h = setup(t, { hash: '#/list?genreId=g1&serverId=s&jeWithoutGenres=27/27:Horror&jeWithoutLanguage=ja', routes: [...GENRE,
+    [`${API}/jellyseerr/discover/tv/genre/35?page=1`, { results: [{ id: 1, mediaType: 'tv', genreIds: [35, 27] }, { id: 2, mediaType: 'tv', genreIds: [35], originalLanguage: 'ja' }, { id: 3, mediaType: 'tv', genreIds: [35] }], totalPages: 1 }],
+    [`${API}/jellyseerr/discover/movies/genre/36?page=1`, { results: [{ id: 11, mediaType: 'movie', genreIds: [36] }, { id: 12, mediaType: 'movie', genreIds: [36, 27], originalLanguage: 'en' }], totalPages: 1 }]] });
+  h.load('jellyseerr/discovery/genre-discovery.js');
+  await until(() => ids(h.section('genre')).length > 0 && h.section('genre').querySelector('.jellyseerr-filters-set'), 'first page');
+  const section = h.section('genre');
+  assert.deepEqual(ids(section).sort((a, b) => a - b), [3, 11]);
+  assert.deepEqual(h.said(section), ['Without Horror', 'Not originally in Japanese']);
+  // (Asked of Seerr as the page alone: nothing it would not understand.)
+  assert.equal(h.calls.some(path => /without|exclude/i.test(path)), false);
+  // Taken away, the address says so and the list has them again.
+  section.querySelector('.jellyseerr-filters-token .jellyseerr-filters-remove').click();
+  assert.equal(h.hash(), '#/list?genreId=g1&serverId=s&jeWithoutLanguage=ja');
+  await until(() => ids(section).includes(1), 'Horror back');
+});
+
 test("a page opened straight from its link keeps its section when a dialog's own history entry is popped (More Info's Back)", async t => {
   const h = setup(t, { hash: '#/list?genreId=g1&serverId=s&jeScore=7..', routes: [...GENRE,
     [`${API}/jellyseerr/discover/tv/genre/35?page=1&voteAverageGte=7`, feed([1], 'tv')],

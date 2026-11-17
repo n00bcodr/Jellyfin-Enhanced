@@ -24,7 +24,8 @@
         votes: ['discovery_filter_votes', 'Votes'], runtime: ['discovery_filter_runtime', 'Runtime'], genres: ['discovery_filter_genres', 'Genres'],
         language: ['discovery_filter_language', 'Original language'], rating: ['discovery_filter_rating', 'Content rating'],
         services: ['discovery_filter_services', 'Streaming services'], keywords: ['discovery_filter_keywords', 'Keywords'],
-        without: ['discovery_filter_without', 'Without keywords']
+        without: ['discovery_filter_without', 'Without keywords'], withoutGenres: ['discovery_filter_without_genres', 'Without genres'],
+        withoutLanguage: ['discovery_filter_without_language', 'Without language']
     });
     /** What a range's fields take, said under them; and what is said there when what is typed cannot be used. */
     const HINTS = Object.freeze({
@@ -39,7 +40,9 @@
         role: ['discovery_filter_rule_role', 'Any of the roles ticked.'], genres: ['discovery_filter_rule_genres', 'All of the genres ticked.'],
         language: ['discovery_filter_rule_language', 'Any of the languages ticked.'], rating: ['discovery_filter_rule_rating', 'Any of the ratings ticked.'],
         services: ['discovery_filter_rule_services', 'Any of the services ticked.'], keywords: ['discovery_filter_rule_keywords', 'All of the keywords ticked.'],
-        without: ['discovery_filter_rule_without', 'None of the keywords ticked.']
+        without: ['discovery_filter_rule_without', 'None of the keywords ticked.'],
+        withoutGenres: ['discovery_filter_rule_without_genres', 'None of the genres ticked.'],
+        withoutLanguage: ['discovery_filter_rule_without_language', 'None of the languages ticked.']
     });
     /** The lists matched by any of what is ticked, with no choice (Seerr's own rule for them). */
     const ANY_OF = new Set(['role', 'language', 'rating']);
@@ -134,7 +137,8 @@
                     or: join === 'or',
                     list: id,
                     // A keyword and a language need a word to be read on their own ("With robot", "Originally in Japanese"); a genre, a rating, a service and a role say what they are.
-                    words: id === 'without' ? say('discovery_filter_set_without', 'Without {name}', { name: item.name })
+                    words: id === 'without' || id === 'withoutGenres' ? say('discovery_filter_set_without', 'Without {name}', { name: item.name })
+                        : id === 'withoutLanguage' ? say('discovery_filter_set_not_language', 'Not originally in {name}', { name: item.name })
                         // ("With bear or dragon": after the word joining them the keyword's own name is enough.)
                         : id === 'keywords' ? (join ? item.name : say('discovery_filter_set_with', 'With {name}', { name: item.name }))
                             : id === 'language' && !join ? say('discovery_filter_set_language', 'Originally in {name}', { name: item.name })
@@ -333,9 +337,9 @@
          * @param {string} id - The list filter
          * @returns {string}
          */
-        const searchWord = id => id === 'genres' ? say('discovery_filter_search_genres', 'Search genres')
+        const searchWord = id => id === 'genres' || id === 'withoutGenres' ? say('discovery_filter_search_genres', 'Search genres')
             : id === 'services' ? say('discovery_filter_search_services', 'Search services')
-                : id === 'language' ? say('discovery_filter_search_languages', 'Search languages') : say('discovery_filter_search', 'Search');
+                : id === 'language' || id === 'withoutLanguage' ? say('discovery_filter_search_languages', 'Search languages') : say('discovery_filter_search', 'Search');
         /** Whether the viewer chooses how several ticks in a list count (not where the page names that list). */
         const matchable = id => logic().MATCH_DEFAULTS?.[id] !== undefined && !(options.fixedAll ?? []).includes(id);
         // Each list's all / any choice, to be marked idle while fewer than two are ticked (it changes nothing then).
@@ -685,8 +689,14 @@
                 const own = options.ownGenre?.trim().toLocaleLowerCase() ?? '';
                 groups.push(listGroup(id, async () => [{ items: await data.genres() }], [], item => own !== '' && item.name.toLocaleLowerCase() === own));
             }
+            // A genre's page can't leave out its own genre: it is not offered there.
+            else if (id === 'withoutGenres') {
+                const own = options.ownGenre?.trim().toLocaleLowerCase() ?? '';
+                groups.push(listGroup(id, async () => [{ items: (await data.genres()).filter(item => own === '' || item.name.toLocaleLowerCase() !== own) }]));
+            }
             // The viewer's own language is the likeliest one wanted.
             else if (id === 'language') groups.push(listGroup(id, async () => [{ items: await data.languages(locale) }], [locale.split('-')[0]?.toLowerCase() ?? '']));
+            else if (id === 'withoutLanguage') groups.push(listGroup(id, async () => [{ items: await data.languages(locale) }]));
             else if (id === 'services') groups.push(listGroup(id, async () => [{ items: await data.services() }]));
             else if (id === 'rating') {
                 groups.push(listGroup(id, async () => (await data.ratings()).map(list => ({

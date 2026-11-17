@@ -53,7 +53,7 @@ public class ApiDiscoveryFilterProfilesTests
         Assert.Empty(Body(controller.GetDiscoveryFilterProfiles(user))["profiles"]!.AsArray());
 
         // The address form the pages write, names and all.
-        const string Kids = "jeType=series&jeGenres=16/16:Animation,10751/10751:Family,/10762:Kids&jeKeywords=10468:bear,12554:dragon&jeAny=genres,keywords&jeScore=7..";
+        const string Kids = "jeType=series&jeGenres=16/16:Animation,10751/10751:Family,/10762:Kids&jeWithoutGenres=27/27:Horror&jeWithoutLanguage=ja&jeKeywords=10468:bear,12554:dragon&jeAny=genres,keywords&jeScore=7..";
         var saved = Body(Assert.IsType<OkObjectResult>(Save(controller, user, "  Kids ", Kids)));
         Assert.Equal("Kids", (string?)saved["profile"]!["name"]);
         Assert.Equal(Kids, (string?)saved["profile"]!["filters"]);

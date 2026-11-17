@@ -35,7 +35,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
         public static readonly IReadOnlySet<string> Pairs = new HashSet<string>(StringComparer.Ordinal)
         {
             "jeType", "jeSort", "jeReleased", "jeScore", "jeVotes", "jeRuntime", "jeRole", "jeGenres", "jeLanguage",
-            "jeRating", "jeServices", "jeKeywords", "jeWithout", "jeAny", "jeAll",
+            "jeRating", "jeServices", "jeKeywords", "jeWithout", "jeWithoutGenres", "jeWithoutLanguage", "jeAny", "jeAll",
         };
 
         // What a value is written with: encodeURIComponent's own characters, '%' escapes, and the ':', ',', '/' and '.'

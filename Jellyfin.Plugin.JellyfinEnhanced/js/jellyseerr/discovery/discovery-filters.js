@@ -24,22 +24,24 @@
 //   - rating: Picked[]: a content rating's id is `<movie|tv>:<country>:<rating>`.
 //   - services: Picked[]: a service's id is TMDB's provider id.
 //   - keywords, without: Picked[]: a keyword's id is TMDB's keyword id.
+//   - withoutGenres, withoutLanguage: Picked[]: genres and original languages a title must not have (ids as genres' and
+//     languages'). Seerr can only leave out keywords: these are checked here, by what each title says of itself.
 //   - match: { genres?, keywords?, services? }: 'all' or 'any', for the lists where a title can have several of
 //     what is ticked; a list not in it keeps its default (genres and keywords all, services any).
 (function(JE) {
     'use strict';
 
-    const FEED_FILTERS = ['year', 'score', 'votes', 'runtime', 'genres', 'language', 'rating', 'services', 'keywords', 'without'];
+    const FEED_FILTERS = ['year', 'score', 'votes', 'runtime', 'genres', 'withoutGenres', 'language', 'withoutLanguage', 'rating', 'services', 'keywords', 'without'];
     /** A person's credits carry no runtime, rating, services or keywords: those are not offered there. */
-    const PERSON_FILTERS = ['role', 'year', 'score', 'votes', 'genres', 'language'];
+    const PERSON_FILTERS = ['role', 'year', 'score', 'votes', 'genres', 'withoutGenres', 'language', 'withoutLanguage'];
     /** What a loaded title says of itself, and so can be checked here (keepByFilters). */
-    const LOADED_FILTERS = ['year', 'score', 'votes', 'genres', 'language'];
-    /** The admin's switch for each filter (the two keyword filters share one). */
+    const LOADED_FILTERS = ['year', 'score', 'votes', 'genres', 'withoutGenres', 'language', 'withoutLanguage'];
+    /** The admin's switch for each filter (a list and its Without share one). */
     const FILTER_SWITCHES = Object.freeze({
         role: 'JellyseerrFilterRole', year: 'JellyseerrFilterYear', score: 'JellyseerrFilterScore', votes: 'JellyseerrFilterVotes',
         runtime: 'JellyseerrFilterRuntime', genres: 'JellyseerrFilterGenres', language: 'JellyseerrFilterLanguage',
         rating: 'JellyseerrFilterContentRating', services: 'JellyseerrFilterStreaming', keywords: 'JellyseerrFilterKeywords',
-        without: 'JellyseerrFilterKeywords'
+        without: 'JellyseerrFilterKeywords', withoutGenres: 'JellyseerrFilterGenres', withoutLanguage: 'JellyseerrFilterLanguage'
     });
     const RANGE_IDS = ['year', 'score', 'votes', 'runtime'];
     /**
@@ -50,7 +52,7 @@
     /** A genre's page's own genre, and a tag's page's own keyword, in a feed's route. */
     const GENRE_ROUTE = /\/genre\/(\d+)(?:$|[/?])/;
     const KEYWORD_ROUTE = /\/keyword\/\d+(?:$|[/?])/;
-    const LIST_IDS = ['role', 'genres', 'language', 'rating', 'services', 'keywords', 'without'];
+    const LIST_IDS = ['role', 'genres', 'withoutGenres', 'language', 'withoutLanguage', 'rating', 'services', 'keywords', 'without'];
 
     /**
      * The filters a section of this scope offers, in the order they are shown, less the ones the admin turned off.
@@ -119,7 +121,32 @@
             }
         }
         if (KEYWORD_ROUTE.test(path)) asked = asked.replace(/(&keywords=)([^&]*)/, (_, name, value) => name + value.replace(/%7C/gi, '%2C'));
+        // What a title must not be is kept here, on every feed (Seerr can only leave out keywords).
+        const allowed = notExcluded(selection, kind);
+        if (allowed) {
+            const kept = keep;
+            keep = kept ? item => kept(item) && allowed(item) : allowed;
+        }
         return { query: asked, keep };
+    }
+
+    /**
+     * What a title must not be, checked by what it says of itself: in none of the genres under Without genres, and
+     * originally in none of the languages under Without language. Null when neither is set.
+     * @param {object} selection - The FilterSelection
+     * @param {'movie'|'tv'} [kind] - The feed's kind (none: each title's own)
+     * @returns {((item: object) => boolean)|null}
+     */
+    function notExcluded(selection, kind) {
+        const genres = selection?.withoutGenres ?? [];
+        const languages = new Set((selection?.withoutLanguage ?? []).map(language => language.id));
+        if (genres.length === 0 && languages.size === 0) return null;
+        return item => {
+            const own = Array.isArray(item?.genreIds) ? item.genreIds.map(String) : [];
+            const itemKind = kind ?? (item?.mediaType === 'tv' ? 'tv' : 'movie');
+            if (genres.some(genre => { const id = genreIdFor(genre, itemKind); return id !== '' && own.includes(id); })) return false;
+            return !(languages.size > 0 && typeof item?.originalLanguage === 'string' && languages.has(item.originalLanguage));
+        };
     }
 
     /**
@@ -268,7 +295,9 @@
             return [id, range ? numberOf(id, range[0]) : null, range ? numberOf(id, range[1]) : null];
         });
         const languages = new Set((chosen.language ?? []).map(language => language.id));
+        const allowed = notExcluded(chosen);
         return results.filter(item => {
+            if (allowed && !allowed(item)) return false;
             // Any of the roles ticked: a part played, or a job in one of the departments.
             if (chosen.role?.length && !chosen.role.some(role => role.id === 'cast'
                 ? item.jeCredit?.acted === true : item.jeCredit?.departments?.includes(role.id) === true)) return false;

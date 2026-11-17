@@ -208,17 +208,24 @@ test('keepByFilters keeps a person\'s titles by role, period, score, votes, ever
   same(kept({ genres: [{ id: '35/35' }, { id: '18/18' }] }), [1]);
   same(kept({ genres: [{ id: '35/' }] }), [1]);
   same(kept({ language: [{ id: 'ja' }, { id: 'en' }] }), [2]);
+  // Without genres: none of them, by the title's own kind (a title that names no genres has none of them).
+  same(kept({ withoutGenres: [{ id: '18/18' }] }), [2, 3]);
+  same(kept({ withoutGenres: [{ id: '35/' }] }), [2, 3]);
+  same(kept({ withoutGenres: [{ id: '35/35' }] }), [3]);
+  // Without language: not originally in any of them.
+  same(kept({ withoutLanguage: [{ id: 'ja' }] }), [1, 3]);
+  same(kept({ genres: [{ id: '35/35' }], withoutLanguage: [{ id: 'fr' }] }), [2]);
 });
 
 test('offeredFilters leaves out what the admin turned off; a missing switch is on', t => {
   const { F } = setup(t);
-  same(F.offeredFilters('feed', null), ['year', 'score', 'votes', 'runtime', 'genres', 'language', 'rating', 'services', 'keywords', 'without']);
-  same(F.offeredFilters('person', undefined), ['role', 'year', 'score', 'votes', 'genres', 'language']);
-  // The two keyword filters share one switch.
+  same(F.offeredFilters('feed', null), ['year', 'score', 'votes', 'runtime', 'genres', 'withoutGenres', 'language', 'withoutLanguage', 'rating', 'services', 'keywords', 'without']);
+  same(F.offeredFilters('person', undefined), ['role', 'year', 'score', 'votes', 'genres', 'withoutGenres', 'language', 'withoutLanguage']);
+  // A list and its Without share one switch (the two keyword filters, genres, languages).
   same(F.offeredFilters('feed', { JellyseerrFilterKeywords: false, JellyseerrFilterStreaming: false, JellyseerrFilterYear: true }),
-    ['year', 'score', 'votes', 'runtime', 'genres', 'language', 'rating']);
-  same(F.offeredFilters('person', { JellyseerrFilterRole: false, JellyseerrFilterVotes: false, JellyseerrFilterRuntime: false }),
-    ['year', 'score', 'genres', 'language']);
+    ['year', 'score', 'votes', 'runtime', 'genres', 'withoutGenres', 'language', 'withoutLanguage', 'rating']);
+  same(F.offeredFilters('person', { JellyseerrFilterRole: false, JellyseerrFilterVotes: false, JellyseerrFilterRuntime: false, JellyseerrFilterLanguage: false }),
+    ['year', 'score', 'genres', 'withoutGenres']);
   const off = Object.fromEntries(Object.values(F.FILTER_SWITCHES).map(name => [name, false]));
   same(F.offeredFilters('feed', off), []);
   same(F.offeredFilters('person', off), []);
@@ -334,7 +341,7 @@ test('a list page\'s further filters are typed or ticked, and asked of Seerr: ra
   assert.equal(menuOf(h).querySelector('.jellyseerr-menu-foot > .jellyseerr-menu-clear').getAttribute('aria-disabled'), 'true');
   // Every filter is a group that says nothing is set; none is open.
   same([...menuOf(h).querySelectorAll('.jellyseerr-menu-group')].map(group => group.textContent),
-    ['ReleasedAny', 'ScoreAny', 'VotesAny', 'RuntimeAny', 'GenresAny', 'Original languageAny', 'Content ratingAny', 'Streaming servicesAny', 'KeywordsAny', 'Without keywordsAny']);
+    ['ReleasedAny', 'ScoreAny', 'VotesAny', 'RuntimeAny', 'GenresAny', 'Without genresAny', 'Original languageAny', 'Without languageAny', 'Content ratingAny', 'Streaming servicesAny', 'KeywordsAny', 'Without keywordsAny']);
   assert.equal(menuOf(h).querySelectorAll('.jellyseerr-menu-choices:not([hidden])').length, 0);
   // A score is typed, decimals and all; what cannot be a score is marked and asks nothing.
   const hintOf = id => bodyOf(h, id).querySelector('.jellyseerr-menu-note');
@@ -417,7 +424,7 @@ test('a list page\'s further filters are typed or ticked, and asked of Seerr: ra
   // "Clear filters" puts the list and every group back.
   menuOf(h).querySelector('.jellyseerr-menu-clear').click();
   assert.equal(shown(), '1,2,11,12');
-  same([...menuOf(h).querySelectorAll('.jellyseerr-menu-group')].map(group => group.hasAttribute('data-set')), Array(10).fill(false));
+  same([...menuOf(h).querySelectorAll('.jellyseerr-menu-group')].map(group => group.hasAttribute('data-set')), Array(12).fill(false));
   assert.equal(button.hasAttribute('data-on'), false);
   assert.equal(setLine(), null);
   h.document.querySelector('.dialogBackdrop').click();
@@ -429,7 +436,7 @@ test('nothing matches: the section says so and offers the way out; the admin\'s 
   const h = setup(t, { config: { JellyseerrFilterStreaming: false, JellyseerrFilterKeywords: false }, genres: COMEDY });
   const s = section(h, { name: 'genre', feeds: { tv: [1, 2], movie: [11, 12], 'tv&firstAirDateLte=1899-12-31': [], 'movie&primaryReleaseDateLte=1899-12-31': [] } });
   s.button.click();
-  same([...menuOf(h).querySelectorAll('.jellyseerr-menu-group')].map(group => group.dataset.toggle), ['year', 'score', 'votes', 'runtime', 'genres', 'language', 'rating']);
+  same([...menuOf(h).querySelectorAll('.jellyseerr-menu-group')].map(group => group.dataset.toggle), ['year', 'score', 'votes', 'runtime', 'genres', 'withoutGenres', 'language', 'withoutLanguage', 'rating']);
   typeRange(h, 'year', null, '1899');
   same(s.shown(), []);
   const none = () => s.root.querySelector('.itemsContainer + .jellyseerr-filters-none');
@@ -469,7 +476,7 @@ test('a person\'s titles are filtered here: by role, by years, by score and vote
   assert.equal(shown(), '5,6,7,8');
   s.button.click();
   // What a person's credits cannot be asked (runtime, rating, services, keywords) is not offered.
-  same([...menuOf(h).querySelectorAll('.jellyseerr-menu-group')].map(group => group.dataset.toggle), ['role', 'year', 'score', 'votes', 'genres', 'language']);
+  same([...menuOf(h).querySelectorAll('.jellyseerr-menu-group')].map(group => group.dataset.toggle), ['role', 'year', 'score', 'votes', 'genres', 'withoutGenres', 'language', 'withoutLanguage']);
   // The roles are the person's own: acting, then each crew department they have credits in, the most first.
   await until(() => bodyOf(h, 'role').querySelectorAll('.actionSheetMenuItem').length === 3, 'roles');
   same([...bodyOf(h, 'role').querySelectorAll('.actionSheetItemText')].map(node => node.textContent), ['Acting', 'Writing', 'Directing']);
@@ -616,6 +623,13 @@ test('a list matched by any of what is ticked is asked with a bar, by all of it 
   same(routeFeed('/JellyfinEnhanced/jellyseerr/discover/tv/keyword/9', 'tv', { match: { keywords: 'any' } }, '&genre=14%7C35&keywords=1%7C2'),
     { query: '&genre=14%7C35&keywords=1%2C2', keep: null });
   same(routeFeed('/JellyfinEnhanced/jellyseerr/discover/movies', 'movie', { match: { genres: 'any' } }, '&genre=14%7C35'), { query: '&genre=14%7C35', keep: null });
+  // Without genres and without language: Seerr can't leave them out, so every feed keeps here what is not them.
+  const not = routeFeed('/JellyfinEnhanced/jellyseerr/discover/movies', 'movie', { withoutGenres: [{ id: '27/' }, { id: '/9648' }], withoutLanguage: [{ id: 'ja' }] }, '&genre=14');
+  assert.equal(not.query, '&genre=14');
+  same([{ genreIds: [27, 14] }, { genreIds: [14], originalLanguage: 'ja' }, { genreIds: [14, 9648], originalLanguage: 'en' }, {}].map(not.keep), [false, false, true, true]);
+  // With a genre page's own keep: both hold.
+  const both = routeFeed(GENRE_PAGE, 'movie', { genres: others, match: { genres: 'any' }, withoutGenres: [{ id: '35/35' }] }, '&genre=16%7C10751%7C35');
+  same([{ genreIds: [16, 10751] }, { genreIds: [16, 10751, 35] }, { genreIds: [16] }].map(both.keep), [true, false, false]);
 });
 
 test('the Filters menu offers all or any for keywords, genres and services; "or" says it where it is any; a tag page keeps its keywords all', { skip: !hasMenu && 'the menu module is not there yet' }, async t => {
