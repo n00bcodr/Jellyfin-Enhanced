@@ -3681,6 +3681,15 @@
       ]
     },
     {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/ElsewhereBrandingIcon",
+      "method": "GetElsewhereBrandingIcon",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "AllowAnonymous"
+      ]
+    },
+    {
       "verb": "POST",
       "path": "/JellyfinEnhanced/DeleteBrandingImage",
       "method": "DeleteBrandingImage",
@@ -10877,7 +10886,7 @@
   "counts": {
     "build_targets": 2,
     "files": 498,
-    "routes": 217,
+    "routes": 218,
     "configuration_properties": 787,
     "storage_references": 88,
     "scheduled_tasks": 17,
