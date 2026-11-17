@@ -816,7 +816,8 @@
                 const range = document.createRange();
                 range.selectNodeContents(firstName);
                 const line = Array.from(range.getClientRects?.() ?? []).find(rect => rect.height > 0);
-                if (line) nameTop = line.top;
+                // (The line box runs above the letters: hidden only where more than its top part is.)
+                if (line) nameTop = line.top + line.height * 0.3;
             }
             const hiddenAbove = nameTop < top - 1;
             content.toggleAttribute('data-above', scroller.scrollTop > 2 && hiddenAbove && !heldAtTop);

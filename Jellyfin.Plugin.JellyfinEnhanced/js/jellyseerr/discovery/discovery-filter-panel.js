@@ -31,7 +31,7 @@
     const HINTS = Object.freeze({
         // (The example dates are written with the hyphen and the space that do not break, so a date is never split, nor left alone on a line.)
         year: ['discovery_filter_year_hint', 'A year, a month (2015‑06) or a day (2015‑06‑30).', 'discovery_filter_year_error', 'Type a year (2015), a month (2015‑06) or a day (2015‑06‑30).'],
-        score: ['discovery_filter_score_hint', 'Between 0 and 10, one decimal at most, such as 7.5.', 'discovery_filter_score_error', 'Type a score from 0 to 10, such as 7.5.'],
+        score: ['discovery_filter_score_range_hint', '0 to 10, one decimal at most (7.5).', 'discovery_filter_score_error', 'Type a score from 0 to 10, such as 7.5.'],
         votes: ['discovery_filter_votes_hint', 'How many people have scored it: a whole number.', 'discovery_filter_number_error', 'Type a whole number, such as 500.'],
         runtime: ['discovery_filter_runtime_hint', 'In whole minutes.', 'discovery_filter_number_error', 'Type a whole number, such as 500.']
     });
@@ -1616,7 +1616,8 @@
             html:not(.layout-tv) .jellyseerr-menu-profile .actionsheetMenuItemIcon { display: none !important; }
             html:not(.layout-tv) .jellyseerr-menu-profile[aria-current] .actionSheetItemText { color: var(--jellyseerr-accent); font-weight: 500; }
             /* (Hung into the row's inset, so the name stays on the column the others and its summary share.) */
-            .jellyseerr-menu-profile-mark { font-size: 1em; vertical-align: -.15em; width: 1em; margin-inline: -1.21em .21em; }
+            /* (Its name is a flex line: the check centred on it.) */
+            .jellyseerr-menu-profile-mark { font-size: 1em; align-self: center; width: 1em; margin-inline: -1.21em .21em; }
             html .jellyseerr-sort-menu .jellyseerr-menu-group[data-toggle="profiles"][data-set] { align-items: flex-start; }
             html .jellyseerr-sort-menu .jellyseerr-menu-profile[aria-current] .actionsheetListItemBody,
             html .jellyseerr-sort-menu .jellyseerr-menu-profile[aria-current] .actionSheetItemText { overflow: visible; }
@@ -1668,6 +1669,7 @@
             html.layout-tv .jellyseerr-sort-menu .jellyseerr-menu-note, html.layout-tv .jellyseerr-sort-menu .jellyseerr-menu-given { font-size: .95em; }
             .jellyseerr-menu-profile-delete { font: inherit; }
             .layout-tv .jellyseerr-menu-profile-delete .material-icons { font-size: 1.5em; }
+            .layout-tv .jellyseerr-menu-profile-delete { margin-inline-end: 12px; }
             /* What a search has narrowed away is gone (a row's own display would otherwise keep it). */
             .jellyseerr-sort-menu .actionSheetMenuItem[hidden], .jellyseerr-menu-note[hidden], .jellyseerr-menu-label[hidden] { display: none !important; }
             .jellyseerr-menu-label { padding: 8px 16px 2px 32px; font-size: .86em; }

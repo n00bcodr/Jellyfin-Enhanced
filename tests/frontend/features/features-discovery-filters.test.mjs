@@ -382,7 +382,7 @@ test('a list page\'s further filters are typed or ticked, and asked of Seerr: ra
   assert.equal(menuOf(h).querySelectorAll('.jellyseerr-menu-choices:not([hidden])').length, 0);
   // A score is typed, decimals and all; what cannot be a score is marked and asks nothing.
   const hintOf = id => bodyOf(h, id).querySelector('.jellyseerr-menu-note');
-  assert.equal(hintOf('score').textContent, 'Between 0 and 10, one decimal at most, such as 7.5.');
+  assert.equal(hintOf('score').textContent, '0 to 10, one decimal at most (7.5).');
   typeRange(h, 'score', 'high', null);
   assert.equal(bodyOf(h, 'score').querySelector('.jellyseerr-menu-input').getAttribute('aria-invalid'), 'true');
   // What cannot be used is said in words where the hint was, and the field points to it.
@@ -392,7 +392,7 @@ test('a list page\'s further filters are typed or ticked, and asked of Seerr: ra
   assert.equal(button.hasAttribute('data-on'), false);
   assert.equal(s.queries.length, 2);
   typeRange(h, 'score', '', null);
-  assert.equal(hintOf('score').textContent, 'Between 0 and 10, one decimal at most, such as 7.5.');
+  assert.equal(hintOf('score').textContent, '0 to 10, one decimal at most (7.5).');
   typeRange(h, 'score', '7.5', null);
   assert.equal(shown(), '3,13');
   assert.equal(bodyOf(h, 'score').querySelector('.jellyseerr-menu-input').hasAttribute('aria-invalid'), false);
