@@ -92,9 +92,11 @@
      * @param {Function} options.label - The string lookup
      * @param {string} options.locale - The page's language
      * @param {object} options.selection - The section's FilterSelection
-     * @returns {{words: string, without: (selection: object) => object}[]} Each thing set, in words, and the selection without it
+     * @param {string} [options.ownGenre] - On a genre's page: that genre's name (always applied, so outside an "or")
+     * @returns {{words: string, or: boolean, without: (selection: object) => object}[]} Each thing set, in words (`or`:
+     *   said after "or"), and the selection without it
      */
-    function filterTokens({ offered, label: say, locale, selection }) {
+    function filterTokens({ offered, label: say, locale, selection, ownGenre }) {
         const tokens = [];
         for (const id of offered) {
             if (isRangeId(id)) {
@@ -107,15 +109,21 @@
                 tokens.push({ words, without: now => ({ ...now, [id]: undefined }) });
                 continue;
             }
-            // (In a list matched by any of what is ticked, each after the first is said with "or" before it.)
+            // (In a list matched by any of what is ticked, each after the first is said with "or" before it. A genre's
+            // page's own genre is always applied: it comes first, outside the "or".)
             const either = logic().MATCH_DEFAULTS?.[id] !== undefined && logic().matchOf(selection, id) === 'any';
-            for (const [index, item] of (selection[id] ?? []).entries()) {
+            const own = id === 'genres' ? ownGenre?.trim().toLocaleLowerCase() ?? '' : '';
+            const isOwn = item => own !== '' && item.name.toLocaleLowerCase() === own;
+            const items = [...(selection[id] ?? [])].sort((a, b) => Number(isOwn(b)) - Number(isOwn(a)));
+            const firstOther = items.findIndex(item => !isOwn(item));
+            for (const [index, item] of items.entries()) {
+                const or = either && firstOther >= 0 && index > firstOther;
                 tokens.push({
-                    or: either && index > 0,
+                    or,
                     // A keyword and a language need a word to be read on their own ("With robot", "Originally in Japanese"); a genre, a rating, a service and a role say what they are.
                     words: id === 'without' ? say('discovery_filter_set_without', 'Without {name}', { name: item.name })
                         // ("With bear or dragon": after "or" the keyword's own name is enough.)
-                        : id === 'keywords' ? (either && index > 0 ? item.name : say('discovery_filter_set_with', 'With {name}', { name: item.name }))
+                        : id === 'keywords' ? (or ? item.name : say('discovery_filter_set_with', 'With {name}', { name: item.name }))
                             : id === 'language' ? say('discovery_filter_set_language', 'Originally in {name}', { name: item.name }) : item.name,
                     without(now) {
                         const left = (now[id] ?? []).filter(entry => entry.id !== item.id);
@@ -267,7 +275,10 @@
          * @param {object[]} picked
          * @returns {string}
          */
-        const sayList = (picked, id) => {
+        const sayList = (ticked, id) => {
+            // (On a genre's page its own genre is always applied: what is said is about the others.)
+            const own = id === 'genres' ? options.ownGenre?.trim().toLocaleLowerCase() ?? '' : '';
+            const picked = own && ticked.length > 1 ? ticked.filter(item => item.name.toLocaleLowerCase() !== own) : ticked;
             // A list where all or any can be chosen says which: "Action and Comedy", "Any of 3".
             if (picked.length >= 2 && logic().MATCH_DEFAULTS?.[id] !== undefined) {
                 const any = logic().matchOf(options.selection(), id) === 'any';
@@ -764,7 +775,7 @@
         const paintSet = (focusAt = -1) => {
             const section = sectionOf();
             let line = section?.querySelector('.jellyseerr-filters-set') ?? null;
-            const tokens = filterTokens({ offered, label, locale: localeOf(), selection: selectionOf(moduleName) });
+            const tokens = filterTokens({ offered, label, locale: localeOf(), selection: selectionOf(moduleName), ownGenre });
             // (Redrawn with the keys on one of its buttons, as after the list it narrowed is in: they stay at that place.)
             const keyedAt = line && focusAt < 0 ? Array.from(line.querySelectorAll('button')).indexOf(document.activeElement) : -1;
             if (!section || tokens.length === 0) {
