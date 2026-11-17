@@ -358,6 +358,9 @@
             const Dashboard = JEAdmin.dashboardShim(window.Dashboard);
 
             JEAdmin.mount(document);
+            // Icon on every setting the usage report sends; the list is read from the server's own reporting code.
+            ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/JellyfinEnhanced/usage/fields'), dataType: 'json' })
+                .then((names) => JEAdmin.markAnalytics(names)).catch(() => { /* badges are cosmetic */ });
 
             const page = document.querySelector('#JellyfinEnhancedPage');
             const form = document.querySelector('#JellyfinEnhancedForm');
@@ -529,6 +532,9 @@
             }
 
             function activateTab(tabId) {
+                // Media Tags keeps its own sections in `tab` (jeSection names the outer tab), so the two must not share the key.
+                JEAdmin.setHash('jeSection', tabId === 'media-tags' ? tabId : null);
+                JEAdmin.setHash('tab', tabId === 'media-tags' ? null : tabId);
                 if (_jePrevTabId && _jePrevTabId !== tabId) {
                     _jeTabScroll[_jePrevTabId] = _jeGetScrollTop();
                 }
@@ -929,7 +935,7 @@
                 }
                 var tabId = id ? null : params.get('tab');
                 var tabBtn = tabId ? Array.from(page.querySelectorAll('.jellyfin-tab-button')).find(function (b) { return b.dataset.tab === tabId; }) : null;
-                if (tabBtn) { tabBtn.click(); return true; }
+                if (tabBtn) { tabBtn.click(); JEAdmin.openCard(params.get('card')); return true; }
                 return false;
             }
 
@@ -986,6 +992,7 @@
             // followed once: showing the page again keeps the tab the administrator moved to since.
             const JE_SECTION_LINKS = ['mdblistRatingsEnabled', 'TMDB_API_KEY'];
             const JE_MEDIA_TAGS_SECTIONS = { tagLayoutAdminDetails: ['layout'], tagScale: ['layout'], tagGap: ['layout'], tagEdgeSpacing: ['layout'], awardsTagsAdminDetails: ['groups', 'awards'], logoTagsAdminDetails: ['groups', 'logos'], customTagsAdminDetails: ['groups', 'custom'], statusTagsAdminDetails: ['badges'], tagStylesEnabled: ['colours'], tagCacheServerMode: ['server'], nativePosterTagsEnabled: ['server'] };
+            document.addEventListener('je-media-tags-section', function (e) { JEAdmin.setHash('tab', e.detail.section); });
             let _jeOpenedAddress = null;
             function jeOpenRequestedSection() {
                 let params;

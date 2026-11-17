@@ -62,6 +62,16 @@
     const isPU = (f) => f.perUser === true || (f.perUser !== false && perUserProps.has(propOf(f)));
     const BADGE = '<i class="material-icons jea-badge" aria-label="Per-user setting" title="Each user has a personal copy. Existing users keep theirs until you overwrite it.">group</i>';
 
+    const ANALYTICS_BADGE = '<a class="material-icons jea-badge jea-analytics" href="#/configurationpage?name=Jellyfin%20Enhanced&tab=admin&card=usage-statistics" aria-label="Shared in Analytics if opted in" title="Shared in Analytics if opted in">insights</a>';
+    const slugOf = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    function setHash(key, val) {
+        const [path, q = ''] = location.hash.split('?');
+        if (!path.includes('configurationpage')) return;
+        const p = new URLSearchParams(q);
+        if (val) p.set(key, val); else p.delete(key);
+        history.replaceState(null, '', path + '?' + p);
+    }
+
     // A long description reads as a wall of text, so each sentence gets its own line (unless the author already structured it).
     function breakLines(html) {
         if (!html || html.length < 140 || /<(br|ul|li|p)\b/i.test(html)) return html;
@@ -353,6 +363,7 @@
         const bt = document.querySelector('.jellyfin-tab-button[data-tab="' + tab.id + '"]');
         if (bt && bt.nextElementSibling) bt.nextElementSibling.querySelectorAll('.jea-nav-leaf.on').forEach((l) => l.classList.remove('on'));
         tab.classList.remove('jea-focused');
+        setHash('card', null);
         tab.querySelectorAll(':scope > fieldset.jea-focus').forEach((f) => f.classList.remove('jea-focus'));
     }
 
@@ -390,7 +401,7 @@
                 a.className = 'jea-nav-leaf';
                 a.textContent = sectionTitle(fs);
                 a._card = fs;
-                a.addEventListener('click', (e) => { e.preventDefault(); open(() => { focusCard(tab, fs); mark(a); }); });
+                a.addEventListener('click', (e) => { e.preventDefault(); open(() => { focusCard(tab, fs); mark(a); setHash('card', slugOf(a.textContent)); }); });
                 tree.appendChild(a);
                 const groups = topGroups(fs);
                 if (groups.length >= 2) {
@@ -605,6 +616,21 @@
         },
         // Call after the overwrite succeeds so the banners clear.
         markApplied() { all().forEach((f) => { base[f.id] = read(f); }); refresh(); },
-        setPerUser(list) { list.forEach((p) => perUserProps.add(p)); }
+        setPerUser(list) { list.forEach((p) => perUserProps.add(p)); },
+        // Address bar keeps the open tab and card (#/configurationpage?name=...&tab=seerr&card=requests) so a reload or shared link returns there.
+        setHash,
+        openCard(slug) {
+            const leaf = slug && [...document.querySelectorAll('.jea-nav-leaf:not(.jea-nav-sub)')].find((l) => slugOf(l.textContent) === slug);
+            if (leaf) leaf.click();
+        },
+        // Adds an insights icon to every field whose property the analytics report sends (list comes from the server, so nothing is defined by hand).
+        markAnalytics(props) {
+            const set = new Set(props);
+            all().filter((f) => f.id && set.has(propOf(f))).forEach((f) => {
+                const el = document.getElementById(f.id);
+                const lbl = el && (el.closest('label') || document.querySelector(`label[for="${f.id}"]`));
+                if (lbl && !lbl.querySelector('.jea-analytics')) lbl.insertAdjacentHTML('beforeend', ANALYTICS_BADGE);
+            });
+        }
     };
 })();
