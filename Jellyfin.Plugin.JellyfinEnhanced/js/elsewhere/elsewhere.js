@@ -14,13 +14,41 @@
             console.log('🪼 Jellyfin Enhanced: 🎬 Jellyfin Elsewhere: Feature is disabled in plugin settings.');
             return;
         }
+        /**
+         * The URL the custom branding icon loads from. An uploaded icon wins over the
+         * URL setting. Root-relative paths to Jellyfin's own routes (/web/…,
+         * /JellyfinEnhanced/…) are resolved through ApiClient so they keep working
+         * when Jellyfin runs under a base path such as /jellyfin. Keep in step with
+         * resolveElsewhereIconUrl in Configuration/configPage.html.
+         * @param {string} configuredUrl - The Custom Branding Icon URL setting.
+         * @param {string} uploadVersion - Upload version from public-config; empty when none.
+         * @returns {string} The icon URL, or '' for no icon.
+         */
+        function resolveBrandingIconUrl(configuredUrl, uploadVersion) {
+            const api = window.ApiClient;
+            if (uploadVersion && api && typeof api.getUrl === 'function') {
+                return api.getUrl('/JellyfinEnhanced/ElsewhereBrandingIcon', { v: uploadVersion });
+            }
+            const url = String(configuredUrl || '').trim();
+            if (/^\/(web|JellyfinEnhanced)\//i.test(url) && api && typeof api.getUrl === 'function') {
+                try {
+                    return api.getUrl(url);
+                } catch (e) {
+                    return url;
+                }
+            }
+            return url;
+        }
+
         // --- Configuration ---
         const TmdbEnabled = !!JE.pluginConfig.TmdbEnabled;
         const DEFAULT_REGION = JE.pluginConfig.DEFAULT_REGION || 'US';
         const DEFAULT_PROVIDERS = JE.pluginConfig.DEFAULT_PROVIDERS ? JE.pluginConfig.DEFAULT_PROVIDERS.replace(/'/g, '').replace(/\n/g, ',').split(',').map(s => s.trim()).filter(s => s) : [];
         const IGNORE_PROVIDERS = JE.pluginConfig.IGNORE_PROVIDERS ? JE.pluginConfig.IGNORE_PROVIDERS.replace(/'/g, '').replace(/\n/g, ',').split(',').map(s => s.trim()).filter(s => s) : [];
         const ELSEWHERE_CUSTOM_BRANDING_TEXT = JE.pluginConfig.ElsewhereCustomBrandingText || '';
-        const ELSEWHERE_CUSTOM_BRANDING_IMAGE_URL = JE.pluginConfig.ElsewhereCustomBrandingImageUrl || '';
+        const ELSEWHERE_CUSTOM_BRANDING_IMAGE_URL = resolveBrandingIconUrl(
+            JE.pluginConfig.ElsewhereCustomBrandingImageUrl,
+            JE.pluginConfig.ElsewhereCustomBrandingIconVersion);
         // Without a TMDB key, provider data comes from Seerr's movie/tv detail
         // (its watchProviders field). Seerr has no per-season providers.
         const UseSeerrProviders = !TmdbEnabled && !!JE.pluginConfig.JellyseerrEnabled;

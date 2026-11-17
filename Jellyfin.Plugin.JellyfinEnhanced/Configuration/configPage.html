@@ -4397,11 +4397,12 @@
                 { inputId: 'faviconInput', dropZoneId: 'faviconDropZone', statusId: 'faviconStatus', fileName: 'favicon.ico', previewId: 'faviconPreview', placeholderId: 'faviconPlaceholder', deleteId: 'faviconDelete', dimensionsId: 'faviconDimensions' },
                 { inputId: 'bannerLightInput', dropZoneId: 'bannerLightDropZone', statusId: 'bannerLightStatus', fileName: 'banner-light.png', previewId: 'bannerLightPreview', placeholderId: 'bannerLightPlaceholder', deleteId: 'bannerLightDelete', dimensionsId: 'bannerLightDimensions' },
                 { inputId: 'bannerDarkInput', dropZoneId: 'bannerDarkDropZone', statusId: 'bannerDarkStatus', fileName: 'banner-dark.png', previewId: 'bannerDarkPreview', placeholderId: 'bannerDarkPlaceholder', deleteId: 'bannerDarkDelete', dimensionsId: 'bannerDarkDimensions' },
-                { inputId: 'touchiconInput', dropZoneId: 'touchiconDropZone', statusId: 'touchiconStatus', fileName: 'apple-touch-icon.png', previewId: 'touchiconPreview', placeholderId: 'touchiconPlaceholder', deleteId: 'touchiconDelete', dimensionsId: 'touchiconDimensions' }
+                { inputId: 'touchiconInput', dropZoneId: 'touchiconDropZone', statusId: 'touchiconStatus', fileName: 'apple-touch-icon.png', previewId: 'touchiconPreview', placeholderId: 'touchiconPlaceholder', deleteId: 'touchiconDelete', dimensionsId: 'touchiconDimensions' },
+                { inputId: 'elsewhereIconInput', dropZoneId: 'elsewhereIconDropZone', statusId: 'elsewhereIconStatus', fileName: 'elsewhere-icon.png', previewId: 'elsewhereIconPreview', placeholderId: 'elsewhereIconPlaceholder', deleteId: 'elsewhereIconDelete', dimensionsId: 'elsewhereIconDimensions' }
             ];
 
             // Which slots have a custom image, in one request, so we don't probe
-            // all five individually (and 404 on every empty one).
+            // all six individually (and 404 on every empty one).
             let brandingStatus = null;
             try {
                 const token = ApiClient.accessToken ? ApiClient.accessToken() : '';
@@ -5051,10 +5052,25 @@
                 banner.appendChild(strong);
                 banner.appendChild(document.createTextNode(
                     (looksLikeFilePath ? 'It looks like a file path on the server. ' : '')
-                    + 'Viewers\' browsers load the icon over the web, so it has to be an address a browser can open, such as https://example.com/logo.png, or a path Jellyfin serves, such as /web/favicons/touchicon.png. Files elsewhere on the server can\'t be used; host the image on a web server or image host instead.'));
+                    + 'Viewers\' browsers load the icon over the web, so it has to be an address a browser can open, such as https://example.com/logo.png, or a path Jellyfin serves, such as /web/favicons/touchicon.png. Files elsewhere on the server can\'t be used; upload the image below instead.'));
                 banner.style.display = '';
             };
-            img.src = url;
+            img.src = resolveElsewhereIconUrl(url);
+        }
+
+        /**
+         * Resolves root-relative paths to Jellyfin's own routes (/web/…,
+         * /JellyfinEnhanced/…) through ApiClient so they work under a base path,
+         * exactly as the client does. Keep in step with resolveBrandingIconUrl in
+         * js/elsewhere/elsewhere.js.
+         * @param {string} url - The trimmed Custom Branding Icon URL.
+         * @returns {string} The URL a viewer's browser would load.
+         */
+        function resolveElsewhereIconUrl(url) {
+            if (/^\/(web|JellyfinEnhanced)\//i.test(url) && window.ApiClient && typeof ApiClient.getUrl === 'function') {
+                try { return ApiClient.getUrl(url); } catch (e) { return url; }
+            }
+            return url;
         }
 
         /**

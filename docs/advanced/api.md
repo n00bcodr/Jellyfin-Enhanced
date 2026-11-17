@@ -1558,6 +1558,7 @@ Neither configuration endpoint exposes provider API keys. `TmdbEnabled` and `Mdb
     | `TagLookItemOverrides` | Nullable array of server-wide item looks `{ItemId,Layout,Density,ColourPreset,Slots,Shapes,Caps,TagScale,TagGap,EdgeSpacing,Scope,LockedAt}` (the `TagLayoutLocks` document with its item id), normalized, newest first, at most 500; only targets visible to the caller through Jellyfin library and parental access checks (including scoped series targets), `null` for anonymous callers or when none are visible. Public config and bootstrap are not cached across users |
     | `CalendarFirstDayOfWeek`, `CalendarTimeFormat`, `MaintenanceModeMessage`, `MaintenanceModeAction`, `MaintenanceModeAffectedUsers` | String |
     | `ClearLocalStorageTimestamp`, `ClearTranslationCacheTimestamp` | Integer |
+    | `ElsewhereCustomBrandingIconVersion` | String: last-write ticks of the uploaded Elsewhere icon, empty when none is uploaded; clients use it to choose and cache-bust `ElsewhereBrandingIcon` |
     | `Shortcuts` | Array of `{Name,Key,Label,Category}` |
     | `MaintenanceModeEndsAt` | Nullable ISO timestamp |
 
@@ -1899,13 +1900,14 @@ For non-administrators the match is limited to items the caller can see (library
 
 Upload, retrieve, and remove custom branding assets. No enable toggle is required for storage operations.
 
-Valid slots are `icon-transparent.png`, `banner-light.png`, `banner-dark.png`, `favicon.ico`, `apple-touch-icon.png`; names normalize to lowercase.
+Valid slots are `icon-transparent.png`, `banner-light.png`, `banner-dark.png`, `favicon.ico`, `apple-touch-icon.png`, `elsewhere-icon.png`; names normalize to lowercase. `elsewhere-icon.png` is the Elsewhere custom branding icon: it isn't swapped into a jellyfin-web asset, accepts only `image/png`, `image/jpeg`, `image/gif`, `image/webp` and `image/svg+xml` uploads, and is served by its content rather than its name.
 
 | Method | Path | Access | Request → response |
 |---|---|---|---|
 | POST | `UploadBrandingImage` | Administrator | Multipart first file plus form `fileName` → success string `File uploaded successfully`. |
-| GET | `BrandingStatus` | Authenticated | Filename-to-existence boolean map for all five slots. |
-| GET | `BrandingImage` | Authenticated | Query `fileName` → stored bytes with extension-derived MIME. |
+| GET | `BrandingStatus` | Authenticated | Filename-to-existence boolean map for all six slots. |
+| GET | `BrandingImage` | Authenticated | Query `fileName` → stored bytes with extension-derived MIME (content-derived for `elsewhere-icon.png`). |
+| GET | `ElsewhereBrandingIcon` | Anonymous | Uploaded Elsewhere icon with content-derived MIME, `Cache-Control: public, max-age=86400`, and a sandboxing `Content-Security-Policy`; `404` when none is uploaded. Anonymous because viewers load it with a plain `<img>`; an optional `v` query only busts caches. |
 | POST | `DeleteBrandingImage` | Administrator | Form `fileName` → success string `File deleted successfully`. |
 
 ```bash
