@@ -396,6 +396,10 @@ test('a list page\'s further filters are typed or ticked, and asked of Seerr: ra
   typeRange(h, 'year', '2010', '2019-06-30');
   assert.equal(shown(), '4,14');
   assert.equal(groupOf(h, 'year').textContent, 'Released2010 to 2019-06-30');
+  // Its fields keep their labels over them once typed in (a placeholder would be gone), each label the field's own.
+  const bounds = [...bodyOf(h, 'year').querySelectorAll('label.jellyseerr-menu-bound')];
+  same(bounds.map(text => text.textContent), ['From', 'To']);
+  same(bounds.map(text => h.document.getElementById(text.htmlFor)?.value), ['2010', '2019-06-30']);
   // Typed the wrong way round, a range has one meaning and is read so; the fields stay as typed.
   typeRange(h, 'year', '2019-06-30', '2010');
   assert.equal(groupOf(h, 'year').textContent, 'Released2010 to 2019-06-30');
@@ -761,7 +765,7 @@ test('a Without list: none of what is ticked, said once at its start; a thing wa
   // On the row, "or" under its Without heading; on the page, "Not" once, then the names joined by "or", one run.
   assert.equal(groupOf(h, 'withoutGenres').textContent, 'Without genresHorror or Thriller');
   const setLine = s.root.querySelector('.jellyseerr-filters-set');
-  same([...setLine.querySelectorAll('.jellyseerr-filters-token')].map(piece => piece.textContent), ['Not Horror', 'or Thriller']);
+  same([...setLine.querySelectorAll('.jellyseerr-filters-token')].map(piece => piece.textContent), ['Not Horror', 'and not Thriller']);
   same([setLine.firstElementChild.className, setLine.firstElementChild.getAttribute('aria-label')], ['jellyseerr-filters-run', 'Without genres']);
   // Horror wanted after all: ticked under Genres, it leaves Without genres (its row says so, its body is built anew).
   await until(() => bodyOf(h, 'genres').querySelectorAll('.actionSheetMenuItem').length === 3, 'the genres');

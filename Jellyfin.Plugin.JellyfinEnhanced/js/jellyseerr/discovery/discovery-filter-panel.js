@@ -148,16 +148,25 @@
                         : id === 'keywords' ? say('discovery_filter_set_with', 'With {name}', { name: item.name })
                             : id === 'language' ? say('discovery_filter_set_language', 'Originally in {name}', { name: item.name })
                                 : id === 'services' ? say('discovery_filter_set_on', 'On {name}', { name: item.name }) : item.name;
+            /**
+             * A left-out thing after the first, its own negative in lower case: "not Thriller", "without horror".
+             * @param {{name: string}} item
+             * @returns {string}
+             */
+            const more = item => id === 'without' ? say('discovery_filter_set_without_more', 'without {name}', { name: item.name })
+                : id === 'withoutLanguage' ? say('discovery_filter_set_not_language_more', 'not originally in {name}', { name: item.name })
+                    : say('discovery_filter_set_not_more', 'not {name}', { name: item.name });
             for (const [index, item] of items.entries()) {
-                // ("and" for all of them; "or" for any, and for none of them: "Without gore or horror".)
-                const join = rule !== '' && index > 0 ? (rule === 'all' ? 'and' : 'or') : undefined;
+                // ("and" for all of them, "or" for any; for none of them "and", each piece said whole: "Not Horror and not
+                // Thriller", a piece never read as wanted.)
+                const join = rule !== '' && index > 0 ? (rule === 'any' ? 'or' : 'and') : undefined;
                 tokens.push({
                     join,
                     or: join === 'or',
                     list: id,
                     // (After the word joining it to the one before, its own name is enough: "With bear or dragon",
                     // "Not Horror or Thriller". `alone`: as it is said by itself, for what names one piece: Undo.)
-                    words: join ? item.name : alone(item),
+                    words: !join ? alone(item) : rule === 'none' ? more(item) : item.name,
                     alone: alone(item),
                     without(now) {
                         const left = (now[id] ?? []).filter(entry => entry.id !== item.id);
@@ -271,6 +280,25 @@
                     dash.setAttribute('aria-hidden', 'true');
                     dash.textContent = '–';
                     row.append(from, dash, to);
+                    // Over the fields, their labels, in sight once a field is typed in too (a placeholder goes then): a row
+                    // of their own, so the fields and the dash between them stand as they did.
+                    const labels = document.createElement('div');
+                    labels.className = 'jellyseerr-menu-range jellyseerr-menu-range-labels';
+                    const spacer = document.createElement('span');
+                    spacer.className = 'jellyseerr-menu-range-spacer';
+                    spacer.setAttribute('aria-hidden', 'true');
+                    spacer.textContent = '–';
+                    const labelFor = (input, words) => {
+                        input.id = `jellyseerr-menu-bound-${++hints}`;
+                        input.placeholder = '';
+                        const text = document.createElement('label');
+                        text.className = 'jellyseerr-menu-bound';
+                        text.htmlFor = input.id;
+                        text.textContent = words;
+                        return text;
+                    };
+                    labels.append(labelFor(from, say('discovery_filter_from', 'From')), spacer, labelFor(to, say('discovery_filter_to', 'To')));
+                    host.appendChild(labels);
                     // Under the fields: what they take. While what is typed cannot be used, that is said there instead, in words.
                     const [hintKey, hintWords, errorKey, errorWords] = HINTS[id];
                     const hint = note(say(hintKey, hintWords));
@@ -1500,6 +1528,9 @@
                a long one; a search. The fields are the menu's own ground a shade lighter, ringed in the
                theme's colour while typed in and in its error colour while what is typed cannot be used. */
             .jellyseerr-menu-range { display: flex; align-items: center; gap: .5em; padding: 4px 16px 8px 32px; }
+            .jellyseerr-menu-range-labels { padding-bottom: 0; }
+            .jellyseerr-menu-bound { flex: 1 1 0; min-width: 0; font-size: .86em; color: var(--jellyseerr-quiet, rgba(255,255,255,.7)); }
+            .jellyseerr-menu-range-spacer { visibility: hidden; }
             .jellyseerr-menu-input { box-sizing: border-box; flex: 1 1 0; width: 100%; min-width: 0; padding: 6px 10px; border: 1px solid var(--jf-palette-divider, rgba(255,255,255,.12)); border-color: color-mix(in srgb, currentColor 45%, transparent); border-radius: var(--jf-shape-borderRadius, 4px); background: var(--jf-palette-action-hover, rgba(255,255,255,.08)); color: inherit; font: inherit; }
             .jellyseerr-menu-input::placeholder { color: var(--jellyseerr-quiet, var(--jf-palette-text-secondary, rgba(255,255,255,.7))); opacity: 1; }
             .jellyseerr-menu-input:focus { outline: none; border-color: var(--jellyseerr-accent, #00a4dc); box-shadow: 0 0 0 1px var(--jellyseerr-accent, #00a4dc); }
@@ -1633,6 +1664,8 @@
             .jellyseerr-menu-list:empty { display: none; }
             /* (A phone's browser zooms into a field whose type is under 16px.) */
             @media (max-width: 600px) { .jellyseerr-menu-input { font-size: max(1em, 16px); min-height: 44px; } }
+            @media (max-width: 600px) { html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-note, html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-profile-says { font-size: .92em; } }
+            @supports (color: color-mix(in srgb, red, blue)) { .layout-tv .jellyseerr-sort-menu { --jellyseerr-quiet: color-mix(in srgb, currentColor 82%, transparent); } }
             .jellyseerr-menu-group .listItemBody { display: flex; flex-direction: row; align-items: baseline; justify-content: space-between; gap: 1.5em; }
             /* The filter's name is never cut: a long value gives way, with an ellipsis. */
             html .jellyseerr-sort-menu .jellyseerr-menu-group .actionSheetItemText { flex: 0 0 auto; }
