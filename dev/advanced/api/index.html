@@ -3643,7 +3643,7 @@
 <h1 id="jellyfin-enhanceds-api">Jellyfin Enhanced's API<a class="headerlink" href="#jellyfin-enhanceds-api" title="Permanent link">¶</a></h1>
 <p>Use Jellyfin Enhanced (JE)'s API to manage bookmarks, reviews, and personal settings, retrieve metadata, and work with integrations through HTTP(S) requests. Install and enable the plugin on your server first.</p>
 <p>To use these APIs from a custom Jellyfin client, you need an HTTP client and a Jellyfin credential. You do not need the injected JE scripts.</p>
-<p>This reference covers the 219 method/path entries in plugin version <strong>12.14.0.0</strong>. Use the endpoint tables to check access requirements, inputs, responses, and limits.</p>
+<p>This reference covers the 220 method/path entries in plugin version <strong>12.14.0.0</strong>. Use the endpoint tables to check access requirements, inputs, responses, and limits.</p>
 <p>Paths in endpoint tables are relative to <code>/JellyfinEnhanced/</code>. Braces mark path parameters; replace them before making a request. The catch-all routes serve only the resources described below.</p>
 <details class="note">
 <summary>Which IDs to use</summary>
@@ -7254,6 +7254,12 @@
 <td><code>usage/track</code></td>
 <td>Authenticated</td>
 <td><code>{"key":"seerr.request_submitted"}</code> → empty <code>200</code>.</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>usage/fields</code></td>
+<td>Administrator</td>
+<td>Array of setting names the usage report carries (the config page marks them with an icon).</td>
 </tr>
 <tr>
 <td>POST</td>
