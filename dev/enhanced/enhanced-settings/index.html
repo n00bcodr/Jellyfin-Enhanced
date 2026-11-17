@@ -1213,6 +1213,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#leaving-soon" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Leaving Soon
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#catch-up" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2763,6 +2774,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#leaving-soon" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Leaving Soon
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#catch-up" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4282,7 +4304,7 @@
 <p>Personal overrides remain in effect until users reset them in their own editor. Personal <span class="keys"><kbd class="key-backspace">Backspace</kbd></span> restores the saved administrator binding, which may differ from the stock key.</p>
 </details>
 <h3 id="page-entry-points">Page entry points<a class="headerlink" href="#page-entry-points" title="Permanent link">¶</a></h3>
-<p>Enable the page under <strong>Pages</strong>, choose its placement, and click <strong>Save Settings</strong>. Bookmarks, Hidden Content, Activity, and Catch Up controls are listed below. Follow <a href="../../getting-started/pages-and-tabs/">JE Pages &amp; Tabs</a> for native Home links, Plugin Pages registration, and automatic or manual Custom Tabs setup.</p>
+<p>Enable the page under <strong>Pages</strong>, choose its placement, and click <strong>Save Settings</strong>. Bookmarks, Hidden Content, Activity, Leaving Soon, and Catch Up controls are listed below. Follow <a href="../../getting-started/pages-and-tabs/">JE Pages &amp; Tabs</a> for native Home links, Plugin Pages registration, and automatic or manual Custom Tabs setup.</p>
 <h3 id="bookmarks">Bookmarks<a class="headerlink" href="#bookmarks" title="Permanent link">¶</a></h3>
 <p>Bookmarks save positions within videos so you can return to them later. The bookmark library lets you manage those saved positions.</p>
 <ol>
@@ -4583,6 +4605,56 @@
 <p><strong>Elsewhere &amp; Reviews</strong> → <strong>User Reviews</strong> → <strong>Hide reviews from hidden users</strong> and <strong>Hide reviews from disabled users</strong> both default to On. They also filter activity authors, with admin/self exceptions. User Reviews runs independently. Disabling Activity Feed stops watched/favorite collection, but reviews written while it is off can appear when the feed returns. See <a href="../../elsewhere/elsewhere-settings/">Elsewhere &amp; Reviews Settings</a> for those shared review controls.</p>
 <p><strong>Active Streams Header Widget</strong> enables the Active Streams data endpoint as well as the header widget. The feed's live section refreshes every 15 seconds while the document is visible. Stored history does not use that polling. The header widget refreshes on initialization, opening, and manual refresh.</p>
 </details>
+<h3 id="leaving-soon">Leaving Soon<a class="headerlink" href="#leaving-soon" title="Permanent link">¶</a></h3>
+<p>The Leaving Soon page lists everything the removal tool that is on (<a href="../tags/#leaving-soon-maintainerr-or-reclaimerr">Maintainerr or Reclaimerr</a>) will remove, with the days left. Everyone sees the items they can access, soonest first, and can filter <strong>Movies</strong> and <strong>Shows</strong>. It needs a removal tool set up first.</p>
+<ol>
+<li>Set up and turn on a removal tool in the <strong>*arr</strong> tab (the Maintainerr or Reclaimerr card).</li>
+<li>Enable the page under <strong>Pages</strong> → <strong>Leaving Soon</strong> and configure an entry point.</li>
+<li>Open <strong>Leaving Soon</strong>. Click a poster or title to open the item.</li>
+</ol>
+<p>What each person gets:</p>
+<ul>
+<li><strong>Everyone:</strong> the list, with a chip for the day it leaves (<strong>Leaves in 5d</strong>, <strong>Leaves tomorrow</strong>, <strong>Leaves today</strong>, or <strong>Leaving soon</strong> when no date is known). With Reclaimerr, their own removal requests and whether each is waiting, approved or denied.</li>
+<li><strong>Administrators:</strong> <strong>Keep</strong> and <strong>Change removal date</strong> (<strong>Postpone</strong> with Maintainerr) on each card, the same actions as the item menu, and with Reclaimerr the waiting removal requests as cards (poster, title, who asked with their Jellyfin name and avatar, and their note) with <strong>Approve</strong> and <strong>Deny</strong>. <strong>Approving deletes the title from the library at once</strong>, because Reclaimerr acts on an approval right away (with its default setting the files are deleted and the Radarr or Sonarr entry is kept unmonitored), so Approve asks you to confirm with <strong>Delete now</strong>; <strong>Deny</strong> keeps the title and needs no confirmation. Approving or denying is done as the administrator who clicked, so Reclaimerr records who reviewed it (the service account is the fallback).</li>
+</ul>
+<p>All settings below are admin server settings.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Enable the Leaving Soon page</strong></td>
+<td>Off</td>
+<td>Turns the page on. It lists nothing until a removal tool is set up.</td>
+</tr>
+<tr>
+<td><strong>Add Leaving Soon as a native Home tab</strong></td>
+<td>Off</td>
+<td>Adds the built-in Leaving Soon Home tab.</td>
+</tr>
+<tr>
+<td><strong>Use Plugin Pages</strong></td>
+<td>Off</td>
+<td>Exposes the page through Plugin Pages.</td>
+</tr>
+<tr>
+<td><strong>Use Custom Tabs</strong></td>
+<td>Off</td>
+<td>Enables the Leaving Soon Custom Tabs embed (<code>&lt;div class="jellyfinenhanced leavingsoon"&gt;&lt;/div&gt;</code>).</td>
+</tr>
+<tr>
+<td><strong>Add the Custom Tabs entry for me</strong></td>
+<td>Off</td>
+<td>Creates the matching managed Custom Tabs entry on save.</td>
+</tr>
+</tbody>
+</table>
+<p>The page reads the server's last read of the removal tool (the <strong>Leaving soon</strong> card's refresh interval) and reloads itself every five minutes and after any Keep or date change made from the item menu or the page. See <a href="../../advanced/api/">API reference</a> for the <code>leaving-soon</code> routes.</p>
 <h3 id="catch-up">Catch Up<a class="headerlink" href="#catch-up" title="Permanent link">¶</a></h3>
 <p>Catch Up gives you swipeable cards for unwatched movies and shows. Use them to mark items watched, dismiss them, add them to your watchlist, or open their details.</p>
 <ol>

@@ -1227,15 +1227,15 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#leaving-soon-maintainerr" class="md-nav__link">
+  <a href="#leaving-soon-maintainerr-or-reclaimerr" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Leaving soon (Maintainerr)
+        Leaving soon (Maintainerr or Reclaimerr)
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Leaving soon (Maintainerr)">
+    <nav class="md-nav" aria-label="Leaving soon (Maintainerr or Reclaimerr)">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -1254,6 +1254,34 @@
     <span class="md-ellipsis">
       
         The Leaving soon home row
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#leaving-soon-reclaimerr" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Leaving soon (Reclaimerr)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Leaving soon (Reclaimerr)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#acting-as-the-user-reclaimerr-side" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Acting as the user: Reclaimerr side
       
     </span>
   </a>
@@ -3038,15 +3066,15 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#leaving-soon-maintainerr" class="md-nav__link">
+  <a href="#leaving-soon-maintainerr-or-reclaimerr" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Leaving soon (Maintainerr)
+        Leaving soon (Maintainerr or Reclaimerr)
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Leaving soon (Maintainerr)">
+    <nav class="md-nav" aria-label="Leaving soon (Maintainerr or Reclaimerr)">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -3065,6 +3093,34 @@
     <span class="md-ellipsis">
       
         The Leaving soon home row
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#leaving-soon-reclaimerr" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Leaving soon (Reclaimerr)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Leaving soon (Reclaimerr)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#acting-as-the-user-reclaimerr-side" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Acting as the user: Reclaimerr side
       
     </span>
   </a>
@@ -5137,7 +5193,8 @@
 <p>Trending reads <strong>#N Today</strong> from TMDB's daily list when a key is configured. Without a key, or when TMDB fails or returns no rankable titles, it reads <strong>#N This Week</strong> from Seerr. With neither source, no rank appears. Only movies and series with TMDB IDs receive ranks.</p>
 <p>The server shares up to 60 movie/series ranks for 30 minutes, with a five-minute retry after an empty answer. The list contains only public TMDB IDs and ranks. Changed ranks re-badge cards already on the page.</p>
 <p>For series cards on screen, and parent series of season/episode cards, the browser batches up to 50 accessible IDs through <code>GET /JellyfinEnhanced/status-tags/series</code>. It retains schedules for an hour and retries failures after five minutes. The server shares TMDB responses for six hours, with at most four lookups in flight and 35 upstream requests per ten-second window. If the series response omits <code>episode_type</code>, its latest aired season supplies it. For an ended series whose latest episode is a special, the newest aired regular season also supplies a separate last regular episode. Parent aggregates fetched through <code>/tag-data</code> are shared by series and episode cards, expire after ten minutes, and are discarded on user or filter changes. No schedule is stored per user or in the tag cache. One shared viewport observer gates schedule requests; offscreen, detached and recycled cards do not dispatch lookups. Targets are released on removal, identity reuse, renderer cleanup and user change. A single timer re-evaluates labels at the next local midnight, and visibility/focus events refresh active cards after a suspended tab returns. User changes, renderer cleanup and <code>pagehide</code> cancel midnight, batch and retry timers; initialisation and <code>pageshow</code> resume them.</p>
-<h3 id="leaving-soon-maintainerr">Leaving soon (Maintainerr)<a class="headerlink" href="#leaving-soon-maintainerr" title="Permanent link">¶</a></h3>
+<h3 id="leaving-soon-maintainerr-or-reclaimerr">Leaving soon (Maintainerr or Reclaimerr)<a class="headerlink" href="#leaving-soon-maintainerr-or-reclaimerr" title="Permanent link">¶</a></h3>
+<p>Two removal tools can feed <strong>Leaving soon</strong>, the item menu and the home row: <strong>Maintainerr</strong> (below) and <strong>Reclaimerr</strong> (the next section). Exactly one is on at a time: each has a <strong>Use</strong> switch in its card in the <strong>*arr</strong> tab, and turning one on turns the other off (both can be off). The settings of the one that is off are kept. The shared options (item-menu switch, home row switch, refresh interval and the live state with <strong>Refresh now</strong>) are in their own <strong>Leaving soon</strong> card. Everything below that says Maintainerr applies while Maintainerr is the one that is on.</p>
 <p><a class="glightbox" data-type="image" data-width="100%" data-height="auto" href="../../images/tags/status-leaving-direct-play.webp" data-desc-position="bottom"><img alt="Leaving soon badges (Maintainerr) and direct-play warnings on library cards" src="../../images/tags/status-leaving-direct-play.webp"></a></p>
 <p><a href="https://github.com/jorenn92/Maintainerr">Maintainerr</a> puts the media its rules will delete into collections (often one called <strong>Leaving Soon</strong>) and deletes each item a set number of days after it was added. With <strong>Leaving soon</strong> on, cards say when an item goes.</p>
 <p>An administrator sets the source in <strong>*arr</strong> › <strong>Maintainerr</strong> (shown as a linked copy under <strong>Services</strong>; the <strong>Media Tags</strong> › <strong>Status badges</strong> › <strong>Leaving soon</strong> section shows its live state, with a <strong>Refresh now</strong> button and a link to the settings, and the Overview tab's <strong>Service Status</strong> lists Maintainerr with its last read):</p>
@@ -5227,6 +5284,68 @@
 <h4 id="the-leaving-soon-home-row">The Leaving soon home row<a class="headerlink" href="#the-leaving-soon-home-row" title="Permanent link">¶</a></h4>
 <p>With <strong>Leaving soon home row</strong> on (and a Maintainerr URL), the plugin registers a <strong>Leaving soon</strong> section with the <a href="https://github.com/IAmParadox27/jellyfin-plugin-home-sections">Home Screen Sections</a> plugin when that plugin is installed (it also needs File Transformation to draw its rows). The row lists Maintainerr's items the viewer can see, soonest removal first, movies and series only (a leaving season or episode shows as its series), up to 20. It is registered on every start (Home Screen Sections keeps registrations in memory) and, if Home Screen Sections has no entry for it yet, added to its section list enabled for everyone with user override allowed; users who keep their own section list may need to turn it on there. The <strong>Leaving soon</strong> section of the Media Tags tab says whether the row is registered, or which plugin is missing. The cards carry the usual Leaving soon badge for users who have it on.</p>
 <p><a class="glightbox" data-type="image" data-width="100%" data-height="auto" href="../../images/tags/maintainerr-home-row.webp" data-desc-position="bottom"><img alt="The Leaving soon row on the home page, soonest removal first" src="../../images/tags/maintainerr-home-row.webp"></a></p>
+<h3 id="leaving-soon-reclaimerr">Leaving soon (Reclaimerr)<a class="headerlink" href="#leaving-soon-reclaimerr" title="Permanent link">¶</a></h3>
+<p><a href="https://github.com/jessielw/Reclaimerr">Reclaimerr</a> scans your libraries with rules and routes the final deletion through Jellyfin, Radarr and Sonarr. With <strong>Use Reclaimerr</strong> on, the plugin reads it instead of Maintainerr:</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Use Reclaimerr</strong></td>
+<td>Off</td>
+<td>Turns Reclaimerr on and Maintainerr off</td>
+</tr>
+<tr>
+<td><strong>Reclaimerr URL</strong></td>
+<td>Empty</td>
+<td>The address this server reaches Reclaimerr at (<code>http://</code> or <code>https://</code>, no credentials or query). Redirects are not followed</td>
+</tr>
+<tr>
+<td><strong>Reclaimerr API token</strong></td>
+<td>Empty</td>
+<td>A token from Reclaimerr's <strong>Settings › Integrations</strong> with the candidates (manage), protections (manage), media (read) and system (read) scopes. Sent as a bearer token; masked in the page like the other keys, and never sent to users or written to the snapshot or logs</td>
+</tr>
+<tr>
+<td><strong>Act as the Jellyfin user</strong></td>
+<td>On</td>
+<td>Requests and schedules are made <strong>as the Jellyfin user who clicked</strong>: <strong>Request removal</strong>, <strong>Mark for removal</strong>, and cancelling or moving a scheduled deletion carry their own name in Reclaimerr (a request shows <code>@Sam</code>, not the service account). It uses Reclaimerr's trusted-proxy sign-in, so Reclaimerr needs <code>FORWARD_AUTH_ENABLED=true</code>, <code>FORWARD_AUTH_USER_HEADER=Remote-User</code> and the address the plugin connects from in <code>FORWARD_AUTH_TRUSTED_PROXIES</code> (see below). The user needs a Reclaimerr account. People who sign in to Reclaimerr with their Jellyfin login (<strong>media sign-in</strong>) get one created and linked automatically (for example <code>sam_user</code>); the plugin finds the account through that link, read with the service account and cached for five minutes, so nothing has to be created or mapped by hand. A user who has never signed in to Reclaimerr has no account yet: the fallback files their action under the service account</td>
+</tr>
+<tr>
+<td><strong>User header</strong></td>
+<td><code>Remote-User</code></td>
+<td>The header the user name is sent in; match Reclaimerr's <code>FORWARD_AUTH_USER_HEADER</code></td>
+</tr>
+<tr>
+<td><strong>Jellyfin user to Reclaimerr user</strong></td>
+<td>Empty</td>
+<td>Normally empty. One <code>Jellyfin name = Reclaimerr name</code> per line points a user at a specific Reclaimerr account instead of the linked one (for example <code>sam = samuel</code>); it wins over the link. Order: this list, then the linked account, then the same name</td>
+</tr>
+<tr>
+<td><strong>Service account username / password (fallback)</strong></td>
+<td>Empty</td>
+<td>A dedicated Reclaimerr <strong>admin</strong> account. The plugin signs it in <strong>by name</strong> through the same trusted-proxy sign-in as users, so the password is optional and Reclaimerr's local login can stay switched off; the password is only used for a local login when the trusted sign-in is not available. It is <strong>the fallback</strong>: the plugin uses it when it cannot act as the user, that is when Reclaimerr's trusted-proxy sign-in is off, the connecting address is not trusted, or the user has no Reclaimerr account (the action then shows under the service account). It also reads scheduled deletions and pending requests, and it is what <strong>Mark for removal</strong> and <strong>Request removal</strong> need when <strong>Act as the Jellyfin user</strong> is off, because Reclaimerr's token API cannot do those. <strong>Create service account</strong> makes one: it asks for a Reclaimerr administrator's login once (used for that call, never stored), creates <code>jellyfin-enhanced</code> with a random password and saves it. Reading candidates, <strong>Keep</strong> and <strong>Postpone</strong> work with the token alone</td>
+</tr>
+</tbody>
+</table>
+<p>What it reads and does:</p>
+<ul>
+<li><strong>Leaving soon facts.</strong> The cleanup candidates whose automatic deletion is scheduled, eligible or postponed (disabled and canceled ones are not leaving), and, with the service account, the manual deletions scheduled for a whole title or for one movie file. The date is the postponed-until day when there is one, else the end of the review period or the scheduled day. A season or episode on its own does not mark a series. Titles are matched to Jellyfin items by TMDB id, and a scheduled movie file marks only the library item that holds that file.</li>
+<li><strong>Item menu (administrators).</strong> <strong>Mark for removal</strong> opens a chooser with <strong>+7, +14, +30, +90 days</strong> and an exact-day picker (30 days is only the default) and schedules a manual deletion of the whole title. <strong>Keep</strong> protects the candidate (or cancels the scheduled deletion). <strong>Postpone removal</strong> takes a day count, an exact day, or <strong>Reset timer</strong> for a candidate.</li>
+<li><strong>Request removal (everyone signed in).</strong> A user who can see a movie or series and is not an administrator gets <strong>Request removal</strong> in the ⋮ menu. It files a Reclaimerr deletion request as that user (or as the service account when acting as the user is not possible), with "Requested by <user> from Jellyfin" as the reason; an administrator approves or denies it in Reclaimerr or on the Leaving Soon page. <strong>Approving executes the deletion immediately</strong> (Reclaimerr acts on approval, not on a date). Asking again while a request is waiting does not file a second one: the user is told it is already waiting.</user></li>
+</ul>
+<h4 id="acting-as-the-user-reclaimerr-side">Acting as the user: Reclaimerr side<a class="headerlink" href="#acting-as-the-user-reclaimerr-side" title="Permanent link">¶</a></h4>
+<p>Set these on the Reclaimerr container and restart it:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>FORWARD_AUTH_ENABLED=true
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>FORWARD_AUTH_USER_HEADER=Remote-User
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>FORWARD_AUTH_TRUSTED_PROXIES=&lt;the address Jellyfin's requests arrive from&gt;
+</span></code></pre></div>
+<p><code>FORWARD_AUTH_TRUSTED_PROXIES</code> takes the peer address Reclaimerr sees, not the client. With Reclaimerr in Docker and Jellyfin on the same host, requests to the published port arrive from the Docker bridge gateway (for example <code>172.80.32.1</code>) or, when the plugin uses the host's LAN address, from that address; list the one you use. Reclaimerr rejects <code>*</code> and all-address ranges, ignores the header from any other peer (the log says "Ignored Remote-User authentication header from untrusted peer"), and only maps the name onto an <strong>existing</strong> active user: it never creates accounts or roles. Local sign-in keeps working for requests that carry no header. Anything running on the trusted address can claim any Reclaimerr user, so trust only addresses you control and keep the Reclaimerr port off the public internet.
+- <strong>Home row and badges.</strong> The same <strong>Leaving soon</strong> row and badge as with Maintainerr, fed by Reclaimerr's data. Reclaimerr itself also keeps <code>Leaving Soon</code> collections in Jellyfin (named under <strong>Settings › General › Leaving Soon Collections</strong> in Reclaimerr); it has no Home Screen Sections row of its own, which is what this row adds.</p>
 <h3 id="direct-play-warning">Direct-play warning<a class="headerlink" href="#direct-play-warning" title="Permanent link">¶</a></h3>
 <p>With <strong>Direct-play warning</strong> on, movies and episodes that this browser would not play as they are get <strong>Transcode</strong> (video, audio, subtitles, bitrate or HDR need converting) or <strong>Won't direct play</strong> (only the container needs a remux). Hover the badge for the reasons, for example <em>Transcode: video codec hevc, audio codec dts</em>.</p>
 <p>The answer comes from Jellyfin's own negotiation, <code>POST /Items/{id}/PlaybackInfo</code> with the device profile the web player itself would send: a port of jellyfin-web 12.1's browser profile (the same browser checks for containers, codecs, HDR, interlacing and levels, and your <strong>Playback</strong> settings in this browser such as DTS, TrueHD, subtitle burn-in and PGS rendering, audio channels and maximum resolution), or the app's own profile in a desktop or TV app, and your saved video quality for this network (the one you chose, or the last automatic measurement). Signing in as another user or changing one of these settings in the page builds the profile again, so lookups ask with the new one. Nothing plays or transcodes. Lookups run only for cards on screen that show no other status badge, in idle moments, at most two at a time (also across page changes and user switches: a request still on its way keeps its place until it ends, at most 15 seconds, after which it is cancelled and counts as a failed lookup) and a few per idle slice. An item with several versions is asked about the version its card shows: the one you picked on its details page (Quality Tags remember it in this browser), else the one Jellyfin plays by default. Answers are kept per item, version, device profile and quality for a day, in memory and in this browser's tag cache store, and only for the media they were given for (each version's revision from the server, covering every fact a playback profile can check: bitrate, bit depth, level, scan type, frame rate, codec tag, anamorphic, reference frames, rotation, NAL length size, colour primaries, space and range, HDR10+ and Dolby Vision facts, and the codec, language and external, default and forced flags of every stream, subtitles included; a card without that revision fingerprints the same list from the facts it holds): a replaced or re-encoded file is asked about again at once, an answer stored before this check existed is asked again, and an answer still on its way for the old file is never shown for the new one; a failed lookup is retried after ten minutes. It skips every item Jellyfin would probe to answer: a <code>.strm</code> item (Jellyfin refreshes it with a remote probe on each such lookup, even when it was probed before) and an item whose tag data lists streams but no video stream in its first media source (media never probed) are not looked up and show no warning. Items whose tag data lists no streams at all (stripped or not sent) are looked up. It is a per-browser check: another device can play the same file differently. <a href="#native-poster-tags-experimental">Native Poster Tags</a> never show it, because a static poster has no client profile.</p>

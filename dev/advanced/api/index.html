@@ -3643,7 +3643,7 @@
 <h1 id="jellyfin-enhanceds-api">Jellyfin Enhanced's API<a class="headerlink" href="#jellyfin-enhanceds-api" title="Permanent link">¶</a></h1>
 <p>Use Jellyfin Enhanced (JE)'s API to manage bookmarks, reviews, and personal settings, retrieve metadata, and work with integrations through HTTP(S) requests. Install and enable the plugin on your server first.</p>
 <p>To use these APIs from a custom Jellyfin client, you need an HTTP client and a Jellyfin credential. You do not need the injected JE scripts.</p>
-<p>This reference covers the 208 method/path entries in plugin version <strong>12.14.0.0</strong>. Use the endpoint tables to check access requirements, inputs, responses, and limits.</p>
+<p>This reference covers the 217 method/path entries in plugin version <strong>12.14.0.0</strong>. Use the endpoint tables to check access requirements, inputs, responses, and limits.</p>
 <p>Paths in endpoint tables are relative to <code>/JellyfinEnhanced/</code>. Braces mark path parameters; replace them before making a request. The catch-all routes serve only the resources described below.</p>
 <details class="note">
 <summary>Which IDs to use</summary>
@@ -5983,7 +5983,7 @@
 <td>GET</td>
 <td><code>admin/leaving-soon</code></td>
 <td>Administrator</td>
-<td>No body → the Leaving soon source state <code>{Configured, Maintainerr, Actions, HomeRow, Collections, CollectionsFound, Items, Dated, LastSuccess, LastAttempt, NextRefresh, LastError}</code> (times Unix ms or null; <code>LastError</code> a short reason such as <code>HTTP 500</code>, <code>timed out</code> or <code>not reachable</code>; <code>Actions</code> whether the item-menu actions are on; <code>HomeRow</code> one of <code>off</code>, <code>unknown</code>, <code>registered</code>, <code>hss-missing</code>, <code>ft-missing</code>, <code>failed</code>). Never the URL, key or collection names.</td>
+<td>No body → the Leaving soon source state <code>{Configured, Maintainerr, Provider, Actions, HomeRow, Collections, CollectionsFound, Items, Dated, LastSuccess, LastAttempt, NextRefresh, LastError}</code> (times Unix ms or null; <code>LastError</code> a short reason such as <code>HTTP 500</code>, <code>timed out</code> or <code>not reachable</code>; <code>Actions</code> whether the item-menu actions are on; <code>HomeRow</code> one of <code>off</code>, <code>unknown</code>, <code>registered</code>, <code>hss-missing</code>, <code>ft-missing</code>, <code>failed</code>). Never the URL, key or collection names.</td>
 </tr>
 <tr>
 <td>POST</td>
@@ -5995,13 +5995,13 @@
 <td>GET</td>
 <td><code>maintainerr/item/{itemId}</code></td>
 <td>Administrator</td>
-<td>No body → <code>{ItemId, Marked, CollectionId, CollectionName, DeleteAt, Supported}</code> from the last read (no Maintainerr call): whether Maintainerr lists the item, in which of its collections (id and title, when the collections were read), its delete time (Unix ms or null) and whether the actions handle its kind (movies and series). <code>404</code> while the actions are off (<code>LeavingSoonMaintainerrActions</code> off or no Maintainerr URL) or the item is unknown.</td>
+<td>No body → <code>{ItemId, Marked, CollectionId, CollectionName, DeleteAt, Supported}</code> from the last read (no Maintainerr call): whether Maintainerr lists the item, in which of its collections (id and title, when the collections were read), its delete time (Unix ms or null) and whether the actions handle its kind (movies and series). <code>404</code> while Maintainerr is not the tool in use, its actions are off (<code>LeavingSoonMaintainerrActions</code> off or no Maintainerr URL) or the item is unknown.</td>
 </tr>
 <tr>
 <td>POST</td>
 <td><code>maintainerr/mark</code></td>
 <td>Administrator</td>
-<td><code>{itemId}</code> → the state above after the change. Adds the item to the one active <strong>manual</strong> Maintainerr collection of its type on its library (<code>POST /api/collections/media/add</code>, <code>action 0</code>); two collections on one library are told apart by asking each one's Radarr/Sonarr server (as Maintainerr lists them, <code>GET /api/settings/radarr|sonarr</code>) whether it holds the item (<code>/api/v3/movie?tmdbId=</code>, <code>/api/v3/series?tvdbId=</code>, same address guard). Then the facts are read again and published, so badges and the home row follow at once. <code>400</code> <code>{error}</code> when no collection fits (the reason names Maintainerr's collections), the item is already marked or is not a movie or series; <code>502</code> <code>{error}</code> with Maintainerr's reason (or a short one: <code>not reachable</code>, <code>timed out</code>, <code>redirected (redirects are not followed)</code>) when the request failed. Never the address or key.</td>
+<td><code>{itemId, mediaSourceId?}</code> → the state above after the change. Adds the item to the one active <strong>manual</strong> Maintainerr collection of its type on its library (<code>POST /api/collections/media/add</code>, <code>action 0</code>); two collections on one library are told apart by asking each one's Radarr/Sonarr server (as Maintainerr lists them, <code>GET /api/settings/radarr|sonarr</code>) whether it holds the item (<code>/api/v3/movie?tmdbId=</code>, <code>/api/v3/series?tvdbId=</code>, same address guard). Then the facts are read again and published, so badges and the home row follow at once. <code>400</code> <code>{error}</code> when no collection fits (the reason names Maintainerr's collections), the item is already marked or is not a movie or series; <code>502</code> <code>{error}</code> with Maintainerr's reason (or a short one: <code>not reachable</code>, <code>timed out</code>, <code>redirected (redirects are not followed)</code>) when the request failed. Never the address or key.</td>
 </tr>
 <tr>
 <td>POST</td>
@@ -6013,7 +6013,61 @@
 <td>POST</td>
 <td><code>maintainerr/postpone</code></td>
 <td>Administrator</td>
-<td><code>{itemId, days?}</code> → the state after the change. <code>days</code> 1–3650 moves the removal that much later (<code>POST /api/collections/media/postpone</code>); without <code>days</code> the timer restarts from today. <code>400</code> when the item is not marked or <code>days</code> is out of range.</td>
+<td><code>{itemId, days?}</code> → the state after the change. <code>days</code> 1-3650 moves the removal that much later (<code>POST /api/collections/media/postpone</code>); without <code>days</code> the timer restarts from today. Maintainerr only moves a removal later. <code>400</code> when the item is not marked or <code>days</code> is out of range.</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>leaving-soon/list</code></td>
+<td>Signed-in user</td>
+<td>No body → <code>{provider, admin, canRequest, actions, items[], requests[], mine[]}</code>: what the removal tool that is on will remove (each item has <code>versionOnly: true</code> when only one version of a movie is scheduled and the others stay), soonest first (undated last), limited to the items the caller can see and to 500. An item is <code>{id, name, detail, type, year, deleteAt}</code>. <code>requests</code> is every pending Reclaimerr deletion request (administrators only), <code>mine</code> the caller's own requests (Reclaimerr, acting as the user). <code>404</code> while the Leaving Soon page is off or no removal tool is set up</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>reclaimerr/requests/{requestId}/approve</code></td>
+<td>Administrator</td>
+<td><code>{note?}</code> → <code>{id, approved: true}</code>. Approves a pending Reclaimerr deletion request as the administrator who clicked (the service account is the fallback). <code>404</code> without Reclaimerr, <code>400</code>/<code>502</code> with Reclaimerr's reason</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>reclaimerr/requests/{requestId}/deny</code></td>
+<td>Administrator</td>
+<td><code>{note?}</code> → <code>{id, approved: false}</code>. Denies it, otherwise as above</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>reclaimerr/service-account</code></td>
+<td>Administrator</td>
+<td><code>{adminUsername, adminPassword}</code> → <code>{username}</code>. Reclaimerr only: signs in once as that Reclaimerr administrator (the login is used for this call only and never stored), creates the <code>jellyfin-enhanced</code> admin account with a random password and saves its login in the configuration (used for Mark for removal, Request removal and scheduled deletions). <code>400</code> without a saved Reclaimerr URL or login, <code>502</code> when Reclaimerr refused (for example the account exists).</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>reclaimerr/item/{itemId}</code></td>
+<td>Signed in</td>
+<td>No body → <code>{ItemId, Marked, CollectionId, CollectionName, DeleteAt, Supported, provider, admin, canRequest}</code> from the last read (no Reclaimerr call). Administrators get every action; anyone else who can see the item learns only whether they may request a removal. <code>CollectionId</code> is positive for a cleanup candidate and negative for a scheduled deletion. <code>404</code> while Reclaimerr is not the tool in use or the caller may neither act nor request.</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>reclaimerr/mark</code></td>
+<td>Administrator</td>
+<td><code>{itemId, date?, mediaSourceId?}</code> → the state above after the change. Schedules a manual deletion for <code>date</code> (ISO 8601, in the future and within 3650 days; 30 days ahead without it). A movie kept in several versions is scheduled by the picked version only; when Reclaimerr cannot confirm which version that is, nothing is scheduled and the answer is <code>400</code>.</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>reclaimerr/unmark</code></td>
+<td>Administrator</td>
+<td><code>{itemId}</code> → the state after the change. Protects the item's cleanup candidate, or cancels its scheduled deletion. It cannot be undone by marking again. <code>400</code> when it is not marked.</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>reclaimerr/postpone</code></td>
+<td>Administrator</td>
+<td><code>{itemId, days?, date?}</code> → the state after the change. <code>date</code> is an exact day; a cleanup candidate only moves later than its current deadline, a scheduled deletion either way. <code>days</code> 1-3650 moves it later by that much; with neither, a candidate's timer restarts.</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>reclaimerr/request</code></td>
+<td>Signed-in user</td>
+<td><code>{itemId, reason?}</code> → the state. With the service account set, files a Reclaimerr deletion request for an administrator to approve (the Jellyfin user is named in the request's reason). <code>AlreadyRequested</code> (<code>mine</code> or <code>other</code>) when one is already waiting. <code>404</code> when requests are off, <code>400</code> for an item the caller cannot see or that is already marked.</td>
 </tr>
 <tr>
 <td>POST</td>
@@ -7485,7 +7539,7 @@
 <p>The authenticated HTML catch-all recognizes exact names <code>calendarPage</code>, <code>downloadsPage</code>, <code>bookmarksPage</code>, <code>hiddenContentPage</code>, <code>recommendationsPage</code>, <code>activityPage</code>, <code>catchUpPage</code>.</p>
 <p>These are resource URLs, separate from Jellyfin web hash navigation or placement in Plugin Pages/Custom Tabs. Unknown names/missing resources return <code>404</code>; absent plugin instance <code>400</code>. See <a href="../../getting-started/pages-and-tabs/">JE Pages &amp; Tabs</a> for placement options.</p>
 <h2 id="full-endpoint-index">Full Endpoint Index<a class="headerlink" href="#full-endpoint-index" title="Permanent link">¶</a></h2>
-<p>The endpoint tables above enumerate all 208 controller method/path entries, including the three catch-all templates. Each group documents effective access, inputs, response shape, and limits; shared proxy rows intentionally retain the configured upstream service's JSON contract.</p>
+<p>The endpoint tables above enumerate all 217 controller method/path entries, including the three catch-all templates. Each group documents effective access, inputs, response shape, and limits; shared proxy rows intentionally retain the configured upstream service's JSON contract.</p>
 <p>For implementation details, <a href="https://github.com/n00bcodr/Jellyfin-Enhanced/blob/main/Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs">JellyfinEnhancedController.cs</a> implements all indexed routes except <code>catchup/*</code>, which is in <a href="https://github.com/n00bcodr/Jellyfin-Enhanced/blob/main/Jellyfin.Plugin.JellyfinEnhanced/Controllers/CatchUpController.cs">CatchUpController.cs</a>. These upstream source links may advance beyond this versioned reference.</p>
 <h3 id="awards-tag-settings-and-refresh">Awards tag settings and refresh<a class="headerlink" href="#awards-tag-settings-and-refresh" title="Permanent link">¶</a></h3>
 <p>Admin <code>AwardsTagsEnabled</code> (false) gates enrichment and seeds the per-user <code>AwardsTagsEnabled</code> default. Both settings and <code>AwardsTagsPosition</code> (<code>top-left</code>) follow new-user and reset-all defaults. <code>TagGroupCaps.Awards</code> defaults to 2, supports 0–10 (0 means all), and <code>awards</code> is a valid group in layout profiles, priority order, shape profiles and locked looks.</p>
