@@ -530,7 +530,8 @@
                                 heading.textContent = section.label;
                                 list.appendChild(heading);
                             }
-                            const head = section.items.filter(item => lifted.has(item.id));
+                            // (In the order they were ticked, as the group's row and the page's line say them.)
+                            const head = [...lifted].map(wanted => section.items.find(item => item.id === wanted)).filter(Boolean);
                             for (const item of head) add(item);
                             if (head.length > 0 && head.length < section.items.length) {
                                 const rule = document.createElement('div');
@@ -751,7 +752,7 @@
      *   form, and how a profile's filters are applied by the page they narrow
      * @returns {object} The group
      */
-    function profilesGroup({ label: say, host }) {
+    function profilesGroup({ label: say, host, scope = 'feed', offered = [], locale = 'en' }) {
         const name = say('discovery_filter_profiles', 'Saved filters');
         const none = say('discovery_filter_profiles_none', 'None');
         /** What the row says: the profile that is what is set now, else how many there are. */
@@ -785,12 +786,67 @@
                 save.textContent = say('discovery_filter_profile_save', 'Save');
                 form.append(field, save);
                 let list = [];
+                /**
+                 * What a profile sets, in one line, as this page would take it.
+                 * @param {string} filters - The profile's filters, in the address form
+                 * @returns {string}
+                 */
+                const summaryOf = filters => {
+                    const read = JE.discoveryAddress?.filtersOf?.(filters, scope);
+                    if (!read) return '';
+                    const parts = [];
+                    if (read.mode === 'movies') parts.push(say('jellyseerr_quota_label_movie', 'Movies'));
+                    else if (read.mode === 'tv') parts.push(say('jellyseerr_quota_label_tv', 'Series'));
+                    for (const token of filterTokens({ offered, label: say, locale, selection: read.selection })) {
+                        // (Several of a list stay together, said with their rule: "dragon or witch".)
+                        if (token.join && parts.length > 0) parts[parts.length - 1] += ` ${token.join === 'or' ? say('discovery_filter_or', 'or') : say('discovery_filter_and', 'and')} ${token.words}`;
+                        else parts.push(token.words);
+                    }
+                    const order = (JE.discoveryFilter?.SORT_OPTIONS ?? []).find(option => option.value !== '' && option.value === read.sort);
+                    if (order) parts.push(say(order.labelKey, order.label));
+                    return parts.join(' · ');
+                };
+                /**
+                 * Says a profile was deleted, with the way back: Undo saves it again.
+                 * @param {{name: string, filters: string}} profile
+                 */
+                const sayUndo = profile => {
+                    const undo = document.createElement('button');
+                    undo.type = 'button';
+                    undo.className = 'jellyseerr-menu-profile-undo';
+                    undo.textContent = say('discovery_filter_profile_undo', 'Undo');
+                    undo.addEventListener('click', () => {
+                        undo.disabled = true;
+                        const keyed = document.activeElement === undo;
+                        saveProfile(profile.name, profile.filters).then(saved => {
+                            if (!body.isConnected) return;
+                            list = [...list.filter(p => p.id !== saved.id), saved];
+                            draw();
+                            sayStatus(say('discovery_filter_profile_restored', 'Restored “{name}”.', { name: saved.name }));
+                            if (keyed) /** @type {HTMLElement|null} */ (rows.querySelector('.jellyseerr-menu-profile-row:last-child .jellyseerr-menu-profile'))?.focus();
+                            handle.say(sayRow(list), list.some(p => p.filters === host.read()));
+                            handle.placed();
+                        }).catch(() => { undo.disabled = false; sayStatus(say('discovery_filter_profile_error', 'Could not save that. Try again.'), true); });
+                    });
+                    status.replaceChildren(say('discovery_filter_profile_deleted', 'Deleted “{name}”.', { name: profile.name }), undo);
+                    status.hidden = false;
+                    status.removeAttribute('data-error');
+                };
                 /** Draws the profiles, the one that is what is set now ticked. */
                 const draw = () => {
                     const now = host.read();
                     rows.replaceChildren(...list.map(profile => {
                         const { item } = JE.discoveryMenu.menuRow(profile.name, 'check', profile.filters !== now);
                         item.classList.add('jellyseerr-menu-profile');
+                        // Under its name, what it sets, in the page's words ("Movies · Score from 7 · Animation and Fantasy").
+                        const says = summaryOf(profile.filters);
+                        if (says) {
+                            const line = document.createElement('div');
+                            line.className = 'listItemBodyText secondary jellyseerr-menu-profile-says';
+                            line.textContent = says;
+                            line.title = says;
+                            item.querySelector('.actionsheetListItemBody')?.appendChild(line);
+                        }
                         item.addEventListener('click', () => { handle.close?.(); host.apply(profile.filters); });
                         const remove = document.createElement('button');
                         remove.type = 'button';
@@ -817,7 +873,7 @@
                                     const head = body.previousElementSibling instanceof HTMLElement ? body.previousElementSibling : null;
                                     (/** @type {HTMLElement|undefined} */ (deletes[Math.min(at, deletes.length - 1)]) ?? (field.disabled ? head : field))?.focus();
                                 }
-                                sayStatus(say('discovery_filter_profile_deleted', 'Deleted “{name}”.', { name: profile.name }));
+                                sayUndo(profile);
                                 handle.say(sayRow(list), list.some(p => p.filters === host.read()));
                                 handle.placed();
                             }).catch(() => { remove.disabled = false; sayStatus(say('discovery_filter_profile_error', 'Could not save that. Try again.'), true); });
@@ -1162,7 +1218,7 @@
             // Where the tabs are out of sight the viewer may have come for them: that group is open.
             const groups = type && typeInMenu ? [{ ...type.groupOf(), open: true }] : [];
             // The user's saved filters first, where the page can apply them.
-            if (profiles && profilesReachable()) groups.push(profilesGroup({ label, host: profiles }));
+            if (profiles && profilesReachable()) groups.push(profilesGroup({ label, host: profiles, scope, offered, locale: localeOf() }));
             groups.push(...filterMenuGroups({
                 offered, data: dataOf(), locale: localeOf(), label,
                 selection: () => selectionOf(moduleName), change, fixedAll, ...(ownGenre ? { ownGenre } : {}),
@@ -1313,16 +1369,19 @@
             .jellyseerr-menu-match { display: flex; flex-flow: row wrap; align-items: center; gap: .35em .6em; }
             .jellyseerr-menu-searchbar .jellyseerr-menu-note { padding: 6px 0 0; }
             .jellyseerr-menu-match-track { display: inline-flex; gap: 2px; padding: 2px; border-radius: 999px; background: var(--jf-palette-action-hover, rgba(255,255,255,.08)); box-shadow: inset 0 0 0 1px var(--jf-palette-divider, rgba(255,255,255,.12)); }
-            .jellyseerr-menu-match-btn { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; font: inherit; color: var(--jf-palette-text-secondary, rgba(255,255,255,.7)); white-space: nowrap; background: none; border: 0; border-radius: 999px; padding: .3em .8em; cursor: pointer; }
+            .jellyseerr-menu-match-btn { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; font: inherit; color: var(--jf-palette-text-secondary, rgba(255,255,255,.7)); white-space: nowrap; background: none; border: 0; border-radius: 999px; padding: .3em .65em; cursor: pointer; }
             /* The half in use on the sheet's own ground, in the accent with its ring (readable on any theme). */
             .jellyseerr-menu-match-btn[aria-checked="true"] { background-color: var(--jellyseerr-menu-ground, transparent); background-image: var(--jellyseerr-menu-shade, none); color: var(--jellyseerr-accent); box-shadow: inset 0 0 0 1px var(--jellyseerr-accent); font-weight: 600; }
             /* The other half can be pressed: it answers the pointer. */
             .jellyseerr-menu-match-btn:not([aria-checked="true"]):hover { background: var(--jf-palette-action-hover, rgba(255,255,255,.08)); color: var(--jf-palette-text-primary, #fff); }
             /* Below two ticks the choice changes nothing: shown, but not in the accent that says the list is narrowed. */
-            .jellyseerr-menu-match[data-idle] .jellyseerr-menu-match-btn[aria-checked="true"] { color: var(--jf-palette-text-primary, #fff); box-shadow: inset 0 0 0 1px var(--jf-palette-divider, rgba(255,255,255,.24)); font-weight: 500; }
+            .jellyseerr-menu-match[data-idle] .jellyseerr-menu-match-btn[aria-checked="true"] { color: var(--jf-palette-text-primary, #fff); box-shadow: inset 0 0 0 1px var(--jf-palette-text-disabled, rgba(255,255,255,.5)); font-weight: 500; }
             .jellyseerr-menu-match-btn:focus-visible { outline: 2px solid var(--jf-palette-text-primary, #fff); outline-offset: 1px; }
             .jellyseerr-menu-match-reserve { display: block; height: 0; overflow: hidden; visibility: hidden; font-weight: 600; }
             @media (forced-colors: active) {
+                .jellyseerr-menu-match-track { border: 1px solid CanvasText; }
+                .jellyseerr-menu-list-rule { forced-color-adjust: none; background: CanvasText; }
+                .jellyseerr-sort-menu .jellyseerr-menu-group[data-set] .jellyseerr-menu-group-value { forced-color-adjust: none; color: LinkText; }
                 .jellyseerr-menu-match-btn[aria-checked="true"] { outline: 2px solid Highlight; outline-offset: -2px; }
                 .jellyseerr-menu-match-btn:focus-visible { outline: 3px solid CanvasText; outline-offset: 1px; }
             }
@@ -1351,7 +1410,11 @@
             /* Saved filters stand apart from the filters under them: a quiet line between, open or not. */
             .jellyseerr-menu-group[data-toggle="profiles"] + .jellyseerr-menu-choices + .jellyseerr-menu-group { border-top: 1px solid var(--jf-palette-divider, rgba(255,255,255,.12)); }
             .layout-tv .jellyseerr-menu-profile-delete:focus { background: var(--jf-palette-text-primary, #fff); color: var(--jellyseerr-menu-ground, #101010); }
-            .jellyseerr-menu-profile-save { flex: none; margin: 0; }
+            .jellyseerr-menu-profile-save { flex: none; align-self: stretch; height: auto; min-height: 0; margin: 0; padding: 0 1em; }
+            .jellyseerr-sort-menu .jellyseerr-menu-profile-says { font-size: .85em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+            .jellyseerr-menu-profile-undo { font: inherit; margin-inline-start: .5em; padding: .2em .5em; border: 0; border-radius: 4px; background: none; color: var(--jellyseerr-accent); text-decoration: underline; cursor: pointer; }
+            .jellyseerr-menu-profile-undo:focus-visible { outline: 2px solid var(--jf-palette-text-primary, #fff); outline-offset: 1px; }
+            .layout-tv .jellyseerr-menu-profile-undo:focus { outline: none; background: var(--jf-palette-text-primary, #fff); color: var(--jellyseerr-menu-ground, #101010); text-decoration: none; }
             .jellyseerr-filters-run { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .15em .5em; max-width: 100%; }
             .jellyseerr-filters-token > .jellyseerr-filters-join { flex: none; overflow: visible; margin-inline-end: .35em; color: var(--jf-palette-text-secondary, rgba(255,255,255,.7)); }
             /* An open group's row reads as the heading of what is under it; a long value is cut with an ellipsis. */

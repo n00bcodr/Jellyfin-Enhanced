@@ -719,8 +719,10 @@ test('all / any chosen before anything is ticked is kept; the keys and a remote 
 
 test('saved filters: the user\'s profiles first in the menu, saved under a name, applied by the page, deleted', { skip: !hasMenu && 'the menu module is not there yet' }, async t => {
   const h = setup(t, { lists: FILTER_LISTS, genres: COMEDY });
+  // (The address reader, for what each profile sets.)
+  h.load('jellyseerr/discovery/discovery-address.js');
   // The server's side, as the endpoints answer (Helpers/DiscoveryFilterProfiles.cs).
-  const stored = [{ id: 'a1', name: 'Kids', filters: 'jeType=series&jeGenres=16/16:Animation' }];
+  const stored = [{ id: 'a1', name: 'Kids', filters: 'jeType=series&jeGenres=16/16:Animation,10751/10751:Family&jeAny=genres&jeScore=7..' }];
   const asked = [];
   h.window.ApiClient.ajax = async ({ type, url, data }) => {
     asked.push([type, url.replace('http://jellyfin.test', '')]);
@@ -743,7 +745,9 @@ test('saved filters: the user\'s profiles first in the menu, saved under a name,
   assert.equal(groups()[0].textContent, 'Saved filters1 saved', 'first, saying how many there are');
   const body = bodyOf(h, 'profiles');
   await until(() => body.querySelector('.jellyseerr-menu-profile'), 'the profiles');
-  same([...body.querySelectorAll('.jellyseerr-menu-profile')].map(row => row.textContent), ['Kids']);
+  same([...body.querySelectorAll('.jellyseerr-menu-profile .actionSheetItemText')].map(row => row.textContent), ['Kids']);
+  // Under its name, what it sets, in the page's words.
+  assert.equal(body.querySelector('.jellyseerr-menu-profile-says').textContent, 'Series · Score from 7 · Animation or Family');
   // What is set now, under a name.
   const field = body.querySelector('.jellyseerr-menu-profile-form input');
   const save = body.querySelector('.jellyseerr-menu-profile-save');
@@ -769,10 +773,28 @@ test('saved filters: the user\'s profiles first in the menu, saved under a name,
   await until(() => body.querySelectorAll('.jellyseerr-menu-profile').length === 1, 'deleted');
   assert.deepEqual(asked.at(-1), ['DELETE', '/JellyfinEnhanced/user-settings/user-a/discovery-filter-profiles/b2']);
   assert.equal(h.document.activeElement, body.querySelector('.jellyseerr-menu-profile-delete'));
-  assert.match(body.querySelector('.jellyseerr-menu-note').textContent, /Deleted “Top rated”/);
+  const status = body.querySelector('.jellyseerr-menu-note');
+  assert.match(status.textContent, /Deleted “Top rated”/);
+  // Undo saves it again.
+  status.querySelector('.jellyseerr-menu-profile-undo').click();
+  await until(() => body.querySelectorAll('.jellyseerr-menu-profile').length === 2, 'restored');
+  same(stored.at(-1), { id: 'b2', name: 'Top rated', filters: 'jeScore=7..' });
+  assert.match(status.textContent, /Restored “Top rated”/);
+  // The keys: a profile's delete is beside its row, not a stop on the way down (right reaches it, left goes back).
+  const press = key => h.document.activeElement.dispatchEvent(new h.window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+  const [kids, top] = body.querySelectorAll('.jellyseerr-menu-profile');
+  kids.focus();
+  press('ArrowDown');
+  assert.equal(h.document.activeElement, top, 'down goes to the next profile');
+  press('ArrowRight');
+  assert.equal(h.document.activeElement, top.parentElement.querySelector('.jellyseerr-menu-profile-delete'));
+  press('ArrowLeft');
+  assert.equal(h.document.activeElement, top);
+  top.parentElement.querySelector('.jellyseerr-menu-profile-delete').click();
+  await until(() => body.querySelectorAll('.jellyseerr-menu-profile').length === 1, 'deleted again');
   // Choosing one: the page applies it and the menu is done.
   body.querySelector('.jellyseerr-menu-profile').click();
-  same(applied, ['jeType=series&jeGenres=16/16:Animation']);
+  same(applied, ['jeType=series&jeGenres=16/16:Animation,10751/10751:Family&jeAny=genres&jeScore=7..']);
   assert.equal(menuOf(h), null);
   // Nothing set: nothing to save.
   now = '';

@@ -256,9 +256,12 @@
         /** @returns {HTMLElement[]} */
         // (The choice is one stop: the half with the keys on it, else the one in use. Left and right move inside it; on a
         // TV they only move, and OK takes one.)
-        const items = () => Array.from(content.querySelectorAll('.actionSheetMenuItem, .jellyseerr-menu-input, .jellyseerr-menu-match-btn, .jellyseerr-menu-profile-delete, .jellyseerr-menu-profile-save'))
+        // (A saved filter's delete is beside its row, not a stop on the way down: the key towards the line's end reaches it.
+        // Tab still goes through each, `beside`.)
+        const items = (beside = false) => Array.from(content.querySelectorAll('.actionSheetMenuItem, .jellyseerr-menu-input, .jellyseerr-menu-match-btn, .jellyseerr-menu-profile-delete, .jellyseerr-menu-profile-save, .jellyseerr-menu-profile-undo'))
             .filter(item => !item.classList.contains('jellyseerr-menu-match-btn') || (item.parentElement?.contains(document.activeElement)
                 ? item === document.activeElement : item.getAttribute('aria-checked') === 'true'))
+            .filter(item => beside || !item.classList.contains('jellyseerr-menu-profile-delete') || item === document.activeElement)
             .filter(item => !item.closest('[hidden]') && !item.hidden && item.getAttribute('aria-disabled') !== 'true' && !(item instanceof HTMLButtonElement && item.disabled && !item.classList.contains('actionSheetMenuItem'))
                 && !(item.dataset.done !== undefined && getComputedStyle(item).display === 'none'));
         /** @returns {HTMLElement[]} */
@@ -356,7 +359,7 @@
          * @param {KeyboardEvent} event
          */
         function onKey(event) {
-            const list = items();
+            const list = items(event.key === 'Tab');
             const index = list.indexOf(/** @type {HTMLElement} */ (document.activeElement));
             /** @param {number} to */
             const move = (to) => {
@@ -380,6 +383,15 @@
             if ((event.key === 'ArrowLeft' || event.key === 'ArrowRight') && active?.classList.contains('jellyseerr-menu-match-btn')) {
                 const forward = (event.key === 'ArrowRight') !== (getComputedStyle(sheet).direction === 'rtl');
                 if (forward ? active.nextElementSibling : active.previousElementSibling) return;
+            }
+            // A saved filter's row and its delete: the key towards the line's end goes to the delete, back from it to the row.
+            const towardsEnd = out === 'ArrowLeft' ? 'ArrowRight' : 'ArrowLeft';
+            const pair = active?.closest('.jellyseerr-menu-profile-row');
+            const beside = event.key === towardsEnd && active?.classList.contains('jellyseerr-menu-profile') ? pair?.querySelector('.jellyseerr-menu-profile-delete')
+                : event.key === out && active?.classList.contains('jellyseerr-menu-profile-delete') ? pair?.querySelector('.jellyseerr-menu-profile') : null;
+            if (beside instanceof HTMLElement) {
+                event.preventDefault(); event.stopPropagation(); keyed = true; beside.focus();
+                return;
             }
             if (event.key === out && body && head && !(active instanceof HTMLInputElement && (active.selectionStart ?? 0) > 0)) {
                 event.preventDefault(); event.stopPropagation(); keyed = true; keyWay = -1; head.focus(); cutAgain();

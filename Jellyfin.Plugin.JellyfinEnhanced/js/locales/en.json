@@ -985,6 +985,8 @@
     "discovery_filter_profile_full": "Delete a saved one first: you have the most there can be.",
     "discovery_filter_profile_error": "Could not save that. Try again.",
     "discovery_filter_profile_deleted": "Deleted “{name}”.",
+    "discovery_filter_profile_undo": "Undo",
+    "discovery_filter_profile_restored": "Restored “{name}”.",
     "discovery_filter_set_range": "{name} {from} to {to}",
     "discovery_filter_set_from": "{name} from {from}",
     "discovery_filter_set_to": "{name} up to {to}",
