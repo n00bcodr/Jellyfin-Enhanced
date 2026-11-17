@@ -402,7 +402,8 @@ test('a list page\'s further filters are typed or ticked, and asked of Seerr: ra
   h.document.querySelector('.dialogBackdrop').click();
   button.click();
   await until(() => bodyOf(h, 'rating').querySelectorAll('.actionSheetMenuItem').length === 2, 'movie ratings only');
-  same([...bodyOf(h, 'rating').querySelectorAll('.jellyseerr-menu-label, .actionSheetItemText')].map(node => node.textContent), ['Movies', 'G', 'PG']);
+  // (With one kind listed, its heading says nothing over the only block: it is left out.)
+  same([...bodyOf(h, 'rating').querySelectorAll('.jellyseerr-menu-label, .actionSheetItemText')].map(node => node.textContent), ['G', 'PG']);
   s.root.querySelector('.jellyseerr-discovery-header').removeAttribute('data-je-kinds');
   h.document.querySelector('.dialogBackdrop').click();
   button.click();
@@ -668,10 +669,18 @@ test('the Filters menu offers all or any for keywords, genres and services; "or"
   const s = section(h, { name: 'network', feeds });
   s.button.click();
   const search = bodyOf(h, 'keywords').querySelector('.jellyseerr-menu-search');
+  // At rest, nothing chosen and nothing typed: the line says what a keyword is; one letter, that two are needed.
+  const line = () => bodyOf(h, 'keywords').querySelector('.jellyseerr-menu-note[aria-live]');
+  same([line().hidden, line().textContent], [false, 'Words a title is tagged with, such as heist or time travel.']);
+  search.value = 's';
+  search.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  assert.equal(line().textContent, 'Type two letters or more.');
   search.value = 'sheep';
   search.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
   await until(() => bodyOf(h, 'keywords').querySelectorAll('.actionSheetMenuItem').length === 2, 'keywords found');
   tickRow(h, 'keywords', 'sheep');
+  // (A keyword chosen stands in for the line.)
+  assert.equal(line().hidden, true);
   // One ticked: the choice is shown (it can be made first) but idle, not in the accent.
   assert.equal(bodyOf(h, 'keywords').querySelector('.jellyseerr-menu-match').hasAttribute('data-idle'), true);
   search.value = 'sheep';

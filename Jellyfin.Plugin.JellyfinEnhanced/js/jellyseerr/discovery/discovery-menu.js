@@ -638,9 +638,16 @@
             // On a TV, under an open group held at the top: the list's view is what is held, a whole number of rows, and the
             // cut's depth. Each cut at the foot (made by moving the rows, above) then leaves the top on a row's edge, under
             // the held strip's rule, and no crumb of a row lies there. (A row of another height in sight puts it off by that much.)
-            const pair = open ? shownRows().filter(entry => open.nextElementSibling?.contains(entry.row)).slice(-2) : [];
-            const [upper, lower] = pair;
-            if (tv && open && upper && lower && open.getBoundingClientRect().top - view.top < 2) {
+            const own = open ? shownRows().filter(entry => open.nextElementSibling?.contains(entry.row)) : [];
+            const [upper, lower] = own.slice(-2);
+            // (Only where the open group's own rows run on past the view, evenly: a row of another height, a line between
+            // rows, or a body that ends in sight would put the cut on a row's edge, and the list would look complete. The
+            // general cut, through a name, is taken then.)
+            const inView = own.filter(entry => entry.box.bottom > view.top && entry.box.top < view.bottom);
+            const steps = inView.slice(1).map((entry, index) => entry.box.top - inView[index].box.top);
+            const even = steps.length > 0 && steps.every(step => Math.abs(step - steps[0]) <= 1) && inView.every(entry => Math.abs(entry.box.height - inView[0].box.height) <= 1);
+            const runsOn = (open?.nextElementSibling?.getBoundingClientRect().bottom ?? 0) > view.bottom + 1;
+            if (tv && open && upper && lower && even && runsOn && open.getBoundingClientRect().top - view.top < 2) {
                 const pitch = lower.box.top - upper.box.top;
                 const depth = cutOf(lower) - lower.box.top;
                 const heldDeep = open.offsetHeight + (bar?.offsetHeight ?? 0);

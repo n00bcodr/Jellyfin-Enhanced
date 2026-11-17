@@ -653,6 +653,7 @@
                             if (held) (next ?? search).focus();
                         }
                         rule.hidden = chosen.childElementCount === 0;
+                        if (!isChosen && search.value.trim() === '') sayStatus(resting());
                         handle.placed();
                     }));
                     const search = field(nameOf(id), say('discovery_filter_search_keywords', 'Search keywords'), 'search');
@@ -671,12 +672,18 @@
                     let asking = null;
                     /** Says how the search went under the field ('' hides the line). */
                     const sayStatus = words => { sayIn(status, words); status.hidden = words === ''; };
+                    // (At rest, with nothing chosen and nothing typed, the line says what a keyword is.)
+                    const hint = id === 'without' ? say('discovery_filter_without_hint', 'Titles tagged with these words are left out.')
+                        : say('discovery_filter_keywords_hint', 'Words a title is tagged with, such as heist or time travel.');
+                    /** What the line says with no search under way. */
+                    const resting = () => search.value.trim().length === 1 ? say('discovery_filter_two_letters', 'Type two letters or more.')
+                        : search.value.trim() === '' && chosen.childElementCount === 0 ? hint : '';
                     /** Searches for what is typed (two letters at least), dropping a search still running. */
                     const look = () => {
                         asking?.abort();
                         const wanted = search.value.trim();
                         found.replaceChildren();
-                        if (wanted.length < 2) { sayStatus(''); handle.placed(); return; }
+                        if (wanted.length < 2) { sayStatus(resting()); handle.placed(); return; }
                         const request = new AbortController();
                         asking = request;
                         sayStatus(say('discovery_filter_loading', 'Loading…'));
@@ -693,7 +700,7 @@
                                         asking?.abort();
                                         search.value = '';
                                         found.replaceChildren();
-                                        sayStatus('');
+                                        sayStatus(resting());
                                         search.focus();
                                     }
                                     rule.hidden = chosen.childElementCount === 0;
@@ -712,6 +719,7 @@
                     search.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); window.clearTimeout(timer); look(); } });
                     // How several count sits with the keywords chosen, above the field and what it finds.
                     host.append(chosen, rule, bar, found, status);
+                    sayStatus(resting());
                 }
             };
         }
@@ -735,10 +743,14 @@
             else if (id === 'services') groups.push(listGroup(id, async () => [{ items: await data.services() }]));
             else if (id === 'rating') {
                 // (Only the page's kinds; one of another kind ticked still shows, at the head, to be unticked.)
-                groups.push(listGroup(id, async () => (await data.ratings()).filter(list => !options.kinds || options.kinds.includes(list.kind)).map(list => ({
-                    label: list.kind === 'movie' ? say('jellyseerr_quota_label_movie', 'Movies') : say('jellyseerr_quota_label_tv', 'Series'),
-                    items: list.ratings
-                }))));
+                groups.push(listGroup(id, async () => {
+                    const lists = (await data.ratings()).filter(list => !options.kinds || options.kinds.includes(list.kind));
+                    // (A kind's heading only where two are listed: over the only block it says nothing.)
+                    return lists.map(list => ({
+                        label: lists.length < 2 ? undefined : list.kind === 'movie' ? say('jellyseerr_quota_label_movie', 'Movies') : say('jellyseerr_quota_label_tv', 'Series'),
+                        items: list.ratings
+                    }));
+                }));
             } else groups.push(keywordGroup(id));
         }
         return groups;
@@ -1334,9 +1346,21 @@
                 undoLabel: () => {
                     // (What the last change set that was not set before: "Undo Score from 9.9".)
                     const words = selection => filterTokens({ offered, label, locale: localeOf(), selection, ownGenre }).map(token => token.words);
-                    const before = new Set(words(undoTo ?? {}));
-                    const added = words(selectionOf(moduleName)).find(word => !before.has(word));
-                    return added ? label('discovery_filters_undo_what', 'Undo {change}', { change: added }) : label('discovery_filters_undo', 'Undo');
+                    const was = undoTo ?? {};
+                    const now = selectionOf(moduleName);
+                    const before = new Set(words(was));
+                    const added = words(now).find(word => !before.has(word));
+                    if (added) return label('discovery_filters_undo_what', 'Undo {change}', { change: added });
+                    // (A rule switched: "Undo all ticked in Streaming services".)
+                    const ruled = Object.keys(logic().MATCH_DEFAULTS ?? {}).find(id => logic().matchOf(was, id) !== logic().matchOf(now, id));
+                    if (ruled) {
+                        const rule = logic().matchOf(now, ruled) === 'any' ? label('discovery_filter_match_any', 'any ticked') : label('discovery_filter_match_all', 'all ticked');
+                        return label('discovery_filters_undo_rule', 'Undo {rule} in {filter}', { rule, filter: label(NAMES[ruled][0], NAMES[ruled][1]) });
+                    }
+                    // (A piece taken away: "Put back Kids".)
+                    const after = new Set(words(now));
+                    const removed = words(was).find(word => !after.has(word));
+                    return removed ? label('discovery_filters_undo_back', 'Put back {piece}', { piece: removed }) : label('discovery_filters_undo', 'Undo');
                 },
                 canUndo: () => undoTo !== null,
                 // (Back to what was set before the last change; the menu then says every group again.)
@@ -1539,7 +1563,8 @@
             html:not(.layout-tv) .jellyseerr-menu-profile[aria-current] .actionSheetItemText { color: var(--jellyseerr-accent); font-weight: 500; }
             @media (forced-colors: active) {
                 html:not(.layout-tv) .jellyseerr-menu-profile[aria-current] .actionSheetItemText { forced-color-adjust: none; color: LinkText; }
-                html .jellyseerr-sort-menu .jellyseerr-menu-profile-save:disabled { opacity: 1; color: GrayText; }
+                html .jellyseerr-sort-menu .jellyseerr-menu-profile-save { border: 1px solid ButtonBorder; }
+                html .jellyseerr-sort-menu .jellyseerr-menu-profile-save:disabled { opacity: 1; color: GrayText; border-color: GrayText; }
             }
             .jellyseerr-menu-profile-save:disabled { opacity: .45; cursor: default; box-shadow: none; }
             @media (pointer: coarse) { .jellyseerr-menu-profile-undo { min-height: 44px; padding-inline: .75em; } }
@@ -1569,7 +1594,7 @@
             .jellyseerr-menu-outcome-undo { flex: none; margin-inline-start: auto; font: inherit; padding: .3em .6em; border: 0; border-radius: 6px; background: none; color: var(--jellyseerr-accent); text-decoration: underline; cursor: pointer; }
             .jellyseerr-menu-outcome-undo:focus-visible { outline: 2px solid var(--jf-palette-text-primary, #fff); outline-offset: 1px; }
             .layout-tv .jellyseerr-menu-outcome-undo:focus { outline: none; background: var(--jf-palette-text-primary, #fff); color: var(--jellyseerr-menu-ground, #101010); text-decoration: none; }
-            @media (pointer: coarse) { .jellyseerr-menu-outcome-undo { min-height: 44px; } }
+            @media (pointer: coarse) { .jellyseerr-menu-outcome-undo { min-height: 44px; margin-block: -8px; } }
             @media (forced-colors: active) { .jellyseerr-sort-menu .jellyseerr-menu-outcome { border: 1px solid CanvasText; } }
             /* What a search has narrowed away is gone (a row's own display would otherwise keep it). */
             .jellyseerr-sort-menu .actionSheetMenuItem[hidden], .jellyseerr-menu-note[hidden], .jellyseerr-menu-label[hidden] { display: none !important; }
