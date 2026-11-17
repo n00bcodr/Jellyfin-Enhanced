@@ -84,7 +84,7 @@ Jellyfin.Plugin.JellyfinEnhanced/
 │   │   └── per-user.js                 # Generated list of settings users also hold personally
 │   └── whats-new-seed.json
 ├── Features/                         # One folder per feature (docs/feature-map.json): Je<Feature>Controller.cs (+ partials), Services/, Models/, Events/, Tasks/, PublicApi/
-├── Shared/                           # Code several features use, by area: Analytics/, Arr/, HiddenContent/, Host/, Library/, Maintenance/, Mdblist/, Media/, MediaTags/, Parental/, Reviews/, Seerr/, Sessions/, Settings/, SpoilerGuard/, Text/, Tmdb/
+├── Shared/                           # Code several features use, by area: Analytics/, Arr/, Branding/, HiddenContent/, Host/, Library/, Maintenance/, Mdblist/, Media/, MediaTags/, Parental/, Reviews/, Seerr/, Sessions/, Settings/, SpoilerGuard/, Text/, Tmdb/
 ├── Infrastructure/                   # Auth/, Extensions/ (repository, database and user API adapters), Hosting/ (event consumer and MVC filter registration), Http/ (JeControllerBase), Identity/, Persistence/
 ├── Transport/                        # Bootstrap and bookmark wire records, TransportJson
 ├── PluginPages/                      # Seven embedded page wrappers
@@ -461,6 +461,7 @@ Paths are relative to `Jellyfin.Plugin.JellyfinEnhanced/`. `Features/<F>/` holds
 | `Shared/Settings/SettingsDocumentService.cs`, `SettingsDocumentPatch.cs`, `SettingsDefaults.cs` | The revisioned per-user settings document (read, patch, defaults), used by the Settings routes and, through `JeControllerBase.LoadRevisionedSettings`, by the Platform bootstrap. |
 | `Features/Platform/Services/CdnAssetService.cs` | Local routes and disk caching for third-party static assets; separate from generated embedded poster assets. |
 | `Features/Platform/Services/ScriptInjectionStartupFilter.cs`, `Features/Chrome/Services/BrandingAssetStartupFilter.cs` | Request-time loader injection and custom branding asset delivery. |
+| `Shared/Branding/ElsewhereBrandingIcon.cs` | The uploaded Elsewhere custom branding icon: its branding slot, accepted types, content sniffing and the upload version, used by the Chrome branding routes (`ElsewhereBrandingIcon`, `BrandingImage`, `UploadBrandingImage`) and by public config (`ElsewhereCustomBrandingIconVersion`). |
 | `Features/Platform/Services/StartupService.cs`, `Shared/Host/HostCompatibilityService.cs` | Scheduled startup initialization and build/host compatibility diagnostics. |
 | `Features/Admin/Services/WhatsNewService.cs` | Admin control-schema discovery and change-baseline persistence. |
 | `Shared/Analytics/UsageEventCounterService.cs`, `Features/Platform/Services/AnalyticsReportingService.cs` | Usage counters and opt-in report construction/sending; see [Community Analytics](community-analytics.md). |

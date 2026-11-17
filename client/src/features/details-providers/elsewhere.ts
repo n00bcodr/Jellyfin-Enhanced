@@ -5,6 +5,7 @@ import type { ElsewhereSettings } from '../../contracts/generated';
 import { sessionLease, hashItemId, lookupDetailsItem, visibleDetailPage } from './page';
 import { createAutocompleteInput } from './elsewhere-autocomplete';
 import { externalLink, pathSegment, safeHref } from './links';
+import { brandingIcon, resolveBrandingIconUrl } from './elsewhere-branding';
 import { field, int, list, str, text } from './wire';
 import {
     FALLBACK_PROVIDERS, FALLBACK_REGIONS, applyProviderFilters, decodeWatchProviders, groupSeasonsByProviders,
@@ -30,7 +31,8 @@ JE.initializeElsewhereScript = function initializeElsewhereScript() {
     const DEFAULT_REGION = config.DEFAULT_REGION || 'US';
     const filters: ProviderFilters = { defaults: parseProviderList(config.DEFAULT_PROVIDERS), ignore: parseProviderList(config.IGNORE_PROVIDERS) };
     const BRANDING_TEXT = config.ElsewhereCustomBrandingText || '';
-    const BRANDING_IMAGE_URL = config.ElsewhereCustomBrandingImageUrl || '';
+    const BRANDING_ICON_UPLOADED = !!config.ElsewhereCustomBrandingIconVersion;
+    const BRANDING_IMAGE_URL = resolveBrandingIconUrl(config.ElsewhereCustomBrandingImageUrl, config.ElsewhereCustomBrandingIconVersion);
     // Without a TMDB key, provider data comes from Seerr's movie/tv detail
     // (its watchProviders field). Seerr has no per-season providers.
     const UseSeerrProviders = !TmdbEnabled && !!config.JellyseerrEnabled;
@@ -610,23 +612,7 @@ JE.initializeElsewhereScript = function initializeElsewhereScript() {
             title.textContent = BRANDING_TEXT;
             title.classList.add('elsewhere-custom-branding');
             title.style.cursor = 'default';
-            if (BRANDING_IMAGE_URL) {
-                title.style.display = 'flex';
-                title.style.alignItems = 'center';
-                title.style.gap = '8px';
-                const icon = document.createElement('img');
-                icon.src = BRANDING_IMAGE_URL;
-                icon.alt = 'Custom Branding';
-                icon.className = 'elsewhere-custom-branding-icon';
-                icon.style.cssText = `
-                        width: 24px;
-                        height: 24px;
-                        object-fit: contain;
-                        margin-left: 4px;
-                    `;
-                icon.onerror = () => { icon.style.display = 'none'; };
-                title.appendChild(icon);
-            }
+            if (BRANDING_IMAGE_URL) title.appendChild(brandingIcon(BRANDING_IMAGE_URL, BRANDING_ICON_UPLOADED));
         } else {
             title.textContent = JE.t('elsewhere_panel_not_available_in', { region: regionName(userRegion) });
         }
@@ -641,6 +627,11 @@ JE.initializeElsewhereScript = function initializeElsewhereScript() {
                 display: flex;
                 align-items: flex-end;
             `;
+        // The cssText above replaces every inline style, so centre the custom branding icon against the message after it.
+        if (title.querySelector('.elsewhere-custom-branding-icon')) {
+            title.style.alignItems = 'center';
+            title.style.gap = '8px';
+        }
         if (hasFilteredServices && linkUrl) {
             title.classList.add('elsewhere-link-reset');
             title.href = safeHref(linkUrl);

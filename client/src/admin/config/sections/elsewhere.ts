@@ -37,8 +37,21 @@ define({
             { type: 'group', title: 'Custom Branding', items: [
                 { id: 'ElsewhereCustomBrandingText', prop: 'ElsewhereCustomBrandingText', type: 'text', label: 'Custom Branding Message', placeholder: 'e.g., Only available on My Server',
                   desc: 'Custom message to display when content is not available on any streaming providers. Leave blank to disable custom branding.' },
-                { id: 'ElsewhereCustomBrandingImageUrl', prop: 'ElsewhereCustomBrandingImageUrl', type: 'text', label: 'Custom Branding Icon URL', placeholder: '/web/assets/img/icon.png',
-                  desc: 'Optional URL for an icon to display next to the custom message. Leave blank for no icon.' }
+                { id: 'ElsewhereCustomBrandingImageUrl', prop: 'ElsewhereCustomBrandingImageUrl', type: 'text', label: 'Custom Branding Icon URL', placeholder: 'e.g., https://example.com/logo.png',
+                  desc: 'Optional icon shown next to the custom message, at 24 × 24. Each viewer\'s browser loads it, so use a web address such as <code>https://example.com/logo.png</code> or a path Jellyfin serves such as <code>/web/favicons/touchicon.png</code>, not a file path on the server. Any image type browsers show works (PNG, SVG, WebP). To use an image from your computer, upload it below instead; an uploaded icon is used in place of this URL. Leave both blank for no icon.' },
+                { type: 'custom', html: '<div class="jea-note jea-note-warn" id="je-elsewhere-icon-warning" style="display:none;"></div>' },
+                { type: 'custom', html: '<div class="je-branding-grid"><div class="je-branding-card">'
+                    + '<label class="je-branding-label-bold">Upload Icon</label>'
+                    + '<label class="je-branding-label">Stored on the server and used instead of the URL above. Takes effect on the next page load.</label>'
+                    + '<div class="je-branding-size-hint">Shown at 24×24px &nbsp;·&nbsp; PNG, JPG, GIF, WebP or SVG</div>'
+                    + '<div class="je-branding-dropzone" id="elsewhereIconDropZone">'
+                    + '<input type="file" id="elsewhereIconInput" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" class="je-branding-file-input" />'
+                    + '<div id="elsewhereIconPlaceholder" class="je-branding-placeholder"><i class="material-icons je-branding-placeholder-icon">image</i></div>'
+                    + '<img id="elsewhereIconPreview" class="je-branding-preview" style="display:none;" />'
+                    + '<div id="elsewhereIconDimensions" class="je-branding-dimensions" style="display:none;"></div>'
+                    + '<div id="elsewhereIconStatus" class="je-branding-status"></div>'
+                    + '<button type="button" class="je-branding-delete" id="elsewhereIconDelete" style="display:none;"><i class="material-icons">delete</i></button>'
+                    + '</div></div></div>' }
             ] }
         ]
     },

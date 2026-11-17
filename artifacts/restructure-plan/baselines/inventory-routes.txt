@@ -3,6 +3,7 @@ GET /JellyfinEnhanced/BrandingStatus
 GET /JellyfinEnhanced/Configuration/jeAdmin.css
 GET /JellyfinEnhanced/Configuration/jeAdmin.js
 POST /JellyfinEnhanced/DeleteBrandingImage
+GET /JellyfinEnhanced/ElsewhereBrandingIcon
 POST /JellyfinEnhanced/MaintenanceMode/Broadcast
 POST /JellyfinEnhanced/MaintenanceMode/Disable
 POST /JellyfinEnhanced/MaintenanceMode/Enable

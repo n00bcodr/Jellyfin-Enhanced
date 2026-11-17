@@ -20,6 +20,8 @@ public sealed class BootstrapPublicConfig
     public required bool ElsewhereUseSeerrRegion { get; init; }
     public required string ElsewhereCustomBrandingText { get; init; }
     public required string ElsewhereCustomBrandingImageUrl { get; init; }
+    /// <summary>Changes with each upload of the Elsewhere branding icon; empty when none is uploaded (the URL setting is used).</summary>
+    public required string ElsewhereCustomBrandingIconVersion { get; init; }
     public required long ClearLocalStorageTimestamp { get; init; }
     public required long ClearTranslationCacheTimestamp { get; init; }
     public required bool AutoPauseEnabled { get; init; }

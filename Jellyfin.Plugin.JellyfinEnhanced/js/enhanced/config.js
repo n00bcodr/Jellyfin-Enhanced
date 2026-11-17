@@ -1636,6 +1636,9 @@
           "EditionTagOrder": {
             "type": "integer"
           },
+          "ElsewhereCustomBrandingIconVersion": {
+            "type": "string"
+          },
           "ElsewhereCustomBrandingImageUrl": {
             "type": "string"
           },
@@ -2523,6 +2526,7 @@
           "DownloadsUsePluginPages",
           "DynamicRangeTagOrder",
           "EditionTagOrder",
+          "ElsewhereCustomBrandingIconVersion",
           "ElsewhereCustomBrandingImageUrl",
           "ElsewhereCustomBrandingText",
           "ElsewhereEnabled",

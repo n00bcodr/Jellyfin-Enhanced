@@ -2,7 +2,7 @@ import type { PageModules } from './modules';
 import { asHtml, asInput } from './dom';
 
 /** Dependencies this module calls; members are resolved lazily, after every module exists. */
-export type GatedHelpDeps = Pick<PageModules, 'context' | 'actions' | 'banners' | 'dependencies' | 'overviewCards' | 'serviceStatus'>;
+export type GatedHelpDeps = Pick<PageModules, 'context' | 'actions' | 'banners' | 'branding' | 'dependencies' | 'overviewCards' | 'serviceStatus'>;
 
 export function createGatedHelp(m: GatedHelpDeps) {
         // ==============================================================
@@ -86,6 +86,7 @@ export function createGatedHelp(m: GatedHelpDeps) {
             m.dependencies.INDIVIDUAL_DEPS.forEach(m.dependencies.updateIndividualDep);
             m.dependencies.CUSTOM_TABS_V12_HINTS.forEach(m.dependencies.updateCustomTabsV12Hint);
             m.dependencies.updateSearchExcludeLibraryWarning();
+            m.branding.scheduleElsewhereIconWarning();
             m.dependencies.PARENT_DEPS.forEach(m.dependencies.updateParentDep);
             m.dependencies.updateRegionSourceNote();
             m.dependencies.updateWatchlistMemoryVisibility();

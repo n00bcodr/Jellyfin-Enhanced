@@ -17,6 +17,7 @@
     "GET JellyfinEnhanced/BrandingStatus": {},
     "GET JellyfinEnhanced/Configuration/jeAdmin.css": {},
     "GET JellyfinEnhanced/Configuration/jeAdmin.js": {},
+    "GET JellyfinEnhanced/ElsewhereBrandingIcon": {},
     "GET JellyfinEnhanced/MaintenanceMode/Status": {"IsAdminUser":1},
     "GET JellyfinEnhanced/MaintenanceMode/Users": {"IsAdminUser":1},
     "GET JellyfinEnhanced/active-streams/sessions": {"IsAdminUser":2},

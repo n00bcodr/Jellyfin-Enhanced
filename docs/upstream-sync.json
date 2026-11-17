@@ -2362,6 +2362,100 @@
         "09aadd255b05bef6e2a1de7fe023a3e7dd76d4e5"
       ],
       "notes": "Applied as is (git show 5b92e29f | git apply --3way, clean): the 32 locale files under Jellyfin.Plugin.JellyfinEnhanced/js/locales, including the Weblate prefill of the Leaving Soon and Reclaimerr strings that upstream da0ea773 added to en.json (ported in this run). No other file changes."
+    },
+    {
+      "sha": "cdc38b53332b22e130745f32a69e3e30613ae8b3",
+      "date": "2026-11-17T13:34:25+00:00",
+      "subject": "Translations update from Hosted Weblate (#1078)",
+      "class": "translation",
+      "features": [
+        "platform"
+      ],
+      "issues": [
+        "#1078"
+      ],
+      "release": null,
+      "size": {
+        "files": 30,
+        "insertions": 4893,
+        "deletions": 4893
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/js/locales/ (30 files)"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "21ac33dc7d13c5a8b9d49b92bed614570f19b224"
+      ],
+      "notes": "Applied as is (git show cdc38b53 | git apply --3way, clean): the 30 locale files under Jellyfin.Plugin.JellyfinEnhanced/js/locales now equal upstream's blobs (Weblate translations of the strings that were still English, among them the Seerr discovery filters). No other file changes."
+    },
+    {
+      "sha": "c8625921245bad999570747afcf465a45db6728c",
+      "date": "2026-11-18T00:08:09+08:00",
+      "subject": "fix(elsewhere): explain, check and allow uploading the custom branding icon (#1080)",
+      "class": "fix",
+      "features": [
+        "details-providers",
+        "chrome",
+        "admin",
+        "platform"
+      ],
+      "issues": [
+        "#1080"
+      ],
+      "release": null,
+      "size": {
+        "files": 10,
+        "insertions": 509,
+        "deletions": 36
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/admin/sections.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/configPage.html",
+        "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/elsewhere/elsewhere.js",
+        "docs/advanced/api.md",
+        "docs/advanced/config-flag-groups.json",
+        "docs/elsewhere/elsewhere-features.md",
+        "docs/elsewhere/elsewhere-settings.md",
+        "tests/backend/Api/ApiBrandingTests.cs",
+        "tests/docs/production-inventory.json"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "f45142322df56476f40078f2c1b2f37abaa69250"
+      ],
+      "unmappedPaths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs"
+      ],
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p73-*",
+      "notes": "Server: upstream's branding code is in Features/Chrome/JeChromeController.cs (the sixth slot elsewhere-icon.png, the upload's type and content checks, the content-typed admin preview with the sandbox headers, the anonymous GET ElsewhereBrandingIcon route) and in a new stateless Shared/Branding/ElsewhereBrandingIcon.cs (slot name, accepted types, the 64 KB sniff, the upload version), because Platform's public config needs the version and a controller may not reach another feature; ElsewhereCustomBrandingIconVersion is a field of Transport/BootstrapConfig.cs, so /public-config, /bootstrap's PublicConfig and the generated contracts carry it. Client: a new features/details-providers/elsewhere-branding.ts resolves the icon as upstream (an upload wins, with ?v=<version>; /web/ and /JellyfinEnhanced/ paths through ApiClient.getUrl) and builds it with upstream's console warnings, and elsewhere.ts centres it after the title's cssText reset (the new module keeps elsewhere.ts under its size ratchet, lowered from 970 to 961 lines); the admin page's slot and URL warning are in admin/config/sections/elsewhere.ts, the upload rules, JSON-unwrapped server reasons, preview refresh after a refusal and the debounced URL check in admin/config/page/branding.ts, and gated-help.ts re-checks on every dependency update as upstream's updateAllDependencies does. Not ported because already present: upstream's change from template literals to concatenation in the config page (the dashboard reads ${...} as translation keys); the rewrite's HTML build already rewrites ${ (scripts/client/html-entries.mjs) and the generated configPage.html holds none. Tests: upstream's backend tests, adapted to JeChromeController with the public-config version read from JePlatformController, plus one that the other slots keep their type rules and get no sandbox headers; upstream has no client tests, so 4 Elsewhere panel tests and 7 admin page tests are new. Records: config-flag-groups.json regenerated (ElsewhereIconInput, as upstream), the production inventory regenerated, api.md's route count 221 to 222 (upstream 217 to 218), the eight new control ids in tests/fixtures/admin-config-baseline.json, Shared/Branding in project-structure.md. The route's snapshot lines (route/auth, auth-helper, auth-read, ExpectedRoutes 221 to 222, ExpectedAnonymous 12 to 13, the INV route list) are additions in this branch's 'contract: upstream sync additions' commit."
+    },
+    {
+      "sha": "782a836462231e7f68c4a673cebd9c06f823097b",
+      "date": "2026-11-17T16:16:42+00:00",
+      "subject": "fix(config): keep the MDBList ratings list in step on the Services tab and style it like the other groups",
+      "class": "fix",
+      "features": [
+        "admin"
+      ],
+      "issues": [],
+      "release": null,
+      "size": {
+        "files": 2,
+        "insertions": 44,
+        "deletions": 5
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/admin/sections.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/configPage.html"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "1b027a343d00e249e3c8ac56c64d7c2c08b7a98c"
+      ],
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p74-*",
+      "notes": "Re-implemented in client/src/admin/config/page/display-cards.ts with upstream's logic: renderMdblistSourcesAdmin builds both the card's list and the Services tab's linked copy (mdblistRatingsSourcesAdmin--mirror; the engine's markup copy dropped the ticks, its arrows did nothing and its edits never reached Save), and syncMdblistSources copies order and ticks from the list just edited to the other, on a tick (a delegated change listener) and on an arrow (the click handler now covers both lists); Save still reads the card's list. In admin/config/sections/display.ts \"Configure ratings shown\" is a group with a note, like its neighbours, in place of the hand-made <details>, as upstream. That is an intentional schema change, so the <details> wrapper's two ids (mdblistSourcesAdminDetails and its --mirror copy; no code read them) leave renderedIds in tests/fixtures/admin-config-baseline.json; no control, setting or section id changes. Upstream has no test for it; tests/frontend/admin/config/admin-config-mdblist-sources.test.mjs (5 tests, through the generated page) is new. No other difference from upstream."
     }
   ]
 }

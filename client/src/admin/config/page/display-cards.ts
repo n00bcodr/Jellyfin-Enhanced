@@ -93,15 +93,24 @@ export function createDisplayCards(m: DisplayCardsDeps) {
             { key: 'master', label: 'Master', logo: 'master.png' },
         ];
 
+        // The Services tab shows a linked copy of the MDBList card (engine/mirrors.ts). The engine copies plain
+        // markup into a copy but would drop this list's ticks and arrow handling, so both lists are built here and
+        // kept in step (syncMdblistSources). The card's list is the one Save reads.
+        var MDBLIST_SOURCES_LIST_IDS = ['mdblistRatingsSourcesAdmin', 'mdblistRatingsSourcesAdmin--mirror'];
+
         // Builds the checkbox+logo+reorder row list from the saved
         // MdblistRatingsSources comma string; empty means every source is
         // checked, in MDBLIST_SOURCES' built-in order. Rebuilt fresh on every
         // load (unlike the quality-category rows, which reorder fixed static
         // HTML) since the row set itself doesn't otherwise exist in the DOM.
         function renderMdblistSourcesAdmin(config: AdminConfig) : void {
-            const container = asHtml(document.getElementById('mdblistRatingsSourcesAdmin'));
-            if (!container) return;
+            MDBLIST_SOURCES_LIST_IDS.forEach(function (id) {
+                const container = asHtml(document.getElementById(id));
+                if (container) renderMdblistSourcesInto(container, config);
+            });
+        }
 
+        function renderMdblistSourcesInto(container: HTMLElement, config: AdminConfig) : void {
             var configured = text(config.MdblistRatingsSources).split(',')
                 .map(function (s) { return s.trim().toLowerCase(); }).filter(Boolean);
             var knownKeys = MDBLIST_SOURCES.map(function (s) { return s.key; });
@@ -160,6 +169,25 @@ export function createDisplayCards(m: DisplayCardsDeps) {
             refreshQualityCatAdminArrows(container);
         }
 
+        // Copies the order and ticks of one MDBList sources list onto the other (the card and its Services tab
+        // copy), so an edit made in either one is what Save reads.
+        function syncMdblistSources(from: Element) : void {
+            MDBLIST_SOURCES_LIST_IDS.forEach(function (id) {
+                const to = asHtml(document.getElementById(id));
+                if (!to || to === from) return;
+                Array.from(from.querySelectorAll<HTMLElement>('.je-quality-cat-admin-row')).forEach(function (row) {
+                    const twin = Array.from(to.querySelectorAll<HTMLElement>('.je-quality-cat-admin-row'))
+                        .filter(function (r) { return r.dataset.sourceKey === row.dataset.sourceKey; })[0];
+                    if (!twin) return;
+                    const source = asInput(row.querySelector('.je-mdblist-source-toggle'));
+                    const target = asInput(twin.querySelector('.je-mdblist-source-toggle'));
+                    if (source && target) target.checked = source.checked;
+                    to.appendChild(twin);
+                });
+                refreshQualityCatAdminArrows(to);
+            });
+        }
+
         // Reads the current row order + checked state back into the
         // comma-separated MdblistRatingsSources string at save time.
         function computeMdblistRatingsSources() : string {
@@ -178,8 +206,18 @@ export function createDisplayCards(m: DisplayCardsDeps) {
         // mirrors the quality-category handler above -- reuses the same
         // refreshQualityCatAdminArrows for the disabled-at-the-ends styling).
         (function () {
+            var lists = MDBLIST_SOURCES_LIST_IDS.map(function (id) { return '#' + id; }).join(', ');
+            var arrows = MDBLIST_SOURCES_LIST_IDS.map(function (id) {
+                return '#' + id + ' .je-cat-up, #' + id + ' .je-cat-down';
+            }).join(', ');
+            document.addEventListener('change', function (e) {
+                var box = e.target;
+                if (!(box instanceof HTMLInputElement) || !box.classList.contains('je-mdblist-source-toggle')) return;
+                var list = box.closest(lists);
+                if (list) syncMdblistSources(list);
+            }, { signal: lifecycle.signal });
             document.addEventListener('click', function (e) {
-                var btn = closestTo(e, '#mdblistRatingsSourcesAdmin .je-cat-up, #mdblistRatingsSourcesAdmin .je-cat-down');
+                var btn = closestTo(e, arrows);
                 if (!(btn instanceof HTMLButtonElement) || btn.disabled) return;
                 e.preventDefault();
                 var row = btn.closest('.je-quality-cat-admin-row');
@@ -190,7 +228,10 @@ export function createDisplayCards(m: DisplayCardsDeps) {
                 var sibling = isUp ? row.previousElementSibling : row.nextElementSibling;
                 if (!sibling || !sibling.classList.contains('je-quality-cat-admin-row')) return;
                 if (isUp) { parent.insertBefore(row, sibling); } else { parent.insertBefore(sibling, row); }
-                if (parent instanceof Element) refreshQualityCatAdminArrows(parent);
+                if (parent instanceof Element) {
+                    refreshQualityCatAdminArrows(parent);
+                    syncMdblistSources(parent);
+                }
             }, { signal: lifecycle.signal });
         })();
     }

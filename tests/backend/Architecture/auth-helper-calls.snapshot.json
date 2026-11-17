@@ -66,6 +66,7 @@
   "GetDoesTheDogDieUsage": {"IsAdminUser":1},
   "GetDownloadHistory": {"IsAdminUser":2,"User":2,"UserHelper.GetCurrentUserId":2},
   "GetDownloadQueue": {"IsAdminUser":1,"User":2,"UserHelper.GetCurrentUserId":2},
+  "GetElsewhereBrandingIcon": {},
   "GetEvents": {"User":2,"UserHelper.GetCurrentUserId":1},
   "GetFileSizeByItemId": {"AuthorizeUserAccess":1},
   "GetGenreInfo": {"IsAdminUser":1,"User":1,"UserHelper.GetCurrentUserId":1},

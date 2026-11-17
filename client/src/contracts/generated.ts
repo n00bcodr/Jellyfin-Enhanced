@@ -170,6 +170,7 @@ export interface BootstrapPublicConfig {
   "DownloadsUsePluginPages": boolean;
   "DynamicRangeTagOrder": number;
   "EditionTagOrder": number;
+  "ElsewhereCustomBrandingIconVersion": string;
   "ElsewhereCustomBrandingImageUrl": string;
   "ElsewhereCustomBrandingText": string;
   "ElsewhereEnabled": boolean;

@@ -4,6 +4,7 @@
   {"verb":"GET","route":"JellyfinEnhanced/Configuration/jeAdmin.css","requiresAuth":false,"auth":"","action":"GetAdminStylesheet","apiBehavior":true,"parameters":[]},
   {"verb":"GET","route":"JellyfinEnhanced/Configuration/jeAdmin.js","requiresAuth":false,"auth":"","action":"GetAdminScript","apiBehavior":true,"parameters":[]},
   {"verb":"POST","route":"JellyfinEnhanced/DeleteBrandingImage","requiresAuth":true,"auth":"","action":"DeleteBrandingImage","apiBehavior":true,"parameters":[]},
+  {"verb":"GET","route":"JellyfinEnhanced/ElsewhereBrandingIcon","requiresAuth":false,"auth":"","action":"GetElsewhereBrandingIcon","apiBehavior":true,"parameters":[]},
   {"verb":"POST","route":"JellyfinEnhanced/MaintenanceMode/Broadcast","requiresAuth":true,"auth":"","action":"BroadcastMaintenanceMessage","apiBehavior":true,"parameters":["request:Body"]},
   {"verb":"POST","route":"JellyfinEnhanced/MaintenanceMode/Disable","requiresAuth":true,"auth":"","action":"DisableMaintenanceMode","apiBehavior":true,"parameters":["includeScheduled:Query"]},
   {"verb":"POST","route":"JellyfinEnhanced/MaintenanceMode/Enable","requiresAuth":true,"auth":"","action":"EnableMaintenanceMode","apiBehavior":true,"parameters":["request:Body"]},

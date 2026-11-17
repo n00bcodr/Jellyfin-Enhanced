@@ -193,11 +193,11 @@ test('DETAILS-PROVIDERS-009 picks that failed to load are retried and never over
 
 // ── Elsewhere ─────────────────────────────────────────────────────────────
 function elsewhereHarness(t, { html, watch = { results: { GB: { link: 'https://www.justwatch.com/gb', flatrate: [{ provider_id: 8, provider_name: 'Netflix', logo_path: '/n.png' }] } } }, getItem = async () => null,
-  config = {}, elsewhere = { Region: 'GB', Regions: ['DE'], Services: ['Netflix'], SeasonProviders: true }, apiFetch } = {}) {
+  config = {}, elsewhere = { Region: 'GB', Regions: ['DE'], Services: ['Netflix'], SeasonProviders: true }, apiFetch, apiClient = {} } = {}) {
   const idle = []; const saved = []; const { session, switchUser } = sessionStub();
   const h = createHarness({ url: 'http://jellyfin.test/web/index.html#!/details?id=one',
     html: html ?? '<div id="itemDetailPage"><div class="detailSectionContent"><div class="itemExternalLinks"><a href="https://www.themoviedb.org/movie/7">TMDB</a></div></div></div>',
-    apiClient: { getItem, ajax: async () => h.JE.userConfig.elsewhere },
+    apiClient: { getItem, ajax: async () => h.JE.userConfig.elsewhere, ...apiClient },
     fetch: async url => String(url).endsWith('regions.txt')
       ? new Response('US\tUnited States\nGB\t<img src=x onerror=alert(1)>\nDE\tGermany')
       : new Response('Netflix\nHulu'),
@@ -220,6 +220,55 @@ test('DETAILS-PROVIDERS-005 an upstream JustWatch link that is not navigable is 
   assert.equal(title.getAttribute('href'), '#');
   assert.equal(h.document.querySelector('img[src="x"]'), null);
   assert.equal(h.document.querySelector('.streaming-lookup-container img').getAttribute('src'), 'https://image.tmdb.org/t/p/w92/n.png');
+});
+// ── Elsewhere custom branding icon (upstream c8625921) ───────────────────────
+// A Jellyfin under the base path /jellyfin: ApiClient.getUrl prefixes it and serializes the query, as the real one does.
+const basePathUrl = (path, query) => `http://jellyfin.test/jellyfin/${String(path).replace(/^\//, '')}${query ? '?' + new URLSearchParams(query) : ''}`;
+const nothingStreams = { results: { GB: { link: 'https://www.justwatch.com/gb', flatrate: [] } } };
+async function brandingIcon(t, pluginConfig) {
+  const h = elsewhereHarness(t, { watch: nothingStreams, apiClient: { getUrl: basePathUrl },
+    config: { ElsewhereCustomBrandingText: 'Only on My Server', ...pluginConfig } });
+  await h.runIdle();
+  const title = h.document.querySelector('.elsewhere-custom-branding');
+  assert.ok(title, 'the custom branding message is shown when nothing streams');
+  return { h, title, icon: title.querySelector('img.elsewhere-custom-branding-icon') };
+}
+test('Elsewhere branding: an uploaded icon is used in place of the URL, from the plugin route with its version', async t => {
+  const { icon } = await brandingIcon(t, { ElsewhereCustomBrandingImageUrl: 'https://example.com/logo.png', ElsewhereCustomBrandingIconVersion: '638700000000000000-1234' });
+  assert.equal(icon.getAttribute('src'), 'http://jellyfin.test/jellyfin/JellyfinEnhanced/ElsewhereBrandingIcon?v=638700000000000000-1234');
+});
+test('Elsewhere branding: a path to Jellyfin\'s own routes resolves under the base path; other URLs are left alone', async t => {
+  for (const [configured, expected] of [
+    ['/web/favicons/touchicon.png', 'http://jellyfin.test/jellyfin/web/favicons/touchicon.png'],
+    ['  /JellyfinEnhanced/ElsewhereBrandingIcon  ', 'http://jellyfin.test/jellyfin/JellyfinEnhanced/ElsewhereBrandingIcon'],
+    ['https://example.com/logo.png', 'https://example.com/logo.png'],
+    ['/config/data/logo.png', '/config/data/logo.png'],
+  ]) {
+    const { icon } = await brandingIcon(t, { ElsewhereCustomBrandingImageUrl: configured, ElsewhereCustomBrandingIconVersion: '' });
+    assert.equal(icon.getAttribute('src'), expected, configured);
+  }
+  const { title } = await brandingIcon(t, { ElsewhereCustomBrandingImageUrl: '', ElsewhereCustomBrandingIconVersion: '' });
+  assert.equal(title.querySelector('img'), null, 'no URL and no upload: no icon');
+});
+test('Elsewhere branding: the icon is centred against the message', async t => {
+  const { title } = await brandingIcon(t, { ElsewhereCustomBrandingImageUrl: 'https://example.com/logo.png' });
+  assert.equal(title.style.display, 'flex');
+  assert.equal(title.style.alignItems, 'center');
+  assert.equal(title.style.gap, '8px');
+  const { title: plainTitle } = await brandingIcon(t, { ElsewhereCustomBrandingImageUrl: '' });
+  assert.equal(plainTitle.style.alignItems, 'flex-end', 'a message without an icon keeps its alignment');
+});
+test('Elsewhere branding: an icon that cannot load is hidden and says why in the console', async t => {
+  for (const [version, pattern] of [['', /failed to load from "\/config\/data\/logo\.png"\. It must be a web address the browser can open, not a server file path/],
+    ['1-2', /the uploaded Elsewhere custom branding icon failed to load from "http:\/\/jellyfin\.test\/jellyfin\/JellyfinEnhanced\/ElsewhereBrandingIcon\?v=1-2"\. Re-upload it/]]) {
+    const { h, icon } = await brandingIcon(t, { ElsewhereCustomBrandingImageUrl: '/config/data/logo.png', ElsewhereCustomBrandingIconVersion: version });
+    const warnings = [];
+    h.window.console.warn = (...args) => warnings.push(args.map(String).join(' '));
+    icon.dispatchEvent(new h.window.Event('error'));
+    assert.equal(icon.style.display, 'none');
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0], pattern);
+  }
 });
 test('DETAILS-PROVIDERS-002/003 the settings form shows remote names as text and the signed-in user\'s saved choices', async t => {
   const h = elsewhereHarness(t);

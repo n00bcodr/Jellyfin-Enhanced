@@ -209,6 +209,41 @@
   var export2 = /* @__PURE__ */ sharedExport(shared3, "pathSegment");
   var export32 = /* @__PURE__ */ sharedExport(shared3, "safeHref");
 
+  // client/src/features/details-providers/elsewhere-branding.ts
+  function resolveBrandingIconUrl(configuredUrl, uploadVersion) {
+    const serverUrl = (path, query) => {
+      try {
+        return export0().getUrl(path, query);
+      } catch {
+        return null;
+      }
+    };
+    if (uploadVersion) {
+      const uploaded = serverUrl("/JellyfinEnhanced/ElsewhereBrandingIcon", { v: uploadVersion });
+      if (uploaded) return uploaded;
+    }
+    const url = String(configuredUrl || "").trim();
+    if (/^\/(web|JellyfinEnhanced)\//i.test(url)) return serverUrl(url) || url;
+    return url;
+  }
+  function brandingIcon(url, uploaded) {
+    const icon = document.createElement("img");
+    icon.src = url;
+    icon.alt = "Custom Branding";
+    icon.className = "elsewhere-custom-branding-icon";
+    icon.style.cssText = `
+                        width: 24px;
+                        height: 24px;
+                        object-fit: contain;
+                        margin-left: 4px;
+                    `;
+    icon.onerror = () => {
+      icon.style.display = "none";
+      console.warn(uploaded ? `🪼 Jellyfin Enhanced: the uploaded Elsewhere custom branding icon failed to load from "${url}". Re-upload it in the plugin settings.` : `🪼 Jellyfin Enhanced: Elsewhere custom branding icon failed to load from "${url}". It must be a web address the browser can open, not a server file path.`);
+    };
+    return icon;
+  }
+
   // client/generated-shared/stub/client/src/features/details-providers/wire.ts
   var shared4 = /* @__PURE__ */ sharedModule("features/details-providers/wire");
   var export5 = /* @__PURE__ */ sharedExport(shared4, "field");
@@ -404,7 +439,8 @@
     const DEFAULT_REGION = config.DEFAULT_REGION || "US";
     const filters = { defaults: parseProviderList(config.DEFAULT_PROVIDERS), ignore: parseProviderList(config.IGNORE_PROVIDERS) };
     const BRANDING_TEXT = config.ElsewhereCustomBrandingText || "";
-    const BRANDING_IMAGE_URL = config.ElsewhereCustomBrandingImageUrl || "";
+    const BRANDING_ICON_UPLOADED = !!config.ElsewhereCustomBrandingIconVersion;
+    const BRANDING_IMAGE_URL = resolveBrandingIconUrl(config.ElsewhereCustomBrandingImageUrl, config.ElsewhereCustomBrandingIconVersion);
     const UseSeerrProviders = !TmdbEnabled && !!config.JellyseerrEnabled;
     const SEASON_PROVIDERS_ADMIN = TmdbEnabled && config.ElsewhereSeasonProviders !== false;
     if (!TmdbEnabled && !UseSeerrProviders) {
@@ -962,25 +998,7 @@
         title.textContent = BRANDING_TEXT;
         title.classList.add("elsewhere-custom-branding");
         title.style.cursor = "default";
-        if (BRANDING_IMAGE_URL) {
-          title.style.display = "flex";
-          title.style.alignItems = "center";
-          title.style.gap = "8px";
-          const icon = document.createElement("img");
-          icon.src = BRANDING_IMAGE_URL;
-          icon.alt = "Custom Branding";
-          icon.className = "elsewhere-custom-branding-icon";
-          icon.style.cssText = `
-                        width: 24px;
-                        height: 24px;
-                        object-fit: contain;
-                        margin-left: 4px;
-                    `;
-          icon.onerror = () => {
-            icon.style.display = "none";
-          };
-          title.appendChild(icon);
-        }
+        if (BRANDING_IMAGE_URL) title.appendChild(brandingIcon(BRANDING_IMAGE_URL, BRANDING_ICON_UPLOADED));
       } else {
         title.textContent = JE.t("elsewhere_panel_not_available_in", { region: regionName(userRegion) });
       }
@@ -995,6 +1013,10 @@
                 display: flex;
                 align-items: flex-end;
             `;
+      if (title.querySelector(".elsewhere-custom-branding-icon")) {
+        title.style.alignItems = "center";
+        title.style.gap = "8px";
+      }
       if (hasFilteredServices && linkUrl) {
         title.classList.add("elsewhere-link-reset");
         title.href = export32(linkUrl);

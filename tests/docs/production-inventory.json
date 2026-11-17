@@ -946,6 +946,10 @@
       "category": "Shared"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Shared/Branding/ElsewhereBrandingIcon.cs",
+      "category": "Shared"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Shared/HiddenContent/HiddenContentDefaults.cs",
       "category": "Shared"
     },
@@ -2520,6 +2524,15 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Features/Chrome/JeChromeController.cs",
       "following_attributes": [
         "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/ElsewhereBrandingIcon",
+      "method": "GetElsewhereBrandingIcon",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Features/Chrome/JeChromeController.cs",
+      "following_attributes": [
+        "AllowAnonymous"
       ]
     },
     {
@@ -11253,8 +11266,8 @@
   ],
   "counts": {
     "build_targets": 1,
-    "files": 565,
-    "routes": 221,
+    "files": 566,
+    "routes": 222,
     "configuration_properties": 792,
     "storage_references": 97,
     "scheduled_tasks": 17,

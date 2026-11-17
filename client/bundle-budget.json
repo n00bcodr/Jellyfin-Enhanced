@@ -1,8 +1,8 @@
 {
   "description": "Budget for the served component bundle, GET /JellyfinEnhanced/bundle.js (Features/Platform/Services/ClientScriptBundle.cs), as an identity (uncompressed) body. rawBytes: its length. gzipBytes: its length after gzip at level 9 (zlib level 9; `gzip -9 -n`, .NET CompressionLevel.SmallestSize). Checked by tests/backend/Api/BundleBudgetTests.cs (gate T) and `scripts/restructure-gates.sh size`. It is a ratchet: lowering a limit needs no reason; a history entry that raises either limit must give one. `limits` is always the last history entry's.",
   "limits": {
-    "rawBytes": 2618666,
-    "gzipBytes": 707700
+    "rawBytes": 2619425,
+    "gzipBytes": 707959
   },
   "history": [
     {
@@ -82,6 +82,19 @@
         "gzipBytes": 707700
       },
       "reason": "Raised by exactly what the port adds, so the headroom left before it stays as it was: streaming providers from Seerr when there is no TMDB key (the Elsewhere panel's Seerr source and region, its autocomplete module, the Seerr API's streaming region, the poster icons, the More Info row and the discovery filters' region). Measured with `scripts/restructure-gates.sh size`: 2,592,384 raw / 704,688 gzip-9 bytes on cb1633b2 before the port, 2,594,887 / 705,663 on d89c57eb after it (+2,503 / +975). Gate T's own measure (BundleBudgetTests, .NET SmallestSize), on which the port went over the old limit, is 706,482 before and 707,585 after (+1,103), so the gzip limit rises by that larger figure: gate T keeps the 115 bytes of headroom it had, gzip -9 keeps 2,037. The port fitted the budget when it was written on 2026-11-13; the 12.16.0.0 ports used that room since."
+    },
+    {
+      "date": "2026-11-18",
+      "change": "upstream sync: port of upstream c8625921 (#1080), branch sync/auto-20261118-0214",
+      "measured": {
+        "rawBytes": 2595646,
+        "gzipBytes": 705922
+      },
+      "limits": {
+        "rawBytes": 2619425,
+        "gzipBytes": 707959
+      },
+      "reason": "Raised by exactly what the port adds, so the headroom left before it stays as it was: the Elsewhere custom branding icon's URL resolution (an uploaded icon, or /web/ and /JellyfinEnhanced/ paths through ApiClient), its load-failure warning and centring (elsewhere.js and its minified twin), and the new public-config field in the bootstrap contract reader. Measured with `scripts/restructure-gates.sh size`: 2,594,887 raw / 705,663 gzip-9 bytes on 2315155c before the port, 2,595,646 / 705,922 with it (+759 / +259). Gate T's own measure (BundleBudgetTests, .NET SmallestSize) with the port: 707,838 gzip-9 bytes, over the previous 707,700 and within the new limit."
     }
   ]
 }

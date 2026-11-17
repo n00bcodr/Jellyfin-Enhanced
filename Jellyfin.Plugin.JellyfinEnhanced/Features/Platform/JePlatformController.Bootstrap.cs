@@ -192,6 +192,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Platform
                 ElsewhereUseSeerrRegion = config.ElsewhereUseSeerrRegion,
                 ElsewhereCustomBrandingText = config.ElsewhereCustomBrandingText,
                 ElsewhereCustomBrandingImageUrl = config.ElsewhereCustomBrandingImageUrl,
+                ElsewhereCustomBrandingIconVersion = Shared.Branding.ElsewhereBrandingIcon.Version(JellyfinEnhanced.BrandingDirectory),
                 ClearLocalStorageTimestamp = config.ClearLocalStorageTimestamp,
                 ClearTranslationCacheTimestamp = config.ClearTranslationCacheTimestamp,
 

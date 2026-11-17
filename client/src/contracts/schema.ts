@@ -1603,6 +1603,9 @@ export const bootstrapSchema = {
         "EditionTagOrder": {
           "type": "integer"
         },
+        "ElsewhereCustomBrandingIconVersion": {
+          "type": "string"
+        },
         "ElsewhereCustomBrandingImageUrl": {
           "type": "string"
         },
@@ -2490,6 +2493,7 @@ export const bootstrapSchema = {
         "DownloadsUsePluginPages",
         "DynamicRangeTagOrder",
         "EditionTagOrder",
+        "ElsewhereCustomBrandingIconVersion",
         "ElsewhereCustomBrandingImageUrl",
         "ElsewhereCustomBrandingText",
         "ElsewhereEnabled",

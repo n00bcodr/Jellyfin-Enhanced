@@ -5,6 +5,7 @@ using MediaBrowser.Controller.Session;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.StaticFiles;
+using Jellyfin.Plugin.JellyfinEnhanced.Shared.Branding;
 using Jellyfin.Plugin.JellyfinEnhanced.Shared.Sessions;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Chrome
@@ -23,7 +24,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Chrome
             "banner-light.png",
             "banner-dark.png",
             "favicon.ico",
-            "apple-touch-icon.png"
+            "apple-touch-icon.png",
+            ElsewhereBrandingIcon.FileName
         }, StringComparer.OrdinalIgnoreCase);
 
         public JeChromeController(
@@ -103,6 +105,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Chrome
                 if (!uploadedFile.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
                     return BadRequest("Only image files are allowed");
 
+                if (ElsewhereBrandingIcon.IsSlot(normalizedFileName))
+                {
+                    if (!ElsewhereBrandingIcon.ContentTypes.Contains(uploadedFile.ContentType))
+                        return BadRequest("The Elsewhere icon must be a PNG, JPEG, GIF, WebP or SVG image");
+
+                    // The Elsewhere icon is served by its content, so only store bytes that are recognisably one of
+                    // those formats; anything else would be served with the wrong type and never display.
+                    string? sniffed;
+                    using (var head = uploadedFile.OpenReadStream())
+                    {
+                        sniffed = ElsewhereBrandingIcon.Sniff(head);
+                    }
+
+                    if (sniffed == null)
+                        return BadRequest("The Elsewhere icon file isn't a readable PNG, JPEG, GIF, WebP or SVG image (an SVG must be UTF-8 and have its <svg> tag in the first 64 KB)");
+                }
+
                 const long maxFileSize = 10 * 1024 * 1024; // 10MB
                 if (uploadedFile.Length > maxFileSize)
                     return BadRequest($"File too large (max 10MB)");
@@ -170,13 +189,55 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Chrome
             if (!System.IO.File.Exists(filePath))
                 return NotFound();
 
-            var provider = new FileExtensionContentTypeProvider();
-            if (!provider.TryGetContentType(filePath, out var contentType))
+            string? contentType = null;
+            if (ElsewhereBrandingIcon.IsSlot(Path.GetFileName(filePath)))
+            {
+                if (!ElsewhereBrandingIcon.TrySniffFile(filePath, out contentType))
+                {
+                    return NotFound();
+                }
+
+                SetUploadedImageSandboxHeaders();
+            }
+
+            if (contentType == null && !new FileExtensionContentTypeProvider().TryGetContentType(filePath, out contentType))
             {
                 contentType = "application/octet-stream";
             }
 
             return PhysicalFile(filePath, contentType);
+        }
+
+        /// <summary>
+        /// The uploaded Elsewhere custom branding icon, for every viewer's <c>&lt;img&gt;</c>. Anonymous because an
+        /// image tag cannot send Jellyfin's auth header; it exposes nothing beyond what the stock branding images
+        /// (served publicly by BrandingAssetStartupFilter) already do.
+        /// </summary>
+        [HttpGet("ElsewhereBrandingIcon")]
+        [AllowAnonymous]
+        public IActionResult GetElsewhereBrandingIcon()
+        {
+            if (!TryResolveBrandingFilePath(ElsewhereBrandingIcon.FileName, out _, out var filePath)
+                || !System.IO.File.Exists(filePath)
+                || !ElsewhereBrandingIcon.TrySniffFile(filePath, out var contentType))
+            {
+                return NotFound();
+            }
+
+            SetUploadedImageSandboxHeaders();
+            // Clients add ?v=<upload version>, so a re-upload gets a new URL.
+            Response.Headers["Cache-Control"] = "public, max-age=86400";
+            return PhysicalFile(filePath, contentType ?? "image/png");
+        }
+
+        /// <summary>
+        /// Headers for serving an admin-uploaded image that may be an SVG: it must never run script or load anything
+        /// if its URL is opened directly.
+        /// </summary>
+        private void SetUploadedImageSandboxHeaders()
+        {
+            Response.Headers["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox";
+            Response.Headers["X-Content-Type-Options"] = "nosniff";
         }
 
         [HttpPost("DeleteBrandingImage")]
