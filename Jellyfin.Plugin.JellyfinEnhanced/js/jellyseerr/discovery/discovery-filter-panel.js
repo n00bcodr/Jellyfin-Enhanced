@@ -305,9 +305,10 @@
             lead.className = 'jellyseerr-menu-match-lead';
             lead.id = `jellyseerr-menu-match-${++hints}`;
             // (On a genre's page its genre is always applied: the choice is about the others.)
+            // (Titles are on a service, not with it.)
             lead.textContent = id === 'genres' && options.ownGenre
                 ? say('discovery_filter_match_given', 'Titles in {genre} and', { genre: options.ownGenre })
-                : say('discovery_filter_match', 'Titles with');
+                : id === 'services' ? say('discovery_filter_match_on', 'Titles on') : say('discovery_filter_match', 'Titles with');
             // One segmented control, as All / Movies / Series is: a radio group, one stop for the keys.
             const track = document.createElement('div');
             track.className = 'jellyseerr-menu-match-track';
@@ -1017,16 +1018,17 @@
             .jellyseerr-menu-note { padding: 2px 16px 8px 32px; font-size: .86em; line-height: 1.4; }
             /* All of what is ticked, or any of it: two small choices on the rule's line, the one in use filled. */
             /* The theme's own grounds; the choice in use in the accent, as everything set in this menu is. */
-            .jellyseerr-menu-match { display: flex; flex-direction: column; align-items: flex-start; gap: .35em; }
+            .jellyseerr-menu-match { display: flex; flex-flow: row wrap; align-items: center; gap: .35em .6em; }
             .jellyseerr-menu-searchbar .jellyseerr-menu-match { padding: 6px 0 0; }
             .jellyseerr-menu-match-track { display: inline-flex; gap: 2px; padding: 2px; border-radius: 999px; background: var(--jf-palette-action-hover, rgba(255,255,255,.08)); }
             .jellyseerr-menu-match-btn { font: inherit; color: var(--jf-palette-text-secondary, rgba(255,255,255,.7)); white-space: nowrap; background: none; border: 0; border-radius: 999px; padding: .3em .95em; cursor: pointer; }
             .jellyseerr-menu-match-btn[aria-checked="true"] { background: var(--jf-palette-action-selected, rgba(255,255,255,.16)); color: var(--jellyseerr-accent); box-shadow: inset 0 0 0 1px var(--jellyseerr-accent); }
             .jellyseerr-menu-match-btn:focus-visible { outline: 2px solid var(--jellyseerr-accent); outline-offset: 1px; }
+            @media (forced-colors: active) { .jellyseerr-menu-match-btn[aria-checked="true"] { outline: 2px solid Highlight; outline-offset: -2px; } }
             .layout-tv .jellyseerr-menu-match-btn:focus { outline: none; background: var(--jf-palette-action-focus, rgba(255,255,255,.24)); color: var(--jf-palette-text-primary, #fff); }
             /* On a touch screen, as wide as the search field above it and a finger's height. */
             @media (pointer: coarse), (max-width: 600px) {
-                html:not(.layout-tv) .jellyseerr-menu-match { align-items: stretch; }
+                html:not(.layout-tv) .jellyseerr-menu-match { flex-direction: column; align-items: stretch; }
                 html:not(.layout-tv) .jellyseerr-menu-match-track { display: flex; }
                 html:not(.layout-tv) .jellyseerr-menu-match-btn { flex: 1 1 0; min-height: 44px; }
             }
