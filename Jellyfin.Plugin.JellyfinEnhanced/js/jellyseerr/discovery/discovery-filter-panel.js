@@ -111,7 +111,7 @@
      * @param {string} options.locale - The page's language
      * @param {object} options.selection - The section's FilterSelection
      * @param {string} [options.ownGenre] - On a genre's page: that genre's name (always applied, so outside an "or")
-     * @returns {{words: string, join?: 'and'|'or', or: boolean, list?: string, without: (selection: object) => object}[]} Each
+     * @returns {{words: string, alone?: string, join?: 'and'|'or', or: boolean, list?: string, without: (selection: object) => object}[]} Each
      *   thing set, in words (`join`: said after "and" or "or", the rule of its list; `list`: the list it is in), and the
      *   selection without it
      */
@@ -135,6 +135,19 @@
             const isOwn = item => own !== '' && item.name.toLocaleLowerCase() === own;
             // (The page's own genre is in its heading: the line says only what was chosen beside it.)
             const items = (selection[id] ?? []).filter(item => !isOwn(item));
+            /**
+             * A thing ticked, said on its own: a keyword and a language need a word to be read alone ("With robot",
+             * "Originally in Japanese"), a Without list says what it leaves out ("Without gore", "Not Horror"), services
+             * are what titles are on ("On Netflix", as the menu's "Titles on"); a genre, a rating and a role say what they are.
+             * @param {{name: string}} item
+             * @returns {string}
+             */
+            const alone = item => id === 'without' ? say('discovery_filter_set_without', 'Without {name}', { name: item.name })
+                : id === 'withoutGenres' ? say('discovery_filter_set_not', 'Not {name}', { name: item.name })
+                    : id === 'withoutLanguage' ? say('discovery_filter_set_not_language', 'Not originally in {name}', { name: item.name })
+                        : id === 'keywords' ? say('discovery_filter_set_with', 'With {name}', { name: item.name })
+                            : id === 'language' ? say('discovery_filter_set_language', 'Originally in {name}', { name: item.name })
+                                : id === 'services' ? say('discovery_filter_set_on', 'On {name}', { name: item.name }) : item.name;
             for (const [index, item] of items.entries()) {
                 // ("and" for all of them; "or" for any, and for none of them: "Without gore or horror".)
                 const join = rule !== '' && index > 0 ? (rule === 'all' ? 'and' : 'or') : undefined;
@@ -142,17 +155,10 @@
                     join,
                     or: join === 'or',
                     list: id,
-                    // A keyword and a language need a word to be read on their own ("With robot", "Originally in Japanese"); a genre, a rating, a service and a role say what they are.
-                    // (A Without list says what it leaves out once, at its start: "Without gore or horror", "Not Horror or
-                    // Thriller", a genre told from a keyword by its capital no more.)
-                    words: id === 'without' ? (join ? item.name : say('discovery_filter_set_without', 'Without {name}', { name: item.name }))
-                        : id === 'withoutGenres' ? (join ? item.name : say('discovery_filter_set_not', 'Not {name}', { name: item.name }))
-                        : id === 'withoutLanguage' ? (join ? item.name : say('discovery_filter_set_not_language', 'Not originally in {name}', { name: item.name }))
-                        // ("With bear or dragon": after the word joining them the keyword's own name is enough.)
-                        : id === 'keywords' ? (join ? item.name : say('discovery_filter_set_with', 'With {name}', { name: item.name }))
-                            : id === 'language' && !join ? say('discovery_filter_set_language', 'Originally in {name}', { name: item.name })
-                                // ("On Netflix or Disney Plus", as the menu's "Titles on".)
-                                : id === 'services' && !join ? say('discovery_filter_set_on', 'On {name}', { name: item.name }) : item.name,
+                    // (After the word joining it to the one before, its own name is enough: "With bear or dragon",
+                    // "Not Horror or Thriller". `alone`: as it is said by itself, for what names one piece: Undo.)
+                    words: join ? item.name : alone(item),
+                    alone: alone(item),
                     without(now) {
                         const left = (now[id] ?? []).filter(entry => entry.id !== item.id);
                         return { ...now, [id]: left.length > 0 ? left : undefined };
@@ -1345,22 +1351,22 @@
                 noneLabel: label('discovery_filters_none', 'Nothing matches these filters.'),
                 undoLabel: () => {
                     // (What the last change set that was not set before: "Undo Score from 9.9".)
-                    const words = selection => filterTokens({ offered, label, locale: localeOf(), selection, ownGenre }).map(token => token.words);
+                    const words = selection => filterTokens({ offered, label, locale: localeOf(), selection, ownGenre }).map(token => token.alone ?? token.words);
                     const was = undoTo ?? {};
                     const now = selectionOf(moduleName);
                     const before = new Set(words(was));
                     const added = words(now).find(word => !before.has(word));
-                    if (added) return label('discovery_filters_undo_what', 'Undo {change}', { change: added });
+                    if (added) return label('discovery_filters_undo_what', 'Undo “{change}”', { change: added });
                     // (A rule switched: "Undo all ticked in Streaming services".)
                     const ruled = Object.keys(logic().MATCH_DEFAULTS ?? {}).find(id => logic().matchOf(was, id) !== logic().matchOf(now, id));
                     if (ruled) {
                         const rule = logic().matchOf(now, ruled) === 'any' ? label('discovery_filter_match_any', 'any ticked') : label('discovery_filter_match_all', 'all ticked');
-                        return label('discovery_filters_undo_rule', 'Undo {rule} in {filter}', { rule, filter: label(NAMES[ruled][0], NAMES[ruled][1]) });
+                        return label('discovery_filters_undo_rule', 'Undo “{rule}” in {filter}', { rule, filter: label(NAMES[ruled][0], NAMES[ruled][1]) });
                     }
                     // (A piece taken away: "Put back Kids".)
                     const after = new Set(words(now));
                     const removed = words(was).find(word => !after.has(word));
-                    return removed ? label('discovery_filters_undo_back', 'Put back {piece}', { piece: removed }) : label('discovery_filters_undo', 'Undo');
+                    return removed ? label('discovery_filters_undo_back', 'Put back “{piece}”', { piece: removed }) : label('discovery_filters_undo', 'Undo');
                 },
                 canUndo: () => undoTo !== null,
                 // (Back to what was set before the last change; the menu then says every group again.)
@@ -1578,6 +1584,8 @@
             /* An open group's row reads as the heading of what is under it; a long value is cut with an ellipsis. */
             .jellyseerr-menu-group[aria-expanded="true"] .actionSheetItemText { font-weight: 500; }
             .jellyseerr-menu-group-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+            /* (The saved set in use is named whole: its name takes a second line on its row rather than being cut.) */
+            html .jellyseerr-sort-menu .jellyseerr-menu-group[data-toggle="profiles"][data-set] .jellyseerr-menu-group-value { white-space: normal; text-align: end; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
             /* A value said short to the eye is said whole to a screen reader. */
             .jellyseerr-menu-whole { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
             /* Why the page's own genre is ticked and can't be unticked, under its name. */
@@ -1588,13 +1596,13 @@
             /* The foot's line when nothing matches: over "Clear filters", the way out. */
             .jellyseerr-sort-menu .jellyseerr-menu-outcome { flex: 0 0 calc(100% - 16px); box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; gap: .75em; margin: 8px 8px 4px; padding: 6px 6px 6px calc(var(--jellyseerr-menu-text, 16px) - 8px); border-radius: 8px; color: var(--jf-palette-text-primary, #fff); background: rgba(0,164,220,.14); background: color-mix(in srgb, var(--jellyseerr-accent, #00a4dc) 16%, transparent); }
             .jellyseerr-sort-menu .jellyseerr-menu-outcome[hidden] { display: none; }
-            .jellyseerr-sort-menu .jellyseerr-menu-outcome { flex-wrap: wrap; row-gap: 0; }
-            /* (The words on one line where they can be; Undo beside them, else under them at the end.) */
-            .jellyseerr-menu-outcome > span { flex: 1 1 12em; }
-            .jellyseerr-menu-outcome-undo { flex: none; margin-inline-start: auto; font: inherit; padding: .3em .6em; border: 0; border-radius: 6px; background: none; color: var(--jellyseerr-accent); text-decoration: underline; cursor: pointer; }
+            /* (Undo right after its sentence, as a deleted set's is: the band's words run on, and wrap as words do.) */
+            .jellyseerr-sort-menu .jellyseerr-menu-outcome { display: block; }
+            .jellyseerr-menu-outcome-undo { display: inline; margin-inline-start: .35em; font: inherit; padding: .3em .6em; border: 0; border-radius: 6px; background: none; color: var(--jellyseerr-accent); text-decoration: underline; cursor: pointer; }
             .jellyseerr-menu-outcome-undo:focus-visible { outline: 2px solid var(--jf-palette-text-primary, #fff); outline-offset: 1px; }
             .layout-tv .jellyseerr-menu-outcome-undo:focus { outline: none; background: var(--jf-palette-text-primary, #fff); color: var(--jellyseerr-menu-ground, #101010); text-decoration: none; }
-            @media (pointer: coarse) { .jellyseerr-menu-outcome-undo { min-height: 44px; margin-block: -8px; } }
+            /* (On touch, a 44px target reaching past the band's words without making the band taller.) */
+            @media (pointer: coarse) { .jellyseerr-menu-outcome-undo { display: inline-block; min-height: 44px; margin-block: -12px; vertical-align: middle; } }
             @media (forced-colors: active) { .jellyseerr-sort-menu .jellyseerr-menu-outcome { border: 1px solid CanvasText; } }
             /* What a search has narrowed away is gone (a row's own display would otherwise keep it). */
             .jellyseerr-sort-menu .actionSheetMenuItem[hidden], .jellyseerr-menu-note[hidden], .jellyseerr-menu-label[hidden] { display: none !important; }

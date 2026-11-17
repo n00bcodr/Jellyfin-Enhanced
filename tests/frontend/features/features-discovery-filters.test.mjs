@@ -462,7 +462,7 @@ test('nothing matches: the section says so and offers the way out; the admin\'s 
   // With the way back from that change alone: Undo puts the filters as they were, and the menu says every group again.
   const undo = outcome.querySelector('.jellyseerr-menu-outcome-undo');
   // (Its words say what it undoes: what the last change set.)
-  same([undo.textContent, undo.getAttribute('aria-label')], ['Undo Released up to 1899', null]);
+  same([undo.textContent, undo.getAttribute('aria-label')], ['Undo “Released up to 1899”', null]);
   undo.click();
   same(s.shown(), [1, 2, 11, 12]);
   assert.equal(groupOf(h, 'year').textContent, 'ReleasedAny');

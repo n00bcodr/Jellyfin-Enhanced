@@ -837,6 +837,8 @@
                         if (wasKeyed) (heads().find(head => head.getAttribute('aria-expanded') === 'true') ?? items()[0])?.focus();
                     });
                     outcome.appendChild(undo);
+                    // (The band made again with the keys on its Undo, after another change: they stay on Undo.)
+                    if (keyed) undo.focus();
                 }
             } else if (keyed) (heads().find(head => head.getAttribute('aria-expanded') === 'true') ?? items()[0])?.focus();
             place(true);
