@@ -383,3 +383,21 @@ test("a saved profile chosen on the tab sets its filters, its address and its ro
   assert.equal(h.tab().querySelector('.je-reco-tools .emby-tab-button-active').dataset.mode, 'tv');
   assert.deepEqual(h.said(h.tab()), ['Animation']);
 });
+
+test("a saved set chosen on Trending takes only what Trending offers: its titles are kept by what they say", async t => {
+  const h = setup(t, { routes: [[`${DISCOVER}/trending?page=1`, scored([[1, 'movie', 8], [2, 'tv', 5], [3, 'movie', 7.5]])]] });
+  h.window.ApiClient.ajax = async ({ type }) => type === 'GET'
+    ? { max: 30, profiles: [{ id: 'a1', name: 'Good on Netflix', filters: 'jeScore=7..&jeServices=8:Netflix' }] } : {};
+  const P = h.load();
+  await P.showCategoryPage('trending');
+  await until(() => h.categoryCards().length === 3, 'Trending');
+  h.category().querySelector('#je-recommendations-category-filters .jellyseerr-filters-btn').click();
+  const saved = [...h.document.querySelectorAll('.jellyseerr-sort-menu .jellyseerr-menu-group')][0];
+  assert.match(saved.textContent, /^Saved filters/);
+  saved.click();
+  await until(() => h.document.querySelector('.jellyseerr-sort-menu .jellyseerr-menu-profile'), 'the profiles');
+  h.document.querySelector('.jellyseerr-sort-menu .jellyseerr-menu-profile').click();
+  await until(() => h.categoryCards().join() === '1,3', 'kept by their score');
+  assert.deepEqual(Object.keys(plain(h.JE.discoveryFilter.getFilters('recommendations'))), ['score'], 'no services, which Trending cannot check');
+  assert.equal(h.hash(), at('jeCategory=trending&jeScore=7..'));
+});

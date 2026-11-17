@@ -1054,7 +1054,11 @@
                         sayStatus(say('discovery_filter_profile_saved', 'Saved as “{name}”.', { name: saved.name }));
                         handle.say(sayRow(list), true);
                     } catch (error) {
-                        const reason = error?.responseJSON?.error ?? error?.error;
+                        // (ApiClient.ajax refuses with the fetch Response: its body says why.)
+                        let reason = error?.responseJSON?.error ?? error?.error;
+                        if (!reason && typeof error?.json === 'function') {
+                            try { reason = (await error.json())?.error; } catch (_) { reason = null; }
+                        }
                         sayStatus(reason === 'full' ? say('discovery_filter_profile_full', 'Delete a saved one first: you have the most there can be.')
                             : say('discovery_filter_profile_error', 'Could not save that. Try again.'), true);
                     } finally {
@@ -1116,6 +1120,24 @@
      * @returns {boolean}
      */
     const worthKeeping = selection => logic().activeFilterCount(selection) > 0 || Object.keys(selection?.match ?? {}).length > 0;
+    /** Per module: the lists matched by all of what is ticked with no choice (createFiltersControl's `fixedAll`). */
+    const fixedAllOf = new Map();
+    /**
+     * A selection as a module takes it: no chosen match for a list it matches by all of them, whatever a link or a
+     * saved set says (a tag's page asks Seerr for its keywords as all of them, so "any" would be said and not done).
+     * @param {string} name - The module name
+     * @param {object} selection - A FilterSelection
+     * @returns {object} The same selection when nothing is dropped
+     */
+    function takenBy(name, selection) {
+        const fixed = fixedAllOf.get(name) ?? [];
+        const match = selection?.match;
+        if (!match || !fixed.some(id => id in match)) return selection;
+        const kept = Object.fromEntries(Object.entries(match).filter(([id]) => !fixed.includes(id)));
+        const next = { ...selection };
+        if (Object.keys(kept).length > 0) next.match = kept; else delete next.match;
+        return next;
+    }
     // A person's titles as last given to be filtered: what the Role list is made of.
     const credits = new Map();
     // Per header: redraws its Filters button, and reloads its list after a change made outside the menu.
@@ -1222,6 +1244,12 @@
      */
     function createFiltersControl(header, moduleName, scope, onChange, ownGenre, place, fixedAll = [], profiles = null) {
         injectStyles();
+        fixedAllOf.set(moduleName, fixedAll);
+        // (What the page's address gave it before this control was made.)
+        const taken = takenBy(moduleName, selectionOf(moduleName));
+        if (taken !== selectionOf(moduleName)) {
+            if (worthKeeping(taken)) moreFilters.set(moduleName, taken); else moreFilters.delete(moduleName);
+        }
         /** The section the header is in, or the page the button narrows. */
         const sectionOf = place ?? (() => header.closest('.jellyseerr-discovery-section'));
         const { offeredFilters, activeFilterCount, rolesOf } = logic();
@@ -1749,7 +1777,8 @@
          * @param {object} selection - The FilterSelection
          */
         setSelection(name, selection) {
-            if (worthKeeping(selection)) moreFilters.set(name, selection);
+            const taken = takenBy(name, selection);
+            if (worthKeeping(taken)) moreFilters.set(name, taken);
             else moreFilters.delete(name);
         },
         /**

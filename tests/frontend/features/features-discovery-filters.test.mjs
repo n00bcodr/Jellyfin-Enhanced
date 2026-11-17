@@ -883,6 +883,50 @@ test('all / any chosen before anything is ticked is kept; the keys and a remote 
   assert.equal(body.querySelector('.jellyseerr-menu-match').hidden, true);
 });
 
+test("a list its page matches by all of them (a tag's keywords) takes no 'any' from a link or a saved set", { skip: !hasMenu && 'the menu module is not there yet' }, t => {
+  const h = setup(t, { genres: COMEDY });
+  const header = h.document.createElement('div');
+  header.className = 'jellyseerr-discovery-header';
+  h.document.body.appendChild(header);
+  const bear = { id: '1', name: 'bear' };
+  const dragon = { id: '2', name: 'dragon' };
+  const comedy = { id: '36/35', name: 'Comedy' };
+  // What the page's address gave it before its control was made.
+  h.F.setSelection('tag', { keywords: [bear, dragon], match: { keywords: 'any' } });
+  const button = h.F.createFiltersControl(header, 'tag', 'feed', () => {}, undefined, undefined, ['keywords']);
+  header.appendChild(button);
+  same(h.F.selectionOf('tag'), { keywords: [bear, dragon] });
+  // A saved set applied later: its other lists keep their match.
+  h.F.setSelection('tag', { keywords: [bear, dragon], genres: [comedy, { id: '16/16', name: 'Animation' }], match: { keywords: 'any', genres: 'any' } });
+  same(h.F.selectionOf('tag').match, { genres: 'any' });
+  // (A section without such a list keeps what it is given.)
+  h.F.setSelection('genre', { keywords: [bear, dragon], match: { keywords: 'any' } });
+  same(h.F.selectionOf('genre').match, { keywords: 'any' });
+});
+
+test("a save the server refuses as full says to delete one first (ApiClient.ajax refuses with the fetch Response)", { skip: !hasMenu && 'the menu module is not there yet' }, async t => {
+  const h = setup(t, { lists: FILTER_LISTS, genres: COMEDY });
+  h.load('jellyseerr/discovery/discovery-address.js');
+  h.window.ApiClient.ajax = async ({ type }) => {
+    if (type === 'GET') return { max: 30, profiles: [] };
+    throw { ok: false, status: 400, json: async () => ({ error: 'full' }) };
+  };
+  const host = { read: () => 'jeScore=7..', apply: () => {} };
+  const header = h.document.createElement('div');
+  h.document.body.appendChild(header);
+  const button = h.F.createFiltersControl(header, 'studio', 'feed', () => {}, undefined, undefined, [], host);
+  h.document.body.appendChild(button);
+  await new Promise(resolve => setTimeout(resolve, 10));
+  button.click();
+  const body = bodyOf(h, 'profiles');
+  await until(() => body.querySelector('.jellyseerr-menu-profile-form input:not([disabled])'), 'the form');
+  const field = body.querySelector('.jellyseerr-menu-profile-form input');
+  field.value = 'One more';
+  field.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  body.querySelector('.jellyseerr-menu-profile-save').click();
+  await until(() => /Delete a saved one first/.test(body.querySelector('.jellyseerr-menu-note')?.textContent ?? ''), 'said why');
+});
+
 test('saved filters: the user\'s profiles first in the menu, saved under a name, applied by the page, deleted', { skip: !hasMenu && 'the menu module is not there yet' }, async t => {
   const h = setup(t, { lists: FILTER_LISTS, genres: COMEDY });
   // (The address reader, for what each profile sets.)

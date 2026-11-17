@@ -547,7 +547,8 @@
       ...(address ? { profiles: {
         read: () => address.filterPairs(address.current(FILTER_MODULE, SORT_MODULE), true).join('&'),
         apply(text) {
-          const wanted = address.filtersOf(text, 'feed');
+          // (Only what this page offers: Trending's titles are kept by what they say of themselves.)
+          const wanted = address.filtersOf(text, scope);
           filter.setFilterMode(FILTER_MODULE, wanted.mode);
           if (wanted.sort) filter.setSortMode(SORT_MODULE, wanted.sort); else filter.resetSortMode(SORT_MODULE);
           filter.setFilters?.(FILTER_MODULE, wanted.selection);

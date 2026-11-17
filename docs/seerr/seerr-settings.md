@@ -301,8 +301,8 @@ Choose which filters the **Filters** button of a "More" section offers. A filter
 | **Score** | On | A range of TMDB user scores, from 0 to 10. |
 | **Votes** | On | A range for the number of TMDB user votes. |
 | **Runtime** | On | A runtime range, in minutes. List pages only. |
-| **Genres** | On | One or more genres. |
-| **Original language** | On | One or more original languages. |
+| **Genres** | On | Genres a title must have, and genres it must not have. |
+| **Original language** | On | Original languages a title must be in, and ones it must not be in. |
 | **Content rating** | On | The ratings used in your **Default Region** (**Elsewhere & Reviews** tab). US ratings where TMDB has none for it. List pages only. |
 | **Streaming services** | On | The services available in your **Default Region** (**Elsewhere & Reviews** tab). List pages only. |
 | **Keywords** | On | Keywords a title must have, and keywords it must not have. List pages only. |
