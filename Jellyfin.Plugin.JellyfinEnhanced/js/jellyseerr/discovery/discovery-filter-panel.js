@@ -114,7 +114,8 @@
                     or: either && index > 0,
                     // A keyword and a language need a word to be read on their own ("With robot", "Originally in Japanese"); a genre, a rating, a service and a role say what they are.
                     words: id === 'without' ? say('discovery_filter_set_without', 'Without {name}', { name: item.name })
-                        : id === 'keywords' ? say('discovery_filter_set_with', 'With {name}', { name: item.name })
+                        // ("With bear or dragon": after "or" the keyword's own name is enough.)
+                        : id === 'keywords' ? (either && index > 0 ? item.name : say('discovery_filter_set_with', 'With {name}', { name: item.name }))
                             : id === 'language' ? say('discovery_filter_set_language', 'Originally in {name}', { name: item.name }) : item.name,
                     without(now) {
                         const left = (now[id] ?? []).filter(entry => entry.id !== item.id);
@@ -266,13 +267,27 @@
          * @param {object[]} picked
          * @returns {string}
          */
-        const sayList = (picked, id) => picked.length > 2
-            ? say('discovery_filter_count', '{count} chosen', { count: picked.length })
-            : picked.length === 2 && matchable(id) && logic().matchOf(options.selection(), id) === 'any'
-                ? say('discovery_filter_either', '{first} or {second}', { first: picked[0].name, second: picked[1].name })
-                : picked.map(item => item.name).join(', ');
+        const sayList = (picked, id) => {
+            // A list where all or any can be chosen says which: "Action and Comedy", "Any of 3".
+            if (picked.length >= 2 && logic().MATCH_DEFAULTS?.[id] !== undefined) {
+                const any = logic().matchOf(options.selection(), id) === 'any';
+                if (picked.length > 2) return any ? say('discovery_filter_any_of', 'Any of {count}', { count: picked.length })
+                    : say('discovery_filter_all_of', 'All of {count}', { count: picked.length });
+                const names = { first: picked[0].name, second: picked[1].name };
+                return any ? say('discovery_filter_either', '{first} or {second}', names) : say('discovery_filter_both', '{first} and {second}', names);
+            }
+            return picked.length > 2 ? say('discovery_filter_count', '{count} chosen', { count: picked.length }) : picked.map(item => item.name).join(', ');
+        };
         /** What is ticked in a list now. */
         const pickedOf = id => options.selection()[id] ?? [];
+        /**
+         * What a long list's search field says it searches.
+         * @param {string} id - The list filter
+         * @returns {string}
+         */
+        const searchWord = id => id === 'genres' ? say('discovery_filter_search_genres', 'Search genres')
+            : id === 'services' ? say('discovery_filter_search_services', 'Search services')
+                : id === 'language' ? say('discovery_filter_search_languages', 'Search languages') : say('discovery_filter_search', 'Search');
         /** Whether the viewer chooses how several ticks in a list count (not where the page names that list). */
         const matchable = id => logic().MATCH_DEFAULTS?.[id] !== undefined && !(options.fixedAll ?? []).includes(id);
         /**
@@ -299,7 +314,7 @@
             track.setAttribute('role', 'radiogroup');
             track.setAttribute('aria-labelledby', lead.id);
             line.append(lead, track);
-            const buttons = [['all', say('discovery_filter_match_all', 'all of these')], ['any', say('discovery_filter_match_any', 'any of these')]].map(([value, words]) => {
+            const buttons = [['all', say('discovery_filter_match_all', 'all ticked')], ['any', say('discovery_filter_match_any', 'any ticked')]].map(([value, words]) => {
                 const button = document.createElement('button');
                 button.type = 'button';
                 button.className = 'jellyseerr-menu-match-btn';
@@ -326,16 +341,18 @@
                 button.tabIndex = on ? 0 : -1;
             });
             paint(logic().matchOf(options.selection(), id));
-            // Left and right move between the two and choose, as in any radio group (up and down are the menu's rows).
+            // Left and right move between the two and choose, as in any radio group (up and down are the menu's rows);
+            // on a TV they only move, and OK chooses, so passing over the choice never reloads the list.
             track.addEventListener('keydown', event => {
                 if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
                 const at = buttons.indexOf(/** @type {HTMLButtonElement} */ (document.activeElement));
-                if (at < 0) return;
+                const forward = (event.key === 'ArrowRight') !== (getComputedStyle(track).direction === 'rtl');
+                const next = buttons[at + (forward ? 1 : -1)];
+                if (at < 0 || !next) return;
                 event.preventDefault();
                 event.stopPropagation();
-                const next = buttons[(at + 1) % buttons.length];
                 next.focus();
-                next.click();
+                if (!document.documentElement.classList.contains('layout-tv')) next.click();
             });
             track.append(...buttons);
             return line;
@@ -439,10 +456,12 @@
                             }
                             for (const item of section.items) if (!lifted.has(item.id)) add(item);
                         }
+                        const rule = ruleOf(id, handle);
                         if (long) {
-                            // The list is in the menu's one scroll, under its group's row and this field, which stay in sight.
+                            // The list is in the menu's one scroll, under its group's row and this field, which stay in sight
+                            // (with how several ticks count, so it can be read whatever part of the list is in view).
                             const whole = Array.from(list.children);
-                            const search = field(nameOf(id), say('discovery_filter_search', 'Search'), 'search');
+                            const search = field(nameOf(id), searchWord(id), 'search');
                             search.classList.add('jellyseerr-menu-search');
                             const bar = document.createElement('div');
                             bar.className = 'jellyseerr-menu-searchbar';
@@ -468,9 +487,10 @@
                                 none.hidden = found.length > 0;
                                 handle.placed();
                             });
+                            bar.appendChild(rule);
                             host.appendChild(bar);
-                        }
-                        host.append(ruleOf(id, handle), list, none);
+                        } else host.appendChild(rule);
+                        host.append(list, none);
                         handle.placed();
                     }).catch(() => {
                         sayIn(waiting, say('discovery_filter_unavailable', 'Could not load these.'));
@@ -499,7 +519,7 @@
                     /** Lists a chosen keyword above the field, ticked; taken away when it is pressed again. */
                     const keep = item => chosen.appendChild(tickRow(id, item, handle, (isChosen, row) => {
                         if (!isChosen) row.remove();
-                        rule.hidden = chosen.childElementCount + found.childElementCount === 0;
+                        rule.hidden = !matchable(id) && chosen.childElementCount + found.childElementCount === 0;
                         handle.placed();
                     }));
                     const search = field(nameOf(id), say('discovery_filter_search_keywords', 'Search keywords'), 'search');
@@ -509,7 +529,8 @@
                     bar.appendChild(search);
                     for (const item of pickedOf(id)) keep(item);
                     // (How several count is said once there is one to tick.)
-                    rule.hidden = chosen.childElementCount === 0;
+                    // (A choice is there from the start: it can be made before any is ticked.)
+                    rule.hidden = !matchable(id) && chosen.childElementCount === 0;
                     const status = note('');
                     status.hidden = true;
                     status.setAttribute('aria-live', 'polite');
@@ -542,12 +563,12 @@
                                         sayStatus('');
                                         search.focus();
                                     }
-                                    rule.hidden = chosen.childElementCount + found.childElementCount === 0;
+                                    rule.hidden = !matchable(id) && chosen.childElementCount + found.childElementCount === 0;
                                     handle.placed();
                                 }));
                                 showFound(row, item.name, item.name.toLocaleLowerCase().indexOf(wanted.toLocaleLowerCase()), wanted.length);
                             }
-                            rule.hidden = chosen.childElementCount + found.childElementCount === 0;
+                            rule.hidden = !matchable(id) && chosen.childElementCount + found.childElementCount === 0;
                             sayStatus(fresh.length === 0 ? say('discovery_filter_no_match', 'No match.') : '');
                             handle.placed();
                         }).catch(() => {
@@ -556,7 +577,8 @@
                     };
                     search.addEventListener('input', () => { window.clearTimeout(timer); timer = window.setTimeout(look, SEARCH_MS); });
                     search.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); window.clearTimeout(timer); look(); } });
-                    host.append(chosen, bar, rule, found, status);
+                    // How several count sits with the keywords chosen, above the field and what it finds.
+                    host.append(chosen, rule, bar, found, status);
                 }
             };
         }
@@ -778,11 +800,13 @@
                 removes.push(remove);
                 piece.append(words, remove);
                 if (!token.or) return [piece];
-                // (Several of a list matched by any of them: "With bear" or "With dragon".)
+                // (Several of a list matched by any of them: "With bear" or "dragon". The "or" goes with what follows it.)
                 const either = document.createElement('span');
                 either.className = 'jellyseerr-filters-or';
                 either.textContent = label('discovery_filter_or', 'or');
-                return [either, piece];
+                // (The space is for a screen reader's words; the margin spaces it to the eye.)
+                piece.prepend(either, ' ');
+                return [piece];
             });
             if (tokens.length > 1) {
                 const all = document.createElement('button');
@@ -992,12 +1016,24 @@
             .jellyseerr-menu-note, .jellyseerr-menu-label { color: var(--jf-palette-text-secondary, rgba(255,255,255,.7)); }
             .jellyseerr-menu-note { padding: 2px 16px 8px 32px; font-size: .86em; line-height: 1.4; }
             /* All of what is ticked, or any of it: two small choices on the rule's line, the one in use filled. */
+            /* The theme's own grounds; the choice in use in the accent, as everything set in this menu is. */
             .jellyseerr-menu-match { display: flex; flex-direction: column; align-items: flex-start; gap: .35em; }
-            .jellyseerr-menu-match-track { display: inline-flex; gap: 2px; padding: 2px; border-radius: 999px; background: rgba(255,255,255,.08); }
-            .jellyseerr-menu-match-btn { font: inherit; color: inherit; white-space: nowrap; background: none; border: 0; border-radius: 999px; padding: .25em .9em; cursor: pointer; }
-            .jellyseerr-menu-match-btn[aria-checked="true"] { background: #e8e8e8; color: #101010; }
-            .jellyseerr-menu-match-btn:focus-visible { outline: 2px solid var(--jf-palette-primary-main, #00a4dc); outline-offset: 1px; }
-            .jellyseerr-filters-or { color: var(--jf-palette-text-secondary, rgba(255,255,255,.7)); margin-inline: -.6em; }
+            .jellyseerr-menu-searchbar .jellyseerr-menu-match { padding: 6px 0 0; }
+            .jellyseerr-menu-match-track { display: inline-flex; gap: 2px; padding: 2px; border-radius: 999px; background: var(--jf-palette-action-hover, rgba(255,255,255,.08)); }
+            .jellyseerr-menu-match-btn { font: inherit; color: var(--jf-palette-text-secondary, rgba(255,255,255,.7)); white-space: nowrap; background: none; border: 0; border-radius: 999px; padding: .3em .95em; cursor: pointer; }
+            .jellyseerr-menu-match-btn[aria-checked="true"] { background: var(--jf-palette-action-selected, rgba(255,255,255,.16)); color: var(--jellyseerr-accent); box-shadow: inset 0 0 0 1px var(--jellyseerr-accent); }
+            .jellyseerr-menu-match-btn:focus-visible { outline: 2px solid var(--jellyseerr-accent); outline-offset: 1px; }
+            .layout-tv .jellyseerr-menu-match-btn:focus { outline: none; background: var(--jf-palette-action-focus, rgba(255,255,255,.24)); color: var(--jf-palette-text-primary, #fff); }
+            /* On a touch screen, as wide as the search field above it and a finger's height. */
+            @media (pointer: coarse), (max-width: 600px) {
+                html:not(.layout-tv) .jellyseerr-menu-match { align-items: stretch; }
+                html:not(.layout-tv) .jellyseerr-menu-match-track { display: flex; }
+                html:not(.layout-tv) .jellyseerr-menu-match-btn { flex: 1 1 0; min-height: 44px; }
+            }
+            .jellyseerr-filters-token > .jellyseerr-filters-or { flex: none; overflow: visible; margin-inline-end: .35em; color: var(--jf-palette-text-secondary, rgba(255,255,255,.7)); }
+            /* An open group's row reads as the heading of what is under it; a long value is cut with an ellipsis. */
+            .jellyseerr-menu-group[aria-expanded="true"] .actionSheetItemText { font-weight: 500; }
+            .jellyseerr-menu-group-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
             /* What a search has narrowed away is gone (a row's own display would otherwise keep it). */
             .jellyseerr-sort-menu .actionSheetMenuItem[hidden], .jellyseerr-menu-note[hidden], .jellyseerr-menu-label[hidden] { display: none !important; }
             .jellyseerr-menu-label { padding: 8px 16px 2px 32px; font-size: .86em; }
@@ -1020,6 +1056,8 @@
             /* On a touch screen the menu can fill the screen: its foot then ends with the way out, said (nothing waits for it; what is set has taken effect). */
             .jellyseerr-sort-menu .jellyseerr-menu-done { display: none !important; flex: none; }
             .jellyseerr-sort-menu .jellyseerr-menu-done .actionsheetMenuItemIcon { display: none; }
+            /* On a touch screen "Done" is the way back to the list: the foot's main action, "Clear filters" the quiet one. */
+            .jellyseerr-sort-menu .jellyseerr-menu-done .actionSheetItemText { font-weight: 500; color: var(--jellyseerr-accent); }
             @media (pointer: coarse) { html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-done { display: flex !important; } }
         `;
         document.head.appendChild(style);

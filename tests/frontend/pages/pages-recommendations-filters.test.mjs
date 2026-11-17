@@ -293,8 +293,7 @@ test("a category address with keywords matched by any asks Seerr for either, and
   ] });
   const P = h.load();
   await until(() => P.state.categoryPageVisible && h.categoryCards().length === 2, 'opened from its address');
-  assert.deepEqual(h.said(h.category()), ['Animation', 'With bear', 'With dragon']);
-  assert.equal(h.category().querySelector('.jellyseerr-filters-set').textContent.includes('or'), true);
+  assert.deepEqual(h.said(h.category()), ['Animation', 'With bear', 'or dragon']);
   assert.equal(h.hash(), link, 'already said as the page writes it');
   // Without jeAny the same keywords are all of them.
   const both = h.JE.discoveryAddress.filtersOfHash(`${TAB}&jeKeywords=10468:bear,12554:dragon`, 'en');

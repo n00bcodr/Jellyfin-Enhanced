@@ -628,12 +628,15 @@ test('the Filters menu offers all or any for keywords, genres and services; "or"
   tickRow(h, 'keywords', 'sheep farm');
   assert.equal(String(s.shown()), '2');
   const choice = bodyOf(h, 'keywords').querySelector('.jellyseerr-menu-match');
-  same([...choice.querySelectorAll('button')].map(button => [button.textContent, button.getAttribute('aria-checked')]), [['all of these', 'true'], ['any of these', 'false']]);
+  same([...choice.querySelectorAll('button')].map(button => [button.textContent, button.getAttribute('aria-checked')]), [['all ticked', 'true'], ['any ticked', 'false']]);
   choice.querySelector('[data-match="any"]').click();
   assert.equal(String(s.shown()), '3,13');
   assert.equal(groupOf(h, 'keywords').textContent, 'Keywordssheep or sheep farm');
+  // Matched by all, two say "and".
   const setLine = s.root.querySelector('.jellyseerr-filters-set');
-  same([...setLine.children].map(piece => piece.textContent), ['With sheep', 'or', 'With sheep farm', 'Clear filters']);
+  // ("or" goes with what follows it, which needs no "With" of its own.)
+  same([...setLine.children].map(piece => piece.textContent), ['With sheep', 'or sheep farm', 'Clear filters']);
+  assert.equal(groupOf(h, 'keywords').textContent.endsWith('sheep or sheep farm'), true);
   same(plain(h.F.selectionOf('network')).match, { keywords: 'any' });
   // Back to all: the default is not kept.
   choice.querySelector('[data-match="all"]').click();
@@ -670,16 +673,19 @@ test('all / any chosen before anything is ticked is kept; the keys and a remote 
     tickRow(h, 'keywords', name);
   }
   assert.equal(String(s.shown()), '3,13');
-  // The keys: down from the search field reaches the choice in use; right switches it; up leaves it.
+  // The keys: up from the search field reaches the choice in use (it sits with the keywords chosen); left switches
+  // it (no wrapping round), left again is the way out to the group's row; down leaves it.
   const press = key => h.document.activeElement.dispatchEvent(new h.window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
   search.focus();
   let steps = 0;
-  while (!h.document.activeElement.classList.contains('jellyseerr-menu-match-btn') && steps++ < 6) press('ArrowDown');
+  while (!h.document.activeElement.classList.contains('jellyseerr-menu-match-btn') && steps++ < 6) press('ArrowUp');
   assert.equal(h.document.activeElement.dataset.match, 'any');
   press('ArrowRight');
+  assert.equal(h.document.activeElement.dataset.match, 'any', 'no half that way: it stays');
+  press('ArrowLeft');
   assert.equal(h.document.activeElement.dataset.match, 'all');
   assert.equal(h.document.activeElement.getAttribute('aria-checked'), 'true');
   assert.equal(plain(h.F.selectionOf('network')).match, undefined);
-  press('ArrowUp');
-  assert.equal(h.document.activeElement.classList.contains('jellyseerr-menu-match-btn'), false);
+  press('ArrowLeft');
+  assert.equal(h.document.activeElement, groupOf(h, 'keywords'), 'out to the group row');
 });
