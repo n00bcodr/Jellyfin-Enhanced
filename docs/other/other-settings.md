@@ -257,7 +257,7 @@ To hide the entire row, turn off **Show Ratings Row on Item Details**. Clearing 
 
 ### Sources and fallbacks
 
-All four sync selectors offer **TMDB**, **RT Critic**, **RT Audience**, **IMDb**, **Trakt**, **Metascore**, **Metacritic User**, **Letterboxd**, **MAL**, **AniList**, and **Master**. The two fallback selectors also offer **None**. **Roger Ebert** is available only for badges.
+All four sync selectors offer **TMDB**, **RT Critic**, **RT Audience**, **IMDb**, **Trakt**, **Metascore**, **Metacritic User**, **Letterboxd**, **MAL**, and **Master**. The two fallback selectors also offer **None**. **Roger Ebert** is available only for badges.
 
 ??? info "How it works"
 
@@ -272,7 +272,6 @@ All four sync selectors offer **TMDB**, **RT Critic**, **RT Audience**, **IMDb**
     | **Metacritic User** | `metacriticuser` |
     | **Letterboxd** | `letterboxd` |
     | **MAL** | `myanimelist` |
-    | **AniList** | `anilist` |
     | **Master** | `master` |
     | **Roger Ebert** | `rogerebert` |
 

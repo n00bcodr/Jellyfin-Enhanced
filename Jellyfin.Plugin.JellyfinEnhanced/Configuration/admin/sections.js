@@ -85,7 +85,7 @@ JEAdmin.define({
     const tog = (id, label, desc, extra) => Object.assign({ id, type: 'toggle', manual: true, label, desc }, extra);
     const sel = (id, label, options, desc, extra) => Object.assign({ id, type: 'select', manual: true, label, options, desc }, extra);
     const RS = [['tmdb', 'TMDB'], ['tomatoes', 'RT Critic'], ['popcorn', 'RT Audience'], ['imdb', 'IMDb'], ['trakt', 'Trakt'],
-        ['metacritic', 'Metascore'], ['metacriticuser', 'Metacritic User'], ['letterboxd', 'Letterboxd'], ['myanimelist', 'MAL'], ['anilist', 'AniList'], ['master', 'Master']];
+        ['metacritic', 'Metascore'], ['metacriticuser', 'Metacritic User'], ['letterboxd', 'Letterboxd'], ['myanimelist', 'MAL'], ['master', 'Master']];
     const RSN = [['', 'None']].concat(RS);
     const arrow = (d) => '<i class="material-icons je-cat-arrow-icon" aria-hidden="true">arrow_' + d + 'ward</i>';
 
@@ -1303,7 +1303,34 @@ JEAdmin.define({
             { id: 'LeavingSoonMaintainerrActions', prop: 'LeavingSoonMaintainerrActions', type: 'toggle', default: true, label: 'Mark, keep and postpone from the item menu',
               desc: 'Administrators get <strong>Mark for removal</strong>, <strong>Keep</strong> and <strong>Postpone removal</strong> in a movie or series\' &#8942; menu (with Reclaimerr, each takes an exact day). Maintainerr: items are added to or removed from its existing manual collection for their library. Marking applies at once, with an Undo.' },
             { id: 'LeavingSoonHomeRow', prop: 'LeavingSoonHomeRow', type: 'toggle', default: true, label: 'Leaving soon home row',
-              desc: 'A <strong>Leaving soon</strong> row on the <a class="sectionTitle" href="https://github.com/IAmParadox27/jellyfin-plugin-home-sections/" target="_blank" rel="noopener">Home Screen Sections</a> home page, soonest removal first. Needs the Home Screen Sections and File Transformation plugins. It is added enabled for everyone; users with their own section list can turn it on or off there.' },
+              desc: 'A <strong>Leaving soon</strong> row on the <a class="sectionTitle" href="https://github.com/IAmParadox27/jellyfin-plugin-home-sections/" target="_blank" rel="noopener">Home Screen Sections</a> home page, soonest removal first. Needs the Home Screen Sections and File Transformation plugins. It is added enabled for everyone; users with their own section list can turn it on or off there.<br>Using <a class="sectionTitle" href="https://github.com/ranaldsgift/KefinTweaks" target="_blank" rel="noopener">KefinTweaks</a> instead? Its home sections can read the same list from <code>/JellyfinEnhanced/leaving-soon/items</code>, without Home Screen Sections. See the <a class="sectionTitle" href="https://n00bcodr.github.io/Jellyfin-Enhanced/enhanced/enhanced-features/#leaving-soon" target="_blank" rel="noopener">documentation</a> for the steps.' },
+            { type: 'custom', html: '<div class="inputContainer jea-row"><button type="button" id="leavingSoonCopyKefinBtn" class="jea-btn"><i class="material-icons" aria-hidden="true" style="font-size:1.1em;vertical-align:middle;margin-right:4px">content_copy</i><span>Copy KefinTweaks section</span></button>'
+                + '<div class="jea-hint">Copies a Leaving soon section for KefinTweaks. In KefinTweaks, open Enhanced Home Screen, New Section, Advanced, Import and paste it.</div></div>',
+              init: () => {
+                  const btn = document.getElementById('leavingSoonCopyKefinBtn');
+                  if (!btn || btn.dataset.wired) return;
+                  btn.dataset.wired = '1';
+                  const section = JSON.stringify({
+                      id: 'leaving-soon', type: 'home', name: 'Leaving Soon', enabled: true, order: 72, cardFormat: 'Poster', userConfigurable: true,
+                      queries: [{ path: '/JellyfinEnhanced/leaving-soon/items', queryOptions: { Limit: 20 } }]
+                  }, null, 2);
+                  const label = btn.querySelector('span');
+                  const done = (ok) => { label.textContent = ok ? 'Copied' : 'Copy failed'; setTimeout(() => { label.textContent = 'Copy KefinTweaks section'; }, 2000); };
+                  btn.addEventListener('click', () => {
+                      const legacy = () => {
+                          const t = document.createElement('textarea');
+                          t.value = section; t.style.position = 'fixed'; t.style.opacity = '0';
+                          document.body.appendChild(t); t.select();
+                          let ok = false;
+                          try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+                          t.remove(); done(ok);
+                      };
+                      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(section).then(() => done(true), legacy);
+                      else legacy();
+                  });
+              } },
+            { id: 'LeavingSoonHideWatched', prop: 'LeavingSoonHideWatched', type: 'toggle', default: false, label: 'Hide watched titles in the home row',
+              desc: 'Leaves out of the <strong>Leaving soon</strong> row what the user has already watched (a series counts once every episode is watched). Use this instead of the Hide Watched checkbox in Home Screen Sections, which that plugin keeps disabled for sections added by other plugins.' },
             { id: 'LeavingSoonRefreshHours', prop: 'LeavingSoonRefreshHours', type: 'number', min: 1, max: 168, default: 6, label: 'Refresh every (hours)',
               desc: 'How often the server reads the removal tool again (1&ndash;168 hours). A failed request is retried sooner. Each mark, keep or postpone reads it again at once.' }
         ]

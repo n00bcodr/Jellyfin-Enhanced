@@ -7,9 +7,12 @@ using System.Threading.Tasks;
 using Jellyfin.Data;
 using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
 using Jellyfin.Plugin.JellyfinEnhanced.Services;
+using MediaBrowser.Controller.Dto;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
+using MediaBrowser.Model.Dto;
+using MediaBrowser.Model.Querying;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -47,9 +50,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private readonly ReclaimerrActions _reclaimerr;
         private readonly IUserManager _userManager;
         private readonly ILibraryManager _libraryManager;
+        private readonly IDtoService _dtoService;
 
-        public LeavingSoonController(LeavingSoonService leaving, ReclaimerrActions reclaimerr, IUserManager userManager, ILibraryManager libraryManager)
+        public LeavingSoonController(LeavingSoonService leaving, ReclaimerrActions reclaimerr, IUserManager userManager, ILibraryManager libraryManager, IDtoService dtoService)
         {
+            _dtoService = dtoService;
             _leaving = leaving;
             _reclaimerr = reclaimerr;
             _userManager = userManager;
@@ -69,6 +74,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         }
 
         private static bool PageOn(Configuration.PluginConfiguration? config) => config != null && config.LeavingSoonPageEnabled && LeavingSoonService.ApiConfigured(config);
+
+        /// <summary>
+        /// The leaving titles as a standard Jellyfin item list (<c>{Items, TotalRecordCount}</c>, soonest removal first,
+        /// movies and series the user can see). Meant for other home screen plugins such as KefinTweaks, whose custom
+        /// sections read any path that answers like <c>/Items</c>. Does not need the Home row or Page switches.
+        /// </summary>
+        [HttpGet("items")]
+        [Authorize]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+        [Produces("application/json")]
+        public ActionResult<QueryResult<BaseItemDto>> Items([FromQuery] int? limit)
+        {
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null || !LeavingSoonService.ApiConfigured(config)) return NotFound();
+            var userId = UserHelper.GetCurrentUserId(User);
+            var user = userId.HasValue && userId.Value != Guid.Empty ? _userManager.GetUserById(userId.Value) : null;
+            if (user == null) return Forbid();
+
+            var items = LeavingSoonSectionResults.Order(_leaving.MaintainerrItems(config), id => _libraryManager.GetItemById(id), item => item.IsVisibleStandalone(user));
+            if (limit is > 0) items = items.Take(limit.Value).ToList();
+            var dtos = _dtoService.GetBaseItemDtos(items, new DtoOptions(), user);
+            return new QueryResult<BaseItemDto>(dtos);
+        }
 
         /// <summary>
         /// What is leaving, soonest first (undated last): <c>{provider, admin, items[], requests[], mine[], canRequest}</c>.

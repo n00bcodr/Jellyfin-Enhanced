@@ -1007,6 +1007,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// installed), listing Maintainerr's members soonest removal first. Needs the Maintainerr URL.
         /// </summary>
         public bool LeavingSoonHomeRow { get; set; } = true;
+        /// <summary>
+        /// Leave titles a user has already watched out of the Leaving soon home row. Its own switch because Home
+        /// Screen Sections keeps its "Hide Watched" checkbox disabled for every section another plugin registers.
+        /// </summary>
+        public bool LeavingSoonHideWatched { get; set; }
         // The Leaving soon page: everything leaving, with days left, for every user (administrators also manage it).
         // Placement like the other pages: a native Home tab, Plugin Pages or Custom Tabs.
         /// <summary>The Leaving soon page is available. Needs a removal tool (Maintainerr or Reclaimerr) that is on.</summary>

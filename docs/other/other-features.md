@@ -414,7 +414,7 @@ To hide the row, turn off **Show Ratings Row on Item Details**. An empty source 
 
 ??? info "How it works"
 
-    JE prefers placement before external links, then uses metadata or other detail-page anchors. Placement varies with layout and theme. The default order prioritizes **TMDB**, **RT Critic**, **RT Audience**, **IMDb**, **Trakt**, and **Metascore**, followed by remaining returned sources. You can also select **Metacritic User**, **Letterboxd**, **Roger Ebert**, **MAL**, **AniList**, and **Master**; see [the source reference](other-settings.md#mdblist-ratings).
+    JE prefers placement before external links, then uses metadata or other detail-page anchors. Placement varies with layout and theme. The default order prioritizes **TMDB**, **RT Critic**, **RT Audience**, **IMDb**, **Trakt**, and **Metascore**, followed by remaining returned sources. You can also select **Metacritic User**, **Letterboxd**, **Roger Ebert**, **MAL**, and **Master**; see [the source reference](other-settings.md#mdblist-ratings).
 
     Badges use source logos or text, show vote-count tooltips when available, and link to source pages where enough information exists. Some links are derived; some badges, such as **Master** without a source URL, stay unlinked. There are no numerical red/yellow/green score bands.
 
