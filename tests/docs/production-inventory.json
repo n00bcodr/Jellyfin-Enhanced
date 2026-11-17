@@ -155,7 +155,19 @@
       "category": "Controllers"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/LeavingSoonController.cs",
+      "category": "Controllers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/MaintainerrController.cs",
+      "category": "Controllers"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ReclaimerrController.cs",
+      "category": "Controllers"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/RemovalControllerBase.cs",
       "category": "Controllers"
     },
     {
@@ -384,6 +396,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/PluginPages/HiddenContentPage.html",
+      "category": "PluginPages"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/PluginPages/LeavingSoonPage.html",
       "category": "PluginPages"
     },
     {
@@ -744,6 +760,14 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/RadarrService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ReclaimerrActions.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ReclaimerrSession.cs",
       "category": "Services"
     },
     {
@@ -1488,6 +1512,14 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/extras/colored-ratings.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/extras/leavingsoon-custom-tab.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/extras/leavingsoon-page.js",
       "category": "js"
     },
     {
@@ -3872,6 +3904,17 @@
     },
     {
       "verb": "GET",
+      "path": "/JellyfinEnhanced/leaving-soon/list",
+      "method": "List",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/LeavingSoonController.cs",
+      "following_attributes": [
+        "Authorize",
+        "ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "GET",
       "path": "/JellyfinEnhanced/maintainerr/item/{itemId}",
       "method": "GetState",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/MaintainerrController.cs",
@@ -3905,6 +3948,86 @@
       "path": "/JellyfinEnhanced/maintainerr/postpone",
       "method": "Postpone",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/MaintainerrController.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/reclaimerr/item/{itemId}",
+      "method": "GetState",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ReclaimerrController.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/reclaimerr/mark",
+      "method": "Mark",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ReclaimerrController.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/reclaimerr/unmark",
+      "method": "Unmark",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ReclaimerrController.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/reclaimerr/postpone",
+      "method": "Postpone",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ReclaimerrController.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/reclaimerr/request",
+      "method": "RequestRemoval",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ReclaimerrController.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/reclaimerr/requests/{requestId:int}/approve",
+      "method": "Approve",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ReclaimerrController.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/reclaimerr/requests/{requestId:int}/deny",
+      "method": "Deny",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ReclaimerrController.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/reclaimerr/service-account",
+      "method": "CreateServiceAccount",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ReclaimerrController.cs",
       "following_attributes": [
         "Authorize",
         "Produces(\"application/json\")"
@@ -5530,6 +5653,78 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "LeavingSoonMaintainerrEnabled",
+      "type": "bool",
+      "initializer": "true",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ReclaimerrEnabled",
+      "type": "bool",
+      "initializer": "false",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ReclaimerrUrl",
+      "type": "string",
+      "initializer": "string.Empty",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ReclaimerrToken",
+      "type": "string",
+      "initializer": "string.Empty",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ReclaimerrUsername",
+      "type": "string",
+      "initializer": "string.Empty",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ReclaimerrActAsUser",
+      "type": "bool",
+      "initializer": "true",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ReclaimerrUserHeader",
+      "type": "string",
+      "initializer": "\"Remote-User\"",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ReclaimerrUserMap",
+      "type": "string",
+      "initializer": "string.Empty",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ReclaimerrPassword",
+      "type": "string",
+      "initializer": "string.Empty",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "LeavingSoonCollections",
       "type": "string",
       "initializer": "string.Empty",
@@ -5557,6 +5752,54 @@
       "name": "LeavingSoonHomeRow",
       "type": "bool",
       "initializer": "true",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "LeavingSoonPageEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "LeavingSoonPageUsePluginPages",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "LeavingSoonPageUseCustomTabs",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "LeavingSoonPageUseNativeTab",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "LeavingSoonPageAutoCreateCustomTab",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "LeavingSoonPageCustomTabJeOwned",
+      "type": "bool",
+      "initializer": null,
       "constructor_assignment": null,
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
     },
@@ -10633,9 +10876,9 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 490,
-    "routes": 208,
-    "configuration_properties": 772,
+    "files": 498,
+    "routes": 217,
+    "configuration_properties": 787,
     "storage_references": 88,
     "scheduled_tasks": 17,
     "locales": 33

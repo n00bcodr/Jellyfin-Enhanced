@@ -85,7 +85,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         /// <summary>Whether the actions are on: the switch and a Maintainerr URL.</summary>
         public static bool Enabled(PluginConfiguration? config)
-            => config != null && config.LeavingSoonMaintainerrActions && LeavingSoonService.IsMaintainerrUrl(config.LeavingSoonMaintainerrUrl);
+            => config != null && config.LeavingSoonMaintainerrActions && config.LeavingSoonMaintainerrEnabled && !LeavingSoonService.UsesReclaimerr(config) && LeavingSoonService.IsMaintainerrUrl(config.LeavingSoonMaintainerrUrl);
 
         /// <summary>Maintainerr's type word for an item, or null for a kind the actions do not handle.</summary>
         public static string? MediaType(BaseItem item) => item switch
@@ -153,7 +153,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         /// <summary>The version (media source) the admin has selected on the item page, or null when none or unknown.</summary>
-        private static MediaSourceInfo? FindVersion(BaseItem item, string? mediaSourceId)
+        internal static MediaSourceInfo? FindVersion(BaseItem item, string? mediaSourceId)
         {
             if (string.IsNullOrWhiteSpace(mediaSourceId) || item is not Movie movie) return null;
             try { return movie.GetMediaSources(false).FirstOrDefault(s => string.Equals(s.Id?.Replace("-", string.Empty), mediaSourceId.Replace("-", string.Empty), StringComparison.OrdinalIgnoreCase)); }
@@ -336,7 +336,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private async Task<MaintainerrItemState> AfterAsync(BaseItem item, PluginConfiguration config, IReadOnlyList<MaintainerrCollection> collections, CancellationToken token)
         {
-            try { await _cache.RefreshLeavingAsync(force: true, token).ConfigureAwait(false); }
+            // The facts are read again now (the answer needs them); stamping the tag cache happens in the background, so the
+            // answer never waits for the cache's rebuild lock (a rebuild after a restart can hold it for minutes).
+            try { await _leaving.RefreshAsync(config, force: true, token).ConfigureAwait(false); _cache.QueueLeavingPublish(); }
             catch (Exception ex) when (ex is not OperationCanceledException) { _logger.Warning($"[Maintainerr] The refresh after an action failed: {ex.Message}"); }
             return State(item, config, collections);
         }

@@ -83,6 +83,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // Administrators' Maintainerr actions (mark, keep, postpone) over the same client, and the
             // "Leaving soon" Home Screen Sections row (registered by reflection once HSS has loaded).
             serviceCollection.AddSingleton<MaintainerrActions>();
+            serviceCollection.AddSingleton<ReclaimerrActions>();
             serviceCollection.AddSingleton<LeavingSoonHomeSection>();
             serviceCollection.AddHostedService(sp => sp.GetRequiredService<LeavingSoonHomeSection>());
             serviceCollection.AddSingleton<AnilistReviewsService>();

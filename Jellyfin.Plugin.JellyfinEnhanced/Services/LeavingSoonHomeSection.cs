@@ -52,7 +52,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         /// <summary>Whether the row is wanted: its switch and a Maintainerr URL.</summary>
         public static bool Wanted(PluginConfiguration? config)
-            => config != null && config.LeavingSoonHomeRow && LeavingSoonService.IsMaintainerrUrl(config.LeavingSoonMaintainerrUrl);
+            => config != null && config.LeavingSoonHomeRow && LeavingSoonService.ApiConfigured(config);
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {

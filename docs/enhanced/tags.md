@@ -935,7 +935,9 @@ The server shares up to 60 movie/series ranks for 30 minutes, with a five-minute
 
 For series cards on screen, and parent series of season/episode cards, the browser batches up to 50 accessible IDs through `GET /JellyfinEnhanced/status-tags/series`. It retains schedules for an hour and retries failures after five minutes. The server shares TMDB responses for six hours, with at most four lookups in flight and 35 upstream requests per ten-second window. If the series response omits `episode_type`, its latest aired season supplies it. For an ended series whose latest episode is a special, the newest aired regular season also supplies a separate last regular episode. Parent aggregates fetched through `/tag-data` are shared by series and episode cards, expire after ten minutes, and are discarded on user or filter changes. No schedule is stored per user or in the tag cache. One shared viewport observer gates schedule requests; offscreen, detached and recycled cards do not dispatch lookups. Targets are released on removal, identity reuse, renderer cleanup and user change. A single timer re-evaluates labels at the next local midnight, and visibility/focus events refresh active cards after a suspended tab returns. User changes, renderer cleanup and `pagehide` cancel midnight, batch and retry timers; initialisation and `pageshow` resume them.
 
-### Leaving soon (Maintainerr)
+### Leaving soon (Maintainerr or Reclaimerr)
+
+Two removal tools can feed **Leaving soon**, the item menu and the home row: **Maintainerr** (below) and **Reclaimerr** (the next section). Exactly one is on at a time: each has a **Use** switch in its card in the **\*arr** tab, and turning one on turns the other off (both can be off). The settings of the one that is off are kept. The shared options (item-menu switch, home row switch, refresh interval and the live state with **Refresh now**) are in their own **Leaving soon** card. Everything below that says Maintainerr applies while Maintainerr is the one that is on.
 
 ![Leaving soon badges (Maintainerr) and direct-play warnings on library cards](../images/tags/status-leaving-direct-play.webp)
 
@@ -987,6 +989,39 @@ The rows are added to Jellyfin's item menu the same way as **Media Tags**, so th
 With **Leaving soon home row** on (and a Maintainerr URL), the plugin registers a **Leaving soon** section with the [Home Screen Sections](https://github.com/IAmParadox27/jellyfin-plugin-home-sections) plugin when that plugin is installed (it also needs File Transformation to draw its rows). The row lists Maintainerr's items the viewer can see, soonest removal first, movies and series only (a leaving season or episode shows as its series), up to 20. It is registered on every start (Home Screen Sections keeps registrations in memory) and, if Home Screen Sections has no entry for it yet, added to its section list enabled for everyone with user override allowed; users who keep their own section list may need to turn it on there. The **Leaving soon** section of the Media Tags tab says whether the row is registered, or which plugin is missing. The cards carry the usual Leaving soon badge for users who have it on.
 
 ![The Leaving soon row on the home page, soonest removal first](../images/tags/maintainerr-home-row.webp)
+
+### Leaving soon (Reclaimerr)
+
+[Reclaimerr](https://github.com/jessielw/Reclaimerr) scans your libraries with rules and routes the final deletion through Jellyfin, Radarr and Sonarr. With **Use Reclaimerr** on, the plugin reads it instead of Maintainerr:
+
+| Setting | Default | What it does |
+|---|---|---|
+| **Use Reclaimerr** | Off | Turns Reclaimerr on and Maintainerr off |
+| **Reclaimerr URL** | Empty | The address this server reaches Reclaimerr at (`http://` or `https://`, no credentials or query). Redirects are not followed |
+| **Reclaimerr API token** | Empty | A token from Reclaimerr's **Settings › Integrations** with the candidates (manage), protections (manage), media (read) and system (read) scopes. Sent as a bearer token; masked in the page like the other keys, and never sent to users or written to the snapshot or logs |
+| **Act as the Jellyfin user** | On | Requests and schedules are made **as the Jellyfin user who clicked**: **Request removal**, **Mark for removal**, and cancelling or moving a scheduled deletion carry their own name in Reclaimerr (a request shows `@Sam`, not the service account). It uses Reclaimerr's trusted-proxy sign-in, so Reclaimerr needs `FORWARD_AUTH_ENABLED=true`, `FORWARD_AUTH_USER_HEADER=Remote-User` and the address the plugin connects from in `FORWARD_AUTH_TRUSTED_PROXIES` (see below). The user needs a Reclaimerr account. People who sign in to Reclaimerr with their Jellyfin login (**media sign-in**) get one created and linked automatically (for example `sam_user`); the plugin finds the account through that link, read with the service account and cached for five minutes, so nothing has to be created or mapped by hand. A user who has never signed in to Reclaimerr has no account yet: the fallback files their action under the service account |
+| **User header** | `Remote-User` | The header the user name is sent in; match Reclaimerr's `FORWARD_AUTH_USER_HEADER` |
+| **Jellyfin user to Reclaimerr user** | Empty | Normally empty. One `Jellyfin name = Reclaimerr name` per line points a user at a specific Reclaimerr account instead of the linked one (for example `sam = samuel`); it wins over the link. Order: this list, then the linked account, then the same name |
+| **Service account username / password (fallback)** | Empty | A dedicated Reclaimerr **admin** account. The plugin signs it in **by name** through the same trusted-proxy sign-in as users, so the password is optional and Reclaimerr's local login can stay switched off; the password is only used for a local login when the trusted sign-in is not available. It is **the fallback**: the plugin uses it when it cannot act as the user, that is when Reclaimerr's trusted-proxy sign-in is off, the connecting address is not trusted, or the user has no Reclaimerr account (the action then shows under the service account). It also reads scheduled deletions and pending requests, and it is what **Mark for removal** and **Request removal** need when **Act as the Jellyfin user** is off, because Reclaimerr's token API cannot do those. **Create service account** makes one: it asks for a Reclaimerr administrator's login once (used for that call, never stored), creates `jellyfin-enhanced` with a random password and saves it. Reading candidates, **Keep** and **Postpone** work with the token alone |
+
+What it reads and does:
+
+- **Leaving soon facts.** The cleanup candidates whose automatic deletion is scheduled, eligible or postponed (disabled and canceled ones are not leaving), and, with the service account, the manual deletions scheduled for a whole title or for one movie file. The date is the postponed-until day when there is one, else the end of the review period or the scheduled day. A season or episode on its own does not mark a series. Titles are matched to Jellyfin items by TMDB id, and a scheduled movie file marks only the library item that holds that file.
+- **Item menu (administrators).** **Mark for removal** opens a chooser with **+7, +14, +30, +90 days** and an exact-day picker (30 days is only the default) and schedules a manual deletion of the whole title. **Keep** protects the candidate (or cancels the scheduled deletion). **Postpone removal** takes a day count, an exact day, or **Reset timer** for a candidate.
+- **Request removal (everyone signed in).** A user who can see a movie or series and is not an administrator gets **Request removal** in the ⋮ menu. It files a Reclaimerr deletion request as that user (or as the service account when acting as the user is not possible), with "Requested by <user> from Jellyfin" as the reason; an administrator approves or denies it in Reclaimerr or on the Leaving Soon page. **Approving executes the deletion immediately** (Reclaimerr acts on approval, not on a date). Asking again while a request is waiting does not file a second one: the user is told it is already waiting.
+
+#### Acting as the user: Reclaimerr side
+
+Set these on the Reclaimerr container and restart it:
+
+```env
+FORWARD_AUTH_ENABLED=true
+FORWARD_AUTH_USER_HEADER=Remote-User
+FORWARD_AUTH_TRUSTED_PROXIES=<the address Jellyfin's requests arrive from>
+```
+
+`FORWARD_AUTH_TRUSTED_PROXIES` takes the peer address Reclaimerr sees, not the client. With Reclaimerr in Docker and Jellyfin on the same host, requests to the published port arrive from the Docker bridge gateway (for example `172.80.32.1`) or, when the plugin uses the host's LAN address, from that address; list the one you use. Reclaimerr rejects `*` and all-address ranges, ignores the header from any other peer (the log says "Ignored Remote-User authentication header from untrusted peer"), and only maps the name onto an **existing** active user: it never creates accounts or roles. Local sign-in keeps working for requests that carry no header. Anything running on the trusted address can claim any Reclaimerr user, so trust only addresses you control and keep the Reclaimerr port off the public internet.
+- **Home row and badges.** The same **Leaving soon** row and badge as with Maintainerr, fed by Reclaimerr's data. Reclaimerr itself also keeps `Leaving Soon` collections in Jellyfin (named under **Settings › General › Leaving Soon Collections** in Reclaimerr); it has no Home Screen Sections row of its own, which is what this row adds.
 
 ### Direct-play warning
 
