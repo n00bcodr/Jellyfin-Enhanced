@@ -204,7 +204,7 @@
             .jellyseerr-menu-choices:not([hidden]) { padding-bottom: 8px; border-bottom: 1px solid var(--jf-palette-divider, rgba(255,255,255,.12)); }
             .jellyseerr-menu-groupbox:last-child > .jellyseerr-menu-choices { border-bottom: 0; }
             /* (On a TV's dark ground the group's closing rule as strong as the foot's.) */
-            .layout-tv .jellyseerr-sort-menu .jellyseerr-menu-choices:not([hidden]) { border-bottom-color: rgba(128,128,128,.45); }
+            .layout-tv .jellyseerr-sort-menu .jellyseerr-menu-choices:not([hidden]) { border-bottom-color: rgba(128,128,128,.6); }
             @media (hover: hover) { html:not(.layout-tv) .jellyseerr-sort-menu .actionSheetMenuItem.jellyseerr-menu-group[aria-expanded="true"]:hover { background-image: linear-gradient(var(--jf-palette-action-hover, rgba(255,255,255,.08)), var(--jf-palette-action-hover, rgba(255,255,255,.08))), var(--jellyseerr-menu-shade); } }
             html:not(.layout-tv) .jellyseerr-sort-menu .actionSheetMenuItem.jellyseerr-menu-group[aria-expanded="true"]:focus-visible { background-image: linear-gradient(var(--jf-palette-action-focus, rgba(255,255,255,.12)), var(--jf-palette-action-focus, rgba(255,255,255,.12))), var(--jellyseerr-menu-shade); }
             html .jellyseerr-sort-menu .actionSheetMenuItem.jellyseerr-menu-clear[aria-disabled="true"] { color: var(--jf-palette-text-disabled, rgba(255,255,255,.5)); cursor: default; background: none !important; }
@@ -216,7 +216,7 @@
             .layout-tv .jellyseerr-menu-list-rule { margin-inline-start: var(--jellyseerr-menu-indent, 32px); }
             /* (On a TV the held strip's rule has the strength of the foot's.) */
             html.layout-tv .jellyseerr-sort-menu .actionSheetMenuItem.jellyseerr-menu-group[data-over]:not(:has(+ .jellyseerr-menu-choices > .jellyseerr-menu-searchbar))::after, .layout-tv .jellyseerr-menu-group[data-over] + .jellyseerr-menu-choices > .jellyseerr-menu-searchbar::after { border-top-color: rgba(128,128,128,.6); }
-            .layout-tv .jellyseerr-menu-foot { margin-top: .3em; padding-top: .3em; border-top: 1px solid rgba(128,128,128,.3); }
+            .layout-tv .jellyseerr-menu-foot { margin-top: .3em; padding-top: .3em; border-top: 1px solid rgba(128,128,128,.6); }
             /* (On a TV's near-black sheet a shadow does not show: the foot's rule is stronger while rows go on under it.) */
             .layout-tv .jellyseerr-sort-menu .actionSheetContent[data-more] > .jellyseerr-menu-foot { border-top-color: rgba(128,128,128,.6); }
             /* On a TV's near-black ground a shadow does not show: the rows themselves fade into the foot over the cut row. */

@@ -5,7 +5,7 @@
 // what the filters ask, so each assertion is about what this package does.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createHarness, englishT, jsRoot, plain } from '../helpers/harness.mjs';
 
@@ -304,6 +304,18 @@ test('each open group keeps the rule that closes it; only the menu\'s last group
   assert.doesNotMatch(css, /\.jellyseerr-menu-choices:last-child/);
   const boxes = [...menuOf(h).querySelectorAll('.jellyseerr-menu-groupbox')];
   assert.ok(boxes.length > 2 && boxes.every(box => box.firstElementChild.classList.contains('jellyseerr-menu-group') && box.lastElementChild.classList.contains('jellyseerr-menu-choices')));
+});
+
+test('the English locales say what en.json says for every filter string they share (an English edit takes a new key)', () => {
+  // (A locale's own copy wins over en.json: an edited English sentence under its old key would never be seen in
+  // en-GB or en-US, nor anywhere a translation still holds the old words. A changed sentence gets a new key.)
+  const read = name => JSON.parse(readFileSync(resolve(jsRoot, 'locales', name), 'utf8'));
+  const en = read('en.json');
+  for (const name of ['en-GB.json', 'en-US.json']) {
+    const copy = read(name);
+    const stale = Object.keys(copy).filter(key => /^discovery_filters?_/.test(key) && key in en && copy[key] !== en[key]);
+    same(stale, [], `${name}: filter strings whose English changed under the same key`);
+  }
 });
 
 test('Undo says what the last change did: the piece it set, as said alone; a rule it switched; a piece it took away', t => {

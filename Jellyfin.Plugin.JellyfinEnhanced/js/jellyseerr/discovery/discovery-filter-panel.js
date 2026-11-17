@@ -1628,10 +1628,10 @@
                 html .jellyseerr-sort-menu .jellyseerr-menu-profile-save:disabled { opacity: 1; color: GrayText; border-color: GrayText; }
             }
             .jellyseerr-menu-profile-save:disabled { opacity: .45; cursor: default; box-shadow: none; }
-            @media (pointer: coarse) { .jellyseerr-menu-profile-undo { min-height: 44px; padding-inline: .75em; } }
+            @media (pointer: coarse) { .jellyseerr-menu-profile-undo::after { content: ''; position: absolute; inset: -12px -8px; } }
             html .jellyseerr-sort-menu .jellyseerr-menu-profile-says { font-size: .85em; line-height: 1.4; white-space: normal; overflow-wrap: anywhere; color: var(--jellyseerr-quiet, rgba(255,255,255,.7)) !important; opacity: 1; }
             .jellyseerr-menu-profile-part { display: inline-block; max-width: 100%; }
-            .jellyseerr-menu-profile-undo { font: inherit; margin-inline-start: 0; padding: .1em 0; border: 0; border-radius: 4px; background: none; color: var(--jellyseerr-accent); text-decoration: underline; cursor: pointer; }
+            .jellyseerr-menu-profile-undo { position: relative; font: inherit; margin: 0 -.2em; padding: .1em .2em; border: 0; border-radius: 4px; background: none; color: var(--jellyseerr-accent); text-decoration: underline; cursor: pointer; }
             .jellyseerr-menu-profile-undo:focus-visible { outline: 2px solid var(--jf-palette-text-primary, #fff); outline-offset: 1px; }
             .layout-tv .jellyseerr-menu-profile-undo:focus { outline: none; background: var(--jf-palette-text-primary, #fff); color: var(--jellyseerr-menu-ground, #101010); text-decoration: none; }
             .jellyseerr-filters-run { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .15em .4em; max-width: 100%; }
@@ -1654,7 +1654,7 @@
             /* (Undo right after its sentence, as a deleted set's is: the band's words run on, and wrap as words do.) */
             .jellyseerr-sort-menu .jellyseerr-menu-outcome { display: block; line-height: 1.6; }
             .jellyseerr-menu-outcome > span, .jellyseerr-menu-profile-said { margin-inline-end: .35em; }
-            .jellyseerr-menu-outcome-undo { display: inline-block; position: relative; margin: 3px 0 0; font: inherit; padding: .1em 0; border: 0; border-radius: 6px; background: none; color: var(--jellyseerr-accent); text-decoration: underline; cursor: pointer; }
+            .jellyseerr-menu-outcome-undo { display: inline-block; position: relative; margin: 3px -.2em 0; font: inherit; padding: .1em .2em; border: 0; border-radius: 6px; background: none; color: var(--jellyseerr-accent); text-decoration: underline; cursor: pointer; }
             .jellyseerr-menu-outcome-undo:focus-visible { outline: 2px solid var(--jf-palette-text-primary, #fff); outline-offset: 0; border-radius: 3px; }
             .layout-tv .jellyseerr-menu-outcome-undo:focus { outline: none; background: var(--jf-palette-text-primary, #fff); color: var(--jellyseerr-menu-ground, #101010); text-decoration: none; }
             /* (On touch, a 44px target reaching past the band's words without making the band taller.) */
