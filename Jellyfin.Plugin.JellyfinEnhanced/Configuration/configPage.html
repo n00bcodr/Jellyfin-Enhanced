@@ -4397,11 +4397,12 @@
                 { inputId: 'faviconInput', dropZoneId: 'faviconDropZone', statusId: 'faviconStatus', fileName: 'favicon.ico', previewId: 'faviconPreview', placeholderId: 'faviconPlaceholder', deleteId: 'faviconDelete', dimensionsId: 'faviconDimensions' },
                 { inputId: 'bannerLightInput', dropZoneId: 'bannerLightDropZone', statusId: 'bannerLightStatus', fileName: 'banner-light.png', previewId: 'bannerLightPreview', placeholderId: 'bannerLightPlaceholder', deleteId: 'bannerLightDelete', dimensionsId: 'bannerLightDimensions' },
                 { inputId: 'bannerDarkInput', dropZoneId: 'bannerDarkDropZone', statusId: 'bannerDarkStatus', fileName: 'banner-dark.png', previewId: 'bannerDarkPreview', placeholderId: 'bannerDarkPlaceholder', deleteId: 'bannerDarkDelete', dimensionsId: 'bannerDarkDimensions' },
-                { inputId: 'touchiconInput', dropZoneId: 'touchiconDropZone', statusId: 'touchiconStatus', fileName: 'apple-touch-icon.png', previewId: 'touchiconPreview', placeholderId: 'touchiconPlaceholder', deleteId: 'touchiconDelete', dimensionsId: 'touchiconDimensions' }
+                { inputId: 'touchiconInput', dropZoneId: 'touchiconDropZone', statusId: 'touchiconStatus', fileName: 'apple-touch-icon.png', previewId: 'touchiconPreview', placeholderId: 'touchiconPlaceholder', deleteId: 'touchiconDelete', dimensionsId: 'touchiconDimensions' },
+                { inputId: 'elsewhereIconInput', dropZoneId: 'elsewhereIconDropZone', statusId: 'elsewhereIconStatus', fileName: 'elsewhere-icon.png', previewId: 'elsewhereIconPreview', placeholderId: 'elsewhereIconPlaceholder', deleteId: 'elsewhereIconDelete', dimensionsId: 'elsewhereIconDimensions' }
             ];
 
             // Which slots have a custom image, in one request, so we don't probe
-            // all five individually (and 404 on every empty one).
+            // all six individually (and 404 on every empty one).
             let brandingStatus = null;
             try {
                 const token = ApiClient.accessToken ? ApiClient.accessToken() : '';
@@ -4462,6 +4463,7 @@
 
                 // Known-empty slots skip the network probe entirely.
                 if (brandingStatus && brandingStatus[config.fileName] === false) {
+                    setElsewhereIconUploaded(config, false);
                     const previewImg = document.getElementById(config.previewId);
                     const placeholder = document.getElementById(config.placeholderId);
                     if (previewImg) previewImg.style.display = 'none';
@@ -4473,6 +4475,24 @@
             });
         }
 
+        /**
+         * The message from a failed branding request: ASP.NET sends BadRequest(string)
+         * as a JSON string, so unwrap it rather than showing quotes and \u escapes.
+         * @param {Response} response - The failed fetch response.
+         * @returns {Promise<string>} The plain message, or '' when there is none.
+         */
+        async function brandingErrorText(response) {
+            const text = await response.text();
+            try {
+                const parsed = JSON.parse(text);
+                return typeof parsed === 'string' ? parsed : text;
+            } catch (e) {
+                return text;
+            }
+        }
+
+        // No template literals here: the dashboard treats ${...} in this page as
+        // translation keys, so they render as their source text.
         async function uploadBrandingImage(file, config, statusDiv) {
             // Validate that it's an image file
             if (!file.type || !file.type.startsWith('image/')) {
@@ -4481,9 +4501,21 @@
                 return;
             }
 
+            // A slot that lists exact types in its input's accept attribute (the
+            // Elsewhere icon) only takes those; dropped files bypass the picker filter.
+            const slotInput = document.getElementById(config.inputId);
+            const accepted = slotInput && slotInput.accept && slotInput.accept !== 'image/*'
+                ? slotInput.accept.split(',').map(t => t.trim().toLowerCase())
+                : null;
+            if (accepted && accepted.indexOf(file.type.toLowerCase()) === -1) {
+                statusDiv.textContent = '✗ Use a PNG, JPG, GIF, WebP or SVG image';
+                statusDiv.style.color = '#ff6b6b';
+                return;
+            }
+
             const maxFileSize = 10 * 1024 * 1024; // 10MB
             if (file.size > maxFileSize) {
-                statusDiv.textContent = `✗ File too large (max ${maxFileSize / (1024 * 1024)}MB)`;
+                statusDiv.textContent = '✗ File too large (max ' + (maxFileSize / (1024 * 1024)) + 'MB)';
                 statusDiv.style.color = '#ff6b6b';
                 return;
             }
@@ -4504,7 +4536,7 @@
                     const img = new Image();
                     img.onload = function() {
                         if (dimensionsDiv) {
-                            dimensionsDiv.textContent = `${img.width} × ${img.height}px`;
+                            dimensionsDiv.textContent = img.width + ' × ' + img.height + 'px';
                             dimensionsDiv.style.display = 'block';
                         }
                         URL.revokeObjectURL(objectUrl);
@@ -4540,14 +4572,17 @@
                     await refreshBrandingPreview(config);
                     setTimeout(() => { statusDiv.textContent = ''; }, 3000);
                 } else {
-                    const error = await response.text();
-                    statusDiv.textContent = `✗ ${error || 'Upload failed'}`;
+                    const error = await brandingErrorText(response);
+                    statusDiv.textContent = '✗ ' + (error || 'Upload failed');
                     statusDiv.style.color = '#ff6b6b';
+                    // Show what is actually stored, not the rejected file.
+                    await refreshBrandingPreview(config);
                 }
             } catch (error) {
                 console.error('Upload exception:', error);
-                statusDiv.textContent = `✗ ${error.message || 'Upload error'}`;
+                statusDiv.textContent = '✗ ' + (error.message || 'Upload error');
                 statusDiv.style.color = '#ff6b6b';
+                await refreshBrandingPreview(config);
             }
         }
 
@@ -4571,6 +4606,8 @@
                     if (placeholder) placeholder.style.display = 'block';
                     if (deleteButton) deleteButton.style.display = 'none';
                     if (dimensionsDiv) dimensionsDiv.style.display = 'none';
+                    // Only a 404 means "nothing stored"; other errors are unknown.
+                    if (response.status === 404 || elsewhereIconUploaded === null) setElsewhereIconUploaded(config, false);
                     return;
                 }
 
@@ -4580,6 +4617,7 @@
                 previewImg.style.display = 'block';
                 if (placeholder) placeholder.style.display = 'none';
                 if (deleteButton) deleteButton.style.display = 'inline-block';
+                setElsewhereIconUploaded(config, true);
 
                 // Show dimensions for existing images
                 if (dimensionsDiv) {
@@ -4593,6 +4631,8 @@
                 if (placeholder) placeholder.style.display = 'block';
                 if (deleteButton) deleteButton.style.display = 'none';
                 if (dimensionsDiv) dimensionsDiv.style.display = 'none';
+                // Unknown, but don't leave the URL check waiting forever.
+                if (elsewhereIconUploaded === null) setElsewhereIconUploaded(config, false);
             }
         }
 
@@ -4624,12 +4664,12 @@
                     await refreshBrandingPreview(config);
                     setTimeout(() => { statusDiv.textContent = ''; }, 2000);
                 } else {
-                    const error = await response.text();
-                    statusDiv.textContent = `✗ ${error || 'Delete failed'}`;
+                    const error = await brandingErrorText(response);
+                    statusDiv.textContent = '✗ ' + (error || 'Delete failed');
                     statusDiv.style.color = '#ff6b6b';
                 }
             } catch (err) {
-                statusDiv.textContent = `✗ ${err.message || 'Delete error'}`;
+                statusDiv.textContent = '✗ ' + (err.message || 'Delete error');
                 statusDiv.style.color = '#ff6b6b';
             }
         }
@@ -5017,6 +5057,96 @@
             var banner = document.getElementById('je-search-exclude-library-warning');
             if (!checkbox || !banner) return;
             banner.style.display = checkbox.checked ? '' : 'none';
+        }
+
+        var elsewhereIconCheckSeq = 0;
+        var elsewhereIconCheckTimer = null;
+        var elsewhereIconLastChecked = null;
+        // null until the branding status is known, so the first check can't flash a
+        // warning for a URL an uploaded icon already replaces.
+        var elsewhereIconUploaded = null;
+
+        /**
+         * Records whether an Elsewhere icon is uploaded (the URL setting is then unused)
+         * and re-checks the URL warning when that changes.
+         * @param {Object} config - The branding upload slot config.
+         * @param {boolean} uploaded - Whether the slot now holds an image.
+         */
+        function setElsewhereIconUploaded(config, uploaded) {
+            if (!config || config.fileName !== 'elsewhere-icon.png' || elsewhereIconUploaded === uploaded) return;
+            elsewhereIconUploaded = uploaded;
+            elsewhereIconLastChecked = null;
+            scheduleElsewhereIconWarning();
+        }
+
+        /**
+         * Test-loads the Elsewhere Custom Branding Icon URL in the admin's browser
+         * (the same way viewers' browsers load it) and shows a warning under the
+         * field when it can't be loaded, e.g. because a server file path was entered.
+         */
+        function updateElsewhereIconWarning() {
+            var input = document.getElementById('ElsewhereCustomBrandingImageUrl');
+            var banner = document.getElementById('je-elsewhere-icon-warning');
+            if (!input || !banner) return;
+            var url = (input.value || '').trim();
+            if (elsewhereIconUploaded === null) return;
+            // An uploaded icon replaces the URL, and with Elsewhere off or no message
+            // the icon isn't shown, so none of those cases needs a warning.
+            var enabledBox = document.getElementById('elsewhereEnabled');
+            var messageInput = document.getElementById('ElsewhereCustomBrandingText');
+            var noMessage = messageInput && !(messageInput.value || '').trim();
+            var key = (elsewhereIconUploaded || (enabledBox && !enabledBox.checked) || noMessage) ? '' : url;
+            // Unrelated dependency updates call this too; don't re-fetch or flicker.
+            if (key === elsewhereIconLastChecked) return;
+            elsewhereIconLastChecked = key;
+            var seq = ++elsewhereIconCheckSeq;
+            if (!key) {
+                banner.style.display = 'none';
+                banner.textContent = '';
+                return;
+            }
+            var looksLikeFilePath = /^(file:|[a-z]:[\\/]|\\\\)/i.test(url)
+                || /^\/(config|data|mnt|media|usr|home|srv|opt|var|volume\d*|share)\//i.test(url);
+            var img = new Image();
+            img.onload = function() {
+                if (seq !== elsewhereIconCheckSeq) return;
+                banner.style.display = 'none';
+            };
+            img.onerror = function() {
+                if (seq !== elsewhereIconCheckSeq) return;
+                var strong = document.createElement('strong');
+                strong.textContent = 'This icon can\'t be loaded. ';
+                banner.textContent = '';
+                banner.appendChild(strong);
+                banner.appendChild(document.createTextNode(
+                    (looksLikeFilePath ? 'It looks like a file path on the server. ' : '')
+                    + 'Viewers\' browsers load the icon over the web, so it has to be an address a browser can open, such as https://example.com/logo.png, or a path Jellyfin serves, such as /web/favicons/touchicon.png. Files elsewhere on the server can\'t be used; upload the image below instead.'));
+                banner.style.display = '';
+            };
+            img.src = resolveElsewhereIconUrl(url);
+        }
+
+        /**
+         * Resolves root-relative paths to Jellyfin's own routes (/web/…,
+         * /JellyfinEnhanced/…) through ApiClient so they work under a base path,
+         * exactly as the client does. Keep in step with resolveBrandingIconUrl in
+         * js/elsewhere/elsewhere.js.
+         * @param {string} url - The trimmed Custom Branding Icon URL.
+         * @returns {string} The URL a viewer's browser would load.
+         */
+        function resolveElsewhereIconUrl(url) {
+            if (/^\/(web|JellyfinEnhanced)\//i.test(url) && window.ApiClient && typeof ApiClient.getUrl === 'function') {
+                try { return ApiClient.getUrl(url); } catch (e) { return url; }
+            }
+            return url;
+        }
+
+        /**
+         * Debounced wrapper so typing in the icon URL field doesn't fire a request per key.
+         */
+        function scheduleElsewhereIconWarning() {
+            clearTimeout(elsewhereIconCheckTimer);
+            elsewhereIconCheckTimer = setTimeout(updateElsewhereIconWarning, 400);
         }
 
         /**
@@ -6279,6 +6409,7 @@
             INDIVIDUAL_DEPS.forEach(updateIndividualDep);
             CUSTOM_TABS_V12_HINTS.forEach(updateCustomTabsV12Hint);
             updateSearchExcludeLibraryWarning();
+            scheduleElsewhereIconWarning();
             PARENT_DEPS.forEach(updateParentDep);
             updateRegionSourceNote();
             updateClearTagCachesQuickBtnVisibility();
@@ -6709,6 +6840,10 @@
         });
         var searchExcludeLibraryCheckbox = document.getElementById('jellyseerrSearchExcludeLibraryItems');
         if (searchExcludeLibraryCheckbox) searchExcludeLibraryCheckbox.addEventListener('change', updateSearchExcludeLibraryWarning);
+        var elsewhereIconInput = document.getElementById('ElsewhereCustomBrandingImageUrl');
+        if (elsewhereIconInput) elsewhereIconInput.addEventListener('input', scheduleElsewhereIconWarning);
+        var elsewhereMessageInput = document.getElementById('ElsewhereCustomBrandingText');
+        if (elsewhereMessageInput) elsewhereMessageInput.addEventListener('input', scheduleElsewhereIconWarning);
 
         var originalTestTmdb = testTmdbConnection;
         testTmdbConnection = async function(event) {

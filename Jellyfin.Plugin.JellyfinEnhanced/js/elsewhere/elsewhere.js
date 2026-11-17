@@ -14,13 +14,46 @@
             console.log('🪼 Jellyfin Enhanced: 🎬 Jellyfin Elsewhere: Feature is disabled in plugin settings.');
             return;
         }
+        /**
+         * The URL the custom branding icon loads from. An uploaded icon wins over the
+         * URL setting. Root-relative paths to Jellyfin's own routes (/web/…,
+         * /JellyfinEnhanced/…) are resolved through ApiClient so they keep working
+         * when Jellyfin runs under a base path such as /jellyfin. Keep in step with
+         * resolveElsewhereIconUrl in Configuration/configPage.html.
+         * @param {string} configuredUrl - The Custom Branding Icon URL setting.
+         * @param {string} uploadVersion - Upload version from public-config; empty when none.
+         * @returns {string} The icon URL, or '' for no icon.
+         */
+        function resolveBrandingIconUrl(configuredUrl, uploadVersion) {
+            const api = window.ApiClient;
+            const serverUrl = (path, params) => {
+                if (!api || typeof api.getUrl !== 'function') return null;
+                try {
+                    return api.getUrl(path, params);
+                } catch (e) {
+                    return null;
+                }
+            };
+            if (uploadVersion) {
+                const uploaded = serverUrl('/JellyfinEnhanced/ElsewhereBrandingIcon', { v: uploadVersion });
+                if (uploaded) return uploaded;
+            }
+            const url = String(configuredUrl || '').trim();
+            if (/^\/(web|JellyfinEnhanced)\//i.test(url)) {
+                return serverUrl(url) || url;
+            }
+            return url;
+        }
+
         // --- Configuration ---
         const TmdbEnabled = !!JE.pluginConfig.TmdbEnabled;
         const DEFAULT_REGION = JE.pluginConfig.DEFAULT_REGION || 'US';
         const DEFAULT_PROVIDERS = JE.pluginConfig.DEFAULT_PROVIDERS ? JE.pluginConfig.DEFAULT_PROVIDERS.replace(/'/g, '').replace(/\n/g, ',').split(',').map(s => s.trim()).filter(s => s) : [];
         const IGNORE_PROVIDERS = JE.pluginConfig.IGNORE_PROVIDERS ? JE.pluginConfig.IGNORE_PROVIDERS.replace(/'/g, '').replace(/\n/g, ',').split(',').map(s => s.trim()).filter(s => s) : [];
         const ELSEWHERE_CUSTOM_BRANDING_TEXT = JE.pluginConfig.ElsewhereCustomBrandingText || '';
-        const ELSEWHERE_CUSTOM_BRANDING_IMAGE_URL = JE.pluginConfig.ElsewhereCustomBrandingImageUrl || '';
+        const ELSEWHERE_CUSTOM_BRANDING_IMAGE_URL = resolveBrandingIconUrl(
+            JE.pluginConfig.ElsewhereCustomBrandingImageUrl,
+            JE.pluginConfig.ElsewhereCustomBrandingIconVersion);
         // Without a TMDB key, provider data comes from Seerr's movie/tv detail
         // (its watchProviders field). Seerr has no per-season providers.
         const UseSeerrProviders = !TmdbEnabled && !!JE.pluginConfig.JellyseerrEnabled;
@@ -899,10 +932,6 @@
 
                 // Add custom icon if URL is provided
                 if (ELSEWHERE_CUSTOM_BRANDING_IMAGE_URL) {
-                    title.style.display = 'flex';
-                    title.style.alignItems = 'center';
-                    title.style.gap = '8px';
-
                     const icon = document.createElement('img');
                     icon.src = ELSEWHERE_CUSTOM_BRANDING_IMAGE_URL;
                     icon.alt = 'Custom Branding';
@@ -913,7 +942,12 @@
                         object-fit: contain;
                         margin-left: 4px;
                     `;
-                    icon.onerror = () => icon.style.display = 'none';
+                    icon.onerror = () => {
+                        icon.style.display = 'none';
+                        console.warn(JE.pluginConfig.ElsewhereCustomBrandingIconVersion
+                            ? `🪼 Jellyfin Enhanced: the uploaded Elsewhere custom branding icon failed to load from "${ELSEWHERE_CUSTOM_BRANDING_IMAGE_URL}". Re-upload it in the plugin settings.`
+                            : `🪼 Jellyfin Enhanced: Elsewhere custom branding icon failed to load from "${ELSEWHERE_CUSTOM_BRANDING_IMAGE_URL}". It must be a web address the browser can open, not a server file path.`);
+                    };
                     title.appendChild(icon);
                 }
             } else {
@@ -932,6 +966,13 @@
                 display: flex;
                 align-items: flex-end;
             `;
+
+            // The cssText above replaces every inline style, so centre the
+            // custom branding icon against the message after it.
+            if (title.querySelector('.elsewhere-custom-branding-icon')) {
+                title.style.alignItems = 'center';
+                title.style.gap = '8px';
+            }
 
             // Add JustWatch link if available and has filtered services
             if (hasFilteredServices && linkUrl) {
