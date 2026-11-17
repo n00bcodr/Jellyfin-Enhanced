@@ -303,3 +303,20 @@ test("a category address with keywords matched by any asks Seerr for either, and
   const services = h.JE.discoveryAddress.filtersOfHash(`${TAB}&jeServices=8:Netflix,337:Disney&jeAll=services,genres&jeAny=keywords`, 'en');
   assert.deepEqual(plain(services.selection.match), { services: 'all' });
 });
+
+test("a category its address asked for, still resolving its genre, is not opened once Back has left its address", async t => {
+  const h = setup(t);
+  let release;
+  const names = new Promise(resolve => { release = resolve; });
+  h.JE.jellyseerrAPI.fetchGenreSlider = () => names;
+  const P = h.load();
+  // A link to the genre's category, followed on Home; Back to the tab before its genre's names come.
+  h.window.location.hash = `${TAB}&jeCategory=genre-movie-28`;
+  await new Promise(resolve => setTimeout(resolve, 30));
+  h.window.history.back();
+  await until(() => h.hash() === TAB, 'Back to the tab');
+  release([{ id: 28, name: 'Action', backdrops: [] }]);
+  await new Promise(resolve => setTimeout(resolve, 30));
+  assert.equal(P.state.categoryPageVisible, false);
+  assert.equal(h.hash(), TAB);
+});

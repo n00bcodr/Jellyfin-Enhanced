@@ -604,8 +604,10 @@
     const pageOf = () => JE.discoveryAddress?.withoutOwn?.(window.location.hash) ?? window.location.hash;
     const from = pageOf();
     const category = await resolve(categoryKey);
-    // Another open, a close or a navigation came while it resolved: this one is no longer wanted.
+    // Another open, a close or a navigation came while it resolved: this one is no longer wanted. One its
+    // address asked for is wanted only while the address still names it (Back to the tab meanwhile).
     if (!category || ticket !== openTicket || pageOf() !== from) return;
+    if (fromUrl && JE.discoveryAddress?.categoryOfHash?.(window.location.hash) !== categoryKey) return;
 
     const config = JE.pluginConfig || {};
     if (!config.RecommendationsPageEnabled) return;
