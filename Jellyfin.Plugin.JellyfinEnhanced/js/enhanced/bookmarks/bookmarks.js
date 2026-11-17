@@ -660,6 +660,9 @@
     console.log(`${logPrefix} createBookmarkMarkers called - video:`, !!video, 'bookmarks:', bookmarksList.length);
 
     if (!bookmarksList.length) {
+      // Still clear markers drawn for an earlier list (e.g. the last bookmark
+      // was just deleted), so none stay on the seek bar
+      document.querySelectorAll('.videoOsdBottom .je-bookmark-marker').forEach(el => el.remove());
       console.log(`${logPrefix} Early return - no bookmarks`);
       return;
     }
