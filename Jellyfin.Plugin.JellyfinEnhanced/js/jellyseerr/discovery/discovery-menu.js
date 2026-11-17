@@ -170,7 +170,14 @@
             el.dataset.short = short ?? '';
             el.title = '';
             if (short && short !== words && el.isConnected && el.scrollWidth > el.clientWidth + 1) {
-                el.textContent = short;
+                // (Short to the eye, "Any of 2"; whole to a screen reader, "Netflix or Disney Plus", and on hover.)
+                const seen = document.createElement('span');
+                seen.setAttribute('aria-hidden', 'true');
+                seen.textContent = short;
+                const whole = document.createElement('span');
+                whole.className = 'jellyseerr-menu-whole';
+                whole.textContent = words;
+                el.replaceChildren(seen, whole);
                 el.title = words;
             }
         };

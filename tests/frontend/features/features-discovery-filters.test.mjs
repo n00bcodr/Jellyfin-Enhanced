@@ -373,7 +373,10 @@ test('a list page\'s further filters are typed or ticked, and asked of Seerr: ra
   assert.equal(shown(), '4,14');
   // The genre of the page is given: every title is in it, so it is ticked and cannot be changed.
   await until(() => bodyOf(h, 'genres').querySelectorAll('.actionSheetMenuItem').length === 1, 'genres');
-  same([...bodyOf(h, 'genres').querySelectorAll('.actionSheetMenuItem')].map(row => [row.textContent, row.getAttribute('aria-checked'), row.getAttribute('aria-disabled')]), [['Comedy', 'true', 'true']]);
+  same([...bodyOf(h, 'genres').querySelectorAll('.actionSheetMenuItem')].map(row => [row.textContent, row.getAttribute('aria-checked'), row.getAttribute('aria-disabled')]), [['ComedyIncluded by this page', 'true', 'true']]);
+  // (The row says why, under its name; the choice beside it is named with its list, for a reader that comes to it alone.)
+  assert.equal(bodyOf(h, 'genres').querySelector('.jellyseerr-menu-given').textContent, 'Included by this page');
+  assert.equal(bodyOf(h, 'genres').querySelector('[role="radiogroup"]').getAttribute('aria-label'), 'Genres: Titles in Comedy and');
   // The lists are Seerr's whole lists (less TMDB's "no language"), each ticked on its own row.
   typeRange(h, 'year', '', '');
   typeRange(h, 'score', '', '');
@@ -397,14 +400,17 @@ test('a list page\'s further filters are typed or ticked, and asked of Seerr: ra
   await until(() => bodyOf(h, 'keywords').querySelectorAll('.actionSheetMenuItem').length === 2, 'keywords found');
   tickRow(h, 'keywords', 'sheep');
   assert.equal(shown(), '5');
-  assert.equal(groupOf(h, 'language').textContent, 'Original languageFrench, Japanese');
+  // (A language and a rating are any of the ones ticked, Seerr's own rule for them: said so, as a chosen any is.)
+  assert.equal(groupOf(h, 'language').textContent, 'Original languageFrench or Japanese');
+  assert.equal(groupOf(h, 'rating').textContent, 'Content ratingG or TV-PG');
   assert.equal(groupOf(h, 'keywords').textContent, 'Keywordssheep');
   // A keyword chosen is kept above the field, and the field is empty for the next.
   assert.equal(search.value, '');
   same([...bodyOf(h, 'keywords').querySelectorAll('.actionSheetItemText')].map(node => node.textContent), ['sheep']);
   assert.equal(button.querySelector('.jellyseerr-filters-name').textContent, 'Filters: 6');
   // One piece per thing set, a list's things each on their own; several can be cleared at once.
-  same([...setLine().children].map(piece => piece.textContent), ['Votes from 100', 'Runtime up to 30 min', 'Originally in French', 'Originally in Japanese', 'G', 'TV-PG', 'Netflix', 'With sheep', 'Clear filters']);
+  same([...setLine().querySelectorAll('.jellyseerr-filters-token')].map(piece => piece.textContent), ['Votes from 100', 'Runtime up to 30 min', 'Originally in French', 'or Japanese', 'G', 'or TV-PG', 'Netflix', 'With sheep']);
+  same([...setLine().children].map(piece => piece.getAttribute('aria-label') ?? piece.className), ['jellyseerr-filters-token', 'jellyseerr-filters-token', 'Original language', 'Content rating', 'jellyseerr-filters-token', 'jellyseerr-filters-token', 'jellyseerr-filters-clear']);
   // The lists are asked like every other lookup of these sections, once each.
   assert.ok(h.asked.every(([, prefix]) => prefix === 'filters'));
   assert.equal(h.asked.filter(([path]) => path.endsWith('/languages')).length, 1);
@@ -480,7 +486,7 @@ test('a person\'s titles are filtered here: by role, by years, by score and vote
   // Any of the roles ticked.
   tickRow(h, 'role', 'Directing');
   assert.equal(shown(), '5,7,8');
-  assert.equal(groupOf(h, 'role').textContent, 'RoleWriting, Directing');
+  assert.equal(groupOf(h, 'role').textContent, 'RoleWriting or Directing');
   assert.equal(s.root.getAttribute('data-role-asked'), 'Writing|Directing');
   // A title with no date is outside every period; one with no votes is under every minimum.
   typeRange(h, 'year', '1990', '1999');
@@ -499,7 +505,7 @@ test('a person\'s titles are filtered here: by role, by years, by score and vote
   // Taken away on the line under the header, piece by piece.
   h.document.querySelector('.dialogBackdrop').click();
   const pieces = () => [...s.root.querySelectorAll('.jellyseerr-filters-set .jellyseerr-filters-token')];
-  same(pieces().map(piece => piece.textContent), ['Writing', 'Directing']);
+  same(pieces().map(piece => piece.textContent), ['Writing', 'or Directing']);
   // Taken away with the keys on it, the keys go on to the next piece's own button; with none left, to the Filters button.
   const first = pieces()[0].querySelector('.jellyseerr-filters-remove');
   first.focus();
@@ -642,12 +648,17 @@ test('the Filters menu offers all or any for keywords, genres and services; "or"
   same([...setLine.querySelectorAll('.jellyseerr-filters-token')].map(piece => piece.textContent), ['With sheep', 'or sheep farm']);
   // The run joined by "or" is one unit on the line.
   same([...setLine.children].map(piece => piece.className), ['jellyseerr-filters-run', 'jellyseerr-filters-clear']);
+  // (Named as its list, for a reader moving by group.)
+  same([setLine.firstElementChild.getAttribute('role'), setLine.firstElementChild.getAttribute('aria-label')], ['group', 'Keywords']);
   assert.equal(groupOf(h, 'keywords').textContent.endsWith('sheep or sheep farm'), true);
   same(plain(h.F.selectionOf('network')).match, { keywords: 'any' });
-  // Back to all: the default is not kept.
+  assert.equal(choice.querySelector('[role="radiogroup"]').getAttribute('aria-label'), 'Keywords: Titles with');
+  // Back to all: the default is not kept, and the line says "and" as it said "or".
   choice.querySelector('[data-match="all"]').click();
   assert.equal(String(s.shown()), '2');
   assert.equal(plain(h.F.selectionOf('network')).match, undefined);
+  same([...setLine.querySelectorAll('.jellyseerr-filters-token')].map(piece => piece.textContent), ['With sheep', 'and sheep farm']);
+  same([...setLine.children].map(piece => piece.className), ['jellyseerr-filters-run', 'jellyseerr-filters-clear']);
   // Genres and services have the choice too; a language or a rating has one rule.
   await until(() => bodyOf(h, 'genres').querySelector('.jellyseerr-menu-match'), 'genres');
   await until(() => bodyOf(h, 'services').querySelector('.jellyseerr-menu-match [data-match="any"][aria-checked="true"]'), 'services, any by default');
@@ -694,6 +705,14 @@ test('all / any chosen before anything is ticked is kept; the keys and a remote 
   assert.equal(plain(h.F.selectionOf('network')).match, undefined);
   press('ArrowLeft');
   assert.equal(h.document.activeElement, groupOf(h, 'keywords'), 'out to the group row');
+  // Unticked with the keys on it, a kept keyword hands them to the next one kept, and the last to the field.
+  const kept = name => [...body.querySelectorAll('.jellyseerr-menu-tick[aria-checked="true"]')].find(row => row.textContent === name);
+  kept('sheep').focus();
+  kept('sheep').click();
+  assert.equal(h.document.activeElement.textContent, 'sheep farm');
+  h.document.activeElement.click();
+  assert.equal(h.document.activeElement, search);
+  assert.equal(body.querySelector('.jellyseerr-menu-match').hidden, true);
 });
 
 test('saved filters: the user\'s profiles first in the menu, saved under a name, applied by the page, deleted', { skip: !hasMenu && 'the menu module is not there yet' }, async t => {

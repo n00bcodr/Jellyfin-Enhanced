@@ -41,6 +41,16 @@
         services: ['discovery_filter_rule_any', 'Titles with any of the ones ticked.'], keywords: ['discovery_filter_rule_all', 'Titles with all of the ones ticked.'],
         without: ['discovery_filter_rule_none', 'Titles with none of the ones ticked.']
     });
+    /** The lists matched by any of what is ticked, with no choice (Seerr's own rule for them). */
+    const ANY_OF = new Set(['role', 'language', 'rating']);
+    /**
+     * How several ticks in a list count: 'all', 'any' (chosen, or Seerr's own rule for the list), or '' where each is
+     * said on its own (Without keywords: none of them).
+     * @param {object} selection - A FilterSelection
+     * @param {string} id - The list filter
+     * @returns {'all'|'any'|''}
+     */
+    const listRule = (selection, id) => logic().MATCH_DEFAULTS?.[id] !== undefined ? logic().matchOf(selection, id) : ANY_OF.has(id) ? 'any' : '';
     /** Whether a filter is a typed range (else a list). */
     const isRangeId = id => id === 'year' || id === 'score' || id === 'votes' || id === 'runtime';
 
@@ -93,8 +103,9 @@
      * @param {string} options.locale - The page's language
      * @param {object} options.selection - The section's FilterSelection
      * @param {string} [options.ownGenre] - On a genre's page: that genre's name (always applied, so outside an "or")
-     * @returns {{words: string, or: boolean, without: (selection: object) => object}[]} Each thing set, in words (`or`:
-     *   said after "or"), and the selection without it
+     * @returns {{words: string, join?: 'and'|'or', or: boolean, list?: string, without: (selection: object) => object}[]} Each
+     *   thing set, in words (`join`: said after "and" or "or", the rule of its list; `list`: the list it is in), and the
+     *   selection without it
      */
     function filterTokens({ offered, label: say, locale, selection, ownGenre }) {
         const tokens = [];
@@ -109,22 +120,24 @@
                 tokens.push({ words, without: now => ({ ...now, [id]: undefined }) });
                 continue;
             }
-            // (In a list matched by any of what is ticked, each after the first is said with "or" before it. A genre's
-            // page's own genre is always applied: it comes first, outside the "or".)
-            const either = logic().MATCH_DEFAULTS?.[id] !== undefined && logic().matchOf(selection, id) === 'any';
+            // (A list of several says its rule between them, as its group's row does: "Action and Comedy" for all of
+            // them, "Family or Kids" for any. Without keywords says each on its own: "Without gore", "Without robot".)
+            const rule = listRule(selection, id);
             const own = id === 'genres' ? ownGenre?.trim().toLocaleLowerCase() ?? '' : '';
             const isOwn = item => own !== '' && item.name.toLocaleLowerCase() === own;
             // (The page's own genre is in its heading: the line says only what was chosen beside it.)
             const items = (selection[id] ?? []).filter(item => !isOwn(item));
             for (const [index, item] of items.entries()) {
-                const or = either && index > 0;
+                const join = rule !== '' && index > 0 ? (rule === 'any' ? 'or' : 'and') : undefined;
                 tokens.push({
-                    or,
+                    join,
+                    or: join === 'or',
+                    list: id,
                     // A keyword and a language need a word to be read on their own ("With robot", "Originally in Japanese"); a genre, a rating, a service and a role say what they are.
                     words: id === 'without' ? say('discovery_filter_set_without', 'Without {name}', { name: item.name })
-                        // ("With bear or dragon": after "or" the keyword's own name is enough.)
-                        : id === 'keywords' ? (or ? item.name : say('discovery_filter_set_with', 'With {name}', { name: item.name }))
-                            : id === 'language' ? say('discovery_filter_set_language', 'Originally in {name}', { name: item.name }) : item.name,
+                        // ("With bear or dragon": after the word joining them the keyword's own name is enough.)
+                        : id === 'keywords' ? (join ? item.name : say('discovery_filter_set_with', 'With {name}', { name: item.name }))
+                            : id === 'language' && !join ? say('discovery_filter_set_language', 'Originally in {name}', { name: item.name }) : item.name,
                     without(now) {
                         const left = (now[id] ?? []).filter(entry => entry.id !== item.id);
                         return { ...now, [id]: left.length > 0 ? left : undefined };
@@ -279,10 +292,12 @@
             // (On a genre's page its own genre is always applied: what is said is about the others.)
             const own = id === 'genres' ? options.ownGenre?.trim().toLocaleLowerCase() ?? '' : '';
             const picked = own && ticked.length > 1 ? ticked.filter(item => item.name.toLocaleLowerCase() !== own) : ticked;
-            // A list where all or any can be chosen says which, the names joined as the page's language joins them:
-            // "Action, Comedy and Animation", "Family or Kids". (Where they don't fit, the row says it short: see shortList.)
-            if (picked.length >= 2 && logic().MATCH_DEFAULTS?.[id] !== undefined) {
-                const any = logic().matchOf(options.selection(), id) === 'any';
+            // A list of all or any of its ticks says which, the names joined as the page's language joins them:
+            // "Action, Comedy and Animation", "Family or Kids", "French or Japanese". (Where they don't fit, the row says
+            // it short: see shortList.)
+            const rule = listRule(options.selection(), id);
+            if (picked.length >= 2 && rule !== '') {
+                const any = rule === 'any';
                 const names = picked.map(item => item.name);
                 let joined = null;
                 try { joined = new Intl.ListFormat(locale || 'en', { style: 'long', type: any ? 'disjunction' : 'conjunction' }).format(names); } catch (_) { joined = null; }
@@ -304,8 +319,9 @@
             const own = id === 'genres' ? options.ownGenre?.trim().toLocaleLowerCase() ?? '' : '';
             const picked = own && ticked.length > 1 ? ticked.filter(item => item.name.toLocaleLowerCase() !== own) : ticked;
             if (picked.length < 2) return undefined;
-            if (logic().MATCH_DEFAULTS?.[id] === undefined) return say('discovery_filter_count', '{count} chosen', { count: picked.length });
-            return logic().matchOf(options.selection(), id) === 'any' ? say('discovery_filter_any_of', 'Any of {count}', { count: picked.length })
+            const rule = listRule(options.selection(), id);
+            if (rule === '') return say('discovery_filter_count', '{count} chosen', { count: picked.length });
+            return rule === 'any' ? say('discovery_filter_any_of', 'Any of {count}', { count: picked.length })
                 : say('discovery_filter_all_of', 'All of {count}', { count: picked.length });
         };
         /** What is ticked in a list now. */
@@ -347,7 +363,8 @@
             line.className = 'jellyseerr-menu-note jellyseerr-menu-match';
             const lead = document.createElement('span');
             lead.className = 'jellyseerr-menu-match-lead';
-            lead.id = `jellyseerr-menu-match-${++hints}`;
+            // (Read as the choice's name, below: not twice.)
+            lead.setAttribute('aria-hidden', 'true');
             // (On a genre's page its genre is always applied: the choice is about the others.)
             // (Titles are on a service, not with it.)
             lead.textContent = id === 'genres' && options.ownGenre
@@ -357,7 +374,8 @@
             const track = document.createElement('div');
             track.className = 'jellyseerr-menu-match-track';
             track.setAttribute('role', 'radiogroup');
-            track.setAttribute('aria-labelledby', lead.id);
+            // (Named with its list, for a reader that comes to it on its own: "Genres: Titles with".)
+            track.setAttribute('aria-label', say('discovery_filter_match_label', '{filter}: {rule}', { filter: nameOf(id), rule: lead.textContent }));
             line.append(lead, track);
             const buttons = [['all', say('discovery_filter_match_all', 'all ticked')], ['any', say('discovery_filter_match_any', 'any ticked')]].map(([value, words]) => {
                 const button = document.createElement('button');
@@ -423,7 +441,16 @@
             row.classList.add('jellyseerr-menu-tick');
             row.setAttribute('role', 'checkbox');
             row.setAttribute('aria-checked', String(chosenNow));
-            if (given) { row.setAttribute('aria-disabled', 'true'); return row; }
+            if (given) {
+                row.setAttribute('aria-disabled', 'true');
+                // (Ticked by the page itself, which the row says under its name: why it can't be unticked here, and why
+                // any of the others still means titles in it.)
+                const why = document.createElement('div');
+                why.className = 'listItemBodyText secondary jellyseerr-menu-given';
+                why.textContent = say('discovery_filter_given', 'Included by this page');
+                row.querySelector('.actionsheetListItemBody')?.appendChild(why);
+                return row;
+            }
             row.addEventListener('click', () => {
                 const before = pickedOf(id);
                 const chosen = !before.some(entry => entry.id === item.id);
@@ -569,7 +596,14 @@
                     found.className = 'jellyseerr-menu-list';
                     /** Lists a chosen keyword above the field, ticked; taken away when it is pressed again. */
                     const keep = item => chosen.appendChild(tickRow(id, item, handle, (isChosen, row) => {
-                        if (!isChosen) row.remove();
+                        if (!isChosen) {
+                            // (Taken away with the keys on it, they go to the next one kept, else the one before, else
+                            // the field: where they were, not back to the top of the menu.)
+                            const held = row.contains(document.activeElement);
+                            const next = /** @type {HTMLElement|null} */ (row.nextElementSibling ?? row.previousElementSibling);
+                            row.remove();
+                            if (held) (next ?? search).focus();
+                        }
                         rule.hidden = chosen.childElementCount === 0;
                         handle.placed();
                     }));
@@ -1015,24 +1049,29 @@
                 remove.addEventListener('click', () => change(token.without(selectionOf(moduleName)), document.activeElement === remove ? index : -1));
                 removes.push(remove);
                 piece.append(words, remove);
-                if (!token.or) return piece;
-                // (Several of a list matched by any of them: "With bear" or "dragon". The "or" goes with what follows it.)
-                const either = document.createElement('span');
-                either.className = 'jellyseerr-filters-or';
-                either.textContent = label('discovery_filter_or', 'or');
+                if (!token.join) return piece;
+                // (Several of a list, joined by its rule: "With bear" or "dragon", "Action" and "Comedy". The word goes
+                // with what follows it.)
+                const joined = document.createElement('span');
+                joined.className = 'jellyseerr-filters-join';
+                joined.textContent = token.join === 'or' ? label('discovery_filter_or', 'or') : label('discovery_filter_and', 'and');
                 // (The space is for a screen reader's words; the margin spaces it to the eye.)
-                piece.prepend(either, ' ');
-                piece.dataset.or = '';
+                piece.prepend(joined, ' ');
+                piece.dataset.join = token.join;
                 return piece;
             });
-            // A run joined by "or" is one unit on the line: closer together, and to the next line whole.
+            // A list's run joined by its word is one unit on the line: closer together, to the next line whole, and
+            // named as its group is ("Genres"), so a reader that moves by group hears which list it is.
             const pieces = [];
-            for (const piece of made) {
-                if (piece.dataset.or === undefined) { pieces.push(piece); continue; }
+            for (const [index, piece] of made.entries()) {
+                if (piece.dataset.join === undefined) { pieces.push(piece); continue; }
                 const before = pieces[pieces.length - 1];
                 const run = before?.classList.contains('jellyseerr-filters-run') ? before : document.createElement('span');
                 if (run !== before) {
                     run.className = 'jellyseerr-filters-run';
+                    run.setAttribute('role', 'group');
+                    const list = tokens[index].list;
+                    if (list && NAMES[list]) run.setAttribute('aria-label', label(NAMES[list][0], NAMES[list][1]));
                     pieces.splice(pieces.length - 1, 1, run);
                     run.appendChild(before);
                 }
@@ -1288,10 +1327,14 @@
             .layout-tv .jellyseerr-menu-profile-delete:focus { background: var(--jf-palette-text-primary, #fff); color: var(--jellyseerr-menu-ground, #101010); }
             .jellyseerr-menu-profile-save { flex: none; margin: 0; }
             .jellyseerr-filters-run { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .15em .5em; max-width: 100%; }
-            .jellyseerr-filters-token > .jellyseerr-filters-or { flex: none; overflow: visible; margin-inline-end: .35em; color: var(--jf-palette-text-secondary, rgba(255,255,255,.7)); }
+            .jellyseerr-filters-token > .jellyseerr-filters-join { flex: none; overflow: visible; margin-inline-end: .35em; color: var(--jf-palette-text-secondary, rgba(255,255,255,.7)); }
             /* An open group's row reads as the heading of what is under it; a long value is cut with an ellipsis. */
             .jellyseerr-menu-group[aria-expanded="true"] .actionSheetItemText { font-weight: 500; }
             .jellyseerr-menu-group-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+            /* A value said short to the eye is said whole to a screen reader. */
+            .jellyseerr-menu-whole { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+            /* Why the page's own genre is ticked and can't be unticked, under its name. */
+            .jellyseerr-sort-menu .jellyseerr-menu-given { font-size: .85em; white-space: normal; }
             /* What a search has narrowed away is gone (a row's own display would otherwise keep it). */
             .jellyseerr-sort-menu .actionSheetMenuItem[hidden], .jellyseerr-menu-note[hidden], .jellyseerr-menu-label[hidden] { display: none !important; }
             .jellyseerr-menu-label { padding: 8px 16px 2px 32px; font-size: .86em; }
