@@ -578,7 +578,7 @@ test('the tabs\' choice repaints the button: a type other than All is said besid
 
 test('a list matched by any of what is ticked is asked with a bar, by all of it with a comma; a route naming the list keeps all', t => {
   const h = setup(t);
-  const { feedFilterQuery, keepByFilters, forRoute, matchOf } = h.F;
+  const { feedFilterQuery, keepByFilters, routeFeed, matchOf } = h.F;
   const bear = { id: '10468', name: 'bear' };
   const dragon = { id: '12554', name: 'dragon' };
   assert.equal(feedFilterQuery({ keywords: [bear, dragon] }, 'movie', 'US'), '&keywords=10468%2C12554', 'keywords: all by default');
@@ -594,10 +594,22 @@ test('a list matched by any of what is ticked is asked with a bar, by all of it 
   const titles = [{ id: 1, mediaType: 'movie', genreIds: [16] }, { id: 2, mediaType: 'movie', genreIds: [16, 28] }, { id: 3, mediaType: 'movie', genreIds: [18] }];
   same(keepByFilters(titles, { genres }).map(item => item.id), [2]);
   same(keepByFilters(titles, { genres, match: { genres: 'any' } }).map(item => item.id), [1, 2]);
-  // TMDB can't say "this genre and any of those": a genre's or a tag's page asks its own list as all of them.
-  assert.equal(forRoute('/JellyfinEnhanced/jellyseerr/discover/movies/genre/16', '&sortBy=x&genre=14%7C35&keywords=1%7C2'), '&sortBy=x&genre=14%2C35&keywords=1%7C2');
-  assert.equal(forRoute('/JellyfinEnhanced/jellyseerr/discover/tv/keyword/9', '&genre=14%7C35&keywords=1%7C2'), '&genre=14%7C35&keywords=1%2C2');
-  assert.equal(forRoute('/JellyfinEnhanced/jellyseerr/discover/movies', '&genre=14%7C35'), '&genre=14%7C35');
+  // A genre's page always asks for its own genre. The others: all of them joined to it by Seerr; any of them kept
+  // here by each title's genres (TMDB can't say "this genre and any of those" in one request).
+  const GENRE_PAGE = '/JellyfinEnhanced/jellyseerr/discover/movies/genre/16';
+  const others = [{ id: '16/16', name: 'Animation' }, { id: '10751/10751', name: 'Family' }, { id: '35/35', name: 'Comedy' }];
+  const all = routeFeed(GENRE_PAGE, 'movie', { genres: others }, '&sortBy=x&genre=16%2C10751%2C35');
+  same([all.query, all.keep], ['&sortBy=x&genre=16%2C10751%2C35', null]);
+  const either = routeFeed(GENRE_PAGE, 'movie', { genres: others, match: { genres: 'any' } }, '&sortBy=x&genre=16%7C10751%7C35&keywords=1%7C2');
+  assert.equal(either.query, '&sortBy=x&keywords=1%7C2');
+  same([{ genreIds: [16, 35] }, { genreIds: [16] }, { genreIds: [10751] }, {}].map(either.keep), [true, false, true, false]);
+  // Only kinds TMDB lacks among the others: nothing of this kind is in any of them.
+  const kids = routeFeed(GENRE_PAGE, 'movie', { genres: [{ id: '/10762', name: 'Kids' }], match: { genres: 'any' } }, '&genre=');
+  same([kids.query, kids.keep], ['&primaryReleaseDateLte=1800-01-01', null]);
+  // A tag's page can only add keywords as all of them: a title does not say its keywords.
+  same(routeFeed('/JellyfinEnhanced/jellyseerr/discover/tv/keyword/9', 'tv', { match: { keywords: 'any' } }, '&genre=14%7C35&keywords=1%7C2'),
+    { query: '&genre=14%7C35&keywords=1%2C2', keep: null });
+  same(routeFeed('/JellyfinEnhanced/jellyseerr/discover/movies', 'movie', { match: { genres: 'any' } }, '&genre=14%7C35'), { query: '&genre=14%7C35', keep: null });
 });
 
 test('the Filters menu offers all or any for keywords, genres and services; "or" says it where it is any; a tag page keeps its keywords all', { skip: !hasMenu && 'the menu module is not there yet' }, async t => {

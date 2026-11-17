@@ -959,6 +959,7 @@
     "discovery_filter_rule_all": "Titles with all of the ones ticked.",
     "discovery_filter_rule_none": "Titles with none of the ones ticked.",
     "discovery_filter_match": "Titles with",
+    "discovery_filter_match_given": "Titles in {genre} and",
     "discovery_filter_match_all": "all of these",
     "discovery_filter_match_any": "any of these",
     "discovery_filter_either": "{first} or {second}",

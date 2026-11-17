@@ -105,9 +105,13 @@
    */
   function feedPage(path, kind, page, options) {
     const query = kind ? (filters().feedQuery?.(FILTER_MODULE, kind) ?? '') : '';
-    // (A genre's category names its genre itself: its genres are asked as all of what is ticked.)
-    const filterQuery = JE.discoveryFilters?.forRoute?.(path, query) ?? query;
-    return fetchWithManagedRequest(feedRequest(path, page, filterQuery, localDay()), options);
+    // (A genre's category names its genre itself: the other genres are asked, or kept, as routeFeed says.)
+    const routed = kind && JE.discoveryFilters?.routeFeed
+      ? JE.discoveryFilters.routeFeed(path, kind, filters().getFilters?.(FILTER_MODULE) ?? {}, query)
+      : { query, keep: null };
+    const request = fetchWithManagedRequest(feedRequest(path, page, routed.query, localDay()), options);
+    // (A narrowed copy of the answer: the request cache keeps Seerr's own.)
+    return routed.keep ? request.then(answer => ({ ...answer, results: (answer?.results || []).filter(routed.keep) })) : request;
   }
 
   /**

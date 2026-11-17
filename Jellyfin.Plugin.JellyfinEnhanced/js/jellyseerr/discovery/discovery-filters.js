@@ -47,8 +47,9 @@
      * them or any, and how each is asked of Seerr when nothing is chosen (as these filters always asked).
      */
     const MATCH_DEFAULTS = Object.freeze({ genres: 'all', keywords: 'all', services: 'any' });
-    /** The list a route already names (a genre's or a tag's page), which TMDB can only add to as all of them. */
-    const ROUTE_LISTS = Object.freeze([['genres', 'genre', /\/genre\/\d+(?:$|[/?])/], ['keywords', 'keywords', /\/keyword\/\d+(?:$|[/?])/]]);
+    /** A genre's page's own genre, and a tag's page's own keyword, in a feed's route. */
+    const GENRE_ROUTE = /\/genre\/(\d+)(?:$|[/?])/;
+    const KEYWORD_ROUTE = /\/keyword\/\d+(?:$|[/?])/;
     const LIST_IDS = ['role', 'genres', 'language', 'rating', 'services', 'keywords', 'without'];
 
     /**
@@ -92,18 +93,33 @@
     }
 
     /**
-     * A feed's request with any list its route already names asked as all of what is ticked: TMDB can't say
-     * "this genre and any of those" in one parameter, so a genre's or a tag's page keeps that list's own rule.
+     * A feed's request where its route already names a list (a genre's page, a tag's), and what is kept of its titles
+     * here. The route's own genre is always asked for. The other genres ticked are added to it as all of them (Seerr
+     * joins the route's genre and that list with a comma); matched by any, they are kept here instead, by the genres
+     * each title has, since TMDB can't say "this genre and any of those" in one request. A tag's own keyword can only be
+     * added to as all of them: a title does not say its keywords.
      * @param {string} path - The feed's path (before its query)
-     * @param {string} query - What the filters add (`&name=value` pairs)
-     * @returns {string} The query
+     * @param {'movie'|'tv'} kind - The feed's kind
+     * @param {object} selection - The FilterSelection
+     * @param {string} query - What the filters add (`&name=value` pairs, as feedFilterQuery gives them)
+     * @returns {{query: string, keep: ((item: object) => boolean)|null}} The query to ask, and what to keep of the answer
      */
-    function forRoute(path, query) {
+    function routeFeed(path, kind, selection, query) {
         let asked = query;
-        for (const [, param, route] of ROUTE_LISTS) {
-            if (route.test(path)) asked = asked.replace(new RegExp(`(&${param}=)([^&]*)`), (_, name, value) => name + value.replace(/%7C/gi, '%2C'));
+        let keep = null;
+        const ownGenre = GENRE_ROUTE.exec(path)?.[1];
+        if (ownGenre && matchOf(selection, 'genres') === 'any') {
+            const ticked = (selection?.genres ?? []).map(genre => genreIdFor(genre, kind)).filter(id => id !== ownGenre);
+            const others = ticked.filter(id => id !== '');
+            if (ticked.length > 0) {
+                asked = asked.replace(/&genre=[^&]*/, '');
+                // Ticked, but none of this kind's genres: nothing of this kind is in any of them (see feedFilterQuery).
+                if (others.length === 0) asked += `&${kind === 'tv' ? 'firstAirDate' : 'primaryReleaseDate'}Lte=1800-01-01`;
+                else keep = item => Array.isArray(item?.genreIds) && item.genreIds.some(id => others.includes(String(id)));
+            }
         }
-        return asked;
+        if (KEYWORD_ROUTE.test(path)) asked = asked.replace(/(&keywords=)([^&]*)/, (_, name, value) => name + value.replace(/%7C/gi, '%2C'));
+        return { query: asked, keep };
     }
 
     /**
@@ -453,7 +469,7 @@
         checkableOnLoaded,
         MATCH_DEFAULTS,
         matchOf,
-        forRoute,
+        routeFeed,
         dayOf,
         numberOf,
         isBound,

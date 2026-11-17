@@ -386,8 +386,8 @@
             meta.appendChild(summary);
         }
         if (onSortChange) {
-            // (On a genre's page that genre is given: its Genres list says so. A genre's or a tag's page names that
-            // list in its own request, so it is matched by all of what is ticked there.)
+            // (On a genre's page that genre is given: its Genres list says so. A tag's page names its keyword in its own
+            // request, and a title can't be checked for keywords, so its keywords are matched by all of what is ticked.)
             const filters = JE.discoveryFilters?.createFiltersControl?.(header, moduleName, scope,
                 () => onSortChange(getSortMode(moduleName)), moduleName === 'genre' ? subject : undefined,
                 undefined, moduleName === 'tag' ? ['keywords'] : undefined);

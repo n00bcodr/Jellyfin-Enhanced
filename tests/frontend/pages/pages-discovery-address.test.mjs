@@ -175,3 +175,18 @@ test("a filter the admin turned off is not taken from an address", async t => {
   await until(() => h.section('person')?.querySelector('.jellyseerr-filters-set, .jellyseerr-filters-none'), 'the section');
   assert.deepEqual(Object.keys(plain(h.JE.discoveryFilters.selectionOf('person'))), ['language']);
 });
+
+test("a genre's page keeps its genre and takes the others ticked as any of them: asked for its genre, kept by theirs", async t => {
+  const h = setup(t, { hash: '#/list?genreId=g1&serverId=s&jeGenres=36/35:Comedy,10751/10751:Family,16/16:Animation&jeAny=genres', routes: [...GENRE,
+    [`${API}/jellyseerr/discover/tv/genre/35?page=1`, { results: [{ id: 1, mediaType: 'tv', genreIds: [35, 10751] }, { id: 2, mediaType: 'tv', genreIds: [35] }], totalPages: 1 }],
+    [`${API}/jellyseerr/discover/movies/genre/36?page=1`, { results: [{ id: 11, mediaType: 'movie', genreIds: [36, 16] }, { id: 12, mediaType: 'movie', genreIds: [36, 18] }], totalPages: 1 }]] });
+  h.load('jellyseerr/discovery/genre-discovery.js');
+  await until(() => ids(h.section('genre')).length > 0, 'first page');
+  assert.deepEqual(ids(h.section('genre')).sort((a, b) => a - b), [1, 11], 'Comedy and (Family or Animation)');
+  assert.equal(h.calls.some(path => path.includes('genre/35?page=1&') || path.includes('genre/36?page=1&')), false, 'asked for its own genre only');
+  h.section('genre').querySelector('.jellyseerr-filters-btn').click();
+  const genres = [...h.document.querySelectorAll('.jellyseerr-sort-menu .jellyseerr-menu-group')].find(group => group.textContent.startsWith('Genres'));
+  genres.click();
+  await until(() => h.document.querySelector('.jellyseerr-sort-menu .jellyseerr-menu-match'), 'the choice');
+  assert.equal(h.document.querySelector('.jellyseerr-sort-menu .jellyseerr-menu-match-lead').textContent, 'Titles in Comedy and');
+});

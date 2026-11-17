@@ -292,13 +292,16 @@
                 }
                 const base = spec.buildDiscoverPath(kind, feedId, /** @type {NonNullable<typeof currentFeeds>} */ (currentFeeds));
                 const query = JE.discoveryFilter?.feedQuery?.(key, kind) ?? '';
-                // (A list the route names itself is asked as all of what is ticked: see forRoute.)
-                const path = `${base}?page=${page}${JE.discoveryFilters?.forRoute?.(base, query) ?? query}`;
+                // (Where the route names a list itself, the filters are asked and kept as routeFeed says.)
+                const routed = JE.discoveryFilters?.routeFeed?.(base, kind, JE.discoveryFilters.selectionOf?.(key) ?? {}, query) ?? { query, keep: null };
+                const path = `${base}?page=${page}${routed.query}`;
                 const response = await fetchWithManagedRequest(path, { signal });
                 if (signal?.aborted) {
                     throw new DOMException('Aborted', 'AbortError');
                 }
-                return response || { results: [], totalPages: 1 };
+                const answer = response || { results: [], totalPages: 1 };
+                // (The answer is the request cache's: a narrowed copy, never the cached one changed.)
+                return routed.keep ? { ...answer, results: (answer.results || []).filter(routed.keep) } : answer;
             } catch (error) {
                 if (error.name === 'AbortError' || !tolerant) throw error;
                 // Mark the failure: the caller keeps the feed open so the scroll

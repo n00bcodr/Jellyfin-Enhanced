@@ -320,3 +320,20 @@ test("a category its address asked for, still resolving its genre, is not opened
   assert.equal(P.state.categoryPageVisible, false);
   assert.equal(h.hash(), TAB);
 });
+
+test("a genre's category keeps its genre and takes the other genres ticked as any of them (Animation, and Family or Kids)", async t => {
+  const link = `${TAB}&jeCategory=genre-tv-16&jeType=series&jeGenres=16/16:Animation,10751/10751:Family,/10762:Kids&jeAny=genres`;
+  const h = setup(t, { hash: link, routes: [[`${DISCOVER}/tv/genre/16?page=1`, { totalPages: 1, results: [
+    { id: 1, mediaType: 'tv', genreIds: [16, 10751] }, { id: 2, mediaType: 'tv', genreIds: [16] }, { id: 3, mediaType: 'tv', genreIds: [16, 10762] }
+  ] }]] });
+  h.JE.jellyseerrAPI.fetchGenreSlider = async kind => kind === 'tv' ? [{ id: 16, name: 'Animation', backdrops: [] }] : [];
+  const P = h.load();
+  await until(() => P.state.categoryPageVisible && h.categoryCards().length === 2, 'opened from its address');
+  assert.deepEqual(h.categoryCards(), [1, 3]);
+  assert.equal(h.calls.some(path => path.startsWith(`${DISCOVER}/tv/genre/16?page=1&`)), false, 'asked for its own genre only');
+  h.category().querySelector('#je-recommendations-category-filters .jellyseerr-filters-btn').click();
+  [...h.document.querySelectorAll('.jellyseerr-sort-menu .jellyseerr-menu-group')].find(group => group.textContent.startsWith('Genres')).click();
+  await until(() => h.document.querySelector('.jellyseerr-sort-menu .jellyseerr-menu-match'), 'the choice');
+  assert.equal(h.document.querySelector('.jellyseerr-sort-menu .jellyseerr-menu-match-lead').textContent, 'Titles in Animation and');
+  assert.equal(h.document.querySelector('.jellyseerr-sort-menu .jellyseerr-menu-match [aria-checked="true"]').dataset.match, 'any');
+});

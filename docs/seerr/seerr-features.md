@@ -378,7 +378,7 @@ The section's header holds its title, then one row: what the list shows, the **A
 | **Score** | A range of TMDB user scores, from 0 to 10, with one decimal at most. |
 | **Votes** | A range for the number of TMDB user votes. |
 | **Runtime** | A range in whole minutes. |
-| **Genres** | Titles in all of the genres ticked, or in any of them (chosen under the list). On a genre page, that genre is already applied and the others are added to it as all of them. |
+| **Genres** | Titles in all of the genres ticked, or in any of them (chosen under the list). On a genre page, that genre is always applied, and the others ticked are added to it as all of them or any of them. |
 | **Original language** | Titles originally in any of the languages ticked. |
 | **Content rating** | Titles with any of the ratings ticked, from the ratings used in the admin's **Default Region** (US ratings where TMDB has none for it). |
 | **Streaming services** | Titles on any of the services ticked, or on all of them (chosen under the list), in the admin's **Default Region**. |

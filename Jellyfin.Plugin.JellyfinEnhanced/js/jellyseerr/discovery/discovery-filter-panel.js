@@ -289,7 +289,10 @@
             const lead = document.createElement('span');
             lead.className = 'jellyseerr-menu-match-lead';
             lead.id = `jellyseerr-menu-match-${++hints}`;
-            lead.textContent = say('discovery_filter_match', 'Titles with');
+            // (On a genre's page its genre is always applied: the choice is about the others.)
+            lead.textContent = id === 'genres' && options.ownGenre
+                ? say('discovery_filter_match_given', 'Titles in {genre} and', { genre: options.ownGenre })
+                : say('discovery_filter_match', 'Titles with');
             // One segmented control, as All / Movies / Series is: a radio group, one stop for the keys.
             const track = document.createElement('div');
             track.className = 'jellyseerr-menu-match-track';
@@ -693,11 +696,11 @@
      * @param {string} [ownGenre] - On a genre's page: that genre's name
      * @param {() => (HTMLElement|null)} [place] - What the button narrows where that is not the header's discovery
      *   section (a page of its own, such as the Recommendations page): it holds the line of what is set, after the header
-     * @param {string[]} [fixedAll] - The lists the page's own address names (a genre's page: genres; a tag's: keywords),
-     *   which are matched by all of what is ticked, with no choice (default: genres where `ownGenre` is given)
+     * @param {string[]} [fixedAll] - The lists matched by all of what is ticked, with no choice (a tag's page: keywords,
+     *   which its own request names and a title can't be checked against)
      * @returns {HTMLButtonElement}
      */
-    function createFiltersControl(header, moduleName, scope, onChange, ownGenre, place, fixedAll = ownGenre ? ['genres'] : []) {
+    function createFiltersControl(header, moduleName, scope, onChange, ownGenre, place, fixedAll = []) {
         injectStyles();
         /** The section the header is in, or the page the button narrows. */
         const sectionOf = place ?? (() => header.closest('.jellyseerr-discovery-section'));
