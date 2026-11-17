@@ -468,6 +468,9 @@
   // The open category ({key, category}), and whether its address names it.
   let openCategory = null;
   let urlMode = false;
+  // Bumped by every open and close: an open still resolving its category (a genre's names) gives up
+  // when a newer open or a close came meanwhile.
+  let openTicket = 0;
   // Our entry carries { jeCategory: true }, so a pop that lands back on it (the More Info modal
   // above the page closing) leaves the page open, and any other pop closes it. This does not
   // depend on whether the modal's own popstate listener ran first. In urlMode the address
@@ -596,8 +599,13 @@
    * @param {boolean} [fromUrl=false] - Opened by its address (a link, a reload, Back, Forward), which names it
    */
   async function showCategoryPage(categoryKey, fromUrl = false) {
+    const ticket = ++openTicket;
+    // Which page this is (the filters may change meanwhile; the page may not).
+    const pageOf = () => JE.discoveryAddress?.withoutOwn?.(window.location.hash) ?? window.location.hash;
+    const from = pageOf();
     const category = await resolve(categoryKey);
-    if (!category) return;
+    // Another open, a close or a navigation came while it resolved: this one is no longer wanted.
+    if (!category || ticket !== openTicket || pageOf() !== from) return;
 
     const config = JE.pluginConfig || {};
     if (!config.RecommendationsPageEnabled) return;
@@ -646,6 +654,7 @@
   }
 
   function hideCategoryPage() {
+    openTicket++;
     if (!state.categoryPageVisible) return;
 
     JE.discoveryFilter.cleanupScrollObserver(state.categoryState);

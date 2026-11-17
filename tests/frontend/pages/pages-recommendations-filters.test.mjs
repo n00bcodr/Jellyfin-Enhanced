@@ -263,3 +263,25 @@ test("an address's filters that are not of their shape are left out", t => {
   assert.equal(address.categoryOfHash(`${TAB}&jeCategory=genre-movie-28`), 'genre-movie-28');
   assert.equal(address.categoryOfHash('#/details?id=1&jeCategory=trending'), null, 'only the Recommendations page has categories');
 });
+
+test("a category still resolving its genre is not opened once the viewer has gone elsewhere, nor twice", async t => {
+  const h = setup(t);
+  let release;
+  const names = new Promise(resolve => { release = resolve; });
+  h.JE.jellyseerrAPI.fetchGenreSlider = () => names;
+  const P = h.load();
+  const first = P.showCategoryPage('genre-movie-28');
+  h.window.location.hash = '#/details?id=another';
+  release([{ id: 28, name: 'Action', backdrops: [] }]);
+  await first;
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(P.state.categoryPageVisible, false);
+  assert.equal(h.hash(), '#/details?id=another');
+  // Two opens at once (the address followed twice): the later one wins, once.
+  h.window.location.hash = TAB;
+  await new Promise(resolve => setTimeout(resolve, 20));
+  const length = h.window.history.length;
+  await Promise.all([P.showCategoryPage('genre-movie-28'), P.showCategoryPage('genre-movie-28')]);
+  assert.equal(P.state.categoryPageVisible, true);
+  assert.equal(h.window.history.length, length + 1, 'one entry');
+});

@@ -243,7 +243,7 @@
         function startFilters(offersType) {
             JE.discoveryFilter?.resetFilterMode?.(key);
             JE.discoveryFilter?.resetSortMode?.(key);
-            JE.discoveryAddress?.adopt?.(key, key, { withType: offersType, withSort: true });
+            JE.discoveryAddress?.adopt?.(key, key, { withType: offersType, withSort: true, scope: isClientPaged ? 'person' : 'feed' });
         }
 
         /** What the section's controls are set to goes into its page's address (its entry is replaced). */
@@ -1035,7 +1035,9 @@
             if (!isDualFeed || !JE.discoveryFilter?.addFilterControl) return;
             const section = itemsContainer.closest(sectionSelector);
             const header = section?.querySelector('.jellyseerr-discovery-header');
-            if (!header || !JE.discoveryFilter.hasBothTypes(cachedTvResults, cachedMovieResults)) return;
+            // (A type its page's address asked for is shown on the tabs from the start, where both feeds exist.)
+            const typed = JE.discoveryFilter.getFilterMode(key) !== 'mixed' && !!currentFeeds?.tvId && !!currentFeeds?.movieId;
+            if (!header || !(typed || JE.discoveryFilter.hasBothTypes(cachedTvResults, cachedMovieResults))) return;
             JE.discoveryFilter.addFilterControl(header, key, handleFilterChange);
         }
 
@@ -1195,28 +1197,19 @@
 
             // Determine if we have both types (only show filter if BOTH have results)
 
-            // A type the address asked for that page 1 has none of (while the other kind has some):
-            // the tabs that would say so are not offered, so the section shows everything.
-            const askedType = JE.discoveryFilter?.getFilterMode(key) || 'mixed';
-            if (askedType !== 'mixed' && !(askedType === 'tv' ? cachedTvResults : cachedMovieResults).length
-                && (cachedTvResults.length > 0 || cachedMovieResults.length > 0)) {
-                JE.discoveryFilter?.setFilterMode?.(key, 'mixed');
-            }
-            // Get current filter mode
+            // Get current filter mode (a type its page's address asked for, else All)
             const filterMode = JE.discoveryFilter?.getFilterMode(key) || 'mixed';
 
             // Update hasMorePages
             updateHasMorePages(filterMode);
 
-            // Get results based on filter mode
-            let displayResults = getFilteredResults(filterMode);
-
-            // If filtered results are empty but we have some content, fall back to showing all
-            if (displayResults.length === 0 && (cachedTvResults.length > 0 || cachedMovieResults.length > 0)) {
-                displayResults = [...cachedTvResults, ...cachedMovieResults];
-            }
+            // Page 1 of both kinds goes in. A type the address asked for hides the other kind's cards, as
+            // choosing it does (so All shows them again), and its own feed is read on from there even when
+            // its page 1 came back empty.
+            const displayResults = getFilteredResults(JE.discoveryFilter?.MODES?.MIXED ?? 'mixed');
 
             if (!section || !itemsContainer) return;
+            if (filterMode !== 'mixed') JE.discoveryFilter?.applyFilterVisibility?.(itemsContainer, filterMode);
             // An empty page 1 is not an empty feed: the parental filter and the
             // in-library/hidden filters can strip a page bare while later pages
             // still hold titles (upstream page counts are preserved). Only give up

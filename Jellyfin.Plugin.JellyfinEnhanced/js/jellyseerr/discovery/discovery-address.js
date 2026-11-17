@@ -266,11 +266,13 @@
     }
 
     /**
-     * Makes what the address says the module's: true when that changed anything.
+     * Makes what the address says the module's: true when that changed anything. Only the filters the
+     * page offers are taken: those of its scope that the admin has not turned off.
      * @param {string} filterModule - Where All / Movies / Series and the further filters are kept
      * @param {string|null} sortModule - Where the order is kept (null: none)
-     * @param {{withType?: boolean, withSort?: boolean}} [options] - `withType`: All / Movies / Series is offered
-     *   (else it stays as it is); `withSort`: the order is read too
+     * @param {{withType?: boolean, withSort?: boolean, scope?: string}} [options] - `withType`: All / Movies / Series
+     *   is offered (else it stays as it is); `withSort`: the order is read too; `scope`: which filters the page
+     *   offers ('feed', the default, 'person' or 'loaded', see discovery-filters.js)
      * @returns {boolean}
      */
     function adopt(filterModule, sortModule, options = {}) {
@@ -278,7 +280,9 @@
         const withSort = options.withSort ?? !!sortModule;
         const now = current(filterModule, withSort ? sortModule : null);
         const said = filtersOfHash(window.location.hash);
-        const wanted = { mode: withType ? said.mode : now.mode, selection: said.selection, sort: withSort ? said.sort : '' };
+        const offered = JE.discoveryFilters?.offeredFilters?.(options.scope || 'feed', JE.pluginConfig) ?? [];
+        const selection = Object.fromEntries(Object.entries(said.selection).filter(([id]) => offered.includes(id)));
+        const wanted = { mode: withType ? said.mode : now.mode, selection, sort: withSort ? said.sort : '' };
         if (filterPairs(wanted, withSort).join('&') === filterPairs(now, withSort).join('&')) return false;
         JE.discoveryFilter?.setFilterMode?.(filterModule, wanted.mode);
         JE.discoveryFilters?.setSelection?.(filterModule, wanted.selection);

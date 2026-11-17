@@ -77,7 +77,9 @@ test("a list page's link with the section's filters: page 1 is asked with them, 
   h.load('jellyseerr/discovery/genre-discovery.js');
   await until(() => ids(h.section('genre')).length > 0 && h.section('genre').querySelector('.jellyseerr-filters-set'), 'first page');
   const section = h.section('genre');
-  assert.deepEqual(ids(section), [11], 'Movies only');
+  // Page 1 of both kinds is in, the series hidden as choosing Movies hides them (All shows them again).
+  assert.deepEqual(ids(section), [1, 11]);
+  assert.equal(section.querySelector('.itemsContainer').classList.contains('filter-movies'), true, 'Movies only shown');
   assert.equal(section.querySelector('.jellyseerr-discovery-filter .emby-tab-button-active').dataset.mode, 'movies');
   assert.equal(section.querySelector('.jellyseerr-sort-btn').textContent, 'Most votes');
   assert.deepEqual(h.said(section), ['Score from 7']);
@@ -150,4 +152,26 @@ test('a section goes on the page the router shows, not the one still showing whi
   assert.equal(h.section('person').closest('.page').id, 'new');
   assert.equal(h.section('person').querySelector('.jellyseerr-discovery-filter .emby-tab-button-active').dataset.mode, 'movies');
   assert.equal(plain(h.JE.discoveryFilter.getFilterMode('person')), 'movies');
+});
+
+test("a type its address asks for holds when its page 1 came back empty: the tabs say it, the other kind is hidden, its feed reads on", async t => {
+  const h = setup(t, { hash: '#/list?genreId=g1&serverId=s&jeType=movies', routes: [...GENRE,
+    [`${API}/jellyseerr/discover/tv/genre/35?page=1`, feed([1], 'tv', 3)],
+    [`${API}/jellyseerr/discover/movies/genre/36?page=1`, feed([], 'movie', 2)]] });
+  h.load('jellyseerr/discovery/genre-discovery.js');
+  await until(() => h.section('genre')?.querySelector('.jellyseerr-discovery-filter'), 'the tabs');
+  const section = h.section('genre');
+  assert.equal(h.JE.discoveryFilter.getFilterMode('genre'), 'movies');
+  assert.equal(section.querySelector('.jellyseerr-discovery-filter .emby-tab-button-active').dataset.mode, 'movies');
+  assert.equal(section.querySelector('.itemsContainer').classList.contains('filter-movies'), true, 'the series card is hidden');
+  assert.equal(h.hash(), '#/list?genreId=g1&serverId=s&jeType=movies');
+});
+
+test("a filter the admin turned off is not taken from an address", async t => {
+  const h = setup(t, { hash: '#/details?id=p1&jeScore=7..&jeLanguage=ko', html: DETAIL('detail'),
+    items: { p1: { Id: 'p1', Type: 'Person' } }, routes: PERSON_ROUTES });
+  h.JE.pluginConfig.JellyseerrFilterScore = false;
+  h.load('jellyseerr/discovery/person-discovery.js');
+  await until(() => h.section('person')?.querySelector('.jellyseerr-filters-set, .jellyseerr-filters-none'), 'the section');
+  assert.deepEqual(Object.keys(plain(h.JE.discoveryFilters.selectionOf('person'))), ['language']);
 });
