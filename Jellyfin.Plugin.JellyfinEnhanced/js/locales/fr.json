@@ -1485,12 +1485,12 @@
     "subtitle_sync_jump_unavailable": "This stream can only jump within the part the server has prepared so far, and that line is outside it.",
     "feature_subtitle_sync_button": "{{icon:subtitles}} Subtitle Sync Button",
     "subtitle_sync_hint_burned": "These subtitles are part of the video picture, so they can't be shifted. Choosing a line jumps to it.",
-    "subtitle_sync_offset_reset": "{{icon:subtitles}} Subtitle offset reset",
+    "subtitle_sync_offset_reset": "{{icon:subtitles}} Décalage des sous-titres réinitialisé",
     "subtitle_sync_hint": "Choose the line you just heard to sync the subtitles to it. The arrow button jumps to a line.",
     "subtitle_sync_hint_unavailable": "This player can't shift subtitles. Choosing a line jumps to it.",
     "panel_settings_subtitle_sync_button": "Subtitle Sync Button",
-    "subtitle_sync_synced": "{{icon:subtitles}} Subtitles synced ({offset})",
+    "subtitle_sync_synced": "{{icon:subtitles}} Sous-titres synchrinisés ({offset})",
     "subtitle_sync_choose_track": "Choose subtitles",
     "panel_settings_subtitle_sync_button_desc": "Adds a button next to Subtitles in the player to sync the subtitles: choose the line you just heard and the subtitles shift to match. You can also search the lines and jump to one",
-    "toast_player_unsupported": "{{icon:info}} Not available with this player"
+    "toast_player_unsupported": "{{icon:info}} Indisponible sur ce lecture"
 }
