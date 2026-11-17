@@ -1054,7 +1054,9 @@
             /* (A phone's browser zooms into a field whose type is under 16px.) */
             @media (max-width: 600px) { .jellyseerr-menu-input { font-size: max(1em, 16px); min-height: 44px; } }
             .jellyseerr-menu-group .listItemBody { display: flex; flex-direction: row; align-items: baseline; justify-content: space-between; gap: 1.5em; }
-            .jellyseerr-menu-group .actionSheetItemText { flex: 0 1 auto; }
+            /* The filter's name is never cut: a long value gives way, with an ellipsis. */
+            html .jellyseerr-sort-menu .jellyseerr-menu-group .actionSheetItemText { flex: 0 0 auto; }
+            html .jellyseerr-sort-menu .jellyseerr-menu-group .jellyseerr-menu-group-value { flex: 0 1 auto; min-width: 0; }
             .jellyseerr-menu-group-value { color: var(--jf-palette-text-secondary, rgba(255,255,255,.7)); white-space: nowrap; }
             .jellyseerr-menu-group[data-set] .jellyseerr-menu-group-value { color: var(--jellyseerr-accent); }
             .jellyseerr-menu-group .actionsheetMenuItemIcon { transition: transform .15s; }
