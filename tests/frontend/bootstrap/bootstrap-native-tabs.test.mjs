@@ -95,6 +95,12 @@ test("a stale index is corrected without the address's other pairs (a Recommenda
   assert.equal(h.window.location.hash, '#/home?tab=4&jeTab=requests&jeCategory=trending&jeType=movies');
 });
 
+test("Home with only the Recommendations filters' fragment after it (a tab reached by clicking, then reloaded) is Home: the tabs are added", async t => {
+  const h = setup(t, { hash: '#/home#jeType=movies' }); h.register();
+  await until(() => h.panel());
+  assert.ok(h.button());
+});
+
 test("a stale index is corrected with the Recommendations filters' fragment kept after the query", async t => {
   const h = setup(t, { count: 2, hash: '#/home?tab=2&jeTab=requests#jeCategory=trending&jeType=movies' }); h.register();
   await until(() => h.panel()?.classList.contains('is-active'));
