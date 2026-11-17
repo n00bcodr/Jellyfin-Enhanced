@@ -115,7 +115,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
         {
             "TMDB_API_KEY", "MdblistApiKey", "DoesTheDogDieApiKey", "ReviewTranslationApiKey", "JellyseerrApiKey",
             "ShokoApiKey", "SonarrApiKey", "RadarrApiKey", "SonarrInstances", "RadarrInstances", "CustomTagRuleKey",
-            "AnalyticsInstallSecret", "LeavingSoonMaintainerrApiKey",
+            "AnalyticsInstallSecret", "LeavingSoonMaintainerrApiKey", "ReclaimerrToken", "ReclaimerrPassword",
         };
 
         private static readonly Regex PresetIdRegex = new Regex("^[a-z0-9][a-z0-9-]{0,39}$", RegexOptions.Compiled);

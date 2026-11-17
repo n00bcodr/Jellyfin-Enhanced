@@ -26,7 +26,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         /// <summary>The configured base address without a trailing slash, or null when none is set.</summary>
         internal static string? BaseUrl(PluginConfiguration? config)
-            => config != null && LeavingSoonService.IsMaintainerrUrl(config.LeavingSoonMaintainerrUrl) ? config.LeavingSoonMaintainerrUrl.Trim().TrimEnd('/') : null;
+            => config != null && config.LeavingSoonMaintainerrEnabled && !LeavingSoonService.UsesReclaimerr(config) && LeavingSoonService.IsMaintainerrUrl(config.LeavingSoonMaintainerrUrl) ? config.LeavingSoonMaintainerrUrl.Trim().TrimEnd('/') : null;
 
         /// <summary>
         /// Send one request and parse its JSON answer. A 3xx answer, a redirect a client
@@ -42,7 +42,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <param name="timeout">The request timeout.</param>
         /// <param name="onRedirect">Told where a 3xx pointed (the caller logs the host once).</param>
         /// <param name="token">The caller's cancellation.</param>
-        internal static async Task<JsonDocument> SendAsync(IHttpClientFactory http, PluginConfiguration config, HttpMethod method, string url, string? body, TimeSpan timeout, Action<Uri, Uri?>? onRedirect, CancellationToken token)
+        internal static async Task<JsonDocument> SendAsync(IHttpClientFactory http, PluginConfiguration config, HttpMethod method, string url, string? body, TimeSpan timeout, Action<Uri, Uri?>? onRedirect, CancellationToken token, string? cookie = null, Action<string>? onSetCookie = null, (string Name, string Value)? asUser = null)
         {
             if (!await Helpers.ArrUrlGuard.IsAllowedUrlAsync(url, token).ConfigureAwait(false)) throw new UnauthorizedAccessException();
             using var limit = CancellationTokenSource.CreateLinkedTokenSource(token);
@@ -51,10 +51,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var target = new Uri(url);
             using var request = new HttpRequestMessage(method, target);
             request.Headers.Accept.ParseAdd("application/json");
-            var key = (config.LeavingSoonMaintainerrApiKey ?? string.Empty).Trim();
-            if (key.Length > 0) request.Headers.TryAddWithoutValidation("X-Api-Key", key);
+            if (asUser is { } who) request.Headers.TryAddWithoutValidation(who.Name, who.Value);
+            else if (cookie != null) { if (cookie.Length > 0) request.Headers.TryAddWithoutValidation("Cookie", cookie); }
+            else if (LeavingSoonService.UsesReclaimerr(config))
+            {
+                var bearer = (config.ReclaimerrToken ?? string.Empty).Trim();
+                if (bearer.Length > 0) request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", bearer);
+            }
+            else
+            {
+                var key = (config.LeavingSoonMaintainerrApiKey ?? string.Empty).Trim();
+                if (key.Length > 0) request.Headers.TryAddWithoutValidation("X-Api-Key", key);
+            }
             if (body != null) request.Content = new StringContent(body, Encoding.UTF8, new MediaTypeHeaderValue("application/json"));
             using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, limit.Token).ConfigureAwait(false);
+            if (onSetCookie != null && response.Headers.TryGetValues("Set-Cookie", out var cookies))
+            {
+                foreach (var line in cookies)
+                {
+                    var pair = line.Split(';', 2)[0].Trim();
+                    if (pair.StartsWith("access_token=", StringComparison.Ordinal)) onSetCookie(pair);
+                }
+            }
+
             if ((int)response.StatusCode is >= 300 and < 400)
             {
                 onRedirect?.Invoke(target, response.Headers.Location);
@@ -85,8 +104,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             try
             {
                 using var doc = JsonDocument.Parse(body);
-                if (doc.RootElement.ValueKind != JsonValueKind.Object || !doc.RootElement.TryGetProperty("message", out var message)) return null;
-                var text = message.ValueKind == JsonValueKind.String ? message.GetString() : message.ValueKind == JsonValueKind.Array && message.GetArrayLength() > 0 ? message[0].ToString() : null;
+                if (doc.RootElement.ValueKind != JsonValueKind.Object) return null;
+                // Maintainerr says {"message": ...}; Reclaimerr (FastAPI) says {"detail": "..."} or {"detail": [{"msg": ...}]}.
+                if (!doc.RootElement.TryGetProperty("message", out var message) && !doc.RootElement.TryGetProperty("detail", out message)) return null;
+                var text = message.ValueKind == JsonValueKind.String ? message.GetString()
+                    : message.ValueKind == JsonValueKind.Array && message.GetArrayLength() > 0 ? (message[0].ValueKind == JsonValueKind.Object && message[0].TryGetProperty("msg", out var msg) ? msg.ToString() : message[0].ToString())
+                    : null;
                 if (string.IsNullOrWhiteSpace(text)) return null;
                 text = text.Trim();
                 return text.Length <= 300 ? text : text[..300];

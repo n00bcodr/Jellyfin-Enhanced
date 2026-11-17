@@ -4195,7 +4195,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 LeavingSoonAvailable = Services.LeavingSoonService.Configured(config),
                 // Whether administrators can mark, keep and postpone removals from the item menu (the actions
                 // switch and a Maintainerr URL); the rows themselves are admin-only on the server.
-                MaintainerrActionsAvailable = Services.MaintainerrActions.Enabled(config),
+                MaintainerrActionsAvailable = Services.MaintainerrActions.Enabled(config) || Services.ReclaimerrActions.Enabled(config),
+                // Whether anyone signed in can ask for a removal (Reclaimerr with a service account).
+                RemovalRequestsAvailable = Services.ReclaimerrActions.RequestsEnabled(config),
+                LeavingSoonProvider = Services.LeavingSoonService.UsesReclaimerr(config) ? "reclaimerr" : "maintainerr",
                 config.StatusTagsOnCollections,
                 config.StatusTagsJustAddedDays,
                 config.StatusTagsNewReleaseDays,
@@ -4371,6 +4374,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.CatchUpUsePluginPages,
                 config.CatchUpUseCustomTabs,
                 config.CatchUpUseNativeTab,
+                // Leaving soon page placement
+                config.LeavingSoonPageEnabled,
+                config.LeavingSoonPageUsePluginPages,
+                config.LeavingSoonPageUseCustomTabs,
+                config.LeavingSoonPageUseNativeTab,
 
                 // Maintenance Mode
                 MaintenanceModeEnabled = mmActive,
