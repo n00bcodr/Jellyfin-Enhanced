@@ -72,8 +72,11 @@
         };
     }
 
-    // A jellyfin-web dialog is open over the page, on the entry it pushed (see dispatchNavigate).
+    // A jellyfin-web dialog is open over the page, on the entry it pushed, and the address it opened over
+    // (see dispatchNavigate).
     let onDialogEntry = false;
+    /** @type {string|null} */
+    let dialogFrom = null;
 
     /**
      * An address without the fragment a page keeps its own state in (`#/route?query#state`, see
@@ -103,18 +106,34 @@
      */
     function dispatchNavigate(event) {
         if (window.location.href === lastDispatchedHref) return;
+        const href = window.location.href;
+        const samePage = lastDispatchedHref !== null && routerPart(href) === routerPart(lastDispatchedHref);
+        const dialogEntry = isDialogEntry();
         // A jellyfin-web dialog opened on the page (an item's "…" menu) pushes an entry at the address its
-        // router last saw, without the page's own fragment, and Back off it closes it: neither is a
-        // navigation, the page is still there showing what it did. (Back or Forward onto such an entry
-        // left behind, with no dialog open, is one: it moves between the page's own entries.)
-        const samePage = lastDispatchedHref !== null && routerPart(window.location.href) === routerPart(lastDispatchedHref);
-        const opened = samePage && event?.type === 'je:navigate' && isDialogEntry();
-        if (opened || (samePage && onDialogEntry && !isDialogEntry())) {
-            onDialogEntry = opened;
-            lastDispatchedHref = window.location.href;
+        // router last saw, without the page's own fragment, and its Back returns to the address it opened
+        // over: neither is a navigation, the page is still there showing what it did.
+        if (samePage && dialogEntry && event?.type === 'je:navigate') {
+            if (!onDialogEntry) dialogFrom = lastDispatchedHref;
+            onDialogEntry = true;
+            lastDispatchedHref = href;
+            return;
+        }
+        if (onDialogEntry && !dialogEntry && href === dialogFrom) {
+            onDialogEntry = false;
+            dialogFrom = null;
+            lastDispatchedHref = href;
             return;
         }
         onDialogEntry = false;
+        dialogFrom = null;
+        // Back or Forward onto such an entry left behind, with no dialog open, on the page shown: the same
+        // page, which gets its address back (its fragment). From a category page it is a move off the
+        // category, and a navigation.
+        const shown = String(lastDispatchedHref);
+        if (samePage && dialogEntry && href === routerPart(href) && !/(?:^|[#&])jeCategory=/.test(shown.slice(routerPart(shown).length))) {
+            (unpatchedReplace || history.replaceState.bind(history))(history.state, '', shown);
+            return;
+        }
         lastDispatchedHref = window.location.href;
         for (const callback of navCallbacks) {
             try {
@@ -139,6 +158,7 @@
         change(state, '', url);
         lastDispatchedHref = window.location.href;
         onDialogEntry = false;
+        dialogFrom = null;
     }
 
     /**

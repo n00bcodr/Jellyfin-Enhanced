@@ -152,6 +152,15 @@ for (const fragment of ['', '#jeType=movies']) {
     h.document.body.appendChild(dialog);
     await paints();
     assert.equal(h.tabs.selectedIndex(), 0, 'still on the tab the user picked');
+    // Closed by Back, then Forward onto its entry left behind (no dialog open): still the picked tab.
+    dialog.remove();
+    h.window.history.back();
+    await until(() => !h.window.history.state?.usr);
+    h.window.history.forward();
+    await until(() => h.window.history.state?.usr?.dialogs);
+    await paints();
+    assert.equal(h.tabs.selectedIndex(), 0, 'still on the tab the user picked after Forward');
+    assert.equal(h.window.location.hash, link + fragment);
   });
 }
 

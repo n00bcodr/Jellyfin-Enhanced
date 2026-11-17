@@ -136,6 +136,14 @@ test("a jellyfin-web dialog after a change (its entry at the router's address, w
   assert.equal(navigated, 0, 'nor its closing');
   assert.equal(h.section('genre'), section, 'the same section');
   assert.equal(section.querySelector('.jellyseerr-discovery-filter .emby-tab-button-active').dataset.mode, 'tv');
+  // Forward onto the dialog's entry left behind (no dialog open): the same page, its address put back.
+  h.window.history.forward();
+  await until(() => h.window.history.state?.usr?.dialogs, 'Forward onto the entry');
+  await new Promise(resolve => setTimeout(resolve, 50));
+  assert.equal(h.hash(), '#/list?genreId=g1&serverId=s#jeType=series');
+  assert.equal(navigated, 0, 'not a navigation either');
+  assert.equal(h.section('genre'), section);
+  assert.equal(h.JE.discoveryFilter.getFilterMode('genre'), 'tv');
   // A real move still is one.
   h.window.history.pushState(null, '', `${ORIGIN}/web/index.html#/home`);
   assert.equal(navigated, 1);
