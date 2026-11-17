@@ -3216,6 +3216,11 @@
 <td>Empty</td>
 <td>Adds an optional icon beside a nonempty custom message.</td>
 </tr>
+<tr>
+<td><strong>Upload Icon</strong></td>
+<td>None</td>
+<td>An icon stored on the server, used in place of the icon URL.</td>
+</tr>
 </tbody>
 </table>
 <h3 id="default-region">Default Region<a class="headerlink" href="#default-region" title="Permanent link">¶</a></h3>
@@ -3382,7 +3387,10 @@
 <h3 id="how-to-use_2">How to use<a class="headerlink" href="#how-to-use_2" title="Permanent link">¶</a></h3>
 <ol>
 <li>Expand <strong>Custom Branding</strong> in <strong>Elsewhere &amp; Reviews</strong>.</li>
-<li>Enter a message and optional icon URL. Use an image viewers can access, such as an HTTPS URL or a root-relative path like <code>/web/assets/img/icon.png</code>.</li>
+<li>Enter a message.</li>
+<li>Optionally add an icon, either way:
+    - <strong>Upload Icon:</strong> drop or pick a PNG, JPG, GIF, WebP or SVG file. It is stored on the server straight away and used instead of the icon URL; the bin button removes it.
+    - <strong>Custom Branding Icon URL:</strong> each viewer's browser loads the icon, so use a web address it can open, such as <code>https://example.com/logo.png</code>, or a path Jellyfin serves, such as <code>/web/favicons/touchicon.png</code>. A file path on the server, such as <code>/config/logo.png</code>, doesn't work. If the admin page can't load the image, a warning appears under the field.</li>
 <li>Click <strong>Save Settings</strong> and reload the client.</li>
 </ol>
 <table>
@@ -3402,7 +3410,12 @@
 <tr>
 <td><strong>Custom Branding Icon URL</strong></td>
 <td>Empty</td>
-<td>Adds a 24 × 24 CSS-pixel icon beside the custom message. Empty supplies no icon.</td>
+<td>Adds a 24 × 24 CSS-pixel icon beside the custom message. Any image type browsers show works, such as PNG, SVG or WebP. Ignored while an icon is uploaded. Empty supplies no icon.</td>
+</tr>
+<tr>
+<td><strong>Upload Icon</strong></td>
+<td>None</td>
+<td>An icon stored on the server, used in place of the icon URL.</td>
 </tr>
 </tbody>
 </table>
@@ -3412,7 +3425,7 @@
 </div>
 <details class="info">
 <summary>Icons, headings, and hidden controls</summary>
-<p>An icon URL without a message has no effect. Failed icons are hidden. There is no default branding logo. Manual-country results retain their own availability headings.</p>
+<p>An icon without a message has no effect. Failed icons are hidden, and the browser console logs a warning naming the URL. Paths starting with <code>/web/</code> or <code>/JellyfinEnhanced/</code> are resolved against your server address, so they keep working when Jellyfin runs under a base path such as <code>/jellyfin</code>; other root-relative paths are used as entered. There is no default branding logo. Manual-country results retain their own availability headings.</p>
 <p>With a custom message in the unavailable automatic state, search and settings controls initially have zero opacity. Pointer entry reveals them and pointer exit hides them; their click handlers remain.</p>
 </details>
 <h2 id="tmdb-reviews">TMDB Reviews<a class="headerlink" href="#tmdb-reviews" title="Permanent link">¶</a></h2>
@@ -3879,7 +3892,7 @@
 <ol>
 <li>Check your effective default country and both admin lists. <strong>Default Providers</strong> can remove everything through unmatched names or capitalization; <strong>Ignore Providers</strong> can exclude all matches.</li>
 <li>Try a manual search with an empty personal provider list to compare unfiltered subscription data in another country.</li>
-<li>If names show without logos, check browser access to <code>image.tmdb.org</code>. For a missing branding icon, check the configured image host.</li>
+<li>If names show without logos, check browser access to <code>image.tmdb.org</code>. For a missing branding icon, check the warning under <strong>Custom Branding Icon URL</strong> and the browser console; the URL must be a web address, not a server file path. An uploaded icon replaces the URL.</li>
 </ol>
 <details class="note">
 <summary>Subscription categories</summary>
