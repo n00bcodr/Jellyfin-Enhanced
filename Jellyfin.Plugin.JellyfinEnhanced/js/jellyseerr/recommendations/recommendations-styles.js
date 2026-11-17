@@ -249,9 +249,11 @@
          light chip with dark words); the Filters button (the "More from" sections' button and menu) is a
          pill of the same ground, its word beside Jellyfin's filter icon, filled like a chosen segment while
          anything in it narrows the page ("Filters: 2"). What is set is said under the bar, each with its x. */
+      /* (The bar keeps the room above it that the title's own heading had, so it is not stuck until scrolled.) */
       .je-recommendations-title.je-reco-header {
         flex-wrap: wrap;
         row-gap: 0.4em;
+        margin-top: 0.67em;
       }
       .je-reco-header .je-reco-heading {
         display: flex;

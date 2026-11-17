@@ -24,6 +24,8 @@
 //   - rating: Picked[]: a content rating's id is `<movie|tv>:<country>:<rating>`.
 //   - services: Picked[]: a service's id is TMDB's provider id.
 //   - keywords, without: Picked[]: a keyword's id is TMDB's keyword id.
+//   - match: { genres?, keywords?, services? }: 'all' or 'any', for the lists where a title can have several of
+//     what is ticked; a list not in it keeps its default (genres and keywords all, services any).
 (function(JE) {
     'use strict';
 
@@ -40,6 +42,13 @@
         without: 'JellyseerrFilterKeywords'
     });
     const RANGE_IDS = ['year', 'score', 'votes', 'runtime'];
+    /**
+     * The lists where a title can have several of what is ticked, so the viewer chooses whether it needs all of
+     * them or any, and how each is asked of Seerr when nothing is chosen (as these filters always asked).
+     */
+    const MATCH_DEFAULTS = Object.freeze({ genres: 'all', keywords: 'all', services: 'any' });
+    /** The list a route already names (a genre's or a tag's page), which TMDB can only add to as all of them. */
+    const ROUTE_LISTS = Object.freeze([['genres', 'genre', /\/genre\/\d+(?:$|[/?])/], ['keywords', 'keywords', /\/keyword\/\d+(?:$|[/?])/]]);
     const LIST_IDS = ['role', 'genres', 'language', 'rating', 'services', 'keywords', 'without'];
 
     /**
@@ -69,6 +78,32 @@
         const chosen = selection || {};
         return RANGE_IDS.map(id => chosen[id]).filter(isRangeSet).length
             + LIST_IDS.map(id => chosen[id]).filter(list => !!list && list.length > 0).length;
+    }
+
+    /**
+     * Whether a list is matched by all of what is ticked or any of it.
+     * @param {object} selection - The FilterSelection
+     * @param {'genres'|'keywords'|'services'} id - The list
+     * @returns {'all'|'any'}
+     */
+    function matchOf(selection, id) {
+        const chosen = selection?.match?.[id];
+        return chosen === 'all' || chosen === 'any' ? chosen : MATCH_DEFAULTS[id];
+    }
+
+    /**
+     * A feed's request with any list its route already names asked as all of what is ticked: TMDB can't say
+     * "this genre and any of those" in one parameter, so a genre's or a tag's page keeps that list's own rule.
+     * @param {string} path - The feed's path (before its query)
+     * @param {string} query - What the filters add (`&name=value` pairs)
+     * @returns {string} The query
+     */
+    function forRoute(path, query) {
+        let asked = query;
+        for (const [, param, route] of ROUTE_LISTS) {
+            if (route.test(path)) asked = asked.replace(new RegExp(`(&${param}=)([^&]*)`), (_, name, value) => name + value.replace(/%7C/gi, '%2C'));
+        }
+        return asked;
     }
 
     /**
@@ -166,10 +201,12 @@
         const chosen = selection || {};
         const pairs = [];
         const date = kind === 'tv' ? 'firstAirDate' : 'primaryReleaseDate';
-        const genres = (chosen.genres ?? []).map(genre => genreIdFor(genre, kind));
-        // A genre TMDB does not have for this kind: nothing of this kind is in it. Seerr has no way to
-        // say "nothing", so the feed is asked for a time nothing was released in.
-        if (genres.includes('')) return `&${date}Lte=1800-01-01`;
+        const anyGenre = matchOf(chosen, 'genres') === 'any';
+        const allGenres = (chosen.genres ?? []).map(genre => genreIdFor(genre, kind));
+        // A genre TMDB does not have for this kind: nothing of this kind is in all of them (Seerr has no way to
+        // say "nothing", so the feed is asked for a time nothing was released in), and it adds nothing to "any of them".
+        const genres = anyGenre ? allGenres.filter(Boolean) : allGenres;
+        if (genres.includes('') || (anyGenre && allGenres.length > 0 && genres.length === 0)) return `&${date}Lte=1800-01-01`;
         const from = chosen.year ? dayOf(chosen.year[0], false) : null;
         const to = chosen.year ? dayOf(chosen.year[1], true) : null;
         if (from) pairs.push([`${date}Gte`, from]);
@@ -181,7 +218,9 @@
             if (low !== null) pairs.push([`${RANGE_PARAMS[id]}Gte`, String(low)]);
             if (high !== null) pairs.push([`${RANGE_PARAMS[id]}Lte`, String(high)]);
         }
-        if (genres.length > 0) pairs.push(['genre', genres.join(',')]);
+        // Seerr takes "all of" as a comma and "any of" as a bar.
+        const join = id => matchOf(chosen, id) === 'any' ? '|' : ',';
+        if (genres.length > 0) pairs.push(['genre', genres.join(join('genres'))]);
         if (chosen.language?.length) pairs.push(['language', chosen.language.map(language => language.id).join('|')]);
         const ratings = (chosen.rating ?? []).map(rating => rating.id.split(':')).filter(parts => parts[0] === kind && parts.length === 3);
         // Ratings are ticked, but none of this kind's: nothing of this kind is wanted (see the genres above).
@@ -189,15 +228,16 @@
         if (ratings.length > 0) {
             pairs.push(['certification', ratings.map(parts => parts[2]).join('|')], ['certificationCountry', ratings[0]?.[1] ?? 'US']);
         }
-        if (chosen.services?.length) pairs.push(['watchProviders', chosen.services.map(service => service.id).join('|')], ['watchRegion', region]);
-        if (chosen.keywords?.length) pairs.push(['keywords', chosen.keywords.map(keyword => keyword.id).join(',')]);
+        if (chosen.services?.length) pairs.push(['watchProviders', chosen.services.map(service => service.id).join(join('services'))], ['watchRegion', region]);
+        if (chosen.keywords?.length) pairs.push(['keywords', chosen.keywords.map(keyword => keyword.id).join(join('keywords'))]);
         if (chosen.without?.length) pairs.push(['excludeKeywords', chosen.without.map(keyword => keyword.id).join(',')]);
         return pairs.map(([name, value]) => `&${name}=${encodeURIComponent(value)}`).join('');
     }
 
     /**
      * A person's titles a selection keeps. A title with no date is outside every period, one with no
-     * score or votes is under every minimum, and one must be in every genre chosen.
+     * score or votes is under every minimum, and one must be in every genre chosen (any of them, where
+     * the genres are matched by any).
      * @param {object[]} results - Seerr results (a person's titles, with `jeCredit`)
      * @param {object} selection - The section's FilterSelection
      * @returns {object[]} The titles kept
@@ -228,7 +268,8 @@
             if (chosen.genres?.length) {
                 const own = Array.isArray(item.genreIds) ? item.genreIds.map(String) : [];
                 const kind = item.mediaType === 'tv' ? 'tv' : 'movie';
-                if (!chosen.genres.every(genre => own.includes(genreIdFor(genre, kind)) && genreIdFor(genre, kind) !== '')) return false;
+                const has = genre => own.includes(genreIdFor(genre, kind)) && genreIdFor(genre, kind) !== '';
+                if (!(matchOf(chosen, 'genres') === 'any' ? chosen.genres.some(has) : chosen.genres.every(has))) return false;
             }
             return languages.size === 0 || (typeof item.originalLanguage === 'string' && languages.has(item.originalLanguage));
         });
@@ -410,6 +451,9 @@
         offeredFilters,
         activeFilterCount,
         checkableOnLoaded,
+        MATCH_DEFAULTS,
+        matchOf,
+        forRoute,
         dayOf,
         numberOf,
         isBound,

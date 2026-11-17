@@ -104,7 +104,9 @@
    * @returns {Promise<any>}
    */
   function feedPage(path, kind, page, options) {
-    const filterQuery = kind ? (filters().feedQuery?.(FILTER_MODULE, kind) ?? '') : '';
+    const query = kind ? (filters().feedQuery?.(FILTER_MODULE, kind) ?? '') : '';
+    // (A genre's category names its genre itself: its genres are asked as all of what is ticked.)
+    const filterQuery = JE.discoveryFilters?.forRoute?.(path, query) ?? query;
     return fetchWithManagedRequest(feedRequest(path, page, filterQuery, localDay()), options);
   }
 

@@ -107,8 +107,11 @@
                 tokens.push({ words, without: now => ({ ...now, [id]: undefined }) });
                 continue;
             }
-            for (const item of selection[id] ?? []) {
+            // (In a list matched by any of what is ticked, each after the first is said with "or" before it.)
+            const either = logic().MATCH_DEFAULTS?.[id] !== undefined && logic().matchOf(selection, id) === 'any';
+            for (const [index, item] of (selection[id] ?? []).entries()) {
                 tokens.push({
+                    or: either && index > 0,
                     // A keyword and a language need a word to be read on their own ("With robot", "Originally in Japanese"); a genre, a rating, a service and a role say what they are.
                     words: id === 'without' ? say('discovery_filter_set_without', 'Without {name}', { name: item.name })
                         : id === 'keywords' ? say('discovery_filter_set_with', 'With {name}', { name: item.name })
@@ -263,13 +266,57 @@
          * @param {object[]} picked
          * @returns {string}
          */
-        const sayList = picked => picked.length <= 2
-            ? picked.map(item => item.name).join(', ')
-            : say('discovery_filter_count', '{count} chosen', { count: picked.length });
+        const sayList = (picked, id) => picked.length > 2
+            ? say('discovery_filter_count', '{count} chosen', { count: picked.length })
+            : picked.length === 2 && matchable(id) && logic().matchOf(options.selection(), id) === 'any'
+                ? say('discovery_filter_either', '{first} or {second}', { first: picked[0].name, second: picked[1].name })
+                : picked.map(item => item.name).join(', ');
         /** What is ticked in a list now. */
         const pickedOf = id => options.selection()[id] ?? [];
-        /** The note that says how several ticks in a list count. */
-        const ruleOf = id => note(say(RULES[id][0], RULES[id][1]));
+        /** Whether the viewer chooses how several ticks in a list count (not where the page names that list). */
+        const matchable = id => logic().MATCH_DEFAULTS?.[id] !== undefined && !(options.fixedAll ?? []).includes(id);
+        /**
+         * How several ticks in a list count, said under the list. Where a title can have several of them, a
+         * choice: all of the ones ticked, or any of them (each said as Seerr's own rule where it can't be chosen).
+         * @param {string} id - The list filter
+         * @param {{say: Function}} [handle] - The group's handle, to say the list again in the choice's words
+         * @returns {HTMLElement}
+         */
+        const ruleOf = (id, handle) => {
+            if (!matchable(id)) return note(say(RULES[id][0], RULES[id][1]));
+            const line = document.createElement('div');
+            line.className = 'jellyseerr-menu-note jellyseerr-menu-match';
+            line.setAttribute('role', 'radiogroup');
+            const lead = document.createElement('span');
+            lead.textContent = say('discovery_filter_match', 'Titles with');
+            line.setAttribute('aria-label', lead.textContent);
+            line.appendChild(lead);
+            const buttons = [['all', say('discovery_filter_match_all', 'all of these')], ['any', say('discovery_filter_match_any', 'any of these')]].map(([value, words]) => {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'jellyseerr-menu-match-btn';
+                button.setAttribute('role', 'radio');
+                button.dataset.match = value;
+                button.textContent = words;
+                button.addEventListener('click', () => {
+                    const now = options.selection();
+                    if (logic().matchOf(now, id) === value) return;
+                    // (The default is not kept: a list on its default is said as nothing in the address.)
+                    const match = { ...(now.match ?? {}), [id]: value };
+                    if (value === logic().MATCH_DEFAULTS[id]) delete match[id];
+                    paint(value);
+                    const picked = pickedOf(id);
+                    options.change({ ...now, match: Object.keys(match).length > 0 ? match : undefined });
+                    handle?.say(sayList(picked, id), picked.length > 0);
+                });
+                return button;
+            });
+            /** Marks the choice in use. */
+            const paint = value => buttons.forEach(button => button.setAttribute('aria-checked', String(button.dataset.match === value)));
+            paint(logic().matchOf(options.selection(), id));
+            line.append(...buttons);
+            return line;
+        };
         /**
          * A row that is ticked or not; pressing it changes that and the selection. Its mark is a box,
          * empty or ticked (several of a list can be), where a list of which one is chosen has a tick.
@@ -297,7 +344,7 @@
                 row.setAttribute('aria-checked', String(chosen));
                 const tick = row.querySelector('.actionsheetMenuItemIcon');
                 if (tick) { tick.classList.remove(box(!chosen)); tick.classList.add(box(chosen)); }
-                handle.say(sayList(next), next.length > 0);
+                handle.say(sayList(next, id), next.length > 0);
                 options.change({ ...options.selection(), [id]: next.length > 0 ? next : undefined });
                 onToggle?.(chosen, row);
             });
@@ -335,7 +382,7 @@
         function listGroup(id, load, first = [], given = () => false) {
             const picked = pickedOf(id);
             return {
-                id, name: nameOf(id), any, set: picked.length > 0, value: sayList(picked),
+                id, name: nameOf(id), any, set: picked.length > 0, value: sayList(picked, id),
                 build(host, handle) {
                     const waiting = note(say('discovery_filter_loading', 'Loading…'));
                     host.appendChild(waiting);
@@ -400,7 +447,7 @@
                             });
                             host.appendChild(bar);
                         }
-                        host.append(ruleOf(id), list, none);
+                        host.append(ruleOf(id, handle), list, none);
                         handle.placed();
                     }).catch(() => {
                         sayIn(waiting, say('discovery_filter_unavailable', 'Could not load these.'));
@@ -418,12 +465,12 @@
         function keywordGroup(id) {
             const picked = pickedOf(id);
             return {
-                id, name: nameOf(id), any, set: picked.length > 0, value: sayList(picked),
+                id, name: nameOf(id), any, set: picked.length > 0, value: sayList(picked, id),
                 build(host, handle) {
                     // The keywords chosen stay listed (ticked) above the field; what the search finds comes under it.
                     const chosen = document.createElement('div');
                     chosen.className = 'jellyseerr-menu-list';
-                    const rule = ruleOf(id);
+                    const rule = ruleOf(id, handle);
                     const found = document.createElement('div');
                     found.className = 'jellyseerr-menu-list';
                     /** Lists a chosen keyword above the field, ticked; taken away when it is pressed again. */
@@ -620,9 +667,11 @@
      * @param {string} [ownGenre] - On a genre's page: that genre's name
      * @param {() => (HTMLElement|null)} [place] - What the button narrows where that is not the header's discovery
      *   section (a page of its own, such as the Recommendations page): it holds the line of what is set, after the header
+     * @param {string[]} [fixedAll] - The lists the page's own address names (a genre's page: genres; a tag's: keywords),
+     *   which are matched by all of what is ticked, with no choice (default: genres where `ownGenre` is given)
      * @returns {HTMLButtonElement}
      */
-    function createFiltersControl(header, moduleName, scope, onChange, ownGenre, place) {
+    function createFiltersControl(header, moduleName, scope, onChange, ownGenre, place, fixedAll = ownGenre ? ['genres'] : []) {
         injectStyles();
         /** The section the header is in, or the page the button narrows. */
         const sectionOf = place ?? (() => header.closest('.jellyseerr-discovery-section'));
@@ -679,7 +728,7 @@
                 header.after(line);
             }
             const removes = [];
-            const pieces = tokens.map((token, index) => {
+            const pieces = tokens.flatMap((token, index) => {
                 const piece = document.createElement('span');
                 piece.className = 'jellyseerr-filters-token';
                 const words = document.createElement('span');
@@ -699,7 +748,12 @@
                 remove.addEventListener('click', () => change(token.without(selectionOf(moduleName)), document.activeElement === remove ? index : -1));
                 removes.push(remove);
                 piece.append(words, remove);
-                return piece;
+                if (!token.or) return [piece];
+                // (Several of a list matched by any of them: "With bear" or "With dragon".)
+                const either = document.createElement('span');
+                either.className = 'jellyseerr-filters-or';
+                either.textContent = label('discovery_filter_or', 'or');
+                return [either, piece];
             });
             if (tokens.length > 1) {
                 const all = document.createElement('button');
@@ -765,7 +819,7 @@
             const groups = type && typeInMenu ? [{ ...type.groupOf(), open: true }] : [];
             groups.push(...filterMenuGroups({
                 offered, data: dataOf(), locale: localeOf(), label,
-                selection: () => selectionOf(moduleName), change, ...(ownGenre ? { ownGenre } : {}),
+                selection: () => selectionOf(moduleName), change, fixedAll, ...(ownGenre ? { ownGenre } : {}),
                 roles: () => rolesOf(credits.get(moduleName) ?? [], label('discovery_role_acting', 'Acting'),
                     department => label(`discovery_role_${department.toLowerCase().replace(/[^a-z]+/g, '_')}`, department))
             }));
@@ -908,6 +962,12 @@
             .jellyseerr-menu-list-rule { height: 1px; margin: 4px 16px 4px 32px; background: var(--jf-palette-divider, rgba(255,255,255,.12)); }
             .jellyseerr-menu-note, .jellyseerr-menu-label { color: var(--jf-palette-text-secondary, rgba(255,255,255,.7)); }
             .jellyseerr-menu-note { padding: 2px 16px 8px 32px; font-size: .86em; line-height: 1.4; }
+            /* All of what is ticked, or any of it: two small choices on the rule's line, the one in use filled. */
+            .jellyseerr-menu-match { display: flex; flex-wrap: wrap; align-items: center; gap: .35em; }
+            .jellyseerr-menu-match-btn { font: inherit; color: inherit; background: rgba(255,255,255,.08); border: 0; border-radius: 999px; padding: .2em .8em; cursor: pointer; }
+            .jellyseerr-menu-match-btn[aria-checked="true"] { background: #e8e8e8; color: #101010; }
+            .jellyseerr-menu-match-btn:focus-visible { outline: 2px solid var(--jf-palette-primary-main, #00a4dc); outline-offset: 1px; }
+            .jellyseerr-filters-or { color: var(--jf-palette-text-secondary, rgba(255,255,255,.7)); margin-inline: -.6em; }
             /* What a search has narrowed away is gone (a row's own display would otherwise keep it). */
             .jellyseerr-sort-menu .actionSheetMenuItem[hidden], .jellyseerr-menu-note[hidden], .jellyseerr-menu-label[hidden] { display: none !important; }
             .jellyseerr-menu-label { padding: 8px 16px 2px 32px; font-size: .86em; }

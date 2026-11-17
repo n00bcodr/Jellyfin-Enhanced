@@ -2,7 +2,8 @@
 // What a page's address says of its Seerr filters, so a link, a reload, Back and Forward show what was
 // set: All / Movies / Series (`jeType`), the order (`jeSort`), and the further filters (`jeReleased`,
 // `jeScore`, `jeVotes`, `jeRuntime`, `jeRole`, `jeGenres`, `jeLanguage`, `jeRating`, `jeServices`,
-// `jeKeywords`, `jeWithout`). The discovery sections ("More from", "More tagged", a genre's, studio's or
+// `jeKeywords`, `jeWithout`), with the lists matched otherwise than by default (`jeAny=genres,keywords`,
+// `jeAll=services`). The discovery sections ("More from", "More tagged", a genre's, studio's or
 // network's page) keep theirs in their own page's address; the Recommendations page keeps its in Home's
 // address (or its own page's), with the category page open over it (`jeCategory`).
 //
@@ -34,11 +35,18 @@
         ['keywords', 'jeKeywords', /^\d{1,9}$/, true],
         ['without', 'jeWithout', /^\d{1,9}$/, true]
     ];
+    /** The lists matched by any of what is ticked, and by all of it, where that is not their default. */
+    const ANY_PARAM = 'jeAny';
+    const ALL_PARAM = 'jeAll';
+    /** The lists a match can be chosen for, in the order they are written. */
+    const MATCHED = ['genres', 'keywords', 'services'];
+    /** A list's own match when none is chosen (as discovery-filters.js MATCH_DEFAULTS). */
+    const matchDefault = id => JE.discoveryFilters?.MATCH_DEFAULTS?.[id] ?? (id === 'services' ? 'any' : 'all');
     const MAX_LIST = 50;
     const MAX_NAME = 80;
     const MAX_BOUND = 10;
     /** Every pair of the address that is this module's; the rest are the host's, kept as they are. */
-    const OWN_PARAMS = new Set([TYPE_PARAM, SORT_PARAM, CATEGORY_PARAM,
+    const OWN_PARAMS = new Set([TYPE_PARAM, SORT_PARAM, CATEGORY_PARAM, ANY_PARAM, ALL_PARAM,
         ...RANGE_PARAMS.map(entry => entry[1]), ...LIST_PARAMS.map(entry => entry[1])]);
     /** The Home route, with or without its query (the tabs' `?tab=N&jeTab=…`). */
     const HOME_HASH = /^(?:#\/home(?:\.html)?(?:\?.*)?)?$/;
@@ -178,6 +186,13 @@
             }
             if (items.length > 0) selection[id] = items;
         }
+        const match = {};
+        for (const [param, value] of [[ANY_PARAM, 'any'], [ALL_PARAM, 'all']]) {
+            for (const id of (valueOf(pairs, param) || '').split(',')) {
+                if (MATCHED.includes(id) && selection[id] && value !== matchDefault(id)) match[id] = value;
+            }
+        }
+        if (Object.keys(match).length > 0) selection.match = match;
         const sort = valueOf(pairs, SORT_PARAM) || '';
         return { mode, selection, sort: sort && sortValues().includes(sort) ? sort : '' };
     }
@@ -204,6 +219,13 @@
             if (items.length === 0) continue;
             pairs.push(`${param}=${items.map(item => named
                 ? `${readable(String(item.id))}:${encodeURIComponent(String(item.name ?? ''))}` : readable(String(item.id))).join(',')}`);
+        }
+        // (A list on its default match, or with nothing ticked, says nothing of it.)
+        const matched = value => MATCHED.filter(id => (selection[id] || []).length > 0 && value !== matchDefault(id)
+            && (selection.match?.[id] ?? matchDefault(id)) === value);
+        for (const [param, value] of [[ANY_PARAM, 'any'], [ALL_PARAM, 'all']]) {
+            const ids = matched(value);
+            if (ids.length > 0) pairs.push(`${param}=${ids.join(',')}`);
         }
         if (withSort && filters.sort) pairs.push(`${SORT_PARAM}=${encodeURIComponent(filters.sort)}`);
         return pairs;
@@ -282,6 +304,8 @@
         const said = filtersOfHash(window.location.hash);
         const offered = JE.discoveryFilters?.offeredFilters?.(options.scope || 'feed', JE.pluginConfig) ?? [];
         const selection = Object.fromEntries(Object.entries(said.selection).filter(([id]) => offered.includes(id)));
+        const match = Object.fromEntries(Object.entries(said.selection.match || {}).filter(([id]) => offered.includes(id)));
+        if (Object.keys(match).length > 0) selection.match = match;
         const wanted = { mode: withType ? said.mode : now.mode, selection, sort: withSort ? said.sort : '' };
         if (filterPairs(wanted, withSort).join('&') === filterPairs(now, withSort).join('&')) return false;
         JE.discoveryFilter?.setFilterMode?.(filterModule, wanted.mode);

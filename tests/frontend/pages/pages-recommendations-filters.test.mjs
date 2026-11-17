@@ -285,3 +285,21 @@ test("a category still resolving its genre is not opened once the viewer has gon
   assert.equal(P.state.categoryPageVisible, true);
   assert.equal(h.window.history.length, length + 1, 'one entry');
 });
+
+test("a category address with keywords matched by any asks Seerr for either, and the address keeps saying it", async t => {
+  const link = `${TAB}&jeCategory=movies&jeGenres=16/16:Animation&jeKeywords=10468:bear,12554:dragon&jeAny=keywords`;
+  const h = setup(t, { hash: link, routes: [
+    [`${DISCOVER}/movies?page=1&genre=16&keywords=10468%7C12554`, scored([[7, 'movie'], [8, 'movie']])]
+  ] });
+  const P = h.load();
+  await until(() => P.state.categoryPageVisible && h.categoryCards().length === 2, 'opened from its address');
+  assert.deepEqual(h.said(h.category()), ['Animation', 'With bear', 'With dragon']);
+  assert.equal(h.category().querySelector('.jellyseerr-filters-set').textContent.includes('or'), true);
+  assert.equal(h.hash(), link, 'already said as the page writes it');
+  // Without jeAny the same keywords are all of them.
+  const both = h.JE.discoveryAddress.filtersOfHash(`${TAB}&jeKeywords=10468:bear,12554:dragon`, 'en');
+  assert.equal(both.selection.match, undefined);
+  // jeAll for services, whose default is any; a match for a list with nothing ticked is not taken.
+  const services = h.JE.discoveryAddress.filtersOfHash(`${TAB}&jeServices=8:Netflix,337:Disney&jeAll=services,genres&jeAny=keywords`, 'en');
+  assert.deepEqual(plain(services.selection.match), { services: 'all' });
+});

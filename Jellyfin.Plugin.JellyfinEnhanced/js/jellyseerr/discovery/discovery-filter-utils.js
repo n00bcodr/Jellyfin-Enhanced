@@ -386,9 +386,11 @@
             meta.appendChild(summary);
         }
         if (onSortChange) {
-            // (On a genre's page that genre is given: its Genres list says so.)
+            // (On a genre's page that genre is given: its Genres list says so. A genre's or a tag's page names that
+            // list in its own request, so it is matched by all of what is ticked there.)
             const filters = JE.discoveryFilters?.createFiltersControl?.(header, moduleName, scope,
-                () => onSortChange(getSortMode(moduleName)), moduleName === 'genre' ? subject : undefined);
+                () => onSortChange(getSortMode(moduleName)), moduleName === 'genre' ? subject : undefined,
+                undefined, moduleName === 'tag' ? ['keywords'] : undefined);
             if (filters) bar.appendChild(filters);
             bar.appendChild(createSortControl(moduleName, onSortChange));
         }
@@ -405,12 +407,12 @@
      * @param {string} moduleName - Module name for the runtime state
      * @param {'feed'|'person'|'loaded'} scope - Which further filters the page can offer
      * @param {Function} onChange - Reloads the page
-     * @param {{ownGenre?: string, place?: function(): (HTMLElement|null)}} [options] - A genre's page names its
-     *   genre; `place` is the page the button narrows
+     * @param {{ownGenre?: string, place?: function(): (HTMLElement|null), fixedAll?: string[]}} [options] - A genre's
+     *   page names its genre; `place` is the page the button narrows; `fixedAll`: the lists its request names itself
      * @returns {HTMLElement|null}
      */
     function createFiltersButton(header, moduleName, scope, onChange, options = {}) {
-        return JE.discoveryFilters?.createFiltersControl?.(header, moduleName, scope, onChange, options.ownGenre, options.place) ?? null;
+        return JE.discoveryFilters?.createFiltersControl?.(header, moduleName, scope, onChange, options.ownGenre, options.place, options.fixedAll) ?? null;
     }
 
     /**

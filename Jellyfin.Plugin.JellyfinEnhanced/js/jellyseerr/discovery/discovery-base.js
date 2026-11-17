@@ -290,8 +290,10 @@
                 if (signal?.aborted) {
                     throw new DOMException('Aborted', 'AbortError');
                 }
-                const path = `${spec.buildDiscoverPath(kind, feedId, /** @type {NonNullable<typeof currentFeeds>} */ (currentFeeds))}?page=${page}`
-                    + (JE.discoveryFilter?.feedQuery?.(key, kind) ?? '');
+                const base = spec.buildDiscoverPath(kind, feedId, /** @type {NonNullable<typeof currentFeeds>} */ (currentFeeds));
+                const query = JE.discoveryFilter?.feedQuery?.(key, kind) ?? '';
+                // (A list the route names itself is asked as all of what is ticked: see forRoute.)
+                const path = `${base}?page=${page}${JE.discoveryFilters?.forRoute?.(base, query) ?? query}`;
                 const response = await fetchWithManagedRequest(path, { signal });
                 if (signal?.aborted) {
                     throw new DOMException('Aborted', 'AbortError');

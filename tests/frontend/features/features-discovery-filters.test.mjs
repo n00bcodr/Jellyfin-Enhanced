@@ -575,3 +575,68 @@ test('the tabs\' choice repaints the button: a type other than All is said besid
   assert.equal(s.button.hasAttribute('data-type-on'), false);
   assert.equal(s.button.querySelector('.jellyseerr-filters-type').textContent, '');
 });
+
+test('a list matched by any of what is ticked is asked with a bar, by all of it with a comma; a route naming the list keeps all', t => {
+  const h = setup(t);
+  const { feedFilterQuery, keepByFilters, forRoute, matchOf } = h.F;
+  const bear = { id: '10468', name: 'bear' };
+  const dragon = { id: '12554', name: 'dragon' };
+  assert.equal(feedFilterQuery({ keywords: [bear, dragon] }, 'movie', 'US'), '&keywords=10468%2C12554', 'keywords: all by default');
+  assert.equal(feedFilterQuery({ keywords: [bear, dragon], match: { keywords: 'any' } }, 'movie', 'US'), '&keywords=10468%7C12554');
+  assert.equal(feedFilterQuery({ services: [{ id: '8' }, { id: '337' }] }, 'tv', 'US'), '&watchProviders=8%7C337&watchRegion=US', 'services: any by default');
+  assert.equal(feedFilterQuery({ services: [{ id: '8' }, { id: '337' }], match: { services: 'all' } }, 'tv', 'US'), '&watchProviders=8%2C337&watchRegion=US');
+  const genres = [{ id: '16/16', name: 'Animation' }, { id: '28/', name: 'Action' }];
+  assert.equal(feedFilterQuery({ genres }, 'tv', 'US'), '&firstAirDateLte=1800-01-01', 'all of them: no series is in Action');
+  assert.equal(feedFilterQuery({ genres, match: { genres: 'any' } }, 'tv', 'US'), '&genre=16', 'any of them: Action adds nothing for series');
+  assert.equal(feedFilterQuery({ genres, match: { genres: 'any' } }, 'movie', 'US'), '&genre=16%7C28');
+  assert.equal(matchOf({ match: { genres: 'nonsense' } }, 'genres'), 'all');
+  // A person's titles (and Trending's): in every genre ticked, or in any of them.
+  const titles = [{ id: 1, mediaType: 'movie', genreIds: [16] }, { id: 2, mediaType: 'movie', genreIds: [16, 28] }, { id: 3, mediaType: 'movie', genreIds: [18] }];
+  same(keepByFilters(titles, { genres }).map(item => item.id), [2]);
+  same(keepByFilters(titles, { genres, match: { genres: 'any' } }).map(item => item.id), [1, 2]);
+  // TMDB can't say "this genre and any of those": a genre's or a tag's page asks its own list as all of them.
+  assert.equal(forRoute('/JellyfinEnhanced/jellyseerr/discover/movies/genre/16', '&sortBy=x&genre=14%7C35&keywords=1%7C2'), '&sortBy=x&genre=14%2C35&keywords=1%7C2');
+  assert.equal(forRoute('/JellyfinEnhanced/jellyseerr/discover/tv/keyword/9', '&genre=14%7C35&keywords=1%7C2'), '&genre=14%7C35&keywords=1%2C2');
+  assert.equal(forRoute('/JellyfinEnhanced/jellyseerr/discover/movies', '&genre=14%7C35'), '&genre=14%7C35');
+});
+
+test('the Filters menu offers all or any for keywords, genres and services; "or" says it where it is any; a tag page keeps its keywords all', { skip: !hasMenu && 'the menu module is not there yet' }, async t => {
+  const h = setup(t, { lists: FILTER_LISTS, genres: COMEDY });
+  const feeds = { tv: [1], movie: [11], 'tv&keywords=3020%2C219906': [2], 'movie&keywords=3020%2C219906': [], 'tv&keywords=3020%7C219906': [3], 'movie&keywords=3020%7C219906': [13] };
+  const s = section(h, { name: 'network', feeds });
+  s.button.click();
+  const search = bodyOf(h, 'keywords').querySelector('.jellyseerr-menu-search');
+  search.value = 'sheep';
+  search.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  await until(() => bodyOf(h, 'keywords').querySelectorAll('.actionSheetMenuItem').length === 2, 'keywords found');
+  tickRow(h, 'keywords', 'sheep');
+  search.value = 'sheep';
+  search.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  await until(() => [...bodyOf(h, 'keywords').querySelectorAll('.actionSheetItemText')].some(node => node.textContent === 'sheep farm'), 'more found');
+  tickRow(h, 'keywords', 'sheep farm');
+  assert.equal(String(s.shown()), '2');
+  const choice = bodyOf(h, 'keywords').querySelector('.jellyseerr-menu-match');
+  same([...choice.querySelectorAll('button')].map(button => [button.textContent, button.getAttribute('aria-checked')]), [['all of these', 'true'], ['any of these', 'false']]);
+  choice.querySelector('[data-match="any"]').click();
+  assert.equal(String(s.shown()), '3,13');
+  assert.equal(groupOf(h, 'keywords').textContent, 'Keywordssheep or sheep farm');
+  const setLine = s.root.querySelector('.jellyseerr-filters-set');
+  same([...setLine.children].map(piece => piece.textContent), ['With sheep', 'or', 'With sheep farm', 'Clear filters']);
+  same(plain(h.F.selectionOf('network')).match, { keywords: 'any' });
+  // Back to all: the default is not kept.
+  choice.querySelector('[data-match="all"]').click();
+  assert.equal(String(s.shown()), '2');
+  assert.equal(plain(h.F.selectionOf('network')).match, undefined);
+  // Genres and services have the choice too; a language or a rating has one rule.
+  await until(() => bodyOf(h, 'genres').querySelector('.jellyseerr-menu-match'), 'genres');
+  await until(() => bodyOf(h, 'services').querySelector('.jellyseerr-menu-match [data-match="any"][aria-checked="true"]'), 'services, any by default');
+  await until(() => bodyOf(h, 'language').querySelector('.jellyseerr-menu-note'), 'languages');
+  assert.equal(bodyOf(h, 'language').querySelector('.jellyseerr-menu-match'), null);
+  h.document.querySelector('.dialogBackdrop').click();
+  // A tag's page names its keyword in its own request: its keywords are matched by all, with no choice.
+  const tag = h.F.createFiltersControl(h.document.createElement('div'), 'tag', 'feed', () => {}, undefined, undefined, ['keywords']);
+  h.document.body.appendChild(tag);
+  tag.click();
+  assert.equal(bodyOf(h, 'keywords').querySelector('.jellyseerr-menu-match'), null);
+  assert.equal(bodyOf(h, 'keywords').querySelector('.jellyseerr-menu-note').textContent, 'Titles with all of the ones ticked.');
+});
