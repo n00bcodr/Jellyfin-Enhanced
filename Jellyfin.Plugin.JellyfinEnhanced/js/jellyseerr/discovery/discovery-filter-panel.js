@@ -1499,7 +1499,7 @@
             .jellyseerr-menu-match-btn:focus-visible { outline: 2px solid var(--jf-palette-text-primary, #fff); outline-offset: 1px; }
             /* (Two equal columns wherever there is room for both at the wider's width; never wider than the line, so the
                choice never moves the list.) */
-            html:not(.layout-tv) .jellyseerr-menu-match-track { display: grid; grid-template-columns: 1fr 1fr; flex: 1 1 auto; }
+            html:not(.layout-tv) .jellyseerr-menu-match-track { display: grid; grid-template-columns: 1fr 1fr; flex: 1 1 0; }
             .jellyseerr-menu-match-reserve { display: block; height: 0; overflow: hidden; visibility: hidden; font-weight: 600; }
             @media (forced-colors: active) {
                 .jellyseerr-menu-match-track { outline: 1px solid CanvasText; outline-offset: -1px; }

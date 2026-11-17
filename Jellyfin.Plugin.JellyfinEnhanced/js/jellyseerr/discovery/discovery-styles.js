@@ -189,7 +189,7 @@
             html:not(.layout-tv) .jellyseerr-sort-menu .actionsheetMenuItemIcon { order: 1; width: auto; margin: 0 !important; margin-inline-start: 1.4em !important; padding: 0; font-size: 1.2em; }
             /* Groups (the filters): each is a row that names its choice in use and opens to its choices, as the
                sections of Jellyfin's own filter menu open. A group that is narrowing the list says so in the accent. */
-            html:not(.layout-tv) .jellyseerr-menu-grouped { width: 19em; max-width: calc(100vw - 16px); }
+            html:not(.layout-tv) .jellyseerr-menu-grouped { width: 20em; max-width: calc(100vw - 16px); }
             /* On a phone it is as wide as the screen allows: nothing of the page is left as a strip beside it. */
             @media (max-width: 600px) { html:not(.layout-tv) .jellyseerr-menu-grouped { width: calc(100vw - 16px); } }
             /* On a TV it is one width whatever is open in it, and stays within the screen. */
