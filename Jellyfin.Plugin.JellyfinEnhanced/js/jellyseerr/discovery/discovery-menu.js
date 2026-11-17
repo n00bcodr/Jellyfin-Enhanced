@@ -236,7 +236,13 @@
                 list.hidden = true;
                 item.setAttribute('aria-controls', list.id);
                 for (const choice of group.choices ?? []) list.appendChild(choiceRow(choice, group.id));
-                scroller.append(item, list);
+                // (Each group's row and body in a box of its own: the row held at the top while its group is open leaves
+                // with the group as it scrolls away, not over the groups after it.)
+                const box = document.createElement('div');
+                box.className = 'jellyseerr-menu-groupbox';
+                box.dataset.group = group.id;
+                box.append(item, list);
+                scroller.appendChild(box);
             }
             if (clearLabel && onClear) {
                 // Over the foot, what the page says when nothing matches what is set (shown while it does).
@@ -358,6 +364,7 @@
                 if (!open) head.removeAttribute('data-over');
                 if (!(head.nextElementSibling instanceof HTMLElement)) continue;
                 head.nextElementSibling.hidden = !open;
+                head.parentElement?.toggleAttribute('data-open', open);
                 // (A list's search field is held just under this row: the row's height, as laid out.)
                 if (open) head.nextElementSibling.style.setProperty('--jellyseerr-menu-head', `${head.offsetHeight}px`);
                 const group = open ? groups?.find(entry => entry.id === head.dataset.toggle) : undefined;

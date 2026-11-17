@@ -1501,7 +1501,7 @@
             .jellyseerr-menu-range { display: flex; align-items: center; gap: .5em; padding: 4px 16px 8px 32px; }
             .jellyseerr-menu-input { box-sizing: border-box; flex: 1 1 0; width: 100%; min-width: 0; padding: 6px 10px; border: 1px solid var(--jf-palette-divider, rgba(255,255,255,.12)); border-color: color-mix(in srgb, currentColor 45%, transparent); border-radius: var(--jf-shape-borderRadius, 4px); background: var(--jf-palette-action-hover, rgba(255,255,255,.08)); color: inherit; font: inherit; }
             .jellyseerr-menu-input::placeholder { color: var(--jellyseerr-quiet, var(--jf-palette-text-secondary, rgba(255,255,255,.7))); opacity: 1; }
-            .jellyseerr-menu-input:focus { outline: none; border-color: var(--jf-palette-primary-main, #00a4dc); box-shadow: 0 0 0 1px var(--jf-palette-primary-main, #00a4dc); }
+            .jellyseerr-menu-input:focus { outline: none; border-color: var(--jellyseerr-accent, #00a4dc); box-shadow: 0 0 0 1px var(--jellyseerr-accent, #00a4dc); }
             .jellyseerr-sort-menu { --jellyseerr-error: var(--jf-palette-error-light, #e57373); --jellyseerr-quiet: var(--jf-palette-text-secondary, rgba(255,255,255,.7)); }
             /* (Quiet on every theme: the text the theme draws, at 70%. A theme's secondary text can be as strong as its text.) */
             @supports (color: color-mix(in srgb, red, blue)) { .jellyseerr-sort-menu { --jellyseerr-quiet: color-mix(in srgb, currentColor 70%, transparent); } }
@@ -1572,7 +1572,7 @@
             html:not(.layout-tv) .jellyseerr-menu-profile-delete:focus-visible { outline: 2px solid var(--jf-palette-text-primary, #fff); outline-offset: -2px; }
             @media (forced-colors: active) { .jellyseerr-menu-profile-delete:focus-visible { outline: 3px solid CanvasText; } }
             /* Saved filters stand apart from the filters under them: a quiet line between, open or not. */
-            .jellyseerr-menu-group[data-toggle="profiles"][aria-expanded="false"] + .jellyseerr-menu-choices + .jellyseerr-menu-group { border-top: 1px solid var(--jf-palette-divider, rgba(255,255,255,.12)); }
+            .jellyseerr-menu-groupbox[data-group="profiles"]:not([data-open]) + .jellyseerr-menu-groupbox > .jellyseerr-menu-group { border-top: 1px solid var(--jf-palette-divider, rgba(255,255,255,.12)); }
             .layout-tv .jellyseerr-menu-profile-delete:focus { background: var(--jf-palette-text-primary, #fff); color: var(--jellyseerr-menu-ground, #101010); }
             .jellyseerr-menu-profile-save { flex: none; align-self: stretch; height: auto; min-height: 0; margin: 0; padding: 0 1em; }
             /* A profile not in use keeps no room for the tick it does not show (on a TV the tick is the row's first column: kept). */
@@ -1622,6 +1622,9 @@
             .layout-tv .jellyseerr-menu-outcome-undo { display: block; width: fit-content; padding: .3em .6em; margin: .2em 0 0 -.6em; border-radius: 999px; }
             [dir="rtl"] .layout-tv .jellyseerr-menu-outcome-undo, .layout-tv [dir="rtl"] .jellyseerr-menu-outcome-undo { margin: .2em -.6em 0 0; }
             html.layout-tv .jellyseerr-sort-menu .jellyseerr-menu-profile-says { font-size: 1rem; }
+            /* TV: hints, notes and the given genre's words near the rows' size; the bin as large as the rows' icons. */
+            html.layout-tv .jellyseerr-sort-menu .jellyseerr-menu-note, html.layout-tv .jellyseerr-sort-menu .jellyseerr-menu-given { font-size: .95em; }
+            .layout-tv .jellyseerr-menu-profile-delete .material-icons { font-size: 1.6em; }
             /* What a search has narrowed away is gone (a row's own display would otherwise keep it). */
             .jellyseerr-sort-menu .actionSheetMenuItem[hidden], .jellyseerr-menu-note[hidden], .jellyseerr-menu-label[hidden] { display: none !important; }
             .jellyseerr-menu-label { padding: 8px 16px 2px 32px; font-size: .86em; }
