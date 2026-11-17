@@ -146,6 +146,8 @@
     function openMenu({ anchor, title, choices = [], groups, clearLabel, doneLabel, noneLabel, undoLabel, onUndo, canUndo, onPick, onClear, onClose }) {
         closeOpen?.();
         const tv = document.documentElement.classList.contains('layout-tv');
+        // (A touch screen's sheet: its height is kept as its foot changes; see cutInARow.)
+        const coarse = !!window.matchMedia?.('(pointer: coarse)').matches;
         const backdrop = document.createElement('div');
         backdrop.className = 'dialogBackdrop dialogBackdropOpened jellyseerr-menu-backdrop';
         const container = document.createElement('div');
@@ -408,8 +410,6 @@
             for (const type of ['popstate', 'hashchange']) window.removeEventListener(type, close);
             window.removeEventListener('resize', resized);
             watcher?.disconnect();
-            window.removeEventListener('focusin', keepHeldFocus, true);
-            window.clearTimeout(holding);
             backdrop.remove();
             container.remove();
             onClose?.();
@@ -441,17 +441,12 @@
         }
         // On a TV Jellyfin scrolls every element that takes focus into place a moment later (a focus listener of its own
         // on the window, then a timer), by where it stands among the rows: what is held over the list would have the
-        // list scrolled back to its start. For that moment after what is held in sight takes focus, the list takes no
-        // scroll to a place (only then: a row's focus is still Jellyfin's to bring into sight).
-        let holding = 0;
-        /** @param {FocusEvent} event */
-        const keepHeldFocus = event => {
-            if (!heldInSight(/** @type {Element} */ (event.target))) return;
-            window.clearTimeout(holding);
-            scroller.scrollTo = () => {};
-            holding = window.setTimeout(() => { delete scroller.scrollTo; }, 60);
-        };
-        if (tv) window.addEventListener('focusin', keepHeldFocus, true);
+        // list scrolled back to its start. While the keys are on what is held in sight, the list takes no scroll to a
+        // place (a row's focus is still Jellyfin's to bring into sight; the menu itself scrolls by scrollTop and scrollBy).
+        if (tv && typeof scroller.scrollTo === 'function') {
+            const scrollTo = scroller.scrollTo.bind(scroller);
+            scroller.scrollTo = (...args) => { if (!heldInSight(/** @type {Element} */ (document.activeElement))) scrollTo(...args); };
+        }
         /**
          * The keys (and a remote's) while the menu is open.
          * @param {KeyboardEvent} event
@@ -720,6 +715,16 @@
                 if (by > 0 && by < next.box.height && headTop - by >= view.top - 1 && below() >= by) scroller.scrollTop += by;
                 return;
             }
+            // On a touch sheet the sheet keeps its height (its foot growing, a line said there, would otherwise take a
+            // whole row off it): the rows move to the cut instead, where they have room to, and the open group's row
+            // stays in sight.
+            if (coarse && !tv && Math.abs(cut - view.bottom) > 1) {
+                const down = view.bottom >= cutOf(next) ? Math.round(view.bottom - cutOf(next)) : 0;
+                const up = down === 0 ? Math.round(cutOf(next) - view.bottom) : 0;
+                const headTop = open?.getBoundingClientRect().top ?? view.top;
+                if (down > 0 && scroller.scrollTop >= down) { scroller.scrollTop -= down; return; }
+                if (up > 0 && up < next.box.height && below() >= up && headTop - up >= view.top - 1) { scroller.scrollTop += up; return; }
+            }
             if (cut > view.top + 40 && Math.abs(cut - view.bottom) > 1) scroller.style.maxHeight = `${Math.round(cut - view.top)}px`;
         };
         /**
@@ -902,13 +907,13 @@
                         if (!onUndo()) return;
                         renew();
                         // (The keys go to the open group's row, else the first row: the button is going.)
-                        if (wasKeyed) (heads().find(head => head.getAttribute('aria-expanded') === 'true') ?? items()[0])?.focus();
+                        if (wasKeyed) focusInPlace(heads().find(head => head.getAttribute('aria-expanded') === 'true') ?? items()[0]);
                     });
                     outcome.append(' ', undo);
                     // (The band made again with the keys on its Undo, after another change: they stay on Undo.)
-                    if (keyed) undo.focus();
+                    if (keyed) undo.focus({ preventScroll: true });
                 }
-            } else if (keyed) (heads().find(head => head.getAttribute('aria-expanded') === 'true') ?? items()[0])?.focus();
+            } else if (keyed) focusInPlace(heads().find(head => head.getAttribute('aria-expanded') === 'true') ?? items()[0]);
             place(true);
         };
         let outcomeFrame = 0;

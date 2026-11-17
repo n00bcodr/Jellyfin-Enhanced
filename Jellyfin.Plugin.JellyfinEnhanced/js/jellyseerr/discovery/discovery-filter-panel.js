@@ -449,7 +449,8 @@
                 if (at < 0 || !next) return;
                 event.preventDefault();
                 event.stopPropagation();
-                next.focus();
+                // (The choice is held in sight over the list: the list stays where it is.)
+                next.focus({ preventScroll: true });
                 if (!document.documentElement.classList.contains('layout-tv')) next.click();
             });
             track.append(...buttons);
@@ -1610,7 +1611,8 @@
             .jellyseerr-sort-menu .jellyseerr-menu-outcome { flex: 0 0 calc(100% - 16px); box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; gap: .75em; margin: 8px 8px 4px; padding: 6px 6px 6px calc(var(--jellyseerr-menu-text, 16px) - 8px); border-radius: 8px; color: var(--jf-palette-text-primary, #fff); background: rgba(0,164,220,.14); background: color-mix(in srgb, var(--jellyseerr-accent, #00a4dc) 16%, transparent); }
             .jellyseerr-sort-menu .jellyseerr-menu-outcome[hidden] { display: none; }
             /* (Undo right after its sentence, as a deleted set's is: the band's words run on, and wrap as words do.) */
-            .jellyseerr-sort-menu .jellyseerr-menu-outcome { display: block; }
+            .jellyseerr-sort-menu .jellyseerr-menu-outcome { display: block; line-height: 1.6; }
+            .jellyseerr-menu-outcome > span { margin-inline-end: .35em; }
             .jellyseerr-menu-outcome-undo { display: inline; position: relative; margin: 0; font: inherit; padding: .1em 0; border: 0; border-radius: 6px; background: none; color: var(--jellyseerr-accent); text-decoration: underline; cursor: pointer; }
             .jellyseerr-menu-outcome-undo:focus-visible { outline: 2px solid var(--jf-palette-text-primary, #fff); outline-offset: 0; border-radius: 3px; }
             .layout-tv .jellyseerr-menu-outcome-undo:focus { outline: none; background: var(--jf-palette-text-primary, #fff); color: var(--jellyseerr-menu-ground, #101010); text-decoration: none; }
