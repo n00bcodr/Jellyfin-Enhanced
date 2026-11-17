@@ -335,8 +335,8 @@ test("a genre's category keeps its genre and takes the other genres ticked as an
   await until(() => h.document.querySelector('.jellyseerr-sort-menu .jellyseerr-menu-match'), 'the choice');
   assert.equal(h.document.querySelector('.jellyseerr-sort-menu .jellyseerr-menu-match-lead').textContent, 'Titles in Animation and');
   assert.equal(h.document.querySelector('.jellyseerr-sort-menu .jellyseerr-menu-match [aria-checked="true"]').dataset.match, 'any');
-  // Its own genre is always applied: said first, outside the "or", and the row speaks of the others.
-  assert.deepEqual(h.said(h.category()), ['Animation', 'Family', 'or Kids']);
+  // Its own genre is always applied (its heading says it): the line and the row speak of the others.
+  assert.deepEqual(h.said(h.category()), ['Family', 'or Kids']);
   const row = [...h.document.querySelectorAll('.jellyseerr-sort-menu .jellyseerr-menu-group')].find(group => group.textContent.startsWith('Genres'));
   assert.equal(row.querySelector('.jellyseerr-menu-group-value').textContent, 'Family or Kids');
 });

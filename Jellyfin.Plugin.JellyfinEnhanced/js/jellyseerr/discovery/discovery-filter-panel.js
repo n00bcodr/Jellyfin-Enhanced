@@ -114,10 +114,10 @@
             const either = logic().MATCH_DEFAULTS?.[id] !== undefined && logic().matchOf(selection, id) === 'any';
             const own = id === 'genres' ? ownGenre?.trim().toLocaleLowerCase() ?? '' : '';
             const isOwn = item => own !== '' && item.name.toLocaleLowerCase() === own;
-            const items = [...(selection[id] ?? [])].sort((a, b) => Number(isOwn(b)) - Number(isOwn(a)));
-            const firstOther = items.findIndex(item => !isOwn(item));
+            // (The page's own genre is in its heading: the line says only what was chosen beside it.)
+            const items = (selection[id] ?? []).filter(item => !isOwn(item));
             for (const [index, item] of items.entries()) {
-                const or = either && firstOther >= 0 && index > firstOther;
+                const or = either && index > 0;
                 tokens.push({
                     or,
                     // A keyword and a language need a word to be read on their own ("With robot", "Originally in Japanese"); a genre, a rating, a service and a role say what they are.
@@ -289,6 +289,20 @@
             }
             return picked.length > 2 ? say('discovery_filter_count', '{count} chosen', { count: picked.length }) : picked.map(item => item.name).join(', ');
         };
+        /**
+         * The same, short, for a row too narrow for the names: "Any of 2", "2 chosen" (none for a single tick).
+         * @param {object[]} ticked
+         * @param {string} id - The list filter
+         * @returns {string|undefined}
+         */
+        const shortList = (ticked, id) => {
+            const own = id === 'genres' ? options.ownGenre?.trim().toLocaleLowerCase() ?? '' : '';
+            const picked = own && ticked.length > 1 ? ticked.filter(item => item.name.toLocaleLowerCase() !== own) : ticked;
+            if (picked.length < 2) return undefined;
+            if (logic().MATCH_DEFAULTS?.[id] === undefined) return say('discovery_filter_count', '{count} chosen', { count: picked.length });
+            return logic().matchOf(options.selection(), id) === 'any' ? say('discovery_filter_any_of', 'Any of {count}', { count: picked.length })
+                : say('discovery_filter_all_of', 'All of {count}', { count: picked.length });
+        };
         /** What is ticked in a list now. */
         const pickedOf = id => options.selection()[id] ?? [];
         /**
@@ -342,7 +356,7 @@
                     paint(value);
                     const picked = pickedOf(id);
                     options.change({ ...now, match: Object.keys(match).length > 0 ? match : undefined });
-                    handle?.say(sayList(picked, id), picked.length > 0);
+                    handle?.say(sayList(picked, id), picked.length > 0, shortList(picked, id));
                 });
                 return button;
             });
@@ -396,7 +410,7 @@
                 row.setAttribute('aria-checked', String(chosen));
                 const tick = row.querySelector('.actionsheetMenuItemIcon');
                 if (tick) { tick.classList.remove(box(!chosen)); tick.classList.add(box(chosen)); }
-                handle.say(sayList(next, id), next.length > 0);
+                handle.say(sayList(next, id), next.length > 0, shortList(next, id));
                 options.change({ ...options.selection(), [id]: next.length > 0 ? next : undefined });
                 onToggle?.(chosen, row);
             });
@@ -434,7 +448,7 @@
         function listGroup(id, load, first = [], given = () => false) {
             const picked = pickedOf(id);
             return {
-                id, name: nameOf(id), any, set: picked.length > 0, value: sayList(picked, id),
+                id, name: nameOf(id), any, set: picked.length > 0, value: sayList(picked, id), short: shortList(picked, id),
                 build(host, handle) {
                     const waiting = note(say('discovery_filter_loading', 'Loading…'));
                     host.appendChild(waiting);
@@ -449,6 +463,9 @@
                         const rows = [];
                         /** Adds a row to the list, and to the rows a search goes through. */
                         const add = item => { const row = tickRow(id, item, handle, undefined, given(item)); rows.push({ row, name: item.name }); list.appendChild(row); };
+                        // What is ticked but not in the list (an address can name it) is at its head, ticked, so it can be seen and unticked.
+                        const listed = new Set(sections.flatMap(section => section.items.map(item => item.id)));
+                        for (const item of pickedOf(id)) if (!listed.has(item.id)) add(item);
                         // A long list opens with what is ticked in it, and what is likeliest wanted, at its head.
                         const lifted = new Set(long && sections.length === 1 ? [...pickedOf(id).map(item => item.id), ...first] : []);
                         for (const section of sections) {
@@ -520,7 +537,7 @@
         function keywordGroup(id) {
             const picked = pickedOf(id);
             return {
-                id, name: nameOf(id), any, set: picked.length > 0, value: sayList(picked, id),
+                id, name: nameOf(id), any, set: picked.length > 0, value: sayList(picked, id), short: shortList(picked, id),
                 build(host, handle) {
                     // The keywords chosen stay listed (ticked) above the field; what the search finds comes under it.
                     const chosen = document.createElement('div');
@@ -531,7 +548,7 @@
                     /** Lists a chosen keyword above the field, ticked; taken away when it is pressed again. */
                     const keep = item => chosen.appendChild(tickRow(id, item, handle, (isChosen, row) => {
                         if (!isChosen) row.remove();
-                        rule.hidden = !matchable(id) && chosen.childElementCount + found.childElementCount === 0;
+                        rule.hidden = chosen.childElementCount === 0;
                         handle.placed();
                     }));
                     const search = field(nameOf(id), say('discovery_filter_search_keywords', 'Search keywords'), 'search');
@@ -541,8 +558,8 @@
                     bar.appendChild(search);
                     for (const item of pickedOf(id)) keep(item);
                     // (How several count is said once there is one to tick.)
-                    // (A choice is there from the start: it can be made before any is ticked.)
-                    rule.hidden = !matchable(id) && chosen.childElementCount === 0;
+                    // (How several count sits with the keywords chosen: it shows once there is one.)
+                    rule.hidden = chosen.childElementCount === 0;
                     const status = note('');
                     status.hidden = true;
                     status.setAttribute('aria-live', 'polite');
@@ -575,12 +592,12 @@
                                         sayStatus('');
                                         search.focus();
                                     }
-                                    rule.hidden = !matchable(id) && chosen.childElementCount + found.childElementCount === 0;
+                                    rule.hidden = chosen.childElementCount === 0;
                                     handle.placed();
                                 }));
                                 showFound(row, item.name, item.name.toLocaleLowerCase().indexOf(wanted.toLocaleLowerCase()), wanted.length);
                             }
-                            rule.hidden = !matchable(id) && chosen.childElementCount + found.childElementCount === 0;
+                            rule.hidden = chosen.childElementCount === 0;
                             sayStatus(fresh.length === 0 ? say('discovery_filter_no_match', 'No match.') : '');
                             handle.placed();
                         }).catch(() => {
@@ -791,7 +808,7 @@
                 header.after(line);
             }
             const removes = [];
-            const pieces = tokens.flatMap((token, index) => {
+            const made = tokens.map((token, index) => {
                 const piece = document.createElement('span');
                 piece.className = 'jellyseerr-filters-token';
                 const words = document.createElement('span');
@@ -811,15 +828,29 @@
                 remove.addEventListener('click', () => change(token.without(selectionOf(moduleName)), document.activeElement === remove ? index : -1));
                 removes.push(remove);
                 piece.append(words, remove);
-                if (!token.or) return [piece];
+                if (!token.or) return piece;
                 // (Several of a list matched by any of them: "With bear" or "dragon". The "or" goes with what follows it.)
                 const either = document.createElement('span');
                 either.className = 'jellyseerr-filters-or';
                 either.textContent = label('discovery_filter_or', 'or');
                 // (The space is for a screen reader's words; the margin spaces it to the eye.)
                 piece.prepend(either, ' ');
-                return [piece];
+                piece.dataset.or = '';
+                return piece;
             });
+            // A run joined by "or" is one unit on the line: closer together, and to the next line whole.
+            const pieces = [];
+            for (const piece of made) {
+                if (piece.dataset.or === undefined) { pieces.push(piece); continue; }
+                const before = pieces[pieces.length - 1];
+                const run = before?.classList.contains('jellyseerr-filters-run') ? before : document.createElement('span');
+                if (run !== before) {
+                    run.className = 'jellyseerr-filters-run';
+                    pieces.splice(pieces.length - 1, 1, run);
+                    run.appendChild(before);
+                }
+                run.appendChild(piece);
+            }
             if (tokens.length > 1) {
                 const all = document.createElement('button');
                 all.type = 'button';
@@ -1030,19 +1061,22 @@
             /* All of what is ticked, or any of it: two small choices on the rule's line, the one in use filled. */
             /* The theme's own grounds; the choice in use in the accent, as everything set in this menu is. */
             .jellyseerr-menu-match { display: flex; flex-flow: row wrap; align-items: center; gap: .35em .6em; }
-            .jellyseerr-menu-searchbar .jellyseerr-menu-match { padding: 6px 0 0; }
+            .jellyseerr-menu-searchbar .jellyseerr-menu-note { padding: 6px 0 0; }
             .jellyseerr-menu-match-track { display: inline-flex; gap: 2px; padding: 2px; border-radius: 999px; background: var(--jf-palette-action-hover, rgba(255,255,255,.08)); }
-            .jellyseerr-menu-match-btn { font: inherit; color: var(--jf-palette-text-secondary, rgba(255,255,255,.7)); white-space: nowrap; background: none; border: 0; border-radius: 999px; padding: .3em .95em; cursor: pointer; }
-            .jellyseerr-menu-match-btn[aria-checked="true"] { background: var(--jf-palette-action-selected, rgba(255,255,255,.16)); color: var(--jellyseerr-accent); box-shadow: inset 0 0 0 1px var(--jellyseerr-accent); }
-            .jellyseerr-menu-match-btn:focus-visible { outline: 2px solid var(--jellyseerr-accent); outline-offset: 1px; }
+            .jellyseerr-menu-match-btn { font: inherit; color: var(--jf-palette-text-secondary, rgba(255,255,255,.7)); white-space: nowrap; background: none; border: 0; border-radius: 999px; padding: .3em .8em; cursor: pointer; }
+            /* The half in use on the sheet's own ground, in the accent with its ring (readable on any theme). */
+            .jellyseerr-menu-match-btn[aria-checked="true"] { background-color: var(--jellyseerr-menu-ground, transparent); background-image: var(--jellyseerr-menu-shade, none); color: var(--jellyseerr-accent); box-shadow: inset 0 0 0 1px var(--jellyseerr-accent); }
+            .jellyseerr-menu-match-btn:focus-visible { outline: 2px solid var(--jf-palette-text-primary, #fff); outline-offset: 1px; }
             @media (forced-colors: active) { .jellyseerr-menu-match-btn[aria-checked="true"] { outline: 2px solid Highlight; outline-offset: -2px; } }
-            .layout-tv .jellyseerr-menu-match-btn:focus { outline: none; background: var(--jf-palette-action-focus, rgba(255,255,255,.24)); color: var(--jf-palette-text-primary, #fff); }
+            /* On a TV the half the remote is on is the inverted pill the Filters button uses; the half in use keeps its ring. */
+            .layout-tv .jellyseerr-menu-match-btn:focus { outline: none; background: var(--jf-palette-text-primary, #fff); color: var(--jellyseerr-menu-ground, #101010); }
+            .layout-tv .jellyseerr-menu-match { font-size: 1rem; }
             /* On a touch screen, as wide as the search field above it and a finger's height. */
             @media (pointer: coarse), (max-width: 600px) {
-                html:not(.layout-tv) .jellyseerr-menu-match { flex-direction: column; align-items: stretch; }
-                html:not(.layout-tv) .jellyseerr-menu-match-track { display: flex; }
+                html:not(.layout-tv) .jellyseerr-menu-match-track { display: flex; flex: 1 1 12em; }
                 html:not(.layout-tv) .jellyseerr-menu-match-btn { flex: 1 1 0; min-height: 44px; }
             }
+            .jellyseerr-filters-run { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .15em .5em; max-width: 100%; }
             .jellyseerr-filters-token > .jellyseerr-filters-or { flex: none; overflow: visible; margin-inline-end: .35em; color: var(--jf-palette-text-secondary, rgba(255,255,255,.7)); }
             /* An open group's row reads as the heading of what is under it; a long value is cut with an ellipsis. */
             .jellyseerr-menu-group[aria-expanded="true"] .actionSheetItemText { font-weight: 500; }

@@ -157,6 +157,29 @@
             heading.textContent = title;
             content.appendChild(heading);
         }
+        /**
+         * A group's value, whole where it fits on its row, else its short form ("Any of 2"), the whole then its title.
+         * (Measured once the menu is on the page: see place.)
+         * @param {HTMLElement} el - The value
+         * @param {string} words - What is set, in full
+         * @param {string} [short] - The same, short
+         */
+        const showValue = (el, words, short) => {
+            el.textContent = words;
+            el.dataset.whole = words;
+            el.dataset.short = short ?? '';
+            el.title = '';
+            if (short && short !== words && el.isConnected && el.scrollWidth > el.clientWidth + 1) {
+                el.textContent = short;
+                el.title = words;
+            }
+        };
+        /** Every group's value again, at the menu's size now. */
+        const fitValues = () => {
+            for (const el of content.querySelectorAll('.jellyseerr-menu-group-value')) {
+                showValue(/** @type {HTMLElement} */ (el), el.dataset.whole ?? el.textContent ?? '', el.dataset.short || undefined);
+            }
+        };
         // The one part of the menu that scrolls: its title (a TV) and its foot ("Clear filters") stay.
         const scroller = document.createElement('div');
         scroller.className = 'actionSheetScroller scrollY';
@@ -180,7 +203,7 @@
                 const current = group.choices?.find(choice => choice.selected) ?? first;
                 // Said as filtering only when it is: the first choice of a group is "any".
                 const set = group.choices ? !!current && current !== first : group.set === true;
-                value.textContent = group.choices ? current?.name ?? '' : (set ? group.value : group.any) ?? '';
+                showValue(value, group.choices ? current?.name ?? '' : (set ? group.value : group.any) ?? '', set ? group.short : undefined);
                 item.toggleAttribute('data-set', set);
                 body.appendChild(value);
                 const list = document.createElement('div');
@@ -219,8 +242,11 @@
         // What the keys move through: the rows and fields showing (a closed group's are not; nor is "clear" with nothing to
         // clear), and a list's all / any choice, by the one in use (left and right move between the two).
         /** @returns {HTMLElement[]} */
-        // (On a TV both halves of the choice are stops: the remote moves between them, and OK takes one.)
-        const items = () => Array.from(content.querySelectorAll(`.actionSheetMenuItem, .jellyseerr-menu-input, .jellyseerr-menu-match-btn${tv ? '' : '[aria-checked="true"]'}`))
+        // (The choice is one stop: the half with the keys on it, else the one in use. Left and right move inside it; on a
+        // TV they only move, and OK takes one.)
+        const items = () => Array.from(content.querySelectorAll('.actionSheetMenuItem, .jellyseerr-menu-input, .jellyseerr-menu-match-btn'))
+            .filter(item => !item.classList.contains('jellyseerr-menu-match-btn') || (item.parentElement?.contains(document.activeElement)
+                ? item === document.activeElement : item.getAttribute('aria-checked') === 'true'))
             .filter(item => !item.closest('[hidden]') && !item.hidden && item.getAttribute('aria-disabled') !== 'true'
                 && !(item.dataset.done !== undefined && getComputedStyle(item).display === 'none'));
         /** @returns {HTMLElement[]} */
@@ -243,10 +269,10 @@
             if (!group.build || built.has(list)) return;
             built.add(list);
             group.build(list, {
-                say(value, set) {
+                say(value, set, short) {
                     const head = headOf(group.id);
                     const words = head?.querySelector('.jellyseerr-menu-group-value');
-                    if (words) words.textContent = set ? value : group.any ?? '';
+                    if (words) showValue(words, set ? value : group.any ?? '', set ? short : undefined);
                     head?.toggleAttribute('data-set', set);
                     weighClear();
                 },
@@ -372,7 +398,7 @@
             const head = headOf(groupId);
             const chosen = rows.find(item => item.dataset.id === id);
             const value = head?.querySelector('.jellyseerr-menu-group-value');
-            if (value) value.textContent = chosen?.querySelector('.actionSheetItemText')?.textContent ?? '';
+            if (value) showValue(value, chosen?.querySelector('.actionSheetItemText')?.textContent ?? '');
             head?.toggleAttribute('data-set', !!chosen && chosen !== rows[0]);
             weighClear();
         };
@@ -398,7 +424,7 @@
                     const head = headOf(group.id);
                     const list = head?.nextElementSibling;
                     const words = head?.querySelector('.jellyseerr-menu-group-value');
-                    if (words) words.textContent = group.any ?? '';
+                    if (words) showValue(words, group.any ?? '');
                     head?.removeAttribute('data-set');
                     head?.setAttribute('aria-expanded', 'false');
                     if (list instanceof HTMLElement) { list.hidden = true; list.replaceChildren(); built.delete(list); }
@@ -613,6 +639,7 @@
          * @param {boolean} [keep=false] - A body changed its own size: the menu does not get shorter under the pointer
          */
         function place(keep = false) {
+            fitValues();
             // On a TV Jellyfin's own rules place the sheet: in the middle of the screen, within its height.
             if (tv) { cutInARow(); edges(); overList(); return; }
             const was = sheet.getBoundingClientRect();

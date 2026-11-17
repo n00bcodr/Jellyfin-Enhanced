@@ -635,7 +635,9 @@ test('the Filters menu offers all or any for keywords, genres and services; "or"
   // Matched by all, two say "and".
   const setLine = s.root.querySelector('.jellyseerr-filters-set');
   // ("or" goes with what follows it, which needs no "With" of its own.)
-  same([...setLine.children].map(piece => piece.textContent), ['With sheep', 'or sheep farm', 'Clear filters']);
+  same([...setLine.querySelectorAll('.jellyseerr-filters-token')].map(piece => piece.textContent), ['With sheep', 'or sheep farm']);
+  // The run joined by "or" is one unit on the line.
+  same([...setLine.children].map(piece => piece.className), ['jellyseerr-filters-run', 'jellyseerr-filters-clear']);
   assert.equal(groupOf(h, 'keywords').textContent.endsWith('sheep or sheep farm'), true);
   same(plain(h.F.selectionOf('network')).match, { keywords: 'any' });
   // Back to all: the default is not kept.
