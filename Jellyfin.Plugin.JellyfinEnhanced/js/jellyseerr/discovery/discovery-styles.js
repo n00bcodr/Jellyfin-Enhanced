@@ -223,7 +223,9 @@
             .layout-tv .jellyseerr-sort-menu .actionSheetContent[data-more] > .actionSheetScroller { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 2.2em), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 2.2em), transparent); }
             .layout-tv .jellyseerr-sort-menu .actionSheetContent[data-above][data-more] > .actionSheetScroller { -webkit-mask-image: linear-gradient(to bottom, transparent, #000 .5em, #000 calc(100% - 2.2em), transparent); mask-image: linear-gradient(to bottom, transparent, #000 .5em, #000 calc(100% - 2.2em), transparent); }
             /* (Rows above, on a TV: a rule under the title, as strong as the foot's; the rows themselves keep their strength.) */
-            .layout-tv .jellyseerr-sort-menu .actionSheetContent[data-above] > .actionSheetTitle { box-shadow: 0 1px 0 rgba(128,128,128,.6); }
+            .layout-tv .jellyseerr-sort-menu .actionSheetContent[data-rows-above] > .actionSheetTitle { box-shadow: 0 1px 0 rgba(128,128,128,.6); }
+            /* (Every TV rule in the one grey: the line under Saved filters, and an open row's edge as rows pass under it.) */
+            html.layout-tv .jellyseerr-sort-menu .jellyseerr-menu-groupbox[data-group="profiles"]:not([data-open]) + .jellyseerr-menu-groupbox > .jellyseerr-menu-group { border-top-color: rgba(128,128,128,.6); }
             @media (prefers-reduced-motion: reduce) { .jellyseerr-menu-group .actionsheetMenuItemIcon { transition: none; } }
             /* On a phone the rows are as tall as the rows of Jellyfin's menus there. */
             @media (max-width: 600px) { html:not(.layout-tv) .jellyseerr-sort-menu .actionSheetMenuItem { min-height: 48px; } }

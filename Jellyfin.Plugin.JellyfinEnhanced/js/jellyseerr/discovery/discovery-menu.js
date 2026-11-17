@@ -821,6 +821,8 @@
             }
             const hiddenAbove = nameTop < top - 1;
             content.toggleAttribute('data-above', scroller.scrollTop > 2 && hiddenAbove && !heldAtTop);
+            // (Rows above at all, a group's row held at the top or not: a TV's title has its rule then.)
+            content.toggleAttribute('data-rows-above', scroller.scrollTop > 2 && hiddenAbove);
         };
         scroller.addEventListener('scroll', edges, { passive: true });
         backdrop.addEventListener('click', () => close());
