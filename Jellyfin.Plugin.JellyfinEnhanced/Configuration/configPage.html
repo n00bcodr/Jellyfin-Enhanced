@@ -4606,7 +4606,8 @@
                     if (placeholder) placeholder.style.display = 'block';
                     if (deleteButton) deleteButton.style.display = 'none';
                     if (dimensionsDiv) dimensionsDiv.style.display = 'none';
-                    setElsewhereIconUploaded(config, false);
+                    // Only a 404 means "nothing stored"; other errors are unknown.
+                    if (response.status === 404 || elsewhereIconUploaded === null) setElsewhereIconUploaded(config, false);
                     return;
                 }
 
@@ -4630,6 +4631,8 @@
                 if (placeholder) placeholder.style.display = 'block';
                 if (deleteButton) deleteButton.style.display = 'none';
                 if (dimensionsDiv) dimensionsDiv.style.display = 'none';
+                // Unknown, but don't leave the URL check waiting forever.
+                if (elsewhereIconUploaded === null) setElsewhereIconUploaded(config, false);
             }
         }
 
@@ -5059,7 +5062,9 @@
         var elsewhereIconCheckSeq = 0;
         var elsewhereIconCheckTimer = null;
         var elsewhereIconLastChecked = null;
-        var elsewhereIconUploaded = false;
+        // null until the branding status is known, so the first check can't flash a
+        // warning for a URL an uploaded icon already replaces.
+        var elsewhereIconUploaded = null;
 
         /**
          * Records whether an Elsewhere icon is uploaded (the URL setting is then unused)
@@ -5084,10 +5089,13 @@
             var banner = document.getElementById('je-elsewhere-icon-warning');
             if (!input || !banner) return;
             var url = (input.value || '').trim();
-            // An uploaded icon replaces the URL, and with Elsewhere off it isn't shown,
-            // so neither case needs a warning.
+            if (elsewhereIconUploaded === null) return;
+            // An uploaded icon replaces the URL, and with Elsewhere off or no message
+            // the icon isn't shown, so none of those cases needs a warning.
             var enabledBox = document.getElementById('elsewhereEnabled');
-            var key = elsewhereIconUploaded || (enabledBox && !enabledBox.checked) ? '' : url;
+            var messageInput = document.getElementById('ElsewhereCustomBrandingText');
+            var noMessage = messageInput && !(messageInput.value || '').trim();
+            var key = (elsewhereIconUploaded || (enabledBox && !enabledBox.checked) || noMessage) ? '' : url;
             // Unrelated dependency updates call this too; don't re-fetch or flicker.
             if (key === elsewhereIconLastChecked) return;
             elsewhereIconLastChecked = key;
@@ -6834,6 +6842,8 @@
         if (searchExcludeLibraryCheckbox) searchExcludeLibraryCheckbox.addEventListener('change', updateSearchExcludeLibraryWarning);
         var elsewhereIconInput = document.getElementById('ElsewhereCustomBrandingImageUrl');
         if (elsewhereIconInput) elsewhereIconInput.addEventListener('input', scheduleElsewhereIconWarning);
+        var elsewhereMessageInput = document.getElementById('ElsewhereCustomBrandingText');
+        if (elsewhereMessageInput) elsewhereMessageInput.addEventListener('input', scheduleElsewhereIconWarning);
 
         var originalTestTmdb = testTmdbConnection;
         testTmdbConnection = async function(event) {

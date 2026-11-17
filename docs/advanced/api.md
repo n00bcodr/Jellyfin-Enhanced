@@ -1900,7 +1900,7 @@ For non-administrators the match is limited to items the caller can see (library
 
 Upload, retrieve, and remove custom branding assets. No enable toggle is required for storage operations.
 
-Valid slots are `icon-transparent.png`, `banner-light.png`, `banner-dark.png`, `favicon.ico`, `apple-touch-icon.png`, `elsewhere-icon.png`; names normalize to lowercase. `elsewhere-icon.png` is the Elsewhere custom branding icon: it isn't swapped into a jellyfin-web asset, accepts only `image/png`, `image/jpeg`, `image/gif`, `image/webp` and `image/svg+xml` uploads, and is served by its content rather than its name.
+Valid slots are `icon-transparent.png`, `banner-light.png`, `banner-dark.png`, `favicon.ico`, `apple-touch-icon.png`, `elsewhere-icon.png`; names normalize to lowercase. `elsewhere-icon.png` is the Elsewhere custom branding icon: it isn't swapped into a jellyfin-web asset, accepts only `image/png`, `image/jpeg`, `image/gif`, `image/webp` and `image/svg+xml` uploads whose bytes are a recognisable PNG, JPEG, GIF, WebP or UTF-8 SVG with `<svg` in the first 64 KB (anything else, including an empty file, returns `400`), and is served by its content rather than its name. Both `BrandingImage` and `ElsewhereBrandingIcon` send a sandboxing `Content-Security-Policy` and `nosniff` for it.
 
 | Method | Path | Access | Request → response |
 |---|---|---|---|
