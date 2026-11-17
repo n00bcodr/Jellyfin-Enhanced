@@ -203,7 +203,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (!LeavingSoonHomeSection.Wanted(config)) return new QueryResult<BaseItemDto>(Array.Empty<BaseItemDto>());
             var user = request.UserId == Guid.Empty ? null : _users.GetUserById(request.UserId);
             if (user == null) return new QueryResult<BaseItemDto>(Array.Empty<BaseItemDto>());
-            var items = Order(_leaving.MaintainerrItems(config), id => _library.GetItemById(id), item => item.IsVisibleStandalone(user));
+            // HSS keeps its own Hide Watched checkbox disabled for a plugin section, so the row has its own switch.
+            var hideWatched = config!.LeavingSoonHideWatched;
+            var items = Order(_leaving.MaintainerrItems(config), id => _library.GetItemById(id),
+                item => item.IsVisibleStandalone(user) && (!hideWatched || !item.IsPlayed(user, null)));
             var dtos = _dto.GetBaseItemDtos(items, new DtoOptions(), user);
             return new QueryResult<BaseItemDto>(dtos);
         }

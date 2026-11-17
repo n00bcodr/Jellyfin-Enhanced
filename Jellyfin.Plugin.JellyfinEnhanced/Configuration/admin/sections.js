@@ -1329,6 +1329,8 @@ JEAdmin.define({
                       else legacy();
                   });
               } },
+            { id: 'LeavingSoonHideWatched', prop: 'LeavingSoonHideWatched', type: 'toggle', default: false, label: 'Hide watched titles in the home row',
+              desc: 'Leaves out of the <strong>Leaving soon</strong> row what the user has already watched (a series counts once every episode is watched). Use this instead of the Hide Watched checkbox in Home Screen Sections, which that plugin keeps disabled for sections added by other plugins.' },
             { id: 'LeavingSoonRefreshHours', prop: 'LeavingSoonRefreshHours', type: 'number', min: 1, max: 168, default: 6, label: 'Refresh every (hours)',
               desc: 'How often the server reads the removal tool again (1&ndash;168 hours). A failed request is retried sooner. Each mark, keep or postpone reads it again at once.' }
         ]
