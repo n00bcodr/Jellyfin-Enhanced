@@ -71,7 +71,7 @@ const PERSON_ROUTES = [[`${API}/person/p1`, { name: 'Ann', tmdbId: '7' }],
   ] }]];
 
 test("a list page's link with the section's filters: page 1 is asked with them, and the controls say them", async t => {
-  const h = setup(t, { hash: '#/list?genreId=g1&serverId=s&jeType=movies&jeScore=7..&jeSort=vote_count.desc', routes: [...GENRE,
+  const h = setup(t, { hash: '#/list?genreId=g1&serverId=s#jeType=movies&jeScore=7..&jeSort=vote_count.desc', routes: [...GENRE,
     [`${API}/jellyseerr/discover/tv/genre/35?page=1&sortBy=vote_count.desc&voteAverageGte=7`, feed([1], 'tv')],
     [`${API}/jellyseerr/discover/movies/genre/36?page=1&sortBy=vote_count.desc&voteAverageGte=7`, feed([11], 'movie')]] });
   h.load('jellyseerr/discovery/genre-discovery.js');
@@ -86,7 +86,7 @@ test("a list page's link with the section's filters: page 1 is asked with them, 
   assert.equal(h.calls.some(path => path.includes('genre/36?page=1&sortBy=vote_count.desc&voteAverageGte=7')), true);
 });
 
-test("a choice on a section replaces its page's address: no history entry, no navigation, the same section", async t => {
+test("a choice on a section replaces its page's address in its fragment: the router's part as it was, no history entry, no navigation, the same section", async t => {
   const h = setup(t, { hash: '#/list?genreId=g1&serverId=s', routes: [...GENRE,
     [`${API}/jellyseerr/discover/tv/genre/35?page=1`, feed([1], 'tv')], [`${API}/jellyseerr/discover/movies/genre/36?page=1`, feed([11], 'movie')],
     [`${API}/jellyseerr/discover/tv/genre/35?page=1&sortBy=vote_average.desc`, feed([2], 'tv')],
@@ -96,17 +96,49 @@ test("a choice on a section replaces its page's address: no history entry, no na
   const section = h.section('genre');
   const length = h.window.history.length;
   const before = h.navigations();
+  // (jellyfin-web's router keys its views on the route and query: a change there it did not make has it build
+  // the page anew on the next Back, a dialog's included.)
+  const routerPart = () => h.hash().split('#').slice(0, 2).join('#');
   section.querySelector('.jellyseerr-discovery-filter [data-mode="tv"]').click();
-  assert.equal(h.hash(), '#/list?genreId=g1&serverId=s&jeType=series');
+  assert.equal(h.hash(), '#/list?genreId=g1&serverId=s#jeType=series');
+  assert.equal(routerPart(), '#/list?genreId=g1&serverId=s');
   section.querySelector('.jellyseerr-sort-btn').click();
   h.document.querySelector('.jellyseerr-sort-menu .actionSheetMenuItem[data-id="vote_average.desc"]').click();
-  assert.equal(h.hash(), '#/list?genreId=g1&serverId=s&jeType=series&jeSort=vote_average.desc');
+  assert.equal(h.hash(), '#/list?genreId=g1&serverId=s#jeType=series&jeSort=vote_average.desc');
+  assert.equal(routerPart(), '#/list?genreId=g1&serverId=s');
   await until(() => ids(section).includes(2) && !ids(section).includes(1), 'reordered');
   assert.equal(h.window.history.length, length, 'Back is not a step per choice');
   assert.equal(h.navigations(), before, 'not a navigation for the rest of the plugin');
   assert.equal(h.section('genre'), section, 'the section was not rebuilt');
   section.querySelector('.jellyseerr-discovery-filter [data-mode="mixed"]').click();
-  assert.equal(h.hash(), '#/list?genreId=g1&serverId=s&jeSort=vote_average.desc');
+  assert.equal(h.hash(), '#/list?genreId=g1&serverId=s#jeSort=vote_average.desc');
+});
+
+test("a jellyfin-web dialog after a change (its entry at the router's address, without the fragment) and Back off it are no navigation: the section keeps its filters", async t => {
+  const h = setup(t, { hash: '#/list?genreId=g1&serverId=s', routes: [...GENRE,
+    [`${API}/jellyseerr/discover/tv/genre/35?page=1`, feed([1], 'tv')], [`${API}/jellyseerr/discover/movies/genre/36?page=1`, feed([11], 'movie')]] });
+  h.load('jellyseerr/discovery/genre-discovery.js');
+  await until(() => ids(h.section('genre')).length === 2, 'first page');
+  const section = h.section('genre');
+  section.querySelector('.jellyseerr-discovery-filter [data-mode="tv"]').click();
+  assert.equal(h.hash(), '#/list?genreId=g1&serverId=s#jeType=series');
+  let navigated = 0;
+  h.JE.core.navigation.onNavigate(() => { navigated++; });
+  // dialogHelper (an item's "…" menu): an entry at the address its router last saw, the open dialogs in the router's state.
+  h.window.history.pushState({ usr: { dialogs: ['dlg1'] }, key: 'k1', idx: 1 }, '', `${ORIGIN}/web/index.html#/list?genreId=g1&serverId=s`);
+  await new Promise(resolve => setTimeout(resolve, 30));
+  assert.equal(navigated, 0, 'the dialog opening is not a navigation');
+  assert.equal(h.section('genre'), section);
+  assert.equal(h.JE.discoveryFilter.getFilterMode('genre'), 'tv');
+  h.window.history.back();
+  await until(() => h.hash() === '#/list?genreId=g1&serverId=s#jeType=series', 'Back off the dialog');
+  await new Promise(resolve => setTimeout(resolve, 30));
+  assert.equal(navigated, 0, 'nor its closing');
+  assert.equal(h.section('genre'), section, 'the same section');
+  assert.equal(section.querySelector('.jellyseerr-discovery-filter .emby-tab-button-active').dataset.mode, 'tv');
+  // A real move still is one.
+  h.window.history.pushState(null, '', `${ORIGIN}/web/index.html#/home`);
+  assert.equal(navigated, 1);
 });
 
 test("a link leaving out genres and a language: Seerr is asked as without them, and what has them is kept off the page", async t => {
@@ -122,7 +154,8 @@ test("a link leaving out genres and a language: Seerr is asked as without them, 
   assert.equal(h.calls.some(path => /without|exclude/i.test(path)), false);
   // Taken away, the address says so and the list has them again.
   section.querySelector('.jellyseerr-filters-token .jellyseerr-filters-remove').click();
-  assert.equal(h.hash(), '#/list?genreId=g1&serverId=s&jeWithoutLanguage=ja');
+  // (The link's query is the router's and stays; the fragment says what is set now.)
+  assert.equal(h.hash(), '#/list?genreId=g1&serverId=s&jeWithoutGenres=27/27:Horror&jeWithoutLanguage=ja#jeWithoutLanguage=ja');
   await until(() => ids(section).includes(1), 'Horror back');
 });
 
@@ -158,7 +191,7 @@ test("a person's link: the type and further filters from the address, and taking
   assert.equal(section.querySelector('.jellyseerr-discovery-filter .emby-tab-button-active').dataset.mode, 'movies');
   assert.deepEqual(h.said(section), ['Score from 7']);
   section.querySelector('.jellyseerr-filters-remove').click();
-  assert.equal(h.hash(), '#/details?id=p1&jeType=movies');
+  assert.equal(h.hash(), '#/details?id=p1&jeType=movies&jeScore=7..#jeType=movies');
   await until(() => String(ids(section)) === '5,7', 'every movie');
 });
 
@@ -171,15 +204,15 @@ test("a section whose address's filters leave nothing stays, says so, and Clear 
   assert.deepEqual(ids(section), []);
   section.querySelector('.jellyseerr-filters-none button').click();
   await until(() => ids(section).length === 3, 'everything again');
-  assert.equal(h.hash(), '#/details?id=p1');
+  assert.equal(h.hash(), '#/details?id=p1&jeLanguage=ko#', 'an empty fragment: nothing set, whatever the query says');
 });
 
 test('a section goes on the page the router shows, not the one still showing while it builds the new page', async t => {
   const h = setup(t, { hash: '#/details?id=m1', html: DETAIL('old'),
     items: { p1: { Id: 'p1', Type: 'Person' }, m1: { Id: 'm1', Type: 'Movie' } }, routes: PERSON_ROUTES });
   h.load('jellyseerr/discovery/person-discovery.js');
-  // Back to a person's page whose address its cached page no longer matches: the router builds a new one.
-  h.window.location.hash = '#/details?id=p1&jeType=movies';
+  // A person's page the router builds anew (another title's page before it).
+  h.window.location.hash = '#/details?id=p1#jeType=movies';
   await until(() => h.calls.some(path => path.endsWith('combined_credits')), 'the person looked up');
   await new Promise(resolve => setTimeout(resolve, 150));
   assert.equal(h.section('person'), null, 'not put on the old page meanwhile');
@@ -245,7 +278,7 @@ test("a saved profile chosen in a section sets its type, order and filters, its 
   await until(() => h.document.querySelector('.jellyseerr-sort-menu .jellyseerr-menu-profile'), 'the profiles');
   h.document.querySelector('.jellyseerr-sort-menu .jellyseerr-menu-profile').click();
   assert.equal(h.document.querySelector('.jellyseerr-sort-menu'), null);
-  assert.equal(h.hash(), '#/list?genreId=g1&serverId=s&jeType=movies&jeScore=7..&jeSort=vote_count.desc');
+  assert.equal(h.hash(), '#/list?genreId=g1&serverId=s#jeType=movies&jeScore=7..&jeSort=vote_count.desc');
   await until(() => ids(section).includes(12), 'asked again');
   assert.equal(section.querySelector('.jellyseerr-sort-btn').textContent, 'Most votes');
   assert.equal(section.querySelector('.jellyseerr-discovery-filter .emby-tab-button-active').dataset.mode, 'movies');

@@ -72,6 +72,30 @@
         };
     }
 
+    // On a jellyfin-web dialog's own history entry (see dispatchNavigate).
+    let onDialogEntry = false;
+
+    /**
+     * An address without the fragment a page keeps its own state in (`#/route?query#state`, see
+     * discovery-address.js): the part jellyfin-web's router reads.
+     * @param {string} href
+     * @returns {string}
+     */
+    function routerPart(href) {
+        const at = String(href).indexOf('#');
+        const mark = at < 0 ? -1 : String(href).indexOf('#', at + 1);
+        return mark < 0 ? String(href) : String(href).slice(0, mark);
+    }
+
+    /**
+     * Whether the history entry is one a jellyfin-web dialog added (its router state lists the open dialogs).
+     * @returns {boolean}
+     */
+    function isDialogEntry() {
+        const dialogs = history.state?.usr?.dialogs;
+        return Array.isArray(dialogs) && dialogs.length > 0;
+    }
+
     /**
      * Fan a navigation event out to all subscribers, at most once per URL
      * change (popstate + hashchange pairs collapse to one dispatch).
@@ -79,6 +103,17 @@
      */
     function dispatchNavigate(event) {
         if (window.location.href === lastDispatchedHref) return;
+        // A jellyfin-web dialog opened on the page (an item's "…" menu) adds an entry at the address its
+        // router last saw, without the page's own fragment, and Back closes it: neither is a navigation,
+        // the page is still there showing what it did.
+        const dialog = isDialogEntry();
+        if ((dialog || onDialogEntry) && lastDispatchedHref !== null
+            && routerPart(window.location.href) === routerPart(lastDispatchedHref)) {
+            onDialogEntry = dialog;
+            lastDispatchedHref = window.location.href;
+            return;
+        }
+        onDialogEntry = false;
         lastDispatchedHref = window.location.href;
         for (const callback of navCallbacks) {
             try {

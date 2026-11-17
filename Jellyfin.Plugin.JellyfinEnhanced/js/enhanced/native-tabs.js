@@ -456,7 +456,8 @@
      * @returns {string|null} Its decoded value, or null when absent.
      */
     function hashParam(name) {
-        var match = new RegExp('[?&]' + name + '=([^&]*)').exec(window.location.hash);
+        // (The query ends where the Recommendations filters' fragment starts, see discovery-address.js.)
+        var match = new RegExp('[?&]' + name + '=([^&#]*)').exec(window.location.hash);
         if (!match) return null;
         try { return decodeURIComponent(match[1]); } catch (e) { return match[1]; }
     }
@@ -464,7 +465,7 @@
     /** @returns {string} The current Home route (`#/home` or `#/home.html`) without its query. */
     function homeRoute() {
         var hash = window.location.hash;
-        return hash.indexOf('#/home') === 0 ? hash.split('?')[0] : '#/home';
+        return hash.indexOf('#/home') === 0 ? '#' + hash.slice(1).split(/[?#]/)[0] : '#/home';
     }
 
     /**
@@ -568,10 +569,14 @@
             // synchronously, and ours clears rewrittenHash once it has seen it.
             // Only the tab's own pairs are corrected: the others (the
             // Recommendations category open on it, its filters) stay.
-            var others = (staleHash.split('?')[1] || '').split('&').filter(function (pair) {
+            // (Their fragment, after the query, too: see discovery-address.js.)
+            var mark = staleHash.indexOf('#', 1);
+            var fragment = mark < 0 ? '' : staleHash.slice(mark);
+            var query = mark < 0 ? staleHash : staleHash.slice(0, mark);
+            var others = (query.split('?')[1] || '').split('&').filter(function (pair) {
                 return pair !== '' && !/^(?:tab|jeTab)=/.test(pair);
             });
-            var freshHash = deepLinkHash(entry) + others.map(function (pair) { return '&' + pair; }).join('');
+            var freshHash = deepLinkHash(entry) + others.map(function (pair) { return '&' + pair; }).join('') + fragment;
             rewrittenHash = freshHash;
             history.replaceState(history.state, '', window.location.pathname + window.location.search + freshHash);
             wantedIndex = entry.index;

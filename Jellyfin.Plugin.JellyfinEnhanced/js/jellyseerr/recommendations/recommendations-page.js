@@ -21,7 +21,7 @@
    * @returns {boolean}
    */
   function isPageHash(hash) {
-    return /^#\/recommendations(?:\?.*)?$/.test(String(hash || ''));
+    return /^#\/recommendations(?:\?[^#]*)?(?:#.*)?$/.test(String(hash || ''));
   }
 
   function createPageContainer() {

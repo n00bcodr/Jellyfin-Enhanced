@@ -1371,8 +1371,17 @@
         // (Asked for once per visit, so the menu can name the profile that is set when it opens.)
         if (profiles && profilesReachable()) loadProfiles().catch(() => {});
         paint();
-        // What was set before the last change: "Nothing matches" offers to go back to it.
+        // What was set before the last change: "Nothing matches" offers to go back to it, while what is set
+        // is still what that change left (a saved set applied, the address followed or the type switched
+        // since replaced it some other way, and going back would undo only part of that).
         let undoTo = null;
+        /** @type {string|null} */
+        let undoFrom = null;
+        /**
+         * What is set (the type and the further filters), as one string to compare.
+         * @returns {string}
+         */
+        const setNow = () => JSON.stringify([filterModeOf(moduleName), selectionOf(moduleName)]);
         /**
          * Takes a new selection: redraws, keeps the list's place while it is rebuilt, and reloads it.
          * @param {object} next - The new FilterSelection
@@ -1381,6 +1390,7 @@
         function change(next, focusAt = -1) {
             undoTo = selectionOf(moduleName);
             if (worthKeeping(next)) moreFilters.set(moduleName, next); else moreFilters.delete(moduleName);
+            undoFrom = setNow();
             paint(focusAt);
             JE.discoveryBusy?.hold?.(button);
             onChange();
@@ -1411,10 +1421,10 @@
                 anchor: button, title: filtersLabel, groups, clearLabel, doneLabel: label('discovery_filters_done', 'Done'),
                 noneLabel: label('discovery_filters_none', 'Nothing matches these filters.'),
                 undoLabel: () => undoWords({ offered, label, locale: localeOf(), ownGenre, before: undoTo ?? {}, now: selectionOf(moduleName) }),
-                canUndo: () => undoTo !== null,
+                canUndo: () => undoTo !== null && undoFrom === setNow(),
                 // (Back to what was set before the last change; the menu then says every group again.)
                 onUndo() {
-                    if (!undoTo) return false;
+                    if (!undoTo || undoFrom !== setNow()) return false;
                     const back = undoTo;
                     change(back);
                     undoTo = null;
@@ -1465,7 +1475,10 @@
         // (The line of what is set needs the section on the page: a header made with filters set gets its line here.)
         wiring.get(section?.querySelector('.jellyseerr-discovery-header') ?? container)?.paint();
         section?.querySelector('.jellyseerr-filters-none')?.remove();
-        if (hasMore || logic().activeFilterCount(selectionOf(moduleName)) === 0 || container.querySelector('.card')) return;
+        // (Only cards of the kind shown count: All / Movies / Series hides the others, see discovery-filter-utils.js.)
+        const kind = container.classList.contains('filter-movies') ? '[data-media-type="movie"]'
+            : container.classList.contains('filter-tv') ? '[data-media-type="tv"]' : '';
+        if (hasMore || logic().activeFilterCount(selectionOf(moduleName)) === 0 || container.querySelector(`.card${kind}`)) return;
         const buildMessageRow = JE.discoverySection?.buildMessageRow;
         if (typeof buildMessageRow !== 'function') return;
         const note = buildMessageRow({

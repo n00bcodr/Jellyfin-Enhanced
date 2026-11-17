@@ -17,6 +17,8 @@ const RECOMMENDATIONS = ['styles', 'catalog', 'data', 'render', 'page', 'categor
 const ORIGIN = 'http://jellyfin.test';
 const DISCOVER = '/JellyfinEnhanced/jellyseerr/discover';
 const TAB = '#/home?tab=2&jeTab=recommendations';
+/** The tab's address with the page's own pairs in their fragment, as the page writes them (see discovery-address.js). */
+const at = pairs => `${TAB}#${pairs}`;
 const HOME = '<div class="mainAnimatedPages"><div class="page mainAnimatedPage" id="indexPage"><div id="tab"></div></div></div>';
 
 async function until(condition, label = 'condition') {
@@ -74,7 +76,7 @@ function setup(t, { hash = TAB, routes = [], config = {} } = {}) {
 const loaded = h => !h.tab().querySelector('.je-skeleton-rows, [aria-label="Loading recommendations…"]') && h.rows().length > 0;
 
 test("a link's filters narrow every row: its kind's rows only, Trending by what its titles say, upcoming as discover from today", async t => {
-  const h = setup(t, { hash: `${TAB}&jeType=movies&jeScore=7..`, routes: [
+  const h = setup(t, { hash: at('jeType=movies&jeScore=7..'), routes: [
     [`${DISCOVER}/trending?page=1`, scored([[1, 'movie', 8], [2, 'tv', 9], [3, 'movie', 5]])],
     [`${DISCOVER}/movies?page=1&voteAverageGte=7`, scored([[11, 'movie', 7.5]])],
     [`${DISCOVER}/movies?page=1&primaryReleaseDateGte=${today()}&voteAverageGte=7`, scored([[12, 'movie', 7.1]])]
@@ -88,7 +90,7 @@ test("a link's filters narrow every row: its kind's rows only, Trending by what 
   assert.equal(h.tab().querySelector('.je-reco-tools .emby-tab-button-active').dataset.mode, 'movies');
   assert.equal(h.tab().querySelector('.je-reco-tools .jellyseerr-filters-btn').hasAttribute('data-on'), true);
   assert.deepEqual(h.said(h.tab()), ['Score from 7']);
-  assert.equal(h.hash(), `${TAB}&jeType=movies&jeScore=7..`, 'already said as the page writes it');
+  assert.equal(h.hash(), at('jeType=movies&jeScore=7..'), 'already said as the page writes it');
 });
 
 test("a choice on the tab replaces its address (no history entry, no navigation) and fills the rows again", async t => {
@@ -99,7 +101,7 @@ test("a choice on the tab replaces its address (no history entry, no navigation)
   const length = h.window.history.length;
   const before = h.navigations();
   h.tab().querySelector('.je-reco-tools [data-mode="tv"]').click();
-  assert.equal(h.hash(), `${TAB}&jeType=series`);
+  assert.equal(h.hash(), at('jeType=series'));
   assert.equal(h.window.history.length, length, 'Back is not a step per filter');
   assert.equal(h.navigations(), before, 'not a navigation for the rest of the plugin');
   await until(() => loaded(h) && !h.rows().includes('Popular Movies'), 'series rows');
@@ -110,7 +112,7 @@ test("a choice on the tab replaces its address (no history entry, no navigation)
 });
 
 test('a filter that leaves the tab nothing says so, and Clear filters brings everything back', async t => {
-  const h = setup(t, { hash: `${TAB}&jeLanguage=xx`, routes: [[`${DISCOVER}/movies?page=1`, scored([[31, 'movie']])]] });
+  const h = setup(t, { hash: at('jeLanguage=xx'), routes: [[`${DISCOVER}/movies?page=1`, scored([[31, 'movie']])]] });
   const P = h.load();
   P.renderInto(h.tab());
   await until(() => h.tab().querySelector('.je-reco-filters-none'), 'the note');
@@ -130,14 +132,14 @@ test('on Home a category names itself in the address: Back and Forward move betw
   const title = () => h.document.getElementById('je-recommendations-category-title').textContent;
   await P.showCategoryPage('trending');
   assert.equal(h.window.history.length, length + 1, 'one entry');
-  assert.equal(h.hash(), `${TAB}&jeCategory=trending`, "the tab's own pairs kept, the category after them");
+  assert.equal(h.hash(), at('jeCategory=trending'), "the tab's own pairs kept, the category in the fragment after them");
   // A dialog over it (the More Info modal, at the same address) closing lands back on it: it stays.
   h.window.history.pushState({ dialog: 1 }, '', h.window.location.href);
   h.window.history.back();
   await until(() => h.window.history.state?.jeCategory === true, 'back on the page entry');
   assert.equal(P.state.categoryPageVisible, true, 'the page stays');
   await P.showCategoryPage('movies');
-  assert.equal(h.hash(), `${TAB}&jeCategory=movies`);
+  assert.equal(h.hash(), at('jeCategory=movies'));
   h.window.history.back();
   await until(() => title() === 'Trending' && h.categoryCards().join() === '1', 'Back to the first category');
   h.window.history.back();
@@ -165,7 +167,10 @@ test("a category link opens filtered and in its order; its arrow keeps the filte
   const length = h.window.history.length;
   h.document.getElementById('je-recommendations-category-back').click();
   await until(() => !P.state.categoryPageVisible, 'the arrow');
-  assert.equal(h.hash(), `${TAB}&jeScore=7..`, 'nothing of the tab below it in history: the address goes back to the tab');
+  // (A link with them in its query: that part is the router's and stays as it was; the fragment says what is set now.)
+  assert.equal(h.hash(), `${TAB}&jeCategory=movies&jeScore=7..&jeSort=vote_average.desc#jeScore=7..`,
+    'nothing of the tab below it in history: the address goes back to the tab');
+  assert.equal(h.JE.discoveryAddress.categoryOfHash(h.hash()), null);
   assert.equal(h.window.history.length, length, 'no entry added');
   // An address naming something that is no category is ignored.
   h.window.location.hash = `${TAB}&jeCategory=%3Cscript%3E`;
@@ -174,30 +179,30 @@ test("a category link opens filtered and in its order; its arrow keeps the filte
 });
 
 test("filters changed on a category are the tab's too; its entry says them, and Back shows the tab entry's own", async t => {
-  const h = setup(t, { hash: `${TAB}&jeScore=9..`, routes: [
+  const h = setup(t, { hash: at('jeScore=9..'), routes: [
     [`${DISCOVER}/movies?page=1`, scored([[2, 'movie']])], [`${DISCOVER}/movies?page=1&voteAverageGte=9`, scored([[3, 'movie', 9.5]])]
   ] });
   const P = h.load();
   P.renderInto(h.tab());
   await until(() => loaded(h), 'rows');
   await P.showCategoryPage('movies');
-  assert.equal(h.hash(), `${TAB}&jeCategory=movies&jeScore=9..`, 'opened with the filters');
+  assert.equal(h.hash(), at('jeCategory=movies&jeScore=9..'), 'opened with the filters');
   assert.deepEqual(h.categoryCards(), [3]);
   const length = h.window.history.length;
   // Taking the score away there replaces the category's entry.
   h.category().querySelector('.jellyseerr-filters-remove').click();
-  assert.equal(h.hash(), `${TAB}&jeCategory=movies`);
+  assert.equal(h.hash(), at('jeCategory=movies'));
   assert.equal(h.window.history.length, length);
   await until(() => h.categoryCards().join() === '2', 'reloaded without it');
   h.window.history.back();
   await until(() => !P.state.categoryPageVisible, 'Back to the tab');
-  assert.equal(h.hash(), `${TAB}&jeScore=9..`);
+  assert.equal(h.hash(), at('jeScore=9..'));
   assert.deepEqual(plain(h.JE.discoveryFilter.getFilters('recommendations')).score, ['9', ''], "the tab's entry keeps its own filters");
   await until(() => h.said(h.tab()).join() === 'Score from 9', 'the tab shows them');
 });
 
 test('a category opens with the filters, asks Seerr with them, and says when they leave nothing', async t => {
-  const h = setup(t, { hash: `${TAB}&jeScore=9..`, routes: [
+  const h = setup(t, { hash: at('jeScore=9..'), routes: [
     [`${DISCOVER}/movies?page=1&voteAverageGte=9`, { results: [], totalPages: 1 }], [`${DISCOVER}/movies?page=1`, scored([[2, 'movie']])]
   ] });
   const P = h.load();
@@ -211,11 +216,11 @@ test('a category opens with the filters, asks Seerr with them, and says when the
   await until(() => h.categoryCards().length === 1, 'the titles without the filter');
   assert.equal(page.querySelector('.je-reco-filters-none'), null);
   assert.deepEqual(h.said(page), []);
-  assert.equal(h.hash(), `${TAB}&jeCategory=movies`);
+  assert.equal(h.hash(), at('jeCategory=movies'));
 });
 
 test('Trending (a feed that takes no filters) keeps its titles by what they say, and has nothing where a filter cannot be checked', async t => {
-  const h = setup(t, { hash: `${TAB}&jeGenres=35/35:Comedy`, routes: [
+  const h = setup(t, { hash: at('jeGenres=35/35:Comedy'), routes: [
     [`${DISCOVER}/trending?page=1`, { results: [{ id: 1, mediaType: 'movie', genreIds: [35] }, { id: 2, mediaType: 'tv', genreIds: [18] }], totalPages: 1 }]
   ] });
   const P = h.load();
@@ -234,7 +239,7 @@ test('off Home a category keeps the same-URL entry, and the page of its own keep
   const P = h.load();
   await until(() => P.state.pageVisible && h.document.querySelector('#je-recommendations-page .je-reco-tools'), 'the page');
   h.document.querySelector('#je-recommendations-page .je-reco-tools [data-mode="movies"]').click();
-  assert.equal(h.hash(), '#/recommendations?jeType=movies');
+  assert.equal(h.hash(), '#/recommendations#jeType=movies');
   const url = h.window.location.href;
   await P.showCategoryPage('movies');
   assert.equal(h.window.location.href, url, 'the address does not name the category off Home');
@@ -254,13 +259,31 @@ test("an address's filters that are not of their shape are left out", t => {
     language: [{ id: 'ko', name: 'Korean' }], rating: [{ id: 'movie:US:PG-13', name: 'PG-13' }],
     services: [{ id: '8', name: '<b>Netflix</b>' }]
   });
-  // What is written reads back as the same, after the host's own pairs.
+  // What is written reads back as the same, in its fragment after the host's route and query, which stay as they are.
   const written = address.addressWith('#/details?id=1&serverId=s', null, { mode: 'tv', selection: said.selection, sort: 'vote_count.desc' }, true);
-  assert.equal(written, '#/details?id=1&serverId=s&jeType=series&jeVotes=500..&jeRole=cast&jeGenres=35/35:Comedy&jeLanguage=ko'
+  assert.equal(written, '#/details?id=1&serverId=s#jeType=series&jeVotes=500..&jeRole=cast&jeGenres=35/35:Comedy&jeLanguage=ko'
     + '&jeRating=movie:US:PG-13&jeServices=8:%3Cb%3ENetflix%3C%2Fb%3E&jeSort=vote_count.desc');
   assert.deepEqual(plain(address.filtersOfHash(written, 'en').selection), plain(said.selection));
   assert.equal(address.withoutOwn(written), '#/details?id=1&serverId=s');
+  // A link with them in its query: read; left as it is while it says what is set; else the fragment says it, and wins.
+  const link = '#/details?id=1&serverId=s&jeType=movies&jeScore=7..';
+  assert.equal(address.filtersOfHash(link, 'en').mode, 'movies');
+  assert.equal(address.addressWith(link, null, { mode: 'movies', selection: { score: ['7', ''] }, sort: '' }, false), link);
+  const changed = address.addressWith(link, null, { mode: 'tv', selection: {}, sort: '' }, false);
+  assert.equal(changed, `${link}#jeType=series`);
+  assert.equal(address.filtersOfHash(changed, 'en').mode, 'tv');
+  assert.deepEqual(plain(address.filtersOfHash(changed, 'en').selection), {});
+  const cleared = address.addressWith(changed, null, { mode: 'mixed', selection: {}, sort: '' }, false);
+  assert.equal(cleared, `${link}#`, 'an empty fragment: nothing set, whatever the query says');
+  assert.equal(address.filtersOfHash(cleared, 'en').mode, 'mixed');
+  assert.deepEqual(plain(address.filtersOfHash(cleared, 'en').selection), {});
+  assert.equal(address.withoutOwn(cleared), '#/details?id=1&serverId=s');
+  // Nothing set and nothing in the query: no fragment at all.
+  assert.equal(address.addressWith(written, null, { mode: 'mixed', selection: {}, sort: '' }, true), '#/details?id=1&serverId=s');
   assert.equal(address.categoryOfHash(`${TAB}&jeCategory=genre-movie-28`), 'genre-movie-28');
+  assert.equal(address.categoryOfHash(at('jeCategory=genre-movie-28')), 'genre-movie-28');
+  assert.equal(address.categoryOfHash('#/home#jeCategory=trending'), 'trending', 'Home without its query');
+  assert.equal(address.categoryOfHash('#/recommendations#jeType=movies'), null);
   assert.equal(address.categoryOfHash('#/details?id=1&jeCategory=trending'), null, 'only the Recommendations page has categories');
 });
 
@@ -294,7 +317,7 @@ test("a category address with keywords matched by any asks Seerr for either, and
   const P = h.load();
   await until(() => P.state.categoryPageVisible && h.categoryCards().length === 2, 'opened from its address');
   assert.deepEqual(h.said(h.category()), ['Animation', 'With bear', 'or dragon']);
-  assert.equal(h.hash(), link, 'already said as the page writes it');
+  assert.equal(h.hash(), link, 'a link with them in its query is left as it is while it says what is set');
   // Without jeAny the same keywords are all of them.
   const both = h.JE.discoveryAddress.filtersOfHash(`${TAB}&jeKeywords=10468:bear,12554:dragon`, 'en');
   assert.equal(both.selection.match, undefined);
@@ -310,7 +333,7 @@ test("a category its address asked for, still resolving its genre, is not opened
   h.JE.jellyseerrAPI.fetchGenreSlider = () => names;
   const P = h.load();
   // A link to the genre's category, followed on Home; Back to the tab before its genre's names come.
-  h.window.location.hash = `${TAB}&jeCategory=genre-movie-28`;
+  h.window.location.hash = at('jeCategory=genre-movie-28');
   await new Promise(resolve => setTimeout(resolve, 30));
   h.window.history.back();
   await until(() => h.hash() === TAB, 'Back to the tab');
@@ -321,7 +344,7 @@ test("a category its address asked for, still resolving its genre, is not opened
 });
 
 test("a genre's category keeps its genre and takes the other genres ticked as any of them (Animation, and Family or Kids)", async t => {
-  const link = `${TAB}&jeCategory=genre-tv-16&jeType=series&jeGenres=16/16:Animation,10751/10751:Family,/10762:Kids&jeAny=genres`;
+  const link = at('jeCategory=genre-tv-16&jeType=series&jeGenres=16/16:Animation,10751/10751:Family,/10762:Kids&jeAny=genres');
   const h = setup(t, { hash: link, routes: [[`${DISCOVER}/tv/genre/16?page=1`, { totalPages: 1, results: [
     { id: 1, mediaType: 'tv', genreIds: [16, 10751] }, { id: 2, mediaType: 'tv', genreIds: [16] }, { id: 3, mediaType: 'tv', genreIds: [16, 10762] }
   ] }]] });
@@ -355,7 +378,7 @@ test("a saved profile chosen on the tab sets its filters, its address and its ro
   await until(() => h.document.querySelector('.jellyseerr-sort-menu .jellyseerr-menu-profile'), 'the profiles');
   h.document.querySelector('.jellyseerr-sort-menu .jellyseerr-menu-profile').click();
   assert.equal(h.document.querySelector('.jellyseerr-sort-menu'), null, 'the menu is done');
-  assert.equal(h.hash(), `${TAB}&jeType=series&jeGenres=16/16:Animation`);
+  assert.equal(h.hash(), at('jeType=series&jeGenres=16/16:Animation'));
   await until(() => loaded(h) && h.cards(h.tab()).includes(41), 'its rows');
   assert.equal(h.tab().querySelector('.je-reco-tools .emby-tab-button-active').dataset.mode, 'tv');
   assert.deepEqual(h.said(h.tab()), ['Animation']);

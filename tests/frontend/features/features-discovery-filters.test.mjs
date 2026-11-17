@@ -547,6 +547,37 @@ test('nothing matches: the section says so and offers the way out; the admin\'s 
   assert.equal(bare.button.getAttribute('aria-expanded'), 'false');
 });
 
+test("Undo is not offered once what is set was replaced some other way (a saved set applied, the address followed)", { skip: !hasMenu && 'the menu module is not there yet' }, async t => {
+  const h = setup(t, { genres: COMEDY });
+  const s = section(h, { name: 'genre', feeds: { tv: [1, 2], movie: [11, 12], 'tv&firstAirDateLte=1899-12-31': [], 'movie&primaryReleaseDateLte=1899-12-31': [] } });
+  s.button.click();
+  typeRange(h, 'year', null, '1899');
+  await until(() => menuOf(h).querySelector('.jellyseerr-menu-outcome-undo'), 'Undo offered for that change');
+  h.document.querySelector('.dialogBackdrop').click();
+  // A saved set (or the address) replaces the whole selection without going through the menu.
+  h.F.setSelection('genre', { year: ['', '1899'], score: ['9.9', ''] });
+  s.button.click();
+  await until(() => menuOf(h).querySelector('.jellyseerr-menu-outcome:not([hidden])'), 'still nothing');
+  assert.equal(menuOf(h).querySelector('.jellyseerr-menu-outcome-undo'), null, 'going back would undo only part of what was set');
+  h.document.querySelector('.dialogBackdrop').click();
+});
+
+test("a list showing one kind says nothing matches when only the other kind's cards (hidden) are left", { skip: !hasMenu && 'the menu module is not there yet' }, t => {
+  const h = setup(t, { genres: COMEDY });
+  const s = section(h, { name: 'genre', feeds: { tv: [1], movie: [11] } });
+  h.F.setSelection('genre', { score: ['9', ''] });
+  const series = h.document.createElement('div');
+  series.className = 'card';
+  series.dataset.mediaType = 'tv';
+  s.list.replaceChildren(series);
+  s.list.classList.add('filter-movies');
+  h.F.noteIfEmpty('genre', s.list, false);
+  assert.ok(s.root.querySelector('.jellyseerr-filters-none'), 'Movies shown, and no movie left');
+  s.list.classList.remove('filter-movies');
+  h.F.noteIfEmpty('genre', s.list, false);
+  assert.equal(s.root.querySelector('.jellyseerr-filters-none'), null, 'All: the series is in sight');
+});
+
 test('a person\'s titles are filtered here: by role, by years, by score and votes, by genre and language', { skip: !hasMenu && 'the menu module is not there yet' }, async t => {
   const h = setup(t, { lists: FILTER_LISTS, genres: { movie: [{ id: 35, name: 'Comedy' }, { id: 27, name: 'Horror' }], tv: [{ id: 35, name: 'Comedy' }] } });
   const titles = [

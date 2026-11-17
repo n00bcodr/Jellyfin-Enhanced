@@ -7,10 +7,16 @@
 // network's page) keep theirs in their own page's address; the Recommendations page keeps its in Home's
 // address (or its own page's), with the category page open over it (`jeCategory`).
 //
-// Pairs are written only while something is set, after the host's own pairs, which stay as they are.
-// A change replaces the history entry (Back takes no step per filter) and is not a navigation for the
-// rest of the plugin (JE.core.navigation.setAddressQuietly). Anything in an address that is not of its
-// filter's shape is left out, so a hand-made or cut-off link narrows by what it says well and by nothing else.
+// Pairs are written only while something is set, in a fragment of their own after the host's route and
+// query (`#/details?id=…&serverId=…#jeType=movies&jeScore=7..`), which stay exactly as they are:
+// jellyfin-web's router keys its views on the route and query, and a change there that it did not make
+// itself has it build the page anew on the next Back (a dialog's or More Info's included), and its dialogs
+// write back the query it last saw. The fragment it keeps apart, unread. An address with the pairs in its
+// query (a link written so) is read as well; once a change is written, the fragment's pairs are the ones
+// that count. A change replaces the history entry (Back takes no step per filter) and is not a
+// navigation for the rest of the plugin (JE.core.navigation.setAddressQuietly). Anything in an address
+// that is not of its filter's shape is left out, so a hand-made or cut-off link narrows by what it says
+// well and by nothing else.
 //
 // Public surface: JE.discoveryAddress.
 (function (JE) {
@@ -50,10 +56,10 @@
     /** Every pair of the address that is this module's; the rest are the host's, kept as they are. */
     const OWN_PARAMS = new Set([TYPE_PARAM, SORT_PARAM, CATEGORY_PARAM, ANY_PARAM, ALL_PARAM,
         ...RANGE_PARAMS.map(entry => entry[1]), ...LIST_PARAMS.map(entry => entry[1])]);
-    /** The Home route, with or without its query (the tabs' `?tab=N&jeTab=…`). */
-    const HOME_HASH = /^(?:#\/home(?:\.html)?(?:\?.*)?)?$/;
-    /** The Recommendations page of its own (the sidebar link), with or without a query. */
-    const PAGE_HASH = /^#\/recommendations(?:\?.*)?$/;
+    /** The Home route, with or without its query (the tabs' `?tab=N&jeTab=…`) and this module's fragment. */
+    const HOME_HASH = /^(?:#\/home(?:\.html)?(?:\?[^#]*)?(?:#.*)?)?$/;
+    /** The Recommendations page of its own (the sidebar link), with or without a query and this module's fragment. */
+    const PAGE_HASH = /^#\/recommendations(?:\?[^#]*)?(?:#.*)?$/;
     /** What a category key may be (see the catalogue's resolveCategory): anything else in an address is ignored. */
     const CATEGORY_KEY = /^(?:[a-z]+(?:-[a-z]+)?|(?:studio|network)-\d{1,9}|genre-(?:movie|tv)-\d{1,9})$/;
 
@@ -69,14 +75,22 @@
     }
 
     /**
-     * A hash's route and its query's pairs, each as written.
-     * @param {string} hash - An address's hash (`#/route?a=1&b=2`)
-     * @returns {{route: string, pairs: string[]}}
+     * A hash's parts, each pair as written: the router's part (route and query), the route, the query's
+     * pairs, and the pairs of the fragment after it (null when there is none; an empty fragment is []).
+     * @param {string} hash - An address's hash (`#/route?a=1&b=2#jeType=movies`)
+     * @returns {{head: string, route: string, pairs: string[], fragment: string[]|null}}
      */
     function split(hash) {
         const text = String(hash || '');
-        const at = text.indexOf('?');
-        return { route: at < 0 ? text : text.slice(0, at), pairs: at < 0 ? [] : text.slice(at + 1).split('&').filter(Boolean) };
+        const mark = text.indexOf('#', 1);
+        const head = mark < 0 ? text : text.slice(0, mark);
+        const at = head.indexOf('?');
+        return {
+            head,
+            route: at < 0 ? head : head.slice(0, at),
+            pairs: at < 0 ? [] : head.slice(at + 1).split('&').filter(Boolean),
+            fragment: mark < 0 ? null : text.slice(mark + 1).split('&').filter(Boolean)
+        };
     }
     /**
      * A pair's name.
@@ -84,6 +98,16 @@
      * @returns {string}
      */
     const nameOf = pair => pair.split('=')[0] || '';
+    /**
+     * This module's pairs in an address: its fragment's once it has one, else those in its query (a link
+     * written with them there).
+     * @param {string} hash
+     * @returns {string[]}
+     */
+    function ownPairs(hash) {
+        const { pairs, fragment } = split(hash);
+        return (fragment ?? pairs).filter(pair => OWN_PARAMS.has(nameOf(pair)));
+    }
     /**
      * Decodes what an address holds, or keeps it as written when it is not well encoded.
      * @param {string} raw
@@ -158,7 +182,7 @@
      * @returns {{mode: string, selection: object, sort: string}}
      */
     function filtersOfHash(hash, locale) {
-        const { pairs } = split(hash);
+        const pairs = ownPairs(hash);
         const type = valueOf(pairs, TYPE_PARAM);
         const mode = type === 'movies' ? 'movies' : type === 'series' ? 'tv' : 'mixed';
         const selection = {};
@@ -240,13 +264,15 @@
      */
     function categoryOfHash(hash) {
         if (!isRecommendationsHash(hash)) return null;
-        const key = valueOf(split(hash).pairs, CATEGORY_PARAM);
+        const key = valueOf(ownPairs(hash), CATEGORY_PARAM);
         return key && CATEGORY_KEY.test(key) ? key : null;
     }
 
     /**
      * The address with this module's pairs in place of those it had: a category (or none), and the
-     * filters (with the order where `withSort`), after the host's own pairs.
+     * filters (with the order where `withSort`), in the fragment after the router's part, which stays as
+     * it is. An address whose query already says just that (a link) is left as it is; one whose query says
+     * something else gets the fragment, empty where nothing is set.
      * @param {string} hash - The address now
      * @param {string|null} category - The category page to name (Recommendations only)
      * @param {{mode: string, selection: object, sort: string}} filters
@@ -254,12 +280,13 @@
      * @returns {string}
      */
     function addressWith(hash, category, filters, withSort) {
-        const { route, pairs } = split(hash);
+        const { head, pairs, fragment } = split(hash);
         const own = category ? [`${CATEGORY_PARAM}=${encodeURIComponent(category)}`] : [];
         own.push(...filterPairs(filters, withSort));
-        const all = [...pairs.filter(pair => !OWN_PARAMS.has(nameOf(pair))), ...own];
-        if (all.length === 0) return route;
-        return `${route || '#/home'}?${all.join('&')}`;
+        const inQuery = pairs.filter(pair => OWN_PARAMS.has(nameOf(pair)));
+        if (fragment === null && own.join('&') === inQuery.join('&')) return hash;
+        if (own.length === 0 && inQuery.length === 0) return head;
+        return `${head || '#/home'}#${own.join('&')}`;
     }
 
     /**
@@ -292,13 +319,13 @@
     /**
      * Filters in the address form (a page's own pairs, or a saved profile's), as a page takes them: only the filters it
      * offers (those of its scope that the admin has not turned off), and their lists' match.
-     * @param {string} text - `name=value` pairs joined by `&` (a whole hash is read as its query)
+     * @param {string} text - `name=value` pairs joined by `&` (a whole hash is read as an address)
      * @param {string} [scope='feed'] - 'feed', 'person' or 'loaded' (see discovery-filters.js)
      * @returns {{mode: string, selection: object, sort: string}}
      */
     function filtersOf(text, scope = 'feed') {
         const source = String(text ?? '');
-        const said = filtersOfHash(source.includes('?') ? source : `#?${source}`);
+        const said = filtersOfHash(source.startsWith('#') || source.includes('?') ? source : `#?${source}`);
         const offered = JE.discoveryFilters?.offeredFilters?.(scope, JE.pluginConfig) ?? [];
         const selection = Object.fromEntries(Object.entries(said.selection).filter(([id]) => offered.includes(id)));
         const match = Object.fromEntries(Object.entries(said.selection.match || {}).filter(([id]) => offered.includes(id)));

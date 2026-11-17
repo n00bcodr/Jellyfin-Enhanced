@@ -95,6 +95,12 @@ test("a stale index is corrected without the address's other pairs (a Recommenda
   assert.equal(h.window.location.hash, '#/home?tab=4&jeTab=requests&jeCategory=trending&jeType=movies');
 });
 
+test("a stale index is corrected with the Recommendations filters' fragment kept after the query", async t => {
+  const h = setup(t, { count: 2, hash: '#/home?tab=2&jeTab=requests#jeCategory=trending&jeType=movies' }); h.register();
+  await until(() => h.panel()?.classList.contains('is-active'));
+  assert.equal(h.window.location.hash, '#/home?tab=4&jeTab=requests#jeCategory=trending&jeType=movies');
+});
+
 test('user selection consumes deep link so later mutations do not steal the chosen tab', async t => {
   const h = setup(t, { hash: '#/home?tab=2&jeTab=requests' }); h.register();
   await until(() => h.panel()?.classList.contains('is-active'));

@@ -33,7 +33,8 @@
             return null;
         }
         try {
-            const params = new URLSearchParams(hash.split('?')[1]);
+            // (The query ends where the page's own fragment starts, see discovery-address.js.)
+            const params = new URLSearchParams((hash.split('?')[1] || '').split('#')[0]);
             return params.get('id');
         } catch (error) {
             return null;
@@ -53,7 +54,7 @@
                 return null;
             }
             try {
-                const params = new URLSearchParams(hash.split('?')[1]);
+                const params = new URLSearchParams((hash.split('?')[1] || '').split('#')[0]);
                 return params.get(param);
             } catch (error) {
                 return null;
