@@ -286,6 +286,7 @@
         padding: 3px;
         border-radius: 999px;
         background: rgba(255, 255, 255, 0.08);
+        background: color-mix(in srgb, currentColor 8%, transparent);
       }
       .je-recommendations-category-header .jellyseerr-discovery-filter .jellyseerr-filter-btn.emby-tab-button,
       .je-reco-tools .jellyseerr-discovery-filter .jellyseerr-filter-btn.emby-tab-button {
@@ -294,10 +295,11 @@
         min-height: 34px;
         margin: 0;
       }
+      /* (The one in use inverted, in the theme's own colours: its text for the ground, its page for the words.) */
       .je-recommendations-category-header .jellyseerr-filter-btn.emby-tab-button-active,
       .je-reco-tools .jellyseerr-filter-btn.emby-tab-button-active {
-        background: #e8e8e8;
-        color: #101010;
+        background: var(--jf-palette-text-primary, #e8e8e8);
+        color: var(--jf-palette-background-default, #101010);
       }
       .je-recommendations-category-header .jellyseerr-filter-btn:focus-visible,
       .je-reco-tools .jellyseerr-filter-btn:focus-visible {
@@ -313,15 +315,27 @@
         min-height: 40px;
         padding: 0 1.05em 0 0.85em;
         border-radius: 999px;
-        background: rgba(255, 255, 255, 0.08);
         color: var(--jf-palette-text-primary, #fff);
+        background: rgba(255, 255, 255, 0.08);
+        background: color-mix(in srgb, currentColor 8%, transparent);
       }
       .je-reco-tools .jellyseerr-filters-btn.emby-tab-button:hover,
-      .je-recommendations-category-controls .jellyseerr-filters-btn.emby-tab-button:hover { background: rgba(255, 255, 255, 0.14); }
+      .je-recommendations-category-controls .jellyseerr-filters-btn.emby-tab-button:hover { background: rgba(255, 255, 255, 0.14); background: color-mix(in srgb, currentColor 14%, transparent); }
       .je-reco-tools .jellyseerr-filters-btn.emby-tab-button[data-on],
       .je-recommendations-category-controls .jellyseerr-filters-btn.emby-tab-button[data-on] {
-        background: #e8e8e8;
-        color: #101010;
+        background: var(--jf-palette-text-primary, #e8e8e8);
+        color: var(--jf-palette-background-default, #101010);
+      }
+      /* Forced colours: each an edge, the one in use (and Filters while set) in the system's highlight. */
+      @media (forced-colors: active) {
+        .je-reco-tools .jellyseerr-filters-btn.emby-tab-button,
+        .je-recommendations-category-controls .jellyseerr-filters-btn.emby-tab-button,
+        .je-reco-tools .jellyseerr-discovery-filter,
+        .je-recommendations-category-header .jellyseerr-discovery-filter { border: 1px solid ButtonText; }
+        .je-reco-tools .jellyseerr-filters-btn.emby-tab-button[data-on],
+        .je-recommendations-category-controls .jellyseerr-filters-btn.emby-tab-button[data-on],
+        .je-recommendations-category-header .jellyseerr-filter-btn.emby-tab-button-active,
+        .je-reco-tools .jellyseerr-filter-btn.emby-tab-button-active { forced-color-adjust: none; background: Highlight; color: HighlightText; }
       }
       .je-reco-tools .jellyseerr-filters-btn .material-icons,
       .je-recommendations-category-controls .jellyseerr-filters-btn .material-icons { font-size: 1.2em; }

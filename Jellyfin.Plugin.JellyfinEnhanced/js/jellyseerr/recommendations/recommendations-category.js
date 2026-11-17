@@ -535,6 +535,9 @@
     // (Trending) offers the ones its titles can be checked against; a genre's page has its genre given.
     const filtersContainer = document.getElementById('je-recommendations-category-filters');
     const header = document.getElementById('je-recommendations-category-header');
+    // (The kinds the category shows, for the filters that are one kind's own: a content rating.)
+    const kinds = [...new Set(st.feeds.map(f => f.kind).filter(Boolean))];
+    if (kinds.length > 0) header.setAttribute('data-je-kinds', kinds.join(',')); else header.removeAttribute('data-je-kinds');
     const scope = st.feeds.some(f => !f.kind) ? 'loaded' : 'feed';
     const address = JE.discoveryAddress;
     const button = filter.createFiltersButton?.(header, FILTER_MODULE, scope, () => { writeAddress(); reload(container); }, {

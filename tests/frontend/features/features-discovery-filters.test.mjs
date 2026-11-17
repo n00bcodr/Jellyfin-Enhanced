@@ -397,6 +397,16 @@ test('a list page\'s further filters are typed or ticked, and asked of Seerr: ra
   await until(() => bodyOf(h, 'rating').querySelectorAll('.actionSheetMenuItem').length === 3, 'ratings');
   // Ratings are in order of strictness, movies' and series' apart; each kind's feed is asked for its own.
   same([...bodyOf(h, 'rating').querySelectorAll('.jellyseerr-menu-label, .actionSheetItemText')].map(node => node.textContent), ['Movies', 'G', 'PG', 'Series', 'TV-PG']);
+  // (A page of one kind offers that kind's ratings only; Movies on the tabs, the same.)
+  s.root.querySelector('.jellyseerr-discovery-header').setAttribute('data-je-kinds', 'movie');
+  h.document.querySelector('.dialogBackdrop').click();
+  button.click();
+  await until(() => bodyOf(h, 'rating').querySelectorAll('.actionSheetMenuItem').length === 2, 'movie ratings only');
+  same([...bodyOf(h, 'rating').querySelectorAll('.jellyseerr-menu-label, .actionSheetItemText')].map(node => node.textContent), ['Movies', 'G', 'PG']);
+  s.root.querySelector('.jellyseerr-discovery-header').removeAttribute('data-je-kinds');
+  h.document.querySelector('.dialogBackdrop').click();
+  button.click();
+  await until(() => bodyOf(h, 'rating').querySelectorAll('.actionSheetMenuItem').length === 3, 'both kinds again');
   tickRow(h, 'rating', 'G'); tickRow(h, 'rating', 'TV-PG');
   await until(() => bodyOf(h, 'services').querySelectorAll('.actionSheetMenuItem').length === 2, 'services');
   same([...bodyOf(h, 'services').querySelectorAll('.actionSheetItemText')].map(node => node.textContent), ['Netflix', 'Disney Plus']);
@@ -443,6 +453,13 @@ test('nothing matches: the section says so and offers the way out; the admin\'s 
   assert.ok(none());
   assert.equal(none().querySelector('span').textContent, 'Nothing matches these filters.');
   assert.equal(none().querySelector('button').textContent, 'Clear filters');
+  // The menu says it too, over its foot (where it covers the list, the page can't be seen saying it).
+  await until(() => menuOf(h).querySelector('.jellyseerr-menu-outcome:not([hidden])'), 'the menu says nothing matches');
+  assert.equal(menuOf(h).querySelector('.jellyseerr-menu-outcome').textContent, 'Nothing matches these filters.');
+  assert.equal(menuOf(h).querySelector('.jellyseerr-menu-outcome').getAttribute('role'), 'status');
+  typeRange(h, 'year', null, '');
+  await until(() => menuOf(h).querySelector('.jellyseerr-menu-outcome[hidden]'), 'and stops when something does');
+  typeRange(h, 'year', null, '1899');
   h.document.querySelector('.dialogBackdrop').click();
   // Pressed with the keys on it, the line's button hands them to the Filters button: the line, and the button with it, goes when the list is back.
   const onLine = none().querySelector('button');
@@ -761,7 +778,8 @@ test('saved filters: the user\'s profiles first in the menu, saved under a name,
   await until(() => body.querySelector('.jellyseerr-menu-profile'), 'the profiles');
   same([...body.querySelectorAll('.jellyseerr-menu-profile .actionSheetItemText')].map(row => row.textContent), ['Kids']);
   // Under its name, what it sets, in the page's words.
-  assert.equal(body.querySelector('.jellyseerr-menu-profile-says').textContent, 'Series · Score from 7 · Animation or Family');
+  // (What tells sets apart first; a line breaks only between parts.)
+  same([...body.querySelectorAll('.jellyseerr-menu-profile-says .jellyseerr-menu-profile-part')].map(part => part.textContent), ['Animation or Family ·', 'Score from 7 ·', 'Series']);
   // What is set now, under a name.
   const field = body.querySelector('.jellyseerr-menu-profile-form input');
   const save = body.querySelector('.jellyseerr-menu-profile-save');

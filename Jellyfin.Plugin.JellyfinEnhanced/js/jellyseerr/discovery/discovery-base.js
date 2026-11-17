@@ -444,6 +444,9 @@
             // Use shared header helper if available, otherwise create basic header
             if (JE.discoveryFilter?.createSectionHeader) {
                 header = JE.discoveryFilter.createSectionHeader(title, key, showFilter, onFilterChange, onSortChange, name, isClientPaged ? 'person' : 'feed');
+                // (The kinds its feeds have, for the filters that are one kind's own: a content rating.)
+                const kinds = [currentFeeds?.movieId ? 'movie' : '', currentFeeds?.tvId ? 'tv' : ''].filter(Boolean);
+                if (!isClientPaged && kinds.length > 0) header.setAttribute('data-je-kinds', kinds.join(','));
             } else {
                 header = document.createElement('div');
                 header.className = 'jellyseerr-discovery-header';

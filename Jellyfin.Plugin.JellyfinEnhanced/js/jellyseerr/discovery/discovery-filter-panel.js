@@ -699,7 +699,8 @@
             else if (id === 'withoutLanguage') groups.push(listGroup(id, async () => [{ items: await data.languages(locale) }]));
             else if (id === 'services') groups.push(listGroup(id, async () => [{ items: await data.services() }]));
             else if (id === 'rating') {
-                groups.push(listGroup(id, async () => (await data.ratings()).map(list => ({
+                // (Only the page's kinds; one of another kind ticked still shows, at the head, to be unticked.)
+                groups.push(listGroup(id, async () => (await data.ratings()).filter(list => !options.kinds || options.kinds.includes(list.kind)).map(list => ({
                     label: list.kind === 'movie' ? say('jellyseerr_quota_label_movie', 'Movies') : say('jellyseerr_quota_label_tv', 'Series'),
                     items: list.ratings
                 }))));
@@ -827,17 +828,21 @@
                 const summaryOf = filters => {
                     const read = JE.discoveryAddress?.filtersOf?.(filters, scope);
                     if (!read) return '';
-                    const parts = [];
+                    // What tells sets apart first (the lists), then the ranges, the type and the order.
+                    const lists = [];
+                    const ranges = [];
+                    for (const token of filterTokens({ offered, label: say, locale, selection: read.selection })) {
+                        const into = token.list ? lists : ranges;
+                        // (Several of a list stay together, said with their rule: "dragon or witch".)
+                        if (token.join && into.length > 0) into[into.length - 1] += ` ${token.join === 'or' ? say('discovery_filter_or', 'or') : say('discovery_filter_and', 'and')} ${token.words}`;
+                        else into.push(token.words);
+                    }
+                    const parts = [...lists, ...ranges];
                     if (read.mode === 'movies') parts.push(say('jellyseerr_quota_label_movie', 'Movies'));
                     else if (read.mode === 'tv') parts.push(say('jellyseerr_quota_label_tv', 'Series'));
-                    for (const token of filterTokens({ offered, label: say, locale, selection: read.selection })) {
-                        // (Several of a list stay together, said with their rule: "dragon or witch".)
-                        if (token.join && parts.length > 0) parts[parts.length - 1] += ` ${token.join === 'or' ? say('discovery_filter_or', 'or') : say('discovery_filter_and', 'and')} ${token.words}`;
-                        else parts.push(token.words);
-                    }
                     const order = (JE.discoveryFilter?.SORT_OPTIONS ?? []).find(option => option.value !== '' && option.value === read.sort);
                     if (order) parts.push(say(order.labelKey, order.label));
-                    return parts.join(' · ');
+                    return parts;
                 };
                 /**
                  * Says a profile was deleted, with the way back: Undo saves it again.
@@ -874,10 +879,16 @@
                         if (profile.filters === now) item.setAttribute('aria-current', 'true');
                         // Under its name, what it sets, in the page's words ("Movies · Score from 7 · Animation and Fantasy").
                         const says = summaryOf(profile.filters);
-                        if (says) {
+                        if (says.length > 0) {
                             const line = document.createElement('div');
                             line.className = 'listItemBodyText secondary jellyseerr-menu-profile-says';
-                            line.textContent = says;
+                            // (Each part whole on a line where it fits: a line breaks between parts, never inside "dragon or witch".)
+                            line.append(...says.flatMap((part, index) => {
+                                const piece = document.createElement('span');
+                                piece.className = 'jellyseerr-menu-profile-part';
+                                piece.textContent = index < says.length - 1 ? `${part} ·` : part;
+                                return index < says.length - 1 ? [piece, ' '] : [piece];
+                            }));
                             item.querySelector('.actionsheetListItemBody')?.appendChild(line);
                         }
                         item.addEventListener('click', () => { handle.close?.(); host.apply(profile.filters); });
@@ -1252,8 +1263,13 @@
             const groups = type && typeInMenu ? [{ ...type.groupOf(), open: true }] : [];
             // The user's saved filters first, where the page can apply them.
             if (profiles && profilesReachable()) groups.push(profilesGroup({ label, host: profiles, scope, offered, locale: localeOf() }));
+            // The kinds the page shows (its tabs' choice, else the kinds its feeds have): a content rating of another
+            // kind can't narrow it.
+            const mode = JE.discoveryFilter?.getFilterMode?.(moduleName);
+            const pageKinds = (header.closest('[data-je-kinds]')?.getAttribute('data-je-kinds') ?? '').split(',').filter(Boolean);
+            const kinds = mode === 'movies' ? ['movie'] : mode === 'tv' ? ['tv'] : pageKinds.length > 0 ? pageKinds : null;
             groups.push(...filterMenuGroups({
-                offered, data: dataOf(), locale: localeOf(), label,
+                offered, data: dataOf(), locale: localeOf(), label, kinds,
                 selection: () => selectionOf(moduleName), change, fixedAll, ...(ownGenre ? { ownGenre } : {}),
                 roles: () => rolesOf(credits.get(moduleName) ?? [], label('discovery_role_acting', 'Acting'),
                     department => label(`discovery_role_${department.toLowerCase().replace(/[^a-z]+/g, '_')}`, department))
@@ -1262,6 +1278,7 @@
             button.setAttribute('aria-expanded', 'true');
             menu.openMenu({
                 anchor: button, title: filtersLabel, groups, clearLabel, doneLabel: label('discovery_filters_done', 'Done'),
+                noneLabel: label('discovery_filters_none', 'Nothing matches these filters.'),
                 onClose: () => { button.setAttribute('aria-expanded', 'false'); roomUnderMenu(sectionOf(), header, false); },
                 // The groups that are a list of choices; the others set themselves (filterMenuGroups).
                 onPick(id, groupId) {
@@ -1413,7 +1430,7 @@
             .jellyseerr-menu-match[data-idle] .jellyseerr-menu-match-btn[aria-checked="true"] { color: var(--jf-palette-text-primary, #fff); box-shadow: inset 0 0 0 1px var(--jf-palette-text-disabled, rgba(255,255,255,.5)); box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 55%, transparent); font-weight: 500; }
             .jellyseerr-menu-match-btn:focus-visible { outline: 2px solid var(--jf-palette-text-primary, #fff); outline-offset: 1px; }
             html:not(.layout-tv) .jellyseerr-menu-match-track { display: flex; flex: 1 1 auto; }
-            html:not(.layout-tv) .jellyseerr-menu-match-btn { flex: 1 1 auto; }
+            html:not(.layout-tv) .jellyseerr-menu-match-btn { flex: 1 1 0; }
             .jellyseerr-menu-match-reserve { display: block; height: 0; overflow: hidden; visibility: hidden; font-weight: 600; }
             @media (forced-colors: active) {
                 .jellyseerr-menu-match-track { outline: 1px solid CanvasText; outline-offset: -1px; }
@@ -1428,7 +1445,7 @@
             .layout-tv .jellyseerr-menu-match-btn[aria-checked="true"]:focus { box-shadow: 0 0 0 3px var(--jellyseerr-accent); }
             /* An open group's list sits in from its row on a TV too. */
             .layout-tv .jellyseerr-sort-menu .jellyseerr-menu-choices > .actionSheetMenuItem,
-            .layout-tv .jellyseerr-sort-menu .jellyseerr-menu-choices .jellyseerr-menu-list > .actionSheetMenuItem { padding-inline-start: 3.9em; }
+            .layout-tv .jellyseerr-sort-menu .jellyseerr-menu-choices .jellyseerr-menu-list > .actionSheetMenuItem { padding-inline-start: 3.5em; }
             .layout-tv .jellyseerr-menu-match { font-size: 1rem; }
             .layout-tv .jellyseerr-menu-match-btn { padding: .45em 1.1em; }
             /* On a touch screen, as wide as the search field above it and a finger's height. */
@@ -1452,7 +1469,8 @@
             html:not(.layout-tv) .jellyseerr-menu-profile:not([aria-current]) .actionsheetMenuItemIcon { display: none !important; }
             .jellyseerr-menu-profile-save:disabled { opacity: .45; cursor: default; box-shadow: none; }
             @media (pointer: coarse) { .jellyseerr-menu-profile-undo { min-height: 44px; padding-inline: .75em; } }
-            .jellyseerr-sort-menu .jellyseerr-menu-profile-says { font-size: .85em; white-space: normal; overflow-wrap: anywhere; }
+            html .jellyseerr-sort-menu .jellyseerr-menu-profile-says { font-size: .85em; white-space: normal; overflow-wrap: anywhere; color: var(--jellyseerr-quiet, rgba(255,255,255,.7)) !important; opacity: 1; }
+            .jellyseerr-menu-profile-part { display: inline-block; max-width: 100%; }
             .jellyseerr-menu-profile-undo { font: inherit; margin-inline-start: .5em; padding: .2em .5em; border: 0; border-radius: 4px; background: none; color: var(--jellyseerr-accent); text-decoration: underline; cursor: pointer; }
             .jellyseerr-menu-profile-undo:focus-visible { outline: 2px solid var(--jf-palette-text-primary, #fff); outline-offset: 1px; }
             .layout-tv .jellyseerr-menu-profile-undo:focus { outline: none; background: var(--jf-palette-text-primary, #fff); color: var(--jellyseerr-menu-ground, #101010); text-decoration: none; }
@@ -1465,6 +1483,10 @@
             .jellyseerr-menu-whole { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
             /* Why the page's own genre is ticked and can't be unticked, under its name. */
             .jellyseerr-sort-menu .jellyseerr-menu-given { font-size: .85em; white-space: normal; color: inherit; opacity: 1; }
+            html .jellyseerr-sort-menu .jellyseerr-menu-tick[aria-disabled="true"] .actionSheetItemText,
+            html .jellyseerr-sort-menu .jellyseerr-menu-tick[aria-disabled="true"] .jellyseerr-menu-given { color: inherit !important; opacity: 1 !important; }
+            /* The foot's line when nothing matches: over "Clear filters", the way out. */
+            .jellyseerr-sort-menu .jellyseerr-menu-outcome { padding: 8px 16px 0; color: var(--jf-palette-text-primary, #fff); }
             /* What a search has narrowed away is gone (a row's own display would otherwise keep it). */
             .jellyseerr-sort-menu .actionSheetMenuItem[hidden], .jellyseerr-menu-note[hidden], .jellyseerr-menu-label[hidden] { display: none !important; }
             .jellyseerr-menu-label { padding: 8px 16px 2px 32px; font-size: .86em; }

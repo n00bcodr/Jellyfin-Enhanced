@@ -49,6 +49,8 @@
      * @property {MenuChoice[]} [choices]
      * @property {MenuGroup[]} [groups]
      * @property {string} [clearLabel] - With groups: a last row that puts every group back on its first choice.
+     * @property {string} [noneLabel] - With groups: said in the foot while the page says nothing matches what is set
+     *   (where the menu covers the list, a phone or a TV, the page can't be seen saying it)
      * @property {string} [doneLabel] - With groups: beside it, where the menu is used by touch (it can fill
      *   a phone's screen), a way out that says so.
      * @property {function(string, string=): void} onPick - (id, groupId)
@@ -137,7 +139,7 @@
      * @param {MenuOptions} options
      * @returns {function(): void} Closes the menu
      */
-    function openMenu({ anchor, title, choices = [], groups, clearLabel, doneLabel, onPick, onClear, onClose }) {
+    function openMenu({ anchor, title, choices = [], groups, clearLabel, doneLabel, noneLabel, onPick, onClear, onClose }) {
         closeOpen?.();
         const tv = document.documentElement.classList.contains('layout-tv');
         const backdrop = document.createElement('div');
@@ -150,6 +152,10 @@
         sheet.setAttribute('aria-label', title);
         const content = document.createElement('div');
         content.className = 'actionSheetContent';
+        /** @type {HTMLElement|null} */
+        let outcome = null;
+        /** @type {MutationObserver|null} */
+        let watcher = null;
         // A TV's action sheet has Jellyfin's title row; the small menu has none (its name is its label).
         if (tv) {
             const heading = document.createElement('h1');
@@ -229,6 +235,14 @@
                 scroller.append(item, list);
             }
             if (clearLabel && onClear) {
+                // Over the foot, what the page says when nothing matches what is set (shown while it does).
+                if (noneLabel) {
+                    outcome = document.createElement('div');
+                    outcome.className = 'jellyseerr-menu-note jellyseerr-menu-outcome';
+                    outcome.setAttribute('role', 'status');
+                    outcome.hidden = true;
+                    content.appendChild(outcome);
+                }
                 const foot = document.createElement('div');
                 foot.className = 'jellyseerr-menu-foot';
                 clear = menuRow(clearLabel, 'check', true).item;
@@ -350,6 +364,7 @@
             window.clearTimeout(settling);
             for (const type of ['popstate', 'hashchange']) window.removeEventListener(type, close);
             window.removeEventListener('resize', resized);
+            watcher?.disconnect();
             backdrop.remove();
             container.remove();
             onClose?.();
@@ -731,6 +746,22 @@
             overList();
         }
         place();
+        // The page's own "nothing matches" (a section's, the Recommendations page's), said in the foot while it is there.
+        const scope = anchor.closest('.jellyseerr-discovery-section') ?? anchor.closest('.page') ?? document.body;
+        /** Shows or hides the foot's line as the page says nothing matches or not. */
+        const sayOutcome = () => {
+            if (!outcome || closed) return;
+            const none = Array.from(scope.querySelectorAll('.jellyseerr-filters-none, .je-reco-filters-none')).some(note => !note.closest('.hide, [hidden]'));
+            if (outcome.hidden === !none) return;
+            outcome.hidden = !none;
+            outcome.textContent = none ? noneLabel ?? '' : '';
+            place(true);
+        };
+        let outcomeFrame = 0;
+        watcher = outcome && typeof MutationObserver === 'function'
+            ? new MutationObserver(() => { cancelAnimationFrame(outcomeFrame); outcomeFrame = requestAnimationFrame(sayOutcome); }) : null;
+        watcher?.observe(scope, { childList: true, subtree: true });
+        sayOutcome();
         // Where the pointer (or a finger) last was on the menu, down the screen; nowhere once it has left the menu.
         sheet.addEventListener('pointermove', event => { pointerAt = event.clientY; });
         sheet.addEventListener('pointerdown', event => { pointerAt = event.clientY; keyed = false; });
