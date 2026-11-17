@@ -828,8 +828,19 @@ test('saved filters: the user\'s profiles first in the menu, saved under a name,
   assert.equal(h.document.activeElement, top);
   top.parentElement.querySelector('.jellyseerr-menu-profile-delete').click();
   await until(() => body.querySelectorAll('.jellyseerr-menu-profile').length === 1, 'deleted again');
+  // What is set the same as a saved set, written in another order (a set saved by hand, or by an earlier version): known as it.
+  const before = now;
+  now = 'jeScore=7..&jeAny=genres&jeGenres=16/16:Animation,10751/10751:Family&jeType=series';
+  h.document.querySelector('.dialogBackdrop').click();
+  button.click();
+  assert.equal(groups()[0].textContent, 'Saved filtersKids');
+  await until(() => bodyOf(h, 'profiles').querySelector('.jellyseerr-menu-profile[aria-current="true"]'), 'ticked as the one in use');
+  now = before;
+  h.document.querySelector('.dialogBackdrop').click();
+  button.click();
   // Choosing one: the page applies it and the menu is done.
-  body.querySelector('.jellyseerr-menu-profile').click();
+  await until(() => bodyOf(h, 'profiles').querySelector('.jellyseerr-menu-profile'), 'the profiles again');
+  bodyOf(h, 'profiles').querySelector('.jellyseerr-menu-profile').click();
   same(applied, ['jeType=series&jeGenres=16/16:Animation,10751/10751:Family&jeAny=genres&jeScore=7..']);
   assert.equal(menuOf(h), null);
   // Nothing set: nothing to save.

@@ -790,11 +790,24 @@
         const name = say('discovery_filter_profiles', 'Saved filters');
         const none = say('discovery_filter_profiles_none', 'None');
         /** What the row says: the profile that is what is set now, else how many there are. */
-        const sayRow = list => list.find(p => p.filters === host.read())?.name
+        /**
+         * Filters in one written form, as this page takes them: a set saved elsewhere, or by an earlier version, with
+         * its pairs in another order or another spelling, is still known as what is set.
+         * @param {string} text
+         * @returns {string}
+         */
+        const plain = text => {
+            const address = JE.discoveryAddress;
+            if (!address?.filtersOf || !address?.filterPairs) return text;
+            try { return address.filterPairs(address.filtersOf(text, scope), true).join('&'); } catch (_) { return text; }
+        };
+        /** Whether a profile is what is set now. */
+        const isNow = profile => plain(profile.filters) === plain(host.read());
+        const sayRow = list => list.find(isNow)?.name
             ?? (list.length > 0 ? say('discovery_filter_profiles_count', '{count} saved', { count: list.length }) : none);
         // (The list as last answered, when there is one: the row then says which profile is set as the menu opens.)
         const known = profilesOf?.user === ApiClient.getCurrentUserId() ? profilesOf.list : null;
-        const now = known ? known.find(p => p.filters === host.read()) : null;
+        const now = known ? known.find(isNow) : null;
         return {
             id: 'profiles', name, any: known ? sayRow(known) : none, set: !!now, value: now?.name ?? none,
             build(body, handle) {
@@ -862,7 +875,7 @@
                             draw();
                             sayStatus(say('discovery_filter_profile_restored', 'Restored “{name}”.', { name: saved.name }));
                             if (keyed) /** @type {HTMLElement|null} */ (rows.querySelector('.jellyseerr-menu-profile-row:last-child .jellyseerr-menu-profile'))?.focus();
-                            handle.say(sayRow(list), list.some(p => p.filters === host.read()));
+                            handle.say(sayRow(list), list.some(isNow));
                             handle.placed();
                         }).catch(() => { undo.disabled = false; sayStatus(say('discovery_filter_profile_error', 'Could not save that. Try again.'), true); });
                     });
@@ -874,9 +887,10 @@
                 const draw = () => {
                     const now = host.read();
                     rows.replaceChildren(...list.map(profile => {
-                        const { item } = JE.discoveryMenu.menuRow(profile.name, 'check', profile.filters !== now);
+                        const current = isNow(profile);
+                        const { item } = JE.discoveryMenu.menuRow(profile.name, 'check', !current);
                         item.classList.add('jellyseerr-menu-profile');
-                        if (profile.filters === now) item.setAttribute('aria-current', 'true');
+                        if (current) item.setAttribute('aria-current', 'true');
                         // Under its name, what it sets, in the page's words ("Movies · Score from 7 · Animation and Fantasy").
                         const says = summaryOf(profile.filters);
                         if (says.length > 0) {
@@ -918,7 +932,7 @@
                                     (/** @type {HTMLElement|undefined} */ (deletes[Math.min(at, deletes.length - 1)]) ?? (field.disabled ? head : field))?.focus();
                                 }
                                 sayUndo(profile);
-                                handle.say(sayRow(list), list.some(p => p.filters === host.read()));
+                                handle.say(sayRow(list), list.some(isNow));
                                 handle.placed();
                             }).catch(() => { remove.disabled = false; sayStatus(say('discovery_filter_profile_error', 'Could not save that. Try again.'), true); });
                         });
@@ -965,7 +979,7 @@
                     list = answer.profiles;
                     sayStatus('');
                     draw();
-                    handle.say(sayRow(list), list.some(p => p.filters === host.read()));
+                    handle.say(sayRow(list), list.some(isNow));
                     handle.placed();
                 }).catch(() => { sayStatus(say('discovery_filter_unavailable', 'Could not load these.'), true); handle.placed(); });
             }
