@@ -49,6 +49,9 @@
      * @property {MenuChoice[]} [choices]
      * @property {MenuGroup[]} [groups]
      * @property {string} [clearLabel] - With groups: a last row that puts every group back on its first choice.
+     * @property {string} [undoLabel] - With noneLabel: a button beside it that undoes the last change (onUndo)
+     * @property {string} [undoName] - Its name for a screen reader
+     * @property {function(): boolean} [onUndo] - Undoes the last change; false where there is none to undo
      * @property {string} [noneLabel] - With groups: said in the foot while the page says nothing matches what is set
      *   (where the menu covers the list, a phone or a TV, the page can't be seen saying it)
      * @property {string} [doneLabel] - With groups: beside it, where the menu is used by touch (it can fill
@@ -139,7 +142,7 @@
      * @param {MenuOptions} options
      * @returns {function(): void} Closes the menu
      */
-    function openMenu({ anchor, title, choices = [], groups, clearLabel, doneLabel, noneLabel, onPick, onClear, onClose }) {
+    function openMenu({ anchor, title, choices = [], groups, clearLabel, doneLabel, noneLabel, undoLabel, undoName, onUndo, onPick, onClear, onClose }) {
         closeOpen?.();
         const tv = document.documentElement.classList.contains('layout-tv');
         const backdrop = document.createElement('div');
@@ -272,7 +275,7 @@
         // TV they only move, and OK takes one.)
         // (A saved filter's delete is beside its row, not a stop on the way down: the key towards the line's end reaches it.
         // Tab still goes through each, `beside`.)
-        const items = (beside = false) => Array.from(content.querySelectorAll('.actionSheetMenuItem, .jellyseerr-menu-input, .jellyseerr-menu-match-btn, .jellyseerr-menu-profile-delete, .jellyseerr-menu-profile-save, .jellyseerr-menu-profile-undo'))
+        const items = (beside = false) => Array.from(content.querySelectorAll('.actionSheetMenuItem, .jellyseerr-menu-input, .jellyseerr-menu-match-btn, .jellyseerr-menu-profile-delete, .jellyseerr-menu-profile-save, .jellyseerr-menu-profile-undo, .jellyseerr-menu-outcome-undo'))
             .filter(item => !item.classList.contains('jellyseerr-menu-match-btn') || (item.parentElement?.contains(document.activeElement)
                 ? item === document.activeElement : item.getAttribute('aria-checked') === 'true'))
             .filter(item => beside || !item.classList.contains('jellyseerr-menu-profile-delete') || item === document.activeElement)
@@ -290,6 +293,24 @@
         weighClear();
         /** Builds a group's own body the first time it opens. */
         const built = new WeakSet();
+        /** Every group's row and body again, from what is set now (after an Undo): an open body is built anew at once. */
+        const renew = () => {
+            for (const group of groups ?? []) {
+                if (typeof group.describe !== 'function') continue;
+                const { value, set, short } = group.describe();
+                const head = headOf(group.id);
+                const words = head?.querySelector('.jellyseerr-menu-group-value');
+                if (words) showValue(words, set ? value : group.any ?? '', set ? short : undefined);
+                head?.toggleAttribute('data-set', set);
+                const body = head?.nextElementSibling;
+                if (!(body instanceof HTMLElement) || !built.has(body)) continue;
+                body.replaceChildren();
+                built.delete(body);
+                if (head?.getAttribute('aria-expanded') === 'true') buildBody(group, body);
+            }
+            weighClear();
+            place(true);
+        };
         /**
          * @param {MenuGroup} group
          * @param {HTMLElement} list
@@ -680,6 +701,13 @@
         // A TV's sheet is drawn by Jellyfin's own rules: what stays over its scrolling rows takes the sheet's own ground,
         // and a group's fields and notes stand on the column its rows' words stand on.
         if (tv) {
+            // (Jellyfin centres its sheet: one that grows as a group opens would move under the remote. It is held at
+            // the top a full sheet has, and grows down from there.)
+            const most = parseFloat(getComputedStyle(sheet).maxHeight);
+            if (most > 0 && most < window.innerHeight) {
+                container.style.alignItems = 'flex-start';
+                sheet.style.marginTop = `${Math.round((window.innerHeight - most) / 2)}px`;
+            }
             sheet.style.setProperty('--jellyseerr-menu-ground', getComputedStyle(sheet).backgroundColor);
             const words = scroller.querySelector('.actionSheetItemText')?.getBoundingClientRect();
             const box = scroller.getBoundingClientRect();
@@ -765,8 +793,30 @@
             if (!outcome || closed) return;
             const none = Array.from(scope.querySelectorAll('.jellyseerr-filters-none, .je-reco-filters-none')).some(note => !note.closest('.hide, [hidden]'));
             if (outcome.hidden === !none) return;
+            const keyed = outcome.contains(document.activeElement);
             outcome.hidden = !none;
-            outcome.textContent = none ? noneLabel ?? '' : '';
+            outcome.replaceChildren();
+            if (none) {
+                const words = document.createElement('span');
+                words.textContent = noneLabel ?? '';
+                outcome.appendChild(words);
+                // (The way back from a change that left nothing, short of clearing every filter.)
+                if (undoLabel && onUndo) {
+                    const undo = document.createElement('button');
+                    undo.type = 'button';
+                    undo.className = 'jellyseerr-menu-outcome-undo';
+                    undo.textContent = undoLabel;
+                    if (undoName) undo.setAttribute('aria-label', undoName);
+                    undo.addEventListener('click', () => {
+                        const wasKeyed = document.activeElement === undo;
+                        if (!onUndo()) return;
+                        renew();
+                        // (The keys go to the open group's row, else the first row: the button is going.)
+                        if (wasKeyed) (heads().find(head => head.getAttribute('aria-expanded') === 'true') ?? items()[0])?.focus();
+                    });
+                    outcome.appendChild(undo);
+                }
+            } else if (keyed) (heads().find(head => head.getAttribute('aria-expanded') === 'true') ?? items()[0])?.focus();
             place(true);
         };
         let outcomeFrame = 0;

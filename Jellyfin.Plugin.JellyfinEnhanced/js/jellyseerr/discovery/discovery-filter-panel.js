@@ -250,6 +250,7 @@
             const set = usable(id, options.selection()[id]);
             return {
                 id, name: nameOf(id), any, set: set[0] !== '' || set[1] !== '', value: sayRange(id, set),
+                describe() { const now = usable(id, options.selection()[id]); return { value: sayRange(id, now), set: now[0] !== '' || now[1] !== '' }; },
                 build(host, handle) {
                     const { isBound } = logic();
                     const row = document.createElement('div');
@@ -539,6 +540,7 @@
             const picked = pickedOf(id);
             return {
                 id, name: nameOf(id), any: anyOf(id), set: picked.length > 0, value: sayList(picked, id), short: shortList(picked, id),
+                describe() { const now = pickedOf(id); return { value: sayList(now, id), set: now.length > 0, short: shortList(now, id) }; },
                 build(host, handle) {
                     const waiting = note(say('discovery_filter_loading', 'Loading…'));
                     host.appendChild(waiting);
@@ -629,6 +631,7 @@
             const picked = pickedOf(id);
             return {
                 id, name: nameOf(id), any: anyOf(id), set: picked.length > 0, value: sayList(picked, id), short: shortList(picked, id),
+                describe() { const now = pickedOf(id); return { value: sayList(now, id), set: now.length > 0, short: shortList(now, id) }; },
                 build(host, handle) {
                     // The keywords chosen stay listed (ticked) above the field; what the search finds comes under it.
                     const chosen = document.createElement('div');
@@ -725,7 +728,7 @@
             }
             // The viewer's own language is the likeliest one wanted.
             else if (id === 'language') groups.push(listGroup(id, async () => [{ items: await data.languages(locale) }], [locale.split('-')[0]?.toLowerCase() ?? '']));
-            else if (id === 'withoutLanguage') groups.push(listGroup(id, async () => [{ items: await data.languages(locale) }]));
+            else if (id === 'withoutLanguage') groups.push(listGroup(id, async () => [{ items: await data.languages(locale) }], [locale.split('-')[0]?.toLowerCase() ?? '']));
             else if (id === 'services') groups.push(listGroup(id, async () => [{ items: await data.services() }]));
             else if (id === 'rating') {
                 // (Only the page's kinds; one of another kind ticked still shows, at the head, to be unticked.)
@@ -1291,7 +1294,10 @@
          * @param {object} next - The new FilterSelection
          * @param {number} [focusAt] - Where the keys go after a piece is taken away (-1: they stay)
          */
+        // What was set before the menu's last change: "Nothing matches" offers to go back to it.
+        let undoTo = null;
         function change(next, focusAt = -1) {
+            undoTo = selectionOf(moduleName);
             if (worthKeeping(next)) moreFilters.set(moduleName, next); else moreFilters.delete(moduleName);
             paint(focusAt);
             JE.discoveryBusy?.hold?.(button);
@@ -1322,6 +1328,15 @@
             menu.openMenu({
                 anchor: button, title: filtersLabel, groups, clearLabel, doneLabel: label('discovery_filters_done', 'Done'),
                 noneLabel: label('discovery_filters_none', 'Nothing matches these filters.'),
+                undoLabel: label('discovery_filters_undo', 'Undo'), undoName: label('discovery_filters_undo_name', 'Undo the last change'),
+                // (Back to what was set before the last change; the menu then says every group again.)
+                onUndo() {
+                    if (!undoTo) return false;
+                    const back = undoTo;
+                    change(back);
+                    undoTo = null;
+                    return true;
+                },
                 onClose: () => { button.setAttribute('aria-expanded', 'false'); roomUnderMenu(sectionOf(), header, false); },
                 // The groups that are a list of choices; the others set themselves (filterMenuGroups).
                 onPick(id, groupId) {
@@ -1517,7 +1532,7 @@
             }
             .jellyseerr-menu-profile-save:disabled { opacity: .45; cursor: default; box-shadow: none; }
             @media (pointer: coarse) { .jellyseerr-menu-profile-undo { min-height: 44px; padding-inline: .75em; } }
-            html .jellyseerr-sort-menu .jellyseerr-menu-profile-says { font-size: .85em; white-space: normal; overflow-wrap: anywhere; color: var(--jellyseerr-quiet, rgba(255,255,255,.7)) !important; opacity: 1; }
+            html .jellyseerr-sort-menu .jellyseerr-menu-profile-says { font-size: .85em; line-height: 1.4; white-space: normal; overflow-wrap: anywhere; color: var(--jellyseerr-quiet, rgba(255,255,255,.7)) !important; opacity: 1; }
             .jellyseerr-menu-profile-part { display: inline-block; max-width: 100%; }
             .jellyseerr-menu-profile-undo { font: inherit; margin-inline-start: .5em; padding: .2em .5em; border: 0; border-radius: 4px; background: none; color: var(--jellyseerr-accent); text-decoration: underline; cursor: pointer; }
             .jellyseerr-menu-profile-undo:focus-visible { outline: 2px solid var(--jf-palette-text-primary, #fff); outline-offset: 1px; }
@@ -1534,7 +1549,13 @@
             html .jellyseerr-sort-menu .jellyseerr-menu-tick[aria-disabled="true"] .actionSheetItemText,
             html .jellyseerr-sort-menu .jellyseerr-menu-tick[aria-disabled="true"] .jellyseerr-menu-given { color: inherit !important; opacity: 1 !important; }
             /* The foot's line when nothing matches: over "Clear filters", the way out. */
-            .jellyseerr-sort-menu .jellyseerr-menu-outcome { flex: 0 0 100%; box-sizing: border-box; padding: 8px 16px 0; color: var(--jf-palette-text-primary, #fff); }
+            .jellyseerr-sort-menu .jellyseerr-menu-outcome { flex: 0 0 calc(100% - 24px); box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; gap: .75em; margin: 8px 12px 4px; padding: 6px 6px 6px 12px; border-radius: 8px; color: var(--jf-palette-text-primary, #fff); background: rgba(0,164,220,.14); background: color-mix(in srgb, var(--jellyseerr-accent, #00a4dc) 16%, transparent); }
+            .jellyseerr-sort-menu .jellyseerr-menu-outcome[hidden] { display: none; }
+            .jellyseerr-menu-outcome-undo { flex: none; font: inherit; padding: .3em .6em; border: 0; border-radius: 6px; background: none; color: var(--jellyseerr-accent); text-decoration: underline; cursor: pointer; }
+            .jellyseerr-menu-outcome-undo:focus-visible { outline: 2px solid var(--jf-palette-text-primary, #fff); outline-offset: 1px; }
+            .layout-tv .jellyseerr-menu-outcome-undo:focus { outline: none; background: var(--jf-palette-text-primary, #fff); color: var(--jellyseerr-menu-ground, #101010); text-decoration: none; }
+            @media (pointer: coarse) { .jellyseerr-menu-outcome-undo { min-height: 44px; } }
+            @media (forced-colors: active) { .jellyseerr-sort-menu .jellyseerr-menu-outcome { border: 1px solid CanvasText; } }
             /* What a search has narrowed away is gone (a row's own display would otherwise keep it). */
             .jellyseerr-sort-menu .actionSheetMenuItem[hidden], .jellyseerr-menu-note[hidden], .jellyseerr-menu-label[hidden] { display: none !important; }
             .jellyseerr-menu-label { padding: 8px 16px 2px 32px; font-size: .86em; }

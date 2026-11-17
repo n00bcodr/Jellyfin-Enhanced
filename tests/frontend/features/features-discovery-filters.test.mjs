@@ -455,9 +455,16 @@ test('nothing matches: the section says so and offers the way out; the admin\'s 
   assert.equal(none().querySelector('button').textContent, 'Clear filters');
   // The menu says it too, over its foot (where it covers the list, the page can't be seen saying it).
   await until(() => menuOf(h).querySelector('.jellyseerr-menu-outcome:not([hidden])'), 'the menu says nothing matches');
-  assert.equal(menuOf(h).querySelector('.jellyseerr-menu-outcome').textContent, 'Nothing matches these filters.');
-  assert.equal(menuOf(h).querySelector('.jellyseerr-menu-outcome').getAttribute('role'), 'status');
-  typeRange(h, 'year', null, '');
+  const outcome = menuOf(h).querySelector('.jellyseerr-menu-outcome');
+  assert.equal(outcome.firstElementChild.textContent, 'Nothing matches these filters.');
+  assert.equal(outcome.getAttribute('role'), 'status');
+  // With the way back from that change alone: Undo puts the filters as they were, and the menu says every group again.
+  const undo = outcome.querySelector('.jellyseerr-menu-outcome-undo');
+  same([undo.textContent, undo.getAttribute('aria-label')], ['Undo', 'Undo the last change']);
+  undo.click();
+  same(s.shown(), [1, 2, 11, 12]);
+  assert.equal(groupOf(h, 'year').textContent, 'ReleasedAny');
+  same([...bodyOf(h, 'year').querySelectorAll('.jellyseerr-menu-input')].map(input => input.value), ['', '']);
   await until(() => menuOf(h).querySelector('.jellyseerr-menu-outcome[hidden]'), 'and stops when something does');
   typeRange(h, 'year', null, '1899');
   h.document.querySelector('.dialogBackdrop').click();
