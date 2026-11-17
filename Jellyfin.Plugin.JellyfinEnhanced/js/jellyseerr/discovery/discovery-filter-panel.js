@@ -36,10 +36,10 @@
     });
     /** How several ticks in one list count, said under the list: Seerr's own rule for each. */
     const RULES = Object.freeze({
-        role: ['discovery_filter_rule_any', 'Titles with any of the ones ticked.'], genres: ['discovery_filter_rule_all', 'Titles with all of the ones ticked.'],
-        language: ['discovery_filter_rule_any', 'Titles with any of the ones ticked.'], rating: ['discovery_filter_rule_any', 'Titles with any of the ones ticked.'],
-        services: ['discovery_filter_rule_any', 'Titles with any of the ones ticked.'], keywords: ['discovery_filter_rule_all', 'Titles with all of the ones ticked.'],
-        without: ['discovery_filter_rule_none', 'Titles with none of the ones ticked.']
+        role: ['discovery_filter_rule_role', 'Titles where they did any of the roles ticked.'], genres: ['discovery_filter_rule_genres', 'Titles in all of the genres ticked.'],
+        language: ['discovery_filter_rule_language', 'Titles originally in any of the languages ticked.'], rating: ['discovery_filter_rule_rating', 'Titles rated any of the ratings ticked.'],
+        services: ['discovery_filter_rule_services', 'Titles on any of the services ticked.'], keywords: ['discovery_filter_rule_keywords', 'Titles with all of the keywords ticked.'],
+        without: ['discovery_filter_rule_without', 'Titles with none of the keywords ticked.']
     });
     /** The lists matched by any of what is ticked, with no choice (Seerr's own rule for them). */
     const ANY_OF = new Set(['role', 'language', 'rating']);
@@ -137,7 +137,9 @@
                     words: id === 'without' ? say('discovery_filter_set_without', 'Without {name}', { name: item.name })
                         // ("With bear or dragon": after the word joining them the keyword's own name is enough.)
                         : id === 'keywords' ? (join ? item.name : say('discovery_filter_set_with', 'With {name}', { name: item.name }))
-                            : id === 'language' && !join ? say('discovery_filter_set_language', 'Originally in {name}', { name: item.name }) : item.name,
+                            : id === 'language' && !join ? say('discovery_filter_set_language', 'Originally in {name}', { name: item.name })
+                                // ("On Netflix or Disney Plus", as the menu's "Titles on".)
+                                : id === 'services' && !join ? say('discovery_filter_set_on', 'On {name}', { name: item.name }) : item.name,
                     without(now) {
                         const left = (now[id] ?? []).filter(entry => entry.id !== item.id);
                         return { ...now, [id]: left.length > 0 ? left : undefined };
@@ -838,13 +840,13 @@
                     rows.replaceChildren(...list.map(profile => {
                         const { item } = JE.discoveryMenu.menuRow(profile.name, 'check', profile.filters !== now);
                         item.classList.add('jellyseerr-menu-profile');
+                        if (profile.filters === now) item.setAttribute('aria-current', 'true');
                         // Under its name, what it sets, in the page's words ("Movies · Score from 7 · Animation and Fantasy").
                         const says = summaryOf(profile.filters);
                         if (says) {
                             const line = document.createElement('div');
                             line.className = 'listItemBodyText secondary jellyseerr-menu-profile-says';
                             line.textContent = says;
-                            line.title = says;
                             item.querySelector('.actionsheetListItemBody')?.appendChild(line);
                         }
                         item.addEventListener('click', () => { handle.close?.(); host.apply(profile.filters); });
@@ -1318,7 +1320,7 @@
             .jellyseerr-filters-name { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
             /* What is set, in words, on a line under the header (it is not held with it): each piece with the way to
                take it away. The page's quiet text, no boxes; a press area of 44px each. */
-            .jellyseerr-filters-set { --jellyseerr-accent: var(--jf-palette-primary-main, #00a4dc); display: flex; flex-wrap: wrap; align-items: center; gap: .15em 1.2em; margin: .4em 0 .7em; color: var(--jf-palette-text-secondary, rgba(255,255,255,.7)); }
+            .jellyseerr-filters-set { --jellyseerr-accent: var(--jf-palette-primary-main, #00a4dc); display: flex; flex-wrap: wrap; align-items: center; gap: .25em 1.6em; margin: .4em 0 .7em; color: var(--jf-palette-text-secondary, rgba(255,255,255,.7)); }
             .jellyseerr-filters-token { display: inline-flex; align-items: center; min-width: 0; max-width: 100%; }
             .jellyseerr-filters-token > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
             .jellyseerr-filters-remove, .jellyseerr-filters-clear { position: relative; flex: none; margin: 0; border: 0; border-radius: .3em; background: none; color: inherit; font: inherit; cursor: pointer; }
@@ -1411,11 +1413,11 @@
             .jellyseerr-menu-group[data-toggle="profiles"] + .jellyseerr-menu-choices + .jellyseerr-menu-group { border-top: 1px solid var(--jf-palette-divider, rgba(255,255,255,.12)); }
             .layout-tv .jellyseerr-menu-profile-delete:focus { background: var(--jf-palette-text-primary, #fff); color: var(--jellyseerr-menu-ground, #101010); }
             .jellyseerr-menu-profile-save { flex: none; align-self: stretch; height: auto; min-height: 0; margin: 0; padding: 0 1em; }
-            .jellyseerr-sort-menu .jellyseerr-menu-profile-says { font-size: .85em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+            .jellyseerr-sort-menu .jellyseerr-menu-profile-says { font-size: .85em; white-space: normal; overflow-wrap: anywhere; }
             .jellyseerr-menu-profile-undo { font: inherit; margin-inline-start: .5em; padding: .2em .5em; border: 0; border-radius: 4px; background: none; color: var(--jellyseerr-accent); text-decoration: underline; cursor: pointer; }
             .jellyseerr-menu-profile-undo:focus-visible { outline: 2px solid var(--jf-palette-text-primary, #fff); outline-offset: 1px; }
             .layout-tv .jellyseerr-menu-profile-undo:focus { outline: none; background: var(--jf-palette-text-primary, #fff); color: var(--jellyseerr-menu-ground, #101010); text-decoration: none; }
-            .jellyseerr-filters-run { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .15em .5em; max-width: 100%; }
+            .jellyseerr-filters-run { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .15em .4em; max-width: 100%; }
             .jellyseerr-filters-token > .jellyseerr-filters-join { flex: none; overflow: visible; margin-inline-end: .35em; color: var(--jf-palette-text-secondary, rgba(255,255,255,.7)); }
             /* An open group's row reads as the heading of what is under it; a long value is cut with an ellipsis. */
             .jellyseerr-menu-group[aria-expanded="true"] .actionSheetItemText { font-weight: 500; }

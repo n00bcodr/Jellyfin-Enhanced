@@ -279,7 +279,7 @@ test('what is set is said piece by piece: a range once, in the viewer\'s numbers
     language: [{ id: 'fr', name: 'French' }], keywords: [{ id: '1', name: 'robot' }], without: [{ id: '2', name: 'gore' }], services: [{ id: '8', name: 'Netflix' }]
   } });
   // A reversed range is read the one way it can mean; what cannot be used is not said.
-  same(tokens.map(token => token.words), ['Released 2010 to 2019', 'Votes from 1,000', 'Runtime up to 90 min', 'Originally in French', 'Netflix', 'With robot', 'Without gore']);
+  same(tokens.map(token => token.words), ['Released 2010 to 2019', 'Votes from 1,000', 'Runtime up to 90 min', 'Originally in French', 'On Netflix', 'With robot', 'Without gore']);
   same(tokens[0].without({ year: ['2019', '2010'], votes: ['1', ''] }), { year: undefined, votes: ['1', ''] });
   same(tokens[3].without({ language: [{ id: 'fr' }, { id: 'ja' }] }), { language: [{ id: 'ja' }] });
   same(tokens[3].without({ language: [{ id: 'fr' }] }), { language: undefined });
@@ -409,7 +409,7 @@ test('a list page\'s further filters are typed or ticked, and asked of Seerr: ra
   same([...bodyOf(h, 'keywords').querySelectorAll('.actionSheetItemText')].map(node => node.textContent), ['sheep']);
   assert.equal(button.querySelector('.jellyseerr-filters-name').textContent, 'Filters: 6');
   // One piece per thing set, a list's things each on their own; several can be cleared at once.
-  same([...setLine().querySelectorAll('.jellyseerr-filters-token')].map(piece => piece.textContent), ['Votes from 100', 'Runtime up to 30 min', 'Originally in French', 'or Japanese', 'G', 'or TV-PG', 'Netflix', 'With sheep']);
+  same([...setLine().querySelectorAll('.jellyseerr-filters-token')].map(piece => piece.textContent), ['Votes from 100', 'Runtime up to 30 min', 'Originally in French', 'or Japanese', 'G', 'or TV-PG', 'On Netflix', 'With sheep']);
   same([...setLine().children].map(piece => piece.getAttribute('aria-label') ?? piece.className), ['jellyseerr-filters-token', 'jellyseerr-filters-token', 'Original language', 'Content rating', 'jellyseerr-filters-token', 'jellyseerr-filters-token', 'jellyseerr-filters-clear']);
   // The lists are asked like every other lookup of these sections, once each.
   assert.ok(h.asked.every(([, prefix]) => prefix === 'filters'));
@@ -672,7 +672,7 @@ test('the Filters menu offers all or any for keywords, genres and services; "or"
   h.document.body.appendChild(tag);
   tag.click();
   assert.equal(bodyOf(h, 'keywords').querySelector('.jellyseerr-menu-match'), null);
-  assert.equal(bodyOf(h, 'keywords').querySelector('.jellyseerr-menu-note').textContent, 'Titles with all of the ones ticked.');
+  assert.equal(bodyOf(h, 'keywords').querySelector('.jellyseerr-menu-note').textContent, 'Titles with all of the keywords ticked.');
 });
 
 test('all / any chosen before anything is ticked is kept; the keys and a remote reach it and switch it', { skip: !hasMenu && 'the menu module is not there yet' }, async t => {
@@ -775,11 +775,15 @@ test('saved filters: the user\'s profiles first in the menu, saved under a name,
   assert.equal(h.document.activeElement, body.querySelector('.jellyseerr-menu-profile-delete'));
   const status = body.querySelector('.jellyseerr-menu-note');
   assert.match(status.textContent, /Deleted “Top rated”/);
+  // (The group's row counts what is left: none of them is what is set now.)
+  assert.equal(groups()[0].textContent, 'Saved filters1 saved');
   // Undo saves it again.
   status.querySelector('.jellyseerr-menu-profile-undo').click();
   await until(() => body.querySelectorAll('.jellyseerr-menu-profile').length === 2, 'restored');
   same(stored.at(-1), { id: 'b2', name: 'Top rated', filters: 'jeScore=7..' });
   assert.match(status.textContent, /Restored “Top rated”/);
+  assert.equal(groups()[0].textContent, 'Saved filtersTop rated');
+  assert.equal(body.querySelector('.jellyseerr-menu-profile[aria-current="true"] .actionSheetItemText').textContent, 'Top rated');
   // The keys: a profile's delete is beside its row, not a stop on the way down (right reaches it, left goes back).
   const press = key => h.document.activeElement.dispatchEvent(new h.window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
   const [kids, top] = body.querySelectorAll('.jellyseerr-menu-profile');

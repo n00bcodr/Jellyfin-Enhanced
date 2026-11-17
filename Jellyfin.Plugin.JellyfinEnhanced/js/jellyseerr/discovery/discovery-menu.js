@@ -287,7 +287,8 @@
                 say(value, set, short) {
                     const head = headOf(group.id);
                     const words = head?.querySelector('.jellyseerr-menu-group-value');
-                    if (words) showValue(words, set ? value : group.any ?? '', set ? short : undefined);
+                    // (Not set, a group says its value where it gives one, "1 saved", else what it says for nothing set.)
+                    if (words) showValue(words, set ? value : (value || group.any) ?? '', set ? short : undefined);
                     head?.toggleAttribute('data-set', set);
                     weighClear();
                 },
