@@ -2952,10 +2952,19 @@
         // checked, in MDBLIST_SOURCES' built-in order. Rebuilt fresh on every
         // load (unlike the quality-category rows, which reorder fixed static
         // HTML) since the row set itself doesn't otherwise exist in the DOM.
-        function renderMdblistSourcesAdmin(config) {
-            var container = document.getElementById('mdblistRatingsSourcesAdmin');
-            if (!container) return;
+        // The Services tab shows a linked copy of the MDBList card (see jeAdmin.js, mirrorOf). The
+        // admin script copies plain markup into a mirror but would drop the ticks and arrow
+        // handling of this list, so both lists are built here and kept in step (syncMdblistSources).
+        var MDBLIST_SOURCES_LIST_IDS = ['mdblistRatingsSourcesAdmin', 'mdblistRatingsSourcesAdmin--mirror'];
 
+        function renderMdblistSourcesAdmin(config) {
+            MDBLIST_SOURCES_LIST_IDS.forEach(function (id) {
+                var container = document.getElementById(id);
+                if (container) renderMdblistSourcesInto(container, config);
+            });
+        }
+
+        function renderMdblistSourcesInto(container, config) {
             var configured = (config.MdblistRatingsSources || '').split(',')
                 .map(function (s) { return s.trim().toLowerCase(); }).filter(Boolean);
             var knownKeys = MDBLIST_SOURCES.map(function (s) { return s.key; });
@@ -3029,9 +3038,34 @@
         // Wire up/down arrow clicks for the MDBList sources list (delegated,
         // mirrors the quality-category handler above -- reuses the same
         // refreshQualityCatAdminArrows for the disabled-at-the-ends styling).
+        // Copies the order and ticks of one MDBList sources list onto the other (the card and its
+        // Services-tab copy), so an edit made in either one is what Save reads.
+        function syncMdblistSources(from) {
+            MDBLIST_SOURCES_LIST_IDS.forEach(function (id) {
+                var to = document.getElementById(id);
+                if (!to || to === from) return;
+                Array.from(from.querySelectorAll('.je-quality-cat-admin-row')).forEach(function (row) {
+                    var twin = to.querySelector('.je-quality-cat-admin-row[data-source-key="' + row.dataset.sourceKey + '"]');
+                    if (!twin) return;
+                    twin.querySelector('.je-mdblist-source-toggle').checked = row.querySelector('.je-mdblist-source-toggle').checked;
+                    to.appendChild(twin);
+                });
+                refreshQualityCatAdminArrows(to);
+            });
+        }
+
         (function () {
+            document.addEventListener('change', function (e) {
+                var cb = e.target;
+                if (!cb || !cb.classList || !cb.classList.contains('je-mdblist-source-toggle')) return;
+                var list = cb.closest('#mdblistRatingsSourcesAdmin, #mdblistRatingsSourcesAdmin--mirror');
+                if (list) syncMdblistSources(list);
+            });
             document.addEventListener('click', function (e) {
-                var btn = e.target.closest && e.target.closest('#mdblistRatingsSourcesAdmin .je-cat-up, #mdblistRatingsSourcesAdmin .je-cat-down');
+                var arrows = MDBLIST_SOURCES_LIST_IDS.map(function (id) {
+                    return '#' + id + ' .je-cat-up, #' + id + ' .je-cat-down';
+                }).join(', ');
+                var btn = e.target.closest && e.target.closest(arrows);
                 if (!btn || btn.disabled) return;
                 e.preventDefault();
                 var row = btn.closest('.je-quality-cat-admin-row');
@@ -3043,6 +3077,7 @@
                 if (!sibling || !sibling.classList.contains('je-quality-cat-admin-row')) return;
                 if (isUp) { parent.insertBefore(row, sibling); } else { parent.insertBefore(sibling, row); }
                 refreshQualityCatAdminArrows(parent);
+                syncMdblistSources(parent);
             });
         })();
 
