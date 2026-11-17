@@ -36,10 +36,10 @@
     });
     /** How several ticks in one list count, said under the list: Seerr's own rule for each. */
     const RULES = Object.freeze({
-        role: ['discovery_filter_rule_role', 'Titles where they did any of the roles ticked.'], genres: ['discovery_filter_rule_genres', 'Titles in all of the genres ticked.'],
-        language: ['discovery_filter_rule_language', 'Titles originally in any of the languages ticked.'], rating: ['discovery_filter_rule_rating', 'Titles rated any of the ratings ticked.'],
-        services: ['discovery_filter_rule_services', 'Titles on any of the services ticked.'], keywords: ['discovery_filter_rule_keywords', 'Titles with all of the keywords ticked.'],
-        without: ['discovery_filter_rule_without', 'Titles with none of the keywords ticked.']
+        role: ['discovery_filter_rule_role', 'Any of the roles ticked.'], genres: ['discovery_filter_rule_genres', 'All of the genres ticked.'],
+        language: ['discovery_filter_rule_language', 'Any of the languages ticked.'], rating: ['discovery_filter_rule_rating', 'Any of the ratings ticked.'],
+        services: ['discovery_filter_rule_services', 'Any of the services ticked.'], keywords: ['discovery_filter_rule_keywords', 'All of the keywords ticked.'],
+        without: ['discovery_filter_rule_without', 'None of the keywords ticked.']
     });
     /** The lists matched by any of what is ticked, with no choice (Seerr's own rule for them). */
     const ANY_OF = new Set(['role', 'language', 'rating']);
@@ -716,10 +716,10 @@
         if (profilesOf?.user === user) return profilesOf.asked;
         const asked = ApiClient.ajax({ type: 'GET', url: profilesUrl(), dataType: 'json' })
             .then(answer => ({ max: Number(answer?.max) || 0, profiles: Array.isArray(answer?.profiles) ? answer.profiles.filter(p => p && typeof p.id === 'string' && typeof p.name === 'string' && typeof p.filters === 'string') : [] }));
-        const held = { user, asked, list: null };
+        const held = { user, asked, list: null, max: 0 };
         profilesOf = held;
         // (Kept as answered, so a menu opened later says at once which profile is set.)
-        asked.then(answer => { held.list = answer.profiles; }, () => {});
+        asked.then(answer => { held.list = answer.profiles; held.max = answer.max; }, () => {});
         asked.catch(() => { if (profilesOf?.asked === asked) profilesOf = null; });
         return asked;
     }
@@ -731,8 +731,29 @@
      */
     async function saveProfile(name, filters) {
         const answer = await ApiClient.ajax({ type: 'POST', url: profilesUrl(), data: JSON.stringify({ name, filters }), contentType: 'application/json', dataType: 'json' });
-        profilesOf = null;
+        keepProfiles(list => withProfile(list, answer.profile));
         return answer.profile;
+    }
+    /**
+     * A list of profiles with one saved: in its place where it was there (a name saved over), else last, as the server
+     * keeps them.
+     * @param {object[]} list
+     * @param {{id: string}} saved
+     * @returns {object[]}
+     */
+    function withProfile(list, saved) {
+        const at = list.findIndex(p => p.id === saved.id);
+        return at < 0 ? [...list, saved] : list.map((p, index) => index === at ? saved : p);
+    }
+    /**
+     * The profiles kept for this visit, changed as the server's were (else asked again next time).
+     * @param {function(object[]): object[]} change
+     */
+    function keepProfiles(change) {
+        const held = profilesOf;
+        if (!held || held.user !== ApiClient.getCurrentUserId() || !Array.isArray(held.list)) { profilesOf = null; return; }
+        const list = change(held.list);
+        profilesOf = { user: held.user, list, max: held.max, asked: Promise.resolve({ max: held.max, profiles: list }) };
     }
     /**
      * Deletes one of the user's profiles.
@@ -741,7 +762,7 @@
      */
     async function deleteProfile(id) {
         await ApiClient.ajax({ type: 'DELETE', url: profilesUrl(`/${encodeURIComponent(id)}`) });
-        profilesOf = null;
+        keepProfiles(list => list.filter(p => p.id !== id));
     }
     JE.session?.onUserChange?.('discovery-filter-profiles', () => { profilesOf = null; });
 
@@ -822,7 +843,7 @@
                         const keyed = document.activeElement === undo;
                         saveProfile(profile.name, profile.filters).then(saved => {
                             if (!body.isConnected) return;
-                            list = [...list.filter(p => p.id !== saved.id), saved];
+                            list = withProfile(list, saved);
                             draw();
                             sayStatus(say('discovery_filter_profile_restored', 'Restored “{name}”.', { name: saved.name }));
                             if (keyed) /** @type {HTMLElement|null} */ (rows.querySelector('.jellyseerr-menu-profile-row:last-child .jellyseerr-menu-profile'))?.focus();
@@ -900,7 +921,7 @@
                     save.disabled = true;
                     try {
                         const saved = await saveProfile(words, host.read());
-                        list = [...list.filter(p => p.id !== saved.id), saved];
+                        list = withProfile(list, saved);
                         field.value = '';
                         draw();
                         sayStatus(say('discovery_filter_profile_saved', 'Saved as “{name}”.', { name: saved.name }));
@@ -1343,9 +1364,11 @@
                theme's colour while typed in and in its error colour while what is typed cannot be used. */
             .jellyseerr-menu-range { display: flex; align-items: center; gap: .5em; padding: 4px 16px 8px 32px; }
             .jellyseerr-menu-input { box-sizing: border-box; flex: 1 1 0; width: 100%; min-width: 0; padding: 6px 10px; border: 1px solid var(--jf-palette-divider, rgba(255,255,255,.12)); border-radius: var(--jf-shape-borderRadius, 4px); background: var(--jf-palette-action-hover, rgba(255,255,255,.08)); color: inherit; font: inherit; }
-            .jellyseerr-menu-input::placeholder { color: var(--jf-palette-text-secondary, rgba(255,255,255,.7)); opacity: 1; }
+            .jellyseerr-menu-input::placeholder { color: var(--jellyseerr-quiet, var(--jf-palette-text-secondary, rgba(255,255,255,.7))); opacity: 1; }
             .jellyseerr-menu-input:focus { outline: none; border-color: var(--jf-palette-primary-main, #00a4dc); box-shadow: 0 0 0 1px var(--jf-palette-primary-main, #00a4dc); }
-            .jellyseerr-sort-menu { --jellyseerr-error: var(--jf-palette-error-light, #e57373); }
+            .jellyseerr-sort-menu { --jellyseerr-error: var(--jf-palette-error-light, #e57373); --jellyseerr-quiet: var(--jf-palette-text-secondary, rgba(255,255,255,.7)); }
+            /* (Quiet on every theme: the text the theme draws, at 70%. A theme's secondary text can be as strong as its text.) */
+            @supports (color: color-mix(in srgb, red, blue)) { .jellyseerr-sort-menu { --jellyseerr-quiet: color-mix(in srgb, currentColor 70%, transparent); } }
             @supports (color: color-mix(in oklab, red 60%, blue)) { .jellyseerr-sort-menu { --jellyseerr-error: color-mix(in oklab, var(--jf-palette-error-main, #f44336) 52%, var(--jf-palette-text-primary, #fff)); } }
             .jellyseerr-menu-input[aria-invalid="true"] { border-color: var(--jellyseerr-error); box-shadow: 0 0 0 1px var(--jellyseerr-error); }
             /* What cannot be used is also said in words, where the hint was. */
@@ -1354,34 +1377,36 @@
             .jellyseerr-menu-searchbar { position: sticky; top: calc(var(--jellyseerr-menu-head, 36px) - 1px); z-index: 1; padding: 5px 16px 6px 32px; background-color: var(--jellyseerr-menu-ground); background-image: var(--jellyseerr-menu-shade); }
             .jellyseerr-menu-search { display: block; width: 100%; }
             /* A row to tick has a box, empty until it is ticked (then in the accent); one given by the page itself is dim and cannot be pressed. */
-            .jellyseerr-sort-menu .jellyseerr-menu-tick .actionsheetMenuItemIcon { color: var(--jf-palette-text-secondary, rgba(255,255,255,.7)); }
+            .jellyseerr-sort-menu .jellyseerr-menu-tick .actionsheetMenuItemIcon { color: var(--jellyseerr-quiet, var(--jf-palette-text-secondary, rgba(255,255,255,.7))); }
             .jellyseerr-sort-menu .jellyseerr-menu-tick[aria-checked="true"] .actionsheetMenuItemIcon { color: var(--jellyseerr-accent); }
-            html .jellyseerr-sort-menu .actionSheetMenuItem.jellyseerr-menu-tick[aria-disabled="true"] { color: var(--jf-palette-text-disabled, rgba(255,255,255,.5)); cursor: default; background: none !important; }
-            .jellyseerr-sort-menu .jellyseerr-menu-tick[aria-disabled="true"] .actionsheetMenuItemIcon { color: inherit; }
+            html .jellyseerr-sort-menu .actionSheetMenuItem.jellyseerr-menu-tick[aria-disabled="true"] { color: var(--jellyseerr-quiet, rgba(255,255,255,.7)); cursor: default; background: none !important; }
+            .jellyseerr-sort-menu .jellyseerr-menu-tick[aria-disabled="true"] .actionsheetMenuItemIcon { color: var(--jf-palette-text-disabled, rgba(255,255,255,.5)); }
             /* A long name in a list takes a second line: its end is often what tells two entries apart ("… Amazon Channel"). (Its box stays in the row's middle, as on any list of two-line items.) */
             html .jellyseerr-sort-menu .jellyseerr-menu-list .actionSheetItemText { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
             /* The letters a search found in a name. */
             .jellyseerr-menu-found { font-weight: 700; }
             /* Under what is ticked or likeliest wanted at a long list's head, before the rest of it. */
             .jellyseerr-menu-list-rule { height: 1px; margin: 4px 16px 4px 32px; background: var(--jf-palette-divider, rgba(255,255,255,.12)); }
-            .jellyseerr-menu-note, .jellyseerr-menu-label { color: var(--jf-palette-text-secondary, rgba(255,255,255,.7)); }
+            .jellyseerr-menu-note, .jellyseerr-menu-label { color: var(--jellyseerr-quiet, var(--jf-palette-text-secondary, rgba(255,255,255,.7))); }
             .jellyseerr-menu-note { padding: 2px 16px 8px 32px; font-size: .86em; line-height: 1.4; }
             /* All of what is ticked, or any of it: two small choices on the rule's line, the one in use filled. */
             /* The theme's own grounds; the choice in use in the accent, as everything set in this menu is. */
             .jellyseerr-menu-match { display: flex; flex-flow: row wrap; align-items: center; gap: .35em .6em; }
             .jellyseerr-menu-searchbar .jellyseerr-menu-note { padding: 6px 0 0; }
             .jellyseerr-menu-match-track { display: inline-flex; gap: 2px; padding: 2px; border-radius: 999px; background: var(--jf-palette-action-hover, rgba(255,255,255,.08)); box-shadow: inset 0 0 0 1px var(--jf-palette-divider, rgba(255,255,255,.12)); }
-            .jellyseerr-menu-match-btn { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; font: inherit; color: var(--jf-palette-text-secondary, rgba(255,255,255,.7)); white-space: nowrap; background: none; border: 0; border-radius: 999px; padding: .3em .65em; cursor: pointer; }
+            .jellyseerr-menu-match-btn { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; font: inherit; color: inherit; white-space: nowrap; background: none; border: 0; border-radius: 999px; padding: .3em .65em; cursor: pointer; }
             /* The half in use on the sheet's own ground, in the accent with its ring (readable on any theme). */
             .jellyseerr-menu-match-btn[aria-checked="true"] { background-color: var(--jellyseerr-menu-ground, transparent); background-image: var(--jellyseerr-menu-shade, none); color: var(--jellyseerr-accent); box-shadow: inset 0 0 0 1px var(--jellyseerr-accent); font-weight: 600; }
             /* The other half can be pressed: it answers the pointer. */
             .jellyseerr-menu-match-btn:not([aria-checked="true"]):hover { background: var(--jf-palette-action-hover, rgba(255,255,255,.08)); color: var(--jf-palette-text-primary, #fff); }
             /* Below two ticks the choice changes nothing: shown, but not in the accent that says the list is narrowed. */
-            .jellyseerr-menu-match[data-idle] .jellyseerr-menu-match-btn[aria-checked="true"] { color: var(--jf-palette-text-primary, #fff); box-shadow: inset 0 0 0 1px var(--jf-palette-text-disabled, rgba(255,255,255,.5)); font-weight: 500; }
+            .jellyseerr-menu-match[data-idle] .jellyseerr-menu-match-btn[aria-checked="true"] { color: var(--jf-palette-text-primary, #fff); box-shadow: inset 0 0 0 1px var(--jf-palette-text-disabled, rgba(255,255,255,.5)); box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 55%, transparent); font-weight: 500; }
             .jellyseerr-menu-match-btn:focus-visible { outline: 2px solid var(--jf-palette-text-primary, #fff); outline-offset: 1px; }
+            html:not(.layout-tv) .jellyseerr-menu-match-track { display: flex; flex: 1 1 auto; }
+            html:not(.layout-tv) .jellyseerr-menu-match-btn { flex: 1 1 auto; }
             .jellyseerr-menu-match-reserve { display: block; height: 0; overflow: hidden; visibility: hidden; font-weight: 600; }
             @media (forced-colors: active) {
-                .jellyseerr-menu-match-track { border: 1px solid CanvasText; }
+                .jellyseerr-menu-match-track { outline: 1px solid CanvasText; outline-offset: -1px; }
                 .jellyseerr-menu-list-rule { forced-color-adjust: none; background: CanvasText; }
                 .jellyseerr-sort-menu .jellyseerr-menu-group[data-set] .jellyseerr-menu-group-value { forced-color-adjust: none; color: LinkText; }
                 .jellyseerr-menu-match-btn[aria-checked="true"] { outline: 2px solid Highlight; outline-offset: -2px; }
@@ -1393,7 +1418,7 @@
             .layout-tv .jellyseerr-menu-match-btn[aria-checked="true"]:focus { box-shadow: 0 0 0 3px var(--jellyseerr-accent); }
             /* An open group's list sits in from its row on a TV too. */
             .layout-tv .jellyseerr-sort-menu .jellyseerr-menu-choices > .actionSheetMenuItem,
-            .layout-tv .jellyseerr-sort-menu .jellyseerr-menu-choices .jellyseerr-menu-list > .actionSheetMenuItem { padding-inline-start: 2.2em; }
+            .layout-tv .jellyseerr-sort-menu .jellyseerr-menu-choices .jellyseerr-menu-list > .actionSheetMenuItem { padding-inline-start: 3.9em; }
             .layout-tv .jellyseerr-menu-match { font-size: 1rem; }
             .layout-tv .jellyseerr-menu-match-btn { padding: .45em 1.1em; }
             /* On a touch screen, as wide as the search field above it and a finger's height. */
@@ -1404,15 +1429,19 @@
             /* Saved filters: each profile a row with its delete button at the end; the form a field and Save. */
             .jellyseerr-menu-profile-row { display: flex; align-items: center; }
             .jellyseerr-menu-profile-row > .actionSheetMenuItem { flex: 1 1 auto; min-width: 0; }
-            .jellyseerr-menu-profile-delete { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; margin-inline-end: 8px; border: 0; border-radius: 50%; background: none; color: var(--jf-palette-text-secondary, rgba(255,255,255,.7)); cursor: pointer; }
+            .jellyseerr-menu-profile-delete { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; margin-inline-end: 2.5px; border: 0; border-radius: 50%; background: none; color: var(--jellyseerr-quiet, var(--jf-palette-text-secondary, rgba(255,255,255,.7))); cursor: pointer; }
             .jellyseerr-menu-profile-delete:hover, .jellyseerr-menu-profile-delete:focus-visible { background: var(--jf-palette-action-hover, rgba(255,255,255,.08)); color: var(--jf-palette-text-primary, #fff); outline: none; }
             /* The keys on it: ringed as the all / any choice is. */
             html:not(.layout-tv) .jellyseerr-menu-profile-delete:focus-visible { outline: 2px solid var(--jf-palette-text-primary, #fff); outline-offset: -2px; }
             @media (forced-colors: active) { .jellyseerr-menu-profile-delete:focus-visible { outline: 3px solid CanvasText; } }
             /* Saved filters stand apart from the filters under them: a quiet line between, open or not. */
-            .jellyseerr-menu-group[data-toggle="profiles"] + .jellyseerr-menu-choices + .jellyseerr-menu-group { border-top: 1px solid var(--jf-palette-divider, rgba(255,255,255,.12)); }
+            .jellyseerr-menu-group[data-toggle="profiles"][aria-expanded="false"] + .jellyseerr-menu-choices + .jellyseerr-menu-group { border-top: 1px solid var(--jf-palette-divider, rgba(255,255,255,.12)); }
             .layout-tv .jellyseerr-menu-profile-delete:focus { background: var(--jf-palette-text-primary, #fff); color: var(--jellyseerr-menu-ground, #101010); }
             .jellyseerr-menu-profile-save { flex: none; align-self: stretch; height: auto; min-height: 0; margin: 0; padding: 0 1em; }
+            /* A profile not in use keeps no room for the tick it does not show (on a TV the tick is the row's first column: kept). */
+            html:not(.layout-tv) .jellyseerr-menu-profile:not([aria-current]) .actionsheetMenuItemIcon { display: none !important; }
+            .jellyseerr-menu-profile-save:disabled { opacity: .45; cursor: default; box-shadow: none; }
+            @media (pointer: coarse) { .jellyseerr-menu-profile-undo { min-height: 44px; padding-inline: .75em; } }
             .jellyseerr-sort-menu .jellyseerr-menu-profile-says { font-size: .85em; white-space: normal; overflow-wrap: anywhere; }
             .jellyseerr-menu-profile-undo { font: inherit; margin-inline-start: .5em; padding: .2em .5em; border: 0; border-radius: 4px; background: none; color: var(--jellyseerr-accent); text-decoration: underline; cursor: pointer; }
             .jellyseerr-menu-profile-undo:focus-visible { outline: 2px solid var(--jf-palette-text-primary, #fff); outline-offset: 1px; }
@@ -1425,7 +1454,7 @@
             /* A value said short to the eye is said whole to a screen reader. */
             .jellyseerr-menu-whole { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
             /* Why the page's own genre is ticked and can't be unticked, under its name. */
-            .jellyseerr-sort-menu .jellyseerr-menu-given { font-size: .85em; white-space: normal; }
+            .jellyseerr-sort-menu .jellyseerr-menu-given { font-size: .85em; white-space: normal; color: inherit; opacity: 1; }
             /* What a search has narrowed away is gone (a row's own display would otherwise keep it). */
             .jellyseerr-sort-menu .actionSheetMenuItem[hidden], .jellyseerr-menu-note[hidden], .jellyseerr-menu-label[hidden] { display: none !important; }
             .jellyseerr-menu-label { padding: 8px 16px 2px 32px; font-size: .86em; }
@@ -1436,7 +1465,7 @@
             /* The filter's name is never cut: a long value gives way, with an ellipsis. */
             html .jellyseerr-sort-menu .jellyseerr-menu-group .actionSheetItemText { flex: 0 0 auto; }
             html .jellyseerr-sort-menu .jellyseerr-menu-group .jellyseerr-menu-group-value { flex: 0 1 auto; min-width: 0; }
-            .jellyseerr-menu-group-value { color: var(--jf-palette-text-secondary, rgba(255,255,255,.7)); white-space: nowrap; }
+            .jellyseerr-menu-group-value { color: var(--jellyseerr-quiet, var(--jf-palette-text-secondary, rgba(255,255,255,.7))); white-space: nowrap; }
             .jellyseerr-menu-group[data-set] .jellyseerr-menu-group-value { color: var(--jellyseerr-accent); }
             .jellyseerr-menu-group .actionsheetMenuItemIcon { transition: transform .15s; }
             .jellyseerr-menu-group[aria-expanded="true"] .actionsheetMenuItemIcon { transform: rotate(180deg); }

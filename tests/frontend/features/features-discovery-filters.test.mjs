@@ -672,7 +672,7 @@ test('the Filters menu offers all or any for keywords, genres and services; "or"
   h.document.body.appendChild(tag);
   tag.click();
   assert.equal(bodyOf(h, 'keywords').querySelector('.jellyseerr-menu-match'), null);
-  assert.equal(bodyOf(h, 'keywords').querySelector('.jellyseerr-menu-note').textContent, 'Titles with all of the keywords ticked.');
+  assert.equal(bodyOf(h, 'keywords').querySelector('.jellyseerr-menu-note').textContent, 'All of the keywords ticked.');
 });
 
 test('all / any chosen before anything is ticked is kept; the keys and a remote reach it and switch it', { skip: !hasMenu && 'the menu module is not there yet' }, async t => {
@@ -802,8 +802,12 @@ test('saved filters: the user\'s profiles first in the menu, saved under a name,
   assert.equal(menuOf(h), null);
   // Nothing set: nothing to save.
   now = '';
+  const askedBefore = asked.length;
   button.click();
+  // (The visit's list was kept as the server has it after the saves and deletes: the count is said at once, unasked.)
+  assert.equal(groups()[0].textContent, 'Saved filters1 saved');
   const again = bodyOf(h, 'profiles');
   await until(() => again.querySelector('.jellyseerr-menu-profile'), 'the profiles again');
   assert.equal(again.querySelector('.jellyseerr-menu-profile-save').disabled, true);
+  assert.equal(asked.length, askedBefore, 'not asked again');
 });
