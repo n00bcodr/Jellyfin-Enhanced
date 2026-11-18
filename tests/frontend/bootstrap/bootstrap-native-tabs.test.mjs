@@ -89,6 +89,24 @@ test('stable JE deep link rewrites stale index and clears partially selected hos
   assert.equal(h.document.querySelectorAll('.emby-tab-button-active').length, 1);
 });
 
+test("a stale index is corrected without the address's other pairs (a Recommendations category, its filters) being lost", async t => {
+  const h = setup(t, { count: 2, hash: '#/home?tab=2&jeTab=requests&jeCategory=trending&jeType=movies' }); h.register();
+  await until(() => h.panel()?.classList.contains('is-active'));
+  assert.equal(h.window.location.hash, '#/home?tab=4&jeTab=requests&jeCategory=trending&jeType=movies');
+});
+
+test("Home with only the Recommendations filters' fragment after it (a tab reached by clicking, then reloaded) is Home: the tabs are added", async t => {
+  const h = setup(t, { hash: '#/home#jeType=movies' }); h.register();
+  await until(() => h.panel());
+  assert.ok(h.button());
+});
+
+test("a stale index is corrected with the Recommendations filters' fragment kept after the query", async t => {
+  const h = setup(t, { count: 2, hash: '#/home?tab=2&jeTab=requests#jeCategory=trending&jeType=movies' }); h.register();
+  await until(() => h.panel()?.classList.contains('is-active'));
+  assert.equal(h.window.location.hash, '#/home?tab=4&jeTab=requests#jeCategory=trending&jeType=movies');
+});
+
 test('user selection consumes deep link so later mutations do not steal the chosen tab', async t => {
   const h = setup(t, { hash: '#/home?tab=2&jeTab=requests' }); h.register();
   await until(() => h.panel()?.classList.contains('is-active'));
@@ -115,3 +133,43 @@ test('unknown Custom Tabs state waits for response and recovers from provider fa
   response.reject(new Error('plugin unavailable'));
   await until(() => h.panel()); assert.equal(h.button().dataset.index, '2'); assertAligned(h);
 });
+
+for (const fragment of ['', '#jeType=movies']) {
+  test(`a tab the user picked stays picked when a jellyfin-web dialog opens over it (the deep link${fragment ? " with the filters' fragment" : ''})`, async t => {
+    const link = '#/home?tab=2&jeTab=requests';
+    const h = setup(t, { hash: link + fragment }); h.register();
+    await until(() => h.panel()?.classList.contains('is-active'));
+    const paints = async () => { for (let i = 0; i < 4; i++) await new Promise(resolve => h.JE.core.dom.afterNextPaint(resolve)); };
+    await paints();
+    // The user clicks Home (tab 0): the address stays as it was.
+    h.tabs.selectedIndex(0);
+    await paints();
+    assert.equal(h.tabs.selectedIndex(), 0);
+    // dialogHelper: an entry at the router's address (no fragment), the open dialogs in the router's state, and its DOM.
+    h.window.history.pushState({ usr: { dialogs: ['dlg1'] }, key: 'k1', idx: 1 }, '', `http://jellyfin.test/web/index.html${link}`);
+    const dialog = h.document.createElement('div');
+    dialog.className = 'dialogContainer';
+    h.document.body.appendChild(dialog);
+    await paints();
+    assert.equal(h.tabs.selectedIndex(), 0, 'still on the tab the user picked');
+    // Closed by Back, then Forward onto its entry left behind (no dialog open): still the picked tab.
+    dialog.remove();
+    h.window.history.back();
+    await until(() => !h.window.history.state?.usr);
+    h.window.history.forward();
+    await until(() => h.window.history.state?.usr?.dialogs);
+    await paints();
+    assert.equal(h.tabs.selectedIndex(), 0, 'still on the tab the user picked after Forward');
+    assert.equal(h.window.location.hash, link + fragment);
+    // A second dialog opened on that entry and closed.
+    h.window.history.pushState({ usr: { dialogs: ['dlg1', 'dlg2'] }, key: 'k2', idx: 2 }, '', `http://jellyfin.test/web/index.html${link}`);
+    h.document.body.appendChild(dialog);
+    await paints();
+    dialog.remove();
+    h.window.history.back();
+    await until(() => h.window.history.state?.key === 'k1');
+    await paints();
+    assert.equal(h.tabs.selectedIndex(), 0, 'still on the tab the user picked after a second dialog');
+  });
+}
+

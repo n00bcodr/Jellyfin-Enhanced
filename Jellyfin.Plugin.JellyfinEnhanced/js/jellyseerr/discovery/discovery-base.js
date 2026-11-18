@@ -33,7 +33,8 @@
             return null;
         }
         try {
-            const params = new URLSearchParams(hash.split('?')[1]);
+            // (The query ends where the page's own fragment starts, see discovery-address.js.)
+            const params = new URLSearchParams((hash.split('?')[1] || '').split('#')[0]);
             return params.get('id');
         } catch (error) {
             return null;
@@ -53,7 +54,7 @@
                 return null;
             }
             try {
-                const params = new URLSearchParams(hash.split('?')[1]);
+                const params = new URLSearchParams((hash.split('?')[1] || '').split('#')[0]);
                 return params.get(param);
             } catch (error) {
                 return null;
@@ -147,11 +148,11 @@
             const target = /** @type {HTMLElement|null} */ (e.target instanceof HTMLElement ? e.target : null);
             if (!target) return;
             shownView = target;
-            shownViewHash = window.location.hash;
+            shownViewHash = pageHash();
         }
 
         function currentShownView() {
-            return shownView && shownView.isConnected && !shownView.classList.contains('hide') && shownViewHash === window.location.hash
+            return shownView && shownView.isConnected && !shownView.classList.contains('hide') && shownViewHash === pageHash()
                 ? shownView
                 : null;
         }
@@ -229,6 +230,29 @@
             JE.discoveryFilter.fetchWithManagedRequest(path, key, options);
 
         /**
+         * The page's address without the section's filter pairs: which page this is, as opposed to what
+         * its section shows (those pairs change in place, see discovery-address.js).
+         * @returns {string}
+         */
+        const pageHash = () => JE.discoveryAddress?.withoutOwn?.(window.location.hash) ?? window.location.hash;
+
+        /**
+         * A section starts with what its page's address says (a link, a reload, Back to it), and with
+         * nothing narrowing it where the address says nothing.
+         * @param {boolean} offersType - Both kinds can be shown, so All / Movies / Series is offered
+         */
+        function startFilters(offersType) {
+            JE.discoveryFilter?.resetFilterMode?.(key);
+            JE.discoveryFilter?.resetSortMode?.(key);
+            JE.discoveryAddress?.adopt?.(key, key, { withType: offersType, withSort: true, scope: isClientPaged ? 'person' : 'feed' });
+        }
+
+        /** What the section's controls are set to goes into its page's address (its entry is replaced). */
+        function writeAddress() {
+            if (spec.getIdFromUrl()) JE.discoveryAddress?.write?.(key, key, true);
+        }
+
+        /**
          * Whether the module is enabled by plugin config.
          * @returns {boolean}
          */
@@ -267,13 +291,18 @@
                 if (signal?.aborted) {
                     throw new DOMException('Aborted', 'AbortError');
                 }
-                const path = `${spec.buildDiscoverPath(kind, feedId, /** @type {NonNullable<typeof currentFeeds>} */ (currentFeeds))}?page=${page}`
-                    + (JE.discoveryFilter?.feedQuery?.(key, kind) ?? '');
+                const base = spec.buildDiscoverPath(kind, feedId, /** @type {NonNullable<typeof currentFeeds>} */ (currentFeeds));
+                const query = JE.discoveryFilter?.feedQuery?.(key, kind) ?? '';
+                // (Where the route names a list itself, the filters are asked and kept as routeFeed says.)
+                const routed = JE.discoveryFilters?.routeFeed?.(base, kind, JE.discoveryFilters.selectionOf?.(key) ?? {}, query) ?? { query, keep: null };
+                const path = `${base}?page=${page}${routed.query}`;
                 const response = await fetchWithManagedRequest(path, { signal });
                 if (signal?.aborted) {
                     throw new DOMException('Aborted', 'AbortError');
                 }
-                return response || { results: [], totalPages: 1 };
+                const answer = response || { results: [], totalPages: 1 };
+                // (The answer is the request cache's: a narrowed copy, never the cached one changed.)
+                return routed.keep ? { ...answer, results: (answer.results || []).filter(routed.keep) } : answer;
             } catch (error) {
                 if (error.name === 'AbortError' || !tolerant) throw error;
                 // Mark the failure: the caller keeps the feed open so the scroll
@@ -416,6 +445,9 @@
             // Use shared header helper if available, otherwise create basic header
             if (JE.discoveryFilter?.createSectionHeader) {
                 header = JE.discoveryFilter.createSectionHeader(title, key, showFilter, onFilterChange, onSortChange, name, isClientPaged ? 'person' : 'feed');
+                // (The kinds its feeds have, for the filters that are one kind's own: a content rating.)
+                const kinds = [currentFeeds?.movieId ? 'movie' : '', currentFeeds?.tvId ? 'tv' : ''].filter(Boolean);
+                if (!isClientPaged && kinds.length > 0) header.setAttribute('data-je-kinds', kinds.join(','));
             } else {
                 header = document.createElement('div');
                 header.className = 'jellyseerr-discovery-header';
@@ -794,6 +826,8 @@
          * sortBy param; client-paged re-sorts the cached list and re-renders.
          */
         async function handleSortChange() {
+            // (Also a further filter's change: the Filters menu reloads through here.)
+            writeAddress();
             const itemsContainer = /** @type {HTMLElement|null} */ (
                 document.querySelector(`${sectionSelector} .itemsContainer`));
 
@@ -933,6 +967,7 @@
          * @param {string} newMode
          */
         function handleFilterChange(newMode) {
+            writeAddress();
             const itemsContainer = /** @type {HTMLElement|null} */ (
                 document.querySelector(`${sectionSelector} .itemsContainer`));
             if (!itemsContainer) return;
@@ -1009,7 +1044,9 @@
             if (!isDualFeed || !JE.discoveryFilter?.addFilterControl) return;
             const section = itemsContainer.closest(sectionSelector);
             const header = section?.querySelector('.jellyseerr-discovery-header');
-            if (!header || !JE.discoveryFilter.hasBothTypes(cachedTvResults, cachedMovieResults)) return;
+            // (A type its page's address asked for is shown on the tabs from the start, where both feeds exist.)
+            const typed = JE.discoveryFilter.getFilterMode(key) !== 'mixed' && !!currentFeeds?.tvId && !!currentFeeds?.movieId;
+            if (!header || !(typed || JE.discoveryFilter.hasBothTypes(cachedTvResults, cachedMovieResults))) return;
             JE.discoveryFilter.addFilterControl(header, key, handleFilterChange);
         }
 
@@ -1080,6 +1117,10 @@
             // Clear cached results
             cachedTvResults = [];
             cachedMovieResults = [];
+
+            // Each section starts on what its page's address says (else on defaults), before page 1
+            // is asked for: the order and the further filters are part of that request.
+            startFilters(!!(currentFeeds.tvId && currentFeeds.movieId));
 
             // Initialize deduplicator for infinite scroll
             itemDeduplicator = JE.seamlessScroll?.createDeduplicator() || null;
@@ -1165,30 +1206,27 @@
 
             // Determine if we have both types (only show filter if BOTH have results)
 
-            // Always start each section on defaults instead of persisting previous choice.
-            JE.discoveryFilter?.resetFilterMode?.(key);
-            JE.discoveryFilter?.resetSortMode?.(key);
-            // Get current filter mode
+            // Get current filter mode (a type its page's address asked for, else All)
             const filterMode = JE.discoveryFilter?.getFilterMode(key) || 'mixed';
 
             // Update hasMorePages
             updateHasMorePages(filterMode);
 
-            // Get results based on filter mode
-            let displayResults = getFilteredResults(filterMode);
-
-            // If filtered results are empty but we have some content, fall back to showing all
-            if (displayResults.length === 0 && (cachedTvResults.length > 0 || cachedMovieResults.length > 0)) {
-                displayResults = [...cachedTvResults, ...cachedMovieResults];
-            }
+            // Page 1 of both kinds goes in. A type the address asked for hides the other kind's cards, as
+            // choosing it does (so All shows them again), and its own feed is read on from there even when
+            // its page 1 came back empty.
+            const displayResults = getFilteredResults(JE.discoveryFilter?.MODES?.MIXED ?? 'mixed');
 
             if (!section || !itemsContainer) return;
+            if (filterMode !== 'mixed') JE.discoveryFilter?.applyFilterVisibility?.(itemsContainer, filterMode);
             // An empty page 1 is not an empty feed: the parental filter and the
             // in-library/hidden filters can strip a page bare while later pages
             // still hold titles (upstream page counts are preserved). Only give up
             // when the feed itself says there is nothing more.
             const fragment = createCardsFragment(displayResults);
-            if (fragment.childNodes.length === 0 && !anyFailed && !hasMorePages) {
+            // (Narrowed by the filters its address gave, it stays, to say nothing matches them: see noteIfEmpty below.)
+            const narrowed = !!JE.discoveryFilter?.hasMoreFilters?.(key);
+            if (fragment.childNodes.length === 0 && !anyFailed && !hasMorePages && !narrowed) {
                 section.remove();
                 return;
             }
@@ -1208,6 +1246,9 @@
             if (hasMorePages) {
                 setupInfiniteScroll();
             }
+            // Filters its address gave: the line of what is set (it needs the section on the page), or the note
+            // that nothing matches them.
+            if (narrowed) JE.discoveryFilter?.noteIfEmpty?.(key, itemsContainer, hasMorePages);
 
             // Mark as successfully processed AFTER successful render
             processedPages.add(pageKey);
@@ -1236,17 +1277,19 @@
             // Check if we have both media types
             const hasBoth = JE.discoveryFilter?.resultHasBothTypes(cachedAllResults) || false;
 
-            // Always start each section on defaults instead of persisting previous choice.
-            JE.discoveryFilter?.resetFilterMode?.(key);
-            JE.discoveryFilter?.resetSortMode?.(key);
+            // Each section starts on what its page's address says (else on defaults); the type only
+            // where the tabs are offered.
+            startFilters(hasBoth);
             // Get current filter mode
             const filterMode = JE.discoveryFilter?.getFilterMode(key) || 'mixed';
 
             // Get filtered results
             let displayResults = getFilteredResults(filterMode);
+            // Further filters its address gave: what they keep is shown, even nothing (said so below).
+            const narrowed = !!JE.discoveryFilter?.hasMoreFilters?.(key);
 
             // If filtered results are empty but we have some content, fall back to showing all
-            if (displayResults.length === 0 && cachedAllResults.length > 0) {
+            if (displayResults.length === 0 && cachedAllResults.length > 0 && !narrowed) {
                 displayResults = cachedAllResults;
             }
 
@@ -1270,7 +1313,7 @@
             // Seed first page and let seamless scroll load the rest.
             const initialItems = displayResults.slice(0, PAGE_SIZE);
             const fragment = createCardsFragment(initialItems);
-            if (fragment.childNodes.length === 0) {
+            if (fragment.childNodes.length === 0 && !narrowed) {
                 console.debug(`${logPrefix} No cards created from results`);
                 return;
             }
@@ -1287,6 +1330,9 @@
             if (hasMorePages) {
                 setupInfiniteScroll();
             }
+            // Filters its address gave: the line of what is set (it needs the section on the page), or the note
+            // that nothing matches them.
+            if (narrowed) JE.discoveryFilter?.noteIfEmpty?.(key, itemsContainer, hasMorePages);
 
             // Mark as successfully processed AFTER successful render
             processedPages.add(pageKey);
@@ -1336,7 +1382,7 @@
 
             const pageKey = spec.pageKey
                 ? spec.pageKey(id)
-                : `${key}-${id}-${window.location.hash}`;
+                : `${key}-${id}-${pageHash()}`;
             if (processedPages.has(pageKey)) return;
 
             // Prevent re-entry if already rendering this same page
@@ -1479,7 +1525,7 @@
             if (!id) return;
             if (element instanceof HTMLElement) {
                 shownView = element;
-                shownViewHash = window.location.hash;
+                shownViewHash = pageHash();
             }
             requestAnimationFrame(() => render());
         }
@@ -1494,8 +1540,8 @@
          * navigate callback can run after the router already swapped pages.
          */
         function snapshotVisiblePage() {
-            if (window.location.hash === snapshotHash) return; // same navigation, second event
-            snapshotHash = window.location.hash;
+            if (pageHash() === snapshotHash) return; // same navigation, second event
+            snapshotHash = pageHash();
             visibleAtNavigation = document.querySelector('.page:not(.hide)');
             visibleContentAtNavigation = listSignature(visibleAtNavigation);
         }

@@ -250,7 +250,8 @@
         defaultEnabled: false,
         getIdFromUrl: JE.discoveryBase.idFromListParam('studioId'),
         // Historical page-key format: no 'network-' prefix.
-        pageKey: (id) => `${id}-${window.location.hash}`,
+        // (Without the section's filter pairs, which change in place: see discovery-address.js.)
+        pageKey: (id) => `${id}-${JE.discoveryAddress?.withoutOwn?.(window.location.hash) ?? window.location.hash}`,
         resolveFeeds,
         buildDiscoverPath: (kind, id, feeds) => {
             if (kind !== 'tv') return `/JellyfinEnhanced/jellyseerr/discover/movies/studio/${id}`;
