@@ -3239,7 +3239,7 @@
 </tr>
 <tr>
 <td><code>navigation.js</code></td>
-<td>Deduplicated SPA navigation notifications through <code>onNavigate</code> and <code>onViewPage</code>.</td>
+<td>Deduplicated SPA navigation notifications through <code>onNavigate</code> and <code>onViewPage</code>; <code>setAddressQuietly</code> changes the address without a navigation (a page's own state in a fragment after its address), and a jellyfin-web dialog's history entry gets the page's address.</td>
 </tr>
 <tr>
 <td><code>session.js</code></td>
@@ -3425,7 +3425,7 @@
 </tr>
 <tr>
 <td><code>discovery/</code></td>
-<td><code>discovery-base.js</code> owns lifecycle, pagination, aborts, gating, filtering and rendering. <code>discovery-filter-utils.js</code> supplies the section header (type tabs, sort button), shared filters and cards; <code>genre-discovery.js</code>, <code>network-discovery.js</code>, <code>person-discovery.js</code>, <code>tag-discovery.js</code>, <code>collection-discovery.js</code> provide feed specs. <code>discovery-section.js</code> builds and places the section, its placeholders and retry row, and joins it to the page (sticky header, jump line); <code>discovery-menu.js</code> is the Jellyfin-style action sheet the sort and Filters buttons open; <code>discovery-filters.js</code> holds the further filters' logic and their lists; <code>discovery-filter-panel.js</code> is the Filters button, its menu, the set-filters line and the empty note; <code>discovery-roles.js</code> writes a person's role line on each card; <code>discovery-busy.js</code> dims a list and marks the control while it reloads; <code>discovery-styles.js</code> holds the section's CSS.</td>
+<td><code>discovery-base.js</code> owns lifecycle, pagination, aborts, gating, filtering and rendering. <code>discovery-filter-utils.js</code> supplies the section header (type tabs, sort button), shared filters and cards; <code>genre-discovery.js</code>, <code>network-discovery.js</code>, <code>person-discovery.js</code>, <code>tag-discovery.js</code>, <code>collection-discovery.js</code> provide feed specs. <code>discovery-section.js</code> builds and places the section, its placeholders and retry row, and joins it to the page (sticky header, jump line); <code>discovery-menu.js</code> is the Jellyfin-style action sheet the sort and Filters buttons open; <code>discovery-filters.js</code> holds the further filters' logic and their lists; <code>discovery-filter-panel.js</code> is the Filters button, its menu, the set-filters line and the empty note; <code>discovery-address.js</code> reads and writes the filters (and the Recommendations category) in the page's address; <code>discovery-roles.js</code> writes a person's role line on each card; <code>discovery-busy.js</code> dims a list and marks the control while it reloads; <code>discovery-styles.js</code> holds the section's CSS.</td>
 </tr>
 <tr>
 <td><code>moreinfo/</code></td>
@@ -4154,7 +4154,7 @@
 <tbody>
 <tr>
 <td><code>Helpers/</code></td>
-<td><code>ArrUrlGuard.cs</code> checks integration URLs; <code>BuildAttestation.cs</code> handles release attestation; <code>PluginConfigurationPatch.cs</code> writes a few configuration fields on top of the live configuration and reports conflicting edits (the Media Tags tab's saves); <code>MediaTagsPageFields.cs</code> is the list of fields those saves may write, read from the page's section modules; <code>MediaTagsPortable.cs</code> reads and writes the versioned Media Tags documents (user and server export, import preview with the save paths' validators, presets: built-in, per-user and offered); <code>ProviderHelper.cs</code> and <code>UserHelper.cs</code> resolve provider/user identifiers; <code>ReviewVisibility.cs</code> applies author visibility; <code>TagEpisodeSelector.cs</code> chooses representative episodes with usable streams.</td>
+<td><code>ArrUrlGuard.cs</code> checks integration URLs; <code>BuildAttestation.cs</code> handles release attestation; <code>PluginConfigurationPatch.cs</code> writes a few configuration fields on top of the live configuration and reports conflicting edits (the Media Tags tab's saves); <code>MediaTagsPageFields.cs</code> is the list of fields those saves may write, read from the page's section modules; <code>MediaTagsPortable.cs</code> reads and writes the versioned Media Tags documents (user and server export, import preview with the save paths' validators, presets: built-in, per-user and offered); <code>DiscoveryFilterProfiles.cs</code> checks and stores a user's saved Seerr filter profiles; <code>ProviderHelper.cs</code> and <code>UserHelper.cs</code> resolve provider/user identifiers; <code>ReviewVisibility.cs</code> applies author visibility; <code>TagEpisodeSelector.cs</code> chooses representative episodes with usable streams.</td>
 </tr>
 <tr>
 <td><code>Helpers/</code> language handling</td>

@@ -1868,6 +1868,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#seerr-filter-profiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Seerr filter profiles
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#media-tags-import-export-and-presets" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3015,6 +3026,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#seerr-filter-profiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Seerr filter profiles
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#media-tags-import-export-and-presets" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3643,7 +3665,7 @@
 <h1 id="jellyfin-enhanceds-api">Jellyfin Enhanced's API<a class="headerlink" href="#jellyfin-enhanceds-api" title="Permanent link">¶</a></h1>
 <p>Use Jellyfin Enhanced (JE)'s API to manage bookmarks, reviews, and personal settings, retrieve metadata, and work with integrations through HTTP(S) requests. Install and enable the plugin on your server first.</p>
 <p>To use these APIs from a custom Jellyfin client, you need an HTTP client and a Jellyfin credential. You do not need the injected JE scripts.</p>
-<p>This reference covers the 220 method/path entries in plugin version <strong>12.14.0.0</strong>. Use the endpoint tables to check access requirements, inputs, responses, and limits.</p>
+<p>This reference covers the 223 method/path entries in plugin version <strong>12.14.0.0</strong>. Use the endpoint tables to check access requirements, inputs, responses, and limits.</p>
 <p>Paths in endpoint tables are relative to <code>/JellyfinEnhanced/</code>. Braces mark path parameters; replace them before making a request. The catch-all routes serve only the resources described below.</p>
 <details class="note">
 <summary>Which IDs to use</summary>
@@ -4773,6 +4795,46 @@
 <p><code>Shapes</code> on rules and locks uses the same <code>{Landscape,List}</code> map as <code>TagShapeOverrides</code>; it layers over that rule's or lock's look, independently of the user's shape overrides. Resolution is the user's lock → the administrator's item look (<code>TagLookItemOverrides</code>) → first matching rule → shape override → default; a lock or item look on the item itself comes before one on its series (<code>core/tag-layout.js</code> <code>lookSource</code>, and natively <code>PosterTagSettings.ForItem</code>, which applies locks, item looks and rules but not shapes). POST also accepts a shape slot map such as <code>{"quality":"bottom","status":"top"}</code>; stored responses use arrays, matching <code>TagLayouts</code> and preserving group ids across key-case conversion. <code>Layout</code>/<code>Density</code> null inherits, and null caps inherit per group. A shape that changes layout uses the profile of the new layout. Portrait and square cards always use the default shape; Native Poster Tags ignore these objects.</p>
 <p><code>TagScale</code> and <code>TagGap</code> are presentation-only settings, normalized case-insensitively on save. An unknown global value becomes <code>default</code>; null inherits the administrator's validated choice, then <code>default</code>. Version-0 documents always render at default size/gap. Promotion writes explicit <code>default</code> values so changing another layout setting does not adopt new administrator sizing. New-user seeding and reset-all copy the administrator's values. A shape's optional <code>TagScale</code>/<code>TagGap</code> uses the same choices, with unknown values normalized to null (inherit). Shape fields also round-trip inside rule/lock <code>Shapes</code>. Native posters use global size/gap in their rendering metrics and settings digest, with shape overrides still web-only. These fields do not change <code>TagCacheEntry</code> or its schema.</p>
 <p>The web client keeps these nullable fields null while they inherit: the settings panel shows the administrator's current value for <code>ShowEditionTag</code>, <code>ShowLowQualitySourceTag</code>, the three technical category switches (<code>ShowRuntimeTag</code>, <code>ShowAspectRatioTag</code>, <code>ShowFrameRateTag</code>), <code>ShowVersionsTag</code>, the three display modes, minimum resolution, Hide SDR, the eleven <code>*TagOrder</code> fields and <code>SeriesQualityAggregation</code>, and saves <code>null</code> for each one the user has not changed, so a save, an import or its <strong>Undo</strong> never pins today's administrator default. Inheriting is a state, not a value comparison: any change through a panel control (even back to the administrator's value), an imported value (even one equal to the default) and a reorder of the quality categories (all ten orders) are saved as the user's own. Only <strong>Follow server</strong> in the series policy, <strong>Follow server settings</strong> in the Quality group, or an import or <strong>Undo</strong> of a null value makes a field inherit again.</p>
+<h3 id="seerr-filter-profiles">Seerr filter profiles<a class="headerlink" href="#seerr-filter-profiles" title="Permanent link">¶</a></h3>
+<p>A user's saved Seerr filter profiles: named sets of the discovery Filters menu's filters, each user's own, kept in
+<code>discovery-filter-profiles.json</code> in the user's directory (<code>Helpers/DiscoveryFilterProfiles.cs</code>) and read-modify-written
+under the user's file lock. A profile's <code>filters</code> are the address form the discovery pages read and write
+(<code>js/jellyseerr/discovery/discovery-address.js</code>), for example <code>jeType=movies&amp;jeScore=7..&amp;jeKeywords=10468:bear,12554:dragon&amp;jeAny=keywords</code>.
+The server checks their shape only: <code>name=value</code> pairs joined by <code>&amp;</code>, each name once and one of <code>jeType</code>, <code>jeSort</code>,
+<code>jeReleased</code>, <code>jeScore</code>, <code>jeVotes</code>, <code>jeRuntime</code>, <code>jeRole</code>, <code>jeGenres</code>, <code>jeWithoutGenres</code>, <code>jeLanguage</code>, <code>jeWithoutLanguage</code>,
+<code>jeRating</code>, <code>jeServices</code>, <code>jeKeywords</code>, <code>jeWithout</code>, <code>jeAny</code>, <code>jeAll</code>, each value of plain address characters (<code>A-Z a-z 0-9 % . _ ~ : , / - ! * ' ( )</code>), at most
+4000 characters in all. The page reads each value as it reads its own address and leaves out anything not of its
+filter's shape, or not offered on that page.</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>Access</th>
+<th>Request → response</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GET</td>
+<td><code>user-settings/{userId}/discovery-filter-profiles</code></td>
+<td>Own/admin</td>
+<td>No body → <code>{max:30, profiles:[{id, name, filters}]}</code>, oldest first.</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>user-settings/{userId}/discovery-filter-profiles</code></td>
+<td>Own/admin</td>
+<td><code>{name, filters}</code> (16 KB limit) → <code>{profile}</code>. A profile of the same name (ignoring case) takes the new filters and keeps its id and place; otherwise it is added with a new id. <code>400 {error}</code>: <code>name</code> (empty, over 60 characters, or with control characters), <code>empty</code>, <code>filters</code>, or <code>full</code> with <code>max</code> (30 per user).</td>
+</tr>
+<tr>
+<td>DELETE</td>
+<td><code>user-settings/{userId}/discovery-filter-profiles/{profileId}</code></td>
+<td>Own/admin</td>
+<td>No body → <code>{success:true}</code>; <code>404 {error:"missing"}</code> for an unknown id.</td>
+</tr>
+</tbody>
+</table>
 <h3 id="media-tags-import-export-and-presets">Media Tags import, export and presets<a class="headerlink" href="#media-tags-import-export-and-presets" title="Permanent link">¶</a></h3>
 <p>A user's Media Tags settings travel as a versioned document with the same PascalCase field names as <code>settings.json</code>:</p>
 <div class="language-json highlight"><pre><span></span><code><span id="__span-19-1"><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="p">{</span><span class="w"> </span><span class="nt">"v"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="nt">"kind"</span><span class="p">:</span><span class="w"> </span><span class="s2">"je-media-tags-user"</span><span class="p">,</span><span class="w"> </span><span class="nt">"settings"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">"TagLayout"</span><span class="p">:</span><span class="w"> </span><span class="s2">"bands"</span><span class="p">,</span><span class="w"> </span><span class="nt">"TagLayoutSettingsVersion"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="nt">"TagScale"</span><span class="p">:</span><span class="w"> </span><span class="s2">"larger"</span><span class="p">,</span><span class="w"> </span><span class="nt">"QualityTagsEnabled"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="p">}</span>
@@ -7561,7 +7623,7 @@
 <p>The authenticated HTML catch-all recognizes exact names <code>calendarPage</code>, <code>downloadsPage</code>, <code>bookmarksPage</code>, <code>hiddenContentPage</code>, <code>recommendationsPage</code>, <code>activityPage</code>, <code>catchUpPage</code>.</p>
 <p>These are resource URLs, separate from Jellyfin web hash navigation or placement in Plugin Pages/Custom Tabs. Unknown names/missing resources return <code>404</code>; absent plugin instance <code>400</code>. See <a href="../../getting-started/pages-and-tabs/">JE Pages &amp; Tabs</a> for placement options.</p>
 <h2 id="full-endpoint-index">Full Endpoint Index<a class="headerlink" href="#full-endpoint-index" title="Permanent link">¶</a></h2>
-<p>The endpoint tables above enumerate all 220 controller method/path entries, including the three catch-all templates. Each group documents effective access, inputs, response shape, and limits; shared proxy rows intentionally retain the configured upstream service's JSON contract.</p>
+<p>The endpoint tables above enumerate all 223 controller method/path entries, including the three catch-all templates. Each group documents effective access, inputs, response shape, and limits; shared proxy rows intentionally retain the configured upstream service's JSON contract.</p>
 <p>For implementation details, <a href="https://github.com/n00bcodr/Jellyfin-Enhanced/blob/main/Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs">JellyfinEnhancedController.cs</a> implements all indexed routes except <code>catchup/*</code>, which is in <a href="https://github.com/n00bcodr/Jellyfin-Enhanced/blob/main/Jellyfin.Plugin.JellyfinEnhanced/Controllers/CatchUpController.cs">CatchUpController.cs</a>. These upstream source links may advance beyond this versioned reference.</p>
 <h3 id="awards-tag-settings-and-refresh">Awards tag settings and refresh<a class="headerlink" href="#awards-tag-settings-and-refresh" title="Permanent link">¶</a></h3>
 <p>Admin <code>AwardsTagsEnabled</code> (false) gates enrichment and seeds the per-user <code>AwardsTagsEnabled</code> default. Both settings and <code>AwardsTagsPosition</code> (<code>top-left</code>) follow new-user and reset-all defaults. <code>TagGroupCaps.Awards</code> defaults to 2, supports 0–10 (0 means all), and <code>awards</code> is a valid group in layout profiles, priority order, shape profiles and locked looks.</p>
