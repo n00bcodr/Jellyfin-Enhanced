@@ -7,7 +7,10 @@ const read = path => readFileSync(new URL(path, root), 'utf8');
 
 /** Python-Markdown's default toc slug, which the docs site uses for heading anchors. */
 const slug = heading => heading.toLowerCase().replace(/[^\w\s-]/g, '').trim().replace(/[\s-]+/g, '-');
-const anchors = new Set(read('docs/enhanced/tags.md').split('\n').filter(line => /^#{1,6} /.test(line)).map(line => slug(line.replace(/^#+ /, ''))));
+const headingsOf = page => new Set(read(`docs/enhanced/${page}.md`).split('\n').filter(line => /^#{1,6} /.test(line)).map(line => slug(line.replace(/^#+ /, ''))));
+const anchors = headingsOf('tags');
+// Sections that moved off the overview page keep their old enhanced/tags/#anchor link working through this map in extra.js.
+const moved = JSON.parse(read('docs/javascripts/extra.js').match(/var MOVED = (\{[^;]*\});/)[1]);
 
 for (const [file, tabsSource] of [
   ['Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/settingspanel/ui-panel-media-tags.js', /function tabsFor\(\) \{([\s\S]*?)\n {4}\}/],
@@ -21,7 +24,10 @@ for (const [file, tabsSource] of [
     assert.ok(ids.length >= 6);
     for (const id of ids) {
       assert.ok(map[id], `tab ${id} has a docs anchor`);
-      assert.ok(anchors.has(map[id]), `#${map[id]} is a heading in docs/enhanced/tags.md`);
+      if (anchors.has(map[id])) continue;
+      const target = moved[map[id]];
+      assert.ok(target, `#${map[id]} is a heading in docs/enhanced/tags.md or has a redirect in docs/javascripts/extra.js`);
+      assert.ok(headingsOf(target[0]).has(target[1]), `#${target[1]} is a heading in docs/enhanced/${target[0]}.md, where #${map[id]} redirects`);
     }
   });
 }

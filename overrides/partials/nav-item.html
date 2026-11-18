@@ -128,7 +128,7 @@
         {{ render_pruned(nav_item) }}
       {% endif %}
     </li>
-  {% elif nav_item == page %}
+  {% elif nav_item == page or (nav_item.active and not nav_item.children) %}
     <li class="{{ class }}">
       {% set toc = page.toc %}
       <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">

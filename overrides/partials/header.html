@@ -48,8 +48,9 @@
     {% if config.extra.alternate %}
       {% include "partials/alternate.html" %}
     {% endif %}
-    {% if "material/search" in config.plugins %}
-      {% set search = config.plugins["material/search"] | attr("config") %}
+    {% set search_key = "material/search" if "material/search" in config.plugins else "search" %}
+    {% if search_key in config.plugins %}
+      {% set search = config.plugins[search_key] | attr("config") %}
       {% if search.enabled %}
         <label class="md-header__button md-icon" for="__search">
           {% set icon = config.theme.icon.search or "material/magnify" %}

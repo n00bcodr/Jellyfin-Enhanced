@@ -4,7 +4,7 @@ Find subscription streaming providers, read reviews, and see release or air date
 
 ## Overview
 
-You can set up provider lookup, TMDB reviews, release dates, and reviews from your Jellyfin users in the admin **Elsewhere & Reviews** tab. Start with [Elsewhere & Reviews Settings](elsewhere-settings.md) for setup, defaults, and troubleshooting.
+You can set up provider lookup, TMDB reviews, release dates, and reviews from your Jellyfin users in the admin [**Elsewhere & Reviews**](../open-in-jellyfin.md?tab=elsewhere) tab. Start with [Elsewhere & Reviews Settings](elsewhere-settings.md) for setup, defaults, and troubleshooting.
 
 !!! note "API key requirements"
 
@@ -27,15 +27,7 @@ See which subscription services carry a movie or series in your default search c
 ![Custom Elsewhere heading above a manual search result with no streaming providers in United Kingdom](../images/elsewhere/providers-unavailable.webp)
 *An admin's **Custom Branding Message** replaces the unavailable heading; the red box is a manual search result.*
 
-Admin settings in **Elsewhere & Reviews**:
-
-| Setting | Default | What it does |
-| --- | --- | --- |
-| **Enable Elsewhere** | On | Enables the detail-page provider panel with a configured TMDB key or, without one, the Seerr integration. |
-| **TMDB API Key** | Empty | Supplies the shared key for server-side TMDB requests. |
-| **Default Region** | `US` | Sets the automatic country until you choose a personal default. |
-| **Default Providers** | Empty | Allows all subscription providers when empty; otherwise allows only exact provider names. |
-| **Ignore Providers** | Empty | Hides matching provider names after **Default Providers** is applied. |
+Admin settings in **Elsewhere & Reviews**; every option and default is in [Elsewhere settings → Configuration Options](elsewhere-settings.md#configuration-options).
 
 Provider badges show names and logos. Available headings open a regional availability link in a new tab when TMDB supplies one, with the **JustWatch** tooltip. These links and badges do not start playback or verify your subscriptions.
 
@@ -59,11 +51,7 @@ See which services carry each part of a series. When seasons have different prov
 2. Keep the admin **Per-season providers** setting on.
 3. In the panel's **Search Settings**, keep **Show providers per season (when seasons differ)** on. This personal setting appears only when the admin permits it.
 
-| Setting | Default | What it does |
-| --- | --- | --- |
-| **Use each user's Seerr streaming region** | Off (admin) | Providers follow each user's Seerr Streaming Region instead of their Elsewhere country; the country picker is then locked. |
-| **Per-season providers** | On (admin) | Enables automatic season lookup for default/aired-order series. |
-| **Show providers per season (when seasons differ)** | On (per user) | Lets you turn off season lookup for your account. |
+Every option and default is in [Elsewhere settings → Configuration Options](elsewhere-settings.md#configuration-options).
 
 ??? info "Grouping and fallbacks"
 
@@ -77,15 +65,11 @@ Give the unavailable-provider heading your own message and optional icon. It app
 
 #### How to use
 
-1. As an admin, open **Custom Branding** in the **Elsewhere & Reviews** tab.
+1. As an admin, open [**Custom Branding** in the **Elsewhere & Reviews** tab](../open-in-jellyfin.md?tab=elsewhere&card=elsewhere-streaming-providers).
 2. Enter a message, then click **Save Settings**. For an icon, upload an image under **Upload Icon** or enter an image URL; an uploaded icon is used in place of the URL.
 3. Reload the detail page.
 
-| Setting | Default | What it does |
-| --- | --- | --- |
-| **Custom Branding Message** | Empty (admin) | Replaces the automatic unavailable heading; empty keeps the standard heading. |
-| **Custom Branding Icon URL** | Empty (admin) | Adds an optional icon beside a nonempty custom message; empty supplies no icon. |
-| **Upload Icon** | None (admin) | An icon stored on the server, used in place of the icon URL. |
+Every option and default is in [Elsewhere settings → Configuration Options](elsewhere-settings.md#configuration-options).
 
 ??? note "Country, filters, and controls"
 
@@ -97,7 +81,7 @@ Share your thoughts and star ratings with other viewers on your Jellyfin server.
 
 ### How to use
 
-1. An admin opens **Elsewhere & Reviews**, turns on **Enable User Written Reviews**, and clicks **Save Settings**. Reload the client after changing the configuration.
+1. An admin opens [**Elsewhere & Reviews**](../open-in-jellyfin.md?tab=elsewhere&card=user-reviews), turns on **Enable User Written Reviews**, and clicks **Save Settings**. Reload the client after changing the configuration.
 2. Open an eligible item and expand **Reviews ({count})**.
 3. Click **Write a Review** (shown only when you have no review for this item), enter text and/or choose a rating, then click the save icon. Click a star's left half for a half-star value or its right half for a full value. Use the close icon beside the stars to clear a rating, or the form's close icon to cancel.
 4. Use your card's **Edit** icon to update the review or **Delete** to remove it after confirmation. You have one review per movie, series, season, or episode; saving again updates it.
@@ -108,14 +92,7 @@ Admin settings in **Elsewhere & Reviews**:
 
 ![TMDB Reviews, Release Dates and User Reviews settings](../images/admin/reviews.webp)
 
-| Setting | Default | What it does |
-| --- | --- | --- |
-| **Enable User Written Reviews** | Off | Enables the local review panel and writing controls, independently of provider lookup and TMDB reviews. |
-| **Hide reviews from hidden users** | On | Hides these authors' reviews from other non-admin viewers. |
-| **Hide reviews from disabled users** | On | Hides these authors' reviews from other non-admin viewers. |
-| **Also save review star ratings as the user's Jellyfin rating** | Off | Copies movie/series review stars to the author's Jellyfin rating at twice the star value. |
-| **Show average user rating on poster cards** | Off | Adds visible local-review averages to eligible posters when rating tags are enabled. |
-| **Show a dash on posters for unrated items** | On | Shows a dash when no visible rated-review average exists, if poster averages are enabled. |
+Every option and default is in [Elsewhere settings → User Reviews](elsewhere-settings.md#user-reviews).
 
 Your server's review cards appear before TMDB cards. They have green borders, author names and avatars, update dates, and star ratings when supplied. Use **Read More** and **Read Less** for long text.
 
@@ -135,7 +112,7 @@ Your server's review cards appear before TMDB cards. They have green borders, au
 
     Admins can use **Delete as admin** on other authors' cards. The web UI does not let them edit another author's review. Failed deletions show feedback. Each review is stored under its movie, series, season, or episode key. Duplicate library items with the same TMDB identity and child numbering share reviews. Hidden authors are identified by Jellyfin account policy, independently of your Hidden Content list; these author filters also apply to stored Activity Feed entries.
 
-    Detail pages show the average of visible rated local reviews out of ten. Poster averages also need effective **Show Rating Tags**; a stored personal value overrides the admin **Enable Rating Tags** default. Rating-tag type and row exclusions also suppress review chips; see [Tags](../enhanced/tags.md#user-review-chips). See [User Reviews settings](elsewhere-settings.md#user-reviews) for visibility, poster controls, and the effects of copying ratings to Jellyfin.
+    Detail pages show the average of visible rated local reviews out of ten. Poster averages also need effective **Show Rating Tags**; a stored personal value overrides the admin **Enable Rating Tags** default. Rating-tag type and row exclusions also suppress review chips; see [Tags](../enhanced/tags-groups.md#user-review-chips). See [User Reviews settings](elsewhere-settings.md#user-reviews) for visibility, poster controls, and the effects of copying ratings to Jellyfin.
 
 ## TMDB Reviews
 
@@ -143,18 +120,12 @@ Read TMDB community reviews on movie and series detail pages. You can browse the
 
 ### How to use
 
-1. Open **Dashboard** → **Plugins** → **Jellyfin Enhanced**, then the **Elsewhere & Reviews** tab.
+1. Open **Dashboard** → **Plugins** → **Jellyfin Enhanced**, then the [**Elsewhere & Reviews**](../open-in-jellyfin.md?tab=elsewhere&card=tmdb-reviews) tab.
 2. Enter and test the shared **TMDB API Key**. Keep **Enable Elsewhere** on to edit the TMDB-review controls in the admin UI.
 3. Turn on **Show TMDB Reviews**, optionally turn on **Expand reviews by default**, and click **Save Settings**.
 4. Reload the client, open a movie or series with a TMDB ID, and expand **Reviews ({count})**. Scroll horizontally through the cards; use **Read More** or **Read Less** for long text.
 
-Admin settings in **Elsewhere & Reviews**:
-
-| Setting | Default | What it does |
-| --- | --- | --- |
-| **TMDB API Key** | Empty | Supplies the same server-side key used for provider lookup and release dates. |
-| **Show TMDB Reviews** | Off | Displays TMDB reviews for movies and series. |
-| **Expand reviews by default** | Off | Sets the starting expansion preference, which you can override by opening or closing the section. |
+Admin settings in **Elsewhere & Reviews**; every option and default is in [Elsewhere settings → Configuration Options](elsewhere-settings.md#configuration-options).
 
 TMDB cards have blue borders and show the author, review date, supplied rating, and a TMDB logo that links to the original review. Text over 350 characters starts as a preview. Opening or closing the section saves your preference for future pages; opening a writing form also opens the section. There is no separate expansion toggle in the personal Enhanced panel.
 
@@ -184,12 +155,10 @@ Read the top AniList user reviews for anime on movie and series detail pages. Th
 ### How to use
 
 1. Make sure AniList is a metadata provider for your anime library (for example with the Jellyfin AniList plugin), so each item has an AniList ID.
-2. Open **Dashboard** → **Plugins** → **Jellyfin Enhanced**, then the **Elsewhere & Reviews** tab, turn on **Show AniList Reviews**, and click **Save Settings**.
+2. Open **Dashboard** → **Plugins** → **Jellyfin Enhanced**, then the [**Elsewhere & Reviews**](../open-in-jellyfin.md?tab=elsewhere&card=anilist) tab, turn on **Show AniList Reviews**, and click **Save Settings**.
 3. Reload the client, open an anime movie or series that has an AniList ID, and expand **Reviews ({count})**.
 
-| Setting | Default | What it does |
-| --- | --- | --- |
-| **Show AniList Reviews** | Off | Displays the top AniList user reviews for movies and series that have an AniList ID. |
+Every option and default is in [Elsewhere settings → AniList Reviews](elsewhere-settings.md#anilist-reviews).
 
 AniList cards have a lighter blue border and show the author, review date, the reviewer's score out of ten, the AniList logo and a link to the original review. The review summary appears in bold above the text. Text over 350 characters starts as a preview with **Read More** and **Read Less**.
 
@@ -221,15 +190,11 @@ Translate English TMDB and AniList reviews into your Jellyfin language. Each rev
 
 ### How to use
 
-1. Open **Dashboard** → **Plugins** → **Jellyfin Enhanced**, then the **Elsewhere & Reviews** tab, turn on **Enable Review Translation**, and click **Save Settings**.
+1. Open **Dashboard** → **Plugins** → **Jellyfin Enhanced**, then the [**Elsewhere & Reviews**](../open-in-jellyfin.md?tab=elsewhere&card=review-translation) tab, turn on **Enable Review Translation**, and click **Save Settings**.
 2. Optionally set a **LibreTranslate URL** so browsers without a built-in translator can translate too.
 3. Make sure your Jellyfin display language is **not English** (the button never shows for English), then reload the client and expand **Reviews ({count})** on a title that has reviews.
 
-| Setting | Default | What it does |
-| --- | --- | --- |
-| **Enable Review Translation** | Off | Adds the **Translate** button to English TMDB and AniList reviews. |
-| **LibreTranslate URL (optional)** | Empty | Your LibreTranslate instance, used when the browser cannot translate. |
-| **LibreTranslate API Key (optional)** | Empty | Only needed when your instance requires a key. |
+Every option and default is in [Elsewhere settings → Review Translation](elsewhere-settings.md#review-translation).
 
 !!! note "Only English reviews, into your Jellyfin language"
 
@@ -260,17 +225,11 @@ See movie release dates or television air dates beside the item's other metadata
 
 ### How to use
 
-1. In **Elsewhere & Reviews**, configure the shared **TMDB API Key**.
-2. Under **Release Dates**, turn on **Show Release/Air Date** and click **Save Settings**.
+1. In [**Elsewhere & Reviews**](../open-in-jellyfin.md?tab=elsewhere&card=tmdb), configure the shared **TMDB API Key**.
+2. Under [**Release Dates**](../open-in-jellyfin.md?tab=elsewhere&card=release-dates), turn on **Show Release/Air Date** and click **Save Settings**.
 3. Reload the client and open a movie, series, season, or episode with the required TMDB metadata. Hover over a movie chip to see **Cinema Release**, **Digital Release**, or **Physical Release**; television chips use **Episode**.
 
-Admin settings in **Elsewhere & Reviews**:
-
-| Setting | Default | What it does |
-| --- | --- | --- |
-| **Show Release/Air Date** | Off | Adds release/air-date chips with a configured TMDB key and available dates. |
-| **Default Region** | `US` | Sets the preferred country for movie release dates. |
-| **TMDB API Key** | Empty | Enables TMDB-backed date lookups. |
+Admin settings in **Elsewhere & Reviews**; every option and default is in [Elsewhere settings → Configuration Options](elsewhere-settings.md#configuration-options).
 
 ![Movie release dates and episode air date](../images/enhanced/release-dates.webp)
 
@@ -294,14 +253,11 @@ Provider logos on Jellyfin Enhanced's Seerr cards help you check subscription av
 ### How to use
 
 1. Complete [Seerr connection setup](../seerr/seerr-settings.md).
-2. Configure the shared **TMDB API Key** in **Elsewhere & Reviews**.
-3. Open **Seerr**, turn on **Show Streaming Providers on Posters**, and click **Save Settings**.
+2. Configure the shared **TMDB API Key** in [**Elsewhere & Reviews**](../open-in-jellyfin.md?tab=elsewhere&card=tmdb).
+3. Open [**Seerr**](../open-in-jellyfin.md?tab=seerr&card=discovery-ui-extras), turn on **Show Streaming Providers on Posters**, and click **Save Settings**.
 4. Reload the client and browse JE's Seerr cards.
 
-| Setting | Default | What it does |
-| --- | --- | --- |
-| **Show Streaming Providers on Posters** | Off (admin, **Seerr**) | Shows up to four valid subscription-provider logos on JE's Seerr cards. |
-| **Show Seerr Results in Search** | On (admin, **Seerr**) | Enables JE's Seerr results in Jellyfin search, when the integration is configured and enabled. |
+Every option and default is in [Elsewhere settings → Integration with Seerr](elsewhere-settings.md#integration-with-seerr).
 
 !!! note "Requirements"
 

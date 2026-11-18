@@ -44,7 +44,7 @@ Catch Up and Activity are built into JE. In Catch Up, you can mark unwatched tit
 
     JE adds its client scripts as the server serves the web interface. It does not require File Transformation for this.
 
-    Watchlist sync reads and writes Jellyfin's Likes flag without requiring KefinTweaks. Catch Up's optional server activity log is separate from outbound analytics; see the [collection and privacy explanation](advanced/community-analytics.md#local-catch-up-activity-log).
+    Watchlist sync reads and writes Jellyfin's Likes flag without requiring KefinTweaks. Catch Up's optional server activity log is separate from outbound analytics; see the [collection and privacy explanation](advanced/community-analytics-settings.md#local-catch-up-activity-log).
 
 See [JE pages & tabs](getting-started/pages-and-tabs.md) for page masters, delivery choices and requirements. For themes and other projects by n00bcodr, use [Related projects](other-projects/other-projects.md).
 

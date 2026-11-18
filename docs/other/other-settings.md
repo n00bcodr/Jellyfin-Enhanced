@@ -2,27 +2,25 @@
 
 Use these controls to personalize Jellyfin and manage your server. Unless marked per-user, they are administrator settings. See [Other Features](other-features.md) for usage and [Settings Overview](../getting-started/settings-overview.md) for personal defaults and overrides.
 
-??? note "Admin tab reference"
+Click **Save Settings** and reload the web client after changing configuration fields. Branding uploads and cache actions apply separately.
 
-    “Other” is a documentation category, not a plugin tab. Open **Dashboard** → **Plugins** → **Jellyfin Enhanced** and use the locations below.
-
-    After changing configuration fields, click **Save Settings** and reload the web client. Branding uploads and cache actions apply separately.
-
-    | Admin tab | Settings covered here |
-    |---|---|
-    | **Display** | **Icons & Theme**, **Default Language**, **MDBList Ratings**, **Content Warnings**, client tag-cache clearing |
-    | **Playback** | **Shortcuts Panel & Toast Timing** |
-    | **Extras** | **UI Tweaks**, **Active Streams**, **External Links**, **Metadata Icons & Sidebar Links**, **Splash Screen Override**, **Custom Image Assets** |
-    | **Pages** | Hidden Content and Activity Feed — links to their canonical guides below |
-    | **Admin** | **Usage Statistics**, **Maintenance Mode**, **Tag Cache**, **Developer Settings** |
+| Admin tab | Settings covered here |
+|---|---|
+| [**Display**](../open-in-jellyfin.md?tab=display) | [Icons & Theme](../open-in-jellyfin.md?tab=display&card=icons-theme){ .je-quiet }, [Default Language](../open-in-jellyfin.md?tab=display&card=default-language){ .je-quiet }, [MDBList Ratings](../open-in-jellyfin.md?tab=display&card=mdblist-ratings){ .je-quiet }, [Content Warnings](../open-in-jellyfin.md?tab=display&card=content-warnings-doesthedogdie){ .je-quiet } |
+| [**Playback**](../open-in-jellyfin.md?tab=playback) | [Shortcuts Panel & Toast Timing](../open-in-jellyfin.md?tab=playback&card=shortcuts-panel-toast-timing){ .je-quiet } |
+| [**Extras**](../open-in-jellyfin.md?tab=extras) | [UI Tweaks](../open-in-jellyfin.md?tab=extras&card=ui-tweaks){ .je-quiet }, [Active Streams](../open-in-jellyfin.md?tab=extras&card=active-streams){ .je-quiet }, [External Links](../open-in-jellyfin.md?tab=extras&card=external-links){ .je-quiet }, [Metadata Icons & Sidebar Links](../open-in-jellyfin.md?tab=extras&card=metadata-icons-sidebar-links){ .je-quiet }, [Splash Screen Override](../open-in-jellyfin.md?tab=extras&card=splash-screen-override){ .je-quiet }, [Custom Image Assets](../open-in-jellyfin.md?tab=extras&card=custom-image-assets){ .je-quiet } |
+| [**Pages**](../open-in-jellyfin.md?tab=pages) | [Hidden Content](../open-in-jellyfin.md?tab=pages&card=hidden-content){ .je-quiet }, [Activity Feed](../open-in-jellyfin.md?tab=pages&card=activity-feed){ .je-quiet } (guides below) |
+| [**Admin**](../open-in-jellyfin.md?tab=admin) | [Usage Statistics](../open-in-jellyfin.md?tab=admin&card=usage-statistics){ .je-quiet }, [Maintenance Mode](../open-in-jellyfin.md?tab=admin&card=maintenance-mode){ .je-quiet }, [Developer Settings](../open-in-jellyfin.md?tab=admin&card=developer-settings){ .je-quiet }; [tag cache](../open-in-jellyfin.md?jeSection=media-tags&tab=server){ .je-quiet } |
 
 ## Custom Branding
+
+[Extras > Custom Image Assets](../open-in-jellyfin.md?tab=extras&card=custom-image-assets){ .je-open }
 
 Replace Jellyfin's branding with your own logos and icons. You do not need another branding plugin.
 
 ### How to use
 
-1. Open admin **Extras** → **Custom Image Assets**.
+1. Open admin [**Extras** → **Custom Image Assets**](../open-in-jellyfin.md?tab=extras&card=custom-image-assets).
 2. Click a slot or drop an image onto it. Upload starts immediately; wait for **✓ Uploaded**.
 3. Check the preview and measured dimensions where available, then reload. Use ++ctrl+f5++ if an old image remains cached.
 4. Upload again to replace a slot, or use its trash button to delete the custom file immediately. Reload after either action.
@@ -61,9 +59,11 @@ Replace Jellyfin's branding with your own logos and icons. You do not need anoth
 
 ## Icon Settings
 
+[Display](../open-in-jellyfin.md?tab=display){ .je-open }
+
 Choose the icons you see in JE's panel headings and toast notifications.
 
-**How to use:** Open admin **Display** → **Icons & Theme**, turn on **Use Icons in UI**, and choose **Icon Style**. Click **Save Settings** and reload.
+**How to use:** Open admin [**Display** → **Icons & Theme**](../open-in-jellyfin.md?tab=display&card=icons-theme), turn on **Use Icons in UI**, and choose **Icon Style**. Click **Save Settings** and reload.
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -78,12 +78,14 @@ Choose the icons you see in JE's panel headings and toast notifications.
 
 ## Extras
 
+[Extras > UI Tweaks](../open-in-jellyfin.md?tab=extras&card=ui-tweaks){ .je-open }
+
 Customize the dashboard, login screen, and user-preferences menu with these optional switches.
 
 ### How to use
 
-1. Open admin **Extras** → **UI Tweaks** and turn on the switches you want.
-2. For **Sidebar Custom Links**, open **Extras** → **External Links**. Enter one configuration-page name/icon pair per line, using the decoded page name, including spaces:
+1. Open admin [**Extras** → **UI Tweaks**](../open-in-jellyfin.md?tab=extras&card=ui-tweaks) and turn on the switches you want.
+2. For **Sidebar Custom Links**, open [**Extras** → **External Links**](../open-in-jellyfin.md?tab=extras&card=external-links). Enter one configuration-page name/icon pair per line, using the decoded page name, including spaces:
 
     ```text
     Jellyfin Enhanced | tune
@@ -107,9 +109,11 @@ Customize the dashboard, login screen, and user-preferences menu with these opti
 
 ### Activity Feed
 
+[Pages > Activity Feed](../open-in-jellyfin.md?tab=pages&card=activity-feed){ .je-open }
+
 Use the user Activity Feed to see activity separately from dashboard icon coloring.
 
-**How to use:** Open **Pages** → **Activity Feed**. Follow [Enhanced Settings](../enhanced/enhanced-settings.md) and [Enhanced Features](../enhanced/enhanced-features.md) for setup and use.
+**How to use:** Follow [Enhanced Settings](../enhanced/enhanced-settings.md) and [Enhanced Features](../enhanced/enhanced-features.md) for setup and use.
 
 !!! note "Active Streams section requirements"
 
@@ -121,9 +125,11 @@ Use the user Activity Feed to see activity separately from dashboard icon colori
 
 ## Active Streams Widget
 
+[Extras](../open-in-jellyfin.md?tab=extras){ .je-open }
+
 See who is watching and open their current session details from Jellyfin's header.
 
-**How to use:** Open admin **Extras** → **Active Streams** and turn on **Active Streams Header Widget**. Click **Save Settings**, reload, and open the widget; use **Refresh** for current data.
+**How to use:** Open admin [**Extras** → **Active Streams**](../open-in-jellyfin.md?tab=extras&card=active-streams) and turn on **Active Streams Header Widget**. Click **Save Settings**, reload, and open the widget; use **Refresh** for current data.
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -140,11 +146,13 @@ See who is watching and open their current session details from Jellyfin's heade
 
 ## Timeout Settings
 
+[Playback > Shortcuts Panel & Toast Timing](../open-in-jellyfin.md?tab=playback&card=shortcuts-panel-toast-timing){ .je-open }
+
 Adjust how long the Enhanced panel and ordinary JE toast messages stay visible.
 
 ### How to use
 
-1. Open admin **Playback** → **Shortcuts Panel & Toast Timing** and enter durations in milliseconds.
+1. Open admin [**Playback** → **Shortcuts Panel & Toast Timing**](../open-in-jellyfin.md?tab=playback&card=shortcuts-panel-toast-timing) and enter durations in milliseconds.
 2. Try **Preview autoclose** and **Preview toast**. They use your unsaved inputs.
 3. Click **Save Settings** and reload.
 
@@ -161,9 +169,11 @@ Adjust how long the Enhanced panel and ordinary JE toast messages stay visible.
 
 ## Letterboxd Integration
 
+[Extras](../open-in-jellyfin.md?tab=extras){ .je-open }
+
 Add a **Letterboxd** link to supported movie and person detail pages.
 
-**How to use:** Open admin **Extras** → **External Links**, turn on **Enable Letterboxd Links**, and optionally enable **Show link as text**. Click **Save Settings** and reload.
+**How to use:** Open admin [**Extras** → **External Links**](../open-in-jellyfin.md?tab=extras&card=external-links), turn on **Enable Letterboxd Links**, and optionally enable **Show link as text**. Click **Save Settings** and reload.
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -180,9 +190,11 @@ Add a **Letterboxd** link to supported movie and person detail pages.
 
 ## Metadata Icons
 
+[Extras > Metadata Icons & Sidebar Links](../open-in-jellyfin.md?tab=extras&card=metadata-icons-sidebar-links){ .je-open }
+
 Show supported metadata and external links as icons on item detail pages.
 
-**How to use:** Open admin **Extras** → **External Links** and turn on **Enable Metadata Icons (Druidblack)**. Click **Save Settings**, reload, and inspect an item's metadata and external links.
+**How to use:** Open admin [**Extras** → **External Links**](../open-in-jellyfin.md?tab=extras&card=external-links) and turn on **Enable Metadata Icons (Druidblack)**. Click **Save Settings**, reload, and inspect an item's metadata and external links.
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -194,13 +206,15 @@ Show supported metadata and external links as icons on item detail pages.
 
 ## MDBList Ratings
 
-Poster **Rating** groups can also select named source chips using the configured key, independently of the detail-row and metadata-sync switches; see [Rating Tags](../enhanced/tags.md#rating-tags).
+[Display > MDBList Ratings](../open-in-jellyfin.md?tab=display&card=mdblist-ratings){ .je-open }
+
+Poster **Rating** groups can also select named source chips using the configured key, independently of the detail-row and metadata-sync switches; see [Rating Tags](../enhanced/tags-groups.md#rating-tags).
 
 Show ratings from several sources on detail pages, or fill Jellyfin's own Community/Critic Rating fields. Displaying ratings, fetching data, and writing Jellyfin fields have separate controls.
 
 ### How to use
 
-1. Open admin **Display** → **MDBList Ratings** and turn on **Enable MDBList Ratings**.
+1. Open admin [**Display** → **MDBList Ratings**](../open-in-jellyfin.md?tab=display&card=mdblist-ratings) and turn on **Enable MDBList Ratings**.
 2. Enter **MDBList API Key** and click **Check**. This tests the entered key before saving and shows account quota/reset information.
 3. Leave **Show Ratings Row on Item Details** on for badges. Open **Configure ratings shown** to select and reorder them with the up/down controls.
 4. Click **Save Settings** and reload.
@@ -283,11 +297,13 @@ See [MDBList Ratings](other-features.md#mdblist-ratings) for batching, expiry, q
 
 ## Content Warnings
 
+[Display > Content Warnings](../open-in-jellyfin.md?tab=display&card=content-warnings-doesthedogdie){ .je-open }
+
 Show community content warnings from DoesTheDogDie on movie and series pages. See the [feature guide](other-features.md#content-warnings) for what users see and how the request budget works.
 
 ### How to use
 
-1. Open admin **Display** → **Content Warnings (DoesTheDogDie)** and turn on **Show Content Warnings**.
+1. Open admin [**Display** → **Content Warnings (DoesTheDogDie)**](../open-in-jellyfin.md?tab=display&card=content-warnings-doesthedogdie) and turn on **Show Content Warnings**.
 2. Enter **DoesTheDogDie API Key**, from your account profile on doesthedogdie.com.
 3. Click **Save Settings** and reload.
 
@@ -304,15 +320,19 @@ These controls are server-wide. Each user picks their own triggers from the gear
 
 ## Hidden Content
 
+[Pages > Hidden Content](../open-in-jellyfin.md?tab=pages&card=hidden-content){ .je-open }
+
 Manage Hidden Content's server settings and personal options.
 
-**How to use:** Open **Pages** → **Hidden Content** for server controls, or the Enhanced panel for personal controls. See [Content Management](../enhanced/enhanced-features.md#content-management) for hiding, restoration, delivery modes, and administrator management. [Enhanced Settings](../enhanced/enhanced-settings.md) covers all defaults and personal options.
+**How to use:** The card above holds the server controls; personal controls are in the Enhanced panel. See [Content Management](../enhanced/enhanced-features.md#content-management) for hiding, restoration, delivery modes, and administrator management. [Enhanced Settings](../enhanced/enhanced-settings.md) covers all defaults and personal options.
 
 ## Splash Screen
 
+[Extras](../open-in-jellyfin.md?tab=extras){ .je-open }
+
 Show your logo on JE's loading overlay, with a decorative progress bar.
 
-**How to use:** Open admin **Extras** → **Custom Image Assets**, turn on **Enable Splash Screen Override**, and enter **Splash Screen Image URL**. Check that the URL opens an image in your browser, then click **Save Settings** and reload.
+**How to use:** Open admin [**Extras** → **Custom Image Assets**](../open-in-jellyfin.md?tab=extras&card=custom-image-assets), turn on **Enable Splash Screen Override**, and enter **Splash Screen Image URL**. Check that the URL opens an image in your browser, then click **Save Settings** and reload.
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -329,11 +349,13 @@ Show your logo on JE's loading overlay, with a decorative progress bar.
 
 ## Default UI Language
 
+[Display > Default Language](../open-in-jellyfin.md?tab=display&card=default-language){ .je-open }
+
 Choose a starting language for JE's interface. Users can save a personal choice that overrides the admin default.
 
 **How to use:**
 
-- **Administrator default:** Open **Display** → **Default Language**, choose **Default UI Language**, and click **Save Settings**.
+- **Administrator default:** Choose **Default UI Language**, and click **Save Settings**.
 - **Personal choice:** Open the Enhanced panel → **Language Settings** and choose **Display Language**. A change saves your preference and browser language key, then reloads.
 
 **Administrator setting:**
@@ -354,14 +376,16 @@ Choose a starting language for JE's interface. Users can save a personal choice 
 
 ## Cache Management
 
+[Media Tags > Server](../open-in-jellyfin.md?jeSection=media-tags&tab=server){ .je-open }
+
 Refresh cached JE data when it becomes stale. These actions do not reset all preferences or delete the MDBList server cache.
 
 **How to use:** Choose the action below for the data you want to refresh. **Clear All Client Caches** asks for confirmation.
 
 | Action | Location | What it does |
 |---|---|---|
-| **Clear All Client Caches** | Admin **Media Tags** → **Server**, with **Server-Side Tag Cache** off; **Overview** → **Quick Actions** labels the shortcut **Clear all client tag caches** | Clears targeted JE client caches on their next page load. Keeps server-stored personal preferences and unrelated browser storage. |
-| **Rebuild Server Tag Cache** | Admin **Admin** → **Tag Cache**, with **Server-Side Tag Cache** on | Rebuilds cached tag data for the library. This may take time on a large server. |
+| **Clear All Client Caches** | Admin [**Media Tags** → **Server**](../open-in-jellyfin.md?jeSection=media-tags&tab=server), with **Server-Side Tag Cache** off; **Overview** → **Quick Actions** labels the shortcut **Clear all client tag caches** | Clears targeted JE client caches on their next page load. Keeps server-stored personal preferences and unrelated browser storage. |
+| **Rebuild Server Tag Cache** | Admin [**Media Tags** → **Server**](../open-in-jellyfin.md?jeSection=media-tags&tab=server), with **Server-Side Tag Cache** on | Rebuilds cached tag data for the library. This may take time on a large server. |
 | **Clear Translation Cache** | Per-user Enhanced panel → **Language Settings** | Clears this browser's translation entries and reloads. Does not signal other clients or reset the language selection. |
 
 ??? info "How it works"
@@ -394,13 +418,13 @@ Run JE's background jobs manually or choose when they run.
 
 ## Maintenance Mode
 
+[Admin > Maintenance Mode](../open-in-jellyfin.md?tab=admin&card=maintenance-mode){ .je-open }
+
 Warn users during server work and optionally restrict non-admin accounts or remote connections. Read [Maintenance Mode](other-features.md#maintenance-mode) before enabling.
 
 !!! warning "Saving can restrict access immediately"
 
     Saving can immediately change account and remote-access policies. The manual default disables non-admin accounts. For a banner/notification-only window, leave both **Action** boxes unchecked.
-
-**Admin location:** **Admin** → **Maintenance Mode**.
 
 ### Manual maintenance
 
@@ -474,11 +498,13 @@ Run a daily maintenance window using the server's local clock. Manual maintenanc
 
 ## Usage Statistics
 
+[Admin > Usage Statistics](../open-in-jellyfin.md?tab=admin&card=usage-statistics){ .je-open }
+
 Choose whether your server shares usage statistics. See [Community Analytics](../advanced/community-analytics.md) for what is collected and how it is used.
 
 ### How to use
 
-1. Open admin **Admin** → **Usage Statistics** and turn on **Share Anonymous Usage Statistics**. On first enabling it, the form selects all three categories.
+1. Open admin [**Admin** → **Usage Statistics**](../open-in-jellyfin.md?tab=admin&card=usage-statistics) and turn on **Share Anonymous Usage Statistics**. On first enabling it, the form selects all three categories.
 2. Uncheck any categories you do not want and inspect **Preview**.
 3. Click **Save Settings** to opt in.
 
@@ -502,9 +528,11 @@ The page shows the last-sent time, or that no report has been sent. **Preview** 
 
 ## Developer Settings
 
+[Admin > Developer Settings](../open-in-jellyfin.md?tab=admin&card=developer-settings){ .je-open }
+
 Use **Dev Mode** when developing JE scripts. Leave it off for normal use.
 
-**How to use:** Open admin **Admin** → **Developer Settings**, change **Dev Mode**, click **Save Settings**, and reload.
+**How to use:** Change **Dev Mode**, click **Save Settings**, and reload.
 
 | Setting | Default | What it does |
 |---|---|---|
