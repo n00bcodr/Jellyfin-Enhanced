@@ -1777,7 +1777,13 @@
                 }
 
                 const itemId = getItemId(el);
-                if (!itemId) continue;
+                if (!itemId) {
+                    // Nothing else would bring the scan back to it: JE's own chips landing in other
+                    // cards no longer wake the body subscribers.
+                    awaitingIdentity.add(el);
+                    watchArtwork(el);
+                    continue;
+                }
 
                 const itemType = getItemType(el);
                 if (itemType && !MEDIA_TYPES.has(itemType)) {
@@ -1862,6 +1868,13 @@
     let identityObserver = null;
     /** @type {WeakSet<HTMLElement>} Card images the identity observer watches the artwork of. */
     let artworkWatched = new WeakSet();
+    /**
+     * Card images a scan passed over because nothing named their item yet: no
+     * item id on the card and no artwork to read one from. Their artwork is
+     * watched so the scan runs again when it arrives (see releaseReusedCards).
+     * @type {WeakSet<HTMLElement>}
+     */
+    let awaitingIdentity = new WeakSet();
 
     /**
      * Watch a scanned card image's artwork for a reuse in place. Only scanned
@@ -1927,14 +1940,23 @@
      * caption outlet and review key go with it, and lookups still in flight
      * for it are dropped by stillShows), then scan again so the new item
      * renders. The records are data-id / data-itemid changes anywhere on the
-     * page and artwork changes of the scanned card images (watchArtwork).
+     * page and artwork changes of the scanned card images (watchArtwork). A
+     * card image scanned before anything named its item (awaitingIdentity) is
+     * scanned again when its artwork arrives.
      * @param {MutationRecord[]} mutations - Attribute records with old values.
      */
     function releaseReusedCards(mutations) {
         let released = false;
         for (const record of mutations) {
-            if (!isIdentityChange(record)) continue;
             const target = /** @type {HTMLElement} */ (record.target);
+            // A card image scanned before anything named its item: its first artwork may (to
+            // isIdentityChange a first load is no change, rightly so for a card that had an id).
+            if (record.attributeName === 'style' && awaitingIdentity.has(target) && getItemId(target)) {
+                awaitingIdentity.delete(target);
+                released = true;
+                continue;
+            }
+            if (!isIdentityChange(record)) continue;
             const images = target.matches(CARD_IMAGE_SELECTOR)
                 ? [target]
                 : Array.from(target.querySelectorAll(CARD_IMAGE_SELECTOR));
@@ -2359,7 +2381,8 @@
                 // Images scanned before the observer existed, and ones a reset released that still hold tags.
                 for (const el of document.querySelectorAll(CARD_IMAGE_SELECTOR)) {
                     const owner = el.closest('.cardScalable') || el;
-                    if (processedCards.has(el) || Array.from(owner.children).some((c) => c.classList.contains('je-tag-host'))) watchArtwork(/** @type {HTMLElement} */ (el));
+                    if (processedCards.has(el) || awaitingIdentity.has(/** @type {HTMLElement} */ (el))
+                        || Array.from(owner.children).some((c) => c.classList.contains('je-tag-host'))) watchArtwork(/** @type {HTMLElement} */ (el));
                 }
             }
         }

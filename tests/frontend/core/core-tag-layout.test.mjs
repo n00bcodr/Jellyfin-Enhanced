@@ -549,6 +549,22 @@ test('artwork loading for the first time is not a reuse', async t => {
   assert.equal(h.calls.length, 1);
 });
 
+test('a card image nothing names yet is scanned again when its artwork arrives, without waiting for another change on the page', async t => {
+  // No item id on the card and no artwork: the scan can only pass over it.
+  const html = modernCard().replace(/ data-id="[^"]*"/, '').replace(/ style="[^"]*"/, '');
+  const h = await setupPipeline(t, { html });
+  h.scan(); h.fetch();
+  assert.equal(h.calls.length, 0);
+  // The lazy loader sets the artwork. Nothing is added to the page, and no chip is drawn anywhere to stir a rescan.
+  h.document.querySelector('.cardImageContainer').style.backgroundImage = `url("http://jellyfin.test/Items/${OTHER}/Images/Primary")`;
+  await settle();
+  h.scan(); h.fetch();
+  assert.deepEqual(h.calls.map(call => call.ids), [[OTHER]], 'the artwork names the item and the scan came back by itself');
+  h.calls[0].resolve({ Items: [{ Id: OTHER, Type: 'Movie', Genres: ['Drama'] }] });
+  await settle();
+  assert.deepEqual(h.genres(), ['Drama']);
+});
+
 test('the pipeline hears the artwork of scanned card images only, not every inline style on the page', async t => {
   const records = [];
   const h = await setupPipeline(t, { html: `<div class="scrollSlider">${modernCard()}</div>`, attributeRecords: records });
