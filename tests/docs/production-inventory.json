@@ -4094,6 +4094,16 @@
     },
     {
       "verb": "POST",
+      "path": "/JellyfinEnhanced/reclaimerr/create-users",
+      "method": "CreateUsers",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ReclaimerrController.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "POST",
       "path": "/JellyfinEnhanced/reclaimerr/service-account",
       "method": "CreateServiceAccount",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ReclaimerrController.cs",
@@ -10958,7 +10968,7 @@
   "counts": {
     "build_targets": 2,
     "files": 500,
-    "routes": 223,
+    "routes": 224,
     "configuration_properties": 788,
     "storage_references": 89,
     "scheduled_tasks": 17,
