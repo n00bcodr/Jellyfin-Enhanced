@@ -431,6 +431,32 @@ test("Forward onto a dialog's entry left behind keeps the tab as it is (the entr
   await until(() => !P.state.categoryPageVisible, 'Back closes the category');
 });
 
+test("a dialog over a category: closing it, Forward onto its entry and a jump onto it from the tab all show the category", async t => {
+  const h = setup(t, { hash: at('jeType=movies'), routes: [[`${DISCOVER}/trending?page=1`, scored([[1, 'movie']])], [`${DISCOVER}/movies?page=1`, scored([[2, 'movie']])]] });
+  const P = h.load();
+  P.renderInto(h.tab());
+  await until(() => loaded(h), 'rows');
+  await P.showCategoryPage('trending');
+  const category = at('jeCategory=trending&jeType=movies');
+  h.window.history.pushState({ usr: { dialogs: ['dlg1'] }, key: 'k1', idx: 2 }, '', `${ORIGIN}/web/index.html${TAB}`);
+  assert.equal(h.hash(), category, "the dialog's entry has the category's address");
+  h.window.history.back();
+  await until(() => !h.window.history.state?.usr, 'closed');
+  h.window.history.forward();
+  await until(() => h.window.history.state?.usr?.dialogs, 'Forward onto its entry');
+  await new Promise(resolve => setTimeout(resolve, 50));
+  assert.equal(P.state.categoryPageVisible, true, 'the category stays');
+  assert.equal(h.hash(), category);
+  assert.equal(h.JE.discoveryFilter.getFilterMode('recommendations'), 'movies');
+  // Back to the tab (past the category's own entry), then a jump of two onto the dialog's entry.
+  h.window.history.go(-2);
+  await until(() => !P.state.categoryPageVisible, 'the tab');
+  assert.equal(h.hash(), at('jeType=movies'));
+  h.window.history.go(2);
+  await until(() => P.state.categoryPageVisible, 'the category again');
+  assert.equal(h.hash(), category);
+});
+
 test("a jump of two entries back while a dialog is open over a category (the browser's history list) leaves the category", async t => {
   const h = setup(t, { hash: at('jeType=movies'), routes: [[`${DISCOVER}/trending?page=1`, scored([[1, 'movie']])], [`${DISCOVER}/movies?page=1`, scored([[2, 'movie']])]] });
   const P = h.load();

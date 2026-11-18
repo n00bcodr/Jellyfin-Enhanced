@@ -161,6 +161,15 @@ for (const fragment of ['', '#jeType=movies']) {
     await paints();
     assert.equal(h.tabs.selectedIndex(), 0, 'still on the tab the user picked after Forward');
     assert.equal(h.window.location.hash, link + fragment);
+    // A second dialog opened on that entry and closed.
+    h.window.history.pushState({ usr: { dialogs: ['dlg1', 'dlg2'] }, key: 'k2', idx: 2 }, '', `http://jellyfin.test/web/index.html${link}`);
+    h.document.body.appendChild(dialog);
+    await paints();
+    dialog.remove();
+    h.window.history.back();
+    await until(() => h.window.history.state?.key === 'k1');
+    await paints();
+    assert.equal(h.tabs.selectedIndex(), 0, 'still on the tab the user picked after a second dialog');
   });
 }
 

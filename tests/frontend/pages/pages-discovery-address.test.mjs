@@ -125,23 +125,30 @@ test("a jellyfin-web dialog after a change (its entry at the router's address, w
   let navigated = 0;
   h.JE.core.navigation.onNavigate(() => { navigated++; });
   // dialogHelper (an item's "…" menu): an entry at the address its router last saw, the open dialogs in the router's state.
+  // The entry gets the page's address as shown.
   h.window.history.pushState({ usr: { dialogs: ['dlg1'] }, key: 'k1', idx: 1 }, '', `${ORIGIN}/web/index.html#/list?genreId=g1&serverId=s`);
+  assert.equal(h.hash(), '#/list?genreId=g1&serverId=s#jeType=series');
+  assert.deepEqual(plain(h.window.history.state), { usr: { dialogs: ['dlg1'] }, key: 'k1', idx: 1 }, "the router's state kept");
   await new Promise(resolve => setTimeout(resolve, 30));
   assert.equal(navigated, 0, 'the dialog opening is not a navigation');
   assert.equal(h.section('genre'), section);
   assert.equal(h.JE.discoveryFilter.getFilterMode('genre'), 'tv');
   h.window.history.back();
-  await until(() => h.hash() === '#/list?genreId=g1&serverId=s#jeType=series', 'Back off the dialog');
+  await until(() => !h.window.history.state?.usr, 'Back off the dialog');
   await new Promise(resolve => setTimeout(resolve, 30));
   assert.equal(navigated, 0, 'nor its closing');
   assert.equal(h.section('genre'), section, 'the same section');
   assert.equal(section.querySelector('.jellyseerr-discovery-filter .emby-tab-button-active').dataset.mode, 'tv');
-  // Forward onto the dialog's entry left behind (no dialog open): the same page, its address put back.
+  // Forward onto the dialog's entry left behind (no dialog open), and a second dialog opened there and closed.
   h.window.history.forward();
   await until(() => h.window.history.state?.usr?.dialogs, 'Forward onto the entry');
-  await new Promise(resolve => setTimeout(resolve, 50));
+  await new Promise(resolve => setTimeout(resolve, 30));
+  h.window.history.pushState({ usr: { dialogs: ['dlg1', 'dlg2'] }, key: 'k2', idx: 2 }, '', `${ORIGIN}/web/index.html#/list?genreId=g1&serverId=s`);
+  h.window.history.back();
+  await until(() => h.window.history.state?.key === 'k1', 'Back off the second dialog');
+  await new Promise(resolve => setTimeout(resolve, 30));
   assert.equal(h.hash(), '#/list?genreId=g1&serverId=s#jeType=series');
-  assert.equal(navigated, 0, 'not a navigation either');
+  assert.equal(navigated, 0, 'none of it a navigation');
   assert.equal(h.section('genre'), section);
   assert.equal(h.JE.discoveryFilter.getFilterMode('genre'), 'tv');
   // A real move still is one.

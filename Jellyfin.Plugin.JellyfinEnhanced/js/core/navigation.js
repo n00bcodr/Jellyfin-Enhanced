@@ -72,11 +72,6 @@
         };
     }
 
-    // A jellyfin-web dialog is open over the page, on the entry it pushed, and the address it opened over
-    // (see dispatchNavigate).
-    let onDialogEntry = false;
-    /** @type {string|null} */
-    let dialogFrom = null;
 
     /**
      * An address without the fragment a page keeps its own state in (`#/route?query#state`, see
@@ -91,12 +86,11 @@
     }
 
     /**
-     * Whether the history entry is one a jellyfin-web dialog added (its router state lists the open dialogs).
+     * Whether the history entry is one a jellyfin-web dialog wrote (its router state lists the open dialogs).
      * @returns {boolean}
      */
     function isDialogEntry() {
-        const dialogs = history.state?.usr?.dialogs;
-        return Array.isArray(dialogs) && dialogs.length > 0;
+        return Array.isArray(history.state?.usr?.dialogs);
     }
 
     /**
@@ -106,32 +100,13 @@
      */
     function dispatchNavigate(event) {
         if (window.location.href === lastDispatchedHref) return;
-        const href = window.location.href;
-        const samePage = lastDispatchedHref !== null && routerPart(href) === routerPart(lastDispatchedHref);
-        const dialogEntry = isDialogEntry();
-        // A jellyfin-web dialog opened on the page (an item's "…" menu) pushes an entry at the address its
-        // router last saw, without the page's own fragment, and its Back returns to the address it opened
-        // over: neither is a navigation, the page is still there showing what it did.
-        if (samePage && dialogEntry && event?.type === 'je:navigate') {
-            if (!onDialogEntry) dialogFrom = lastDispatchedHref;
-            onDialogEntry = true;
-            lastDispatchedHref = href;
-            return;
-        }
-        if (onDialogEntry && !dialogEntry && href === dialogFrom) {
-            onDialogEntry = false;
-            dialogFrom = null;
-            lastDispatchedHref = href;
-            return;
-        }
-        onDialogEntry = false;
-        dialogFrom = null;
-        // Back or Forward onto such an entry left behind, with no dialog open, on the page shown: the same
-        // page, which gets its address back (its fragment). From a category page it is a move off the
-        // category, and a navigation.
-        const shown = String(lastDispatchedHref);
-        if (samePage && dialogEntry && href === routerPart(href) && !/(?:^|[#&])jeCategory=/.test(shown.slice(routerPart(shown).length))) {
-            (unpatchedReplace || history.replaceState.bind(history))(history.state, '', shown);
+        // A jellyfin-web dialog opened on the page (an item's "…" menu) pushes an entry at the address its router
+        // last saw, which lacks the page's own fragment (its Seerr filters, the Recommendations category, see
+        // discovery-address.js). The entry gets the page's address as it is shown: the page is still there, and
+        // closing the dialog, Back and Forward over its entry and a reload on it all find the page as it was.
+        if (event?.type === 'je:navigate' && lastDispatchedHref !== null && isDialogEntry()
+            && routerPart(window.location.href) === routerPart(lastDispatchedHref)) {
+            (unpatchedReplace || history.replaceState.bind(history))(history.state, '', lastDispatchedHref);
             return;
         }
         lastDispatchedHref = window.location.href;
@@ -157,8 +132,6 @@
         const change = push ? (unpatchedPush || history.pushState.bind(history)) : (unpatchedReplace || history.replaceState.bind(history));
         change(state, '', url);
         lastDispatchedHref = window.location.href;
-        onDialogEntry = false;
-        dialogFrom = null;
     }
 
     /**
