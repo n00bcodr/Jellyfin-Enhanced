@@ -594,7 +594,7 @@ Use `.status-overlay-container` and `.status-tag` to style the Just Added, New a
 }
 ```
 
-The default look is a dark translucent pill with a blurred backdrop, the same for every kind except the warmer rank colour. Status Tags are not part of Tag Styles.
+The default look is a dark translucent pill, the same for every kind except the warmer rank colour. Status Tags are not part of Tag Styles.
 
 The opt-in [Leaving soon](../enhanced/tags.md#leaving-soon-maintainerr) badges are `.status-tag--leaving` with `data-je-status="leaving"`; the [direct-play warning](../enhanced/tags.md#direct-play-warning) is `.status-tag--playback` with `data-je-status="direct_play"` and `data-je-dp`, which takes pointer events so its `title` tooltip shows:
 

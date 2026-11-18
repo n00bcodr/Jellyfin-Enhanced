@@ -1568,8 +1568,10 @@
                     gap: 0.25em;
                     padding: calc(4px * var(--je-tag-scale, 1)) calc(10px * var(--je-tag-scale, 1));
                     background-color: rgba(15, 15, 15, 0.72);
-                    -webkit-backdrop-filter: blur(6px);
-                    backdrop-filter: blur(6px);
+                    /* No backdrop-filter: a blur made every status tag a
+                       compositor layer and promoted whatever painted over it
+                       (rating tags and the shared chip box dropped theirs for
+                       the same reason; native posters never had one). */
                     color: #ffffff;
                     border: 1px solid rgba(255, 255, 255, 0.18);
                     border-radius: 6px;
