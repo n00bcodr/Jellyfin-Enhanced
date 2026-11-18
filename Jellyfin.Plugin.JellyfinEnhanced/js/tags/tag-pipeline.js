@@ -74,7 +74,8 @@
     let reviewRatings = null;        // Map<"mediaType:tmdbKey", average> from the payload; null = unavailable
     let reviewRatingsRequestedAt = 0; // performance.now() when the request behind reviewRatings started
     const reviewRatingsListeners = new Set(); // called with the changed keys (Set, or null = all) when averages change
-    const PERSIST_SLICE = 250;       // entries per idle-slice write (each put clones its entry on this thread)
+    const PERSIST_SLICE = 250;       // most entries per idle-slice write (each put clones its entry on this thread)
+    const PERSIST_BUDGET_MS = 4;     // a background slice ends early once its puts took this long (slow devices write less per slice)
     const PERSIST_START_DELAY_MS = 1500; // let the page's first tag scans have the idle time before persisting
     // Shape of the stored entries (the server's tag cache schema they were
     // written under). A stored copy of another shape is dropped on restore and
@@ -563,10 +564,14 @@
             const token = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
             // Another tab already stored newer data: keep it.
             if (!await store.beginFullWrite(scope, token, { servedAt })) return;
-            for (let i = 0; i < entries.length; i += PERSIST_SLICE) {
+            for (let i = 0; i < entries.length;) {
                 await idleYield();
                 if (generation !== persistGeneration) return;
-                if (!await store.putManyIfOwner(scope, token, entries.slice(i, i + PERSIST_SLICE))) return;
+                const slice = entries.slice(i, i + PERSIST_SLICE);
+                // true: the whole slice; a number: the budget ended it early.
+                const wrote = await store.putManyIfOwner(scope, token, slice, PERSIST_BUDGET_MS);
+                if (!wrote) return;
+                i += wrote === true ? slice.length : wrote;
             }
             if (generation !== persistGeneration) return;
             if (await store.commitFullWrite(scope, token, meta)) {

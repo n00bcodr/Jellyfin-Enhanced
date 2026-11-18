@@ -9,7 +9,7 @@ const settle = () => new Promise(resolve => setTimeout(resolve, 0));
  * `change(page)` may alter the answer of a page (another generation, another filter). Deltas answer empty.
  * The stub store accepts the full write and records how many entries it was given.
  */
-async function pagedHarness(t, { total, change = () => null, pages = true, storage = true, waitFor = null, commitGate = null } = {}) {
+async function pagedHarness(t, { total, change = () => null, pages = true, storage = true, waitFor = null, commitGate = null, put = null } = {}) {
   const ids = Array.from({ length: total }, (_, i) => `m${String(i).padStart(6, '0')}`);
   const requests = [];
   const stored = { entries: 0, committed: false, began: 0 };
@@ -47,7 +47,7 @@ async function pagedHarness(t, { total, change = () => null, pages = true, stora
         getMany: async (scope, wanted) => ({ entries: new Map(wanted.filter(id => ids.includes(id)).map(id => [id, { Type: 'Movie', Genres: [id], stored: true }])), meta: stored.committed ? { version: 4, filterRevision: 'r1', servedAt: 60, count: stored.entries } : null }),
         clearScope: async () => {}, clearOtherScopes: async () => {},
         beginFullWrite: async () => { stored.began++; stored.entries = 0; stored.committed = false; return true; },
-        putManyIfOwner: async (scope, token, entries) => { stored.entries += entries.length; return true; },
+        putManyIfOwner: put ? (scope, token, entries, budgetMs) => put(stored, entries, budgetMs) : async (scope, token, entries) => { stored.entries += entries.length; return true; },
         commitFullWrite: async () => { if (commitGate) await commitGate; stored.committed = true; return true; },
         applyDelta: async () => true,
         reconcileAccess: async () => ({ applied: true, dropped: [] }),
@@ -74,6 +74,26 @@ test('a full load reads the cache in bounded pages, then a delta since the first
   for (const id of [ids[0], ids[2000], ids[4499]]) assert.deepEqual(JSON.parse(JSON.stringify(pipeline.peekServerEntry(id))), { Type: 'Movie', Genres: [id] });
   for (let i = 0; i < 40 && !requests.some(r => 'since' in r); i++) await settle();
   assert.equal(requests.find(r => 'since' in r)?.since, '50', 'the delta starts at the first page, so changes made while paging arrive');
+});
+
+test('a background write whose slice ran out of time resumes after what was written: every entry once, in order, then the commit', async t => {
+  const written = [];
+  const budgets = new Set();
+  // A slow device: each slice only manages a few entries before its time is up (the store answers how many).
+  const put = async (stored, entries, budgetMs) => {
+    budgets.add(budgetMs);
+    const done = Math.min(entries.length, 90);
+    for (const [id] of entries.slice(0, done)) written.push(id);
+    stored.entries += done;
+    return done === entries.length ? true : done;
+  };
+  const { ids, stored } = await pagedHarness(t, { total: 400, put });
+  // The write starts after a short idle delay.
+  for (let i = 0; i < 400 && !stored.committed; i++) await new Promise(resolve => setTimeout(resolve, 10));
+  assert.equal(stored.committed, true);
+  assert.deepEqual(written, ids, 'nothing skipped or written twice');
+  assert.equal(budgets.size, 1);
+  assert.ok([...budgets][0] > 0, 'background slices are given a time budget');
 });
 
 test('pages from another generation or filter start the load over; a load that keeps changing never asks for everything at once', async t => {
