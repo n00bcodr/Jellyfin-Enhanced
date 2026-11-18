@@ -1,8 +1,10 @@
 using System;
+using System.Linq;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Data;
+using Jellyfin.Plugin.JellyfinEnhanced.Extensions;
 using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
 using Jellyfin.Plugin.JellyfinEnhanced.Services;
 using MediaBrowser.Controller.Entities;
@@ -19,6 +21,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// <summary>Create service account: a Reclaimerr administrator, used for this one call and never stored.</summary>
         [JsonPropertyName("adminUsername")] public string? AdminUsername { get; set; }
         [JsonPropertyName("adminPassword")] public string? AdminPassword { get; set; }
+    }
+
+    /// <summary>Body of the create-users route: what every new account gets.</summary>
+    public class ReclaimerrCreateUsersRequest
+    {
+        [JsonPropertyName("permissions")] public string[]? Permissions { get; set; }
+        [JsonPropertyName("pages")] public string[]? Pages { get; set; }
     }
 
     /// <summary>Body of the request review routes.</summary>
@@ -175,6 +184,46 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             try
             {
                 return Ok(await action(item, config!).ConfigureAwait(false));
+            }
+            catch (MaintainerrActions.ActionException ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
+            catch (OperationCanceledException) when (HttpContext.RequestAborted.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(502, new { error = "Reclaimerr: " + MaintainerrHttp.Describe(ex) });
+            }
+        }
+
+        /// <summary>
+        /// Create a Reclaimerr account for every Jellyfin user that has none, with the permissions and pages picked, through the
+        /// service account, and map each new account to its Jellyfin user. Administrators only. Answers <c>{created, existing, skipped}</c>.
+        /// </summary>
+        [HttpPost("create-users")]
+        [Authorize]
+        [Produces("application/json")]
+        public async Task<IActionResult> CreateUsers([FromBody] ReclaimerrCreateUsersRequest? request, CancellationToken token)
+        {
+            if (!IsAdmin()) return Forbid();
+            var plugin = JellyfinEnhanced.Instance;
+            var config = plugin?.Configuration;
+            if (plugin == null || config == null || !ReclaimerrActions.Enabled(config)) return NotFound();
+            try
+            {
+                var names = UserManager.GetAllUsers().Select(u => u.Username).ToList();
+                var result = await _reclaimerr.CreateAccountsAsync(config, names, request?.Permissions ?? Array.Empty<string>(), request?.Pages ?? Array.Empty<string>(), token).ConfigureAwait(false);
+                if (result.Created.Count > 0)
+                {
+                    // The plugin acts as a user only through a mapping or link (it never guesses by name), so record each new account.
+                    var lines = string.Concat(result.Created.Select(c => $"\n{c.Jellyfin} = {c.Reclaimerr}"));
+                    plugin.UpdateConfiguration(c => { c.ReclaimerrUserMap = ((c.ReclaimerrUserMap ?? string.Empty).TrimEnd() + lines).Trim(); return c; }, fullSave: false);
+                }
+
+                return Ok(new { created = result.Created.Select(c => c.Jellyfin).ToList(), existing = result.Existing, skipped = result.Skipped, userMap = plugin.Configuration.ReclaimerrUserMap });
             }
             catch (MaintainerrActions.ActionException ex)
             {

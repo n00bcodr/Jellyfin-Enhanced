@@ -1287,7 +1287,20 @@ JEAdmin.define({
               desc: 'Optional. With <strong>Act as the Jellyfin user</strong> on and Reclaimerr\'s trusted-proxy sign-in working, the service account signs in by name alone, so this can stay empty (and Reclaimerr\'s local login can be switched off). It is used only when that does not work.' },
             { type: 'custom', showIf: 'ReclaimerrEnabled', html: '<div class="inputContainer jea-row"><button type="button" id="reclaimerrCreateAccountBtn" class="jea-btn">Create service account</button>'
                 + '<div id="reclaimerrCreateAccountLine" class="jea-hint">Asks for a Reclaimerr administrator\'s name once (and a password only if their trusted sign-in is not available; not stored), creates a <code>jellyfin-enhanced</code> admin account with a random password and saves it here. Save the Reclaimerr URL first.</div></div>',
-              init: () => JEAdmin.maintainerr && JEAdmin.maintainerr.wireCreateAccount() }
+              init: () => JEAdmin.maintainerr && JEAdmin.maintainerr.wireCreateAccount() },
+            { type: 'group', title: 'Create Reclaimerr accounts for Jellyfin users', open: true, showIf: 'ReclaimerrEnabled', items: [
+                { type: 'note', html: 'Creates a Reclaimerr account for every Jellyfin user who has none, so each person\'s requests carry their own name and they can see them under <strong>My requests</strong>. They sign in through the trusted-proxy sign-in, so there is no password to know. Needs the service account above. Existing accounts are left as they are. Names shorter than 5 characters get <code>_user</code> added (Reclaimerr\'s minimum), and other characters become <code>_</code>.' },
+                { type: 'custom', html: '<div class="inputContainer">'
+                    + '<div><strong>What the new accounts may do</strong></div>'
+                    + '<div id="reclaimerrNewPerms" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:6px 16px;margin:8px 0 16px">'
+                    + [['request', 'Request removals'], ['auto_approve', 'Auto-approve'], ['manage_requests', 'Manage requests'], ['manage_protection', 'Manage protection'], ['manage_reclaim', 'Manage reclaim']].map(([v, l]) => '<label><input type="checkbox" value="' + v + '"> ' + l + '</label>').join('') + '</div>'
+                    + '<div><strong>Reclaimerr pages they can open</strong></div>'
+                    + '<div id="reclaimerrNewPages" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:6px 16px;margin:8px 0 16px">'
+                    + ['requests', 'candidates', 'settings', 'dashboard', 'movies', 'series', 'protected', 'duplicates', 'calendar', 'storage', 'history'].map((v) => '<label><input type="checkbox" value="' + v + '"> ' + v.charAt(0).toUpperCase() + v.slice(1) + '</label>').join('') + '</div>'
+                    + '<div class="jea-row"><button type="button" id="reclaimerrCreateUsersBtn" class="jea-btn">Create accounts for all Jellyfin users</button></div>'
+                    + '<div id="reclaimerrCreateUsersLine" class="jea-hint"></div></div>',
+                  init: () => JEAdmin.maintainerr && JEAdmin.maintainerr.wireCreateUsers() }
+            ] }
         ]
     },
     // Shared by whichever removal tool is on: the live state, the item menu, the home row and the refresh interval.
@@ -1428,6 +1441,36 @@ JEAdmin.maintainerr = (function () {
         });
     }
 
+    /** Create a Reclaimerr account for every Jellyfin user that has none, with the ticked permissions and pages. */
+    function wireCreateUsers() {
+        const button = el('reclaimerrCreateUsersBtn');
+        if (!button || button._wired) return;
+        button._wired = true;
+        // Set in script rather than markup so nothing else on the page can change the starting ticks.
+        const start = { reclaimerrNewPerms: ['request'], reclaimerrNewPages: ['requests', 'candidates', 'settings'] };
+        for (const [id, on] of Object.entries(start)) for (const box of document.querySelectorAll('#' + id + ' input')) box.checked = on.includes(box.value);
+        const ticked = (id) => Array.from(document.querySelectorAll('#' + id + ' input:checked')).map((i) => i.value);
+        button.addEventListener('click', async () => {
+            const line = el('reclaimerrCreateUsersLine');
+            const pages = ticked('reclaimerrNewPages');
+            if (!pages.length) { if (line) line.textContent = 'Pick at least one page.'; return; }
+            if (!window.confirm('Create a Reclaimerr account for every Jellyfin user who has none?')) return;
+            button.disabled = true;
+            try {
+                const answer = await ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('JellyfinEnhanced/reclaimerr/create-users'), data: JSON.stringify({ permissions: ticked('reclaimerrNewPerms'), pages }), contentType: 'application/json', dataType: 'json' });
+                // The page's Save writes the user map back, so it must hold the new lines or Save would drop them.
+                const map = el('ReclaimerrUserMap');
+                if (map && typeof answer.userMap === 'string') map.value = answer.userMap;
+                const skipped = answer.skipped || [];
+                if (line) line.textContent = 'Created ' + answer.created.length + ', already had an account: ' + answer.existing + (skipped.length ? ', not created: ' + skipped.join('; ') : '') + '.';
+            } catch (err) {
+                let reason = null;
+                try { reason = typeof err?.json === 'function' ? (await err.json())?.error : null; } catch (e) { /* no body */ }
+                if (line) line.textContent = 'Could not create the accounts: ' + (reason || err?.status || err?.message || 'request failed');
+            } finally { button.disabled = false; }
+        });
+    }
+
     function wire() {
         const button = el('maintainerrRefreshBtn');
         if (!button || button._wired) return;
@@ -1447,6 +1490,6 @@ JEAdmin.maintainerr = (function () {
         });
         setTimeout(() => load(false), 0);
     }
-    const api = { wire, wireCreateAccount, load, status: () => last, onStatus: null };
+    const api = { wire, wireCreateAccount, wireCreateUsers, load, status: () => last, onStatus: null };
     return api;
 })();
