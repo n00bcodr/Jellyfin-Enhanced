@@ -1043,6 +1043,10 @@
       "category": "js"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/component-groups.json",
+      "category": "js"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/component-scripts.json",
       "category": "js"
     },
@@ -10551,6 +10555,10 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/CdnAssetService.cs"
     },
     {
+      "literal": "component-groups.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/ClientScriptBundle.cs"
+    },
+    {
       "literal": "component-scripts.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/ClientScriptBundle.cs"
     },
@@ -10957,10 +10965,10 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 500,
+    "files": 501,
     "routes": 223,
     "configuration_properties": 788,
-    "storage_references": 89,
+    "storage_references": 90,
     "scheduled_tasks": 17,
     "locales": 33
   }
