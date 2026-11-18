@@ -326,6 +326,10 @@
         background: var(--jf-palette-text-primary, #e8e8e8);
         color: var(--jf-palette-background-default, #101010);
       }
+      /* The pill's ::after is only its press area: a theme that draws the chosen tab's bar there (JellyFlix's
+         .emby-tab-button-active::after) would draw it through the words while filters are set. */
+      .je-reco-tools .jellyseerr-filters-btn.emby-tab-button::after,
+      .je-recommendations-category-controls .jellyseerr-filters-btn.emby-tab-button::after { background: none; }
       /* Forced colours: each an edge, the one in use (and Filters while set) in the system's highlight. */
       @media (forced-colors: active) {
         .je-reco-tools .jellyseerr-filters-btn.emby-tab-button,
