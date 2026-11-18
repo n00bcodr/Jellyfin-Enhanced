@@ -33,7 +33,8 @@ for (const edge of ['tight', 'flush']) for (const [scale, gap, size, spacing] of
         const el = host.querySelector(`[data-je-slot="${slot}"]`), chip = el.querySelector('.quality-overlay-label');
         const c = chip.getBoundingClientRect(), h = host.getBoundingClientRect(), st = getComputedStyle(el);
         rows.push({ slot, left: c.left - h.left, right: h.right - c.right, top: c.top - h.top, bottom: h.bottom - c.bottom,
-          gap: parseFloat(st.gap), font: parseFloat(getComputedStyle(chip).fontSize), inset: parseFloat(st.left),
+          // The stacking gap: the slot's own, or, for a bottom stack of a card resting in flow, its children's top margin.
+          gap: parseFloat(st.rowGap) || parseFloat(getComputedStyle(el.firstElementChild).marginTop), font: parseFloat(getComputedStyle(chip).fontSize), inset: parseFloat(st.left),
           progressBottom: parseFloat(el.style.getPropertyValue('--je-anchor-bottom')), clipped: getComputedStyle(host).overflow, radius: getComputedStyle(host).borderRadius });
       }
       return rows;

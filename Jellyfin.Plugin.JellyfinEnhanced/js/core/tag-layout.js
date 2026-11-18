@@ -1965,7 +1965,7 @@
             const conf = resolveLayout(ctrl);
             shown.push([ctrl, conf]);
             if (host.dataset.jeLive || !flowFor(ctrl, conf)) continue;
-            const slots = slotKinds(ctrl, conf).filter(([, key]) => !claimed.has(key));
+            const slots = measurableKinds(ctrl, conf).filter(([, key]) => !claimed.has(key));
             if (!slots.length) continue;
             for (const [, key] of slots) claimed.add(key);
             probes.push({ host, slots });
@@ -2036,6 +2036,54 @@
             kinds.push([slot, `${context}|${slot.dataset.jeSlot || ''}|${Array.from(slot.children, classOf).join(',')}`]);
         }
         return kinds;
+    }
+
+    /** @type {WeakSet<HTMLElement>} hosts waiting for an image of theirs to load before they are asked about (awaitImages) */
+    const awaitingImages = new WeakSet();
+
+    /**
+     * Whether a slot holds an image that has not finished loading (a flag, a
+     * logo): its chips do not have the boxes they will have, and two layouts
+     * of empty boxes prove nothing.
+     * @param {HTMLElement} slot
+     * @returns {boolean}
+     */
+    function imagesLoading(slot) {
+        for (const img of slot.querySelectorAll('img')) if (!(/** @type {HTMLImageElement} */ (img)).complete) return true;
+        return false;
+    }
+
+    /**
+     * Decide a card's layout again when one of its images has loaded or
+     * failed (neither event bubbles: heard on the way down to it).
+     * @param {CardController} ctrl
+     */
+    function awaitImages(ctrl) {
+        const host = ctrl.host;
+        if (awaitingImages.has(host)) return;
+        awaitingImages.add(host);
+        const settled = () => {
+            host.removeEventListener('load', settled, true);
+            host.removeEventListener('error', settled, true);
+            awaitingImages.delete(host);
+            if (host.isConnected && controllers.get(host) === ctrl && ctrl.layout) syncFlow(ctrl, resolveLayout(ctrl));
+        };
+        host.addEventListener('load', settled, true);
+        host.addEventListener('error', settled, true);
+    }
+
+    /**
+     * The kinds of slot of a card that can be asked about now; a card with a
+     * slot whose images are still loading is asked about that slot later.
+     * @param {CardController} ctrl
+     * @param {TagLayoutSettings} conf
+     * @returns {Array<[HTMLElement, string]>}
+     */
+    function measurableKinds(ctrl, conf) {
+        const kinds = slotKinds(ctrl, conf);
+        const ready = kinds.filter(([slot]) => !imagesLoading(slot));
+        if (ready.length < kinds.length) awaitImages(ctrl);
+        return ready;
     }
 
     /**
@@ -2142,7 +2190,7 @@
             if (!(host.clientWidth > 0)) { awaitSize(ctrl); continue; }
             const conf = resolveLayout(ctrl);
             if (!flowFor(ctrl, conf)) continue;
-            const slots = slotKinds(ctrl, conf).filter(([, key]) => !flowAlike.has(key) && !claimed.has(key));
+            const slots = measurableKinds(ctrl, conf).filter(([, key]) => !flowAlike.has(key) && !claimed.has(key));
             if (!slots.length) continue;
             for (const [, key] of slots) claimed.add(key);
             probes.push({ host, slots });

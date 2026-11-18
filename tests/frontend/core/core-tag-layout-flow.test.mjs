@@ -81,8 +81,12 @@ function setup(t, { html = card(), settings = {}, plugin = {}, supports = () => 
   /** Run the frames queued so far, and the ones they queue (the after-paint passes). */
   const settle = () => { for (let i = 0; i < 20 && frames.length; i++) for (const fn of frames.splice(0)) fn(); };
   Object.assign(h, { host, settle, sized });
-  // A laid-out page: every host has a size and every slot and group a box, the same in either layout.
+  // A laid-out page: every host has a size and every slot and group a box, the same in either layout,
+  // and its images have loaded (`loading` holds the ones a test says have not).
   layOut(h);
+  const loading = new Set();
+  Object.defineProperty(h.window.HTMLImageElement.prototype, 'complete', { configurable: true, get() { return !loading.has(this); } });
+  h.loading = loading;
   return Object.assign(h, {
     layout: JE.core.tagLayout, asked, renderers,
     render() { for (const [, r] of renderers) if (r.isEnabled() && r.renderFromServerCache) r.renderFromServerCache(host(), entry(), ID); },
@@ -652,6 +656,38 @@ test('a window width that holds re-asks the page\'s CSS (a media query may have 
   h.settle();
   assert.ok(h.layout.flowStats().probes > asked);
   assert.equal(h.flow(), '1');
+});
+
+test('a slot whose image is still loading is not asked about: empty boxes are the same in any layout', t => {
+  // The flag has no size yet. Custom CSS (or a host that is not the card's box) lays the loaded flag out
+  // differently in flow, which two measurements of an empty group would not show.
+  const h = setup(t);
+  let loaded = false;
+  layOut(h, { moved: (el, flow) => (loaded && flow && el.classList.contains('language-overlay-container') ? [0, 11] : null) });
+  const wrap = h.flags(false);
+  const flag = wrap.querySelector('img');
+  h.loading.add(flag);
+  h.layout.commitGroup(h.host(), 'language', wrap);
+  const placed = h.host().querySelector('img.language-flag');
+  h.loading.add(placed);
+  assert.equal(h.flow(), undefined, 'positioned until the image is there');
+  assert.equal(h.layout.flowStats().probes, 0);
+  loaded = true;
+  h.loading.clear();
+  placed.dispatchEvent(new h.window.Event('load'));
+  assert.equal(h.flow(), undefined, 'asked now, and the answer is no');
+  assert.ok(h.layout.flowStats().probes > 0);
+  // The same with nothing in the way: flow once the image has loaded.
+  const plain = setup(t);
+  const other = plain.flags(false);
+  plain.layout.commitGroup(plain.host(), 'language', other);
+  const img = plain.host().querySelector('img.language-flag');
+  plain.loading.add(img);
+  plain.layout.syncFlowOf(plain.host());
+  assert.equal(plain.flow(), undefined);
+  plain.loading.clear();
+  img.dispatchEvent(new plain.window.Event('error'));
+  assert.equal(plain.flow(), '1', 'a failed image has settled too');
 });
 
 test('a card that cannot be measured stays positioned until one of its kind can', t => {
