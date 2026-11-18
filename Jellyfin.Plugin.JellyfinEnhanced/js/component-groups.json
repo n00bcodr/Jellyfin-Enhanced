@@ -7,7 +7,7 @@
         "Rules: a module is in one group; inside a group modules run in manifest order; \"after\" names groups (listed earlier in this file) whose modules",
         "must have run first, because this group reads their exports while loading or cannot work without them. The order of this file is the order groups",
         "run in when several load together. A new module that is not listed here loads on every page: list it in a group unless every page needs it.",
-        "tests/frontend/bootstrap/bootstrap-groups.test.mjs checks the split (each group loads with only what it is after) and the size budgets in scripts/bundle-budgets.json."
+        "tests/frontend/bootstrap/bootstrap-groups.test.mjs checks the split (each group loads with only what it is after); bootstrap-bundle-budget.test.mjs checks the sizes against scripts/bundle-budgets.json."
     ],
     "groups": [
         {

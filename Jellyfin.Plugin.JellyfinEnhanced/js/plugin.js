@@ -1903,6 +1903,10 @@
                     // The incoming user may have features on that the previous
                     // one did not: load their groups (which also runs their
                     // stage-6 initializers) before the re-initialization below.
+                    // A tag type whose group has only just loaded is then started
+                    // twice, which these initializers allow (see below); skipping
+                    // the second call could miss a group that finished loading
+                    // while an earlier switch's settings were still being cleared.
                     await loadNeededGroups();
                     if (!JE.session.isCurrent(epoch)) return;
 
