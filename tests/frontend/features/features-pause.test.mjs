@@ -68,6 +68,24 @@ function playing(t,{current=src(A),sessions=null}={}){
  Object.defineProperty(video,'currentSrc',{get:()=>currentSrc});Object.defineProperty(video,'paused',{get:()=>paused});Object.defineProperty(video,'duration',{get:()=>2700});
  return {h,p,video,setSource:value=>{currentSrc=value;},pause:async()=>{paused=true;video.dispatchEvent(new h.window.Event('pause'));await flush();},overlay:()=>p.overlay.getAttribute('aria-hidden'),plot:()=>p.overlayPlot.textContent};
 }
+test('the pause screen listens for interaction only while there is a video',async t=>{
+ const x=playing(t);const {h,p}=x;
+ const interact=type=>{p.lastUserInteractionAt=0;h.document.dispatchEvent(new h.window.Event(type,{bubbles:true}));return p.lastUserInteractionAt>0;};
+ for(const type of ['wheel','mousedown','click','touchstart','touchmove','keydown'])assert.equal(interact(type),false,`no video: ${type} is not listened for`);
+ p.checkForVideoChanges();await flush();
+ for(const type of ['wheel','mousedown','click','touchstart','touchmove','keydown'])assert.equal(interact(type),true,`a video: ${type} counts as interaction`);
+ const move=(x,y)=>{p.lastUserInteractionAt=0;h.document.dispatchEvent(new h.window.MouseEvent('mousemove',{bubbles:true,clientX:x,clientY:y}));return p.lastUserInteractionAt>0;};
+ assert.equal(move(10,10),false,'the first movement only records where the pointer is');
+ assert.equal(move(14,14),false,'a small movement is ignored');
+ assert.equal(move(60,60),true,'a real movement counts');
+ h.document.body.innerHTML='';p.checkForVideoChanges();
+ assert.equal(interact('wheel'),false,'the video is gone: nothing is listened for');
+ assert.equal(move(200,200),false);
+ // A second video is listened for again, and teardown stops it.
+ h.document.body.innerHTML='<div class="videoPlayerContainer"><video></video></div>';p.checkForVideoChanges();await flush();
+ assert.equal(interact('wheel'),true);
+ p.destroy();assert.equal(interact('wheel'),false);
+});
 test('a source change on the same video element drops the previous item before the next pause',async t=>{
  const x=playing(t);x.p.checkForVideoChanges();await flush();
  assert.equal(x.plot(),'overview A');
