@@ -10,8 +10,14 @@
 // navs and missing pushState navs entirely. This module patches history once,
 // listens once, dedupes, and fans out to registered callbacks.
 //
+// A page's own state kept in a fragment after its address (the Seerr filters, see
+// discovery-address.js) is written with setAddressQuietly, which is no
+// navigation; a jellyfin-web dialog's history entry on the page is given the
+// page's address (dispatchNavigate).
+//
 // Public surface: JE.core.navigation { onNavigate, offNavigate, onViewPage,
-// getCurrentView }. JE.helpers keeps thin aliases for unmigrated callers.
+// getCurrentView, setAddressQuietly }. JE.helpers keeps thin aliases for
+// unmigrated callers.
 (function(JE) {
     'use strict';
 
@@ -94,6 +100,29 @@
     }
 
     /**
+     * An address's route (`…#/home`), without its query and fragment.
+     * @param {string} href
+     * @returns {string}
+     */
+    function routeOf(href) {
+        const text = String(href);
+        const at = text.indexOf('#');
+        return at < 0 ? text : text.slice(0, at + 1) + text.slice(at + 1).split(/[?#]/)[0];
+    }
+
+    /**
+     * A page as the plugin's pages tell them apart: the router's part of its address, and the page a
+     * fragment opens over it (the Recommendations category), not the filters it shows.
+     * @param {string} href
+     * @returns {string}
+     */
+    function pageOf(href) {
+        const head = routerPart(href);
+        const category = /(?:^|[#&])jeCategory=([^&]*)/.exec(String(href).slice(head.length));
+        return `${head}#${category ? category[1] : ''}`;
+    }
+
+    /**
      * Fan a navigation event out to all subscribers, at most once per URL
      * change (popstate + hashchange pairs collapse to one dispatch).
      * @param {Event} [event]
@@ -102,12 +131,17 @@
         if (window.location.href === lastDispatchedHref) return;
         // A jellyfin-web dialog opened on the page (an item's "…" menu) pushes an entry at the address its router
         // last saw, which lacks the page's own fragment (its Seerr filters, the Recommendations category, see
-        // discovery-address.js). The entry gets the page's address as it is shown: the page is still there, and
-        // closing the dialog, Back and Forward over its entry and a reload on it all find the page as it was.
-        if (event?.type === 'je:navigate' && lastDispatchedHref !== null && isDialogEntry()
-            && routerPart(window.location.href) === routerPart(lastDispatchedHref)) {
-            (unpatchedReplace || history.replaceState.bind(history))(history.state, '', lastDispatchedHref);
-            return;
+        // discovery-address.js) and can lag behind its query (a tab number corrected in place). The entry gets
+        // the page's address as it is shown: the page is still there, and closing the dialog and a reload on its
+        // entry find the page as it was. Back or Forward onto such an entry of the page shown gives it the page's
+        // address as it is now (its filters may have changed since): the same page, not a navigation.
+        if (lastDispatchedHref !== null && isDialogEntry()) {
+            const href = window.location.href;
+            const pushed = event?.type === 'je:navigate';
+            if (pushed ? routeOf(href) === routeOf(lastDispatchedHref) : pageOf(href) === pageOf(lastDispatchedHref)) {
+                (unpatchedReplace || history.replaceState.bind(history))(history.state, '', lastDispatchedHref);
+                return;
+            }
         }
         lastDispatchedHref = window.location.href;
         for (const callback of navCallbacks) {

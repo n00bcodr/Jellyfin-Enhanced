@@ -470,3 +470,21 @@ test("a jump of two entries back while a dialog is open over a category (the bro
   await until(() => !P.state.categoryPageVisible, 'the category is left');
 });
 
+test("a dialog pushed at a tab number the router has not seen corrected (native tabs fix it in place) still gets the page's address", async t => {
+  const stale = '#/home?tab=5&jeTab=recommendations';
+  const h = setup(t, { hash: `${stale}#jeType=movies`, routes: [[`${DISCOVER}/movies?page=1`, scored([[2, 'movie']])]] });
+  const P = h.load();
+  P.renderInto(h.tab());
+  await until(() => loaded(h), 'rows');
+  // The native tabs correct the number in place, which jellyfin-web's router never sees.
+  h.window.history.replaceState(h.window.history.state, '', `${ORIGIN}/web/index.html${at('jeType=movies')}`);
+  await new Promise(resolve => setTimeout(resolve, 30));
+  let navigated = 0;
+  h.JE.core.navigation.onNavigate(() => { navigated++; });
+  h.window.history.pushState({ usr: { dialogs: ['dlg1'] }, key: 'k1', idx: 1 }, '', `${ORIGIN}/web/index.html${stale}`);
+  await new Promise(resolve => setTimeout(resolve, 30));
+  assert.equal(h.hash(), at('jeType=movies'));
+  assert.equal(navigated, 0, 'not a navigation');
+  assert.equal(h.JE.discoveryFilter.getFilterMode('recommendations'), 'movies');
+});
+

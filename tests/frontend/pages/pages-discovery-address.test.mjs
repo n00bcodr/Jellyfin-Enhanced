@@ -156,6 +156,47 @@ test("a jellyfin-web dialog after a change (its entry at the router's address, w
   assert.equal(navigated, 1);
 });
 
+test("a filter changed after a dialog closed, then Forward onto the dialog's entry: the page as it is now, no navigation", async t => {
+  const h = setup(t, { hash: '#/list?genreId=g1&serverId=s', routes: [...GENRE,
+    [`${API}/jellyseerr/discover/tv/genre/35?page=1`, feed([1], 'tv')], [`${API}/jellyseerr/discover/movies/genre/36?page=1`, feed([11], 'movie')]] });
+  h.load('jellyseerr/discovery/genre-discovery.js');
+  await until(() => ids(h.section('genre')).length === 2, 'first page');
+  const section = h.section('genre');
+  section.querySelector('.jellyseerr-discovery-filter [data-mode="tv"]').click();
+  let navigated = 0;
+  h.JE.core.navigation.onNavigate(() => { navigated++; });
+  h.window.history.pushState({ usr: { dialogs: ['dlg1'] }, key: 'k1', idx: 1 }, '', `${ORIGIN}/web/index.html#/list?genreId=g1&serverId=s`);
+  h.window.history.back();
+  await until(() => !h.window.history.state?.usr, 'closed');
+  section.querySelector('.jellyseerr-discovery-filter [data-mode="movies"]').click();
+  assert.equal(h.hash(), '#/list?genreId=g1&serverId=s#jeType=movies');
+  h.window.history.forward();
+  await until(() => h.window.history.state?.usr?.dialogs, 'Forward onto the entry');
+  await new Promise(resolve => setTimeout(resolve, 50));
+  assert.equal(h.hash(), '#/list?genreId=g1&serverId=s#jeType=movies', 'the entry has the page as it is now');
+  assert.equal(navigated, 0);
+  assert.equal(h.section('genre'), section);
+  assert.equal(h.JE.discoveryFilter.getFilterMode('genre'), 'movies');
+});
+
+test("a bound typed on a page and left before it is taken is not taken on the next page", async t => {
+  const h = setup(t, { hash: '#/list?genreId=g1&serverId=s', routes: [...GENRE, [`${API}/genre/g2`, { id: 'g2', name: 'Drama', type: 'Genre' }],
+    [`${API}/jellyseerr/discover/tv/genre/35?page=1`, feed([1], 'tv')], [`${API}/jellyseerr/discover/movies/genre/36?page=1`, feed([11], 'movie')]] });
+  h.load('jellyseerr/discovery/genre-discovery.js');
+  await until(() => ids(h.section('genre')).length === 2, 'first page');
+  h.section('genre').querySelector('.jellyseerr-filters-btn').click();
+  const score = [...h.document.querySelectorAll('.jellyseerr-sort-menu .jellyseerr-menu-group')].find(group => group.textContent.startsWith('Score'));
+  score.click();
+  const from = score.nextElementSibling.querySelector('.jellyseerr-menu-input');
+  from.value = '7';
+  from.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  // Away to another genre's page before typing pauses long enough to be taken.
+  h.window.location.hash = '#/list?genreId=g2&serverId=s';
+  await new Promise(resolve => setTimeout(resolve, 1000));
+  assert.equal(h.hash(), '#/list?genreId=g2&serverId=s', "not written into the next page's address");
+  assert.equal(plain(h.JE.discoveryFilters.selectionOf('genre')).score, undefined);
+});
+
 test("a link leaving out genres and a language: Seerr is asked as without them, and what has them is kept off the page", async t => {
   const h = setup(t, { hash: '#/list?genreId=g1&serverId=s&jeWithoutGenres=27/27:Horror&jeWithoutLanguage=ja', routes: [...GENRE,
     [`${API}/jellyseerr/discover/tv/genre/35?page=1`, { results: [{ id: 1, mediaType: 'tv', genreIds: [35, 27] }, { id: 2, mediaType: 'tv', genreIds: [35], originalLanguage: 'ja' }, { id: 3, mediaType: 'tv', genreIds: [35] }], totalPages: 1 }],

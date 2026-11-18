@@ -325,8 +325,18 @@
                         handle.say(isSet ? sayRange(id, next) : '', isSet);
                         options.change({ ...options.selection(), [id]: isSet ? next : undefined });
                     };
+                    /** The page in view, as its address names it (not the filters it shows). */
+                    const pageNow = () => {
+                        const hash = window.location.hash;
+                        return `${JE.discoveryAddress?.withoutOwn?.(hash) ?? hash}|${JE.discoveryAddress?.categoryOfHash?.(hash) ?? ''}`;
+                    };
                     for (const input of [from, to]) {
-                        input.addEventListener('input', () => { window.clearTimeout(timer); timer = window.setTimeout(take, TYPING_MS); });
+                        input.addEventListener('input', () => {
+                            window.clearTimeout(timer);
+                            // (Taken once typing pauses, on the page it was typed on: not after leaving it.)
+                            const page = pageNow();
+                            timer = window.setTimeout(() => { if (pageNow() === page) take(); }, TYPING_MS);
+                        });
                         input.addEventListener('change', take);
                         input.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); take(); } });
                     }
