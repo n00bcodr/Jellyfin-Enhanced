@@ -154,9 +154,9 @@
                 position: static;
                 grid-area: 1 / 1;
                 min-width: 0; min-height: 0;
-                /* The host fades for its slots (tags/tag-pipeline.js). */
-                transition: none;
             }
+            /* A card whose slots are clear of each other fades through its host alone (tags/tag-pipeline.js). */
+            ${FLOW}[data-je-fade] > .je-tag-slot { transition: none; }
             ${FLOW_SLOT} > [data-je-group] { position: static; }
 
             /* corners: the inset the four stacks had, as a margin */
@@ -731,9 +731,10 @@
             html .je-tag-host > .je-tag-slot[data-je-slot="corner"] .rating-star-icon { font-size: calc(11px * var(--je-tag-scale, 1)) !important; }
 
             /* Hide Tags on Hover: everything but the summary / minimal reveal.
-               A card in resting flow fades as a whole (its host, tags/tag-pipeline.js),
-               so its slots are left alone. */
-            ${HIDE_ACTIVE} .je-tag-host:not([data-je-flow]) > .je-tag-slot:not([data-je-slot="hover"]),
+               A card marked data-je-fade fades through its host alone (tags/tag-pipeline.js;
+               core/tag-layout.js marks a flow card whose slots do not overlap), so its
+               slots are left as they are. */
+            ${HIDE_ACTIVE} .je-tag-host:not([data-je-fade]) > .je-tag-slot:not([data-je-slot="hover"]),
             ${HIDE_ACTIVE} .je-tag-host:not([data-je-layout="summary"], [data-je-layout="minimal"]) > .je-tag-more-tip,
             ${PREVIEW_HIDE} .je-tag-host > .je-tag-slot:not([data-je-slot="hover"]),
             ${PREVIEW_HIDE} .je-tag-host:not([data-je-layout="summary"], [data-je-layout="minimal"]) > .je-tag-more-tip {

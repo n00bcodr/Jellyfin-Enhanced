@@ -315,8 +315,8 @@ test('hide-on-hover keeps the summary and minimal reveal; reveal follows hover a
   const h = setup(t, { settings: { tagLayoutSettingsVersion: 1, tagLayout: 'summary', tagsHideOnHover: true } });
   h.render();
   const css = h.document.getElementById('je-tag-layout').textContent;
-  // (A card in resting flow fades through its host instead: core-tag-layout-flow.test.mjs.)
-  assert.match(css, /body\.je-tags-hide-on-hover \.card:hover \.je-tag-host:not\(\[data-je-flow\]\) > \.je-tag-slot:not\(\[data-je-slot="hover"\]\)/);
+  // (A card marked to fade as one fades through its host instead: core-tag-layout-flow.test.mjs.)
+  assert.match(css, /body\.je-tags-hide-on-hover \.card:hover \.je-tag-host:not\(\[data-je-fade\]\) > \.je-tag-slot:not\(\[data-je-slot="hover"\]\)/);
   assert.doesNotMatch(css, /body\.je-tags-hide-on-hover[^{}]+:focus-within/);
   assert.match(css, /:is\(:is\(\.card, \.listItem\):is\(:hover, :focus-within\), \.je-tag-reveal\) \.je-tag-host > \.je-tag-slot\[data-je-slot="hover"\] \{ opacity: 1; \}/,
     'cards and list rows (a season\'s episodes) alike');

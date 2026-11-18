@@ -27,11 +27,12 @@
     const SERVER_CACHE_WAIT_DELAYS = [2000, 3000, 5000, 5000, 10000, 10000, 15000, 15000, 30000, 30000, 30000, 30000, 60000, 60000];
     const logPrefix = '🪼 Jellyfin Enhanced [TagPipeline]:';
     /**
-     * Easing of a flow card's host as its tags fade out under Hide Tags on
-     * Hover: two 0.15s `ease` fades multiplied (the host's and its slots'),
-     * as progress 1 - (1 - ease(t))^2 sampled every 5% (within 0.7% of the curve).
+     * Easing of a host that fades alone under Hide Tags on Hover (a flow card
+     * whose slots do not overlap): two 0.15s `ease` fades multiplied, the
+     * host's and its slots', as progress 1 - (1 - ease(t))^2, sampled finely
+     * where it bends (within 0.3 of one colour level of the curve).
      */
-    const FLOW_FADE_OUT = 'linear(0, 0.0648 5%, 0.1806 10%, 0.3365 15%, 0.5033 20%, 0.6501 25%, 0.7631 30%, 0.8438 35%, 0.8992 40%, 0.9364 45%, 0.961 50%, 0.9768 55%, 0.9868 60%, 0.9929 65%, 0.9965 70%, 0.9984 75%, 0.9994 80%, 0.9998 85%, 1 90%, 1 95%, 1)';
+    const FLOW_FADE_OUT = 'linear(0, 0.0199 2%, 0.0478 4%, 0.084 6%, 0.1284 8%, 0.1806 10%, 0.2395 12%, 0.3033 14%, 0.3701 16%, 0.4375 18%, 0.5033 20%, 0.5657 22%, 0.6233 24%, 0.6756 26%, 0.7221 28%, 0.7631 30%, 0.7989 32%, 0.8299 34%, 0.8567 36%, 0.8796 38%, 0.8992 40%, 0.9159 42%, 0.9301 44%, 0.9422 46%, 0.9524 48%, 0.961 50%, 0.9682 52%, 0.9742 54%, 0.9792 56%, 0.9834 58%, 0.9868 60%, 0.9938 66%, 0.9965 70%, 0.9984 75%, 0.9994 80%, 1 90%, 1)';
 
     // ── Server cache state ─────────────────────────────────────────────
     //
@@ -2464,26 +2465,28 @@
             // This setting makes them completely invisible for users who want zero clutter.
             // Summary and minimal reveal their full chips on hover instead, so
             // there it hides every slot but that reveal (tag-layout-styles.js).
-            // A card in resting flow (core/tag-layout.js flowFor) fades as one: its
-            // slots no longer fade inside the host, each a layer the compositor
-            // had to raise and drop on every card the pointer crossed, so the
-            // host's own curve carries what the two fades made together. Out, the
-            // host and its slots both eased over 0.15s, which multiplies to the
-            // curve below (1 - (1 - ease)^2, sampled); back, the host snapped and
-            // the slots eased, which is a plain ease. Reduced motion had no slot
-            // fade: the host eases out and snaps back.
+            // A flow card whose slots are clear of each other (data-je-fade,
+            // core/tag-layout.js flushOverlap) fades through its host alone: its
+            // slots no longer fade inside it, each a layer the compositor had to
+            // raise and drop on every card the pointer crossed, and the host's own
+            // curve carries what the two fades made together. Out, the host and
+            // its slots both eased over 0.15s, which multiplies to FLOW_FADE_OUT;
+            // back, the host snapped and the slots eased, which is a plain ease.
+            // Reduced motion had no slot fade: the host eases out and snaps back.
+            // Where slots overlap the two fades are not the same picture part way
+            // through, and such a card keeps the rule above and its slots' own.
             JE.helpers.addCSS('je-tag-hover-fade', `
                 body.je-tags-hide-on-hover .card:hover .je-tag-host:not([data-je-layout="summary"]):not([data-je-layout="minimal"]) {
                     opacity: 0 !important;
                     transition: opacity 0.15s ease;
                 }
-                body.je-tags-hide-on-hover .je-tag-host[data-je-flow] { transition: opacity 0.15s ease; }
-                body.je-tags-hide-on-hover .card:hover .je-tag-host[data-je-flow]:not([data-je-layout="summary"]):not([data-je-layout="minimal"]) {
+                body.je-tags-hide-on-hover .je-tag-host[data-je-fade] { transition: opacity 0.15s ease; }
+                body.je-tags-hide-on-hover .card:hover .je-tag-host[data-je-fade]:not([data-je-layout="summary"]):not([data-je-layout="minimal"]) {
                     transition: opacity 0.15s ${FLOW_FADE_OUT};
                 }
                 @media (prefers-reduced-motion: reduce) {
-                    body.je-tags-hide-on-hover .je-tag-host[data-je-flow] { transition: none; }
-                    body.je-tags-hide-on-hover .card:hover .je-tag-host[data-je-flow]:not([data-je-layout="summary"]):not([data-je-layout="minimal"]) {
+                    body.je-tags-hide-on-hover .je-tag-host[data-je-fade] { transition: none; }
+                    body.je-tags-hide-on-hover .card:hover .je-tag-host[data-je-fade]:not([data-je-layout="summary"]):not([data-je-layout="minimal"]) {
                         transition: opacity 0.15s ease;
                     }
                 }

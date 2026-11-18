@@ -664,10 +664,13 @@
         lookSettingsCache.clear();
         flowAllowed = null;
         namesFloat = null;
+        flowVerdicts.clear();
     }
 
     /** @type {boolean|null} whether the page's CSS leaves resting flow on (flowAllowedByPage; read once per settings pass) */
     let flowAllowed = null;
+    /** @type {Map<string, boolean>} kind of element → whether the page's CSS moves it or makes it a layer (layeredByPage) */
+    const flowVerdicts = new Map();
 
     /** @type {{rules: Array<Object>, locks: Map<string, Object>, overrides: Map<string, Object>}|null} memoised rules, locks and item looks */
     let cachedLooks = null;
@@ -779,6 +782,7 @@
      * @property {boolean} [pendingPresentation] - A detached card needs presentation on reconnection.
      * @property {string|null} shape - 'portrait', 'landscape' or 'list'; null until the
      *   fitting pass measured a card its classes don't classify (see shapeOfCard).
+     * @property {Set<HTMLElement>} layered - Elements of the card the page's CSS moves or makes a layer (layeredFlow).
      */
 
     /** @type {WeakMap<HTMLElement, CardController>} host → controller */
@@ -815,7 +819,10 @@
             resizeQueued = false;
             for (const host of document.querySelectorAll('.je-tag-host')) {
                 const ctrl = controllers.get(/** @type {HTMLElement} */ (host));
-                if (ctrl) scheduleFit(ctrl);
+                if (!ctrl) continue;
+                scheduleFit(ctrl);
+                // Chips follow the card's width: slots that were clear of each other may not be now.
+                if (/** @type {HTMLElement} */ (host).dataset.jeFlow === '1') scheduleOverlap(ctrl);
             }
         });
     }
@@ -986,7 +993,7 @@
         }
         if (!ctrl && create) {
             injectStyles();
-            ctrl = { host, itemId, groups: new Map(), nodes: new Map(), outlet: null, pill: null, layout: null, seq: 0, moreTip: null, described: null, lookKey: '', shape: shapeOfCard(host) };
+            ctrl = { host, itemId, groups: new Map(), nodes: new Map(), outlet: null, pill: null, layout: null, seq: 0, moreTip: null, described: null, lookKey: '', shape: shapeOfCard(host), layered: new Set() };
             controllers.set(host, ctrl);
         }
         return ctrl;
@@ -1838,21 +1845,257 @@
         return !names || genreNamesFloat(host);
     }
 
+    /** Style sheets the page had when the verdicts below were reached: another count means other rules. */
+    let flowSheets = -1;
+    /**
+     * The z-index each group container's own stylesheet gives it. A group is
+     * a flex or grid item in either layout, so it stacks by that number the
+     * same way in both; inside a tag host the pipeline's base rules reset
+     * all but the custom group's to auto. Any other value is the page's.
+     */
+    const OWN_Z_INDEX = {
+        [CONTAINER_CLASS.quality]: '100', [CONTAINER_CLASS.genre]: '101', [CONTAINER_CLASS.language]: '101', [CONTAINER_CLASS.rating]: '10',
+        [CONTAINER_CLASS.ageRating]: '10', [CONTAINER_CLASS.status]: '10', [CONTAINER_CLASS.logos]: '10', [CONTAINER_CLASS.custom]: '10',
+    };
+
+    /**
+     * The offsets a flow card's slot computes to from JE's own rules (it is
+     * not positioned, so they are read as written): the corner inset, with
+     * the indicator offset allowed on the top-right stack; the bands' edges;
+     * the caption's poster corner. Each side lists the values it may have.
+     * @param {string} slot
+     * @param {CardController} ctrl
+     * @param {TagLayoutSettings} conf
+     * @returns {{top: Array<number|string>, right: Array<number|string>, bottom: Array<number|string>, left: Array<number|string>}|null}
+     */
+    function slotOffsets(slot, ctrl, conf) {
+        if (conf.layout === 'corners') {
+            const edge = edgeOf(ctrl);
+            const scale = conf.legacy ? 1 : TAG_SCALES[conf.tagScale];
+            const indicator = Math.min(30, Math.max(20, 0.03 * window.innerWidth)) * scale;
+            return { top: slot === 'tr' ? [edge, edge + indicator] : [edge], right: [edge], bottom: [edge], left: [edge] };
+        }
+        if (slot === 'top') return { top: [0], right: [0], bottom: ['auto'], left: [0] };
+        if (slot === 'bottom') return { top: ['auto'], right: [0], bottom: [0], left: [0] };
+        if (slot === 'poster') return { top: [STACK_INSET], right: ['auto'], bottom: ['auto'], left: [STACK_INSET] };
+        return null;
+    }
+
+    /**
+     * Whether a computed offset is one of the values JE's rules give it.
+     * @param {string} value - Computed top, right, bottom or left ('' where the browser has none to give).
+     * @param {Array<number|string>} allowed
+     * @returns {boolean}
+     */
+    function offsetIs(value, allowed) {
+        if (!value) return true;
+        return allowed.some((want) => (typeof want === 'number' ? Math.abs(parseFloat(value) - want) < 0.75 && value.endsWith('px') : value === want));
+    }
+
+    /**
+     * Whether the page's CSS, read from a flow card's element, moves that
+     * element or makes it a layer of its own: anything JE's flow rules do
+     * not expect. A flow card paints the same pixels as a positioned one
+     * only while nothing inside it is positioned, offset, transformed,
+     * translucent, filtered, masked or given a stacking order, and while its
+     * slots keep the stacking direction, alignment and gap the flow rules
+     * stand in for. Custom CSS that nudges a group with `top`/`left`, gives a
+     * slot another `inset`, fades or scales a chip, or turns a corner stack
+     * into a row shows up here, and its card keeps the positioned layout,
+     * where all of that works as it always did. Reads styles only (no layout).
+     * @param {HTMLElement} el
+     * @param {'slot'|'group'|'part'} kind
+     * @param {string} slot - The slot the element is (in).
+     * @param {CardController} ctrl
+     * @param {TagLayoutSettings} conf
+     * @returns {boolean}
+     */
+    function layeredByPage(el, kind, slot, ctrl, conf) {
+        let cs;
+        try { cs = getComputedStyle(el); } catch { return false; }
+        const off = (value, none) => !!value && value !== none;
+        if (off(cs.position, 'static') || off(cs.transform, 'none') || off(cs.translate, 'none') || off(cs.rotate, 'none') || off(cs.scale, 'none')
+            || off(cs.opacity, '1') || off(cs.filter, 'none') || off(cs.backdropFilter, 'none') || off(cs.mixBlendMode, 'normal')
+            || off(cs.clipPath, 'none') || off(cs.maskImage, 'none') || off(cs.perspective, 'none') || off(cs.willChange, 'auto')
+            || off(cs.isolation, 'auto') || /paint|layout|strict|content/.test(cs.contain || '')) return true;
+        if (off(cs.zIndex, 'auto') && cs.zIndex !== OWN_Z_INDEX[el.classList[0]]) return true;
+        if (kind === 'group') return !['top', 'right', 'bottom', 'left'].every((side) => offsetIs(cs[side], ['auto']));
+        if (kind !== 'slot') return false;
+        const want = slotOffsets(slot, ctrl, conf);
+        if (want && !['top', 'right', 'bottom', 'left'].every((side) => offsetIs(cs[side], want[side]))) return true;
+        const rising = slot === 'bl' || slot === 'br';
+        const rows = slot === 'top' || slot === 'bottom';
+        if (off(cs.flexDirection, rows ? 'row' : rising ? 'column-reverse' : 'column') || off(cs.flexWrap, rows ? 'wrap' : 'nowrap')) return true;
+        if (off(cs.alignItems, slot === 'tr' || slot === 'br' || slot === 'bottom' ? 'flex-end' : 'flex-start')) return true;
+        // The rising stacks' gap is their children's top margin in flow: another gap must keep the flex stack.
+        const gap = 4 * (conf.legacy ? 1 : TAG_SCALES[conf.tagScale] * TAG_GAPS[conf.tagGap]);
+        return rising && !!cs.columnGap && cs.columnGap !== 'normal' && Math.abs(parseFloat(cs.columnGap) - gap) > 0.05;
+    }
+
+    /** @type {WeakSet<HTMLElement>} slots and group nodes whose styles were inspected (layeredFlow) */
+    const inspected = new WeakSet();
+
+    /**
+     * Whether anything on a flow card is moved or layered by the page's CSS
+     * (layeredByPage). Looks only at the slots and group nodes it has not
+     * seen before, and asks the styles once per kind of element (the same
+     * card type, look, slot, tag and classes): on a settled page that is a
+     * map lookup per new element. Must run while the host is marked for flow
+     * and not live, so the styles read are a flow card's.
+     * @param {CardController} ctrl
+     * @param {TagLayoutSettings} conf
+     * @returns {boolean}
+     */
+    function layeredFlow(ctrl, conf) {
+        const host = ctrl.host;
+        const sheets = document.styleSheets ? document.styleSheets.length : 0;
+        if (sheets !== flowSheets) { flowSheets = sheets; flowVerdicts.clear(); }
+        let context = '';
+        /** @param {HTMLElement} el @param {'slot'|'group'|'part'} kind @param {string} slot */
+        const look = (el, kind, slot) => {
+            if (!context) {
+                const card = host.closest('.card, .listItem');
+                context = `${card ? card.className : ''}|${conf.layout}|${conf.legacy ? 1 : 0}|${edgeOf(ctrl)}|${conf.tagScale}|${conf.tagGap}`;
+            }
+            const key = `${context}|${slot}|${kind}|${el.tagName}|${el.className}`;
+            let layered = flowVerdicts.get(key);
+            if (layered === undefined) {
+                layered = layeredByPage(el, kind, slot, ctrl, conf);
+                flowVerdicts.set(key, layered);
+            }
+            if (layered) ctrl.layered.add(el);
+        };
+        for (const child of host.children) {
+            if (!child.classList.contains('je-tag-slot')) continue;
+            const slotEl = /** @type {HTMLElement} */ (child);
+            const slot = slotEl.dataset.jeSlot || '';
+            if (!inspected.has(slotEl)) { inspected.add(slotEl); look(slotEl, 'slot', slot); }
+            for (const node of slotEl.children) {
+                if (inspected.has(/** @type {HTMLElement} */ (node)) || !(/** @type {HTMLElement} */ (node)).dataset.jeGroup) continue;
+                inspected.add(/** @type {HTMLElement} */ (node));
+                look(/** @type {HTMLElement} */ (node), 'group', slot);
+                for (const part of node.querySelectorAll('*')) {
+                    // A genre's floating name is JE's own (left out of a resting card); the inside of an inline SVG paints with it.
+                    if (part.namespaceURI !== 'http://www.w3.org/1999/xhtml' && part.localName !== 'svg') continue;
+                    if (part.classList.contains('genre-text')) continue;
+                    look(/** @type {HTMLElement} */ (part), 'part', slot);
+                }
+            }
+        }
+        return ctrl.layered.size > 0;
+    }
+
     /**
      * Mark (or unmark) a card's host for the resting flow rules, after its
-     * groups were placed or removed. A card the pointer is already on when
-     * its genre icons arrive shows their names at once, as it always did.
+     * groups were placed or removed. The mark goes on first, so that the
+     * styles inspected for custom CSS are a flow card's, and comes off again
+     * when something on the card is moved or layered by the page. A card the
+     * pointer is already on when its genre icons arrive shows their names at
+     * once, as it always did (and is inspected once it rests).
      * @param {CardController} ctrl
      * @param {TagLayoutSettings} conf
      */
     function syncFlow(ctrl, conf) {
         const host = ctrl.host;
-        const flow = flowFor(ctrl, conf);
+        let flow = flowFor(ctrl, conf);
+        if (flow) {
+            // What the page layered last time and is still on the card keeps it positioned, with nothing to re-read.
+            for (const el of ctrl.layered) if (!host.contains(el)) ctrl.layered.delete(el);
+            if (ctrl.layered.size > 0) {
+                flow = false;
+            } else {
+                if (!host.dataset.jeLive && showsNamesNow(host)) host.dataset.jeLive = '1';
+                if (!host.dataset.jeLive) {
+                    if (host.dataset.jeFlow !== '1') host.dataset.jeFlow = '1';
+                    flow = !layeredFlow(ctrl, conf);
+                }
+            }
+        }
         if (flow !== (host.dataset.jeFlow === '1')) {
             if (flow) host.dataset.jeFlow = '1';
             else delete host.dataset.jeFlow;
         }
-        if (flow && !host.dataset.jeLive && showsNamesNow(host)) host.dataset.jeLive = '1';
+        if (flow) scheduleOverlap(ctrl);
+        else if (host.dataset.jeFade) delete host.dataset.jeFade;
+    }
+
+    // ── One fade or five ───────────────────────────────────────────────
+    // Under Hide Tags on Hover a card's tags fade out as the pointer arrives:
+    // the host, and inside it every slot, each over 0.15s. Where chips of two
+    // slots overlap, that shows the lower chip through the upper one part way
+    // through, which one fade of the whole host would not. So a flow card
+    // keeps the five fades unless its slots are measured clear of each other:
+    // then the host alone fades, on the curve the two made together, and the
+    // pixels are the same in every frame with one animated layer, not five.
+
+    /** How far a chip's shadow, ring or outline may paint beyond its box (CSS px). */
+    const PAINT_REACH = 12;
+    /** @type {Set<CardController>} flow cards whose slots are to be measured after the next paint */
+    const pendingOverlap = new Set();
+    let overlapScheduled = false;
+
+    /**
+     * Queue a flow card for the overlap measurement (only while the pointer
+     * hides tags: nothing fades otherwise, and an unmeasured card fades the
+     * way every card did).
+     * @param {CardController} ctrl
+     */
+    function scheduleOverlap(ctrl) {
+        if (!hidesOnHover(ctrl.host)) {
+            if (ctrl.host.dataset.jeFade) delete ctrl.host.dataset.jeFade;
+            return;
+        }
+        pendingOverlap.add(ctrl);
+        if (overlapScheduled) return;
+        overlapScheduled = true;
+        if (typeof JE.core.dom?.afterNextPaint === 'function') JE.core.dom.afterNextPaint(flushOverlap);
+        else requestAnimationFrame(flushOverlap);
+    }
+
+    /**
+     * Whether no two slots of a card paint within reach of each other (reads
+     * only). A band is its whole box (it paints a scrim); other slots are
+     * their groups, or the chips of a group laid out as contents.
+     * @param {CardController} ctrl
+     * @returns {boolean}
+     */
+    function slotsApart(ctrl) {
+        /** @type {DOMRect[][]} */
+        const slots = [];
+        for (const slot of ctrl.host.children) {
+            if (!slot.classList.contains('je-tag-slot')) continue;
+            if (ctrl.layout === 'bands') { slots.push([slot.getBoundingClientRect()]); continue; }
+            const boxes = [];
+            for (const group of slot.children) {
+                const box = group.getBoundingClientRect();
+                if (box.width > 0 && box.height > 0) boxes.push(box);
+                else for (const chip of group.children) boxes.push(chip.getBoundingClientRect());
+            }
+            slots.push(boxes.filter((b) => b.width > 0 && b.height > 0));
+        }
+        for (let i = 0; i < slots.length; i++) {
+            for (let j = i + 1; j < slots.length; j++) {
+                for (const a of slots[i]) {
+                    for (const b of slots[j]) {
+                        if (a.left - PAINT_REACH < b.right && b.left - PAINT_REACH < a.right && a.top - PAINT_REACH < b.bottom && b.top - PAINT_REACH < a.bottom) return false;
+                    }
+                }
+            }
+        }
+        return true;
+    }
+
+    /** Measure every queued flow card (reads), then mark the ones whose host may fade alone (writes). */
+    function flushOverlap() {
+        overlapScheduled = false;
+        const list = Array.from(pendingOverlap).filter((c) => c.host.isConnected && controllers.get(c.host) === c);
+        pendingOverlap.clear();
+        const apart = list.map((ctrl) => ctrl.host.dataset.jeFlow === '1' && !ctrl.host.dataset.jeLive && hidesOnHover(ctrl.host)
+            && ctrl.host.clientWidth > 0 && slotsApart(ctrl));
+        list.forEach((ctrl, i) => {
+            if (apart[i]) { if (ctrl.host.dataset.jeFade !== 'one') ctrl.host.dataset.jeFade = 'one'; }
+            else if (ctrl.host.dataset.jeFade) delete ctrl.host.dataset.jeFade;
+        });
     }
 
     /**
@@ -1881,6 +2124,9 @@
         delete ctrl.host.dataset.jeEdge;
         delete ctrl.host.dataset.jeGenreBound;
         delete ctrl.host.dataset.jeFlow;
+        delete ctrl.host.dataset.jeFade;
+        ctrl.layered.clear();
+        pendingOverlap.delete(ctrl);
     }
 
     /**
@@ -3246,7 +3492,11 @@
             restTimers.delete(host);
             let over = false;
             try { over = card.matches(':hover'); } catch { over = false; }
-            if (!over || hidesOnHover(host)) delete host.dataset.jeLive;
+            if (over && !hidesOnHover(host)) return;
+            delete host.dataset.jeLive;
+            // What was placed while the card was live has not been inspected, nor its slots measured.
+            const ctrl = controllers.get(host);
+            if (ctrl && host.isConnected) syncFlow(ctrl, resolveLayout(ctrl));
         }, REST_AFTER_MS));
     }
 

@@ -4,8 +4,8 @@
     "scenarios": {
       "allFeaturesOn": {
         "maxModules": 74,
-        "maxRawBytes": 1899000,
-        "maxGzipBytes": 474000
+        "maxRawBytes": 1961000,
+        "maxGzipBytes": 491000
       },
       "defaults": {
         "maxModules": 33,
@@ -14,8 +14,8 @@
       },
       "tagsOnly": {
         "maxModules": 54,
-        "maxRawBytes": 1593000,
-        "maxGzipBytes": 402000
+        "maxRawBytes": 1645000,
+        "maxGzipBytes": 416000
       }
     },
     "coreMaxRawBytes": 488000,
@@ -25,8 +25,8 @@
   "measured": {
     "manifest": {
       "modules": 195,
-      "rawBytes": 5079163,
-      "gzipBytes": 1203464
+      "rawBytes": 5140042,
+      "gzipBytes": 1219492
     },
     "scenarios": {
       "allFeaturesOn": {
@@ -42,8 +42,8 @@
           "active-streams"
         ],
         "modules": 71,
-        "rawBytes": 1843263,
-        "gzipBytes": 459854
+        "rawBytes": 1903419,
+        "gzipBytes": 476115
       },
       "defaults": {
         "groups": [
@@ -52,8 +52,8 @@
           "bookmarks-library"
         ],
         "modules": 32,
-        "rawBytes": 616641,
-        "gzipBytes": 159523
+        "rawBytes": 621025,
+        "gzipBytes": 160867
       },
       "tagsOnly": {
         "groups": [
@@ -63,16 +63,16 @@
           "bookmarks-library"
         ],
         "modules": 52,
-        "rawBytes": 1546229,
-        "gzipBytes": 389816
+        "rawBytes": 1596553,
+        "gzipBytes": 403535
       }
     },
-    "coreRawBytes": 473368,
+    "coreRawBytes": 477752,
     "largestOtherGroup": {
       "id": "player",
-      "rawBytes": 261472
+      "rawBytes": 262195
     },
-    "allFeaturesOnShareOfManifestRaw": 0.3629
+    "allFeaturesOnShareOfManifestRaw": 0.3703
   },
   "history": [
     {
@@ -153,6 +153,85 @@
         "groupMaxRawBytes": 270000
       },
       "reason": "First budget: today's measured values plus about 3% headroom; allFeaturesOn must stay at or below 45% of the manifest's raw bytes. Before the split every page downloaded and ran the single bundle, 5,078,353 raw bytes / 195 modules."
+    },
+    {
+      "date": "2026-11-19",
+      "change": "home-screen tag performance: resting flow layout with custom CSS detection, observers that let answered cards go",
+      "measured": {
+        "manifest": {
+          "modules": 195,
+          "rawBytes": 5140042,
+          "gzipBytes": 1219492
+        },
+        "scenarios": {
+          "allFeaturesOn": {
+            "groups": [
+              "core",
+              "tags",
+              "tag-direct-play",
+              "tag-poster-colours",
+              "spoiler-guard",
+              "hidden-content",
+              "seerr-api",
+              "theme-selector",
+              "active-streams"
+            ],
+            "modules": 71,
+            "rawBytes": 1903419,
+            "gzipBytes": 476115
+          },
+          "defaults": {
+            "groups": [
+              "core",
+              "bookmarks",
+              "bookmarks-library"
+            ],
+            "modules": 32,
+            "rawBytes": 621025,
+            "gzipBytes": 160867
+          },
+          "tagsOnly": {
+            "groups": [
+              "core",
+              "tags",
+              "bookmarks",
+              "bookmarks-library"
+            ],
+            "modules": 52,
+            "rawBytes": 1596553,
+            "gzipBytes": 403535
+          }
+        },
+        "coreRawBytes": 477752,
+        "largestOtherGroup": {
+          "id": "player",
+          "rawBytes": 262195
+        },
+        "allFeaturesOnShareOfManifestRaw": 0.3703
+      },
+      "limits": {
+        "scenarios": {
+          "allFeaturesOn": {
+            "maxModules": 74,
+            "maxRawBytes": 1961000,
+            "maxGzipBytes": 491000
+          },
+          "defaults": {
+            "maxModules": 33,
+            "maxRawBytes": 636000,
+            "maxGzipBytes": 165000
+          },
+          "tagsOnly": {
+            "maxModules": 54,
+            "maxRawBytes": 1645000,
+            "maxGzipBytes": 416000
+          }
+        },
+        "coreMaxRawBytes": 488000,
+        "allFeaturesOnMaxShareOfManifestRaw": 0.45,
+        "groupMaxRawBytes": 270000
+      },
+      "reason": "Code the poster tags gained at boot since the first budget (allFeaturesOn +60,156 raw / +16,261 gzip bytes, tagsOnly +50,324 / +13,719): core/tag-layout.js +25.0 KB (the resting flow layout and the custom CSS detection that keeps a moved or layered card positioned), tags/tag-direct-play.js +9.8 KB and tags/statustags.js +7.7 KB (observers that release answered cards), tags/tag-layout-styles.js +6.1 KB, tags/tag-pipeline.js +5.6 KB, about 6 KB elsewhere. Limits for allFeaturesOn and tagsOnly are the new measured values plus about 3% headroom; every other limit is unchanged."
     }
   ]
 }
