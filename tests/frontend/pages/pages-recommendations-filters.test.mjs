@@ -87,8 +87,11 @@ test("a link's filters narrow every row: its kind's rows only, Trending by what 
   assert.deepEqual(h.rows(), ['Trending', 'Popular Movies', 'Upcoming Movies', 'Studios']);
   assert.deepEqual(h.cards(h.tab()), [1, 11, 12], 'Trending keeps its movie scored 7 or more');
   assert.equal(h.calls.some(path => /\/discover\/tv(\/|\?)/.test(path)), false, 'no series feed is asked for');
-  assert.equal(h.tab().querySelector('.je-reco-tools .emby-tab-button-active').dataset.mode, 'movies');
+  assert.equal(h.tab().querySelector('.je-reco-tools .jellyseerr-filter-btn.emby-tab-button-active').dataset.mode, 'movies');
   assert.equal(h.tab().querySelector('.je-reco-tools .jellyseerr-filters-btn').hasAttribute('data-on'), true);
+  // Filled while something is set, it is marked as the chosen type is, so a theme that fills only the chosen tab
+  // button (Jellyfish, Zesty: every other tab button's fill cleared) fills it too.
+  assert.ok(h.tab().querySelector('.je-reco-tools .jellyseerr-filters-btn').classList.contains('emby-tab-button-active'));
   assert.deepEqual(h.said(h.tab()), ['Score from 7']);
   assert.equal(h.hash(), at('jeType=movies&jeScore=7..'), 'already said as the page writes it');
 });
@@ -122,6 +125,8 @@ test('a filter that leaves the tab nothing says so, and Clear filters brings eve
   await until(() => loaded(h) && h.rows().includes('Popular Movies'), 'everything again');
   assert.deepEqual(plain(h.JE.discoveryFilter.getFilters('recommendations')), {});
   assert.deepEqual(h.said(h.tab()), [], 'nothing said to be set');
+  const filters = h.tab().querySelector('.je-reco-tools .jellyseerr-filters-btn');
+  assert.equal(filters.hasAttribute('data-on') || filters.classList.contains('emby-tab-button-active'), false, 'its Filters button is no longer marked');
   assert.equal(h.hash(), TAB);
 });
 
@@ -208,7 +213,7 @@ test('a category opens with the filters, asks Seerr with them, and says when the
   const P = h.load();
   await P.showCategoryPage('movies');
   const page = h.category();
-  assert.ok(page.querySelector('#je-recommendations-category-filters .jellyseerr-filters-btn[data-on]'), 'its Filters button is on');
+  assert.ok(page.querySelector('#je-recommendations-category-filters .jellyseerr-filters-btn[data-on].emby-tab-button-active'), 'its Filters button is on');
   assert.deepEqual(h.said(page), ['Score from 9']);
   await until(() => page.querySelector('.je-reco-filters-none'), 'the note');
   assert.deepEqual(h.categoryCards(), []);
@@ -380,7 +385,7 @@ test("a saved profile chosen on the tab sets its filters, its address and its ro
   assert.equal(h.document.querySelector('.jellyseerr-sort-menu'), null, 'the menu is done');
   assert.equal(h.hash(), at('jeType=series&jeGenres=16/16:Animation'));
   await until(() => loaded(h) && h.cards(h.tab()).includes(41), 'its rows');
-  assert.equal(h.tab().querySelector('.je-reco-tools .emby-tab-button-active').dataset.mode, 'tv');
+  assert.equal(h.tab().querySelector('.je-reco-tools .jellyseerr-filter-btn.emby-tab-button-active').dataset.mode, 'tv');
   assert.deepEqual(h.said(h.tab()), ['Animation']);
 });
 

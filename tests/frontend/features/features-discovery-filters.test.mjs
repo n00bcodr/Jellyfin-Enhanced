@@ -411,6 +411,8 @@ test('a list page\'s further filters are typed or ticked, and asked of Seerr: ra
   assert.equal(groupOf(h, 'score').textContent, 'ScoreFrom 7.5');
   assert.ok(groupOf(h, 'score').hasAttribute('data-set'));
   assert.ok(button.hasAttribute('data-on'));
+  // In a section's header it stays a word in the accent, not a chosen tab (only a page of its own fills it).
+  assert.equal(button.classList.contains('emby-tab-button-active'), false);
   assert.equal(button.querySelector('.jellyseerr-filters-name').textContent, 'Filters: 1');
   assert.equal(hintOf('score').hasAttribute('data-error'), false);
   assert.equal(menuOf(h).querySelector('.jellyseerr-menu-clear').hasAttribute('aria-disabled'), false);

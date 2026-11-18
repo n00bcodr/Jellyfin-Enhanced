@@ -1386,6 +1386,10 @@
             const set = activeFilterCount(selectionOf(moduleName));
             const typed = filterModeOf(moduleName) === MIXED() ? 0 : 1;
             button.toggleAttribute('data-on', set > 0);
+            // On a page of its own the button is a pill, filled while something is set, like the chosen All / Movies /
+            // Series beside it. It is marked the way that choice is, so a theme that clears every tab button's fill
+            // (Jellyfish, Zesty) and fills the chosen one fills this one too, instead of leaving dark words on the page.
+            if (place) button.classList.toggle('emby-tab-button-active', set > 0);
             // (All / Movies / Series shows on the button only where the tabs are out of sight: the stylesheet's part.)
             button.toggleAttribute('data-type-on', typed > 0);
             typeWord.textContent = typed > 0 ? typeOf()?.groupOf().choices?.find(choice => choice.selected)?.name ?? '' : '';
