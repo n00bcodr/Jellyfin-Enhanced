@@ -411,6 +411,29 @@ test('a boot batch of several groups runs as one paced list: one wait for idle t
   assert.equal(idleWaits, 2);
 });
 
+test('groups loaded for a page the user went to run in idle time; a group asked for directly does not wait for it', async t => {
+  const boot = basic(t);
+  await boot.booted();
+  let idleWaits = 0;
+  const idle = boot.window.requestIdleCallback;
+  boot.window.requestIdleCallback = (callback, options) => { idleWaits++; return idle(callback, options); };
+  // Navigation: requested at once (no wait before the request), run in idle time so the new view is drawn first.
+  await boot.navigate('#/details?id=1');
+  assert.deepEqual(boot.asked, ['core,tags,hidden-content', 'details,reviews']);
+  assert.equal(idleWaits, 1);
+  await boot.navigate('#/home');
+  // Asked for directly (what a stand-in export does): no idle wait at all.
+  idleWaits = 0;
+  const direct = bootLoader(t, { manifest: BASIC_MANIFEST, groups: BASIC_GROUPS, modules: BASIC_MODULES });
+  await direct.booted();
+  const directIdle = direct.window.requestIdleCallback;
+  let directWaits = 0;
+  direct.window.requestIdleCallback = (callback, options) => { directWaits++; return directIdle(callback, options); };
+  await direct.plugin.loader.ensure(['details']);
+  assert.equal(direct.plugin.loader.state().details, 'ready');
+  assert.equal(directWaits, 0);
+});
+
 test('an address that becomes a details page while boot is under way: the boot features start before that page\'s groups are fetched', async t => {
   // A sign-in redirect lands on its page after the loader has made its first plan. Hidden Content (and Spoiler
   // Guard) must be running before the page's own groups, whose modules start rendering as they load, arrive.

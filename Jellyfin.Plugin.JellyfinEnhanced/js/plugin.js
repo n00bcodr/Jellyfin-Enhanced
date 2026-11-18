@@ -704,9 +704,10 @@
     // much. So at boot each slice runs in idle time (BUNDLE_IDLE_TIMEOUT_MS caps
     // the wait) and is kept short (BUNDLE_RUN_BUDGET_MS) so a task that becomes
     // pending mid-slice — a chunk arriving on a cold load — waits only a few
-    // milliseconds. A group loaded later, because the user went somewhere or
-    // opened something, keeps the short slices but does not wait for idle time:
-    // someone is waiting for it.
+    // milliseconds. A group loaded later because the user went to its page is
+    // paced the same way, so the new view is drawn first; one loaded because
+    // something was asked for directly (the settings panel, a shortcut) keeps
+    // the short slices but does not wait for idle time: someone is waiting.
     const BUNDLE_RUN_BUDGET_MS = 10;
     const BUNDLE_IDLE_TIMEOUT_MS = 100;
 
@@ -720,7 +721,7 @@
      * @param {Function[]} modules - One function per module, in run order (a
      *   function marked `jeLoaderStep` is a step of the loader's own, not counted).
      * @param {string[]} names - The modules' paths (for error messages).
-     * @param {boolean} idle - Wait for browser idle time between slices (boot) instead of only yielding.
+     * @param {boolean} idle - Wait for browser idle time between slices (boot, and a page the user went to) instead of only yielding.
      * @returns {Promise<void>}
      */
     async function runBundleModules(modules, names, idle) {
@@ -946,7 +947,7 @@
      * error — then only the broken file fails, as before bundles existed).
      * @param {string[]} ids - Group ids, in run order, all marked 'loading'.
      * @param {Promise<object|null>} pending - The batch's requestGroupBundle result.
-     * @param {boolean} idle - Run in idle-time slices (boot).
+     * @param {boolean} idle - Run in idle-time slices (boot, and a page the user went to).
      * @returns {Promise<void>}
      */
     async function runGroupBatch(ids, pending, idle) {
@@ -1037,9 +1038,14 @@
      * them, have run; it never rejects. Groups run in the order they were asked
      * for, so a dependency asked for earlier always runs first.
      * @param {string[]} ids - Group ids.
-     * @param {{ idle?: boolean, initialize?: boolean }} [options] - `idle`:
-     *   boot pacing. `initialize: false`: the caller runs the groups'
-     *   stage-6 initializers itself (boot).
+     * @param {{ pace?: 'boot'|'background'|'now', initialize?: boolean }} [options]
+     *   `pace`: 'boot' waits for idle time before requesting and runs the
+     *   modules in idle time; 'background' (a page the user went to) requests
+     *   at once but still runs the modules in idle time, so jellyfin-web draws
+     *   the new view first; 'now' (the default: something was asked for
+     *   directly) requests at once and runs without waiting for idle time.
+     *   `initialize: false`: the caller runs the groups' stage-6 initializers
+     *   itself (boot).
      * @returns {Promise<void>}
      */
     function ensureGroups(ids, options = {}) {
@@ -1047,9 +1053,9 @@
         const missing = withRequiredGroups(ids).filter(id => !groupStates[id]);
         if (missing.length) {
             for (const id of missing) groupStates[id] = 'loading';
-            const pending = requestGroupBundle(missing, !!options.idle).catch(() => null);
+            const pending = requestGroupBundle(missing, options.pace === 'boot').catch(() => null);
             groupQueue = groupQueue
-                .then(() => runGroupBatch(missing, pending, !!options.idle))
+                .then(() => runGroupBatch(missing, pending, options.pace === 'boot' || options.pace === 'background'))
                 .then(() => {
                     if (options.initialize === false) return;
                     const loaded = missing.filter(id => groupStates[id] === 'ready');
@@ -1457,7 +1463,9 @@
         // A group whose files could not be fetched at all is asked for again
         // after a pause, not on every page change in between (scheduleGroupRetry).
         const due = neededGroups().filter(id => groupStates[id] || !groupRetryAfter[id] || groupRetryAfter[id] <= now);
-        const loading = ensureGroups(due);
+        // Paced like boot: the modules of a page the user has just gone to
+        // run in the gaps jellyfin-web leaves while it draws that page.
+        const loading = ensureGroups(due, { pace: 'background' });
         scheduleGroupRetry();
         return loading;
     }
@@ -2149,7 +2157,7 @@
             // as individual files. Modules read JE.pluginConfig / JE.userConfig
             // at eval time, so this must stay after the config is applied.
             await setComponentGroups(bootstrap);
-            await ensureGroups(neededGroups(), { idle: true, initialize: false });
+            await ensureGroups(neededGroups(), { pace: 'boot', initialize: false });
             console.log('🪼 Jellyfin Enhanced: Component scripts loaded.');
 
             // Wire user-switch detection → global reset → re-bootstrap.
