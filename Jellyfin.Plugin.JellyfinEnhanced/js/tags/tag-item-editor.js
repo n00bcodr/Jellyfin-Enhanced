@@ -485,7 +485,10 @@
 
         let item, admin;
         try {
-            [item, admin] = await Promise.all([options.item ? Promise.resolve(options.item) : fetchItem(id), serverMode ? Promise.resolve(true) : isAdministrator()]);
+            // The dialog's preview uses the settings panel's preview code (JE.internals.enhancedUi), which
+            // loads on demand (the "settings" group, see plugin.js): it is fetched alongside the item.
+            [item, admin] = await Promise.all([options.item ? Promise.resolve(options.item) : fetchItem(id), serverMode ? Promise.resolve(true) : isAdministrator(),
+                JE.loader?.ensure(['settings'])]);
         } catch (err) {
             abandon();
             throw err;
