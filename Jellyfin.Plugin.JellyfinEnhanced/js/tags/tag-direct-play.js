@@ -36,6 +36,14 @@
 // flight; their requests keep their slots until they settle or are aborted,
 // so a reset never raises the two-request cap.
 //
+// A card is watched only while where it is can matter. Once its item has a
+// fresh answer there is nothing to ask until that answer lapses, so the card
+// is released from the observer (settle): a page of answered cards costs the
+// browser no intersection work while it is scrolled. A released card is
+// watched again when its answer lapses (its day is over, the profile or the
+// bitrate changed, memory dropped it) or it is drawn for other media or
+// another item.
+//
 // Public surface: JE.tagDirectPlay { track, untrack, peek, describe,
 // profile, profileHash, bitrate, webProfile, setProfile, reset, stats,
 // classify }.
@@ -121,6 +129,30 @@
     let tracked = new WeakMap();
     /** @type {Set<HTMLElement>} tracked cards currently on screen */
     const visible = new Set();
+    /** @type {Set<HTMLElement>} tracked cards under the observer, on screen or not (it reports one that leaves the page) */
+    const watched = new Set();
+    /**
+     * Tracked cards released from the observer because their item has a fresh
+     * answer (see settle). Held weakly: a released card is no longer reported
+     * when it leaves the page, so nothing else would let go of it.
+     * @type {Set<WeakRef<HTMLElement>>}
+     */
+    const settled = new Set();
+    /** @type {WeakMap<HTMLElement, WeakRef<HTMLElement>>} a released card → its entry in `settled` */
+    let settledRef = new WeakMap();
+    /**
+     * Cards watched again because their answer lapsed. The observer's first
+     * report for them only says where they are: a card that was on screen all
+     * along is asked about when it next comes on screen or is drawn, as it
+     * would have been had it never been released.
+     * @type {WeakSet<HTMLElement>}
+     */
+    let rewatched = new WeakSet();
+    /** The timer for the earliest lapse among the released cards' answers, and when it fires (ms since the epoch). */
+    let settledTimer = 0;
+    let settledAt = 0;
+    /** The hash current() last answered with: a change lapses every released card's answer. */
+    let ratedHash = '';
     /** @type {Map<string, number>} answers waiting to be persisted (memory key → saved time), by scope */
     const unsaved = new Map();
     /** @type {Map<Function, Set<string>>} live passes to run after a slice applied answers, each with the items answered */
@@ -806,6 +838,8 @@
         rated = null;
         primed = null;
         primedKey = '';
+        // Their answers went with the hash (and stay gone should the next build hash the same).
+        rewatchSettled();
     }
 
     /**
@@ -819,6 +853,10 @@
         const bitrate = userBitrate(base.profile);
         if (!rated || rated.base !== base || rated.bitrate !== bitrate) {
             rated = { base, bitrate, value: { profile: base.profile, bitrate, hash: hashOf({ profile: base.hash, bitrate }) } };
+            // Another profile or bitrate: the released cards have no answer under it.
+            const changed = ratedHash !== '' && ratedHash !== rated.value.hash;
+            ratedHash = rated.value.hash;
+            if (changed) rewatchSettled();
         }
         return rated.value;
     }
@@ -901,16 +939,19 @@
                 }
                 // Cards drawn before the stored answers arrived: one pass, and no request for those.
                 if (!loaded.length) return;
-                for (const card of visible) {
+                for (const card of [...watched]) {
                     const entry = tracked.get(card);
                     if (!entry) continue;
                     const memoryKey = `${hash}|${itemKey(entry)}`;
-                    if (memory.has(memoryKey) && !inFlight.has(memoryKey) && sameMedia(memory.get(memoryKey), entry.media)) {
+                    if (!memory.has(memoryKey) || inFlight.has(memoryKey) || !sameMedia(memory.get(memoryKey), entry.media)) continue;
+                    if (visible.has(card)) {
                         queue.delete(memoryKey);
                         // The pass covers every restored item: their cards off screen are drawn from memory
                         // too, and coming on screen later asks (and tells) nothing.
                         notifySoon(entry, loaded);
                     }
+                    // Answered, on screen or not: nothing left to watch it for.
+                    settle(card);
                 }
                 scheduleSlice();
             } catch { /* the store marks itself unavailable */ }
@@ -963,7 +1004,11 @@
     function remember(key, value) {
         memory.delete(key);
         memory.set(key, value);
-        if (memory.size > MEMORY_CAP) memory.delete(memory.keys().next().value);
+        if (memory.size > MEMORY_CAP) {
+            memory.delete(memory.keys().next().value);
+            // It may have been a released card's answer.
+            if (settled.size) armSettled(Date.now());
+        }
     }
 
     /**
@@ -1009,7 +1054,16 @@
             for (const { target, isIntersecting } of entries) {
                 const card = /** @type {HTMLElement} */ (target);
                 if (!tracked.has(card) || !card.isConnected) { untrack(card); continue; }
-                if (isIntersecting) { visible.add(card); enqueue(card); } else visible.delete(card);
+                // A report queued before the card was released.
+                if (settledRef.has(card)) continue;
+                const whereOnly = rewatched.delete(card);
+                if (isIntersecting) {
+                    visible.add(card);
+                    if (!whereOnly) enqueue(card);
+                } else {
+                    visible.delete(card);
+                    settle(card);
+                }
             }
             scheduleSlice();
             // A failed lookup scrolled back before it is due waits for the timer.
@@ -1017,6 +1071,118 @@
         }, { rootMargin: '200px 0px' });
         observer = own;
         return observer;
+    }
+
+    /**
+     * Put a tracked card under the observer.
+     * @param {HTMLElement} card
+     * @returns {boolean} False when there is no IntersectionObserver.
+     */
+    function watch(card) {
+        const io = watcher();
+        if (!io) return false;
+        watched.add(card);
+        io.observe(card);
+        return true;
+    }
+
+    /**
+     * The fresh answer for a tracked card's item and media under the profile
+     * in use, with no request for the item on the network: while it lasts
+     * there is nothing to ask about the card. A failure is no such answer (it
+     * is retried while the card is on screen).
+     * @param {{id: string, source?: string, media?: string}} entry - The card's record.
+     * @returns {{r: DirectPlayResult, t: number}|null}
+     */
+    function settledAnswer(entry) {
+        const key = `${current().hash}|${itemKey(entry)}`;
+        if (inFlight.has(key)) return null;
+        const value = memory.get(key);
+        return value && value.r !== null && sameMedia(value, entry.media || '') && Date.now() - value.t < TTL_MS ? value : null;
+    }
+
+    /**
+     * Release a tracked card from the observer when its item has a fresh
+     * answer (settledAnswer): nothing is asked until that answer lapses, so
+     * where the card is no longer matters. Cards stay watched where released
+     * ones could not be found again (no WeakRef) or nothing watches (no
+     * IntersectionObserver).
+     * @param {HTMLElement} card
+     * @returns {boolean} Whether the card is released (now or already).
+     */
+    function settle(card) {
+        if (settledRef.has(card)) return true;
+        const entry = tracked.get(card);
+        if (!entry || !observer || typeof WeakRef !== 'function') return false;
+        const value = settledAnswer(entry);
+        if (!value) return false;
+        const ref = new WeakRef(card);
+        settled.add(ref);
+        settledRef.set(card, ref);
+        visible.delete(card);
+        rewatched.delete(card);
+        watched.delete(card);
+        observer.unobserve(card);
+        armSettled(value.t + TTL_MS);
+        return true;
+    }
+
+    /**
+     * Watch a released card again.
+     * @param {HTMLElement} card
+     * @param {boolean} whereOnly - Its answer lapsed by itself: the first report only says where the card is
+     *   (see `rewatched`). False when the card was drawn again: on screen, it is asked about.
+     */
+    function rewatch(card, whereOnly) {
+        const ref = settledRef.get(card);
+        if (!ref) return;
+        settled.delete(ref);
+        settledRef.delete(card);
+        if (whereOnly) rewatched.add(card);
+        else rewatched.delete(card);
+        watch(card);
+    }
+
+    /** Watch every released card again: their answers lapsed together (another profile or bitrate). */
+    function rewatchSettled() {
+        for (const ref of [...settled]) {
+            const card = ref.deref();
+            if (card && tracked.has(card)) rewatch(card, true);
+            else settled.delete(ref);
+        }
+    }
+
+    /**
+     * Check the released cards at this time at the latest (one timer, for the earliest lapse).
+     * @param {number} at - Ms since the epoch.
+     */
+    function armSettled(at) {
+        if (settledTimer && settledAt <= at) return;
+        if (settledTimer) clearTimeout(settledTimer);
+        settledAt = at;
+        settledTimer = setTimeout(checkSettled, Math.max(0, at - Date.now()));
+    }
+
+    /**
+     * Watch again the released cards whose answer has lapsed (a day old, or
+     * dropped from memory), forget the ones that left the page, and arm the
+     * timer for the next lapse.
+     */
+    function checkSettled() {
+        settledTimer = 0;
+        settledAt = 0;
+        let next = 0;
+        for (const ref of [...settled]) {
+            const card = ref.deref();
+            const entry = card ? tracked.get(card) : undefined;
+            if (!card || !entry) { settled.delete(ref); continue; }
+            if (!card.isConnected) { untrack(card); continue; }
+            const value = settledAnswer(entry);
+            if (!value) { rewatch(card, true); continue; }
+            const at = value.t + TTL_MS;
+            if (!next || at < next) next = at;
+        }
+        if (next) armSettled(next);
     }
 
     /**
@@ -1030,7 +1196,7 @@
         const media = entry.media || '';
         // A request for these media already on the network answers this card too.
         if (inFlight.has(key) && inFlight.get(key).media === media) { inFlight.get(key).cards.add(card); return; }
-        if (!inFlight.has(key) && !due(key, media)) { counters.fromMemory++; return; }
+        if (!inFlight.has(key) && !due(key, media)) { counters.fromMemory++; settle(card); return; }
         const job = queue.get(key) || { id: entry.id, source: entry.source || '', cards: new Set(), media };
         job.media = media;
         job.cards.add(card);
@@ -1052,17 +1218,25 @@
     function track(card, itemId, onResult, media = '', source = '') {
         hookSession();
         const previous = tracked.get(card);
-        tracked.set(card, { id: itemId, onResult, media, source });
+        const entry = { id: itemId, onResult, media, source };
+        tracked.set(card, entry);
         prime();
+        // A released card drawn again: watched once more unless what it shows now is answered too.
+        if (settledRef.has(card)) {
+            if (!settledAnswer(entry)) rewatch(card, false);
+            return;
+        }
         // Drawn again (an expired answer, another profile, changed media): ask again if it is due.
         if (previous && previous.id === itemId && (previous.source || '') === source) {
+            // Watched again a moment ago and not reported yet: that report asks, as this draw would have.
+            if (rewatched.delete(card)) return;
             if (visible.has(card)) { enqueue(card); scheduleSlice(); }
             return;
         }
         if (previous) visible.delete(card);
-        const io = watcher();
-        if (io) io.observe(card);
-        else { visible.add(card); enqueue(card); scheduleSlice(); }
+        if (!watcher()) { visible.add(card); enqueue(card); scheduleSlice(); return; }
+        // Already answered (a page drawn again within the day): never watched at all.
+        if (!settle(card)) watch(card);
     }
 
     /** @param {HTMLElement} card Stop watching a card (recycled, removed, or showing another badge). */
@@ -1070,6 +1244,10 @@
         if (!tracked.has(card)) return;
         tracked.delete(card);
         visible.delete(card);
+        const ref = settledRef.get(card);
+        if (ref) { settled.delete(ref); settledRef.delete(card); }
+        rewatched.delete(card);
+        watched.delete(card);
         observer?.unobserve(card);
         for (const [key, job] of queue) {
             job.cards.delete(card);
@@ -1231,7 +1409,7 @@
         armRetry();
         for (const card of job.cards) {
             const entry = tracked.get(card);
-            if (entry && itemKey(entry) === itemKey(job)) notifySoon(entry);
+            if (entry && itemKey(entry) === itemKey(job)) { notifySoon(entry); settle(card); }
         }
         scheduleSlice();
     }
@@ -1287,7 +1465,14 @@
         generation++;
         for (const card of [...visible]) untrack(card);
         visible.clear();
+        watched.clear();
         tracked = new WeakMap();
+        settled.clear();
+        settledRef = new WeakMap();
+        rewatched = new WeakSet();
+        if (settledTimer) clearTimeout(settledTimer);
+        settledTimer = 0;
+        settledAt = 0;
         queue.clear();
         inFlight.clear();
         pendingNotify.clear();
@@ -1344,7 +1529,7 @@
             if (!profile) built = null;
             primed = null;
         },
-        /** @returns {Object} Slice and request counters. */
-        stats: () => ({ ...counters, queued: queue.size, inFlight: network.size, memory: memory.size }),
+        /** @returns {Object} Slice and request counters, and how many cards are watched and released. */
+        stats: () => ({ ...counters, queued: queue.size, inFlight: network.size, memory: memory.size, watching: watched.size, settled: settled.size }),
     };
 })(window.JellyfinEnhanced);

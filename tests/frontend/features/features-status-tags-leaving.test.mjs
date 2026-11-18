@@ -580,6 +580,123 @@ for (const [how, resetBy] of [
   });
 }
 
+test('direct play: a card whose item is answered is released from the observer, and one drawn for an answered item is never watched', async t => {
+  const h = setup(t, { cards: 4, settings: { statusTagsDirectPlay: true }, autoIntersect: false, answer: id => (id === 'bad' ? new Error('down') : 'transcode') });
+  const dp = h.JE.tagDirectPlay;
+  h.show(movie(), h.hosts[0], 'm1');
+  h.show(movie(), h.hosts[1], 'm2');
+  h.show(movie(), h.hosts[2], 'bad');
+  const io = h.observers.at(-1);
+  assert.equal(io.targets.size, 3, 'every card is watched until its item is answered');
+  h.intersect(h.hosts[0]);
+  h.intersect(h.hosts[2]);
+  await h.slice(); await h.slice();
+  assert.deepEqual(h.requests.map(r => r.id).sort(), ['bad', 'm1']);
+  assert.equal(h.badge(h.hosts[0]), 'Transcode');
+  assert.equal(io.targets.has(h.hosts[0]), false, 'answered: released');
+  assert.equal(io.targets.has(h.hosts[1]), true, 'not asked about yet: watched');
+  assert.equal(io.targets.has(h.hosts[2]), true, 'a failed lookup stays watched for its retry');
+  assert.equal(dp.stats().settled, 1);
+  // A report that was queued before the release changes nothing.
+  h.intersect(h.hosts[0], false);
+  h.intersect(h.hosts[0]);
+  await h.slice();
+  assert.equal(h.requests.length, 2);
+  assert.equal(io.targets.has(h.hosts[0]), false);
+  // Another card of the answered item: badged as it is drawn, never watched.
+  h.show(movie(), h.hosts[3], 'm1');
+  assert.equal(h.badge(h.hosts[3]), 'Transcode');
+  assert.equal(io.targets.has(h.hosts[3]), false);
+  assert.equal(dp.stats().settled, 2);
+  // Reused for an item with no answer: watched again, and asked about once on screen.
+  h.show(movie(), h.hosts[3], 'm2');
+  assert.equal(io.targets.has(h.hosts[3]), true);
+  h.intersect(h.hosts[3]);
+  await h.slice(); await h.slice();
+  assert.deepEqual(h.requests.map(r => r.id).sort(), ['bad', 'm1', 'm2']);
+  assert.equal(io.targets.has(h.hosts[3]), false, 'released once answered');
+  // The other card of that item never came on screen: the report that says so releases it, with no request.
+  assert.equal(io.targets.has(h.hosts[1]), true);
+  h.intersect(h.hosts[1], false);
+  await h.slice();
+  assert.equal(io.targets.has(h.hosts[1]), false);
+  assert.equal(h.requests.length, 3);
+  assert.deepEqual([...io.targets], [h.hosts[2]], 'only the failed card is still watched');
+  // A reset forgets the released cards; drawn again, the answers in memory keep them unwatched.
+  dp.reset();
+  assert.equal(dp.stats().settled, 0);
+  h.show(movie(), h.hosts[0], 'm1');
+  assert.equal(h.badge(h.hosts[0]), 'Transcode');
+  assert.equal(h.observers.at(-1).targets.size, 0);
+  assert.equal(dp.stats().settled, 1);
+});
+
+test('direct play: a released card is watched again when its answer lapses, and asked about when it next comes on screen', async t => {
+  const h = setup(t, { cards: 3, settings: { statusTagsDirectPlay: true }, autoIntersect: false });
+  const dp = h.JE.tagDirectPlay;
+  // The lapse timer (the day an answer lasts) runs by hand.
+  const lapses = [];
+  const timeout = h.window.setTimeout, clear = h.window.clearTimeout;
+  h.window.setTimeout = (fn, ms, ...rest) => {
+    if (ms !== DAY) return timeout(fn, ms, ...rest);
+    const timer = { fn };
+    lapses.push(timer);
+    return timer;
+  };
+  h.window.clearTimeout = timer => { const at = lapses.indexOf(timer); if (at >= 0) lapses.splice(at, 1); else clear(timer); };
+  h.hosts.forEach((host, i) => { h.show(movie(), host, `m${i}`); h.intersect(host); });
+  await h.slice(); await h.slice(); await h.slice();
+  const io = h.observers.at(-1);
+  assert.deepEqual(h.requests.map(r => r.id).sort(), ['m0', 'm1', 'm2']);
+  assert.equal(io.targets.size, 0, 'all answered: nothing is watched');
+  assert.equal(lapses.length, 1, 'one timer, for the earliest lapse');
+  // One card leaves the page meanwhile; nothing reports it.
+  h.hosts[2].closest('.card').remove();
+  h.setNow(NOW + DAY + 1);
+  lapses.splice(0).forEach(timer => timer.fn());
+  assert.deepEqual([...io.targets], [h.hosts[0], h.hosts[1]], 'the cards still on the page are watched again');
+  assert.equal(dp.stats().settled, 0, 'and the one that left is forgotten');
+  // The first reports only say where the cards are: one stayed on screen, one had scrolled away.
+  h.intersect(h.hosts[0]);
+  h.intersect(h.hosts[1], false);
+  await h.slice(); await h.slice();
+  assert.equal(h.requests.length, 3, 'the lapse itself asks nothing, as for a card that was watched all along');
+  h.intersect(h.hosts[1]);
+  await h.slice(); await h.slice();
+  assert.deepEqual(h.requests.slice(3).map(r => r.id), ['m1'], 'coming on screen asks');
+  h.intersect(h.hosts[0], false);
+  h.intersect(h.hosts[0]);
+  await h.slice(); await h.slice();
+  assert.deepEqual(h.requests.slice(3).map(r => r.id), ['m1', 'm0']);
+  assert.equal(io.targets.size, 0, 'answered again: released again');
+  assert.equal(lapses.length, 1);
+});
+
+test('direct play: another profile or bitrate lapses the answers of the released cards', async t => {
+  const h = setup(t, { cards: 2, settings: { statusTagsDirectPlay: true }, autoIntersect: false });
+  const dp = h.JE.tagDirectPlay;
+  h.hosts.forEach((host, i) => { h.show(movie(), host, `m${i}`); h.intersect(host); });
+  await h.slice(); await h.slice();
+  const io = h.observers.at(-1);
+  assert.equal(io.targets.size, 0);
+  h.window.localStorage.setItem('maxbitrate-Video-undefined', '4000000');
+  dp.profileHash(); // the next use of the profile notices
+  assert.equal(io.targets.size, 2, 'both are watched again');
+  // One is drawn again before the observer reported it: on screen, it is asked about, as a watched card drawn again is.
+  h.show(movie(), h.hosts[0], 'm0');
+  h.intersect(h.hosts[0]);
+  h.intersect(h.hosts[1]);
+  await h.slice(); await h.slice();
+  assert.deepEqual(h.requests.slice(2).map(r => r.id), ['m0'], 'the other waits until it next comes on screen');
+  assert.equal(h.requests.at(-1).body.MaxStreamingBitrate, 4000000);
+  h.intersect(h.hosts[1], false);
+  h.intersect(h.hosts[1]);
+  await h.slice(); await h.slice();
+  assert.deepEqual(h.requests.slice(2).map(r => r.id), ['m0', 'm1']);
+  assert.equal(io.targets.size, 0);
+  h.window.localStorage.removeItem('maxbitrate-Video-undefined');
+});
+
 test('direct play: only cards on screen, two requests at a time, a few launches per slice, and only while idle time lasts', async t => {
   const h = setup(t, { cards: 12, settings: { statusTagsDirectPlay: true }, hold: true, autoIntersect: false });
   h.hosts.forEach((host, i) => h.show(movie(), host, `m${i}`));
@@ -818,13 +935,14 @@ test('direct play: a stalled item counts as failed and is asked again only after
 test('direct play: failures a second apart are each retried on time by the one retry timer, with no new draw', async t => {
   let fail = true;
   const h = setup(t, { cards: 2, hold: true, settings: { statusTagsDirectPlay: true }, answer: () => (fail ? new Error('offline fixture') : 'transcode') });
-  // The retry timer runs by hand: every timer that is not a request deadline, a slice or the persist debounce.
+  // The retry timer runs by hand: every timer that is not a request deadline, a slice, the persist debounce
+  // or the day an answered card's answer lasts (the lapse timer of released cards).
   const retries = [];
   const timeout = h.window.setTimeout, clear = h.window.clearTimeout;
   let now = NOW;
   const setNow = ms => { now = ms; h.setNow(ms); };
   h.window.setTimeout = (fn, ms, ...rest) => {
-    if (ms === DEADLINE_MS || ms === 2000 || ms <= 16) return timeout(fn, ms, ...rest);
+    if (ms === DEADLINE_MS || ms === 2000 || ms <= 16 || ms === DAY) return timeout(fn, ms, ...rest);
     const timer = { fn, at: now + ms };
     retries.push(timer);
     return timer;
@@ -967,9 +1085,10 @@ test('direct play: stored answers that arrive after the cards were drawn badge e
   assert.equal(h.badge(h.hosts[0]), "Won't direct play");
   assert.equal(h.badge(h.hosts[1]), "Won't direct play", 'a card off screen is drawn from the restored answer too');
   assert.equal(h.badge(h.hosts[2]), "Won't direct play");
+  assert.equal(h.observers.at(-1).targets.size, 0, 'answered cards are released from the observer wherever they are');
   h.intersect(h.hosts[1]);
   await h.slice(); await h.slice();
-  assert.equal(h.requests.length, 0, 'and nothing is asked when it comes on screen');
+  assert.equal(h.requests.length, 0, 'and nothing is asked when one comes on screen');
 });
 
 test('direct play: a replaced file is asked about again, and an answer for the old file never shows for the new one', async t => {
