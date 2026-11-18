@@ -1232,16 +1232,23 @@
      * or a card that falls back to its library badge or none). Each badge
      * goes through the layout controller, which re-presents its card;
      * overlays it does not manage are re-stacked in one pass.
+     *
+     * Data about single items (a direct-play answer) names them: the pass then
+     * reads only the cards of those items, and is not the page's pass of the
+     * day (renderedDay stays, so the next full pass still runs).
      * @param {Object} ctx - Factory context.
+     * @param {Iterable<string>} [itemIds] - The only items whose cards can have changed; omitted, every card.
      * @returns {void}
      */
-    function applyLivePass(ctx) {
+    function applyLivePass(ctx, itemIds) {
         if (!statusActive || !JE.currentSettings?.statusTagsEnabled) return;
-        renderedDay = localDay(Date.now());
+        const only = itemIds ? new Set(Array.from(itemIds, normId)) : null;
+        if (!only) renderedDay = localDay(Date.now());
         const hosts = [];
         document.querySelectorAll(LIVE_SELECTOR).forEach((el) => {
             const card = liveCards.get(/** @type {HTMLElement} */ (el));
-            if (!card || ctx.shouldIgnore(el) || el.closest('.je-hidden')) return;
+            if (!card || (only && !only.has(card.id))) return;
+            if (ctx.shouldIgnore(el) || el.closest('.je-hidden')) return;
             if (!isCurrentRecord(card) || card.domId !== cardIdentity(el)) {
                 forgetSeriesCard(/** @type {HTMLElement} */ (el));
                 return;
@@ -1530,9 +1537,14 @@
         armMidnight(ctx);
     }
 
-    /** One live pass for the direct-play answers a slice applied (one stable callback, so a slice runs it once). */
-    function onDirectPlayAnswer() {
-        if (statusCtx) applyLivePass(statusCtx);
+    /**
+     * One live pass for the direct-play answers a slice applied (one stable
+     * callback, so a slice runs it once), over the cards of the items answered.
+     * @param {Set<string>} [itemIds] - The items answered (tags/tag-direct-play.js); omitted, every card.
+     * @returns {void}
+     */
+    function onDirectPlayAnswer(itemIds) {
+        if (statusCtx) applyLivePass(statusCtx, itemIds);
     }
 
     /** @type {Object} Factory spec — everything status-specific lives here. */

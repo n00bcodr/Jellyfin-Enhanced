@@ -522,6 +522,31 @@ test('direct play: a visible card is asked about in an idle slice, with this bro
   assert.equal(h.chip(h.hosts[2]), null, 'direct play shows nothing');
 });
 
+test('direct play: an answer re-badges every card of its item and reads no other card', async t => {
+  const h = setup(t, { cards: 4, settings: { statusTagsDirectPlay: true }, hold: true });
+  // pickBadge asks the pipeline for the facts of each card it evaluates.
+  const evaluated = [];
+  h.JE.tagPipeline.peekItemFacts = (id) => { evaluated.push(id); return null; };
+  h.show(movie(), h.hosts[0], 'm1');
+  h.show(movie(), h.hosts[1], 'm1'); // the same item on another card
+  h.show(movie(), h.hosts[2], 'm2');
+  h.show(show(), h.hosts[3], 's1'); // a live card with no lookup at all
+  await h.slice();
+  assert.deepEqual(h.requests.map(r => r.id), ['m1', 'm2']);
+  evaluated.length = 0;
+  await h.releaseOne();
+  await h.slice();
+  assert.deepEqual([...new Set(evaluated)], ['m1'], 'only the answered item\'s cards are read');
+  assert.equal(h.badge(h.hosts[0]), 'Transcode');
+  assert.equal(h.badge(h.hosts[1]), 'Transcode', 'both cards of the item get the answer');
+  assert.equal(h.chip(h.hosts[2]), null);
+  evaluated.length = 0;
+  await h.releaseOne();
+  await h.slice();
+  assert.deepEqual([...new Set(evaluated)], ['m2']);
+  assert.equal(h.badge(h.hosts[2]), 'Transcode');
+});
+
 for (const [how, resetBy] of [
   ['a direct reset', (h) => h.JE.tagDirectPlay.reset()],
   ['reinitialising Status tags', (h) => h.JE.reinitializeStatusTags()],
@@ -926,6 +951,25 @@ test('direct play: stored answers are restored before any request, and new ones 
   assert.equal(h.chip(h.hosts[0]).title, "Won't direct play: container mkv");
   await new Promise(resolve => setTimeout(resolve, 2100));
   assert.deepEqual(puts.map(p => ({ ...p, ids: p.ids.sort() })), [{ scope: 'server-a:user-a', profileHash: hash.value, ids: ['m2', 'm3'], cap: 2000 }]);
+});
+
+test('direct play: stored answers that arrive after the cards were drawn badge every card of their items, on screen or not', async t => {
+  const stored = { r: { directPlay: false, remux: true, reasons: ['ContainerNotSupported'], container: 'mkv', video: 'h264', audio: 'aac' }, t: NOW - 1000, m: (0x811c9dc5).toString(36) };
+  const store = { available: () => true, getDirectPlay: async () => new Map([['m1', stored], ['m2', stored]]), putDirectPlay: async () => {} };
+  const h = setup(t, { settings: { statusTagsDirectPlay: true }, store, autoIntersect: false });
+  h.show(movie(), h.hosts[0], 'm1');
+  h.show(movie(), h.hosts[1], 'm2');
+  h.show(movie(), h.hosts[2], 'm2');
+  assert.equal(h.chip(h.hosts[0]), null, 'drawn before the store answered');
+  h.intersect(h.hosts[0]); // only the first card is on screen
+  await h.settle();
+  await h.slice(); await h.slice();
+  assert.equal(h.badge(h.hosts[0]), "Won't direct play");
+  assert.equal(h.badge(h.hosts[1]), "Won't direct play", 'a card off screen is drawn from the restored answer too');
+  assert.equal(h.badge(h.hosts[2]), "Won't direct play");
+  h.intersect(h.hosts[1]);
+  await h.slice(); await h.slice();
+  assert.equal(h.requests.length, 0, 'and nothing is asked when it comes on screen');
 });
 
 test('direct play: a replaced file is asked about again, and an answer for the old file never shows for the new one', async t => {

@@ -123,8 +123,8 @@
     const visible = new Set();
     /** @type {Map<string, number>} answers waiting to be persisted (memory key → saved time), by scope */
     const unsaved = new Map();
-    /** @type {Set<Function>} live passes to run after a slice applied answers */
-    const pendingNotify = new Set();
+    /** @type {Map<Function, Set<string>>} live passes to run after a slice applied answers, each with the items answered */
+    const pendingNotify = new Map();
     let observer = null;
     let sliceScheduled = false;
     let generation = 0;
@@ -893,23 +893,43 @@
                 const stored = await store.getDirectPlay(s, hash);
                 if (gen !== generation || primedKey !== key) return;
                 const now = Date.now();
-                let loaded = 0;
+                /** @type {string[]} The items the store answered (a version's key is `${id}@${source}`). */
+                const loaded = [];
                 for (const [id, value] of stored) {
                     const memoryKey = `${hash}|${id}`;
-                    if (!memory.has(memoryKey) && value && now - value.t < TTL_MS) { memory.set(memoryKey, value); loaded++; }
+                    if (!memory.has(memoryKey) && value && now - value.t < TTL_MS) { memory.set(memoryKey, value); loaded.push(String(id).split('@')[0]); }
                 }
                 // Cards drawn before the stored answers arrived: one pass, and no request for those.
-                if (!loaded) return;
+                if (!loaded.length) return;
                 for (const card of visible) {
                     const entry = tracked.get(card);
                     if (!entry) continue;
                     const memoryKey = `${hash}|${itemKey(entry)}`;
-                    if (memory.has(memoryKey) && !inFlight.has(memoryKey) && sameMedia(memory.get(memoryKey), entry.media)) { queue.delete(memoryKey); pendingNotify.add(entry.onResult); }
+                    if (memory.has(memoryKey) && !inFlight.has(memoryKey) && sameMedia(memory.get(memoryKey), entry.media)) {
+                        queue.delete(memoryKey);
+                        // The pass covers every restored item: their cards off screen are drawn from memory
+                        // too, and coming on screen later asks (and tells) nothing.
+                        notifySoon(entry, loaded);
+                    }
                 }
                 scheduleSlice();
             } catch { /* the store marks itself unavailable */ }
         })();
         return primed;
+    }
+
+    /**
+     * Have the next slice tell a card's renderer that its item was answered.
+     * A renderer's passes are batched: one call per slice, with every item
+     * answered since the last one.
+     * @param {{id: string, onResult: Function}} entry - A tracked card's record.
+     * @param {string[]} [more] - Other items answered with it.
+     */
+    function notifySoon(entry, more) {
+        let ids = pendingNotify.get(entry.onResult);
+        if (!ids) pendingNotify.set(entry.onResult, ids = new Set());
+        ids.add(entry.id);
+        if (more) for (const id of more) ids.add(id);
     }
 
     /** Write the answers of the last few seconds (debounced) under the scope they were asked in. */
@@ -1019,10 +1039,12 @@
 
     /**
      * Watch a card that may get a warning; its item is asked about once it is
-     * on screen. `onResult` runs (batched per slice) when an answer lands.
+     * on screen. `onResult` runs (batched per slice) when an answer lands,
+     * with the ids of the items answered (as given here), so its pass can
+     * leave every other card alone.
      * @param {HTMLElement} card
      * @param {string} itemId
-     * @param {Function} onResult
+     * @param {(itemIds: Set<string>) => void} onResult
      * @param {string} [media] - The item's media fingerprint: an answer for other media is asked again.
      * @param {string} [source] - The version the card stands for (the user's pick, see qualitytags.js); '' for
      *   the default one Jellyfin plays.
@@ -1065,7 +1087,7 @@
 
     /**
      * One idle slice: the live passes for answers that landed since the last
-     * one (one per renderer), then launches for queued items still on screen
+     * one (one per renderer, for the items answered), then launches for queued items still on screen
      * while idle time and request slots last (one at least when the slice
      * ran late).
      * @param {IdleDeadline} [deadline]
@@ -1093,8 +1115,8 @@
         }
         const notify = [...pendingNotify];
         pendingNotify.clear();
-        for (const fn of notify) {
-            try { fn(); } catch (e) { console.warn(`${logPrefix} A badge pass failed.`, e); }
+        for (const [fn, ids] of notify) {
+            try { fn(ids); } catch (e) { console.warn(`${logPrefix} A badge pass failed.`, e); }
         }
         let launched = 0;
         for (const [key, job] of queue) {
@@ -1209,7 +1231,7 @@
         armRetry();
         for (const card of job.cards) {
             const entry = tracked.get(card);
-            if (entry && itemKey(entry) === itemKey(job)) pendingNotify.add(entry.onResult);
+            if (entry && itemKey(entry) === itemKey(job)) notifySoon(entry);
         }
         scheduleSlice();
     }
