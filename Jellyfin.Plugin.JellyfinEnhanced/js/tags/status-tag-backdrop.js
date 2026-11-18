@@ -72,7 +72,7 @@
 // carrier's inline style, so they go with the card; decoded artwork is
 // kept for a few cards only.
 //
-// Surface (JE.statusTagBackdrop): BLUR_PX, track, release, refresh,
+// Surface (JE.statusTagBackdrop): BLUR_PX, track, release, resume, refresh,
 // setActive, isActive, stats, and the pure parts boxSizes, blurRgba,
 // fitImage, parseGradient, parseColour, splitLayers, snap,
 // startsPixelGrid, placeLayer.
@@ -446,6 +446,8 @@
         const tainting = new Set();
         /** @type {Set<Card>} cards found still in use when their pictures were due back (see rest) */
         const lingering = new Set();
+        /** @type {WeakSet<HTMLElement>} hosts released while they were off the page (see resume) */
+        const detached = new WeakSet();
         const counters = { passes: 0, maxPassMs: 0, measures: 0, measureMs: 0, maxMeasureMs: 0, layoutMs: 0, cards: 0, reused: 0, slices: 0, sliceMs: 0, maxSliceMs: 0, decodes: 0, drawn: 0, plain: 0, pixelMs: 0, maxPixelMs: 0, failed: 0 };
         let active = true;
         let measureScheduled = false;
@@ -647,6 +649,8 @@
                 // force it early, so a tag that moved keeps its old picture's place for the frame it moves in.
                 card.chips = new MutationObserver((records) => {
                     if (records.every((record) => record.type === 'attributes' && record.target === host && HOST_MARKS.has(record.attributeName || ''))) return;
+                    // Before the paint that shows the change: a tag drawn afresh must not be bare meanwhile.
+                    dropStale(created);
                     created.moved = true;
                     markDirty(created);
                 });
@@ -657,9 +661,44 @@
                 }
             }
             // Until its pictures stand in for it, the tag has the live filter: the look never waits for this part.
+            dropStale(card);
             if (!card.carriers.size) setBlur(host, true);
             card.moved = true;
             markDirty(card);
+        }
+
+        /**
+         * Pictures on a slot that left the card, or that no longer holds a
+         * status tag (the card was presented again, its badge redrawn or
+         * removed), are not under any tag now: they go at once and the live
+         * filter stands in, until the measuring pass shows the pictures the
+         * card kept on its new slot. Cheap: a card has one or two carriers.
+         * @param {Card} card
+         */
+        function dropStale(card) {
+            if (!card.carriers.size) return;
+            let stale = false;
+            for (const carrier of card.carriers) {
+                if (!carrier.isConnected || !card.host.contains(carrier) || !carrier.querySelector(`.${tagClass}`)) { stale = true; break; }
+            }
+            if (!stale) return;
+            for (const carrier of card.carriers) clear(carrier);
+            card.carriers.clear();
+            card.on = [];
+            setBlur(card.host, true);
+        }
+
+        /**
+         * Take up again a card that was released while it was off the page
+         * and is back with the same nodes (the layout controller says so).
+         * @param {HTMLElement} host
+         */
+        function resume(host) {
+            if (!host || !detached.has(host) || !host.isConnected) return;
+            detached.delete(host);
+            if (!host.querySelector(`.${tagClass}`)) { delete host.dataset.jeBlur; return; }
+            track(host);
+            try { JE.core?.tagLayout?.syncFlowOf?.(host); } catch { /* the controller decides it when the card is next placed */ }
         }
 
         /**
@@ -697,7 +736,10 @@
             lingering.delete(card);
             for (const carrier of card.carriers) clear(carrier);
             card.carriers.clear();
+            // Off the page (its view was dropped, or its row is being moved): should the same nodes come
+            // back, the tag has the live filter, and resume() takes the card up again.
             if (host.isConnected) setBlur(host, true);
+            else { host.dataset.jeBlur = '1'; detached.add(host); }
             card.sig = '';
             card.on = [];
             card.latest = null;
@@ -1450,7 +1492,13 @@
             card.resting = setTimeout(() => {
                 card.resting = 0;
                 if (!card.live || cards.get(card.host) !== card) return;
-                if (inUse(card)) { lingering.add(card); return; }
+                if (inUse(card)) {
+                    // Focus says when it leaves; a hover left behind by a touch does not.
+                    let over = false;
+                    try { over = !!card.host.closest('.card, .listItem')?.matches(':hover'); } catch { over = false; }
+                    if (over) lingering.add(card);
+                    return;
+                }
                 card.live = false;
                 card.moved = true;
                 markDirty(card);
@@ -1608,6 +1656,7 @@
             BLUR_PX,
             track,
             release,
+            resume,
             refresh,
             setActive,
             isActive: () => active,

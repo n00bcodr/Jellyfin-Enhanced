@@ -871,6 +871,61 @@ test('a card in use gives its pictures up for the live filter, and takes them ba
   assert.equal(h.host.hasAttribute('data-je-blur'), false);
 });
 
+test('a card presented again is never painted bare: its old pictures go and the filter stands in before the paint', async t => {
+  const h = setup(t);
+  layout(h);
+  h.backdrop.track(h.host);
+  await h.flush();
+  const picture = h.layers(h.slot);
+  assert.equal(picture['background-size'], '78px 22px');
+  assert.equal(h.host.hasAttribute('data-je-blur'), false);
+  // The layout controller draws the card's slots afresh (a setting saved, the user's data arriving): no badge is drawn again.
+  const fresh = h.slot.cloneNode(true);
+  for (const name of ['background-image', 'background-position', 'background-size', 'background-repeat']) fresh.style.removeProperty(name);
+  h.slot.replaceWith(fresh);
+  for (const [from, to] of [[h.slot, fresh], [h.group, fresh.querySelector('.status-overlay-container')], [h.tag, fresh.querySelector('.status-tag')]]) {
+    const r = from.getBoundingClientRect();
+    h.rect(to, r.left, r.top, r.right, r.bottom);
+  }
+  h.style(fresh.querySelector('.status-tag'), { backgroundColor: 'rgba(15, 15, 15, 0.72)', borderTopLeftRadius: '6px', borderTopRightRadius: '6px', borderBottomRightRadius: '6px', borderBottomLeftRadius: '6px' });
+  // The observer's turn comes before any frame.
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.host.dataset.jeBlur, '1', 'the new tag has the live filter at once');
+  await h.flush();
+  assert.deepEqual(h.layers(fresh), picture, 'then the pictures the card kept, on its new slot');
+  assert.equal(h.host.hasAttribute('data-je-blur'), false);
+  assert.equal(h.backdrop.stats().drawn, 1, 'not drawn again');
+  // The badge goes from a slot that stays (it shared the slot): its patch goes with it.
+  fresh.querySelector('.status-overlay-container').remove();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(h.layers(fresh), {});
+});
+
+test('a card taken off the page and put back with the same nodes keeps the filter meanwhile and is taken up again', async t => {
+  const h = setup(t);
+  layout(h);
+  h.backdrop.track(h.host);
+  await h.flush();
+  assert.equal(h.layers(h.slot)['background-size'], '78px 22px');
+  const card = h.host.closest('.card');
+  const parent = card.parentNode;
+  card.remove();
+  h.backdrop.track(null);
+  h.tag.setAttribute('title', 'x'); // anything that runs a measuring pass
+  await h.flush();
+  assert.equal(h.backdrop.stats().watching, 0, 'let go: nothing is kept for a card that is gone');
+  assert.deepEqual(h.layers(h.slot), {});
+  assert.equal(h.host.dataset.jeBlur, '1', 'should it come back, its tag is not bare');
+  parent.appendChild(card);
+  h.backdrop.resume(h.host);
+  assert.equal(h.backdrop.stats().watching, 1);
+  await h.flush();
+  assert.equal(h.layers(h.slot)['background-size'], '78px 22px');
+  assert.equal(h.host.hasAttribute('data-je-blur'), false);
+  h.backdrop.resume(h.host);
+  assert.equal(h.backdrop.stats().watching, 1, 'only a card that was let go while it was away');
+});
+
 /** Six cards with an empty tag host each, and the trending answer that gives each a badge. */
 const BARE = ['a', 'b', 'c', 'd', 'e', 'f'].map(id => `<div class="card" data-id="${id}"><div class="cardScalable"><div class="cardImageContainer"></div><div class="je-tag-host"></div></div></div>`).join('');
 const TRENDING = () => [{ source: 'tmdb-day', movies: { 1: 3, 2: 5, 3: 7, 4: 9, 5: 11, 6: 13 }, series: {} }];
