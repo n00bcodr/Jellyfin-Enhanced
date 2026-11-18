@@ -18,14 +18,14 @@ Get Jellyfin Enhanced running, choose a few settings, and try it in your browser
 
 Choose the starting preferences for accounts that haven't loaded JE yet. You can connect optional services now or later.
 
-1. As an administrator, open **Dashboard → Plugins → Jellyfin Enhanced**. This is the server configuration page; your personal panel is separate.
+1. As an administrator, open **Dashboard → Plugins → Jellyfin Enhanced**.
 2. In **Overview**, check **Service Status** and **Optional Dependencies** for integrations you plan to use.
-3. In **Display** and **Playback**, choose starting preferences. Poster tags have their own tab, **Media Tags**, right after **Display** (it saves as you go).
-4. In **Pages**, enable the pages you want and choose how users reach them. [JE pages & tabs](pages-and-tabs.md) explains the options.
+3. In [**Display**](../open-in-jellyfin.md?tab=display) and [**Playback**](../open-in-jellyfin.md?tab=playback), choose starting preferences.
+4. In [**Pages**](../open-in-jellyfin.md?tab=pages), enable the pages you want and choose how users reach them. [JE pages & tabs](pages-and-tabs.md) explains the options.
 5. If you use Seerr, Sonarr, Radarr, Bazarr, Shoko, or TMDB-based features, connect them now; see **Connect optional services** below.
 6. Click **Save Settings**, then refresh affected web clients.
 
-These are administrator defaults for a new configuration. Where a setting supplies a personal starting value, users can change it for their account.
+Users can change any setting that only supplies a personal starting value.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
@@ -47,8 +47,8 @@ Main media-tag preferences start off, including quality, genre, language, rating
 
 ??? note "Connect optional services"
 
-    - **Seerr:** Open **Seerr**, turn on **Enable Seerr integration**, enter **Seerr URL(s) (One per line)** and **Seerr API Key**, then click **Test** beside the key. Follow the [Seerr setup guide](../seerr/seerr-settings.md#setup) to link/import Jellyfin accounts. In **Users**, click **Import Users Now** to import unblocked users. Then use **Permission Audit → Run Audit** to check linked accounts; it doesn't import missing ones.
-    - **Sonarr, Radarr, Bazarr, or Shoko:** Configure them in **\*arr**. Use addresses reachable from the Jellyfin server. Configure public browser links separately with URL mappings when needed.
+    - **Seerr:** Open [**Seerr**](../open-in-jellyfin.md?tab=seerr&card=seerr-connection-setup), turn on **Enable Seerr integration**, enter **Seerr URL(s) (One per line)** and **Seerr API Key**, then click **Test** beside the key. Follow the [Seerr setup guide](../seerr/seerr-settings.md#setup) to link/import Jellyfin accounts. In [**Users**](../open-in-jellyfin.md?tab=seerr&card=users), click **Import Users Now** to import unblocked users. Then use **Permission Audit → Run Audit** to check linked accounts; it doesn't import missing ones.
+    - **Sonarr, Radarr, Bazarr, or Shoko:** Configure them in [**\*arr**](../open-in-jellyfin.md?tab=arr). Use addresses reachable from the Jellyfin server. Configure public browser links separately with URL mappings when needed.
     - **TMDB:** Add **TMDB API Key** in **Seerr** or **Elsewhere & Reviews** if your chosen features need it. Both fields edit the same key. Basic poster tags don't require it.
 
     Click **Save Settings** and refresh affected clients after configuring services. Test each optional service separately. Opening the personal panel confirms that JE's client interface loaded; it doesn't confirm that every integration is ready.
@@ -85,7 +85,7 @@ See [settings overview](settings-overview.md#the-personal-enhanced-panel) for al
 - Start a browser video and press ++b++ to save a bookmark. Open **Bookmarks** to return to that timestamp later.
 - In **Media Tags** (on its **Groups** tab), turn on a poster tag group and browse a library. [Tags & badges](../enhanced/tags.md) explains their data requirements and scopes.
 - Pause a browser video and wait without interacting to try the pause screen. Adjust playback preferences in **Playback Settings**.
-- If your administrator enabled them, open **Calendar**, **Requests**, or **Seerr Recommendations** (**Recommendations** in Plugin Pages or JE-managed Custom Tabs) to try the connected services.
+- If a server admin enabled them, open **Calendar**, **Requests**, or **Seerr Recommendations** (**Recommendations** in Plugin Pages or JE-managed Custom Tabs) to try the connected services.
 
 ![Movie details with Enhanced information and links](../images/enhanced/detail-overview.webp)
 

@@ -1,73 +1,44 @@
 # Spoiler Guard Settings
 
-Open Dashboard → Plugins → **Jellyfin Enhanced** → [**Display**](../open-in-jellyfin.md?tab=display) → [**Spoiler Guard**](../open-in-jellyfin.md?tab=display&card=spoiler-guard) to set server-wide policy. Users can relax individual metadata policies and seek previews in [Per-user overrides](#per-user-overrides). See [Spoiler Guard features](spoiler-guard-features.md) for title toggles, supported clients, collection inheritance, and browsing examples.
+Set server-wide policy under [**Display** → **Spoiler Guard**](../open-in-jellyfin.md?tab=display&card=spoiler-guard). Users can relax individual metadata policies and seek previews in [Per-user overrides](#per-user-overrides). Title toggles, supported clients and collection inheritance are in [Spoiler Guard features](spoiler-guard-features.md).
 
 !!! note "A title must be protected"
 
-    Protection needs a user's direct series/movie entry or applicable collection membership. The relevant item eligibility rules also apply.
+    Protection needs a direct series/movie entry for the user, or collection membership, and the item must be eligible.
 
 ## Master switch
 
 [Display > Spoiler Guard](../open-in-jellyfin.md?tab=display&card=spoiler-guard){ .je-open }
 
-Turn on Spoiler Guard to let users protect individual titles. You can also add protection through automatic modes.
-
-**How to use:** Enable **Enable Spoiler Guard**, then save the configuration.
-
 | Setting | Default | What it does |
 |---|---|---|
-| **Enable Spoiler Guard** | Off | Enables server protection and JE's Spoiler Guard interface. Stored lists remain when it is off, but do not activate protection. |
+| **Enable Spoiler Guard** | Off | Turns on server protection and the Spoiler Guard interface. Stored lists are kept while it is off but protect nothing. |
 
-??? info "How it works"
-
-    The master gates the other controls. Cast scope depends on cast hiding; advanced category controls depend on advanced mode.
-
-    Metadata controls are under **Hide metadata on unwatched episodes**, although several also affect series, movies, seasons, and extras.
-
-    | Setting | Internal property |
-    |---|---|
-    | **Enable Spoiler Guard** | `SpoilerBlurEnabled` |
+Every other control depends on this switch. Cast scope also needs cast hiding on, and the advanced reveals need advanced mode.
 
 ## Image replacement mode
 
-Choose whether protected images use parent artwork or blur. This lets you keep browsing without seeing the original scene.
-
-**How to use:**
-
-1. Set **Image replacement mode** and adjust **Blur intensity**.
-2. Choose the artwork, movie-poster, and seek-preview options below, then save.
-3. Fetch fresh item metadata in your clients after changing policy.
+Choose whether protected images are swapped for parent artwork or blurred.
 
 ![Admin Spoiler Guard settings with stock-card mode, image exceptions, automatic scope, and metadata policies](../images/admin/spoiler-policy.webp)
 
 | Setting | Default | What it does |
 |---|---|---|
 | **Image replacement mode** | **Show stock cards (hide images entirely, default)** | Uses parent artwork, or **Blur images** to blur the original. Missing parent art falls back to blur. |
-| **Blur intensity** | 40 | Blur strength; UI range 5–100. Higher values give stronger blur, but do not guarantee that all content becomes unrecognizable. Also controls stock-card fallback blur. |
+| **Blur intensity** | 40 | Strength from 5 to 100. Also sets the stock-card fallback blur. High values do not guarantee the image is unrecognizable. |
 | **Also hide the wide backdrop / fanart** | Off | Protects wide backdrops and fanart on eligible items. |
-| **Keep movie posters visible** | On | Keeps guarded movie posters and thumbnails visible in either replacement mode. |
-| **Hide trickplay seek previews** | On | Protects the scrubbing previews of protected unwatched episodes and movies. Sheets ending before saved progress still reveal; users can opt out. |
+| **Keep movie posters visible** | On | Leaves guarded movie posters and thumbnails visible in either mode. |
+| **Hide trickplay seek previews** | On | Protects scrubbing previews of protected unwatched episodes and movies. Sheets ending before saved progress are revealed, and users can opt out. |
 
-With **Keep movie posters visible** off, **Also hide the wide backdrop / fanart** on, and **Blur images** selected, both the protected movie's poster and backdrop blur. Its logo remains visible.
+Clients need to refetch item metadata after a policy change.
+
+With **Keep movie posters visible** off, **Also hide the wide backdrop / fanart** on and **Blur images** selected, a protected movie's poster and backdrop both blur. Its logo stays visible.
 
 ![Protected movie with its poster and backdrop blurred while its logo remains clear](movie-poster.webp)
 
-??? info "How it works"
-
-    **Image replacement mode** uses `SpoilerBlurMode="hide"` for **Show stock cards (hide images entirely, default)**, or `"blur"` for **Blur images**. Blur uses a Gaussian transformation on the server.
-
-    | Setting | Internal property |
-    |---|---|
-    | **Blur intensity** | `SpoilerBlurIntensity` |
-    | **Also hide the wide backdrop / fanart** | `SpoilerBlurArtwork` |
-    | **Keep movie posters visible** | `SpoilerKeepMoviePosters` |
-    | **Hide trickplay seek previews** | `SpoilerBlurTrickplay` |
-
 ### Show stock cards
 
-Stock cards replace eligible images with parent artwork. You can still recognize the show or collection without seeing the protected image.
-
-**How to use:** Select **Show stock cards (hide images entirely, default)** in **Image replacement mode** and save.
+Eligible images are replaced with parent artwork, so you can still recognize the show or collection.
 
 | Eligible item | Parent artwork |
 |---|---|
@@ -78,31 +49,29 @@ Stock cards replace eligible images with parent artwork. You can still recognize
 
 ??? note "Fallbacks and exceptions"
 
-    A movie with a direct entry uses fallback blur even if it also inherits collection protection. Movie Primary/Thumb replacement only takes effect with **Keep movie posters visible** off.
+    A movie with a direct entry gets fallback blur even if it also inherits collection protection. Movie Primary/Thumb replacement only applies with **Keep movie posters visible** off.
 
-    Recognized image-processing failures use dark stock/fallback images. Unsupported result shapes, unresolved identity, missing scope, or configured exemptions can still return original content. Stock-card fallback blur can retain silhouettes and colors.
+    Image-processing failures return dark stock or fallback images. Unsupported result shapes, unresolved identity, missing scope or configured exemptions can still return the original. Fallback blur can leave silhouettes and colors visible.
 
 ### Blur images
 
-Blur hides detail but leaves some color and shape information visible. Increase **Blur intensity** for stronger blur.
-
-**How to use:** Select **Blur images** in **Image replacement mode**, adjust **Blur intensity**, and save.
+Blur hides detail but leaves some color and shape visible. Raise **Blur intensity** for a stronger effect.
 
 ### Image eligibility and exceptions
 
-Protection focuses on unwatched content. Series, collection, and early-season artwork stays visible to help you navigate.
+Protection targets unwatched content. Series, collection and early-season artwork stays visible so you can navigate.
 
 ??? note "Which images stay protected"
 
-    Primary, Thumb, Screenshot, and Chapter images are covered. Supported trickplay images are covered while **Hide trickplay seek previews** is on and the user has not unchecked **Seek previews**. Backdrop/Art are optional; Logo/Banner remain outside replacement.
+    Primary, Thumb, Screenshot and Chapter images are covered. Trickplay is covered while **Hide trickplay seek previews** is on and the user has not unchecked **Seek previews**. Backdrop/Art are optional, and Logo/Banner are never replaced.
 
-    When seek previews are not protected, previews of protected items are served unchanged with `no-store` caching, so turning protection back on takes effect at the next fetch. Previews of unprotected items are unaffected.
+    Series and collection images pass through. Season 0/1 images pass through, while later seasons stay protected until any episode in them is played. Played movies and episodes are exempt, and unplayed episodes in Season 0/1 stay eligible.
 
-    Series and collection images pass through. Season 0/1 images pass through; later-season images are protected until any episode in that season is played. Played movies and episodes are exempt. Unplayed episodes inside Season 0/1 remain eligible.
+    **Keep movie posters visible** still leaves movie chapter thumbnails and screenshots eligible (and Backdrop/Art when enabled). Movie chapters starting before saved progress are revealed. Episodes keep chapter-image protection until played. Whole trickplay sheets are revealed once their end is at or before saved progress. See [saved-progress rules](spoiler-guard-features.md#saved-progress-chapters-and-trickplay).
 
-    **Keep movie posters visible** leaves movie chapter thumbnails and screenshots eligible, as well as Backdrop/Art when enabled. Movie chapters starting strictly before saved playback progress are revealed; those starting at or after it remain protected. Episodes retain chapter-image protection until played. Whole trickplay sheets can be revealed for either item type when their calculated exclusive end is at or before saved progress. See [saved-progress rules](spoiler-guard-features.md#saved-progress-chapters-and-trickplay).
+    While seek previews are unprotected, previews of protected items are served unchanged with `no-store`, so re-enabling protection takes effect on the next fetch.
 
-    Advanced mode can exempt the next episode's Primary/Thumb image. Metadata opt-outs do not directly disable image replacement; opting out of advanced mode does disable that exception.
+    Advanced mode can exempt the next episode's Primary/Thumb image. Metadata opt-outs do not disable image replacement, but opting out of advanced mode removes that exception.
 
 ## Auto-enable options
 
@@ -125,17 +94,9 @@ Automatic modes add titles to users' protection lists, reducing the need to togg
 
 ??? note "Internal setting names"
 
-    | Setting | Internal property |
-    |---|---|
-    | **Auto-enable Spoiler Guard on first play of a new show** | `SpoilerAutoEnableOnFirstPlay` |
-    | **Auto-enable Spoiler Guard on Seerr request** | `SpoilerAutoEnableOnSeerrRequest` |
-    | **Auto-enable Spoiler Guard when new titles are added to the library** | `SpoilerAutoEnableOnLibraryAdd` |
-
 ### Auto-enable on first play of a new show
 
 This protects a new show when you start S1E1 and currently have no played episode in that series. Later episodes and movies never trigger it, regardless of **Movies** scope.
-
-**How to use:** Enable **Auto-enable Spoiler Guard on first play of a new show**, save, then start qualifying S1E1 playback.
 
 ??? note "First-play eligibility"
 
@@ -144,8 +105,6 @@ This protects a new show when you start S1E1 and currently have no played episod
 ### Auto-enable on Seerr request
 
 This records pending protection after qualifying successful requests through JE. Manual pre-arming is also available independently; see [pending protection](spoiler-guard-features.md#pre-arming-for-titles-not-yet-in-your-library).
-
-**How to use:** Enable **Auto-enable Spoiler Guard on Seerr request**, save, then request a title through JE.
 
 !!! warning "Check protection after requesting"
 
@@ -160,8 +119,6 @@ This records pending protection after qualifying successful requests through JE.
 ### Auto-enable when new titles are added to the library
 
 This adds newly created shows and movies to users' protection lists. New items are queued from any library source.
-
-**How to use:** Enable **Auto-enable Spoiler Guard when new titles are added to the library**, choose and save scope, then add new titles.
 
 !!! note "Protection can take time"
 
@@ -180,8 +137,6 @@ This adds newly created shows and movies to users' protection lists. New items a
 
 Scope lets you choose which content automatic modes protect. The same saved scope also applies when you protect existing titles.
 
-**How to use:** Under **Auto-enable applies to**, choose types and libraries, then save. Leave every library unchecked to cover all.
-
 | Setting | Default | What it does |
 |---|---|---|
 | **TV shows** | On | Allows series in automatic modes and apply-existing. |
@@ -191,12 +146,6 @@ Scope lets you choose which content automatic modes protect. The same saved scop
 ??? note "Library picker and internal values"
 
     The picker includes TV, movie, and mixed libraries, with their actual names and type suffixes. Deleted selections are flagged and dropped on save. Until then, an allowlist containing only deleted valid IDs can match nothing. If the picker cannot load, saving preserves the previous selection.
-
-    | Setting | Internal property |
-    |---|---|
-    | **TV shows** | `SpoilerAutoEnableSeries` |
-    | **Movies** | `SpoilerAutoEnableMovies` |
-    | **Libraries — leave every library unticked to cover all of them. Doesn't apply to Seerr requests (the title isn't in a library yet).** | `SpoilerAutoEnableLibraryIds`; defaults to an empty string; selected IDs are stored comma-separated. |
 
 ## Guarding titles already in the library
 
@@ -235,8 +184,6 @@ Use **Apply to existing titles now…** for a one-time pass over existing shows 
 
 A detail-page toggle normally refreshes matching item images while text waits for navigation. Turn on strict refresh to reload descriptions, titles, and ratings too, with a brief page flash.
 
-**How to use:** Enable **Strict refresh mode (full page reload after toggle)** and save.
-
 | Setting | Default | What it does |
 |---|---|---|
 | **Strict refresh mode (full page reload after toggle)** | Off | Adds a full reload to the normal detail-toggle image refresh. |
@@ -247,15 +194,9 @@ A detail-page toggle normally refreshes matching item images while text waits fo
 
     Supported watched-state changes always use an image refresh after about 200 ms, without a full reload. Seerr-modal toggles and personal preference saves do not use the detail-toggle refresh path. See [refresh behavior](spoiler-guard-features.md#after-toggling-what-happens-on-your-screen).
 
-    | Setting | Internal property |
-    |---|---|
-    | **Strict refresh mode (full page reload after toggle)** | `SpoilerBlurStrictRefresh` |
-
 ## Hide metadata on unwatched episodes
 
 Choose which information to hide while you browse protected titles. These admin policies also apply to eligible movies, series, seasons, and extras; see the [item-scope matrix](spoiler-guard-features.md#what-spoiler-guard-protects).
-
-**How to use:** Open **Hide metadata on unwatched episodes**, choose fields to protect, and save.
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -274,26 +215,11 @@ Choose which information to hide while you browse protected titles. These admin 
 
 ??? note "Internal setting names"
 
-    | Setting | Internal property |
-    |---|---|
-    | **Hide episode descriptions** | `SpoilerStripOverview` |
-    | **Placeholder text** | `SpoilerOverviewPlaceholder` |
-    | **Hide tags** | `SpoilerStripTags` |
-    | **Hide chapter names (keep timestamps)** | `SpoilerStripChapters` |
-    | **Hide taglines** | `SpoilerStripTaglines` |
-    | **Hide ratings** | `SpoilerStripRatings` |
-    | **Hide air date** | `SpoilerStripPremiereDate` |
-    | **Replace episode titles** | `SpoilerReplaceTitle` |
-    | **Hide cast on unwatched episodes** | `SpoilerStripCast` |
-    | **Hide reviews on Spoiler Guard series** | `SpoilerStripReviews` |
-    | **Hide TV show descriptions** | `SpoilerStripSeriesOverview`; raw default `null`, inheriting `SpoilerStripOverview` until explicitly saved. |
-    | **Cast hiding scope** | `SpoilerStripCastMode="GuestStars"` removes `GuestStar` entries; `"All"` removes every `People` entry, including crew. |
-
 ### Descriptions and placeholder text
 
 Protected nonempty descriptions use your placeholder text. Empty descriptions stay empty.
 
-**How to use:** Set **Placeholder text** and save. Save a separate **Hide TV show descriptions** choice if you want it to differ from episode-description hiding.
+**Hide TV show descriptions** can be saved separately if you want it to differ from episode-description hiding.
 
 ??? note "Placeholder cleanup and older settings"
 
@@ -305,8 +231,6 @@ Protected nonempty descriptions use your placeholder text. Empty descriptions st
 
 Chapter names and thumbnail images have separate protection rules. You can keep chapter names visible without revealing protected images.
 
-**How to use:** Turn off **Hide chapter names (keep timestamps)** to retain names, then save.
-
 ??? note "Chapter and preview limits"
 
     Turning off chapter-name hiding does not reveal protected chapter images. Effective title or description protection can also clear chapter image-path metadata.
@@ -315,9 +239,7 @@ Chapter names and thumbnail images have separate protection rules. You can keep 
 
 ### Titles, ratings, and cast
 
-You can replace episode titles, hide scores, and remove guest stars or the whole cast. These choices reduce spoilers in names and cast lists while you browse.
-
-**How to use:** Choose **Replace episode titles**, **Hide ratings**, and **Hide cast on unwatched episodes** as needed. Set **Cast hiding scope**, then save.
+You can replace episode titles, hide scores, and remove guest stars or the whole cast.
 
 ??? note "Title, score, and character-role limits"
 
@@ -331,9 +253,9 @@ You can replace episode titles, hide scores, and remove guest stars or the whole
 
 ### Reviews
 
-Spoiler Guard can hide JE's Reviews panel on protected detail pages. This helps you avoid spoilers even after an episode or directly protected movie is played.
+Spoiler Guard can hide JE's Reviews panel on protected detail pages, even after an episode or directly protected movie is played.
 
-**How to use:** Enable **Hide reviews on Spoiler Guard series** and save. Users can opt out with **Reviews** in their personal settings.
+Users can opt out with **Reviews** in their personal settings.
 
 !!! note "Reviews must also be enabled"
 
@@ -388,17 +310,6 @@ Users can uncheck **Advanced per-category reveals** in personal settings to rest
 
     Watched-data events normally evict the boundary immediately. Library changes can wait for the five-minute cache lifetime.
 
-    | Setting | Internal property |
-    |---|---|
-    | **Enable advanced per-category reveals** | `SpoilerAdvancedMode` |
-    | **Next episode: keep title hidden** | `SpoilerNextEpisodeStripTitle` |
-    | **Next episode: keep description hidden** | `SpoilerNextEpisodeStripOverview` |
-    | **Next episode: keep ratings hidden** | `SpoilerNextEpisodeStripRatings` |
-    | **Next episode: keep image hidden** | `SpoilerNextEpisodeStripImage` |
-    | **Current season: keep titles hidden** | `SpoilerCurrentSeasonStripTitle` |
-    | **Current season: keep descriptions hidden** | `SpoilerCurrentSeasonStripOverview` |
-    | **Current season: keep ratings hidden** | `SpoilerCurrentSeasonStripRatings` |
-
 ## Per-user overrides
 
 You can reveal selected information for your own account while keeping the rest protected. Your choices do not change server-wide policy.
@@ -440,22 +351,6 @@ Changes save immediately. Only admin-enabled categories appear; **Advanced per-c
     Checking a category saves `null` (inherit); unchecking saves `false`. The inherited defaults are nullable. **Don't ask me to confirm when turning Spoiler Guard off** defaults to `false`. These preferences live in `UserSpoilerBlur.Prefs` within `spoilerblur.json`.
 
     The dialog's **Don't ask again for 15 minutes** is a separate per-account, per-browser local-storage snooze. Unchecking the permanent preference restores confirmation subject to any active snooze.
-
-    | Setting | Internal property |
-    |---|---|
-    | **TV show descriptions** | `HideSeriesDescriptions` |
-    | **Episode descriptions** | `HideEpisodeDescriptions` |
-    | **Episode titles** | `ReplaceEpisodeTitles` |
-    | **Chapter names** | `HideChapterNames` |
-    | **Cast list** | `HideCast` |
-    | **Ratings** | `HideRatings` |
-    | **Air date** | `HideAirDate` |
-    | **Taglines** | `HideTaglines` |
-    | **Tags** | `HideTags` |
-    | **Reviews** | `HideReviews` |
-    | **Seek previews** | `HideTrickplay` |
-    | **Advanced per-category reveals** | `UseAdvancedCategories` |
-    | **Don't ask me to confirm when turning Spoiler Guard off** | `SkipDisableConfirm` |
 
 ## Automatic per-user image identity tags
 
@@ -561,3 +456,55 @@ JE logs Spoiler Guard activity so you can investigate automatic protection or st
     Look for first-play events (`SpoilerAutoEnable`), library-add batches (`SpoilerAutoEnableOnLibraryAdd`), apply-existing per-user/summary results (`SpoilerApplyExisting`), Seerr pending records and promotions (`SpoilerSeerrPromoter`), failed cache evictions, unexpected response shapes, and corruption/quarantine paths.
 
     Informational events normally use INFO; corruption and unexpected-shape diagnostics use WARNING.
+
+## Internal property names
+
+??? info "Configuration property for each setting"
+
+    | Setting | Property |
+    |---|---|
+    | **Enable Spoiler Guard** | `SpoilerBlurEnabled` |
+    | **Blur intensity** | `SpoilerBlurIntensity` |
+    | **Also hide the wide backdrop / fanart** | `SpoilerBlurArtwork` |
+    | **Keep movie posters visible** | `SpoilerKeepMoviePosters` |
+    | **Hide trickplay seek previews** | `SpoilerBlurTrickplay` |
+    | **Auto-enable Spoiler Guard on first play of a new show** | `SpoilerAutoEnableOnFirstPlay` |
+    | **Auto-enable Spoiler Guard on Seerr request** | `SpoilerAutoEnableOnSeerrRequest` |
+    | **Auto-enable Spoiler Guard when new titles are added to the library** | `SpoilerAutoEnableOnLibraryAdd` |
+    | **TV shows** | `SpoilerAutoEnableSeries` |
+    | **Movies** | `SpoilerAutoEnableMovies` |
+    | **Libraries** | `SpoilerAutoEnableLibraryIds`; defaults to an empty string; selected IDs are stored comma-separated. |
+    | **Strict refresh mode (full page reload after toggle)** | `SpoilerBlurStrictRefresh` |
+    | **Hide episode descriptions** | `SpoilerStripOverview` |
+    | **Placeholder text** | `SpoilerOverviewPlaceholder` |
+    | **Hide tags** | `SpoilerStripTags` |
+    | **Hide chapter names (keep timestamps)** | `SpoilerStripChapters` |
+    | **Hide taglines** | `SpoilerStripTaglines` |
+    | **Hide ratings** | `SpoilerStripRatings` |
+    | **Hide air date** | `SpoilerStripPremiereDate` |
+    | **Replace episode titles** | `SpoilerReplaceTitle` |
+    | **Hide cast on unwatched episodes** | `SpoilerStripCast` |
+    | **Hide reviews on Spoiler Guard series** | `SpoilerStripReviews` |
+    | **Hide TV show descriptions** | `SpoilerStripSeriesOverview`; raw default `null`, inheriting `SpoilerStripOverview` until explicitly saved. |
+    | **Cast hiding scope** | `SpoilerStripCastMode="GuestStars"` removes `GuestStar` entries; `"All"` removes every `People` entry, including crew. |
+    | **Enable advanced per-category reveals** | `SpoilerAdvancedMode` |
+    | **Next episode: keep title hidden** | `SpoilerNextEpisodeStripTitle` |
+    | **Next episode: keep description hidden** | `SpoilerNextEpisodeStripOverview` |
+    | **Next episode: keep ratings hidden** | `SpoilerNextEpisodeStripRatings` |
+    | **Next episode: keep image hidden** | `SpoilerNextEpisodeStripImage` |
+    | **Current season: keep titles hidden** | `SpoilerCurrentSeasonStripTitle` |
+    | **Current season: keep descriptions hidden** | `SpoilerCurrentSeasonStripOverview` |
+    | **Current season: keep ratings hidden** | `SpoilerCurrentSeasonStripRatings` |
+    | **TV show descriptions** | `HideSeriesDescriptions` |
+    | **Episode descriptions** | `HideEpisodeDescriptions` |
+    | **Episode titles** | `ReplaceEpisodeTitles` |
+    | **Chapter names** | `HideChapterNames` |
+    | **Cast list** | `HideCast` |
+    | **Ratings** | `HideRatings` |
+    | **Air date** | `HideAirDate` |
+    | **Taglines** | `HideTaglines` |
+    | **Tags** | `HideTags` |
+    | **Reviews** | `HideReviews` |
+    | **Seek previews** | `HideTrickplay` |
+    | **Advanced per-category reveals** | `UseAdvancedCategories` |
+    | **Don't ask me to confirm when turning Spoiler Guard off** | `SkipDisableConfirm` |

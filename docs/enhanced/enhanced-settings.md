@@ -1,14 +1,12 @@
 # Enhanced settings
 
-Series and season quality can summarize a representative episode (default), the latest aired episode, the best value per category, values shared by every episode, or best quality with a **Mixed** marker (**±** in compact mode). Choose [**Media Tags** → **Groups**](../open-in-jellyfin.md?jeSection=media-tags&tab=groups) → **Quality** → **Series and seasons show:**. The admin default seeds new users and **Apply defaults to all users**; personal choices override it. **Follow server (…)** keeps following the administrator's later changes, while choosing a policy by name keeps it, even when it is the administrator's current one. Native Poster Tags use the same policy. See [Quality Tags](tags.md#quality-tags) for missing metadata, language and source/format behavior.
-
 Use the Enhanced panel for your preferences, or **Dashboard** → **Plugins** → **Jellyfin Enhanced** for server features and new users' starting values. This page covers Enhanced; [Tags & Badges](tags.md) and specialist settings pages cover their own controls. Defaults below are for plugin 12.12.0.0; your administrator may choose different starting values.
 
 ## Enhanced Settings — User configuration
 
 ### Enhanced Panel
 
-The Enhanced panel lets you choose how Jellyfin Enhanced works for your account. Ordinary users can open it without Plugin Pages or Custom Tabs.
+Anyone can open the Enhanced panel to set their own preferences; no companion plugin is needed.
 
 **How to open it on desktop:**
 
@@ -76,7 +74,7 @@ Changing **Custom Pause Screen** or **Disable Custom Styles** asks you to refres
 
 ### Shortcuts
 
-Shortcuts let you navigate Jellyfin and control playback from your keyboard. Your keys start from the administrator's **Keyboard** configuration, and you can choose your own overrides.
+Shortcuts let you navigate Jellyfin and control playback from your keyboard. Your keys start from the administrator's [**Keyboard**](../open-in-jellyfin.md?tab=keyboard&card=keyboard-shortcuts) configuration, and you can choose your own overrides.
 
 1. Open **Shortcuts**. Actions are grouped under **Global** and **Player**.
 2. Click or focus a binding and wait for **Waiting…**.
@@ -84,33 +82,33 @@ Shortcuts let you navigate Jellyfin and control playback from your keyboard. You
 
 While the editor is listening, ++backspace++ restores the current administrator binding. ++delete++ or the adjacent disable button disables the action. Re-enabling also restores the administrator binding.
 
-The stock bindings are:
+The stock bindings are below. Actions marked *Player* only work in the video player.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| **Open Search** | ++slash++ | Clicks the header search control and focuses search when available. |
+| **Open Search** | ++slash++ | Opens search and focuses it when available. |
 | **Go to Home** | ++shift+h++ | Opens Home. |
 | **Go to Dashboard** | ++d++ | Opens the dashboard; Jellyfin permissions still apply. |
 | **Quick Connect** | ++q++ | Opens Quick Connect. |
-| **Play Random Item** | ++r++ | Clicks the random button outside the player; opens an item's details. |
-| **Cycle Aspect Ratio** | ++a++ | Changes the video aspect ratio in the player. |
-| **Show Playback Info** | ++i++ | Shows playback information in the player. |
-| **Subtitle Menu** | ++s++ | Opens the player's subtitle menu. |
-| **Cycle Subtitle Tracks** | ++c++ | Cycles subtitle tracks. |
-| **Cycle Audio Tracks** | ++v++ | Cycles audio tracks. |
-| **Increase Playback Speed** | ++plus++ | Moves up one speed step. |
-| **Decrease Playback Speed** | ++minus++ | Moves down one speed step. |
-| **Reset Playback Speed** | ++r++ | Returns to 1× in the player. |
-| **Bookmark Current Time** | ++b++ | Opens bookmark creation at the current position when bookmarks are enabled. |
-| **Open Episode Preview** | ++p++ | Opens the preview using the existing button; requires the InPlayerEpisodePreview companion plugin. |
-| **Skip Intro/Outro** | ++o++ | Skips the current intro/outro. |
-| **Step Back One Frame** | ++comma++ | Pauses and seeks backward by an estimated frame duration. |
-| **Step Forward One Frame** | ++period++ | Pauses and seeks forward by an estimated frame duration. |
-| **Decrease Subtitle Offset** | ++left-bracket++ | Shifts subtitles 0.1 s later (lowers the offset) and briefly shows Jellyfin's subtitle offset panel. |
-| **Increase Subtitle Offset** | ++right-bracket++ | Shifts subtitles 0.1 s earlier (raises the offset) and briefly shows Jellyfin's subtitle offset panel. |
-| **Sync Subtitles** | ++shift+s++ | Opens or closes [Subtitle Sync](enhanced-features.md#subtitle-sync): choose the line you just heard to sync the subtitles, or search and jump to a line. |
-| **Jump to Last Position** | ++z++ | Returns once to the saved position before your last seek. |
-| **Jump to % of video** | ++0++–++9++ | Seeks to 0%, 10%, … 90% of the video. |
+| **Play Random Item** | ++r++ | Outside the player, clicks the dice button when available and opens a random item's details. |
+| **Cycle Aspect Ratio** | ++a++ | Player. Cycles **Auto → Cover → Fill**. |
+| **Show Playback Info** | ++i++ | Player. Toggles JE's statistics overlay. |
+| **Subtitle Menu** | ++s++ | Player. Opens the subtitle menu. |
+| **Cycle Subtitle Tracks** | ++c++ | Player. Cycles tracks, including **Off**. |
+| **Cycle Audio Tracks** | ++v++ | Player. Cycles audio tracks, without an Off option. |
+| **Increase Playback Speed** | ++plus++ | Player. Steps up through 0.25×, 0.5×, 0.75×, 1×, 1.25×, 1.5×, 1.75× and 2×. |
+| **Decrease Playback Speed** | ++minus++ | Player. Steps down through those speeds. |
+| **Reset Playback Speed** | ++r++ | Player. Returns to 1×. |
+| **Bookmark Current Time** | ++b++ | Player. Opens **Add Bookmark** at the current position when Bookmarks is enabled. |
+| **Open Episode Preview** | ++p++ | Player. Clicks the existing preview button; requires the separate InPlayerEpisodePreview plugin. |
+| **Skip Intro/Outro** | ++o++ | Player. Skips the current intro or outro segment. |
+| **Step Back One Frame** | ++comma++ | Player. Pauses and seeks back one estimated frame. |
+| **Step Forward One Frame** | ++period++ | Player. Pauses and seeks forward one estimated frame. |
+| **Decrease Subtitle Offset** | ++left-bracket++ | Player. Shifts subtitles 0.1 s later (lowers the offset) and briefly shows Jellyfin's subtitle offset panel. |
+| **Increase Subtitle Offset** | ++right-bracket++ | Player. Shifts subtitles 0.1 s earlier (raises the offset) and briefly shows Jellyfin's subtitle offset panel. |
+| **Sync Subtitles** | ++shift+s++ | Player. Opens or closes [Subtitle Sync](enhanced-features.md#subtitle-sync): choose the line you just heard to sync the subtitles, or search and jump to a line. |
+| **Jump to Last Position** | ++z++ | Player. Returns once to the position saved before your last seek. |
+| **Jump to % of video** | ++0++–++9++ | Player. Seeks to 0%, 10%, … 90%. Can be disabled but not rebound. |
 
 Ordinary shortcuts do not fire while an input or textarea is focused. See [Enhanced features](enhanced-features.md) for the player tools.
 
@@ -193,7 +191,7 @@ Make text subtitles easier to read with your preferred colors, size, and positio
 | **Background** | Transparent (`#00000000`) | Sets background color and opacity, also 0–255. |
 | **Size** | **Normal** | Chooses **Tiny**, **Small**, **Normal**, **Large**, **Extra Large**, or **Gigantic**. |
 | **Font** | **Default** | Chooses **Default**, **Noto Sans**, **Sans Serif**, **Typewriter**, or **Roboto**. |
-| **Text Effect** | **Auto** | Chooses **Auto**, **None**, **Shadow**, **Outline**, or **Outline + Shadow**. **Auto** adds a shadow with a transparent background and none with an opaque box. |
+| **Text Effect** | **Auto** | Chooses **Auto**, **None**, **Shadow**, **Outline**, or **Outline + Shadow**. **Auto** adds a shadow with the transparent preset or `#00000000`; a visible box, including a semi-transparent one, gets no Auto shadow. |
 | **Position** | Horizontal 50%, vertical 85% for newly created settings | Click or drag the grid to move the subtitle stack. Both axes are limited to 2–98%. |
 
 !!! note "Subtitle formats"
@@ -252,8 +250,6 @@ Open **UI Settings** and turn on the options you want.
 | **Show Audio Languages** | On | Audio language links on item details. |
 | **Add Remove from Continue Watching & Next Up Buttons** | Off | Adds removal buttons to home rows and keeps your playback position. |
 
-Poster tags moved to [Media Tags](#media-tags); **UI Settings** keeps a **Media Tags moved to its own section** note with an **Open** button.
-
 ??? info "How it works"
 
     The progress-display selector beneath **Show Watch Progress** has no separate label.
@@ -269,74 +265,18 @@ Poster tags moved to [Media Tags](#media-tags); **UI Settings** keeps a **Media 
 
 ### Media Tags
 
-Everything about poster tags for your account: the layout, the tag groups, status badges, rules and locked items, and your colour preset. (Administrators set the server defaults on the [Media Tags tab](tags.md) of the Jellyfin Enhanced configuration page; the **Server** tab here links to it.) Each tab does one job; a live preview beside the tabs (a strip under them on a phone) shows the result as you change it. See [The Media Tags section](tags.md#the-media-tags-section) for the preview, the phone layout and search.
+Your poster tags: layout, tag groups, status badges, rules and locked items, and colour preset. A live preview beside the tabs (a strip below them on a phone) shows the result as you change it. Administrators set server defaults on the [Media Tags admin tab](tags.md#the-media-tags-section).
 
 ![Media Tags on its Layout tab with the live preview](../images/tags/media-tags-hub.webp)
 
-=== "Layout"
+Each tab covers one job. The full setting reference for all of them is [Tags & Badges](tags.md).
 
-    | Setting | Default | What it does |
-    | --- | --- | --- |
-    | **Episode thumbnails** / **List rows** → **Use a different look** | Off | Optional layout, density, Position pills and chip limit per shape. **Use recommended** starts with compact bands for thumbnails or compact corners for list images. Locks and rules take precedence. Portrait and square cards, and Native Poster Tags, keep the default look. |
-    | Layout tiles: **Corners**, **Bands**, **Caption**, **Summary**, **Minimal** | **Corners** | Your default layout; the line under the tiles describes the selected one. Arrow keys move between tiles. |
-    | **Label density**: **Full** / **Compact** | **Full** | **Compact** shortens quality labels and hides the critic score next to a community score. |
-    | **Tag size** | **Default (100%)** | **Smaller (85%)**, **Default (100%)**, **Larger (115%)** or **Largest (130%)**; scales text, icons, flags and padding on web and native posters. |
-    | **Gap** | **Default** | **Tight** (75%), **Default** (100%) or **Roomy** (150%) spacing between tags. Shape overrides can inherit or set their own size and gap. |
-    | **Edge spacing**: **Default** / **Tight** / **Flush** | The administrator's (**Default**) | How far Corners tags sit from the poster edge: 6px, 3px or touching it. Flush tags follow the poster's rounded corners. Settings saved before layouts keep **Default** until you change it. |
-    | **Hide tags on hover** | Off | Fades poster tags while you hover a card. |
-    | **Show Tags in Native Clients (Experimental)** | On | Shown only while the administrator has Native Poster Tags on. Draws your tags, including Status, into posters for native apps. Corners and Bands are supported; Caption, Summary and Minimal use Corners. Bands follows its profile, limits and density. |
-    | **Show People Tags** | Off | Age, birthplace and deceased status on cast cards. |
-    | **Presets** | Built-in presets | **Apply** previews a preset's changes first; **Share** copies it; **Save as preset** keeps your settings (up to 10, on the server); **Import preset** adds a shared one; administrators can offer more. |
-    | **Import & export** | — | **Export settings** downloads or copies your Media Tags settings; **Import settings** checks a file or pasted text on the server, shows what changes and what is skipped, and applies it with **Undo**. See [Import, export and presets](tags.md#import-export-and-presets). |
-
-=== "Groups"
-
-    | Setting | Default | What it does |
-    | --- | --- | --- |
-    | Move up / move down | Status, quality, rating, age rating, language, genre, custom | Sets the priority order. Higher groups win when space is short. |
-    | Group switch | Off | Turns the group's tags on or off. |
-    | **Position** | Depends on the layout | Where the group goes in the selected layout, or **Hidden**. Corners offers a 3×3 grid with four corners, top/bottom centre, left/right centre and centre. Native Poster Tags use these picks for Corners and Bands. |
-    | **Show up to** | Genre 3, language 3, custom 3, awards 2, age rating and status 1, quality, rating and logos **All** | How many tags the group shows (1–10, or **All** for quality and rating). |
-    | **Include** | Categories on; low-quality sources off | Quality: resolution, source, HDR, special format, video format, sound and edition, their stack order and the sound language. Edition defaults on after sound; **Include low-quality sources (CAM, TS, TC, SCR)** defaults off. Source/edition naming is resolved on the server. Language: **Audio** and **Subtitles** (CC marker), **Style: Flags / Codes** and **Audio count badge: Off / Badge only / Badge and flags**. Rating: ordered source checkboxes with move buttons, **Minimum score**, **Colour by score** and where to show ratings. Status: the **Badges** button opens **Status badges**. Custom chips follow the administrator’s rules (see [Custom Tags](tags.md#custom-tags)). |
-    | Language **Style** / **Audio count badge** | Flags / Off | Codes show uppercase language codes with full-name tooltips. Dual means two audio languages, Multi three or more. The badge and included audio/subtitle chips share the language limit, audio first. |
-    | Language **Priority** → **Follow server policy** | On | Uses the administrator's live language list. Turn off to search by name or ISO code, add up to 12 languages, move them or remove them. An empty personal list has no priorities. Applies to audio/subtitle chips, Dual/Multi counts, Summary and native posters. |
-    | Language **Only show priority languages** | Follow server | Inherit the current strict policy, show only prioritized languages, or keep other languages after them. The administrator's regional-merge setting still applies. |
-    | Quality **Follow server settings** | — | Edition, low-quality sources, the quality category order and **Series and seasons show:** follow the administrator again, including later changes. Any change to one of them keeps it as your own, even a change back to the administrator's value. |
-    | **Reset to defaults** | — | Restores the administrator's layout, density, positions, order and limits. Group switches and includes stay. |
-
-    Priority controls pause until their save finishes. A failed save restores the previous policy while keeping other settings changes. Retry the priority edit once the controls become available.
-
-=== "Status badges"
-
-    | Setting | Default | What it does |
-    | --- | --- | --- |
-    | **Just Added** / **New releases** / **Trending** / **Schedule** / **Milestones** | On | Which badge families the Status group may show. A poster shows one badge at a time. |
-    | **Series status** | Off | Returning / Ended / Cancelled. |
-    | **Leaving soon** | Off | **Leaving in 5d** / **Leaving soon** on items the server will remove (Maintainerr or the administrator's leaving collections). Says *needs a Leaving soon source on the server* until an administrator sets one. |
-    | **Direct-play warning** | Off | **Transcode** / **Won't direct play** on movies and episodes this browser can't play as they are, with the reasons on hover. Web only; checked for cards on screen whose media Jellyfin has already probed (`.strm` items are always skipped, since Jellyfin probes them on every lookup). |
-
-    The administrator's two time windows show beside **Just Added** and **New releases**; administrators also get a link to change them. Turn the Status group itself on in **Groups**. Native posters follow these family switches and time windows too; their trending badge requires a TMDB key. A personal web save remembers the date locale and timezone used for native relative dates. Invalid or oversized context values are dropped, retaining the display-language/server-timezone fallback.
-
-=== "Rules & locks"
-
-    | Setting | Default | What it does |
-    | --- | --- | --- |
-    | **Rules** | None | In order, the first enabled rule whose conditions (library, type, genre, age rating) all hold gives the card its layout and density. Arrows reorder, **On**/**Off** pauses a rule, **Edit** loads it into the form, **Delete** removes it. |
-    | **Otherwise** | Your layout | Every other card uses its shape override, if enabled, or your default layout and density; **Change** goes to the Layout tab. |
-    | **Locked items** | None | The items you gave their own look in their ⋮ menu's **Media Tags** editor, each with **Edit** and **Unlock**, plus **Unlock all**. Locks always win. |
-    | **Add a rule** | Library condition, **Caption**, **Compact** | Up to five conditions, each needing a value; **Add rule** adds it at the end of the list. |
-
-=== "Colours"
-
-    | Setting | Default | What it does |
-    | --- | --- | --- |
-    | **Tag Colours** | **Server default** | Shown only when the administrator turns on **Let users pick their own preset** in Tag Styles. Each tile shows three chips in that preset's colours; colours the administrator changed for a group or a single tag stay on top. Applies right away on the web; posters drawn for native apps follow the next time they load. |
-
-=== "Server (administrators)"
-
-    Shortcuts to the Media Tags admin tab: **Server defaults for new users**, **Tag colours editor**, **Tag cache** and **Native poster tags**. Each **Open** goes straight to that section of it. Other users never get this tab. The admin tab's **Server** section also exports and imports the server-wide Media Tags settings and lists the **Presets for users** ([Import, export and presets](tags.md#import-export-and-presets)).
-
-See [Tags & Badges](tags.md#layouts) for the layouts and their complete settings reference, [Rules and locked items](tags.md#rules-and-locked-items) for how rules match, and [One item's look](tags.md#one-items-look) for the per-item editor in an item's ⋮ menu (layout, density, each group's place and limit, size and spacing, **Lock this look for me**, and for administrators **For everyone (server-wide)**). It starts from the item’s resolved look, including shape-specific size and limits. Saving from the admin Rules list returns keyboard focus to that item’s Edit button, or its series after a scope move.
+- **Layout:** your layout tile, label density, tag size, gap, edge spacing, hide on hover, Native Poster Tags, People Tags, presets, import and export, and optional episode-thumbnail and list-row looks. See [Layouts](tags-layouts.md#layouts).
+- **Groups:** priority order, each group's switch, position and limit, and what Quality and Language include. **Follow server settings** keeps following the administrator; any change you make stays yours. **Reset to defaults** restores the administrator's layout, positions, order and limits but keeps group switches and includes.
+- **Status badges:** which badge families the Status group may show: Just Added, New releases, Trending, Schedule, Milestones, Series status, Leaving soon and Direct-play warning.
+- **Rules & locks:** your own rules, the first enabled match decides a card's layout and density, and items you locked from their ⋮ menu. Locks always win. See [Rules and locked items](tags-layouts.md#rules-and-locked-items).
+- **Colours:** your **Tag Colours** preset, shown only when the administrator allows personal presets.
+- **Server** (administrators only): shortcuts to the admin tab's defaults, colours, tag cache and Native Poster Tags. See [Import, export and presets](tags-layouts.md#import-export-and-presets) for server-wide import and presets.
 
 ### Hidden Content
 
@@ -352,23 +292,23 @@ All controls below are per-user preferences. The matching admin defaults are und
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| **Enable Content Hiding** | On | Enables filtering for your account while the server feature is available. |
-| **Show Hide Buttons** | On | Shows hide controls. Turning it off leaves enabled filters working. |
-| **Show Confirmation Dialog** | On | Asks before hiding an item. |
-| **Show on Seerr Items** | On | Shows hide buttons on Seerr search/discovery cards. |
-| **Show in Library Views** | Off | Shows hide buttons on native library/home cards. |
-| **Show on Detail Pages** | On | Shows hide controls on supported item detail pages. |
-| **Show on Cast/Actors** | Off | Shows hide controls on cast/actor cards and supports hiding people. |
-| **Filter Library** | On | Filters native library browsing and supported related detail-page lists. |
+| **Enable Content Hiding** | On | Enables filtering for your account while the server feature is available. Admin default: **Hidden Content enabled by default**. |
+| **Show Hide Buttons** | On | Shows hide controls. Turning it off leaves enabled filters working. Admin default: **Show "Hide" buttons by default**. |
+| **Show Confirmation Dialog** | On | Asks before hiding an item. Admin default: **Show confirmation dialog before hiding**. |
+| **Show on Seerr Items** | On | Shows hide buttons on Seerr search/discovery cards. Admin default: **Show "Hide" button on Seerr search results**. |
+| **Show in Library Views** | Off | Shows hide buttons on native library/home cards. Admin default: **Show "Hide" button on library / home cards**. |
+| **Show on Detail Pages** | On | Shows hide controls on supported item detail pages. Admin default: **Show "Hide" button on item details pages**. |
+| **Show on Cast/Actors** | Off | Shows hide controls on cast/actor cards and supports hiding people. Admin default: **Show "Hide" button on cast / actor cards**. |
+| **Filter Library** | On | Filters native library browsing and supported related detail-page lists. Admin default: **Filter Library & details pages**. |
 | **Filter Discovery** | On | Filters Seerr discovery. |
-| **Filter Search** | Off | Filters Jellyfin and Seerr search results. |
+| **Filter Search** | Off | Filters Jellyfin and Seerr search results. Admin default: **Filter Search results**. |
 | **Filter Calendar** | On | Filters the calendar. |
-| **Filter Upcoming** | On | Filters upcoming episodes. |
-| **Filter Recommendations** | On | Filters suggestions and similar/recommended rows. |
-| **Filter Requests** | On | Filters the Requests page. |
+| **Filter Upcoming** | On | Filters upcoming episodes. Admin default: **Filter Upcoming episodes**. |
+| **Filter Recommendations** | On | Filters suggestions and similar/recommended rows. Admin default: **Filter Suggestions / recommendations**. |
+| **Filter Requests** | On | Filters the Requests page. Admin default: **Filter Requests page**. |
 | **Filter Next Up** | On | Filters the Next Up home row. |
 | **Filter Continue Watching** | On | Filters the Continue Watching home row. |
-| **Hide Collections & Libraries** | Off | Experimental: also allows hiding libraries, collections, and playlists. |
+| **Hide Collections & Libraries** | Off | Experimental: also allows hiding libraries, collections, and playlists. Admin default: **Allow hiding collections, libraries, and playlists (experimental)**. |
 
 !!! note
 
@@ -451,7 +391,7 @@ Use the admin configuration page to turn server features on and set starting pre
 
 ??? info "How it works"
 
-    The tabs are **Overview**, **Display**, **Media Tags**, **Elsewhere & Reviews**, **Playback**, **Pages**, **Extras**, **Keyboard**, **Services**, **Seerr**, **\*arr**, **Admin**, **Credits**, and **Docs**. The sidebar groups them and lists each tab's cards (for Media Tags, its sections) underneath. The **Media Tags** tab saves each change as you make it, so it has no **Save Settings**; **Save Settings** on the other tabs never changes a Media Tags setting. See [Tags & badges](tags.md).
+    The tabs are [**Overview**](../open-in-jellyfin.md?tab=overview), [**Display**](../open-in-jellyfin.md?tab=display), [**Media Tags**](../open-in-jellyfin.md?jeSection=media-tags), [**Elsewhere & Reviews**](../open-in-jellyfin.md?tab=elsewhere), [**Playback**](../open-in-jellyfin.md?tab=playback), [**Pages**](../open-in-jellyfin.md?tab=pages), [**Extras**](../open-in-jellyfin.md?tab=extras), [**Keyboard**](../open-in-jellyfin.md?tab=keyboard&card=keyboard-shortcuts), [**Services**](../open-in-jellyfin.md?tab=services), [**Seerr**](../open-in-jellyfin.md?tab=seerr), [**\*arr**](../open-in-jellyfin.md?tab=arr), [**Admin**](../open-in-jellyfin.md?tab=admin), **Credits**, and **Docs**. The sidebar groups them and lists each tab's cards (for Media Tags, its sections) underneath. The **Media Tags** tab saves each change as you make it, so it has no **Save Settings**; **Save Settings** on the other tabs never changes a Media Tags setting. See [Tags & badges](tags.md).
 
     Some server effects happen immediately. Page integrations can have additional requirements, described below.
 
@@ -534,7 +474,7 @@ Open [**Playback** → **Player Behaviour**](../open-in-jellyfin.md?tab=playback
 | **Auto Picture-in-Picture on tab switch** | Off | Starts personal **Auto Picture-in-Picture** enabled. Browser restrictions still apply. |
 | **Long press/hold for 2x speed β** | Off | Starts personal **Long Press for 2x Speed (β)** enabled. Supports mouse and touch. |
 | **Enable Custom Pause Screen** | On | Starts personal **Custom Pause Screen** enabled. |
-| **Show Age Rating When Playback Starts** | Off | Shows rating information when playback starts. No personal-panel toggle. |
+| **Show Age Rating When Playback Starts** | Off | Shows the official age rating, up to three recognized advisory tags and up to three genres for five seconds when playback starts. No personal-panel toggle. |
 
 Player rating chips have a separate admin server control under [**Media Tags** → **Groups**](../open-in-jellyfin.md?jeSection=media-tags&tab=groups) → **Rating**:
 
@@ -577,9 +517,11 @@ Under [**Playback** → **Shortcuts Panel & Toast Timing**](../open-in-jellyfin.
 
 ### Random button defaults
 
+[Display > Random Button](../open-in-jellyfin.md?tab=display&card=random-button){ .je-open }
+
 Set the dice button's starting pool for new users. Users can override all five preferences in **Random Button Settings**.
 
-Open [**Display** → **Random Button**](../open-in-jellyfin.md?tab=display&card=random-button) and choose the starting values:
+Choose the starting values:
 
 | Setting | Default | What it does |
 | --- | --- | --- |
@@ -613,7 +555,9 @@ The editable action labels and stock keys match the [Shortcuts table](#shortcuts
 
 ### Page entry points
 
-Enable the page under **Pages**, choose its placement, and click **Save Settings**. Bookmarks, Hidden Content, Activity, Leaving Soon, and Catch Up controls are listed below. Follow [JE Pages & Tabs](../getting-started/pages-and-tabs.md) for native Home links, Plugin Pages registration, and automatic or manual Custom Tabs setup.
+[Pages](../open-in-jellyfin.md?tab=pages){ .je-open }
+
+Enable the page, choose its placement, and click **Save Settings**. Bookmarks, Hidden Content, Activity, Leaving Soon, and Catch Up controls are listed below. Follow [JE Pages & Tabs](../getting-started/pages-and-tabs.md) for native Home links, Plugin Pages registration, and automatic or manual Custom Tabs setup.
 
 ### Bookmarks
 
@@ -661,7 +605,7 @@ Admin server settings:
 | **Use Plugin Pages for Hidden Content** | Off | Exposes the page through Plugin Pages. |
 | **Use Custom Tabs for Hidden Content** | Off | Enables its Custom Tabs embed. |
 | **Add the Custom Tabs entry for me** | Off | Creates the matching managed Custom Tabs entry on save. |
-| **Let admins view and manage other users' hidden content** | On | Adds another-user selection to management. Viewing another account starts read-only; **Edit** enables changes on its behalf. |
+| **Let admins view and manage other users' hidden content** | On | Adds another-user selection to management. Viewing another account starts read-only; **Edit** enables changes on its behalf. Turning it off disables both viewing and editing. |
 
 Under **More Settings**, these admin values supply starting values for the matching [personal Hidden Content controls](#hidden-content). Saving new defaults leaves existing personal copies intact.
 
@@ -740,7 +684,7 @@ Stored watched/favorite/review entries respect viewer library access. Active Str
 
 [Pages](../open-in-jellyfin.md?tab=pages){ .je-open }
 
-The Leaving Soon page lists everything the removal tool that is on ([Maintainerr or Reclaimerr](tags.md#leaving-soon-maintainerr-or-reclaimerr)) will remove, with the days left. Everyone sees the items they can access, soonest first, and can filter **Movies** and **Shows**. It needs a removal tool set up first.
+The Leaving Soon page lists everything the removal tool that is on ([Maintainerr or Reclaimerr](tags-status.md#leaving-soon-maintainerr-or-reclaimerr)) will remove, with the days left. Everyone sees the items they can access, soonest first, and can filter **Movies** and **Shows**. It needs a removal tool set up first.
 
 1. Set up and turn on a removal tool in the **\*arr** tab (the Maintainerr or Reclaimerr card).
 2. Enable the page under [**Pages** → **Leaving Soon**](../open-in-jellyfin.md?tab=pages&card=leaving-soon) and configure an entry point.
@@ -807,27 +751,29 @@ See [Enhanced features](enhanced-features.md) for the full gesture workflow and 
 
 ### Tags: Quality, Genre, Language, Rating, Age Rating, Status, Awards, Logos, Custom, People
 
-All tag settings have moved to [Tags & Badges](tags.md): personal **Media Tags** controls, the admin **Media Tags** tab's defaults, quality categories/order, language preferences, rating scopes, custom tag rules, people/review badges, hover behavior, and Tag Styles.
+Tag settings (quality, language, rating scopes, custom rules, people and review badges, hover behavior, Tag Styles) are covered in [Tags & Badges](tags.md).
 
 #### Custom tag rules
 
-[**Media Tags** → **Groups**](../open-in-jellyfin.md?jeSection=media-tags&tab=groups) → **Custom** (the configuration page's Media Tags tab) turns Jellyfin tags and collections into poster chips: up to 20 rules of match type, name, label and optional icon, plus **Enable Custom Tags** and its **Position** as defaults for users. Colour the labels under **Tag Styles** → **Custom**. See [Custom Tags](tags.md#custom-tags).
+[**Media Tags** → **Groups**](../open-in-jellyfin.md?jeSection=media-tags&tab=groups) → **Custom** (the configuration page's Media Tags tab) turns Jellyfin tags and collections into poster chips: up to 20 rules of match type, name, label and optional icon, plus **Enable Custom Tags** and its **Position** as defaults for users. Colour the labels under **Tag Styles** → **Custom**. See [Custom Tags](tags-groups.md#custom-tags).
 
 #### Configuration
 
-For personal tag choices, open **Media Tags**. Administrators use the configuration page's **Media Tags** tab. See [Tags & Badges](tags.md) for exact labels, defaults, and configuration instructions.
+For personal tag choices, open **Media Tags**. Administrators use the configuration page's [**Media Tags**](../open-in-jellyfin.md?jeSection=media-tags) tab. See [Tags & Badges](tags.md) for exact labels, defaults, and configuration instructions.
 
 #### Status Tags badge groups
 
-Under [**Media Tags** → **Status badges**](../open-in-jellyfin.md?jeSection=media-tags&tab=badges), the eight personal switches are Just Added, New releases (New Movie / New Series / New Episode), Trending, Schedule (Airing Today / Airs / Returns / Coming Soon), Milestones (New Season / Premiere / Finale / Complete Season), Series status (Returning / Ended / Cancelled), Leaving soon (Maintainerr or leaving collections) and Direct-play warning (Transcode / Won't direct play, web only). The first five default on; the last three off. The administrator sets the Leaving soon source (Maintainerr URL and API key, or existing collection names, and how often it is read) in the **Status badges** section of the Media Tags admin tab; see [Leaving soon](tags.md#leaving-soon-maintainerr) and [Direct-play warning](tags.md#direct-play-warning). Administrators set starting defaults and the two shared day windows in the **Status badges** section of that tab. Finale and series schedule enrichment require a TMDB key; Jellyfin date badges work without one. **Compact** density shortens long milestone labels. See [Status Tags](tags.md#status-tags) for sources and first-match priority by card type.
+Under [**Media Tags** → **Status badges**](../open-in-jellyfin.md?jeSection=media-tags&tab=badges), the eight personal switches are Just Added, New releases (New Movie / New Series / New Episode), Trending, Schedule (Airing Today / Airs / Returns / Coming Soon), Milestones (New Season / Premiere / Finale / Complete Season), Series status (Returning / Ended / Cancelled), Leaving soon (Maintainerr or leaving collections) and Direct-play warning (Transcode / Won't direct play, web only). The first five default on; the last three off. The administrator sets the Leaving soon source (Maintainerr URL and API key, or existing collection names, and how often it is read) in the **Status badges** section of the Media Tags admin tab; see [Leaving soon](tags-status.md#leaving-soon-maintainerr-or-reclaimerr) and [Direct-play warning](tags-status.md#direct-play-warning). Administrators set starting defaults and the two shared day windows in the **Status badges** section of that tab. Finale and series schedule enrichment require a TMDB key; Jellyfin date badges work without one. **Compact** density shortens long milestone labels. See [Status Tags](tags-status.md#status-tags) for sources and first-match priority by card type.
 
 #### Logo Tags
 
-The **Logos** row on the **Groups** tab of **Media Tags** turns the group on (off by default) and sets its position and **Show up to**. What the logo shows is the administrator's choice under [**Media Tags** → **Groups**](../open-in-jellyfin.md?jeSection=media-tags&tab=groups) → **Logos**: **Movies show** (streaming service, studio or no logo), **Series show** (network, streaming service or no logo), **Streaming region** and **Logos per title** (1 or 2). Logos need the TMDB API key for images; without one, names are shown. See [Logo Tags](tags.md#logo-tags).
+The **Logos** row on the **Groups** tab of **Media Tags** turns the group on (off by default) and sets its position and **Show up to**. What the logo shows is the administrator's choice under [**Media Tags** → **Groups**](../open-in-jellyfin.md?jeSection=media-tags&tab=groups) → **Logos**: **Movies show** (streaming service, studio or no logo), **Series show** (network, streaming service or no logo), **Streaming region** and **Logos per title** (1 or 2). Logos need the TMDB API key for images; without one, names are shown. See [Logo Tags](tags-groups.md#logo-tags).
 
 #### Server-Side Tag Cache
 
-Server cache settings, library exclusions, browser fallback persistence, **Clear All Client Caches**, and [**Admin** → **Tag Cache**](../open-in-jellyfin.md?tab=admin&card=tag-cache) → **Rebuild Server Tag Cache** are covered in [Tags & Badges](tags.md).
+[Media Tags > Server](../open-in-jellyfin.md?jeSection=media-tags&tab=server){ .je-open }
+
+Server cache settings, library exclusions, browser fallback persistence, **Clear All Client Caches**, and [**Media Tags** → **Server**](../open-in-jellyfin.md?jeSection=media-tags&tab=server) → **Rebuild Server Tag Cache** are covered in [Tags & Badges](tags.md).
 
 #### Audio Language Tags
 
@@ -835,7 +781,7 @@ The controls under [**Display** → **Audio Language Tags**](../open-in-jellyfin
 
 #### Native Poster Tags (Experimental)
 
-The admin **Media Tags** tab's controls and personal **Show Tags in Native Clients (Experimental)** are covered in [Tags & Badges](tags.md), including eligible clients, exclusions, and refresh requirements.
+The admin [**Media Tags**](../open-in-jellyfin.md?jeSection=media-tags) tab's controls and personal **Show Tags in Native Clients (Experimental)** are covered in [Tags & Badges](tags.md), including eligible clients, exclusions, and refresh requirements.
 
 ### Settings in other areas
 
@@ -861,16 +807,16 @@ Open **Docs** to load **Documentation** from the GitHub Pages site, or choose **
 
 ### Awards poster group
 
-[**Media Tags → Groups → Awards**](../open-in-jellyfin.md?jeSection=media-tags&tab=groups) enables chart and winner chips, with the usual position, priority and cap controls (default two). Existing users start off. Administrators first enable Awards under [**Display → Media Tags → Awards Tags**](../open-in-jellyfin.md?tab=display&card=media-tags), choose ribbons, configure the two MDBList lists and a freshness interval (24 hours), and run **Refresh Awards Tags**. IMDb/Letterboxd charts and Certified Fresh require the server MDBList key; Wikidata Oscar/Emmy wins do not. Native posters follow the same group preference. See [Awards Tags](tags.md#awards-tags).
+[**Media Tags → Groups → Awards**](../open-in-jellyfin.md?jeSection=media-tags&tab=groups) enables chart and winner chips, with the usual position, priority and cap controls (default two). Existing users start off. Administrators first enable Awards under [**Display → Media Tags → Awards Tags**](../open-in-jellyfin.md?tab=display&card=media-tags), choose ribbons, configure the two MDBList lists and a freshness interval (24 hours), and run **Refresh Awards Tags**. IMDb/Letterboxd charts and Certified Fresh require the server MDBList key; Wikidata Oscar/Emmy wins do not. Native posters follow the same group preference. See [Awards Tags](tags-groups.md#awards-tags).
 
 
 ### Quality stream display
 
-In [**Media Tags → Groups → Quality**](../open-in-jellyfin.md?jeSection=media-tags&tab=groups), the Sound, Video codec and HDR display modes independently choose **Highest only** (the unchanged default) or **All distinct values**. **Minimum resolution to show** filters resolution chips below Off / 720p / 1080p / 4K; **Hide SDR** removes SDR exposed by All HDR mode. Each field offers **Server default**; **Follow server settings** also restores these five overrides and the technical category switches/orders. Explicit choices stay personal even if they equal the server defaults. Administrator defaults live on the dedicated [**Media Tags → Groups → Quality**](../open-in-jellyfin.md?jeSection=media-tags&tab=groups) page. The Quality group limit and Compact labels apply to the resulting chips, including the existing layout overflow count. See [quality display and aggregation](tags.md#highest-only-or-every-stream-value).
+In [**Media Tags → Groups → Quality**](../open-in-jellyfin.md?jeSection=media-tags&tab=groups), the Sound, Video codec and HDR display modes independently choose **Highest only** (the unchanged default) or **All distinct values**. **Minimum resolution to show** filters resolution chips below Off / 720p / 1080p / 4K; **Hide SDR** removes SDR exposed by All HDR mode. Each field offers **Server default**; **Follow server settings** also restores these five overrides and the technical category switches/orders. Explicit choices stay personal even if they equal the server defaults. Administrator defaults live on the dedicated [**Media Tags → Groups → Quality**](../open-in-jellyfin.md?jeSection=media-tags&tab=groups) page. The Quality group limit and Compact labels apply to the resulting chips, including the existing layout overflow count. See [quality display and aggregation](tags-quality.md#highest-only-or-every-stream-value).
 
 ### Technical poster facts
 
-[**Media Tags → Groups → Quality → Include**](../open-in-jellyfin.md?jeSection=media-tags&tab=groups) adds **Runtime**, **Aspect ratio** and **Frame rate**, all off initially, with the usual stacking-order controls. The administrator sets their new-user defaults on the Media Tags admin tab, **Groups → Quality**. Full/Compact density changes duration and ratio labels. [**Media Tags → Status badges → Scenes**](../open-in-jellyfin.md?jeSection=media-tags&tab=badges) is also off initially and allows Post-credits/Mid-credits movie badges once the administrator enables the family and configures TMDB. Language subtitle chips automatically use **SDH** for hearing-impaired tracks when **Include → Subtitles** is on; no extra language switch is required. See [Tags & badges](tags.md#runtime-aspect-ratio-and-frame-rate).
+[**Media Tags → Groups → Quality → Include**](../open-in-jellyfin.md?jeSection=media-tags&tab=groups) adds **Runtime**, **Aspect ratio** and **Frame rate**, all off initially, with the usual stacking-order controls. The administrator sets their new-user defaults on the Media Tags admin tab, **Groups → Quality**. Full/Compact density changes duration and ratio labels. [**Media Tags → Status badges → Scenes**](../open-in-jellyfin.md?jeSection=media-tags&tab=badges) is also off initially and allows Post-credits/Mid-credits movie badges once the administrator enables the family and configures TMDB. Language subtitle chips automatically use **SDH** for hearing-impaired tracks when **Include → Subtitles** is on; no extra language switch is required. See [Tags & badges](tags-quality.md#runtime-aspect-ratio-and-frame-rate).
 
 The Media Tags group editor hides **Show up to** for Status and Age rating, and for Logos when the administrator allows only one logo. Other groups keep their limit control.
 

@@ -205,8 +205,8 @@ Use the action that matches the stale or missing content. Clearing all browser s
 | --- | --- |
 | Old scripts after an update | Hard-refresh; inspect the script version and proxy cache using [Scripts Not Loading](#scripts-not-loading). |
 | Stale translation strings | Personal **Language Settings** → **Clear Translation Cache** reloads this browser. **Refresh Translation Cache** signals clients to refresh translations on their next page load. See [Translation Updates](../faq-support/contributing-translations.md#translation-updates) for bundled-locale limits. |
-| Stale browser tag data | With **Server-Side Tag Cache** off, use administrator **Overview** → **Quick Actions** → **Clear all client tag caches**, or [**Display** → **Clear All Client Caches**](../open-in-jellyfin.md?tab=display&card=clear-all-client-caches), then reload affected clients. |
-| Stale server tag data | **Refresh Tag Cache** updates changed entries and rebuilds the cache when needed. [**Admin** → **Tag Cache**](../open-in-jellyfin.md?tab=admin&card=tag-cache) → **Rebuild Server Tag Cache** starts a full rebuild. |
+| Stale browser tag data | With **Server-Side Tag Cache** off, use administrator **Overview** → **Quick Actions** → **Clear all client tag caches**, or [**Media Tags** → **Server** → **Clear All Client Caches**](../open-in-jellyfin.md?jeSection=media-tags&tab=server), then reload affected clients. |
+| Stale server tag data | **Refresh Tag Cache** updates changed entries and rebuilds the cache when needed. [**Media Tags** → **Server**](../open-in-jellyfin.md?jeSection=media-tags&tab=server) → **Rebuild Server Tag Cache** starts a full rebuild. |
 | Missing locally mirrored icons or other CDN assets | Check asset requests and server logs; run **Refresh CDN Assets** after repairing upstream connectivity. See the details below for the request path. |
 
 The admin **Display** controls for tag caching are:
@@ -252,7 +252,7 @@ Compare direct local access with your remote URL. If the tabs work locally, chec
 
 ??? note "Details"
 
-    The current tabs are **Overview**, **Display**, **Playback**, **Pages**, **Seerr**, **\*arr**, **Elsewhere & Reviews**, **Extras**, **Keyboard**, **Admin**, and **Docs**.
+    The current tabs are [**Overview**](../open-in-jellyfin.md?tab=overview), [**Display**](../open-in-jellyfin.md?tab=display), [**Playback**](../open-in-jellyfin.md?tab=playback), [**Pages**](../open-in-jellyfin.md?tab=pages), [**Seerr**](../open-in-jellyfin.md?tab=seerr), [**\*arr**](../open-in-jellyfin.md?tab=arr), [**Elsewhere & Reviews**](../open-in-jellyfin.md?tab=elsewhere), [**Extras**](../open-in-jellyfin.md?tab=extras), [**Keyboard**](../open-in-jellyfin.md?tab=keyboard&card=keyboard-shortcuts), [**Admin**](../open-in-jellyfin.md?tab=admin), and **Docs**.
 
     A proxy authentication page returned in place of JSON or JavaScript is a different failure from an unreachable service. For Seerr and *arr, server connection URLs must be reachable by Jellyfin without an interactive browser sign-in; user-facing URL mappings are separate. Follow [Seerr settings](../seerr/seerr-settings.md) or [*arr troubleshooting](../arr/troubleshooting-support.md) for service-specific diagnosis.
 

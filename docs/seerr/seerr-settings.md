@@ -12,8 +12,6 @@ All settings here are **admin (server) settings** unless marked as per-user.
 
 [Seerr > Seerr Connection Setup](../open-in-jellyfin.md?tab=seerr&card=seerr-connection-setup){ .je-open }
 
-Connect Seerr to search and request media from Jellyfin. Follow the setup steps below.
-
 !!! note "Before you start"
 
     You need a reachable Seerr instance, its API key, and Seerr accounts linked to your Jellyfin users. API calls need an address reachable from the Jellyfin server; browser-facing Seerr links need an address your users can reach.
@@ -61,6 +59,8 @@ You can instead use JE's [automatic or manual import](#step-4-configure-user-imp
 
 ### Step 3: Configure Plugin
 
+[Seerr > Seerr Connection Setup](../open-in-jellyfin.md?tab=seerr&card=seerr-connection-setup){ .je-open }
+
 Enter your connection details in JE to enable Seerr features.
 
 **How to use:**
@@ -96,14 +96,15 @@ Enter your connection details in JE to enable Seerr features.
 
 ### Step 4: Configure User Import (Optional)
 
+[Seerr > Users](../open-in-jellyfin.md?tab=seerr&card=users){ .je-open }
+
 Let JE create missing Seerr accounts automatically, or import users when you choose.
 
 **How to use:**
 
-1. Open [**Seerr** → **Users**](../open-in-jellyfin.md?tab=seerr&card=users).
-2. For automatic import, enable **Auto import Jellyfin users to Seerr** and save.
-3. For an immediate import, press **Import Users Now**. This saves the current configuration and imports unblocked users.
-4. Read the imported/total counts and any returned errors. Reaching Seerr does not mean every account was imported.
+1. For automatic import, enable **Auto import Jellyfin users to Seerr** and save.
+2. For an immediate import, press **Import Users Now**. This saves the current configuration and imports unblocked users.
+3. Read the imported/total counts and any returned errors. Reaching Seerr does not mean every account was imported.
 
 ![Seerr user import controls and blocked user selection](../images/admin/seerr-users.webp)
 
@@ -134,7 +135,7 @@ For conflicting-email errors, inspect Seerr for an old or duplicate account befo
 
 Add requestable titles and collections to Jellyfin search.
 
-**How to use:** Open [**Seerr** → **Search & Requests**](../open-in-jellyfin.md?tab=seerr&card=search-requests) and choose the options below. See [Search Integration](seerr-features.md#search-integration) and [collection requests](seerr-features.md#collection-requests).
+**How to use:** Choose the options below. See [Search Integration](seerr-features.md#search-integration) and [collection requests](seerr-features.md#collection-requests).
 
 ![Seerr search, request and discovery switches](../images/admin/seerr-discovery.webp)
 
@@ -160,7 +161,7 @@ Show 4K movie request actions.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| **Enable 4K Requests** | Off | Exposes 4K movie request actions; Seerr still validates the request. |
+| **Enable 4K Requests** | Off | Exposes 4K movie requests. Needs a suitable Seerr 4K Radarr destination and permissions; Seerr still validates the request. |
 
 !!! note "4K movie requirements"
 
@@ -174,7 +175,7 @@ Show 4K season requests alongside normal-quality requests.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| **Enable 4K TV Requests** | Off | Exposes **Request in 4K**, opening the season dialog in 4K mode. Normal and 4K availability are tracked separately. |
+| **Enable 4K TV Requests** | Off | Exposes **Request in 4K**, opening the season dialog in 4K mode. Normal and 4K availability are tracked separately. Needs a suitable Seerr 4K Sonarr destination and permissions. |
 
 !!! note "4K series requirements"
 
@@ -245,7 +246,7 @@ Show subscription-provider icons on Seerr posters.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| **Show Streaming Providers on Posters** | Off | Adds up to four subscription-provider icons from the admin's default Elsewhere region (or each user's Seerr streaming region when that Elsewhere option is on) to Seerr posters; needs a TMDB key or the Seerr integration. |
+| **Show Streaming Providers on Posters** | Off | Adds up to four subscription-provider icons from the admin's default Elsewhere region and provider filters (or each user's Seerr streaming region when that Elsewhere option is on) to Seerr posters; needs a TMDB key or the Seerr integration. |
 
 !!! note "Requires TMDB"
 
@@ -263,7 +264,7 @@ Show subscription-provider icons on Seerr posters.
 
 Add related titles and follow-up season requests to item detail pages.
 
-**How to use:** Open [**Seerr** → **Discovery & UI Extras**](../open-in-jellyfin.md?tab=seerr&card=discovery-ui-extras) → **Item Pages Discovery** and choose the options below. See [Item Details](seerr-features.md#item-details).
+**How to use:** Choose the options under **Item Pages Discovery**. See [Item Details](seerr-features.md#item-details).
 
 | Setting | Default | What it does |
 | --- | --- | --- |
@@ -309,8 +310,8 @@ Choose which filters the **Filters** button of a "More" section offers. A filter
 | **Runtime** | On | A runtime range, in minutes. List pages only. |
 | **Genres** | On | Genres a title must have, and genres it must not have. |
 | **Original language** | On | Original languages a title must be in, and ones it must not be in. |
-| **Content rating** | On | The ratings used in your **Default Region** (**Elsewhere & Reviews** tab). US ratings where TMDB has none for it. List pages only. |
-| **Streaming services** | On | The services available in your **Default Region** (**Elsewhere & Reviews** tab). List pages only. |
+| **Content rating** | On | The ratings used in your **Default Region** ([**Elsewhere & Reviews**](../open-in-jellyfin.md?tab=elsewhere&card=tmdb) tab). US ratings where TMDB has none for it. List pages only. |
+| **Streaming services** | On | The services available in your **Default Region** ([**Elsewhere & Reviews**](../open-in-jellyfin.md?tab=elsewhere&card=tmdb) tab). List pages only. |
 | **Keywords** | On | Keywords a title must have, and keywords it must not have. List pages only. |
 | **Role (actor pages)** | On | What the person did in a title: acting, or a crew department such as Directing or Writing. Person pages only. |
 
@@ -324,7 +325,7 @@ Add requested titles to the requester's Jellyfin watchlist as they reach the lib
 
 **How to use:**
 
-1. Open [**Seerr** → **Watchlist**](../open-in-jellyfin.md?tab=seerr&card=watchlist) and enable the options you want.
+1. Enable the options you want.
 2. Save your settings.
 3. After enabling requested-media monitoring, restart Jellyfin or run **Jellyfin Enhanced Startup** once to start watching for library additions and updates.
 
@@ -387,8 +388,6 @@ See [Auto-Request Settings](seerr-features.md#auto-request-settings) for trigger
 
 Request the next numeric season near the end of the current one.
 
-**How to use:** Open [**Seerr** → **Auto Season Requests**](../open-in-jellyfin.md?tab=seerr&card=auto-season-requests). Enable the feature and choose the threshold below.
-
 | Setting | Default | What it does |
 | --- | --- | --- |
 | **Enable Automatic Advance Season Requests** | Off | Requests the next numeric season using the playback user's linked Seerr account when the threshold is met. |
@@ -405,16 +404,14 @@ Request the next numeric season near the end of the current one.
 
 Request the next collection movie based on playback.
 
-**How to use:** Open [**Seerr** → **Auto Movie Requests**](../open-in-jellyfin.md?tab=seerr&card=auto-movie-requests). Enable the feature, choose playback triggers, and select a quality profile mode.
-
 | Setting | Default | What it does |
 | --- | --- | --- |
-| **Enable Auto Movie Requests** | Off | Considers the immediately following movie in Seerr's returned collection entries. |
-| **When movie starts** | Off | Checks near the start of playback. |
+| **Enable Auto Movie Requests** | Off | Considers the immediately following movie in Seerr's returned collection entries. Needs a TMDB ID, collection membership, JE's TMDB key and linked user access. |
+| **When movie starts** | Off | Checks at most five minutes in and below 5% playback. |
 | **After X minutes watched** | On | Checks after playback reaches the position threshold. Seeking or resuming can meet it. |
 | **Minutes Watched Threshold:** | 20 | Playback-position threshold in minutes; input range 1–180. |
 | **Only request if released** | On | Skips a movie with a valid future release date. Missing/unparseable dates do not block a request. |
-| **Quality Profile Mode:** | **Default** | **Default** lets Seerr choose. **Original** copies settings from the watched movie's first Seerr request. **Custom** sends the configured selections below. |
+| **Quality Profile Mode:** | **Default** | **Default** lets Seerr choose. **Original** copies settings from the watched movie's first Seerr request. **Custom** sends the configured selections below. A 4K Radarr server is requested as a 4K request. |
 | **Use default instead of 4K fallback** | On | In **Original**, falls back to Seerr defaults when the copied request was 4K. Turn off to preserve those 4K settings. |
 | **Radarr Server:** | Unset | Destination used only in **Custom**. A server marked **(4K)** is requested as a 4K request. |
 | **Quality Profile:** | Unset | Profile used only in **Custom**. |
@@ -438,7 +435,7 @@ Request the next collection movie based on playback.
 
 Delete a Seerr request once the user who made it has watched it.
 
-**How to use:** Open [**Seerr** → **Auto Request Removal**](../open-in-jellyfin.md?tab=seerr&card=auto-request-removal) and enable the feature. The **Remove watched requests from Seerr** scheduled task runs daily at 04:30 and removes each request on the first run after its requester has watched it; run it from **Dashboard** → **Scheduled Tasks** to apply it at once.
+**How to use:** Enable the feature. The **Remove watched requests from Seerr** scheduled task runs daily at 04:30 and removes each request on the first run after its requester has watched it; run it from **Dashboard** → **Scheduled Tasks** to apply it at once.
 
 !!! warning "Destructive: use with caution"
 
@@ -456,7 +453,7 @@ See [Auto Request Removal](seerr-features.md#auto-request-removal) for how movie
 
 Help Seerr discover availability after Jellyfin library additions by triggering its recently-added scan.
 
-**How to use:** Open [**Seerr** → **Recently Added Sync to Seerr**](../open-in-jellyfin.md?tab=seerr&card=recently-added-sync-to-seerr), enable the automatic scan, and save. For an administrator test, press **Trigger scan now**.
+For an administrator test, press **Trigger scan now**.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
@@ -551,13 +548,14 @@ Refresh Requests automatically while users browse.
 
 ## Seerr Recommendations Page
 
+[Pages > Seerr Recommendations Page](../open-in-jellyfin.md?tab=pages&card=seerr-recommendations-page){ .je-open }
+
 Give users a dedicated page for discovering movies and series.
 
 **How to use:**
 
-1. Open [**Pages** → **Seerr Recommendations Page**](../open-in-jellyfin.md?tab=pages&card=seerr-recommendations-page).
-2. Enable the page and choose a navigation option below.
-3. Save your settings.
+1. Enable the page and choose a navigation option below.
+2. Save your settings.
 
 See [Recommendations browsing](seerr-features.md#recommendations-page) for using the page.
 
@@ -584,8 +582,6 @@ For routes, layout limits, Plugin Pages restart rules, and Custom Tabs setup, se
 [Seerr > Debug & Caching](../open-in-jellyfin.md?tab=seerr&card=debug-caching){ .je-open }
 
 Use these controls to investigate stale status or permissions.
-
-**How to use:** Open [**Seerr** → **Debug & Caching**](../open-in-jellyfin.md?tab=seerr&card=debug-caching) and adjust the cache settings below. Reload other clients as needed.
 
 | Setting | Default | What it does |
 | --- | --- | --- |

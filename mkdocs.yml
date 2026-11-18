@@ -13,10 +13,9 @@ theme:
   custom_dir: overrides
   logo: images/favicon.ico
   favicon: images/favicon.ico
-  # Jellyfin's own UI font
   font:
-    text: Noto Sans
-    code: Noto Sans Mono
+    text: Ubuntu
+    code: Ubuntu Mono
   icon:
     previous: material/chevron-left
     next: material/chevron-right
@@ -47,6 +46,7 @@ theme:
     - navigation.top
     - navigation.footer
     - toc.follow
+    - toc.integrate
     - search.suggest
     - search.highlight
     - search.share
@@ -136,8 +136,15 @@ nav:
 
   - Enhanced:
     - Features: enhanced/enhanced-features.md
-    - Tags & Badges: enhanced/tags.md
     - Settings: enhanced/enhanced-settings.md
+
+  - Tags & Badges:
+    - Overview: enhanced/tags.md
+    - Layouts & Rules: enhanced/tags-layouts.md
+    - Quality, Genre & Language: enhanced/tags-quality.md
+    - Ratings, Awards & More: enhanced/tags-groups.md
+    - Status Badges: enhanced/tags-status.md
+    - Server & Styles: enhanced/tags-server.md
 
   - Spoiler Guard:
     - Features: spoiler-guard/spoiler-guard-features.md
@@ -161,10 +168,14 @@ nav:
     - Features: other/other-features.md
     - Settings: other/other-settings.md
 
+  - Community Analytics:
+    - "What's collected": advanced/community-analytics.md
+    - Live Dashboard: advanced/community-analytics-dashboard.md
+    - Settings: advanced/community-analytics-settings.md
+
   - Advanced:
     - CSS Customization: advanced/css-customization.md
     - API: advanced/api.md
-    - Community Analytics: advanced/community-analytics.md
     - Project Structure: advanced/project-structure.md
     - Admin Media Tags Tab: advanced/admin-media-tags.md
 

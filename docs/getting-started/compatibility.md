@@ -4,17 +4,14 @@ JE supports Jellyfin Server 12.x and 10.11.x with separate builds. You'll get th
 
 ## Jellyfin versions
 
-Use the build that matches your Jellyfin server. Both versions support the seven JE pages, tags, and automatic requests.
+Install the build that matches your Jellyfin server, then restart Jellyfin (see [installation](../installation/installation.md)). Both builds support the seven JE pages, tags and automatic requests.
 
-1. Install the matching build from the shared plugin repository.
-2. Restart Jellyfin. See [installation](../installation/installation.md) for the full steps.
-
-| Area | Jellyfin 12.x | Jellyfin 10.11.x |
+| Server | Build file | Runtime |
 | --- | --- | --- |
-| Plugin build | Jellyfin 12.x build | Jellyfin 10.11.x build |
-| Script loading and branding | Supported | Supported |
-| JE pages and native Home tabs | Supported; Modern Layout has navigation limits below | Supported, including native Home tabs |
-| Personal Enhanced panel | Drawer, user settings menu, player button, shortcut, and Modern Layout avatar-menu entry | Drawer, user settings menu, player button, and shortcut |
+| Jellyfin 12.x | `Jellyfin.Plugin.JellyfinEnhanced_12.0.0.zip` | .NET 10 |
+| Jellyfin 10.11.x | `Jellyfin.Plugin.JellyfinEnhanced_10.11.0.zip` | .NET 9 |
+
+Two differences you will notice: Jellyfin 12's Modern Layout adds a **Jellyfin Enhanced** entry to the avatar menu but has [navigation limits](#modern-and-legacy-layouts), and Jellyfin 10.11 supports native Home tabs without those limits.
 
 !!! note "Older Jellyfin servers"
 
@@ -25,11 +22,6 @@ Use the build that matches your Jellyfin server. Both versions support the seven
     If **Wrong plugin build for this Jellyfin version** appears on the admin page, reinstall the matching build and restart. See [troubleshooting](../installation/troubleshooting.md).
 
 ??? info "Build and API details"
-
-    | Server | Build file | Runtime target |
-    | --- | --- | --- |
-    | Jellyfin 12.x | `Jellyfin.Plugin.JellyfinEnhanced_12.0.0.zip` | .NET 10 |
-    | Jellyfin 10.11.x | `Jellyfin.Plugin.JellyfinEnhanced_10.11.0.zip` | .NET 9 |
 
     Script loading and branding use built-in request-time middleware on both versions. The conditional server code adapts Activity library access and item statistics. Jellyfin 12 uses access-scoping and batch APIs; 10.11 uses compatible access queries and individual user-data reads. These differences don't reserve the seven JE pages, tags, or automatic requests for Jellyfin 12.
 
@@ -115,8 +107,8 @@ Companion plugins add optional navigation and playback tools. You don't need Fil
 | Companion | Used for | Without it |
 | --- | --- | --- |
 | File Transformation | Prerequisites of other web modifications, including page/tab companions shown by JE's dependency dashboard | Normal JE script loading and branding still work. |
-| Plugin Pages | The **Use Plugin Pages** variants under **Pages** | Its registered navigation entries aren't available. JE's standalone implementations for Bookmarks, Hidden Content, Requests, Calendar, and Recommendations can provide navigation when their other placement settings permit it; Activity and Catch Up need a tab or Plugin Pages. |
-| Custom Tabs | The **Use Custom Tabs** variants under **Pages** | It can't create the Home containers those options expect. Custom Tabs mode can suppress JE's standalone sidebar links, so turn it off and select a native Home tab or another available placement. |
+| Plugin Pages | The **Use Plugin Pages** variants under [**Pages**](../open-in-jellyfin.md?tab=pages) | Its registered navigation entries aren't available. JE's standalone implementations for Bookmarks, Hidden Content, Requests, Calendar, and Recommendations can provide navigation when their other placement settings permit it; Activity and Catch Up need a tab or Plugin Pages. |
+| Custom Tabs | The **Use Custom Tabs** variants under [**Pages**](../open-in-jellyfin.md?tab=pages) | It can't create the Home containers those options expect. Custom Tabs mode can suppress JE's standalone sidebar links, so turn it off and select a native Home tab or another available placement. |
 | Intro Skipper | Timestamp source and admin dependency check for **Auto-Skip** | Auto-skip controls are unavailable in the admin UI when the plugin is known to be absent. |
 | In-Player Episode Preview | **Open Episode Preview** player shortcut | JE can't open the companion's preview interface. |
 | KefinTweaks | Watchlist interface for Seerr/Jellyfin watchlist features | Server-side watchlist data and monitoring don't provide a built-in JE watchlist browser. KefinTweaks is detected as a web modification, rather than a normal server plugin. |
@@ -145,12 +137,12 @@ Connect only the services your chosen features need. The table shows where to se
 | Automatic season requests | Configured Seerr and the automatic request switches, eligible playback, and permitted linked users | [**Seerr → Auto Season Requests**](../open-in-jellyfin.md?tab=seerr&card=auto-season-requests); [Seerr features](../seerr/seerr-features.md) |
 | Automatic movie requests | Configured Seerr plus **TMDB API Key** for movie discovery, eligible playback, and permitted linked users | [**Seerr → Seerr Connection Setup**](../open-in-jellyfin.md?tab=seerr&card=seerr-connection-setup) and **Auto Movie Requests** |
 | Requests page | **Enable Requests Page**; Seerr for requests/issues, enabled Sonarr/Radarr instances with API keys for downloads/history | [**Pages → Requests Page**](../open-in-jellyfin.md?tab=pages&card=requests-page), **Seerr**, and **\*arr**; [*arr settings](../arr/arr-settings.md) |
-| Calendar | **Enable Calendar Page** and at least one configured source: enabled Sonarr/Radarr instance with API key, or Shoko URL and API key | [**Pages → Calendar Page**](../open-in-jellyfin.md?tab=pages&card=calendar-page) and [**\*arr → Sonarr / Radarr / Shoko**](../open-in-jellyfin.md?tab=arr&card=sonarr-radarr-shoko); [*arr features](../arr/arr-features.md) |
-| Sonarr/Radarr item links and tag synchronization | Enabled instances with **URL** and **API Key**. Item links also need a Jellyfin administrator account and **Enable \*arr Links on Detail Pages**. Sync needs **Enable Tags Sync** and its scheduled task. | [**\*arr → Sonarr / Radarr**](../open-in-jellyfin.md?tab=arr&card=sonarr-radarr), **\*arr UI Links**, and **Tags Sync** |
+| Calendar | **Enable Calendar Page** and at least one configured source: enabled Sonarr/Radarr instance with API key, or Shoko URL and API key | [**Pages → Calendar Page**](../open-in-jellyfin.md?tab=pages&card=calendar-page) and [**\*arr → Sonarr / Radarr / Shoko**](../open-in-jellyfin.md?tab=arr&card=sonarr); [*arr features](../arr/arr-features.md) |
+| Sonarr/Radarr item links and tag synchronization | Enabled instances with **URL** and **API Key**. Item links also need a Jellyfin administrator account and **Enable \*arr Links on Detail Pages**. Sync needs **Enable Tags Sync** and its scheduled task. | [**\*arr → Sonarr / Radarr**](../open-in-jellyfin.md?tab=arr&card=sonarr), **\*arr UI Links**, and **Tags Sync** |
 | Bazarr link | A Jellyfin administrator account, one **Bazarr URL**, and **Enable \*arr Links on Detail Pages**; optional **Bazarr URL Mappings**. No API key is needed. | [**\*arr → Bazarr**](../open-in-jellyfin.md?tab=arr&card=bazarr); [*arr settings](../arr/arr-settings.md) |
 | Shoko anime Calendar entries | **Shoko URL**, **Shoko API Key**, and selected episode types; Sonarr/Radarr aren't required | [**\*arr → Shoko**](../open-in-jellyfin.md?tab=arr&card=shoko) |
 | Recommendations page | **Enable Recommendations Page**, enabled/configured Seerr, and a linked user; studio-produced TV discovery also needs a TMDB key | [**Pages → Seerr Recommendations Page**](../open-in-jellyfin.md?tab=pages&card=seerr-recommendations-page) and **Seerr**; [Seerr features](../seerr/seerr-features.md) |
-| Elsewhere streaming providers and TMDB reviews | **TMDB API Key**, the relevant switches, and appropriate TMDB item IDs | **Elsewhere & Reviews**; [Elsewhere & Reviews Settings](../elsewhere/elsewhere-settings.md) |
+| Elsewhere streaming providers and TMDB reviews | **TMDB API Key**, the relevant switches, and appropriate TMDB item IDs | [**Elsewhere & Reviews**](../open-in-jellyfin.md?tab=elsewhere&card=tmdb); [Elsewhere & Reviews Settings](../elsewhere/elsewhere-settings.md) |
 | MDBList ratings and rating synchronization | **MDBList API Key** and the relevant display/fetch/sync switches; fetching depends on the account's available allowance | [**Display → MDBList Ratings**](../open-in-jellyfin.md?tab=display&card=mdblist-ratings); [MDBList settings](../other/other-settings.md#mdblist-ratings) |
 | Standalone Letterboxd links | **Enable Letterboxd Links**; movies need an IMDb ID. No Letterboxd account/API key is configured in JE | [**Extras → External Links**](../open-in-jellyfin.md?tab=extras&card=external-links); [Other settings](../other/other-settings.md) |
 | Ordinary poster rating tags | Stored Jellyfin community or critic ratings; no JE TMDB/MDBList key merely to display those values | [**Display → Media Tags**](../open-in-jellyfin.md?tab=display&card=media-tags) or personal **Media Tags**; [Tags & badges](../enhanced/tags.md) |

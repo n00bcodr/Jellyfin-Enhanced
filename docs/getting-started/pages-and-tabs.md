@@ -1,16 +1,16 @@
 # JE Pages & Tabs
 
-JE adds seven pages for bookmarks, upcoming releases, requests, and more. Choose which ones to enable and where you want users to find them. Page content and navigation have separate settings.
+JE adds seven pages for bookmarks, upcoming releases, requests, and more. Choose which ones to enable and where you want users to find them.
 
 ## Choose a placement
 
-Native Home tabs are a quick way to make pages easy to reach. They need no companion plugin and work on Jellyfin 12 and 10.11.
+Native Home tabs need no companion plugin and work on Jellyfin 12 and 10.11.
 
 1. Open admin **Dashboard → Plugins → Jellyfin Enhanced →** [**Pages**](../open-in-jellyfin.md?tab=pages).
 2. Enable the feature and its **Add … as a native Home tab** option.
 3. Click **Save Settings** and refresh the user's web client.
 
-You can also choose one of the other placements below.
+Other placements are listed below.
 
 | Placement | Requires | How users reach it |
 | --- | --- | --- |
@@ -51,15 +51,7 @@ Use **Series** for episode bookmarks; each episode has its own card.
 
 For library maintenance, see [Enhanced features](../enhanced/enhanced-features.md#playback-controls).
 
-Admin [**Pages → Bookmarks**](../open-in-jellyfin.md?tab=pages&card=bookmarks):
-
-| Setting | Default | What it does |
-| --- | --- | --- |
-| **Enable Bookmarks Feature** | On | Enables bookmarking and the library. |
-| **Add Bookmarks as a native Home tab** | Off | Adds a JE-managed Home tab. |
-| **Use Plugin Pages for Bookmarks Library** | Off | Registers the companion page. |
-| **Use Custom Tabs for Bookmarks** | Off | Shows the page in a Custom Tabs container. |
-| **Add the Custom Tabs entry for me** | Off | Manages the matching companion entry on save. |
+Admin [**Pages → Bookmarks**](../open-in-jellyfin.md?tab=pages&card=bookmarks); every option and default is in [Enhanced settings → Bookmarks](../enhanced/enhanced-settings.md#bookmarks).
 
 ??? note "Details"
 
@@ -85,16 +77,7 @@ Keep titles or other supported items off selected surfaces, then review or unhid
 
 See [content management](../enhanced/enhanced-features.md#content-management) and [Enhanced settings](../enhanced/enhanced-settings.md).
 
-Admin [**Pages → Hidden Content**](../open-in-jellyfin.md?tab=pages&card=hidden-content):
-
-| Setting | Default | What it does |
-| --- | --- | --- |
-| **Enable Hidden Content** | Off | Enables hide controls, filtering, management, and personal settings. |
-| **Add Hidden Content as a native Home tab** | Off | Adds a Home tab. |
-| **Use Plugin Pages for Hidden Content** | Off | Registers the companion page. |
-| **Use Custom Tabs for Hidden Content** | Off | Shows the page in a Custom Tabs container. |
-| **Add the Custom Tabs entry for me** | Off | Manages the companion entry. |
-| **Let admins view and manage other users' hidden content** | On | Allows administrators to select another user's hidden list and use **Edit** to add or unhide items for that user. |
+Admin [**Pages → Hidden Content**](../open-in-jellyfin.md?tab=pages&card=hidden-content); every option and default is in [Enhanced settings → Hidden Content administration](../enhanced/enhanced-settings.md#hidden-content-administration).
 
 ??? note "Details"
 
@@ -128,15 +111,7 @@ Admin [**Pages → Hidden Content**](../open-in-jellyfin.md?tab=pages&card=hidde
 
 See [*arr features](../arr/arr-features.md), [*arr settings](../arr/arr-settings.md), and [Seerr permissions](../seerr/permission-audit.md).
 
-Admin [**Pages → Requests Page**](../open-in-jellyfin.md?tab=pages&card=requests-page):
-
-| Setting | Default | What it does |
-| --- | --- | --- |
-| **Enable Requests Page** | Off | Enables the combined page. |
-| **Add Requests as a native Home tab** | Off | Adds a Home tab. |
-| **Use Plugin Pages for Requests** | Off | Registers the companion page. |
-| **Use Custom Tabs for Requests** | Off | Shows the page in a Custom Tabs container. |
-| **Add the Custom Tabs entry for me** | Off | Manages the companion entry. |
+Admin [**Pages → Requests Page**](../open-in-jellyfin.md?tab=pages&card=requests-page); every option and default is in [Seerr settings → Requests Page Management](../seerr/seerr-settings.md#requests-page-management).
 
 **Show Downloads in Requests Page**, **Show Seerr Issues Section**, and **Show Download History Section** control the page's content separately.
 
@@ -163,15 +138,7 @@ Browse upcoming movies and episodes from your configured Sonarr, Radarr, or Shok
 
 See [*arr features](../arr/arr-features.md) and [*arr settings](../arr/arr-settings.md) for source setup and access filters.
 
-Admin [**Pages → Calendar Page**](../open-in-jellyfin.md?tab=pages&card=calendar-page):
-
-| Setting | Default | What it does |
-| --- | --- | --- |
-| **Enable Calendar Page** | Off | Enables the Calendar. |
-| **Add Calendar as a native Home tab** | Off | Adds a Home tab. |
-| **Use Plugin Pages** | Off | Registers the Calendar companion page. |
-| **Use Custom Tabs** | Off | Shows the page in a Custom Tabs container. |
-| **Add the Custom Tabs entry for me** | Off | Manages the companion entry. |
+Admin [**Pages → Calendar Page**](../open-in-jellyfin.md?tab=pages&card=calendar-page); every option and default is in [*arr settings → Calendar Page Settings](../arr/arr-settings.md#calendar-page-settings).
 
 ??? note "Details"
 
@@ -202,15 +169,7 @@ Find something to watch in trending, popular, and upcoming feeds, or browse stud
 
 See [Seerr features](../seerr/seerr-features.md).
 
-Admin [**Pages → Seerr Recommendations Page**](../open-in-jellyfin.md?tab=pages&card=seerr-recommendations-page):
-
-| Setting | Default | What it does |
-| --- | --- | --- |
-| **Enable Recommendations Page** | Off | Enables discovery. |
-| **Add Recommendations as a native Home tab** | Off | Adds a Home tab. |
-| **Use Plugin Pages** | Off | Registers the companion page. |
-| **Use Custom Tabs** | Off | Shows the page in a Custom Tabs container. |
-| **Add the Custom Tabs entry for me** | Off | Manages the companion entry. |
+Admin [**Pages → Seerr Recommendations Page**](../open-in-jellyfin.md?tab=pages&card=seerr-recommendations-page); every option and default is in [Seerr settings → Seerr Recommendations Page](../seerr/seerr-settings.md#seerr-recommendations-page).
 
 ??? note "Details"
 
@@ -232,21 +191,13 @@ See recent watched, favorited, and reviewed activity from people on your server.
 
 Open **Activity** from a configured tab or Plugin Pages entry. See [Enhanced features](../enhanced/enhanced-features.md) and [Enhanced settings](../enhanced/enhanced-settings.md).
 
-Admin [**Pages → Activity Feed**](../open-in-jellyfin.md?tab=pages&card=activity-feed):
-
-| Setting | Default | What it does |
-| --- | --- | --- |
-| **Enable Activity Feed** | Off | Enables activity recording and display. |
-| **Add Activity as a native Home tab** | Off | Adds a Home tab. |
-| **Use Plugin Pages** | Off | Registers the companion page. |
-| **Use Custom Tabs** | Off | Shows the page in a Custom Tabs container. |
-| **Add the Custom Tabs entry for me** | Off | Manages the companion entry. |
+Admin [**Pages → Activity Feed**](../open-in-jellyfin.md?tab=pages&card=activity-feed); every option and default is in [Enhanced settings → Activity Feed](../enhanced/enhanced-settings.md#activity-feed).
 
 Choose activity types in this admin section.
 
 !!! note "Active Streams needs data collection"
 
-    **Show Active Streams section** also needs active-stream data collection enabled in **Extras**. This is independent of showing the header widget.
+    **Show Active Streams section** also needs active-stream data collection enabled in [**Extras**](../open-in-jellyfin.md?tab=extras&card=active-streams). This is independent of showing the header widget.
 
 ??? note "Details"
 
@@ -271,16 +222,7 @@ Work through unwatched titles as a card deck. You'll see only titles you can acc
 
 See [Enhanced features](../enhanced/enhanced-features.md) for the deck and its actions.
 
-Admin [**Pages → Catch Up**](../open-in-jellyfin.md?tab=pages&card=catch-up):
-
-| Setting | Default | What it does |
-| --- | --- | --- |
-| **Enable Catch Up** | Off | Enables the deck. |
-| **Record Catch Up activity** | On | Records deck actions when Catch Up is enabled; admins can read the page's **Activity** panel. |
-| **Add Catch Up as a native Home tab** | Off | Adds a Home tab. |
-| **Use Plugin Pages** | Off | Registers the companion page. |
-| **Use Custom Tabs** | Off | Shows the page in a Custom Tabs container. |
-| **Add the Custom Tabs entry for me** | Off | Manages the companion entry. |
+Admin [**Pages → Catch Up**](../open-in-jellyfin.md?tab=pages&card=catch-up); every option and default is in [Enhanced settings → Catch Up](../enhanced/enhanced-settings.md#catch-up).
 
 ??? note "Details"
 

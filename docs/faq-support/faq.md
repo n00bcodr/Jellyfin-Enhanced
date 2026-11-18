@@ -18,7 +18,7 @@ Yes. You can change shortcut combinations for your account, and changes save aut
 
 While the binding is listening, ++backspace++ restores the administrator binding and ++delete++ disables that action for you.
 
-Administrators control shortcut availability under **Keyboard**:
+Administrators control shortcut availability under [**Keyboard**](../open-in-jellyfin.md?tab=keyboard&card=keyboard-shortcuts):
 
 | Setting | Default | What it does |
 | --- | --- | --- |
@@ -51,8 +51,8 @@ You can choose a JE language independently of Jellyfin's language.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| **Display Language** (per user) | **Auto** | Follows Jellyfin's language unless your administrator sets a starting language or you choose your own. |
-| **Default UI Language** (admin, **Display**) | **System Default** | Sets the starting JE language for new users; they can change it in their personal settings. |
+| **Display Language** (per user) | **Auto** | Follows Jellyfin's language unless a server admin sets a starting language or you choose your own. |
+| **Default UI Language** (admin, [**Display**](../open-in-jellyfin.md?tab=display&card=default-language)) | **System Default** | Sets the starting JE language for new users; they can change it in their personal settings. |
 
 ??? info "How it works"
 
@@ -144,9 +144,9 @@ See [Playback controls](../enhanced/enhanced-features.md#playback-controls) for 
 
 Test the connection from Jellyfin first, then check account import and permissions separately.
 
-1. In administrator **Seerr**, configure **Enable Seerr integration**, **Seerr URL(s) (One per line)**, and **Seerr API Key**.
+1. In administrator [**Seerr**](../open-in-jellyfin.md?tab=seerr&card=seerr-connection-setup), configure **Enable Seerr integration**, **Seerr URL(s) (One per line)**, and **Seerr API Key**.
 2. Select **Test** beside the key.
-3. For a linked account, use **Permission Audit** → **Run Audit** to check permissions needed by enabled features.
+3. For a linked account, use [**Permission Audit**](../open-in-jellyfin.md?tab=seerr&card=permission-audit) → **Run Audit** to check permissions needed by enabled features.
 
 !!! note "Required"
 
@@ -164,7 +164,7 @@ These screenshots show external account management. They do not show JE feature 
 
 ### Tags not showing on posters?
 
-Open **Media Tags** in the Enhanced panel, turn on the tag groups you want on its **Groups** tab, and check the item's metadata; your saved choices override administrator defaults. See [Tags & Badges](../enhanced/tags.md) for setup, scopes, and native posters, and the [score sources and fallback rules](../enhanced/tags.md#rating-tags) for season/episode differences between server-cache, batch, and player paths. For stale data, use [targeted cache troubleshooting](../installation/troubleshooting.md#stale-caches-or-missing-assets).
+Open **Media Tags** in the Enhanced panel, turn on the tag groups you want on its **Groups** tab, and check the item's metadata; your saved choices override administrator defaults. See [Tags & Badges](../enhanced/tags.md) for setup, scopes, and native posters, and the [score sources and fallback rules](../enhanced/tags-groups.md#rating-tags) for season/episode differences between server-cache, batch, and player paths. For stale data, use [targeted cache troubleshooting](../installation/troubleshooting.md#stale-caches-or-missing-assets).
 
 ### Bookmarks not syncing across devices?
 
@@ -246,7 +246,7 @@ Identify what failed before treating it as a TMDB problem:
 It preserves playback progress and watched state.
 
 1. Enable your personal **Add Remove from Continue Watching & Next Up Buttons** preference.
-2. For lasting row filtering, your administrator must enable **Enable "Remove from Continue Watching"** or **Enable Hidden Content**.
+2. For lasting row filtering, a server admin must enable **Enable "Remove from Continue Watching"** or **Enable Hidden Content**.
 3. Enable your personal **Enable Content Hiding** and the filter for the affected row.
 
 Administrator settings:
@@ -340,7 +340,7 @@ Personal setting:
 | --- | --- | --- |
 | **Disable Custom Styles** | Off | Stops JE's subtitle styling so Jellyfin's own styles apply. |
 
-Administrators set the starting preference under **Playback**:
+Administrators set the starting preference under [**Playback**](../open-in-jellyfin.md?tab=playback):
 
 | Setting | Default | What it does |
 | --- | --- | --- |

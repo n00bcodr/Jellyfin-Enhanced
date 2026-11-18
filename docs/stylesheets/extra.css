@@ -672,7 +672,6 @@ body {
   /* page outline inside the drawer: lighter rows */
   .md-nav--primary .md-nav--secondary .md-nav__link { font-weight: 400; font-size: .7rem; padding-top: .45rem; padding-bottom: .45rem; }
   .md-nav--primary .md-nav--secondary .md-nav__link::before { display: none; }
-  .md-nav--primary .md-nav--secondary .md-nav__title { display: none; }
 }
 
 /* ---------------------------------------------------------------------
@@ -822,7 +821,7 @@ body {
 .md-typeset h3,
 .md-typeset h4,
 .md-typeset h5,
-.md-typeset h6 { color: var(--je-text-strong); font-weight: 700; letter-spacing: -.01em; }
+.md-typeset h6 { color: var(--je-text-strong); font-weight: 700; letter-spacing: 0; }
 
 .md-typeset h1 {
   font-size: 1.85em;
@@ -841,37 +840,26 @@ body {
   background: var(--je-brand);
 }
 
-/* h2 = the plugin's fieldset legend bar */
+/* h2 = a plain section title with a thin rule; h3 = a lighter sub-title */
 .md-typeset h2 {
-  font-size: 1.12em;
+  font-size: 1.3em;
   line-height: 1.35;
-  margin: 2.4em 0 1em;
-  padding: .62em .9em;
-  border: 1px solid var(--je-border);
-  border-radius: var(--je-radius);
-  background: var(--je-legend);
+  margin: 2.2em 0 .8em;
+  padding: 0 0 .35em;
+  border: 0;
+  border-bottom: 1px solid var(--je-border);
+  border-radius: 0;
+  background: none;
 }
-/* h3 = a settings-row title with the accent marker */
 .md-typeset h3 {
-  position: relative;
-  font-size: 1em;
+  font-size: 1.05em;
   line-height: 1.4;
-  margin: 2em 0 .7em;
-  padding-left: .8em;
-}
-.md-typeset h3::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: .2em;
-  bottom: .2em;
-  width: 3px;
-  border-radius: 3px;
-  background: var(--je-accent);
+  margin: 1.8em 0 .6em;
+  color: var(--je-accent);
 }
 .md-typeset h4 { font-size: .9em; margin: 1.6em 0 .6em; color: var(--je-text-strong); }
 .md-typeset h5, .md-typeset h6 { font-size: .8em; color: var(--je-text-muted); text-transform: none; }
-.md-typeset h2 + h3 { margin-top: 1.2em; }
+.md-typeset h2 + h3 { margin-top: 1em; }
 
 /* permalink anchors */
 .md-typeset .headerlink { color: var(--je-text-subtle); }
@@ -1193,8 +1181,9 @@ body {
     white-space: nowrap;
   }
   .md-typeset table:not([class])[data-je-stack="stack"] tr {
-    margin: 0 0 .4rem;
-    padding: .6rem .75rem .65rem;
+    margin: 0 0 .3rem;
+    padding: .5rem .7rem .55rem;
+    line-height: 1.55;
     background: var(--je-row);
     border: 1px solid var(--je-border);
     border-left: 3px solid var(--je-accent-border);
@@ -1214,7 +1203,7 @@ body {
     font-size: .76rem;
     font-weight: 700;
   }
-  .md-typeset table:not([class])[data-je-stack="stack"] td + td { margin-top: .35rem; }
+  .md-typeset table:not([class])[data-je-stack="stack"] td + td { margin-top: .25rem; }
   /* the column name sits above longer values … */
   .md-typeset table:not([class])[data-je-stack="stack"] td + td::before {
     content: attr(data-label);
@@ -1797,7 +1786,7 @@ body {
   body[data-md-color-scheme="default"] { background: var(--je-backdrop), var(--je-panel); background-attachment: fixed; background-repeat: no-repeat; }
   .md-main__inner { margin-top: .5rem; }
   .md-content__inner { padding-top: .6rem; }
-  .md-typeset h2 { padding: .55em .75em; margin-top: 2em; }
+  .md-typeset h2 { margin-top: 1.8em; }
 }
 
 /* ---------------------------------------------------------------------
@@ -1854,8 +1843,57 @@ body {
 .md-typeset a.je-open::after { grid-column: 2; grid-row: 1 / span 2; width: .9rem; height: .9rem; color: var(--je-blue); }
 .md-typeset a.je-open:hover { background-color: color-mix(in srgb, var(--je-blue) 8%, transparent); }
 
+/* Quiet variant: a plain inline link that keeps only the small arrow (for lists of settings in a table). */
+.md-typeset a[href*="open-in-jellyfin/?"].je-quiet {
+  display: inline; border: 0; padding: 0; font-size: inherit; line-height: inherit; font-weight: inherit; overflow: visible;
+}
+.md-typeset a[href*="open-in-jellyfin/?"].je-quiet::before { display: none; }
+.md-typeset a[href*="open-in-jellyfin/?"].je-quiet::after { display: inline-block; margin-left: .25em; vertical-align: -.1em; width: .75em; height: .75em; }
+.md-typeset a[href*="open-in-jellyfin/?"].je-quiet:hover { text-decoration: underline; }
+
 /* Page title of open-in-jellyfin.md: the same icon block as the links. */
 .md-typeset h1.je-title::before {
   content: ""; display: inline-block; vertical-align: -.2em; margin-right: .5em; width: 1.4em; height: 1.4em; border-radius: .35em;
   background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='8' rx='3'/%3E%3Crect x='3' y='12' width='18' height='8' rx='3'/%3E%3Cpath d='M7 8v.01M7 16v.01M11 8h6M11 16h6'/%3E%3C/svg%3E") no-repeat center / .85em, #00a4dc;
+}
+
+/* Prototype: section cards on settings-style pages (see extra.js), after the plugin's configuration page:
+   a fieldset-like card with an accent-gradient title bar. */
+.md-typeset .je-card {
+  margin: 1.4em 0;
+  border: 1px solid var(--je-border);
+  border-radius: var(--je-radius-l);
+  background: var(--je-tabbed-bg);
+  overflow: clip;
+}
+.md-typeset .je-card > :is(h2, h3) {
+  margin: 0;
+  padding: .7em 1em;
+  border: 0;
+  border-bottom: 1px solid var(--je-border);
+  border-radius: 0;
+  background: var(--je-legend);
+  color: var(--je-text-strong);
+}
+.md-typeset .je-card > h3 { font-size: 1.05em; }
+.md-typeset .je-card > h3::before { display: none; }
+.md-typeset .je-card__body { padding: .2em 1.1em 1em; }
+.md-typeset .je-card__body > :first-child { margin-top: .9em; }
+.md-typeset .je-card__body > :last-child { margin-bottom: 0; }
+@media screen and (max-width: 44.984375em) {
+  .md-typeset .je-card__body { padding: .1em .8em .8em; }
+}
+
+/* The page's own sections in the left sidebar (toc.integrate): a lighter, tighter tree than the page list above it. */
+@media screen and (min-width: 76.25em) {
+  .md-nav--primary .md-nav--secondary > .md-nav__list { margin: .1rem 0 .4rem .95rem; padding: 0; border-left: 2px solid var(--je-border); }
+  .md-nav--primary .md-nav--secondary .md-nav__item > .md-nav__link,
+  .md-nav--primary .md-nav--secondary .md-nav__item > .md-nav__container > a.md-nav__link {
+    margin: 0 .2rem; padding: .28rem .55rem; gap: 0; font-size: .64rem; font-weight: 400; line-height: 1.3; color: var(--je-text-muted);
+  }
+  .md-nav--primary .md-nav--secondary > .md-nav__list > .md-nav__item > .md-nav__link { font-weight: 600; color: var(--je-text); }
+  .md-nav--primary .md-nav--secondary .md-nav .md-nav__link { padding-left: 1rem; font-size: .62rem; }
+  .md-nav--primary .md-nav--secondary .md-nav__link--active,
+  .md-nav--primary .md-nav--secondary .md-nav__link--active:hover { color: var(--je-accent-text); font-weight: 600; background: var(--je-surface-2); }
+  .md-nav--primary .md-nav--secondary .md-nav__link:hover { background: var(--je-surface-2); color: var(--je-text-strong); }
 }

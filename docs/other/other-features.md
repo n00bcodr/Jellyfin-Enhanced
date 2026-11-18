@@ -1,22 +1,16 @@
 # Other Features
 
-Personalize Jellyfin's web interface, inspect active streams, add external ratings, and manage maintenance windows. These features come with Jellyfin Enhanced; you do not need to install the optional UI scripts separately. See [Other Settings](other-settings.md) for the settings reference.
-
-??? note "Where to find these controls"
-
-    “Other” is a documentation category. Open **Dashboard** → **Plugins** → **Jellyfin Enhanced**; administrator controls are spread across **Display**, **Playback**, **Extras**, **Pages**, and **Admin**.
-
-    Web enhancements need supported Jellyfin page layouts and markup. See [Compatibility](../getting-started/compatibility.md) for clients and layouts.
+Personalize Jellyfin's web interface, inspect active streams, add external ratings, and manage maintenance windows. Web enhancements need a [compatible client and layout](../getting-started/compatibility.md). Settings are in [Other Settings](other-settings.md).
 
 ## Custom Branding
 
-Replace Jellyfin's logos, banners, browser favicon, and touch icon with your own images. You do not need to edit jellyfin-web files or install another branding plugin.
+Replace Jellyfin's logos, banners, browser favicon, and touch icon with your own images.
 
 ![Custom Lab Media icon in the Home header and dashboard drawer, and Banner Light on Jellyfin's desktop loading screen](../images/other/branding-result.webp)
 
 ### How to use
 
-1. Open the admin **Extras** tab → **Custom Image Assets**.
+1. Open the admin [**Extras** tab → **Custom Image Assets**](../open-in-jellyfin.md?tab=extras&card=custom-image-assets).
 2. Click a slot or drop an image onto it. Upload starts immediately; wait for **✓ Uploaded**.
 3. Check the preview and measured dimensions where available, then reload Jellyfin. Use ++ctrl+f5++ if the old asset remains cached.
 4. To replace a file, upload again. To remove it, use that slot's trash button; deletion acts immediately and restores stock-asset fallback.
@@ -36,13 +30,7 @@ Replace Jellyfin's logos, banners, browser favicon, and touch icon with your own
 
 All slots are administrator uploads under [**Extras** → **Custom Image Assets**](../open-in-jellyfin.md?tab=extras&card=custom-image-assets).
 
-| Setting | Default | What it does |
-|---|---|---|
-| **Icon Transparent** | Stock icon | Top-left logo beside the server version; recommended 536×536 transparent PNG. |
-| **Favicon** | Stock favicon | Browser tab icon; UI recommends 256×256 for PNG and lists ICO, PNG, or SVG. Prefer ICO. |
-| **Banner Dark** | Stock banner | Light-mode loading banner; recommended 1302×378. |
-| **Banner Light** | Stock banner | Dark-mode loading banner; recommended 1302×378. |
-| **Apple Touch Icon** | Stock touch icon | iOS Home Screen and supported PWA touch icons; recommended 180×180 PNG. |
+Every option and default is in [Other settings → Custom Branding](other-settings.md#custom-branding).
 
 !!! note "Formats and limits"
 
@@ -80,10 +68,7 @@ Choose the icons you see in JE's panel headings and ordinary toast notifications
 2. Choose **Icon Style**.
 3. Click **Save Settings** and reload.
 
-| Setting | Default | What it does |
-|---|---|---|
-| **Use Icons in UI** | On | Displays helper icons in supported JE UI regions. |
-| **Icon Style** | **Emoji** | Chooses **Emoji**, **Lucide Icons**, or **Material UI Icons**. Requires **Use Icons in UI**. |
+Every option and default is in [Other settings → Icon Settings](other-settings.md#icon-settings).
 
 ??? note "Details"
 
@@ -110,9 +95,7 @@ Give matching events in the dashboard Home activity list predefined Material ico
 
 **How to use:** Enable **Colored Dashboard Icons** under admin [**Extras** → **UI Tweaks**](../open-in-jellyfin.md?tab=extras&card=ui-tweaks), save, and open the dashboard Home page. The full **Activity** page is unchanged.
 
-| Setting | Default | What it does |
-|---|---|---|
-| **Colored Dashboard Icons** | Off | Applies predefined replacements to supported dashboard event entries. |
+Every option and default is in [Other settings → Extras](other-settings.md#extras).
 
 ??? note "Details"
 
@@ -126,9 +109,7 @@ Color official age/content classifications, including PG-13, TV-MA, and supporte
 
 **How to use:** Enable **Colored Ratings Backgrounds** under admin [**Extras** → **UI Tweaks**](../open-in-jellyfin.md?tab=extras&card=ui-tweaks), save, and open a detail page with an official rating.
 
-| Setting | Default | What it does |
-|---|---|---|
-| **Colored Ratings Backgrounds** | Off | Applies classification-specific backgrounds to supported official-rating chips. |
+Every option and default is in [Other settings → Extras](other-settings.md#extras).
 
 No ratings API key is needed.
 
@@ -144,9 +125,7 @@ Select a user card on the login screen to show that user's profile picture above
 
 **How to use:** Enable **Profile Picture on Login** under admin [**Extras** → **UI Tweaks**](../open-in-jellyfin.md?tab=extras&card=ui-tweaks), save, and reload the signed-out login page. Select a user with a profile picture.
 
-| Setting | Default | What it does |
-|---|---|---|
-| **Profile Picture on Login** | Off | Displays the selected login card's avatar above the password field on supported markup. |
+Every option and default is in [Other settings → Extras](other-settings.md#extras).
 
 ??? note "Details"
 
@@ -176,10 +155,7 @@ Replace supported dashboard plugin-menu icons with a mixture of Material icons a
 3. Click **Test Links** to preview the entered links in the current window until refresh.
 4. Click **Save Settings** to persist the configuration, then reload the dashboard sidebar.
 
-| Setting | Default | What it does |
-|---|---|---|
-| **Custom Plugin Menu Icons** | Off | Replaces matching plugin-link icons and enables saved custom configuration-page links. |
-| **Sidebar Custom Links** | Empty | Under [**Extras** → **External Links**](../open-in-jellyfin.md?tab=extras&card=external-links); adds one configuration-page name/icon pair per line. |
+Every option and default is in [Other settings → Extras](other-settings.md#extras).
 
 ??? info "How it works"
 
@@ -256,10 +232,7 @@ See who is watching, what they are playing or have paused, and how Jellyfin is d
 2. Click the stream icon in the Jellyfin header to open the panel. Its title shows the active-stream count, or **No Active Streams** when none are playing.
 3. Click the **Refresh sessions** icon with the tooltip **Refresh** for current data. The footer shows the last update time.
 
-| Setting | Default | What it does |
-|---|---|---|
-| **Active Streams Header Widget** | Off | Adds the counter and sessions panel, available to administrators by default. |
-| **Show widget to non-admins** | Off | Gives signed-in non-admin viewers access to current sessions. |
+Every option and default is in [Other settings → Active Streams Widget](other-settings.md#active-streams-widget).
 
 ??? info "How it works"
 
@@ -318,10 +291,7 @@ Adjust how long the Enhanced panel and ordinary JE toasts remain visible.
 2. Enter durations in milliseconds and try **Preview autoclose** or **Preview toast**.
 3. Click **Save Settings** and reload to use the new durations.
 
-| Setting | Default | What it does |
-|---|---|---|
-| **Shortcuts Panel Autoclose Delay (ms)** | 15000 ms (15 seconds) | Inactivity delay before the Enhanced panel closes. |
-| **Toast Notification Duration (ms)** | 1500 ms (1.5 seconds) | Duration of ordinary JE toast notifications. |
+Every option and default is in [Other settings → Timeout Settings](other-settings.md#timeout-settings).
 
 ??? note "Details"
 
@@ -341,10 +311,7 @@ Add a **Letterboxd** external link to supported movie and person detail pages.
 2. Optionally enable **Show link as text**, then click **Save Settings** and reload.
 3. Open a movie with an IMDb ID, or a person detail page, and click **Letterboxd**.
 
-| Setting | Default | What it does |
-|---|---|---|
-| **Enable Letterboxd Links** | Off | Adds supported movie/person links. |
-| **Show link as text** | Off | Uses **Letterboxd** text instead of an icon. |
+Every option and default is in [Other settings → Letterboxd Integration](other-settings.md#letterboxd-integration).
 
 !!! note "Metadata Icons uses icon links"
 
@@ -366,9 +333,7 @@ Show supported item metadata and external links as icons using Druidblack's meta
 2. Click **Save Settings** and reload.
 3. Open an item detail page to see its metadata and external links.
 
-| Setting | Default | What it does |
-|---|---|---|
-| **Enable Metadata Icons (Druidblack)** | Off | Styles supported metadata and external links, and forces Letterboxd and *arr links into icon mode. |
+Every option and default is in [Other settings → Metadata Icons](other-settings.md#metadata-icons).
 
 ??? info "How it works"
 
@@ -386,13 +351,7 @@ Show ratings from multiple sources on detail pages. You can also fill Jellyfin's
 4. Leave **Show Ratings Row on Item Details** on for badges. Expand **Configure ratings shown** to choose sources and reorder them with the arrows.
 5. Click **Save Settings**, reload, and open a supported item with a TMDB ID.
 
-| Setting | Default | What it does |
-|---|---|---|
-| **Enable MDBList Ratings** | Off | Master switch. |
-| **MDBList API Key** | Empty | Account key used by the server. |
-| **Show Ratings Row on Item Details** | On | Enables source badges when the master is on. |
-| **Configure ratings shown** | All returned sources (empty list) | Selects and orders detail-page badges independently of synchronization sources. |
-| **Show % Symbol** | Off | Adds `%` only to normalized badge scores. |
+Every option and default is in [Other settings → Display controls](other-settings.md#display-controls).
 
 These controls apply server-wide under admin [**Display** → **MDBList Ratings**](../open-in-jellyfin.md?tab=display&card=mdblist-ratings). They are not personal settings.
 
@@ -438,16 +397,7 @@ Fill Jellyfin's Community/Critic Rating fields from MDBList data. Fetching ratin
 
 All controls below are under admin [**Display** → **MDBList Ratings**](../open-in-jellyfin.md?tab=display&card=mdblist-ratings).
 
-| Setting | Default | What it does |
-|---|---|---|
-| **Fetch Ratings from MDBList** | Off | Allows the Fetch task to run. |
-| **Fetch Task Reserve** | 400 | Stops Fetch when the remaining account quota is at or below the reserve. |
-| **Sync Ratings from MDBList to Jellyfin** | Off | Allows the Sync task to run. |
-| **Star Rating Source (Community Rating)** | **TMDB** | Primary source for Community Rating. |
-| **Star Rating Fallback Source** | **None** | Used when the primary source has no usable score. |
-| **Tomato Rating Source (Critic Rating)** | **RT Critic** | Primary source for Critic Rating. |
-| **Tomato Rating Fallback Source** | **None** | Used when the primary source has no usable score. |
-| **Overwrite Existing Jellyfin Ratings** | Off | Preserves existing fields when off; replaces fields with usable selected-source data when on. |
+Every option and default is in [Other settings → Fetch controls](other-settings.md#fetch-controls).
 
 ??? info "How it works"
 
@@ -508,10 +458,7 @@ Show community-voted content warnings, such as "a dog dies", gore or flashing li
 
 ![Content Warnings (DoesTheDogDie) settings in the admin Display tab, with the master switch and API key field](../images/other/content-warnings-admin.webp)
 
-| Setting | Default | What it does |
-|---|---|---|
-| **Show Content Warnings** | Off | Master switch. The section also needs a saved key. |
-| **DoesTheDogDie API Key** | Empty | Account key used by the server. Viewers never see it. |
+Every option and default is in [Other settings → Content Warnings](other-settings.md#content-warnings).
 
 ### Reading the section
 
@@ -573,10 +520,7 @@ Show your logo on a black full-screen loading overlay while Jellyfin starts. The
 2. Enter **Splash Screen Image URL** and check that the URL opens an image in your browser.
 3. Click **Save Settings** and reload.
 
-| Setting | Default | What it does |
-|---|---|---|
-| **Enable Splash Screen Override** | Off | Enables JE's loading overlay. |
-| **Splash Screen Image URL** | `/web/assets/img/banner-light.png` | Supplies the logo from a browser-reachable URL or suitable same-origin path. |
+Every option and default is in [Other settings → Splash Screen](other-settings.md#splash-screen).
 
 ??? note "Details"
 
@@ -597,10 +541,7 @@ Use community translations for JE's interface, with an administrator default and
 
 ![Display Language choices and Clear Translation Cache](../images/enhanced/panel-language.webp)
 
-| Setting | Default | What it does |
-|---|---|---|
-| **Default UI Language** | **System Default** (empty) | Admin default for users without a saved personal selection. |
-| **Display Language** | **Auto** (empty before the admin default supplies a starting value) | Per-user override in **Language Settings**, including an explicitly saved **Auto**. |
+Every option and default is in [Other settings → Default UI Language](other-settings.md#default-ui-language).
 
 The admin setting is a dropdown, not an arbitrary-code text field. It does not force users who already have a saved language choice to change.
 
@@ -672,16 +613,7 @@ Warn users during server work, optionally restrict non-admin accounts or remote 
 
 All settings are server controls under admin [**Admin** → **Maintenance Mode**](../open-in-jellyfin.md?tab=admin&card=maintenance-mode).
 
-| Setting | Default | What it does |
-|---|---|---|
-| **Enable Maintenance Mode** | Off | Applies a manual maintenance window on save. |
-| **Duration (minutes)** | 0 | Sets the manual end time; `0` is open-ended. |
-| **Login Page Banner Message** | `This server is currently undergoing maintenance. Please try again.` | Plain-text web banner. |
-| **Active Session Notification** | `Server undergoing maintenance.` | Native message attempted after successful manual Enable on applicable saves. |
-| **Remind on playback start** | Off | Reminds affected non-admin sessions, with a five-minute cooldown. |
-| **Disable user accounts** | On under **Action** | Disables affected accounts' login. |
-| **Disable remote connections** | Off under **Action** | Disables affected users' remote access; LAN remains available if accounts stay enabled. |
-| **Affected Users** | **All non-admin users** | Shared target selection for manual and scheduled windows. |
+Every option and default is in [Other settings → Manual maintenance](other-settings.md#manual-maintenance).
 
 See [Other Settings](other-settings.md#maintenance-mode) for input bounds, action encodings, and blank-message behavior.
 
@@ -723,8 +655,6 @@ Add time remaining or an end time to your maintenance messages.
 ### Reminders on playback start
 
 Remind affected non-admin users about maintenance when they start playback. This is most useful when accounts remain enabled.
-
-**How to use:** Enable **Remind on playback start**.
 
 ??? note "Details"
 
@@ -807,7 +737,7 @@ Choose the action below that matches the data you need refreshed. Confirm **Clea
 | Action | Location | What it does |
 |---|---|---|
 | **Clear All Client Caches** | Admin [**Media Tags** → **Server**](../open-in-jellyfin.md?jeSection=media-tags&tab=server), with **Server-Side Tag Cache** off; **Overview** → **Quick Actions** labels the shortcut **Clear all client tag caches** | Clears targeted JE client caches on the next load, after confirmation. |
-| **Rebuild Server Tag Cache** | Admin [**Admin** → **Tag Cache**](../open-in-jellyfin.md?tab=admin&card=tag-cache), with **Server-Side Tag Cache** on | Rebuilds library tag data on the server. |
+| **Rebuild Server Tag Cache** | Admin [**Media Tags** → **Server**](../open-in-jellyfin.md?jeSection=media-tags&tab=server), with **Server-Side Tag Cache** on | Rebuilds library tag data on the server. |
 | **Clear Translation Cache** | Per-user Enhanced panel → **Language Settings** | Clears this browser's translation entries and reloads. |
 
 Cache actions do not wipe unrelated browser storage, reset server-stored personal settings, or delete the MDBList server cache. Clearing/rebuilding tag data can make the next load slower. For tag-cache setup and defaults, see [Tags & Badges](../enhanced/tags.md).
@@ -828,13 +758,7 @@ Choose whether your server shares usage statistics. Reporting is off by default.
 2. On first enabling it, the form selects feature-toggle states, usage counts, and data-file sizes. Adjust the categories you want to share.
 3. Use **Preview**, then click **Save Settings** to opt in.
 
-| Setting | Default | What it does |
-|---|---|---|
-| **Share Anonymous Usage Statistics** | Off | Opts the server into reporting after saving. |
-| **Feature toggle states (on/off only)** | On | Includes feature enable/disable states when reporting is on. |
-| **Feature usage counts** | On | Includes usage counts when reporting is on. |
-| **Data file sizes (bytes only, never contents)** | On | Includes file sizes when reporting is on. |
-| **Reporting interval (days)** | 15 | Sets the reporting interval, within 7–30 days. |
+Every option and default is in [Other settings → Usage Statistics](other-settings.md#usage-statistics).
 
 See [the settings reference](other-settings.md#usage-statistics) and [Community Analytics](../advanced/community-analytics.md) for preview, collection, privacy, and reporting details.
 

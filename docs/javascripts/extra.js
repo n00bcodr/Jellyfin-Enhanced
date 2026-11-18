@@ -243,3 +243,61 @@ document.addEventListener("click", function (e) {
     e.stopPropagation(); // keep instant navigation from handling it
     window.open(a.href, "_blank", "noopener");
 }, true);
+
+// Old deep links to sections that moved off the Tags & Badges overview (enhanced/tags/#anchor), such as the ones
+// the plugin and README use, are sent to the page that now holds the section.
+(function () {
+  var MOVED = {"layouts":["tags-layouts","layouts"],"tag-size-and-spacing":["tags-layouts","tag-size-and-spacing"],"edge-spacing":["tags-layouts","edge-spacing"],"episode-thumbnails-and-list-rows":["tags-layouts","episode-thumbnails-and-list-rows"],"tag-groups-order-position-limits":["tags-layouts","tag-groups-order-position-limits"],"admin-defaults":["tags-layouts","admin-defaults"],"rules-and-locked-items":["tags-layouts","rules-and-locked-items"],"one-items-look":["tags-layouts","one-items-look"],"import-export-and-presets":["tags-layouts","import-export-and-presets"],"quality-tags":["tags-quality","quality-tags"],"highest-only-or-every-stream-value":["tags-quality","highest-only-or-every-stream-value"],"runtime-aspect-ratio-and-frame-rate":["tags-quality","runtime-aspect-ratio-and-frame-rate"],"series-policy-and-detection-details":["tags-quality","series-policy-and-detection-details"],"genre-tags":["tags-quality","genre-tags"],"language-tags":["tags-quality","language-tags"],"grouping-regions-and-partial-dubs":["tags-quality","grouping-regions-and-partial-dubs"],"audio-language-links":["tags-quality","audio-language-links"],"rating-tags":["tags-groups","rating-tags"],"user-review-chips":["tags-groups","user-review-chips"],"age-rating-tags":["tags-groups","age-rating-tags"],"awards-tags":["tags-groups","awards-tags"],"logo-tags":["tags-groups","logo-tags"],"custom-tags":["tags-groups","custom-tags"],"people-tags":["tags-groups","people-tags"],"player-badges":["tags-groups","player-badges"],"languages":["tags-quality","languages"],"status-tags":["tags-status","status-tags"],"badges-and-priority":["tags-status","badges-and-priority"],"scenes":["tags-status","scenes"],"tmdb-and-trending":["tags-status","tmdb-and-trending"],"leaving-soon-maintainerr-or-reclaimerr":["tags-status","leaving-soon-maintainerr-or-reclaimerr"],"marking-keeping-and-postponing-from-the-item-menu":["tags-status","marking-keeping-and-postponing-from-the-item-menu"],"the-leaving-soon-home-row":["tags-status","the-leaving-soon-home-row"],"leaving-soon-reclaimerr":["tags-status","leaving-soon-reclaimerr"],"acting-as-the-user-reclaimerr-side":["tags-status","acting-as-the-user-reclaimerr-side"],"direct-play-warning":["tags-status","direct-play-warning"],"server-side-tag-cache":["tags-server","server-side-tag-cache"],"builds-refreshes-and-exclusions":["tags-server","builds-refreshes-and-exclusions"],"browser-storage-and-fallback":["tags-server","browser-storage-and-fallback"],"card-identity-and-shared-artwork":["tags-server","card-identity-and-shared-artwork"],"tags-after-navigation":["tags-server","tags-after-navigation"],"related-routes":["tags-server","related-routes"],"native-poster-tags-experimental":["tags-server","native-poster-tags-experimental"],"eligible-clients-and-requests":["tags-server","eligible-clients-and-requests"],"limits-and-caching":["tags-server","limits-and-caching"],"tag-styles-and-css":["tags-server","tag-styles-and-css"],"presets":["tags-server","presets"],"the-poster-preset":["tags-server","the-poster-preset"],"groups-and-single-tags":["tags-server","groups-and-single-tags"],"tag-text":["tags-server","tag-text"],"hidden-tags":["tags-server","hidden-tags"],"genre-colours":["tags-server","genre-colours"],"contrast-check":["tags-server","contrast-check"],"user-presets":["tags-server","user-presets"]};
+  function go() {
+    var m = location.pathname.match(/^(.*\/enhanced\/)tags\/?$/);
+    var t = m && MOVED[decodeURIComponent(location.hash.slice(1))];
+    if (t) location.replace(m[1] + t[0] + "/#" + t[1]);
+  }
+  go();
+  window.addEventListener("hashchange", go);
+})();
+
+/* Section cards, like the plugin's configuration page: each "##" section of a content page is a card with an
+   accent-gradient title bar. Markdown is untouched; this only regroups the rendered nodes.
+   Also: the drawer's page-sections level is titled with the page instead of "On this page". */
+(function () {
+  "use strict";
+  function cardify() {
+    var art = document.querySelector(".md-content__inner.md-typeset");
+    if (!art || art.dataset.jeCards) return;
+    if (art.querySelector(".je-hero, .je-404")) return;                       // home page and 404 keep their own layouts
+    // Cards follow "##" sections; a page with only one or two of those but several "###" subsections is carded at "###".
+    var kids = Array.prototype.slice.call(art.children);
+    var h2 = kids.filter(function (el) { return el.tagName === "H2"; });
+    var h3 = kids.filter(function (el) { return el.tagName === "H3"; });
+    var tag = h2.length >= 3 ? "H2" : (h3.length >= 3 ? "H3" : (h2.length >= 2 ? "H2" : ""));
+    if (!tag) return;                                                         // nothing to group on a short page
+    var heads = tag === "H2" ? h2 : h3;
+    art.dataset.jeCards = "1";
+    heads.forEach(function (h) {
+      var sec = document.createElement("section");
+      sec.className = "je-card";
+      var body = document.createElement("div");
+      body.className = "je-card__body";
+      h.parentNode.insertBefore(sec, h);
+      sec.appendChild(h);
+      sec.appendChild(body);
+      var next = sec.nextSibling, after;
+      while (next && next.tagName !== "H2" && next.tagName !== tag && !(next.classList && (next.classList.contains("je-card") || next.classList.contains("md-source-file") || next.classList.contains("md-feedback")))) {
+        after = next.nextSibling;
+        body.appendChild(next);
+        next = after;
+      }
+    });
+  }
+  // The drawer's second level lists the page's sections: title it with the page instead of "On this page".
+  function titleDrawer() {
+    var t = document.querySelector(".md-nav--secondary > .md-nav__title");
+    var h1 = document.querySelector(".md-content__inner h1");
+    if (!t || !h1) return;
+    var name = h1.textContent.replace(/¶/g, "").trim();
+    Array.prototype.forEach.call(t.childNodes, function (n) { if (n.nodeType === 3 && n.textContent.trim()) n.textContent = "\n      " + name + "\n    "; });
+  }
+  function init() { cardify(); titleDrawer(); }
+  if (typeof document$ !== "undefined") document$.subscribe(init); else document.addEventListener("DOMContentLoaded", init);
+})();

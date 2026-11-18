@@ -22,7 +22,7 @@ Service links let you open a title in Sonarr, Radarr, or Bazarr. Check your acco
 
     If a link appears but opens the wrong address, check **URL Mappings (optional)**, **Bazarr URL Mappings**, or **Shoko URL Mappings**. The left side must be the Jellyfin server address used by the client, including any base path. The right side is the browser-facing service address. A successful API test does not establish browser reachability; mappings do not change the server's API destination.
 
-    If the single-instance status badge is missing, enable **Show status badge for single-instance** and **Show links as text**. If Sonarr reports no statistics, the badge reads `0/0` with gray status. **Enable Metadata Icons (Druidblack)** under **Extras** forces icon mode, where visible badges are omitted and details remain in tooltips.
+    If the single-instance status badge is missing, enable **Show status badge for single-instance** and **Show links as text**. If Sonarr reports no statistics, the badge reads `0/0` with gray status. **Enable Metadata Icons (Druidblack)** under [**Extras**](../open-in-jellyfin.md?tab=extras&card=metadata-icons-sidebar-links) forces icon mode, where visible badges are omitted and details remain in tooltips.
 
 ### Connection errors and instance recovery
 
@@ -111,7 +111,7 @@ Filters can hide events even when a source loads successfully. Check the visible
 6. Check [Hidden Content filtering](#hidden-content-filtering) and named source failures.
 
 ??? info "Highlighting, matching, and event times"
-    Watchlist highlighting uses Jellyfin's like (Likes) flag, not the favorite (heart) flag. Under **Seerr**, **Add requested media to Watchlist** and **Sync Seerr Watchlist → Jellyfin** set this flag for matching library items; see [Seerr settings](../seerr/seerr-settings.md). Watched markers reflect whether you have played or started the matched episode or movie; watching other episodes does not mark an upcoming episode.
+    Watchlist highlighting uses Jellyfin's like (Likes) flag, not the favorite (heart) flag. Under [**Seerr**](../open-in-jellyfin.md?tab=seerr&card=watchlist), **Add requested media to Watchlist** and **Sync Seerr Watchlist → Jellyfin** set this flag for matching library items; see [Seerr settings](../seerr/seerr-settings.md). Watched markers reflect whether you have played or started the matched episode or movie; watching other episodes does not mark an upcoming episode.
 
     If an available event does nothing when clicked, confirm Jellyfin has scanned and matched it. The **Available** arrow opens details rather than starting playback. A Shoko event is **Available** when Shoko reports an episode file. Shoko matching needs `Shoko Series`/`Shoko Episode` provider IDs. Unmatched anime may still offer an administrator's **Open in Shoko** link. Event dates use your browser's local time. Shoko air dates are also converted to your browser's local time, so depending on your timezone an event can show a time or appear on the previous day.
 

@@ -198,7 +198,7 @@ If tag data is stale or missing, also check the server's cache configuration und
 | **Exclude libraries from the tag cache** | Off | `TagCacheExcludeLibraries`: enables library exclusions. |
 | **Libraries to exclude** | Empty | `TagCacheExcludedLibraryIds`: selected libraries to skip; an empty selection excludes nothing. |
 
-Exclusion changes affect the next cache rebuild. Click **Save Settings**, then open [**Admin** → **Tag Cache**](../open-in-jellyfin.md?tab=admin&card=tag-cache) and click **Rebuild Server Tag Cache**. Confirm the full rebuild. See [Tags & Badges](../enhanced/tags.md) for cache operation; CSS only styles the resulting elements.
+Exclusion changes affect the next cache rebuild. Click **Save Settings**, then open [**Media Tags** → **Server**](../open-in-jellyfin.md?jeSection=media-tags&tab=server) and click **Rebuild Server Tag Cache**. Confirm the full rebuild. See [Tags & Badges](../enhanced/tags.md) for cache operation; CSS only styles the resulting elements.
 
 Use the **Position** pills on the **Groups** tab and the layout tiles on the **Layout** tab of **Media Tags** to move tag containers.
 
@@ -252,9 +252,9 @@ In the Corners layout, containers carry `data-je-corner` with one of the nine st
 
 **Edge spacing** other than Default marks a Corners host with `data-je-edge="tight"` or `data-je-edge="flush"` and sets `--je-edge` (`3px` or `0px`) on it; every anchor's offset, the corner containers' size limits, the centre budgets' defaults and the indicator gap use it. Default has no marker and keeps the original rules. A flush host clips its chips with `overflow: hidden` and `border-radius: var(--je-card-radius)`, where `--je-card-radius` is the artwork's corner radius, measured once per card; box chips touching an edge get square corners there. For example, `.je-tag-host[data-je-edge="flush"] .quality-overlay-label { border-radius: 0; }` makes every flush quality chip square.
 
-A card whose look comes from a lock (see [Rules and locked items](../enhanced/tags.md#rules-and-locked-items)) has `data-je-locked="1"` on its `.je-tag-host`; nothing styles it by default. For example, `.je-tag-host[data-je-locked="1"] { outline: 1px dashed #fff8; }` marks locked cards. A server-wide item look does not set it.
+A card whose look comes from a lock (see [Rules and locked items](../enhanced/tags-layouts.md#rules-and-locked-items)) has `data-je-locked="1"` on its `.je-tag-host`; nothing styles it by default. For example, `.je-tag-host[data-je-locked="1"] { outline: 1px dashed #fff8; }` marks locked cards. A server-wide item look does not set it.
 
-The per-item editor ([One item's look](../enhanced/tags.md#one-items-look)) is a dialog `.je-tie` inside `.je-tie-backdrop`; its sample card is `.je-tie-card`, and its row in Jellyfin's ⋮ menu is `.actionSheetMenuItem[data-id="je-media-tags"]`. Its Undo message is `.je-tie-toast`.
+The per-item editor ([One item's look](../enhanced/tags-layouts.md#one-items-look)) is a dialog `.je-tie` inside `.je-tie-backdrop`; its sample card is `.je-tie-card`, and its row in Jellyfin's ⋮ menu is `.actionSheetMenuItem[data-id="je-media-tags"]`. Its Undo message is `.je-tie-toast`.
 
 The Media Tags import, export and preset dialogs (in the settings panel and on the configuration page's Media Tags tab) are `.je-pt-backdrop > .je-pt-dialog[role="dialog"]`, with `.je-pt-change` / `.je-pt-skip` rows (`.je-pt-from`, `.je-pt-to`, `.je-pt-reason`) and `.je-pt-btn` buttons (`[data-primary]` for the main action). The panel's preset rows are `.je-mth-tp-item` inside `[data-tp-source="builtIn" | "offered" | "mine"]`.
 
@@ -264,7 +264,7 @@ Processing markers such as `data-je-quality-tagged`, `data-je-genre-tagged`, `da
 
 ### Tag Styles and native posters
 
-Use the built-in [Tag Styles editor](../enhanced/tags.md#tag-styles-and-css) for supported colors; that guide covers presets, tabs, scope, opacity, and bulk controls. See [Native Poster Tags](../enhanced/tags.md#native-poster-tags-experimental) for native-client setup and refresh requirements. CSS remains useful for web shape, sizing, visibility, and other surfaces.
+Use the built-in [Tag Styles editor](../enhanced/tags-server.md#tag-styles-and-css) for supported colors; that guide covers presets, tabs, scope, opacity, and bulk controls. See [Native Poster Tags](../enhanced/tags-server.md#native-poster-tags-experimental) for native-client setup and refresh requirements. CSS remains useful for web shape, sizing, visibility, and other surfaces.
 
 Web overrides use important selectors. Their specificity is `(0,4,0)` for quality, `(0,3,0)` for age and rating chips, and `(0,2,0)` for the whole genre group (`(0,3,0)` for one genre, through `data-je-genre`). These beat simple color recipes; more specific important Custom CSS can override them.
 
@@ -304,7 +304,7 @@ The codec class names are historical: `.video-format` means video codec, while `
     - Source detection requires a `.disc` media stub and selects one source badge.
     - Standalone channel fallback produces `7.1` or `5.1`. `2.0` can be appended to a codec label but is not a standalone fallback.
 
-Use the [Quality Tags category controls](../enhanced/tags.md#quality-tags) before CSS hiding; that guide covers administrator defaults, personal overrides, and category order.
+Use the [Quality Tags category controls](../enhanced/tags-quality.md#quality-tags) before CSS hiding; that guide covers administrator defaults, personal overrides, and category order.
 
 **Resize all quality badges:**
 
@@ -390,7 +390,7 @@ Use these hooks to style genre icons and their hover labels. Up to three genres 
 
 - Icons use `.genre-tag > .je-msym-outlined`.
 - Text uses `.genre-text` inside `.genre-overlay-container`.
-- `data-je-genre` holds the genre's [Tag Styles label](../enhanced/tags.md#genre-colours): the canonical English genre its icon stands for (`horror`, `science fiction`, `game-show`…), the same for every spelling and translation (*Sci-Fi* and *Ciencia ficción* are both `science fiction`), or `other`. Tag Styles colour one genre through it: `.genre-tag[data-je-genre="horror"]`.
+- `data-je-genre` holds the genre's [Tag Styles label](../enhanced/tags-server.md#genre-colours): the canonical English genre its icon stands for (`horror`, `science fiction`, `game-show`…), the same for every spelling and translation (*Sci-Fi* and *Ciencia ficción* are both `science fiction`), or `other`. Tag Styles colour one genre through it: `.genre-tag[data-je-genre="horror"]`.
 - Target the exact name the item has through its title, such as `.genre-tag[title="Drama"]`.
 
 By default, text appears on hover and floats inward from the selected corner. To keep labels visible inside wider chips:
@@ -472,7 +472,7 @@ Use `.rating-overlay-container`, `.rating-tag`, and `.rating-text` to style post
 - `.rating-tag-tmdb` displays Jellyfin's `CommunityRating`; the class name does not guarantee TMDB supplied the metadata. Its star is `.rating-star-icon`.
 - Critic chips use `.rating-tag-critic` and `.rating-tomato-icon.fresh` or `.rating-tomato-icon.rotten`. Scores below 60 are rotten, and scores of 60 or more are fresh.
 
-Use the [Rating Tags scope controls](../enhanced/tags.md#rating-tags) to choose item types and home rows; that guide covers administrator defaults and personal overrides.
+Use the [Rating Tags scope controls](../enhanced/tags-groups.md#rating-tags) to choose item types and home rows; that guide covers administrator defaults and personal overrides.
 
 **Change the community-score background:**
 
@@ -596,7 +596,7 @@ Use `.status-overlay-container` and `.status-tag` to style the Just Added, New a
 
 The default look is a dark translucent pill with a blurred backdrop, the same for every kind except the warmer rank colour. Status Tags are not part of Tag Styles.
 
-The opt-in [Leaving soon](../enhanced/tags.md#leaving-soon-maintainerr) badges are `.status-tag--leaving` with `data-je-status="leaving"`; the [direct-play warning](../enhanced/tags.md#direct-play-warning) is `.status-tag--playback` with `data-je-status="direct_play"` and `data-je-dp`, which takes pointer events so its `title` tooltip shows:
+The opt-in [Leaving soon](../enhanced/tags-status.md#leaving-soon-maintainerr-or-reclaimerr) badges are `.status-tag--leaving` with `data-je-status="leaving"`; the [direct-play warning](../enhanced/tags-status.md#direct-play-warning) is `.status-tag--playback` with `data-je-status="direct_play"` and `data-je-dp`, which takes pointer events so its `title` tooltip shows:
 
 ```css
 .status-tag--leaving {
@@ -610,7 +610,7 @@ The opt-in [Leaving soon](../enhanced/tags.md#leaving-soon-maintainerr) badges a
 
 ### Custom Tags CSS
 
-Each [Custom tag](../enhanced/tags.md#custom-tags) chip is a `.custom-tag` inside `.custom-overlay-container`, with the label in `.custom-tag-text` and, when the rule has an icon, a `.custom-tag-icon` before it (the chip then also has `.custom-tag--icon`). `data-je-custom` holds the label (Tag Styles colour chips through it) and `data-je-custom-rule` the rule id (`tag:` or `collection:` and an opaque hash, for example `collection:9f2c1e0b7a6d5c4e`; style by label, since the id changes if the rule is re-targeted). The default look is a dark blue-grey chip with a faint border.
+Each [Custom tag](../enhanced/tags-groups.md#custom-tags) chip is a `.custom-tag` inside `.custom-overlay-container`, with the label in `.custom-tag-text` and, when the rule has an icon, a `.custom-tag-icon` before it (the chip then also has `.custom-tag--icon`). `data-je-custom` holds the label (Tag Styles colour chips through it) and `data-je-custom-rule` the rule id (`tag:` or `collection:` and an opaque hash, for example `collection:9f2c1e0b7a6d5c4e`; style by label, since the id changes if the rule is re-targeted). The default look is a dark blue-grey chip with a faint border.
 
 **Colour one label and hide the icons:**
 

@@ -44,7 +44,7 @@ The loader waits for browser idle time, with a 100 ms timeout. It then executes 
 
 If the bundle request fails or the bundle does not define a valid module array, the loader injects individual files with `script.async = false`. Downloads can overlap; execution follows manifest order.
 
-Administrator setting, under **Admin** → **Developer Settings**:
+Administrator setting, under [**Admin** → **Developer Settings**](../open-in-jellyfin.md?tab=admin&card=developer-settings):
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -314,7 +314,7 @@ See [Seerr Features](../seerr/seerr-features.md) for permissions and integration
 
 Calendar combines Radarr, Sonarr and Shoko data. Shoko retrieval lives in the main controller, with Jellyfin posters and deep-link handling in the calendar modules; there is no separate `ShokoService.cs`. Shoko is configured when both URL and API key are present. Check it alone and alongside *arr sources when changing calendar behavior. See [*arr Settings](../arr/arr-settings.md) for setup.
 
-Administrator settings under **\*arr** → **Shoko**:
+Administrator settings under [**\*arr** → **Shoko**](../open-in-jellyfin.md?tab=arr&card=shoko):
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -359,7 +359,7 @@ Administrator settings under **\*arr** → **Shoko**:
 
 `Services/PosterTags/Resolution/StatusRules.cs` resolves the same first-match status decision server-side and reads embedded locale resources. `PosterTagStatusProvider.cs` obtains shared daily TMDB ranks and series schedules plus caller-filtered parent aggregates. `PosterTagPlan.cs` plans static top/bottom Bands and their overflow; `PosterTagRenderer.cs` paints strips, status chips and the dedicated overflow tile. `tests/fixtures/native-overflow/` holds browser measurements and isolated chip pixels for Corners/Bands, exercised by backend tests and `tests/browser/native-overflow.spec.cjs`. Status-enabled settings digests use a five-minute URL bucket. `tests/poster/parity/status-fixtures.mjs` exercises each status family and timezone boundaries against the real web renderer and native resolver; the integrated profiles also cover Bands, density, order and profile inheritance.
 
-See [Tag Styles and CSS](../enhanced/tags.md#tag-styles-and-css) and [Native Poster Tags](../enhanced/tags.md#native-poster-tags-experimental) for controls and defaults. Tag Styles change colors, not size, shape or position. Administrator controls under **Display** map to these properties:
+See [Tag Styles and CSS](../enhanced/tags-server.md#tag-styles-and-css) and [Native Poster Tags](../enhanced/tags-server.md#native-poster-tags-experimental) for controls and defaults. Tag Styles change colors, not size, shape or position. Administrator controls under **Display** map to these properties:
 
 | Setting | Property |
 |---|---|

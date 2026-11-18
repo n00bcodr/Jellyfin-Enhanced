@@ -1,6 +1,6 @@
 # Elsewhere & Reviews Settings
 
-Configure providers, TMDB reviews, release dates, and local reviews in **Dashboard** → **Plugins** → **Jellyfin Enhanced** → [**Elsewhere & Reviews**](../open-in-jellyfin.md?tab=elsewhere). Settings on this page are admin settings for the server unless marked per user. The **TMDB** and **AniList** cards also appear on the **Services** tab as linked copies, so changing one changes the other. For viewer workflows, see [Elsewhere Integration](elsewhere-features.md).
+Configure providers, TMDB reviews, release dates, and local reviews in **Dashboard** → **Plugins** → **Jellyfin Enhanced** → [**Elsewhere & Reviews**](../open-in-jellyfin.md?tab=elsewhere). Settings on this page are admin settings for the server unless marked per user. The [**TMDB**](../open-in-jellyfin.md?tab=elsewhere&card=tmdb) and [**AniList**](../open-in-jellyfin.md?tab=elsewhere&card=anilist) cards also appear on the **Services** tab as linked copies, so changing one changes the other. For viewer workflows, see [Elsewhere Integration](elsewhere-features.md).
 
 ## Prerequisites
 
@@ -20,14 +20,15 @@ Use a compatible Jellyfin web client with Jellyfin Enhanced loaded. See [Compati
 
 ## Setup
 
+[Elsewhere & Reviews > TMDB](../open-in-jellyfin.md?tab=elsewhere&card=tmdb){ .je-open }
+
 Set up the shared TMDB key first, then choose the Elsewhere features you want. The same key also serves JE's TMDB-dependent Seerr features.
 
-1. Open **Dashboard** → **Plugins** → **Jellyfin Enhanced**, then **Elsewhere & Reviews**.
-2. Enter your **TMDB API Key**. Click **Test** beside it and read the feedback. This checks the entered key through Jellyfin, including an unsaved key; it does not save configuration.
-3. Turn on **Enable Elsewhere**. Enter the key first if this checkbox is disabled.
-4. Choose **Default Region**, such as `US`, `GB`, `DE`, or `AU`. Optionally configure **Default Providers**, **Ignore Providers**, and **Custom Branding**.
-5. Turn on any review or release-date features you want, then click **Save Settings**.
-6. Reload the client and open a supported item detail page.
+1. Enter your **TMDB API Key**. Click **Test** beside it and read the feedback. This checks the entered key through Jellyfin, including an unsaved key; it does not save configuration.
+2. Turn on **Enable Elsewhere**. Enter the key first if this checkbox is disabled.
+3. Choose **Default Region**, such as `US`, `GB`, `DE`, or `AU`. Optionally configure **Default Providers**, **Ignore Providers**, and **Custom Branding**.
+4. Turn on any review or release-date features you want, then click **Save Settings**.
+5. Reload the client and open a supported item detail page.
 
 ??? note "Configured key versus tested key"
 
@@ -215,7 +216,7 @@ Show your own heading when no filtered automatic providers or season groups rema
 
 ### How to use
 
-1. Expand **Custom Branding** in **Elsewhere & Reviews**.
+1. Expand [**Custom Branding** in **Elsewhere & Reviews**](../open-in-jellyfin.md?tab=elsewhere&card=elsewhere-streaming-providers).
 2. Enter a message.
 3. Optionally add an icon, either way:
     - **Upload Icon:** drop or pick a PNG, JPG, GIF, WebP or SVG file. It is stored on the server straight away and used instead of the icon URL; the bin button removes it.
@@ -298,7 +299,7 @@ Add a **Translate** button to English TMDB and AniList reviews. See [Review Tran
 
 ### How to use
 
-1. Turn on **Enable Review Translation** in **Elsewhere & Reviews**.
+1. Turn on **Enable Review Translation** in [**Elsewhere & Reviews**](../open-in-jellyfin.md?tab=elsewhere&card=review-translation).
 2. Optionally enter your **LibreTranslate URL** (and **API Key** if your instance needs one) for browsers without a built-in translator.
 3. Click **Save Settings** and reload the client.
 
@@ -326,7 +327,7 @@ Let viewers share text reviews and/or star ratings on your server. Local reviews
 
 ### How to use
 
-1. Turn on **Enable User Written Reviews** in **Elsewhere & Reviews**, click **Save Settings**, and reload the client.
+1. Turn on **Enable User Written Reviews** in [**Elsewhere & Reviews**](../open-in-jellyfin.md?tab=elsewhere&card=user-reviews), click **Save Settings**, and reload the client.
 2. On an eligible detail page, expand **Reviews ({count})** and click **Write a Review** if you have no review for that item, or **Edit** on your existing review.
 
 See [User Reviews](elsewhere-features.md#user-reviews) for writing, editing, deletion, character limits, and the picker limitation.
@@ -399,13 +400,13 @@ To use this, turn on **Also save review star ratings as the user's Jellyfin rati
 
 Hide both local and TMDB review panels on guarded items in the web client. This includes guarded movies and a guarded series' child pages.
 
-1. Use the admin **Enable Spoiler Guard** and **Hide reviews on Spoiler Guard series** settings in **Display**.
+1. Use the admin **Enable Spoiler Guard** and **Hide reviews on Spoiler Guard series** settings in [**Display**](../open-in-jellyfin.md?tab=display&card=spoiler-guard).
 2. Set your personal **Reviews** preference in Spoiler Guard to override the admin policy, or leave it unset to inherit that policy.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| **Enable Spoiler Guard** | Off (admin, **Display**) | Enables Spoiler Guard, including its review-suppression checks. |
-| **Hide reviews on Spoiler Guard series** | On (admin, **Display**) | Permits suppression of local and TMDB review panels for guarded items. |
+| **Enable Spoiler Guard** | Off (admin, [**Display**](../open-in-jellyfin.md?tab=display&card=spoiler-guard)) | Enables Spoiler Guard, including its review-suppression checks. |
+| **Hide reviews on Spoiler Guard series** | On (admin, [**Display**](../open-in-jellyfin.md?tab=display&card=spoiler-guard)) | Permits suppression of local and TMDB review panels for guarded items. |
 | **Reviews** | Unset; inherits admin policy (per user) | Controls personal review hiding in Spoiler Guard preferences. Off allows reviews once state loads successfully. |
 
 See [Spoiler Guard settings](../spoiler-guard/spoiler-guard-settings.md).
@@ -423,7 +424,7 @@ Show movie release dates and television air dates beside detail-page metadata. S
 ### How to use
 
 1. Configure the shared **TMDB API Key**.
-2. Turn on **Show Release/Air Date** under **Release Dates**, then click **Save Settings**.
+2. Turn on **Show Release/Air Date** under [**Release Dates**](../open-in-jellyfin.md?tab=elsewhere&card=release-dates), then click **Save Settings**.
 3. Reload the client and open an identifiable movie, series, season, or episode.
 
 | Setting | Default | What it does |
@@ -444,8 +445,8 @@ Show subscription-provider logos on JE's Seerr cards inside Jellyfin, including 
 ### How to use
 
 1. Complete [Seerr connection setup](../seerr/seerr-settings.md).
-2. Configure the shared **TMDB API Key** in **Elsewhere & Reviews**.
-3. Open **Seerr**, turn on **Show Streaming Providers on Posters**, and click **Save Settings**.
+2. Configure the shared **TMDB API Key** in [**Elsewhere & Reviews**](../open-in-jellyfin.md?tab=elsewhere&card=tmdb).
+3. Open [**Seerr**](../open-in-jellyfin.md?tab=seerr&card=discovery-ui-extras), turn on **Show Streaming Providers on Posters**, and click **Save Settings**.
 4. Reload the client and browse JE's Seerr cards. For Jellyfin search cards, keep **Show Seerr Results in Search** on.
 
 Admin settings in **Seerr**, except the TMDB key:
@@ -455,7 +456,7 @@ Admin settings in **Seerr**, except the TMDB key:
 | **Enable Seerr integration** | Off | Enables JE's Seerr features. |
 | **Seerr URL(s) (One per line)** | Empty | Supplies the Seerr instance addresses used by JE. |
 | **Seerr API Key** | Empty | Authenticates JE's requests to Seerr. |
-| **TMDB API Key** | Empty (**Elsewhere & Reviews**) | Enables server-side watch-provider lookups. |
+| **TMDB API Key** | Empty ([**Elsewhere & Reviews**](../open-in-jellyfin.md?tab=elsewhere&card=tmdb)) | Enables server-side watch-provider lookups. |
 | **Show Streaming Providers on Posters** | Off | Adds at most four valid subscription-provider logos to JE's Seerr cards. |
 | **Show Seerr Results in Search** | On | Enables JE's Seerr results in Jellyfin search when connection and access requirements are met. |
 

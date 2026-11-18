@@ -2,19 +2,15 @@
 
 Use these controls to personalize Jellyfin and manage your server. Unless marked per-user, they are administrator settings. See [Other Features](other-features.md) for usage and [Settings Overview](../getting-started/settings-overview.md) for personal defaults and overrides.
 
-??? note "Admin tab reference"
+Click **Save Settings** and reload the web client after changing configuration fields. Branding uploads and cache actions apply separately.
 
-    “Other” is a documentation category, not a plugin tab. Open **Dashboard** → **Plugins** → **Jellyfin Enhanced** and use the locations below.
-
-    After changing configuration fields, click **Save Settings** and reload the web client. Branding uploads and cache actions apply separately.
-
-    | Admin tab | Settings covered here |
-    |---|---|
-    | **Display** | **Icons & Theme**, **Default Language**, **MDBList Ratings**, **Content Warnings**, client tag-cache clearing |
-    | **Playback** | **Shortcuts Panel & Toast Timing** |
-    | **Extras** | **UI Tweaks**, **Active Streams**, **External Links**, **Metadata Icons & Sidebar Links**, **Splash Screen Override**, **Custom Image Assets** |
-    | **Pages** | Hidden Content and Activity Feed — links to their canonical guides below |
-    | **Admin** | **Usage Statistics**, **Maintenance Mode**, **Tag Cache**, **Developer Settings** |
+| Admin tab | Settings covered here |
+|---|---|
+| [**Display**](../open-in-jellyfin.md?tab=display) | [Icons & Theme](../open-in-jellyfin.md?tab=display&card=icons-theme){ .je-quiet }, [Default Language](../open-in-jellyfin.md?tab=display&card=default-language){ .je-quiet }, [MDBList Ratings](../open-in-jellyfin.md?tab=display&card=mdblist-ratings){ .je-quiet }, [Content Warnings](../open-in-jellyfin.md?tab=display&card=content-warnings-doesthedogdie){ .je-quiet } |
+| [**Playback**](../open-in-jellyfin.md?tab=playback) | [Shortcuts Panel & Toast Timing](../open-in-jellyfin.md?tab=playback&card=shortcuts-panel-toast-timing){ .je-quiet } |
+| [**Extras**](../open-in-jellyfin.md?tab=extras) | [UI Tweaks](../open-in-jellyfin.md?tab=extras&card=ui-tweaks){ .je-quiet }, [Active Streams](../open-in-jellyfin.md?tab=extras&card=active-streams){ .je-quiet }, [External Links](../open-in-jellyfin.md?tab=extras&card=external-links){ .je-quiet }, [Metadata Icons & Sidebar Links](../open-in-jellyfin.md?tab=extras&card=metadata-icons-sidebar-links){ .je-quiet }, [Splash Screen Override](../open-in-jellyfin.md?tab=extras&card=splash-screen-override){ .je-quiet }, [Custom Image Assets](../open-in-jellyfin.md?tab=extras&card=custom-image-assets){ .je-quiet } |
+| [**Pages**](../open-in-jellyfin.md?tab=pages) | [Hidden Content](../open-in-jellyfin.md?tab=pages&card=hidden-content){ .je-quiet }, [Activity Feed](../open-in-jellyfin.md?tab=pages&card=activity-feed){ .je-quiet } (guides below) |
+| [**Admin**](../open-in-jellyfin.md?tab=admin) | [Usage Statistics](../open-in-jellyfin.md?tab=admin&card=usage-statistics){ .je-quiet }, [Maintenance Mode](../open-in-jellyfin.md?tab=admin&card=maintenance-mode){ .je-quiet }, [Developer Settings](../open-in-jellyfin.md?tab=admin&card=developer-settings){ .je-quiet }; [tag cache](../open-in-jellyfin.md?jeSection=media-tags&tab=server){ .je-quiet } |
 
 ## Custom Branding
 
@@ -82,6 +78,8 @@ Choose the icons you see in JE's panel headings and toast notifications.
 
 ## Extras
 
+[Extras > UI Tweaks](../open-in-jellyfin.md?tab=extras&card=ui-tweaks){ .je-open }
+
 Customize the dashboard, login screen, and user-preferences menu with these optional switches.
 
 ### How to use
@@ -111,9 +109,11 @@ Customize the dashboard, login screen, and user-preferences menu with these opti
 
 ### Activity Feed
 
+[Pages > Activity Feed](../open-in-jellyfin.md?tab=pages&card=activity-feed){ .je-open }
+
 Use the user Activity Feed to see activity separately from dashboard icon coloring.
 
-**How to use:** Open [**Pages** → **Activity Feed**](../open-in-jellyfin.md?tab=pages&card=activity-feed). Follow [Enhanced Settings](../enhanced/enhanced-settings.md) and [Enhanced Features](../enhanced/enhanced-features.md) for setup and use.
+**How to use:** Follow [Enhanced Settings](../enhanced/enhanced-settings.md) and [Enhanced Features](../enhanced/enhanced-features.md) for setup and use.
 
 !!! note "Active Streams section requirements"
 
@@ -190,6 +190,8 @@ Add a **Letterboxd** link to supported movie and person detail pages.
 
 ## Metadata Icons
 
+[Extras > Metadata Icons & Sidebar Links](../open-in-jellyfin.md?tab=extras&card=metadata-icons-sidebar-links){ .je-open }
+
 Show supported metadata and external links as icons on item detail pages.
 
 **How to use:** Open admin [**Extras** → **External Links**](../open-in-jellyfin.md?tab=extras&card=external-links) and turn on **Enable Metadata Icons (Druidblack)**. Click **Save Settings**, reload, and inspect an item's metadata and external links.
@@ -204,9 +206,9 @@ Show supported metadata and external links as icons on item detail pages.
 
 ## MDBList Ratings
 
-[Display > MDBList](../open-in-jellyfin.md?tab=display&card=mdblist){ .je-open }
+[Display > MDBList Ratings](../open-in-jellyfin.md?tab=display&card=mdblist-ratings){ .je-open }
 
-Poster **Rating** groups can also select named source chips using the configured key, independently of the detail-row and metadata-sync switches; see [Rating Tags](../enhanced/tags.md#rating-tags).
+Poster **Rating** groups can also select named source chips using the configured key, independently of the detail-row and metadata-sync switches; see [Rating Tags](../enhanced/tags-groups.md#rating-tags).
 
 Show ratings from several sources on detail pages, or fill Jellyfin's own Community/Critic Rating fields. Displaying ratings, fetching data, and writing Jellyfin fields have separate controls.
 
@@ -295,7 +297,7 @@ See [MDBList Ratings](other-features.md#mdblist-ratings) for batching, expiry, q
 
 ## Content Warnings
 
-[Display > Content Warnings](../open-in-jellyfin.md?tab=display&card=content-warnings){ .je-open }
+[Display > Content Warnings](../open-in-jellyfin.md?tab=display&card=content-warnings-doesthedogdie){ .je-open }
 
 Show community content warnings from DoesTheDogDie on movie and series pages. See the [feature guide](other-features.md#content-warnings) for what users see and how the request budget works.
 
@@ -318,9 +320,11 @@ These controls are server-wide. Each user picks their own triggers from the gear
 
 ## Hidden Content
 
+[Pages > Hidden Content](../open-in-jellyfin.md?tab=pages&card=hidden-content){ .je-open }
+
 Manage Hidden Content's server settings and personal options.
 
-**How to use:** Open [**Pages** → **Hidden Content**](../open-in-jellyfin.md?tab=pages&card=hidden-content) for server controls, or the Enhanced panel for personal controls. See [Content Management](../enhanced/enhanced-features.md#content-management) for hiding, restoration, delivery modes, and administrator management. [Enhanced Settings](../enhanced/enhanced-settings.md) covers all defaults and personal options.
+**How to use:** The card above holds the server controls; personal controls are in the Enhanced panel. See [Content Management](../enhanced/enhanced-features.md#content-management) for hiding, restoration, delivery modes, and administrator management. [Enhanced Settings](../enhanced/enhanced-settings.md) covers all defaults and personal options.
 
 ## Splash Screen
 
@@ -345,11 +349,13 @@ Show your logo on JE's loading overlay, with a decorative progress bar.
 
 ## Default UI Language
 
+[Display > Default Language](../open-in-jellyfin.md?tab=display&card=default-language){ .je-open }
+
 Choose a starting language for JE's interface. Users can save a personal choice that overrides the admin default.
 
 **How to use:**
 
-- **Administrator default:** Open [**Display** → **Default Language**](../open-in-jellyfin.md?tab=display&card=default-language), choose **Default UI Language**, and click **Save Settings**.
+- **Administrator default:** Choose **Default UI Language**, and click **Save Settings**.
 - **Personal choice:** Open the Enhanced panel → **Language Settings** and choose **Display Language**. A change saves your preference and browser language key, then reloads.
 
 **Administrator setting:**
@@ -370,6 +376,8 @@ Choose a starting language for JE's interface. Users can save a personal choice 
 
 ## Cache Management
 
+[Media Tags > Server](../open-in-jellyfin.md?jeSection=media-tags&tab=server){ .je-open }
+
 Refresh cached JE data when it becomes stale. These actions do not reset all preferences or delete the MDBList server cache.
 
 **How to use:** Choose the action below for the data you want to refresh. **Clear All Client Caches** asks for confirmation.
@@ -377,7 +385,7 @@ Refresh cached JE data when it becomes stale. These actions do not reset all pre
 | Action | Location | What it does |
 |---|---|---|
 | **Clear All Client Caches** | Admin [**Media Tags** → **Server**](../open-in-jellyfin.md?jeSection=media-tags&tab=server), with **Server-Side Tag Cache** off; **Overview** → **Quick Actions** labels the shortcut **Clear all client tag caches** | Clears targeted JE client caches on their next page load. Keeps server-stored personal preferences and unrelated browser storage. |
-| **Rebuild Server Tag Cache** | Admin [**Admin** → **Tag Cache**](../open-in-jellyfin.md?tab=admin&card=tag-cache), with **Server-Side Tag Cache** on | Rebuilds cached tag data for the library. This may take time on a large server. |
+| **Rebuild Server Tag Cache** | Admin [**Media Tags** → **Server**](../open-in-jellyfin.md?jeSection=media-tags&tab=server), with **Server-Side Tag Cache** on | Rebuilds cached tag data for the library. This may take time on a large server. |
 | **Clear Translation Cache** | Per-user Enhanced panel → **Language Settings** | Clears this browser's translation entries and reloads. Does not signal other clients or reset the language selection. |
 
 ??? info "How it works"
@@ -417,8 +425,6 @@ Warn users during server work and optionally restrict non-admin accounts or remo
 !!! warning "Saving can restrict access immediately"
 
     Saving can immediately change account and remote-access policies. The manual default disables non-admin accounts. For a banner/notification-only window, leave both **Action** boxes unchecked.
-
-**Admin location:** [**Admin** → **Maintenance Mode**](../open-in-jellyfin.md?tab=admin&card=maintenance-mode).
 
 ### Manual maintenance
 
@@ -526,7 +532,7 @@ The page shows the last-sent time, or that no report has been sent. **Preview** 
 
 Use **Dev Mode** when developing JE scripts. Leave it off for normal use.
 
-**How to use:** Open admin [**Admin** → **Developer Settings**](../open-in-jellyfin.md?tab=admin&card=developer-settings), change **Dev Mode**, click **Save Settings**, and reload.
+**How to use:** Change **Dev Mode**, click **Save Settings**, and reload.
 
 | Setting | Default | What it does |
 |---|---|---|
