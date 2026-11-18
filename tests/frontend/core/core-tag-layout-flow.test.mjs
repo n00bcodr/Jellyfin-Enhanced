@@ -591,10 +591,14 @@ test('Hide Tags on Hover: a card drawn under the pointer does not turn flow off 
     if (!el.classList?.contains('je-tag-slot') || !el.closest('.card').matches(':hover')) return cs;
     return new Proxy(cs, { get: (target, key) => (key === 'opacity' ? '0' : key === 'getPropertyValue' ? name => (name === 'opacity' ? '0' : target.getPropertyValue(name)) : target[key]) });
   };
+  // (Asking an element for its animations lays the page out: where the pointer is tells it instead.)
+  let animationReads = 0;
+  h.window.Element.prototype.getAnimations = function () { animationReads++; return []; };
   renderInto(h, under);
   renderInto(h, other);
   h.settle();
   assert.deepEqual([under.dataset.jeFlow, other.dataset.jeFlow], ['1', '1'], 'nothing was remembered against the kind');
+  assert.equal(animationReads, 0);
   const before = h.layout.flowStats().inspections;
   // The pointer leaves; once the slots are back the card's own are inspected.
   hover(h, false, first);
@@ -624,7 +628,24 @@ test('a style sheet arriving re-asks one card of each kind where it stands; a hi
   assert.ok(h.layout.flowStats().probes > asked, 'the kinds were asked about again');
   assert.equal(marks.includes('second'), false, 'a card that was not the one measured is not touched');
   assert.deepEqual([first.dataset.jeFlow, second.dataset.jeFlow], ['1', '1']);
-  // The page goes to the background (Back will show it again) and a sheet arrives meanwhile.
+  // The page goes to the background (Back will show it again) and an unrelated sheet arrives meanwhile:
+  // shown again, its cards are measured where they stand. None is laid out positioned on the way.
+  for (const host of [first, second]) Object.defineProperty(host, 'clientWidth', { configurable: true, get: () => 0 });
+  customCss(h, '.also-unrelated { color: blue; }');
+  h.layout.syncFlowOf(first);
+  h.settle();
+  for (const host of [first, second]) Object.defineProperty(host, 'clientWidth', { configurable: true, get: () => 200 });
+  const writes = [];
+  const watch = new h.window.MutationObserver(records => writes.push(...records.map(record => record.target.dataset.jeFlow || 'off')));
+  for (const host of [first, second]) watch.observe(host, { attributes: true, attributeFilter: ['data-je-flow'] });
+  const before = h.layout.flowStats().probes;
+  h.sized.report([first, second].map(target => ({ target, contentRect: { width: 200, height: 300 } })));
+  h.settle();
+  writes.push(...watch.takeRecords().map(record => record.target.dataset.jeFlow || 'off'));
+  watch.disconnect();
+  assert.ok(h.layout.flowStats().probes > before, 'asked about');
+  assert.deepEqual([first.dataset.jeFlow, second.dataset.jeFlow], ['1', '1']);
+  assert.ok(writes.length <= 2 && writes.every(state => state === '1'), `only the measured card's mark is flipped and put back (${writes.join(',')})`);
   for (const host of [first, second]) Object.defineProperty(host, 'clientWidth', { configurable: true, get: () => 0 });
   customCss(h, '.quality-overlay-label { opacity: 0.85; }');
   h.layout.syncFlowOf(first);

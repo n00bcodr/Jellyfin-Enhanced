@@ -785,6 +785,8 @@
      * @property {string|null} shape - 'portrait', 'landscape' or 'list'; null until the
      *   fitting pass measured a card its classes don't classify (see shapeOfCard).
      * @property {Set<HTMLElement>} layered - Elements of the card the page's CSS moves or makes a layer (layeredFlow).
+     * @property {string} kinds - The kinds of slot the card holds now (laidOutAlike).
+     * @property {string} flowKinds - The kinds it held when it was last let into flow.
      */
 
     /** @type {WeakMap<HTMLElement, CardController>} host → controller */
@@ -1008,7 +1010,7 @@
         }
         if (!ctrl && create) {
             injectStyles();
-            ctrl = { host, itemId, groups: new Map(), nodes: new Map(), outlet: null, pill: null, layout: null, seq: 0, moreTip: null, described: null, lookKey: '', shape: shapeOfCard(host), layered: new Set() };
+            ctrl = { host, itemId, groups: new Map(), nodes: new Map(), outlet: null, pill: null, layout: null, seq: 0, moreTip: null, described: null, lookKey: '', shape: shapeOfCard(host), layered: new Set(), kinds: '', flowKinds: '' };
             controllers.set(host, ctrl);
         }
         return ctrl;
@@ -1250,6 +1252,8 @@
     function resumePresentation(target) {
         const ctrl = target ? controllerFor(target, false) : null;
         if (ctrl?.pendingPresentation && ctrl.host.isConnected) presentAll(ctrl);
+        // The status-tag painter let go of the card while it was off the page (tags/status-tag-backdrop.js).
+        if (ctrl?.host.isConnected) JE.statusTagBackdrop?.resume?.(ctrl.host);
     }
 
     // ── Representations ────────────────────────────────────────────────
@@ -2096,11 +2100,16 @@
      */
     function laidOutAlike(ctrl, conf) {
         let known = true;
+        let differs = false;
+        let kinds = '';
         for (const [, key] of slotKinds(ctrl, conf)) {
+            kinds += `${key}\n`;
             const alike = flowAlike.get(key);
-            if (alike === false) return false;
+            if (alike === false) differs = true;
             if (alike === undefined) known = false;
         }
+        ctrl.kinds = kinds;
+        if (differs) return false;
         if (known) return true;
         pendingAlike.add(ctrl);
         if (!alikeScheduled) {
@@ -2199,6 +2208,7 @@
         // The answers reach every card they free, not only the ones that asked. With nothing to ask
         // (hidden or live cards only) nothing changes.
         if (!probes.length) return;
+        for (const ctrl of list) if (ctrl.host.dataset.jeFlow === '1') syncFlow(ctrl, resolveLayout(ctrl));
         for (const el of document.querySelectorAll('.je-tag-host:not([data-je-flow])')) {
             const ctrl = controllers.get(/** @type {HTMLElement} */ (el));
             if (ctrl && ctrl.layout) syncFlow(ctrl, resolveLayout(ctrl));
@@ -2293,15 +2303,17 @@
         };
         // Hide Tags on Hover fades the slots of the card under the pointer: an opacity read then is JE's
         // own and passing, and would be remembered against every card of the kind.
+        // (Told from where the pointer is and was: asking a slot for its animations lays the page out.)
         const hides = hidesOnHover(host);
         let hovered = false;
         if (hides) { try { hovered = !!host.closest('.card, .listItem')?.matches(':hover'); } catch { hovered = false; } }
+        const easingBack = hides && !hovered && lastLeft.host === host && performance.now() - lastLeft.at < REST_AFTER_MS;
         let fading = false;
         for (const child of host.children) {
             if (!child.classList.contains('je-tag-slot')) continue;
             const slot = /** @type {HTMLElement} */ (child).dataset.jeSlot || '';
             if (inspected.get(child) !== `${flowEpoch}`) {
-                if (hides && (hovered || (typeof child.getAnimations === 'function' && child.getAnimations().length > 0))) {
+                if (hovered || easingBack) {
                     fading = true;
                 } else {
                     inspected.set(child, `${flowEpoch}`);
@@ -2332,6 +2344,8 @@
 
     /** @type {WeakSet<HTMLElement>} hosts whose slots were fading when they were to be inspected: looked at when the pointer has left */
     const uninspected = new WeakSet();
+    /** The host of the card the pointer last left, and when (performance.now()): its slots ease back for a moment. */
+    const lastLeft = { host: /** @type {HTMLElement|null} */ (null), at: 0 };
     /** @type {WeakMap<HTMLElement, ReturnType<typeof setTimeout>>} hosts due another look once their slots have faded back */
     const inspectTimers = new WeakMap();
 
@@ -2371,7 +2385,12 @@
         if (flow) {
             // What the page layered last time and is still on the card keeps it positioned, with nothing to re-read.
             for (const el of ctrl.layered) if (!host.contains(el)) ctrl.layered.delete(el);
-            if (ctrl.layered.size > 0 || laidOutAlike(ctrl, conf) !== true) {
+            const alike = ctrl.layered.size > 0 ? false : laidOutAlike(ctrl, conf);
+            // Resting in flow already, holding what it held when it was let in: only the answers were
+            // forgotten (a style sheet came or the width changed while its page was hidden). It keeps its
+            // layout and is measured where it stands (flushAlike), not laid out twice to get there.
+            if (alike === null && host.dataset.jeFlow === '1' && ctrl.flowKinds === ctrl.kinds) return;
+            if (alike !== true) {
                 flow = false;
             } else {
                 if (!host.dataset.jeLive && notAtRest(host)) host.dataset.jeLive = '1';
@@ -2387,6 +2406,7 @@
             if (flow) host.dataset.jeFlow = '1';
             else delete host.dataset.jeFlow;
         }
+        if (flow) ctrl.flowKinds = ctrl.kinds;
     }
 
     /**
@@ -2421,6 +2441,8 @@
         if (due !== undefined) { clearTimeout(due); restTimers.delete(ctrl.host); }
         if (lingering === ctrl.host) lingering = null;
         ctrl.layered.clear();
+        ctrl.kinds = '';
+        ctrl.flowKinds = '';
         pendingAlike.delete(ctrl);
     }
 
@@ -3845,6 +3867,8 @@
             restLater(card);
             // Its slots were fading under the pointer when they were to be inspected: once they are back.
             const host = /** @type {HTMLElement|null} */ (card.querySelector('.je-tag-host'));
+            lastLeft.host = host;
+            lastLeft.at = performance.now();
             const ctrl = host && uninspected.delete(host) ? controllers.get(host) : null;
             if (ctrl) inspectLater(ctrl, false);
         }, { passive: true });
