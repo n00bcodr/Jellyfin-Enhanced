@@ -396,6 +396,21 @@ test('the first plan reads the saved settings before JE.loadSettings exists', as
   }
 });
 
+test('a boot batch of several groups runs as one paced list: one wait for idle time, not one per group', async t => {
+  // Each wait for idle time can take up to 100 ms on a busy page. Waiting once per group spread a twenty-group
+  // boot over a second or more, so modules that start work as they load finished before stage 6 had started
+  // the features they consult (Seerr cards drawn before Hidden Content existed).
+  let idleWaits = 0;
+  const boot = basic(t, { url: 'http://jellyfin.test/web/index.html#/details?id=1' });
+  // Wrapped before the loader's first wait (it is still waiting for the bootstrap answer).
+  const idle = boot.window.requestIdleCallback;
+  boot.window.requestIdleCallback = (callback, options) => { idleWaits++; return idle(callback, options); };
+  await boot.booted();
+  assert.deepEqual(boot.asked, ['core,tags,details,reviews,hidden-content']);
+  // One before the request is made, one before the modules run.
+  assert.equal(idleWaits, 2);
+});
+
 test('an address that becomes a details page while boot is under way: the boot features start before that page\'s groups are fetched', async t => {
   // A sign-in redirect lands on its page after the loader has made its first plan. Hidden Content (and Spoiler
   // Guard) must be running before the page's own groups, whose modules start rendering as they load, arrive.

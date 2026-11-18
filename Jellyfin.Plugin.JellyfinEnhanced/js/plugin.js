@@ -717,7 +717,8 @@
      * throwing <script> did) and the run continues with the next module —
      * nothing after it is lost, and it is not re-run. window.__JE_BUNDLE_PROGRESS
      * counts the modules run since the page loaded.
-     * @param {Function[]} modules - One function per module, in manifest order.
+     * @param {Function[]} modules - One function per module, in run order (a
+     *   function marked `jeLoaderStep` is a step of the loader's own, not counted).
      * @param {string[]} names - The modules' paths (for error messages).
      * @param {boolean} idle - Wait for browser idle time between slices (boot) instead of only yielding.
      * @returns {Promise<void>}
@@ -733,7 +734,7 @@
                 console.error(`🪼 Jellyfin Enhanced: Module '${names[i] || `#${i + 1}`}' threw while loading; continuing with the next module.`, e);
                 setTimeout(() => { throw e; }, 0);
             }
-            window.__JE_BUNDLE_PROGRESS = Math.max(0, window.__JE_BUNDLE_PROGRESS || 0) + 1;
+            if (!modules[i].jeLoaderStep) window.__JE_BUNDLE_PROGRESS = Math.max(0, window.__JE_BUNDLE_PROGRESS || 0) + 1;
             if (i + 1 >= modules.length) break;
             // End the slice when its budget is spent or the idle period is over.
             // A callback that ran because the timeout expired reports no idle
@@ -979,22 +980,53 @@
                 }
             }
         };
+        // Consecutive groups that came in the bundle run as ONE list of modules,
+        // paced as one run. Run group by group, each run would begin with its own
+        // wait for idle time, and a boot of twenty groups would spread its modules
+        // over a second or more: modules that start work as they load (Seerr's
+        // fetch and draw) would then finish before stage 6 had started the
+        // features they consult (Hidden Content), which follows the last module.
+        let modules = [];
+        let names = [];
+        let bundleGroups = [];
+        const flushBundles = async () => {
+            if (!bundleGroups.length) return;
+            const running = bundleGroups;
+            const list = modules;
+            const paths = names;
+            modules = [];
+            names = [];
+            bundleGroups = [];
+            await runBundleModules(list, paths, idle);
+            for (const id of running) groupStates[id] = 'ready';
+        };
+        // JE's own Home tabs are registered between "core" and every other
+        // group's modules, so the tabs keep one order (see registerPageTabs).
+        const registerTabs = () => registerPageTabs();
+        registerTabs.jeLoaderStep = true;
         for (const id of ids) {
             const group = componentGroups.byId[id];
+            const needsTabs = id === CORE_GROUP && !componentGroups.whole;
             if (complete(id)) {
                 await flushFiles();
-                await runBundleModules(bundles[id].modules, group.scripts, idle);
-                groupStates[id] = 'ready';
+                modules = modules.concat(bundles[id].modules);
+                names = names.concat(group.scripts);
+                bundleGroups.push(id);
+                if (needsTabs) {
+                    modules.push(registerTabs);
+                    names.push('plugin.js (Home tab registration)');
+                }
             } else {
+                await flushBundles();
                 files = files.concat(group.scripts);
                 fileGroups.push(id);
-            }
-            if (id === CORE_GROUP && !componentGroups.whole) {
-                // Before any other group's modules run, so the tabs keep one order.
-                await flushFiles();
-                if (groupStates[CORE_GROUP] === 'ready') registerPageTabs();
+                if (needsTabs) {
+                    await flushFiles();
+                    if (groupStates[CORE_GROUP] === 'ready') registerPageTabs();
+                }
             }
         }
+        await flushBundles();
         await flushFiles();
     }
 
