@@ -697,6 +697,34 @@ test('direct play: another profile or bitrate lapses the answers of the released
   h.window.localStorage.removeItem('maxbitrate-Video-undefined');
 });
 
+test('direct play: an observer report with nothing to ask or tell queues no idle slice', async t => {
+  const h = setup(t, { cards: 3, settings: { statusTagsDirectPlay: true }, autoIntersect: false, hold: true, answer: id => (id === 'bad' ? new Error('down') : 'transcode') });
+  h.show(movie(), h.hosts[0], 'bad');
+  h.show(movie(), h.hosts[1], 'm1');
+  h.show(movie(), h.hosts[2], 'm1'); // the same item, never on screen
+  h.intersect(h.hosts[0]);
+  await h.slice();
+  await h.release();
+  await h.slice(); await h.slice();
+  assert.deepEqual(h.requests.map(r => r.id), ['bad']);
+  assert.equal(h.idle.length, 0);
+  // A failed lookup not due yet, scrolled away and back; a card that is off screen.
+  h.intersect(h.hosts[0], false);
+  h.intersect(h.hosts[0]);
+  h.intersect(h.hosts[2], false);
+  assert.equal(h.idle.length, 0, 'nothing to ask: no slice');
+  h.intersect(h.hosts[1]);
+  assert.equal(h.idle.length, 1, 'something to ask: one slice');
+  await h.slice();
+  assert.deepEqual(h.requests.map(r => r.id), ['bad', 'm1']);
+  // On the network: a second card of the item joins the request, with no slice of its own.
+  h.intersect(h.hosts[2]);
+  assert.equal(h.idle.length, 0);
+  await h.release();
+  await h.slice();
+  assert.equal(h.badge(h.hosts[2]), 'Transcode');
+});
+
 test('direct play: only cards on screen, two requests at a time, a few launches per slice, and only while idle time lasts', async t => {
   const h = setup(t, { cards: 12, settings: { statusTagsDirectPlay: true }, hold: true, autoIntersect: false });
   h.hosts.forEach((host, i) => h.show(movie(), host, `m${i}`));

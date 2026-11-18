@@ -164,6 +164,8 @@
     let retryTimer = 0;
     /** When the retry timer fires (ms since the epoch), or 0. */
     let retryAt = 0;
+    /** Whether memory may hold a failed lookup (none since the last user: nothing to retry, see nextRetryAt). */
+    let failedSeen = false;
     /** @type {Object|null} */
     let override = null;
     /**
@@ -935,7 +937,11 @@
                 const loaded = [];
                 for (const [id, value] of stored) {
                     const memoryKey = `${hash}|${id}`;
-                    if (!memory.has(memoryKey) && value && now - value.t < TTL_MS) { memory.set(memoryKey, value); loaded.push(String(id).split('@')[0]); }
+                    if (!memory.has(memoryKey) && value && now - value.t < TTL_MS) {
+                        memory.set(memoryKey, value);
+                        if (value.r === null) failedSeen = true;
+                        loaded.push(String(id).split('@')[0]);
+                    }
                 }
                 // Cards drawn before the stored answers arrived: one pass, and no request for those.
                 if (!loaded.length) return;
@@ -1004,6 +1010,7 @@
     function remember(key, value) {
         memory.delete(key);
         memory.set(key, value);
+        if (value.r === null) failedSeen = true;
         if (memory.size > MEMORY_CAP) {
             memory.delete(memory.keys().next().value);
             // It may have been a released card's answer.
@@ -1065,7 +1072,9 @@
                     settle(card);
                 }
             }
-            scheduleSlice();
+            // A slice only when there is something for it to ask or tell: most reports of a
+            // scroll are for cards that wait on a lookup already queued, on the network or failed.
+            if (queue.size || pendingNotify.size) scheduleSlice();
             // A failed lookup scrolled back before it is due waits for the timer.
             armRetry();
         }, { rootMargin: '200px 0px' });
@@ -1421,6 +1430,7 @@
      * @returns {number}
      */
     function nextRetryAt() {
+        if (!failedSeen) return 0;
         const { hash } = current();
         let earliest = 0;
         for (const card of visible) {
@@ -1490,6 +1500,7 @@
         JE.session?.onUserChange?.('direct-play', () => {
             reset();
             memory.clear();
+            failedSeen = false;
             unsaved.clear();
             // The next user's profile: built again once their id is in place
             // (the hook may run before it is; the build records the user).
