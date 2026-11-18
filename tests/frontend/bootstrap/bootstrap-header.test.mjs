@@ -68,6 +68,75 @@ test('expanding header restores original actions and clears obsolete mirrors wit
   assert.equal(h.document.getElementById('je-header-launcher').style.display, 'none');
 });
 
+test('a header with room to spare measures More once, then again only after a resize', async t => {
+  const h = header(t, 1000);
+  const launcher = h.document.getElementById('je-header-launcher');
+  await until(() => h.tray.dataset.ready === 'true' && launcher.style.display === 'none');
+  // Every later pass that shows More (to measure it) writes inline-flex first.
+  let shown = 0;
+  const setProperty = launcher.style.setProperty.bind(launcher.style);
+  launcher.style.setProperty = (name, value, priority) => { if (name === 'display' && value === 'inline-flex') shown++; return setProperty(name, value, priority); };
+  const pass = async () => {
+    // A title change reaches the tray's own observer, which schedules a pass.
+    const calendar = h.document.getElementById('calendar');
+    calendar.title = `${calendar.title}!`;
+    await new Promise(resolve => h.window.requestAnimationFrame(() => h.window.requestAnimationFrame(resolve)));
+  };
+  await pass(); await pass();
+  assert.equal(shown, 0, 'nothing can collapse: More stays hidden and unmeasured');
+  assert.equal(launcher.style.display, 'none');
+  assert.equal(h.tray.querySelectorAll('.je-header-overflowed').length, 0);
+  h.resize(990);
+  await until(() => shown === 1);
+  assert.equal(launcher.style.display, 'none');
+  // Narrow enough to collapse: the remembered width is not used to decide it.
+  h.resize(130);
+  await until(() => h.document.querySelector('.je-launcher-action'));
+  assert.equal(launcher.style.display, 'inline-flex');
+  assert.equal(h.document.getElementById('randomItemButton').classList.contains('je-header-overflowed'), false);
+});
+
+test('the legacy header hidden by an inline display:none wrapper is recognised without a layout read', t => {
+  let reads = 0;
+  const h = createHarness({ html: '<div style="display: none;"><div class="skinHeader"><div class="headerTop"><div class="headerRight" id="legacy"></div></div></div></div>'
+      + '<div class="MuiAppBar-root"><div class="MuiToolbar-root"><div class="MuiBox-root" id="native"><button>SyncPlay</button></div><div><button aria-controls="app-user-menu"></button></div></div></div>',
+    JE: { t: key => key, session: { getUserId: () => 'user', onUserChange() {} } } });
+  t.after(() => h.close());
+  Object.defineProperty(h.window.HTMLElement.prototype, 'offsetParent', { configurable: true, get() { reads++; return this.parentElement; } });
+  for (const file of ['core/dom-observer.js', 'core/navigation.js', 'core/ui-kit.js', 'enhanced/helpers.js']) h.load(file);
+  assert.equal(h.JE.helpers.getHeaderRightContainer(), h.document.getElementById('native'));
+  assert.equal(reads, 0, 'the markup answers: no offsetParent read');
+  // A header not hidden that way is measured, and used when it is rendered.
+  h.document.body.firstElementChild.style.display = '';
+  assert.equal(h.JE.helpers.getHeaderRightContainer(), h.document.getElementById('legacy'));
+  assert.equal(reads, 1);
+  // Rendered: not measured again on this page, however often features ask.
+  for (let i = 0; i < 5; i++) assert.equal(h.JE.helpers.getHeaderRightContainer(), h.document.getElementById('legacy'));
+  assert.equal(reads, 1);
+  // Another page may hide it (the video player): the next navigation measures again.
+  h.window.history.pushState({}, '', '#/video');
+  assert.equal(h.JE.helpers.getHeaderRightContainer(), h.document.getElementById('legacy'));
+  assert.equal(reads, 2);
+  // Hidden by the markup again: answered without a read, whatever was remembered.
+  h.document.body.firstElementChild.style.display = 'none';
+  assert.equal(h.JE.helpers.getHeaderRightContainer(), h.document.getElementById('native'));
+  assert.equal(reads, 2);
+});
+
+test('a legacy header that is not rendered yet is asked again until it is', t => {
+  let rendered = false, reads = 0;
+  const h = createHarness({ html: '<div class="skinHeader"><div class="headerTop"><div class="headerRight" id="legacy"></div></div></div>',
+    JE: { t: key => key, session: { getUserId: () => 'user', onUserChange() {} } } });
+  t.after(() => h.close());
+  Object.defineProperty(h.window.HTMLElement.prototype, 'offsetParent', { configurable: true, get() { reads++; return rendered ? this.parentElement : null; } });
+  for (const file of ['core/dom-observer.js', 'core/navigation.js', 'core/ui-kit.js', 'enhanced/helpers.js']) h.load(file);
+  assert.equal(h.JE.helpers.getHeaderRightContainer(), null);
+  assert.equal(h.JE.helpers.getHeaderRightContainer(), null);
+  assert.equal(reads, 2, 'a negative answer is never kept');
+  rendered = true;
+  assert.equal(h.JE.helpers.getHeaderRightContainer(), h.document.getElementById('legacy'));
+});
+
 test('identity reset discards previous user actions and signed-out tray access', async t => {
   const h = header(t, 130); await until(() => h.document.querySelector('.je-launcher-action'));
   h.logout();
