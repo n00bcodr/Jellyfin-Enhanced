@@ -69,7 +69,7 @@
         if (!path.includes('configurationpage')) return;
         const p = new URLSearchParams(q);
         if (val) p.set(key, val); else p.delete(key);
-        history.replaceState(null, '', path + '?' + p);
+        history.replaceState(null, '', path + '?' + p.toString().replace(/\+/g, '%20'));
     }
 
     // A long description reads as a wall of text, so each sentence gets its own line (unless the author already structured it).

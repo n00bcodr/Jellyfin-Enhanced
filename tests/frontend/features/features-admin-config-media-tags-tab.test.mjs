@@ -194,19 +194,21 @@ test('addresses open the tab at their section: the tab\'s own, older jeSection i
 test('links to the page itself (the Display card, the tab\'s own links) open in place, without navigating', async (t) => {
   const h = boot(t);
   await h.settle();
-  const before = h.window.location.hash;
+  // The address follows the open section (replaceState, no navigation), so compare the page it names, not the whole hash.
+  const page = () => h.window.location.hash.split('&')[0];
+  const before = page();
   const link = h.document.querySelector('#mediaTagsCard .je-media-tags-card-link[href$="tab=colours"]');
   assert.ok(link, 'the Display card links to the Colours section');
   link.click();
   await h.until(() => h.root.dataset.tab === 'colours', 'the card link opened Colours');
-  assert.equal(h.window.location.hash, before, 'the page was not navigated (unsaved changes elsewhere would be lost)');
+  assert.equal(page(), before, 'the page was not navigated (unsaved changes elsewhere would be lost)');
   // The tab's link to a main-page setting (Status badges → TMDB key, in Connections › Services) opens there in place too.
   h.root.querySelector('#jeTaTab-badges').click();
   const tmdb = h.root.querySelector('a[href*="tab=services"]');
   assert.ok(tmdb);
   tmdb.click();
   await h.settle();
-  assert.equal(h.window.location.hash, before);
+  assert.equal(page(), before);
   assert.ok(h.document.getElementById('services').classList.contains('active'), 'the Services tab opened');
   // The Enhanced panel's pointer (outside the page, over it): opened in place too.
   const hub = h.document.createElement('a');
@@ -214,7 +216,7 @@ test('links to the page itself (the Display card, the tab\'s own links) open in 
   h.document.body.appendChild(hub);
   hub.click();
   await h.until(() => h.root.dataset.tab === 'server', 'the panel pointer opened Server');
-  assert.equal(h.window.location.hash, before);
+  assert.equal(page(), before);
   // A link inside another (older) view of a page is that view's business.
   const other = h.document.createElement('div');
   other.dataset.role = 'page';
