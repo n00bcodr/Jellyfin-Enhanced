@@ -150,11 +150,13 @@ export const aspectRatios = (() => {
     return ratios;
 })();
 
-/** The group's stylesheet: base chips, then one colour rule per label. */
+/** The group's stylesheet: the base chip once, then one colour rule per label. */
 export function qualityCss(overlayClass: string, containerClass: string, chipBaseCss: (selector: string) => string): string {
     // Generate CSS rules from the color configuration
-    const rules = Object.entries(qualityColors).map(([k, v]) => {
-        return chipBaseCss(`.${overlayClass}`) + `.${containerClass} .${overlayClass}[data-quality="${k}"] {
+    // The chip box (padding, font size, media queries) is the same for every colour, so it is written
+    // once; only the two colours differ per quality.
+    const rules = chipBaseCss(`.${overlayClass}`) + Object.entries(qualityColors).map(([k, v]) => {
+        return `.${containerClass} .${overlayClass}[data-quality="${k}"] {
                     background: ${v.bg} !important;
                     color: ${v.text} !important;
                 }`;

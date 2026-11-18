@@ -517,3 +517,19 @@ test("Jellyfin's own 3D format marks a version 3D without release words in its n
   assert.ok(!h.render({ Type: 'Movie', StreamData: { Streams: streams, Sources: [{ Id: 'a', Path: 'Movie.mkv' }] } }, 'm2').includes('3D'));
   assert.ok(h.render({ Type: 'Movie', StreamData: { Streams: streams, Sources: [{ Id: 'a', Path: 'Movie.3D.HSBS.mkv' }] } }, 'm3').includes('3D'));
 });
+
+test('the quality stylesheet writes the chip box once and one colour rule per quality', t => {
+  const h = setup(t);
+  // The tag pipeline injects a renderer's stylesheet when the renderer registers.
+  h.renderers.get('quality').injectCss();
+  const css = h.document.getElementById('quality-tag-enhanced-style')?.textContent || '';
+  assert.ok(css.includes('.quality-overlay-container {'), 'the stylesheet is injected');
+  // The chip box (padding, font size, media queries) is the same for every colour: once, not once per quality.
+  assert.equal(css.split('font-variant-caps: small-caps').length - 1, 1);
+  assert.equal(css.split('@supports (container-type: inline-size)').length - 1, 1);
+  const colours = [...css.matchAll(/\.quality-overlay-container \.quality-overlay-label\[data-quality="([^"]+)"\]\s*\{\s*background: ([^;]+) !important;\s*color: ([^;]+) !important;/g)];
+  const labels = colours.map(match => match[1]);
+  assert.ok(labels.length > 50, `${labels.length} colour rules`);
+  assert.ok(['4K', '1080p', 'HDR10', 'ATMOS', 'LOW-RES'].every(label => labels.includes(label)));
+  assert.ok(css.length < 60_000, `${css.length} characters`);
+});

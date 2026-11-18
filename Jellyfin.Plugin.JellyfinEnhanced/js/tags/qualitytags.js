@@ -159,8 +159,8 @@
     return ratios;
   })();
   function qualityCss(overlayClass, containerClass, chipBaseCss) {
-    const rules = Object.entries(qualityColors).map(([k, v]) => {
-      return chipBaseCss(`.${overlayClass}`) + `.${containerClass} .${overlayClass}[data-quality="${k}"] {
+    const rules = chipBaseCss(`.${overlayClass}`) + Object.entries(qualityColors).map(([k, v]) => {
+      return `.${containerClass} .${overlayClass}[data-quality="${k}"] {
                     background: ${v.bg} !important;
                     color: ${v.text} !important;
                 }`;

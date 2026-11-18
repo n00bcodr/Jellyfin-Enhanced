@@ -2851,6 +2851,31 @@
       ],
       "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p86-*",
       "notes": "Three fixes to the #1084 port's controls under community themes, as upstream: on a page of its own (the Recommendations page and its category pages) the Filters button also carries emby-tab-button-active while something is set, as the chosen All / Movies / Series beside it does, so a theme that fills only the chosen tab button (Jellyfish, Zesty) fills it too (client/src/features/seerr/discovery/filter-panel.ts; a section's header keeps its accent-coloured word); the All / Movies / Series tabs keep display: inline-flex so Zesty's unscoped button.emby-tab-button:nth-child(3) { display: none } no longer hides Series (discovery.css); and the pill's ::after, only its press area, draws nothing, so JellyFlix's chosen-tab bar no longer runs through 'Filters: 1' (recommendation-tiles.css). No other difference. Tests: upstream's new tests/browser/discovery-theme-tabs.spec.cjs, loading discovery-filter-utils.js (which bundles the discovery stylesheet and the filter panel here) where upstream loads the separate scripts; its two test changes are merged into pages-discovery-filters.test.mjs and pages-recommendations-filters.test.mjs. Before the port the browser spec fails 6 of 6 (chromium, mobile-chromium, Firefox) and the Recommendations filters file 2 of 20 (the section-header assertion is a guard that holds either way); all pass on the port."
+    },
+    {
+      "sha": "8bff075022437fc6db24b2e3b0e8221dca4a830b",
+      "date": "2026-11-18T10:44:32+00:00",
+      "subject": "perf(tags): write the quality chip base CSS once instead of once per quality colour (374 KB to 26 KB)",
+      "class": "performance",
+      "features": [
+        "media-tags"
+      ],
+      "issues": [],
+      "release": null,
+      "size": {
+        "files": 1,
+        "insertions": 4,
+        "deletions": 2
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/js/tags/qualitytags.js"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "d364401e57c8d5b45815796c57716018d15c411f"
+      ],
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p87-*",
+      "notes": "Re-implemented in client/src/features/media-tags/types/quality/quality-data.ts (qualityCss, which qualitytags.ts's buildCss calls; upstream's change is in js/tags/qualitytags.js's buildCss): the chip box from JE.core.tagRenderer.chipBaseCss is written once before the colour rules instead of once per quality colour. No other difference from upstream. The box declares no background or colour and every colour rule is more specific, so the chips look the same: on a lab every quality chip's computed look on the home page is identical on this tree before the port, after it and on upstream 8bff0750, and the stylesheet is 373,840 characters before and 25,583 after (upstream: 25,583). Upstream adds no test; tests/frontend/features/media-tags/features-quality-display.test.mjs gains 'the quality stylesheet writes the chip box once and one colour rule per quality', which injects the stylesheet as the tag pipeline does on registration and failed before the port (92 chip boxes). The other place that writes quality colours, tag-styles.ts (Tag Styles), writes no chip box per rule. Nothing stored or cached changes."
     }
   ]
 }
