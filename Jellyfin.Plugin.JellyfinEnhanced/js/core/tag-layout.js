@@ -3044,8 +3044,28 @@
         const target = /** @type {Element|null} */ (event.target instanceof Element ? event.target : null);
         const card = target?.closest('.card');
         if (!card || card === revealedCard) return;
+        const host = /** @type {HTMLElement|null} */ (card.querySelector('.je-tag-host'));
+        // The pointer on a card whose tags hide on hover reveals nothing (the
+        // host is transparent while it is there): no bound to place, and no
+        // layout to force for it on every card a scroll moves under the
+        // pointer. The card is not recorded, so focus moving into it (which
+        // does show its names once the pointer leaves) still bounds it.
+        if (event.type === 'pointerover' && hidesOnHover(host)) return;
         revealedCard = card;
-        fitReveal(/** @type {HTMLElement|null} */ (card.querySelector('.je-tag-host')));
+        fitReveal(host);
+    }
+
+    /**
+     * Whether the pointer hides this card's tags instead of revealing them:
+     * "Hide tags on hover" is on and the card's layout has no hover reveal of
+     * its own (the stylesheet rules keyed off body.je-tags-hide-on-hover).
+     * @param {HTMLElement|null} host
+     * @returns {boolean}
+     */
+    function hidesOnHover(host) {
+        if (!host || !document.body?.classList.contains('je-tags-hide-on-hover')) return false;
+        const layout = host.dataset.jeLayout;
+        return layout !== 'summary' && layout !== 'minimal';
     }
     if (typeof document !== 'undefined' && document.addEventListener) {
         document.addEventListener('pointerover', onReveal, { passive: true });

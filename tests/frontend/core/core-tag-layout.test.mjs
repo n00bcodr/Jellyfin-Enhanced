@@ -1400,3 +1400,37 @@ test('first ratings use whole overflow only in mixed language rows', t => {
     if (mixed) { assert.equal(more.textContent, '+1');assert.equal(more.title, '7.7'); }
   }
 });
+
+test('the pointer does not bound genre names on a card whose tags hide on hover; focus still does, and so does a layout with a hover reveal', async t => {
+  const h = setup(t);
+  h.render();
+  const host = h.host();
+  const card = host.closest('.card');
+  assert.ok(host.querySelector('.genre-tag > .genre-text'), 'the card has genre names to bound');
+  // A bound starts by reading the host's box.
+  let reads = 0;
+  host.getBoundingClientRect = () => { reads++; return { left: 0, right: 0, top: 0, bottom: 0, width: 0, height: 0, x: 0, y: 0 }; };
+  const over = () => host.dispatchEvent(new h.window.Event('pointerover', { bubbles: true }));
+  const out = () => host.dispatchEvent(new h.window.Event('pointerout', { bubbles: true }));
+  over();
+  assert.equal(reads, 1, 'tags stay visible on hover: the names are bounded');
+  out();
+  h.document.body.classList.add('je-tags-hide-on-hover');
+  reads = 0;
+  over(); over(); out(); over();
+  assert.equal(reads, 0, 'the host is transparent while the pointer is on it: nothing to bound, no layout read');
+  // Focus shows the names once the pointer has left, so it bounds them, even with the pointer still on the card.
+  card.dispatchEvent(new h.window.Event('focusin', { bubbles: true }));
+  assert.equal(reads, 1);
+  out();
+  // Summary keeps a reveal of its own under "Hide tags on hover".
+  await h.apply({ tagLayout: 'summary', tagLayoutSettingsVersion: 1 });
+  assert.equal(h.host().dataset.jeLayout, 'summary');
+  const summaryHost = h.host();
+  let summaryReads = 0;
+  summaryHost.getBoundingClientRect = () => { summaryReads++; return { left: 0, right: 0, top: 0, bottom: 0, width: 0, height: 0, x: 0, y: 0 }; };
+  // Only a host with names or a "+N" tip outside the reveal reads anything; either way the pointer is not skipped there.
+  const expectsRead = !!summaryHost.querySelector(':scope > .je-tag-slot:not([data-je-slot="hover"]) .genre-tag > .genre-text, :scope > .je-tag-more-tip');
+  summaryHost.dispatchEvent(new h.window.Event('pointerover', { bubbles: true }));
+  assert.equal(summaryReads, expectsRead ? 1 : 0);
+});
