@@ -46,6 +46,8 @@
 // the picture would not be what the filter shows:
 //   - while the pointer is on the card with its tags on show, or focus is
 //     in it: Jellyfin's overlay lies between the artwork and the tags then;
+//   - until the page has been quiet for a few seconds (QUIET_MS): pictures
+//     are painted in idle time after a page has loaded, not while it does;
 //   - when it cannot be drawn faithfully: artwork still loading, hidden,
 //     filtered or faded by CSS, a chip of an earlier slot under the tag (a
 //     crowded card), a tag reaching outside the image or itself
@@ -121,6 +123,11 @@
         /** A scaled card is looked at again after this long, doubling up to the cap while it stays scaled (ms). */
         const HOLD_MS = 1000;
         const HOLD_MAX_MS = 30000;
+        /**
+         * Pictures wait until no new status tag has been drawn for this long (ms): they are painted
+         * after a page has finished loading, not while it does.
+         */
+        const QUIET_MS = 3000;
         /** What ends a passing state of a card (measureAgainLater). */
         const AGAIN_EVENTS = ['transitionend', 'transitioncancel', 'animationend', 'pointerleave', 'focusout'];
         /** The colour the canvas probe draws and must read back (isSupported). */
@@ -448,6 +455,11 @@
         const lingering = new Set();
         /** @type {WeakSet<HTMLElement>} hosts released while they were off the page (see resume) */
         const detached = new WeakSet();
+        /** How long no new card must have been tracked before pictures are painted (ms; scheduleSlice), when the last one was, and the timer that waits. */
+        let quietMs = QUIET_MS;
+        let lastTracked = -Infinity;
+        /** @type {ReturnType<typeof setTimeout>|0} */
+        let quietTimer = 0;
         const counters = { passes: 0, maxPassMs: 0, measures: 0, measureMs: 0, maxMeasureMs: 0, layoutMs: 0, cards: 0, reused: 0, slices: 0, sliceMs: 0, maxSliceMs: 0, decodes: 0, drawn: 0, plain: 0, pixelMs: 0, maxPixelMs: 0, failed: 0 };
         let active = true;
         let measureScheduled = false;
@@ -644,6 +656,7 @@
                 const created = /** @type {Card} */ ({ host, chips: null, art: null, container: null, img: null, onLoad: () => markDirty(created), sig: '', carriers: new Set(), kept: null, moved: true, on: [], latest: null, fullSig: '', again: null, live: false, resting: 0, holdMs: 0 });
                 card = created;
                 cards.set(host, card);
+                lastTracked = performance.now();
                 // Chips arriving, leaving, moving or being fitted all change the host's subtree. Reading the
                 // layout here, in the middle of whatever changed it (a hover reveal, a fitting pass), would
                 // force it early, so a tag that moved keeps its old picture's place for the frame it moves in.
@@ -1165,6 +1178,19 @@
         /** Run a slice when the browser is idle (soon, at the latest). */
         function scheduleSlice() {
             if (sliceScheduled || !active) return;
+            // Pictures are painted once the page has been quiet. While status tags are still being drawn
+            // (a page loading, a row filling in) the live filter shows them, and the decoding and the pixel
+            // work would only compete with what the page is busy with.
+            const wait = lastTracked + quietMs - performance.now();
+            if (wait > 0) {
+                if (!quietTimer) {
+                    quietTimer = setTimeout(() => {
+                        quietTimer = 0;
+                        scheduleSlice();
+                    }, wait);
+                }
+                return;
+            }
             sliceScheduled = true;
             if (typeof requestIdleCallback === 'function') requestIdleCallback(runSlice, { timeout: 500 });
             else setTimeout(runSlice, 16);
@@ -1660,6 +1686,9 @@
             refresh,
             setActive,
             isActive: () => active,
+            /** The quiet period before pictures are painted (ms); a performance check or a test may shorten it. */
+            get quietMs() { return quietMs; },
+            set quietMs(ms) { quietMs = Math.max(0, Number(ms) || 0); },
             /** @returns {Object} Timings and counts (performance checks). */
             stats: () => ({ ...counters, watching: cards.size, waiting: waiting.length, ready: ready.length, decoding: decoding.size, artwork: artwork.size, unreadable: unreadable.size }),
             boxSizes,

@@ -155,7 +155,8 @@ function setup(t, { html = card(), scene = () => [200, 120, 40, 255], trending =
   if (loader) h.JE.loader = loader;
   h.load('tags/statustags.js');
   // The painter is a file of its own (a component group fetched on demand); `arrive()` is that file running.
-  h.arrive = () => { h.load('tags/status-tag-backdrop.js'); h.backdrop = h.JE.statusTagBackdrop; };
+  // (The painter waits for the page to be quiet before it paints; these tests have no clock to wait on.)
+  h.arrive = () => { h.load('tags/status-tag-backdrop.js'); h.backdrop = h.JE.statusTagBackdrop; h.backdrop.quietMs = 0; };
   if (painter) h.arrive();
   const $ = selector => h.document.querySelector(selector);
   Object.assign(h, { root: $('.cardScalable'), art: $('.cardImageContainer'), host: $('.je-tag-host'), slot: $('.je-tag-slot'), group: $('.status-overlay-container'), tag: $('.status-tag') });
@@ -924,6 +925,29 @@ test('a card taken off the page and put back with the same nodes keeps the filte
   assert.equal(h.host.hasAttribute('data-je-blur'), false);
   h.backdrop.resume(h.host);
   assert.equal(h.backdrop.stats().watching, 1, 'only a card that was let go while it was away');
+});
+
+test('pictures are painted only once no new status tag has been drawn for a while; the live filter shows meanwhile', async t => {
+  const h = setup(t);
+  h.backdrop.quietMs = 3000;
+  assert.equal(h.backdrop.quietMs, 3000);
+  const waits = [];
+  const queued = h.window.setTimeout;
+  h.window.setTimeout = (fn, ms) => { if (ms > 1000) { waits.push({ fn, ms }); return waits.length; } return queued(fn, ms); };
+  layout(h);
+  h.backdrop.track(h.host);
+  await h.flush();
+  assert.deepEqual(h.layers(h.slot), {}, 'measured, but nothing decoded or drawn yet');
+  assert.equal(h.decoded.length, 0);
+  assert.equal(h.host.dataset.jeBlur, '1');
+  assert.equal(waits.length, 1, 'one timer for the rest of the quiet period');
+  assert.ok(waits[0].ms > 2000 && waits[0].ms <= 3000);
+  // The page has been quiet.
+  h.backdrop.quietMs = 0;
+  waits[0].fn();
+  await h.flush();
+  assert.equal(h.layers(h.slot)['background-size'], '78px 22px');
+  assert.equal(h.host.hasAttribute('data-je-blur'), false);
 });
 
 /** Six cards with an empty tag host each, and the trending answer that gives each a badge. */
