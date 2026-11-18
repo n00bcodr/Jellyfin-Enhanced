@@ -611,7 +611,7 @@ Repository-root files support development, documentation and release metadata:
 | Location | Purpose |
 |---|---|
 | `README.md`, `CONTRIBUTING.md` | Project overview and contribution/build/check guidance. |
-| `mkdocs.yml`, `docs/` | MkDocs navigation, enabled extensions and site content. Documentation is separate from embedded plugin resources. |
+| `mkdocs.yml`, `docs/` | Navigation, enabled extensions and site content. The docs are built with Zensical, which reads `mkdocs.yml`, so the file keeps its name. Documentation is separate from embedded plugin resources. |
 | `manifest.json` | Release/plugin catalog metadata; distinct from the component manifest and generated-asset manifest. |
 | `package.json`, `package-lock.json` | Test tooling/dependencies; production client bundling is performed by C#, without an npm bundler. |
 | `css/ratings.css`, `images/mdblist-logos/` | Rating color-table input and MDBList logo sources. |
@@ -662,7 +662,7 @@ docs/
 overrides/                            # Theme template overrides (copies of Material 9.6.12 templates with marked changes)
 ```
 
-`mkdocs.yml` owns navigation and Markdown extensions. Site screenshots (WebP) and short screen recordings (MP4) live in the `docs/images/<area>/` folders above; Spoiler Guard's sit beside its pages in `docs/spoiler-guard/`. `docs/images/readme/` holds the README images. Keep the flat `docs/images/ratings.png`, `theme-selector.png`, `colored-activity-icons.png`, `login-image.png` and `plugin-icons.png`: the admin page loads them from `main` for its **View Screenshot** previews. `overrides/` copies a few Material 9.6.12 templates, so refresh it if the Material version pin in `.github/workflows/docs.yml` changes.
+`mkdocs.yml` owns navigation and Markdown extensions. Site screenshots (WebP) and short screen recordings (MP4) live in the `docs/images/<area>/` folders above; Spoiler Guard's sit beside its pages in `docs/spoiler-guard/`. `docs/images/readme/` holds the README images. Keep the flat `docs/images/ratings.png`, `theme-selector.png`, `colored-activity-icons.png`, `login-image.png` and `plugin-icons.png`: the admin page loads them from `main` for its **View Screenshot** previews. `overrides/` holds the header, footer, navigation and icon templates for the `classic` theme variant. Pull requests that touch the docs build the site without publishing it and upload it as a `docs-preview` artifact; download it and serve the folder to check the result.
 
 These are documentation assets, separate from runtime fonts, native rendering assets and root feature assets. The admin **Docs** tab loads the hosted site from the browser, rather than an offline copy embedded in the assembly.
 
@@ -755,7 +755,7 @@ The inventory at `tests/docs/production-inventory.json` records lexical producti
 | Workflows | Purpose |
 |---|---|
 | `regression.yml` | Regression suites, lock checks and production inventory. |
-| `docs.yml` | Generated config groups, MkDocs Material 9.6.12 build and Pages deployment. |
+| `docs.yml` | Generated config groups, Zensical build, versioned Pages deployment with mike, and a build-only run with a preview artifact on pull requests. |
 | `translation_validation.yml`, `check-unused-translations.yml` | Locale validation and unused-key reporting. |
 | `validate-manifest.yml` | Release manifest validation. |
 | `codeql.yml`, `dependency-review.yml`, `security-scan.yml`, `scorecards.yml` | Static analysis, dependency/security checks and repository scorecard. |
