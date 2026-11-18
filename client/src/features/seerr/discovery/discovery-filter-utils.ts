@@ -1,9 +1,11 @@
 // /js/jellyseerr/discovery/discovery-filter-utils.js
 // Shared utilities for the discovery sections, published as JE.discoveryFilter, and the sections' parts
-// every discovery entry reads at call time, published in upstream's load order before it:
+// every discovery entry reads at call time, published in upstream's load order around it:
 // JE.discoveryStyles, JE.discoveryBusy, JE.discoveryMenu, JE.discoveryRoles, JE.discoverySection and
-// JE.discoveryFilters (one copy each: their state lives only here).
+// JE.discoveryFilters before it, JE.discoveryAddress (upstream's discovery-address.js) after it (one copy
+// each: their state lives only here).
 import { discoveryHost, type SeerrDiscoveryHost } from '../host-discovery';
+import { createDiscoveryAddress } from './address';
 import { createDiscoveryBusy } from './busy';
 import { createCardRendering } from './card-rendering';
 import { injectDiscoveryStyles } from './discovery-styles';
@@ -57,7 +59,8 @@ function createDiscoveryFilter(JE: SeerrDiscoveryHost, client: ReturnType<typeof
     JE.discoveryMenu = createDiscoveryMenu(JE);
     JE.discoveryRoles = createDiscoveryRoles(label);
     JE.discoverySection = createDiscoverySection(JE);
-    JE.discoveryFilters = createFilterPanel(JE, label);
+    JE.discoveryFilters = createFilterPanel(JE, label, api);
     injectFilterStyles();
     JE.discoveryFilter = createDiscoveryFilter(JE, api);
+    JE.discoveryAddress = createDiscoveryAddress(JE);
 })();

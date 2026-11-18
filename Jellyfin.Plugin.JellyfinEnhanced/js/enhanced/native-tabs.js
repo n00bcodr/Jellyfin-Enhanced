@@ -78,10 +78,14 @@
   var APP_BACK_MAX_POLLS = 40;
   var LOG = "🪼 Jellyfin Enhanced: [native-tabs]";
   function isHomeHash(hash) {
-    return hash === "" || hash === "#/home" || hash === "#/home.html" || hash.includes("#/home?") || hash.includes("#/home.html?");
+    return hash === "" || hash === "#/home" || hash === "#/home.html" || hash.includes("#/home?") || hash.includes("#/home.html?") || hash.indexOf("#/home#") === 0 || hash.indexOf("#/home.html#") === 0;
+  }
+  function linkOf(hash) {
+    const mark = String(hash || "").indexOf("#", 1);
+    return mark < 0 ? String(hash || "") : String(hash).slice(0, mark);
   }
   function hashParam(hash, name) {
-    const match = new RegExp("[?&]" + name + "=([^&]*)").exec(hash);
+    const match = new RegExp("[?&]" + name + "=([^&#]*)").exec(hash);
     if (!match) return null;
     const raw = match[1] ?? "";
     try {
@@ -91,7 +95,7 @@
     }
   }
   function homeRoute(hash) {
-    return hash.indexOf("#/home") === 0 ? hash.split("?")[0] ?? "#/home" : "#/home";
+    return hash.indexOf("#/home") === 0 ? "#" + (hash.slice(1).split(/[?#]/)[0] ?? "/home") : "#/home";
   }
   function deepLinkHash(hash, index, id) {
     return homeRoute(hash) + "?tab=" + index + "&" + DEEP_LINK_PARAM + "=" + encodeURIComponent(id);
@@ -396,7 +400,7 @@
         if (selectingTab) return;
         const urlIndex = parseInt(hashParam(hash(), "tab") ?? "", 10);
         const picked = parseInt(String(event instanceof CustomEvent ? event.detail?.selectedTabIndex : void 0), 10);
-        if (picked !== (isNaN(urlIndex) ? 0 : urlIndex) || Date.now() - lastTabStripInput < 1e3) userPickedHash = hash();
+        if (picked !== (isNaN(urlIndex) ? 0 : urlIndex) || Date.now() - lastTabStripInput < 1e3) userPickedHash = linkOf(hash());
       });
       tabs2.addEventListener("tabchange", (event) => {
         const picked = parseInt(String(event instanceof CustomEvent ? event.detail?.selectedTabIndex : void 0), 10);
@@ -427,26 +431,30 @@
       const entry = wantedId != null && linkedToOwnTab ? entries.find((e) => e.id === wantedId) : void 0;
       if (entry && entry.index != null && entry.index !== wantedIndex) {
         const staleHash = hash();
-        const freshHash = deepLinkHash(staleHash, entry.index, entry.id);
-        rewrittenHash = freshHash;
+        const mark = staleHash.indexOf("#", 1);
+        const fragment = mark < 0 ? "" : staleHash.slice(mark);
+        const query = mark < 0 ? staleHash : staleHash.slice(0, mark);
+        const others = (query.split("?")[1] || "").split("&").filter((pair) => pair !== "" && !/^(?:tab|jeTab)=/.test(pair));
+        const freshHash = deepLinkHash(staleHash, entry.index, entry.id) + others.map((pair) => "&" + pair).join("") + fragment;
+        rewrittenHash = linkOf(freshHash);
         history.replaceState(history.state, "", window.location.pathname + window.location.search + freshHash);
         wantedIndex = entry.index;
-        if (userPickedHash === staleHash) userPickedHash = freshHash;
+        if (userPickedHash === linkOf(staleHash)) userPickedHash = linkOf(freshHash);
         const ownPanel = document.getElementById(OWN_ID_PREFIX + "panel-" + entry.id);
-        if (appliedDeepLink && appliedDeepLink.hash === staleHash && appliedDeepLink.panel === ownPanel) {
-          appliedDeepLink.hash = hash();
+        if (appliedDeepLink && appliedDeepLink.hash === linkOf(staleHash) && appliedDeepLink.panel === ownPanel) {
+          appliedDeepLink.hash = linkOf(hash());
           appliedDeepLink.btn = document.getElementById(OWN_ID_PREFIX + "btn-" + entry.id);
         }
       }
       if (isNaN(wantedIndex) || wantedIndex < 2) return;
-      if (userPickedHash === hash()) return;
+      if (userPickedHash === linkOf(hash())) return;
       const found = slider.closest('[is="emby-tabs"]') || document.querySelector('[is="emby-tabs"]');
       const tabs2 = isTabs(found) ? found : null;
       const btn = tabs2?.querySelectorAll(".emby-tab-button")[wantedIndex];
       const panel = root.querySelectorAll(".tabContent")[wantedIndex];
       const select = tabs2?.selectedIndex?.bind(tabs2);
       if (!tabs2 || !select || !btn || !panel || slotIndex(btn) !== wantedIndex || slotIndex(panel) !== wantedIndex) return;
-      const current = hash();
+      const current = linkOf(hash());
       if (appliedDeepLink && appliedDeepLink.hash === current && appliedDeepLink.root === root && appliedDeepLink.panel === panel && appliedDeepLink.tabs === tabs2) {
         const stillSelected = select() === wantedIndex && panel.classList.contains("is-active") && ![...tabs2.querySelectorAll(".emby-tab-button-active")].some((el) => el !== btn);
         if (appliedDeepLink.btn === btn || !stillSelected) {
@@ -571,7 +579,7 @@
           return void 0;
         }
         if (!canGoBack && active && home && isOwnSlot(active)) {
-          userPickedHash = hash();
+          userPickedHash = linkOf(hash());
           home.click();
           return void 0;
         }
@@ -594,7 +602,7 @@
       watchAppBack();
       JE2.helpers.observeTabContainers("native-tabs", '.tabContent.pageTabContent[data-index="0"]', scheduleInject);
       JE2.core.navigation.onNavigate(() => {
-        if (hash() !== rewrittenHash) {
+        if (linkOf(hash()) !== rewrittenHash) {
           appliedDeepLink = null;
           userPickedHash = null;
         }

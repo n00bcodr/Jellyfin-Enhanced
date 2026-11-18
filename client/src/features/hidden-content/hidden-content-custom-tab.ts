@@ -58,7 +58,9 @@ import { host, registry, type HiddenHost } from './host';
   function isOnHomePage() {
     var hash = window.location.hash;
     return hash === '' || hash === '#/home' || hash === '#/home.html'
-      || hash.indexOf('#/home?') !== -1 || hash.indexOf('#/home.html?') !== -1;
+      || hash.indexOf('#/home?') !== -1 || hash.indexOf('#/home.html?') !== -1
+      // (Or only the Recommendations filters' fragment after it: see seerr/discovery/address.ts.)
+      || hash.indexOf('#/home#') === 0 || hash.indexOf('#/home.html#') === 0;
   }
 
   /** Wait for JE.hiddenContentPage and JE.hiddenContent to be ready before initializing (30s timeout). */

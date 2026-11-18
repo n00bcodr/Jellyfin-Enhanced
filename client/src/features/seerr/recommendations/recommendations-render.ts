@@ -3,8 +3,8 @@
 // by the standalone page, Plugin Pages and the custom/native tabs.
 import { bindToSession, filterOf, translate, type SeerrDiscoveryHost } from '../host-discovery';
 import { isAbortError } from '../discovery/domain';
-import type { FeedKind, GenreSliderEntry, SeerrResult } from '../discovery/types';
-import { LOG_PREFIX, PAGE_ID, part, recommendationsHost } from './stage';
+import type { FeedKind, GenreSliderEntry, ProfilesHost, SeerrResult } from '../discovery/types';
+import { FILTER_MODULE, LOG_PREFIX, PAGE_ID, part, recommendationsHost } from './stage';
 import type { CatalogEntry, RecommendationsStage, RenderOwner, RowResult } from './types';
 
 // Tile colour by genre name, shared across movie/TV since names overlap.
@@ -275,59 +275,74 @@ function createRows(JE: SeerrDiscoveryHost, P: RecommendationsStage) {
         }
         return owner;
     }
-    function appendHeading(owner: RenderOwner): void {
-        const heading = element('h1', 'je-recommendations-title je-pad-left je-pad-right', owner.container);
+    /** The page's title bar: its heading, and at its end the page's filters (see toolbarControls). */
+    function appendHeading(owner: RenderOwner): { bar: HTMLElement; tools: HTMLElement } {
+        const bar = element('div', 'je-recommendations-title je-reco-header je-pad-left je-pad-right', owner.container);
+        const heading = element('h1', 'je-reco-heading', bar);
         const logo = element('img', 'je-reco-logo', heading);
         logo.alt = '';
         logo.src = JE.cdn?.selfhst('svg/seerr.svg') ?? '';
         element('span', '', heading).textContent = text('recommendations_title');
-        owner.disposers.push(trackBar(heading));
+        const tools = element('div', 'je-reco-tools', bar);
+        owner.disposers.push(trackBar(bar));
+        return { bar, tools };
     }
-    function appendRetry(owner: RenderOwner): void {
-        const row = element('div', 'je-retry-row je-pad-left je-pad-right', owner.container);
+    function appendRetry(owner: RenderOwner, box: HTMLElement): void {
+        const row = element('div', 'je-retry-row je-pad-left je-pad-right', box);
         const button = element('button', 'raised emby-button', row);
         button.type = 'button';
         button.textContent = '⟳ Tap to retry';
         button.addEventListener('click', () => { void renderInto(owner.container); }, { once: true, signal: owner.controller.signal });
     }
-    function appendEmpty(owner: RenderOwner, rowResults: readonly RowResult[]): void {
-        const empty = element('div', 'je-recommendations-empty je-pad-left je-pad-right', owner.container);
+    function appendEmpty(owner: RenderOwner, box: HTMLElement, rowResults: readonly RowResult[]): void {
+        const empty = element('div', 'je-recommendations-empty je-pad-left je-pad-right', box);
         empty.textContent = text('recommendations_empty');
         // A failed load is not an empty catalogue, and this container won't be rendered again by itself.
-        if (rowResults.some(entry => entry.failed)) appendRetry(owner);
+        if (rowResults.some(entry => entry.failed)) appendRetry(owner, box);
     }
-    function appendRows(owner: RenderOwner, rowResults: readonly RowResult[]): void {
-        const { container } = owner;
+    /** Says that the filters leave the page nothing, with the way back to everything (`onClear`). */
+    function appendNothingMatches(box: HTMLElement, onClear: () => void): void {
+        const note = JE.discoverySection?.buildMessageRow?.({
+            message: text('discovery_filters_none'), actionLabel: text('discovery_filters_clear'), onAction: onClear
+        });
+        if (!note) return;
+        note.classList.add('je-recommendations-empty', 'je-reco-filters-none', 'je-pad-left', 'je-pad-right');
+        box.appendChild(note);
+    }
+    /** The rows of the kinds All | Movies | Series shows, then the genre, studio and network tiles of those kinds. */
+    function appendRows(owner: RenderOwner, box: HTMLElement, rowResults: readonly RowResult[]): void {
+        const shows = (kind: FeedKind) => part(P, 'shownForType')(kind, filterOf(JE).getFilterMode(FILTER_MODULE));
         for (const { row, results } of rowResults) {
-            if (results.length > 0) container.appendChild(rows.createMediaRow(text(row.titleKey), results, row.key, owner));
+            if (results.length > 0) box.appendChild(rows.createMediaRow(text(row.titleKey), results, row.key, owner));
         }
         const movieGenres = part(P, 'MOVIE_GENRES');
         const tvGenres = part(P, 'TV_GENRES');
-        if (movieGenres.length) container.appendChild(rows.createGenreTileRow(text('recommendations_movie_genres'), movieGenres, 'movie', owner));
-        if (tvGenres.length) container.appendChild(rows.createGenreTileRow(text('recommendations_tv_genres'), tvGenres, 'tv', owner));
-        container.appendChild(rows.createTileRow(text('recommendations_studios'), part(P, 'STUDIOS'), 'studio', owner));
-        container.appendChild(rows.createTileRow(text('recommendations_networks'), part(P, 'NETWORKS'), 'network', owner));
+        if (movieGenres.length && shows('movie')) box.appendChild(rows.createGenreTileRow(text('recommendations_movie_genres'), movieGenres, 'movie', owner));
+        if (tvGenres.length && shows('tv')) box.appendChild(rows.createGenreTileRow(text('recommendations_tv_genres'), tvGenres, 'tv', owner));
+        if (shows('movie')) box.appendChild(rows.createTileRow(text('recommendations_studios'), part(P, 'STUDIOS'), 'studio', owner));
+        if (shows('tv')) box.appendChild(rows.createTileRow(text('recommendations_networks'), part(P, 'NETWORKS'), 'network', owner));
     }
-    /** Renders the title and rows. Each container owns its render, so one host can't end another's. */
-    async function renderInto(container: HTMLElement): Promise<void> {
+    /**
+     * Fills the rows box under the page's filters: the rows of the kinds All | Movies | Series shows, each asked with the
+     * filters, then the tiles of those kinds. `signal` ends with the next fill and with the page's render; `onClear`:
+     * Clear filters, from the note when they leave nothing.
+     */
+    async function fillRows(owner: RenderOwner, box: HTMLElement, signal: AbortSignal, onClear: () => void, wasConnected: boolean): Promise<void> {
         const state = part(P, 'state');
-        const owner = beginRender(container);
-        const { signal } = owner.controller;
-        const wasConnected = container.isConnected;
+        const { container } = owner;
         const superseded = () => signal.aborted || state.renders.get(container) !== owner;
-
-        // Cards leaving the document must be unobserved first (lazy posters).
-        JE.jellyseerrUI?.releasePosters?.(container);
-        container.replaceChildren();
-        appendHeading(owner);
+        JE.jellyseerrUI?.releasePosters?.(box);
+        box.replaceChildren();
+        const shows = (kind: FeedKind) => part(P, 'shownForType')(kind, filterOf(JE).getFilterMode(FILTER_MODULE));
         const loading = JE.core?.ui?.createSkeletonRows([
-            ...part(P, 'ROWS').map(row => text(row.titleKey)), text('recommendations_movie_genres'),
-            text('recommendations_tv_genres'), text('recommendations_studios'), text('recommendations_networks')
+            ...part(P, 'ROWS').filter(row => part(P, 'shownForType')(row.kind, filterOf(JE).getFilterMode(FILTER_MODULE))).map(row => text(row.titleKey)),
+            ...(shows('movie') ? [text('recommendations_movie_genres')] : []), ...(shows('tv') ? [text('recommendations_tv_genres')] : []),
+            ...(shows('movie') ? [text('recommendations_studios')] : []), ...(shows('tv') ? [text('recommendations_networks')] : [])
         ]);
         if (loading) {
             loading.className = 'je-pad-left je-pad-right';
             loading.setAttribute('aria-label', text('recommendations_loading'));
-            container.appendChild(loading);
+            box.appendChild(loading);
         }
         let rowResults: RowResult[] = [];
         let movieGenres: GenreSliderEntry[] = [];
@@ -345,14 +360,95 @@ function createRows(JE: SeerrDiscoveryHost, P: RecommendationsStage) {
         P.MOVIE_GENRES = movieGenres;
         P.TV_GENRES = tvGenres;
         loading?.remove();
-        if (rowResults.some(entry => entry.results.length > 0)) appendRows(owner, rowResults);
-        else appendEmpty(owner, rowResults);
+        if (rowResults.some(entry => entry.results.length > 0)) appendRows(owner, box, rowResults);
+        // (Filters that leave nothing are said so, with the way back; a row that failed is not "nothing", it has its retry.)
+        else if (part(P, 'isNarrowed')() && !rowResults.some(entry => entry.failed)) appendNothingMatches(box, onClear);
+        else appendEmpty(owner, box, rowResults);
+    }
+    /** The page's filters at the end of its title bar: All | Movies | Series, then the Filters button with its menu. */
+    function toolbarControls(bar: HTMLElement, place: () => HTMLElement | null, onChange: () => void, profiles?: ProfilesHost): HTMLElement[] {
+        const facade = filterOf(JE);
+        const type = facade.createFilterControl(FILTER_MODULE, () => onChange());
+        const button = facade.createFiltersButton(bar, FILTER_MODULE, 'feed', onChange, { place, ...(profiles ? { profiles } : {}) });
+        return button ? [type, button] : [type];
+    }
+    // Per rendered page: redraws its filters and, when they changed since its rows were filled, fills them again (the
+    // filters are the category pages' too, which can change them).
+    const syncs = new Map<HTMLElement, () => void>();
+    /** After the filters changed elsewhere (a category page): every page shows them, with rows to match. */
+    function syncFilters(): void {
+        for (const [container, sync] of [...syncs]) {
+            if (container.isConnected) sync(); else syncs.delete(container);
+        }
+    }
+    /**
+     * Renders the title bar with the page's filters, then the rows, in a box of their own that fills again whenever the
+     * filters change. Each container owns its render, so one host can't end another's.
+     */
+    async function renderInto(container: HTMLElement): Promise<void> {
+        const owner = beginRender(container);
+        const { signal } = owner.controller;
+        const wasConnected = container.isConnected;
+
+        // Cards leaving the document must be unobserved first (lazy posters).
+        JE.jellyseerrUI?.releasePosters?.(container);
+        container.replaceChildren();
+        // Where the address holds the filters (Home's tab, the page of its own), a link, a reload or Back opens the page
+        // with what it says.
+        const address = JE.discoveryAddress;
+        if (part(P, 'addressHoldsFilters')()) address?.adopt(FILTER_MODULE, null, { withSort: false });
+        const { bar, tools } = appendHeading(owner);
+        const rowsBox = element('div', 'je-reco-rows', container);
+        let filled = '';
+        let rowsController: AbortController | null = null;
+        const fill = (): Promise<void> => {
+            filled = part(P, 'filterSignature')();
+            rowsController?.abort();
+            const controller = rowsController = new AbortController();
+            signal.addEventListener('abort', () => controller.abort(), { once: true, signal: controller.signal });
+            return fillRows(owner, rowsBox, controller.signal, clear, wasConnected);
+        };
+        const refill = () => { fill().catch(error => console.error(`${LOG_PREFIX} Failed to filter`, error)); };
+        // The saved filters: what is set now (no order on this page), and a profile's applied as the address would be.
+        const profiles: ProfilesHost | undefined = address ? {
+            read: () => address.filterPairs(address.current(FILTER_MODULE, null), false).join('&'),
+            apply(filters) {
+                const wanted = address.filtersOf(filters, 'feed');
+                filterOf(JE).setFilterMode(FILTER_MODULE, wanted.mode);
+                filterOf(JE).setFilters(FILTER_MODULE, wanted.selection);
+                paintTools();
+                changed();
+            }
+        } : undefined;
+        function paintTools(): void { tools.replaceChildren(...toolbarControls(bar, () => container, changed, profiles)); }
+        // A change made here: the address says it first (a reload or a link shows the same), then the rows follow.
+        function changed(): void {
+            if (part(P, 'addressHoldsFilters')()) address?.write(FILTER_MODULE, null, false);
+            refill();
+        }
+        // Clear filters, from the note that they leave nothing: the controls are drawn again with them.
+        function clear(): void {
+            const keyed = rowsBox.contains(document.activeElement);
+            part(P, 'clearFilters')();
+            paintTools();
+            changed();
+            // (The note goes with the rows: the keys go to the Filters button, which the bar keeps.)
+            if (keyed) tools.querySelector<HTMLElement>('.jellyseerr-filters-btn')?.focus({ preventScroll: true });
+        }
+        syncs.set(container, () => {
+            paintTools();
+            if (part(P, 'filterSignature')() !== filled) refill();
+        });
+        owner.disposers.push(() => { syncs.delete(container); rowsController?.abort(); });
+        paintTools();
+        await fill();
     }
     P.trackStickyBar = trackBar;
     P.createMediaRow = rows.createMediaRow;
     P.createTileRow = rows.createTileRow;
     P.createGenreTileRow = rows.createGenreTileRow;
     P.renderInto = renderInto;
+    P.syncFilters = syncFilters;
     P.renderForCustomTab = element => {
         if (!element) return;
         renderInto(element).catch(error => console.error(`${LOG_PREFIX} Failed to render`, error));

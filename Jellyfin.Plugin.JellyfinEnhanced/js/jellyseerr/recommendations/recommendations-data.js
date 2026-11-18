@@ -76,7 +76,7 @@
   var CATEGORY_PAGE_ID = "je-recommendations-category-page";
   var PLUGIN_PAGE_LINK = 'a[is="emby-linkbutton"][data-itemid="Jellyfin.Plugin.JellyfinEnhanced.RecommendationsPage"]';
   var SORT_MODULE = "recommendationsCategory";
-  var FILTER_MODULE = "recommendationsTrending";
+  var FILTER_MODULE = "recommendations";
   var OTHER_PAGE = `.mainAnimatedPage:not(.hide):not(#${PAGE_ID}):not(#${CATEGORY_PAGE_ID})`;
   function recommendationsHost() {
     const { JE } = discoveryHost();
@@ -91,6 +91,32 @@
 
   // client/src/features/seerr/recommendations/recommendations-data.ts
   var EMPTY_SLIDER_RETRY_MS = 60 * 1e3;
+  var TRENDING_FILTERED_PAGES = 3;
+  var TRENDING_FILTERED_ENOUGH = 12;
+  function localDay(now = /* @__PURE__ */ new Date()) {
+    const two = (value) => String(value).padStart(2, "0");
+    return `${now.getFullYear()}-${two(now.getMonth() + 1)}-${two(now.getDate())}`;
+  }
+  function shownForType(kind, mode) {
+    return !kind || mode === "mixed" || (mode === "movies" ? kind === "movie" : kind === "tv");
+  }
+  var isTrendingPath = (path) => /\/discover\/trending$/.test(path);
+  function feedRequest(path, page, filterQuery, today) {
+    if (!filterQuery || isTrendingPath(path)) return `${path}?page=${page}`;
+    const upcoming = /\/discover\/(movies|tv)\/upcoming$/.exec(path);
+    if (!upcoming) return `${path}?page=${page}${filterQuery}`;
+    const name = upcoming[1] === "movies" ? "primaryReleaseDateGte" : "firstAirDateGte";
+    const own = new RegExp(`&${name}=([^&]*)`).exec(filterQuery)?.[1];
+    let given = "";
+    try {
+      given = own ? decodeURIComponent(own) : "";
+    } catch {
+      given = "";
+    }
+    const from = given > today ? given : today;
+    const rest = filterQuery.replace(new RegExp(`&${name}=[^&]*`, "g"), "");
+    return `${path.replace(/\/upcoming$/, "")}?page=${page}&${name}=${encodeURIComponent(from)}${rest}`;
+  }
   var idleCategory = () => ({
     activeScrollObserver: null,
     isLoading: false,
@@ -115,15 +141,48 @@
       renders: /* @__PURE__ */ new Map()
     };
     const fetchWithManagedRequest = (path, options) => filterOf(JE).fetchWithManagedRequest(path, "recommendations", options);
+    const filters = () => filterOf(JE);
+    async function feedPage(path, kind, page, options) {
+      const query = kind ? filters().feedQuery?.(FILTER_MODULE, kind) ?? "" : "";
+      const routed = kind && JE.discoveryFilters?.routeFeed ? JE.discoveryFilters.routeFeed(path, kind, filters().getFilters?.(FILTER_MODULE) ?? {}, query) : { query, keep: null };
+      const answer = decodeFeedPage(await fetchWithManagedRequest(feedRequest(path, page, routed.query, localDay()), options));
+      const keep = routed.keep;
+      return keep ? { ...answer, results: answer.results.filter(keep) } : answer;
+    }
+    function keepLoaded(results) {
+      const selection = filters().getFilters(FILTER_MODULE);
+      if (JE.discoveryFilters?.checkableOnLoaded && !JE.discoveryFilters.checkableOnLoaded(selection)) return null;
+      return filters().filterByMediaType(filters().keepByFilters(FILTER_MODULE, results), filters().getFilterMode(FILTER_MODULE));
+    }
+    const isNarrowed = () => (filters().getFilterMode?.(FILTER_MODULE) ?? "mixed") !== "mixed" || !!filters().hasMoreFilters?.(FILTER_MODULE);
+    const filterSignature = () => JSON.stringify([filters().getFilterMode(FILTER_MODULE), filters().getFilters(FILTER_MODULE)]);
+    function clearFilters() {
+      filters().clearFilters(FILTER_MODULE);
+      filters().setFilterMode(FILTER_MODULE, filters().MODES.MIXED);
+    }
+    const addressHoldsFilters = () => !!JE.discoveryAddress?.isRecommendationsHash(window.location.hash);
+    async function fetchRowResults(row, signal) {
+      if (!isTrendingPath(row.path) || !isNarrowed()) return (await feedPage(row.path, row.kind, 1, { signal })).results;
+      const kept = [];
+      for (let page = 1; page <= TRENDING_FILTERED_PAGES && kept.length < TRENDING_FILTERED_ENOUGH; page++) {
+        const answer = decodeFeedPage(await fetchWithManagedRequest(`${row.path}?page=${page}`, { signal }));
+        const fit = keepLoaded(answer.results);
+        if (fit === null) break;
+        kept.push(...fit);
+        if (page >= (Number(answer.totalPages) || 1)) break;
+      }
+      return kept;
+    }
     function fetchAllRows(signal) {
+      const mode = filters().getFilterMode?.(FILTER_MODULE) ?? "mixed";
       const load = async (row) => {
         try {
-          return { row, results: decodeFeedPage(await fetchWithManagedRequest(`${row.path}?page=1`, { signal })).results, failed: false };
+          return { row, results: await fetchRowResults(row, signal), failed: false };
         } catch {
           return { row, results: [], failed: true };
         }
       };
-      return Promise.all(part(P, "ROWS").map(load));
+      return Promise.all(part(P, "ROWS").filter((row) => shownForType(row.kind, mode)).map(load));
     }
     const genreSliders = /* @__PURE__ */ new Map();
     function fetchGenreSlider(mediaType) {
@@ -167,6 +226,16 @@
     P.pluginPagesExists = !!sidebar?.querySelector(PLUGIN_PAGE_LINK);
     P.state = state;
     P.fetchWithManagedRequest = fetchWithManagedRequest;
+    P.localDay = localDay;
+    P.shownForType = shownForType;
+    P.isTrendingPath = isTrendingPath;
+    P.feedRequest = feedRequest;
+    P.feedPage = feedPage;
+    P.keepLoaded = keepLoaded;
+    P.isNarrowed = isNarrowed;
+    P.filterSignature = filterSignature;
+    P.clearFilters = clearFilters;
+    P.addressHoldsFilters = addressHoldsFilters;
     P.fetchAllRows = fetchAllRows;
     P.fetchGenreSlider = fetchGenreSlider;
     P.disposeRender = disposeRender;

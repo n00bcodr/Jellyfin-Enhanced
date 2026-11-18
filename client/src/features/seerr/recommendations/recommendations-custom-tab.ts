@@ -42,7 +42,8 @@ const READY_MAX_POLLS = 300;
         mounted.container.replaceChildren();
         mounted = null;
     }
-    const isOnHomePage = () => /^(?:#\/home(?:\.html)?(?:\?.*)?)?$/.test(window.location.hash);
+    // (Or only the filters' fragment after it: see discovery/address.ts.)
+    const isOnHomePage = () => /^(?:#\/home(?:\.html)?(?:[?#].*)?)?$/.test(window.location.hash);
     /** The container of the active tab of the active home page; never a stale cached copy. */
     function findActiveContainer(): HTMLElement | null {
         const all = [...document.querySelectorAll<HTMLElement>(CONTAINER_SELECTOR)];

@@ -53,7 +53,7 @@
     var lastMountedContainer = null;
     function isOnHomePage() {
       var hash = window.location.hash.replace(/^#!/, "#");
-      return hash === "" || hash === "#/home" || hash === "#/home.html" || hash.indexOf("#/home?") !== -1 || hash.indexOf("#/home.html?") !== -1;
+      return hash === "" || hash === "#/home" || hash === "#/home.html" || hash.indexOf("#/home?") !== -1 || hash.indexOf("#/home.html?") !== -1 || hash.indexOf("#/home#") === 0 || hash.indexOf("#/home.html#") === 0;
     }
     function waitForCatchUp(callback) {
       var attempts = 0;

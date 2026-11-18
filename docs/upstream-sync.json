@@ -2723,6 +2723,134 @@
       ],
       "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p83-*",
       "notes": "Upstream’s rule goes as is into the discovery sections’ stylesheet, client/src/features/seerr/discovery/discovery.css (after the cards’ scroll margin, as upstream places it in discovery-styles.js): .detailSection > .jellyseerr-discovery-section spans every column (grid-column: 1 / -1) and may shrink below its cards’ width (min-width: 0). Here the person and collection discovery sections are appended to .detailPagePrimaryContent .detailSection (section-chassis.ts, section.ts), so the rule reaches them; no other difference. Test: tests/browser/discovery-recommendations-rewrite.spec.cjs, “a discovery section spans the whole details section when a theme lays that out as a grid” (a four-column .detailSection 800 px wide, a 2000 px row of cards: the section was 200 px in chromium, mobile-chromium and firefox, and is 800). Lab, a person page with a theme rule like ElegantFin’s: the section was 225 of 900 px on this tree before the port, 900 on upstream’s build and 900 after."
+    },
+    {
+      "sha": "5201d47baf7e9cf217ef1b87339c4ab2bac9bc7e",
+      "date": "2026-11-18T08:28:25+00:00",
+      "subject": "fix(admin): keep Media Tags deep links when the address follows the open tab, update api.md route total and in-place link test",
+      "class": "fix",
+      "features": [
+        "admin",
+        "media-tags"
+      ],
+      "issues": [],
+      "release": null,
+      "size": {
+        "files": 4,
+        "insertions": 11,
+        "deletions": 7
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/configPage.html",
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/jeAdmin.js",
+        "docs/advanced/api.md",
+        "tests/frontend/features/features-admin-config-media-tags-tab.test.mjs"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "05cf85bc72888c714a0115f6e2565f7fc070d651"
+      ],
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p84-*",
+      "notes": "Two client changes, both as upstream. (1) activateTab (client/src/admin/config/page/tabs.ts): when the Media Tags tab is shown and the address’s jeSection already names it, `tab` (the Media Tags section) is left in the address; upstream’s rule, with jeSection written first and then `tab` (same end state). (2) setHash (client/src/admin/config/engine/address.ts) writes a space as %20, as Jellyfin’s own links and the page’s links write the page name, where URLSearchParams writes `+` (a `+` in a value is %2B, so only spaces change). Upstream’s own case, a link to a Media Tags section with Media Tags the tab the session kept, already opened the linked section here: the b0a8a963 port follows the address the page opened at (test “an address naming a Media Tags section, with Media Tags the tab restored from the session, opens it while the tab loads”; lab row F: Layout on upstream’s parent 6b8c9218, Colours on this tree before and after and on upstream 5201d47b). What the port changes here: the Media Tags tab’s own button pressed again, and the end of a settings search (which shows the saved tab again), took the section out of the address while the tab still showed it, so a reload in a new session or a copied link opened Overview (lab rows C, D, E). On Jellyfin 12.4 the dashboard menu keeps the page marked and a reload works with `+` or %20 (rows A, B, every build): (2) changes only how the address is spelt, now the same as upstream’s. Not applied: upstream’s api.md hunk (its route total 219 → 220 counts its usage/fields route, which this tree counted, 223 → 224, when it ported b0a8a963 in d744de8f) and its edit of the test “links to the page itself … open in place” (compare only the page part of the address), which this tree restated in the b0a8a963 port to assert no hashchange and no history entry; it passes unchanged. Tests that failed first: admin-config-address.test.mjs “the address the page writes keeps the page name as Jellyfin writes it” and features-admin-config-media-tags-tab.test.mjs “showing the Media Tags tab again keeps its section in the address” (its button, then a search ended with Escape)."
+    },
+    {
+      "sha": "d617312fc0307960caaed2d3cef5c3bb94f19258",
+      "date": "2026-11-18T08:39:47+00:00",
+      "subject": "feat(seerr): filters on Recommendations, filters in the page address, all or any, Without genres and language, saved filters (#1084)",
+      "class": "feature",
+      "features": [
+        "seerr",
+        "chrome",
+        "platform",
+        "admin",
+        "activity",
+        "calendar",
+        "catchup",
+        "downloads",
+        "hidden-content",
+        "media-tags"
+      ],
+      "issues": [
+        "#1084"
+      ],
+      "release": null,
+      "size": {
+        "files": 41,
+        "insertions": 4823,
+        "deletions": 346
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/admin/sections.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Helpers/DiscoveryFilterProfiles.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/arr/calendar/calendar-custom-tab.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/arr/requests/requests-custom-tab.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/component-scripts.json",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/core/navigation.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/catchup/catchup-custom-tab.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/hiddencontent/hidden-content-custom-tab.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/native-tabs.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/extras/activity-custom-tab.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/extras/leavingsoon-custom-tab.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/discovery/ (9 files)",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/recommendations/ (8 files)",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/locales/en.json",
+        "docs/advanced/api.md",
+        "docs/advanced/project-structure.md",
+        "docs/seerr/seerr-features.md",
+        "docs/seerr/seerr-settings.md",
+        "tests/backend/Api/ApiDiscoveryFilterProfilesTests.cs",
+        "tests/docs/production-inventory.json",
+        "tests/frontend/bootstrap/bootstrap-native-tabs.test.mjs",
+        "tests/frontend/features/features-discovery-filters.test.mjs",
+        "tests/frontend/pages/pages-discovery-address.test.mjs",
+        "tests/frontend/pages/pages-discovery.test.mjs",
+        "tests/frontend/pages/pages-recommendations-filters.test.mjs"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "cf203615c739cd1ea5c9ed4f3fe94f6bccd1bf7d"
+      ],
+      "unmappedPaths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Helpers/DiscoveryFilterProfiles.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/component-scripts.json",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/extras/leavingsoon-custom-tab.js"
+      ],
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p85-*",
+      "notes": "Re-implemented in client/src/features/seerr/discovery: address.ts (upstream's discovery-address.js: the filters, the order and the Recommendations category in a fragment after the page's route and query, read with every pair checked for its shape, written by replacing the entry quietly), filters.ts (Without genres and Without language, the scope 'loaded', MATCH_DEFAULTS, matchOf, routeFeed, checkableOnLoaded, all / any in feedFilterQuery and keepByFilters), filter-groups.ts (rules said per list, the all / any choice, partner lists, kept keywords' hints, range labels, ratings by the page's kinds, undoWords), profiles.ts (upstream's saved filters: the group, its requests and Undo), filter-panel.ts (place, fixedAll, profiles, Undo after Nothing matches, the joined runs on the line of what is set, setSelection), menu.ts with menu-parts.ts (group boxes, values said short where they don't fit, the Nothing-matches band with Undo, the keys on the all / any choice and a saved set's delete, focus that does not scroll what is held, the TV and touch cuts), controls.ts (createFiltersButton, getFilters / setFilters / clearFilters, a section's saved filters, the tag page's fixed keywords), controller.ts with section-address.ts (a section starts on what its address says and writes it back, routed feeds, the type from the address on the tabs at once, a section narrowed to nothing stays to say so), network-discovery.ts and domain.ts (the query ends where the fragment starts), and the stylesheets discovery.css and discovery-filter-panel.css (upstream's rules as they are). Recommendations: stage.ts (the page and its categories share one filter module, 'recommendations'), recommendations-catalog.ts (each row and feed names its kind), recommendations-data.ts (feedPage, feedRequest with upcoming as discover from today, Trending kept by what its titles say, isNarrowed, clearFilters), recommendations-render.ts (the title bar with All | Movies | Series and the Filters button, a rows box that refills, syncFilters), recommendations-category.ts (the category's address on Home with Back and Forward, followUrl, the shared filters, Nothing matches with Clear filters), recommendations-page.ts, recommendations-init.ts and recommendation-tiles.css. Also core/navigation.ts with host/navigation-host.ts (setAddressQuietly, a jellyfin-web dialog's entry given the page's address, the opened address seeded as seen), chrome/native-tabs.ts (Home with only the filters' fragment is Home; a stale index corrected keeping the other pairs), the Home checks of the activity, calendar, catchup, downloads, hidden-content, leaving-soon and recommendations custom tabs, the two admin descriptions in client/src/admin/config/sections/seerr.ts, and en.json as upstream. Server: Features/Seerr/Services/DiscoveryFilterProfiles.cs is upstream's Helpers/DiscoveryFilterProfiles.cs in this tree's namespace; the three routes GET, POST and DELETE user-settings/{userId}/discovery-filter-profiles(/{profileId}) are on JeSeerrController (JeSeerrController.FilterProfiles.cs), [Authorize] and AuthorizeUserConfigAccess as upstream (upstream puts them in its one controller). Differences from upstream: (1) upstream adds discovery-address.js to component-scripts.json; that list is pinned here, so discovery-filter-utils.ts bundles address.ts and publishes JE.discoveryAddress after JE.discoveryFilter, in upstream's order. (2) To keep files within their size limits: menu.ts's row helpers and the new value and band code are in menu-parts.ts; a section's address code is in section-address.ts and keepAttached moved from controller.ts to section-chassis.ts (controller.ts 809 to 806 lines, its size-baseline entry lowered). (3) The Recommendations page keeps the rewrite's per-container render ownership and its retry row: with filters set, rows whose requests failed show the retry, not 'Nothing matches these filters.' (upstream says nothing matches whenever no row has titles while filters are set, a failure shown as nothing). (4) The category page keeps the rewrite's return to the standalone page, matched by the page's address with its filters (isPageHash) rather than '#/recommendations' exactly. (5) Saved filters: the client keeps only profiles of {id, name, filters} strings from the server's answers and treats a save answer of another shape as a failure (upstream reads them as given). (6) The per-module fixed-all map is cleared with the module's reset, and the Nothing-matches watcher is disconnected by name, for the leak guard. Tests: upstream's new files are tests/frontend/pages/pages-discovery-address.test.mjs and pages-recommendations-filters.test.mjs here, loading discovery-filter-utils.js where upstream loads the separate scripts; the genre category test adds TMDB's genre lists as fixtures (the rewrite reads a genre answer that is not a list as a failure, where upstream's harness answers every unknown path with an empty page). Upstream's changes to features-discovery-filters.test.mjs are merged into pages-discovery-filters.test.mjs (its loads of discovery-styles.js and discovery-address.js dropped: bundled). Upstream's bootstrap-native-tabs.test.mjs additions are here as they are, the two stale-index tests waiting for the corrected index as the file's existing stale-index test does (in this harness the tab mounts at index 2 before the late count moves it). Upstream's pages-discovery.test.mjs change is to a category test that is in pages-recommendations-boundaries.test.mjs here, on its own harness, which needed no change. Upstream's tests/backend/Api/ApiDiscoveryFilterProfilesTests.cs is tests/backend/Features/Seerr/ApiDiscoveryFilterProfilesTests.cs with the controller type changed. Rewrite tests restated for the new behaviour: the identity-change test sets the page's one filter module, 'recommendations' (it was 'recommendationsTrending'); the category-key test expects each feed's kind; the same-URL history test runs off Home (on Home the entry now names the category, which upstream's new tests cover). Tests first, on ce694a1d (this branch before the port) with the new tests copied in: pages-discovery-address 14 of 14 fail, pages-recommendations-filters 19 of 20 (the one that passes says a category its address no longer names is not opened, which is trivially true there), pages-discovery-filters 17 fail (the new and changed tests), bootstrap-native-tabs the 5 new ones; the backend test does not compile there. All pass on the port. Contract: three new routes, GET, POST and DELETE under user-settings/{userId}/discovery-filter-profiles, [Authorize] with AuthorizeUserConfigAccess like their neighbours; their snapshot lines are the separate commit 'contract: upstream sync additions'. No existing route, verb, authorization or registration changes. Docs: api.md as upstream (the route count 224 to 227), seerr-features.md and seerr-settings.md as upstream, project-structure.md written for this tree, docs/rewrite/discovery-recommendations.md and the seerr README. A user's saved filters are a new per-user file, discovery-filter-profiles.json; nothing stored before changes shape."
+    },
+    {
+      "sha": "b84c45ddf8f5fb9db224d24c17e1f2a73155ee7f",
+      "date": "2026-11-18T17:39:09+08:00",
+      "subject": "fix(seerr): Filters pill and Series tab under Jellyfish, Zesty and JellyFlix themes (#1085)",
+      "class": "fix",
+      "features": [
+        "seerr"
+      ],
+      "issues": [
+        "#1085"
+      ],
+      "release": null,
+      "size": {
+        "files": 6,
+        "insertions": 73,
+        "deletions": 3
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/discovery/discovery-filter-panel.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/discovery/discovery-styles.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/recommendations/recommendations-styles.js",
+        "tests/browser/discovery-theme-tabs.spec.cjs",
+        "tests/frontend/features/features-discovery-filters.test.mjs",
+        "tests/frontend/pages/pages-recommendations-filters.test.mjs"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "84da76642ca1042f47e8ccc8462c76ac2c0e9042"
+      ],
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p86-*",
+      "notes": "Three fixes to the #1084 port's controls under community themes, as upstream: on a page of its own (the Recommendations page and its category pages) the Filters button also carries emby-tab-button-active while something is set, as the chosen All / Movies / Series beside it does, so a theme that fills only the chosen tab button (Jellyfish, Zesty) fills it too (client/src/features/seerr/discovery/filter-panel.ts; a section's header keeps its accent-coloured word); the All / Movies / Series tabs keep display: inline-flex so Zesty's unscoped button.emby-tab-button:nth-child(3) { display: none } no longer hides Series (discovery.css); and the pill's ::after, only its press area, draws nothing, so JellyFlix's chosen-tab bar no longer runs through 'Filters: 1' (recommendation-tiles.css). No other difference. Tests: upstream's new tests/browser/discovery-theme-tabs.spec.cjs, loading discovery-filter-utils.js (which bundles the discovery stylesheet and the filter panel here) where upstream loads the separate scripts; its two test changes are merged into pages-discovery-filters.test.mjs and pages-recommendations-filters.test.mjs. Before the port the browser spec fails 6 of 6 (chromium, mobile-chromium, Firefox) and the Recommendations filters file 2 of 20 (the section-header assertion is a guard that holds either way); all pass on the port."
     }
   ]
 }

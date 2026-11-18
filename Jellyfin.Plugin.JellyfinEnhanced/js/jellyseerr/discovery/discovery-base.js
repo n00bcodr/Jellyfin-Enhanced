@@ -99,7 +99,7 @@
   }
   function hashParams(hash) {
     try {
-      return new URLSearchParams(hash.split("?")[1]);
+      return new URLSearchParams((hash.split("?")[1] || "").split("#")[0]);
     } catch {
       return null;
     }
@@ -131,6 +131,41 @@
     return `${container.childElementCount}|${label}`;
   }
 
+  // client/src/features/seerr/discovery/section-address.ts
+  function createSectionAddress(JE, spec, isClientPaged) {
+    const { key } = spec;
+    return {
+      /** The page's address without the section's filter pairs (they change in place): which page this is. */
+      pageHash: () => JE.discoveryAddress?.withoutOwn?.(window.location.hash) ?? window.location.hash,
+      /**
+       * A section starts with what its page's address says (a link, a reload, Back to it), and with nothing narrowing it
+       * where the address says nothing. `offersType`: both kinds can be shown, so All / Movies / Series is offered.
+       */
+      start(offersType) {
+        JE.discoveryFilter?.resetFilterMode?.(key);
+        JE.discoveryFilter?.resetSortMode?.(key);
+        JE.discoveryAddress?.adopt?.(key, key, { withType: offersType, withSort: true, scope: isClientPaged ? "person" : "feed" });
+      },
+      /** What the section's controls are set to goes into its page's address (its entry is replaced). */
+      write() {
+        if (spec.getIdFromUrl()) JE.discoveryAddress?.write?.(key, key, true);
+      },
+      /**
+       * A feed page's request after its base path: the page, the order, then the further filters, asked (and kept here)
+       * as routeFeed says where the route names a list itself. `keep` narrows the decoded answer: a copy, never the cached one.
+       */
+      feed(base, page, kind) {
+        const query = JE.discoveryFilter?.feedQuery?.(key, kind) ?? "";
+        const routed = JE.discoveryFilters?.routeFeed?.(base, kind, JE.discoveryFilters.selectionOf?.(key) ?? {}, query) ?? { query, keep: null };
+        const kept = routed.keep;
+        return {
+          path: `${base}?page=${page}${routed.query}`,
+          keep: (answer) => kept ? { ...answer, results: answer.results.filter(kept) } : answer
+        };
+      }
+    };
+  }
+
   // client/src/features/seerr/discovery/say.ts
   function createSay(JE) {
     return (key, fallback, values) => {
@@ -142,8 +177,10 @@
   }
 
   // client/src/features/seerr/discovery/section-chassis.ts
+  var KEEP_ATTACHED_MS = 6e3;
   function createSectionChassis(JE, { key, page, personScope }) {
     const label = createSay(JE);
+    let keepAttachedSequence = 0;
     function createSectionContainer(title, showFilter, onFilterChange, onSortChange, name) {
       const header = filterOf(JE).createSectionHeader(
         title,
@@ -197,12 +234,29 @@
       const parts = JE.discoverySection;
       return parts?.buildPlaceholderCards ? parts.buildPlaceholderCards(parts.PLACEHOLDER_CARDS, cardClass) : null;
     }
-    return { createSectionContainer, placeInPage, place, buildRetrySection, placeholders };
+    function keepAttached(section, listPage, signal, shownView) {
+      const handle = JE.helpers?.onBodyMutation?.(`jellyseerr-${key}-discovery-keepattached-${++keepAttachedSequence}`, () => {
+        if (signal.aborted) return;
+        const detached = !section.isConnected;
+        if (!detached && !section.closest(".page.hide")) return;
+        const own = ".itemsContainer:not(.jellyseerr-discovery-section *)";
+        const container = shownView()?.querySelector(own) ?? document.querySelector(`.page:not(.hide) ${own}`) ?? document.querySelector(`.libraryPage:not(.hide) ${own}`) ?? listPage;
+        if (!container.closest(".page, .libraryPage")?.contains(section)) placeInPage(container, section);
+      });
+      if (!handle) return;
+      const stop = () => {
+        clearTimeout(timer);
+        signal.removeEventListener("abort", stop);
+        handle.unsubscribe();
+      };
+      const timer = setTimeout(stop, KEEP_ATTACHED_MS);
+      signal.addEventListener("abort", stop, { once: true });
+    }
+    return { createSectionContainer, placeInPage, place, buildRetrySection, placeholders, keepAttached };
   }
 
   // client/src/features/seerr/discovery/controller.ts
   var MAX_PREFETCH_PER_FEED = 3;
-  var KEEP_ATTACHED_MS = 6e3;
   var LOAD_YIELD_COLD = 0.8;
   var LOAD_YIELD_FLOOR = 0.05;
   var newCursor = () => ({ page: 1, hasMore: true, total: Infinity });
@@ -219,6 +273,7 @@
     const pageSize = spec.mode === "client-paged" && spec.pageSize || 40;
     const filter = () => filterOf(JE);
     const chassis = createSectionChassis(JE, { key, page: isDualFeed ? "list" : "detail", personScope: isClientPaged });
+    const address = createSectionAddress(JE, spec, isClientPaged);
     const processedPages = /* @__PURE__ */ new Set();
     let visibleAtNavigation = null;
     let visibleContentAtNavigation = "";
@@ -227,7 +282,6 @@
     let shownViewHash = null;
     let currentAbortController = null;
     let currentRenderingPageKey = null;
-    let keepAttachedSequence = 0;
     let initialized = false;
     let disposed = false;
     let pendingFrame = 0;
@@ -262,10 +316,10 @@
     function rememberShownView(event) {
       if (!(event.target instanceof HTMLElement)) return;
       shownView = event.target;
-      shownViewHash = window.location.hash;
+      shownViewHash = address.pageHash();
     }
     function currentShownView() {
-      return shownView?.isConnected && !shownView.classList.contains("hide") && shownViewHash === window.location.hash ? shownView : null;
+      return shownView?.isConnected && !shownView.classList.contains("hide") && shownViewHash === address.pageHash() ? shownView : null;
     }
     function isEnabled() {
       const value = JE.pluginConfig?.[spec.configKey];
@@ -290,10 +344,10 @@
       try {
         throwIfAborted(signal);
         if (spec.mode !== "dual-feed" || !currentFeeds) throw abortError();
-        const path = `${spec.buildDiscoverPath(kind, feedId, currentFeeds)}?page=${page}${filter().feedQuery(key, kind)}`;
-        const response = await managed(path, { signal });
+        const request = address.feed(spec.buildDiscoverPath(kind, feedId, currentFeeds), page, kind);
+        const response = await managed(request.path, { signal });
         throwIfAborted(signal);
-        return decodeFeedPage(response);
+        return request.keep(decodeFeedPage(response));
       } catch (error) {
         if (isAbortError(error) || !tolerant) throw error;
         return { results: [], failed: true };
@@ -535,6 +589,7 @@
       void handleSortChange();
     }, name);
     async function handleSortChange() {
+      address.write();
       const itemsContainer = itemsContainerNow();
       if (isClientPaged) {
         if (!itemsContainer) return;
@@ -600,6 +655,7 @@
       }
     }
     function handleFilterChange(newMode) {
+      address.write();
       const itemsContainer = itemsContainerNow();
       if (!itemsContainer) return;
       if (isClientPaged) {
@@ -628,26 +684,9 @@
     function ensureFilterControl(itemsContainer) {
       if (!isDualFeed) return;
       const header = itemsContainer.closest(sectionSelector)?.querySelector(".jellyseerr-discovery-header");
-      if (!header || !filter().hasBothTypes(cachedTvResults, cachedMovieResults)) return;
+      const typed = filter().getFilterMode(key) !== "mixed" && !!currentFeeds?.tvId && !!currentFeeds.movieId;
+      if (!header || !(typed || filter().hasBothTypes(cachedTvResults, cachedMovieResults))) return;
       filter().addFilterControl(header, key, handleFilterChange);
-    }
-    function keepAttached(section, listPage, signal) {
-      const handle = JE.helpers?.onBodyMutation?.(`jellyseerr-${key}-discovery-keepattached-${++keepAttachedSequence}`, () => {
-        if (signal.aborted) return;
-        const detached = !section.isConnected;
-        if (!detached && !section.closest(".page.hide")) return;
-        const own = ".itemsContainer:not(.jellyseerr-discovery-section *)";
-        const container = currentShownView()?.querySelector(own) ?? document.querySelector(`.page:not(.hide) ${own}`) ?? document.querySelector(`.libraryPage:not(.hide) ${own}`) ?? listPage;
-        if (!container.closest(".page, .libraryPage")?.contains(section)) chassis.placeInPage(container, section);
-      });
-      if (!handle) return;
-      const stop = () => {
-        clearTimeout(timer);
-        signal.removeEventListener("abort", stop);
-        handle.unsubscribe();
-      };
-      const timer = setTimeout(stop, KEEP_ATTACHED_MS);
-      signal.addEventListener("abort", stop, { once: true });
     }
     async function renderDualFeed(id, signal, pageKey) {
       if (spec.mode !== "dual-feed") return;
@@ -670,6 +709,7 @@
       cachedTvResults = [];
       cachedMovieResults = [];
       shownResults.clear();
+      address.start(!!(feeds.tvId && feeds.movieId));
       const fetches = pageOneFetches(feeds, signal);
       fetches.forEach((fetch) => {
         fetch.catch(() => {
@@ -683,12 +723,13 @@
       if (listPage) {
         document.querySelector(sectionSelector)?.remove();
         const built = createSectionContainer(resolved.title, false, resolved.name);
+        built.querySelector(".jellyseerr-discovery-header")?.setAttribute("data-je-kinds", [feeds.movieId ? "movie" : "", feeds.tvId ? "tv" : ""].filter(Boolean).join(","));
         if (chassis.place(listPage, built)) {
           section = built;
           itemsContainer = built.querySelector(".itemsContainer");
           const held = chassis.placeholders(cardClass);
           if (itemsContainer && held) itemsContainer.appendChild(held);
-          keepAttached(built, listPage, signal);
+          chassis.keepAttached(built, listPage, signal, currentShownView);
         }
       }
       let fetchResults;
@@ -701,13 +742,14 @@
       if (signal.aborted) return;
       const anyFailed = commitPageOne(fetchResults);
       if (itemsContainer && !anyFailed) JE.discoverySection?.clearPlaceholders?.(itemsContainer);
-      filter().resetFilterMode(key);
-      filter().resetSortMode(key);
-      updateHasMorePages(filter().getFilterMode(key));
+      const filterMode = filter().getFilterMode(key);
+      updateHasMorePages(filterMode);
       const displayResults = interleavedResults();
       if (!section || !itemsContainer) return;
+      if (filterMode !== "mixed") filter().applyFilterVisibility(itemsContainer, filterMode);
       const fragment = createCardsFragment(displayResults);
-      if (fragment.childNodes.length === 0 && !anyFailed && !hasMorePages) {
+      const narrowed = filter().hasMoreFilters(key);
+      if (fragment.childNodes.length === 0 && !anyFailed && !hasMorePages && !narrowed) {
         section.remove();
         return;
       }
@@ -717,6 +759,7 @@
       itemsContainer.appendChild(fragment);
       markShown(displayResults);
       if (hasMorePages) setupInfiniteScroll();
+      if (narrowed) filter().noteIfEmpty(key, itemsContainer, hasMorePages);
       markProcessed(pageKey);
     }
     async function renderClientPaged(id, signal, pageKey) {
@@ -727,8 +770,8 @@
       cachedAllResults = resolved.items;
       clientListActive = true;
       const hasBoth = filter().resultHasBothTypes(cachedAllResults);
-      filter().resetFilterMode(key);
-      filter().resetSortMode(key);
+      address.start(hasBoth);
+      const narrowed = filter().hasMoreFilters(key);
       const displayResults = pagedResultsForMode(filter().getFilterMode(key));
       const detailSection = await waitForPageReady(signal);
       if (signal.aborted) return;
@@ -746,7 +789,7 @@
         fragment = createCardsFragment(chunk);
         consumed += chunk.length;
       }
-      if (!itemsContainer || fragment.childNodes.length === 0) {
+      if (!itemsContainer || fragment.childNodes.length === 0 && !narrowed) {
         console.debug(`${logPrefix} No cards created from results`);
         return;
       }
@@ -758,6 +801,7 @@
       chassis.place(detailSection, section);
       console.debug(`${logPrefix} Section added with ${cardCount} cards`);
       if (hasMorePages) setupInfiniteScroll();
+      if (narrowed) filter().noteIfEmpty(key, itemsContainer, hasMorePages);
       markProcessed(pageKey);
     }
     async function showClientPagedRetry(signal) {
@@ -777,7 +821,7 @@
     async function render() {
       const id = disposed ? null : spec.getIdFromUrl();
       if (!id) return;
-      const pageKey = spec.pageKey ? spec.pageKey(id) : `${key}-${id}-${window.location.hash}`;
+      const pageKey = spec.pageKey ? spec.pageKey(id) : `${key}-${id}-${address.pageHash()}`;
       if (processedPages.has(pageKey)) return;
       if (currentRenderingPageKey === pageKey) return;
       if (!isEnabled()) return;
@@ -842,15 +886,15 @@
       if (disposed || !spec.getIdFromUrl()) return;
       if (element instanceof HTMLElement) {
         shownView = element;
-        shownViewHash = window.location.hash;
+        shownViewHash = address.pageHash();
       }
       pendingFrame = requestAnimationFrame(() => {
         void render();
       });
     }
     function snapshotVisiblePage() {
-      if (window.location.hash === snapshotHash) return;
-      snapshotHash = window.location.hash;
+      if (address.pageHash() === snapshotHash) return;
+      snapshotHash = address.pageHash();
       visibleAtNavigation = document.querySelector(".page:not(.hide)");
       visibleContentAtNavigation = listSignature(visibleAtNavigation);
     }

@@ -126,7 +126,8 @@ test('an identity change closes the category page, ends its requests and resets 
   const pending = deferred();
   const h = setup(t, { routes: [[`${DISCOVER}/trending?page=1`, pending.promise]] });
   const P = h.load();
-  h.JE.discoveryFilter.setFilterMode('recommendationsTrending', 'tv');
+  // (The page's filters are one module, shared by its categories: upstream d617312f.)
+  h.JE.discoveryFilter.setFilterMode('recommendations', 'tv');
   h.JE.discoveryFilter.setSortMode('recommendationsCategory', 'release_date.asc');
   P.showCategoryPage('trending');
   await until(() => h.calls.some(call => call.path.endsWith('trending?page=1')), 'page 1');
@@ -135,7 +136,7 @@ test('an identity change closes the category page, ends its requests and resets 
   assert.equal(signal.aborted, true);
   assert.equal(P.state.categoryPageVisible, false);
   assert.equal(h.category().classList.contains('hide'), true);
-  assert.equal(h.JE.discoveryFilter.getFilterMode('recommendationsTrending'), 'mixed');
+  assert.equal(h.JE.discoveryFilter.getFilterMode('recommendations'), 'mixed');
   assert.equal(h.JE.discoveryFilter.getSortMode('recommendationsCategory'), '');
   pending.resolve(feed([666], 'movie'));
   await tick();
@@ -432,15 +433,16 @@ test('a genre row avoids repeating a backdrop and a tile opens its category', as
 test('every category key resolves to its feeds, with series only where a TMDB key provides them', t => {
   const h = setup(t);
   const P = h.load();
+  // (Each feed names the kind the page's filters are asked for; Trending, which takes none, names none: upstream d617312f.)
   assert.deepEqual(plain(P.resolveCategory('trending')), { title: 'Trending', feeds: [{ path: `${DISCOVER}/trending` }] });
-  assert.deepEqual(plain(P.resolveCategory('studio-420')), { title: 'Marvel Studios', feeds: [{ path: `${DISCOVER}/movies/studio/420`, mediaType: 'movie' }] });
+  assert.deepEqual(plain(P.resolveCategory('studio-420')), { title: 'Marvel Studios', feeds: [{ path: `${DISCOVER}/movies/studio/420`, mediaType: 'movie', kind: 'movie' }] });
   h.JE.pluginConfig.TmdbEnabled = true;
   assert.deepEqual(plain(P.resolveCategory('studio-420').feeds.map(feedSource => feedSource.mediaType)), ['movie', 'tv']);
   assert.deepEqual(plain(P.resolveCategory('network-213').feeds), [
-    { path: `${DISCOVER}/tv/network/213`, mediaType: 'tv' }, { path: `${DISCOVER}/movies/studio/178464`, mediaType: 'movie' }]);
-  assert.deepEqual(plain(P.resolveCategory('network-2739').feeds), [{ path: `${DISCOVER}/tv/network/2739`, mediaType: 'tv' }]);
+    { path: `${DISCOVER}/tv/network/213`, mediaType: 'tv', kind: 'tv' }, { path: `${DISCOVER}/movies/studio/178464`, mediaType: 'movie', kind: 'movie' }]);
+  assert.deepEqual(plain(P.resolveCategory('network-2739').feeds), [{ path: `${DISCOVER}/tv/network/2739`, mediaType: 'tv', kind: 'tv' }]);
   P.TV_GENRES = [{ id: 9, name: 'Soap', backdrops: [] }];
-  assert.deepEqual(plain(P.resolveCategory('genre-tv-9')), { title: 'Soap', feeds: [{ path: `${DISCOVER}/tv/genre/9` }] });
+  assert.deepEqual(plain(P.resolveCategory('genre-tv-9')), { title: 'Soap', feeds: [{ path: `${DISCOVER}/tv/genre/9`, kind: 'tv' }] });
   for (const key of ['genre-movie-9', 'studio-999', 'network-999', 'nonsense', 'studio-420x', 'genre-tv-']) assert.equal(P.resolveCategory(key), null);
   assert.equal(P.ROWS.length, 5);
   assert.equal(P.STUDIOS.length, 16);
@@ -638,14 +640,17 @@ test('Back from a category opened on home returns home, and closing it leaves no
 });
 
 // Upstream c165a07b: the category page holds one history entry, so Back (the Android back button too) closes it.
+// Off Home (upstream d617312f) that entry is a copy of the address (on Home it names the category: see
+// pages-recommendations-filters.test.mjs).
 test('an open category page holds one same-URL history entry, and Back closes it', async t => {
-  const h = setup(t, { routes: [[`${DISCOVER}/trending?page=1`, feed([1], 'movie', 1)], [`${DISCOVER}/movies?page=1`, feed([2], 'movie', 1)]] });
+  const offHome = '#/list?parentId=p1';
+  const h = setup(t, { hash: offHome, routes: [[`${DISCOVER}/trending?page=1`, feed([1], 'movie', 1)], [`${DISCOVER}/movies?page=1`, feed([2], 'movie', 1)]] });
   const P = h.load();
   const entries = h.window.history.length;
   await P.showCategoryPage('trending');
   assert.equal(h.window.history.length, entries + 1);
   assert.deepEqual(plain(h.window.history.state), { jeCategory: true });
-  assert.equal(h.window.location.hash, '#/home');
+  assert.equal(h.window.location.hash, offHome);
   // Another category opened over the first reuses the entry.
   await P.showCategoryPage('movies');
   assert.equal(h.window.history.length, entries + 1);
@@ -653,7 +658,7 @@ test('an open category page holds one same-URL history entry, and Back closes it
   await until(() => !P.state.categoryPageVisible, 'category closed by Back');
   assert.equal(h.document.querySelector('#indexPage').classList.contains('hide'), false);
   assert.equal(h.category().classList.contains('hide'), true);
-  assert.equal(h.window.location.hash, '#/home');
+  assert.equal(h.window.location.hash, offHome);
 });
 
 test('a pop that lands back on the category entry (More Info closing above it) keeps the page open', async t => {

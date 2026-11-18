@@ -4,7 +4,7 @@
 
 What the rewrite has taken from [upstream](https://github.com/n00bcodr/Jellyfin-Enhanced) (`main`) since it branched at `2e0f9251bf`. The source of truth is [`upstream-sync.json`](upstream-sync.json); the procedure is [upstream-sync-procedure.md](upstream-sync-procedure.md).
 
-83 upstream commits: 80 ported, 3 already-present.
+86 upstream commits: 83 ported, 3 already-present.
 
 | # | Upstream | Date | Class | Features | Subject | Status | Rewrite commit | Note |
 |---|---|---|---|---|---|---|---|---|
@@ -91,3 +91,6 @@ What the rewrite has taken from [upstream](https://github.com/n00bcodr/Jellyfin-
 | 81 | [`b0a8a963`](https://github.com/n00bcodr/Jellyfin-Enhanced/commit/b0a8a96326c27069b7267b8ac99a0eb0507ca598) | 2026-11-17 | feature | admin, platform | feat(admin): analytics icon on reported settings and tab/card in the config page address | ported | `885764c4` | artifacts/restructure-plan/step-logs/upstream-sync-evidence/p81-* |
 | 82 | [`19ac2bcb`](https://github.com/n00bcodr/Jellyfin-Enhanced/commit/19ac2bcb0b06abc817b7b136b2446356869fa56f) | 2026-11-17 | test | admin, platform | chore(tests): regenerate production inventory | ported | `885764c4` | With `b0a8a963`. Upstream’s bot regenerating its production inventory for b0a8a963 (routes 219 → 220). This tree’s tests/docs/production-inventory.json is generated (je12 regen) in that entry’s commit, with the same change: the route GET /JellyfinEnhanced/usage/fields (routes 223 → 224). |
 | 83 | [`6b8c9218`](https://github.com/n00bcodr/Jellyfin-Enhanced/commit/6b8c9218aaedb75a5208e54fbdd48b55b6e89b62) | 2026-11-17 | fix | seerr | fix(seerr): let the discovery section span the full width on themes that grid .detailSection | ported | `825a86e3` | artifacts/restructure-plan/step-logs/upstream-sync-evidence/p83-* |
+| 84 | [`5201d47b`](https://github.com/n00bcodr/Jellyfin-Enhanced/commit/5201d47baf7e9cf217ef1b87339c4ab2bac9bc7e) | 2026-11-18 | fix | admin, media-tags | fix(admin): keep Media Tags deep links when the address follows the open tab, update api.md route total and in-place link test | ported | `05cf85bc` | artifacts/restructure-plan/step-logs/upstream-sync-evidence/p84-* |
+| 85 | [`d617312f`](https://github.com/n00bcodr/Jellyfin-Enhanced/commit/d617312fc0307960caaed2d3cef5c3bb94f19258) | 2026-11-18 | feature | seerr, chrome, platform, admin, activity, calendar, catchup, downloads, hidden-content, media-tags | feat(seerr): filters on Recommendations, filters in the page address, all or any, Without genres and language, saved filters (#1084) | ported | `cf203615` | artifacts/restructure-plan/step-logs/upstream-sync-evidence/p85-* |
+| 86 | [`b84c45dd`](https://github.com/n00bcodr/Jellyfin-Enhanced/commit/b84c45ddf8f5fb9db224d24c17e1f2a73155ee7f) | 2026-11-18 | fix | seerr | fix(seerr): Filters pill and Series tab under Jellyfish, Zesty and JellyFlix themes (#1085) | ported | `84da7664` | artifacts/restructure-plan/step-logs/upstream-sync-evidence/p86-* |

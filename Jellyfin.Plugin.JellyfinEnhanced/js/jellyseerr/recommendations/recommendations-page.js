@@ -51,6 +51,7 @@
   // client/src/features/seerr/recommendations/recommendations-page.ts
   var HASH = "#/recommendations";
   var CONTAINER_ID = "je-recommendations-container";
+  var isPageHash = (hash) => /^#\/recommendations(?:\?[^#]*)?(?:#.*)?$/.test(String(hash || ""));
   (function() {
     "use strict";
     const { JE, P } = recommendationsHost();
@@ -84,7 +85,7 @@
       if (P.pluginPagesExists && config.RecommendationsUsePluginPages) return;
       state.pageVisible = true;
       const page = createPageContainer();
-      if (window.location.hash !== HASH) history.pushState({ page: "recommendations" }, title(), HASH);
+      if (!isPageHash(window.location.hash)) history.pushState({ page: "recommendations" }, title(), HASH);
       const activePage = document.querySelector(`.mainAnimatedPage:not(.hide):not(#${PAGE_ID})`);
       if (activePage) {
         state.previousPage = activePage;
@@ -118,6 +119,7 @@
       const container = page?.querySelector(`#${CONTAINER_ID}`);
       if (container) P.disposeRender?.(container);
     }
+    P.isPageHash = isPageHash;
     P.createPageContainer = createPageContainer;
     P.showPage = showPage;
     P.hidePage = hidePage;

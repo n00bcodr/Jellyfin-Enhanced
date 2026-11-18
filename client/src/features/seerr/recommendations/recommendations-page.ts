@@ -5,6 +5,8 @@ import { LOG_PREFIX, OTHER_PAGE, PAGE_ID, part, recommendationsHost } from './st
 
 const HASH = '#/recommendations';
 const CONTAINER_ID = 'je-recommendations-container';
+/** Whether an address is this page's own: `#/recommendations`, with or without a query and its filters' fragment. */
+const isPageHash = (hash: string): boolean => /^#\/recommendations(?:\?[^#]*)?(?:#.*)?$/.test(String(hash || ''));
 
 (function () {
     'use strict';
@@ -40,7 +42,8 @@ const CONTAINER_ID = 'je-recommendations-container';
         if (P.pluginPagesExists && config.RecommendationsUsePluginPages) return;
         state.pageVisible = true;
         const page = createPageContainer();
-        if (window.location.hash !== HASH) history.pushState({ page: 'recommendations' }, title(), HASH);
+        // (Its address may carry the page's filters: see discovery/address.ts.)
+        if (!isPageHash(window.location.hash)) history.pushState({ page: 'recommendations' }, title(), HASH);
         const activePage = document.querySelector(`.mainAnimatedPage:not(.hide):not(#${PAGE_ID})`);
         if (activePage) {
             state.previousPage = activePage;
@@ -77,6 +80,7 @@ const CONTAINER_ID = 'je-recommendations-container';
         const container = page?.querySelector<HTMLElement>(`#${CONTAINER_ID}`);
         if (container) P.disposeRender?.(container);
     }
+    P.isPageHash = isPageHash;
     P.createPageContainer = createPageContainer;
     P.showPage = showPage;
     P.hidePage = hidePage;

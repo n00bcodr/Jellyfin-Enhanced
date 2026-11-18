@@ -20,6 +20,7 @@ export function setHash(key: string, value: string | null | undefined): void {
     if (params.get('name') !== PAGE_NAME) return;
     if ((params.get(key) ?? '') === (value ?? '')) return;
     if (value) params.set(key, value); else params.delete(key);
-    // The router's own history entry state stays as it is; only the address changes.
-    window.history.replaceState(window.history.state, '', path + '?' + params.toString());
+    // The router's own history entry state stays as it is; only the address changes. A space is written %20, as
+    // Jellyfin's own links write the page name (URLSearchParams writes `+`; a `+` in a value is %2B) (upstream 5201d47b).
+    window.history.replaceState(window.history.state, '', path + '?' + params.toString().replace(/\+/g, '%20'));
 }

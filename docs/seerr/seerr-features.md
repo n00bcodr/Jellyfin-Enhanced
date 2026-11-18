@@ -378,16 +378,22 @@ The section's header holds its title, then one row: what the list shows, the **A
 | **Score** | A range of TMDB user scores, from 0 to 10, with one decimal at most. |
 | **Votes** | A range for the number of TMDB user votes. |
 | **Runtime** | A range in whole minutes. |
-| **Genres** | Titles in all of the genres ticked. On a genre page, that genre is already applied. |
+| **Genres** | Titles in all of the genres ticked, or in any of them (chosen under the list). On a genre page, that genre is always applied (its row says **Included by this page**), and the others ticked are added to it as all of them or any of them. |
+| **Without genres** | Titles in none of the genres ticked (a genre page's own genre is not offered). Seerr can't leave genres out, so the titles it returns are narrowed in the browser by the genres each one has. |
 | **Original language** | Titles originally in any of the languages ticked. |
+| **Without language** | Titles originally in none of the languages ticked, narrowed in the browser like **Without genres**. |
 | **Content rating** | Titles with any of the ratings ticked, from the ratings used in the admin's **Default Region** (US ratings where TMDB has none for it). |
-| **Streaming services** | Titles on any of the services ticked, in the admin's **Default Region**. |
-| **Keywords** / **Without keywords** | Search TMDB keywords; titles must have all of the ones ticked under **Keywords** and none of the ones under **Without keywords**. |
+| **Streaming services** | Titles on any of the services ticked, or on all of them (chosen under the list), in the admin's **Default Region**. |
+| **Keywords** / **Without keywords** | Search TMDB keywords; titles must have all of the ones ticked under **Keywords** (or any of them, chosen under the list) and none of the ones under **Without keywords**. On a tag page, its keyword is already applied and the others are added to it as all of them. |
 | **Role** | Person pages only: titles where the person did any of the roles ticked, **Acting** or a crew department such as **Directing** or **Writing**. |
 
-What is set shows on a line under the header, each with a button to remove it, and **Clear filters** removes them all. If nothing matches, the section says so and offers **Clear filters**. A section starts with no filters, on **All** and **Popular**, each time you open its page.
+What is set shows on a line under the header, each with a button to remove it (several of a list say their rule between them: **and** for all of them, **or** for any of them), and **Clear filters** removes them all. If nothing matches, the section says so and offers **Clear filters**.
 
-On list pages (genre, studio/network and tag), Seerr applies the filters to its feeds. A person page already has the person's titles, so it filters them in the browser and offers only **Role**, **Released**, **Score**, **Votes**, **Genres** and **Original language**. There, a title with no date is outside every period, and one with no score or votes is under every minimum.
+**Saved filters**, the menu's first group, keeps sets of filters under a name: type a name and press **Save** to keep what is set now (the type, the sort, every filter and how each list matches), and choose a saved set to apply it at once, on any discovery page or the Recommendations page (each page takes the filters it offers). Each says what it sets under its name. The bin beside one deletes it, and **Undo** saves it again. They are your own, kept on the server, so they follow you to every device; you can keep up to 30.
+
+The tabs, the sort and the filters are kept in the page's address, after a second `#` at its end (for example `#/details?id=…&serverId=…#jeType=movies&jeScore=7..&jeSort=vote_average.desc`, with `&jeAny=keywords` where keywords are matched by any of them), so reloading the page, coming **Back** to it or opening a copied link shows the same list. Jellyfin's own part of the address stays as it is, so it keeps the page as it was when a dialog or **More Info** closes. A link with the same pairs in the address's query (`#/details?id=…&jeType=movies`) works too. A change replaces the address rather than adding a step to **Back**. A page opened without them starts with no filters, on **All** and **Popular**.
+
+On list pages (genre, studio/network and tag), Seerr applies the filters to its feeds. A person page already has the person's titles, so it filters them in the browser and offers only **Role**, **Released**, **Score**, **Votes**, **Genres**, **Without genres**, **Original language** and **Without language**. There, a title with no date is outside every period, and one with no score or votes is under every minimum.
 
 On a person page, each card says what the person did in that title, on a line under its name: the part played (**as** the character) and the jobs held, each on its own line when the person did both. A line that does not fit the card drops whole parts or jobs from its end and says how many it left out (`Director, Writer +1`); hover the card for all of them. With **Role** set to a crew department, the jobs come first and the jobs in that department lead.
 
@@ -431,9 +437,9 @@ Browse trending, popular, and upcoming titles in **Seerr Recommendations**. This
 **How to use:**
 
 1. Open the configured Recommendations navigation entry.
-2. Select a row heading or tile to open a category.
-3. Use its filters and sort controls, then scroll for further pages.
-4. Use the category's own back arrow to return.
+2. To narrow the whole page, use **All** / **Movies** / **Series** and **Filters** at the end of its title bar. They work as in the [discovery sections](#filters-sort-and-roles); what is set shows on a line under the bar, and if nothing matches, the page says so and offers **Clear filters**.
+3. Select a row heading or tile to open a category. It opens with the page's filters and has the same controls, plus its sort; filters changed there are the page's too.
+4. Scroll for further pages, and use the category's own back arrow to return.
 
 ![Movie genre, TV genre and studio tiles on the Seerr Recommendations page](../images/seerr/recommendations-tiles.webp)
 
@@ -447,9 +453,11 @@ Admin settings under **Pages** → **Seerr Recommendations Page** ([full navigat
 | **Use Custom Tabs** | Off | Embeds Recommendations with Custom Tabs; incompatible with its native tab. |
 | **Add the Custom Tabs entry for me** | Off | Creates/removes the managed Custom Tabs entry with that mode. |
 
-!!! note "Returning to a category"
+!!! note "Addresses"
 
-    Categories have no independent URL or history entry. Refreshing the page does not restore the category.
+    On the Home tab, the filters are in the page's address, and an open category has an address of its own with its filters and its sort, for example `#/home?tab=2&jeTab=recommendations#jeCategory=trending&jeType=movies` (`&jeCategory=trending` in the query works too). **Back** and **Forward** move between the tab and its categories, and a reload or a copied link opens the same view. Home's address names the tab only when it was opened from a link that does (`?tab=2&jeTab=recommendations`): reached by clicking it, the tab leaves Home's address as it is, so a reload opens Home on its first tab, and the Recommendations tab has its filters when you go back to it. On the page of its own (`#/recommendations`) the filters are in its address, but a category is not; with Plugin Pages, neither is.
+
+    **Movies** or **Series** leaves out the other kind's rows and tiles. **Trending** takes no filters from Seerr, so its titles are kept by what each one says of itself: its category offers only **Released**, **Score**, **Votes**, **Genres**, **Without genres**, **Original language** and **Without language**, and it shows nothing while a filter it can't check is set. With filters set, the upcoming rows are asked for titles from today on.
 
 ??? info "How it works"
 

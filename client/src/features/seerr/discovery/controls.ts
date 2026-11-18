@@ -1,7 +1,9 @@
 import type { SeerrDiscoveryHost } from '../host-discovery';
 import { FILTER_MODES, isFilterMode, SORT_OPTIONS, tvSortValue } from './domain';
 import { createSay } from './say';
-import type { FeedKind, FilterChange, FilterMode, FilterScope, SeerrResult, SortChange, TypePicker } from './types';
+import type {
+    FeedKind, FilterChange, FilterMode, FilterScope, FilterSelection, FiltersButtonOptions, ProfilesHost, SeerrResult, SortChange, TypePicker
+} from './types';
 
 /** Runtime-only filter and sort choices; each section starts on defaults instead of persisting them. */
 export function createControls(JE: SeerrDiscoveryHost) {
@@ -9,6 +11,8 @@ export function createControls(JE: SeerrDiscoveryHost) {
     const sortModes = new Map<string, string>();
     // Per header's tabs: the All / Movies / Series choice, for the Filters menu to offer where the tabs are out of sight.
     const typePickers = new WeakMap<Element, TypePicker>();
+    // Per sort button: redraws it after its order was set from elsewhere (a saved profile).
+    const sortPainters = new WeakMap<Element, () => void>();
     const label = createSay(JE);
     const getFilterMode = (name: string): FilterMode => filterModes.get(name) ?? FILTER_MODES.MIXED;
     function setFilterMode(name: string, mode: string): void {
@@ -82,6 +86,8 @@ export function createControls(JE: SeerrDiscoveryHost) {
                 choices: buttons.map(entry => ({ id: entry.mode, name: entry.label, selected: entry.mode === getFilterMode(moduleName) }))
             }),
             choose,
+            // Redraws the tabs after the type was set from elsewhere (a saved profile).
+            paint,
             // (Known from what puts them out of sight, a held header at a phone's width, as the stylesheet has
             // it: their own style is no guide while they are still fading.)
             tabsShowing: () => !(container.closest('.jellyseerr-discovery-header')?.hasAttribute('data-stuck')
@@ -124,6 +130,7 @@ export function createControls(JE: SeerrDiscoveryHost) {
             button.setAttribute('aria-label', `${sortLabel}: ${current}`);
         };
         paint();
+        sortPainters.set(button, paint);
         button.addEventListener('click', () => {
             const current = getSortMode(moduleName);
             button.setAttribute('aria-expanded', 'true');
@@ -194,9 +201,11 @@ export function createControls(JE: SeerrDiscoveryHost) {
             meta.appendChild(summary);
         }
         if (onSortChange) {
-            // (On a genre's page that genre is given: its Genres list says so.)
+            // (On a genre's page that genre is given: its Genres list says so. A tag's page names its keyword in its own
+            // request, and a title can't be checked for keywords, so its keywords are matched by all of what is ticked.)
             const filters = JE.discoveryFilters?.createFiltersControl?.(header, moduleName, scope,
-                () => onSortChange(getSortMode(moduleName)), moduleName === 'genre' ? subject : undefined);
+                () => onSortChange(getSortMode(moduleName)), moduleName === 'genre' ? subject : undefined,
+                undefined, moduleName === 'tag' ? ['keywords'] : [], sectionProfiles(header, moduleName, scope, onFilterChange, onSortChange));
             if (filters) bar.appendChild(filters);
             bar.appendChild(createSortControl(moduleName, onSortChange));
         }
@@ -206,8 +215,53 @@ export function createControls(JE: SeerrDiscoveryHost) {
         return header;
     }
 
+    /**
+     * A section's side of the saved filters: what is set now, in the address form, and applying a profile's (its type
+     * where the tabs are offered, its order and its further filters), then the section's own reload.
+     */
+    function sectionProfiles(header: HTMLElement, moduleName: string, scope: FilterScope, onFilterChange: FilterChange | undefined,
+        onSortChange: SortChange): ProfilesHost | null {
+        if (!JE.discoveryAddress) return null;
+        return {
+            read: () => JE.discoveryAddress?.filterPairs(JE.discoveryAddress.current(moduleName, moduleName), true).join('&') ?? '',
+            apply(text) {
+                const address = JE.discoveryAddress;
+                if (!address) return;
+                const wanted = address.filtersOf(text, scope);
+                const tabs = header.querySelector('[data-type-group]');
+                if (tabs) setFilterMode(moduleName, wanted.mode);
+                if (wanted.sort) sortModes.set(moduleName, wanted.sort); else sortModes.delete(moduleName);
+                JE.discoveryFilters?.setSelection?.(moduleName, wanted.selection);
+                if (tabs) typePickers.get(tabs)?.paint();
+                const sortButton = header.querySelector('.jellyseerr-sort-btn');
+                if (sortButton) sortPainters.get(sortButton)?.();
+                JE.discoveryFilters?.repaint?.(header);
+                onSortChange(getSortMode(moduleName));
+                if (tabs) onFilterChange?.(getFilterMode(moduleName));
+            }
+        };
+    }
+
+    /**
+     * The Filters button for a page of its own (the Recommendations page and its category pages), with its menu and its
+     * line of what is set (after `header`, inside what `place` gives). A genre's page names its genre; `fixedAll`: the
+     * lists its request names itself; `profiles`: the page's side of the saved filters.
+     */
+    function createFiltersButton(header: HTMLElement, moduleName: string, scope: FilterScope, onChange: () => void,
+        options: FiltersButtonOptions = {}): HTMLButtonElement | null {
+        return JE.discoveryFilters?.createFiltersControl?.(header, moduleName, scope, onChange, options.ownGenre, options.place,
+            options.fixedAll ?? [], options.profiles ?? null) ?? null;
+    }
+
     return {
         getFilterMode, setFilterMode, getSortMode, getTvSortMode,
+        createFiltersButton,
+        /** The further filters set for a module (beyond All / Movies / Series); {} when nothing is set. */
+        getFilters: (moduleName: string): FilterSelection => JE.discoveryFilters?.selectionOf?.(moduleName) ?? {},
+        /** Sets a module's further filters as a whole; the caller redraws its controls and reloads. */
+        setFilters: (moduleName: string, selection: FilterSelection): void => { JE.discoveryFilters?.setSelection?.(moduleName, selection); },
+        /** Takes a module's further filters away; the caller redraws its controls and reloads. */
+        clearFilters: (moduleName: string): void => { JE.discoveryFilters?.setSelection?.(moduleName, {}); },
         /** A section starts with nothing narrowing it: neither the type nor the further filters. */
         resetFilterMode: (name: string): void => { filterModes.delete(name); JE.discoveryFilters?.reset?.(name); },
         setSortMode: (name: string, sort: string): void => { sortModes.set(name, sort); },

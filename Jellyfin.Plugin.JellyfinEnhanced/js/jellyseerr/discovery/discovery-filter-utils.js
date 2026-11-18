@@ -29,6 +29,436 @@
     return ctx;
   }
 
+  // client/src/features/seerr/discovery/filters.ts
+  var FEED_FILTERS = ["year", "score", "votes", "runtime", "genres", "withoutGenres", "language", "withoutLanguage", "rating", "services", "keywords", "without"];
+  var PERSON_FILTERS = ["role", "year", "score", "votes", "genres", "withoutGenres", "language", "withoutLanguage"];
+  var LOADED_FILTERS = ["year", "score", "votes", "genres", "withoutGenres", "language", "withoutLanguage"];
+  var FILTER_SWITCHES = Object.freeze({
+    role: "JellyseerrFilterRole",
+    year: "JellyseerrFilterYear",
+    score: "JellyseerrFilterScore",
+    votes: "JellyseerrFilterVotes",
+    runtime: "JellyseerrFilterRuntime",
+    genres: "JellyseerrFilterGenres",
+    language: "JellyseerrFilterLanguage",
+    rating: "JellyseerrFilterContentRating",
+    services: "JellyseerrFilterStreaming",
+    keywords: "JellyseerrFilterKeywords",
+    without: "JellyseerrFilterKeywords",
+    withoutGenres: "JellyseerrFilterGenres",
+    withoutLanguage: "JellyseerrFilterLanguage"
+  });
+  var RANGE_IDS = ["year", "score", "votes", "runtime"];
+  var MATCH_DEFAULTS = Object.freeze({ genres: "all", keywords: "all", services: "any" });
+  var GENRE_ROUTE = /\/genre\/(\d+)(?:$|[/?])/;
+  var KEYWORD_ROUTE = /\/keyword\/\d+(?:$|[/?])/;
+  var LIST_IDS = ["role", "genres", "withoutGenres", "language", "withoutLanguage", "rating", "services", "keywords", "without"];
+  var RANGE_PARAMS = Object.freeze({ score: "voteAverage", votes: "voteCount", runtime: "withRuntime" });
+  var isRecord = (value) => typeof value === "object" && value !== null;
+  var isRangeId = (id) => id === "year" || id === "score" || id === "votes" || id === "runtime";
+  function offeredFilters(scope, config) {
+    const switches = isRecord(config) ? config : null;
+    const ids = scope === "person" ? PERSON_FILTERS : scope === "loaded" ? LOADED_FILTERS : FEED_FILTERS;
+    return ids.filter((id) => switches?.[FILTER_SWITCHES[id]] !== false);
+  }
+  var isRangeSet = (range) => !!range && (range[0] !== "" || range[1] !== "");
+  function activeFilterCount(selection) {
+    const chosen = selection || {};
+    return RANGE_IDS.map((id) => chosen[id]).filter(isRangeSet).length + LIST_IDS.map((id) => chosen[id]).filter((list) => !!list && list.length > 0).length;
+  }
+  function matchOf(selection, id) {
+    const chosen = selection?.match?.[id];
+    return chosen === "all" || chosen === "any" ? chosen : MATCH_DEFAULTS[id];
+  }
+  function routeFeed(path, kind, selection, query) {
+    let asked = query;
+    let keep = null;
+    const ownGenre = GENRE_ROUTE.exec(path)?.[1];
+    if (ownGenre && matchOf(selection, "genres") === "any") {
+      const ticked = (selection?.genres ?? []).map((genre) => genreIdFor(genre, kind)).filter((id) => id !== ownGenre);
+      const others = ticked.filter((id) => id !== "");
+      if (ticked.length > 0) {
+        asked = asked.replace(/&genre=[^&]*/, "");
+        if (others.length === 0) asked += `&${kind === "tv" ? "firstAirDate" : "primaryReleaseDate"}Lte=1800-01-01`;
+        else keep = (item) => Array.isArray(item?.genreIds) && item.genreIds.some((id) => others.includes(String(id)));
+      }
+    }
+    if (KEYWORD_ROUTE.test(path)) asked = asked.replace(/(&keywords=)([^&]*)/, (_, name, value) => name + value.replace(/%7C/gi, "%2C"));
+    const allowed = notExcluded(selection, kind);
+    if (allowed) {
+      const kept = keep;
+      keep = kept ? (item) => kept(item) && allowed(item) : allowed;
+    }
+    return { query: asked, keep };
+  }
+  function notExcluded(selection, kind) {
+    const genres = selection?.withoutGenres ?? [];
+    const languages = new Set((selection?.withoutLanguage ?? []).map((language) => language.id));
+    if (genres.length === 0 && languages.size === 0) return null;
+    return (item) => {
+      const own = Array.isArray(item?.genreIds) ? item.genreIds.map(String) : [];
+      const itemKind = kind ?? (item?.mediaType === "tv" ? "tv" : "movie");
+      if (genres.some((genre) => {
+        const id = genreIdFor(genre, itemKind);
+        return id !== "" && own.includes(id);
+      })) return false;
+      return !(languages.size > 0 && typeof item?.originalLanguage === "string" && languages.has(item.originalLanguage));
+    };
+  }
+  function checkableOnLoaded(selection) {
+    const chosen = selection || {};
+    return !isRangeSet(chosen.runtime) && [chosen.role, chosen.rating, chosen.services, chosen.keywords, chosen.without].every((list) => !list || list.length === 0);
+  }
+  function dayOf(text, last) {
+    const typed = String(text ?? "").trim();
+    if (/^\d{4}$/.test(typed)) return `${typed}-${last ? "12-31" : "01-01"}`;
+    const month = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(typed);
+    if (month) return `${typed}-${last ? String(new Date(Date.UTC(Number(month[1]), Number(month[2]), 0)).getUTCDate()).padStart(2, "0") : "01"}`;
+    return /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(typed) ? typed : null;
+  }
+  function numberOf(id, text) {
+    const typed = String(text ?? "").trim().replace(",", ".");
+    if (id === "score") {
+      const score = /^\d{1,2}(\.\d)?$/.test(typed) ? Number(typed) : NaN;
+      return score >= 0 && score <= 10 ? score : null;
+    }
+    return /^\d{1,7}$/.test(typed) ? Number(typed) : null;
+  }
+  function isBound(id, text, upper) {
+    return String(text ?? "").trim() === "" || (id === "year" ? dayOf(text, upper) !== null : numberOf(id, text) !== null);
+  }
+  function isReversed(id, range) {
+    const [from, to] = range;
+    if (from.trim() === "" || to.trim() === "") return false;
+    if (id === "year") {
+      const first = dayOf(from, false);
+      const last = dayOf(to, true);
+      return first !== null && last !== null && first > last;
+    }
+    const low = numberOf(id, from);
+    const high = numberOf(id, to);
+    return low !== null && high !== null && low > high;
+  }
+  var genreIdFor = (genre, kind) => genre.id.split("/")[kind === "movie" ? 0 : 1] ?? "";
+  function feedFilterQuery(selection, kind, region) {
+    const chosen = selection || {};
+    const pairs = [];
+    const date = kind === "tv" ? "firstAirDate" : "primaryReleaseDate";
+    const anyGenre = matchOf(chosen, "genres") === "any";
+    const allGenres = (chosen.genres ?? []).map((genre) => genreIdFor(genre, kind));
+    const genres = anyGenre ? allGenres.filter(Boolean) : allGenres;
+    if (genres.includes("") || anyGenre && allGenres.length > 0 && genres.length === 0) return `&${date}Lte=1800-01-01`;
+    const from = chosen.year ? dayOf(chosen.year[0], false) : null;
+    const to = chosen.year ? dayOf(chosen.year[1], true) : null;
+    if (from) pairs.push([`${date}Gte`, from]);
+    if (to) pairs.push([`${date}Lte`, to]);
+    for (const id of ["score", "votes", "runtime"]) {
+      const range = chosen[id];
+      const low = range ? numberOf(id, range[0]) : null;
+      const high = range ? numberOf(id, range[1]) : null;
+      if (low !== null) pairs.push([`${RANGE_PARAMS[id]}Gte`, String(low)]);
+      if (high !== null) pairs.push([`${RANGE_PARAMS[id]}Lte`, String(high)]);
+    }
+    const join = (id) => matchOf(chosen, id) === "any" ? "|" : ",";
+    if (genres.length > 0) pairs.push(["genre", genres.join(join("genres"))]);
+    if (chosen.language?.length) pairs.push(["language", chosen.language.map((language) => language.id).join("|")]);
+    const ratings = (chosen.rating ?? []).map((rating) => rating.id.split(":")).filter((parts) => parts[0] === kind && parts.length === 3);
+    if (chosen.rating?.length && ratings.length === 0) return `&${date}Lte=1800-01-01`;
+    if (ratings.length > 0) {
+      pairs.push(["certification", ratings.map((parts) => parts[2] ?? "").join("|")], ["certificationCountry", ratings[0]?.[1] ?? "US"]);
+    }
+    if (chosen.services?.length) pairs.push(["watchProviders", chosen.services.map((service) => service.id).join(join("services"))], ["watchRegion", region]);
+    if (chosen.keywords?.length) pairs.push(["keywords", chosen.keywords.map((keyword) => keyword.id).join(join("keywords"))]);
+    if (chosen.without?.length) pairs.push(["excludeKeywords", chosen.without.map((keyword) => keyword.id).join(",")]);
+    return pairs.map(([name, value]) => `&${name}=${encodeURIComponent(value)}`).join("");
+  }
+  function keepByFilters(results, selection) {
+    const chosen = selection || {};
+    if (activeFilterCount(chosen) === 0) return results;
+    const from = chosen.year ? dayOf(chosen.year[0], false) : null;
+    const to = chosen.year ? dayOf(chosen.year[1], true) : null;
+    const bounds = ["score", "votes"].map((id) => {
+      const range = chosen[id];
+      return [id, range ? numberOf(id, range[0]) : null, range ? numberOf(id, range[1]) : null];
+    });
+    const languages = new Set((chosen.language ?? []).map((language) => language.id));
+    const allowed = notExcluded(chosen);
+    return results.filter((item) => {
+      if (allowed && !allowed(item)) return false;
+      if (chosen.role?.length && !chosen.role.some((role) => role.id === "cast" ? item.jeCredit?.acted === true : item.jeCredit?.departments?.includes(role.id) === true)) return false;
+      if (from || to) {
+        const date = (typeof item.releaseDate === "string" && item.releaseDate ? item.releaseDate : typeof item.firstAirDate === "string" ? item.firstAirDate : "").slice(0, 10);
+        if (!date || from && date < from || to && date > to) return false;
+      }
+      for (const [id, low, high] of bounds) {
+        const value = Number(id === "score" ? item.voteAverage : item.voteCount) || 0;
+        if (low !== null && value < low || high !== null && value > high) return false;
+      }
+      if (chosen.genres?.length) {
+        const own = Array.isArray(item.genreIds) ? item.genreIds.map(String) : [];
+        const kind = item.mediaType === "tv" ? "tv" : "movie";
+        const has = (genre) => own.includes(genreIdFor(genre, kind)) && genreIdFor(genre, kind) !== "";
+        if (!(matchOf(chosen, "genres") === "any" ? chosen.genres.some(has) : chosen.genres.every(has))) return false;
+      }
+      return languages.size === 0 || typeof item.originalLanguage === "string" && languages.has(item.originalLanguage);
+    });
+  }
+  function rolesOf(results, actingName, nameOf2) {
+    const counts = /* @__PURE__ */ new Map();
+    let acted = 0;
+    for (const item of results || []) {
+      if (item.jeCredit?.acted) acted++;
+      for (const department of item.jeCredit?.departments ?? []) counts.set(department, (counts.get(department) ?? 0) + 1);
+    }
+    const crew = Array.from(counts).sort((a, b) => Number(a[0] === "Crew") - Number(b[0] === "Crew") || b[1] - a[1] || a[0].localeCompare(b[0])).map(([id]) => ({ id, name: nameOf2(id) }));
+    return acted > 0 ? [{ id: "cast", name: actingName }, ...crew] : crew;
+  }
+
+  // client/src/features/seerr/discovery/address.ts
+  var TYPE_PARAM = "jeType";
+  var SORT_PARAM = "jeSort";
+  var CATEGORY_PARAM = "jeCategory";
+  var RANGE_PARAMS2 = [["year", "jeReleased"], ["score", "jeScore"], ["votes", "jeVotes"], ["runtime", "jeRuntime"]];
+  var LIST_PARAMS = [
+    ["role", "jeRole", /^(?:cast|[A-Z][A-Za-z]{0,20}(?:[ &-]{1,3}[A-Za-z]{1,20}){0,3})$/, false],
+    ["genres", "jeGenres", /^(?:\d{1,9}\/\d{0,9}|\/\d{1,9})$/, true],
+    ["withoutGenres", "jeWithoutGenres", /^(?:\d{1,9}\/\d{0,9}|\/\d{1,9})$/, true],
+    ["language", "jeLanguage", /^[a-z]{2}$/, false],
+    ["withoutLanguage", "jeWithoutLanguage", /^[a-z]{2}$/, false],
+    ["rating", "jeRating", /^(?:movie|tv):[A-Z]{2}:[A-Za-z0-9+\- ]{1,12}$/, false],
+    ["services", "jeServices", /^\d{1,9}$/, true],
+    ["keywords", "jeKeywords", /^\d{1,9}$/, true],
+    ["without", "jeWithout", /^\d{1,9}$/, true]
+  ];
+  var ANY_PARAM = "jeAny";
+  var ALL_PARAM = "jeAll";
+  var MATCHED = ["genres", "keywords", "services"];
+  var MAX_LIST = 50;
+  var MAX_NAME = 80;
+  var MAX_BOUND = 10;
+  var OWN_PARAMS = /* @__PURE__ */ new Set([
+    TYPE_PARAM,
+    SORT_PARAM,
+    CATEGORY_PARAM,
+    ANY_PARAM,
+    ALL_PARAM,
+    ...RANGE_PARAMS2.map((entry) => entry[1]),
+    ...LIST_PARAMS.map((entry) => entry[1])
+  ]);
+  var HOME_HASH = /^(?:#\/home(?:\.html)?(?:\?[^#]*)?(?:#.*)?)?$/;
+  var PAGE_HASH = /^#\/recommendations(?:\?[^#]*)?(?:#.*)?$/;
+  var CATEGORY_KEY = /^(?:[a-z]+(?:-[a-z]+)?|(?:studio|network)-\d{1,9}|genre-(?:movie|tv)-\d{1,9})$/;
+  function split(hash) {
+    const text = String(hash || "");
+    const mark = text.indexOf("#", 1);
+    const head = mark < 0 ? text : text.slice(0, mark);
+    const at = head.indexOf("?");
+    return {
+      head,
+      route: at < 0 ? head : head.slice(0, at),
+      pairs: at < 0 ? [] : head.slice(at + 1).split("&").filter(Boolean),
+      fragment: mark < 0 ? null : text.slice(mark + 1).split("&").filter(Boolean)
+    };
+  }
+  var nameOf = (pair) => pair.split("=")[0] || "";
+  function ownPairs(hash) {
+    const { pairs, fragment } = split(hash);
+    return (fragment ?? pairs).filter((pair) => OWN_PARAMS.has(nameOf(pair)));
+  }
+  var decode = (raw) => {
+    try {
+      return decodeURIComponent(raw);
+    } catch {
+      return raw;
+    }
+  };
+  var rawOf = (pairs, name) => {
+    const pair = pairs.find((entry) => nameOf(entry) === name);
+    return pair === void 0 ? null : pair.slice(name.length + 1);
+  };
+  var valueOf = (pairs, name) => {
+    const raw = rawOf(pairs, name);
+    return raw === null ? null : decode(raw);
+  };
+  var readable = (text) => encodeURIComponent(text).replace(/%2F/gi, "/").replace(/%3A/gi, ":");
+  var isHomeHash = (hash) => HOME_HASH.test(String(hash ?? ""));
+  var isRecommendationsHash = (hash) => isHomeHash(hash) || PAGE_HASH.test(String(hash ?? ""));
+  function createDiscoveryAddress(JE) {
+    const label = (key, fallback) => {
+      const text = typeof JE.t === "function" ? JE.t(key) : "";
+      return text && text !== key ? text : fallback;
+    };
+    const matchDefault = (id) => JE.discoveryFilters?.MATCH_DEFAULTS?.[id] ?? MATCH_DEFAULTS[id];
+    const isBound2 = (id, text, upper) => typeof JE.discoveryFilters?.isBound === "function" ? JE.discoveryFilters.isBound(id, text, upper) : String(text ?? "").trim() === "";
+    const sortValues = () => (JE.discoveryFilter?.SORT_OPTIONS ?? []).map((option) => option.value);
+    const roleName = (id) => id === "cast" ? label("discovery_role_acting", "Acting") : label(`discovery_role_${id.toLowerCase().replace(/[^a-z]+/g, "_")}`, id);
+    function filtersOfHash(hash, locale) {
+      const pairs = ownPairs(hash);
+      const type = valueOf(pairs, TYPE_PARAM);
+      const mode = type === "movies" ? "movies" : type === "series" ? "tv" : "mixed";
+      const selection = {};
+      for (const [id, param] of RANGE_PARAMS2) {
+        const value = valueOf(pairs, param);
+        const at = value ? value.indexOf("..") : -1;
+        if (!value || at < 0) continue;
+        const bounds = [value.slice(0, at).trim(), value.slice(at + 2).trim()].map((bound, index) => bound.length <= MAX_BOUND && isBound2(id, bound, index === 1) ? bound : "");
+        const range = [bounds[0] ?? "", bounds[1] ?? ""];
+        if (range[0] || range[1]) selection[id] = range;
+      }
+      let names = null;
+      try {
+        names = new Intl.DisplayNames([locale || document.documentElement.lang || "en"], { type: "language" });
+      } catch {
+        names = null;
+      }
+      for (const [id, param, shape, named] of LIST_PARAMS) {
+        const raw = rawOf(pairs, param);
+        if (!raw) continue;
+        const items = [];
+        for (const entry of raw.split(",").slice(0, MAX_LIST)) {
+          const at = named ? entry.indexOf(":") : -1;
+          const itemId = decode(at < 0 ? entry : entry.slice(0, at)).trim();
+          if (!shape.test(itemId) || items.some((item) => item.id === itemId)) continue;
+          let name = at < 0 ? "" : decode(entry.slice(at + 1)).trim().slice(0, MAX_NAME);
+          if (id === "role") name = roleName(itemId);
+          if (id === "rating") name = itemId.split(":")[2] || itemId;
+          if (id === "language" || id === "withoutLanguage") {
+            try {
+              name = names?.of(itemId) || "";
+            } catch {
+              name = "";
+            }
+          }
+          items.push({ id: itemId, name: name || itemId });
+        }
+        if (items.length > 0) selection[id] = items;
+      }
+      const match = {};
+      for (const [param, value] of [[ANY_PARAM, "any"], [ALL_PARAM, "all"]]) {
+        for (const id of (valueOf(pairs, param) || "").split(",")) {
+          const matched = MATCHED.find((entry) => entry === id);
+          if (matched && selection[matched] && value !== matchDefault(matched)) match[matched] = value;
+        }
+      }
+      if (Object.keys(match).length > 0) selection.match = match;
+      const sort = valueOf(pairs, SORT_PARAM) || "";
+      return { mode, selection, sort: sort && sortValues().includes(sort) ? sort : "" };
+    }
+    function filterPairs(filters, withSort) {
+      const pairs = [];
+      const selection = filters.selection || {};
+      if (filters.mode === "movies" || filters.mode === "tv") pairs.push(`${TYPE_PARAM}=${filters.mode === "tv" ? "series" : "movies"}`);
+      for (const [id, param] of RANGE_PARAMS2) {
+        const range = selection[id];
+        const [from = "", to = ""] = [String(range?.[0] ?? "").trim(), String(range?.[1] ?? "").trim()].map((bound, index) => isBound2(id, bound, index === 1) ? bound : "");
+        if (from || to) pairs.push(`${param}=${readable(from)}..${readable(to)}`);
+      }
+      for (const [id, param, , named] of LIST_PARAMS) {
+        const items = selection[id] ?? [];
+        if (items.length === 0) continue;
+        pairs.push(`${param}=${items.map((item) => named ? `${readable(String(item.id))}:${encodeURIComponent(String(item.name ?? ""))}` : readable(String(item.id))).join(",")}`);
+      }
+      const matched = (value) => MATCHED.filter((id) => (selection[id] ?? []).length > 0 && value !== matchDefault(id) && (selection.match?.[id] ?? matchDefault(id)) === value);
+      for (const [param, value] of [[ANY_PARAM, "any"], [ALL_PARAM, "all"]]) {
+        const ids = matched(value);
+        if (ids.length > 0) pairs.push(`${param}=${ids.join(",")}`);
+      }
+      if (withSort && filters.sort) pairs.push(`${SORT_PARAM}=${encodeURIComponent(filters.sort)}`);
+      return pairs;
+    }
+    function categoryOfHash(hash) {
+      if (!isRecommendationsHash(hash)) return null;
+      const key = valueOf(ownPairs(hash), CATEGORY_PARAM);
+      return key && CATEGORY_KEY.test(key) ? key : null;
+    }
+    function addressWith(hash, category, filters, withSort) {
+      const { head, pairs, fragment } = split(hash);
+      const own = category ? [`${CATEGORY_PARAM}=${encodeURIComponent(category)}`] : [];
+      own.push(...filterPairs(filters, withSort));
+      const inQuery = pairs.filter((pair) => OWN_PARAMS.has(nameOf(pair)));
+      if (fragment === null && own.join("&") === inQuery.join("&")) return hash;
+      if (own.length === 0 && inQuery.length === 0) return head;
+      return `${head || "#/home"}#${own.join("&")}`;
+    }
+    function withoutOwn(hash) {
+      const { route, pairs } = split(hash);
+      const kept = pairs.filter((pair) => !OWN_PARAMS.has(nameOf(pair)));
+      return kept.length > 0 ? `${route}?${kept.join("&")}` : route;
+    }
+    function current(filterModule, sortModule) {
+      const filter = JE.discoveryFilter;
+      return {
+        mode: filter?.getFilterMode?.(filterModule) || "mixed",
+        selection: JE.discoveryFilters?.selectionOf?.(filterModule) || {},
+        sort: sortModule ? filter?.getSortMode?.(sortModule) || "" : ""
+      };
+    }
+    function filtersOf(text, scope = "feed") {
+      const source = String(text ?? "");
+      const said2 = filtersOfHash(source.startsWith("#") || source.includes("?") ? source : `#?${source}`);
+      const offered = JE.discoveryFilters?.offeredFilters?.(scope, JE.pluginConfig) ?? [];
+      const selection = {};
+      for (const [id, range] of RANGE_PARAMS2.map(([id2]) => [id2, said2.selection[id2]])) {
+        if (range && offered.includes(id)) selection[id] = range;
+      }
+      for (const [id] of LIST_PARAMS) {
+        const list = said2.selection[id];
+        if (list && offered.includes(id)) selection[id] = list;
+      }
+      const match = {};
+      for (const id of MATCHED) {
+        const value = said2.selection.match?.[id];
+        if (value && offered.includes(id)) match[id] = value;
+      }
+      if (Object.keys(match).length > 0) selection.match = match;
+      return { mode: said2.mode, selection, sort: said2.sort };
+    }
+    function adopt(filterModule, sortModule, options = {}) {
+      const withType = options.withType !== false;
+      const withSort = options.withSort ?? !!sortModule;
+      const now = current(filterModule, withSort ? sortModule : null);
+      const said2 = filtersOf(window.location.hash, options.scope || "feed");
+      const wanted = { mode: withType ? said2.mode : now.mode, selection: said2.selection, sort: withSort ? said2.sort : "" };
+      if (filterPairs(wanted, withSort).join("&") === filterPairs(now, withSort).join("&")) return false;
+      JE.discoveryFilter?.setFilterMode?.(filterModule, wanted.mode);
+      JE.discoveryFilters?.setSelection?.(filterModule, wanted.selection);
+      if (withSort && sortModule) {
+        if (wanted.sort) JE.discoveryFilter?.setSortMode?.(sortModule, wanted.sort);
+        else JE.discoveryFilter?.resetSortMode?.(sortModule);
+      }
+      return true;
+    }
+    function go(hash, options = {}) {
+      const url = `${window.location.pathname}${window.location.search}${hash}`;
+      const push = options.push === true;
+      const state = "state" in options ? options.state : push ? null : history.state;
+      const navigation = JE.core?.navigation;
+      if (typeof navigation?.setAddressQuietly === "function") navigation.setAddressQuietly(state, url, push);
+      else if (push) history.pushState(state, "", url);
+      else history.replaceState(state, "", url);
+    }
+    function write(filterModule, sortModule, withSort = !!sortModule) {
+      const hash = window.location.hash;
+      const next = addressWith(hash, categoryOfHash(hash), current(filterModule, withSort ? sortModule : null), withSort);
+      if (next !== hash) go(next);
+    }
+    return {
+      OWN_PARAMS,
+      isHomeHash,
+      isRecommendationsHash,
+      filtersOfHash,
+      filtersOf,
+      filterPairs,
+      categoryOfHash,
+      addressWith,
+      withoutOwn,
+      current,
+      adopt,
+      write,
+      go
+    };
+  }
+
   // client/src/features/seerr/discovery/discovery-busy.css
   var discovery_busy_default = `/* Where the open menu covers the list (a phone, a narrow window): a change that takes long shows in the menu's foot that it is still being fetched (the same circle, after the same moment). */
 /* (In the middle of the foot: beside "Done" it would read as Done's own, as if closing the menu had to wait.) */
@@ -102,6 +532,9 @@ html:has(.jellyseerr-sort-menu[data-over-list]) .jellyseerr-discovery-section:ha
 /* Filter and sort are no taller than their words (each keeps 44px to press, the ::after), so the row
    is the same height at the join and held, at every width. */
 .jellyseerr-discovery-filter .jellyseerr-filter-btn { padding: .55em .9em; min-height: 2.75em; font-size: inherit; }
+/* All three types always show: a theme's rule for a third tab of its own (Zesty hides a library's
+   Trailers tab with button.emby-tab-button:nth-child(3)) would otherwise take Series away. */
+.jellyseerr-discovery-filter .jellyseerr-filter-btn.emby-tab-button { display: inline-flex; }
 .jellyseerr-discovery-header .jellyseerr-filter-btn { position: relative; padding-block: .2em; min-height: 0; overflow: visible; }
 .jellyseerr-discovery-header .jellyseerr-filter-btn::after { content: ''; position: absolute; inset: 50% 0 auto; height: 44px; transform: translateY(-50%); }
 /* The chosen filter: the theme's accent, as Jellyfin marks the page you are on in its top bar, and a
@@ -229,19 +662,22 @@ html:not(.layout-tv) .jellyseerr-sort-menu .listItemBody, html:not(.layout-tv) .
 html:not(.layout-tv) .jellyseerr-sort-menu .actionsheetMenuItemIcon { order: 1; width: auto; margin: 0 !important; margin-inline-start: 1.4em !important; padding: 0; font-size: 1.2em; }
 /* Groups (the filters): each is a row that names its choice in use and opens to its choices, as the
    sections of Jellyfin's own filter menu open. A group that is narrowing the list says so in the accent. */
-html:not(.layout-tv) .jellyseerr-menu-grouped { width: 19em; max-width: calc(100vw - 16px); }
+html:not(.layout-tv) .jellyseerr-menu-grouped { width: 20em; max-width: calc(100vw - 16px); }
 /* On a phone it is as wide as the screen allows: nothing of the page is left as a strip beside it. */
 @media (max-width: 600px) { html:not(.layout-tv) .jellyseerr-menu-grouped { width: calc(100vw - 16px); } }
 /* On a TV it is one width whatever is open in it, and stays within the screen. */
 .layout-tv .jellyseerr-menu-grouped { width: min(34em, 92vw); max-height: 84vh; }
 /* The open group's row stays at the top of the menu's scroll, over its own body, and the group ends with a line. */
+.jellyseerr-sort-menu .actionSheetScroller { overflow-anchor: none; }
 .jellyseerr-sort-menu { --jellyseerr-menu-ground: var(--jf-palette-background-paper, #202020); --jellyseerr-menu-shade: var(--jf-overlays-8, none); --jellyseerr-held-fade: .8; }
 .layout-tv .jellyseerr-sort-menu { --jellyseerr-menu-shade: none; }
 html .jellyseerr-sort-menu .actionSheetMenuItem.jellyseerr-menu-group[aria-expanded="true"] { position: sticky; top: 0; z-index: 2; overflow: visible; background-color: var(--jellyseerr-menu-ground); background-image: var(--jellyseerr-menu-shade); }
 /* Once rows pass under it, it has a lower edge: a rule, and under the rule the menu's ground running on for a few pixels and fading, so no crumb of a row lies on the rule. */
 html .jellyseerr-sort-menu .actionSheetMenuItem.jellyseerr-menu-group[data-over]:not(:has(+ .jellyseerr-menu-choices > .jellyseerr-menu-searchbar))::after, .jellyseerr-menu-group[data-over] + .jellyseerr-menu-choices > .jellyseerr-menu-searchbar::after { content: ''; position: absolute; inset-inline: 0; top: 100%; height: calc(var(--jellyseerr-held-fade) * 1em); border-top: 1px solid var(--jf-palette-divider, rgba(255,255,255,.12)); background: var(--jellyseerr-menu-shade), var(--jellyseerr-menu-ground); -webkit-mask-image: linear-gradient(#000 45%, transparent); mask-image: linear-gradient(#000 45%, transparent); pointer-events: none; }
 .jellyseerr-menu-choices:not([hidden]) { padding-bottom: 8px; border-bottom: 1px solid var(--jf-palette-divider, rgba(255,255,255,.12)); }
-.jellyseerr-menu-choices:last-child { border-bottom: 0; }
+.jellyseerr-menu-groupbox:last-child > .jellyseerr-menu-choices { border-bottom: 0; }
+/* (On a TV's dark ground the group's closing rule as strong as the foot's.) */
+.layout-tv .jellyseerr-sort-menu .jellyseerr-menu-choices:not([hidden]) { border-bottom-color: rgba(128,128,128,.6); }
 @media (hover: hover) { html:not(.layout-tv) .jellyseerr-sort-menu .actionSheetMenuItem.jellyseerr-menu-group[aria-expanded="true"]:hover { background-image: linear-gradient(var(--jf-palette-action-hover, rgba(255,255,255,.08)), var(--jf-palette-action-hover, rgba(255,255,255,.08))), var(--jellyseerr-menu-shade); } }
 html:not(.layout-tv) .jellyseerr-sort-menu .actionSheetMenuItem.jellyseerr-menu-group[aria-expanded="true"]:focus-visible { background-image: linear-gradient(var(--jf-palette-action-focus, rgba(255,255,255,.12)), var(--jf-palette-action-focus, rgba(255,255,255,.12))), var(--jellyseerr-menu-shade); }
 html .jellyseerr-sort-menu .actionSheetMenuItem.jellyseerr-menu-clear[aria-disabled="true"] { color: var(--jf-palette-text-disabled, rgba(255,255,255,.5)); cursor: default; background: none !important; }
@@ -253,9 +689,16 @@ html.layout-tv[dir="rtl"] .jellyseerr-sort-menu .actionSheetMenuItem:focus { box
 .layout-tv .jellyseerr-menu-list-rule { margin-inline-start: var(--jellyseerr-menu-indent, 32px); }
 /* (On a TV the held strip's rule has the strength of the foot's.) */
 html.layout-tv .jellyseerr-sort-menu .actionSheetMenuItem.jellyseerr-menu-group[data-over]:not(:has(+ .jellyseerr-menu-choices > .jellyseerr-menu-searchbar))::after, .layout-tv .jellyseerr-menu-group[data-over] + .jellyseerr-menu-choices > .jellyseerr-menu-searchbar::after { border-top-color: rgba(128,128,128,.6); }
-.layout-tv .jellyseerr-menu-foot { margin-top: .3em; padding-top: .3em; border-top: 1px solid rgba(128,128,128,.3); }
+.layout-tv .jellyseerr-menu-foot { margin-top: .3em; padding-top: .3em; border-top: 1px solid rgba(128,128,128,.6); }
 /* (On a TV's near-black sheet a shadow does not show: the foot's rule is stronger while rows go on under it.) */
 .layout-tv .jellyseerr-sort-menu .actionSheetContent[data-more] > .jellyseerr-menu-foot { border-top-color: rgba(128,128,128,.6); }
+/* On a TV's near-black ground a shadow does not show: the rows themselves fade into the foot over the cut row. */
+.layout-tv .jellyseerr-sort-menu .actionSheetContent[data-more] > .actionSheetScroller { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 2.2em), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 2.2em), transparent); }
+.layout-tv .jellyseerr-sort-menu .actionSheetContent[data-above][data-more] > .actionSheetScroller { -webkit-mask-image: linear-gradient(to bottom, transparent, #000 .5em, #000 calc(100% - 2.2em), transparent); mask-image: linear-gradient(to bottom, transparent, #000 .5em, #000 calc(100% - 2.2em), transparent); }
+/* (Rows above, on a TV: a rule under the title, as strong as the foot's; the rows themselves keep their strength.) */
+.layout-tv .jellyseerr-sort-menu .actionSheetContent[data-rows-above] > .actionSheetTitle { box-shadow: 0 1px 0 rgba(128,128,128,.6); }
+/* (Every TV rule in the one grey: the line under Saved filters, and an open row's edge as rows pass under it.) */
+html.layout-tv .jellyseerr-sort-menu .jellyseerr-menu-groupbox[data-group="profiles"]:not([data-open]) + .jellyseerr-menu-groupbox > .jellyseerr-menu-group { border-top-color: rgba(128,128,128,.6); }
 @media (prefers-reduced-motion: reduce) { .jellyseerr-menu-group .actionsheetMenuItemIcon { transition: none; } }
 /* On a phone the rows are as tall as the rows of Jellyfin's menus there. */
 @media (max-width: 600px) { html:not(.layout-tv) .jellyseerr-sort-menu .actionSheetMenuItem { min-height: 48px; } }
@@ -349,7 +792,7 @@ html.layout-tv .jellyseerr-sort-menu .actionSheetMenuItem.jellyseerr-menu-group[
     { value: "release_date.desc", label: "Newest", labelKey: "discovery_sort_newest" },
     { value: "release_date.asc", label: "Oldest", labelKey: "discovery_sort_oldest" }
   ];
-  function isRecord(value) {
+  function isRecord2(value) {
     return typeof value === "object" && value !== null && !Array.isArray(value);
   }
   function isFilterMode(value) {
@@ -396,7 +839,7 @@ html.layout-tv .jellyseerr-sort-menu .actionSheetMenuItem.jellyseerr-menu-group[
     return sort.replace("release_date", "first_air_date");
   }
   function mediaInfoOf(item) {
-    return isRecord(item.mediaInfo) ? item.mediaInfo : null;
+    return isRecord2(item.mediaInfo) ? item.mediaInfo : null;
   }
   var resultKey = (item) => `${String(item.mediaType)}-${String(item.id)}`;
   function selectCardResults(results, policy) {
@@ -414,7 +857,7 @@ html.layout-tv .jellyseerr-sort-menu .actionSheetMenuItem.jellyseerr-menu-group[
     return items;
   }
   function isGenreEntry(value) {
-    return isRecord(value) && typeof value.id === "number" && typeof value.name === "string";
+    return isRecord2(value) && typeof value.id === "number" && typeof value.name === "string";
   }
   function decodeGenreList(value) {
     if (!Array.isArray(value)) throw decodeError("genre list");
@@ -580,7 +1023,7 @@ html.layout-tv .jellyseerr-sort-menu .actionSheetMenuItem.jellyseerr-menu-group[
 .jellyseerr-filters-name { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 /* What is set, in words, on a line under the header (it is not held with it): each piece with the way to
    take it away. The page's quiet text, no boxes; a press area of 44px each. */
-.jellyseerr-filters-set { --jellyseerr-accent: var(--jf-palette-primary-main, #00a4dc); display: flex; flex-wrap: wrap; align-items: center; gap: .15em 1.2em; margin: .4em 0 .7em; color: var(--jf-palette-text-secondary, rgba(255,255,255,.7)); }
+.jellyseerr-filters-set { --jellyseerr-accent: var(--jf-palette-primary-main, #00a4dc); display: flex; flex-wrap: wrap; align-items: center; gap: .25em 1.6em; margin: .4em 0 .7em; color: var(--jf-palette-text-secondary, rgba(255,255,255,.7)); }
 .jellyseerr-filters-token { display: inline-flex; align-items: center; min-width: 0; max-width: 100%; }
 .jellyseerr-filters-token > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .jellyseerr-filters-remove, .jellyseerr-filters-clear { position: relative; flex: none; margin: 0; border: 0; border-radius: .3em; background: none; color: inherit; font: inherit; cursor: pointer; }
@@ -602,10 +1045,17 @@ html.layout-tv .jellyseerr-sort-menu .actionSheetMenuItem.jellyseerr-menu-group[
    a long one; a search. The fields are the menu's own ground a shade lighter, ringed in the
    theme's colour while typed in and in its error colour while what is typed cannot be used. */
 .jellyseerr-menu-range { display: flex; align-items: center; gap: .5em; padding: 4px 16px 8px 32px; }
-.jellyseerr-menu-input { box-sizing: border-box; flex: 1 1 0; width: 100%; min-width: 0; padding: 6px 10px; border: 1px solid var(--jf-palette-divider, rgba(255,255,255,.12)); border-radius: var(--jf-shape-borderRadius, 4px); background: var(--jf-palette-action-hover, rgba(255,255,255,.08)); color: inherit; font: inherit; }
-.jellyseerr-menu-input::placeholder { color: var(--jf-palette-text-secondary, rgba(255,255,255,.7)); opacity: 1; }
-.jellyseerr-menu-input:focus { outline: none; border-color: var(--jf-palette-primary-main, #00a4dc); box-shadow: 0 0 0 1px var(--jf-palette-primary-main, #00a4dc); }
-.jellyseerr-sort-menu { --jellyseerr-error: var(--jf-palette-error-light, #e57373); }
+.jellyseerr-menu-range-labels { padding-bottom: 0; }
+.jellyseerr-menu-bound { flex: 1 1 0; min-width: 0; font-size: .86em; color: var(--jellyseerr-quiet, rgba(255,255,255,.7)); }
+.jellyseerr-menu-range-spacer { visibility: hidden; }
+.jellyseerr-menu-input { box-sizing: border-box; flex: 1 1 0; width: 100%; min-width: 0; padding: 6px 10px; border: 1px solid var(--jf-palette-divider, rgba(255,255,255,.12)); border-color: color-mix(in srgb, currentColor 45%, transparent); border-radius: var(--jf-shape-borderRadius, 4px); background: var(--jf-palette-action-hover, rgba(255,255,255,.08)); color: inherit; font: inherit; }
+.jellyseerr-menu-input::placeholder { color: var(--jellyseerr-quiet, var(--jf-palette-text-secondary, rgba(255,255,255,.7))); opacity: 1; }
+.jellyseerr-menu-input:focus { outline: none; border-color: var(--jellyseerr-accent, #00a4dc); box-shadow: 0 0 0 1px var(--jellyseerr-accent, #00a4dc); }
+/* (Forced colours drop the box shadow: a field with the keys in it has an outline there.) */
+@media (forced-colors: active) { .jellyseerr-menu-input:focus { outline: 2px solid Highlight; outline-offset: 1px; } }
+.jellyseerr-sort-menu { --jellyseerr-error: var(--jf-palette-error-light, #e57373); --jellyseerr-quiet: var(--jf-palette-text-secondary, rgba(255,255,255,.7)); }
+/* (Quiet on every theme: the text the theme draws, at 70%. A theme's secondary text can be as strong as its text.) */
+@supports (color: color-mix(in srgb, red, blue)) { .jellyseerr-sort-menu { --jellyseerr-quiet: color-mix(in srgb, currentColor 70%, transparent); } }
 @supports (color: color-mix(in oklab, red 60%, blue)) { .jellyseerr-sort-menu { --jellyseerr-error: color-mix(in oklab, var(--jf-palette-error-main, #f44336) 52%, var(--jf-palette-text-primary, #fff)); } }
 .jellyseerr-menu-input[aria-invalid="true"] { border-color: var(--jellyseerr-error); box-shadow: 0 0 0 1px var(--jellyseerr-error); }
 /* What cannot be used is also said in words, where the hint was. */
@@ -614,27 +1064,139 @@ html.layout-tv .jellyseerr-sort-menu .actionSheetMenuItem.jellyseerr-menu-group[
 .jellyseerr-menu-searchbar { position: sticky; top: calc(var(--jellyseerr-menu-head, 36px) - 1px); z-index: 1; padding: 5px 16px 6px 32px; background-color: var(--jellyseerr-menu-ground); background-image: var(--jellyseerr-menu-shade); }
 .jellyseerr-menu-search { display: block; width: 100%; }
 /* A row to tick has a box, empty until it is ticked (then in the accent); one given by the page itself is dim and cannot be pressed. */
-.jellyseerr-sort-menu .jellyseerr-menu-tick .actionsheetMenuItemIcon { color: var(--jf-palette-text-secondary, rgba(255,255,255,.7)); }
+.jellyseerr-sort-menu .jellyseerr-menu-tick .actionsheetMenuItemIcon { color: var(--jellyseerr-quiet, var(--jf-palette-text-secondary, rgba(255,255,255,.7))); }
 .jellyseerr-sort-menu .jellyseerr-menu-tick[aria-checked="true"] .actionsheetMenuItemIcon { color: var(--jellyseerr-accent); }
-html .jellyseerr-sort-menu .actionSheetMenuItem.jellyseerr-menu-tick[aria-disabled="true"] { color: var(--jf-palette-text-disabled, rgba(255,255,255,.5)); cursor: default; background: none !important; }
-.jellyseerr-sort-menu .jellyseerr-menu-tick[aria-disabled="true"] .actionsheetMenuItemIcon { color: inherit; }
+html .jellyseerr-sort-menu .actionSheetMenuItem.jellyseerr-menu-tick[aria-disabled="true"] { color: var(--jellyseerr-quiet, rgba(255,255,255,.7)); cursor: default; background: none !important; }
+.jellyseerr-sort-menu .jellyseerr-menu-tick[aria-disabled="true"] .actionsheetMenuItemIcon { color: var(--jf-palette-text-disabled, rgba(255,255,255,.5)); }
 /* A long name in a list takes a second line: its end is often what tells two entries apart ("… Amazon Channel"). (Its box stays in the row's middle, as on any list of two-line items.) */
 html .jellyseerr-sort-menu .jellyseerr-menu-list .actionSheetItemText { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
 /* The letters a search found in a name. */
 .jellyseerr-menu-found { font-weight: 700; }
 /* Under what is ticked or likeliest wanted at a long list's head, before the rest of it. */
 .jellyseerr-menu-list-rule { height: 1px; margin: 4px 16px 4px 32px; background: var(--jf-palette-divider, rgba(255,255,255,.12)); }
-.jellyseerr-menu-note, .jellyseerr-menu-label { color: var(--jf-palette-text-secondary, rgba(255,255,255,.7)); }
+.jellyseerr-menu-note, .jellyseerr-menu-label { color: var(--jellyseerr-quiet, var(--jf-palette-text-secondary, rgba(255,255,255,.7))); }
 .jellyseerr-menu-note { padding: 2px 16px 8px 32px; font-size: .86em; line-height: 1.4; }
+/* All of what is ticked, or any of it: two small choices on the rule's line, the one in use filled. */
+/* The theme's own grounds; the choice in use in the accent, as everything set in this menu is. */
+.jellyseerr-menu-match { display: flex; flex-flow: row wrap; align-items: center; gap: .35em .6em; }
+.jellyseerr-menu-searchbar .jellyseerr-menu-note { padding: 6px 0 0; }
+.jellyseerr-menu-match-track { display: inline-flex; gap: 2px; padding: 2px; border-radius: 999px; background: var(--jf-palette-action-hover, rgba(255,255,255,.08)); box-shadow: inset 0 0 0 1px var(--jf-palette-divider, rgba(255,255,255,.12)); }
+.jellyseerr-menu-match-btn { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; font: inherit; color: inherit; white-space: nowrap; background: none; border: 0; border-radius: 999px; padding: .3em .65em; cursor: pointer; }
+/* The half in use on the sheet's own ground, in the accent with its ring (readable on any theme). */
+.jellyseerr-menu-match-btn[aria-checked="true"] { background-color: var(--jellyseerr-menu-ground, transparent); background-image: var(--jellyseerr-menu-shade, none); color: var(--jellyseerr-accent); box-shadow: inset 0 0 0 1px var(--jellyseerr-accent); font-weight: 600; }
+/* The other half can be pressed: it answers the pointer. */
+.jellyseerr-menu-match-btn:not([aria-checked="true"]):hover { background: var(--jf-palette-action-hover, rgba(255,255,255,.08)); color: var(--jf-palette-text-primary, #fff); }
+/* Below two ticks the choice changes nothing: shown, but not in the accent that says the list is narrowed. */
+.jellyseerr-menu-match[data-idle] .jellyseerr-menu-match-btn[aria-checked="true"] { color: var(--jf-palette-text-primary, #fff); box-shadow: inset 0 0 0 1px var(--jf-palette-text-disabled, rgba(255,255,255,.5)); box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 55%, transparent); font-weight: 500; }
+.jellyseerr-menu-match-btn:focus-visible { outline: 2px solid var(--jf-palette-text-primary, #fff); outline-offset: 1px; }
+/* (Two equal columns wherever there is room for both at the wider's width; never wider than the line, so the
+   choice never moves the list.) */
+html:not(.layout-tv) .jellyseerr-menu-match-track { display: grid; grid-template-columns: 1fr 1fr; flex: 1 1 0; }
+.jellyseerr-menu-match-reserve { display: block; height: 0; overflow: hidden; visibility: hidden; font-weight: 600; }
+@media (forced-colors: active) {
+    .jellyseerr-menu-match-track { outline: 1px solid CanvasText; outline-offset: -1px; }
+    .jellyseerr-menu-list-rule { forced-color-adjust: none; background: CanvasText; }
+    .jellyseerr-sort-menu .jellyseerr-menu-group[data-set] .jellyseerr-menu-group-value { forced-color-adjust: none; color: LinkText; }
+    .jellyseerr-menu-match-btn[aria-checked="true"] { outline: 2px solid Highlight; outline-offset: -2px; }
+    .jellyseerr-menu-match-btn:focus-visible { outline: 3px solid CanvasText; outline-offset: 1px; }
+}
+/* On a TV the half the remote is on is the inverted pill the Filters button uses; the half in use keeps its ring. */
+.layout-tv .jellyseerr-menu-match-btn:focus { outline: none; background: var(--jf-palette-text-primary, #fff); color: var(--jellyseerr-menu-ground, #101010); }
+/* Under the remote, the half in use keeps its mark: an accent ring outside the pill. */
+.layout-tv .jellyseerr-menu-match-btn[aria-checked="true"]:focus { box-shadow: 0 0 0 3px var(--jellyseerr-accent); }
+/* An open group's list sits in from its row on a TV too. */
+.layout-tv .jellyseerr-sort-menu .jellyseerr-menu-choices > .actionSheetMenuItem,
+.layout-tv .jellyseerr-sort-menu .jellyseerr-menu-choices .jellyseerr-menu-list > .actionSheetMenuItem { padding-inline-start: 3.5em; }
+.layout-tv .jellyseerr-menu-match { font-size: 1rem; }
+.layout-tv .jellyseerr-menu-match-btn { padding: .45em 1.1em; }
+/* On a touch screen, as wide as the search field above it and a finger's height. */
+@media (pointer: coarse), (max-width: 600px) {
+    html:not(.layout-tv) .jellyseerr-menu-match-track { display: grid; grid-template-columns: 1fr 1fr; flex: 1 1 12em; }
+    html:not(.layout-tv) .jellyseerr-menu-match-btn { flex: 1 1 0; min-height: 44px; }
+}
+/* Saved filters: each profile a row with its delete button at the end; the form a field and Save. */
+.jellyseerr-menu-profile-row { display: flex; align-items: center; }
+.jellyseerr-menu-profile-row > .actionSheetMenuItem { flex: 1 1 auto; min-width: 0; }
+.jellyseerr-menu-profile-delete { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; margin-inline-end: 2.5px; border: 0; border-radius: 50%; background: none; color: var(--jellyseerr-quiet, var(--jf-palette-text-secondary, rgba(255,255,255,.7))); cursor: pointer; }
+.jellyseerr-menu-profile-delete:hover, .jellyseerr-menu-profile-delete:focus-visible { background: var(--jf-palette-action-hover, rgba(255,255,255,.08)); color: var(--jf-palette-text-primary, #fff); outline: none; }
+/* The keys on it: ringed as the all / any choice is. */
+html:not(.layout-tv) .jellyseerr-menu-profile-delete:focus-visible { outline: 2px solid var(--jf-palette-text-primary, #fff); outline-offset: -2px; }
+@media (forced-colors: active) { .jellyseerr-menu-profile-delete:focus-visible { outline: 3px solid CanvasText; } }
+/* Saved filters stand apart from the filters under them: a quiet line between, open or not. */
+.jellyseerr-menu-groupbox[data-group="profiles"]:not([data-open]) + .jellyseerr-menu-groupbox > .jellyseerr-menu-group { border-top: 1px solid var(--jf-palette-divider, rgba(255,255,255,.12)); }
+.layout-tv .jellyseerr-menu-profile-delete:focus { background: var(--jf-palette-text-primary, #fff); color: var(--jellyseerr-menu-ground, #101010); }
+.jellyseerr-menu-profile-save { flex: none; align-self: stretch; height: auto; min-height: 0; margin: 0; padding: 0 1em; }
+/* A profile not in use keeps no room for the tick it does not show (on a TV the tick is the row's first column: kept). */
+html:not(.layout-tv) .jellyseerr-menu-profile .actionsheetMenuItemIcon { display: none !important; }
+html:not(.layout-tv) .jellyseerr-menu-profile[aria-current] .actionSheetItemText { color: var(--jellyseerr-accent); font-weight: 500; }
+/* (Hung into the row's inset, so the name stays on the column the others and its summary share.) */
+/* (Its name is a flex line: the check centred on it.) */
+.jellyseerr-menu-profile-mark { font-size: 1em; align-self: center; width: 1em; margin-inline: -1.21em .21em; }
+html .jellyseerr-sort-menu .jellyseerr-menu-group[data-toggle="profiles"][data-set] { align-items: flex-start; }
+html .jellyseerr-sort-menu .jellyseerr-menu-profile[aria-current] .actionsheetListItemBody,
+html .jellyseerr-sort-menu .jellyseerr-menu-profile[aria-current] .actionSheetItemText { overflow: visible; }
+.layout-tv .jellyseerr-menu-profile-mark { display: none; }
+@media (forced-colors: active) {
+    html:not(.layout-tv) .jellyseerr-menu-profile[aria-current] .actionSheetItemText { forced-color-adjust: none; color: LinkText; }
+    html .jellyseerr-sort-menu .jellyseerr-menu-profile-save { border: 1px solid ButtonBorder; }
+    html .jellyseerr-sort-menu .jellyseerr-menu-profile-save:disabled { opacity: 1; color: GrayText; border-color: GrayText; }
+}
+.jellyseerr-menu-profile-save:disabled { opacity: .45; cursor: default; box-shadow: none; }
+@media (pointer: coarse) { .jellyseerr-menu-profile-undo::after { content: ''; position: absolute; inset: -12px -8px; } }
+html .jellyseerr-sort-menu .jellyseerr-menu-profile-says { font-size: .85em; line-height: 1.4; white-space: normal; overflow-wrap: anywhere; color: var(--jellyseerr-quiet, rgba(255,255,255,.7)) !important; opacity: 1; }
+.jellyseerr-menu-profile-part { display: inline-block; max-width: 100%; }
+.jellyseerr-menu-profile-undo { position: relative; font: inherit; margin: 0 -.2em; padding: .1em .2em; border: 0; border-radius: 4px; background: none; color: var(--jellyseerr-accent); text-decoration: underline; cursor: pointer; }
+.jellyseerr-menu-profile-undo:focus-visible { outline: 2px solid var(--jf-palette-text-primary, #fff); outline-offset: 1px; }
+.layout-tv .jellyseerr-menu-profile-undo:focus { outline: none; background: var(--jf-palette-text-primary, #fff); color: var(--jellyseerr-menu-ground, #101010); text-decoration: none; }
+.jellyseerr-filters-run { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .15em .4em; max-width: 100%; }
+.jellyseerr-filters-token > .jellyseerr-filters-join { flex: none; overflow: visible; margin-inline-end: .35em; color: var(--jf-palette-text-secondary, rgba(255,255,255,.7)); }
+/* An open group's row reads as the heading of what is under it; a long value is cut with an ellipsis. */
+.jellyseerr-menu-group[aria-expanded="true"] .actionSheetItemText { font-weight: 500; }
+.jellyseerr-menu-group-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* (The saved set in use is named whole: its name takes a second line on its row rather than being cut.) */
+html .jellyseerr-sort-menu .jellyseerr-menu-group[data-toggle="profiles"][data-set] .jellyseerr-menu-group-value { white-space: normal; text-align: end; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+/* A value said short to the eye is said whole to a screen reader. */
+.jellyseerr-menu-whole { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+/* Why the page's own genre is ticked and can't be unticked, under its name. */
+.jellyseerr-sort-menu .jellyseerr-menu-given { font-size: .85em; white-space: normal; color: inherit; opacity: 1; }
+html .jellyseerr-sort-menu .jellyseerr-menu-elsewhere { color: var(--jellyseerr-quiet, rgba(255,255,255,.7)); }
+html .jellyseerr-sort-menu .jellyseerr-menu-tick[aria-disabled="true"] .actionSheetItemText,
+html .jellyseerr-sort-menu .jellyseerr-menu-tick[aria-disabled="true"] .jellyseerr-menu-given { color: inherit !important; opacity: 1 !important; }
+/* The foot's line when nothing matches: over "Clear filters", the way out. */
+.jellyseerr-sort-menu .jellyseerr-menu-outcome { flex: 0 0 calc(100% - 16px); box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; gap: .75em; margin: 8px 8px 4px; padding: 8px 6px 8px calc(var(--jellyseerr-menu-text, 16px) - 8px); border-radius: 8px; color: var(--jf-palette-text-primary, #fff); background: rgba(0,164,220,.14); background: color-mix(in srgb, var(--jellyseerr-accent, #00a4dc) 16%, transparent); }
+.jellyseerr-sort-menu .jellyseerr-menu-outcome[hidden] { display: none; }
+/* (Undo right after its sentence, as a deleted set's is: the band's words run on, and wrap as words do.) */
+.jellyseerr-sort-menu .jellyseerr-menu-outcome { display: block; line-height: 1.6; }
+.jellyseerr-menu-outcome > span, .jellyseerr-menu-profile-said { margin-inline-end: .35em; }
+.jellyseerr-menu-outcome-undo { display: inline-block; position: relative; margin: 3px -.2em 0; font: inherit; padding: .1em .2em; border: 0; border-radius: 6px; background: none; color: var(--jellyseerr-accent); text-decoration: underline; cursor: pointer; }
+.jellyseerr-menu-outcome-undo:focus-visible { outline: 2px solid var(--jf-palette-text-primary, #fff); outline-offset: 0; border-radius: 3px; }
+.layout-tv .jellyseerr-menu-outcome-undo:focus { outline: none; background: var(--jf-palette-text-primary, #fff); color: var(--jellyseerr-menu-ground, #101010); text-decoration: none; }
+/* (On touch, a 44px target reaching past the band's words without making the band taller.) */
+@media (pointer: coarse) { .jellyseerr-menu-outcome-undo::after { content: ''; position: absolute; inset: -12px -8px; } }
+@media (forced-colors: active) { .jellyseerr-sort-menu .jellyseerr-menu-outcome { border: 1px solid CanvasText; } }
+/* TV: the band's words and a set's summary at the rows' size (read from across the room); Undo a pill the remote lands on. */
+.layout-tv .jellyseerr-sort-menu .jellyseerr-menu-outcome { font-size: 1.1rem; padding-block: .5em; }
+.layout-tv .jellyseerr-menu-outcome-undo { display: block; width: fit-content; padding: .3em .6em; margin: .2em 0 0 -.6em; border-radius: 999px; }
+[dir="rtl"] .layout-tv .jellyseerr-menu-outcome-undo, .layout-tv [dir="rtl"] .jellyseerr-menu-outcome-undo { margin: .2em -.6em 0 0; }
+html.layout-tv .jellyseerr-sort-menu .jellyseerr-menu-profile-says { font-size: 1rem; }
+/* TV: hints, notes and the given genre's words near the rows' size; the bin as large as the rows' icons. */
+html.layout-tv .jellyseerr-sort-menu .jellyseerr-menu-note, html.layout-tv .jellyseerr-sort-menu .jellyseerr-menu-given { font-size: .95em; }
+.jellyseerr-menu-profile-delete { font: inherit; }
+.layout-tv .jellyseerr-menu-profile-delete .material-icons { font-size: 1.5em; }
+.layout-tv .jellyseerr-menu-profile-delete { margin-inline-end: 12px; }
 /* What a search has narrowed away is gone (a row's own display would otherwise keep it). */
 .jellyseerr-sort-menu .actionSheetMenuItem[hidden], .jellyseerr-menu-note[hidden], .jellyseerr-menu-label[hidden] { display: none !important; }
 .jellyseerr-menu-label { padding: 8px 16px 2px 32px; font-size: .86em; }
 .jellyseerr-menu-list:empty { display: none; }
 /* (A phone's browser zooms into a field whose type is under 16px.) */
 @media (max-width: 600px) { .jellyseerr-menu-input { font-size: max(1em, 16px); min-height: 44px; } }
+@media (max-width: 600px) { html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-note, html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-profile-says, html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-bound { font-size: .92em; } }
+@supports (color: color-mix(in srgb, red, blue)) { .layout-tv .jellyseerr-sort-menu { --jellyseerr-quiet: color-mix(in srgb, currentColor 82%, transparent); } }
 .jellyseerr-menu-group .listItemBody { display: flex; flex-direction: row; align-items: baseline; justify-content: space-between; gap: 1.5em; }
-.jellyseerr-menu-group .actionSheetItemText { flex: 0 1 auto; }
-.jellyseerr-menu-group-value { color: var(--jf-palette-text-secondary, rgba(255,255,255,.7)); white-space: nowrap; }
+/* The filter's name is never cut: a long value gives way, with an ellipsis. */
+html .jellyseerr-sort-menu .jellyseerr-menu-group .actionSheetItemText { flex: 0 0 auto; }
+html .jellyseerr-sort-menu .jellyseerr-menu-group .jellyseerr-menu-group-value { flex: 0 1 auto; min-width: 0; }
+.jellyseerr-menu-group-value { color: var(--jellyseerr-quiet, var(--jf-palette-text-secondary, rgba(255,255,255,.7))); white-space: nowrap; }
 .jellyseerr-menu-group[data-set] .jellyseerr-menu-group-value { color: var(--jellyseerr-accent); }
 .jellyseerr-menu-group .actionsheetMenuItemIcon { transition: transform .15s; }
 .jellyseerr-menu-group[aria-expanded="true"] .actionsheetMenuItemIcon { transform: rotate(180deg); }
@@ -642,19 +1204,21 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-group .actionsheetMe
 html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-choices .actionSheetMenuItem { padding-inline-start: 32px; }
 /* "Clear filters" is the menu's foot, always in reach; at full strength only while something is set. */
 html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-foot { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--jf-palette-divider, rgba(255,255,255,.12)); }
-html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-foot { display: flex; }
+html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-foot { display: flex; flex-wrap: wrap; }
 html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-foot > .actionSheetMenuItem { width: auto; }
 html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 auto; }
 /* On a touch screen the menu can fill the screen: its foot then ends with the way out, said (nothing waits for it; what is set has taken effect). */
 .jellyseerr-sort-menu .jellyseerr-menu-done { display: none !important; flex: none; }
 .jellyseerr-sort-menu .jellyseerr-menu-done .actionsheetMenuItemIcon { display: none; }
+/* On a touch screen "Done" is the way back to the list: the foot's main action, "Clear filters" the quiet one. */
+.jellyseerr-sort-menu .jellyseerr-menu-done .actionSheetItemText { font-weight: 500; color: var(--jellyseerr-accent); }
 @media (pointer: coarse) { html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-done { display: flex !important; } }
 `;
 
   // client/src/features/seerr/discovery/filter-data.ts
   var FILTERS_API = "/JellyfinEnhanced/jellyseerr/filters";
-  var isRecord2 = (value) => typeof value === "object" && value !== null;
-  var rowsOf = (value) => (Array.isArray(value) ? value : []).filter(isRecord2);
+  var isRecord3 = (value) => typeof value === "object" && value !== null;
+  var rowsOf = (value) => (Array.isArray(value) ? value : []).filter(isRecord3);
   var byName = (a, b) => a.name.localeCompare(b.name);
   function createFilterData({ region, fetch, fetchGenres }) {
     let genres = null;
@@ -711,7 +1275,7 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
       const lists = [];
       for (const kind of ["movie", "tv"]) {
         const body = await fetch(`${FILTERS_API}/certifications/${kind}`);
-        const all = isRecord2(body) && isRecord2(body.certifications) ? body.certifications : {};
+        const all = isRecord3(body) && isRecord3(body.certifications) ? body.certifications : {};
         const country = rowsOf(all[region]).length > 0 ? region : "US";
         const own = rowsOf(all[country]).filter((row) => typeof row.certification === "string" && row.certification !== "").sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0)).map((row) => ({ id: `${kind}:${country}:${String(row.certification)}`, name: String(row.certification) }));
         if (own.length > 0) lists.push({ kind, ratings: own });
@@ -745,138 +1309,9 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
       /** The keywords TMDB has for what is typed; `signal` ends the request when a newer search starts. */
       async searchKeywords(query, signal) {
         const body = await fetch(`/JellyfinEnhanced/tmdb/search/keyword?query=${encodeURIComponent(query)}`, { signal });
-        return rowsOf(isRecord2(body) ? body.results : null).filter((row) => typeof row.name === "string" && /^\d+$/.test(String(row.id ?? ""))).map((row) => ({ id: String(row.id), name: String(row.name) }));
+        return rowsOf(isRecord3(body) ? body.results : null).filter((row) => typeof row.name === "string" && /^\d+$/.test(String(row.id ?? ""))).map((row) => ({ id: String(row.id), name: String(row.name) }));
       }
     };
-  }
-
-  // client/src/features/seerr/discovery/filters.ts
-  var FEED_FILTERS = ["year", "score", "votes", "runtime", "genres", "language", "rating", "services", "keywords", "without"];
-  var PERSON_FILTERS = ["role", "year", "score", "votes", "genres", "language"];
-  var FILTER_SWITCHES = Object.freeze({
-    role: "JellyseerrFilterRole",
-    year: "JellyseerrFilterYear",
-    score: "JellyseerrFilterScore",
-    votes: "JellyseerrFilterVotes",
-    runtime: "JellyseerrFilterRuntime",
-    genres: "JellyseerrFilterGenres",
-    language: "JellyseerrFilterLanguage",
-    rating: "JellyseerrFilterContentRating",
-    services: "JellyseerrFilterStreaming",
-    keywords: "JellyseerrFilterKeywords",
-    without: "JellyseerrFilterKeywords"
-  });
-  var RANGE_IDS = ["year", "score", "votes", "runtime"];
-  var LIST_IDS = ["role", "genres", "language", "rating", "services", "keywords", "without"];
-  var RANGE_PARAMS = Object.freeze({ score: "voteAverage", votes: "voteCount", runtime: "withRuntime" });
-  var isRecord3 = (value) => typeof value === "object" && value !== null;
-  var isRangeId = (id) => id === "year" || id === "score" || id === "votes" || id === "runtime";
-  function offeredFilters(scope, config) {
-    const switches = isRecord3(config) ? config : null;
-    return (scope === "person" ? PERSON_FILTERS : FEED_FILTERS).filter((id) => switches?.[FILTER_SWITCHES[id]] !== false);
-  }
-  var isRangeSet = (range) => !!range && (range[0] !== "" || range[1] !== "");
-  function activeFilterCount(selection) {
-    const chosen = selection || {};
-    return RANGE_IDS.map((id) => chosen[id]).filter(isRangeSet).length + LIST_IDS.map((id) => chosen[id]).filter((list) => !!list && list.length > 0).length;
-  }
-  function dayOf(text, last) {
-    const typed = String(text ?? "").trim();
-    if (/^\d{4}$/.test(typed)) return `${typed}-${last ? "12-31" : "01-01"}`;
-    const month = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(typed);
-    if (month) return `${typed}-${last ? String(new Date(Date.UTC(Number(month[1]), Number(month[2]), 0)).getUTCDate()).padStart(2, "0") : "01"}`;
-    return /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(typed) ? typed : null;
-  }
-  function numberOf(id, text) {
-    const typed = String(text ?? "").trim().replace(",", ".");
-    if (id === "score") {
-      const score = /^\d{1,2}(\.\d)?$/.test(typed) ? Number(typed) : NaN;
-      return score >= 0 && score <= 10 ? score : null;
-    }
-    return /^\d{1,7}$/.test(typed) ? Number(typed) : null;
-  }
-  function isBound(id, text, upper) {
-    return String(text ?? "").trim() === "" || (id === "year" ? dayOf(text, upper) !== null : numberOf(id, text) !== null);
-  }
-  function isReversed(id, range) {
-    const [from, to] = range;
-    if (from.trim() === "" || to.trim() === "") return false;
-    if (id === "year") {
-      const first = dayOf(from, false);
-      const last = dayOf(to, true);
-      return first !== null && last !== null && first > last;
-    }
-    const low = numberOf(id, from);
-    const high = numberOf(id, to);
-    return low !== null && high !== null && low > high;
-  }
-  var genreIdFor = (genre, kind) => genre.id.split("/")[kind === "movie" ? 0 : 1] ?? "";
-  function feedFilterQuery(selection, kind, region) {
-    const chosen = selection || {};
-    const pairs = [];
-    const date = kind === "tv" ? "firstAirDate" : "primaryReleaseDate";
-    const genres = (chosen.genres ?? []).map((genre) => genreIdFor(genre, kind));
-    if (genres.includes("")) return `&${date}Lte=1800-01-01`;
-    const from = chosen.year ? dayOf(chosen.year[0], false) : null;
-    const to = chosen.year ? dayOf(chosen.year[1], true) : null;
-    if (from) pairs.push([`${date}Gte`, from]);
-    if (to) pairs.push([`${date}Lte`, to]);
-    for (const id of ["score", "votes", "runtime"]) {
-      const range = chosen[id];
-      const low = range ? numberOf(id, range[0]) : null;
-      const high = range ? numberOf(id, range[1]) : null;
-      if (low !== null) pairs.push([`${RANGE_PARAMS[id]}Gte`, String(low)]);
-      if (high !== null) pairs.push([`${RANGE_PARAMS[id]}Lte`, String(high)]);
-    }
-    if (genres.length > 0) pairs.push(["genre", genres.join(",")]);
-    if (chosen.language?.length) pairs.push(["language", chosen.language.map((language) => language.id).join("|")]);
-    const ratings = (chosen.rating ?? []).map((rating) => rating.id.split(":")).filter((parts) => parts[0] === kind && parts.length === 3);
-    if (chosen.rating?.length && ratings.length === 0) return `&${date}Lte=1800-01-01`;
-    if (ratings.length > 0) {
-      pairs.push(["certification", ratings.map((parts) => parts[2] ?? "").join("|")], ["certificationCountry", ratings[0]?.[1] ?? "US"]);
-    }
-    if (chosen.services?.length) pairs.push(["watchProviders", chosen.services.map((service) => service.id).join("|")], ["watchRegion", region]);
-    if (chosen.keywords?.length) pairs.push(["keywords", chosen.keywords.map((keyword) => keyword.id).join(",")]);
-    if (chosen.without?.length) pairs.push(["excludeKeywords", chosen.without.map((keyword) => keyword.id).join(",")]);
-    return pairs.map(([name, value]) => `&${name}=${encodeURIComponent(value)}`).join("");
-  }
-  function keepByFilters(results, selection) {
-    const chosen = selection || {};
-    if (activeFilterCount(chosen) === 0) return results;
-    const from = chosen.year ? dayOf(chosen.year[0], false) : null;
-    const to = chosen.year ? dayOf(chosen.year[1], true) : null;
-    const bounds = ["score", "votes"].map((id) => {
-      const range = chosen[id];
-      return [id, range ? numberOf(id, range[0]) : null, range ? numberOf(id, range[1]) : null];
-    });
-    const languages = new Set((chosen.language ?? []).map((language) => language.id));
-    return results.filter((item) => {
-      if (chosen.role?.length && !chosen.role.some((role) => role.id === "cast" ? item.jeCredit?.acted === true : item.jeCredit?.departments?.includes(role.id) === true)) return false;
-      if (from || to) {
-        const date = (typeof item.releaseDate === "string" && item.releaseDate ? item.releaseDate : typeof item.firstAirDate === "string" ? item.firstAirDate : "").slice(0, 10);
-        if (!date || from && date < from || to && date > to) return false;
-      }
-      for (const [id, low, high] of bounds) {
-        const value = Number(id === "score" ? item.voteAverage : item.voteCount) || 0;
-        if (low !== null && value < low || high !== null && value > high) return false;
-      }
-      if (chosen.genres?.length) {
-        const own = Array.isArray(item.genreIds) ? item.genreIds.map(String) : [];
-        const kind = item.mediaType === "tv" ? "tv" : "movie";
-        if (!chosen.genres.every((genre) => own.includes(genreIdFor(genre, kind)) && genreIdFor(genre, kind) !== "")) return false;
-      }
-      return languages.size === 0 || typeof item.originalLanguage === "string" && languages.has(item.originalLanguage);
-    });
-  }
-  function rolesOf(results, actingName, nameOf) {
-    const counts = /* @__PURE__ */ new Map();
-    let acted = 0;
-    for (const item of results || []) {
-      if (item.jeCredit?.acted) acted++;
-      for (const department of item.jeCredit?.departments ?? []) counts.set(department, (counts.get(department) ?? 0) + 1);
-    }
-    const crew = Array.from(counts).sort((a, b) => Number(a[0] === "Crew") - Number(b[0] === "Crew") || b[1] - a[1] || a[0].localeCompare(b[0])).map(([id]) => ({ id, name: nameOf(id) }));
-    return acted > 0 ? [{ id: "cast", name: actingName }, ...crew] : crew;
   }
 
   // client/src/features/seerr/discovery/filter-groups.ts
@@ -896,24 +1331,40 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
     rating: ["discovery_filter_rating", "Content rating"],
     services: ["discovery_filter_services", "Streaming services"],
     keywords: ["discovery_filter_keywords", "Keywords"],
-    without: ["discovery_filter_without", "Without keywords"]
+    without: ["discovery_filter_without", "Without keywords"],
+    withoutGenres: ["discovery_filter_without_genres", "Without genres"],
+    withoutLanguage: ["discovery_filter_without_language", "Without language"]
   });
   var HINTS = Object.freeze({
     // (The example dates are written with the hyphen and the space that do not break, so a date is never split, nor left alone on a line.)
     year: ["discovery_filter_year_hint", "A year, a month (2015‑06) or a day (2015‑06‑30).", "discovery_filter_year_error", "Type a year (2015), a month (2015‑06) or a day (2015‑06‑30)."],
-    score: ["discovery_filter_score_hint", "From 0 to 10; one decimal, such as 7.5.", "discovery_filter_score_error", "Type a score from 0 to 10, such as 7.5."],
+    score: ["discovery_filter_score_range_hint", "0 to 10, one decimal at most (7.5).", "discovery_filter_score_error", "Type a score from 0 to 10, such as 7.5."],
     votes: ["discovery_filter_votes_hint", "How many people have scored it: a whole number.", "discovery_filter_number_error", "Type a whole number, such as 500."],
     runtime: ["discovery_filter_runtime_hint", "In whole minutes.", "discovery_filter_number_error", "Type a whole number, such as 500."]
   });
   var RULES = Object.freeze({
-    role: ["discovery_filter_rule_any", "Titles with any of the ones ticked."],
-    genres: ["discovery_filter_rule_all", "Titles with all of the ones ticked."],
-    language: ["discovery_filter_rule_any", "Titles with any of the ones ticked."],
-    rating: ["discovery_filter_rule_any", "Titles with any of the ones ticked."],
-    services: ["discovery_filter_rule_any", "Titles with any of the ones ticked."],
-    keywords: ["discovery_filter_rule_all", "Titles with all of the ones ticked."],
-    without: ["discovery_filter_rule_none", "Titles with none of the ones ticked."]
+    role: ["discovery_filter_rule_role", "Any of the roles ticked."],
+    genres: ["discovery_filter_rule_genres", "All of the genres ticked."],
+    language: ["discovery_filter_rule_language", "Any of the languages ticked."],
+    rating: ["discovery_filter_rule_rating", "Any of the ratings ticked."],
+    services: ["discovery_filter_rule_services", "Any of the services ticked."],
+    keywords: ["discovery_filter_rule_keywords", "All of the keywords ticked."],
+    without: ["discovery_filter_rule_without", "None of the keywords ticked."],
+    withoutGenres: ["discovery_filter_rule_without_genres", "None of the genres ticked."],
+    withoutLanguage: ["discovery_filter_rule_without_language", "None of the languages ticked."]
   });
+  var ANY_OF = /* @__PURE__ */ new Set(["role", "language", "rating"]);
+  var NONE_OF = /* @__PURE__ */ new Set(["without", "withoutGenres", "withoutLanguage"]);
+  var PARTNERS = Object.freeze({
+    genres: "withoutGenres",
+    withoutGenres: "genres",
+    language: "withoutLanguage",
+    withoutLanguage: "language",
+    keywords: "without",
+    without: "keywords"
+  });
+  var isMatchId = (id) => Object.prototype.hasOwnProperty.call(MATCH_DEFAULTS, id);
+  var listRule = (selection, id) => isMatchId(id) ? matchOf(selection, id) : ANY_OF.has(id) ? "any" : NONE_OF.has(id) ? "none" : "";
   function usable(id, range) {
     return !range ? ["", ""] : isReversed(id, range) ? [range[1].trim(), range[0].trim()] : [isBound(id, range[0], false) ? range[0].trim() : "", isBound(id, range[1], true) ? range[1].trim() : ""];
   }
@@ -927,7 +1378,7 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
   }
   var without = (selection, id) => ({ ...selection, [id]: void 0 });
   var withList = (selection, id, list) => ({ ...selection, [id]: list.length > 0 ? list : void 0 });
-  function filterTokens({ offered, label: say, locale, selection }) {
+  function filterTokens({ offered, label: say, locale, selection, ownGenre }) {
     const tokens = [];
     for (const id of offered) {
       if (isRangeId(id)) {
@@ -939,10 +1390,22 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
         tokens.push({ words, without: (now) => without(now, id) });
         continue;
       }
-      for (const item of selection[id] ?? []) {
+      const rule = listRule(selection, id);
+      const own = id === "genres" ? ownGenre?.trim().toLocaleLowerCase() ?? "" : "";
+      const isOwn = (item) => own !== "" && item.name.toLocaleLowerCase() === own;
+      const items = (selection[id] ?? []).filter((item) => !isOwn(item));
+      const alone = (item) => id === "without" ? say("discovery_filter_set_without", "Without {name}", { name: item.name }) : id === "withoutGenres" ? say("discovery_filter_set_not", "Not {name}", { name: item.name }) : id === "withoutLanguage" ? say("discovery_filter_set_not_language", "Not originally in {name}", { name: item.name }) : id === "keywords" ? say("discovery_filter_set_with", "With {name}", { name: item.name }) : id === "language" ? say("discovery_filter_set_language", "Originally in {name}", { name: item.name }) : id === "services" ? say("discovery_filter_set_on", "On {name}", { name: item.name }) : item.name;
+      const more = (item) => id === "without" ? say("discovery_filter_set_without_more", "without {name}", { name: item.name }) : id === "withoutLanguage" ? say("discovery_filter_set_not_language_more", "not originally in {name}", { name: item.name }) : say("discovery_filter_set_not_more", "not {name}", { name: item.name });
+      for (const [index, item] of items.entries()) {
+        const join = rule !== "" && index > 0 ? rule === "any" ? "or" : "and" : void 0;
         tokens.push({
-          // A keyword and a language need a word to be read on their own ("With robot", "Originally in Japanese"); a genre, a rating, a service and a role say what they are.
-          words: id === "without" ? say("discovery_filter_set_without", "Without {name}", { name: item.name }) : id === "keywords" ? say("discovery_filter_set_with", "With {name}", { name: item.name }) : id === "language" ? say("discovery_filter_set_language", "Originally in {name}", { name: item.name }) : item.name,
+          join,
+          or: join === "or",
+          list: id,
+          // (After the word joining it to the one before, its own name is enough: "With bear or dragon". `alone`:
+          // as it is said by itself, for what names one piece: Undo.)
+          words: !join ? alone(item) : rule === "none" ? more(item) : item.name,
+          alone: alone(item),
           without: (now) => withList(now, id, (now[id] ?? []).filter((entry) => entry.id !== item.id))
         });
       }
@@ -952,7 +1415,8 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
   function filterMenuGroups(JE, options) {
     const { label: say, data, locale } = options;
     const any = say("discovery_filter_any", "Any");
-    const nameOf = (id) => say(NAMES[id][0], NAMES[id][1]);
+    const anyOf = (id) => NONE_OF.has(id) ? say("discovery_filter_none", "None") : any;
+    const nameOf2 = (id) => say(NAMES[id][0], NAMES[id][1]);
     const menuRow2 = (name, iconName, iconHidden) => {
       const menu = JE.discoveryMenu;
       if (!menu) throw new Error("Discovery menu is not loaded");
@@ -991,16 +1455,20 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
       const set = usable(id, options.selection()[id]);
       return {
         id,
-        name: nameOf(id),
+        name: nameOf2(id),
         any,
         set: set[0] !== "" || set[1] !== "",
         value: sayRange(id, set),
+        describe() {
+          const now = usable(id, options.selection()[id]);
+          return { value: sayRange(id, now), set: now[0] !== "" || now[1] !== "" };
+        },
         build(host, handle) {
           const row = document.createElement("div");
           row.className = "jellyseerr-menu-range";
           const mode = id === "score" ? "decimal" : "numeric";
-          const from = field(nameOf(id), say("discovery_filter_from", "From"), mode);
-          const to = field(nameOf(id), say("discovery_filter_to", "To"), mode);
+          const from = field(nameOf2(id), say("discovery_filter_from", "From"), mode);
+          const to = field(nameOf2(id), say("discovery_filter_to", "To"), mode);
           const now = options.selection()[id];
           from.value = now?.[0] ?? "";
           to.value = now?.[1] ?? "";
@@ -1008,6 +1476,23 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
           dash.setAttribute("aria-hidden", "true");
           dash.textContent = "–";
           row.append(from, dash, to);
+          const labels = document.createElement("div");
+          labels.className = "jellyseerr-menu-range jellyseerr-menu-range-labels";
+          const spacer = document.createElement("span");
+          spacer.className = "jellyseerr-menu-range-spacer";
+          spacer.setAttribute("aria-hidden", "true");
+          spacer.textContent = "–";
+          const labelFor = (input, words) => {
+            input.id = `jellyseerr-menu-bound-${++hints}`;
+            input.placeholder = "";
+            const text = document.createElement("label");
+            text.className = "jellyseerr-menu-bound";
+            text.htmlFor = input.id;
+            text.textContent = words;
+            return text;
+          };
+          labels.append(labelFor(from, say("discovery_filter_from", "From")), spacer, labelFor(to, say("discovery_filter_to", "To")));
+          host.appendChild(labels);
           const [hintKey, hintWords, errorKey, errorWords] = HINTS[id];
           const hint = note(say(hintKey, hintWords));
           hint.id = `jellyseerr-menu-hint-${++hints}`;
@@ -1032,10 +1517,17 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
             handle.say(isSet ? sayRange(id, next) : "", isSet);
             options.change({ ...options.selection(), [id]: isSet ? next : void 0 });
           };
+          const pageNow = () => {
+            const hash = window.location.hash;
+            return `${JE.discoveryAddress?.withoutOwn?.(hash) ?? hash}|${JE.discoveryAddress?.categoryOfHash?.(hash) ?? ""}`;
+          };
           for (const input of [from, to]) {
             input.addEventListener("input", () => {
               window.clearTimeout(timer);
-              timer = window.setTimeout(take, TYPING_MS);
+              const page = pageNow();
+              timer = window.setTimeout(() => {
+                if (pageNow() === page) take();
+              }, TYPING_MS);
             });
             input.addEventListener("change", take);
             input.addEventListener("keydown", (event) => {
@@ -1048,9 +1540,110 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
         }
       };
     }
-    const sayList = (picked) => picked.length <= 2 ? picked.map((item) => item.name).join(", ") : say("discovery_filter_count", "{count} chosen", { count: picked.length });
+    const othersOf = (ticked, id) => {
+      const own = id === "genres" ? options.ownGenre?.trim().toLocaleLowerCase() ?? "" : "";
+      return own && ticked.length > 1 ? ticked.filter((item) => item.name.toLocaleLowerCase() !== own) : ticked;
+    };
+    const sayList = (ticked, id) => {
+      const picked = othersOf(ticked, id);
+      const rule = listRule(options.selection(), id);
+      if (picked.length >= 2 && rule !== "") {
+        const anyRule = rule !== "all";
+        const names = picked.map((item) => item.name);
+        let joined = null;
+        try {
+          joined = new Intl.ListFormat(locale || "en", { style: "long", type: anyRule ? "disjunction" : "conjunction" }).format(names);
+        } catch {
+          joined = null;
+        }
+        if (joined) return joined;
+        if (picked.length > 2 && rule === "none") return say("discovery_filter_none_of", "None of {count}", { count: picked.length });
+        if (picked.length > 2) return anyRule ? say("discovery_filter_any_of", "Any of {count}", { count: picked.length }) : say("discovery_filter_all_of", "All of {count}", { count: picked.length });
+        const two = { first: names[0] ?? "", second: names[1] ?? "" };
+        return anyRule ? say("discovery_filter_either", "{first} or {second}", two) : say("discovery_filter_both", "{first} and {second}", two);
+      }
+      return picked.map((item) => item.name).join(", ");
+    };
+    const shortList = (ticked, id) => {
+      const picked = othersOf(ticked, id);
+      if (picked.length < 2) return void 0;
+      const rule = listRule(options.selection(), id);
+      if (rule === "") return say("discovery_filter_count", "{count} chosen", { count: picked.length });
+      if (rule === "none") return say("discovery_filter_none_of", "None of {count}", { count: picked.length });
+      return rule === "any" ? say("discovery_filter_any_of", "Any of {count}", { count: picked.length }) : say("discovery_filter_all_of", "All of {count}", { count: picked.length });
+    };
     const pickedOf = (id) => options.selection()[id] ?? [];
-    const ruleOf = (id) => note(say(RULES[id][0], RULES[id][1]));
+    const searchWord = (id) => id === "genres" || id === "withoutGenres" ? say("discovery_filter_search_genres", "Search genres") : id === "services" ? say("discovery_filter_search_services", "Search services") : id === "language" || id === "withoutLanguage" ? say("discovery_filter_search_languages", "Search languages") : say("discovery_filter_search", "Search");
+    const matchable = (id) => isMatchId(id) && !(options.fixedAll ?? []).includes(id);
+    const matchLines = /* @__PURE__ */ new Map();
+    const markIdle = (id, ticked) => {
+      const own = id === "genres" ? options.ownGenre?.trim().toLocaleLowerCase() ?? "" : "";
+      const count = own ? ticked.filter((item) => item.name.toLocaleLowerCase() !== own).length : ticked.length;
+      matchLines.get(id)?.toggleAttribute("data-idle", count < 2);
+    };
+    const ruleOf = (id, handle) => {
+      if (!matchable(id)) return note(say(RULES[id][0], RULES[id][1]));
+      const line = document.createElement("div");
+      line.className = "jellyseerr-menu-note jellyseerr-menu-match";
+      const lead = document.createElement("span");
+      lead.className = "jellyseerr-menu-match-lead";
+      lead.setAttribute("aria-hidden", "true");
+      lead.textContent = id === "genres" && options.ownGenre ? say("discovery_filter_match_given", "Titles in {genre} and", { genre: options.ownGenre }) : id === "services" ? say("discovery_filter_match_on", "Titles on") : say("discovery_filter_match", "Titles with");
+      const track = document.createElement("div");
+      track.className = "jellyseerr-menu-match-track";
+      track.setAttribute("role", "radiogroup");
+      track.setAttribute("aria-label", say("discovery_filter_match_label", "{filter}: {rule}", { filter: nameOf2(id), rule: lead.textContent }));
+      line.append(lead, track);
+      const halves = [
+        ["all", say("discovery_filter_match_all", "all ticked")],
+        ["any", say("discovery_filter_match_any", "any ticked")]
+      ];
+      const buttons = halves.map(([value, words]) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "jellyseerr-menu-match-btn";
+        button.setAttribute("role", "radio");
+        button.dataset.match = value;
+        const reserve = document.createElement("span");
+        reserve.className = "jellyseerr-menu-match-reserve";
+        reserve.setAttribute("aria-hidden", "true");
+        reserve.textContent = words;
+        button.append(words, reserve);
+        button.addEventListener("click", () => {
+          const now = options.selection();
+          if (matchOf(now, id) === value) return;
+          const match = { ...now.match ?? {}, [id]: value };
+          if (value === MATCH_DEFAULTS[id]) delete match[id];
+          paint(value);
+          const picked = pickedOf(id);
+          options.change({ ...now, match: Object.keys(match).length > 0 ? match : void 0 });
+          handle?.say(sayList(picked, id), picked.length > 0, shortList(picked, id));
+        });
+        return button;
+      });
+      const paint = (value) => buttons.forEach((button) => {
+        const on = button.dataset.match === value;
+        button.setAttribute("aria-checked", String(on));
+        button.tabIndex = on ? 0 : -1;
+      });
+      paint(matchOf(options.selection(), id));
+      matchLines.set(id, line);
+      markIdle(id, pickedOf(id));
+      track.addEventListener("keydown", (event) => {
+        if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+        const focused = document.activeElement;
+        const at = focused instanceof HTMLButtonElement ? buttons.indexOf(focused) : -1;
+        const forward = event.key === "ArrowRight" !== (getComputedStyle(track).direction === "rtl");
+        const next = buttons[at + (forward ? 1 : -1)];
+        if (at < 0 || !next) return;
+        event.preventDefault();
+        event.stopPropagation();
+        next.focus({ preventScroll: true });
+        if (!document.documentElement.classList.contains("layout-tv")) next.click();
+      });
+      track.append(...buttons);
+      return line;
+    };
     function tickRow(id, item, handle, onToggle, given = false) {
       const chosenNow = given || pickedOf(id).some((entry) => entry.id === item.id);
       const box = (chosen) => chosen ? "check_box" : "check_box_outline_blank";
@@ -1058,13 +1651,25 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
       row.classList.add("jellyseerr-menu-tick");
       row.setAttribute("role", "checkbox");
       row.setAttribute("aria-checked", String(chosenNow));
+      const partner = PARTNERS[id];
+      if (!given && !chosenNow && partner && pickedOf(partner).some((entry) => entry.id === item.id)) {
+        const elsewhere = document.createElement("div");
+        elsewhere.className = "listItemBodyText secondary jellyseerr-menu-given jellyseerr-menu-elsewhere";
+        elsewhere.textContent = say("discovery_filter_ticked_under", "Ticked under {list}", { list: nameOf2(partner) });
+        row.querySelector(".actionsheetListItemBody")?.appendChild(elsewhere);
+      }
       if (given) {
         row.setAttribute("aria-disabled", "true");
+        const why = document.createElement("div");
+        why.className = "listItemBodyText secondary jellyseerr-menu-given";
+        why.textContent = say("discovery_filter_given", "Included by this page");
+        row.querySelector(".actionsheetListItemBody")?.appendChild(why);
         return row;
       }
       row.addEventListener("click", () => {
         const before = pickedOf(id);
         const chosen = !before.some((entry) => entry.id === item.id);
+        row.querySelector(".jellyseerr-menu-elsewhere")?.remove();
         const next = chosen ? [...before, item] : before.filter((entry) => entry.id !== item.id);
         row.setAttribute("aria-checked", String(chosen));
         const tick = row.querySelector(".actionsheetMenuItemIcon");
@@ -1072,8 +1677,16 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
           tick.classList.remove(box(!chosen));
           tick.classList.add(box(chosen));
         }
-        handle.say(sayList(next), next.length > 0);
-        options.change(withList(options.selection(), id, next));
+        handle.say(sayList(next, id), next.length > 0, shortList(next, id));
+        markIdle(id, next);
+        let selection = withList(options.selection(), id, next);
+        const other = partner ? pickedOf(partner) : [];
+        if (partner && chosen && other.some((entry) => entry.id === item.id)) {
+          const rest = other.filter((entry) => entry.id !== item.id);
+          selection = withList(selection, partner, rest);
+          handle.other?.(partner, sayList(rest, partner), rest.length > 0, shortList(rest, partner));
+        }
+        options.change(selection);
         onToggle?.(chosen, row);
       });
       return row;
@@ -1096,10 +1709,15 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
       const picked = pickedOf(id);
       return {
         id,
-        name: nameOf(id),
-        any,
+        name: nameOf2(id),
+        any: anyOf(id),
         set: picked.length > 0,
-        value: sayList(picked),
+        value: sayList(picked, id),
+        short: shortList(picked, id),
+        describe() {
+          const now = pickedOf(id);
+          return { value: sayList(now, id), set: now.length > 0, short: shortList(now, id) };
+        },
         build(host, handle) {
           const waiting = note(say("discovery_filter_loading", "Loading…"));
           host.appendChild(waiting);
@@ -1117,6 +1735,8 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
               rows.push({ row, name: item.name });
               list.appendChild(row);
             };
+            const listed = new Set(sections.flatMap((section) => section.items.map((item) => item.id)));
+            for (const item of pickedOf(id)) if (!listed.has(item.id)) add(item);
             const lifted = new Set(long && sections.length === 1 ? [...pickedOf(id).map((item) => item.id), ...first] : []);
             for (const section of sections) {
               if (section.label) {
@@ -1125,19 +1745,20 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
                 heading.textContent = section.label;
                 list.appendChild(heading);
               }
-              const head = section.items.filter((item) => lifted.has(item.id));
+              const head = [...lifted].map((wanted) => section.items.find((item) => item.id === wanted)).filter((item) => item !== void 0);
               for (const item of head) add(item);
               if (head.length > 0 && head.length < section.items.length) {
-                const rule = document.createElement("div");
-                rule.className = "jellyseerr-menu-list-rule";
-                rule.setAttribute("role", "separator");
-                list.appendChild(rule);
+                const rule2 = document.createElement("div");
+                rule2.className = "jellyseerr-menu-list-rule";
+                rule2.setAttribute("role", "separator");
+                list.appendChild(rule2);
               }
               for (const item of section.items) if (!lifted.has(item.id)) add(item);
             }
+            const rule = ruleOf(id, handle);
             if (long) {
               const whole = Array.from(list.children);
-              const search = field(nameOf(id), say("discovery_filter_search", "Search"), "search");
+              const search = field(nameOf2(id), searchWord(id), "search");
               search.classList.add("jellyseerr-menu-search");
               const bar = document.createElement("div");
               bar.className = "jellyseerr-menu-searchbar";
@@ -1161,9 +1782,10 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
                 none.hidden = found.length > 0;
                 handle.placed();
               });
+              bar.appendChild(rule);
               host.appendChild(bar);
-            }
-            host.append(ruleOf(id), list, none);
+            } else host.appendChild(rule);
+            host.append(list, none);
             handle.placed();
           }).catch(() => {
             sayIn(waiting, say("discovery_filter_unavailable", "Could not load these."));
@@ -1175,29 +1797,40 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
       const picked = pickedOf(id);
       return {
         id,
-        name: nameOf(id),
-        any,
+        name: nameOf2(id),
+        any: anyOf(id),
         set: picked.length > 0,
-        value: sayList(picked),
+        value: sayList(picked, id),
+        short: shortList(picked, id),
+        describe() {
+          const now = pickedOf(id);
+          return { value: sayList(now, id), set: now.length > 0, short: shortList(now, id) };
+        },
         build(host, handle) {
           const chosen = document.createElement("div");
           chosen.className = "jellyseerr-menu-list";
-          const rule = ruleOf(id);
+          const rule = ruleOf(id, handle);
           const found = document.createElement("div");
           found.className = "jellyseerr-menu-list";
           const keep = (item) => {
             chosen.appendChild(tickRow(id, item, handle, (isChosen, row) => {
-              if (!isChosen) row.remove();
-              rule.hidden = chosen.childElementCount + found.childElementCount === 0;
+              if (!isChosen) {
+                const held = row.contains(document.activeElement);
+                const sibling = row.nextElementSibling ?? row.previousElementSibling;
+                const next = sibling instanceof HTMLElement ? sibling : null;
+                row.remove();
+                if (held) (next ?? search).focus();
+              }
+              rule.hidden = chosen.childElementCount === 0;
+              if (!isChosen && search.value.trim() === "") sayStatus(resting());
               handle.placed();
             }));
           };
-          const search = field(nameOf(id), say("discovery_filter_search_keywords", "Search keywords"), "search");
+          const search = field(nameOf2(id), say("discovery_filter_search_keywords", "Search keywords"), "search");
           search.classList.add("jellyseerr-menu-search");
           const bar = document.createElement("div");
           bar.className = "jellyseerr-menu-searchbar";
           bar.appendChild(search);
-          for (const item of pickedOf(id)) keep(item);
           rule.hidden = chosen.childElementCount === 0;
           const status = note("");
           status.hidden = true;
@@ -1208,12 +1841,16 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
             sayIn(status, words);
             status.hidden = words === "";
           };
+          const hint = id === "without" ? say("discovery_filter_without_hint", "Titles tagged with these words are left out.") : say("discovery_filter_keywords_hint", "Words a title is tagged with, such as “heist” or “time travel”.");
+          const resting = () => search.value.trim().length === 1 ? say("discovery_filter_two_letters", "Type two letters or more.") : search.value.trim() === "" && chosen.childElementCount === 0 ? hint : "";
+          for (const item of pickedOf(id)) keep(item);
+          rule.hidden = chosen.childElementCount === 0;
           const look = () => {
             asking?.abort();
             const wanted = search.value.trim();
             found.replaceChildren();
             if (wanted.length < 2) {
-              sayStatus("");
+              sayStatus(resting());
               handle.placed();
               return;
             }
@@ -1232,15 +1869,15 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
                     asking?.abort();
                     search.value = "";
                     found.replaceChildren();
-                    sayStatus("");
+                    sayStatus(resting());
                     search.focus();
                   }
-                  rule.hidden = chosen.childElementCount + found.childElementCount === 0;
+                  rule.hidden = chosen.childElementCount === 0;
                   handle.placed();
                 }));
                 showFound(row, item.name, item.name.toLocaleLowerCase().indexOf(wanted.toLocaleLowerCase()), wanted.length);
               }
-              rule.hidden = chosen.childElementCount + found.childElementCount === 0;
+              rule.hidden = chosen.childElementCount === 0;
               sayStatus(fresh.length === 0 ? say("discovery_filter_no_match", "No match.") : "");
               handle.placed();
             }).catch(() => {
@@ -1258,7 +1895,8 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
               look();
             }
           });
-          host.append(chosen, bar, rule, found, status);
+          host.append(chosen, rule, bar, found, status);
+          sayStatus(resting());
         }
       };
     }
@@ -1269,22 +1907,371 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
       else if (id === "genres") {
         const own = options.ownGenre?.trim().toLocaleLowerCase() ?? "";
         groups.push(listGroup(id, async () => [{ items: await data.genres() }], [], (item) => own !== "" && item.name.toLocaleLowerCase() === own));
-      } else if (id === "language") groups.push(listGroup(id, async () => [{ items: await data.languages(locale) }], [locale.split("-")[0]?.toLowerCase() ?? ""]));
-      else if (id === "services") groups.push(listGroup(id, async () => [{ items: await data.services() }]));
+      } else if (id === "withoutGenres") {
+        const own = options.ownGenre?.trim().toLocaleLowerCase() ?? "";
+        groups.push(listGroup(id, async () => [{ items: (await data.genres()).filter((item) => own === "" || item.name.toLocaleLowerCase() !== own) }]));
+      } else if (id === "language" || id === "withoutLanguage") {
+        groups.push(listGroup(id, async () => [{ items: await data.languages(locale) }], [locale.split("-")[0]?.toLowerCase() ?? ""]));
+      } else if (id === "services") groups.push(listGroup(id, async () => [{ items: await data.services() }]));
       else if (id === "rating") {
-        groups.push(listGroup(id, async () => (await data.ratings()).map((list) => ({
-          label: list.kind === "movie" ? say("jellyseerr_quota_label_movie", "Movies") : say("jellyseerr_quota_label_tv", "Series"),
-          items: list.ratings
-        }))));
+        groups.push(listGroup(id, async () => {
+          const lists = (await data.ratings()).filter((list) => !options.kinds || options.kinds.includes(list.kind));
+          return lists.map((list) => ({
+            label: lists.length < 2 ? void 0 : list.kind === "movie" ? say("jellyseerr_quota_label_movie", "Movies") : say("jellyseerr_quota_label_tv", "Series"),
+            items: list.ratings
+          }));
+        }));
       } else groups.push(keywordGroup(id));
     }
     return groups;
   }
+  function undoWords({ offered, label: say, locale, ownGenre, before, now }) {
+    const words = (selection) => filterTokens({ offered, label: say, locale, selection, ownGenre }).map((token) => token.alone ?? token.words);
+    const had = new Set(words(before));
+    const added = words(now).find((word) => !had.has(word));
+    if (added) return say("discovery_filters_undo_what", "Undo “{change}”", { change: added });
+    const ruled = Object.keys(MATCH_DEFAULTS).find((id) => matchOf(before, id) !== matchOf(now, id));
+    if (ruled) {
+      const rule = matchOf(now, ruled) === "any" ? say("discovery_filter_match_any", "any ticked") : say("discovery_filter_match_all", "all ticked");
+      return say("discovery_filters_undo_rule", "Undo “{rule}” in {filter}", { rule, filter: say(NAMES[ruled][0], NAMES[ruled][1]) });
+    }
+    const has = new Set(words(now));
+    const removed = words(before).find((word) => !has.has(word));
+    return removed ? say("discovery_filters_undo_back", "Put back “{piece}”", { piece: removed }) : say("discovery_filters_undo", "Undo");
+  }
+
+  // client/src/features/seerr/discovery/profiles.ts
+  var PROFILES_API = "discovery-filter-profiles";
+  var isRecord4 = (value) => typeof value === "object" && value !== null;
+  var isProfile = (value) => isRecord4(value) && typeof value.id === "string" && typeof value.name === "string" && typeof value.filters === "string";
+  var withProfile = (list, saved) => {
+    const at = list.findIndex((profile) => profile.id === saved.id);
+    return at < 0 ? [...list, saved] : list.map((profile, index) => index === at ? saved : profile);
+  };
+  async function refusal(error) {
+    if (!isRecord4(error)) return null;
+    const said2 = isRecord4(error.responseJSON) ? error.responseJSON.error : error.error;
+    if (said2) return said2;
+    if (typeof error.json !== "function") return null;
+    try {
+      const body = await error.json();
+      return isRecord4(body) ? body.error : null;
+    } catch {
+      return null;
+    }
+  }
+  function createProfiles(JE, api) {
+    let held = null;
+    const client = () => {
+      const found = api();
+      const ajax = found?.ajax;
+      if (!found || typeof ajax !== "function") return null;
+      let user = "";
+      try {
+        user = found.getCurrentUserId() ?? "";
+      } catch {
+        user = "";
+      }
+      if (!user) return null;
+      return {
+        ajax: (request) => ajax.call(found, request),
+        user,
+        url: (path = "") => found.getUrl(`/JellyfinEnhanced/user-settings/${user}/${PROFILES_API}${path}`)
+      };
+    };
+    const reachable = () => client() !== null;
+    function load() {
+      const api2 = client();
+      if (!api2) return Promise.reject(new Error("Saved filters are not reachable"));
+      const user = api2.user;
+      if (held?.user === user) return held.asked;
+      const asked = api2.ajax({ type: "GET", url: api2.url(), dataType: "json" }).then((answer) => ({
+        max: isRecord4(answer) ? Number(answer.max) || 0 : 0,
+        profiles: isRecord4(answer) && Array.isArray(answer.profiles) ? answer.profiles.filter(isProfile) : []
+      }));
+      const kept = { user, asked, list: null, max: 0 };
+      held = kept;
+      asked.then((answer) => {
+        kept.list = answer.profiles;
+        kept.max = answer.max;
+      }, () => {
+        if (held?.asked === asked) held = null;
+      });
+      return asked;
+    }
+    function keep(change) {
+      const was = held;
+      if (!was || was.user !== client()?.user || !Array.isArray(was.list)) {
+        held = null;
+        return;
+      }
+      const list = change(was.list);
+      held = { user: was.user, list, max: was.max, asked: Promise.resolve({ max: was.max, profiles: list }) };
+    }
+    async function save(name, filters) {
+      const api2 = client();
+      if (!api2) throw new Error("Saved filters are not reachable");
+      const answer = await api2.ajax({
+        type: "POST",
+        url: api2.url(),
+        data: JSON.stringify({ name, filters }),
+        contentType: "application/json",
+        dataType: "json"
+      });
+      const profile = isRecord4(answer) ? answer.profile : null;
+      if (!isProfile(profile)) throw new Error("The saved filters came back in an unknown shape");
+      keep((list) => withProfile(list, profile));
+      return profile;
+    }
+    async function remove(id) {
+      const api2 = client();
+      if (!api2) throw new Error("Saved filters are not reachable");
+      await api2.ajax({ type: "DELETE", url: api2.url(`/${encodeURIComponent(id)}`) });
+      keep((list) => list.filter((profile) => profile.id !== id));
+    }
+    JE.session?.onUserChange("discovery-filter-profiles", () => {
+      held = null;
+    });
+    function group({ label: say, host, scope = "feed", offered = [], locale = "en" }) {
+      const name = say("discovery_filter_profiles", "Saved filters");
+      const none = say("discovery_filter_profiles_none", "None");
+      const plain = (text) => {
+        const address = JE.discoveryAddress;
+        if (!address) return text;
+        try {
+          return address.filterPairs(address.filtersOf(text, scope), true).join("&");
+        } catch {
+          return text;
+        }
+      };
+      const isNow = (profile) => plain(profile.filters) === plain(host.read());
+      const sayRow = (list) => list.find(isNow)?.name ?? (list.length > 0 ? say("discovery_filter_profiles_count", "{count} saved", { count: list.length }) : none);
+      const known = held && held.user === client()?.user ? held.list : null;
+      const now = known ? known.find(isNow) : void 0;
+      return {
+        id: "profiles",
+        name,
+        any: known ? sayRow(known) : none,
+        set: !!now,
+        value: now?.name ?? none,
+        build(body, handle) {
+          const rows = document.createElement("div");
+          rows.className = "jellyseerr-menu-list";
+          const status = document.createElement("div");
+          status.className = "jellyseerr-menu-note";
+          status.setAttribute("aria-live", "polite");
+          const sayStatus = (words, error = false) => {
+            status.textContent = words;
+            status.hidden = words === "";
+            status.toggleAttribute("data-error", error);
+          };
+          const form = document.createElement("div");
+          form.className = "jellyseerr-menu-range jellyseerr-menu-profile-form";
+          const field = document.createElement("input");
+          field.type = "text";
+          field.className = "jellyseerr-menu-input";
+          field.maxLength = 60;
+          field.autocomplete = "off";
+          field.placeholder = say("discovery_filter_profile_name", "Name these filters");
+          field.setAttribute("aria-label", field.placeholder);
+          const saveButton = document.createElement("button");
+          saveButton.type = "button";
+          saveButton.className = "jellyseerr-menu-profile-save emby-button raised";
+          saveButton.textContent = say("discovery_filter_profile_save", "Save");
+          form.append(field, saveButton);
+          let list = [];
+          const summaryOf = (filters) => {
+            const read = JE.discoveryAddress?.filtersOf(filters, scope);
+            if (!read) return [];
+            const lists = [];
+            const ranges = [];
+            for (const token of filterTokens({ offered, label: say, locale, selection: read.selection })) {
+              const into = token.list ? lists : ranges;
+              if (token.join && into.length > 0) {
+                into[into.length - 1] += ` ${token.join === "or" ? say("discovery_filter_or", "or") : say("discovery_filter_and", "and")} ${token.words}`;
+              } else into.push(token.words);
+            }
+            const parts = [...lists, ...ranges];
+            if (read.mode === "movies") parts.push(say("jellyseerr_quota_label_movie", "Movies"));
+            else if (read.mode === "tv") parts.push(say("jellyseerr_quota_label_tv", "Series"));
+            const order = (JE.discoveryFilter?.SORT_OPTIONS ?? []).find((option) => option.value !== "" && option.value === read.sort);
+            if (order) parts.push(say(order.labelKey, order.label));
+            return parts;
+          };
+          const sayUndo = (profile) => {
+            const undo = document.createElement("button");
+            undo.type = "button";
+            undo.className = "jellyseerr-menu-profile-undo";
+            undo.textContent = say("discovery_filter_profile_undo", "Undo");
+            undo.addEventListener("click", () => {
+              undo.disabled = true;
+              const keyed = document.activeElement === undo;
+              save(profile.name, profile.filters).then((saved) => {
+                if (!body.isConnected) return;
+                list = withProfile(list, saved);
+                draw();
+                sayStatus(say("discovery_filter_profile_restored", "Restored “{name}”.", { name: saved.name }));
+                if (keyed) rows.querySelector(".jellyseerr-menu-profile-row:last-child .jellyseerr-menu-profile")?.focus();
+                handle.say(sayRow(list), list.some(isNow));
+                handle.placed();
+              }).catch(() => {
+                undo.disabled = false;
+                sayStatus(say("discovery_filter_profile_error", "Could not save that. Try again."), true);
+              });
+            });
+            const sentence = document.createElement("span");
+            sentence.className = "jellyseerr-menu-profile-said";
+            sentence.textContent = say("discovery_filter_profile_deleted", "Deleted “{name}”.", { name: profile.name });
+            status.replaceChildren(sentence, " ", undo);
+            status.hidden = false;
+            status.removeAttribute("data-error");
+          };
+          const canSave = () => {
+            saveButton.disabled = host.read() === "" || field.value.trim() === "";
+          };
+          const draw = () => {
+            const menu = JE.discoveryMenu;
+            if (!menu) return;
+            const setNow = host.read();
+            rows.replaceChildren(...list.map((profile) => {
+              const current = isNow(profile);
+              const { item } = menu.menuRow(profile.name, "check", !current);
+              item.classList.add("jellyseerr-menu-profile");
+              if (current) {
+                item.setAttribute("aria-current", "true");
+                const mark = document.createElement("span");
+                mark.className = "material-icons check jellyseerr-menu-profile-mark";
+                mark.setAttribute("aria-hidden", "true");
+                item.querySelector(".actionSheetItemText")?.prepend(mark);
+              }
+              const says = summaryOf(profile.filters);
+              if (says.length > 0) {
+                const line = document.createElement("div");
+                line.className = "listItemBodyText secondary jellyseerr-menu-profile-says";
+                line.append(...says.flatMap((part, index) => {
+                  const piece = document.createElement("span");
+                  piece.className = "jellyseerr-menu-profile-part";
+                  piece.textContent = index < says.length - 1 ? `${part} ·` : part;
+                  return index < says.length - 1 ? [piece, " "] : [piece];
+                }));
+                item.querySelector(".actionsheetListItemBody")?.appendChild(line);
+              }
+              item.addEventListener("click", () => {
+                handle.close?.();
+                host.apply(profile.filters);
+              });
+              const removeButton = document.createElement("button");
+              removeButton.type = "button";
+              removeButton.className = "jellyseerr-menu-profile-delete";
+              const removeLabel = say("discovery_filter_profile_delete", "Delete {name}", { name: profile.name });
+              removeButton.setAttribute("aria-label", removeLabel);
+              removeButton.title = removeLabel;
+              const bin = document.createElement("span");
+              bin.className = "material-icons delete_outline";
+              bin.setAttribute("aria-hidden", "true");
+              removeButton.appendChild(bin);
+              removeButton.addEventListener("click", (event) => {
+                event.stopPropagation();
+                removeButton.disabled = true;
+                const at = list.indexOf(profile);
+                const keyed = document.activeElement === removeButton;
+                remove(profile.id).then(() => {
+                  list = list.filter((entry) => entry.id !== profile.id);
+                  draw();
+                  if (keyed) {
+                    const deletes = rows.querySelectorAll(".jellyseerr-menu-profile-delete");
+                    const head = body.previousElementSibling instanceof HTMLElement ? body.previousElementSibling : null;
+                    (deletes[Math.min(at, deletes.length - 1)] ?? (field.disabled ? head : field))?.focus();
+                  }
+                  sayUndo(profile);
+                  handle.say(sayRow(list), list.some(isNow));
+                  handle.placed();
+                }).catch(() => {
+                  removeButton.disabled = false;
+                  sayStatus(say("discovery_filter_profile_error", "Could not save that. Try again."), true);
+                });
+              });
+              const wrap = document.createElement("div");
+              wrap.className = "jellyseerr-menu-profile-row";
+              wrap.append(item, removeButton);
+              return wrap;
+            }));
+            const empty = setNow === "";
+            field.disabled = empty;
+            canSave();
+            if (empty) sayStatus(say("discovery_filter_profile_nothing", "Set a filter to save it here."));
+          };
+          field.addEventListener("input", canSave);
+          const store = async () => {
+            const words = field.value.trim();
+            if (!words) {
+              field.focus();
+              return;
+            }
+            saveButton.disabled = true;
+            try {
+              const saved = await save(words, host.read());
+              list = withProfile(list, saved);
+              field.value = "";
+              draw();
+              sayStatus(say("discovery_filter_profile_saved", "Saved as “{name}”.", { name: saved.name }));
+              handle.say(sayRow(list), true);
+            } catch (error) {
+              const reason = await refusal(error);
+              sayStatus(reason === "full" ? say("discovery_filter_profile_full", "Delete a saved one first: you have the most there can be.") : say("discovery_filter_profile_error", "Could not save that. Try again."), true);
+            } finally {
+              canSave();
+              handle.placed();
+            }
+          };
+          saveButton.addEventListener("click", () => {
+            void store();
+          });
+          field.addEventListener("keydown", (event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              void store();
+            }
+          });
+          sayStatus(say("discovery_filter_loading", "Loading…"));
+          body.append(rows, form, status);
+          load().then((answer) => {
+            if (!body.isConnected) return;
+            list = answer.profiles;
+            sayStatus("");
+            draw();
+            handle.say(sayRow(list), list.some(isNow));
+            handle.placed();
+          }).catch(() => {
+            sayStatus(say("discovery_filter_unavailable", "Could not load these."), true);
+            handle.placed();
+          });
+        }
+      };
+    }
+    return { reachable, load, group };
+  }
 
   // client/src/features/seerr/discovery/filter-panel.ts
-  function createFilterPanel(JE, label) {
+  function createFilterPanel(JE, label, api = () => void 0) {
     const moreFilters = /* @__PURE__ */ new Map();
     const selectionOf = (name) => moreFilters.get(name) ?? {};
+    const worthKeeping = (selection) => activeFilterCount(selection) > 0 || Object.keys(selection?.match ?? {}).length > 0;
+    const fixedAllOf = /* @__PURE__ */ new Map();
+    function takenBy(name, selection) {
+      const fixed = fixedAllOf.get(name) ?? [];
+      const match = selection?.match;
+      if (!match || !fixed.some((id) => id in match)) return selection;
+      const kept = Object.fromEntries(Object.entries(match).filter(([id]) => !fixed.some((entry) => entry === id)));
+      const { match: _dropped, ...rest } = selection;
+      return Object.keys(kept).length > 0 ? { ...rest, match: kept } : rest;
+    }
+    const keepSelection = (name, selection) => {
+      const taken = takenBy(name, selection);
+      if (worthKeeping(taken)) moreFilters.set(name, taken);
+      else moreFilters.delete(name);
+    };
+    const profiles = createProfiles(JE, api);
     const credits = /* @__PURE__ */ new Map();
     const wiring = /* @__PURE__ */ new WeakMap();
     let filterData = null;
@@ -1324,8 +2311,10 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
       const tuck = parseFloat(header.style.getPropertyValue("--jellyseerr-header-tuck")) || 0;
       section.style.minHeight = open ? `${Math.ceil(window.innerHeight - bar + tuck + 4)}px` : "";
     }
-    function createFiltersControl(header, moduleName, scope, onChange, ownGenre) {
+    function createFiltersControl(header, moduleName, scope, onChange, ownGenre, place, fixedAll = [], profilesHost = null) {
       injectStyleOnce("jellyseerr-discovery-filter-panel-styles", discovery_filter_panel_default);
+      fixedAllOf.set(moduleName, fixedAll);
+      if (takenBy(moduleName, selectionOf(moduleName)) !== selectionOf(moduleName)) keepSelection(moduleName, selectionOf(moduleName));
       const filtersLabel = label("discovery_filters", "Filters");
       const clearLabel = label("discovery_filters_clear", "Clear filters");
       const localeOf = () => document.documentElement.lang || "en";
@@ -1347,11 +2336,11 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
         const tabs = header.querySelector("[data-type-group]");
         return tabs ? JE.discoveryFilter?.typePickerOf?.(tabs) : void 0;
       };
-      const sectionOf = () => header.closest(".jellyseerr-discovery-section");
+      const sectionOf = place ?? (() => header.closest(".jellyseerr-discovery-section"));
       const paintSet = (focusAt = -1) => {
         const section = sectionOf();
         let line = section?.querySelector(".jellyseerr-filters-set") ?? null;
-        const tokens = filterTokens({ offered, label, locale: localeOf(), selection: selectionOf(moduleName) });
+        const tokens = filterTokens({ offered, label, locale: localeOf(), selection: selectionOf(moduleName), ownGenre });
         const focused = document.activeElement;
         const keyedAt = line && focusAt < 0 && focused instanceof HTMLButtonElement ? Array.from(line.querySelectorAll("button")).indexOf(focused) : -1;
         if (!section || tokens.length === 0) {
@@ -1367,7 +2356,7 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
           header.after(line);
         }
         const removes = [];
-        const pieces = tokens.map((token, index) => {
+        const made = tokens.map((token, index) => {
           const piece = document.createElement("span");
           piece.className = "jellyseerr-filters-token";
           const words = document.createElement("span");
@@ -1386,8 +2375,33 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
           remove.addEventListener("click", () => change(token.without(selectionOf(moduleName)), document.activeElement === remove ? index : -1));
           removes.push(remove);
           piece.append(words, remove);
+          if (!token.join) return piece;
+          const joined = document.createElement("span");
+          joined.className = "jellyseerr-filters-join";
+          joined.textContent = token.join === "or" ? label("discovery_filter_or", "or") : label("discovery_filter_and", "and");
+          piece.prepend(joined, " ");
+          piece.dataset.join = token.join;
           return piece;
         });
+        const pieces = [];
+        for (const [index, piece] of made.entries()) {
+          const before = pieces[pieces.length - 1];
+          if (piece.dataset.join === void 0 || !before) {
+            pieces.push(piece);
+            continue;
+          }
+          let run = before;
+          if (!before.classList.contains("jellyseerr-filters-run")) {
+            run = document.createElement("span");
+            run.className = "jellyseerr-filters-run";
+            run.setAttribute("role", "group");
+            const list = tokens[index]?.list;
+            if (list) run.setAttribute("aria-label", label(NAMES[list][0], NAMES[list][1]));
+            pieces.splice(pieces.length - 1, 1, run);
+            run.appendChild(before);
+          }
+          run.appendChild(piece);
+        }
         if (tokens.length > 1) {
           const all = document.createElement("button");
           all.type = "button";
@@ -1407,13 +2421,14 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
         const set = activeFilterCount(selectionOf(moduleName));
         const typed = filterModeOf(moduleName) === MIXED() ? 0 : 1;
         button.toggleAttribute("data-on", set > 0);
+        if (place) button.classList.toggle("emby-tab-button-active", set > 0);
         button.toggleAttribute("data-type-on", typed > 0);
         typeWord.textContent = typed > 0 ? typeOf()?.groupOf().choices?.find((choice) => choice.selected)?.name ?? "" : "";
         button.toggleAttribute("data-type-only", offered.length === 0);
         name.textContent = set > 0 ? `${filtersLabel}: ${set}` : filtersLabel;
         const roles = selectionOf(moduleName).role ?? [];
         const section = sectionOf();
-        JE.discoveryBusy?.mark?.(section);
+        if (section?.classList.contains("jellyseerr-discovery-section")) JE.discoveryBusy?.mark?.(section);
         section?.toggleAttribute("data-jobs-first", roles.length > 0 && !roles.some((role) => role.id === "cast"));
         if (section) {
           section.setAttribute(JE.discoveryRoles?.ROLE_ASKED ?? "data-role-asked", roles.map((role) => role.id).join("|"));
@@ -1422,10 +2437,16 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
         paintSet(focusAt);
       };
       wiring.set(header, { paint: (at = -1) => paint(at), reload: onChange });
+      if (profilesHost && profiles.reachable()) profiles.load().catch(() => void 0);
       paint();
+      let undoTo = null;
+      let undoFrom = null;
+      const setNow = () => JSON.stringify([filterModeOf(moduleName), selectionOf(moduleName)]);
       function change(next, focusAt = -1) {
-        if (activeFilterCount(next) > 0) moreFilters.set(moduleName, next);
+        undoTo = selectionOf(moduleName);
+        if (worthKeeping(next)) moreFilters.set(moduleName, next);
         else moreFilters.delete(moduleName);
+        undoFrom = setNow();
         paint(focusAt);
         JE.discoveryBusy?.hold?.(button);
         onChange();
@@ -1435,11 +2456,17 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
         const type = typeOf();
         const typeInMenu = !!type && !type.tabsShowing();
         const groups = type && typeInMenu ? [{ ...type.groupOf(), open: true }] : [];
+        if (profilesHost && profiles.reachable()) groups.push(profiles.group({ label, host: profilesHost, scope, offered, locale: localeOf() }));
+        const mode = filterModeOf(moduleName);
+        const pageKinds = (header.closest("[data-je-kinds]")?.getAttribute("data-je-kinds") ?? "").split(",").filter((kind) => kind === "movie" || kind === "tv");
+        const kinds = mode === "movies" ? ["movie"] : mode === "tv" ? ["tv"] : pageKinds.length > 0 ? pageKinds : null;
         groups.push(...filterMenuGroups(JE, {
           offered,
           data: dataOf(),
           locale: localeOf(),
           label,
+          kinds,
+          fixedAll,
           selection: () => selectionOf(moduleName),
           change,
           ...ownGenre ? { ownGenre } : {},
@@ -1460,6 +2487,16 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
           groups,
           clearLabel,
           doneLabel: label("discovery_filters_done", "Done"),
+          noneLabel: label("discovery_filters_none", "Nothing matches these filters."),
+          undoLabel: () => undoWords({ offered, label, locale: localeOf(), ownGenre, before: undoTo ?? {}, now: selectionOf(moduleName) }),
+          canUndo: () => undoTo !== null && undoFrom === setNow(),
+          // (Back to what was set before the last change; the menu then says every group again.)
+          onUndo() {
+            if (!undoTo || undoFrom !== setNow()) return false;
+            change(undoTo);
+            undoTo = null;
+            return true;
+          },
           onClose: () => {
             button.setAttribute("aria-expanded", "false");
             roomUnderMenu(sectionOf(), header, false);
@@ -1470,7 +2507,7 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
           },
           onClear() {
             if (typeInMenu) type?.choose(MIXED());
-            if (activeFilterCount(selectionOf(moduleName)) > 0) change({});
+            if (worthKeeping(selectionOf(moduleName))) change({});
           }
         });
       };
@@ -1502,7 +2539,8 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
       const headerOf = () => section?.querySelector(".jellyseerr-discovery-header") ?? container;
       wiring.get(headerOf())?.paint();
       section?.querySelector(".jellyseerr-filters-none")?.remove();
-      if (hasMore || activeFilterCount(selectionOf(moduleName)) === 0 || container.querySelector(".card")) return;
+      const kind = container.classList.contains("filter-movies") ? '[data-media-type="movie"]' : container.classList.contains("filter-tv") ? '[data-media-type="tv"]' : "";
+      if (hasMore || activeFilterCount(selectionOf(moduleName)) === 0 || container.querySelector(`.card${kind}`)) return;
       const buildMessageRow2 = JE.discoverySection?.buildMessageRow;
       if (typeof buildMessageRow2 !== "function") return;
       const note = buildMessageRow2({
@@ -1522,8 +2560,12 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
     injectStyleOnce("jellyseerr-discovery-filter-panel-styles", discovery_filter_panel_default);
     return {
       FILTER_SWITCHES,
+      MATCH_DEFAULTS,
       offeredFilters,
       activeFilterCount,
+      checkableOnLoaded,
+      matchOf,
+      routeFeed,
       dayOf,
       numberOf,
       isBound,
@@ -1542,10 +2584,13 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
       },
       /** Whether any further filter is narrowing the section's list. */
       active: (name) => activeFilterCount(selectionOf(name)) > 0,
+      /** Sets a module's further filters as a whole (from its page's address); the caller redraws and reloads. */
+      setSelection: keepSelection,
       /** A section starts with nothing narrowing it: its further filters and the titles seen go. */
       reset(name) {
         moreFilters.delete(name);
         credits.delete(name);
+        fixedAllOf.delete(name);
       },
       /** Redraws a header's Filters button (after All / Movies / Series changed); `element` is the header or inside it. */
       repaint(element) {
@@ -1556,16 +2601,14 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
       roomUnderMenu,
       filterMenuGroups: (options) => filterMenuGroups(JE, options),
       filterTokens,
+      undoWords,
       /** The section's selection, for tests and the facade. */
       selectionOf
     };
   }
 
-  // client/src/features/seerr/discovery/menu.ts
+  // client/src/features/seerr/discovery/menu-parts.ts
   var isBackKey = (event) => event.key === "Escape" || event.key === "BrowserBack" || event.key === "GoBack" || event.keyCode === 10009 || event.keyCode === 461;
-  var GROUPED_MIN_ROOM = 260;
-  var EDGE = 8;
-  var CUT_AT = 0.6;
   function icon(name, hidden = false) {
     const span = document.createElement("span");
     span.className = `actionsheetMenuItemIcon listItemIcon listItemIcon-transparent material-icons ${name}`;
@@ -1598,12 +2641,82 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
     const row = window.matchMedia?.("(max-width: 600px)").matches ? 48 : 36;
     return Math.min((groupCount + 1) * row + 24 + 110, Math.round(window.innerHeight * 0.72));
   }
+  function showValue(el, words, short) {
+    el.textContent = words;
+    el.dataset.whole = words;
+    el.dataset.short = short ?? "";
+    el.title = "";
+    if (short && short !== words && el.isConnected && el.scrollWidth > el.clientWidth + 1) {
+      const seen = document.createElement("span");
+      seen.setAttribute("aria-hidden", "true");
+      seen.textContent = short;
+      const whole = document.createElement("span");
+      whole.className = "jellyseerr-menu-whole";
+      whole.textContent = words;
+      el.replaceChildren(seen, whole);
+      el.title = words;
+    }
+  }
+  function watchOutcome(options) {
+    const { band, anchor, noneLabel, undoLabel, onUndo, canUndo } = options;
+    const scope = anchor.closest(".jellyseerr-discovery-section") ?? anchor.closest(".page") ?? document.body;
+    const sayOutcome = () => {
+      if (options.closed()) return;
+      const none = Array.from(scope.querySelectorAll(".jellyseerr-filters-none, .je-reco-filters-none")).some((note) => !note.closest(".hide, [hidden]"));
+      const undoable = none && !!(undoLabel && onUndo) && (canUndo?.() ?? true);
+      const undoWords2 = undoable ? (typeof undoLabel === "function" ? undoLabel() : undoLabel) ?? "" : "";
+      if (band.hidden === !none && (band.dataset.undo ?? "") === undoWords2) return;
+      band.dataset.undo = undoWords2;
+      const keyed = band.contains(document.activeElement);
+      band.toggleAttribute("data-undoable", undoable);
+      band.hidden = !none;
+      band.replaceChildren();
+      if (none) {
+        const words = document.createElement("span");
+        words.textContent = noneLabel;
+        band.appendChild(words);
+        if (undoable && onUndo) {
+          const undo = document.createElement("button");
+          undo.type = "button";
+          undo.className = "jellyseerr-menu-outcome-undo";
+          undo.textContent = undoWords2;
+          undo.addEventListener("click", () => {
+            const wasKeyed = document.activeElement === undo;
+            if (!onUndo()) return;
+            options.renew();
+            if (wasKeyed) options.focusHome();
+          });
+          band.append(" ", undo);
+          if (keyed) undo.focus({ preventScroll: true });
+        }
+      } else if (keyed) options.focusHome();
+      options.placed();
+    };
+    let frame = 0;
+    sayOutcome();
+    if (typeof MutationObserver !== "function") return () => cancelAnimationFrame(frame);
+    const watcher = new MutationObserver(() => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(sayOutcome);
+    });
+    watcher.observe(scope, { childList: true, subtree: true });
+    return () => {
+      watcher.disconnect();
+      cancelAnimationFrame(frame);
+    };
+  }
+
+  // client/src/features/seerr/discovery/menu.ts
+  var GROUPED_MIN_ROOM = 260;
+  var EDGE = 8;
+  var CUT_AT = 0.6;
   function createDiscoveryMenu(JE) {
     let closeOpen = null;
     let bodies = 0;
-    function openMenu({ anchor, title, choices = [], groups, clearLabel, doneLabel, onPick, onClear, onClose }) {
+    function openMenu({ anchor, title, choices = [], groups, clearLabel, doneLabel, noneLabel, undoLabel, onUndo, canUndo, onPick, onClear, onClose }) {
       closeOpen?.();
       const tv = document.documentElement.classList.contains("layout-tv");
+      const coarse = !!window.matchMedia?.("(pointer: coarse)").matches;
       const backdrop = document.createElement("div");
       backdrop.className = "dialogBackdrop dialogBackdropOpened jellyseerr-menu-backdrop";
       const container = document.createElement("div");
@@ -1614,12 +2727,23 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
       sheet.setAttribute("aria-label", title);
       const content = document.createElement("div");
       content.className = "actionSheetContent";
+      let outcome = null;
+      let stopOutcome = null;
       if (tv) {
         const heading = document.createElement("h1");
         heading.className = "actionSheetTitle";
         heading.textContent = title;
         content.appendChild(heading);
       }
+      let fittedWidth = -1;
+      const fitValues = () => {
+        const width = sheet.offsetWidth;
+        if (width === fittedWidth) return;
+        fittedWidth = width;
+        for (const el of content.querySelectorAll(".jellyseerr-menu-group-value")) {
+          showValue(el, el.dataset.whole ?? el.textContent ?? "", el.dataset.short || void 0);
+        }
+      };
       const scroller = document.createElement("div");
       scroller.className = "actionSheetScroller scrollY";
       for (const choice of choices) scroller.appendChild(choiceRow(choice));
@@ -1638,7 +2762,7 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
           const first = group.choices?.[0];
           const current = group.choices?.find((choice) => choice.selected) ?? first;
           const set = group.choices ? !!current && current !== first : group.set === true;
-          value.textContent = group.choices ? current?.name ?? "" : (set ? group.value : group.any) ?? "";
+          showValue(value, group.choices ? current?.name ?? "" : (set ? group.value : group.any) ?? "", set ? group.short : void 0);
           item.toggleAttribute("data-set", set);
           body.appendChild(value);
           const list = document.createElement("div");
@@ -1649,11 +2773,22 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
           list.hidden = true;
           item.setAttribute("aria-controls", list.id);
           for (const choice of group.choices ?? []) list.appendChild(choiceRow(choice, group.id));
-          scroller.append(item, list);
+          const box = document.createElement("div");
+          box.className = "jellyseerr-menu-groupbox";
+          box.dataset.group = group.id;
+          box.append(item, list);
+          scroller.appendChild(box);
         }
         if (clearLabel && onClear) {
+          if (noneLabel) {
+            outcome = document.createElement("div");
+            outcome.className = "jellyseerr-menu-note jellyseerr-menu-outcome";
+            outcome.setAttribute("role", "status");
+            outcome.hidden = true;
+          }
           const foot = document.createElement("div");
           foot.className = "jellyseerr-menu-foot";
+          if (outcome) foot.appendChild(outcome);
           clear = menuRow(clearLabel, "check", true).item;
           clear.classList.add("jellyseerr-menu-clear");
           clear.dataset.clear = "";
@@ -1671,7 +2806,7 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
       }
       sheet.appendChild(content);
       container.appendChild(sheet);
-      const items = () => Array.from(content.querySelectorAll(".actionSheetMenuItem, .jellyseerr-menu-input")).filter((item) => !item.closest("[hidden]") && !item.hidden && item.getAttribute("aria-disabled") !== "true" && !(item.dataset.done !== void 0 && getComputedStyle(item).display === "none"));
+      const items = (beside = false) => Array.from(content.querySelectorAll(".actionSheetMenuItem, .jellyseerr-menu-input, .jellyseerr-menu-match-btn, .jellyseerr-menu-profile-delete, .jellyseerr-menu-profile-save, .jellyseerr-menu-profile-undo, .jellyseerr-menu-outcome-undo")).filter((item) => !item.classList.contains("jellyseerr-menu-match-btn") || (item.parentElement?.contains(document.activeElement) ? item === document.activeElement : item.getAttribute("aria-checked") === "true")).filter((item) => beside || !item.classList.contains("jellyseerr-menu-profile-delete") || item === document.activeElement).filter((item) => !item.closest("[hidden]") && !item.hidden && item.getAttribute("aria-disabled") !== "true" && !(item instanceof HTMLButtonElement && item.disabled && !item.classList.contains("actionSheetMenuItem")) && !(item.dataset.done !== void 0 && getComputedStyle(item).display === "none"));
       const heads = () => Array.from(scroller.querySelectorAll(".jellyseerr-menu-group"));
       const headOf = (groupId) => heads().find((item) => item.dataset.toggle === groupId);
       const weighClear = () => {
@@ -1681,14 +2816,31 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
       };
       weighClear();
       const built = /* @__PURE__ */ new WeakSet();
+      const renew = () => {
+        for (const group of groups ?? []) {
+          if (typeof group.describe !== "function") continue;
+          const { value, set, short } = group.describe();
+          const head = headOf(group.id);
+          const words = head?.querySelector(".jellyseerr-menu-group-value");
+          if (words) showValue(words, set ? value : group.any ?? "", set ? short : void 0);
+          head?.toggleAttribute("data-set", set);
+          const body = head?.nextElementSibling;
+          if (!(body instanceof HTMLElement) || !built.has(body)) continue;
+          body.replaceChildren();
+          built.delete(body);
+          if (head?.getAttribute("aria-expanded") === "true") buildBody(group, body);
+        }
+        weighClear();
+        place(true);
+      };
       const buildBody = (group, list) => {
         if (!group.build || built.has(list)) return;
         built.add(list);
         group.build(list, {
-          say(value, set) {
+          say(value, set, short) {
             const head = headOf(group.id);
             const words = head?.querySelector(".jellyseerr-menu-group-value");
-            if (words) words.textContent = set ? value : group.any ?? "";
+            if (words) showValue(words, set ? value : (value || group.any) ?? "", set ? short : void 0);
             head?.toggleAttribute("data-set", set);
             weighClear();
           },
@@ -1697,6 +2849,23 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
             place(true);
             const head = headOf(group.id);
             if (head?.getAttribute("aria-expanded") === "true") reveal(head);
+          },
+          // (A choice that is done with the menu, such as a saved profile applied.)
+          close: () => close(),
+          // (Another group's value changed by this one, a genre ticked here leaving its Without list: its row says it,
+          // and its body is built anew when next opened.)
+          other(groupId, value, set, short) {
+            const head = headOf(groupId);
+            const words = head?.querySelector(".jellyseerr-menu-group-value");
+            const otherGroup = groups?.find((entry) => entry.id === groupId);
+            if (words) showValue(words, set ? value : (value || otherGroup?.any) ?? "", set ? short : void 0);
+            head?.toggleAttribute("data-set", set);
+            const body = head?.nextElementSibling;
+            if (body instanceof HTMLElement && built.has(body) && head?.getAttribute("aria-expanded") !== "true") {
+              body.replaceChildren();
+              built.delete(body);
+            }
+            weighClear();
           }
         });
       };
@@ -1708,6 +2877,7 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
           const body = head.nextElementSibling;
           if (!(body instanceof HTMLElement)) continue;
           body.hidden = !open;
+          head.parentElement?.toggleAttribute("data-open", open);
           if (open) body.style.setProperty("--jellyseerr-menu-head", `${head.offsetHeight}px`);
           const group = open ? groups?.find((entry) => entry.id === head.dataset.toggle) : void 0;
           if (group) buildBody(group, body);
@@ -1716,6 +2886,7 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
       const reveal = (head) => {
         const body = head.nextElementSibling;
         if (!(body instanceof HTMLElement)) return;
+        cutInARow();
         const view = scroller.getBoundingClientRect();
         const top = head.getBoundingClientRect().top - view.top;
         const over = body.getBoundingClientRect().bottom - view.bottom;
@@ -1726,6 +2897,7 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
       let closed = false;
       let pointerAt = null;
       let keyed = false;
+      let pointered = false;
       let keyWay = 0;
       let settling = 0;
       let following = 0;
@@ -1739,13 +2911,37 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
         window.clearTimeout(settling);
         for (const type of ["popstate", "hashchange"]) window.removeEventListener(type, close);
         window.removeEventListener("resize", resized);
+        stopOutcome?.();
         backdrop.remove();
         container.remove();
         onClose?.();
         if (anchor.isConnected) anchor.focus();
       }
+      function focusInPlace(target) {
+        target?.focus({ preventScroll: heldInSight(target) });
+      }
+      function heldInSight(target) {
+        if (!(target instanceof HTMLElement) || !scroller.contains(target)) return false;
+        const held = !!target.closest(".jellyseerr-menu-searchbar") || target.classList.contains("jellyseerr-menu-group") && target.getAttribute("aria-expanded") === "true";
+        if (!held) return false;
+        const view = scroller.getBoundingClientRect();
+        const box = target.getBoundingClientRect();
+        return box.top >= view.top - 1 && box.bottom <= view.bottom + 1;
+      }
+      if (tv && typeof scroller.scrollTo === "function") {
+        const scrollTo = scroller.scrollTo.bind(scroller);
+        Object.defineProperty(scroller, "scrollTo", {
+          configurable: true,
+          writable: true,
+          value: (first, y) => {
+            if (heldInSight(document.activeElement)) return;
+            if (typeof first === "number") scrollTo(first, y ?? 0);
+            else scrollTo(first);
+          }
+        });
+      }
       function onKey(event) {
-        const list = items();
+        const list = items(event.key === "Tab");
         const focused = document.activeElement;
         const index = focused instanceof HTMLElement ? list.indexOf(focused) : -1;
         const move = (to) => {
@@ -1753,7 +2949,7 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
           event.stopPropagation();
           keyed = true;
           keyWay = to >= index ? 1 : -1;
-          list[(to + list.length) % list.length]?.focus();
+          focusInPlace(list[(to + list.length) % list.length]);
           cutAgain();
         };
         if (focused instanceof HTMLInputElement && (event.key === "Home" || event.key === "End")) return;
@@ -1762,12 +2958,26 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
         const previous = body?.previousElementSibling;
         const head = previous instanceof HTMLElement ? previous : active?.classList.contains("jellyseerr-menu-group") && active.getAttribute("aria-expanded") === "true" ? active : null;
         const out = getComputedStyle(sheet).direction === "rtl" ? "ArrowRight" : "ArrowLeft";
+        if ((event.key === "ArrowLeft" || event.key === "ArrowRight") && active?.classList.contains("jellyseerr-menu-match-btn")) {
+          const forward = event.key === "ArrowRight" !== (getComputedStyle(sheet).direction === "rtl");
+          if (forward ? active.nextElementSibling : active.previousElementSibling) return;
+        }
+        const towardsEnd = out === "ArrowLeft" ? "ArrowRight" : "ArrowLeft";
+        const pair = active?.closest(".jellyseerr-menu-profile-row");
+        const beside = event.key === towardsEnd && active?.classList.contains("jellyseerr-menu-profile") ? pair?.querySelector(".jellyseerr-menu-profile-delete") : event.key === out && active?.classList.contains("jellyseerr-menu-profile-delete") ? pair?.querySelector(".jellyseerr-menu-profile") : null;
+        if (beside instanceof HTMLElement) {
+          event.preventDefault();
+          event.stopPropagation();
+          keyed = true;
+          beside.focus();
+          return;
+        }
         if (event.key === out && body && head && !(active instanceof HTMLInputElement && (active.selectionStart ?? 0) > 0)) {
           event.preventDefault();
           event.stopPropagation();
           keyed = true;
           keyWay = -1;
-          head.focus();
+          focusInPlace(head);
           cutAgain();
           return;
         }
@@ -1796,7 +3006,7 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
         const head = headOf(groupId);
         const chosen = rows.find((item) => item.dataset.id === id);
         const value = head?.querySelector(".jellyseerr-menu-group-value");
-        if (value) value.textContent = chosen?.querySelector(".actionSheetItemText")?.textContent ?? "";
+        if (value) showValue(value, chosen?.querySelector(".actionSheetItemText")?.textContent ?? "");
         head?.toggleAttribute("data-set", !!chosen && chosen !== rows[0]);
         weighClear();
       };
@@ -1825,7 +3035,7 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
             const head = headOf(group.id);
             const list = head?.nextElementSibling;
             const words = head?.querySelector(".jellyseerr-menu-group-value");
-            if (words) words.textContent = group.any ?? "";
+            if (words) showValue(words, group.any ?? "");
             head?.removeAttribute("data-set");
             head?.setAttribute("aria-expanded", "false");
             if (list instanceof HTMLElement) {
@@ -1855,7 +3065,8 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
       scroller.addEventListener("scroll", () => {
         for (const head of heads()) {
           const body = head.nextElementSibling;
-          const over = head.getAttribute("aria-expanded") === "true" && body instanceof HTMLElement && body.getBoundingClientRect().top < head.getBoundingClientRect().bottom - 1;
+          const held = Math.abs(head.getBoundingClientRect().top - scroller.getBoundingClientRect().top) < 2;
+          const over = head.getAttribute("aria-expanded") === "true" && body instanceof HTMLElement && held && body.getBoundingClientRect().top < head.getBoundingClientRect().bottom - 1;
           head.toggleAttribute("data-over", over);
           if (!(body instanceof HTMLElement)) continue;
           const strip = over ? (body.querySelector(".jellyseerr-menu-searchbar") ?? head).getBoundingClientRect().bottom : -Infinity;
@@ -1869,6 +3080,21 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
       }, { passive: true });
       const shownRows = () => Array.from(scroller.querySelectorAll(".actionSheetMenuItem")).filter((row) => !row.closest("[hidden]") && !row.hidden).map((row) => ({ row, box: row.getBoundingClientRect() })).filter((entry) => entry.box.height > 0);
       const below = () => scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
+      const unrowed = () => {
+        const body = heads().find((head) => head.getAttribute("aria-expanded") === "true")?.nextElementSibling;
+        if (!(body instanceof HTMLElement)) return [];
+        return Array.from(body.querySelectorAll("input, button:not(.actionSheetMenuItem), .jellyseerr-menu-note, .jellyseerr-menu-match")).filter((el) => !el.closest("[hidden]") && !el.closest(".actionSheetMenuItem")).map((el) => el.getBoundingClientRect()).filter((box) => box.height > 0);
+      };
+      const firstLine = (name) => {
+        if (!name || typeof document.createRange !== "function") return void 0;
+        const range = document.createRange();
+        range.selectNodeContents(name);
+        return Array.from(range.getClientRects?.() ?? []).find((rect) => rect.height > 0);
+      };
+      const topCutOf = ({ row, box }) => {
+        const line = firstLine(row.querySelector(".actionSheetItemText"));
+        return line ? line.top + line.height * (1 - CUT_AT) : box.top + box.height * (1 - CUT_AT);
+      };
       const cutOf = ({ row, box }) => {
         const name = row.querySelector(".actionSheetItemText");
         let line;
@@ -1893,22 +3119,41 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
           range.selectNodeContents(words);
           const said2 = range.getBoundingClientRect?.();
           const room = footRow.getBoundingClientRect();
-          const rtl = getComputedStyle(footRow).direction === "rtl";
-          if (said2 && said2.width > 0) footRow.style.setProperty("--jellyseerr-clear-end", `${Math.ceil(rtl ? room.right - said2.left : said2.right - room.left)}px`);
+          const rtl2 = getComputedStyle(footRow).direction === "rtl";
+          if (said2 && said2.width > 0) footRow.style.setProperty("--jellyseerr-clear-end", `${Math.ceil(rtl2 ? room.right - said2.left : said2.right - room.left)}px`);
         }
         const top = scroller.getBoundingClientRect().top;
-        if (scroller.scrollTop > 2 && below() > 2 && !(open && open.getBoundingClientRect().top - top < 2)) {
-          const over = shownRows().map((entry) => entry.box).filter((box) => box.top < top - 1).pop();
-          if (over) scroller.scrollTop -= Math.round(top - over.top - over.height * (1 - CUT_AT));
+        if (scroller.scrollTop > 2 && below() > 2 && !(open && Math.abs(open.getBoundingClientRect().top - top) < 2)) {
+          const entries = shownRows();
+          const overEntry = entries.filter((entry) => entry.box.top < top - 1).pop();
+          const up = overEntry ? Math.round(top - overEntry.box.top - (topCutOf(overEntry) - overEntry.box.top)) : 0;
+          const body = open?.nextElementSibling;
+          const bottom = scroller.getBoundingClientRect().bottom;
+          const fits = body instanceof HTMLElement && !!open && body.getBoundingClientRect().bottom - open.getBoundingClientRect().top <= bottom - top;
+          const nextEntry = entries.find((entry) => entry.box.top >= top - 1);
+          if (up > 0 && fits && nextEntry && body instanceof HTMLElement && body.getBoundingClientRect().bottom + up > bottom + 1) {
+            scroller.scrollTop += Math.round(topCutOf(nextEntry) - top);
+          } else if (overEntry) scroller.scrollTop -= up;
         }
         const view = scroller.getBoundingClientRect();
         const rows = shownRows().filter((entry) => entry.box.top > view.top + 1);
         const next = rows.find((entry) => entry.box.bottom > view.bottom - 1);
         const last = rows.filter((entry) => entry.box.bottom <= view.bottom - 1).pop();
+        if (next && below() > 1 && below() < next.box.height && open) {
+          const rest = below();
+          if (open.getBoundingClientRect().top - rest >= view.top - 1) scroller.scrollTop += rest;
+          return;
+        }
         if (!next || below() < next.box.height) return;
-        const pair = open ? shownRows().filter((entry) => open.nextElementSibling?.contains(entry.row)).slice(-2) : [];
-        const [upper, lower] = pair;
-        if (tv && open && upper && lower && open.getBoundingClientRect().top - view.top < 2) {
+        const own = open ? shownRows().filter((entry) => open.nextElementSibling?.contains(entry.row)) : [];
+        const [upper, lower] = own.slice(-2);
+        const inView = own.filter((entry) => entry.box.bottom > view.top && entry.box.top < view.bottom);
+        const steps = inView.slice(1).map((entry, index) => entry.box.top - (inView[index]?.box.top ?? entry.box.top));
+        const firstStep = steps[0] ?? 0;
+        const firstHeight = inView[0]?.box.height ?? 0;
+        const even = steps.length > 0 && steps.every((step) => Math.abs(step - firstStep) <= 1) && inView.every((entry) => Math.abs(entry.box.height - firstHeight) <= 1);
+        const runsOn = (open?.nextElementSibling?.getBoundingClientRect().bottom ?? 0) > view.bottom + 1;
+        if (tv && open && upper && lower && even && runsOn && open.getBoundingClientRect().top - view.top < 2) {
           const pitch = lower.box.top - upper.box.top;
           const depth = cutOf(lower) - lower.box.top;
           const heldDeep = open.offsetHeight + (bar?.offsetHeight ?? 0);
@@ -1919,6 +3164,28 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
           }
         }
         const cut = view.bottom >= cutOf(next) ? cutOf(next) : last ? cutOf(last) : 0;
+        if (cut < view.bottom - 1 && unrowed().some((box) => box.bottom > cut + 1 && box.top < view.bottom)) {
+          const by = Math.round(cutOf(next) - view.bottom);
+          const headTop = open?.getBoundingClientRect().top ?? view.top;
+          if (by > 0 && by < next.box.height && headTop - by >= view.top - 1 && below() >= by) scroller.scrollTop += by;
+          return;
+        }
+        if (coarse && !tv && Math.abs(cut - view.bottom) > 1) {
+          const down = view.bottom >= cutOf(next) ? Math.round(view.bottom - cutOf(next)) : 0;
+          const up = down === 0 ? Math.round(cutOf(next) - view.bottom) : 0;
+          const headTop = open?.getBoundingClientRect().top ?? view.top;
+          const topTrue = () => {
+            const edge = scroller.getBoundingClientRect().top;
+            return !shownRows().some((entry) => entry.box.top < edge - 1 && entry.box.bottom > edge + 1 && topCutOf(entry) < edge - 1 && (entry.row.querySelector(".actionSheetItemText")?.getBoundingClientRect().bottom ?? entry.box.bottom) <= edge + 1);
+          };
+          const was = scroller.scrollTop;
+          if (down > 0 && scroller.scrollTop >= down) scroller.scrollTop -= down;
+          else if (up > 0 && up < next.box.height && below() >= up && headTop - up >= view.top - 1) scroller.scrollTop += up;
+          if (scroller.scrollTop !== was) {
+            if (topTrue()) return;
+            scroller.scrollTop = was;
+          }
+        }
         if (cut > view.top + 40 && Math.abs(cut - view.bottom) > 1) scroller.style.maxHeight = `${Math.round(cut - view.top)}px`;
       };
       const cutAgain = () => {
@@ -1950,10 +3217,20 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
         edges();
       };
       const edges = () => {
-        content.toggleAttribute("data-more", scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight > 2);
+        const bottom = scroller.getBoundingClientRect().bottom;
+        const rowsShown = Array.from(scroller.querySelectorAll(".actionSheetMenuItem")).filter((row) => !row.closest("[hidden]") && row.getBoundingClientRect().height > 0);
+        const lastRow = rowsShown[rowsShown.length - 1];
+        const hidden = (lastRow?.getBoundingClientRect().bottom ?? 0) > bottom + 4 || unrowed().some((box) => box.bottom > bottom + 4);
+        content.toggleAttribute("data-more", scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight > 2 && hidden);
         const held = heads().find((head) => head.getAttribute("aria-expanded") === "true");
-        const heldAtTop = !!held && held.getBoundingClientRect().top - scroller.getBoundingClientRect().top < 2;
-        content.toggleAttribute("data-above", scroller.scrollTop > 2 && !heldAtTop);
+        const top = scroller.getBoundingClientRect().top;
+        const heldAtTop = !!held && Math.abs(held.getBoundingClientRect().top - top) < 2;
+        const firstRow = rowsShown[0];
+        const line = firstLine(firstRow?.querySelector(".actionSheetItemText") ?? null);
+        const nameTop = line ? line.top + line.height * 0.3 : firstRow?.getBoundingClientRect().top ?? top;
+        const hiddenAbove = nameTop < top - 1;
+        content.toggleAttribute("data-above", scroller.scrollTop > 2 && hiddenAbove && !heldAtTop);
+        content.toggleAttribute("data-rows-above", scroller.scrollTop > 2 && hiddenAbove);
       };
       scroller.addEventListener("scroll", edges, { passive: true });
       backdrop.addEventListener("click", () => close());
@@ -1962,10 +3239,27 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
       });
       document.body.append(backdrop, container);
       if (tv) {
+        const most = parseFloat(getComputedStyle(sheet).maxHeight);
+        if (most > 0 && most < window.innerHeight) {
+          container.style.alignItems = "flex-start";
+          sheet.style.marginTop = `${Math.round((window.innerHeight - most) / 2)}px`;
+        }
         sheet.style.setProperty("--jellyseerr-menu-ground", getComputedStyle(sheet).backgroundColor);
-        const words = scroller.querySelector(".actionSheetItemText")?.getBoundingClientRect();
-        const box = scroller.getBoundingClientRect();
-        if (words && box.width > 0) sheet.style.setProperty("--jellyseerr-menu-indent", `${Math.round(getComputedStyle(sheet).direction === "rtl" ? box.right - words.right : words.left - box.left)}px`);
+      }
+      const firstName = scroller.querySelector(".actionSheetItemText");
+      const wordsBox = firstName?.getBoundingClientRect();
+      const scrollerBox = scroller.getBoundingClientRect();
+      const rtl = getComputedStyle(sheet).direction === "rtl";
+      if (wordsBox && scrollerBox.width > 0) {
+        sheet.style.setProperty("--jellyseerr-menu-indent", `${Math.round(rtl ? scrollerBox.right - wordsBox.right : wordsBox.left - scrollerBox.left)}px`);
+      }
+      if (firstName && scrollerBox.width > 0 && typeof document.createRange === "function") {
+        const range = document.createRange();
+        range.selectNodeContents(firstName);
+        const letters = range.getBoundingClientRect?.();
+        if (letters && letters.width > 0) {
+          sheet.style.setProperty("--jellyseerr-menu-text", `${Math.round(rtl ? scrollerBox.right - letters.right : letters.left - scrollerBox.left)}px`);
+        }
       }
       for (const group of groups ?? []) {
         const head = group.open ? headOf(group.id) : void 0;
@@ -1981,6 +3275,7 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
         sheet.toggleAttribute("data-over-list", box.left < x + half && x - half < box.right && box.top < y + half && y - half < box.bottom);
       }
       function place(keep = false) {
+        fitValues();
         if (tv) {
           cutInARow();
           edges();
@@ -2022,20 +3317,39 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
         overList();
       }
       place();
+      if (outcome && noneLabel) {
+        stopOutcome = watchOutcome({
+          band: outcome,
+          anchor,
+          noneLabel,
+          undoLabel,
+          onUndo,
+          canUndo,
+          renew,
+          closed: () => closed,
+          focusHome: () => focusInPlace(heads().find((head) => head.getAttribute("aria-expanded") === "true") ?? items()[0]),
+          placed: () => place(true)
+        });
+      }
       sheet.addEventListener("pointermove", (event) => {
         pointerAt = event.clientY;
       });
       sheet.addEventListener("pointerdown", (event) => {
         pointerAt = event.clientY;
         keyed = false;
+        pointered = true;
       });
       sheet.addEventListener("wheel", () => {
         keyed = false;
+        pointered = true;
       }, { passive: true });
+      sheet.addEventListener("keydown", () => {
+        pointered = false;
+      }, true);
       scroller.addEventListener("scroll", () => {
         window.clearTimeout(settling);
         settling = window.setTimeout(() => {
-          if (!closed && keyed) cutAgain();
+          if (!closed && (keyed || !pointered)) cutAgain();
         }, 140);
       }, { passive: true });
       sheet.addEventListener("pointerleave", (event) => {
@@ -2455,6 +3769,7 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
     const filterModes = /* @__PURE__ */ new Map();
     const sortModes = /* @__PURE__ */ new Map();
     const typePickers = /* @__PURE__ */ new WeakMap();
+    const sortPainters = /* @__PURE__ */ new WeakMap();
     const label = createSay(JE);
     const getFilterMode = (name) => filterModes.get(name) ?? FILTER_MODES.MIXED;
     function setFilterMode(name, mode) {
@@ -2519,6 +3834,8 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
           choices: buttons.map((entry) => ({ id: entry.mode, name: entry.label, selected: entry.mode === getFilterMode(moduleName) }))
         }),
         choose,
+        // Redraws the tabs after the type was set from elsewhere (a saved profile).
+        paint,
         // (Known from what puts them out of sight, a held header at a phone's width, as the stylesheet has
         // it: their own style is no guide while they are still fading.)
         tabsShowing: () => !(container.closest(".jellyseerr-discovery-header")?.hasAttribute("data-stuck") && window.matchMedia?.("(max-width: 34em)").matches)
@@ -2531,7 +3848,7 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
     }
     function createSortControl(moduleName, onSortChange) {
       const sortLabel = label("discovery_sort_label", "Sort");
-      const nameOf = (value) => {
+      const nameOf2 = (value) => {
         const entry = SORT_OPTIONS.find((option) => option.value === value) ?? SORT_OPTIONS[0];
         return entry ? label(entry.labelKey, entry.label) : "";
       };
@@ -2546,11 +3863,12 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
       chevron.setAttribute("aria-hidden", "true");
       button.append(text, chevron);
       const paint = () => {
-        const current = nameOf(getSortMode(moduleName));
+        const current = nameOf2(getSortMode(moduleName));
         text.textContent = current;
         button.setAttribute("aria-label", `${sortLabel}: ${current}`);
       };
       paint();
+      sortPainters.set(button, paint);
       button.addEventListener("click", () => {
         const current = getSortMode(moduleName);
         button.setAttribute("aria-expanded", "true");
@@ -2610,7 +3928,10 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
           moduleName,
           scope,
           () => onSortChange(getSortMode(moduleName)),
-          moduleName === "genre" ? subject : void 0
+          moduleName === "genre" ? subject : void 0,
+          void 0,
+          moduleName === "tag" ? ["keywords"] : [],
+          sectionProfiles(header, moduleName, scope, onFilterChange, onSortChange)
         );
         if (filters) bar.appendChild(filters);
         bar.appendChild(createSortControl(moduleName, onSortChange));
@@ -2620,11 +3941,56 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
       if (showFilter) addFilterControl(header, moduleName, onFilterChange);
       return header;
     }
+    function sectionProfiles(header, moduleName, scope, onFilterChange, onSortChange) {
+      if (!JE.discoveryAddress) return null;
+      return {
+        read: () => JE.discoveryAddress?.filterPairs(JE.discoveryAddress.current(moduleName, moduleName), true).join("&") ?? "",
+        apply(text) {
+          const address = JE.discoveryAddress;
+          if (!address) return;
+          const wanted = address.filtersOf(text, scope);
+          const tabs = header.querySelector("[data-type-group]");
+          if (tabs) setFilterMode(moduleName, wanted.mode);
+          if (wanted.sort) sortModes.set(moduleName, wanted.sort);
+          else sortModes.delete(moduleName);
+          JE.discoveryFilters?.setSelection?.(moduleName, wanted.selection);
+          if (tabs) typePickers.get(tabs)?.paint();
+          const sortButton = header.querySelector(".jellyseerr-sort-btn");
+          if (sortButton) sortPainters.get(sortButton)?.();
+          JE.discoveryFilters?.repaint?.(header);
+          onSortChange(getSortMode(moduleName));
+          if (tabs) onFilterChange?.(getFilterMode(moduleName));
+        }
+      };
+    }
+    function createFiltersButton(header, moduleName, scope, onChange, options = {}) {
+      return JE.discoveryFilters?.createFiltersControl?.(
+        header,
+        moduleName,
+        scope,
+        onChange,
+        options.ownGenre,
+        options.place,
+        options.fixedAll ?? [],
+        options.profiles ?? null
+      ) ?? null;
+    }
     return {
       getFilterMode,
       setFilterMode,
       getSortMode,
       getTvSortMode,
+      createFiltersButton,
+      /** The further filters set for a module (beyond All / Movies / Series); {} when nothing is set. */
+      getFilters: (moduleName) => JE.discoveryFilters?.selectionOf?.(moduleName) ?? {},
+      /** Sets a module's further filters as a whole; the caller redraws its controls and reloads. */
+      setFilters: (moduleName, selection) => {
+        JE.discoveryFilters?.setSelection?.(moduleName, selection);
+      },
+      /** Takes a module's further filters away; the caller redraws its controls and reloads. */
+      clearFilters: (moduleName) => {
+        JE.discoveryFilters?.setSelection?.(moduleName, {});
+      },
       /** A section starts with nothing narrowing it: neither the type nor the further filters. */
       resetFilterMode: (name) => {
         filterModes.delete(name);
@@ -2740,7 +4106,7 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
       const raw = deps.storage().getItem(key);
       if (!raw) return null;
       const entry = JSON.parse(raw);
-      if (!isRecord(entry) || typeof entry.storedAt !== "number") return null;
+      if (!isRecord2(entry) || typeof entry.storedAt !== "number") return null;
       const age = deps.now() - entry.storedAt;
       if (!(age >= 0 && age < GENRE_LIST_TTL_MS)) return null;
       const { genres } = entry;
@@ -2881,11 +4247,11 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
         purgeLegacy();
         try {
           const parsed = JSON.parse(deps.storage().getItem(key) || "null");
-          const stored = isRecord(parsed) ? parsed.entries : null;
-          if (!isRecord(stored)) return entries;
+          const stored = isRecord2(parsed) ? parsed.entries : null;
+          if (!isRecord2(stored)) return entries;
           const now = deps.now();
           for (const [entryKey, entry] of Object.entries(stored)) {
-            if (!isRecord(entry)) continue;
+            if (!isRecord2(entry)) continue;
             const { storedAt, value } = entry;
             if (typeof storedAt !== "number") continue;
             const age = now - storedAt;
@@ -2981,9 +4347,10 @@ html:not(.layout-tv) .jellyseerr-sort-menu .jellyseerr-menu-clear { flex: 1 1 au
     JE.discoveryMenu = createDiscoveryMenu(JE);
     JE.discoveryRoles = createDiscoveryRoles(label);
     JE.discoverySection = createDiscoverySection(JE);
-    JE.discoveryFilters = createFilterPanel(JE, label);
+    JE.discoveryFilters = createFilterPanel(JE, label, api);
     injectFilterStyles();
     JE.discoveryFilter = createDiscoveryFilter(JE, api);
+    JE.discoveryAddress = createDiscoveryAddress(JE);
   })();
 })();
 })();

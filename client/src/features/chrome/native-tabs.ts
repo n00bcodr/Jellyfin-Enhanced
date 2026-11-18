@@ -67,18 +67,30 @@ const APP_BACK_MAX_POLLS = 40;
 const LOG = '🪼 Jellyfin Enhanced: [native-tabs]';
 
 export function isHomeHash(hash: string): boolean {
-    return hash === '' || hash === '#/home' || hash === '#/home.html' || hash.includes('#/home?') || hash.includes('#/home.html?');
+    return hash === '' || hash === '#/home' || hash === '#/home.html' || hash.includes('#/home?') || hash.includes('#/home.html?')
+        // (Or only the Recommendations filters' fragment after it: see discovery/address.ts.)
+        || hash.indexOf('#/home#') === 0 || hash.indexOf('#/home.html#') === 0;
+}
+/**
+ * A Home address without the fragment the Recommendations filters may add after its query (discovery/address.ts):
+ * what a deep link is. Dialogs push the address without it, and the filters change it in place, neither of which
+ * is a new link to follow.
+ */
+export function linkOf(hash: string): string {
+    const mark = String(hash || '').indexOf('#', 1);
+    return mark < 0 ? String(hash || '') : String(hash).slice(0, mark);
 }
 /** A hash-route query value, decoded when valid; null when absent. */
 export function hashParam(hash: string, name: string): string | null {
-    const match = new RegExp('[?&]' + name + '=([^&]*)').exec(hash);
+    // (The query ends where the Recommendations filters' fragment starts, see discovery/address.ts.)
+    const match = new RegExp('[?&]' + name + '=([^&#]*)').exec(hash);
     if (!match) return null;
     const raw = match[1] ?? '';
     try { return decodeURIComponent(raw); } catch { return raw; }
 }
 /** The current Home route (`#/home` or `#/home.html`) without its query. */
 export function homeRoute(hash: string): string {
-    return hash.indexOf('#/home') === 0 ? (hash.split('?')[0] ?? '#/home') : '#/home';
+    return hash.indexOf('#/home') === 0 ? '#' + (hash.slice(1).split(/[?#]/)[0] ?? '/home') : '#/home';
 }
 export function deepLinkHash(hash: string, index: number, id: string): string {
     return homeRoute(hash) + '?tab=' + index + '&' + DEEP_LINK_PARAM + '=' + encodeURIComponent(id);
@@ -419,7 +431,7 @@ export function createNativeTabs(JE: NativeTabsBridge, readClient: () => NativeT
             if (selectingTab) return;
             const urlIndex = parseInt(hashParam(hash(), 'tab') ?? '', 10);
             const picked = parseInt(String(event instanceof CustomEvent ? event.detail?.selectedTabIndex : undefined), 10);
-            if (picked !== (isNaN(urlIndex) ? 0 : urlIndex) || Date.now() - lastTabStripInput < 1000) userPickedHash = hash();
+            if (picked !== (isNaN(urlIndex) ? 0 : urlIndex) || Date.now() - lastTabStripInput < 1000) userPickedHash = linkOf(hash());
         });
         // tabchange fires once the index is recorded; the highlight may follow in the same task.
         tabs.addEventListener('tabchange', event => {
@@ -456,29 +468,35 @@ export function createNativeTabs(JE: NativeTabsBridge, readClient: () => NativeT
         if (entry && entry.index != null && entry.index !== wantedIndex) {
             // Rewrite rather than navigate: a router navigation builds a new Home page.
             const staleHash = hash();
+            // Only the tab's own pairs are corrected: the others (the Recommendations category open on it, its
+            // filters) stay, the filters' fragment after the query too (discovery/address.ts).
+            const mark = staleHash.indexOf('#', 1);
+            const fragment = mark < 0 ? '' : staleHash.slice(mark);
+            const query = mark < 0 ? staleHash : staleHash.slice(0, mark);
+            const others = (query.split('?')[1] || '').split('&').filter(pair => pair !== '' && !/^(?:tab|jeTab)=/.test(pair));
             // replaceState notifies JE navigation synchronously; ours clears rewrittenHash once seen.
-            const freshHash = deepLinkHash(staleHash, entry.index, entry.id);
-            rewrittenHash = freshHash;
+            const freshHash = deepLinkHash(staleHash, entry.index, entry.id) + others.map(pair => '&' + pair).join('') + fragment;
+            rewrittenHash = linkOf(freshHash);
             history.replaceState(history.state, '', window.location.pathname + window.location.search + freshHash);
             wantedIndex = entry.index;
-            if (userPickedHash === staleHash) userPickedHash = freshHash;
+            if (userPickedHash === linkOf(staleHash)) userPickedHash = linkOf(freshHash);
             // Our tab moved after the link was already followed: only the URL needed updating.
             const ownPanel = document.getElementById(OWN_ID_PREFIX + 'panel-' + entry.id);
-            if (appliedDeepLink && appliedDeepLink.hash === staleHash && appliedDeepLink.panel === ownPanel) {
-                appliedDeepLink.hash = hash();
+            if (appliedDeepLink && appliedDeepLink.hash === linkOf(staleHash) && appliedDeepLink.panel === ownPanel) {
+                appliedDeepLink.hash = linkOf(hash());
                 appliedDeepLink.btn = document.getElementById(OWN_ID_PREFIX + 'btn-' + entry.id);
             }
         }
         // Home(0) and Favorites(1) exist before Jellyfin selects, so they always complete.
         if (isNaN(wantedIndex) || wantedIndex < 2) return;
-        if (userPickedHash === hash()) return;
+        if (userPickedHash === linkOf(hash())) return;
         const found = slider.closest('[is="emby-tabs"]') || document.querySelector('[is="emby-tabs"]');
         const tabs = isTabs(found) ? found : null;
         const btn = tabs?.querySelectorAll('.emby-tab-button')[wantedIndex];
         const panel = root.querySelectorAll<HTMLElement>('.tabContent')[wantedIndex];
         const select = tabs?.selectedIndex?.bind(tabs);
         if (!tabs || !select || !btn || !panel || slotIndex(btn) !== wantedIndex || slotIndex(panel) !== wantedIndex) return;
-        const current = hash();
+        const current = linkOf(hash());
         // Consume a deep link once per page/header; reapplying it would undo a later click.
         if (appliedDeepLink && appliedDeepLink.hash === current && appliedDeepLink.root === root &&
             appliedDeepLink.panel === panel && appliedDeepLink.tabs === tabs) {
@@ -619,7 +637,7 @@ export function createNativeTabs(JE: NativeTabsBridge, readClient: () => NativeT
             if (!canGoBack && active && home && isOwnSlot(active)) {
                 // The URL still says ?tab=N. Spend that deep link now: Jellyfin reports the tab change
                 // only ~120 ms after the click, and syncDeepLink would select N again.
-                userPickedHash = hash();
+                userPickedHash = linkOf(hash());
                 home.click();
                 return undefined;
             }
@@ -647,7 +665,7 @@ export function createNativeTabs(JE: NativeTabsBridge, readClient: () => NativeT
         JE.helpers.observeTabContainers('native-tabs', '.tabContent.pageTabContent[data-index="0"]', scheduleInject);
         // Every navigation (hashchange, popstate and pushState).
         JE.core.navigation.onNavigate(() => {
-            if (hash() !== rewrittenHash) {
+            if (linkOf(hash()) !== rewrittenHash) {
                 appliedDeepLink = null;
                 userPickedHash = null;
             }

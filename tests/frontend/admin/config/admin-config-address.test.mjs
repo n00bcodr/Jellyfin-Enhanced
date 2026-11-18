@@ -130,3 +130,19 @@ test('a link to a setting opens its tab, not the tab the session kept', async t 
   assert.equal(activeTab(h.document), holder);
   assert.equal(params(h.window).get('tab'), holder, 'the address now names the tab shown');
 });
+
+// Upstream 5201d47b: the address the page writes spells the page's name as Jellyfin's own links do (%20, not the `+`
+// URLSearchParams writes), so it stays the address the dashboard links to and the page compares with.
+test('the address the page writes keeps the page name as Jellyfin writes it', async t => {
+  const h = bootGenerated();
+  t.after(h.close);
+  await h.ready();
+  const { document, window } = h;
+  tabButton(document, 'seerr').click();
+  await settle(window);
+  assert.equal(window.location.hash, '#/configurationpage?name=Jellyfin%20Enhanced&tab=seerr');
+  const leaf = tabButton(document, 'seerr').nextElementSibling.querySelector(':scope > .jea-nav-leaf');
+  leaf.click();
+  await settle(window);
+  assert.equal(window.location.hash, `#/configurationpage?name=Jellyfin%20Enhanced&tab=seerr&card=${slug(leaf.textContent)}`);
+});

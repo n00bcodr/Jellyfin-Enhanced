@@ -10,6 +10,7 @@ import {
     throwIfAborted, unseenResults, type YieldStats
 } from './domain';
 import { listSignature } from './page-ready';
+import { createSectionAddress } from './section-address';
 import { createSectionChassis } from './section-chassis';
 import type {
     DiscoveryController, DiscoverySpec, FeedKind, FeedPage, FilterMode, ManagedFetchOptions,
@@ -18,7 +19,6 @@ import type {
 
 /** Prefetch per feed stays below the shared 8-slot request pool so demand never queues behind it. */
 const MAX_PREFETCH_PER_FEED = 3;
-const KEEP_ATTACHED_MS = 6000;
 const LOAD_YIELD_COLD = 0.8;
 const LOAD_YIELD_FLOOR = 0.05;
 
@@ -38,6 +38,8 @@ export function createDiscoveryController(spec: DiscoverySpec, JE: SeerrDiscover
     const filter = () => filterOf(JE);
     // The page's own card: a list page's grid uses portraitCard, a detail page's lists overflowPortraitCard.
     const chassis = createSectionChassis(JE, { key, page: isDualFeed ? 'list' : 'detail', personScope: isClientPaged });
+    // The section's filters in its page's address; the page itself is its address without them.
+    const address = createSectionAddress(JE, spec, isClientPaged);
 
     // ---- Chassis state (all modes) -------------------------------------------
     const processedPages = new Set<string>();
@@ -52,7 +54,6 @@ export function createDiscoveryController(spec: DiscoverySpec, JE: SeerrDiscover
     let shownViewHash: string | null = null;
     let currentAbortController: AbortController | null = null;
     let currentRenderingPageKey: string | null = null;
-    let keepAttachedSequence = 0;
     let initialized = false;
     let disposed = false;
     let pendingFrame = 0;
@@ -93,10 +94,10 @@ export function createDiscoveryController(spec: DiscoverySpec, JE: SeerrDiscover
     function rememberShownView(event: Event): void {
         if (!(event.target instanceof HTMLElement)) return;
         shownView = event.target;
-        shownViewHash = window.location.hash;
+        shownViewHash = address.pageHash();
     }
     function currentShownView(): HTMLElement | null {
-        return shownView?.isConnected && !shownView.classList.contains('hide') && shownViewHash === window.location.hash
+        return shownView?.isConnected && !shownView.classList.contains('hide') && shownViewHash === address.pageHash()
             ? shownView : null;
     }
     function isEnabled(): boolean {
@@ -127,10 +128,10 @@ export function createDiscoveryController(spec: DiscoverySpec, JE: SeerrDiscover
             throwIfAborted(signal);
             if (spec.mode !== 'dual-feed' || !currentFeeds) throw abortError();
             // The page, then what the section's controls ask for (the order, then the further filters).
-            const path = `${spec.buildDiscoverPath(kind, feedId, currentFeeds)}?page=${page}${filter().feedQuery(key, kind)}`;
-            const response = await managed(path, { signal });
+            const request = address.feed(spec.buildDiscoverPath(kind, feedId, currentFeeds), page, kind);
+            const response = await managed(request.path, { signal });
             throwIfAborted(signal);
-            return decodeFeedPage(response);
+            return request.keep(decodeFeedPage(response));
         } catch (error) {
             if (isAbortError(error) || !tolerant) throw error;
             // The caller keeps the feed open so the engine re-fetches page 1 instead of ending it.
@@ -401,6 +402,8 @@ export function createDiscoveryController(spec: DiscoverySpec, JE: SeerrDiscover
 
     /** dual-feed re-fetches page 1 with the new sortBy; client-paged re-sorts its cached list. */
     async function handleSortChange(): Promise<void> {
+        // (Also a further filter's change: the Filters menu reloads through here.)
+        address.write();
         const itemsContainer = itemsContainerNow();
         if (isClientPaged) {
             if (!itemsContainer) return;
@@ -474,6 +477,7 @@ export function createDiscoveryController(spec: DiscoverySpec, JE: SeerrDiscover
         }
     }
     function handleFilterChange(newMode: FilterMode): void {
+        address.write();
         const itemsContainer = itemsContainerNow();
         if (!itemsContainer) return;
         if (isClientPaged) {
@@ -505,30 +509,10 @@ export function createDiscoveryController(spec: DiscoverySpec, JE: SeerrDiscover
     function ensureFilterControl(itemsContainer: HTMLElement): void {
         if (!isDualFeed) return;
         const header = itemsContainer.closest(sectionSelector)?.querySelector('.jellyseerr-discovery-header');
-        if (!header || !filter().hasBothTypes(cachedTvResults, cachedMovieResults)) return;
+        // (A type its page's address asked for is shown on the tabs from the start, where both feeds exist.)
+        const typed = filter().getFilterMode(key) !== 'mixed' && !!currentFeeds?.tvId && !!currentFeeds.movieId;
+        if (!header || !(typed || filter().hasBothTypes(cachedTvResults, cachedMovieResults))) return;
         filter().addFilterControl(header, key, handleFilterChange);
-    }
-    /**
-     * The list page may still be settling when the section goes in (as soon as the container
-     * exists, not once it is full). If a re-render drops the section in the first seconds, put it back.
-     */
-    function keepAttached(section: HTMLElement, listPage: HTMLElement, signal: AbortSignal): void {
-        // Unique id per call: a stale handle unsubscribing a shared id would drop the successor's.
-        const handle = JE.helpers?.onBodyMutation?.(`jellyseerr-${key}-discovery-keepattached-${++keepAttachedSequence}`, () => {
-            if (signal.aborted) return;
-            const detached = !section.isConnected;
-            if (!detached && !section.closest('.page.hide')) return;
-            // (Not the section's own list: the page's.)
-            const own = '.itemsContainer:not(.jellyseerr-discovery-section *)';
-            const container = currentShownView()?.querySelector<HTMLElement>(own) ??
-                document.querySelector<HTMLElement>(`.page:not(.hide) ${own}`) ??
-                document.querySelector<HTMLElement>(`.libraryPage:not(.hide) ${own}`) ?? listPage;
-            if (!container.closest('.page, .libraryPage')?.contains(section)) chassis.placeInPage(container, section);
-        });
-        if (!handle) return;
-        const stop = () => { clearTimeout(timer); signal.removeEventListener('abort', stop); handle.unsubscribe(); };
-        const timer = setTimeout(stop, KEEP_ATTACHED_MS);
-        signal.addEventListener('abort', stop, { once: true });
     }
     async function renderDualFeed(id: string, signal: AbortSignal, pageKey: string): Promise<void> {
         if (spec.mode !== 'dual-feed') return;
@@ -552,6 +536,9 @@ export function createDiscoveryController(spec: DiscoverySpec, JE: SeerrDiscover
         cachedTvResults = [];
         cachedMovieResults = [];
         shownResults.clear();
+        // The section starts on what its page's address says (else on defaults) before page 1 is asked for: the order
+        // and the further filters are part of that request.
+        address.start(!!(feeds.tvId && feeds.movieId));
 
         // (No prefetch alongside page 1: extra requests slow it down at Seerr, and the engine's
         // first fill fetches pages 2-3 the moment page 1 has rendered.)
@@ -570,13 +557,15 @@ export function createDiscoveryController(spec: DiscoverySpec, JE: SeerrDiscover
         if (listPage) {
             document.querySelector(sectionSelector)?.remove();
             const built = createSectionContainer(resolved.title, false, resolved.name);
+            // (The kinds its feeds have, for the filters that are one kind's own: a content rating.)
+            built.querySelector('.jellyseerr-discovery-header')?.setAttribute('data-je-kinds', [feeds.movieId ? 'movie' : '', feeds.tvId ? 'tv' : ''].filter(Boolean).join(','));
             if (chassis.place(listPage, built)) {
                 section = built;
                 itemsContainer = built.querySelector<HTMLElement>('.itemsContainer');
                 // The section's place is held from now on; the cards land in these boxes.
                 const held = chassis.placeholders(cardClass);
                 if (itemsContainer && held) itemsContainer.appendChild(held);
-                keepAttached(built, listPage, signal);
+                chassis.keepAttached(built, listPage, signal, currentShownView);
             }
         }
         // A failure here tears the section down only while this render still owns it: an abort means
@@ -593,16 +582,19 @@ export function createDiscoveryController(spec: DiscoverySpec, JE: SeerrDiscover
         const anyFailed = commitPageOne(fetchResults);
         // A failed first page is retried by the scroll engine: the held places stay until it lands or gives up.
         if (itemsContainer && !anyFailed) JE.discoverySection?.clearPlaceholders?.(itemsContainer);
-        // Always start each section on defaults instead of persisting the previous choice.
-        filter().resetFilterMode(key);
-        filter().resetSortMode(key);
-        updateHasMorePages(filter().getFilterMode(key));
+        // (A type its page's address asked for: page 1 of both kinds goes in with the other kind hidden, as choosing it
+        // does, and its own feed is read on from there even when its page 1 came back empty.)
+        const filterMode = filter().getFilterMode(key);
+        updateHasMorePages(filterMode);
         const displayResults = interleavedResults();
         if (!section || !itemsContainer) return;
+        if (filterMode !== 'mixed') filter().applyFilterVisibility(itemsContainer, filterMode);
         // An empty page 1 is not an empty feed: the parental, in-library and hidden filters can strip
         // a page bare while later pages hold titles. Give up only when the feed says nothing is left.
+        // (Narrowed by the filters its address gave, it stays, to say nothing matches them.)
         const fragment = createCardsFragment(displayResults);
-        if (fragment.childNodes.length === 0 && !anyFailed && !hasMorePages) {
+        const narrowed = filter().hasMoreFilters(key);
+        if (fragment.childNodes.length === 0 && !anyFailed && !hasMorePages && !narrowed) {
             section.remove();
             return;
         }
@@ -612,6 +604,8 @@ export function createDiscoveryController(spec: DiscoverySpec, JE: SeerrDiscover
         itemsContainer.appendChild(fragment);
         markShown(displayResults);
         if (hasMorePages) setupInfiniteScroll();
+        // Filters its address gave: the line of what is set, or the note that nothing matches them.
+        if (narrowed) filter().noteIfEmpty(key, itemsContainer, hasMorePages);
         markProcessed(pageKey);
     }
     async function renderClientPaged(id: string, signal: AbortSignal, pageKey: string): Promise<void> {
@@ -622,8 +616,10 @@ export function createDiscoveryController(spec: DiscoverySpec, JE: SeerrDiscover
         cachedAllResults = resolved.items;
         clientListActive = true;
         const hasBoth = filter().resultHasBothTypes(cachedAllResults);
-        filter().resetFilterMode(key);
-        filter().resetSortMode(key);
+        // The section starts on what its page's address says (else on defaults); the type only where the tabs are offered.
+        address.start(hasBoth);
+        // (Further filters its address gave: what they keep is shown, even nothing, said so below.)
+        const narrowed = filter().hasMoreFilters(key);
         const displayResults = pagedResultsForMode(filter().getFilterMode(key));
 
         const detailSection = await waitForPageReady(signal);
@@ -644,7 +640,7 @@ export function createDiscoveryController(spec: DiscoverySpec, JE: SeerrDiscover
             fragment = createCardsFragment(chunk);
             consumed += chunk.length;
         }
-        if (!itemsContainer || fragment.childNodes.length === 0) {
+        if (!itemsContainer || (fragment.childNodes.length === 0 && !narrowed)) {
             console.debug(`${logPrefix} No cards created from results`);
             return;
         }
@@ -656,6 +652,7 @@ export function createDiscoveryController(spec: DiscoverySpec, JE: SeerrDiscover
         chassis.place(detailSection, section);
         console.debug(`${logPrefix} Section added with ${cardCount} cards`);
         if (hasMorePages) setupInfiniteScroll();
+        if (narrowed) filter().noteIfEmpty(key, itemsContainer, hasMorePages);
         markProcessed(pageKey);
     }
     /** Offers a retry when a full-list discovery fails before the scroll engine has cards to offer one on. */
@@ -677,7 +674,7 @@ export function createDiscoveryController(spec: DiscoverySpec, JE: SeerrDiscover
     async function render(): Promise<void> {
         const id = disposed ? null : spec.getIdFromUrl();
         if (!id) return;
-        const pageKey = spec.pageKey ? spec.pageKey(id) : `${key}-${id}-${window.location.hash}`;
+        const pageKey = spec.pageKey ? spec.pageKey(id) : `${key}-${id}-${address.pageHash()}`;
         if (processedPages.has(pageKey)) return;
         if (currentRenderingPageKey === pageKey) return;
         if (!isEnabled()) return;
@@ -753,7 +750,7 @@ export function createDiscoveryController(spec: DiscoverySpec, JE: SeerrDiscover
         if (disposed || !spec.getIdFromUrl()) return;
         if (element instanceof HTMLElement) {
             shownView = element;
-            shownViewHash = window.location.hash;
+            shownViewHash = address.pageHash();
         }
         pendingFrame = requestAnimationFrame(() => { void render(); });
     }
@@ -762,8 +759,8 @@ export function createDiscoveryController(spec: DiscoverySpec, JE: SeerrDiscover
      * router reacts: the deduplicated navigate callback can run after pages were already swapped.
      */
     function snapshotVisiblePage(): void {
-        if (window.location.hash === snapshotHash) return; // Same navigation, second event.
-        snapshotHash = window.location.hash;
+        if (address.pageHash() === snapshotHash) return; // Same navigation, second event.
+        snapshotHash = address.pageHash();
         visibleAtNavigation = document.querySelector('.page:not(.hide)');
         visibleContentAtNavigation = listSignature(visibleAtNavigation);
     }

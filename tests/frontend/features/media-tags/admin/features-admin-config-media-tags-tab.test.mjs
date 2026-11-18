@@ -221,6 +221,34 @@ test('the address follows the Media Tags tab and its section, and the next tab r
   assert.equal(params().get('tab'), 'display');
 });
 
+// Upstream 5201d47b: showing the Media Tags tab again (its button, or the search's end putting the saved tab back)
+// keeps the section the address names, so a reload or a copied link still opens that section.
+test('showing the Media Tags tab again keeps its section in the address', async (t) => {
+  const h = boot(t);
+  await h.settle();
+  const params = () => new URLSearchParams(h.window.location.hash.split('?')[1] || '');
+  h.tabButton('media-tags').click();
+  await h.until();
+  h.root.querySelector('#jeTaTab-colours').click();
+  await h.settle();
+  assert.equal(params().get('tab'), 'colours');
+  h.tabButton('media-tags').click();
+  await h.settle();
+  assert.equal(h.root.dataset.tab, 'colours', 'the section shown is kept');
+  assert.equal(params().get('jeSection'), 'media-tags');
+  assert.equal(params().get('tab'), 'colours', 'its button: the address still names the section shown');
+  const input = h.document.getElementById('settingsSearchInput');
+  input.value = 'rating';
+  input.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  await sleep(250);
+  input.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  await h.settle();
+  assert.ok(h.tab.classList.contains('active'));
+  assert.equal(h.root.dataset.tab, 'colours');
+  assert.equal(params().get('jeSection'), 'media-tags');
+  assert.equal(params().get('tab'), 'colours', 'the search ended: the address still names the section shown');
+});
+
 test('an address naming a Media Tags section opens it, not the tab the session kept', async (t) => {
   // Restoring the session's tab writes the address too; the link that opened the page still decides.
   const h = boot(t, { url: `${PAGE_URL}&jeSection=media-tags&tab=groups&group=rating`, session: { jellyfinEnhancedActiveTab: 'display' } });

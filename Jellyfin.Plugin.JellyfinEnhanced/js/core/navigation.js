@@ -2,6 +2,22 @@
 "use strict";
 (() => {
   // client/src/core/navigation.ts
+  function routerPart(href) {
+    const text = String(href);
+    const at = text.indexOf("#");
+    const mark = at < 0 ? -1 : text.indexOf("#", at + 1);
+    return mark < 0 ? text : text.slice(0, mark);
+  }
+  function routeOf(href) {
+    const text = String(href);
+    const at = text.indexOf("#");
+    return at < 0 ? text : text.slice(0, at + 1) + (text.slice(at + 1).split(/[?#]/)[0] ?? "");
+  }
+  function pageOf(href) {
+    const head = routerPart(href);
+    const category = /(?:^|[#&])jeCategory=([^&]*)/.exec(String(href).slice(head.length));
+    return `${head}#${category ? category[1] : ""}`;
+  }
   function createNavigation(deps) {
     const callbacks = /* @__PURE__ */ new Map();
     const views = /* @__PURE__ */ new Set();
@@ -34,13 +50,40 @@
         };
       },
       getCurrentView: () => deps.currentView(),
+      /**
+       * Changes the address without it being a navigation for the plugin: no 'je:navigate', and the address counts
+       * as already seen, so its features keep what they show. For what a page keeps in its own address (a Seerr
+       * section's filters, the Recommendations category page), which must not tear that page's features down. The
+       * browser's Back and Forward to and from it still navigate. `state`: the entry's (keep `history.state` when
+       * replacing: the router's own is in it); `push`: add a history entry (else the current one is replaced).
+       */
+      setAddressQuietly(state, url, push = false) {
+        deps.writeAddress(state, url, push);
+        lastHref = deps.href();
+      },
       getViewHandlerCount: () => views.size,
       getNavCallbackCount: () => callbacks.size
     };
     return {
       navigation,
+      /**
+       * The address the page opened at is already where it is: a popstate or hashchange that lands on it again (a
+       * dialog's own history entry popped by Back, such as the Seerr More Info modal's) is not a navigation.
+       * Unseeded, the first one after a reload or an opened link would tear every page feature down.
+       */
+      seed() {
+        lastHref = deps.href();
+      },
       dispatchNavigate(event) {
         if (deps.href() === lastHref) return;
+        if (lastHref !== null && deps.isDialogEntry()) {
+          const href = deps.href();
+          const pushed = event?.type === "je:navigate";
+          if (pushed ? routeOf(href) === routeOf(lastHref) : pageOf(href) === pageOf(lastHref)) {
+            deps.writeAddress(deps.state(), lastHref, false);
+            return;
+          }
+        }
         lastHref = deps.href();
         const generation = ++navGeneration;
         for (const [callback, entry] of [...callbacks]) {
@@ -92,6 +135,8 @@
     const je = host.JellyfinEnhanced;
     const core = je.core ?? (je.core = {});
     if (core.navigation) return;
+    let unpatchedPush = null;
+    let unpatchedReplace = null;
     const currentElement = () => document.querySelector(".libraryPage:not(.hide)");
     const currentView = () => {
       const element = currentElement();
@@ -119,7 +164,18 @@
           return null;
         }
       },
-      report: (context, error) => console.error(`🪼 Jellyfin Enhanced: Navigation: ${context}:`, error)
+      report: (context, error) => console.error(`🪼 Jellyfin Enhanced: Navigation: ${context}:`, error),
+      isDialogEntry() {
+        const state = window.history.state;
+        if (!state || typeof state !== "object" || !("usr" in state)) return false;
+        const usr = state.usr;
+        return !!usr && typeof usr === "object" && "dialogs" in usr && Array.isArray(usr.dialogs);
+      },
+      state: () => window.history.state,
+      writeAddress(state, url, push) {
+        const write = push ? unpatchedPush ?? window.history.pushState.bind(window.history) : unpatchedReplace ?? window.history.replaceState.bind(window.history);
+        write(state, "", url);
+      }
     });
     core.navigation = runtime.navigation;
     let hooked = false;
@@ -162,12 +218,15 @@
           event
         );
       });
+      runtime.seed();
       for (const event of ["je:navigate", "hashchange", "popstate"]) {
         window.addEventListener(event, runtime.dispatchNavigate);
       }
       const history = window.history;
       if (!history.__jePushed) {
         history.__jePushed = true;
+        unpatchedPush = history.pushState.bind(history);
+        unpatchedReplace = history.replaceState.bind(history);
         for (const method of ["pushState", "replaceState"]) {
           const original = history[method].bind(history);
           history[method] = (data, unused, url) => {

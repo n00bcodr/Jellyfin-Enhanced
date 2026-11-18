@@ -5,6 +5,9 @@ import { filterOf, type SeerrDiscoveryHost } from '../host-discovery';
 import { createSay } from './say';
 import type { FilterChange, SectionPage, SortChange } from './types';
 
+/** How long a list section is put back after the list page drops it while it settles. */
+const KEEP_ATTACHED_MS = 6000;
+
 export interface ChassisOptions {
     readonly key: string;
     readonly page: SectionPage;
@@ -14,6 +17,7 @@ export interface ChassisOptions {
 
 export function createSectionChassis(JE: SeerrDiscoveryHost, { key, page, personScope }: ChassisOptions) {
     const label = createSay(JE);
+    let keepAttachedSequence = 0;
 
     /** The section with its header (the title, then a row with the filter and sort controls). `name`: the name the title is about. */
     function createSectionContainer(title: string, showFilter: boolean, onFilterChange: FilterChange, onSortChange: SortChange,
@@ -70,5 +74,28 @@ export function createSectionChassis(JE: SeerrDiscoveryHost, { key, page, person
         return parts?.buildPlaceholderCards ? parts.buildPlaceholderCards(parts.PLACEHOLDER_CARDS, cardClass) : null;
     }
 
-    return { createSectionContainer, placeInPage, place, buildRetrySection, placeholders };
+    /**
+     * The list page may still be settling when the section goes in (as soon as the container exists, not once it is
+     * full). If a re-render drops the section in the first seconds, put it back (`shownView`: the page the router showed).
+     */
+    function keepAttached(section: HTMLElement, listPage: HTMLElement, signal: AbortSignal, shownView: () => HTMLElement | null): void {
+        // Unique id per call: a stale handle unsubscribing a shared id would drop the successor's.
+        const handle = JE.helpers?.onBodyMutation?.(`jellyseerr-${key}-discovery-keepattached-${++keepAttachedSequence}`, () => {
+            if (signal.aborted) return;
+            const detached = !section.isConnected;
+            if (!detached && !section.closest('.page.hide')) return;
+            // (Not the section's own list: the page's.)
+            const own = '.itemsContainer:not(.jellyseerr-discovery-section *)';
+            const container = shownView()?.querySelector<HTMLElement>(own) ??
+                document.querySelector<HTMLElement>(`.page:not(.hide) ${own}`) ??
+                document.querySelector<HTMLElement>(`.libraryPage:not(.hide) ${own}`) ?? listPage;
+            if (!container.closest('.page, .libraryPage')?.contains(section)) placeInPage(container, section);
+        });
+        if (!handle) return;
+        const stop = () => { clearTimeout(timer); signal.removeEventListener('abort', stop); handle.unsubscribe(); };
+        const timer = setTimeout(stop, KEEP_ATTACHED_MS);
+        signal.addEventListener('abort', stop, { once: true });
+    }
+
+    return { createSectionContainer, placeInPage, place, buildRetrySection, placeholders, keepAttached };
 }

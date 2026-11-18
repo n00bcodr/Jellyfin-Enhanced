@@ -1,7 +1,7 @@
 {
   "description": "Budget for what the plugin assembly, Jellyfin.Plugin.JellyfinEnhanced.dll, embeds (client assets, pages, tag assets). embeddedBytes: the summed length of its manifest resources as embedded (a packed one at its packed length). The DLL is these plus about 3.1 MB of code. The budget counts the resources, not the DLL file, because gate T runs with coverage and the file on disk is then the instrumented copy (0.65 MB longer); the resources are the same bytes either way. Checked by tests/backend/Api/PackedResourcesTests.cs (gate T). It is a ratchet: lowering the limit needs no reason; a history entry that raises it must give one. `limits` is always the last history entry's.",
   "limits": {
-    "embeddedBytes": 11922650
+    "embeddedBytes": 12049175
   },
   "history": [
     {
@@ -59,6 +59,17 @@
         "embeddedBytes": 11922650
       },
       "reason": "Raised by exactly what the ports add, so the headroom left before them stays as it was. Measured with PackedResourcesTests on each commit, on top of 2315155c: 11,873,489 bytes on 2315155c, 11,874,672 on 21ac33dc (+1,183: the 30 translated locale files), 11,895,660 on f4514232 (+20,988: the Elsewhere branding icon in elsewhere.js, the admin page's upload slot, URL check and sections, the bootstrap contract reader, and their minified twins and maps), 11,902,184 on 1b027a34 (+6,524: the MDBList list kept in step on the Services tab, in the admin page's script and sections). +28,695 in all."
+    },
+    {
+      "date": "2026-11-18",
+      "change": "upstream sync: ports of upstream 5201d47b and d617312f (#1084), branch sync/auto-20261118-1631",
+      "measured": {
+        "embeddedBytes": 12036754
+      },
+      "limits": {
+        "embeddedBytes": 12049175
+      },
+      "reason": "Raised by exactly what the ports add, so the headroom left before them stays as it was. Measured with PackedResourcesTests on each commit: 11,910,229 bytes on 55ad63b0, 11,911,205 on 05cf85bc (+976: 5201d47b's address rules in the admin page's script, configPage.html and jeAdmin.js with its map), 12,036,754 on cf203615 (+125,549: upstream's #1084, the Seerr filters, the address module, saved filters and Undo in the discovery and Recommendations scripts with their minified twins and source maps, the navigation core, native tabs and custom tabs, the admin descriptions and en.json). +126,525 in all."
     }
   ]
 }

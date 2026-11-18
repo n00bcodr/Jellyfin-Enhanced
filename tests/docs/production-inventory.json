@@ -658,6 +658,10 @@
       "category": "Features"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Features/Seerr/JeSeerrController.FilterProfiles.cs",
+      "category": "Features"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Features/Seerr/JeSeerrController.Issues.cs",
       "category": "Features"
     },
@@ -707,6 +711,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Features/Seerr/Services/DiscoverFilters.cs",
+      "category": "Features"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Features/Seerr/Services/DiscoveryFilterProfiles.cs",
       "category": "Features"
     },
     {
@@ -3835,6 +3843,38 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Features/Seerr/JeSeerrController.Discover.cs",
       "following_attributes": [
         "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/user-settings/{userId}/discovery-filter-profiles",
+      "method": "GetDiscoveryFilterProfiles",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Features/Seerr/JeSeerrController.FilterProfiles.cs",
+      "following_attributes": [
+        "Authorize",
+        "ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/user-settings/{userId}/discovery-filter-profiles",
+      "method": "SaveDiscoveryFilterProfile",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Features/Seerr/JeSeerrController.FilterProfiles.cs",
+      "following_attributes": [
+        "Authorize",
+        "RequestSizeLimit(DiscoveryFilterProfiles.MaxRequestBytes)",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "DELETE",
+      "path": "/JellyfinEnhanced/user-settings/{userId}/discovery-filter-profiles/{profileId}",
+      "method": "DeleteDiscoveryFilterProfile",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Features/Seerr/JeSeerrController.FilterProfiles.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")"
       ]
     },
     {
@@ -10928,6 +10968,10 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Features/Platform/Services/ClientScriptBundle.cs"
     },
     {
+      "literal": "discovery-filter-profiles.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Features/Seerr/Services/DiscoveryFilterProfiles.cs"
+    },
+    {
       "literal": "Saved user shortcuts for {_userDisplayResolver.ResolveUserDisplay(authorizedUserId)} to shortcuts.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Features/Settings/JeSettingsController.cs"
     },
@@ -11294,10 +11338,10 @@
   ],
   "counts": {
     "build_targets": 1,
-    "files": 566,
-    "routes": 224,
+    "files": 568,
+    "routes": 227,
     "configuration_properties": 793,
-    "storage_references": 97,
+    "storage_references": 98,
     "scheduled_tasks": 17,
     "locales": 33
   }

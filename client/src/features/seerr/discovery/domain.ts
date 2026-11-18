@@ -166,7 +166,8 @@ export function selectCardResults(results: readonly SeerrResult[], policy: CardP
 
 // ---- Page URLs ----------------------------------------------------------------
 function hashParams(hash: string): URLSearchParams | null {
-    try { return new URLSearchParams(hash.split('?')[1]); }
+    // (The query ends where the page's own fragment starts, see address.ts.)
+    try { return new URLSearchParams((hash.split('?')[1] || '').split('#')[0]); }
     catch { return null; }
 }
 export function parseDetailId(hash: string): string | null {

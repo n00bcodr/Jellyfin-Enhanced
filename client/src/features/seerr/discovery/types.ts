@@ -92,13 +92,18 @@ export interface PageReadyOptions {
 
 export type FilterChange = (mode: FilterMode) => void;
 export type SortChange = (sort: string) => void;
-/** Which further filters a section can offer: a list page's feed (Seerr filters it) or a person's titles (filtered here). */
-export type FilterScope = 'feed' | 'person';
+/**
+ * Which further filters a section can offer: a list page's feed (Seerr filters it), a person's titles (filtered here),
+ * or titles of a feed that takes no filters, such as Trending (filtered here by what each title says of itself).
+ */
+export type FilterScope = 'feed' | 'person' | 'loaded';
 export interface SortOption { readonly value: string; readonly label: string; readonly labelKey: string }
 /** The All / Movies / Series choice of a header's tabs, for the Filters menu where the tabs are out of sight. */
 export interface TypePicker {
     groupOf(): MenuGroup;
     choose(mode: string): void;
+    /** Redraws the tabs after the type was set from elsewhere (a saved profile). */
+    paint(): void;
     tabsShowing(): boolean;
 }
 
@@ -106,8 +111,13 @@ export interface TypePicker {
 export interface MenuChoice { readonly id: string; readonly name: string; readonly selected: boolean }
 /** What a group's own body has of the menu: its row's words, and a new place after its size changed. */
 export interface GroupHandle {
-    say(value: string, set: boolean): void;
+    /** The row's words (`short`: the same, for a row too narrow for them). */
+    say(value: string, set: boolean, short?: string): void;
     placed(): void;
+    /** Closes the menu (a choice that is done with it, such as a saved profile applied). */
+    close?(): void;
+    /** Another group's value changed by this one (a genre ticked here leaving its Without list). */
+    other?(groupId: string, value: string, set: boolean, short?: string): void;
 }
 export interface MenuGroup {
     readonly id: string;
@@ -120,6 +130,10 @@ export interface MenuGroup {
     readonly set?: boolean | undefined;
     /** What its row says when nothing is set in it. */
     readonly any?: string | undefined;
+    /** The value said short ("Any of 2"), for a row too narrow for the whole. */
+    readonly short?: string | undefined;
+    /** What its row says from what is set now (after an Undo). */
+    readonly describe?: (() => { readonly value: string; readonly set: boolean; readonly short?: string | undefined }) | undefined;
     /** The menu opens with this group open (the one the viewer came for). */
     readonly open?: boolean | undefined;
 }
@@ -130,6 +144,14 @@ export interface MenuOptions {
     readonly groups?: readonly MenuGroup[] | undefined;
     readonly clearLabel?: string | undefined;
     readonly doneLabel?: string | undefined;
+    /** With groups: said in the foot while the page says nothing matches what is set. */
+    readonly noneLabel?: string | undefined;
+    /** With noneLabel: a button beside it that undoes the last change, its words or what gives them. */
+    readonly undoLabel?: string | (() => string) | undefined;
+    /** Undoes the last change; false where there is none to undo. */
+    readonly onUndo?: (() => boolean) | undefined;
+    /** Whether there is a change to undo (else no Undo is offered). */
+    readonly canUndo?: (() => boolean) | undefined;
     onPick(id: string, groupId?: string): void;
     readonly onClear?: (() => void) | undefined;
     readonly onClose?: (() => void) | undefined;
@@ -180,14 +202,26 @@ export interface Picked { readonly id: string; readonly name: string }
 /** What was typed as the lower and the upper bound; '' for none. */
 export type Range = readonly [string, string];
 export type RangeId = 'year' | 'score' | 'votes' | 'runtime';
-export type ListId = 'role' | 'genres' | 'language' | 'rating' | 'services' | 'keywords' | 'without';
+export type ListId = 'role' | 'genres' | 'withoutGenres' | 'language' | 'withoutLanguage' | 'rating' | 'services' | 'keywords' | 'without';
 export type FilterId = RangeId | ListId;
+/** The lists where a title can have several of what is ticked, so the viewer chooses all of them or any. */
+export type MatchId = 'genres' | 'keywords' | 'services';
+export type Match = 'all' | 'any';
 /**
  * The further filters set in a section. A genre's id is `<movie id>/<tv id>`, a language's its two-letter
  * code, a content rating's `<movie|tv>:<country>:<rating>`, a service's and a keyword's TMDB's id, a role
  * `cast` or a crew department by TMDB's name.
  */
-export type FilterSelection = { readonly [K in RangeId]?: Range | undefined } & { readonly [K in ListId]?: readonly Picked[] | undefined };
+export type FilterSelection = { readonly [K in RangeId]?: Range | undefined } & { readonly [K in ListId]?: readonly Picked[] | undefined }
+    & {
+        /**
+         * How several ticks count, for the lists where a title can have several of them; a list not in it keeps its
+         * default (genres and keywords all, services any). (Without genres and Without language, the genres and
+         * original languages a title must not have, are checked here by what each title says of itself: Seerr can
+         * only leave out keywords.)
+         */
+        readonly match?: { readonly [K in MatchId]?: Match | undefined } | undefined;
+    };
 export interface RatingList { readonly kind: FeedKind; readonly ratings: readonly Picked[] }
 export interface FilterData {
     readonly region: string;
@@ -203,7 +237,25 @@ export interface FilterDataDependencies {
     fetchGenres(kind: FeedKind): Promise<unknown>;
 }
 export type Say = (key: string, fallback: string, values?: Record<string, string | number>) => string;
-export interface FilterToken { readonly words: string; without(selection: FilterSelection): FilterSelection }
+/**
+ * One thing set, in words. `join`: said after "and" or "or" (the rule of its list); `alone`: as it is said by itself
+ * (what names one piece: Undo); `list`: the list it is in.
+ */
+export interface FilterToken {
+    readonly words: string;
+    readonly alone?: string | undefined;
+    readonly join?: 'and' | 'or' | undefined;
+    readonly or?: boolean | undefined;
+    readonly list?: ListId | undefined;
+    without(selection: FilterSelection): FilterSelection;
+}
+/** A page's side of the saved filters: what is set now in the address form, and how it applies a profile's. */
+export interface ProfilesHost {
+    read(): string;
+    apply(filters: string): void;
+}
+/** A feed's request where its route already names a list (a genre's page, a tag's), and what is kept of its titles here. */
+export interface RoutedFeed { readonly query: string; readonly keep: ((item: SeerrResult) => boolean) | null }
 export interface FilterMenuOptions {
     readonly offered: readonly FilterId[];
     readonly data: FilterData;
@@ -215,11 +267,19 @@ export interface FilterMenuOptions {
     readonly roles?: (() => Picked[]) | undefined;
     /** On a genre's page: that genre's name (every title of the list is in it already). */
     readonly ownGenre?: string | undefined;
+    /** The kinds the page shows (a content rating of another kind can't narrow it); null: both. */
+    readonly kinds?: readonly FeedKind[] | null | undefined;
+    /** The lists matched by all of what is ticked, with no choice (a tag's page: keywords). */
+    readonly fixedAll?: readonly MatchId[] | undefined;
 }
 export interface DiscoveryFiltersFacade {
     readonly FILTER_SWITCHES: Readonly<Record<FilterId, string>>;
+    readonly MATCH_DEFAULTS: Readonly<Record<MatchId, Match>>;
     offeredFilters(scope: FilterScope, config: unknown): FilterId[];
     activeFilterCount(selection: FilterSelection | null | undefined): number;
+    checkableOnLoaded(selection: FilterSelection | null | undefined): boolean;
+    matchOf(selection: FilterSelection | null | undefined, id: MatchId): Match;
+    routeFeed(path: string, kind: FeedKind, selection: FilterSelection | null | undefined, query: string): RoutedFeed;
     dayOf(text: string, last: boolean): string | null;
     numberOf(id: RangeId, text: string): number | null;
     isBound(id: RangeId, text: string, upper: boolean): boolean;
@@ -229,18 +289,60 @@ export interface DiscoveryFiltersFacade {
     rolesOf(results: readonly SeerrResult[], actingName: string, nameOf: (department: string) => string): Picked[];
     createFilterData(dependencies: FilterDataDependencies): FilterData;
     createFiltersControl(header: HTMLElement, moduleName: string, scope: FilterScope, onChange: () => void,
-        ownGenre?: string): HTMLButtonElement;
+        ownGenre?: string, place?: () => HTMLElement | null, fixedAll?: readonly MatchId[], profiles?: ProfilesHost | null): HTMLButtonElement;
     feedQuery(name: string, kind: FeedKind): string;
     keep(name: string, results: SeerrResult[]): SeerrResult[];
     active(name: string): boolean;
+    /** Sets a module's further filters as a whole (from its page's address); the caller redraws and reloads. */
+    setSelection(name: string, selection: FilterSelection): void;
     reset(name: string): void;
     repaint(element: Element | null | undefined): void;
     noteIfEmpty(moduleName: string, container: HTMLElement | null | undefined, hasMore: boolean): void;
     roomUnderMenu(section: HTMLElement | null, header: HTMLElement, open: boolean): void;
     filterMenuGroups(options: FilterMenuOptions): MenuGroup[];
     filterTokens(options: { readonly offered: readonly FilterId[]; readonly label: Say; readonly locale: string;
-        readonly selection: FilterSelection }): FilterToken[];
+        readonly selection: FilterSelection; readonly ownGenre?: string | undefined }): FilterToken[];
+    undoWords(options: UndoWordsOptions): string;
     selectionOf(name: string): FilterSelection;
+}
+export interface UndoWordsOptions {
+    readonly offered: readonly FilterId[];
+    readonly label: Say;
+    readonly locale: string;
+    readonly ownGenre?: string | undefined;
+    readonly before: FilterSelection;
+    readonly now: FilterSelection;
+}
+/** A page of its own's Filters button (createFiltersButton). */
+export interface FiltersButtonOptions {
+    /** On a genre's page: that genre's name. */
+    readonly ownGenre?: string | undefined;
+    /** The page the button narrows: it holds the line of what is set, after the header. */
+    readonly place?: (() => HTMLElement | null) | undefined;
+    /** The lists its request names itself, matched by all of what is ticked. */
+    readonly fixedAll?: readonly MatchId[] | undefined;
+    /** The page's side of the saved filters. */
+    readonly profiles?: ProfilesHost | undefined;
+}
+
+/** What an address (or a saved profile) says of the filters: All / Movies / Series, the further filters, the order. */
+export interface AddressFilters { readonly mode: FilterMode; readonly selection: FilterSelection; readonly sort: string }
+/** Public `JE.discoveryAddress` surface (address.ts): the filters in a page's address. */
+export interface DiscoveryAddressFacade {
+    readonly OWN_PARAMS: ReadonlySet<string>;
+    isHomeHash(hash: string): boolean;
+    isRecommendationsHash(hash: string): boolean;
+    filtersOfHash(hash: string, locale?: string): AddressFilters;
+    filtersOf(text: string, scope?: FilterScope): AddressFilters;
+    filterPairs(filters: AddressFilters, withSort: boolean): string[];
+    categoryOfHash(hash: string): string | null;
+    addressWith(hash: string, category: string | null, filters: AddressFilters, withSort: boolean): string;
+    withoutOwn(hash: string): string;
+    current(filterModule: string, sortModule: string | null): AddressFilters;
+    adopt(filterModule: string, sortModule: string | null,
+        options?: { readonly withType?: boolean; readonly withSort?: boolean; readonly scope?: FilterScope }): boolean;
+    write(filterModule: string, sortModule: string | null, withSort?: boolean): void;
+    go(hash: string, options?: { readonly push?: boolean; readonly state?: unknown }): void;
 }
 
 /** Public `JE.discoveryFilter` surface; it is read at call time by every consumer. */
@@ -264,6 +366,11 @@ export interface DiscoveryFilterFacade {
     createSortControl(moduleName: string, onSortChange?: SortChange): HTMLElement;
     createSectionHeader(title: string, moduleName: string, showFilter: boolean,
         onFilterChange?: FilterChange, onSortChange?: SortChange, subject?: string, scope?: FilterScope): HTMLElement;
+    createFiltersButton(header: HTMLElement, moduleName: string, scope: FilterScope, onChange: () => void,
+        options?: FiltersButtonOptions): HTMLButtonElement | null;
+    getFilters(moduleName: string): FilterSelection;
+    setFilters(moduleName: string, selection: FilterSelection): void;
+    clearFilters(moduleName: string): void;
     feedQuery(moduleName: string, kind: FeedKind): string;
     keepByFilters(moduleName: string, results: SeerrResult[]): SeerrResult[];
     hasMoreFilters(moduleName: string): boolean;

@@ -7,6 +7,10 @@ export function installNavigation(): void {
     const je = host.JellyfinEnhanced;
     const core = je.core ?? (je.core = {});
     if (core.navigation) return;
+    // History's own methods as they were before the patch below, for an address change that is not a navigation
+    // (setAddressQuietly).
+    let unpatchedPush: History['pushState'] | null = null;
+    let unpatchedReplace: History['replaceState'] | null = null;
     const currentElement = () => document.querySelector('.libraryPage:not(.hide)');
     const currentView = () => {
         const element = currentElement();
@@ -37,7 +41,19 @@ export function installNavigation(): void {
                 return null;
             }
         },
-        report: (context, error) => console.error(`🪼 Jellyfin Enhanced: Navigation: ${context}:`, error)
+        report: (context, error) => console.error(`🪼 Jellyfin Enhanced: Navigation: ${context}:`, error),
+        isDialogEntry() {
+            const state: unknown = window.history.state;
+            if (!state || typeof state !== 'object' || !('usr' in state)) return false;
+            const usr: unknown = state.usr;
+            return !!usr && typeof usr === 'object' && 'dialogs' in usr && Array.isArray(usr.dialogs);
+        },
+        state: () => window.history.state,
+        writeAddress(state, url, push) {
+            const write = push ? (unpatchedPush ?? window.history.pushState.bind(window.history))
+                : (unpatchedReplace ?? window.history.replaceState.bind(window.history));
+            write(state, '', url);
+        }
     });
     core.navigation = runtime.navigation;
     let hooked = false;
@@ -69,6 +85,7 @@ export function installNavigation(): void {
             runtime.notifyViewHandlers(currentView() || undefined, event.target instanceof Element ? event.target : null,
                 window.location.hash, event);
         });
+        runtime.seed();
         for (const event of ['je:navigate', 'hashchange', 'popstate']) {
             window.addEventListener(event, runtime.dispatchNavigate);
         }
@@ -76,6 +93,8 @@ export function installNavigation(): void {
         const history: History & { __jePushed?: boolean } = window.history;
         if (!history.__jePushed) {
             history.__jePushed = true;
+            unpatchedPush = history.pushState.bind(history);
+            unpatchedReplace = history.replaceState.bind(history);
             for (const method of ['pushState', 'replaceState'] as const) {
                 const original = history[method].bind(history);
                 history[method] = (data: unknown, unused: string, url?: string | URL | null) => {

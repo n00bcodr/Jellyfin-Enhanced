@@ -5,13 +5,14 @@ import { part, recommendationsHost } from './stage';
 import type { CatalogEntry, CategorySource, ResolvedCategory, RowDefinition } from './types';
 
 // Fixed media rows in display order. "path" serves the row preview (page 1) and the "View All"
-// category page, which pages through it via ?page=N.
+// category page, which pages through it via ?page=N. "kind" is what the row holds, for the page's
+// All | Movies | Series and the kind its filters are asked for; Trending holds both and takes no filters.
 const ROWS: RowDefinition[] = [
     { key: 'trending', path: '/JellyfinEnhanced/jellyseerr/discover/trending', titleKey: 'recommendations_trending' },
-    { key: 'movies', path: '/JellyfinEnhanced/jellyseerr/discover/movies', titleKey: 'recommendations_popular_movies' },
-    { key: 'tv', path: '/JellyfinEnhanced/jellyseerr/discover/tv', titleKey: 'recommendations_popular_tv' },
-    { key: 'movies-upcoming', path: '/JellyfinEnhanced/jellyseerr/discover/movies/upcoming', titleKey: 'recommendations_upcoming_movies' },
-    { key: 'tv-upcoming', path: '/JellyfinEnhanced/jellyseerr/discover/tv/upcoming', titleKey: 'recommendations_upcoming_tv' }
+    { key: 'movies', path: '/JellyfinEnhanced/jellyseerr/discover/movies', titleKey: 'recommendations_popular_movies', kind: 'movie' },
+    { key: 'tv', path: '/JellyfinEnhanced/jellyseerr/discover/tv', titleKey: 'recommendations_popular_tv', kind: 'tv' },
+    { key: 'movies-upcoming', path: '/JellyfinEnhanced/jellyseerr/discover/movies/upcoming', titleKey: 'recommendations_upcoming_movies', kind: 'movie' },
+    { key: 'tv-upcoming', path: '/JellyfinEnhanced/jellyseerr/discover/tv/upcoming', titleKey: 'recommendations_upcoming_tv', kind: 'tv' }
 ];
 // Curated TMDB company ids, as Seerr's own discover page does. logo is the entry's TMDB logo_path, so
 // the tile rows need no lookups with or without a TMDB key; a moved logo falls back to the text tile.
@@ -62,24 +63,25 @@ const NETWORKS: CatalogEntry[] = [
      * A category key (row key, "studio-<id>", "network-<id>" or "genre-<movie|tv>-<id>") to its title
      * and feeds. Most are one feed; a studio pages its movies beside the series it produced (the
      * plugin's TMDB-backed feed, so only with a TMDB key) and a network its series beside its company's
-     * movies, so the category page can offer All | Movies | Series.
+     * movies, so the category page can offer All | Movies | Series. A feed's "kind" is the kind the page's
+     * filters are asked for (none for Trending, which takes none: its titles are checked as they come).
      */
     function resolveCategory(categoryKey: string): ResolvedCategory | null {
         const row = part(P, 'ROWS').find(entry => entry.key === categoryKey);
-        if (row) return { title: translate(JE, row.titleKey), feeds: [{ path: row.path }] };
+        if (row) return { title: translate(JE, row.titleKey), feeds: [{ path: row.path, ...(row.kind ? { kind: row.kind } : {}) }] };
 
         const studioId = /^studio-(\d+)$/.exec(categoryKey)?.[1];
         const studio = studioId && part(P, 'STUDIOS').find(entry => String(entry.id) === studioId);
         if (studio) {
-            const feeds: CategorySource[] = [{ path: `/JellyfinEnhanced/jellyseerr/discover/movies/studio/${studio.id}`, mediaType: 'movie' }];
-            if (JE.pluginConfig?.TmdbEnabled) feeds.push({ path: `/JellyfinEnhanced/jellyseerr/discover/tv/studio/${studio.id}`, mediaType: 'tv' });
+            const feeds: CategorySource[] = [{ path: `/JellyfinEnhanced/jellyseerr/discover/movies/studio/${studio.id}`, mediaType: 'movie', kind: 'movie' }];
+            if (JE.pluginConfig?.TmdbEnabled) feeds.push({ path: `/JellyfinEnhanced/jellyseerr/discover/tv/studio/${studio.id}`, mediaType: 'tv', kind: 'tv' });
             return { title: studio.name, feeds };
         }
         const networkId = /^network-(\d+)$/.exec(categoryKey)?.[1];
         const network = networkId && part(P, 'NETWORKS').find(entry => String(entry.id) === networkId);
         if (network) {
-            const feeds: CategorySource[] = [{ path: `/JellyfinEnhanced/jellyseerr/discover/tv/network/${network.id}`, mediaType: 'tv' }];
-            if (network.companyId) feeds.push({ path: `/JellyfinEnhanced/jellyseerr/discover/movies/studio/${network.companyId}`, mediaType: 'movie' });
+            const feeds: CategorySource[] = [{ path: `/JellyfinEnhanced/jellyseerr/discover/tv/network/${network.id}`, mediaType: 'tv', kind: 'tv' }];
+            if (network.companyId) feeds.push({ path: `/JellyfinEnhanced/jellyseerr/discover/movies/studio/${network.companyId}`, mediaType: 'movie', kind: 'movie' });
             return { title: network.name, feeds };
         }
         const genreMatch = /^genre-(movie|tv)-(\d+)$/.exec(categoryKey);
@@ -87,7 +89,7 @@ const NETWORKS: CatalogEntry[] = [
             const isMovie = genreMatch[1] === 'movie';
             const genre = part(P, isMovie ? 'MOVIE_GENRES' : 'TV_GENRES').find(entry => String(entry.id) === genreMatch[2]);
             if (genre) {
-                return { title: genre.name, feeds: [{ path: `/JellyfinEnhanced/jellyseerr/discover/${isMovie ? 'movies' : 'tv'}/genre/${genre.id}` }] };
+                return { title: genre.name, feeds: [{ path: `/JellyfinEnhanced/jellyseerr/discover/${isMovie ? 'movies' : 'tv'}/genre/${genre.id}`, kind: isMovie ? 'movie' : 'tv' }] };
             }
         }
         return null;

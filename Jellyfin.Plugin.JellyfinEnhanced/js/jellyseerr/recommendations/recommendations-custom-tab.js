@@ -79,7 +79,7 @@
       mounted.container.replaceChildren();
       mounted = null;
     }
-    const isOnHomePage = () => /^(?:#\/home(?:\.html)?(?:\?.*)?)?$/.test(window.location.hash);
+    const isOnHomePage = () => /^(?:#\/home(?:\.html)?(?:[?#].*)?)?$/.test(window.location.hash);
     function findActiveContainer() {
       const all = [...document.querySelectorAll(CONTAINER_SELECTOR)];
       return all.reverse().find((element) => JE.helpers?.isActiveTabContainer?.(element)) ?? null;

@@ -32,7 +32,7 @@
     if ((params.get(key) ?? "") === (value ?? "")) return;
     if (value) params.set(key, value);
     else params.delete(key);
-    window.history.replaceState(window.history.state, "", path + "?" + params.toString());
+    window.history.replaceState(window.history.state, "", path + "?" + params.toString().replace(/\+/g, "%20"));
   }
 
   // client/src/admin/config/engine/schema.ts

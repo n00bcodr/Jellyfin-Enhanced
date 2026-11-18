@@ -57,6 +57,7 @@
   var LOG_PREFIX = "🪼 Jellyfin Enhanced: Recommendations:";
   var PAGE_ID = "je-recommendations-page";
   var CATEGORY_PAGE_ID = "je-recommendations-category-page";
+  var FILTER_MODULE = "recommendations";
   var OTHER_PAGE = `.mainAnimatedPage:not(.hide):not(#${PAGE_ID}):not(#${CATEGORY_PAGE_ID})`;
   function recommendationsHost() {
     const { JE } = discoveryHost();
@@ -335,15 +336,18 @@
       return owner;
     }
     function appendHeading(owner) {
-      const heading = element("h1", "je-recommendations-title je-pad-left je-pad-right", owner.container);
+      const bar = element("div", "je-recommendations-title je-reco-header je-pad-left je-pad-right", owner.container);
+      const heading = element("h1", "je-reco-heading", bar);
       const logo = element("img", "je-reco-logo", heading);
       logo.alt = "";
       logo.src = JE.cdn?.selfhst("svg/seerr.svg") ?? "";
       element("span", "", heading).textContent = text("recommendations_title");
-      owner.disposers.push(trackBar(heading));
+      const tools = element("div", "je-reco-tools", bar);
+      owner.disposers.push(trackBar(bar));
+      return { bar, tools };
     }
-    function appendRetry(owner) {
-      const row = element("div", "je-retry-row je-pad-left je-pad-right", owner.container);
+    function appendRetry(owner, box) {
+      const row = element("div", "je-retry-row je-pad-left je-pad-right", box);
       const button = element("button", "raised emby-button", row);
       button.type = "button";
       button.textContent = "⟳ Tap to retry";
@@ -351,43 +355,51 @@
         void renderInto(owner.container);
       }, { once: true, signal: owner.controller.signal });
     }
-    function appendEmpty(owner, rowResults) {
-      const empty = element("div", "je-recommendations-empty je-pad-left je-pad-right", owner.container);
+    function appendEmpty(owner, box, rowResults) {
+      const empty = element("div", "je-recommendations-empty je-pad-left je-pad-right", box);
       empty.textContent = text("recommendations_empty");
-      if (rowResults.some((entry) => entry.failed)) appendRetry(owner);
+      if (rowResults.some((entry) => entry.failed)) appendRetry(owner, box);
     }
-    function appendRows(owner, rowResults) {
-      const { container } = owner;
+    function appendNothingMatches(box, onClear) {
+      const note = JE.discoverySection?.buildMessageRow?.({
+        message: text("discovery_filters_none"),
+        actionLabel: text("discovery_filters_clear"),
+        onAction: onClear
+      });
+      if (!note) return;
+      note.classList.add("je-recommendations-empty", "je-reco-filters-none", "je-pad-left", "je-pad-right");
+      box.appendChild(note);
+    }
+    function appendRows(owner, box, rowResults) {
+      const shows = (kind) => part(P, "shownForType")(kind, filterOf(JE).getFilterMode(FILTER_MODULE));
       for (const { row, results } of rowResults) {
-        if (results.length > 0) container.appendChild(rows.createMediaRow(text(row.titleKey), results, row.key, owner));
+        if (results.length > 0) box.appendChild(rows.createMediaRow(text(row.titleKey), results, row.key, owner));
       }
       const movieGenres = part(P, "MOVIE_GENRES");
       const tvGenres = part(P, "TV_GENRES");
-      if (movieGenres.length) container.appendChild(rows.createGenreTileRow(text("recommendations_movie_genres"), movieGenres, "movie", owner));
-      if (tvGenres.length) container.appendChild(rows.createGenreTileRow(text("recommendations_tv_genres"), tvGenres, "tv", owner));
-      container.appendChild(rows.createTileRow(text("recommendations_studios"), part(P, "STUDIOS"), "studio", owner));
-      container.appendChild(rows.createTileRow(text("recommendations_networks"), part(P, "NETWORKS"), "network", owner));
+      if (movieGenres.length && shows("movie")) box.appendChild(rows.createGenreTileRow(text("recommendations_movie_genres"), movieGenres, "movie", owner));
+      if (tvGenres.length && shows("tv")) box.appendChild(rows.createGenreTileRow(text("recommendations_tv_genres"), tvGenres, "tv", owner));
+      if (shows("movie")) box.appendChild(rows.createTileRow(text("recommendations_studios"), part(P, "STUDIOS"), "studio", owner));
+      if (shows("tv")) box.appendChild(rows.createTileRow(text("recommendations_networks"), part(P, "NETWORKS"), "network", owner));
     }
-    async function renderInto(container) {
+    async function fillRows(owner, box, signal, onClear, wasConnected) {
       const state = part(P, "state");
-      const owner = beginRender(container);
-      const { signal } = owner.controller;
-      const wasConnected = container.isConnected;
+      const { container } = owner;
       const superseded = () => signal.aborted || state.renders.get(container) !== owner;
-      JE.jellyseerrUI?.releasePosters?.(container);
-      container.replaceChildren();
-      appendHeading(owner);
+      JE.jellyseerrUI?.releasePosters?.(box);
+      box.replaceChildren();
+      const shows = (kind) => part(P, "shownForType")(kind, filterOf(JE).getFilterMode(FILTER_MODULE));
       const loading = JE.core?.ui?.createSkeletonRows([
-        ...part(P, "ROWS").map((row) => text(row.titleKey)),
-        text("recommendations_movie_genres"),
-        text("recommendations_tv_genres"),
-        text("recommendations_studios"),
-        text("recommendations_networks")
+        ...part(P, "ROWS").filter((row) => part(P, "shownForType")(row.kind, filterOf(JE).getFilterMode(FILTER_MODULE))).map((row) => text(row.titleKey)),
+        ...shows("movie") ? [text("recommendations_movie_genres")] : [],
+        ...shows("tv") ? [text("recommendations_tv_genres")] : [],
+        ...shows("movie") ? [text("recommendations_studios")] : [],
+        ...shows("tv") ? [text("recommendations_networks")] : []
       ]);
       if (loading) {
         loading.className = "je-pad-left je-pad-right";
         loading.setAttribute("aria-label", text("recommendations_loading"));
-        container.appendChild(loading);
+        box.appendChild(loading);
       }
       let rowResults = [];
       let movieGenres = [];
@@ -410,14 +422,86 @@
       P.MOVIE_GENRES = movieGenres;
       P.TV_GENRES = tvGenres;
       loading?.remove();
-      if (rowResults.some((entry) => entry.results.length > 0)) appendRows(owner, rowResults);
-      else appendEmpty(owner, rowResults);
+      if (rowResults.some((entry) => entry.results.length > 0)) appendRows(owner, box, rowResults);
+      else if (part(P, "isNarrowed")() && !rowResults.some((entry) => entry.failed)) appendNothingMatches(box, onClear);
+      else appendEmpty(owner, box, rowResults);
+    }
+    function toolbarControls(bar, place, onChange, profiles) {
+      const facade = filterOf(JE);
+      const type = facade.createFilterControl(FILTER_MODULE, () => onChange());
+      const button = facade.createFiltersButton(bar, FILTER_MODULE, "feed", onChange, { place, ...profiles ? { profiles } : {} });
+      return button ? [type, button] : [type];
+    }
+    const syncs = /* @__PURE__ */ new Map();
+    function syncFilters() {
+      for (const [container, sync] of [...syncs]) {
+        if (container.isConnected) sync();
+        else syncs.delete(container);
+      }
+    }
+    async function renderInto(container) {
+      const owner = beginRender(container);
+      const { signal } = owner.controller;
+      const wasConnected = container.isConnected;
+      JE.jellyseerrUI?.releasePosters?.(container);
+      container.replaceChildren();
+      const address = JE.discoveryAddress;
+      if (part(P, "addressHoldsFilters")()) address?.adopt(FILTER_MODULE, null, { withSort: false });
+      const { bar, tools } = appendHeading(owner);
+      const rowsBox = element("div", "je-reco-rows", container);
+      let filled = "";
+      let rowsController = null;
+      const fill = () => {
+        filled = part(P, "filterSignature")();
+        rowsController?.abort();
+        const controller = rowsController = new AbortController();
+        signal.addEventListener("abort", () => controller.abort(), { once: true, signal: controller.signal });
+        return fillRows(owner, rowsBox, controller.signal, clear, wasConnected);
+      };
+      const refill = () => {
+        fill().catch((error) => console.error(`${LOG_PREFIX} Failed to filter`, error));
+      };
+      const profiles = address ? {
+        read: () => address.filterPairs(address.current(FILTER_MODULE, null), false).join("&"),
+        apply(filters) {
+          const wanted = address.filtersOf(filters, "feed");
+          filterOf(JE).setFilterMode(FILTER_MODULE, wanted.mode);
+          filterOf(JE).setFilters(FILTER_MODULE, wanted.selection);
+          paintTools();
+          changed();
+        }
+      } : void 0;
+      function paintTools() {
+        tools.replaceChildren(...toolbarControls(bar, () => container, changed, profiles));
+      }
+      function changed() {
+        if (part(P, "addressHoldsFilters")()) address?.write(FILTER_MODULE, null, false);
+        refill();
+      }
+      function clear() {
+        const keyed = rowsBox.contains(document.activeElement);
+        part(P, "clearFilters")();
+        paintTools();
+        changed();
+        if (keyed) tools.querySelector(".jellyseerr-filters-btn")?.focus({ preventScroll: true });
+      }
+      syncs.set(container, () => {
+        paintTools();
+        if (part(P, "filterSignature")() !== filled) refill();
+      });
+      owner.disposers.push(() => {
+        syncs.delete(container);
+        rowsController?.abort();
+      });
+      paintTools();
+      await fill();
     }
     P.trackStickyBar = trackBar;
     P.createMediaRow = rows.createMediaRow;
     P.createTileRow = rows.createTileRow;
     P.createGenreTileRow = rows.createGenreTileRow;
     P.renderInto = renderInto;
+    P.syncFilters = syncFilters;
     P.renderForCustomTab = (element2) => {
       if (!element2) return;
       renderInto(element2).catch((error) => console.error(`${LOG_PREFIX} Failed to render`, error));

@@ -1,6 +1,6 @@
 import type { YieldStats } from '../discovery/domain';
 import type {
-    FeedKind, GenreSliderEntry, ManagedFetchOptions, ScrollHint, ScrollResult, ScrollState, SeerrResult
+    FeedKind, FeedPage, GenreSliderEntry, ManagedFetchOptions, ScrollHint, ScrollResult, ScrollState, SeerrResult
 } from '../discovery/types';
 
 export interface RecommendationsFacade {
@@ -8,7 +8,8 @@ export interface RecommendationsFacade {
     showPage(): void;
     hidePage(): void;
 }
-export interface RowDefinition { readonly key: string; readonly path: string; readonly titleKey: string }
+/** A media row; `kind`: what it holds, for the page's All | Movies | Series and the kind its filters are asked for (Trending holds both and takes none). */
+export interface RowDefinition { readonly key: string; readonly path: string; readonly titleKey: string; readonly kind?: FeedKind }
 export interface CatalogEntry {
     readonly name: string;
     readonly id: number;
@@ -16,7 +17,8 @@ export interface CatalogEntry {
     /** The company whose movies a network's category page shows beside its series. */
     readonly companyId?: number;
 }
-export interface CategorySource { readonly path: string; readonly mediaType?: FeedKind }
+/** A category's feed; `kind`: the kind the page's filters are asked for (none for Trending, which takes none: its titles are checked as they come). */
+export interface CategorySource { readonly path: string; readonly mediaType?: FeedKind; readonly kind?: FeedKind }
 export interface ResolvedCategory { readonly title: string; readonly feeds: CategorySource[] }
 export interface RowResult { readonly row: RowDefinition; readonly results: SeerrResult[]; readonly failed: boolean }
 
@@ -24,6 +26,8 @@ export interface RowResult { readonly row: RowDefinition; readonly results: Seer
 export interface CategoryFeed {
     readonly path: string;
     readonly mediaType: FeedKind | null;
+    /** The kind the filters are asked for (null: Trending takes none, its titles are kept here by what each says of itself). */
+    readonly kind: FeedKind | null;
     page: number;
     totalPages: number;
     hasMore: boolean;
@@ -69,6 +73,28 @@ export interface RecommendationsInternals {
     TV_GENRES: GenreSliderEntry[];
     resolveCategory(categoryKey: string): ResolvedCategory | null;
     fetchWithManagedRequest(path: string, options?: ManagedFetchOptions): Promise<unknown>;
+    /** Today in the viewer's calendar, as Seerr's dates are written. */
+    localDay(now?: Date): string;
+    /** Whether a row or feed of this kind (none: both kinds) shows under All | Movies | Series. */
+    shownForType(kind: FeedKind | null | undefined, mode: string): boolean;
+    isTrendingPath(path: string): boolean;
+    feedRequest(path: string, page: number, filterQuery: string, today: string): string;
+    /** One page of a feed under the page's filters, asked as the feed's kind takes them. */
+    feedPage(path: string, kind: FeedKind | null | undefined, page: number, options?: ManagedFetchOptions): Promise<FeedPage>;
+    /** Titles of a feed that takes no filters, kept by the filters; null when one is set they can't be checked against. */
+    keepLoaded(results: SeerrResult[]): SeerrResult[] | null;
+    /** Whether anything narrows the page: a type other than All, or a further filter. */
+    isNarrowed(): boolean;
+    filterSignature(): string;
+    clearFilters(): void;
+    /** Whether the page's address holds its filters: on Home (its tab) or on its own page. */
+    addressHoldsFilters(): boolean;
+    /** Whether an address is the page's own (`#/recommendations`, with or without its filters). */
+    isPageHash(hash: string): boolean;
+    /** After the filters changed elsewhere (a category page): every page shows them, with rows to match. */
+    syncFilters(): void;
+    /** Follows the address after a navigation, as far as it is a category's on Home: true when it did. */
+    followUrl(): boolean;
     fetchAllRows(signal: AbortSignal): Promise<RowResult[]>;
     fetchGenreSlider(mediaType: FeedKind): Promise<GenreSliderEntry[]>;
     disposeRender(container: HTMLElement): void;
@@ -85,7 +111,8 @@ export interface RecommendationsInternals {
     createCategoryPageContainer(): HTMLElement;
     loadMoreCategoryItems(st: CategoryState, container: HTMLElement, hint?: ScrollHint,
         isStale?: () => boolean): Promise<ScrollResult>;
-    showCategoryPage(categoryKey: string): Promise<void>;
+    /** `fromUrl`: opened by its address (a link, a reload, Back, Forward), which names it. */
+    showCategoryPage(categoryKey: string, fromUrl?: boolean): Promise<void>;
     hideCategoryPage(): void;
     /** True while the open category page's own history entry is the current one. */
     categoryOnOwnEntry(): boolean;

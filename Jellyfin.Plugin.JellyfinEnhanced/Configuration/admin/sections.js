@@ -1758,7 +1758,7 @@
               type: "toggle",
               default: true,
               label: "Genres",
-              desc: "One or more genres."
+              desc: "Genres a title must have, and genres it must not have."
             },
             {
               id: "jellyseerrFilterLanguage",
@@ -1766,7 +1766,7 @@
               type: "toggle",
               default: true,
               label: "Original language",
-              desc: "One or more original languages."
+              desc: "Original languages a title must be in, and ones it must not be in."
             },
             {
               id: "jellyseerrFilterContentRating",

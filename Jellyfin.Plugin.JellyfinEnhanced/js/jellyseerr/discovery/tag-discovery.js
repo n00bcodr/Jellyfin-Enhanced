@@ -36,7 +36,7 @@
   }
   function hashParams(hash) {
     try {
-      return new URLSearchParams(hash.split("?")[1]);
+      return new URLSearchParams((hash.split("?")[1] || "").split("#")[0]);
     } catch {
       return null;
     }

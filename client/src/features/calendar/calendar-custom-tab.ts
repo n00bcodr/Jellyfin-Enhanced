@@ -28,7 +28,8 @@ import { invalidate, own } from './lifetime';
  own(ctx,'custom-tab',dispose);
  lifecycle.track(dispose);
  function isHome() {
-  return /^(?:#\/home(?:\.html)?(?:\?.*)?)?$/.test(window.location.hash);
+  // (Or only the Recommendations filters' fragment after it: see seerr/discovery/address.ts.)
+  return /^(?:#\/home(?:\.html)?(?:[?#].*)?)?$/.test(window.location.hash);
  }
  function reconcile() {
   if (disposed) return;

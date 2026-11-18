@@ -64,7 +64,7 @@
     own(ctx, "custom-tab", dispose);
     lifecycle.track(dispose);
     function isHome() {
-      return /^(?:#\/home(?:\.html)?(?:\?.*)?)?$/.test(window.location.hash);
+      return /^(?:#\/home(?:\.html)?(?:[?#].*)?)?$/.test(window.location.hash);
     }
     function reconcile() {
       if (disposed) return;

@@ -2,23 +2,49 @@
 // what is set, the note when nothing matches, and the further-filter selection and the person's titles
 // seen, per section (by module name). The pure logic is in filters.ts, the lists in filter-data.ts and
 // the menu's groups in filter-groups.ts. Published, with them, as JE.discoveryFilters.
-import type { SeerrDiscoveryHost } from '../host-discovery';
+import type { DiscoveryApiClient, SeerrDiscoveryHost } from '../host-discovery';
 import panelCss from './discovery-filter-panel.css';
 import { injectStyleOnce } from './discovery-styles';
 import { createFilterData } from './filter-data';
-import { filterMenuGroups, filterTokens } from './filter-groups';
+import { filterMenuGroups, filterTokens, NAMES, undoWords } from './filter-groups';
 import {
-    activeFilterCount, dayOf, feedFilterQuery, FILTER_SWITCHES, isBound, isReversed, keepByFilters, numberOf, offeredFilters, rolesOf
+    activeFilterCount, checkableOnLoaded, dayOf, feedFilterQuery, FILTER_SWITCHES, isBound, isReversed, keepByFilters, MATCH_DEFAULTS,
+    matchOf, numberOf, offeredFilters, rolesOf, routeFeed
 } from './filters';
+import { createProfiles } from './profiles';
 import type {
-    DiscoveryFiltersFacade, FeedKind, FilterData, FilterScope, FilterSelection, MenuGroup, Say, SeerrResult
+    DiscoveryFiltersFacade, FeedKind, FilterData, FilterScope, FilterSelection, MatchId, MenuGroup, ProfilesHost, Say, SeerrResult
 } from './types';
 
-export function createFilterPanel(JE: SeerrDiscoveryHost, label: Say): DiscoveryFiltersFacade {
+export function createFilterPanel(JE: SeerrDiscoveryHost, label: Say, api: () => DiscoveryApiClient | undefined = () => undefined): DiscoveryFiltersFacade {
     // The further filters set in a section, by module name.
     const moreFilters = new Map<string, FilterSelection>();
     /** The section's selection (empty when nothing is set). */
     const selectionOf = (name: string): FilterSelection => moreFilters.get(name) ?? {};
+    /** Whether a selection is kept: anything narrowing the list, or a list's all / any chosen before its ticks. */
+    const worthKeeping = (selection: FilterSelection | null | undefined): boolean =>
+        activeFilterCount(selection) > 0 || Object.keys(selection?.match ?? {}).length > 0;
+    /** Per module: the lists matched by all of what is ticked with no choice (createFiltersControl's `fixedAll`). */
+    const fixedAllOf = new Map<string, readonly MatchId[]>();
+    /**
+     * A selection as a module takes it: no chosen match for a list it matches by all of them, whatever a link or a saved
+     * set says (a tag's page asks Seerr for its keywords as all of them, so "any" would be said and not done). The same
+     * selection when nothing is dropped.
+     */
+    function takenBy(name: string, selection: FilterSelection): FilterSelection {
+        const fixed = fixedAllOf.get(name) ?? [];
+        const match = selection?.match;
+        if (!match || !fixed.some(id => id in match)) return selection;
+        const kept = Object.fromEntries(Object.entries(match).filter(([id]) => !fixed.some(entry => entry === id)));
+        const { match: _dropped, ...rest } = selection;
+        return Object.keys(kept).length > 0 ? { ...rest, match: kept } : rest;
+    }
+    /** Sets a module's selection as it takes it, or drops it when nothing is left worth keeping. */
+    const keepSelection = (name: string, selection: FilterSelection): void => {
+        const taken = takenBy(name, selection);
+        if (worthKeeping(taken)) moreFilters.set(name, taken); else moreFilters.delete(name);
+    };
+    const profiles = createProfiles(JE, api);
     // A person's titles as last given to be filtered: what the Role list is made of.
     const credits = new Map<string, SeerrResult[]>();
     // Per header: redraws its Filters button, and reloads its list after a change made outside the menu.
@@ -92,9 +118,19 @@ export function createFilterPanel(JE: SeerrDiscoveryHost, label: Say): Discovery
      * the list it is in the accent with a dot (as Jellyfin marks its own filter button), and what is
      * set is said in words on a line under the header, each piece with the way to take it away.
      */
+    /**
+     * `place`: what the button narrows where that is not the header's discovery section (a page of its own, such as the
+     * Recommendations page): it holds the line of what is set, after the header. `fixedAll`: the lists matched by all of
+     * what is ticked, with no choice (a tag's page: keywords, which its own request names and a title can't be checked
+     * against). `profiles`: offers the user's saved filters: what is set now in the address form, and how the page
+     * applies a profile's.
+     */
     function createFiltersControl(header: HTMLElement, moduleName: string, scope: FilterScope, onChange: () => void,
-        ownGenre?: string): HTMLButtonElement {
+        ownGenre?: string, place?: () => HTMLElement | null, fixedAll: readonly MatchId[] = [], profilesHost: ProfilesHost | null = null): HTMLButtonElement {
         injectStyleOnce('jellyseerr-discovery-filter-panel-styles', panelCss);
+        fixedAllOf.set(moduleName, fixedAll);
+        // (What the page's address gave it before this control was made.)
+        if (takenBy(moduleName, selectionOf(moduleName)) !== selectionOf(moduleName)) keepSelection(moduleName, selectionOf(moduleName));
         const filtersLabel = label('discovery_filters', 'Filters');
         const clearLabel = label('discovery_filters_clear', 'Clear filters');
         /** The page's language. */
@@ -122,13 +158,13 @@ export function createFilterPanel(JE: SeerrDiscoveryHost, label: Say): Discovery
             const tabs = header.querySelector('[data-type-group]');
             return tabs ? JE.discoveryFilter?.typePickerOf?.(tabs) : undefined;
         };
-        /** The section the header is in. */
-        const sectionOf = (): HTMLElement | null => header.closest<HTMLElement>('.jellyseerr-discovery-section');
+        /** The section the header is in, or the page the button narrows. */
+        const sectionOf = place ?? ((): HTMLElement | null => header.closest<HTMLElement>('.jellyseerr-discovery-section'));
         /** The line of what is set, under the header (it is not held with it): made, redrawn, or taken away. */
         const paintSet = (focusAt = -1): void => {
             const section = sectionOf();
             let line = section?.querySelector<HTMLElement>('.jellyseerr-filters-set') ?? null;
-            const tokens = filterTokens({ offered, label, locale: localeOf(), selection: selectionOf(moduleName) });
+            const tokens = filterTokens({ offered, label, locale: localeOf(), selection: selectionOf(moduleName), ownGenre });
             // (Redrawn with the keys on one of its buttons, as after the list it narrowed is in: they stay at that place.)
             const focused = document.activeElement;
             const keyedAt = line && focusAt < 0 && focused instanceof HTMLButtonElement ? Array.from(line.querySelectorAll('button')).indexOf(focused) : -1;
@@ -145,7 +181,7 @@ export function createFilterPanel(JE: SeerrDiscoveryHost, label: Say): Discovery
                 header.after(line);
             }
             const removes: HTMLButtonElement[] = [];
-            const pieces = tokens.map((token, index) => {
+            const made = tokens.map((token, index) => {
                 const piece = document.createElement('span');
                 piece.className = 'jellyseerr-filters-token';
                 const words = document.createElement('span');
@@ -165,8 +201,35 @@ export function createFilterPanel(JE: SeerrDiscoveryHost, label: Say): Discovery
                 remove.addEventListener('click', () => change(token.without(selectionOf(moduleName)), document.activeElement === remove ? index : -1));
                 removes.push(remove);
                 piece.append(words, remove);
+                if (!token.join) return piece;
+                // (Several of a list, joined by its rule: "With bear" or "dragon", "Action" and "Comedy". The word goes
+                // with what follows it.)
+                const joined = document.createElement('span');
+                joined.className = 'jellyseerr-filters-join';
+                joined.textContent = token.join === 'or' ? label('discovery_filter_or', 'or') : label('discovery_filter_and', 'and');
+                // (The space is for a screen reader's words; the margin spaces it to the eye.)
+                piece.prepend(joined, ' ');
+                piece.dataset.join = token.join;
                 return piece;
             });
+            // A list's run joined by its word is one unit on the line: closer together, to the next line whole, and named
+            // as its group is ("Genres"), so a reader that moves by group hears which list it is.
+            const pieces: HTMLElement[] = [];
+            for (const [index, piece] of made.entries()) {
+                const before = pieces[pieces.length - 1];
+                if (piece.dataset.join === undefined || !before) { pieces.push(piece); continue; }
+                let run = before;
+                if (!before.classList.contains('jellyseerr-filters-run')) {
+                    run = document.createElement('span');
+                    run.className = 'jellyseerr-filters-run';
+                    run.setAttribute('role', 'group');
+                    const list = tokens[index]?.list;
+                    if (list) run.setAttribute('aria-label', label(NAMES[list][0], NAMES[list][1]));
+                    pieces.splice(pieces.length - 1, 1, run);
+                    run.appendChild(before);
+                }
+                run.appendChild(piece);
+            }
             if (tokens.length > 1) {
                 const all = document.createElement('button');
                 all.type = 'button';
@@ -187,6 +250,10 @@ export function createFilterPanel(JE: SeerrDiscoveryHost, label: Say): Discovery
             const set = activeFilterCount(selectionOf(moduleName));
             const typed = filterModeOf(moduleName) === MIXED() ? 0 : 1;
             button.toggleAttribute('data-on', set > 0);
+            // On a page of its own the button is a pill, filled while something is set, like the chosen All / Movies /
+            // Series beside it. It is marked the way that choice is, so a theme that clears every tab button's fill
+            // (Jellyfish, Zesty) and fills the chosen one fills this one too, instead of leaving dark words on the page.
+            if (place) button.classList.toggle('emby-tab-button-active', set > 0);
             // (All / Movies / Series shows on the button only where the tabs are out of sight: the stylesheet's part.)
             button.toggleAttribute('data-type-on', typed > 0);
             typeWord.textContent = typed > 0 ? typeOf()?.groupOf().choices?.find(choice => choice.selected)?.name ?? '' : '';
@@ -196,7 +263,8 @@ export function createFilterPanel(JE: SeerrDiscoveryHost, label: Say): Discovery
             // Asked for by a job (Directing) and not for acting, a title's jobs come before its part on the card.
             const roles = selectionOf(moduleName).role ?? [];
             const section = sectionOf();
-            JE.discoveryBusy?.mark?.(section);
+            // (A page of its own shows its own placeholders while it reloads.)
+            if (section?.classList.contains('jellyseerr-discovery-section')) JE.discoveryBusy?.mark?.(section);
             section?.toggleAttribute('data-jobs-first', roles.length > 0 && !roles.some(role => role.id === 'cast'));
             // And among the jobs, the ones asked for lead ("Director, Writer" for Directing): a line that does not fit loses jobs from its end.
             if (section) {
@@ -206,10 +274,21 @@ export function createFilterPanel(JE: SeerrDiscoveryHost, label: Say): Discovery
             paintSet(focusAt);
         };
         wiring.set(header, { paint: (at = -1) => paint(at), reload: onChange });
+        // (Asked for once per visit, so the menu can name the profile that is set when it opens.)
+        if (profilesHost && profiles.reachable()) profiles.load().catch(() => undefined);
         paint();
+        // What was set before the last change: "Nothing matches" offers to go back to it, while what is set is still what
+        // that change left (a saved set applied, the address followed or the type switched since replaced it some other
+        // way, and going back would undo only part of that).
+        let undoTo: FilterSelection | null = null;
+        let undoFrom: string | null = null;
+        /** What is set (the type and the further filters), as one string to compare. */
+        const setNow = (): string => JSON.stringify([filterModeOf(moduleName), selectionOf(moduleName)]);
         /** Takes a new selection: redraws, keeps the list's place while it is rebuilt, and reloads it. */
         function change(next: FilterSelection, focusAt = -1): void {
-            if (activeFilterCount(next) > 0) moreFilters.set(moduleName, next); else moreFilters.delete(moduleName);
+            undoTo = selectionOf(moduleName);
+            if (worthKeeping(next)) moreFilters.set(moduleName, next); else moreFilters.delete(moduleName);
+            undoFrom = setNow();
             paint(focusAt);
             JE.discoveryBusy?.hold?.(button);
             onChange();
@@ -221,8 +300,15 @@ export function createFilterPanel(JE: SeerrDiscoveryHost, label: Say): Discovery
             const typeInMenu = !!type && !type.tabsShowing();
             // Where the tabs are out of sight the viewer may have come for them: that group is open.
             const groups: MenuGroup[] = type && typeInMenu ? [{ ...type.groupOf(), open: true }] : [];
+            // The user's saved filters first, where the page can apply them.
+            if (profilesHost && profiles.reachable()) groups.push(profiles.group({ label, host: profilesHost, scope, offered, locale: localeOf() }));
+            // The kinds the page shows (its tabs' choice, else the kinds its feeds have): a content rating of another kind can't narrow it.
+            const mode = filterModeOf(moduleName);
+            const pageKinds = (header.closest('[data-je-kinds]')?.getAttribute('data-je-kinds') ?? '').split(',')
+                .filter((kind): kind is FeedKind => kind === 'movie' || kind === 'tv');
+            const kinds: FeedKind[] | null = mode === 'movies' ? ['movie'] : mode === 'tv' ? ['tv'] : pageKinds.length > 0 ? pageKinds : null;
             groups.push(...filterMenuGroups(JE, {
-                offered, data: dataOf(), locale: localeOf(), label,
+                offered, data: dataOf(), locale: localeOf(), label, kinds, fixedAll,
                 selection: () => selectionOf(moduleName), change, ...(ownGenre ? { ownGenre } : {}),
                 roles: () => rolesOf(credits.get(moduleName) ?? [], label('discovery_role_acting', 'Acting'),
                     department => label(`discovery_role_${department.toLowerCase().replace(/[^a-z]+/g, '_')}`, department))
@@ -231,6 +317,16 @@ export function createFilterPanel(JE: SeerrDiscoveryHost, label: Say): Discovery
             button.setAttribute('aria-expanded', 'true');
             menu.openMenu({
                 anchor: button, title: filtersLabel, groups, clearLabel, doneLabel: label('discovery_filters_done', 'Done'),
+                noneLabel: label('discovery_filters_none', 'Nothing matches these filters.'),
+                undoLabel: () => undoWords({ offered, label, locale: localeOf(), ownGenre, before: undoTo ?? {}, now: selectionOf(moduleName) }),
+                canUndo: () => undoTo !== null && undoFrom === setNow(),
+                // (Back to what was set before the last change; the menu then says every group again.)
+                onUndo() {
+                    if (!undoTo || undoFrom !== setNow()) return false;
+                    change(undoTo);
+                    undoTo = null;
+                    return true;
+                },
                 onClose: () => { button.setAttribute('aria-expanded', 'false'); roomUnderMenu(sectionOf(), header, false); },
                 // The groups that are a list of choices; the others set themselves (filterMenuGroups).
                 onPick(id, groupId) {
@@ -238,7 +334,7 @@ export function createFilterPanel(JE: SeerrDiscoveryHost, label: Say): Discovery
                 },
                 onClear() {
                     if (typeInMenu) type?.choose(MIXED());
-                    if (activeFilterCount(selectionOf(moduleName)) > 0) change({});
+                    if (worthKeeping(selectionOf(moduleName))) change({});
                 }
             });
         };
@@ -274,7 +370,10 @@ export function createFilterPanel(JE: SeerrDiscoveryHost, label: Say): Discovery
         const headerOf = (): Element => section?.querySelector('.jellyseerr-discovery-header') ?? container;
         wiring.get(headerOf())?.paint();
         section?.querySelector('.jellyseerr-filters-none')?.remove();
-        if (hasMore || activeFilterCount(selectionOf(moduleName)) === 0 || container.querySelector('.card')) return;
+        // (Only cards of the kind shown count: All / Movies / Series hides the others, see controls.ts.)
+        const kind = container.classList.contains('filter-movies') ? '[data-media-type="movie"]'
+            : container.classList.contains('filter-tv') ? '[data-media-type="tv"]' : '';
+        if (hasMore || activeFilterCount(selectionOf(moduleName)) === 0 || container.querySelector(`.card${kind}`)) return;
         const buildMessageRow = JE.discoverySection?.buildMessageRow;
         if (typeof buildMessageRow !== 'function') return;
         const note = buildMessageRow({
@@ -295,8 +394,8 @@ export function createFilterPanel(JE: SeerrDiscoveryHost, label: Say): Discovery
 
     injectStyleOnce('jellyseerr-discovery-filter-panel-styles', panelCss);
     return {
-        FILTER_SWITCHES, offeredFilters, activeFilterCount, dayOf, numberOf, isBound, isReversed, feedFilterQuery,
-        keepByFilters, rolesOf, createFilterData,
+        FILTER_SWITCHES, MATCH_DEFAULTS, offeredFilters, activeFilterCount, checkableOnLoaded, matchOf, routeFeed, dayOf, numberOf,
+        isBound, isReversed, feedFilterQuery, keepByFilters, rolesOf, createFilterData,
         createFiltersControl,
         /** What a feed's request carries for the section's further filters (the sort is the caller's). */
         feedQuery: (name: string, kind: FeedKind) => feedFilterQuery(selectionOf(name), kind, adminRegion()),
@@ -307,10 +406,14 @@ export function createFilterPanel(JE: SeerrDiscoveryHost, label: Say): Discovery
         },
         /** Whether any further filter is narrowing the section's list. */
         active: name => activeFilterCount(selectionOf(name)) > 0,
+        /** Sets a module's further filters as a whole (from its page's address); the caller redraws and reloads. */
+        setSelection: keepSelection,
         /** A section starts with nothing narrowing it: its further filters and the titles seen go. */
         reset(name) {
             moreFilters.delete(name);
             credits.delete(name);
+            // (Its header, made again, says again which lists it matches by all of what is ticked.)
+            fixedAllOf.delete(name);
         },
         /** Redraws a header's Filters button (after All / Movies / Series changed); `element` is the header or inside it. */
         repaint(element) {
@@ -321,6 +424,7 @@ export function createFilterPanel(JE: SeerrDiscoveryHost, label: Say): Discovery
         roomUnderMenu,
         filterMenuGroups: options => filterMenuGroups(JE, options),
         filterTokens,
+        undoWords,
         /** The section's selection, for tests and the facade. */
         selectionOf
     };

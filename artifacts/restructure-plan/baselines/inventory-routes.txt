@@ -199,6 +199,9 @@ POST /JellyfinEnhanced/user-settings/{userId}/bookmark.json/add
 DELETE /JellyfinEnhanced/user-settings/{userId}/bookmark.json/{bookmarkId}
 GET /JellyfinEnhanced/user-settings/{userId}/ddd-triggers.json
 POST /JellyfinEnhanced/user-settings/{userId}/ddd-triggers.json
+GET /JellyfinEnhanced/user-settings/{userId}/discovery-filter-profiles
+POST /JellyfinEnhanced/user-settings/{userId}/discovery-filter-profiles
+DELETE /JellyfinEnhanced/user-settings/{userId}/discovery-filter-profiles/{profileId}
 GET /JellyfinEnhanced/user-settings/{userId}/elsewhere.json
 POST /JellyfinEnhanced/user-settings/{userId}/elsewhere.json
 GET /JellyfinEnhanced/user-settings/{userId}/hidden-content.json

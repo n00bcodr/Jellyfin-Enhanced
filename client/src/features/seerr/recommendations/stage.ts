@@ -5,9 +5,14 @@ export const LOG_PREFIX = '🪼 Jellyfin Enhanced: Recommendations:';
 export const PAGE_ID = 'je-recommendations-page';
 export const CATEGORY_PAGE_ID = 'je-recommendations-category-page';
 export const PLUGIN_PAGE_LINK = 'a[is="emby-linkbutton"][data-itemid="Jellyfin.Plugin.JellyfinEnhanced.RecommendationsPage"]';
+/** The category pages' order (kept on its own: the page itself has none). */
 export const SORT_MODULE = 'recommendationsCategory';
-/** Shared by every category page mixing both media types; the control only appears on those. */
-export const FILTER_MODULE = 'recommendationsTrending';
+/**
+ * All | Movies | Series and the further filters of the "More from" sections, kept under one module for the page and
+ * every category page opened from it: what is set on one is set on the others. Where the page's address holds them
+ * (Home's tab, the page of its own), it says what is set (discovery/address.ts).
+ */
+export const FILTER_MODULE = 'recommendations';
 /** Any other visible main page, which a hidden recommendations page must not cover up by restoring. */
 export const OTHER_PAGE = `.mainAnimatedPage:not(.hide):not(#${PAGE_ID}):not(#${CATEGORY_PAGE_ID})`;
 

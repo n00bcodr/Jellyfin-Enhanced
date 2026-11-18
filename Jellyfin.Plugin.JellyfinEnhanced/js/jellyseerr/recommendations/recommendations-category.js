@@ -50,16 +50,8 @@
   function isRecord(value) {
     return typeof value === "object" && value !== null && !Array.isArray(value);
   }
-  function isSeerrResult(value) {
-    return isRecord(value);
-  }
   function isAbortError(error) {
     return isRecord(error) && error.name === "AbortError";
-  }
-  function decodeError(what) {
-    const error = new Error(`Unexpected ${what} response`);
-    error.name = "DecodeError";
-    return error;
   }
   var text = (value) => typeof value === "string" ? value : "";
   var dateOf = (item) => text(item.releaseDate) || text(item.firstAirDate);
@@ -96,22 +88,13 @@
       return true;
     });
   }
-  function decodeFeedPage(value) {
-    if (value === null || value === void 0) return { results: [] };
-    if (!isRecord(value)) throw decodeError("feed page");
-    const rows = value.results;
-    if (rows !== null && rows !== void 0 && !Array.isArray(rows)) throw decodeError("feed page");
-    const results = Array.isArray(rows) ? rows.filter(isSeerrResult) : [];
-    const total = Number(value.totalPages);
-    return total > 0 ? { results, totalPages: total } : { results };
-  }
 
   // client/src/features/seerr/recommendations/stage.ts
   var LOG_PREFIX = "🪼 Jellyfin Enhanced: Recommendations:";
   var PAGE_ID = "je-recommendations-page";
   var CATEGORY_PAGE_ID = "je-recommendations-category-page";
   var SORT_MODULE = "recommendationsCategory";
-  var FILTER_MODULE = "recommendationsTrending";
+  var FILTER_MODULE = "recommendations";
   var OTHER_PAGE = `.mainAnimatedPage:not(.hide):not(#${PAGE_ID}):not(#${CATEGORY_PAGE_ID})`;
   function recommendationsHost() {
     const { JE } = discoveryHost();
@@ -126,7 +109,7 @@
 
   // client/src/features/seerr/recommendations/recommendations-category.ts
   var SCROLL_ROOT = `#${CATEGORY_PAGE_ID} .content-primary`;
-  var RETURN_HASH = "#/recommendations";
+  var BACK_KEY = "jeCategoryBack";
   var MAX_PAGES_PER_LOAD = 4;
   var CATEGORY_YIELD_COLD = 0.9;
   var CATEGORY_YIELD_FLOOR = 0.1;
@@ -139,8 +122,9 @@
                 <span class="material-icons" aria-hidden="true">arrow_back</span>
               </button>
               <h1 id="je-recommendations-category-title"></h1>
-              <div id="je-recommendations-category-controls" style="margin-left:auto;display:flex;align-items:center;gap:0.75em;">
+              <div id="je-recommendations-category-controls" class="je-recommendations-category-controls" style="margin-left:auto;display:flex;align-items:center;gap:0.75em;">
                 <div id="je-recommendations-category-filter"></div>
+                <div id="je-recommendations-category-filters"></div>
                 <div id="je-recommendations-category-sort"></div>
               </div>
             </div>
@@ -172,9 +156,11 @@
         isLoading: false,
         // Whether the All | Movies | Series control governs this page.
         filtered: false,
+        // kind: the kind the filters are asked for (null: Trending takes none, its titles are kept here by what each says of itself).
         feeds: category.feeds.map((feed) => ({
           path: feed.path,
           mediaType: feed.mediaType ?? null,
+          kind: feed.kind ?? null,
           page: 0,
           totalPages: 0,
           hasMore: true,
@@ -190,10 +176,12 @@
       st.controller?.abort();
       filter().cleanupScrollObserver(st);
     }
-    const fetchPage = async (st, feed, page) => {
-      const options = st.controller ? { signal: st.controller.signal } : {};
-      return decodeFeedPage(await part(P, "fetchWithManagedRequest")(`${feed.path}?page=${page}`, options));
-    };
+    const fetchPage = (st, feed, page) => part(P, "feedPage")(feed.path, feed.kind, page, st.controller ? { signal: st.controller.signal } : {});
+    const keepOnPage = (st, results) => st.feeds.every((feed) => feed.kind) ? results : filter().keepByFilters(FILTER_MODULE, results);
+    function uncheckable(st) {
+      if (st.feeds.every((feed) => feed.kind) || !JE.discoveryFilters?.checkableOnLoaded) return false;
+      return !JE.discoveryFilters.checkableOnLoaded(filter().getFilters(FILTER_MODULE));
+    }
     function activeFeeds(st) {
       if (!st.filtered) return st.feeds;
       const mode = filter().getFilterMode(FILTER_MODULE);
@@ -220,20 +208,47 @@
     const interleave = (a, b) => filter().interleaveArrays(a, b);
     function renderBatch(st, container, batch) {
       const results = unseenResults(batch, st.shown);
-      const fragment = filter().createCardsFragment(results, { cardClass: "portraitCard" });
+      const fragment = filter().createCardsFragment(keepOnPage(st, results), { cardClass: "portraitCard" });
       for (const item of results) st.shown.add(resultKey(item));
       const rendered = fragment.childNodes.length;
       st.yieldStats.fetched += results.length;
       st.yieldStats.rendered += rendered;
       container.appendChild(fragment);
       ensureFilterControl(st, container);
+      noteIfNothing(st, container);
       return rendered;
     }
     function createFilterControl(container) {
       return filter().createFilterControl(FILTER_MODULE, (mode) => {
+        writeAddress();
         filter().applyFilterVisibility(container, mode);
+        noteIfNothing(state().categoryState, container);
         armScroll(container);
       });
+    }
+    function noteIfNothing(st, container) {
+      const page = container.parentElement;
+      page?.querySelector(".je-reco-filters-none")?.remove();
+      if (state().categoryState !== st || !part(P, "isNarrowed")() || activeFeeds(st).some((feed) => feed.hasMore)) return;
+      const { MODES } = filter();
+      const mode = st.filtered ? filter().getFilterMode(FILTER_MODULE) : MODES.MIXED;
+      const kind = mode === MODES.MOVIES ? '[data-media-type="movie"]' : mode === MODES.TV ? '[data-media-type="tv"]' : "";
+      if (container.querySelector(`.card${kind}`)) return;
+      const note = JE.discoverySection?.buildMessageRow?.({
+        message: translate(JE, "discovery_filters_none"),
+        actionLabel: translate(JE, "discovery_filters_clear"),
+        onAction() {
+          const keyed = note?.contains(document.activeElement) ?? false;
+          part(P, "clearFilters")();
+          writeAddress();
+          if (openCategory) showControls(openCategory.key, openCategory.category, container);
+          reload(container);
+          if (keyed) document.querySelector("#je-recommendations-category-filters .jellyseerr-filters-btn")?.focus({ preventScroll: true });
+        }
+      });
+      if (!note) return;
+      note.classList.add("je-recommendations-empty", "je-reco-filters-none", "je-pad-left", "je-pad-right");
+      container.after(note);
     }
     function ensureFilterControl(st, container) {
       if (st.filtered || st.feeds.length < 2 || !st.feeds.every((feed) => feed.seen > 0)) return;
@@ -301,6 +316,14 @@
     async function loadInitialCategoryPage(st, container, isStale) {
       JE.jellyseerrUI?.releasePosters?.(container);
       container.replaceChildren();
+      container.parentElement?.querySelector(".je-reco-filters-none")?.remove();
+      if (uncheckable(st)) {
+        st.feeds.forEach((feed) => {
+          feed.hasMore = false;
+        });
+        noteIfNothing(st, container);
+        return;
+      }
       const settled = await Promise.allSettled(st.feeds.map((feed) => fetchPage(st, feed, 1)));
       if (isStale()) return;
       const perFeed = st.feeds.map((feed, index) => {
@@ -337,21 +360,29 @@
       page.setAttribute("data-type", "custom");
       page.innerHTML = PAGE_MARKUP;
       page.querySelector("#je-recommendations-category-back")?.addEventListener("click", () => {
-        if (historyEntryActive) history.back();
+        const address = JE.discoveryAddress;
+        if (urlMode && isRecord(history.state) && history.state[BACK_KEY] === true) history.back();
+        else if (urlMode && address) {
+          address.go(address.addressWith(window.location.hash, null, address.current(FILTER_MODULE, null), false));
+          hideCategoryPage();
+        } else if (historyEntryActive) history.back();
         else closeCategoryPage();
       });
       (document.querySelector(".mainAnimatedPages") ?? document.body).appendChild(page);
       return page;
     }
     function closeCategoryPage() {
-      const returnToPage = state().categoryReturnsToPage && window.location.hash === RETURN_HASH;
+      const returnToPage = state().categoryReturnsToPage && part(P, "isPageHash")(window.location.hash);
       hideCategoryPage();
       if (returnToPage) part(P, "showPage")();
     }
     let historyEntryActive = false;
+    let openCategory = null;
+    let urlMode = false;
+    let openTicket = 0;
     const isOwnEntry = (entry) => isRecord(entry) && entry.jeCategory === true;
     function onHistoryPop(event) {
-      if (!historyEntryActive || isOwnEntry(event.state)) return;
+      if (!historyEntryActive || urlMode || isOwnEntry(event.state)) return;
       releaseHistoryEntry();
       closeCategoryPage();
     }
@@ -359,45 +390,126 @@
       historyEntryActive = false;
       window.removeEventListener("popstate", onHistoryPop);
     }
-    async function showCategoryPage(categoryKey) {
-      const category = part(P, "resolveCategory")(categoryKey);
-      if (!category || !JE.pluginConfig?.RecommendationsPageEnabled) return;
+    function writeAddress() {
+      if (urlMode) JE.discoveryAddress?.write(FILTER_MODULE, SORT_MODULE, true);
+      else if (part(P, "addressHoldsFilters")()) JE.discoveryAddress?.write(FILTER_MODULE, null, false);
+    }
+    function reload(container) {
+      const pageState = state();
+      const category = openCategory?.category;
+      if (!category) return;
+      const previous = pageState.categoryState;
+      retire(previous);
+      const next = pageState.categoryState = newCategoryState(category);
+      next.filtered = previous.filtered;
+      const stale = () => pageState.categoryState !== next || !pageState.categoryPageVisible;
+      loadInitialCategoryPage(next, container, stale).then(() => {
+        if (!stale()) armScroll(container);
+      }).catch((error) => console.error(`${LOG_PREFIX} Failed to reload category`, error));
+    }
+    function showControls(categoryKey, category, container) {
+      const st = state().categoryState;
+      const facade = filter();
+      const filterSlot = document.getElementById("je-recommendations-category-filter");
+      const filtersSlot = document.getElementById("je-recommendations-category-filters");
+      const sortSlot = document.getElementById("je-recommendations-category-sort");
+      const header = document.getElementById("je-recommendations-category-header");
+      if (!filterSlot || !filtersSlot || !sortSlot || !header) return;
+      filterSlot.replaceChildren();
+      const typed = st.feeds.filter((feed) => feed.mediaType).length >= 2;
+      if (categoryKey === "trending" || st.filtered || typed && facade.getFilterMode(FILTER_MODULE) !== facade.MODES.MIXED) {
+        st.filtered = true;
+        filterSlot.appendChild(createFilterControl(container));
+      }
+      facade.applyFilterVisibility(container, st.filtered ? facade.getFilterMode(FILTER_MODULE) : facade.MODES.MIXED);
+      const kinds = [...new Set(st.feeds.map((feed) => feed.kind).filter(Boolean))];
+      if (kinds.length > 0) header.setAttribute("data-je-kinds", kinds.join(","));
+      else header.removeAttribute("data-je-kinds");
+      const scope = st.feeds.some((feed) => !feed.kind) ? "loaded" : "feed";
+      const address = JE.discoveryAddress;
+      const profiles = address ? {
+        read: () => address.filterPairs(address.current(FILTER_MODULE, SORT_MODULE), true).join("&"),
+        apply(filters) {
+          const wanted = address.filtersOf(filters, scope);
+          facade.setFilterMode(FILTER_MODULE, wanted.mode);
+          if (wanted.sort) facade.setSortMode(SORT_MODULE, wanted.sort);
+          else facade.resetSortMode(SORT_MODULE);
+          facade.setFilters(FILTER_MODULE, wanted.selection);
+          showControls(categoryKey, category, container);
+          writeAddress();
+          reload(container);
+        }
+      } : void 0;
+      const button = facade.createFiltersButton(header, FILTER_MODULE, scope, () => {
+        writeAddress();
+        reload(container);
+      }, {
+        place: () => document.querySelector(`#${CATEGORY_PAGE_ID} .content-primary`),
+        ...categoryKey.startsWith("genre-") ? { ownGenre: category.title } : {},
+        ...profiles ? { profiles } : {}
+      });
+      filtersSlot.replaceChildren(...button ? [button] : []);
+      sortSlot.replaceChildren(facade.createSortControl(SORT_MODULE, () => {
+        writeAddress();
+        reload(container);
+      }));
+    }
+    async function resolve(categoryKey) {
+      const found = part(P, "resolveCategory")(categoryKey);
+      const genre = /^genre-(movie|tv)-\d+$/.exec(categoryKey)?.[1];
+      if (found || genre !== "movie" && genre !== "tv") return found;
+      const list = await part(P, "fetchGenreSlider")(genre);
+      if (!list.length) return null;
+      if (genre === "movie") P.MOVIE_GENRES = list;
+      else P.TV_GENRES = list;
+      return part(P, "resolveCategory")(categoryKey);
+    }
+    function markHistory(categoryKey, fromUrl) {
+      const address = JE.discoveryAddress;
+      urlMode = !!address?.isHomeHash(window.location.hash);
+      if (address && urlMode) {
+        const target = address.addressWith(window.location.hash, categoryKey, address.current(FILTER_MODULE, SORT_MODULE), true);
+        releaseHistoryEntry();
+        if (fromUrl || window.location.hash === target) {
+          if (window.location.hash !== target || !isOwnEntry(history.state)) {
+            address.go(target, { state: { ...isRecord(history.state) ? history.state : {}, jeCategory: true } });
+          }
+          return;
+        }
+        address.go(target, { push: true, state: { jeCategory: true, [BACK_KEY]: true } });
+        return;
+      }
+      if (!historyEntryActive) {
+        history.pushState({ jeCategory: true }, "", window.location.href);
+        historyEntryActive = true;
+        window.addEventListener("popstate", onHistoryPop);
+      }
+    }
+    async function showCategoryPage(categoryKey, fromUrl = false) {
+      const ticket = ++openTicket;
+      const pageOf = () => JE.discoveryAddress?.withoutOwn(window.location.hash) ?? window.location.hash;
+      const from = pageOf();
+      const category = await resolve(categoryKey);
+      if (!category || ticket !== openTicket || pageOf() !== from) return;
+      if (fromUrl && JE.discoveryAddress?.categoryOfHash(window.location.hash) !== categoryKey) return;
+      if (!JE.pluginConfig?.RecommendationsPageEnabled) return;
+      if (fromUrl) JE.discoveryAddress?.adopt(FILTER_MODULE, SORT_MODULE, { withSort: true });
       const pageState = state();
       const fromPage = pageState.pageVisible;
       if (fromPage) part(P, "hidePage")();
       retire(pageState.categoryState);
       pageState.categoryPageVisible = true;
       pageState.categoryReturnsToPage = fromPage || pageState.categoryReturnsToPage;
+      openCategory = { key: categoryKey, category };
       const st = pageState.categoryState = newCategoryState(category);
       const stale = () => pageState.categoryState !== st || !pageState.categoryPageVisible;
       const page = createCategoryPageContainer();
       const title = document.getElementById("je-recommendations-category-title");
       const container = document.getElementById("je-recommendations-category-container");
-      const filterSlot = document.getElementById("je-recommendations-category-filter");
-      const sortSlot = document.getElementById("je-recommendations-category-sort");
-      if (!title || !container || !filterSlot || !sortSlot) return;
+      if (!title || !container) return;
       title.textContent = category.title;
-      filterSlot.replaceChildren();
-      if (categoryKey === "trending") {
-        st.filtered = true;
-        filterSlot.appendChild(createFilterControl(container));
-      }
-      filter().applyFilterVisibility(container, st.filtered ? filter().getFilterMode(FILTER_MODULE) : filter().MODES.MIXED);
-      sortSlot.replaceChildren(filter().createSortControl(SORT_MODULE, () => {
-        const previous = pageState.categoryState;
-        retire(previous);
-        const sorted = pageState.categoryState = newCategoryState(category);
-        sorted.filtered = previous.filtered;
-        const sortStale = () => pageState.categoryState !== sorted || !pageState.categoryPageVisible;
-        loadInitialCategoryPage(sorted, container, sortStale).then(() => {
-          if (!sortStale()) armScroll(container);
-        }).catch((error) => console.error(`${LOG_PREFIX} Failed to re-sort category`, error));
-      }));
-      if (!historyEntryActive) {
-        history.pushState({ jeCategory: true }, "", window.location.href);
-        historyEntryActive = true;
-        window.addEventListener("popstate", onHistoryPop);
-      }
+      showControls(categoryKey, category, container);
+      markHistory(categoryKey, fromUrl);
       const activePage = document.querySelector(`.mainAnimatedPage:not(.hide):not(#${CATEGORY_PAGE_ID})`);
       if (activePage) {
         pageState.categoryPreviousPage = activePage;
@@ -414,6 +526,7 @@
       if (!stale()) armScroll(container);
     }
     function hideCategoryPage() {
+      openTicket++;
       const pageState = state();
       if (!pageState.categoryPageVisible) return;
       pageState.categoryPageVisible = false;
@@ -425,6 +538,7 @@
       const page = document.getElementById(CATEGORY_PAGE_ID);
       JE.jellyseerrUI?.releasePosters?.(page ?? void 0);
       document.getElementById("je-recommendations-category-container")?.replaceChildren();
+      page?.querySelector(".je-reco-filters-none")?.remove();
       if (page) {
         page.classList.add("hide");
         page.dispatchEvent(new CustomEvent("viewhide", { bubbles: true, detail: { type: "custom" } }));
@@ -433,14 +547,48 @@
       pageState.categoryPreviousPage = null;
       if (previous && !document.querySelector(OTHER_PAGE)) {
         previous.classList.remove("hide");
-        previous.dispatchEvent(new CustomEvent("viewshow", { bubbles: true, detail: { type: "interior", isRestored: true } }));
+        previous.dispatchEvent(new CustomEvent("viewshow", { bubbles: true, detail: { type: "interior", isRestored: true, jeRestored: true } }));
       }
+      openCategory = null;
+      urlMode = false;
+      P.syncFilters?.();
+    }
+    const homeShowing = () => !!document.querySelector("#indexPage:not(.hide)");
+    function openFromUrl(key) {
+      showCategoryPage(key, true).catch((error) => console.error(`${LOG_PREFIX} Failed to open category`, error));
+    }
+    function followUrl() {
+      const address = JE.discoveryAddress;
+      if (!address) return false;
+      const hash = window.location.hash;
+      const wanted = address.isHomeHash(hash) ? address.categoryOfHash(hash) : null;
+      if (state().categoryPageVisible && urlMode) {
+        if (wanted === openCategory?.key) {
+          if (address.adopt(FILTER_MODULE, SORT_MODULE, { withSort: true })) openFromUrl(wanted);
+          return true;
+        }
+        if (wanted) {
+          openFromUrl(wanted);
+          return true;
+        }
+        if (!address.isHomeHash(hash)) return false;
+        address.adopt(FILTER_MODULE, null, { withSort: false });
+        hideCategoryPage();
+        return true;
+      }
+      if (!wanted || state().categoryPageVisible || !homeShowing()) {
+        if (!state().categoryPageVisible && address.isRecommendationsHash(hash) && address.adopt(FILTER_MODULE, null, { withSort: false })) P.syncFilters?.();
+        return false;
+      }
+      openFromUrl(wanted);
+      return true;
     }
     P.createCategoryPageContainer = createCategoryPageContainer;
     P.loadMoreCategoryItems = loadMoreCategoryItems;
     P.showCategoryPage = showCategoryPage;
     P.hideCategoryPage = hideCategoryPage;
     P.categoryOnOwnEntry = () => historyEntryActive && isOwnEntry(history.state);
+    P.followUrl = followUrl;
   })();
 })();
 })();

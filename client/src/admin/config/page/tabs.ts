@@ -43,9 +43,13 @@ export function createTabs(m: TabsDeps) {
 
             function activateTab(tabId: string) : void {
                 // The address names the tab shown. Media Tags keeps its own section in `tab` (jeSection names the
-                // tab), so the two never share the key (upstream b0a8a963).
-                JEAdmin.setHash('jeSection', tabId === m.mediaTagsTab.JE_MT_TAB ? tabId : null);
-                JEAdmin.setHash('tab', tabId === m.mediaTagsTab.JE_MT_TAB ? null : tabId);
+                // tab), so the two never share the key (upstream b0a8a963). An address that already names Media Tags
+                // keeps its section when that tab is shown again (its button, the end of a search): the tab shows the
+                // same section, which a reload or a copied link must open (upstream 5201d47b).
+                const mediaTags = tabId === m.mediaTagsTab.JE_MT_TAB;
+                const atMediaTags = new URLSearchParams(window.location.hash.split('?')[1] || '').get('jeSection') === m.mediaTagsTab.JE_MT_TAB;
+                JEAdmin.setHash('jeSection', mediaTags ? tabId : null);
+                if (!(mediaTags && atMediaTags)) JEAdmin.setHash('tab', mediaTags ? null : tabId);
                 if (_jePrevTabId && _jePrevTabId !== tabId) {
                     _jeTabScroll[_jePrevTabId] = _jeGetScrollTop();
                 }

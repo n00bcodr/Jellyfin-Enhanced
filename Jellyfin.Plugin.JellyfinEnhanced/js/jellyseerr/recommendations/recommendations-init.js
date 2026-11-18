@@ -32,6 +32,11 @@
     return JE.t?.(key, params) ?? key;
   }
 
+  // client/src/features/seerr/discovery/domain.ts
+  function isRecord(value) {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
+  }
+
   // client/src/features/seerr/recommendations/stage.ts
   var LOG_PREFIX = "🪼 Jellyfin Enhanced: Recommendations:";
   var PAGE_ID = "je-recommendations-page";
@@ -59,9 +64,10 @@
     const hideCategoryPage = () => part(P, "hideCategoryPage")();
     function handleNavigation() {
       part(P, "sweepRenders")();
+      if (part(P, "followUrl")()) return;
       if (state.categoryPageVisible && part(P, "categoryOnOwnEntry")()) return;
       if (state.categoryPageVisible) hideCategoryPage();
-      if (window.location.hash === "#/recommendations") showPage();
+      if (part(P, "isPageHash")(window.location.hash)) showPage();
       else if (state.pageVisible) hidePage();
     }
     function handleViewShow(event) {
@@ -70,6 +76,13 @@
       if (id === PAGE_ID || id === CATEGORY_PAGE_ID) return;
       if (state.pageVisible) hidePage();
       if (state.categoryPageVisible) hideCategoryPage();
+      const restored = event instanceof CustomEvent && isRecord(event.detail) && event.detail.jeRestored === true;
+      const address = JE.discoveryAddress;
+      if (!restored && address?.isHomeHash(window.location.hash) && address.categoryOfHash(window.location.hash)) {
+        requestAnimationFrame(() => {
+          part(P, "followUrl")();
+        });
+      }
     }
     function linkHidden() {
       const config = JE.pluginConfig;

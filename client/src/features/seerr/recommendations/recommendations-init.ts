@@ -1,6 +1,7 @@
 // /js/jellyseerr/recommendations/recommendations-init.js
 // Recommendations Page: sidebar link injection, navigation wiring, public surface and bootstrap.
 import { translate } from '../host-discovery';
+import { isRecord } from '../discovery/domain';
 import { CATEGORY_PAGE_ID, LOG_PREFIX, PAGE_ID, part, PLUGIN_PAGE_LINK, recommendationsHost } from './stage';
 
 (function () {
@@ -13,11 +14,14 @@ import { CATEGORY_PAGE_ID, LOG_PREFIX, PAGE_ID, part, PLUGIN_PAGE_LINK, recommen
 
     function handleNavigation(): void {
         part(P, 'sweepRenders')();
+        // A category's own address (opened from the Home tab; Back and Forward between the tab and its
+        // categories) is the category page's to follow.
+        if (part(P, 'followUrl')()) return;
         // A pop that lands back on the open category's own entry is not a navigation away. The first
         // pop after a load is reported as one even on an unchanged URL, which closed the page here.
         if (state.categoryPageVisible && part(P, 'categoryOnOwnEntry')()) return;
         if (state.categoryPageVisible) hideCategoryPage();
-        if (window.location.hash === '#/recommendations') showPage();
+        if (part(P, 'isPageHash')(window.location.hash)) showPage();
         else if (state.pageVisible) hidePage();
     }
     function handleViewShow(event: Event): void {
@@ -26,6 +30,13 @@ import { CATEGORY_PAGE_ID, LOG_PREFIX, PAGE_ID, part, PLUGIN_PAGE_LINK, recommen
         if (id === PAGE_ID || id === CATEGORY_PAGE_ID) return;
         if (state.pageVisible) hidePage();
         if (state.categoryPageVisible) hideCategoryPage();
+        // The router showing Home (a reload, a link, Back from a title, Forward) at a category's address: that page
+        // opens over it once the router is done. (Not the page a category gave back on closing, which no longer names one.)
+        const restored = event instanceof CustomEvent && isRecord(event.detail) && event.detail.jeRestored === true;
+        const address = JE.discoveryAddress;
+        if (!restored && address?.isHomeHash(window.location.hash) && address.categoryOfHash(window.location.hash)) {
+            requestAnimationFrame(() => { part(P, 'followUrl')(); });
+        }
     }
     /** The sidebar link belongs to the standalone page; the other hosts bring their own entry. */
     function linkHidden(): boolean {

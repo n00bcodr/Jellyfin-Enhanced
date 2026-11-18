@@ -1,5 +1,5 @@
 import type {
-    DiscoveryBaseFacade, DiscoveryBusyFacade, DiscoveryConfigKey, DiscoveryFilterFacade, DiscoveryFiltersFacade,
+    DiscoveryAddressFacade, DiscoveryBaseFacade, DiscoveryBusyFacade, DiscoveryConfigKey, DiscoveryFilterFacade, DiscoveryFiltersFacade,
     DiscoveryMenuFacade, DiscoveryRolesFacade, DiscoverySectionFacade, FeedKind, LoadMore, ScrollHint,
     ScrollOptions, ScrollState, SeerrResult
 } from './discovery/types';
@@ -77,7 +77,12 @@ export interface DiscoveryLifecycle {
 export type ViewListener = (view: string | null | undefined, element: Element | null | undefined) => void;
 export interface DiscoveryCore {
     lifecycle?: { register(name: string): DiscoveryLifecycle };
-    navigation?: { onNavigate(callback: () => void): () => void; onViewPage(callback: ViewListener): () => void };
+    navigation?: {
+        onNavigate(callback: () => void): () => void;
+        onViewPage(callback: ViewListener): () => void;
+        /** Changes the address without it being a navigation for the plugin (the filters a page keeps in its address). */
+        setAddressQuietly?(state: unknown, url: string, push?: boolean): void;
+    };
     ui?: { createSkeletonRows(titles: Array<string | null>): HTMLElement };
 }
 export interface SeerrDiscoveryHost {
@@ -101,6 +106,7 @@ export interface SeerrDiscoveryHost {
     discoveryRoles?: DiscoveryRolesFacade;
     discoverySection?: DiscoverySectionFacade;
     discoveryFilters?: DiscoveryFiltersFacade;
+    discoveryAddress?: DiscoveryAddressFacade;
     discoveryBase?: DiscoveryBaseFacade;
     recommendationsPage?: RecommendationsFacade;
     internals?: { recommendationsPage?: RecommendationsStage };
@@ -110,7 +116,9 @@ export interface DiscoveryApiClient {
     getCurrentUserId(): string;
     accessToken(): string;
     getItem?(userId: string, itemId: string): Promise<unknown>;
-    ajax?(request: { type: string; url: string; headers: Record<string, string>; dataType: string }): Promise<unknown>;
+    ajax?(request: {
+        type: string; url: string; headers?: Record<string, string>; dataType?: string; data?: string; contentType?: string;
+    }): Promise<unknown>;
 }
 interface DiscoveryWindow extends Window {
     JellyfinEnhanced?: SeerrDiscoveryHost;

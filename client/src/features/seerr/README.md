@@ -58,7 +58,7 @@ Sources are relative to this folder; outputs are relative to `Jellyfin.Plugin.Je
 
 `public-api.ts` is the only module another feature may import, and only with `import type` (feature-boundaries rule 1). It holds types only, no runtime code.
 
-- Facades this feature publishes on `window.JellyfinEnhanced`: `jellyseerrAPI`, `jellyseerrUI`, `jellyseerrMoreInfo`, `requestManager`, `discoveryFilter`, `seamlessScroll`, and, from `discovery/discovery-filter-utils.ts` before `discoveryFilter` (upstream ships each as a script of its own), the discovery section's parts `discoveryStyles`, `discoveryBusy`, `discoveryMenu`, `discoveryRoles`, `discoverySection` and `discoveryFilters`.
+- Facades this feature publishes on `window.JellyfinEnhanced`: `jellyseerrAPI`, `jellyseerrUI`, `jellyseerrMoreInfo`, `requestManager`, `discoveryFilter`, `seamlessScroll`, and, from `discovery/discovery-filter-utils.ts` before `discoveryFilter` (upstream ships each as a script of its own), the discovery section's parts `discoveryStyles`, `discoveryBusy`, `discoveryMenu`, `discoveryRoles`, `discoverySection` and `discoveryFilters`, and after it `discoveryAddress` (the filters in a page's address, upstream's `discovery-address.js`).
 - `JE.internals` slots it owns (`tests/frontend/architecture/internals-owners.json`): `jellyseerrUi`, `moreInfoModal`, `recommendationsPage`.
 
 ## Settings / admin UI

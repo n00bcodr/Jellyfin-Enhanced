@@ -50,10 +50,10 @@
   // client/src/features/seerr/recommendations/recommendations-catalog.ts
   var ROWS = [
     { key: "trending", path: "/JellyfinEnhanced/jellyseerr/discover/trending", titleKey: "recommendations_trending" },
-    { key: "movies", path: "/JellyfinEnhanced/jellyseerr/discover/movies", titleKey: "recommendations_popular_movies" },
-    { key: "tv", path: "/JellyfinEnhanced/jellyseerr/discover/tv", titleKey: "recommendations_popular_tv" },
-    { key: "movies-upcoming", path: "/JellyfinEnhanced/jellyseerr/discover/movies/upcoming", titleKey: "recommendations_upcoming_movies" },
-    { key: "tv-upcoming", path: "/JellyfinEnhanced/jellyseerr/discover/tv/upcoming", titleKey: "recommendations_upcoming_tv" }
+    { key: "movies", path: "/JellyfinEnhanced/jellyseerr/discover/movies", titleKey: "recommendations_popular_movies", kind: "movie" },
+    { key: "tv", path: "/JellyfinEnhanced/jellyseerr/discover/tv", titleKey: "recommendations_popular_tv", kind: "tv" },
+    { key: "movies-upcoming", path: "/JellyfinEnhanced/jellyseerr/discover/movies/upcoming", titleKey: "recommendations_upcoming_movies", kind: "movie" },
+    { key: "tv-upcoming", path: "/JellyfinEnhanced/jellyseerr/discover/tv/upcoming", titleKey: "recommendations_upcoming_tv", kind: "tv" }
   ];
   var STUDIOS = [
     { name: "Marvel Studios", id: 420, logo: "/hUzeosd33nzE5MCNsZxCGEKTXaQ.png" },
@@ -96,19 +96,19 @@
     const { JE, P } = recommendationsHost();
     function resolveCategory(categoryKey) {
       const row = part(P, "ROWS").find((entry) => entry.key === categoryKey);
-      if (row) return { title: translate(JE, row.titleKey), feeds: [{ path: row.path }] };
+      if (row) return { title: translate(JE, row.titleKey), feeds: [{ path: row.path, ...row.kind ? { kind: row.kind } : {} }] };
       const studioId = /^studio-(\d+)$/.exec(categoryKey)?.[1];
       const studio = studioId && part(P, "STUDIOS").find((entry) => String(entry.id) === studioId);
       if (studio) {
-        const feeds = [{ path: `/JellyfinEnhanced/jellyseerr/discover/movies/studio/${studio.id}`, mediaType: "movie" }];
-        if (JE.pluginConfig?.TmdbEnabled) feeds.push({ path: `/JellyfinEnhanced/jellyseerr/discover/tv/studio/${studio.id}`, mediaType: "tv" });
+        const feeds = [{ path: `/JellyfinEnhanced/jellyseerr/discover/movies/studio/${studio.id}`, mediaType: "movie", kind: "movie" }];
+        if (JE.pluginConfig?.TmdbEnabled) feeds.push({ path: `/JellyfinEnhanced/jellyseerr/discover/tv/studio/${studio.id}`, mediaType: "tv", kind: "tv" });
         return { title: studio.name, feeds };
       }
       const networkId = /^network-(\d+)$/.exec(categoryKey)?.[1];
       const network = networkId && part(P, "NETWORKS").find((entry) => String(entry.id) === networkId);
       if (network) {
-        const feeds = [{ path: `/JellyfinEnhanced/jellyseerr/discover/tv/network/${network.id}`, mediaType: "tv" }];
-        if (network.companyId) feeds.push({ path: `/JellyfinEnhanced/jellyseerr/discover/movies/studio/${network.companyId}`, mediaType: "movie" });
+        const feeds = [{ path: `/JellyfinEnhanced/jellyseerr/discover/tv/network/${network.id}`, mediaType: "tv", kind: "tv" }];
+        if (network.companyId) feeds.push({ path: `/JellyfinEnhanced/jellyseerr/discover/movies/studio/${network.companyId}`, mediaType: "movie", kind: "movie" });
         return { title: network.name, feeds };
       }
       const genreMatch = /^genre-(movie|tv)-(\d+)$/.exec(categoryKey);
@@ -116,7 +116,7 @@
         const isMovie = genreMatch[1] === "movie";
         const genre = part(P, isMovie ? "MOVIE_GENRES" : "TV_GENRES").find((entry) => String(entry.id) === genreMatch[2]);
         if (genre) {
-          return { title: genre.name, feeds: [{ path: `/JellyfinEnhanced/jellyseerr/discover/${isMovie ? "movies" : "tv"}/genre/${genre.id}` }] };
+          return { title: genre.name, feeds: [{ path: `/JellyfinEnhanced/jellyseerr/discover/${isMovie ? "movies" : "tv"}/genre/${genre.id}`, kind: isMovie ? "movie" : "tv" }] };
         }
       }
       return null;

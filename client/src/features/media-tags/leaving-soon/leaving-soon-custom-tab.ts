@@ -35,7 +35,9 @@ export function mountLeavingSoonTab(JE: TagRuntimeBridge): void {
     function isOnHomePage(): boolean {
         const hash = window.location.hash.replace(/^#!/, '#');
         return hash === '' || hash === '#/home' || hash === '#/home.html'
-            || hash.indexOf('#/home?') !== -1 || hash.indexOf('#/home.html?') !== -1;
+            || hash.indexOf('#/home?') !== -1 || hash.indexOf('#/home.html?') !== -1
+            // (Or only the Recommendations filters' fragment after it: see seerr/discovery/address.ts.)
+            || hash.indexOf('#/home#') === 0 || hash.indexOf('#/home.html#') === 0;
     }
 
     /** The container inside the active (non-hidden) home page, never a stale cached copy. */

@@ -15,11 +15,9 @@
 //
 // Published as JE.discoveryMenu { openMenu, menuRow, groupedMenuRoom }.
 import type { SeerrDiscoveryHost } from '../host-discovery';
+import { choiceRow, groupedMenuRoom, isBackKey, menuRow, showValue, watchOutcome } from './menu-parts';
 import type { DiscoveryMenuFacade, MenuChoice, MenuGroup, MenuOptions, MenuRow } from './types';
 
-/** What a TV remote's Back sends, by key name or by code (Tizen 10009, webOS 461). */
-const isBackKey = (event: KeyboardEvent): boolean =>
-    event.key === 'Escape' || event.key === 'BrowserBack' || event.key === 'GoBack' || event.keyCode === 10009 || event.keyCode === 461;
 /** The least height under its anchor a grouped menu is hung there with, where there is more room above (px). */
 const GROUPED_MIN_ROOM = 260;
 const EDGE = 8;
@@ -32,56 +30,16 @@ const EDGE = 8;
  */
 const CUT_AT = 0.6;
 
-/** Jellyfin's icon in a menu row's icon slot (`hidden`: kept in place but not shown). */
-function icon(name: string, hidden = false): HTMLElement {
-    const span = document.createElement('span');
-    span.className = `actionsheetMenuItemIcon listItemIcon listItemIcon-transparent material-icons ${name}`;
-    span.setAttribute('aria-hidden', 'true');
-    if (hidden) span.style.visibility = 'hidden';
-    return span;
-}
-
-/** A row in Jellyfin's own item markup: the icon slot, then the words. */
-export function menuRow(name: string, iconName: string, iconHidden: boolean): MenuRow {
-    const item = document.createElement('button');
-    item.type = 'button';
-    item.className = 'listItem listItem-button actionSheetMenuItem emby-button';
-    const body = document.createElement('div');
-    body.className = 'listItemBody actionsheetListItemBody';
-    const text = document.createElement('div');
-    text.className = 'listItemBodyText actionSheetItemText';
-    text.textContent = name;
-    body.appendChild(text);
-    // The tick is Jellyfin's icon in the item's own icon slot, kept in place (hidden) on the others.
-    // (The small menu shows it at the row's end, where Jellyfin's sort menu marks the order in use.)
-    item.append(icon(iconName, iconHidden), body);
-    return { item, text, body };
-}
-
-/** One choice's row, ticked when it is the one in use. */
-function choiceRow(choice: MenuChoice, groupId?: string): HTMLButtonElement {
-    const { item } = menuRow(choice.name, 'check', !choice.selected);
-    item.dataset.id = choice.id;
-    if (groupId !== undefined) item.dataset.group = groupId;
-    item.setAttribute('role', groupId === undefined ? 'menuitemradio' : 'radio');
-    item.setAttribute('aria-checked', String(choice.selected));
-    return item;
-}
-
-/** How much room a menu of groups wants under its anchor before any group is open (px), for the caller to make that room first. */
-export function groupedMenuRoom(groupCount: number): number {
-    const row = window.matchMedia?.('(max-width: 600px)').matches ? 48 : 36;
-    return Math.min((groupCount + 1) * row + 24 + 110, Math.round(window.innerHeight * 0.72));
-}
-
 export function createDiscoveryMenu(JE: SeerrDiscoveryHost): DiscoveryMenuFacade {
     let closeOpen: (() => void) | null = null;
     let bodies = 0;
 
     /** Opens the menu under its anchor; returns the function that closes it. One menu is open at a time. */
-    function openMenu({ anchor, title, choices = [], groups, clearLabel, doneLabel, onPick, onClear, onClose }: MenuOptions): () => void {
+    function openMenu({ anchor, title, choices = [], groups, clearLabel, doneLabel, noneLabel, undoLabel, onUndo, canUndo, onPick, onClear, onClose }: MenuOptions): () => void {
         closeOpen?.();
         const tv = document.documentElement.classList.contains('layout-tv');
+        // (A touch screen's sheet: its height is kept as its foot changes; see cutInARow.)
+        const coarse = !!window.matchMedia?.('(pointer: coarse)').matches;
         const backdrop = document.createElement('div');
         backdrop.className = 'dialogBackdrop dialogBackdropOpened jellyseerr-menu-backdrop';
         const container = document.createElement('div');
@@ -92,6 +50,8 @@ export function createDiscoveryMenu(JE: SeerrDiscoveryHost): DiscoveryMenuFacade
         sheet.setAttribute('aria-label', title);
         const content = document.createElement('div');
         content.className = 'actionSheetContent';
+        let outcome: HTMLElement | null = null;
+        let stopOutcome: (() => void) | null = null;
         // A TV's action sheet has Jellyfin's title row; the small menu has none (its name is its label).
         if (tv) {
             const heading = document.createElement('h1');
@@ -99,6 +59,17 @@ export function createDiscoveryMenu(JE: SeerrDiscoveryHost): DiscoveryMenuFacade
             heading.textContent = title;
             content.appendChild(heading);
         }
+        // (Measured again only when the menu's width changed: placing it follows the page's scrolling.)
+        let fittedWidth = -1;
+        /** Every group's value again, at the menu's size now. */
+        const fitValues = (): void => {
+            const width = sheet.offsetWidth;
+            if (width === fittedWidth) return;
+            fittedWidth = width;
+            for (const el of content.querySelectorAll<HTMLElement>('.jellyseerr-menu-group-value')) {
+                showValue(el, el.dataset.whole ?? el.textContent ?? '', el.dataset.short || undefined);
+            }
+        };
         // The one part of the menu that scrolls: its title (a TV) and its foot ("Clear filters") stay.
         const scroller = document.createElement('div');
         scroller.className = 'actionSheetScroller scrollY';
@@ -121,7 +92,7 @@ export function createDiscoveryMenu(JE: SeerrDiscoveryHost): DiscoveryMenuFacade
                 const current = group.choices?.find(choice => choice.selected) ?? first;
                 // Said as filtering only when it is: the first choice of a group is "any".
                 const set = group.choices ? !!current && current !== first : group.set === true;
-                value.textContent = group.choices ? current?.name ?? '' : (set ? group.value : group.any) ?? '';
+                showValue(value, group.choices ? current?.name ?? '' : (set ? group.value : group.any) ?? '', set ? group.short : undefined);
                 item.toggleAttribute('data-set', set);
                 body.appendChild(value);
                 const list = document.createElement('div');
@@ -132,11 +103,25 @@ export function createDiscoveryMenu(JE: SeerrDiscoveryHost): DiscoveryMenuFacade
                 list.hidden = true;
                 item.setAttribute('aria-controls', list.id);
                 for (const choice of group.choices ?? []) list.appendChild(choiceRow(choice, group.id));
-                scroller.append(item, list);
+                // (Each group's row and body in a box of its own: the row held at the top while its group is open leaves
+                // with the group as it scrolls away, not over the groups after it.)
+                const box = document.createElement('div');
+                box.className = 'jellyseerr-menu-groupbox';
+                box.dataset.group = group.id;
+                box.append(item, list);
+                scroller.appendChild(box);
             }
             if (clearLabel && onClear) {
+                // Over the foot, what the page says when nothing matches what is set (shown while it does).
+                if (noneLabel) {
+                    outcome = document.createElement('div');
+                    outcome.className = 'jellyseerr-menu-note jellyseerr-menu-outcome';
+                    outcome.setAttribute('role', 'status');
+                    outcome.hidden = true;
+                }
                 const foot = document.createElement('div');
                 foot.className = 'jellyseerr-menu-foot';
+                if (outcome) foot.appendChild(outcome);
                 clear = menuRow(clearLabel, 'check', true).item;
                 clear.classList.add('jellyseerr-menu-clear');
                 clear.dataset.clear = '';
@@ -157,9 +142,18 @@ export function createDiscoveryMenu(JE: SeerrDiscoveryHost): DiscoveryMenuFacade
         sheet.appendChild(content);
         container.appendChild(sheet);
 
-        // What the keys move through: the rows and fields showing (a closed group's are not; nor is "clear" with nothing to clear).
-        const items = (): HTMLElement[] => Array.from(content.querySelectorAll<HTMLElement>('.actionSheetMenuItem, .jellyseerr-menu-input'))
+        // What the keys move through: the rows and fields showing (a closed group's are not; nor is "clear" with nothing to
+        // clear), and a list's all / any choice, by the one in use (left and right move between the two). (The choice is
+        // one stop: the half with the keys on it, else the one in use; on a TV left and right only move, and OK takes one.
+        // A saved filter's delete is beside its row, not a stop on the way down: the key towards the line's end reaches it.
+        // Tab still goes through each, `beside`.)
+        const items = (beside = false): HTMLElement[] => Array.from(content.querySelectorAll<HTMLElement>('.actionSheetMenuItem, .jellyseerr-menu-input, '
+            + '.jellyseerr-menu-match-btn, .jellyseerr-menu-profile-delete, .jellyseerr-menu-profile-save, .jellyseerr-menu-profile-undo, .jellyseerr-menu-outcome-undo'))
+            .filter(item => !item.classList.contains('jellyseerr-menu-match-btn') || (item.parentElement?.contains(document.activeElement)
+                ? item === document.activeElement : item.getAttribute('aria-checked') === 'true'))
+            .filter(item => beside || !item.classList.contains('jellyseerr-menu-profile-delete') || item === document.activeElement)
             .filter(item => !item.closest('[hidden]') && !item.hidden && item.getAttribute('aria-disabled') !== 'true'
+                && !(item instanceof HTMLButtonElement && item.disabled && !item.classList.contains('actionSheetMenuItem'))
                 && !(item.dataset.done !== undefined && getComputedStyle(item).display === 'none'));
         const heads = (): HTMLElement[] => Array.from(scroller.querySelectorAll<HTMLElement>('.jellyseerr-menu-group'));
         const headOf = (groupId: string): HTMLElement | undefined => heads().find(item => item.dataset.toggle === groupId);
@@ -171,19 +165,52 @@ export function createDiscoveryMenu(JE: SeerrDiscoveryHost): DiscoveryMenuFacade
         weighClear();
         /** Builds a group's own body the first time it opens. */
         const built = new WeakSet<HTMLElement>();
+        /** Every group's row and body again, from what is set now (after an Undo): an open body is built anew at once. */
+        const renew = (): void => {
+            for (const group of groups ?? []) {
+                if (typeof group.describe !== 'function') continue;
+                const { value, set, short } = group.describe();
+                const head = headOf(group.id);
+                const words = head?.querySelector<HTMLElement>('.jellyseerr-menu-group-value');
+                if (words) showValue(words, set ? value : group.any ?? '', set ? short : undefined);
+                head?.toggleAttribute('data-set', set);
+                const body = head?.nextElementSibling;
+                if (!(body instanceof HTMLElement) || !built.has(body)) continue;
+                body.replaceChildren();
+                built.delete(body);
+                if (head?.getAttribute('aria-expanded') === 'true') buildBody(group, body);
+            }
+            weighClear();
+            place(true);
+        };
         const buildBody = (group: MenuGroup, list: HTMLElement): void => {
             if (!group.build || built.has(list)) return;
             built.add(list);
             group.build(list, {
-                say(value, set) {
+                say(value, set, short) {
                     const head = headOf(group.id);
-                    const words = head?.querySelector('.jellyseerr-menu-group-value');
-                    if (words) words.textContent = set ? value : group.any ?? '';
+                    const words = head?.querySelector<HTMLElement>('.jellyseerr-menu-group-value');
+                    // (Not set, a group says its value where it gives one, "1 saved", else what it says for nothing set.)
+                    if (words) showValue(words, set ? value : (value || group.any) ?? '', set ? short : undefined);
                     head?.toggleAttribute('data-set', set);
                     weighClear();
                 },
                 // (What a body does to its own size, a search narrowing a list, never makes the menu shorter: what is under the pointer stays there.)
-                placed: () => { place(true); const head = headOf(group.id); if (head?.getAttribute('aria-expanded') === 'true') reveal(head); }
+                placed: () => { place(true); const head = headOf(group.id); if (head?.getAttribute('aria-expanded') === 'true') reveal(head); },
+                // (A choice that is done with the menu, such as a saved profile applied.)
+                close: () => close(),
+                // (Another group's value changed by this one, a genre ticked here leaving its Without list: its row says it,
+                // and its body is built anew when next opened.)
+                other(groupId, value, set, short) {
+                    const head = headOf(groupId);
+                    const words = head?.querySelector<HTMLElement>('.jellyseerr-menu-group-value');
+                    const otherGroup = groups?.find(entry => entry.id === groupId);
+                    if (words) showValue(words, set ? value : (value || otherGroup?.any) ?? '', set ? short : undefined);
+                    head?.toggleAttribute('data-set', set);
+                    const body = head?.nextElementSibling;
+                    if (body instanceof HTMLElement && built.has(body) && head?.getAttribute('aria-expanded') !== 'true') { body.replaceChildren(); built.delete(body); }
+                    weighClear();
+                }
             });
         };
         /** Opens one group (the others close), or closes it. */
@@ -195,6 +222,7 @@ export function createDiscoveryMenu(JE: SeerrDiscoveryHost): DiscoveryMenuFacade
                 const body = head.nextElementSibling;
                 if (!(body instanceof HTMLElement)) continue;
                 body.hidden = !open;
+                head.parentElement?.toggleAttribute('data-open', open);
                 // (A list's search field is held just under this row: the row's height, as laid out.)
                 if (open) body.style.setProperty('--jellyseerr-menu-head', `${head.offsetHeight}px`);
                 const group = open ? groups?.find(entry => entry.id === head.dataset.toggle) : undefined;
@@ -205,6 +233,8 @@ export function createDiscoveryMenu(JE: SeerrDiscoveryHost): DiscoveryMenuFacade
         const reveal = (head: HTMLElement): void => {
             const body = head.nextElementSibling;
             if (!(body instanceof HTMLElement)) return;
+            // (Measured at the height the list has once cut, which is less than the menu's room.)
+            cutInARow();
             const view = scroller.getBoundingClientRect();
             const top = head.getBoundingClientRect().top - view.top;
             const over = body.getBoundingClientRect().bottom - view.bottom;
@@ -216,6 +246,8 @@ export function createDiscoveryMenu(JE: SeerrDiscoveryHost): DiscoveryMenuFacade
         let pointerAt: number | null = null;
         // Whether the list was last moved by the keys (a remote), and the wait for it to come to rest.
         let keyed = false;
+        // Whether the list was last moved by a finger, a mouse or a wheel (left where it was put), not by focus.
+        let pointered = false;
         let keyWay = 0;
         let settling = 0;
         let following = 0;
@@ -230,21 +262,53 @@ export function createDiscoveryMenu(JE: SeerrDiscoveryHost): DiscoveryMenuFacade
             window.clearTimeout(settling);
             for (const type of ['popstate', 'hashchange']) window.removeEventListener(type, close);
             window.removeEventListener('resize', resized);
+            stopOutcome?.();
             backdrop.remove();
             container.remove();
             onClose?.();
             if (anchor.isConnected) anchor.focus();
         }
+        /**
+         * Puts the keys on a row or a field. What is held in sight over the list (an open group's row, its search field and
+         * all / any choice) takes them where it stands: the browser would otherwise scroll the list back to where it stands
+         * among the rows.
+         */
+        function focusInPlace(target: HTMLElement | undefined): void {
+            target?.focus({ preventScroll: heldInSight(target) });
+        }
+        /** Whether a row or field is one held in sight over the list (an open group's row, its search field and all / any choice), and in sight now. */
+        function heldInSight(target: Element | null): boolean {
+            if (!(target instanceof HTMLElement) || !scroller.contains(target)) return false;
+            const held = !!target.closest('.jellyseerr-menu-searchbar') || (target.classList.contains('jellyseerr-menu-group') && target.getAttribute('aria-expanded') === 'true');
+            if (!held) return false;
+            const view = scroller.getBoundingClientRect();
+            const box = target.getBoundingClientRect();
+            return box.top >= view.top - 1 && box.bottom <= view.bottom + 1;
+        }
+        // On a TV Jellyfin scrolls every element that takes focus into place a moment later (a focus listener of its own on
+        // the window, then a timer), by where it stands among the rows: what is held over the list would have the list
+        // scrolled back to its start. While the keys are on what is held in sight, the list takes no scroll to a place (a
+        // row's focus is still Jellyfin's to bring into sight; the menu itself scrolls by scrollTop and scrollBy).
+        if (tv && typeof scroller.scrollTo === 'function') {
+            const scrollTo = scroller.scrollTo.bind(scroller);
+            Object.defineProperty(scroller, 'scrollTo', {
+                configurable: true, writable: true,
+                value: (first?: ScrollToOptions | number, y?: number): void => {
+                    if (heldInSight(document.activeElement)) return;
+                    if (typeof first === 'number') scrollTo(first, y ?? 0); else scrollTo(first);
+                }
+            });
+        }
         /** The keys (and a remote's) while the menu is open. */
         function onKey(event: KeyboardEvent): void {
-            const list = items();
+            const list = items(event.key === 'Tab');
             const focused = document.activeElement;
             const index = focused instanceof HTMLElement ? list.indexOf(focused) : -1;
             const move = (to: number): void => {
                 event.preventDefault(); event.stopPropagation();
                 keyed = true;
                 keyWay = to >= index ? 1 : -1;
-                list[(to + list.length) % list.length]?.focus();
+                focusInPlace(list[(to + list.length) % list.length]);
                 cutAgain();
             };
             // In a field, Home and End are the field's own.
@@ -257,8 +321,23 @@ export function createDiscoveryMenu(JE: SeerrDiscoveryHost): DiscoveryMenuFacade
             // Towards the start of the line, out of a group's body: back on the group's own row (a long list need not be walked to leave it).
             // (In a field the key is the caret's until the caret is at the field's start.)
             const out = getComputedStyle(sheet).direction === 'rtl' ? 'ArrowRight' : 'ArrowLeft';
+            // (On a list's all / any choice, left and right are the choice's own while there is a half that way; past its
+            // first half, left is the way out to the group's row as everywhere in a group.)
+            if ((event.key === 'ArrowLeft' || event.key === 'ArrowRight') && active?.classList.contains('jellyseerr-menu-match-btn')) {
+                const forward = (event.key === 'ArrowRight') !== (getComputedStyle(sheet).direction === 'rtl');
+                if (forward ? active.nextElementSibling : active.previousElementSibling) return;
+            }
+            // A saved filter's row and its delete: the key towards the line's end goes to the delete, back from it to the row.
+            const towardsEnd = out === 'ArrowLeft' ? 'ArrowRight' : 'ArrowLeft';
+            const pair = active?.closest('.jellyseerr-menu-profile-row');
+            const beside = event.key === towardsEnd && active?.classList.contains('jellyseerr-menu-profile') ? pair?.querySelector('.jellyseerr-menu-profile-delete')
+                : event.key === out && active?.classList.contains('jellyseerr-menu-profile-delete') ? pair?.querySelector('.jellyseerr-menu-profile') : null;
+            if (beside instanceof HTMLElement) {
+                event.preventDefault(); event.stopPropagation(); keyed = true; beside.focus();
+                return;
+            }
             if (event.key === out && body && head && !(active instanceof HTMLInputElement && (active.selectionStart ?? 0) > 0)) {
-                event.preventDefault(); event.stopPropagation(); keyed = true; keyWay = -1; head.focus(); cutAgain();
+                event.preventDefault(); event.stopPropagation(); keyed = true; keyWay = -1; focusInPlace(head); cutAgain();
                 return;
             }
             // Escape, or a remote's Back: the menu closes and the key goes no further, so the page stays.
@@ -284,8 +363,8 @@ export function createDiscoveryMenu(JE: SeerrDiscoveryHost): DiscoveryMenuFacade
             }
             const head = headOf(groupId);
             const chosen = rows.find(item => item.dataset.id === id);
-            const value = head?.querySelector('.jellyseerr-menu-group-value');
-            if (value) value.textContent = chosen?.querySelector('.actionSheetItemText')?.textContent ?? '';
+            const value = head?.querySelector<HTMLElement>('.jellyseerr-menu-group-value');
+            if (value) showValue(value, chosen?.querySelector('.actionSheetItemText')?.textContent ?? '');
             head?.toggleAttribute('data-set', !!chosen && chosen !== rows[0]);
             weighClear();
         };
@@ -309,8 +388,8 @@ export function createDiscoveryMenu(JE: SeerrDiscoveryHost): DiscoveryMenuFacade
                     if (group.choices) { mark(group.id, group.choices[0]?.id ?? ''); continue; }
                     const head = headOf(group.id);
                     const list = head?.nextElementSibling;
-                    const words = head?.querySelector('.jellyseerr-menu-group-value');
-                    if (words) words.textContent = group.any ?? '';
+                    const words = head?.querySelector<HTMLElement>('.jellyseerr-menu-group-value');
+                    if (words) showValue(words, group.any ?? '');
                     head?.removeAttribute('data-set');
                     head?.setAttribute('aria-expanded', 'false');
                     if (list instanceof HTMLElement) { list.hidden = true; list.replaceChildren(); built.delete(list); }
@@ -341,7 +420,9 @@ export function createDiscoveryMenu(JE: SeerrDiscoveryHost): DiscoveryMenuFacade
         scroller.addEventListener('scroll', () => {
             for (const head of heads()) {
                 const body = head.nextElementSibling;
-                const over = head.getAttribute('aria-expanded') === 'true' && body instanceof HTMLElement
+                // (Only while it is held: leaving with its group it is a row like any other, its edge gone with it.)
+                const held = Math.abs(head.getBoundingClientRect().top - scroller.getBoundingClientRect().top) < 2;
+                const over = head.getAttribute('aria-expanded') === 'true' && body instanceof HTMLElement && held
                     && body.getBoundingClientRect().top < head.getBoundingClientRect().bottom - 1;
                 head.toggleAttribute('data-over', over);
                 if (!(body instanceof HTMLElement)) continue;
@@ -362,6 +443,26 @@ export function createDiscoveryMenu(JE: SeerrDiscoveryHost): DiscoveryMenuFacade
             .filter(row => !row.closest('[hidden]') && !row.hidden)
             .map(row => ({ row, box: row.getBoundingClientRect() })).filter(entry => entry.box.height > 0);
         const below = (): number => scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
+        /** What the open group's body holds that is not a row (a field, a button, a note), as laid out. */
+        const unrowed = (): DOMRect[] => {
+            const body = heads().find(head => head.getAttribute('aria-expanded') === 'true')?.nextElementSibling;
+            if (!(body instanceof HTMLElement)) return [];
+            return Array.from(body.querySelectorAll('input, button:not(.actionSheetMenuItem), .jellyseerr-menu-note, .jellyseerr-menu-match'))
+                .filter(el => !el.closest('[hidden]') && !el.closest('.actionSheetMenuItem'))
+                .map(el => el.getBoundingClientRect()).filter(box => box.height > 0);
+        };
+        /** The first line box of a row's name, where the browser can measure one. */
+        const firstLine = (name: Element | null): DOMRect | undefined => {
+            if (!name || typeof document.createRange !== 'function') return undefined;
+            const range = document.createRange();
+            range.selectNodeContents(name);
+            return Array.from(range.getClientRects?.() ?? []).find(rect => rect.height > 0);
+        };
+        /** Where a row is cut at the top: through the first line of its name, a little above its middle (what is hidden above runs down to there). */
+        const topCutOf = ({ row, box }: { row: HTMLElement; box: DOMRect }): number => {
+            const line = firstLine(row.querySelector('.actionSheetItemText'));
+            return line ? line.top + line.height * (1 - CUT_AT) : box.top + box.height * (1 - CUT_AT);
+        };
         /** Where a row is cut: through the last line of its name (a long name has two), a little under that line's middle. */
         const cutOf = ({ row, box }: { row: HTMLElement; box: DOMRect }): number => {
             const name = row.querySelector('.actionSheetItemText');
@@ -399,22 +500,49 @@ export function createDiscoveryMenu(JE: SeerrDiscoveryHost): DiscoveryMenuFacade
             }
             // Above: the row at the edge shows the lower part of its name (unless an open group's row is held there: that row is the edge).
             const top = scroller.getBoundingClientRect().top;
-            if (scroller.scrollTop > 2 && below() > 2 && !(open && open.getBoundingClientRect().top - top < 2)) {
-                const over = shownRows().map(entry => entry.box).filter(box => box.top < top - 1).pop();
-                // (Hidden: the row's upper part, down to a little above the middle of its name.)
-                if (over) scroller.scrollTop -= Math.round((top - over.top) - over.height * (1 - CUT_AT));
+            if (scroller.scrollTop > 2 && below() > 2 && !(open && Math.abs(open.getBoundingClientRect().top - top) < 2)) {
+                const entries = shownRows();
+                const overEntry = entries.filter(entry => entry.box.top < top - 1).pop();
+                // (Hidden: the row's upper part, down to a little above the middle of its name: by the name, so the edge never
+                // falls in a row's padding, two rules with nothing between.)
+                const up = overEntry ? Math.round((top - overEntry.box.top) - (topCutOf(overEntry) - overEntry.box.top)) : 0;
+                // (Not by moving the rows down, if that puts the foot of an open group that fits in sight out of it again: the
+                // next row is cut instead, the rows moving up.)
+                const body = open?.nextElementSibling;
+                const bottom = scroller.getBoundingClientRect().bottom;
+                const fits = body instanceof HTMLElement && !!open && body.getBoundingClientRect().bottom - open.getBoundingClientRect().top <= bottom - top;
+                const nextEntry = entries.find(entry => entry.box.top >= top - 1);
+                if (up > 0 && fits && nextEntry && body instanceof HTMLElement && body.getBoundingClientRect().bottom + up > bottom + 1) {
+                    scroller.scrollTop += Math.round(topCutOf(nextEntry) - top);
+                } else if (overEntry) scroller.scrollTop -= up;
             }
             const view = scroller.getBoundingClientRect();
             const rows = shownRows().filter(entry => entry.box.top > view.top + 1);
             const next = rows.find(entry => entry.box.bottom > view.bottom - 1);
             const last = rows.filter(entry => entry.box.bottom <= view.bottom - 1).pop();
+            if (next && below() > 1 && below() < next.box.height && open) {
+                // (Less than a row left under an open group at the list's end: the rest is brought up, so the list ends on its
+                // last row rather than on blank over it, where the group's row stays in sight.)
+                const rest = below();
+                if (open.getBoundingClientRect().top - rest >= view.top - 1) scroller.scrollTop += rest;
+                return;
+            }
             if (!next || below() < next.box.height) return;
             // On a TV, under an open group held at the top: the list's view is what is held, a whole number of rows, and the
             // cut's depth. Each cut at the foot (made by moving the rows, above) then leaves the top on a row's edge, under
             // the held strip's rule, and no crumb of a row lies there. (A row of another height in sight puts it off by that much.)
-            const pair = open ? shownRows().filter(entry => open.nextElementSibling?.contains(entry.row)).slice(-2) : [];
-            const [upper, lower] = pair;
-            if (tv && open && upper && lower && open.getBoundingClientRect().top - view.top < 2) {
+            const own = open ? shownRows().filter(entry => open.nextElementSibling?.contains(entry.row)) : [];
+            const [upper, lower] = own.slice(-2);
+            // (Only where the open group's own rows run on past the view, evenly: a row of another height, a line between
+            // rows, or a body that ends in sight would put the cut on a row's edge, and the list would look complete. The
+            // general cut, through a name, is taken then.)
+            const inView = own.filter(entry => entry.box.bottom > view.top && entry.box.top < view.bottom);
+            const steps = inView.slice(1).map((entry, index) => entry.box.top - (inView[index]?.box.top ?? entry.box.top));
+            const firstStep = steps[0] ?? 0;
+            const firstHeight = inView[0]?.box.height ?? 0;
+            const even = steps.length > 0 && steps.every(step => Math.abs(step - firstStep) <= 1) && inView.every(entry => Math.abs(entry.box.height - firstHeight) <= 1);
+            const runsOn = (open?.nextElementSibling?.getBoundingClientRect().bottom ?? 0) > view.bottom + 1;
+            if (tv && open && upper && lower && even && runsOn && open.getBoundingClientRect().top - view.top < 2) {
                 const pitch = lower.box.top - upper.box.top;
                 const depth = cutOf(lower) - lower.box.top;
                 const heldDeep = open.offsetHeight + (bar?.offsetHeight ?? 0);
@@ -422,6 +550,37 @@ export function createDiscoveryMenu(JE: SeerrDiscoveryHost): DiscoveryMenuFacade
                 if (whole >= 1) { scroller.style.maxHeight = `${Math.round(heldDeep + whole * pitch + depth)}px`; return; }
             }
             const cut = view.bottom >= cutOf(next) ? cutOf(next) : last ? cutOf(last) : 0;
+            // (Never over what the open group has under its rows that is not a row, such as Keywords' all / any choice and
+            // search field under the keywords chosen, or a range's fields: the cut would hide them.)
+            if (cut < view.bottom - 1 && unrowed().some(box => box.bottom > cut + 1 && box.top < view.bottom)) {
+                // (Then, where the next row's name can be brought up to the edge without moving the open group's row out of
+                // sight, the rows move: the list ends through a name, not on blank.)
+                const by = Math.round(cutOf(next) - view.bottom);
+                const headTop = open?.getBoundingClientRect().top ?? view.top;
+                if (by > 0 && by < next.box.height && headTop - by >= view.top - 1 && below() >= by) scroller.scrollTop += by;
+                return;
+            }
+            // On a touch sheet the sheet keeps its height (its foot growing, a line said there, would otherwise take a whole
+            // row off it): the rows move to the cut instead, where they have room to, and the open group's row stays in sight.
+            if (coarse && !tv && Math.abs(cut - view.bottom) > 1) {
+                const down = view.bottom >= cutOf(next) ? Math.round(view.bottom - cutOf(next)) : 0;
+                const up = down === 0 ? Math.round(cutOf(next) - view.bottom) : 0;
+                const headTop = open?.getBoundingClientRect().top ?? view.top;
+                // (Kept only where the top then still falls through a name or a row's edge, not in a row's padding with its name
+                // gone above: else the list is cut at the foot as elsewhere.)
+                const topTrue = (): boolean => {
+                    const edge = scroller.getBoundingClientRect().top;
+                    return !shownRows().some(entry => entry.box.top < edge - 1 && entry.box.bottom > edge + 1 && topCutOf(entry) < edge - 1
+                        && (entry.row.querySelector('.actionSheetItemText')?.getBoundingClientRect().bottom ?? entry.box.bottom) <= edge + 1);
+                };
+                const was = scroller.scrollTop;
+                if (down > 0 && scroller.scrollTop >= down) scroller.scrollTop -= down;
+                else if (up > 0 && up < next.box.height && below() >= up && headTop - up >= view.top - 1) scroller.scrollTop += up;
+                if (scroller.scrollTop !== was) {
+                    if (topTrue()) return;
+                    scroller.scrollTop = was;
+                }
+            }
             if (cut > view.top + 40 && Math.abs(cut - view.bottom) > 1) scroller.style.maxHeight = `${Math.round(cut - view.top)}px`;
         };
         /**
@@ -459,11 +618,27 @@ export function createDiscoveryMenu(JE: SeerrDiscoveryHost): DiscoveryMenuFacade
         };
         /** Marks whether rows go on below and above what is in sight. */
         const edges = (): void => {
-            content.toggleAttribute('data-more', scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight > 2);
+            // (More below only where a row or a field is, not a row's own padding.)
+            const bottom = scroller.getBoundingClientRect().bottom;
+            const rowsShown = Array.from(scroller.querySelectorAll<HTMLElement>('.actionSheetMenuItem'))
+                .filter(row => !row.closest('[hidden]') && row.getBoundingClientRect().height > 0);
+            const lastRow = rowsShown[rowsShown.length - 1];
+            const hidden = (lastRow?.getBoundingClientRect().bottom ?? 0) > bottom + 4 || unrowed().some(box => box.bottom > bottom + 4);
+            content.toggleAttribute('data-more', scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight > 2 && hidden);
             // (Above too, unless an open group's row is held there: that row is the edge.)
             const held = heads().find(head => head.getAttribute('aria-expanded') === 'true');
-            const heldAtTop = !!held && held.getBoundingClientRect().top - scroller.getBoundingClientRect().top < 2;
-            content.toggleAttribute('data-above', scroller.scrollTop > 2 && !heldAtTop);
+            const top = scroller.getBoundingClientRect().top;
+            const heldAtTop = !!held && Math.abs(held.getBoundingClientRect().top - top) < 2;
+            // (More above only where a row is hidden there, not a few pixels of the list's own padding: by its name, a row
+            // whose name is whole in sight, only its padding gone, hides nothing. The line box runs above the letters:
+            // hidden only where more than its top part is.)
+            const firstRow = rowsShown[0];
+            const line = firstLine(firstRow?.querySelector('.actionSheetItemText') ?? null);
+            const nameTop = line ? line.top + line.height * 0.3 : firstRow?.getBoundingClientRect().top ?? top;
+            const hiddenAbove = nameTop < top - 1;
+            content.toggleAttribute('data-above', scroller.scrollTop > 2 && hiddenAbove && !heldAtTop);
+            // (Rows above at all, a group's row held at the top or not: a TV's title has its rule then.)
+            content.toggleAttribute('data-rows-above', scroller.scrollTop > 2 && hiddenAbove);
         };
         scroller.addEventListener('scroll', edges, { passive: true });
         backdrop.addEventListener('click', () => close());
@@ -473,10 +648,31 @@ export function createDiscoveryMenu(JE: SeerrDiscoveryHost): DiscoveryMenuFacade
         // A TV's sheet is drawn by Jellyfin's own rules: what stays over its scrolling rows takes the sheet's own ground,
         // and a group's fields and notes stand on the column its rows' words stand on.
         if (tv) {
+            // (Jellyfin centres its sheet: one that grows as a group opens would move under the remote. It is held at the
+            // top a full sheet has, and grows down from there.)
+            const most = parseFloat(getComputedStyle(sheet).maxHeight);
+            if (most > 0 && most < window.innerHeight) {
+                container.style.alignItems = 'flex-start';
+                sheet.style.marginTop = `${Math.round((window.innerHeight - most) / 2)}px`;
+            }
             sheet.style.setProperty('--jellyseerr-menu-ground', getComputedStyle(sheet).backgroundColor);
-            const words = scroller.querySelector('.actionSheetItemText')?.getBoundingClientRect();
-            const box = scroller.getBoundingClientRect();
-            if (words && box.width > 0) sheet.style.setProperty('--jellyseerr-menu-indent', `${Math.round(getComputedStyle(sheet).direction === 'rtl' ? box.right - words.right : words.left - box.left)}px`);
+        }
+        // (The column the rows' words stand on, for what is not a row: a TV's fields and notes, by the words' box; the
+        // foot's band, by the letters themselves.)
+        const firstName = scroller.querySelector('.actionSheetItemText');
+        const wordsBox = firstName?.getBoundingClientRect();
+        const scrollerBox = scroller.getBoundingClientRect();
+        const rtl = getComputedStyle(sheet).direction === 'rtl';
+        if (wordsBox && scrollerBox.width > 0) {
+            sheet.style.setProperty('--jellyseerr-menu-indent', `${Math.round(rtl ? scrollerBox.right - wordsBox.right : wordsBox.left - scrollerBox.left)}px`);
+        }
+        if (firstName && scrollerBox.width > 0 && typeof document.createRange === 'function') {
+            const range = document.createRange();
+            range.selectNodeContents(firstName);
+            const letters = range.getBoundingClientRect?.();
+            if (letters && letters.width > 0) {
+                sheet.style.setProperty('--jellyseerr-menu-text', `${Math.round(rtl ? scrollerBox.right - letters.right : letters.left - scrollerBox.left)}px`);
+            }
         }
         for (const group of groups ?? []) {
             const head = group.open ? headOf(group.id) : undefined;
@@ -507,6 +703,7 @@ export function createDiscoveryMenu(JE: SeerrDiscoveryHost): DiscoveryMenuFacade
          * anchor it does not get shorter at all (its rows would move under the pointer).
          */
         function place(keep = false): void {
+            fitValues();
             // On a TV Jellyfin's own rules place the sheet: in the middle of the screen, within its height.
             if (tv) { cutInARow(); edges(); overList(); return; }
             const was = sheet.getBoundingClientRect();
@@ -546,15 +743,26 @@ export function createDiscoveryMenu(JE: SeerrDiscoveryHost): DiscoveryMenuFacade
             overList();
         }
         place();
+        // The page's own "nothing matches" (a section's, the Recommendations page's), said in the foot while it is there.
+        if (outcome && noneLabel) {
+            stopOutcome = watchOutcome({
+                band: outcome, anchor, noneLabel, undoLabel, onUndo, canUndo, renew,
+                closed: () => closed,
+                focusHome: () => focusInPlace(heads().find(head => head.getAttribute('aria-expanded') === 'true') ?? items()[0]),
+                placed: () => place(true)
+            });
+        }
         // Where the pointer (or a finger) last was on the menu, down the screen; nowhere once it has left the menu.
         sheet.addEventListener('pointermove', event => { pointerAt = event.clientY; });
-        sheet.addEventListener('pointerdown', event => { pointerAt = event.clientY; keyed = false; });
-        sheet.addEventListener('wheel', () => { keyed = false; }, { passive: true });
+        sheet.addEventListener('pointerdown', event => { pointerAt = event.clientY; keyed = false; pointered = true; });
+        sheet.addEventListener('wheel', () => { keyed = false; pointered = true; }, { passive: true });
+        sheet.addEventListener('keydown', () => { pointered = false; }, true);
         // The keys' row is brought into sight by the browser, and on a TV by Jellyfin's own focus scrolling, over a
-        // moment: the cut is made again once the list has come to rest. (A finger or a wheel leaves it where it was put.)
+        // moment: the cut is made again once the list has come to rest. (A finger or a wheel leaves it where it was put;
+        // a field or the choice focused by the menu itself moves it without a key.)
         scroller.addEventListener('scroll', () => {
             window.clearTimeout(settling);
-            settling = window.setTimeout(() => { if (!closed && keyed) cutAgain(); }, 140);
+            settling = window.setTimeout(() => { if (!closed && (keyed || !pointered)) cutAgain(); }, 140);
         }, { passive: true });
         sheet.addEventListener('pointerleave', event => { if (event.pointerType === 'mouse') pointerAt = null; });
         /** Keeps the menu with its anchor while the page scrolls under it (a list reloading, a wheel). */
