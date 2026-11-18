@@ -329,6 +329,10 @@ Avoid hyphens in JavaScript directory segments under the current implicit embedd
 - Each start-up call and each function in `exports` is defined by a module of the group it is listed under.
 - Each group, loaded with only the groups it is `after`, reads the same exports while loading as it does in the single bundle, with every feature on and with every feature off. A difference means a missing `after` or a module in the wrong group.
 
+[bootstrap-loader-groups.test.mjs](https://github.com/n00bcodr/Jellyfin-Enhanced/blob/main/tests/frontend/bootstrap/bootstrap-loader-groups.test.mjs) runs the loader itself against simulated requests: what a boot asks for, loading on navigation, on a Home tab becoming active, on a video starting and through a stand-in function, the order batches run in, the file-by-file fallback, dev mode, a missing or invalid groups file, and a user switch.
+
+[bootstrap-bundle-budget.test.mjs](https://github.com/n00bcodr/Jellyfin-Enhanced/blob/main/tests/frontend/bootstrap/bootstrap-bundle-budget.test.mjs) keeps a Home load small. For three configurations (every feature on, the stock defaults, and the defaults with the poster tag types on) it checks the exact groups a Home load asks for and their module count and size against `scripts/bundle-budgets.json`, which also caps `core`, any single group other than `core`, `tags`, `seerr` and `settings`, and the every-feature-on load at 45% of the whole client. `node scripts/bundle-budgets.mjs` prints the current numbers.
+
 ## Component Breakdown
 
 These indexes group client modules and relevant supporting server files by web feature area.
