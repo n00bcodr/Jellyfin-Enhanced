@@ -1533,8 +1533,10 @@
         },
         buildCss() {
             // Generate CSS rules from the color configuration
-            const rules = Object.entries(qualityColors).map(([k, v]) => {
-                return JE.core.tagRenderer.chipBaseCss(`.${overlayClass}`) + `.${containerClass} .${overlayClass}[data-quality="${k}"] {
+            // The chip box (padding, font size, media queries) is the same for every colour, so it is written
+            // once; only the two colours differ per quality.
+            const rules = JE.core.tagRenderer.chipBaseCss(`.${overlayClass}`) + Object.entries(qualityColors).map(([k, v]) => {
+                return `.${containerClass} .${overlayClass}[data-quality="${k}"] {
                     background: ${v.bg} !important;
                     color: ${v.text} !important;
                 }`;
