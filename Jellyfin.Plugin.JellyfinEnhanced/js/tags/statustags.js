@@ -152,6 +152,25 @@
     let intersectingCards = new WeakSet();
     /** @type {Set<HTMLElement>} Targets explicitly released when removed or recycled. */
     const observedSeriesCards = new Set();
+    /**
+     * Schedule-reading cards taken off the viewport observer while nothing can
+     * be asked for them (restSeriesCard): they stay in observedSeriesCards, are
+     * in no intersection set, and go back under the observer when that ends.
+     * @type {WeakSet<HTMLElement>}
+     */
+    let restingSeriesCards = new WeakSet();
+    /**
+     * Cards put back under the observer because their rest ended by itself.
+     * The observer's first report for them only says where they are: a card
+     * that was on screen all along asks when it next comes on screen or is
+     * drawn, as it would have had it never rested.
+     * @type {WeakSet<HTMLElement>}
+     */
+    let resumedSeriesCards = new WeakSet();
+    /** @type {ReturnType<typeof setTimeout>|null} One timer for the earliest end of a rest. */
+    let seriesRestTimer = null;
+    /** @type {number} When that timer fires (ms since the epoch), or 0. */
+    let seriesRestAt = 0;
     /** @type {MutationObserver|null} Shared removal/identity watcher for schedule targets. */
     let seriesTargetObserver = null;
 
@@ -1086,12 +1105,16 @@
                         forgetSeriesCard(host);
                         continue;
                     }
+                    // A report queued before the card was taken off the observer.
+                    if (restingSeriesCards.has(host)) continue;
+                    const whereOnly = resumedSeriesCards.delete(host);
                     if (isIntersecting) intersectingCards.add(host);
                     else intersectingCards.delete(host);
-                    if (isIntersecting && eligibleSeriesCard(host, card)) {
+                    if (isIntersecting && !whereOnly && eligibleSeriesCard(host, card)) {
                         requestSeries(ctx, card.data.seriesId);
                         armSeriesRetry(ctx);
                     }
+                    restSeriesCard(ctx, host);
                 }
             });
             seriesObserver = observer;
@@ -1107,10 +1130,117 @@
         }
         if (seriesObserver && !observedSeriesCards.has(el)) {
             observedSeriesCards.add(el);
-            seriesObserver.observe(el);
+            // Nothing to ask for it (a page drawn again within the hour): never watched at all.
+            if (!restSeriesCard(ctx, el)) seriesObserver.observe(el);
+        } else if (restingSeriesCards.has(el)) {
+            // Drawn again while resting: watched once more as soon as something can be asked for it.
+            if (!seriesRestUntil(liveCards.get(el))) resumeSeriesCard(el, false);
+        } else {
+            // Put back a moment ago and not reported yet: that report asks, as this draw would have.
+            resumedSeriesCards.delete(el);
         }
         const card = liveCards.get(el);
         if (eligibleSeriesCard(el, card)) requestSeries(ctx, card.data.seriesId);
+    }
+
+    /**
+     * Until when nothing can be asked for a schedule-reading card: its series'
+     * facts are fresh (not loading, not due a retry) and, for an ended series,
+     * the parent facts the finale rules read are held (requestSeries asks for
+     * them whenever such a card comes on screen without them).
+     * @param {{data: StatusData}|undefined} card - The card's live record.
+     * @returns {number} Ms since the epoch, or 0 when something can be asked now.
+     */
+    function seriesRestUntil(card) {
+        const id = card?.data.seriesId;
+        const known = id ? seriesInfo.get(id) : null;
+        if (!known || known.loading || known.retry || !(Date.now() < known.expires)) return 0;
+        if (!TMDB_ENDED.has(known.facts?.status) || !JE.tagPipeline?.lookupItemFacts) return known.expires;
+        const parentUntil = JE.tagPipeline.itemFactsExpiry?.(id) || 0;
+        return parentUntil > Date.now() ? Math.min(known.expires, parentUntil) : 0;
+    }
+
+    /**
+     * Take a schedule-reading card off the viewport observer while nothing can
+     * be asked for it (seriesRestUntil): where it is then decides nothing, and
+     * a page of such cards costs the browser no intersection work while it is
+     * scrolled. One timer puts the cards back when the earliest rest ends.
+     * @param {Object} ctx - Factory context.
+     * @param {HTMLElement} el
+     * @returns {boolean} Whether the card rests (now or already).
+     */
+    function restSeriesCard(ctx, el) {
+        if (restingSeriesCards.has(el)) return true;
+        if (!seriesObserver || !observedSeriesCards.has(el)) return false;
+        const until = seriesRestUntil(liveCards.get(el));
+        if (!until) return false;
+        restingSeriesCards.add(el);
+        resumedSeriesCards.delete(el);
+        intersectingCards.delete(el);
+        seriesObserver.unobserve(el);
+        armSeriesRest(ctx, until);
+        return true;
+    }
+
+    /**
+     * Put a resting card back under the viewport observer.
+     * @param {HTMLElement} el
+     * @param {boolean} whereOnly - Its rest ended by itself: the first report only says where the card is
+     *   (see resumedSeriesCards). False when the card was drawn again or the tab came back: on screen, it asks.
+     * @returns {void}
+     */
+    function resumeSeriesCard(el, whereOnly) {
+        if (!restingSeriesCards.delete(el)) return;
+        if (whereOnly) resumedSeriesCards.add(el);
+        else resumedSeriesCards.delete(el);
+        seriesObserver?.observe(el);
+    }
+
+    /**
+     * Put back every resting card for which something can be asked again, and
+     * arm the timer for the next end of a rest.
+     * @param {Object} ctx - Factory context.
+     * @param {boolean} [whereOnly=true] - See resumeSeriesCard.
+     * @returns {void}
+     */
+    function checkSeriesRest(ctx, whereOnly = true) {
+        if (seriesRestTimer !== null) clearTimeout(seriesRestTimer);
+        seriesRestTimer = null;
+        seriesRestAt = 0;
+        let next = 0;
+        for (const el of observedSeriesCards) {
+            if (!restingSeriesCards.has(el)) continue;
+            const until = seriesRestUntil(liveCards.get(el));
+            if (!until) resumeSeriesCard(el, whereOnly);
+            else if (!next || until < next) next = until;
+        }
+        if (next) armSeriesRest(ctx, next);
+    }
+
+    /**
+     * Check the resting cards at this time at the latest.
+     * @param {Object} ctx - Factory context.
+     * @param {number} at - Ms since the epoch.
+     * @returns {void}
+     */
+    function armSeriesRest(ctx, at) {
+        if (seriesRestTimer !== null && seriesRestAt <= at) return;
+        if (seriesRestTimer !== null) clearTimeout(seriesRestTimer);
+        seriesRestAt = at;
+        seriesRestTimer = setTimeout(() => {
+            seriesRestTimer = null;
+            seriesRestAt = 0;
+            checkSeriesRest(ctx);
+        }, Math.max(0, at - Date.now()));
+    }
+
+    /**
+     * Rest every watched card whose series was just answered.
+     * @param {Object} ctx - Factory context.
+     * @returns {void}
+     */
+    function restAnsweredSeriesCards(ctx) {
+        for (const el of observedSeriesCards) restSeriesCard(ctx, el);
     }
 
     /** @param {HTMLElement} el @returns {string|null} Current pipeline card identity. */
@@ -1124,6 +1254,8 @@
         seriesObserver?.unobserve(el);
         observedSeriesCards.delete(el);
         intersectingCards.delete(el);
+        restingSeriesCards.delete(el);
+        resumedSeriesCards.delete(el);
     }
 
     /** @param {HTMLElement} el @returns {void} Forget a removed or recycled card's live data. */
@@ -1141,6 +1273,8 @@
         seriesTargetObserver?.disconnect();
         seriesTargetObserver = null;
         intersectingCards = new WeakSet();
+        restingSeriesCards = new WeakSet();
+        resumedSeriesCards = new WeakSet();
     }
 
     /** @param {HTMLElement} el @param {Object|undefined} card @returns {boolean} */
@@ -1208,9 +1342,11 @@
             if (replacedAt.size + updatedIds.length > REPLACED_AT_CAP) {
                 staleBelowRev = trackRev;
                 replacedAt.clear();
-                return;
+            } else {
+                for (const id of updatedIds) replacedAt.set(normId(id), trackRev);
             }
-            for (const id of updatedIds) replacedAt.set(normId(id), trackRev);
+            // A resting card whose parent facts left the cache can ask again.
+            checkSeriesRest(ctx);
             return;
         }
         staleBelowRev = trackRev;
@@ -1220,6 +1356,8 @@
         seriesQueue.clear();
         parentFactsQueue.clear();
         parentFactsLoads.clear();
+        // No series is known any more: every resting card can ask again.
+        checkSeriesRest(ctx);
         ctx.clearPersistent();
         ctx.hot?.clear();
         if (info?.replaced && JE.currentSettings?.statusTagsEnabled) JE.reinitializeStatusTags();
@@ -1367,6 +1505,7 @@
                 if (epoch !== seriesEpoch) return;
                 for (const id of ids) parentFactsLoads.delete(id);
                 if (batch.some(id => JE.tagPipeline.peekItemFacts(id))) applyLivePass(ctx);
+                restAnsweredSeriesCards(ctx);
             }
         } finally {
             parentFactsLoading = false;
@@ -1458,6 +1597,7 @@
         }
         if (changed || renderedDay !== localDay(Date.now())) applyLivePass(ctx);
         armSeriesRetry(ctx);
+        restAnsweredSeriesCards(ctx);
     }
 
     /**
@@ -1502,6 +1642,10 @@
     function refreshCalendar(ctx) {
         if (!statusActive || !JE.currentSettings?.statusTagsEnabled) return;
         applyLivePass(ctx);
+        // Rests that ended while the tab slept (its timers and the observer's reports wait for it):
+        // those cards go back under the observer, and the ones on screen ask when it reports them.
+        for (const el of observedSeriesCards) resumedSeriesCards.delete(el);
+        checkSeriesRest(ctx, false);
         for (const [id] of seriesInfo) if (hasVisibleSeries(id)) requestSeries(ctx, id);
         armMidnight(ctx);
         armSeriesRetry(ctx);
@@ -1514,10 +1658,11 @@
     function stopStatus() {
         statusActive = false;
         seriesEpoch++;
-        for (const timer of [midnightTimer, seriesTimer, seriesRetryTimer, parentFactsTimer]) {
+        for (const timer of [midnightTimer, seriesTimer, seriesRetryTimer, parentFactsTimer, seriesRestTimer]) {
             if (timer !== null) clearTimeout(timer);
         }
-        midnightTimer = seriesTimer = seriesRetryTimer = parentFactsTimer = null;
+        midnightTimer = seriesTimer = seriesRetryTimer = parentFactsTimer = seriesRestTimer = null;
+        seriesRestAt = 0;
         seriesQueue.clear();
         parentFactsQueue.clear();
         parentFactsLoads.clear();

@@ -190,6 +190,19 @@
     }
 
     /**
+     * Until when peekItemFacts answers for an item, as far as that is known
+     * ahead: Infinity while the server cache holds its entry (a replaced cache
+     * tells its renderers), the expiry of a fetched projection, 0 for none.
+     * @param {string} id - Normalized item id.
+     * @returns {number} Ms since the epoch, Infinity or 0.
+     */
+    function itemFactsExpiry(id) {
+        if (serverCache?.get(id)) return Infinity;
+        const saved = itemFacts.get(id);
+        return saved && saved.expires > Date.now() ? saved.expires : 0;
+    }
+
+    /**
      * Warm parent facts through the confirmed server cache or the same filtered
      * /tag-data projection used for cards. Native parent DTOs lack these aggregates.
      * @param {string[]} ids - Normalized parent ids.
@@ -2502,6 +2515,7 @@
         lookupServerEntries,
         rememberItemFacts,
         peekItemFacts,
+        itemFactsExpiry,
         lookupItemFacts,
         peekSeasonFacts,
         /**
