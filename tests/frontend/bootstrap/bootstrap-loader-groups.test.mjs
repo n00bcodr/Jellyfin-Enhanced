@@ -197,6 +197,57 @@ test('a lazy batch of which nothing arrives is forgotten, and asked for again af
   assert.deepEqual(only(boot.log, 'init:initializeReviewsScript'), ['init:initializeReviewsScript']);
 });
 
+test('a group that keeps failing is retried on a timer with a growing pause, and loads without another trigger once it can', async t => {
+  let offline = true;
+  const boot = basic(t, { expectedConsoleErrors: [/Failed to load script 'fake\/details-1\.js'/, /Failed to load script 'fake\/reviews-1\.js'/],
+    bundle: ids => (offline && ids && ids.includes('details') ? { fail: true } : undefined),
+    file: () => (offline ? 'error' : 'ok') });
+  await boot.booted();
+  // Capture the loader's retry timers instead of waiting for them; every other timer runs as usual.
+  const timers = [];
+  const setTimeoutReal = boot.window.setTimeout;
+  boot.window.setTimeout = (callback, delay, ...rest) => (delay >= 4000 ? timers.push({ callback, delay }) : setTimeoutReal(callback, delay, ...rest));
+  const now = boot.window.Date.now;
+  let clock = 0;
+  boot.window.Date.now = () => now() + clock;
+  t.after(() => { boot.window.setTimeout = setTimeoutReal; boot.window.Date.now = now; });
+  const fire = async () => { const timer = timers.shift(); clock += timer.delay; timer.callback(); await boot.plugin.loader.settled(); await flush(boot.window); };
+
+  await boot.navigate('#/details?id=1');
+  assert.equal(timers.length, 1);
+  assert.ok(timers[0].delay >= 5000 && timers[0].delay < 5200, `first pause ${timers[0].delay}`);
+  await fire(); // still unreachable: fails again and schedules the next attempt itself, further away
+  assert.deepEqual(boot.asked, ['core,tags,hidden-content', 'details,reviews', 'details,reviews']);
+  assert.equal(timers.length, 1);
+  assert.ok(timers[0].delay >= 10000 && timers[0].delay < 10200, `second pause ${timers[0].delay}`);
+  offline = false;
+  await fire(); // reachable again: no navigation or other trigger needed
+  assert.equal(boot.plugin.loader.state().details, 'ready');
+  assert.deepEqual(only(boot.log, 'init:initializeReviewsScript'), ['init:initializeReviewsScript']);
+  assert.equal(timers.length, 0);
+});
+
+test('a failed group the page no longer needs is not retried', async t => {
+  const boot = basic(t, { expectedConsoleErrors: [/Failed to load script 'fake\/details-1\.js'/, /Failed to load script 'fake\/reviews-1\.js'/],
+    bundle: ids => (ids && ids.includes('details') ? { fail: true } : undefined), file: () => 'error' });
+  await boot.booted();
+  const timers = [];
+  const setTimeoutReal = boot.window.setTimeout;
+  boot.window.setTimeout = (callback, delay, ...rest) => (delay >= 4000 ? timers.push({ callback, delay }) : setTimeoutReal(callback, delay, ...rest));
+  t.after(() => { boot.window.setTimeout = setTimeoutReal; });
+  await boot.navigate('#/details?id=1');
+  assert.equal(timers.length, 1);
+  await boot.navigate('#/home');
+  const now = boot.window.Date.now;
+  boot.window.Date.now = () => now() + 6000;
+  t.after(() => { boot.window.Date.now = now; });
+  timers.shift().callback();
+  await boot.plugin.loader.settled();
+  await flush(boot.window);
+  assert.deepEqual(boot.asked, ['core,tags,hidden-content', 'details,reviews']);
+  assert.equal(timers.length, 0);
+});
+
 test('an explicit request for a group that failed to load does not wait for the pause', async t => {
   let offline = true;
   const boot = basic(t, { expectedConsoleErrors: [/Failed to load script 'fake\/details-1\.js'/, /Failed to load script 'fake\/reviews-1\.js'/],

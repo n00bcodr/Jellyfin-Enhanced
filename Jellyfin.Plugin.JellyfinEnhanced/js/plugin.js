@@ -779,8 +779,11 @@
     const groupInitSettings = Object.create(null);
     // Group id -> time (ms) before which a group whose load failed entirely is not retried
     // on a mere page change, so an unreachable server is not asked again on every DOM change.
+    // The pause doubles with each failure in a row (5 s, 10 s, ... up to a minute).
     const groupRetryAfter = Object.create(null);
+    const groupRetryCount = Object.create(null);
     const GROUP_RETRY_DELAY_MS = 5000;
+    const GROUP_RETRY_MAX_DELAY_MS = 60000;
     let groupRetryTimer = 0;
 
     /**
@@ -971,7 +974,8 @@
                     groupStates[id] = 'ready';
                 } else {
                     delete groupStates[id];
-                    groupRetryAfter[id] = Date.now() + GROUP_RETRY_DELAY_MS;
+                    groupRetryCount[id] = (groupRetryCount[id] || 0) + 1;
+                    groupRetryAfter[id] = Date.now() + Math.min(GROUP_RETRY_MAX_DELAY_MS, GROUP_RETRY_DELAY_MS * Math.pow(2, groupRetryCount[id] - 1));
                 }
             }
         };
@@ -1017,6 +1021,11 @@
                 .then(() => {
                     if (options.initialize === false) return;
                     const loaded = missing.filter(id => groupStates[id] === 'ready');
+                    for (const id of loaded) {
+                        delete groupRetryAfter[id];
+                        delete groupRetryCount[id];
+                    }
+                    if (loaded.length < missing.length) scheduleGroupRetry();
                     if (!loaded.length) return;
                     initializeGroupFeatures(loaded);
                     nudgeObservers();
@@ -1413,19 +1422,30 @@
      */
     function loadNeededGroups() {
         const now = Date.now();
-        const waiting = [];
-        const due = neededGroups().filter((id) => {
-            if (!groupRetryAfter[id] || groupRetryAfter[id] <= now || groupStates[id]) return true;
-            waiting.push(groupRetryAfter[id]);
-            return false;
-        });
         // A group whose files could not be fetched at all is asked for again
-        // after a pause (not on every page change in between), and without
-        // needing another trigger once the pause is over.
-        if (waiting.length && !groupRetryTimer) {
-            groupRetryTimer = setTimeout(() => { groupRetryTimer = 0; loadNeededGroups(); }, Math.max(0, Math.min(...waiting) - now) + 50);
-        }
-        return ensureGroups(due);
+        // after a pause, not on every page change in between (scheduleGroupRetry).
+        const due = neededGroups().filter(id => groupStates[id] || !groupRetryAfter[id] || groupRetryAfter[id] <= now);
+        const loading = ensureGroups(due);
+        scheduleGroupRetry();
+        return loading;
+    }
+
+    /**
+     * Arranges for the groups whose last load failed entirely to be asked for
+     * again when their pause is over, without waiting for another trigger. The
+     * retry asks only for what the page still needs; if that fails too, the
+     * batch schedules the next one, with a longer pause.
+     */
+    function scheduleGroupRetry() {
+        if (groupRetryTimer) return;
+        const now = Date.now();
+        // Only groups the page still needs and that are not being loaded right now.
+        const waiting = neededGroups().filter(id => !groupStates[id] && groupRetryAfter[id] > now).map(id => groupRetryAfter[id]);
+        if (!waiting.length) return;
+        groupRetryTimer = setTimeout(() => {
+            groupRetryTimer = 0;
+            loadNeededGroups();
+        }, Math.max(0, Math.min(...waiting) - Date.now()) + 50);
     }
 
     /**
