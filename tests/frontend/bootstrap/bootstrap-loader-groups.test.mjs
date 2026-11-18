@@ -396,7 +396,19 @@ test('the first plan reads the saved settings before JE.loadSettings exists', as
   }
 });
 
-test('the plan is made again once settings resolve: a group only the resolved settings need loads before stage 6', async t => {
+test('an address that becomes a details page while boot is under way: the boot features start before that page\'s groups are fetched', async t => {
+  // A sign-in redirect lands on its page after the loader has made its first plan. Hidden Content (and Spoiler
+  // Guard) must be running before the page's own groups, whose modules start rendering as they load, arrive.
+  const boot = basic(t, { bundle: (ids, index) => { if (index === 0) boot.window.location.hash = '#/details?id=1'; } });
+  await boot.booted();
+  assert.deepEqual(boot.asked, ['core,tags,hidden-content', 'details,reviews']);
+  assert.ok(boot.log.indexOf('init:initializeHiddenContent') >= 0);
+  assert.ok(boot.log.indexOf('init:initializeHiddenContent') < boot.log.indexOf('fake/details-1.js'), 'Hidden Content starts before the details groups run');
+  assert.deepEqual(only(boot.log, 'init:initializeReviewsScript'), ['init:initializeReviewsScript']);
+  assert.equal(boot.plugin.initialized, true);
+});
+
+test('the plan is made again once settings resolve: a group only the resolved settings need loads after the boot features start, before JE.initialized', async t => {
   // The user changes while the first batch is on its way (before session.js exists), so the boot reloads
   // user B's documents and resolves their settings; only then do the tags turn out to be needed.
   const boot = switching(t, { manifest: [...BOOT_MODULES, 'fake/core-1.js', 'fake/tags-1.js', 'fake/tags-2.js'],
@@ -408,8 +420,10 @@ test('the plan is made again once settings resolve: a group only the resolved se
   await boot.booted();
   assert.deepEqual(boot.asked, ['core', 'tags']);
   assert.equal(boot.requests[1].currentSettings.qualityTagsEnabled, true);
-  // Loaded before stage 6, so its initializers run in table order with the boot's, before JE.initialized.
-  assert.deepEqual(boot.log.slice(boot.log.indexOf('fake/tags-1.js')), ['fake/tags-1.js', 'fake/tags-2.js', 'init:initializeEnhancedScript',
+  // The boot groups' features start first (Hidden Content and Spoiler Guard must not wait on a second download);
+  // the added group then loads and starts as its own batch, and only then is boot reported complete.
+  assert.ok(boot.log.indexOf('init:initializeEnhancedScript') < boot.log.indexOf('fake/tags-1.js'));
+  assert.deepEqual(boot.log.slice(boot.log.indexOf('fake/tags-1.js')), ['fake/tags-1.js', 'fake/tags-2.js',
     'init:initializeQualityTags initialized=undefined', 'init:tagPipeline.initialize']);
 });
 

@@ -1488,7 +1488,8 @@
     }
 
     /**
-     * Starts loading groups on demand once boot is done:
+     * Starts loading groups on demand once the boot groups' features have
+     * started, and loads at once whatever the page needs beyond them:
      *  - on every navigation (JE's own deduplicated navigation hook, which
      *    fires as soon as the address changes, before the new view is shown);
      *  - when a Home tab holding the placeholder of a page that is not loaded
@@ -1496,6 +1497,7 @@
      *  - when a <video> starts loading or playing (playback can begin before
      *    the address changes to the video page);
      *  - when a switched-in user's data has loaded (done by its own caller).
+     * @returns {Promise<void>} Resolves when the groups needed right now have loaded.
      */
     function watchGroupTriggers() {
         const onNavigate = JE.core && JE.core.navigation && JE.core.navigation.onNavigate;
@@ -1520,7 +1522,7 @@
             for (const type of ['loadstart', 'play', 'playing']) document.addEventListener(type, onVideo, true);
         }
 
-        loadNeededGroups(); // the user may have moved on during boot
+        return loadNeededGroups(); // what the resolved settings and the current address add
     }
 
     /**
@@ -2158,10 +2160,6 @@
 
             seedDisplayLanguage(userId);
 
-            // The first plan read personal settings before enhanced/config.js
-            // had resolved them (and the user may have changed since); load
-            // whatever the resolved settings and the current page add.
-            await ensureGroups(neededGroups(), { idle: true, initialize: false });
             installLazyExports();
 
             // Stage 5: Initialize theme system first
@@ -2179,7 +2177,13 @@
             // far, in FEATURE_INITIALIZERS order. Groups loaded later run their
             // own entries right after their modules.
             initializeGroupFeatures(Object.keys(groupStates).filter(id => groupStates[id] === 'ready'));
-            watchGroupTriggers();
+            // Only now ask the rules again. The first plan was made before
+            // enhanced/config.js had resolved the personal settings, and the
+            // address or the user may have changed since (a sign-in redirect
+            // lands on its page after boot began). Whatever that adds loads as
+            // its own batch, AFTER the features above have started: Hidden
+            // Content and Spoiler Guard must never wait on another download.
+            await watchGroupTriggers();
 
             console.log('🪼 Jellyfin Enhanced: All components initialized successfully.');
 
