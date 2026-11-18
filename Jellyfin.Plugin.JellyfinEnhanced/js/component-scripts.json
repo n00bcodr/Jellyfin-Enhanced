@@ -222,6 +222,7 @@
     "tags/tag-direct-play.js",
     "tags/status-vocabulary.js",
     "tags/statustags.js",
+    "tags/status-tag-backdrop.js",
     "// Poster preset colours (read by tag-styles.js and core/tag-layout.js at call time).",
     "tags/tag-poster-colours.js",
     "tags/logotags.js",

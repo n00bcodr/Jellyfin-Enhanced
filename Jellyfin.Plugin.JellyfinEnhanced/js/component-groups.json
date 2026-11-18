@@ -57,6 +57,16 @@
             ]
         },
         {
+            "id": "tag-status-backdrop",
+            "after": [
+                "tags"
+            ],
+            "note": "The blurred backdrop of status tags, painted as a picture under each tag. Never loaded at boot: tags/statustags.js asks for it when the first status tag is drawn.",
+            "modules": [
+                "tags/status-tag-backdrop.js"
+            ]
+        },
+        {
             "id": "tag-people",
             "note": "Age and birthplace tags on cast cards. Loaded on an item's details page when People Tags are on.",
             "modules": [

@@ -1963,6 +1963,10 @@
       "category": "js"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/tags/status-tag-backdrop.js",
+      "category": "js"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/tags/status-vocabulary.js",
       "category": "js"
     },
@@ -10965,7 +10969,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 501,
+    "files": 502,
     "routes": 223,
     "configuration_properties": 788,
     "storage_references": 90,

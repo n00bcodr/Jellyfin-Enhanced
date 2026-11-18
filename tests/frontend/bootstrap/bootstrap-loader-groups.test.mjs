@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHarness, deferred, plain } from '../helpers/harness.mjs';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { createHarness, deferred, jsRoot, plain } from '../helpers/harness.mjs';
 import { manifestModules, rawGroups, resolveGroups } from '../helpers/eval-reads.mjs';
 import { BOOT_MODULES, TAB_MODULES, bootLoader, defines, until } from '../helpers/loader-harness.mjs';
 
@@ -576,4 +578,32 @@ test('with the real manifest and groups file, boot loads exactly the needed grou
   assert.deepEqual(boot.asked.slice(1), ['details,seerr']);
   assert.deepEqual(modulesRun(boot.log.slice(before)), ['details', 'seerr'].flatMap(id => resolved.get(id)));
   assert.equal(new Set(modulesRun(boot.log)).size, modulesRun(boot.log).length, 'no module ran twice');
+});
+
+test('the status-tag backdrop painter is its own group: no boot and no page change loads it, a direct request loads it alone', async t => {
+  const manifest = manifestModules();
+  const groups = rawGroups();
+  const resolved = new Map(resolveGroups(manifest, groups).map(group => [group.id, group.scripts]));
+  assert.deepEqual(resolved.get('tag-status-backdrop'), ['tags/status-tag-backdrop.js'], 'the group holds the painter and nothing else');
+  assert.deepEqual(groups.find(group => group.id === 'tag-status-backdrop').after, ['tags']);
+  // tags/statustags.js asks for the group by this id when the first status tag is drawn.
+  assert.match(readFileSync(resolve(jsRoot, 'tags/statustags.js'), 'utf8'), /const BACKDROP_GROUP = 'tag-status-backdrop';/);
+  assert.ok(resolved.get('tags').includes('tags/statustags.js') && !resolved.get('tags').includes('tags/status-tag-backdrop.js'));
+
+  const boot = bootLoader(t, { manifest, groups, real: TAB_MODULES, userSettings: { StatusTagsEnabled: true, StatusTagsDirectPlay: true } });
+  await boot.booted();
+  await boot.navigate('#/details?id=1');
+  await boot.navigate('#/home');
+  const loaded = () => boot.asked.flatMap(list => list.split(','));
+  assert.ok(loaded().includes('tags'), 'status tags are on: the tags load at boot');
+  assert.ok(!loaded().includes('tag-status-backdrop'), `the painter is not part of a boot or a page change (${boot.asked.join(' | ')})`);
+  assert.ok(!modulesRun(boot.log).includes('tags/status-tag-backdrop.js'));
+
+  const before = boot.log.length;
+  await boot.plugin.loader.ensure(['tag-status-backdrop']);
+  assert.equal(boot.asked.at(-1), 'tag-status-backdrop', 'one request, for that group alone');
+  assert.deepEqual(modulesRun(boot.log.slice(before)), ['tags/status-tag-backdrop.js']);
+  const requests = boot.asked.length;
+  await boot.plugin.loader.ensure(['tag-status-backdrop']);
+  assert.equal(boot.asked.length, requests, 'asked for once');
 });

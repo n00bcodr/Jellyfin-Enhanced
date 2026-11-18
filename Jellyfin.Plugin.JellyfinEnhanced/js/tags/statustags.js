@@ -993,6 +993,53 @@
         ctx.hot?.set(itemId, entry);
     }
 
+    // ── The blurred backdrop ───────────────────────────────────────────
+    // A status tag is a 72% dark pill over the card's artwork, and the
+    // artwork behind it is blurred. That blur is a picture painted under the
+    // tag by tags/status-tag-backdrop.js (JE.statusTagBackdrop), a component
+    // group of its own that is fetched when the first status tag is drawn: a
+    // page that shows none never downloads it. A tag does not wait for it: it
+    // is drawn at once with the plain pill and its picture follows, exactly as
+    // when the painter is already there.
+
+    /** The component group holding tags/status-tag-backdrop.js (js/component-groups.json). */
+    const BACKDROP_GROUP = 'tag-status-backdrop';
+    /** True from the request for the painter until it is answered; a request that brought nothing is made again by the next tag drawn. */
+    let backdropAsked = false;
+
+    /**
+     * Have the status tag of a card backed by its blurred picture: by the
+     * painter when it is loaded, otherwise once it has arrived (it takes up
+     * every status tag on the page when it starts).
+     * @param {HTMLElement|null} host - The card's .je-tag-host.
+     */
+    function trackBackdrop(host) {
+        if (!host) return;
+        if (JE.statusTagBackdrop) {
+            JE.statusTagBackdrop.track(host);
+            return;
+        }
+        if (backdropAsked || typeof JE.loader?.ensure !== 'function') return;
+        backdropAsked = true;
+        let asked;
+        try {
+            asked = Promise.resolve(JE.loader.ensure([BACKDROP_GROUP]));
+        } catch {
+            asked = Promise.resolve();
+        }
+        asked.catch(() => {}).then(() => { backdropAsked = false; });
+    }
+
+    /**
+     * The .je-tag-host a render target's badges are placed in (core/tag-layout.js), if it has one.
+     * @param {HTMLElement} el
+     * @returns {HTMLElement|null}
+     */
+    function hostOf(el) {
+        if (el.classList?.contains('je-tag-host')) return el;
+        return /** @type {HTMLElement|null} */ (Array.from(el.children || []).find((child) => child.classList.contains('je-tag-host')) || null);
+    }
+
     /**
      * Create and append the status badge to a card.
      * @param {Object} ctx - Factory context.
@@ -1034,7 +1081,8 @@
         }
         container.appendChild(tag);
 
-        ctx.commitOverlay(el, container);
+        // The badge's blurred backdrop follows once the card is laid out (see "The blurred backdrop").
+        if (ctx.commitOverlay(el, container)) trackBackdrop(hostOf(el));
     }
 
     /**
@@ -1725,10 +1773,10 @@
                     gap: 0.25em;
                     padding: calc(4px * var(--je-tag-scale, 1)) calc(10px * var(--je-tag-scale, 1));
                     background-color: rgba(15, 15, 15, 0.72);
-                    /* No backdrop-filter: a blur made every status tag a
-                       compositor layer and promoted whatever painted over it
-                       (rating tags and the shared chip box dropped theirs for
-                       the same reason; native posters never had one). */
+                    /* No backdrop-filter: it made every status tag a compositor
+                       layer and promoted whatever painted over it. The blurred
+                       artwork behind the pill is a picture painted under the
+                       tag instead (see "The blurred backdrop" above). */
                     color: #ffffff;
                     border: 1px solid rgba(255, 255, 255, 0.18);
                     border-radius: 6px;

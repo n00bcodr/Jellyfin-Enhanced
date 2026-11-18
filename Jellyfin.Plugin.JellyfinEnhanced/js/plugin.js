@@ -1295,6 +1295,9 @@
         'tags': { needed: () => posterTagsOn() },
         'tag-direct-play': { needed: () => posterTagsOn() && userSetting('statusTagsEnabled') && userSetting('statusTagsDirectPlay') },
         'tag-poster-colours': { needed: () => posterTagsOn() && !!(JE.pluginConfig || {}).TagStyleWebActive },
+        // No page needs it by itself: tags/statustags.js asks for it (JE.loader.ensure)
+        // when the first status tag is drawn, so a page that shows none never fetches it.
+        'tag-status-backdrop': { needed: () => false },
         'tag-people': { needed: (route) => isDetailsRoute(route) && userSetting('peopleTagsEnabled') },
         // Its item-menu hook has to see the first menu that opens.
         'removal-menu': { needed: () => { const c = JE.pluginConfig || {}; return c.MaintainerrActionsAvailable === true || c.RemovalRequestsAvailable === true; } },
