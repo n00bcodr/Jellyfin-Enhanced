@@ -4480,6 +4480,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 _logger.Error($"Bootstrap: could not read the component-script manifest: {ex.Message}");
             }
 
+            System.Text.Json.JsonElement? componentGroups = null;
+            try
+            {
+                componentGroups = Services.ClientScriptBundle.GetComponentGroupsDocument();
+            }
+            catch (Exception ex)
+            {
+                // The client then loads the whole manifest as one group.
+                _logger.Error($"Bootstrap: could not read the component-group file: {ex.Message}");
+            }
+
             var isAdmin = IsAdminUser();
 
             return new JsonResult(new
@@ -4502,6 +4513,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     HiddenContent = TryLoadUserDocument("hidden-content.json", authorizedUserId, () => LoadUserHiddenContentDocument(authorizedUserId)),
                 },
                 ComponentScripts = componentScripts,
+                // The "groups" array of js/component-groups.json: which modules
+                // load together and on demand. Null when the file is unusable.
+                ComponentGroups = componentGroups,
                 Prefetched = BuildBootstrapPrefetched(config, userId.Value, authorizedUserId, isAdmin),
             });
         }
@@ -4655,17 +4669,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         }
 
         /// <summary>
-        /// The concatenated component scripts (see Services/ClientScriptBundle).
+        /// The concatenated component scripts (see Services/ClientScriptBundle):
+        /// the groups named by <paramref name="g"/> ("core,tags"), or the whole
+        /// manifest without it. An unknown, repeated or malformed group list is 404.
         /// Same headers as GetScriptResource: immutable in production (the URL
         /// carries the cache key), no-store and rebuilt per request in dev mode.
         /// </summary>
         [HttpGet("bundle.js")]
-        public ActionResult GetScriptBundle() => GetScriptBundleResource(map: false);
+        public ActionResult GetScriptBundle([FromQuery] string? g = null) => GetScriptBundleResource(map: false, g);
 
         [HttpGet("bundle.js.map")]
-        public ActionResult GetScriptBundleMap() => GetScriptBundleResource(map: true);
+        public ActionResult GetScriptBundleMap([FromQuery] string? g = null) => GetScriptBundleResource(map: true, g);
 
-        private ActionResult GetScriptBundleResource(bool map)
+        private ActionResult GetScriptBundleResource(bool map, string? groupList)
         {
             var plugin = JellyfinEnhanced.Instance;
             if (plugin == null)
@@ -4677,7 +4693,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             byte[] script, sourceMap;
             try
             {
-                (script, sourceMap) = Services.ClientScriptBundle.GetBundle(plugin.ScriptCacheKey, rebuild: devMode, _logger);
+                if (groupList == null)
+                {
+                    (script, sourceMap) = Services.ClientScriptBundle.GetBundle(plugin.ScriptCacheKey, rebuild: devMode, _logger);
+                }
+                else
+                {
+                    var groups = Services.ClientScriptBundle.ParseGroupRequest(groupList);
+                    if (groups == null)
+                    {
+                        return NotFound();
+                    }
+
+                    (script, sourceMap) = Services.ClientScriptBundle.GetGroupBundle(plugin.ScriptCacheKey, groups, rebuild: devMode, _logger);
+                }
             }
             catch (Exception ex)
             {
