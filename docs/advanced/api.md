@@ -4,7 +4,7 @@ Use Jellyfin Enhanced (JE)'s API to manage bookmarks, reviews, and personal sett
 
 To use these APIs from a custom Jellyfin client, you need an HTTP client and a Jellyfin credential. You do not need the injected JE scripts.
 
-This reference covers the 223 method/path entries in plugin version **12.14.0.0**. Use the endpoint tables to check access requirements, inputs, responses, and limits.
+This reference covers the 224 method/path entries in plugin version **12.14.0.0**. Use the endpoint tables to check access requirements, inputs, responses, and limits.
 
 Paths in endpoint tables are relative to `/JellyfinEnhanced/`. Braces mark path parameters; replace them before making a request. The catch-all routes serve only the resources described below.
 
@@ -1191,6 +1191,7 @@ Use these own/admin routes to retrieve data visible to the target account. Missi
 | POST | `reclaimerr/requests/{requestId}/approve` | Administrator | `{note?}` → `{id, approved: true}`. Approves a pending Reclaimerr deletion request as the administrator who clicked (the service account is the fallback). `404` without Reclaimerr, `400`/`502` with Reclaimerr's reason |
 | POST | `reclaimerr/requests/{requestId}/deny` | Administrator | `{note?}` → `{id, approved: false}`. Denies it, otherwise as above |
 | POST | `reclaimerr/service-account` | Administrator | `{adminUsername, adminPassword}` → `{username}`. Reclaimerr only: signs in once as that Reclaimerr administrator (the login is used for this call only and never stored), creates the `jellyfin-enhanced` admin account with a random password and saves its login in the configuration (used for Mark for removal, Request removal and scheduled deletions). `400` without a saved Reclaimerr URL or login, `502` when Reclaimerr refused (for example the account exists). |
+| POST | `reclaimerr/create-users` | Administrator | `{permissions?, pages?}` → `{created, existing, skipped, userMap}`. Reclaimerr only: through the service account, creates a Reclaimerr account (User role, random password, signed in by name) for every Jellyfin user who has none, with the permissions (`request`, `auto_approve`, `manage_requests`, `manage_protection`, `manage_reclaim`) and pages given (at least one; `400` otherwise), and adds each to the Jellyfin-to-Reclaimerr user map. A user who is mapped, linked or has an account of the same name is left alone (`existing`); names under 5 characters get `_user` added and other characters become `_`; users that could not be created are listed in `skipped` |
 | GET | `reclaimerr/item/{itemId}` | Signed in | No body → `{ItemId, Marked, CollectionId, CollectionName, DeleteAt, Supported, provider, admin, canRequest}` from the last read (no Reclaimerr call). Administrators get every action; anyone else who can see the item learns only whether they may request a removal. `CollectionId` is positive for a cleanup candidate and negative for a scheduled deletion. `404` while Reclaimerr is not the tool in use or the caller may neither act nor request. |
 | POST | `reclaimerr/mark` | Administrator | `{itemId, date?, mediaSourceId?}` → the state above after the change. Schedules a manual deletion for `date` (ISO 8601, in the future and within 3650 days; 30 days ahead without it). A movie kept in several versions is scheduled by the picked version only; when Reclaimerr cannot confirm which version that is, nothing is scheduled and the answer is `400`. |
 | POST | `reclaimerr/unmark` | Administrator | `{itemId}` → the state after the change. Protects the item's cleanup candidate, or cancels its scheduled deletion. It cannot be undone by marking again. `400` when it is not marked. |
@@ -2021,7 +2022,7 @@ These are resource URLs, separate from Jellyfin web hash navigation or placement
 
 ## Full Endpoint Index
 
-The endpoint tables above enumerate all 223 controller method/path entries, including the three catch-all templates. Each group documents effective access, inputs, response shape, and limits; shared proxy rows intentionally retain the configured upstream service's JSON contract.
+The endpoint tables above enumerate all 224 controller method/path entries, including the three catch-all templates. Each group documents effective access, inputs, response shape, and limits; shared proxy rows intentionally retain the configured upstream service's JSON contract.
 
 For implementation details, [JellyfinEnhancedController.cs](https://github.com/n00bcodr/Jellyfin-Enhanced/blob/main/Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs) implements all indexed routes except `catchup/*`, which is in [CatchUpController.cs](https://github.com/n00bcodr/Jellyfin-Enhanced/blob/main/Jellyfin.Plugin.JellyfinEnhanced/Controllers/CatchUpController.cs). These upstream source links may advance beyond this versioned reference.
 
