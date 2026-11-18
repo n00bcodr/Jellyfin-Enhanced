@@ -26,6 +26,12 @@
     // takes a while).
     const SERVER_CACHE_WAIT_DELAYS = [2000, 3000, 5000, 5000, 10000, 10000, 15000, 15000, 30000, 30000, 30000, 30000, 60000, 60000];
     const logPrefix = '🪼 Jellyfin Enhanced [TagPipeline]:';
+    /**
+     * Easing of a flow card's host as its tags fade out under Hide Tags on
+     * Hover: two 0.15s `ease` fades multiplied (the host's and its slots'),
+     * as progress 1 - (1 - ease(t))^2 sampled every 5% (within 0.7% of the curve).
+     */
+    const FLOW_FADE_OUT = 'linear(0, 0.0648 5%, 0.1806 10%, 0.3365 15%, 0.5033 20%, 0.6501 25%, 0.7631 30%, 0.8438 35%, 0.8992 40%, 0.9364 45%, 0.961 50%, 0.9768 55%, 0.9868 60%, 0.9929 65%, 0.9965 70%, 0.9984 75%, 0.9994 80%, 0.9998 85%, 1 90%, 1 95%, 1)';
 
     // ── Server cache state ─────────────────────────────────────────────
     //
@@ -2404,10 +2410,28 @@
             // This setting makes them completely invisible for users who want zero clutter.
             // Summary and minimal reveal their full chips on hover instead, so
             // there it hides every slot but that reveal (tag-layout-styles.js).
+            // A card in resting flow (core/tag-layout.js flowFor) fades as one: its
+            // slots no longer fade inside the host, each a layer the compositor
+            // had to raise and drop on every card the pointer crossed, so the
+            // host's own curve carries what the two fades made together. Out, the
+            // host and its slots both eased over 0.15s, which multiplies to the
+            // curve below (1 - (1 - ease)^2, sampled); back, the host snapped and
+            // the slots eased, which is a plain ease. Reduced motion had no slot
+            // fade: the host eases out and snaps back.
             JE.helpers.addCSS('je-tag-hover-fade', `
                 body.je-tags-hide-on-hover .card:hover .je-tag-host:not([data-je-layout="summary"]):not([data-je-layout="minimal"]) {
                     opacity: 0 !important;
                     transition: opacity 0.15s ease;
+                }
+                body.je-tags-hide-on-hover .je-tag-host[data-je-flow] { transition: opacity 0.15s ease; }
+                body.je-tags-hide-on-hover .card:hover .je-tag-host[data-je-flow]:not([data-je-layout="summary"]):not([data-je-layout="minimal"]) {
+                    transition: opacity 0.15s ${FLOW_FADE_OUT};
+                }
+                @media (prefers-reduced-motion: reduce) {
+                    body.je-tags-hide-on-hover .je-tag-host[data-je-flow] { transition: none; }
+                    body.je-tags-hide-on-hover .card:hover .je-tag-host[data-je-flow]:not([data-je-layout="summary"]):not([data-je-layout="minimal"]) {
+                        transition: opacity 0.15s ease;
+                    }
                 }
             `);
             // Apply the class based on current setting

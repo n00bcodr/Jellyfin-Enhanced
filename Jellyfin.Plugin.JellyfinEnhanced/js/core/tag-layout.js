@@ -203,6 +203,12 @@
     const FIT_MAX_ROWS = 2;
     const CENTRE_SLOTS = new Set(['tc', 'bc', 'ml', 'mr', 'c']);
     /**
+     * Layouts whose resting slots can be laid out in flow (tags/tag-layout-styles.js
+     * buildFlowStyles). Summary and Minimal fade single slots on hover, which
+     * needs each slot to be a layer of its own.
+     */
+    const FLOW_LAYOUTS = new Set(['corners', 'bands', 'caption']);
+    /**
      * Column stacks outside Corners, per layout, and their inset from each card
      * edge (tags/tag-layout-styles.js): their chips are whole, so one wider than
      * the card is ellipsized at that inset by the fitting pass.
@@ -656,7 +662,11 @@
         cachedSettings = null;
         cachedLooks = null;
         lookSettingsCache.clear();
+        flowAllowed = null;
     }
+
+    /** @type {boolean|null} whether the page's CSS leaves resting flow on (flowAllowedByPage; read once per settings pass) */
+    let flowAllowed = null;
 
     /** @type {{rules: Array<Object>, locks: Map<string, Object>, overrides: Map<string, Object>}|null} memoised rules, locks and item looks */
     let cachedLooks = null;
@@ -1732,6 +1742,90 @@
         else delete ctrl.host.dataset.jeIndicatorGap;
     }
 
+    /** @type {boolean|null} whether this browser has what the flow rules are written with (asked once) */
+    let flowSupport = null;
+
+    /**
+     * Whether the browser supports everything the resting flow rules use: a
+     * size container and its cqh unit, `overflow: clip`, and the `linear()`
+     * easing the host's hover fade is written with (tags/tag-pipeline.js).
+     * Without any of them cards keep the positioned layout.
+     * @returns {boolean}
+     */
+    function flowSupported() {
+        if (flowSupport === null) {
+            const css = typeof CSS !== 'undefined' && typeof CSS.supports === 'function' ? CSS : null;
+            flowSupport = !!css && css.supports('container-type', 'size') && css.supports('max-height', '1cqh')
+                && css.supports('overflow', 'clip') && css.supports('transition-timing-function', 'linear(0, 1)');
+        }
+        return flowSupport;
+    }
+
+    /**
+     * Whether the page's own CSS leaves resting flow on. Custom CSS written
+     * against the positioned layout (a group nudged with `top`/`left`, a slot
+     * given another `inset`) can keep it with `:root { --je-tag-flow: off; }`.
+     * Read from the root once and kept until the layout settings are next
+     * invalidated (a settings change, a user switch, JE.reinitializeTagLayout()).
+     * @returns {boolean}
+     */
+    function flowAllowedByPage() {
+        if (flowAllowed === null) {
+            let value = '';
+            try { value = getComputedStyle(document.documentElement).getPropertyValue('--je-tag-flow'); } catch { value = ''; }
+            flowAllowed = String(value || '').trim().toLowerCase() !== 'off';
+        }
+        return flowAllowed;
+    }
+
+    /**
+     * How a card's resting tags may be laid out: in flow, with nothing
+     * positioned inside the host (tags/tag-layout-styles.js buildFlowStyles),
+     * or positioned as they always were. Flow paints the same pixels only
+     * while nothing inside the host is a layer in its own right, so a card
+     * keeps the positioned layout when it has
+     *   - a layout or anchor that positions or fades slots one by one
+     *     (Summary, Minimal, the five centre anchors, Flush's clipped host);
+     *   - a dimmed "partial" language flag (its opacity makes it a layer, and
+     *     the chips after it must then be layers to paint over it);
+     *   - a context that is not a library card or list row (the previews
+     *     style their sample hosts themselves);
+     *   - a page whose CSS turns flow off (flowAllowedByPage).
+     * A card with genre icons on the image flows only while their names
+     * cannot float out of them ("quiet": the stylesheet applies it under
+     * Hide Tags on Hover), since a floating name hangs off a positioned icon.
+     * @param {CardController} ctrl
+     * @param {TagLayoutSettings} conf
+     * @returns {''|'1'|'quiet'}
+     */
+    function flowFor(ctrl, conf) {
+        if (!api.restingFlow || !FLOW_LAYOUTS.has(conf.layout) || !flowSupported() || !flowAllowedByPage()) return '';
+        if (conf.layout === 'corners' && conf.edge === 'flush') return '';
+        const host = ctrl.host;
+        if (!host.closest('.card, .listItem')) return '';
+        let names = false;
+        for (const child of host.children) {
+            if (!child.classList.contains('je-tag-slot')) continue;
+            if (CENTRE_SLOTS.has(/** @type {HTMLElement} */ (child).dataset.jeSlot || '')) return '';
+            if (child.querySelector('.language-flag-partial')) return '';
+            if (!names && child.querySelector('.genre-tag')) names = true;
+        }
+        return names ? 'quiet' : '1';
+    }
+
+    /**
+     * Mark (or unmark) a card's host for the resting flow rules, after its
+     * groups were placed or removed.
+     * @param {CardController} ctrl
+     * @param {TagLayoutSettings} conf
+     */
+    function syncFlow(ctrl, conf) {
+        const flow = flowFor(ctrl, conf);
+        if ((ctrl.host.dataset.jeFlow || '') === flow) return;
+        if (flow) ctrl.host.dataset.jeFlow = flow;
+        else delete ctrl.host.dataset.jeFlow;
+    }
+
     /**
      * Remove every representation, slot, pill and outlet a card owns.
      * @param {CardController} ctrl
@@ -1757,6 +1851,7 @@
         delete ctrl.host.dataset.jeShape;
         delete ctrl.host.dataset.jeEdge;
         delete ctrl.host.dataset.jeGenreBound;
+        delete ctrl.host.dataset.jeFlow;
     }
 
     /**
@@ -1801,6 +1896,7 @@
         for (const group of groups) presentGroup(ctrl, conf, group);
         refreshPill(ctrl, conf);
         syncIndicatorGap(ctrl, conf);
+        syncFlow(ctrl, conf);
         scheduleFit(ctrl);
         // Poster preset: the card's colours follow its artwork (tags/tag-poster-colours.js).
         JE.tagPosterColours?.track(ctrl.host);
@@ -3185,6 +3281,7 @@
             presentGroup(ctrl, conf, group);
             if (conf.layout === 'summary') refreshPill(ctrl, conf);
             syncIndicatorGap(ctrl, conf);
+            syncFlow(ctrl, conf);
             scheduleFit(ctrl);
         }
         return true;
@@ -3205,6 +3302,7 @@
         const conf = resolveLayout(ctrl);
         if (conf.layout === 'summary') refreshPill(ctrl, conf);
         syncIndicatorGap(ctrl, conf);
+        syncFlow(ctrl, conf);
         scheduleFit(ctrl);
     }
 
@@ -3556,6 +3654,12 @@
         POSITION_SETTINGS,
         /** @type {Function|null} set by tags/tag-layout-styles.js */
         buildStyles: null,
+        /**
+         * Whether resting cards may be laid out in flow (flowFor). Off, every
+         * card keeps the positioned layout; refreshPresentation() applies a change
+         * to cards already on the page (the pixel-comparison harness flips it).
+         */
+        restingFlow: true,
         normalizeGroup,
         readEdge,
         normalizeSettings,

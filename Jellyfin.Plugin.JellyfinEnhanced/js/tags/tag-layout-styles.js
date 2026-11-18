@@ -24,6 +24,17 @@
     /** Corners slots of a card with a non-default edge spacing (data-je-edge, set by core/tag-layout.js). */
     const EDGE = '.je-tag-host[data-je-layout="corners"][data-je-edge] > .je-tag-slot';
     const FLUSH = '.je-tag-host[data-je-layout="corners"][data-je-edge="flush"] > .je-tag-slot';
+    /**
+     * A card whose resting tags are laid out in flow (core/tag-layout.js
+     * flowFor marks its host): "1" whatever the page shows, "quiet" only
+     * while genre names cannot float out of their icons (Hide Tags on Hover).
+     */
+    const FLOW = ':is(.je-tag-host[data-je-flow="1"], body.je-tags-hide-on-hover .je-tag-host[data-je-flow="quiet"])';
+    const FLOW_SLOT = `${FLOW} > .je-tag-slot`;
+    /** The two corner stacks that grow upward from the bottom edge. */
+    const FLOW_RISING = `${FLOW_SLOT}:is([data-je-slot="bl"], [data-je-slot="br"])`;
+    /** Most children a rising stack places from its last row up (nine groups at most, and room to spare). */
+    const FLOW_ROWS = 12;
     /** Chips with a box of their own (not the genre circle or a flag image). */
     const BOX_CHIP = ':is(.quality-overlay-label, .rating-tag, .age-rating-tag, .status-tag, .awards-tag, .je-logo-chip, .custom-tag, .language-chip)';
 
@@ -100,6 +111,88 @@
                 border: 1px solid var(--je-tag-ring-color, transparent);
                 border-width: var(--je-flush-ring-top, 1px) var(--je-flush-ring-right, 1px) var(--je-flush-ring-bottom, 1px) var(--je-flush-ring-left, 1px);
             }
+        `;
+    }
+
+    /**
+     * Resting flow: the same boxes and the same paint order with nothing
+     * positioned inside the host.
+     *
+     * Every positioned box is a paint layer of its own, and a card used to
+     * carry about fourteen (four slots, each group, each genre icon): on a
+     * home page of sixty cards the browser walked, hit-tested and re-layered
+     * some nine hundred of them on every frame of a scroll. Here the host is
+     * a one-cell grid and its slots are grid items laid over each other in
+     * that cell, with the corner inset as a margin; groups and chips are
+     * plain flex items. Flex and grid items paint whole and in document
+     * order, which is the order the positioned boxes painted in, so chips
+     * that overlap keep their shadows the same way round.
+     *
+     * The two bottom corners grow upward. A column-reverse flex container
+     * would paint its first child last (Chromium paints reversed flex items
+     * in visual order), so they are grids instead: each child is placed from
+     * the last row up, the stack is aligned to the bottom edge, and the gap
+     * is each child's top margin (an unrendered child then leaves no gap, as
+     * in the flex stack; the spare margin above the top child shows nothing).
+     * A grid item's percentage height is its row's, so the containers' height
+     * limit is restated there against the host, which is a size container.
+     *
+     * Only hosts the controller marks get these rules: everything else keeps
+     * the positioned layout above, unchanged.
+     * @returns {string} CSS text.
+     */
+    function buildFlowStyles() {
+        const rows = Array.from({ length: FLOW_ROWS }, (_, i) => `${FLOW_RISING} > :nth-child(${i + 1}) { grid-row: ${FLOW_ROWS - i}; }`).join('\n            ');
+        return `
+            ${FLOW} {
+                display: grid;
+                grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+                container-type: size;
+            }
+            ${FLOW_SLOT} {
+                position: static;
+                grid-area: 1 / 1;
+                min-width: 0; min-height: 0;
+                /* The host fades for its slots (tags/tag-pipeline.js). */
+                transition: none;
+            }
+            ${FLOW_SLOT} > [data-je-group] { position: static; }
+
+            /* corners: the inset the four stacks had, as a margin */
+            ${FLOW_SLOT}:is([data-je-slot="tl"], [data-je-slot="tr"], [data-je-slot="bl"], [data-je-slot="br"]) {
+                margin: var(--je-edge, 6px);
+            }
+            .cardScalable:has(.countIndicator, .playedIndicator) > ${FLOW}[data-je-indicator-gap] > .je-tag-slot[data-je-slot="tr"],
+            .cardIndicators ~ ${FLOW}[data-je-indicator-gap] > .je-tag-slot[data-je-slot="tr"] {
+                margin-top: calc(var(--je-edge, 6px) + ${INDICATOR_OFFSET});
+            }
+            ${FLOW_RISING} {
+                display: grid;
+                grid-template-rows: repeat(${FLOW_ROWS}, auto);
+                grid-template-columns: minmax(0, 1fr);
+                align-content: end;
+                row-gap: 0;
+            }
+            ${FLOW_SLOT}[data-je-slot="bl"] { justify-items: start; }
+            ${FLOW_SLOT}[data-je-slot="br"] { justify-items: end; }
+            ${FLOW_RISING} > * { margin-top: calc(4px * var(--je-tag-scale, 1) * var(--je-tag-gap, 1)); }
+            ${rows}
+            /* 90% (85% on phones) of the image, as the corner rules above work out to. */
+            ${FLOW_RISING} > :is(.quality-overlay-container, .language-overlay-container, .genre-overlay-container) { max-height: 90cqh; }
+            @media (max-width: 480px) {
+                ${FLOW_RISING} > :is(.quality-overlay-container, .genre-overlay-container) { max-height: 85cqh; }
+            }
+
+            /* bands: the top band from the top edge, the bottom band from the bottom */
+            ${FLOW_SLOT}[data-je-slot="top"] { align-self: start; }
+            ${FLOW_SLOT}[data-je-slot="bottom"] { align-self: end; }
+            /* caption: the small poster stack in its corner */
+            ${FLOW_SLOT}[data-je-slot="poster"] { justify-self: start; align-self: start; margin: 6px; }
+
+            /* A genre icon holds its floating name; while names cannot show it holds nothing. */
+            ${FLOW} .genre-tag { position: static; }
+            /* The same clip (it also trims the chips' shadows at the group's edge) without a scroll container. */
+            ${FLOW} :is(.quality-overlay-container, .language-overlay-container) { overflow: clip; }
         `;
     }
 
@@ -631,13 +724,17 @@
             }
             html .je-tag-host > .je-tag-slot[data-je-slot="corner"] .rating-star-icon { font-size: calc(11px * var(--je-tag-scale, 1)) !important; }
 
-            /* Hide Tags on Hover: everything but the summary / minimal reveal. */
-            ${HIDE_ACTIVE} .je-tag-host > .je-tag-slot:not([data-je-slot="hover"]),
+            /* Hide Tags on Hover: everything but the summary / minimal reveal.
+               A card in resting flow fades as a whole (its host, tags/tag-pipeline.js),
+               so its slots are left alone. */
+            ${HIDE_ACTIVE} .je-tag-host:not([data-je-flow]) > .je-tag-slot:not([data-je-slot="hover"]),
             ${HIDE_ACTIVE} .je-tag-host:not([data-je-layout="summary"], [data-je-layout="minimal"]) > .je-tag-more-tip,
             ${PREVIEW_HIDE} .je-tag-host > .je-tag-slot:not([data-je-slot="hover"]),
             ${PREVIEW_HIDE} .je-tag-host:not([data-je-layout="summary"], [data-je-layout="minimal"]) > .je-tag-more-tip {
                 opacity: 0 !important;
             }
+
+            ${buildFlowStyles()}
 
             @media (prefers-reduced-motion: reduce) {
                 ${SLOT}, .je-tag-host > .je-tag-more-tip { transition: none; }
