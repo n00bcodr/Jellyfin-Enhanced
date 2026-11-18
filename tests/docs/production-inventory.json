@@ -2773,6 +2773,15 @@
       ]
     },
     {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/usage/fields",
+      "method": "GetUsageReportedFields",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
       "verb": "POST",
       "path": "/JellyfinEnhanced/usage/preview",
       "method": "PreviewUsageReport",
@@ -10949,7 +10958,7 @@
   "counts": {
     "build_targets": 2,
     "files": 500,
-    "routes": 222,
+    "routes": 223,
     "configuration_properties": 788,
     "storage_references": 89,
     "scheduled_tasks": 17,

@@ -303,13 +303,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// TmdbEnabled/MdblistEnabled. The actual keys are strings and must
         /// never be reflected in GetStringSettings, only whether one is present.
         /// </summary>
+        private static bool IsReportedFlag(PropertyInfo p) =>
+            p.PropertyType == typeof(bool)
+            && !p.Name.StartsWith("Analytics", StringComparison.Ordinal)
+            && p.GetCustomAttribute<Model.AnalyticsExcludeAttribute>() == null;
+
+        /// <summary>
+        /// Names of the PluginConfiguration properties the report carries, derived from the same rules as the
+        /// payload so the config page can mark them without a hand-kept list. The two derived presence flags
+        /// (TmdbEnabled, MdblistEnabled) are not properties and are left out.
+        /// </summary>
+        public static IEnumerable<string> GetReportedSettingNames() =>
+            typeof(PluginConfiguration)
+                .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+                .Where(p => IsReportedFlag(p)
+                    || (p.PropertyType == typeof(string) && p.GetCustomAttribute<Model.AnalyticsIncludeAttribute>() != null))
+                .Select(p => p.Name)
+                .Concat(new[] { "MaintenanceModeAffectedUsers", "NativePosterTagsWebClientNames" })
+                .Distinct();
+
         private static Dictionary<string, bool> GetBooleanFeatureFlags(PluginConfiguration config)
         {
             var flags = typeof(PluginConfiguration)
                 .GetProperties(BindingFlags.Public | BindingFlags.Instance)
-                .Where(p => p.PropertyType == typeof(bool)
-                    && !p.Name.StartsWith("Analytics", StringComparison.Ordinal)
-                    && p.GetCustomAttribute<Model.AnalyticsExcludeAttribute>() == null)
+                .Where(IsReportedFlag)
                 .ToDictionary(p => p.Name, p => (bool)p.GetValue(config)!);
 
             flags["TmdbEnabled"] = !string.IsNullOrWhiteSpace(config.TMDB_API_KEY);

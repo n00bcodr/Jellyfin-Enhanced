@@ -4,7 +4,7 @@ Use Jellyfin Enhanced (JE)'s API to manage bookmarks, reviews, and personal sett
 
 To use these APIs from a custom Jellyfin client, you need an HTTP client and a Jellyfin credential. You do not need the injected JE scripts.
 
-This reference covers the 222 method/path entries in plugin version **12.14.0.0**. Use the endpoint tables to check access requirements, inputs, responses, and limits.
+This reference covers the 223 method/path entries in plugin version **12.14.0.0**. Use the endpoint tables to check access requirements, inputs, responses, and limits.
 
 Paths in endpoint tables are relative to `/JellyfinEnhanced/`. Braces mark path parameters; replace them before making a request. The catch-all routes serve only the resources described below.
 
@@ -1830,6 +1830,7 @@ Track the plugin's supported usage counters or preview a report. See [community 
 | Method | Path | Access | Contract |
 |---|---|---|---|
 | POST | `usage/track` | Authenticated | `{"key":"seerr.request_submitted"}` → empty `200`. |
+| GET | `usage/fields` | Administrator | Array of setting names the usage report carries (the config page marks them with an icon). |
 | POST | `usage/preview` | Administrator | JSON object with optional booleans `shareFeatureFlags`, `shareUsageCounts`, `shareDataSizes` → preview. |
 
 ```bash
