@@ -1156,17 +1156,19 @@
      * fallback title, icon]: exactly what the page's own *-custom-tab module
      * registers), `marker` the class of the placeholder a tab holds for it,
      * `pluginPage` the page's Plugin Pages address (lower case). The order is
-     * the order the tabs are registered in, which is the order they appear in.
+     * the order the tabs are registered in, which is the order they appear in:
+     * the order the pages' own modules register them in the single bundle.
      */
     const FEATURE_PAGES = [
         { group: 'hidden-content-page', flag: 'HiddenContentEnabled', delivery: 'HiddenContent', tab: ['hidden-content', 'hidden_content_manage_title', 'Hidden Content', 'remove_red_eye'], marker: 'jellyfinenhanced hidden-content', routes: ['hidden-content'], pluginPage: 'hiddencontentpage' },
         { group: 'catchup', flag: 'CatchUpEnabled', delivery: 'CatchUp', tab: ['catchup', 'catchup_title', 'Catch Up', 'style'], marker: 'jellyfinenhanced catchup', pluginPage: 'catchuppage' },
-        { group: 'bookmarks-library', flag: 'BookmarksEnabled', delivery: 'Bookmarks', tab: ['bookmarks', null, 'Bookmarks', 'location_on'], marker: 'sections bookmarks', routes: ['bookmarks'], pluginPage: 'bookmarkspage' },
         { group: 'recommendations', flag: 'RecommendationsPageEnabled', delivery: 'Recommendations', tab: ['recommendations', 'recommendations_title', undefined, 'auto_awesome'], marker: 'jellyfinenhanced recommendations', routes: ['recommendations'], pluginPage: 'recommendationspage' },
         { group: 'requests-page', flag: 'DownloadsPageEnabled', delivery: 'Downloads', tab: ['requests', 'requests_requests', 'Requests', 'download'], marker: 'jellyfinenhanced requests', routes: ['downloads'], pluginPage: 'downloadspage' },
         { group: 'calendar-page', flag: 'CalendarPageEnabled', delivery: 'Calendar', tab: ['calendar', 'calendar_title', 'Calendar', 'calendar_month'], marker: 'jellyfinenhanced calendar', routes: ['calendar'], pluginPage: 'calendarpage' },
         { group: 'activity-page', flag: 'ActivityFeedEnabled', delivery: 'ActivityFeed', tab: ['activity', 'activity_title', 'Activity', 'history'], marker: 'jellyfinenhanced activity', pluginPage: 'activitypage' },
-        { group: 'leavingsoon-page', flag: 'LeavingSoonPageEnabled', delivery: 'LeavingSoonPage', tab: ['leavingsoon', 'leavingsoon_title', 'Leaving Soon', 'auto_delete'], marker: 'jellyfinenhanced leavingsoon', pluginPage: 'leavingsoonpage' }
+        { group: 'leavingsoon-page', flag: 'LeavingSoonPageEnabled', delivery: 'LeavingSoonPage', tab: ['leavingsoon', 'leavingsoon_title', 'Leaving Soon', 'auto_delete'], marker: 'jellyfinenhanced leavingsoon', pluginPage: 'leavingsoonpage' },
+        // Last: the Bookmarks library registers its tab from a timer once its data is ready, after the others.
+        { group: 'bookmarks-library', flag: 'BookmarksEnabled', delivery: 'Bookmarks', tab: ['bookmarks', null, 'Bookmarks', 'location_on'], marker: 'sections bookmarks', routes: ['bookmarks'], pluginPage: 'bookmarkspage' }
     ];
     const markerSelector = (page) => '.' + page.marker.split(' ').join('.');
     /** Whether a page is delivered as a Home tab (JE's own or the Custom Tabs plugin's). */
