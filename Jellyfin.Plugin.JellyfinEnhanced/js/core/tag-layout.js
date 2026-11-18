@@ -663,6 +663,7 @@
         cachedLooks = null;
         lookSettingsCache.clear();
         flowAllowed = null;
+        namesFloat = null;
     }
 
     /** @type {boolean|null} whether the page's CSS leaves resting flow on (flowAllowedByPage; read once per settings pass) */
@@ -1778,52 +1779,80 @@
         return flowAllowed;
     }
 
+    /** @type {boolean|null} whether genre names float beside their icons, as the stylesheet has them (genreNamesFloat) */
+    let namesFloat = null;
+
     /**
-     * How a card's resting tags may be laid out: in flow, with nothing
+     * Whether genre names float out of their icons (the stylesheet's absolute
+     * position), read from the first name a card shows and kept until the
+     * layout settings are next invalidated. Custom CSS can show them inline
+     * instead (`position: static`, the documented recipe): they are then part
+     * of the resting card and cannot be left out of it.
+     * @param {HTMLElement} host - A host holding at least one genre name.
+     * @returns {boolean}
+     */
+    function genreNamesFloat(host) {
+        if (namesFloat === null) {
+            const name = host.querySelector('.genre-tag > .genre-text');
+            if (!name) return true;
+            let position = '';
+            try { position = getComputedStyle(name).position; } catch { position = ''; }
+            namesFloat = position !== 'static' && position !== 'relative';
+        }
+        return namesFloat;
+    }
+
+    /**
+     * Whether a card's resting tags may be laid out in flow, with nothing
      * positioned inside the host (tags/tag-layout-styles.js buildFlowStyles),
-     * or positioned as they always were. Flow paints the same pixels only
+     * or stay positioned as they always were. Flow paints the same pixels only
      * while nothing inside the host is a layer in its own right, so a card
      * keeps the positioned layout when it has
      *   - a layout or anchor that positions or fades slots one by one
      *     (Summary, Minimal, the five centre anchors, Flush's clipped host);
      *   - a dimmed "partial" language flag (its opacity makes it a layer, and
      *     the chips after it must then be layers to paint over it);
+     *   - genre names custom CSS shows inline (genreNamesFloat);
      *   - a context that is not a library card or list row (the previews
      *     style their sample hosts themselves);
      *   - a page whose CSS turns flow off (flowAllowedByPage).
-     * A card with genre icons on the image flows only while their names
-     * cannot float out of them ("quiet": the stylesheet applies it under
-     * Hide Tags on Hover), since a floating name hangs off a positioned icon.
+     * Floating genre names hang off a positioned icon: a flow card leaves them
+     * out while it rests, and is laid out positioned for as long as the
+     * pointer that shows them is on it (goLive).
      * @param {CardController} ctrl
      * @param {TagLayoutSettings} conf
-     * @returns {''|'1'|'quiet'}
+     * @returns {boolean}
      */
     function flowFor(ctrl, conf) {
-        if (!api.restingFlow || !FLOW_LAYOUTS.has(conf.layout) || !flowSupported() || !flowAllowedByPage()) return '';
-        if (conf.layout === 'corners' && conf.edge === 'flush') return '';
+        if (!api.restingFlow || !FLOW_LAYOUTS.has(conf.layout) || !flowSupported() || !flowAllowedByPage()) return false;
+        if (conf.layout === 'corners' && conf.edge === 'flush') return false;
         const host = ctrl.host;
-        if (!host.closest('.card, .listItem')) return '';
+        if (!host.closest('.card, .listItem')) return false;
         let names = false;
         for (const child of host.children) {
             if (!child.classList.contains('je-tag-slot')) continue;
-            if (CENTRE_SLOTS.has(/** @type {HTMLElement} */ (child).dataset.jeSlot || '')) return '';
-            if (child.querySelector('.language-flag-partial')) return '';
+            if (CENTRE_SLOTS.has(/** @type {HTMLElement} */ (child).dataset.jeSlot || '')) return false;
+            if (child.querySelector('.language-flag-partial')) return false;
             if (!names && child.querySelector('.genre-tag')) names = true;
         }
-        return names ? 'quiet' : '1';
+        return !names || genreNamesFloat(host);
     }
 
     /**
      * Mark (or unmark) a card's host for the resting flow rules, after its
-     * groups were placed or removed.
+     * groups were placed or removed. A card the pointer is already on when
+     * its genre icons arrive shows their names at once, as it always did.
      * @param {CardController} ctrl
      * @param {TagLayoutSettings} conf
      */
     function syncFlow(ctrl, conf) {
+        const host = ctrl.host;
         const flow = flowFor(ctrl, conf);
-        if ((ctrl.host.dataset.jeFlow || '') === flow) return;
-        if (flow) ctrl.host.dataset.jeFlow = flow;
-        else delete ctrl.host.dataset.jeFlow;
+        if (flow !== (host.dataset.jeFlow === '1')) {
+            if (flow) host.dataset.jeFlow = '1';
+            else delete host.dataset.jeFlow;
+        }
+        if (flow && !host.dataset.jeLive && showsNamesNow(host)) host.dataset.jeLive = '1';
     }
 
     /**
@@ -3148,7 +3177,77 @@
         // does show its names once the pointer leaves) still bounds it.
         if (event.type === 'pointerover' && hidesOnHover(host)) return;
         revealedCard = card;
-        fitReveal(host);
+        // The pointer shows genre names (focus alone does not): a flow card is
+        // laid out positioned first, so they float from their icons.
+        const live = event.type === 'pointerover' && goLive(host);
+        try {
+            fitReveal(host);
+        } finally {
+            // Whatever the bound did, the names must not stay held at their starting opacity.
+            if (live) showNames(/** @type {HTMLElement} */ (host));
+        }
+    }
+
+    /** How long after the pointer leaves a card its host goes back to flow: past the names' 0.12s fade. */
+    const REST_AFTER_MS = 200;
+    /** @type {WeakMap<HTMLElement, ReturnType<typeof setTimeout>>} hosts due back in flow */
+    const restTimers = new WeakMap();
+
+    /**
+     * Whether a flow card's genre names are showing now: it has some, the
+     * pointer is on it, and the pointer reveals rather than hides its tags.
+     * @param {HTMLElement} host
+     * @returns {boolean}
+     */
+    function showsNamesNow(host) {
+        if (hidesOnHover(host) || !host.querySelector('.genre-tag > .genre-text')) return false;
+        try { return !!host.closest('.card')?.matches(':hover'); } catch { return false; }
+    }
+
+    /**
+     * Lay a flow card out positioned while the pointer is on it, so its genre
+     * names can float from their icons (data-je-live; the stylesheet's flow
+     * rules skip a live host). It starts as "in", which holds the names at
+     * opacity 0 for one style pass: an element that was not rendered has
+     * nothing to fade in from. showNames() then lets them fade.
+     * @param {HTMLElement|null} host
+     * @returns {boolean} True when the host went live now.
+     */
+    function goLive(host) {
+        if (!host || host.dataset.jeFlow !== '1') return false;
+        const due = restTimers.get(host);
+        if (due !== undefined) { clearTimeout(due); restTimers.delete(host); }
+        if (host.dataset.jeLive || !host.querySelector('.genre-tag > .genre-text')) return false;
+        host.dataset.jeLive = 'in';
+        return true;
+    }
+
+    /**
+     * Let a host that just went live fade its genre names in (the styles
+     * are read once first, so the browser has their starting opacity).
+     * @param {HTMLElement} host
+     */
+    function showNames(host) {
+        if (host.dataset.jeLive !== 'in') return;
+        const name = host.querySelector('.genre-tag > .genre-text');
+        try { if (name) void getComputedStyle(name).opacity; } catch { /* no styles to read: nothing to fade from */ }
+        host.dataset.jeLive = '1';
+    }
+
+    /**
+     * Put a live host back in flow once the pointer has left its card and the
+     * names have faded (unless the pointer came back meanwhile).
+     * @param {Element} card
+     */
+    function restLater(card) {
+        const host = /** @type {HTMLElement|null} */ (card.querySelector('.je-tag-host[data-je-live]'));
+        if (!host || restTimers.has(host)) return;
+        restTimers.set(host, setTimeout(() => {
+            restTimers.delete(host);
+            let over = false;
+            try { over = card.matches(':hover'); } catch { over = false; }
+            if (!over || hidesOnHover(host)) delete host.dataset.jeLive;
+        }, REST_AFTER_MS));
     }
 
     /**
@@ -3167,7 +3266,11 @@
         document.addEventListener('pointerover', onReveal, { passive: true });
         document.addEventListener('focusin', onReveal);
         document.addEventListener('pointerout', (event) => {
-            if (revealedCard && !(event.relatedTarget instanceof Node && revealedCard.contains(event.relatedTarget))) revealedCard = null;
+            const to = event.relatedTarget instanceof Node ? event.relatedTarget : null;
+            if (revealedCard && !(to && revealedCard.contains(to))) revealedCard = null;
+            // A card the pointer leaves (it may have gone live as its tags arrived, never "revealed").
+            const card = event.target instanceof Element ? event.target.closest('.card') : null;
+            if (card && !(to && card.contains(to))) restLater(card);
         }, { passive: true });
     }
 

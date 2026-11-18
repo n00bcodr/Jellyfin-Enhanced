@@ -19,12 +19,12 @@ const entry = () => ({
 });
 
 /** The real renderers and layout controller over one card, in a browser that has (or lacks) what flow needs. */
-function setup(t, { html = card(), settings = {}, plugin = {}, supports = () => true } = {}) {
+function setup(t, { html = card(), settings = {}, plugin = {}, supports = () => true, globals = {} } = {}) {
   const renderers = new Map();
   const asked = [];
   const h = createHarness({
     html,
-    globals: { CSS: { supports: (...args) => { asked.push(args.join(': ')); return supports(...args); } } },
+    globals: { CSS: { supports: (...args) => { asked.push(args.join(': ')); return supports(...args); } }, ...globals },
     JE: {
       currentSettings: { qualityTagsEnabled: true, ratingTagsEnabled: true, ageRatingTagsEnabled: true, qualityTagsPreferredAudioLanguage: 'none', ...settings },
       pluginConfig: { TagCacheServerMode: true, ...plugin },
@@ -63,17 +63,107 @@ const V1 = { tagLayoutSettingsVersion: 1 };
 /** Corners profile putting quality on one anchor. */
 const onAnchor = slot => ({ corners: { groups: [{ group: 'quality', slot }] } });
 
-test('a corners card with nothing layered inside flows; genre icons make it flow only while their names are hidden', async t => {
+test('a corners card flows, with or without genre icons, and the mark follows the groups it holds', async t => {
   const h = setup(t);
   h.render();
   assert.equal(h.host().dataset.jeLayout, 'corners');
   assert.equal(h.flow(), '1', 'quality, rating and age rating: nothing that needs a layer');
   await h.apply({ genreTagsEnabled: true });
   h.render();
-  assert.ok(h.host().querySelector('.genre-tag'));
-  assert.equal(h.flow(), 'quiet', 'a floating name hangs off a positioned icon: the stylesheet decides by the body class');
+  assert.ok(h.host().querySelector('.genre-tag > .genre-text'));
+  assert.equal(h.flow(), '1', 'a resting card shows no genre name, so its icons need not be positioned');
+  assert.equal(h.host().hasAttribute('data-je-live'), false);
   h.layout.removeGroup(h.host(), 'genre');
-  assert.equal(h.flow(), '1', 'the mark follows the groups a card holds');
+  assert.equal(h.flow(), '1');
+});
+
+/** Dispatch a bubbling pointer event the way the browser does when the pointer crosses elements. */
+function pointer(h, type, target, relatedTarget = null) {
+  const event = new h.window.Event(type, { bubbles: true });
+  Object.defineProperty(event, 'relatedTarget', { value: relatedTarget });
+  target.dispatchEvent(event);
+}
+
+/** Make `card.matches(':hover')` answer as if the pointer were (or were not) on the card. */
+function hover(h, on) {
+  const card = h.document.querySelector('.card');
+  const matches = h.window.Element.prototype.matches;
+  card.matches = function (selector) { return selector === ':hover' ? on : matches.call(this, selector); };
+  return card;
+}
+
+test('the pointer on a card with genre icons lays it out positioned so their names can float, and it rests again once the pointer has gone', async t => {
+  const timers = [];
+  const h = setup(t, { settings: { genreTagsEnabled: true }, globals: { setTimeout: (fn, ms) => { timers.push({ fn, ms }); return timers.length; }, clearTimeout: id => { if (timers[id - 1]) timers[id - 1].fn = null; } } });
+  h.render();
+  const host = h.host();
+  const card = hover(h, true);
+  assert.equal(h.flow(), '1');
+  // The names start at opacity 0 for the pass that first renders them, then are let go to fade in.
+  const seen = [];
+  const read = h.window.getComputedStyle;
+  h.window.getComputedStyle = function (el, ...rest) { if (el.classList?.contains('genre-text')) seen.push(host.dataset.jeLive); return read.call(this, el, ...rest); };
+  pointer(h, 'pointerover', card.querySelector('.cardImageContainer'));
+  assert.ok(seen.includes('in'), 'styles were read while the names were held at their starting opacity');
+  assert.equal(host.dataset.jeLive, '1');
+  assert.equal(h.flow(), '1', 'the mark stays: only the live state lifts the flow rules');
+  // Moving inside the card changes nothing.
+  pointer(h, 'pointerout', card.querySelector('.cardImageContainer'), card.querySelector('.cardOverlayContainer'));
+  assert.equal(timers.filter(x => x.fn && x.ms === 200).length, 0);
+  // Leaving it: back to flow after the names' fade, unless the pointer returned.
+  hover(h, false);
+  pointer(h, 'pointerout', card.querySelector('.cardImageContainer'), h.document.body);
+  const rest = timers.filter(x => x.fn && x.ms === 200);
+  assert.equal(rest.length, 1);
+  assert.equal(host.dataset.jeLive, '1', 'still positioned while the names fade');
+  const due = rest[0].fn;
+  rest[0].fn = null;
+  due();
+  assert.equal(host.hasAttribute('data-je-live'), false);
+  // Leave and come straight back: the pending rest is dropped.
+  hover(h, true);
+  pointer(h, 'pointerover', card.querySelector('.cardImageContainer'));
+  pointer(h, 'pointerout', card.querySelector('.cardImageContainer'), h.document.body);
+  pointer(h, 'pointerover', card.querySelector('.cardImageContainer'));
+  assert.equal(timers.filter(x => x.fn && x.ms === 200).length, 0);
+  assert.equal(host.dataset.jeLive, '1');
+});
+
+test('nothing goes live for focus, for a card without genre icons, or while Hide Tags on Hover hides the card under the pointer', async t => {
+  const h = setup(t, { settings: { genreTagsEnabled: true } });
+  h.render();
+  const host = h.host();
+  const card = hover(h, true);
+  card.querySelector('.cardImageContainer').dispatchEvent(new h.window.Event('focusin', { bubbles: true }));
+  assert.equal(host.hasAttribute('data-je-live'), false, 'focus does not show genre names');
+  pointer(h, 'pointerout', card.querySelector('.cardImageContainer'), h.document.body);
+  h.document.body.classList.add('je-tags-hide-on-hover');
+  pointer(h, 'pointerover', card.querySelector('.cardImageContainer'));
+  assert.equal(host.hasAttribute('data-je-live'), false, 'the host fades out instead: nothing to show');
+  h.document.body.classList.remove('je-tags-hide-on-hover');
+  h.layout.removeGroup(host, 'genre');
+  pointer(h, 'pointerover', card.querySelector('.cardImageContainer'));
+  assert.equal(host.hasAttribute('data-je-live'), false, 'no names to float');
+});
+
+test('genre icons arriving on a card the pointer is already on show their names at once', async t => {
+  const h = setup(t, { settings: { genreTagsEnabled: true } });
+  hover(h, true);
+  h.render();
+  assert.equal(h.flow(), '1');
+  assert.equal(h.host().dataset.jeLive, '1');
+});
+
+test('genre names custom CSS shows inline keep their cards positioned', async t => {
+  const h = setup(t, { settings: { genreTagsEnabled: true } });
+  const style = h.document.createElement('style');
+  style.textContent = '.genre-tag .genre-text { position: static !important; }';
+  h.document.head.appendChild(style);
+  h.render();
+  assert.ok(h.host().querySelector('.genre-tag > .genre-text'));
+  assert.equal(h.flow(), undefined, 'an inline name is part of the resting card');
+  h.layout.removeGroup(h.host(), 'genre');
+  assert.equal(h.flow(), '1', 'cards without genre icons are not held back');
 });
 
 test('a dimmed partial flag keeps the card positioned, and flow returns when it goes', t => {
@@ -165,7 +255,7 @@ test('clearing a card removes the mark with everything else', t => {
 test('the stylesheet lays a flow card out as grid items with the same insets, and the bottom corners as rising grids', t => {
   const h = setup(t);
   const css = h.layout.buildStyles();
-  const FLOW = ':is(.je-tag-host[data-je-flow="1"], body.je-tags-hide-on-hover .je-tag-host[data-je-flow="quiet"])';
+  const FLOW = '.je-tag-host[data-je-flow]:not([data-je-live])';
   const SLOT = `${FLOW} > .je-tag-slot`;
   const RISING = `${SLOT}:is([data-je-slot="bl"], [data-je-slot="br"])`;
   const rule = selector => {
@@ -189,16 +279,18 @@ test('the stylesheet lays a flow card out as grid items with the same insets, an
   for (let n = 1; n <= 12; n++) assert.ok(css.includes(`${RISING} > :nth-child(${n}) { grid-row: ${13 - n}; }`), `child ${n} from the bottom`);
   // A grid item's percentage height is its row's: the containers' limit is restated against the host.
   assert.match(rule(`${RISING} > :is(.quality-overlay-container, .language-overlay-container, .genre-overlay-container)`), /max-height: 90cqh;/);
-  assert.match(css, /@media \(max-width: 480px\) \{\s*:is\(\.je-tag-host\[data-je-flow="1"\][^{]*> :is\(\.quality-overlay-container, \.genre-overlay-container\) \{ max-height: 85cqh; \}/);
+  assert.match(css, /@media \(max-width: 480px\) \{\s*\.je-tag-host\[data-je-flow\]:not\(\[data-je-live\]\)[^{]*> :is\(\.quality-overlay-container, \.genre-overlay-container\) \{ max-height: 85cqh; \}/);
   // Bands and the caption's poster stack.
   assert.match(rule(`${SLOT}[data-je-slot="top"]`), /align-self: start;/);
   assert.match(rule(`${SLOT}[data-je-slot="bottom"]`), /align-self: end;/);
   assert.match(rule(`${SLOT}[data-je-slot="poster"]`), /justify-self: start; align-self: start; margin: 6px;/);
-  // Nothing inside is a layer: icons hold no name, and the group clip is not a scroll container.
+  // Nothing inside is a layer: icons hold no name (it is left out until the card goes live), and the group clip is not a scroll container.
   assert.match(rule(`${FLOW} .genre-tag`), /position: static;/);
+  assert.match(rule(`${FLOW} .genre-tag > .genre-text`), /display: none;/);
+  assert.match(rule('.je-tag-host.je-tag-host[data-je-live="in"] .genre-tag > .genre-text'), /opacity: 0;/);
   assert.match(rule(`${FLOW} :is(.quality-overlay-container, .language-overlay-container)`), /overflow: clip;/);
   // A legacy card keeps its unmultiplied gap, as its slots always had.
-  assert.ok(css.includes(':is(.je-tag-host[data-je-legacy][data-je-flow="1"], body.je-tags-hide-on-hover .je-tag-host[data-je-legacy][data-je-flow="quiet"]) > .je-tag-slot:is([data-je-slot="bl"], [data-je-slot="br"]) > * { margin-top: 4px;}'));
+  assert.ok(css.includes('.je-tag-host[data-je-legacy][data-je-flow]:not([data-je-live]) > .je-tag-slot:is([data-je-slot="bl"], [data-je-slot="br"]) > * { margin-top: 4px;}'));
 });
 
 test('the positioned rules are untouched, and Hide Tags on Hover leaves a flow card\'s slots to its host', t => {

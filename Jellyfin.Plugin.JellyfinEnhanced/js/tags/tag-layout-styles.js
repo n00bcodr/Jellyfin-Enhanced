@@ -26,10 +26,10 @@
     const FLUSH = '.je-tag-host[data-je-layout="corners"][data-je-edge="flush"] > .je-tag-slot';
     /**
      * A card whose resting tags are laid out in flow (core/tag-layout.js
-     * flowFor marks its host): "1" whatever the page shows, "quiet" only
-     * while genre names cannot float out of their icons (Hide Tags on Hover).
+     * flowFor marks its host), except while the pointer is on it to show its
+     * genre names (data-je-live): the positioned rules apply again then.
      */
-    const FLOW = ':is(.je-tag-host[data-je-flow="1"], body.je-tags-hide-on-hover .je-tag-host[data-je-flow="quiet"])';
+    const FLOW = '.je-tag-host[data-je-flow]:not([data-je-live])';
     const FLOW_SLOT = `${FLOW} > .je-tag-slot`;
     /** The two corner stacks that grow upward from the bottom edge. */
     const FLOW_RISING = `${FLOW_SLOT}:is([data-je-slot="bl"], [data-je-slot="br"])`;
@@ -138,7 +138,8 @@
      * limit is restated there against the host, which is a size container.
      *
      * Only hosts the controller marks get these rules: everything else keeps
-     * the positioned layout above, unchanged.
+     * the positioned layout above, unchanged, and so does a marked host for
+     * as long as the pointer is on its card to show genre names.
      * @returns {string} CSS text.
      */
     function buildFlowStyles() {
@@ -189,8 +190,13 @@
             /* caption: the small poster stack in its corner */
             ${FLOW_SLOT}[data-je-slot="poster"] { justify-self: start; align-self: start; margin: 6px; }
 
-            /* A genre icon holds its floating name; while names cannot show it holds nothing. */
+            /* A genre icon is positioned to hold its floating name. A resting card shows no name
+               (it was there at opacity 0): the icon holds nothing, and the name is left out until
+               the pointer brings the card back to the positioned layout. */
             ${FLOW} .genre-tag { position: static; }
+            ${FLOW} .genre-tag > .genre-text { display: none; }
+            /* The first style pass of a card going live: a name that was not rendered fades in from here. */
+            .je-tag-host.je-tag-host[data-je-live="in"] .genre-tag > .genre-text { opacity: 0; }
             /* The same clip (it also trims the chips' shadows at the group's edge) without a scroll container. */
             ${FLOW} :is(.quality-overlay-container, .language-overlay-container) { overflow: clip; }
         `;
