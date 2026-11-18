@@ -8,6 +8,7 @@ copyright: Copyright &copy;2026 n00bcodr. Made with 💜 for Jellyfin and the co
 
 theme:
   name: material
+  variant: classic
   # JE look: template overrides for the logo mark, nav/tab icons (overrides/partials/je-icons.html),
   # the section bar above each page title, area names in titles, and the footer key hint
   custom_dir: overrides

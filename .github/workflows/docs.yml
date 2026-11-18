@@ -58,11 +58,13 @@ jobs:
         with:
           python-version: "3.12"
 
-      # Always the current tooling (it includes mike), even when an older tag is being built.
+      # Always the current tooling (Zensical and the mike fork), even when an older tag is being built.
       - name: Install dependencies
         run: |
           git show origin/main:.github/docs/requirements.txt > "$RUNNER_TEMP/docs-requirements.txt"
           pip install --require-hashes -r "$RUNNER_TEMP/docs-requirements.txt"
+          # Zensical-compatible fork of mike (same CLI), pinned to a commit. Not on PyPI, so it cannot be hash-pinned.
+          pip install --no-deps "git+https://github.com/squidfunk/mike.git@2d4ad799442f4592db8ad53b179bfb33db8c69ac"
 
       - name: Install Node dependencies
         run: '[ ! -f package-lock.json ] || npm ci --ignore-scripts'

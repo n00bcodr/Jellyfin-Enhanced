@@ -3,7 +3,7 @@
   section bar above each page title.
 
   - Areas (top-level nav sections) are keyed by their nav title in mkdocs.yml.
-  - Pages are keyed by their file path under docs/, so renaming a nav label
+  - Pages are keyed by their URL (file path without .md, trailing slash), so renaming a nav label
     keeps the icon. Pages without an entry fall back by file name
     (*-features.md, *-settings.md, troubleshooting*); anything else has no icon.
   If you rename an area in the mkdocs.yml nav, rename its key here too.
@@ -22,43 +22,44 @@
   "Help": "material/lifebuoy",
 } %}
 {% set pages = {
-  "index.md": "material/home-outline",
-  "getting-started/index.md": "material/lightning-bolt-outline",
-  "installation/installation.md": "material/download-outline",
-  "getting-started/compatibility.md": "material/devices",
-  "getting-started/settings-overview.md": "material/tune-variant",
-  "getting-started/pages-and-tabs.md": "material/view-dashboard-outline",
-  "enhanced/tags.md": "material/information-outline",
-  "enhanced/tags-layouts.md": "material/view-grid-outline",
-  "enhanced/tags-quality.md": "material/translate",
-  "enhanced/tags-groups.md": "material/tag-multiple-outline",
-  "enhanced/tags-status.md": "material/bell-outline",
-  "enhanced/tags-server.md": "material/server-outline",
-  "seerr/permission-audit.md": "material/shield-account-outline",
-  "advanced/css-customization.md": "material/palette-outline",
-  "advanced/api.md": "material/api",
-  "advanced/community-analytics.md": "material/format-list-checks",
-  "advanced/community-analytics-dashboard.md": "material/chart-line",
-  "advanced/project-structure.md": "material/file-tree-outline",
-  "faq-support/faq.md": "material/help-circle-outline",
-  "faq-support/report-issues.md": "material/bug-outline",
-  "faq-support/feature-requests.md": "material/lightbulb-on-outline",
-  "faq-support/contributing-translations.md": "material/translate",
-  "faq-support/support.md": "material/forum-outline",
-  "other-projects/other-projects.md": "material/puzzle-outline",
-  "about.md": "material/information-outline",
+  "": "material/home-outline",
+  "getting-started/": "material/lightning-bolt-outline",
+  "installation/installation/": "material/download-outline",
+  "getting-started/compatibility/": "material/devices",
+  "getting-started/settings-overview/": "material/tune-variant",
+  "getting-started/pages-and-tabs/": "material/view-dashboard-outline",
+  "enhanced/tags/": "material/information-outline",
+  "enhanced/tags-layouts/": "material/view-grid-outline",
+  "enhanced/tags-quality/": "material/translate",
+  "enhanced/tags-groups/": "material/tag-multiple-outline",
+  "enhanced/tags-status/": "material/bell-outline",
+  "enhanced/tags-server/": "material/server-outline",
+  "seerr/permission-audit/": "material/shield-account-outline",
+  "advanced/css-customization/": "material/palette-outline",
+  "advanced/api/": "material/api",
+  "advanced/community-analytics/": "material/format-list-checks",
+  "advanced/community-analytics-dashboard/": "material/chart-line",
+  "advanced/project-structure/": "material/file-tree-outline",
+  "faq-support/faq/": "material/help-circle-outline",
+  "faq-support/report-issues/": "material/bug-outline",
+  "faq-support/feature-requests/": "material/lightbulb-on-outline",
+  "faq-support/contributing-translations/": "material/translate",
+  "faq-support/support/": "material/forum-outline",
+  "other-projects/other-projects/": "material/puzzle-outline",
+  "about/": "material/information-outline",
 } %}
-{#- Returns the icon name for a nav section or page, or an empty string -#}
+{#- Returns the icon name for a nav section or page, or an empty string.
+    Pages are keyed by URL under the site root (Zensical nav items expose no file object). -#}
 {% macro icon_for(item) -%}
-  {%- if item.is_section -%}
-    {{- areas.get(item.title, "") -}}
-  {%- elif item.file -%}
-    {%- set src = item.file.src_uri -%}
+  {%- if item.children -%}
+    {{- areas[item.title] if item.title in areas else "" -}}
+  {%- elif item.canonical_url -%}
+    {%- set src = item.canonical_url | replace(config.site_url, "") -%}
     {%- if src in pages -%}
       {{- pages[src] -}}
-    {%- elif src.endswith("-features.md") -%}
+    {%- elif src[-10:] == "-features/" -%}
       material/star-four-points-outline
-    {%- elif src.endswith("-settings.md") -%}
+    {%- elif src[-10:] == "-settings/" -%}
       material/tune
     {%- elif "troubleshooting" in src -%}
       material/wrench-outline

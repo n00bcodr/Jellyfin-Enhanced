@@ -7,7 +7,7 @@ Anywhere in this documentation you see a link with the Jellyfin server icon, it 
 Your address is kept only in this browser (local storage). It is never sent anywhere, and this page never contacts your server: it only sends your browser to it. You still sign in to Jellyfin as an administrator.
 
 <form id="je-open-form" style="display:flex;gap:.5em;flex-wrap:wrap;margin:1em 0">
-  <input id="je-open-url" type="url" placeholder="http://192.168.1.10:8096" aria-label="Jellyfin server address" style="flex:1;min-width:16em;padding:.5em">
+  <input id="je-open-url" type="url" placeholder="http://192.168.1.10:8096" aria-label="Jellyfin server address" class="je-open-input">
   <button type="submit" class="md-button md-button--primary">Save</button>
   <button type="button" id="je-open-clear" class="md-button">Remove</button>
 </form>
