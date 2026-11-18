@@ -378,6 +378,11 @@
                     outline-offset: -1px;
                     box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
                 }
+                /* A dimmed flag or chip paints late (its opacity makes it a layer).
+                   The chips beside one stay positioned so they still paint after
+                   it, its dark ring under their edge, as when every chip had a
+                   transform; without one in the group no chip needs a layer. */
+                .${containerClass}:has(.${partialFlagClass}) .language-chip { position: relative; }
                 .layout-mobile .${flagClass} {
                     width: calc(clamp(20px, 5vw, 26px) * var(--je-tag-scale, 1));
                 }

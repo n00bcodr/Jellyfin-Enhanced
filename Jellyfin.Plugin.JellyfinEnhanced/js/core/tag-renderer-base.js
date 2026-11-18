@@ -873,8 +873,9 @@
                     box-shadow: 0 1px 4px rgba(0,0,0,0.4);
                     border: 1px solid rgba(255,255,255,0.15);
                     /* backdrop-filter removed — blur causes jank during hover animations */
+                    /* No transform: an identity one still made every chip a
+                       layer of its own to paint, composite and hit-test. */
                     opacity: 1;
-                    transform: translateY(0);
                     white-space: nowrap;
                     flex-shrink: 0;
                     line-height: 1.2;
