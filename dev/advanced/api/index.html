@@ -3099,7 +3099,7 @@
 <h1 id="jellyfin-enhanceds-api">Jellyfin Enhanced's API<a class="headerlink" href="#jellyfin-enhanceds-api" title="Permanent link">&para;</a></h1>
 <p>Use Jellyfin Enhanced (JE)'s API to manage bookmarks, reviews, and personal settings, retrieve metadata, and work with integrations through HTTP(S) requests. Install and enable the plugin on your server first.</p>
 <p>To use these APIs from a custom Jellyfin client, you need an HTTP client and a Jellyfin credential. You do not need the injected JE scripts.</p>
-<p>This reference covers the 223 method/path entries in plugin version <strong>12.14.0.0</strong>. Use the endpoint tables to check access requirements, inputs, responses, and limits.</p>
+<p>This reference covers the 224 method/path entries in plugin version <strong>12.14.0.0</strong>. Use the endpoint tables to check access requirements, inputs, responses, and limits.</p>
 <p>Paths in endpoint tables are relative to <code>/JellyfinEnhanced/</code>. Braces mark path parameters; replace them before making a request. The catch-all routes serve only the resources described below.</p>
 <details class="note">
 <summary>Which IDs to use</summary>
@@ -5542,6 +5542,12 @@ filter's shape, or not offered on that page.</p>
 <td><code>{adminUsername, adminPassword}</code> → <code>{username}</code>. Reclaimerr only: signs in once as that Reclaimerr administrator (the login is used for this call only and never stored), creates the <code>jellyfin-enhanced</code> admin account with a random password and saves its login in the configuration (used for Mark for removal, Request removal and scheduled deletions). <code>400</code> without a saved Reclaimerr URL or login, <code>502</code> when Reclaimerr refused (for example the account exists).</td>
 </tr>
 <tr>
+<td>POST</td>
+<td><code>reclaimerr/create-users</code></td>
+<td>Administrator</td>
+<td><code>{permissions?, pages?}</code> → <code>{created, existing, skipped, userMap}</code>. Reclaimerr only: through the service account, creates a Reclaimerr account (User role, random password, signed in by name) for every Jellyfin user who has none, with the permissions (<code>request</code>, <code>auto_approve</code>, <code>manage_requests</code>, <code>manage_protection</code>, <code>manage_reclaim</code>) and pages given (at least one; <code>400</code> otherwise), and adds each to the Jellyfin-to-Reclaimerr user map. A user who is mapped, linked or has an account of the same name is left alone (<code>existing</code>); names under 5 characters get <code>_user</code> added and other characters become <code>_</code>; users that could not be created are listed in <code>skipped</code></td>
+</tr>
+<tr>
 <td>GET</td>
 <td><code>reclaimerr/item/{itemId}</code></td>
 <td>Signed in</td>
@@ -7057,7 +7063,7 @@ filter's shape, or not offered on that page.</p>
 <p>The authenticated HTML catch-all recognizes exact names <code>calendarPage</code>, <code>downloadsPage</code>, <code>bookmarksPage</code>, <code>hiddenContentPage</code>, <code>recommendationsPage</code>, <code>activityPage</code>, <code>catchUpPage</code>.</p>
 <p>These are resource URLs, separate from Jellyfin web hash navigation or placement in Plugin Pages/Custom Tabs. Unknown names/missing resources return <code>404</code>; absent plugin instance <code>400</code>. See <a href="../../getting-started/pages-and-tabs/">JE Pages &amp; Tabs</a> for placement options.</p>
 <h2 id="full-endpoint-index">Full Endpoint Index<a class="headerlink" href="#full-endpoint-index" title="Permanent link">&para;</a></h2>
-<p>The endpoint tables above enumerate all 223 controller method/path entries, including the three catch-all templates. Each group documents effective access, inputs, response shape, and limits; shared proxy rows intentionally retain the configured upstream service's JSON contract.</p>
+<p>The endpoint tables above enumerate all 224 controller method/path entries, including the three catch-all templates. Each group documents effective access, inputs, response shape, and limits; shared proxy rows intentionally retain the configured upstream service's JSON contract.</p>
 <p>For implementation details, <a href="https://github.com/n00bcodr/Jellyfin-Enhanced/blob/main/Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs">JellyfinEnhancedController.cs</a> implements all indexed routes except <code>catchup/*</code>, which is in <a href="https://github.com/n00bcodr/Jellyfin-Enhanced/blob/main/Jellyfin.Plugin.JellyfinEnhanced/Controllers/CatchUpController.cs">CatchUpController.cs</a>. These upstream source links may advance beyond this versioned reference.</p>
 <h3 id="awards-tag-settings-and-refresh">Awards tag settings and refresh<a class="headerlink" href="#awards-tag-settings-and-refresh" title="Permanent link">&para;</a></h3>
 <p>Admin <code>AwardsTagsEnabled</code> (false) gates enrichment and seeds the per-user <code>AwardsTagsEnabled</code> default. Both settings and <code>AwardsTagsPosition</code> (<code>top-left</code>) follow new-user and reset-all defaults. <code>TagGroupCaps.Awards</code> defaults to 2, supports 0–10 (0 means all), and <code>awards</code> is a valid group in layout profiles, priority order, shape profiles and locked looks.</p>
