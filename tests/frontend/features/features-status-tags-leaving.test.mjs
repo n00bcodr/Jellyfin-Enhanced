@@ -685,14 +685,13 @@ test('direct play: another profile or bitrate lapses the answers of the released
   assert.equal(io.targets.size, 0);
   navigated();
   assert.equal(io.targets.size, 2, 'both are watched again');
-  // One is drawn again before the observer reported it: on screen, it is asked about, as a watched card drawn again is.
-  h.show(movie(), h.hosts[0], 'm0');
+  // The observer's first report: a card on screen is asked about at once, under the new bitrate. Nothing
+  // else would bring it back while it stays there (a cached page shown again after the quality was changed).
   h.intersect(h.hosts[0]);
-  h.intersect(h.hosts[1]);
-  await h.slice(); await h.slice();
-  assert.deepEqual(h.requests.slice(2).map(r => r.id), ['m0'], 'the other waits until it next comes on screen');
-  assert.equal(h.requests.at(-1).body.MaxStreamingBitrate, 4000000);
   h.intersect(h.hosts[1], false);
+  await h.slice(); await h.slice();
+  assert.deepEqual(h.requests.slice(2).map(r => r.id), ['m0'], 'the one on screen; the other when it comes on screen');
+  assert.equal(h.requests.at(-1).body.MaxStreamingBitrate, 4000000);
   h.intersect(h.hosts[1]);
   await h.slice(); await h.slice();
   assert.deepEqual(h.requests.slice(2).map(r => r.id), ['m0', 'm1']);

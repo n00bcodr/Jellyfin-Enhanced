@@ -1202,11 +1202,16 @@
         watch(card);
     }
 
-    /** Watch every released card again: their answers lapsed together (another profile or bitrate). */
+    /**
+     * Watch every released card again: their answers lapsed together (another
+     * profile or bitrate). A card on screen is asked about at the observer's
+     * first report: nothing else would bring it back while it stays there (a
+     * cached page shown again after the quality was changed).
+     */
     function rewatchSettled() {
         for (const ref of [...settled]) {
             const card = ref.deref();
-            if (card && tracked.has(card)) rewatch(card, true);
+            if (card && tracked.has(card)) rewatch(card, false);
             else settled.delete(ref);
         }
     }
@@ -1610,6 +1615,6 @@
             primed = null;
         },
         /** @returns {Object} Slice and request counters, and how many cards are watched and released. */
-        stats: () => ({ ...counters, queued: queue.size, inFlight: network.size, memory: memory.size, watching: watchedCards().length, settled: settled.size }),
+        stats: () => ({ ...counters, queued: queue.size, inFlight: network.size, memory: memory.size, watching: [...watched].filter((ref) => ref.deref()?.isConnected).length, settled: settled.size }),
     };
 })(window.JellyfinEnhanced);
