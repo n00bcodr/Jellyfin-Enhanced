@@ -599,9 +599,12 @@ test('the status-tag backdrop painter is its own group: no boot and no page chan
   assert.ok(!loaded().includes('tag-status-backdrop'), `the painter is not part of a boot or a page change (${boot.asked.join(' | ')})`);
   assert.ok(!modulesRun(boot.log).includes('tags/status-tag-backdrop.js'));
 
+  // Asked for as tags/statustags.js does: at the boot bundle's pace, when the page is idle and at low priority.
+  assert.match(readFileSync(resolve(jsRoot, 'tags/statustags.js'), 'utf8'), /JE\.loader\.ensure\(\[BACKDROP_GROUP\], \{ pace: 'boot' \}\)/);
   const before = boot.log.length;
-  await boot.plugin.loader.ensure(['tag-status-backdrop']);
+  await boot.plugin.loader.ensure(['tag-status-backdrop'], { pace: 'boot' });
   assert.equal(boot.asked.at(-1), 'tag-status-backdrop', 'one request, for that group alone');
+  assert.equal(boot.requests.at(-1).priority, 'low');
   assert.deepEqual(modulesRun(boot.log.slice(before)), ['tags/status-tag-backdrop.js']);
   const requests = boot.asked.length;
   await boot.plugin.loader.ensure(['tag-status-backdrop']);

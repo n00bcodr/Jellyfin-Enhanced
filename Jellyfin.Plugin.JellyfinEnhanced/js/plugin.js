@@ -1570,14 +1570,16 @@
 
     /**
      * The component-group loader, for features and automation.
-     * `ensure(ids)` loads groups (resolves when they have run and their
-     * features are initialized), `state()` reports each group asked for so far
+     * `ensure(ids, { pace })` loads groups (resolves when they have run and
+     * their features are initialized; `pace` as in ensureGroups, 'now' unless
+     * given: a caller whose work can wait for the page asks with 'boot'),
+     * `state()` reports each group asked for so far
      * ('loading' or 'ready'), `needed()` lists what the current page needs,
      * `settled()` resolves when nothing is loading, and `catalog()` describes
      * the rules above as data (tests check them against the groups file).
      */
     JE.loader = {
-        ensure: (ids) => ensureGroups(Array.isArray(ids) ? ids : [ids]),
+        ensure: (ids, options) => ensureGroups(Array.isArray(ids) ? ids : [ids], options && options.pace ? { pace: options.pace } : {}),
         state: () => Object.assign({}, groupStates),
         needed: () => neededGroups(),
         settled: () => groupQueue.then(() => undefined),

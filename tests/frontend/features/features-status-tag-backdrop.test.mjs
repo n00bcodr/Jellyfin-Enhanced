@@ -115,6 +115,8 @@ function setup(t, { html = card(), scene = () => [200, 120, 40, 255], trending =
   h.blurred = [];
   h.scene = scene;
   h.readError = null;
+  /** A canvas that answers with other pixels than were drawn, without throwing. */
+  h.lying = false;
   let pictures = 0;
   const contexts = new WeakMap();
   w.HTMLCanvasElement.prototype.getContext = function () {
@@ -125,11 +127,16 @@ function setup(t, { html = card(), scene = () => [200, 120, 40, 255], trending =
         translate(...args) { h.ops.push(['translate', ...args.map(Math.round)]); },
         stroke() { h.ops.push(['stroke', this.strokeStyle, this.lineWidth]); },
         fillText(text, x, y) { h.ops.push(['fillText', text, this.font, this.fillStyle, Math.round(x), Math.round(y)]); },
-        fillRect(...args) { h.ops.push(['fillRect', this.fillStyle, ...args]); },
+        fillRect(...args) {
+          // The 2×2 canvas is the painter's probe (isSupported): it reads back the colour it drew.
+          if (canvas.width === 2 && canvas.height === 2) { this.probe = /\d+/g[Symbol.match](this.fillStyle).map(Number); return; }
+          h.ops.push(['fillRect', this.fillStyle, ...args]);
+        },
         fill() { h.ops.push(['fill', this.globalCompositeOperation, ...(this.globalCompositeOperation === 'destination-in' ? [] : [this.fillStyle])]); },
         drawImage(source, ...args) { h.ops.push(['drawImage', source.url || 'canvas', ...args]); },
         createLinearGradient(...args) { const stops = []; return { gradient: args, stops, addColorStop: (at, colour) => stops.push([at, colour]) }; },
         getImageData(x, y, width, height) {
+          if (this.probe && !h.lying) return { data: Uint8ClampedArray.from([...this.probe, 255]), width, height };
           if (h.readError) throw h.readError;
           const data = new Uint8ClampedArray(width * height * 4);
           for (let i = 0; i < width * height; i++) data.set(h.scene(i % width, Math.floor(i / width)), i * 4);
@@ -664,13 +671,132 @@ test('drawing a badge tracks its card; a browser without a readable canvas keeps
   await blind.flush();
   assert.deepEqual(blind.layers(blind.slot), {});
   assert.equal(blind.decoded.length, 0, 'nothing is decoded for a picture that cannot be drawn');
+  assert.equal(blind.backdrop.stats().watching, 0, 'and nothing stays watched in a browser that cannot do the pixel work');
   blind.backdrop.track(blind.host);
-  assert.equal(blind.backdrop.stats().watching, 1, 'the card is not tracked again');
+  assert.equal(blind.backdrop.stats().watching, 0, 'nor is a card tracked again');
 });
 
-/** Four cards with an empty tag host each, and the trending answer that gives each a badge. */
-const BARE = ['a', 'b', 'c', 'd'].map(id => `<div class="card" data-id="${id}"><div class="cardScalable"><div class="cardImageContainer"></div><div class="je-tag-host"></div></div></div>`).join('');
-const TRENDING = () => [{ source: 'tmdb-day', movies: { 1: 3, 2: 5, 3: 7, 4: 9 }, series: {} }];
+test('pictures of an older layout are not put back when the artwork goes and returns', async t => {
+  const h = setup(t);
+  layout(h);
+  h.backdrop.track(h.host);
+  await h.flush();
+  assert.equal(h.layers(h.slot)['background-size'], '78px 22px');
+  // The tag grows while the artwork is dimmed: the layout is read, and there is nothing to draw.
+  h.style(h.art, { opacity: '0.4' });
+  layout(h, { tagLeft: 148.9, tagWidth: 145.5 });
+  h.tag.textContent = 'Returns Oct 4';
+  await h.flush();
+  assert.deepEqual(h.layers(h.slot), {});
+  h.style(h.art, { opacity: '1' });
+  // The lazy loader parks the artwork and puts it back: the card has not moved since it was last read,
+  // but the pictures it kept are those of the narrow tag.
+  h.art.style.backgroundImage = 'none';
+  await h.flush();
+  h.art.style.backgroundImage = `url('${ART}')`;
+  await h.flush();
+  assert.equal(h.layers(h.slot)['background-size'], '145px 22px', 'drawn for the tag as it is now');
+  assert.equal(h.backdrop.stats().reused, 0);
+});
+
+test('a card measured while a transform scales it keeps what it has and is read when that is over', async t => {
+  const h = setup(t);
+  layout(h);
+  // Laid out 200 × 300; a focused card on a TV is drawn 18% larger.
+  Object.defineProperty(h.art, 'offsetWidth', { configurable: true, get: () => 200 });
+  Object.defineProperty(h.art, 'offsetHeight', { configurable: true, get: () => 300 });
+  h.backdrop.track(h.host);
+  await h.flush();
+  const first = h.layers(h.slot);
+  assert.equal(first['background-size'], '78px 22px');
+  const scaled = () => {
+    h.rect(h.root, 82.4, 23.3, 318.4, 377.3);
+    h.rect(h.art, 82.4, 23.3, 318.4, 377.3);
+    h.rect(h.host, 82.4, 23.3, 318.4, 377.3);
+    h.rect(h.slot, 89.5, 30.4, 311.3, 370.2);
+    h.rect(h.group, 219.7, 30.4, 311.3, 56.1);
+    h.rect(h.tag, 219.7, 30.4, 311.3, 56.1);
+  };
+  scaled();
+  h.tag.setAttribute('title', 'Transcode: container mkv'); // anything that has the card measured
+  await h.flush();
+  assert.deepEqual(h.layers(h.slot), first, 'the scaled measurement is not written');
+  assert.equal(h.backdrop.stats().drawn, 1);
+  // Focus moves on: the card is as it was, and nothing it watches says so.
+  layout(h);
+  h.host.closest('.card').dispatchEvent(new h.window.Event('focusout', { bubbles: true }));
+  await h.flush();
+  assert.deepEqual(h.layers(h.slot), first);
+  // A card first drawn while scaled gets its picture once the scale is gone.
+  const late = setup(t);
+  layout(late);
+  Object.defineProperty(late.art, 'offsetWidth', { configurable: true, get: () => 200 });
+  Object.defineProperty(late.art, 'offsetHeight', { configurable: true, get: () => 300 });
+  late.rect(late.art, 82.4, 23.3, 318.4, 377.3);
+  late.backdrop.track(late.host);
+  await late.flush();
+  assert.deepEqual(late.layers(late.slot), {});
+  layout(late);
+  late.host.closest('.card').dispatchEvent(new late.window.Event('transitionend', { bubbles: true }));
+  await late.flush();
+  assert.equal(late.layers(late.slot)['background-size'], '78px 22px');
+});
+
+test('a tag that is itself translucent keeps the plain pill, and gets its picture back when it is opaque again', async t => {
+  for (const which of ['tag', 'group']) {
+    const h = setup(t);
+    layout(h);
+    h.style(h[which], { opacity: '0' });
+    h.backdrop.track(h.host);
+    await h.flush();
+    assert.deepEqual(h.layers(h.slot), {}, `${which}: a picture would stay at full strength with no chip over it`);
+    assert.equal(h.decoded.length, 0);
+    h.style(h[which], { opacity: '1' });
+    h.host.closest('.card').dispatchEvent(new h.window.Event('pointerleave'));
+    await h.flush();
+    assert.equal(h.layers(h.slot)['background-size'], '78px 22px', which);
+  }
+});
+
+test('a canvas that answers with other pixels than were drawn is not used', async t => {
+  const h = setup(t);
+  layout(h);
+  h.lying = true;
+  h.backdrop.track(h.host);
+  await h.flush();
+  assert.deepEqual(h.layers(h.slot), {});
+  assert.equal(h.decoded.length, 0, 'nothing is decoded for pictures that would be noise');
+});
+
+test('a content security policy that refuses data: images turns the pictures off', async t => {
+  const h = setup(t);
+  layout(h);
+  h.backdrop.track(h.host);
+  await h.flush();
+  assert.equal(h.layers(h.slot)['background-size'], '78px 22px');
+  const violation = (blockedURI, effectiveDirective) => h.document.dispatchEvent(Object.assign(new h.window.Event('securitypolicyviolation'), { blockedURI, effectiveDirective }));
+  violation('https://example.test/x.png', 'img-src');
+  violation('data', 'font-src');
+  assert.equal(h.backdrop.isActive(), true, 'another refusal is not ours');
+  violation('data', 'img-src');
+  assert.equal(h.backdrop.isActive(), false);
+  assert.deepEqual(h.layers(h.slot), {});
+  assert.equal(h.backdrop.stats().watching, 0);
+});
+
+test('a user switch takes the outgoing user\'s pictures away at once', async t => {
+  const h = setup(t);
+  layout(h);
+  h.backdrop.track(h.host);
+  await h.flush();
+  assert.equal(h.layers(h.slot)['background-size'], '78px 22px');
+  h.userChanged();
+  assert.deepEqual(h.layers(h.slot), {}, 'before any card is measured again');
+});
+
+/** Six cards with an empty tag host each, and the trending answer that gives each a badge. */
+const BARE = ['a', 'b', 'c', 'd', 'e', 'f'].map(id => `<div class="card" data-id="${id}"><div class="cardScalable"><div class="cardImageContainer"></div><div class="je-tag-host"></div></div></div>`).join('');
+const TRENDING = () => [{ source: 'tmdb-day', movies: { 1: 3, 2: 5, 3: 7, 4: 9, 5: 11, 6: 13 }, series: {} }];
 const OLD = Date.now() - 400 * 24 * 60 * 60 * 1000;
 /** Draw the trending badge of movie `n` on the nth tag host, as the pipeline would. */
 function badge(h, n) {
@@ -682,7 +808,8 @@ function badge(h, n) {
 test('the painter is fetched when the first status tag is drawn, once; tags never wait for it and it takes them up when it arrives', async t => {
   const asked = [];
   let arrived;
-  const loader = { ensure(ids) { asked.push(ids); return new Promise(resolve => { arrived = resolve; }); } };
+  const paces = [];
+  const loader = { ensure(ids, options) { asked.push(ids); paces.push(options?.pace); return new Promise(resolve => { arrived = resolve; }); } };
   const h = setup(t, { html: BARE, trending: TRENDING(), painter: false, loader });
   h.JE.initializeStatusTags();
   await new Promise(resolve => setImmediate(resolve));
@@ -692,6 +819,7 @@ test('the painter is fetched when the first status tag is drawn, once; tags neve
   const first = badge(h, 1);
   assert.ok(first.querySelector('.status-tag'), 'the tag is drawn at once, with the plain pill');
   assert.deepEqual(asked.map(ids => [...ids]), [['tag-status-backdrop']]);
+  assert.deepEqual(paces, ['boot'], 'fetched like the boot bundle: when the page is idle, at low priority');
   const second = badge(h, 2);
   assert.ok(second.querySelector('.status-tag'));
   assert.equal(asked.length, 1, 'one request, however many tags are drawn meanwhile');
@@ -706,19 +834,51 @@ test('the painter is fetched when the first status tag is drawn, once; tags neve
   assert.equal(asked.length, 1);
 });
 
-test('a request that brought no painter is made again by the next tag; without a loader the pill stays plain', async t => {
+test('a request that brought no painter waits before it is made again, twice as long each time; without a loader the pill stays plain', async t => {
   const asked = [];
-  const answers = [() => Promise.resolve(), () => Promise.reject(new Error('offline')), () => { throw new Error('no such group'); }, () => Promise.resolve()];
+  let h;
+  const answers = [() => Promise.resolve(), () => Promise.reject(new Error('offline')), () => { throw new Error('no such group'); }, () => { h.arrive(); return Promise.resolve(); }];
   const loader = { ensure(ids) { asked.push(ids); return answers[asked.length - 1](); } };
-  const h = setup(t, { html: BARE, trending: TRENDING(), painter: false, loader });
+  h = setup(t, { html: BARE, trending: TRENDING(), painter: false, loader });
+  let now = 1_000_000;
+  h.window.Date.now = () => now;
+  const tick = () => new Promise(resolve => setImmediate(resolve));
   h.JE.initializeStatusTags();
-  await new Promise(resolve => setImmediate(resolve));
-  for (let n = 1; n <= 4; n++) {
-    assert.ok(badge(h, n).querySelector('.status-tag'), 'the tag is drawn whatever the loader answers');
-    assert.equal(asked.length, n);
-    await new Promise(resolve => setImmediate(resolve));
-  }
+  await tick();
+  // The pauses' own timers, apart from the status module's other ones.
+  const pauses = [];
+  h.window.setTimeout = (fn, ms) => { if ([5000, 10000, 20000].includes(ms)) pauses.push({ fn, ms }); return 0; };
+  const firePauses = () => { for (const pause of pauses.splice(0)) pause.fn(); };
+  assert.ok(badge(h, 1).querySelector('.status-tag'), 'the tag is drawn whatever the loader answers');
+  assert.equal(asked.length, 1);
+  await tick();
+  // Nothing came. The next tags do not ask again at once: every tag of a page would, each a request that fails.
+  badge(h, 2);
+  now += 4999;
+  badge(h, 3);
+  assert.equal(asked.length, 1, 'not within five seconds');
+  now += 1;
+  badge(h, 4);
+  assert.equal(asked.length, 2, 'the first tag drawn after the pause asks');
+  await tick();
+  assert.deepEqual(pauses.map(pause => pause.ms), [5000, 10000]);
+  now += 9999;
+  badge(h, 5);
+  firePauses();
+  assert.equal(asked.length, 2, 'the pause doubles: neither a tag nor a timer asks before it is over');
+  now += 1;
+  badge(h, 6);
+  assert.equal(asked.length, 3);
+  await tick();
   assert.equal(h.JE.statusTagBackdrop, undefined);
+  // A page that has settled draws no further tag: the timer of the last pause asks while a status tag is still there.
+  assert.deepEqual(pauses.map(pause => pause.ms), [20000]);
+  now += 20000;
+  firePauses();
+  assert.equal(asked.length, 4);
+  await tick();
+  assert.equal(h.backdrop.stats().watching, 6, 'and the painter that came takes up every tag');
+  assert.deepEqual(pauses, [], 'nothing is asked, and no pause armed, once it is there');
 
   // The old loader (everything in one bundle) or none: nothing to ask, nothing thrown.
   const bare = setup(t, { html: BARE, trending: TRENDING(), painter: false });

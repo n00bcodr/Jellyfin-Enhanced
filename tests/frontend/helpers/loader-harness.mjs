@@ -122,7 +122,7 @@ export function bootLoader(t, {
       const g = address.searchParams.get('g');
       const ids = g === null ? null : g.split(',');
       const index = requests.length;
-      requests.push({ ids, url: node.src, currentSettings: JE().currentSettings, loadSettings: JE().loadSettings });
+      requests.push({ ids, url: node.src, priority: node.getAttribute('fetchpriority') || '', currentSettings: JE().currentSettings, loadSettings: JE().loadSettings });
       const plan = bundle?.(ids, index) || {};
       Promise.resolve(plan.hold).then(() => {
         arrivals.push(ids ? ids.join(',') : 'whole');

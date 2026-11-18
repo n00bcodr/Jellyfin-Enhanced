@@ -97,6 +97,12 @@
         const RESIZE_SETTLE_MS = 200;
         /** Layout units in a pixel: geometry is compared and written in these. */
         const UNITS = 64;
+        /** Artwork addresses remembered as unreadable. */
+        const UNREADABLE_CAP = 500;
+        /** What ends a passing state of a card (measureAgainLater). */
+        const AGAIN_EVENTS = ['transitionend', 'transitioncancel', 'animationend', 'pointerleave', 'focusout'];
+        /** The colour the canvas probe draws and must read back (isSupported). */
+        const PROBE_RGB = [18, 52, 86];
 
         // ── The blur (pure) ────────────────────────────────────────────
 
@@ -372,11 +378,14 @@
          * for ('' when it shows none), `carriers` the elements that hold
          * them, `kept` the last pictures drawn and what they were drawn for,
          * `moved` whether its chips or its size changed since it was last read,
-         * `on` the elements its last measured pictures belong on and `latest`
-         * the job that measurement made (an older one in flight is dropped).
+         * `on` the elements its last measured pictures belong on, `latest`
+         * the job that measurement made (an older one in flight is dropped),
+         * `fullSig` what the last read of its layout found ('' for nothing to
+         * draw) and `again` the way to stop waiting for a passing state to end
+         * (measureAgainLater).
          * @typedef {{host: HTMLElement, chips: MutationObserver|null, art: MutationObserver|null, container: Element|null, img: HTMLImageElement|null,
          *   onLoad: () => void, sig: string, carriers: Set<HTMLElement>, kept: {job: Job, drawn: (string[]|null)[]}|null, moved: boolean,
-         *   on: HTMLElement[], latest: Job|null}} Card
+         *   on: HTMLElement[], latest: Job|null, fullSig: string, again: (() => void)|null}} Card
          */
         /** A background painted between the artwork and a tag (pixels in the image box; `host`: the host's own, under every chip). @typedef {{x: number, y: number, width: number, height: number, colour: string|null, gradients: Object[], host: boolean}} Under */
         /**
@@ -411,8 +420,10 @@
         const decoding = new Map();
         /** @type {Map<string, {drawable: CanvasImageSource, bitmap: boolean, width: number, height: number}>} decoded artwork, most recent last */
         const artwork = new Map();
-        /** @type {Set<string>} artwork that cannot be read (a tainted canvas, a broken image) */
+        /** @type {Set<string>} artwork that cannot be read (a tainted canvas, a broken image); the oldest are forgotten past UNREADABLE_CAP */
         const unreadable = new Set();
+        /** @type {Set<string>} origins whose artwork taints the canvas: nothing from them is decoded again */
+        const tainting = new Set();
         const counters = { passes: 0, maxPassMs: 0, measures: 0, measureMs: 0, maxMeasureMs: 0, layoutMs: 0, cards: 0, reused: 0, slices: 0, sliceMs: 0, maxSliceMs: 0, decodes: 0, drawn: 0, plain: 0, pixelMs: 0, maxPixelMs: 0, failed: 0 };
         let active = true;
         let measureScheduled = false;
@@ -428,15 +439,23 @@
         /** @type {boolean|null} whether this browser can do the pixel work (decided when the first picture is due) */
         let supported = null;
 
-        /** @returns {boolean} A canvas whose pixels can be read back and exported. */
+        /** @returns {boolean} A canvas whose pixels can be read back, as they were drawn, and exported. */
         function isSupported() {
             if (supported !== null) return supported;
             try {
                 const probe = document.createElement('canvas');
-                probe.width = probe.height = 1;
+                probe.width = probe.height = 2;
                 const ctx = probe.getContext('2d', { willReadFrequently: true });
-                supported = !!ctx && typeof ctx.getImageData === 'function' && typeof probe.toDataURL === 'function'
-                    && probe.toDataURL('image/png').startsWith('data:image/png');
+                supported = false;
+                if (ctx && typeof ctx.getImageData === 'function' && typeof probe.toDataURL === 'function') {
+                    // A canvas that answers with other pixels than were drawn (a browser resisting
+                    // fingerprinting does, without throwing) would put noise behind every tag.
+                    ctx.fillStyle = `rgb(${PROBE_RGB.join(', ')})`;
+                    ctx.fillRect(0, 0, 2, 2);
+                    const read = ctx.getImageData(0, 0, 1, 1).data;
+                    supported = PROBE_RGB.every((value, i) => Math.abs(read[i] - value) <= 1) && read[3] === 255
+                        && probe.toDataURL('image/png').startsWith('data:image/png');
+                }
             } catch {
                 supported = false;
             }
@@ -531,6 +550,44 @@
         const HOST_MARKS = new Set(['data-je-flow', 'data-je-live', 'data-je-fade']);
 
         /** @param {ResizeObserverEntry[]} entries A watched card changed size. */
+        /** @param {string} url @returns {string} Its origin ('' when it cannot be told). */
+        function originOf(url) {
+            try { return new URL(url, document.baseURI).origin; } catch { return ''; }
+        }
+
+        /** @param {string} url Remember artwork as unreadable, forgetting the oldest past the cap. */
+        function markUnreadable(url) {
+            unreadable.add(url);
+            if (unreadable.size > UNREADABLE_CAP) unreadable.delete(unreadable.values().next().value);
+        }
+
+        /**
+         * Read a card again once a passing state is over: a hover or focus
+         * that scales the card, dims its artwork or fades its tag ends
+         * without changing anything this part watches. The card's own
+         * transitions ending, the pointer leaving it and focus leaving it
+         * are the ends looked for; a card still in the state then waits on.
+         * @param {Card} card
+         */
+        function measureAgainLater(card) {
+            if (card.again) return;
+            const target = card.host.closest('.card, .listItem') || card.host.parentElement;
+            if (!target || typeof target.addEventListener !== 'function') return;
+            const stop = () => {
+                if (card.again !== stop) return;
+                card.again = null;
+                for (const type of AGAIN_EVENTS) target.removeEventListener(type, again);
+            };
+            const again = () => {
+                if (card.again !== stop) return;
+                stop();
+                card.moved = true;
+                markDirty(card);
+            };
+            card.again = stop;
+            for (const type of AGAIN_EVENTS) target.addEventListener(type, again, { passive: true });
+        }
+
         function onResize(entries) {
             for (const entry of entries) {
                 const card = cards.get(/** @type {HTMLElement} */ (entry.target));
@@ -549,7 +606,7 @@
             if (!active || !host || supported === false || typeof MutationObserver !== 'function') return;
             let card = cards.get(host);
             if (!card) {
-                const created = /** @type {Card} */ ({ host, chips: null, art: null, container: null, img: null, onLoad: () => markDirty(created), sig: '', carriers: new Set(), kept: null, moved: true, on: [], latest: null });
+                const created = /** @type {Card} */ ({ host, chips: null, art: null, container: null, img: null, onLoad: () => markDirty(created), sig: '', carriers: new Set(), kept: null, moved: true, on: [], latest: null, fullSig: '', again: null });
                 card = created;
                 cards.set(host, card);
                 // Chips arriving, leaving, moving or being fitted all change the host's subtree. Reading the
@@ -581,6 +638,7 @@
             card.art?.disconnect();
             card.img?.removeEventListener('load', card.onLoad);
             sizes?.unobserve(host);
+            card.again?.();
             for (const carrier of card.carriers) clear(carrier);
             card.carriers.clear();
             card.sig = '';
@@ -750,146 +808,171 @@
             if (!tags.length) return none;
             const art = artworkOf(host);
             watchArtwork(card, art ? ('wait' in art ? art.wait : art.container) : null, art && 'wait' in art ? art.img : null);
-            if (!art || 'wait' in art || unreadable.has(art.url)) return none;
+            if (!art || 'wait' in art || unreadable.has(art.url) || (tainting.size && tainting.has(originOf(art.url)))) return none;
             // Only the artwork went and came back (Jellyfin unloads the images of cards scrolled out of a
             // row): nothing moved, so the pictures drawn for it are shown again without reading the layout.
+            // They are the pictures of the layout last read: a card read since they were drawn (its tag
+            // changed and the new picture is still to draw, or there was nothing to draw) is read again.
             const kept = card.kept;
-            if (!card.moved && kept && kept.job.url === art.url && kept.job.scale === scale && kept.job.specs.every((spec) => spec.pieces.every((p) => p.carrier.isConnected))) {
+            if (!card.moved && kept && kept.job.sig === card.fullSig && kept.job.url === art.url && kept.job.scale === scale
+                && kept.job.specs.every((spec) => spec.pieces.every((p) => p.carrier.isConnected))) {
                 return { card, sig: kept.job.sig, job: kept.job };
             }
-            // The first geometry read of a pass pays for any layout the page still owes (other modules'
-            // writes since the last frame); timed apart, so the counters tell it from this part's own reads.
-            const probe = pass.probed ? 0 : performance.now();
-            const boxRect = art.box.getBoundingClientRect();
-            if (!pass.probed) {
-                pass.probed = true;
-                counters.layoutMs += performance.now() - probe;
-            }
-            card.moved = false;
-            if (!(boxRect.width > 0 && boxRect.height > 0)) return none;
-            const boxStyle = getComputedStyle(art.box);
-            // Never sharper than the page shows it: artwork a style filters, hides or fades keeps the plain pill.
-            const shown = (style, el) => style.filter === 'none' && style.visibility !== 'hidden'
-                && (Number(style.opacity) >= 1 || (typeof el.getAnimations === 'function' && el.getAnimations().length > 0));
-            if (!shown(boxStyle, art.box)) return none;
-            const containerStyle = art.container === art.box ? boxStyle : getComputedStyle(art.container);
-            if (art.container !== art.box && !shown(containerStyle, art.container)) return none;
-            /** @type {{size: string, position: string}} */
-            let fit;
-            if (art.img) fit = { size: boxStyle.objectFit, position: boxStyle.objectPosition };
-            else {
-                if (splitLayers(boxStyle.backgroundImage).length !== 1 || boxStyle.backgroundAttachment !== 'scroll'
-                    || !['padding-box', 'border-box'].includes(boxStyle.backgroundOrigin)
-                    || (boxStyle.backgroundRepeat !== 'no-repeat' && boxStyle.backgroundSize !== 'cover')) return none;
-                fit = { size: boxStyle.backgroundSize, position: boxStyle.backgroundPosition };
-            }
-            const baseColour = [boxStyle.backgroundColor, containerStyle.backgroundColor].find((c) => (parseColour(c) || [0, 0, 0, 0])[3] >= 1) || null;
-            // Pixels in the coordinates the card is painted (and snapped) in.
-            const origin = paintOrigin(host, pass.origins);
-            const X = (v) => (v - origin.x) * scale, Y = (v) => (v - origin.y) * scale;
-            const boxLeft = snap(X(boxRect.left)), boxTop = snap(Y(boxRect.top));
-            const boxWidth = snap(X(boxRect.right)) - boxLeft, boxHeight = snap(Y(boxRect.bottom)) - boxTop;
-            if (!(boxWidth > 0 && boxHeight > 0)) return none;
-            const frac = (v) => units(v - Math.floor(v));
+            /** The layout read. @returns {{card: Card, sig: string, job: Job|null, hold?: boolean}} */
+            const full = () => {
+                // The first geometry read of a pass pays for any layout the page still owes (other modules'
+                // writes since the last frame); timed apart, so the counters tell it from this part's own reads.
+                const probe = pass.probed ? 0 : performance.now();
+                const boxRect = art.box.getBoundingClientRect();
+                if (!pass.probed) {
+                    pass.probed = true;
+                    counters.layoutMs += performance.now() - probe;
+                }
+                if (!(boxRect.width > 0 && boxRect.height > 0)) { card.moved = false; return none; }
+                // A card scaled by a transform (a focused card on a TV, a theme's hover) measures larger
+                // than it is laid out, and its pictures are written in layout pixels: it keeps what it
+                // has and is read when the state is over.
+                const laidOut = [art.box.offsetWidth, art.box.offsetHeight];
+                if (laidOut[0] > 0 && laidOut[1] > 0 && (Math.abs(boxRect.width - laidOut[0]) > Math.max(1, laidOut[0] * 0.01)
+                    || Math.abs(boxRect.height - laidOut[1]) > Math.max(1, laidOut[1] * 0.01))) {
+                    measureAgainLater(card);
+                    return { card, sig: '', job: null, hold: true };
+                }
+                card.moved = false;
+                const boxStyle = getComputedStyle(art.box);
+                // Never sharper than the page shows it: artwork a style filters, hides or fades keeps the plain pill
+                // (while a hover dims it, say: the card is read again when that is over).
+                const shown = (style, el) => style.filter === 'none' && style.visibility !== 'hidden'
+                    && (Number(style.opacity) >= 1 || (typeof el.getAnimations === 'function' && el.getAnimations().length > 0));
+                if (!shown(boxStyle, art.box)) { measureAgainLater(card); return none; }
+                const containerStyle = art.container === art.box ? boxStyle : getComputedStyle(art.container);
+                if (art.container !== art.box && !shown(containerStyle, art.container)) { measureAgainLater(card); return none; }
+                /** @type {{size: string, position: string}} */
+                let fit;
+                if (art.img) fit = { size: boxStyle.objectFit, position: boxStyle.objectPosition };
+                else {
+                    if (splitLayers(boxStyle.backgroundImage).length !== 1 || boxStyle.backgroundAttachment !== 'scroll'
+                        || !['padding-box', 'border-box'].includes(boxStyle.backgroundOrigin)
+                        || (boxStyle.backgroundRepeat !== 'no-repeat' && boxStyle.backgroundSize !== 'cover')) return none;
+                    fit = { size: boxStyle.backgroundSize, position: boxStyle.backgroundPosition };
+                }
+                const baseColour = [boxStyle.backgroundColor, containerStyle.backgroundColor].find((c) => (parseColour(c) || [0, 0, 0, 0])[3] >= 1) || null;
+                // Pixels in the coordinates the card is painted (and snapped) in.
+                const origin = paintOrigin(host, pass.origins);
+                const X = (v) => (v - origin.x) * scale, Y = (v) => (v - origin.y) * scale;
+                const boxLeft = snap(X(boxRect.left)), boxTop = snap(Y(boxRect.top));
+                const boxWidth = snap(X(boxRect.right)) - boxLeft, boxHeight = snap(Y(boxRect.bottom)) - boxTop;
+                if (!(boxWidth > 0 && boxHeight > 0)) return none;
+                const frac = (v) => units(v - Math.floor(v));
 
-            /**
-             * An element's facts, read once a pass: its box, its painted box, its unsnapped padding box and how many pictures it holds.
-             * @type {Map<Element, {style: CSSStyleDeclaration, rect: DOMRect, painted: number[], padding: number[], own: number}>}
-             */
-            const seen = new Map();
-            const facts = (el) => {
-                let f = seen.get(el);
-                if (!f) {
-                    const rect = el.getBoundingClientRect();
-                    const style = getComputedStyle(el);
-                    const border = (side) => (parseFloat(style[side]) || 0) * scale;
-                    f = {
-                        style,
-                        rect,
-                        painted: [snap(X(rect.left)), snap(Y(rect.top)), snap(X(rect.right)), snap(Y(rect.bottom))],
-                        padding: [X(rect.left) + border('borderLeftWidth'), Y(rect.top) + border('borderTopWidth'), X(rect.right) - border('borderRightWidth'), Y(rect.bottom) - border('borderBottomWidth')],
-                        own: applied.get(/** @type {HTMLElement} */ (el)) || 0,
-                    };
-                    seen.set(el, f);
-                }
-                return f;
-            };
-            /** @type {Spec[]} */
-            const specs = [];
-            /** @type {Map<HTMLElement, Base>} */
-            const bases = new Map();
-            const parts = [];
-            for (const tag of tags) {
-                const rect = tag.getBoundingClientRect();
-                if (!(rect.width > 0 && rect.height > 0)) continue;
-                const style = getComputedStyle(tag);
-                const colour = parseColour(style.backgroundColor);
-                // An opaque tag hides its backdrop; a hidden one shows nothing.
-                if (style.visibility === 'hidden' || (colour && colour[3] >= 1 && style.backgroundImage === 'none')) continue;
-                const group = /** @type {HTMLElement|null} */ (tag.closest('[data-je-group]'));
-                const slot = /** @type {HTMLElement|null} */ (tag.closest('.je-tag-slot'));
-                if (!group || !slot || !host.contains(slot)) continue;
-                // The backdrop filter's own pixels: the tag's snapped corner, and its size rounded as a whole.
-                // A group or slot that starts a pixel grid of its own snaps the tag from its own snapped corner.
-                let gridX = origin.x, gridY = origin.y, left = 0, top = 0;
-                for (const el of [slot, group]) {
-                    const f = facts(el);
-                    if (!startsPixelGrid(f.style, false)) continue;
-                    left += snap((f.rect.left - gridX) * scale);
-                    top += snap((f.rect.top - gridY) * scale);
-                    gridX = f.rect.left;
-                    gridY = f.rect.top;
-                }
-                left += snap((rect.left - gridX) * scale);
-                top += snap((rect.top - gridY) * scale);
-                const width = snap(units(rect.width * scale)), height = snap(units(rect.height * scale));
-                if (!(width > 0 && height > 0)) continue;
-                // A tag reaching outside the artwork's box has something else behind it.
-                if (left < boxLeft || top < boxTop || left + width > boxLeft + boxWidth || top + height > boxTop + boxHeight) continue;
-                // What the host, the slot and the group (when it has a box) paint between the artwork and the tag.
-                const unders = [];
-                let drawable = true;
-                let underText = '';
-                for (const el of [host, slot, group]) {
-                    const f = facts(el);
-                    if (!(f.painted[2] > f.painted[0] && f.painted[3] > f.painted[1])) continue;
-                    const bg = backgroundOf(f.style, f.painted.map((v, i) => v - (i % 2 ? boxTop : boxLeft)), f.own);
-                    if (!bg) { drawable = false; break; }
-                    if (!bg.text) continue;
-                    unders.push({ x: f.painted[0] - boxLeft, y: f.painted[1] - boxTop, width: f.painted[2] - f.painted[0], height: f.painted[3] - f.painted[1], colour: bg.colour, gradients: bg.gradients, host: el === host });
-                    underText += `${bg.text};`;
-                }
-                if (!drawable) continue;
-                // The slot shows the picture's pixels that lie inside its own box.
-                /** @type {Piece[]} */
-                const pieces = [];
-                const piece = (carrier, x0, y0, x1, y1) => {
-                    if (!(x1 > x0 && y1 > y0)) return;
-                    const f = facts(carrier);
-                    const h = placeLayer(x0, x1, f.padding[0], f.padding[2]), v = placeLayer(y0, y1, f.padding[1], f.padding[3]);
-                    if (!h || !v || x0 < f.painted[0] || y0 < f.painted[1] || x1 > f.painted[2] || y1 > f.painted[3]) return;
-                    pieces.push({ carrier, sx: x0 - left, sy: y0 - top, width: x1 - x0, height: y1 - y0, left: units(h.offset / scale), top: units(v.offset / scale), cssWidth: units(h.size / scale), cssHeight: units(v.size / scale) });
-                    if (!bases.has(carrier)) {
-                        const base = baseOf(f.style, f.own);
-                        if (base) bases.set(carrier, base);
+                /**
+                 * An element's facts, read once a pass: its box, its painted box, its unsnapped padding box and how many pictures it holds.
+                 * @type {Map<Element, {style: CSSStyleDeclaration, rect: DOMRect, painted: number[], padding: number[], own: number}>}
+                 */
+                const seen = new Map();
+                const facts = (el) => {
+                    let f = seen.get(el);
+                    if (!f) {
+                        const rect = el.getBoundingClientRect();
+                        const style = getComputedStyle(el);
+                        const border = (side) => (parseFloat(style[side]) || 0) * scale;
+                        f = {
+                            style,
+                            rect,
+                            painted: [snap(X(rect.left)), snap(Y(rect.top)), snap(X(rect.right)), snap(Y(rect.bottom))],
+                            padding: [X(rect.left) + border('borderLeftWidth'), Y(rect.top) + border('borderTopWidth'), X(rect.right) - border('borderRightWidth'), Y(rect.bottom) - border('borderBottomWidth')],
+                            own: applied.get(/** @type {HTMLElement} */ (el)) || 0,
+                        };
+                        seen.set(el, f);
                     }
+                    return f;
                 };
-                const inSlot = facts(slot).painted;
-                const cutRight = Math.max(left, Math.min(left + width, inSlot[2])), cutBottom = Math.max(top, Math.min(top + height, inSlot[3]));
-                piece(slot, Math.max(left, inSlot[0]), Math.max(top, inSlot[1]), cutRight, cutBottom);
-                if (!pieces.length) continue;
-                const radii = [style.borderTopLeftRadius, style.borderTopRightRadius, style.borderBottomRightRadius, style.borderBottomLeftRadius]
-                    .map((r) => (/%/.test(r) ? 0 : (parseFloat(r) || 0) * scale));
-                const beneath = beneathOf(host, slot, Number(facts(slot).style.opacity), [left, top, left + width, top + height], X, Y, scale)
-                    .map((b) => ({ ...b, x: b.x - boxLeft, y: b.y - boxTop }));
-                specs.push({ x: left - boxLeft, y: top - boxTop, width, height, radii, unders, beneath, pieces });
-                parts.push([left - boxLeft, top - boxTop, width, height, radii.map(units).join('/'), underText,
-                    beneath.map((b) => [units(b.x), units(b.y), units(b.width), units(b.height), b.colour || '', b.radius || 0, b.border ? `${b.border.width}${b.border.colour}` : '', b.text || '', b.font || '', b.image ? b.image.currentSrc || b.image.src : ''].join('~')).join(';'),
-                    pieces.map((p) => `${p.sx},${p.sy},${p.width},${p.height},${p.left},${p.top},${p.cssWidth},${p.cssHeight}`).join(';')].join(','));
-            }
-            if (!specs.length) return none;
-            const sig = [scale, art.url, art.img ? 'img' : 'bg', fit.size, fit.position, baseColour || '', frac(X(boxRect.left)), frac(Y(boxRect.top)), boxWidth, boxHeight, ...parts].join('|');
-            return { card, sig, job: { card, sig, key: art.url, url: art.url, img: art.img, scale, boxWidth, boxHeight, fit, base: baseColour, specs, bases } };
+                /** @type {Spec[]} */
+                const specs = [];
+                /** @type {Map<HTMLElement, Base>} */
+                const bases = new Map();
+                const parts = [];
+                for (const tag of tags) {
+                    const rect = tag.getBoundingClientRect();
+                    if (!(rect.width > 0 && rect.height > 0)) continue;
+                    const style = getComputedStyle(tag);
+                    const colour = parseColour(style.backgroundColor);
+                    // An opaque tag hides its backdrop; a hidden one shows nothing.
+                    if (style.visibility === 'hidden' || (colour && colour[3] >= 1 && style.backgroundImage === 'none')) continue;
+                    const group = /** @type {HTMLElement|null} */ (tag.closest('[data-je-group]'));
+                    const slot = /** @type {HTMLElement|null} */ (tag.closest('.je-tag-slot'));
+                    if (!group || !slot || !host.contains(slot)) continue;
+                    // The picture is the slot's, so it would stay at full strength under a tag that is
+                    // itself translucent or fading (its own opacity, or its group's): the plain pill then.
+                    if (Number(style.opacity) < 1 || (group !== tag && Number(facts(group).style.opacity) < 1)) { measureAgainLater(card); continue; }
+                    // The backdrop filter's own pixels: the tag's snapped corner, and its size rounded as a whole.
+                    // A group or slot that starts a pixel grid of its own snaps the tag from its own snapped corner.
+                    let gridX = origin.x, gridY = origin.y, left = 0, top = 0;
+                    for (const el of [slot, group]) {
+                        const f = facts(el);
+                        if (!startsPixelGrid(f.style, false)) continue;
+                        left += snap((f.rect.left - gridX) * scale);
+                        top += snap((f.rect.top - gridY) * scale);
+                        gridX = f.rect.left;
+                        gridY = f.rect.top;
+                    }
+                    left += snap((rect.left - gridX) * scale);
+                    top += snap((rect.top - gridY) * scale);
+                    const width = snap(units(rect.width * scale)), height = snap(units(rect.height * scale));
+                    if (!(width > 0 && height > 0)) continue;
+                    // A tag reaching outside the artwork's box has something else behind it.
+                    if (left < boxLeft || top < boxTop || left + width > boxLeft + boxWidth || top + height > boxTop + boxHeight) continue;
+                    // What the host, the slot and the group (when it has a box) paint between the artwork and the tag.
+                    const unders = [];
+                    let drawable = true;
+                    let underText = '';
+                    for (const el of [host, slot, group]) {
+                        const f = facts(el);
+                        if (!(f.painted[2] > f.painted[0] && f.painted[3] > f.painted[1])) continue;
+                        const bg = backgroundOf(f.style, f.painted.map((v, i) => v - (i % 2 ? boxTop : boxLeft)), f.own);
+                        if (!bg) { drawable = false; break; }
+                        if (!bg.text) continue;
+                        unders.push({ x: f.painted[0] - boxLeft, y: f.painted[1] - boxTop, width: f.painted[2] - f.painted[0], height: f.painted[3] - f.painted[1], colour: bg.colour, gradients: bg.gradients, host: el === host });
+                        underText += `${bg.text};`;
+                    }
+                    if (!drawable) continue;
+                    // The slot shows the picture's pixels that lie inside its own box.
+                    /** @type {Piece[]} */
+                    const pieces = [];
+                    const piece = (carrier, x0, y0, x1, y1) => {
+                        if (!(x1 > x0 && y1 > y0)) return;
+                        const f = facts(carrier);
+                        const h = placeLayer(x0, x1, f.padding[0], f.padding[2]), v = placeLayer(y0, y1, f.padding[1], f.padding[3]);
+                        if (!h || !v || x0 < f.painted[0] || y0 < f.painted[1] || x1 > f.painted[2] || y1 > f.painted[3]) return;
+                        pieces.push({ carrier, sx: x0 - left, sy: y0 - top, width: x1 - x0, height: y1 - y0, left: units(h.offset / scale), top: units(v.offset / scale), cssWidth: units(h.size / scale), cssHeight: units(v.size / scale) });
+                        if (!bases.has(carrier)) {
+                            const base = baseOf(f.style, f.own);
+                            if (base) bases.set(carrier, base);
+                        }
+                    };
+                    const inSlot = facts(slot).painted;
+                    const cutRight = Math.max(left, Math.min(left + width, inSlot[2])), cutBottom = Math.max(top, Math.min(top + height, inSlot[3]));
+                    piece(slot, Math.max(left, inSlot[0]), Math.max(top, inSlot[1]), cutRight, cutBottom);
+                    if (!pieces.length) continue;
+                    const corners = [style.borderTopLeftRadius, style.borderTopRightRadius, style.borderBottomRightRadius, style.borderBottomLeftRadius];
+                    // A corner given as a percentage or as an ellipse is not cut here: a square picture
+                    // would show past the pill's corners, so such a tag keeps the plain pill.
+                    if (corners.some((r) => /%|\S\s+\S/.test(String(r || '')))) continue;
+                    const radii = corners.map((r) => (parseFloat(r) || 0) * scale);
+                    const beneath = beneathOf(host, slot, Number(facts(slot).style.opacity), [left, top, left + width, top + height], X, Y, scale)
+                        .map((b) => ({ ...b, x: b.x - boxLeft, y: b.y - boxTop }));
+                    specs.push({ x: left - boxLeft, y: top - boxTop, width, height, radii, unders, beneath, pieces });
+                    parts.push([left - boxLeft, top - boxTop, width, height, radii.map(units).join('/'), underText,
+                        beneath.map((b) => [units(b.x), units(b.y), units(b.width), units(b.height), b.colour || '', b.radius || 0, b.border ? `${b.border.width}${b.border.colour}` : '', b.text || '', b.font || '', b.image ? b.image.currentSrc || b.image.src : ''].join('~')).join(';'),
+                        pieces.map((p) => `${p.sx},${p.sy},${p.width},${p.height},${p.left},${p.top},${p.cssWidth},${p.cssHeight}`).join(';')].join(','));
+                }
+                if (!specs.length) return none;
+                const sig = [scale, art.url, art.img ? 'img' : 'bg', fit.size, fit.position, baseColour || '', frac(X(boxRect.left)), frac(Y(boxRect.top)), boxWidth, boxHeight, ...parts].join('|');
+                return { card, sig, job: { card, sig, key: art.url, url: art.url, img: art.img, scale, boxWidth, boxHeight, fit, base: baseColour, specs, bases } };
+            };
+            const result = full();
+            if (!result.hold) card.fullSig = result.sig;
+            return result;
         }
 
         /**
@@ -903,7 +986,8 @@
             const scale = pixelScale();
             const pass = { origins: new Map(), probed: false };
             const plans = list.filter((card) => card.host.isConnected && cards.get(card.host) === card).map((card) => read(card, scale, pass));
-            for (const { card, sig, job } of plans) {
+            for (const { card, sig, job, hold } of plans) {
+                if (hold) continue;
                 // The same geometry on the same elements: nothing to do. The same geometry on new elements
                 // (a card presented again in place draws its slots afresh) needs its pictures put on them.
                 const on = job ? job.specs.flatMap((spec) => spec.pieces.map((p) => p.carrier)) : [];
@@ -929,6 +1013,8 @@
                     scheduleSlice();
                 }
             }
+            // A browser that cannot do the pixel work: nothing is watched or measured for it again.
+            if (supported === false) setActive(false);
             const spent = performance.now() - started;
             counters.measures++;
             counters.cards += plans.length;
@@ -1069,7 +1155,7 @@
                     remember(key, entry);
                     for (const j of flight.jobs) ready.push(j);
                 } else {
-                    unreadable.add(key);
+                    markUnreadable(key);
                     counters.failed++;
                 }
                 scheduleSlice();
@@ -1324,7 +1410,9 @@
             } catch (err) {
                 // A canvas the browser will not let us read: this artwork keeps the plain pill.
                 drawn = [];
-                unreadable.add(job.key);
+                markUnreadable(job.key);
+                // Artwork from another origin without CORS: every image from there would be decoded, drawn and refused.
+                if (err?.name === 'SecurityError') tainting.add(originOf(job.key));
                 forget(job.key);
                 counters.failed++;
                 if (err?.name !== 'SecurityError') console.debug(`${backdropLog} could not draw a backdrop`, err);
@@ -1378,9 +1466,29 @@
         JE.session?.onUserChange?.('status-tag-backdrop', () => {
             dropWork();
             unreadable.clear();
-            for (const card of cards.values()) { card.sig = ''; card.kept = null; card.on = []; card.latest = null; }
+            tainting.clear();
+            // The outgoing user's pictures go at once, not when their cards are next measured.
+            for (const card of cards.values()) {
+                for (const carrier of card.carriers) clear(carrier);
+                card.carriers.clear();
+                card.sig = '';
+                card.fullSig = '';
+                card.kept = null;
+                card.on = [];
+                card.latest = null;
+            }
             refresh();
         });
+
+        // A content security policy without `data:` among its image sources refuses every picture
+        // after the work of drawing it: the first refusal turns the pictures off for the page.
+        if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+            document.addEventListener('securitypolicyviolation', (event) => {
+                if (!active || event.blockedURI !== 'data' || !/^img-src/.test(event.effectiveDirective || event.violatedDirective || '')) return;
+                console.warn(`${backdropLog} the page's content security policy refuses data: images; status tags keep the plain pill.`);
+                setActive(false);
+            });
+        }
 
         // Browser zoom or a move to another screen changes the pixel grid the pictures are cut for.
         if (typeof window.addEventListener === 'function') {

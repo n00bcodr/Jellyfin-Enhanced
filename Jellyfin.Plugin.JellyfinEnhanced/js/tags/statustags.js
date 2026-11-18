@@ -1004,8 +1004,15 @@
 
     /** The component group holding tags/status-tag-backdrop.js (js/component-groups.json). */
     const BACKDROP_GROUP = 'tag-status-backdrop';
-    /** True from the request for the painter until it is answered; a request that brought nothing is made again by the next tag drawn. */
+    /** After a request that brought no painter, the next one waits this long, doubling up to the cap (ms). */
+    const BACKDROP_RETRY_MS = 5000;
+    const BACKDROP_RETRY_MAX_MS = 60000;
+    /** True while a request for the painter is out. */
     let backdropAsked = false;
+    /** The pause before the next request (0 until one failed), when it ends (ms since the epoch) and its timer. */
+    let backdropPause = 0;
+    let backdropNotBefore = 0;
+    let backdropTimer = 0;
 
     /**
      * Have the status tag of a card backed by its blurred picture: by the
@@ -1019,15 +1026,38 @@
             JE.statusTagBackdrop.track(host);
             return;
         }
-        if (backdropAsked || typeof JE.loader?.ensure !== 'function') return;
+        if (Date.now() >= backdropNotBefore) askForBackdrop();
+    }
+
+    /**
+     * Ask the loader for the painter, once at a time. It is fetched like the
+     * boot bundle, when the page is idle and at low priority: the tags are
+     * drawn already, and their pictures can wait for the page. A request
+     * that brings nothing (offline, a server that restarted) is made again
+     * after a pause that doubles, by the next tag drawn or, on a page that
+     * has settled, by a timer while a status tag is still there.
+     */
+    function askForBackdrop() {
+        if (backdropAsked || JE.statusTagBackdrop || typeof JE.loader?.ensure !== 'function') return;
         backdropAsked = true;
+        if (backdropTimer) clearTimeout(backdropTimer);
+        backdropTimer = 0;
         let asked;
         try {
-            asked = Promise.resolve(JE.loader.ensure([BACKDROP_GROUP]));
+            asked = Promise.resolve(JE.loader.ensure([BACKDROP_GROUP], { pace: 'boot' }));
         } catch {
             asked = Promise.resolve();
         }
-        asked.catch(() => {}).then(() => { backdropAsked = false; });
+        asked.catch(() => {}).then(() => {
+            backdropAsked = false;
+            if (JE.statusTagBackdrop) return;
+            backdropPause = Math.min(BACKDROP_RETRY_MAX_MS, backdropPause ? backdropPause * 2 : BACKDROP_RETRY_MS);
+            backdropNotBefore = Date.now() + backdropPause;
+            backdropTimer = setTimeout(() => {
+                backdropTimer = 0;
+                if (Date.now() >= backdropNotBefore && document.querySelector(`.je-tag-host .${tagClass}`)) askForBackdrop();
+            }, backdropPause);
+        });
     }
 
     /**
