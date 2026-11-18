@@ -303,11 +303,16 @@
               z-index: 2;
               transition: background 0.2s;
             }
-            #pause-screen-close-btn:hover,
-            #pause-screen-close-btn:focus-visible {
+            #pause-screen-close-btn:hover {
               background: rgba(0,0,0,0.8);
             }
             #pause-screen-close-btn:focus-visible {
+              background: rgba(0,0,0,0.8);
+              outline: 2px solid #fff;
+              outline-offset: 2px;
+            }
+            .layout-tv #pause-screen-close-btn:focus {
+              background: rgba(0,0,0,0.8);
               outline: 2px solid #fff;
               outline-offset: 2px;
             }
