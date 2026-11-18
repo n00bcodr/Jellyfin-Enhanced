@@ -1758,7 +1758,7 @@
 
                 // Skip contexts that should never have tags
                 if (shouldSkipElement(el)) {
-                    processedCards.add(el);
+                    markProcessed(el);
                     continue;
                 }
 
@@ -1767,11 +1767,11 @@
 
                 const itemType = getItemType(el);
                 if (itemType && !MEDIA_TYPES.has(itemType)) {
-                    processedCards.add(el);
+                    markProcessed(el);
                     continue;
                 }
 
-                processedCards.add(el);
+                markProcessed(el);
                 chunk.push({ el, itemId, itemType, reuse: cardReuse.get(el) || 0 });
                 ids.push(itemId);
             }
@@ -1842,6 +1842,35 @@
     /** Card images whose item id lives on an ancestor's data-id / data-itemid. */
     const CARD_IMAGE_SELECTOR = '.cardImageContainer, div.listItemImage';
 
+    /** How the identity observer watches one scanned card image: its artwork (the inline style), with the old value. */
+    const ARTWORK_WATCH = { attributes: true, attributeFilter: ['style'], attributeOldValue: true };
+    /** @type {MutationObserver|null} The page's card identity observer (see releaseReusedCards). */
+    let identityObserver = null;
+    /** @type {WeakSet<HTMLElement>} Card images the identity observer watches the artwork of. */
+    let artworkWatched = new WeakSet();
+
+    /**
+     * Watch a scanned card image's artwork for a reuse in place. Only scanned
+     * images are watched, each on its own: a page-wide watch of `style` also
+     * heard every other inline style write on the page, such as a scroller
+     * moving its row on each wheel event and each animation frame.
+     * @param {HTMLElement} el - Card image or list row image.
+     */
+    function watchArtwork(el) {
+        if (!identityObserver || artworkWatched.has(el)) return;
+        artworkWatched.add(el);
+        identityObserver.observe(el, ARTWORK_WATCH);
+    }
+
+    /**
+     * Mark a card image scanned (see runScan) and watch its artwork.
+     * @param {HTMLElement} el - Card image or list row image.
+     */
+    function markProcessed(el) {
+        processedCards.add(el);
+        watchArtwork(el);
+    }
+
     /**
      * The item id in an image URL (".../Items/<id>/Images/..."), or ''.
      * @param {string|null} text - A style attribute or background-image value.
@@ -1883,7 +1912,8 @@
      * scanned card under a changed identity (its layout controller, slots,
      * caption outlet and review key go with it, and lookups still in flight
      * for it are dropped by stillShows), then scan again so the new item
-     * renders.
+     * renders. The records are data-id / data-itemid changes anywhere on the
+     * page and artwork changes of the scanned card images (watchArtwork).
      * @param {MutationRecord[]} mutations - Attribute records with old values.
      */
     function releaseReusedCards(mutations) {
@@ -1940,7 +1970,7 @@
             if (!itemId || (changed && !changed.has(itemId))) continue;
             cardReuse.set(el, (cardReuse.get(el) || 0) + 1);
             JE.core.tagLayout?.clearCard(el.closest('.cardScalable') || el);
-            if (hidden.has(itemId)) processedCards.add(el);
+            if (hidden.has(itemId)) markProcessed(el);
             else {
                 processedCards.delete(el);
                 released = true;
@@ -2301,12 +2331,23 @@
         }, { priority: 0 });
 
         // Cards reused in place for another item (see releaseReusedCards):
-        // one attribute observer for the page, never one per card.
+        // one attribute observer for the page, never one per card. It hears
+        // the item id attributes page-wide, and the artwork of each scanned
+        // card image through that image's own registration (watchArtwork).
         const createObserver = JE.core?.dom?.createObserver || JE.helpers?.createObserver;
         if (typeof createObserver === 'function') {
-            createObserver('tag-pipeline-card-identity', releaseReusedCards, document.body, {
-                subtree: true, attributes: true, attributeFilter: ['data-id', 'data-itemid', 'style'], attributeOldValue: true,
+            const observer = createObserver('tag-pipeline-card-identity', releaseReusedCards, document.body, {
+                subtree: true, attributes: true, attributeFilter: ['data-id', 'data-itemid'], attributeOldValue: true,
             });
+            if (observer && typeof observer.observe === 'function') {
+                identityObserver = observer;
+                artworkWatched = new WeakSet();
+                // Images scanned before the observer existed, and ones a reset released that still hold tags.
+                for (const el of document.querySelectorAll(CARD_IMAGE_SELECTOR)) {
+                    const owner = el.closest('.cardScalable') || el;
+                    if (processedCards.has(el) || Array.from(owner.children).some((c) => c.classList.contains('je-tag-host'))) watchArtwork(/** @type {HTMLElement} */ (el));
+                }
+            }
         }
 
         // Also trigger on navigation

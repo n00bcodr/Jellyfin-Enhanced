@@ -381,7 +381,7 @@ test('a user switch drops the outgoing user\'s facts; the incoming user\'s layou
  * layout controller and genre renderer over one page of cards. Idle slices,
  * the fetch debounce and each /tag-data response are driven by the test.
  */
-async function setupPipeline(t, { html = modernCard(), settings = {} } = {}) {
+async function setupPipeline(t, { html = modernCard(), settings = {}, attributeRecords = null } = {}) {
   const idle = [], timers = new Map(), calls = [];
   let seq = 0;
   const h = createHarness({
@@ -398,6 +398,18 @@ async function setupPipeline(t, { html = modernCard(), settings = {} } = {}) {
     },
   });
   t.after(() => h.close());
+  if (attributeRecords) {
+    // Every attribute record any observer of the page is handed, as "attribute on element".
+    const Native = h.window.MutationObserver;
+    h.window.MutationObserver = class extends Native {
+      constructor(callback) {
+        super((records, observer) => {
+          for (const r of records) if (r.type === 'attributes') attributeRecords.push(`${r.attributeName} on ${r.target.className.split(' ')[0]}`);
+          callback(records, observer);
+        });
+      }
+    };
+  }
   for (const file of ['core/dom-observer.js', 'core/ui-kit.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'core/tag-look.js', 'tags/tag-pipeline.js', 'tags/tag-layout-styles.js', 'tags/genretags.js']) h.load(file);
   h.JE.initializeGenreTags();
   h.JE.tagPipeline.initialize();
@@ -535,6 +547,31 @@ test('artwork loading for the first time is not a reuse', async t => {
   assert.deepEqual(h.genres(), ['Drama'], 'an episode card\'s artwork may name its series');
   h.scan(); h.fetch();
   assert.equal(h.calls.length, 1);
+});
+
+test('the pipeline hears the artwork of scanned card images only, not every inline style on the page', async t => {
+  const records = [];
+  const h = await setupPipeline(t, { html: `<div class="scrollSlider">${modernCard()}</div>`, attributeRecords: records });
+  // Before the scan: nothing is watched yet (a card's first artwork is no reuse either way).
+  const slider = h.document.querySelector('.scrollSlider');
+  slider.style.transform = 'translateX(-80px)';
+  await settle();
+  assert.deepEqual(records, [], 'a scroller moving its row');
+  h.scan(); h.fetch();
+  h.calls[0].resolve({ Items: [{ Id: ID, Type: 'Movie', Genres: ['Drama'] }] });
+  await settle();
+  assert.deepEqual(h.genres(), ['Drama']);
+  records.length = 0;
+  slider.style.transform = 'translateX(-160px)';
+  h.document.querySelector('.card').style.opacity = '0.5';
+  h.document.querySelector('.je-tag-host').style.setProperty('--x', '1');
+  await settle();
+  assert.deepEqual(records, [], 'inline styles of anything but a scanned card image are not reported');
+  h.document.querySelector('.cardImageContainer').style.backgroundImage = `url("http://jellyfin.test/Items/${OTHER}/Images/Primary")`;
+  h.document.querySelector('.card').setAttribute('data-id', OTHER);
+  await settle();
+  assert.deepEqual(records.sort(), ['data-id on card', 'style on cardImageContainer'], 'the scanned image\'s artwork and the card\'s id are');
+  assert.deepEqual(h.genres(), [], 'and the reuse is acted on');
 });
 
 test('the user review chip joins the rating group and follows its slot and summary', async t => {
