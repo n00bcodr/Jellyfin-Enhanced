@@ -289,6 +289,28 @@ test('a dimmed partial flag keeps the card positioned, and flow returns when it 
   assert.equal(h.flow(), '1');
 });
 
+test('a status tag with the live backdrop filter keeps its card positioned, until the painter says its picture stands in', t => {
+  const h = setup(t);
+  h.render();
+  assert.equal(h.flow(), '1');
+  const status = h.document.createElement('div');
+  status.className = 'status-overlay-container';
+  status.innerHTML = '<div class="status-tag">New</div>';
+  // The status renderer marks the host as it draws the badge (tags/statustags.js), then tells the controller.
+  h.layout.commitGroup(h.host(), 'status', status);
+  h.host().dataset.jeBlur = '1';
+  h.layout.syncFlowOf(h.host());
+  assert.equal(h.flow(), undefined, 'a filtered tag is a layer of its own');
+  delete h.host().dataset.jeBlur;
+  h.layout.syncFlowOf(h.host());
+  assert.equal(h.flow(), '1');
+  // The mark alone, with no status tag on the card (its badge went), holds nothing back.
+  h.layout.removeGroup(h.host(), 'status');
+  h.host().dataset.jeBlur = '1';
+  h.layout.syncFlowOf(h.host());
+  assert.equal(h.flow(), '1');
+});
+
 test('centre anchors, Flush, Summary and Minimal keep the positioned layout; Tight, Bands and Caption flow', async t => {
   const h = setup(t, { settings: V1 });
   h.render();

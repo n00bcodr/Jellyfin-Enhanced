@@ -999,8 +999,8 @@
     // tag by tags/status-tag-backdrop.js (JE.statusTagBackdrop), a component
     // group of its own that is fetched when the first status tag is drawn: a
     // page that shows none never downloads it. A tag does not wait for it: it
-    // is drawn at once with the plain pill and its picture follows, exactly as
-    // when the painter is already there.
+    // is drawn at once with the live backdrop filter (`data-je-blur` on its
+    // host), which the painter takes off once its picture stands in.
 
     /** The component group holding tags/status-tag-backdrop.js (js/component-groups.json). */
     const BACKDROP_GROUP = 'tag-status-backdrop';
@@ -1025,6 +1025,12 @@
         if (JE.statusTagBackdrop) {
             JE.statusTagBackdrop.track(host);
             return;
+        }
+        // No painter (yet): the tag has the live filter, as it always had. The painter takes the mark
+        // off once its picture stands in; without one (an old loader's failure, no loader) it stays.
+        if (host.dataset.jeBlur !== '1') {
+            host.dataset.jeBlur = '1';
+            JE.core?.tagLayout?.syncFlowOf?.(host);
         }
         if (Date.now() >= backdropNotBefore) askForBackdrop();
     }
@@ -1803,10 +1809,11 @@
                     gap: 0.25em;
                     padding: calc(4px * var(--je-tag-scale, 1)) calc(10px * var(--je-tag-scale, 1));
                     background-color: rgba(15, 15, 15, 0.72);
-                    /* No backdrop-filter: it made every status tag a compositor
-                       layer and promoted whatever painted over it. The blurred
-                       artwork behind the pill is a picture painted under the
-                       tag instead (see "The blurred backdrop" above). */
+                    /* The backdrop blur is not set here: a filtered tag is a compositor
+                       layer and promotes whatever paints over it. A resting tag has the
+                       blurred artwork painted under it as a picture; the live filter
+                       below stands wherever that picture is not in place (see "The
+                       blurred backdrop" above). */
                     color: #ffffff;
                     border: 1px solid rgba(255, 255, 255, 0.18);
                     border-radius: 6px;
@@ -1821,6 +1828,10 @@
                     text-overflow: ellipsis;
                     max-width: 100%;
                     pointer-events: none;
+                }
+                .je-tag-host[data-je-blur] .${tagClass} {
+                    -webkit-backdrop-filter: blur(6px);
+                    backdrop-filter: blur(6px);
                 }
                 .${tagClass}--trending .${tagClass}-rank { color: #ffd166; }
                 /* Only the direct-play warning takes hover, for its tooltip. */

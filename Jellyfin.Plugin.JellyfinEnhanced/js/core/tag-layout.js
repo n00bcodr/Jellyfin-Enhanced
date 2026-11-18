@@ -1816,6 +1816,8 @@
      *     (Summary, Minimal, the five centre anchors, Flush's clipped host);
      *   - a dimmed "partial" language flag (its opacity makes it a layer, and
      *     the chips after it must then be layers to paint over it);
+     *   - a status tag with the live backdrop filter (`data-je-blur` on the
+     *     host, tags/status-tag-backdrop.js): a filtered tag is a layer too;
      *   - genre names custom CSS shows inline (genreNamesFloat);
      *   - a context that is not a library card or list row (the previews
      *     style their sample hosts themselves);
@@ -1832,11 +1834,13 @@
         if (conf.layout === 'corners' && conf.edge === 'flush') return false;
         const host = ctrl.host;
         if (!host.closest('.card, .listItem')) return false;
+        const blur = host.dataset.jeBlur === '1';
         let names = false;
         for (const child of host.children) {
             if (!child.classList.contains('je-tag-slot')) continue;
             if (CENTRE_SLOTS.has(/** @type {HTMLElement} */ (child).dataset.jeSlot || '')) return false;
             if (child.querySelector('.language-flag-partial')) return false;
+            if (blur && child.querySelector('.status-tag')) return false;
             if (!names && child.querySelector('.genre-tag')) names = true;
         }
         return !names || genreNamesFloat(host);
@@ -4161,6 +4165,15 @@
          * to cards already on the page (the pixel-comparison harness flips it).
          */
         restingFlow: true,
+        /**
+         * Decide a card's resting layout again: something outside this module changed what it may be
+         * (a status tag gained or lost its live backdrop filter, tags/status-tag-backdrop.js).
+         * @param {HTMLElement} host
+         */
+        syncFlowOf(host) {
+            const ctrl = host ? controllers.get(host) : null;
+            if (ctrl && ctrl.layout) syncFlow(ctrl, resolveLayout(ctrl));
+        },
         /** @returns {{alike: number, verdicts: number, probes: number, inspections: number}} What is remembered of the page's CSS, and how often it was asked (performance checks). */
         flowStats: () => ({ alike: flowAlike.size, verdicts: flowVerdicts.size, ...flowCounters }),
         normalizeGroup,

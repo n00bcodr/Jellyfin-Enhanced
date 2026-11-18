@@ -412,9 +412,9 @@ test('a band the slot paints is blurred into the picture and stays under it', as
   assert.equal(other.decoded.length, 0);
 });
 
-test('a chip of an earlier slot that reaches under the tag is blurred into the picture', async t => {
+test('a tag with a chip of an earlier slot under it keeps the live filter: only the filter shows that chip as it is', async t => {
   const chips = '<div class="je-tag-slot" data-je-slot="tl"><div class="quality-overlay-container" data-je-group="quality">'
-    + '<div class="quality-overlay-label" id="long">Dolby Digital+ 7.1</div><div class="quality-overlay-label" id="short">4K</div><img id="flag" src="http://jellyfin.test/JellyfinEnhanced/cdn/flags/gb.svg"><img id="far" src="http://cdn.example/x.png"></div></div>';
+    + '<div class="quality-overlay-label" id="long">Dolby Digital+ 7.1</div><div class="quality-overlay-label" id="short">4K</div></div></div>';
   const h = setup(t, { html: card().replace('<div class="je-tag-slot" data-je-slot="tr">', `${chips}<div class="je-tag-slot" data-je-slot="tr">`) });
   h.slot = h.document.querySelector('[data-je-slot="tr"]');
   layout(h);
@@ -423,42 +423,26 @@ test('a chip of an earlier slot that reaches under the tag is blurred into the p
   // A long label that ends 20px inside the tag's box (the tag starts at 216.4), a short one that does not reach it.
   const long = h.document.getElementById('long'), short = h.document.getElementById('short');
   h.rect(long, 110.4, 58.3, 236.4, 76.3);
-  h.style(long, { backgroundColor: 'rgb(0, 150, 136)', borderTopLeftRadius: '4px', borderTopWidth: '1px', borderTopColor: 'rgba(255, 255, 255, 0.3)', color: 'rgb(255, 255, 255)', fontStyle: 'normal', fontWeight: '700', fontSize: '12px', fontFamily: 'Noto Sans', letterSpacing: 'normal', textTransform: 'uppercase' });
+  h.style(long, { backgroundColor: 'rgb(0, 150, 136)' });
   h.rect(short, 110.4, 80.3, 140.4, 98.3);
   h.style(short, { backgroundColor: 'rgb(30, 136, 229)' });
-  // Images under the tag: the same-origin one is drawn, the other would taint the canvas.
-  h.rect(h.document.getElementById('flag'), 220.4, 60.3, 236.4, 72.3);
-  h.rect(h.document.getElementById('far'), 240.4, 60.3, 256.4, 72.3);
-  h.window.document.createRange = () => ({ selectNodeContents() {}, getBoundingClientRect: () => ({ left: 114.4, top: 60.3, right: 232.4, bottom: 74.3, width: 118, height: 14 }) });
   h.backdrop.track(h.host);
   await h.flush();
-  const scene = h.ops.slice(h.ops.findIndex(op => op[0] === 'drawImage'), h.ops.findIndex(op => op[0] === 'fill' && op[1] === 'destination-in'));
-  assert.deepEqual(scene, [
-    ['drawImage', ART, -116, -6, 200, 300],
-    // The label's box, 106px left of the tag's corner and 2px below it, its border inside the edge.
-    ['translate', -106, 2], ['fill', 'source-over', 'rgb(0, 150, 136)'], ['stroke', 'rgba(255, 255, 255, 0.3)', 2],
-    ['fillText', 'DOLBY DIGITAL+ 7.1', 'normal 700 12px Noto Sans', 'rgb(255, 255, 255)', -102, 11],
-    ['drawImage', 'canvas', 4, 4, 16, 12],
-  ], 'the artwork, then the chip that lies under the tag: box, border, label, flag');
-  assert.equal(h.layers(h.slot)['background-size'], '78px 22px');
-
-  // The chip changes colour: the card is drawn again.
-  h.style(long, { backgroundColor: 'rgb(200, 0, 0)' });
+  assert.deepEqual(h.layers(h.slot), {}, 'no picture: a redrawn chip, without its shadow, would only be near');
+  assert.equal(h.host.dataset.jeBlur, '1');
+  assert.equal(h.decoded.length, 0);
+  // The label is fitted shorter and no longer reaches the tag (nor does its shadow): the picture can stand in.
+  h.rect(long, 110.4, 58.3, 200.4, 76.3);
   long.setAttribute('data-quality', 'x');
   await h.flush();
-  assert.equal(h.backdrop.stats().drawn, 2);
-  // Both slots fade together (the pointer hides the tags): nothing to draw again.
+  assert.equal(h.layers(h.slot)['background-size'], '78px 22px');
+  assert.equal(h.host.hasAttribute('data-je-blur'), false);
+  // A slot that does not show while the tag's does (a summary giving way to the reveal) is not under it.
+  h.rect(long, 110.4, 58.3, 236.4, 76.3);
   h.style(tl, { opacity: '0' });
-  h.style(h.slot, { opacity: '0' });
   long.setAttribute('data-quality', 'y');
   await h.flush();
-  assert.equal(h.backdrop.stats().drawn, 2);
-  // A slot that does not show while the tag's does (a summary giving way to the reveal) is not under it.
-  h.style(h.slot, { opacity: '1' });
-  long.setAttribute('data-quality', 'z');
-  await h.flush();
-  assert.equal(h.backdrop.stats().drawn, 3);
-  assert.equal(h.ops.filter(op => op[0] === 'fillText').length, 2, 'its label is not drawn into the third picture');
+  assert.equal(h.layers(h.slot)['background-size'], '78px 22px');
 });
 
 test('artwork that is not there yet gets its picture when it arrives', async t => {
@@ -558,7 +542,7 @@ test('artwork that Jellyfin unloads and loads again shows the pictures the card 
   assert.equal(h.backdrop.stats().drawn, 2);
 });
 
-test('the plain pill is kept where the picture would not be what the page shows', async t => {
+test('no picture is shown where it would not be what the page shows', async t => {
   const draw = async (prepare) => {
     const h = setup(t);
     layout(h);
@@ -649,7 +633,7 @@ test('a page full of new cards is measured a few cards a frame', async t => {
   assert.equal(h.backdrop.stats().passes, 3);
 });
 
-test('drawing a badge tracks its card; a browser without a readable canvas keeps the plain pill', async t => {
+test('drawing a badge tracks its card; a browser without a readable canvas keeps the live filter', async t => {
   const bare = '<div class="card" data-id="a"><div class="cardScalable"><div class="cardImageContainer"></div><div class="je-tag-host"></div></div></div>';
   const h = setup(t, { html: bare, trending: [{ source: 'tmdb-day', movies: { 1: 3 }, series: {} }] });
   h.JE.initializeStatusTags();
@@ -742,7 +726,7 @@ test('a card measured while a transform scales it keeps what it has and is read 
   assert.equal(late.layers(late.slot)['background-size'], '78px 22px');
 });
 
-test('a tag that is itself translucent keeps the plain pill, and gets its picture back when it is opaque again', async t => {
+test('a tag that is itself translucent gets no picture, and gets one when it is opaque again', async t => {
   for (const which of ['tag', 'group']) {
     const h = setup(t);
     layout(h);
@@ -794,6 +778,94 @@ test('a user switch takes the outgoing user\'s pictures away at once', async t =
   assert.deepEqual(h.layers(h.slot), {}, 'before any card is measured again');
 });
 
+test('a tag has the live filter from the moment it is tracked until its picture stands in, and keeps it wherever no picture can', async t => {
+  const h = setup(t);
+  layout(h);
+  h.backdrop.track(h.host);
+  assert.equal(h.host.dataset.jeBlur, '1', 'the look does not wait for the picture');
+  await h.flush();
+  assert.equal(h.layers(h.slot)['background-size'], '78px 22px');
+  assert.equal(h.host.hasAttribute('data-je-blur'), false, 'the picture stands in: no filter, no layer');
+  // The tag moves: its old picture goes, and the filter is back until the new one is drawn.
+  layout(h, { tagTop: 86.3 });
+  h.tag.textContent = 'Returns Oct 4';
+  await h.frame(); await h.frame();
+  assert.deepEqual(h.layers(h.slot), {});
+  assert.equal(h.host.dataset.jeBlur, '1');
+  await h.flush();
+  assert.equal(h.host.hasAttribute('data-je-blur'), false);
+  // Artwork the page dims, a canvas that lies, pictures switched off: the filter stays.
+  h.style(h.art, { opacity: '0.4' });
+  h.tag.textContent = 'New';
+  await h.flush();
+  assert.deepEqual(h.layers(h.slot), {});
+  assert.equal(h.host.dataset.jeBlur, '1');
+  h.style(h.art, { opacity: '1' });
+  h.host.closest('.card').dispatchEvent(new h.window.Event('pointerleave'));
+  await h.flush();
+  assert.equal(h.host.hasAttribute('data-je-blur'), false);
+  h.backdrop.setActive(false);
+  assert.deepEqual(h.layers(h.slot), {});
+  assert.equal(h.host.dataset.jeBlur, '1', 'off: every tag is back on the filter it always had');
+  const lying = setup(t);
+  layout(lying);
+  lying.lying = true;
+  lying.backdrop.track(lying.host);
+  await lying.flush();
+  assert.equal(lying.host.dataset.jeBlur, '1');
+  lying.host.removeAttribute('data-je-blur');
+  lying.backdrop.track(lying.host);
+  assert.equal(lying.host.dataset.jeBlur, '1', 'a badge drawn later in a browser that cannot paint pictures gets the filter too');
+});
+
+test('a card in use gives its pictures up for the live filter, and takes them back once it rests', async t => {
+  const h = setup(t);
+  layout(h);
+  h.backdrop.track(h.host);
+  await h.flush();
+  const picture = h.layers(h.slot);
+  const card = h.host.closest('.card');
+  const state = { hover: false, focus: false };
+  const matches = h.window.Element.prototype.matches;
+  card.matches = function (selector) { return selector === ':hover' ? state.hover : selector === ':focus-within' ? state.focus : matches.call(this, selector); };
+  const send = (type, related = null) => { const event = new h.window.Event(type, { bubbles: true }); Object.defineProperty(event, 'relatedTarget', { value: related }); h.art.dispatchEvent(event); };
+  // Focus: Jellyfin's overlay now lies between the artwork and the tag, and only the filter shows it.
+  state.focus = true;
+  send('focusin');
+  assert.deepEqual(h.layers(h.slot), {});
+  assert.equal(h.host.dataset.jeBlur, '1');
+  // Whatever is measured meanwhile writes nothing.
+  h.tag.setAttribute('title', 'x');
+  await h.flush();
+  assert.deepEqual(h.layers(h.slot), {});
+  // Focus leaves: the same picture, not drawn again.
+  state.focus = false;
+  send('focusout', h.document.body);
+  assert.equal(h.host.dataset.jeBlur, '1', 'not before the overlay has faded');
+  await h.flush();
+  assert.deepEqual(h.layers(h.slot), picture);
+  assert.equal(h.host.hasAttribute('data-je-blur'), false);
+  assert.equal(h.backdrop.stats().drawn, 1);
+  // The pointer where it hides the tags: the host fades out, nothing to switch.
+  h.document.body.classList.add('je-tags-hide-on-hover');
+  state.hover = true;
+  send('pointerover');
+  assert.deepEqual(h.layers(h.slot), picture);
+  assert.equal(h.host.hasAttribute('data-je-blur'), false);
+  // The pointer where it does not; a touch then leaves the card hovered with no pointerout to come.
+  h.document.body.classList.remove('je-tags-hide-on-hover');
+  send('pointerover');
+  assert.equal(h.host.dataset.jeBlur, '1');
+  send('pointerout', h.document.body);
+  await h.flush();
+  assert.equal(h.host.dataset.jeBlur, '1', 'still hovered');
+  state.hover = false;
+  h.document.body.dispatchEvent(new h.window.Event('pointerover', { bubbles: true }));
+  await h.flush();
+  assert.deepEqual(h.layers(h.slot), picture);
+  assert.equal(h.host.hasAttribute('data-je-blur'), false);
+});
+
 /** Six cards with an empty tag host each, and the trending answer that gives each a badge. */
 const BARE = ['a', 'b', 'c', 'd', 'e', 'f'].map(id => `<div class="card" data-id="${id}"><div class="cardScalable"><div class="cardImageContainer"></div><div class="je-tag-host"></div></div></div>`).join('');
 const TRENDING = () => [{ source: 'tmdb-day', movies: { 1: 3, 2: 5, 3: 7, 4: 9, 5: 11, 6: 13 }, series: {} }];
@@ -817,7 +889,8 @@ test('the painter is fetched when the first status tag is drawn, once; tags neve
   assert.deepEqual(asked, [], 'a page without a status tag asks for nothing');
 
   const first = badge(h, 1);
-  assert.ok(first.querySelector('.status-tag'), 'the tag is drawn at once, with the plain pill');
+  assert.ok(first.querySelector('.status-tag'), 'the tag is drawn at once');
+  assert.equal(first.dataset.jeBlur, '1', 'with the live filter it always had, until a picture stands in');
   assert.deepEqual(asked.map(ids => [...ids]), [['tag-status-backdrop']]);
   assert.deepEqual(paces, ['boot'], 'fetched like the boot bundle: when the page is idle, at low priority');
   const second = badge(h, 2);
@@ -834,7 +907,7 @@ test('the painter is fetched when the first status tag is drawn, once; tags neve
   assert.equal(asked.length, 1);
 });
 
-test('a request that brought no painter waits before it is made again, twice as long each time; without a loader the pill stays plain', async t => {
+test('a request that brought no painter waits before it is made again, twice as long each time; without a loader the tag keeps the live filter', async t => {
   const asked = [];
   let h;
   const answers = [() => Promise.resolve(), () => Promise.reject(new Error('offline')), () => { throw new Error('no such group'); }, () => { h.arrive(); return Promise.resolve(); }];
@@ -886,4 +959,5 @@ test('a request that brought no painter waits before it is made again, twice as 
   await new Promise(resolve => setImmediate(resolve));
   assert.ok(badge(bare, 1).querySelector('.status-tag'));
   assert.deepEqual(bare.layers(bare.document.querySelector('.je-tag-host')), {});
+  assert.equal(bare.document.querySelector('.je-tag-host').dataset.jeBlur, '1', 'and the tag keeps the live filter for good');
 });

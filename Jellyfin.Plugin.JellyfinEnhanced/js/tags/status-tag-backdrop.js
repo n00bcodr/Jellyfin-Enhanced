@@ -37,14 +37,27 @@
 // image (an <img>, or the image container's background image) placed by
 // its object-fit / background-size over the image box's own opaque
 // colour, then the plain colours and linear gradients the host, the slot
-// and the group paint (a Bands layout's band), and the chips of earlier
-// slots that reach under the tag on a crowded card (their boxes, labels
-// and images; shadows are left out). A tag keeps the plain
-// pill, the look without a blur, when that cannot be done faithfully:
-// artwork still loading, hidden, filtered or faded by CSS, a tag reaching
-// outside the image, transparency with nothing known behind it, a
-// background this part cannot draw, a canvas the browser will not let it
-// read. It never shows artwork sharper than the page does: the picture
+// and the group paint (a Bands layout's band).
+//
+// The picture is a stand-in for the filter, used only where it is the
+// same: a card's host carries `data-je-blur`, which gives its status tags
+// the live `backdrop-filter` (tags/statustags.js), from the moment its
+// badge is drawn until every tag on it has its picture, and again whenever
+// the picture would not be what the filter shows:
+//   - while the pointer is on the card with its tags on show, or focus is
+//     in it: Jellyfin's overlay lies between the artwork and the tags then;
+//   - when it cannot be drawn faithfully: artwork still loading, hidden,
+//     filtered or faded by CSS, a chip of an earlier slot under the tag (a
+//     crowded card), a tag reaching outside the image or itself
+//     translucent, transparency with nothing known behind it, a background
+//     this part cannot draw, a canvas the browser will not let it read;
+//   - where this part does not run at all (no readable canvas, a content
+//     security policy without data: images, the file not loaded).
+// So the look never waits for this part and never depends on it; it only
+// stops costing a compositor layer where a picture can stand in. A
+// filtered tag is a layer of its own, so the layout controller keeps such
+// a card positioned (core/tag-layout.js flowFor) and is told when the mark
+// changes. A picture never shows artwork sharper than the page does: it
 // comes from the image the card shows (artwork Spoiler Guard serves
 // blurred is blurred again).
 //
@@ -55,8 +68,7 @@
 // cards a pass, and only a card whose geometry really changed is drawn
 // again, in idle slices (it loses its old pictures in that pass; a card
 // whose artwork Jellyfin unloaded and loads again, as it does for cards
-// scrolled out of a row, shows the pictures it already has). A tag shows at once with the plain pill; its
-// picture follows a few frames later. Pictures are data URLs in the
+// scrolled out of a row, shows the pictures it already has). Pictures are data URLs in the
 // carrier's inline style, so they go with the card; decoded artwork is
 // kept for a few cards only.
 //
@@ -97,8 +109,15 @@
         const RESIZE_SETTLE_MS = 200;
         /** Layout units in a pixel: geometry is compared and written in these. */
         const UNITS = 64;
+        /** How far past its box a chip's shadow, ring or outline may paint (pixels of the grid). */
+        const BENEATH_REACH = 6;
         /** Artwork addresses remembered as unreadable. */
         const UNREADABLE_CAP = 500;
+        /**
+         * How long after the pointer or focus has left a card its pictures come back (ms): once Jellyfin's
+         * overlay has faded from the artwork, and before the layout controller rests the card (its 200 ms).
+         */
+        const LIVE_REST_MS = 180;
         /** What ends a passing state of a card (measureAgainLater). */
         const AGAIN_EVENTS = ['transitionend', 'transitioncancel', 'animationend', 'pointerleave', 'focusout'];
         /** The colour the canvas probe draws and must read back (isSupported). */
@@ -381,28 +400,26 @@
          * `on` the elements its last measured pictures belong on, `latest`
          * the job that measurement made (an older one in flight is dropped),
          * `fullSig` what the last read of its layout found ('' for nothing to
-         * draw) and `again` the way to stop waiting for a passing state to end
-         * (measureAgainLater).
+         * draw), `again` the way to stop waiting for a passing state to end
+         * (measureAgainLater), `live` whether the pointer or focus is on the
+         * card (its tags then keep the live filter, see use) and `resting` the
+         * timer that ends that.
          * @typedef {{host: HTMLElement, chips: MutationObserver|null, art: MutationObserver|null, container: Element|null, img: HTMLImageElement|null,
          *   onLoad: () => void, sig: string, carriers: Set<HTMLElement>, kept: {job: Job, drawn: (string[]|null)[]}|null, moved: boolean,
-         *   on: HTMLElement[], latest: Job|null, fullSig: string, again: (() => void)|null}} Card
+         *   on: HTMLElement[], latest: Job|null, fullSig: string, again: (() => void)|null, live: boolean,
+         *   resting: ReturnType<typeof setTimeout>|0}} Card
          */
         /** A background painted between the artwork and a tag (pixels in the image box; `host`: the host's own, under every chip). @typedef {{x: number, y: number, width: number, height: number, colour: string|null, gradients: Object[], host: boolean}} Under */
         /**
          * A part of a tag's picture as one background layer: `sx`…`height` are its pixels within the picture, the rest its CSS box in the carrier.
          * @typedef {{carrier: HTMLElement, sx: number, sy: number, width: number, height: number, left: number, top: number, cssWidth: number, cssHeight: number}} Piece
          */
-        /**
-         * Something a chip of an earlier slot paints under a tag (pixels in the image box): a box, a label or an image.
-         * @typedef {{x: number, y: number, width: number, height: number, colour?: string, radius?: number, border?: {width: number, colour: string},
-         *   text?: string, font?: string, spacing?: string, image?: HTMLImageElement}} Beneath
-         */
-        /** One tag's picture to draw (pixels, relative to the image box). @typedef {{x: number, y: number, width: number, height: number, radii: number[], unders: Under[], beneath: Beneath[], pieces: Piece[]}} Spec */
+        /** One tag's picture to draw (pixels, relative to the image box). @typedef {{x: number, y: number, width: number, height: number, radii: number[], unders: Under[], pieces: Piece[]}} Spec */
         /** A carrier's own background layers, kept under the pictures. @typedef {{image: string[], position: string[], size: string[], repeat: string[]}} Base */
         /**
          * A card's pictures being drawn.
          * @typedef {{card: Card, sig: string, key: string, url: string, img: HTMLImageElement|null, scale: number, boxWidth: number, boxHeight: number,
-         *   fit: {size: string, position: string}, base: string|null, specs: Spec[], bases: Map<HTMLElement, Base>}} Job
+         *   fit: {size: string, position: string}, base: string|null, specs: Spec[], bases: Map<HTMLElement, Base>, partial: boolean}} Job
          */
         /** A picture layer as written. @typedef {{url: string, x: number, y: number, width: number, height: number}} Layer */
 
@@ -424,6 +441,8 @@
         const unreadable = new Set();
         /** @type {Set<string>} origins whose artwork taints the canvas: nothing from them is decoded again */
         const tainting = new Set();
+        /** @type {Set<Card>} cards found still in use when their pictures were due back (see rest) */
+        const lingering = new Set();
         const counters = { passes: 0, maxPassMs: 0, measures: 0, measureMs: 0, maxMeasureMs: 0, layoutMs: 0, cards: 0, reused: 0, slices: 0, sliceMs: 0, maxSliceMs: 0, decodes: 0, drawn: 0, plain: 0, pixelMs: 0, maxPixelMs: 0, failed: 0 };
         let active = true;
         let measureScheduled = false;
@@ -547,7 +566,7 @@
         }
 
         /** The layout controller's own marks on a host (core/tag-layout.js): how the card is laid out and fades, never where a tag is. */
-        const HOST_MARKS = new Set(['data-je-flow', 'data-je-live']);
+        const HOST_MARKS = new Set(['data-je-flow', 'data-je-live', 'data-je-blur']);
 
         /** @param {ResizeObserverEntry[]} entries A watched card changed size. */
         /** @param {string} url @returns {string} Its origin ('' when it cannot be told). */
@@ -603,10 +622,12 @@
          * @param {HTMLElement|null|undefined} host
          */
         function track(host) {
-            if (!active || !host || supported === false || typeof MutationObserver !== 'function') return;
+            if (!host) return;
+            // Where no picture will be painted the tag keeps the live filter.
+            if (!active || supported === false || typeof MutationObserver !== 'function') { setBlur(host, true); return; }
             let card = cards.get(host);
             if (!card) {
-                const created = /** @type {Card} */ ({ host, chips: null, art: null, container: null, img: null, onLoad: () => markDirty(created), sig: '', carriers: new Set(), kept: null, moved: true, on: [], latest: null, fullSig: '', again: null });
+                const created = /** @type {Card} */ ({ host, chips: null, art: null, container: null, img: null, onLoad: () => markDirty(created), sig: '', carriers: new Set(), kept: null, moved: true, on: [], latest: null, fullSig: '', again: null, live: false, resting: 0 });
                 card = created;
                 cards.set(host, card);
                 // Chips arriving, leaving, moving or being fitted all change the host's subtree. Reading the
@@ -623,12 +644,31 @@
                     sizes.observe(host);
                 }
             }
+            // Until its pictures stand in for it, the tag has the live filter: the look never waits for this part.
+            if (!card.carriers.size) setBlur(host, true);
             card.moved = true;
             markDirty(card);
         }
 
         /**
-         * Stop watching a card and take its pictures away.
+         * Give a card's status tags the live backdrop filter, or take it
+         * away once their pictures stand in for it (tags/statustags.js styles
+         * `.je-tag-host[data-je-blur] .status-tag`). A filtered tag is a layer
+         * of its own, which a card resting in flow must not hold, so the
+         * layout controller is told to decide the card's layout again.
+         * @param {HTMLElement} host
+         * @param {boolean} on
+         */
+        function setBlur(host, on) {
+            if ((host.dataset.jeBlur === '1') === on) return;
+            if (on) host.dataset.jeBlur = '1';
+            else delete host.dataset.jeBlur;
+            try { JE.core?.tagLayout?.syncFlowOf?.(host); } catch (err) { console.debug(`${backdropLog} could not re-decide a card's layout`, err); }
+        }
+
+        /**
+         * Stop watching a card and take its pictures away: its tags keep
+         * the live filter from then on.
          * @param {HTMLElement} host
          */
         function release(host) {
@@ -639,8 +679,13 @@
             card.img?.removeEventListener('load', card.onLoad);
             sizes?.unobserve(host);
             card.again?.();
+            if (card.resting) clearTimeout(card.resting);
+            card.resting = 0;
+            card.live = false;
+            lingering.delete(card);
             for (const carrier of card.carriers) clear(carrier);
             card.carriers.clear();
+            if (host.isConnected) setBlur(host, true);
             card.sig = '';
             card.on = [];
             card.latest = null;
@@ -723,75 +768,45 @@
         }
 
         /**
-         * What the chips of earlier slots paint under a tag's box (reads
+         * Whether a chip of an earlier slot paints under a tag's box (reads
          * only): slots are painted in order, so a chip of a slot before the
          * tag's own lies under it where they overlap, and the filter blurred
-         * it with the artwork. Boxes (colour, radius, border), the text of
-         * text nodes and loaded same-origin images are redrawn; shadows and
-         * anything else a chip paints are left out.
-         * A slot counts only while it shows as the tag's own slot does (the
-         * same opacity): corner slots fade together when the pointer hides
-         * the tags, which changes nothing, and a summary that gives way to
-         * the hover reveal is not under the chips revealed.
+         * it with the artwork, shadow and all. Such a tag keeps the live
+         * filter: a redrawn chip would only be near. A slot counts only
+         * while it shows as the tag's own slot does (the same opacity):
+         * corner slots fade together when the pointer hides the tags, which
+         * changes nothing, and a summary that gives way to the hover reveal
+         * is not under the chips revealed.
          * @param {HTMLElement} host
          * @param {HTMLElement} slot - The tag's slot.
          * @param {number} opacity - The slot's computed opacity.
          * @param {number[]} box - The tag's box [left, top, right, bottom] in the grid, in pixels.
          * @param {(v: number) => number} X - Viewport CSS x → grid pixels.
          * @param {(v: number) => number} Y
-         * @param {number} scale
-         * @returns {Beneath[]}
+         * @returns {boolean}
          */
-        function beneathOf(host, slot, opacity, box, X, Y, scale) {
-            /** @type {Beneath[]} */
-            const out = [];
-            const over = (r) => r.width > 0 && r.height > 0 && X(r.right) > box[0] && X(r.left) < box[2] && Y(r.bottom) > box[1] && Y(r.top) < box[3];
-            const place = (r) => ({ x: X(r.left), y: Y(r.top), width: (r.right - r.left) * scale, height: (r.bottom - r.top) * scale });
+        function chipBeneath(host, slot, opacity, box, X, Y) {
+            // (A chip's shadow, ring or outline reaches a little past its box.)
+            const over = (r) => r.width > 0 && r.height > 0 && X(r.right) > box[0] - BENEATH_REACH && X(r.left) < box[2] + BENEATH_REACH
+                && Y(r.bottom) > box[1] - BENEATH_REACH && Y(r.top) < box[3] + BENEATH_REACH;
             for (const other of Array.from(host.children)) {
                 if (other === slot) break;
                 if (!other.classList.contains('je-tag-slot') || !over(other.getBoundingClientRect())) continue;
                 const shown = getComputedStyle(other);
                 if (shown.visibility === 'hidden' || Math.abs(Number(shown.opacity) - opacity) > 0.05) continue;
                 for (const el of Array.from(other.querySelectorAll('*'))) {
-                    const rect = el.getBoundingClientRect();
-                    if (!over(rect)) continue;
+                    if (!over(el.getBoundingClientRect())) continue;
                     const style = getComputedStyle(el);
                     if (style.visibility === 'hidden' || !(Number(style.opacity) > 0)) continue;
                     const colour = parseColour(style.backgroundColor);
                     const edge = parseFloat(style.borderTopWidth) || 0;
                     const edgeColour = parseColour(style.borderTopColor);
-                    if ((colour && colour[3] > 0) || (edge > 0 && edgeColour && edgeColour[3] > 0)) {
-                        out.push({
-                            ...place(rect), colour: colour && colour[3] > 0 ? style.backgroundColor : undefined, radius: (parseFloat(style.borderTopLeftRadius) || 0) * scale,
-                            border: edge > 0 && edgeColour && edgeColour[3] > 0 ? { width: edge * scale, colour: style.borderTopColor } : undefined,
-                        });
-                    }
-                    if (el.tagName === 'IMG') {
-                        const img = /** @type {HTMLImageElement} */ (el);
-                        let local = false;
-                        try { local = new URL(img.currentSrc || img.src, location.href).origin === location.origin; } catch { /* not a URL: not drawn */ }
-                        if (local && img.complete && img.naturalWidth > 0) out.push({ ...place(rect), image: img });
-                        continue;
-                    }
-                    for (const node of Array.from(el.childNodes)) {
-                        if (node.nodeType !== 3 || !/\S/.test(node.nodeValue || '')) continue;
-                        let at = rect;
-                        if (typeof document.createRange === 'function') {
-                            const range = document.createRange();
-                            range.selectNodeContents(node);
-                            if (typeof range.getBoundingClientRect === 'function') at = range.getBoundingClientRect();
-                        }
-                        if (!over(at)) continue;
-                        const raw = (node.nodeValue || '').replace(/\s+/g, ' ').trim();
-                        out.push({
-                            ...place(at), text: style.textTransform === 'uppercase' ? raw.toUpperCase() : raw, colour: style.color,
-                            font: `${style.fontStyle || 'normal'} ${style.fontWeight || 400} ${(parseFloat(style.fontSize) || 12) * scale}px ${style.fontFamily || 'sans-serif'}`,
-                            spacing: style.letterSpacing && style.letterSpacing !== 'normal' ? `${(parseFloat(style.letterSpacing) || 0) * scale}px` : '0px',
-                        });
-                    }
+                    if ((colour && colour[3] > 0) || (edge > 0 && edgeColour && edgeColour[3] > 0)) return true;
+                    if (el.tagName === 'IMG' || el.localName === 'svg' || style.backgroundImage !== 'none' || style.boxShadow !== 'none') return true;
+                    if (Array.from(el.childNodes).some((node) => node.nodeType === 3 && /\S/.test(node.nodeValue || ''))) return true;
                 }
             }
-            return out;
+            return false;
         }
 
         /**
@@ -840,7 +855,7 @@
                 }
                 card.moved = false;
                 const boxStyle = getComputedStyle(art.box);
-                // Never sharper than the page shows it: artwork a style filters, hides or fades keeps the plain pill
+                // Never sharper than the page shows it: artwork a style filters, hides or fades keeps the live filter
                 // (while a hover dims it, say: the card is read again when that is over).
                 const shown = (style, el) => style.filter === 'none' && style.visibility !== 'hidden'
                     && (Number(style.opacity) >= 1 || (typeof el.getAnimations === 'function' && el.getAnimations().length > 0));
@@ -892,6 +907,8 @@
                 /** @type {Map<HTMLElement, Base>} */
                 const bases = new Map();
                 const parts = [];
+                // A tag that shows a backdrop and gets no picture here: the card then keeps the live filter for all of them.
+                let partial = false;
                 for (const tag of tags) {
                     const rect = tag.getBoundingClientRect();
                     if (!(rect.width > 0 && rect.height > 0)) continue;
@@ -901,10 +918,10 @@
                     if (style.visibility === 'hidden' || (colour && colour[3] >= 1 && style.backgroundImage === 'none')) continue;
                     const group = /** @type {HTMLElement|null} */ (tag.closest('[data-je-group]'));
                     const slot = /** @type {HTMLElement|null} */ (tag.closest('.je-tag-slot'));
-                    if (!group || !slot || !host.contains(slot)) continue;
+                    if (!group || !slot || !host.contains(slot)) { partial = true; continue; }
                     // The picture is the slot's, so it would stay at full strength under a tag that is
-                    // itself translucent or fading (its own opacity, or its group's): the plain pill then.
-                    if (Number(style.opacity) < 1 || (group !== tag && Number(facts(group).style.opacity) < 1)) { measureAgainLater(card); continue; }
+                    // itself translucent or fading (its own opacity, or its group's): the live filter then.
+                    if (Number(style.opacity) < 1 || (group !== tag && Number(facts(group).style.opacity) < 1)) { partial = true; measureAgainLater(card); continue; }
                     // The backdrop filter's own pixels: the tag's snapped corner, and its size rounded as a whole.
                     // A group or slot that starts a pixel grid of its own snaps the tag from its own snapped corner.
                     let gridX = origin.x, gridY = origin.y, left = 0, top = 0;
@@ -921,7 +938,7 @@
                     const width = snap(units(rect.width * scale)), height = snap(units(rect.height * scale));
                     if (!(width > 0 && height > 0)) continue;
                     // A tag reaching outside the artwork's box has something else behind it.
-                    if (left < boxLeft || top < boxTop || left + width > boxLeft + boxWidth || top + height > boxTop + boxHeight) continue;
+                    if (left < boxLeft || top < boxTop || left + width > boxLeft + boxWidth || top + height > boxTop + boxHeight) { partial = true; continue; }
                     // What the host, the slot and the group (when it has a box) paint between the artwork and the tag.
                     const unders = [];
                     let drawable = true;
@@ -935,7 +952,7 @@
                         unders.push({ x: f.painted[0] - boxLeft, y: f.painted[1] - boxTop, width: f.painted[2] - f.painted[0], height: f.painted[3] - f.painted[1], colour: bg.colour, gradients: bg.gradients, host: el === host });
                         underText += `${bg.text};`;
                     }
-                    if (!drawable) continue;
+                    if (!drawable) { partial = true; continue; }
                     // The slot shows the picture's pixels that lie inside its own box.
                     /** @type {Piece[]} */
                     const pieces = [];
@@ -953,22 +970,21 @@
                     const inSlot = facts(slot).painted;
                     const cutRight = Math.max(left, Math.min(left + width, inSlot[2])), cutBottom = Math.max(top, Math.min(top + height, inSlot[3]));
                     piece(slot, Math.max(left, inSlot[0]), Math.max(top, inSlot[1]), cutRight, cutBottom);
-                    if (!pieces.length) continue;
+                    if (!pieces.length) { partial = true; continue; }
                     const corners = [style.borderTopLeftRadius, style.borderTopRightRadius, style.borderBottomRightRadius, style.borderBottomLeftRadius];
                     // A corner given as a percentage or as an ellipse is not cut here: a square picture
-                    // would show past the pill's corners, so such a tag keeps the plain pill.
-                    if (corners.some((r) => /%|\S\s+\S/.test(String(r || '')))) continue;
+                    // would show past the pill's corners, so such a tag keeps the live filter.
+                    if (corners.some((r) => /%|\S\s+\S/.test(String(r || '')))) { partial = true; continue; }
                     const radii = corners.map((r) => (parseFloat(r) || 0) * scale);
-                    const beneath = beneathOf(host, slot, Number(facts(slot).style.opacity), [left, top, left + width, top + height], X, Y, scale)
-                        .map((b) => ({ ...b, x: b.x - boxLeft, y: b.y - boxTop }));
-                    specs.push({ x: left - boxLeft, y: top - boxTop, width, height, radii, unders, beneath, pieces });
+                    // Another slot's chip under the tag is part of its backdrop: only the filter shows it as it is.
+                    if (chipBeneath(host, slot, Number(facts(slot).style.opacity), [left, top, left + width, top + height], X, Y)) { partial = true; continue; }
+                    specs.push({ x: left - boxLeft, y: top - boxTop, width, height, radii, unders, pieces });
                     parts.push([left - boxLeft, top - boxTop, width, height, radii.map(units).join('/'), underText,
-                        beneath.map((b) => [units(b.x), units(b.y), units(b.width), units(b.height), b.colour || '', b.radius || 0, b.border ? `${b.border.width}${b.border.colour}` : '', b.text || '', b.font || '', b.image ? b.image.currentSrc || b.image.src : ''].join('~')).join(';'),
                         pieces.map((p) => `${p.sx},${p.sy},${p.width},${p.height},${p.left},${p.top},${p.cssWidth},${p.cssHeight}`).join(';')].join(','));
                 }
                 if (!specs.length) return none;
                 const sig = [scale, art.url, art.img ? 'img' : 'bg', fit.size, fit.position, baseColour || '', frac(X(boxRect.left)), frac(Y(boxRect.top)), boxWidth, boxHeight, ...parts].join('|');
-                return { card, sig, job: { card, sig, key: art.url, url: art.url, img: art.img, scale, boxWidth, boxHeight, fit, base: baseColour, specs, bases } };
+                return { card, sig, job: { card, sig, key: art.url, url: art.url, img: art.img, scale, boxWidth, boxHeight, fit, base: baseColour, specs, bases, partial } };
             };
             const result = full();
             if (!result.hold) card.fullSig = result.sig;
@@ -985,7 +1001,8 @@
             const started = performance.now();
             const scale = pixelScale();
             const pass = { origins: new Map(), probed: false };
-            const plans = list.filter((card) => card.host.isConnected && cards.get(card.host) === card).map((card) => read(card, scale, pass));
+            // A card in use keeps the live filter: it is read when it rests (rest).
+            const plans = list.filter((card) => card.host.isConnected && cards.get(card.host) === card && !card.live).map((card) => read(card, scale, pass));
             for (const { card, sig, job, hold } of plans) {
                 if (hold) continue;
                 // The same geometry on the same elements: nothing to do. The same geometry on new elements
@@ -1006,6 +1023,8 @@
                 }
                 for (const carrier of card.carriers) clear(carrier);
                 card.carriers.clear();
+                // No picture until the new one is drawn (or at all): the live filter stands in.
+                setBlur(card.host, true);
                 // The pictures taken away are not a change to measure.
                 card.chips?.takeRecords();
                 if (job && isSupported()) {
@@ -1251,52 +1270,13 @@
         }
 
         /**
-         * Paint what a chip of an earlier slot shows under a tag: its box, a label or an image.
-         * @param {CanvasRenderingContext2D} ctx
-         * @param {Beneath} chip
-         * @param {number} dx - Its offset in the canvas.
-         * @param {number} dy
-         */
-        function drawBeneath(ctx, chip, dx, dy) {
-            if (chip.image) {
-                ctx.drawImage(chip.image, dx, dy, chip.width, chip.height);
-                return;
-            }
-            if (chip.text !== undefined) {
-                ctx.font = chip.font || '';
-                if ('letterSpacing' in ctx) /** @type {*} */ (ctx).letterSpacing = chip.spacing || '0px';
-                ctx.textBaseline = 'middle';
-                ctx.textAlign = 'left';
-                ctx.fillStyle = chip.colour || '#fff';
-                ctx.fillText(chip.text, dx, dy + chip.height / 2);
-                return;
-            }
-            ctx.save();
-            ctx.translate(dx, dy);
-            const r = chip.radius || 0;
-            roundedPath(ctx, chip.width, chip.height, [r, r, r, r]);
-            if (chip.colour) {
-                ctx.fillStyle = chip.colour;
-                ctx.fill();
-            }
-            if (chip.border) {
-                // Inside the box's edge, as a border is.
-                ctx.clip();
-                ctx.lineWidth = chip.border.width * 2;
-                ctx.strokeStyle = chip.border.colour;
-                ctx.stroke();
-            }
-            ctx.restore();
-        }
-
-        /**
          * One tag's picture: what is behind the tag, blurred, with the tag's
          * corners cut; then each of its parts as an image.
          * @param {Job} job
          * @param {Spec} spec
          * @param {{drawable: CanvasImageSource, width: number, height: number}} art
          * @param {{x: number, y: number, width: number, height: number}} placed - The image in its box.
-         * @returns {string[]|null} A PNG data URL for each piece, or null when the tag keeps the plain pill.
+         * @returns {string[]|null} A PNG data URL for each piece, or null when the tag keeps the live filter.
          */
         function picture(job, spec, art, placed) {
             const { width, height } = spec;
@@ -1325,7 +1305,6 @@
             };
             // In paint order: the host's own background, the chips of earlier slots, then the tag's slot and group.
             spec.unders.filter((under) => under.host).forEach(background);
-            for (const chip of spec.beneath) drawBeneath(ctx, chip, chip.x - spec.x, chip.y - spec.y);
             spec.unders.filter((under) => !under.host).forEach(background);
             const pixels = ctx.getImageData(0, 0, width, height);
             const data = pixels.data;
@@ -1371,18 +1350,120 @@
                 });
             });
             const card = job.card;
+            // In use: the live filter shows what is behind the tag now (rest() shows these pictures later).
+            if (card.live) return;
+            // Pictures stand in for the filter only when every tag that shows a backdrop has all of its own.
+            const complete = !job.partial && job.specs.length > 0 && job.specs.every((spec, at) => {
+                const urls = drawn[at];
+                return !!urls && spec.pieces.every((p, i) => !!urls[i] && p.carrier.isConnected);
+            });
+            if (!complete) layers.clear();
             for (const carrier of Array.from(card.carriers)) {
                 if (layers.has(carrier)) continue;
                 clear(carrier);
                 card.carriers.delete(carrier);
             }
             for (const [carrier, list] of layers) {
-                if (!carrier.isConnected) continue;
                 write(carrier, list, job.bases.get(carrier) || null);
                 card.carriers.add(carrier);
             }
             // These writes are not a change to measure.
             card.chips?.takeRecords();
+            setBlur(card.host, !complete);
+        }
+
+        // ── A card in use ──────────────────────────────────────────────
+        // A picture is the artwork under a resting tag. With the pointer on a
+        // card (where it does not hide the tags) or focus inside it, Jellyfin
+        // draws its overlay between the artwork and the tags, and the backdrop
+        // filter blurred that too. A card in use therefore gives its pictures
+        // up for the live filter, and takes them back once it rests.
+
+        /**
+         * Whether the pointer hides this card's tags instead of leaving them
+         * on show (the layout controller's rule: "Hide tags on hover", except
+         * for the layouts with a hover reveal of their own).
+         * @param {HTMLElement} host
+         * @returns {boolean}
+         */
+        function hidesOnHover(host) {
+            if (!document.body?.classList.contains('je-tags-hide-on-hover')) return false;
+            const layout = host.dataset.jeLayout;
+            return layout !== 'summary' && layout !== 'minimal';
+        }
+
+        /** @param {Card} card @returns {boolean} Whether focus is in its card, or the pointer is on it with its tags on show. */
+        function inUse(card) {
+            try {
+                const el = card.host.closest('.card, .listItem');
+                return !!el && (el.matches(':focus-within') || (!hidesOnHover(card.host) && el.matches(':hover')));
+            } catch {
+                return false;
+            }
+        }
+
+        /** @param {Card} card The pointer or focus arrived: the live filter, and no picture under it. */
+        function use(card) {
+            if (card.resting) clearTimeout(card.resting);
+            card.resting = 0;
+            lingering.delete(card);
+            if (card.live) return;
+            card.live = true;
+            setBlur(card.host, true);
+            for (const carrier of card.carriers) clear(carrier);
+            card.carriers.clear();
+            // Put back by the measuring pass once the card rests (the same geometry: shown again, not redrawn).
+            card.on = [];
+            card.chips?.takeRecords();
+        }
+
+        /**
+         * A card the pointer or focus left: its pictures come back shortly,
+         * unless it is in use again by then. A card still in use when the
+         * time comes is looked at again when the pointer shows up elsewhere
+         * (a touch leaves its card hovered and sends no pointerout later).
+         * @param {Card} card
+         */
+        function rest(card) {
+            if (!card.live || card.resting) return;
+            card.resting = setTimeout(() => {
+                card.resting = 0;
+                if (!card.live || cards.get(card.host) !== card) return;
+                if (inUse(card)) { lingering.add(card); return; }
+                card.live = false;
+                card.moved = true;
+                markDirty(card);
+            }, LIVE_REST_MS);
+        }
+
+        /** @param {Event} event A pointerover or focusin anywhere on the page. */
+        function onUse(event) {
+            const target = event.target instanceof Element ? event.target : null;
+            const pointer = event.type === 'pointerover';
+            const el = target ? target.closest('.card, .listItem') : null;
+            if (pointer) for (const card of Array.from(lingering)) if (!el || !el.contains(card.host)) { lingering.delete(card); rest(card); }
+            const host = el ? /** @type {HTMLElement|null} */ (el.querySelector('.je-tag-host')) : null;
+            const card = host ? cards.get(host) : undefined;
+            if (!card || !host || (pointer && hidesOnHover(host))) return;
+            use(card);
+        }
+
+        /** @param {Event} event A pointerout or focusout anywhere on the page. */
+        function onLeave(event) {
+            const target = event.target instanceof Element ? event.target : null;
+            const el = target ? target.closest('.card, .listItem') : null;
+            const to = /** @type {any} */ (event).relatedTarget instanceof Node ? /** @type {any} */ (event).relatedTarget : null;
+            if (!el || (to && el.contains(to))) return;
+            const host = /** @type {HTMLElement|null} */ (el.querySelector('.je-tag-host'));
+            const card = host ? cards.get(host) : undefined;
+            if (card) rest(card);
+        }
+
+        if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+            document.addEventListener('pointerover', onUse, { passive: true });
+            document.addEventListener('focusin', onUse);
+            document.addEventListener('pointerout', onLeave, { passive: true });
+            document.addEventListener('focusout', onLeave);
         }
 
         /**
@@ -1397,7 +1478,7 @@
             artwork.delete(job.key);
             artwork.set(job.key, art);
             const started = performance.now();
-            /** @type {(string[]|null)[]} each tag's pictures (null: it keeps the plain pill) */
+            /** @type {(string[]|null)[]} each tag's pictures (null: it keeps the live filter) */
             let drawn = [];
             try {
                 const placed = fitImage(art.width, art.height, job.boxWidth, job.boxHeight, job.fit, job.scale);
@@ -1408,7 +1489,7 @@
                     return urls;
                 });
             } catch (err) {
-                // A canvas the browser will not let us read: this artwork keeps the plain pill.
+                // A canvas the browser will not let us read: this artwork keeps the live filter.
                 drawn = [];
                 markUnreadable(job.key);
                 // Artwork from another origin without CORS: every image from there would be decoded, drawn and refused.
@@ -1471,6 +1552,7 @@
             for (const card of cards.values()) {
                 for (const carrier of card.carriers) clear(carrier);
                 card.carriers.clear();
+                setBlur(card.host, true);
                 card.sig = '';
                 card.fullSig = '';
                 card.kept = null;
@@ -1485,7 +1567,7 @@
         if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
             document.addEventListener('securitypolicyviolation', (event) => {
                 if (!active || event.blockedURI !== 'data' || !/^img-src/.test(event.effectiveDirective || event.violatedDirective || '')) return;
-                console.warn(`${backdropLog} the page's content security policy refuses data: images; status tags keep the plain pill.`);
+                console.warn(`${backdropLog} the page's content security policy refuses data: images; status tags keep the live backdrop filter.`);
                 setActive(false);
             });
         }
