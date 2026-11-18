@@ -56,6 +56,8 @@ function setup(t, { html = card(), settings = {}, plugin = {}, supports = () => 
     html,
     globals: {
       CSS: { supports: (...args) => { asked.push(args.join(': ')); return supports(...args); } }, requestAnimationFrame: fn => { frames.push(fn); return frames.length; },
+      // Idle periods come when the test settles the page, like frames.
+      requestIdleCallback: fn => { frames.push(() => fn({ timeRemaining: () => 50, didTimeout: false })); return frames.length; },
       ResizeObserver: class { constructor(report) { sized.report = report; } observe() {} unobserve() {} disconnect() {} },
       ...globals,
     },
@@ -90,7 +92,7 @@ function setup(t, { html = card(), settings = {}, plugin = {}, supports = () => 
   return Object.assign(h, {
     layout: JE.core.tagLayout, asked, renderers,
     render() { for (const [, r] of renderers) if (r.isEnabled() && r.renderFromServerCache) r.renderFromServerCache(host(), entry(), ID); },
-    /** The mark once the page has settled (a kind of slot is asked about after the paint that first shows it). */
+    /** The mark once the page has settled (a kind of slot is asked about in idle time after its card was drawn). */
     flow: () => { settle(); return host().dataset.jeFlow; },
     async apply(changes) { Object.assign(JE.currentSettings, changes); await JE.reinitializeTagLayout(); },
     /** A language group wrapper with one flag, dimmed when partial. */
@@ -488,24 +490,56 @@ function renderInto(h, host, e = entry()) {
 }
 const hostsOf = h => Array.from(h.document.querySelectorAll('.je-tag-host'));
 
-test('a kind of slot is asked about once, after the paint that first shows it, and its card rests in flow from then on', t => {
+/** Count what is read from the page: computed styles and boxes. */
+function countReads(h) {
+  const reads = { styles: 0, boxes: 0 };
+  const style = h.window.getComputedStyle;
+  h.window.getComputedStyle = function (...args) { reads.styles++; return style.apply(this, args); };
+  const box = h.window.Element.prototype.getBoundingClientRect;
+  h.window.Element.prototype.getBoundingClientRect = function () { reads.boxes++; return box.call(this); };
+  return reads;
+}
+
+test('a kind of slot is asked about once, in idle time after its card was drawn, and its card rests in flow from then on', t => {
   const h = setup(t, { html: card() + card(OTHER) });
   const [first, second] = hostsOf(h);
+  const reads = countReads(h);
   renderInto(h, first);
   assert.equal(first.dataset.jeFlow, undefined, 'drawn positioned: the browser has not laid this kind out both ways yet');
   assert.equal(h.layout.flowStats().probes, 0, 'and nothing is measured while the card is being drawn');
+  assert.deepEqual(reads, { styles: 0, boxes: 0 }, 'nor is any style or box read');
   h.settle();
   assert.equal(first.dataset.jeFlow, '1');
   const asked = h.layout.flowStats().probes;
   assert.ok(asked > 0);
-  // A second card of the same kinds is in flow as it is drawn, with nothing asked.
+  assert.ok(reads.styles > 0 && reads.boxes > 0, 'the idle pass is where the page is read');
+  // A second card of the same kinds is in flow as it is drawn, with nothing asked or read.
+  Object.assign(reads, { styles: 0, boxes: 0 });
   renderInto(h, second);
   assert.equal(second.dataset.jeFlow, '1');
+  assert.deepEqual(reads, { styles: 0, boxes: 0 });
   h.settle();
   h.layout.refreshPresentation();
   h.settle();
   assert.equal(h.layout.flowStats().probes, asked);
   assert.deepEqual(hostsOf(h).map(host => host.dataset.jeFlow), ['1', '1']);
+});
+
+test('the idle pass waits while cards are still being drawn: one pass decides them all', t => {
+  const idle = [];
+  const h = setup(t, { html: card() + card(OTHER), globals: { requestIdleCallback: fn => { idle.push(fn); return idle.length; } } });
+  const [first, second] = hostsOf(h);
+  renderInto(h, first);
+  assert.equal(idle.length, 1, 'asked for when the first card needs it');
+  // Another card arrives before the browser is idle: the period that comes is not the quiet one.
+  renderInto(h, second);
+  idle.shift()({ timeRemaining: () => 50, didTimeout: false });
+  assert.equal(h.layout.flowStats().probes, 0, 'nothing measured in a period cards were drawn before');
+  assert.deepEqual(hostsOf(h).map(host => host.dataset.jeFlow), [undefined, undefined]);
+  assert.equal(idle.length, 1, 'it asks for the next one instead');
+  idle.shift()({ timeRemaining: () => 50, didTimeout: false });
+  assert.deepEqual(hostsOf(h).map(host => host.dataset.jeFlow), ['1', '1'], 'no card was drawn since: both are decided');
+  assert.equal(idle.length, 0);
 });
 
 test('custom CSS that moves a box keeps its kind of card positioned, with no opt-out: the browser lays it out differently in flow', t => {

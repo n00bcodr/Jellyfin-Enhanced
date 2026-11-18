@@ -1847,10 +1847,15 @@
      * (goLive).
      * @param {CardController} ctrl
      * @param {TagLayoutSettings} conf
-     * @returns {boolean}
+     * @param {boolean} [read] - False while a card is being drawn: nothing is read from styles then, and
+     *   an answer that needs a read is null (flushAlike reads it in idle time).
+     * @returns {boolean|null}
      */
-    function flowFor(ctrl, conf) {
-        if (!api.restingFlow || !FLOW_LAYOUTS.has(conf.layout) || !flowSupported() || !flowAllowedByPage()) return false;
+    function flowFor(ctrl, conf, read = true) {
+        if (!api.restingFlow || !FLOW_LAYOUTS.has(conf.layout) || !flowSupported()) return false;
+        // The page's switch is a style read: for a card that is being drawn it waits for the idle pass.
+        if (flowAllowed === null && !read) return null;
+        if (!flowAllowedByPage()) return false;
         if (conf.layout === 'corners' && conf.edge === 'flush') return false;
         const host = ctrl.host;
         if (!host.closest('.card, .listItem')) return false;
@@ -1863,7 +1868,9 @@
             if (blur && child.querySelector('.status-tag')) return false;
             if (!names && child.querySelector('.genre-tag')) names = true;
         }
-        return !names || genreNamesFloat(host);
+        if (!names) return true;
+        if (namesFloat === null && !read) return null;
+        return genreNamesFloat(host);
     }
 
     // ── The page's own CSS on a flow card ──────────────────────────────
@@ -1872,7 +1879,7 @@
     // flow, each asked once per kind and remembered:
     //   - does the browser lay its slots out in flow exactly as positioned?
     //     Asked of the browser itself: a card of the kind is measured both
-    //     ways after a paint (laidOutAlike). A nudged group, a slot with
+    //     ways in idle time (flushAlike). A nudged group, a slot with
     //     another inset or margin, a re-ordered or re-aligned stack, padding
     //     on the host: whatever moves a box by any property answers no.
     //   - is anything on it a layer of its own (translucent, transformed,
@@ -1947,37 +1954,19 @@
     }
 
     /**
-     * The page's CSS may have changed under cards already drawn. What styles
-     * said is forgotten, and one card of each kind of slot on the page is
-     * measured again where it stands, in the layout it has and in the other
-     * (one layout for all of them, not one for every card). Then each card
-     * is decided again: only those whose answers changed are touched. A card
-     * that cannot be measured now keeps what it has until it gets a size.
+     * The page's CSS may have changed under cards already drawn. What was
+     * learnt is forgotten and every card is decided again in the idle pass
+     * (flushAlike): one card of each kind is measured where it stands, and
+     * only cards whose answers changed are touched. A card resting in flow
+     * keeps its layout meanwhile.
      */
     function reprobe() {
         forgetPageCss();
-        /** @type {Array<[CardController, TagLayoutSettings]>} */
-        const shown = [];
-        /** @type {Array<{host: HTMLElement, slots: Array<[HTMLElement, string]>}>} */
-        const probes = [];
-        const claimed = new Set();
         for (const el of document.querySelectorAll('.je-tag-host')) {
-            const host = /** @type {HTMLElement} */ (el);
-            const ctrl = controllers.get(host);
+            const ctrl = controllers.get(/** @type {HTMLElement} */ (el));
             if (!ctrl || !ctrl.layout) continue;
-            if (!(host.clientWidth > 0)) { awaitSize(ctrl); continue; }
-            const conf = resolveLayout(ctrl);
-            shown.push([ctrl, conf]);
-            if (host.dataset.jeLive || !flowFor(ctrl, conf)) continue;
-            const slots = measurableKinds(ctrl, conf).filter(([, key]) => !claimed.has(key));
-            if (!slots.length) continue;
-            for (const [, key] of slots) claimed.add(key);
-            probes.push({ host, slots });
-        }
-        askBrowser(probes);
-        for (const [ctrl, conf] of shown) {
             ctrl.layered.clear();
-            syncFlow(ctrl, conf);
+            queueFlow(ctrl);
         }
     }
 
@@ -2092,8 +2081,8 @@
 
     /**
      * Whether the browser lays every slot of a card out in flow exactly as
-     * positioned. A kind not asked about yet answers null: the card stays
-     * positioned and is measured after the next paint (flushAlike).
+     * positioned, from what is remembered. A kind not asked about yet
+     * answers null (flushAlike asks).
      * @param {CardController} ctrl
      * @param {TagLayoutSettings} conf
      * @returns {boolean|null}
@@ -2110,13 +2099,34 @@
         }
         ctrl.kinds = kinds;
         if (differs) return false;
-        if (known) return true;
+        return known ? true : null;
+    }
+
+    /** How many cards were ever queued for the idle pass, and how many had been when it was last scheduled. */
+    let flowQueued = 0;
+    let flowSeen = 0;
+    /** The idle pass runs at the latest this long after it was asked for (ms). */
+    const FLOW_IDLE_TIMEOUT_MS = 2000;
+
+    /**
+     * Have a card's resting layout decided in idle time (flushAlike): what
+     * decides it has to be read from the page, and a card that is being
+     * drawn reads nothing.
+     * @param {CardController} ctrl
+     */
+    function queueFlow(ctrl) {
         pendingAlike.add(ctrl);
-        if (!alikeScheduled) {
-            alikeScheduled = true;
-            afterPaint(flushAlike);
-        }
-        return null;
+        flowQueued++;
+        scheduleAlike();
+    }
+
+    /** Run the idle pass when the browser is next idle. */
+    function scheduleAlike() {
+        if (alikeScheduled) return;
+        alikeScheduled = true;
+        flowSeen = flowQueued;
+        if (typeof requestIdleCallback === 'function') requestIdleCallback(() => flushAlike(), { timeout: FLOW_IDLE_TIMEOUT_MS });
+        else setTimeout(flushAlike, 200);
     }
 
     /**
@@ -2156,9 +2166,11 @@
      * Measure cards both ways and remember, for each kind of slot asked
      * about, whether every box came out the same: each card's boxes in the
      * layout it has (reads), the mark flipped on all of them (writes), their
-     * boxes again (one layout for all), and the mark put back. Nothing is
-     * painted in between.
-     * @param {Array<{host: HTMLElement, slots: Array<[HTMLElement, string]>}>} probes
+     * boxes again (one layout for all), and the mark put back. A card that
+     * also shows kinds of element not seen before has their styles read
+     * while it is laid out in flow (layeredFlow). Nothing is painted in
+     * between.
+     * @param {Array<{host: HTMLElement, slots: Array<[HTMLElement, string]>, ctrl: CardController|null, conf: TagLayoutSettings}>} probes
      */
     function askBrowser(probes) {
         if (!probes.length) return;
@@ -2168,8 +2180,10 @@
             else delete host.dataset.jeFlow;
         };
         const first = probes.map((probe, i) => boxesOf(probe.host, probe.slots, !marked[i]));
+        probes.forEach((probe, i) => { if (marked[i] && probe.ctrl) layeredFlow(probe.ctrl, probe.conf, true); });
         probes.forEach((probe, i) => flip(probe.host, !marked[i]));
         const second = probes.map((probe, i) => boxesOf(probe.host, probe.slots, marked[i]));
+        probes.forEach((probe, i) => { if (!marked[i] && probe.ctrl) layeredFlow(probe.ctrl, probe.conf, true); });
         probes.forEach((probe, i) => {
             probe.slots.forEach(([, key], k) => {
                 const a = first[i][k], b = second[i][k];
@@ -2181,37 +2195,53 @@
     }
 
     /**
-     * Ask the browser about every kind of slot not answered yet, on one card
-     * of each, after the paint that first shows it. Cards that may rest in
-     * flow now are marked.
+     * The idle pass: decide the resting layout of every card queued for it.
+     * Nothing is read from the page while cards are being drawn; here, once
+     * a whole idle period has passed with no card queued, the page's switch
+     * is read, one card of each kind of slot not answered yet is measured
+     * both ways, the styles of kinds of element not seen yet are read, and
+     * every queued card is marked for flow or left positioned.
      */
     function flushAlike() {
         alikeScheduled = false;
+        if (flowQueued !== flowSeen) { scheduleAlike(); return; }
         const list = Array.from(pendingAlike).filter((c) => c.host.isConnected && controllers.get(c.host) === c && c.layout);
         pendingAlike.clear();
-        /** @type {Array<{host: HTMLElement, slots: Array<[HTMLElement, string]>}>} */
+        /** @type {Array<{host: HTMLElement, slots: Array<[HTMLElement, string]>, ctrl: CardController|null, conf: TagLayoutSettings}>} */
         const probes = [];
         const claimed = new Set();
+        /** @type {Array<[CardController, TagLayoutSettings]>} */
+        const deciding = [];
         for (const ctrl of list) {
             const host = ctrl.host;
-            // A live card is not at rest: asked about when it is. A hidden one has no boxes to compare: when it gets a size.
+            // A live card is not at rest: decided when it is. A hidden one has no boxes to compare: when it gets a size.
             if (host.dataset.jeLive) continue;
             if (!(host.clientWidth > 0)) { awaitSize(ctrl); continue; }
             const conf = resolveLayout(ctrl);
-            if (!flowFor(ctrl, conf)) continue;
+            deciding.push([ctrl, conf]);
+            if (flowFor(ctrl, conf, true) !== true) continue;
             const slots = measurableKinds(ctrl, conf).filter(([, key]) => !flowAlike.has(key) && !claimed.has(key));
-            if (!slots.length) continue;
             for (const [, key] of slots) claimed.add(key);
-            probes.push({ host, slots });
+            // Kinds of element no card has shown yet: their styles are read on this card.
+            const fresh = new Set();
+            layeredFlow(ctrl, conf, false, fresh);
+            let inspect = false;
+            for (const key of fresh) if (!claimed.has(key)) { claimed.add(key); inspect = true; }
+            if (slots.length || inspect) probes.push({ host, slots, ctrl: inspect ? ctrl : null, conf });
         }
         askBrowser(probes);
-        // The answers reach every card they free, not only the ones that asked. With nothing to ask
-        // (hidden or live cards only) nothing changes.
+        for (const [ctrl, conf] of deciding) {
+            const flow = decideFlow(ctrl, conf);
+            // Still not known (an image of the card is loading): it stays as it is and is decided when that settles.
+            if (flow !== null) markFlow(ctrl, flow);
+        }
+        // The answers reach every card they free, not only the ones that asked.
         if (!probes.length) return;
-        for (const ctrl of list) if (ctrl.host.dataset.jeFlow === '1') syncFlow(ctrl, resolveLayout(ctrl));
         for (const el of document.querySelectorAll('.je-tag-host:not([data-je-flow])')) {
             const ctrl = controllers.get(/** @type {HTMLElement} */ (el));
-            if (ctrl && ctrl.layout) syncFlow(ctrl, resolveLayout(ctrl));
+            if (!ctrl || !ctrl.layout || pendingAlike.has(ctrl)) continue;
+            const flow = decideFlow(ctrl, resolveLayout(ctrl));
+            if (flow === true) markFlow(ctrl, true);
         }
     }
 
@@ -2280,26 +2310,42 @@
      * elements, as the fitting pass's "+N" does), and asks the styles once
      * per kind of element: the card's context, the slot, the group, the chip
      * it is part of, its tag and classes. On a settled page that is a map
-     * lookup per new element. Must run while the host is marked for flow and
-     * not live, so the styles read are a flow card's.
+     * lookup per new element.
      * @param {CardController} ctrl
      * @param {TagLayoutSettings} conf
-     * @returns {boolean}
+     * @param {boolean} read - Read the styles of kinds not seen yet. The host must then be marked for flow
+     *   and not live, so the styles read are a flow card's. False (a card being drawn, or one being
+     *   decided from what is remembered): nothing is read, and a kind not seen yet makes the answer null.
+     * @param {Set<string>} [fresh] - Receives the keys of the kinds not seen yet.
+     * @returns {boolean|null}
      */
-    function layeredFlow(ctrl, conf) {
+    function layeredFlow(ctrl, conf, read, fresh) {
         const host = ctrl.host;
         let context = '';
-        /** @param {Element} el @param {string} where - Slot, group and enclosing chip. */
-        const look = (el, where) => {
+        let unknown = false;
+        /**
+         * @param {Element} el
+         * @param {string} where - Slot, group and enclosing chip.
+         * @param {boolean} [passing] - The element is in a passing state of JE's own (a fading slot): never
+         *   read, and not offered to the idle pass as the one to read its kind from.
+         * @returns {boolean} False when its kind has not been seen and is not read now.
+         */
+        const look = (el, where, passing = false) => {
             if (!context) context = flowContext(ctrl, conf);
             const key = `${context}|${where}|${el.tagName}|${classOf(el)}`;
             let layered = flowVerdicts.get(key);
             if (layered === undefined) {
+                if (!read || passing) {
+                    unknown = true;
+                    if (fresh && !passing) fresh.add(key);
+                    return false;
+                }
                 layered = layeredByPage(el);
                 flowVerdicts.set(key, layered);
                 flowCounters.inspections++;
             }
             if (layered) ctrl.layered.add(/** @type {HTMLElement} */ (el));
+            return true;
         };
         // Hide Tags on Hover fades the slots of the card under the pointer: an opacity read then is JE's
         // own and passing, and would be remembered against every card of the kind.
@@ -2313,20 +2359,16 @@
             if (!child.classList.contains('je-tag-slot')) continue;
             const slot = /** @type {HTMLElement} */ (child).dataset.jeSlot || '';
             if (inspected.get(child) !== `${flowEpoch}`) {
-                if (hovered || easingBack) {
-                    fading = true;
-                } else {
-                    inspected.set(child, `${flowEpoch}`);
-                    look(child, `${slot}|slot`);
-                }
+                // Another card of the kind answers for a fading slot; with none, it is read once the pointer has gone.
+                if (look(child, `${slot}|slot`, hovered || easingBack)) inspected.set(child, `${flowEpoch}`);
+                else if (hovered || easingBack) fading = true;
             }
             for (const node of child.children) {
                 const parts = node.getElementsByTagName('*');
                 const stamp = `${flowEpoch}:${parts.length}`;
                 if (inspected.get(node) === stamp) continue;
-                inspected.set(node, stamp);
                 const group = /** @type {HTMLElement} */ (node).dataset.jeGroup || classOf(node);
-                look(node, `${slot}|${group}`);
+                let seen = look(node, `${slot}|${group}`);
                 for (const part of Array.from(parts)) {
                     // A genre's floating name is JE's own (left out of a resting card); the inside of an inline SVG paints with it.
                     if (part.namespaceURI !== 'http://www.w3.org/1999/xhtml' && part.localName !== 'svg') continue;
@@ -2334,12 +2376,14 @@
                     // The chip it belongs to: a rule can tell `.rating-tag-critic .rating-text` from another chip's.
                     let chip = part;
                     while (chip.parentElement && chip.parentElement !== node) chip = chip.parentElement;
-                    look(part, `${slot}|${group}|${chip === part ? '' : classOf(chip)}`);
+                    if (!look(part, `${slot}|${group}|${chip === part ? '' : classOf(chip)}`)) seen = false;
                 }
+                if (seen) inspected.set(node, stamp);
             }
         }
         if (fading) inspectLater(ctrl, hovered);
-        return ctrl.layered.size > 0;
+        if (ctrl.layered.size > 0) return true;
+        return unknown ? null : false;
     }
 
     /** @type {WeakSet<HTMLElement>} hosts whose slots were fading when they were to be inspected: looked at when the pointer has left */
@@ -2367,46 +2411,71 @@
     }
 
     /**
+     * Whether a card may rest in flow, from what is remembered: nothing is
+     * read from the page. Null when the page has to be asked first (its
+     * switch, how it shows genre names, a kind of slot or of element not
+     * seen yet); flushAlike asks in idle time. A card that is hovered or
+     * focused when its tags arrive is live at once (and is inspected once it
+     * rests).
+     * @param {CardController} ctrl
+     * @param {TagLayoutSettings} conf
+     * @returns {boolean|null}
+     */
+    function decideFlow(ctrl, conf) {
+        const host = ctrl.host;
+        const alike = laidOutAlike(ctrl, conf);
+        const eligible = flowFor(ctrl, conf, false);
+        if (eligible !== true) return eligible;
+        // What the page layered last time and is still on the card keeps it positioned, with nothing to re-read.
+        for (const el of ctrl.layered) if (!host.contains(el)) ctrl.layered.delete(el);
+        if (ctrl.layered.size > 0) return false;
+        if (alike !== true) return alike;
+        if (!host.dataset.jeLive && notAtRest(host)) host.dataset.jeLive = '1';
+        // A live mark nothing will take off: the card was removed while focused and put back.
+        else if (host.dataset.jeLive && !restTimers.has(host) && lingering !== host && !notAtRest(host)) delete host.dataset.jeLive;
+        if (host.dataset.jeLive) return true;
+        const layered = layeredFlow(ctrl, conf, false);
+        return layered === null ? null : !layered;
+    }
+
+    /**
+     * Put the resting flow mark on a card's host or take it off.
+     * @param {CardController} ctrl
+     * @param {boolean} flow
+     */
+    function markFlow(ctrl, flow) {
+        const host = ctrl.host;
+        if (flow !== (host.dataset.jeFlow === '1')) {
+            if (flow) host.dataset.jeFlow = '1';
+            else delete host.dataset.jeFlow;
+        }
+        if (flow) ctrl.flowKinds = ctrl.kinds;
+    }
+
+    /**
      * Mark (or unmark) a card's host for the resting flow rules, after its
-     * groups were placed or removed. A card holding a kind of slot the
-     * browser has not been asked about stays positioned until it has
-     * (laidOutAlike). Otherwise the mark goes on first, so that the styles
-     * inspected for layers are a flow card's, and comes off again when
-     * something on the card is a layer of the page's making. A card that is
-     * hovered or focused when its tags arrive is live at once (and is
-     * inspected once it rests).
+     * groups were placed or removed. This runs while the card is being
+     * drawn, so it reads nothing from the page: a card of kinds already
+     * answered is marked or left positioned at once, and any other stays
+     * positioned, as every card always was, until the idle pass has asked
+     * the page (flushAlike). A card resting in flow that holds what it held
+     * when it was let in keeps its layout while it is asked about again
+     * (only the answers were forgotten: a style sheet came, the width
+     * changed), instead of being laid out twice to get back there.
      * @param {CardController} ctrl
      * @param {TagLayoutSettings} conf
      */
     function syncFlow(ctrl, conf) {
         const host = ctrl.host;
         noteSheets();
-        let flow = flowFor(ctrl, conf);
-        if (flow) {
-            // What the page layered last time and is still on the card keeps it positioned, with nothing to re-read.
-            for (const el of ctrl.layered) if (!host.contains(el)) ctrl.layered.delete(el);
-            const alike = ctrl.layered.size > 0 ? false : laidOutAlike(ctrl, conf);
-            // Resting in flow already, holding what it held when it was let in: only the answers were
-            // forgotten (a style sheet came or the width changed while its page was hidden). It keeps its
-            // layout and is measured where it stands (flushAlike), not laid out twice to get there.
-            if (alike === null && host.dataset.jeFlow === '1' && ctrl.flowKinds === ctrl.kinds) return;
-            if (alike !== true) {
-                flow = false;
-            } else {
-                if (!host.dataset.jeLive && notAtRest(host)) host.dataset.jeLive = '1';
-                // A live mark nothing will take off: the card was removed while focused and put back.
-                else if (host.dataset.jeLive && !restTimers.has(host) && lingering !== host && !notAtRest(host)) delete host.dataset.jeLive;
-                if (!host.dataset.jeLive) {
-                    if (host.dataset.jeFlow !== '1') host.dataset.jeFlow = '1';
-                    flow = !layeredFlow(ctrl, conf);
-                }
-            }
+        const flow = decideFlow(ctrl, conf);
+        if (flow !== null) {
+            markFlow(ctrl, flow);
+            return;
         }
-        if (flow !== (host.dataset.jeFlow === '1')) {
-            if (flow) host.dataset.jeFlow = '1';
-            else delete host.dataset.jeFlow;
-        }
-        if (flow) ctrl.flowKinds = ctrl.kinds;
+        queueFlow(ctrl);
+        if (host.dataset.jeFlow === '1' && ctrl.flowKinds === ctrl.kinds) return;
+        markFlow(ctrl, false);
     }
 
     /**
