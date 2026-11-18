@@ -36,6 +36,15 @@
     const FLOW_RISING = `${FLOW_SLOT}:is([data-je-slot="bl"], [data-je-slot="br"])`;
     /** Most children a rising stack places from its last row up (nine groups at most, and room to spare). */
     const FLOW_ROWS = 12;
+    /**
+     * The whole-pixel nudge of a group container (core/tag-layout.js
+     * flushSnap): how far it moves right and down, a fraction of a pixel.
+     * It is always a pair of margins that cancel (left with right, top with
+     * bottom), so the container moves and nothing around it does. Every rule
+     * that gives a group container a margin adds its side of the pair.
+     */
+    const SNAP_X = 'var(--je-snap-x, 0px)';
+    const SNAP_Y = 'var(--je-snap-y, 0px)';
     /** Chips with a box of their own (not the genre circle or a flag image). */
     const BOX_CHIP = ':is(.quality-overlay-label, .rating-tag, .age-rating-tag, .status-tag, .awards-tag, .je-logo-chip, .custom-tag, .language-chip)';
 
@@ -175,7 +184,7 @@
             }
             ${FLOW_SLOT}[data-je-slot="bl"] { justify-items: start; }
             ${FLOW_SLOT}[data-je-slot="br"] { justify-items: end; }
-            ${FLOW_RISING} > * { margin-top: calc(4px * var(--je-tag-scale, 1) * var(--je-tag-gap, 1)); }
+            ${FLOW_RISING} > * { margin-top: calc(calc(4px * var(--je-tag-scale, 1) * var(--je-tag-gap, 1)) + ${SNAP_Y}); }
             ${rows}
             /* 90% (85% on phones) of the image, as the corner rules above work out to. */
             ${FLOW_RISING} > :is(.quality-overlay-container, .language-overlay-container, .genre-overlay-container) { max-height: 90cqh; }
@@ -223,7 +232,8 @@
                 position: relative;
                 flex-shrink: 0;
                 top: auto; right: auto; bottom: auto; left: auto;
-                margin: 0;
+                /* No margin of its own: only the whole-pixel nudge, which is 0 until the controller sets it. */
+                margin: ${SNAP_Y} calc(0px - ${SNAP_X}) calc(0px - ${SNAP_Y}) ${SNAP_X};
             }
 
             /* corners: one stack per corner, first priority at the corner edge */
@@ -346,20 +356,20 @@
             }
             ${INDICATORS}[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > [data-je-indicator-gap],
             .cardIndicators ~ .je-tag-host[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > [data-je-indicator-gap] {
-                margin-top: max(0px, ${LEGACY_INDICATOR_OFFSET} - var(--je-indicator-before, 0px));
+                margin-top: calc(max(0px, ${LEGACY_INDICATOR_OFFSET} - var(--je-indicator-before, 0px)) + ${SNAP_Y});
             }
             /* ... and on phones the rating, age rating and status containers sit
                4px from the card edges instead of 6px. */
             @media (max-width: 480px) {
-                ${LEGACY_EDGE('tl')} { margin-left: -2px; }
-                ${LEGACY_EDGE('bl')} { margin-left: -2px; }
-                ${LEGACY_EDGE('tr')} { margin-right: -2px; }
-                ${LEGACY_EDGE('br')} { margin-right: -2px; }
-                ${LEGACY_EDGE('tl')}:first-child, ${LEGACY_EDGE('tr')}:first-child { margin-top: -2px; }
-                ${LEGACY_EDGE('bl')}:first-child, ${LEGACY_EDGE('br')}:first-child { margin-bottom: -2px; }
+                ${LEGACY_EDGE('tl')} { margin-left: calc(-2px + ${SNAP_X}); }
+                ${LEGACY_EDGE('bl')} { margin-left: calc(-2px + ${SNAP_X}); }
+                ${LEGACY_EDGE('tr')} { margin-right: calc(-2px - ${SNAP_X}); }
+                ${LEGACY_EDGE('br')} { margin-right: calc(-2px - ${SNAP_X}); }
+                ${LEGACY_EDGE('tl')}:first-child, ${LEGACY_EDGE('tr')}:first-child { margin-top: calc(-2px + ${SNAP_Y}); }
+                ${LEGACY_EDGE('bl')}:first-child, ${LEGACY_EDGE('br')}:first-child { margin-bottom: calc(-2px - ${SNAP_Y}); }
                 ${INDICATORS}[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > ${LEGACY_MOBILE_GROUPS}[data-je-indicator-gap],
                 .cardIndicators ~ .je-tag-host[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > ${LEGACY_MOBILE_GROUPS}[data-je-indicator-gap] {
-                    margin-top: max(0px, ${LEGACY_INDICATOR_OFFSET} - 2px - var(--je-indicator-before, 0px));
+                    margin-top: calc(max(0px, ${LEGACY_INDICATOR_OFFSET} - 2px - var(--je-indicator-before, 0px)) + ${SNAP_Y});
                 }
             }
 
@@ -440,8 +450,10 @@
                 min-width: 0;
                 max-width: 100%;
             }
+            /* (An auto margin takes one side of a group's whole-pixel nudge, and shares the line's free space in whole
+               layout units. A nudged line keeps one auto margin and gets the others as lengths: core/tag-layout.js bandNudges.) */
             ${host('bands')}[data-je-slot="top"] > [data-je-group] + [data-je-group] {
-                margin-left: auto;
+                margin-left: var(--je-band-left, auto);
             }
             ${host('bands')}[data-je-slot="top"] > [data-je-group]:first-child {
                 justify-content: flex-start;

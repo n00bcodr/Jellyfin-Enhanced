@@ -2448,6 +2448,8 @@
         if (flow !== (host.dataset.jeFlow === '1')) {
             if (flow) host.dataset.jeFlow = '1';
             else delete host.dataset.jeFlow;
+            // The other layout: the same boxes to within what the comparison allows, measured as they now are.
+            scheduleSnap(ctrl);
         }
         if (flow) ctrl.flowKinds = ctrl.kinds;
     }
@@ -2476,6 +2478,502 @@
         queueFlow(ctrl);
         if (host.dataset.jeFlow === '1' && ctrl.flowKinds === ctrl.kinds) return;
         markFlow(ctrl, false);
+    }
+
+
+    // ── Whole pixels ───────────────────────────────────────────────────
+    // Chromium paints a box that has layout and style containment from a
+    // whole pixel: the box's corner is rounded to one, and everything
+    // inside is placed from there. Seven group containers had that
+    // containment, at the price of a paint property node for each on every
+    // card. Without it a container whose corner falls between two pixels
+    // paints its chips a fraction of a pixel off, which shows in their
+    // edges and in the anti-aliasing of their text. So each of those
+    // containers is moved by that fraction instead (--je-snap-x and
+    // --je-snap-y, a pair of margins that cancel: tags/tag-layout-styles.js):
+    // its corner then lies on the pixel the contained box was painted from,
+    // and the card paints the same pixels with no containment, layer or
+    // stacking context added.
+    //
+    // A card is measured once after the paint that shows its tags, in one
+    // pass for every card queued (reads, then writes), and again only when
+    // its own size or one of its containers' changes (a size observer): no
+    // layout is read while a page scrolls or the pointer moves. A card the
+    // fitting pass is about to measure is un-nudged first, so that pass
+    // reads the layout as it is without the nudge.
+    //
+    // Firefox and WebKit paint a contained box where they paint a plain one
+    // (measured: nothing differs between them), so nothing is nudged there.
+
+    /** The groups whose containers had layout and style containment. */
+    const SNAPPED_GROUPS = new Set(['genre', 'quality', 'language', 'rating', 'ageRating', 'status', 'logos']);
+    /** A size that differs by less than this is the same size (CSS px). */
+    const SNAP_SAME_PX = 0.02;
+    /** A card whose size is changing is measured once it has kept a size for this long (ms). */
+    const SNAP_SETTLE_MS = 120;
+    /** What ends a state a card cannot be measured in (snapLater). */
+    const SNAP_AGAIN_EVENTS = ['pointerleave', 'focusout', 'transitionend', 'transitioncancel', 'animationend', 'animationcancel'];
+    /** A plain move as a computed transform. */
+    const MOVE_ONLY = /^matrix\(1, 0, 0, 1, (-?[\d.e-]+), (-?[\d.e-]+)\)$/;
+    /** @type {WeakMap<HTMLElement, {x: number, y: number, vx: string, vy: string, left: string}>} container → how far it is moved (CSS px) and the values written */
+    const nudges = new WeakMap();
+    /** The written values and the custom properties that carry them. @type {Array<['vx'|'vy'|'left', string]>} */
+    const SNAP_PROPERTIES = [['vx', '--je-snap-x'], ['vy', '--je-snap-y'], ['left', '--je-band-left']];
+    /** @type {WeakSet<HTMLElement>} top bands whose own box is watched (watchBand) */
+    const bandsWatched = new WeakSet();
+    /** @type {Set<CardController>} cards to measure in the next pass */
+    const pendingSnap = new Set();
+    let snapScheduled = false;
+    /** @type {ReturnType<typeof setTimeout>|0} */
+    let snapSettle = 0;
+    /** @type {boolean|null} */
+    let snapSupport = null;
+    /** Layout pixels per CSS pixel: the grid boxes are snapped to. 0 until the browser has said (watchScale). */
+    let layoutScale = 0;
+    /** @type {ResizeObserver|null} */
+    let scaleObserver = null;
+    /** @type {ResizeObserver|null} hosts and nudged containers */
+    let snapObserver = null;
+    /** @type {WeakMap<Element, number[]>} element → its border box [width, height] as last observed */
+    const snapSizes = new WeakMap();
+    /** @type {WeakMap<Element, number[]>} element → its box as the last pass read it */
+    const snapRead = new WeakMap();
+    /** @type {WeakSet<HTMLElement>} hosts waiting for a state they cannot be measured in to end */
+    const snapWaiting = new WeakSet();
+    const snapCounters = { passes: 0, cards: 0, moved: 0, deferred: 0, passMs: 0, maxPassMs: 0 };
+
+    /**
+     * Whether containers are nudged here: an engine that paints a contained
+     * box from a whole pixel (Chromium's family) and can say which grid it
+     * snaps to (`devicePixelContentBoxSize`, Chromium 84).
+     * @returns {boolean}
+     */
+    function snapSupported() {
+        if (snapSupport === null) {
+            snapSupport = false;
+            try {
+                snapSupport = navigator.vendor === 'Google Inc.' && typeof ResizeObserver === 'function'
+                    && typeof ResizeObserverEntry === 'function' && 'devicePixelContentBoxSize' in ResizeObserverEntry.prototype;
+            } catch { snapSupport = false; }
+            // (The two custom properties are left unregistered on purpose: a registered length is kept to
+            // six decimals, which is coarser than a layout unit on a dense screen.)
+        }
+        return snapSupport && api.wholePixels;
+    }
+
+    /**
+     * Learn the grid the browser snaps boxes to, and hear when it changes
+     * (browser zoom, a window moved to another screen). It is the device
+     * pixel ratio, except under an emulated one (the developer tools' device
+     * mode): boxes still snap in CSS pixels there, which the root's size in
+     * device pixels shows.
+     */
+    function watchScale() {
+        if (scaleObserver || typeof ResizeObserver !== 'function') return;
+        try {
+            scaleObserver = new ResizeObserver((entries) => {
+                const entry = entries[entries.length - 1];
+                const css = entry.contentBoxSize?.[0]?.inlineSize;
+                const device = entry.devicePixelContentBoxSize?.[0]?.inlineSize;
+                if (!(css > 0 && device > 0)) return;
+                const ratio = window.devicePixelRatio || 1;
+                // The same within a pixel over the root's width: the ratio is real.
+                const scale = Math.abs(device - css * ratio) <= 1 ? ratio : Math.round(device / css * 100) / 100;
+                if (scale === layoutScale) return;
+                const first = !layoutScale;
+                layoutScale = scale;
+                // Another grid: every card's containers land elsewhere on it.
+                if (!first) for (const el of document.querySelectorAll('.je-tag-host')) {
+                    const ctrl = controllers.get(/** @type {HTMLElement} */ (el));
+                    if (ctrl && ctrl.layout) pendingSnap.add(ctrl);
+                }
+                if (pendingSnap.size) scheduleSnapPass();
+            });
+            scaleObserver.observe(document.documentElement, { box: 'device-pixel-content-box' });
+        } catch {
+            scaleObserver = null;
+            snapSupport = false;
+        }
+    }
+
+    /** Run the pass after the next paint. */
+    function scheduleSnapPass() {
+        if (snapScheduled) return;
+        snapScheduled = true;
+        afterPaint(flushSnap);
+    }
+
+    /**
+     * Queue a card for the next whole-pixel pass.
+     * @param {CardController} ctrl
+     * @param {boolean} [settle] - Its size is changing: wait until it has kept one (a window being resized
+     *   reports every card on every frame).
+     */
+    function scheduleSnap(ctrl, settle = false) {
+        if (!snapSupported()) return;
+        watchScale();
+        pendingSnap.add(ctrl);
+        if (!settle) { scheduleSnapPass(); return; }
+        if (snapSettle) clearTimeout(snapSettle);
+        snapSettle = setTimeout(() => {
+            snapSettle = 0;
+            scheduleSnapPass();
+        }, SNAP_SETTLE_MS);
+    }
+
+    /**
+     * Take a card's nudges off (writes only): the fitting pass is about to
+     * measure it, and reads the layout as it is without them.
+     * @param {CardController} ctrl
+     */
+    function unsnap(ctrl) {
+        for (const slot of ctrl.host.children) {
+            for (const node of slot.children) {
+                if (!nudges.has(/** @type {HTMLElement} */ (node))) continue;
+                nudges.delete(/** @type {HTMLElement} */ (node));
+                for (const [, name] of SNAP_PROPERTIES) /** @type {HTMLElement} */ (node).style.removeProperty(name);
+            }
+        }
+    }
+
+    /**
+     * Size observer of the hosts and containers a pass measured: a size
+     * other than the one it read means the card is laid out differently now
+     * (the window, an image or a font that loaded, a chip's text).
+     * @param {ResizeObserverEntry[]} entries
+     */
+    function onSnapSizes(entries) {
+        for (const entry of entries) {
+            const el = /** @type {HTMLElement} */ (entry.target);
+            if (!el.isConnected) {
+                snapObserver?.unobserve(el);
+                snapSizes.delete(el);
+                snapRead.delete(el);
+                continue;
+            }
+            const band = el.classList.contains('je-tag-slot');
+            // A band is watched for the room inside its padding (which Jellyfin's indicators change); the rest for their own box.
+            const box = band ? null : entry.borderBoxSize?.[0];
+            const width = box ? box.inlineSize : entry.contentRect.width;
+            const height = box ? box.blockSize : entry.contentRect.height;
+            const seen = snapSizes.get(el);
+            snapSizes.set(el, [width, height]);
+            // The size the pass read (for a band: the size it last reported): nothing has changed.
+            const read = band ? seen || [width, height] : snapRead.get(el);
+            if (read && Math.abs(read[0] - width) < SNAP_SAME_PX && Math.abs(read[1] - height) < SNAP_SAME_PX) continue;
+            const host = /** @type {HTMLElement|null} */ (el.classList.contains('je-tag-host') ? el : el.closest('.je-tag-host'));
+            const ctrl = host ? controllers.get(host) : null;
+            if (!ctrl || !ctrl.layout) continue;
+            // A band's margins given as lengths (bandNudges) do not follow a size that changes: off at once, before this frame is painted.
+            if (ctrl.layout === 'bands') unsnap(ctrl);
+            scheduleSnap(ctrl, true);
+        }
+    }
+
+    /**
+     * Watch a top band's own box: its padding follows Jellyfin's indicators,
+     * and the room inside it is what its groups are spread over.
+     * @param {HTMLElement} slot
+     */
+    function watchBand(slot) {
+        if (bandsWatched.has(slot)) return;
+        bandsWatched.add(slot);
+        snapObserver ??= new ResizeObserver(onSnapSizes);
+        snapObserver.observe(slot);
+    }
+
+    /**
+     * Watch an element a pass measured, and note the box it read.
+     * @param {Element} el
+     * @param {DOMRect} rect
+     */
+    function noteSnapRead(el, rect) {
+        if (!snapRead.has(el)) {
+            snapObserver ??= new ResizeObserver(onSnapSizes);
+            snapObserver.observe(el);
+        }
+        snapRead.set(el, [rect.width, rect.height]);
+    }
+
+    /**
+     * Whether an element's box is the size it is laid out at. Not so while
+     * its card is scaled (hovered, focused, animating): distances read then
+     * are scaled too.
+     * @param {Element} el
+     * @param {DOMRect} rect
+     * @returns {boolean}
+     */
+    function atLayoutSize(el, rect) {
+        const seen = snapSizes.get(el);
+        return !seen || (Math.abs(seen[0] - rect.width) < SNAP_SAME_PX && Math.abs(seen[1] - rect.height) < SNAP_SAME_PX);
+    }
+
+    /**
+     * Measure a card again when the state it could not be measured in ends
+     * (the pointer leaves, focus leaves, an animation finishes).
+     * @param {CardController} ctrl
+     */
+    function snapLater(ctrl) {
+        const host = ctrl.host;
+        const card = host.closest('.card, .listItem') || host.parentElement;
+        if (!card || snapWaiting.has(host)) return;
+        snapWaiting.add(host);
+        snapCounters.deferred++;
+        const again = () => {
+            for (const type of SNAP_AGAIN_EVENTS) card.removeEventListener(type, again, true);
+            snapWaiting.delete(host);
+            if (host.isConnected && controllers.get(host) === ctrl && ctrl.layout) scheduleSnap(ctrl, true);
+        };
+        for (const type of SNAP_AGAIN_EVENTS) card.addEventListener(type, again, true);
+    }
+
+    /**
+     * Whether an element starts a pixel grid of its own: the browser snaps
+     * the boxes inside it from its own (snapped) corner, not from the page's.
+     * Measured on Chromium 145: paint containment, layout with style
+     * containment (Jellyfin's `.cardScalable`), content-visibility,
+     * `will-change: transform` or `scale` (a home row's scroll slider), and
+     * here any transform that is more than a move. (The same rule places the
+     * status tags' pictures: tags/status-tag-backdrop.js.)
+     * @param {CSSStyleDeclaration} style
+     * @param {boolean} moves - Its transform is none or a plain move.
+     * @returns {boolean}
+     */
+    function startsPixelGrid(style, moves) {
+        const contain = style.contain || '';
+        const paint = /\b(?:paint|content|strict)\b/.test(contain);
+        const layout = /\b(?:layout|content|strict)\b/.test(contain);
+        const styled = /\b(?:style|content|strict)\b/.test(contain) || (!!style.containerType && style.containerType !== 'normal');
+        return paint || (layout && styled) || /\b(?:transform|scale|rotate)\b/.test(style.willChange || '')
+            || (!!style.contentVisibility && style.contentVisibility !== 'visible') || !moves;
+    }
+
+    /**
+     * What an element's styles say of the pixel grid, kept until what is
+     * known of the page's CSS is next forgotten (forgetPageCss): whether it
+     * starts one, and the plain move it makes otherwise.
+     * @type {WeakMap<Element, {epoch: number, starts: boolean, move: number[]|null}>}
+     */
+    const gridFacts = new WeakMap();
+
+    /** @param {Element} el @returns {{epoch: number, starts: boolean, move: number[]|null}} */
+    function gridFact(el) {
+        let fact = gridFacts.get(el);
+        if (fact && fact.epoch === flowEpoch) return fact;
+        fact = { epoch: flowEpoch, starts: false, move: null };
+        try {
+            const style = getComputedStyle(el);
+            const transform = style.transform || 'none';
+            const move = transform === 'none' ? null : MOVE_ONLY.exec(transform);
+            fact.starts = startsPixelGrid(style, transform === 'none' || !!move);
+            if (!fact.starts && move) fact.move = [Number(move[1]), Number(move[2])];
+        } catch { /* no styles to read: it starts nothing */ }
+        gridFacts.set(el, fact);
+        return fact;
+    }
+
+    /**
+     * Where the pixel grid of an element's children starts (reads only):
+     * the corner of the nearest element that starts one, itself included,
+     * else the page's. A plain move in between moves the grid with it.
+     * @param {Element|null} el
+     * @param {Map<Element, {x: number, y: number}>} memo - One pass's answers.
+     * @returns {{x: number, y: number}} In viewport CSS pixels.
+     */
+    function gridOrigin(el, memo) {
+        if (!el || el === document.documentElement) return { x: 0, y: 0 };
+        const known = memo.get(el);
+        if (known) return known;
+        const fact = gridFact(el);
+        let origin;
+        if (fact.starts) {
+            const rect = el.getBoundingClientRect();
+            origin = { x: rect.left, y: rect.top };
+        } else {
+            const up = gridOrigin(el.parentElement, memo);
+            origin = fact.move ? { x: up.x + fact.move[0], y: up.y + fact.move[1] } : up;
+        }
+        memo.set(el, origin);
+        return origin;
+    }
+
+    /**
+     * How far a coordinate is from the whole pixel a contained box there
+     * was painted from. Layout works in 64ths of a pixel, and rounds a half
+     * up.
+     * @param {number} value - CSS px from the grid's corner.
+     * @returns {number} Layout units (64ths of a layout pixel) to move by.
+     */
+    function snapUnits(value) {
+        const units = Math.round(value * layoutScale * 64);
+        return Math.floor(units / 64 + 0.5) * 64 - units;
+    }
+
+    /** @param {number} units - Layout units. @returns {number} CSS px. */
+    const unitsToPx = (units) => units / 64 / layoutScale;
+
+    /** @param {number} px - CSS px. @returns {number} Layout units, to the nearest. */
+    const toUnits = (px) => Math.round(px * layoutScale * 64);
+
+    /**
+     * Bands' top band spreads its groups with auto margins: the band's first
+     * group has one on its right, every other group one on its left, and
+     * the browser shares a line's free space among them in whole layout
+     * units, one after the other. A group moved through its other margin
+     * changes that sharing, and with it where the groups between the ends
+     * of the line land. So the line's first and last group are moved
+     * through the margin they have (they are held by the line's ends), and
+     * each group in between gets its auto margin as a length, what it
+     * measures now plus the nudge (--je-band-left): it then sits a fixed
+     * distance from the group after it, and the line lies exactly as it
+     * did, each group moved by its own fraction. Lengths do not follow a
+     * card that changes size, so the size observer takes them off the
+     * moment one does (onSnapSizes).
+     * @param {HTMLElement} slot
+     * @param {{x: number, y: number}} origin - The corner of the slot's pixel grid.
+     * @param {Array<{node: HTMLElement, rect: DOMRect, ux: number, uy: number, dx: number, dy: number, group: boolean}>} items - Every item of the band that has a box, in order: its groups, and anything else laid out with them.
+     * @returns {Array<{vx: number, left: number}|null>} For each item its --je-snap-x and --je-band-left (0: none), in CSS px; null for one that stays as it is.
+     */
+    function bandNudges(slot, origin, items) {
+        /** @type {Array<{vx: number, left: number}|null>} */
+        const out = new Array(items.length).fill(null);
+        let gap = 0;
+        let start = 0;
+        try {
+            const style = getComputedStyle(slot);
+            // (A length becomes layout units by dropping what is left over.)
+            gap = Math.floor((parseFloat(style.columnGap) || 0) * layoutScale * 64 + 1e-3);
+            start = toUnits(slot.getBoundingClientRect().left + (parseFloat(style.paddingLeft) || 0) - origin.x);
+        } catch { return out; }
+        /** @type {number[][]} */
+        const lines = [];
+        items.forEach((item, i) => {
+            const line = lines[lines.length - 1];
+            if (line && Math.abs(items[line[0]].uy - item.uy) < 1) line.push(i);
+            else lines.push([i]);
+        });
+        /** A CSS pixel, in layout units: the least an auto margin must hold to give some up. */
+        const pixel = 64 * layoutScale;
+        lines.forEach((line, at) => {
+            const n = line.length;
+            // Something on the line that is not a group has no auto margin: the line stays as it is.
+            if (line.some((i) => !items[i].group)) return;
+            const x = line.map((i) => toUnits(items[i].ux));
+            const w = line.map((i) => toUnits(items[i].rect.width));
+            const d = line.map((i) => toUnits(items[i].dx));
+            // The line starts with the band's first group: it is held by the line's start, and two auto margins lie between it and the next.
+            const first = items[line[0]].node === slot.firstElementChild;
+            /** The auto margin (or two) between a group and the next. */
+            const between = (/** @type {number} */ j) => x[j + 1] - (x[j] + w[j]) - gap;
+            // Room: every auto margin holds a pixel at least, so none runs out and wraps a group ...
+            let free = first ? 0 : x[0] - start;
+            let roomy = first ? n === 1 || between(0) >= 2 * pixel : free >= pixel;
+            for (let j = 0; j < n - 1; j++) {
+                free += between(j);
+                if (j > 0 || !first) roomy = roomy && between(j) >= pixel;
+            }
+            if (!roomy) return;
+            const lengths = (/** @type {number} */ j) => j >= (first ? 2 : 1);
+            // ... and the next line's first group must stay too wide for what the margins leave of this line.
+            const next = lines[at + 1];
+            const taken = d.reduce((sum, nudge, j) => sum + (first && j === 0 ? nudge : -nudge) + (lengths(j) ? between(j - 1) + nudge : 0), 0);
+            if (next && free - taken + 1 >= toUnits(items[next[0]].rect.width) + gap) return;
+            line.forEach((i, j) => {
+                // (--je-snap-x is the left margin of the band's first group and minus the right margin of the others.)
+                out[i] = { vx: unitsToPx(d[j]), left: lengths(j) ? unitsToPx(between(j - 1) + d[j]) : 0 };
+            });
+        });
+        return out;
+    }
+
+    /**
+     * The whole-pixel pass: for every queued card, how far each of its
+     * containers is from the pixel it was painted from when it was
+     * contained (reads), then the nudges that changed (writes).
+     */
+    function flushSnap() {
+        snapScheduled = false;
+        if (!snapSupported()) { pendingSnap.clear(); return; }
+        // The grid is not known yet: the pass runs when the browser has said.
+        if (!layoutScale) { watchScale(); return; }
+        const started = performance.now();
+        const list = Array.from(pendingSnap).filter((c) => c.host.isConnected && controllers.get(c.host) === c && c.layout);
+        pendingSnap.clear();
+        /** @type {Array<{node: HTMLElement, x: number, y: number, vx: number, left: number}>} */
+        const plans = [];
+        const memo = new Map();
+        for (const ctrl of list) {
+            // About to be fitted: measured after that pass (flushFit queues it again).
+            if (pendingFit.has(ctrl)) continue;
+            const host = ctrl.host;
+            const hostRect = host.getBoundingClientRect();
+            // Not laid out (a hidden page): its size observer queues it when it is.
+            if (!(hostRect.width > 0 && hostRect.height > 0)) { noteSnapRead(host, hostRect); continue; }
+            if (!atLayoutSize(host, hostRect)) { snapLater(ctrl); continue; }
+            snapCounters.cards++;
+            let any = false;
+            for (const slot of host.children) {
+                if (!slot.classList.contains('je-tag-slot')) continue;
+                const band = ctrl.layout === 'bands' && /** @type {HTMLElement} */ (slot).dataset.jeSlot === 'top';
+                /** @type {Array<{node: HTMLElement, rect: DOMRect, ux: number, uy: number, dx: number, dy: number, group: boolean}>} */
+                const items = [];
+                /** @type {{x: number, y: number}|null} */
+                let origin = null;
+                for (const child of slot.children) {
+                    const node = /** @type {HTMLElement} */ (child);
+                    const group = node.dataset.jeGroup;
+                    const snapped = !!group && SNAPPED_GROUPS.has(group);
+                    // In the band every item takes part: one that is not nudged still has to stay where it is.
+                    if (!snapped && !band) continue;
+                    const was = nudges.get(node);
+                    const rect = node.getBoundingClientRect();
+                    // No box (its chips are the slot's own items, it is hidden, its image has not loaded): nothing is
+                    // painted from its corner. It is watched all the same: when it gets a box, the card is measured.
+                    if (!(rect.width > 0 && rect.height > 0)) {
+                        if (was) plans.push({ node, x: 0, y: 0, vx: 0, left: 0 });
+                        if (group) noteSnapRead(node, rect);
+                        continue;
+                    }
+                    if (!atLayoutSize(node, rect)) continue;
+                    origin ??= gridOrigin(slot, memo);
+                    if (group) noteSnapRead(node, rect);
+                    // Where it would be without the nudge it has.
+                    const ux = rect.left - origin.x - (was ? was.x : 0);
+                    const uy = rect.top - origin.y - (was ? was.y : 0);
+                    items.push({ node, rect, ux, uy, dx: snapped ? unitsToPx(snapUnits(ux)) : 0, dy: snapped ? unitsToPx(snapUnits(uy)) : 0, group: !!group });
+                }
+                if (!items.length) continue;
+                any = true;
+                if (band) watchBand(/** @type {HTMLElement} */ (slot));
+                const values = band && origin ? bandNudges(/** @type {HTMLElement} */ (slot), origin, items) : null;
+                items.forEach((item, i) => {
+                    if (!item.group) return;
+                    if (!values) { plans.push({ node: item.node, x: item.dx, y: item.dy, vx: item.dx, left: 0 }); return; }
+                    // A band line that could not take its nudges keeps its groups where they are across; up and down nothing is shared.
+                    const value = values[i];
+                    plans.push({ node: item.node, x: value ? item.dx : 0, y: item.dy, vx: value ? value.vx : 0, left: value ? value.left : 0 });
+                });
+            }
+            if (any) noteSnapRead(host, hostRect);
+        }
+        for (const plan of plans) {
+            const { node } = plan;
+            const was = nudges.get(node);
+            // The shortest text that reads back as the same number: the margin then comes out on the layout unit meant.
+            const next = { x: plan.x, y: plan.y, vx: plan.vx ? `${plan.vx}px` : '', vy: plan.y ? `${plan.y}px` : '', left: plan.left ? `${plan.left}px` : '' };
+            for (const [key, name] of SNAP_PROPERTIES) {
+                if ((was ? was[key] : '') === next[key]) continue;
+                if (next[key]) node.style.setProperty(name, next[key]);
+                else node.style.removeProperty(name);
+                snapCounters.moved++;
+            }
+            if (next.vx || next.vy || next.left) nudges.set(node, next);
+            else nudges.delete(node);
+        }
+        const took = performance.now() - started;
+        snapCounters.passes++;
+        snapCounters.passMs += took;
+        snapCounters.maxPassMs = Math.max(snapCounters.maxPassMs, took);
     }
 
     /**
@@ -2513,6 +3011,7 @@
         ctrl.kinds = '';
         ctrl.flowKinds = '';
         pendingAlike.delete(ctrl);
+        pendingSnap.delete(ctrl);
     }
 
     /**
@@ -2559,6 +3058,7 @@
         syncIndicatorGap(ctrl, conf);
         syncFlow(ctrl, conf);
         scheduleFit(ctrl);
+        scheduleSnap(ctrl);
         // Poster preset: the card's colours follow its artwork (tags/tag-poster-colours.js).
         JE.tagPosterColours?.track(ctrl.host);
     }
@@ -2814,6 +3314,8 @@
     function scheduleFit(ctrl) {
         if (fitting || !(FIT_LAYOUTS.has(ctrl.layout || '') || centreSlots(ctrl).length || cornerLanguageGroups(ctrl).length || indicatorGapsToMeasure(ctrl) || needsShape(ctrl) || needsRadius(ctrl))) return;
         pendingFit.add(ctrl);
+        // The pass measures the layout as it is without the whole-pixel nudges, which are worked out again after it.
+        unsnap(ctrl);
         watchSize(ctrl.host);
         if (fitScheduled) return;
         fitScheduled = true;
@@ -3002,6 +3504,8 @@
         } finally {
             fitting = false;
         }
+        // What was fitted is laid out by the next frame: its whole-pixel nudges are measured after that paint.
+        for (const ctrl of list) scheduleSnap(ctrl);
         // Genre names asked for while this pass was pending, and those of revealed
         // cards it changed, are bounded against the fitted chips.
         const bound = new Set(genreAfterFit);
@@ -4060,6 +4564,7 @@
             syncIndicatorGap(ctrl, conf);
             syncFlow(ctrl, conf);
             scheduleFit(ctrl);
+            scheduleSnap(ctrl);
         }
         return true;
     }
@@ -4081,6 +4586,7 @@
         syncIndicatorGap(ctrl, conf);
         syncFlow(ctrl, conf);
         scheduleFit(ctrl);
+        scheduleSnap(ctrl);
     }
 
     /**
@@ -4178,6 +4684,11 @@
         teardown(ctrl);
         controllers.delete(ctrl.host);
         unwatchSize(ctrl.host);
+        if (snapRead.has(ctrl.host)) {
+            snapObserver?.unobserve(ctrl.host);
+            snapRead.delete(ctrl.host);
+            snapSizes.delete(ctrl.host);
+        }
         // Its artwork watch (tags/tag-poster-colours.js) goes with it.
         JE.tagPosterColours?.release(ctrl.host);
     }
@@ -4448,6 +4959,17 @@
         },
         /** @returns {{alike: number, verdicts: number, probes: number, inspections: number}} What is remembered of the page's CSS, and how often it was asked (performance checks). */
         flowStats: () => ({ alike: flowAlike.size, verdicts: flowVerdicts.size, ...flowCounters }),
+        /**
+         * Whether group containers are nudged to the whole pixel they were painted from when they
+         * were contained (flushSnap). Off, they stay where the layout puts them;
+         * refreshPresentation() applies a change to cards already on the page (the
+         * pixel-comparison harness flips it).
+         */
+        wholePixels: true,
+        /** Run the pending whole-pixel pass now (tests; the page runs it after the next paint). */
+        flushSnap,
+        /** @returns {{passes: number, cards: number, moved: number, deferred: number, passMs: number, maxPassMs: number, scale: number, waiting: number}} Counts and timings of the whole-pixel pass (performance checks). */
+        snapStats: () => ({ ...snapCounters, scale: layoutScale, waiting: pendingSnap.size }),
         normalizeGroup,
         readEdge,
         normalizeSettings,

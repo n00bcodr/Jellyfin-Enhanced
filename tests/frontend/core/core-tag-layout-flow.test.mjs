@@ -422,7 +422,8 @@ test('the stylesheet lays a flow card out as grid items with the same insets, an
   assert.match(rule(RISING), /display: grid; grid-template-rows: repeat\(12, auto\); grid-template-columns: minmax\(0, 1fr\); align-content: end; row-gap: 0;/);
   assert.match(rule(`${SLOT}[data-je-slot="bl"]`), /justify-items: start;/);
   assert.match(rule(`${SLOT}[data-je-slot="br"]`), /justify-items: end;/);
-  assert.match(rule(`${RISING} > *`), /margin-top: calc\(4px \* var\(--je-tag-scale, 1\) \* var\(--je-tag-gap, 1\)\);/);
+  // (with the child's whole-pixel nudge, 0 until the controller sets one)
+  assert.match(rule(`${RISING} > *`), /margin-top: calc\(calc\(4px \* var\(--je-tag-scale, 1\) \* var\(--je-tag-gap, 1\)\) \+ var\(--je-snap-y, 0px\)\);/);
   for (let n = 1; n <= 12; n++) assert.ok(css.includes(`${RISING} > :nth-child(${n}) { grid-row: ${13 - n}; }`), `child ${n} from the bottom`);
   // A grid item's percentage height is its row's: the containers' limit is restated against the host.
   assert.match(rule(`${RISING} > :is(.quality-overlay-container, .language-overlay-container, .genre-overlay-container)`), /max-height: 90cqh;/);
@@ -437,7 +438,7 @@ test('the stylesheet lays a flow card out as grid items with the same insets, an
   assert.match(rule('.je-tag-host.je-tag-host[data-je-live="in"] .genre-tag > .genre-text'), /opacity: 0;/);
   assert.match(rule(`${FLOW} :is(.quality-overlay-container, .language-overlay-container)`), /overflow: clip;/);
   // A legacy card keeps its unmultiplied gap, as its slots always had.
-  assert.ok(css.includes('.je-tag-host[data-je-legacy][data-je-flow]:not([data-je-live]) > .je-tag-slot:is([data-je-slot="bl"], [data-je-slot="br"]) > * { margin-top: 4px;}'));
+  assert.ok(css.includes('.je-tag-host[data-je-legacy][data-je-flow]:not([data-je-live]) > .je-tag-slot:is([data-je-slot="bl"], [data-je-slot="br"]) > * { margin-top: calc(4px + var(--je-snap-y, 0px));}'));
 });
 
 /** The real pipeline's start-up, keeping the stylesheets it injects. */
