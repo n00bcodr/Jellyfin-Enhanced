@@ -662,7 +662,7 @@ docs/
 overrides/                            # Theme template overrides (copies of Material 9.6.12 templates with marked changes)
 ```
 
-`mkdocs.yml` owns navigation and Markdown extensions. Site screenshots (WebP) and short screen recordings (MP4) live in the `docs/images/<area>/` folders above; Spoiler Guard's sit beside its pages in `docs/spoiler-guard/`. `docs/images/readme/` holds the README images. Keep the flat `docs/images/ratings.png`, `theme-selector.png`, `colored-activity-icons.png`, `login-image.png` and `plugin-icons.png`: the admin page loads them from `main` for its **View Screenshot** previews. `overrides/` holds the header, footer, navigation and icon templates for the `classic` theme variant. Pull requests that touch the docs build the site without publishing it and upload it as a `docs-preview` artifact; download it and serve the folder to check the result.
+`mkdocs.yml` owns navigation and Markdown extensions. Site screenshots (WebP) and short screen recordings (MP4) live in the `docs/images/<area>/` folders above; Spoiler Guard's sit beside its pages in `docs/spoiler-guard/`. `docs/images/readme/` holds the README images. Keep the flat `docs/images/ratings.png`, `theme-selector.png`, `colored-activity-icons.png`, `login-image.png` and `plugin-icons.png`: the admin page loads them from `main` for its **View Screenshot** previews. `overrides/` holds the header, footer, navigation and icon templates for the `classic` theme variant. Pull requests that touch the docs build the site without publishing it, so a docs break shows up before merge.
 
 These are documentation assets, separate from runtime fonts, native rendering assets and root feature assets. The admin **Docs** tab loads the hosted site from the browser, rather than an offline copy embedded in the assembly.
 
@@ -755,7 +755,7 @@ The inventory at `tests/docs/production-inventory.json` records lexical producti
 | Workflows | Purpose |
 |---|---|
 | `regression.yml` | Regression suites, lock checks and production inventory. |
-| `docs.yml` | Generated config groups, Zensical build, versioned Pages deployment with mike, and a build-only run with a preview artifact on pull requests. |
+| `docs.yml` | Generated config groups, Zensical build, versioned Pages deployment with mike, and a build-only run on pull requests. |
 | `translation_validation.yml`, `check-unused-translations.yml` | Locale validation and unused-key reporting. |
 | `validate-manifest.yml` | Release manifest validation. |
 | `codeql.yml`, `dependency-review.yml`, `security-scan.yml`, `scorecards.yml` | Static analysis, dependency/security checks and repository scorecard. |
