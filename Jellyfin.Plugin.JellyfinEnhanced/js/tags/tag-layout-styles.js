@@ -26,8 +26,9 @@
     const FLUSH = '.je-tag-host[data-je-layout="corners"][data-je-edge="flush"] > .je-tag-slot';
     /**
      * A card whose resting tags are laid out in flow (core/tag-layout.js
-     * flowFor marks its host), except while the pointer is on it to show its
-     * genre names (data-je-live): the positioned rules apply again then.
+     * flowFor marks its host), except while the pointer is on it with its
+     * tags on show or focus is in it (data-je-live): the positioned rules
+     * apply again then.
      */
     const FLOW = '.je-tag-host[data-je-flow]:not([data-je-live])';
     const FLOW_SLOT = `${FLOW} > .je-tag-slot`;
@@ -139,7 +140,7 @@
      *
      * Only hosts the controller marks get these rules: everything else keeps
      * the positioned layout above, unchanged, and so does a marked host for
-     * as long as the pointer is on its card to show genre names.
+     * as long as its card is hovered (with its tags on show) or focused.
      * @returns {string} CSS text.
      */
     function buildFlowStyles() {

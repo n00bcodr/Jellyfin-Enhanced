@@ -812,9 +812,24 @@
     }
 
     let resizeQueued = false;
+    /** How long a window size must hold before the page's CSS is asked about again (ms), and the timer that waits for it. */
+    const RESIZE_SETTLE_MS = 250;
+    /** @type {ReturnType<typeof setTimeout>|0} */
+    let resizeSettle = 0;
+    /** The window width the page's CSS was last asked about at. */
+    let probedWidth = typeof window !== 'undefined' ? window.innerWidth : 0;
 
     /** Card sizes follow the window: re-fit every fitted card once per frame of resizing. */
     function refitOnResize() {
+        // The page's CSS may answer differently at this size (a media query crossed): asked again once the size holds.
+        // (The width: a phone's address bar coming and going resizes the window on every scroll.)
+        if (resizeSettle) clearTimeout(resizeSettle);
+        resizeSettle = setTimeout(() => {
+            resizeSettle = 0;
+            if (window.innerWidth === probedWidth) return;
+            probedWidth = window.innerWidth;
+            queueReprobe();
+        }, RESIZE_SETTLE_MS);
         if (resizeQueued) return;
         resizeQueued = true;
         requestAnimationFrame(() => {
@@ -1823,8 +1838,9 @@
      *     style their sample hosts themselves);
      *   - a page whose CSS turns flow off (flowAllowedByPage).
      * Floating genre names hang off a positioned icon: a flow card leaves them
-     * out while it rests, and is laid out positioned for as long as the
-     * pointer that shows them is on it (goLive).
+     * out while it rests. Any flow card is laid out positioned for as long
+     * as the pointer is on it with its tags on show, or focus is in it
+     * (goLive).
      * @param {CardController} ctrl
      * @param {TagLayoutSettings} conf
      * @returns {boolean}
@@ -1863,7 +1879,9 @@
 
     /** Style sheets the page had when the answers were reached: another count means other rules. */
     let flowSheets = -1;
-    let resyncQueued = false;
+    let reprobeQueued = false;
+    /** @type {WeakSet<CardController>} cards that had no size when their layout was to be decided: decided when they get one (refitOnSizeChange) */
+    const unmeasured = new WeakSet();
 
     /**
      * Run after the next paint (the shared pass where the DOM module is
@@ -1890,37 +1908,72 @@
 
     /**
      * Notice style sheets arriving or leaving after cards were drawn (custom
-     * CSS saved in the dashboard, a theme, a sheet JE injects late): what
-     * was learnt is forgotten and every card on the page is looked at again
-     * after the next paint. Text written into an existing sheet and a sheet
-     * pulled in by `@import` do not change the count: those apply from the
-     * next JE.reinitializeTagLayout().
+     * CSS saved in the dashboard, a theme, a sheet JE injects late), at the
+     * next card placed: every kind on the page is asked about again after
+     * the next paint (reprobe). Text written into an existing sheet and a
+     * sheet pulled in by `@import` do not change the count: those apply
+     * from the next JE.reinitializeTagLayout().
      */
     function noteSheets() {
         const sheets = document.styleSheets ? document.styleSheets.length : 0;
         if (sheets === flowSheets) return;
         const first = flowSheets < 0;
         flowSheets = sheets;
-        if (first) return;
-        forgetPageCss();
-        if (resyncQueued) return;
-        resyncQueued = true;
+        if (!first) queueReprobe();
+    }
+
+    /**
+     * A card with no size (its page is hidden) has no boxes to compare: its
+     * resting layout is decided when the size observer first reports one.
+     * @param {CardController} ctrl
+     */
+    function awaitSize(ctrl) {
+        unmeasured.add(ctrl);
+        watchSize(ctrl.host);
+    }
+
+    /** Ask about every kind on the page again after the next paint (other style sheets, or a window size that may cross a media query). */
+    function queueReprobe() {
+        if (reprobeQueued) return;
+        reprobeQueued = true;
         afterPaint(() => {
-            resyncQueued = false;
-            syncEveryFlow(false);
+            reprobeQueued = false;
+            reprobe();
         });
     }
 
     /**
-     * Decide flow again for the cards on the page.
-     * @param {boolean} unmarkedOnly - Only the cards not resting in flow now (an answer arrived that may let them).
+     * The page's CSS may have changed under cards already drawn. What styles
+     * said is forgotten, and one card of each kind of slot on the page is
+     * measured again where it stands, in the layout it has and in the other
+     * (one layout for all of them, not one for every card). Then each card
+     * is decided again: only those whose answers changed are touched. A card
+     * that cannot be measured now keeps what it has until it gets a size.
      */
-    function syncEveryFlow(unmarkedOnly) {
-        for (const el of document.querySelectorAll(unmarkedOnly ? '.je-tag-host:not([data-je-flow])' : '.je-tag-host')) {
-            const ctrl = controllers.get(/** @type {HTMLElement} */ (el));
+    function reprobe() {
+        forgetPageCss();
+        /** @type {Array<[CardController, TagLayoutSettings]>} */
+        const shown = [];
+        /** @type {Array<{host: HTMLElement, slots: Array<[HTMLElement, string]>}>} */
+        const probes = [];
+        const claimed = new Set();
+        for (const el of document.querySelectorAll('.je-tag-host')) {
+            const host = /** @type {HTMLElement} */ (el);
+            const ctrl = controllers.get(host);
             if (!ctrl || !ctrl.layout) continue;
-            if (!unmarkedOnly) ctrl.layered.clear();
-            syncFlow(ctrl, resolveLayout(ctrl));
+            if (!(host.clientWidth > 0)) { awaitSize(ctrl); continue; }
+            const conf = resolveLayout(ctrl);
+            shown.push([ctrl, conf]);
+            if (host.dataset.jeLive || !flowFor(ctrl, conf)) continue;
+            const slots = slotKinds(ctrl, conf).filter(([, key]) => !claimed.has(key));
+            if (!slots.length) continue;
+            for (const [, key] of slots) claimed.add(key);
+            probes.push({ host, slots });
+        }
+        askBrowser(probes);
+        for (const [ctrl, conf] of shown) {
+            ctrl.layered.clear();
+            syncFlow(ctrl, conf);
         }
     }
 
@@ -1928,7 +1981,8 @@
      * The z-index each group container's own stylesheet gives it. A group is
      * a flex or grid item in either layout, so it stacks by that number the
      * same way in both; inside a tag host the pipeline's base rules reset
-     * all but the custom group's to auto. Any other value is the page's.
+     * all but the custom group's to auto. Any other value is the page's
+     * (the awards container sets none).
      */
     const OWN_Z_INDEX = {
         [CONTAINER_CLASS.quality]: '100', [CONTAINER_CLASS.genre]: '101', [CONTAINER_CLASS.language]: '101', [CONTAINER_CLASS.rating]: '10',
@@ -1939,21 +1993,26 @@
     const classOf = (el) => el.getAttribute('class') || '';
 
     /**
-     * What tells one kind of card from another for the page's CSS: the
-     * card's classes and item type, and the look its tags are drawn in.
+     * What tells one kind of card from another for the page's CSS: the page
+     * it is on, the card's classes, item type and indicators, and the look
+     * its tags are drawn in.
      * @param {CardController} ctrl
      * @param {TagLayoutSettings} conf
      * @returns {string}
      */
     function flowContext(ctrl, conf) {
         const card = ctrl.host.closest('.card, .listItem');
-        return `${card ? classOf(card) : ''}|${card ? card.getAttribute('data-type') || '' : ''}|${conf.layout}|${conf.legacy ? 1 : 0}|${edgeOf(ctrl)}|${conf.tagScale}|${conf.tagGap}`;
+        const page = ctrl.host.closest('.page, .mainAnimatedPage');
+        const indicators = card ? card.querySelector('.cardIndicators') : null;
+        return `${page ? page.id || classOf(page) : ''}|${card ? classOf(card) : ''}|${card ? card.getAttribute('data-type') || '' : ''}`
+            + `|${indicators ? Array.from(indicators.children, classOf).join(',') : ''}`
+            + `|${conf.layout}|${conf.legacy ? 1 : 0}|${edgeOf(ctrl)}|${conf.tagScale}|${conf.tagGap}`;
     }
 
     // ── Laid out alike ─────────────────────────────────────────────────
 
-    /** Boxes are the same when no edge differs by more than this (CSS px). */
-    const ALIKE_PX = 0.02;
+    /** Boxes are the same when no edge differs by more than this (CSS px): engines round a grid item and a positioned box a few hundredths apart. */
+    const ALIKE_PX = 0.1;
     /** How often the browser was asked about a kind of slot, and an element's styles were read (performance checks and tests). */
     const flowCounters = { probes: 0, inspections: 0 };
     /** @type {Set<CardController>} cards holding a kind of slot the browser has not been asked about */
@@ -2005,8 +2064,7 @@
 
     /**
      * The boxes of some slots of a host, from the host's corner (reads only):
-     * each slot, what it holds, and the chips of a group laid out as
-     * contents. Null for a slot whose quality or language group the page's
+     * each slot, what it holds, and the chips of each group. Null for a slot whose quality or language group the page's
      * CSS no longer clips (positioned state only): flow would clip it again.
      * @param {HTMLElement} host
      * @param {Array<[HTMLElement, string]>} slots
@@ -2021,7 +2079,6 @@
             const add = (el) => {
                 const r = el.getBoundingClientRect();
                 boxes.push(r.left - origin.left, r.top - origin.top, r.width, r.height);
-                return r.width > 0 && r.height > 0;
             };
             add(slot);
             for (const node of slot.children) {
@@ -2030,17 +2087,46 @@
                     try { cs = getComputedStyle(node); } catch { cs = null; }
                     if (cs && ((cs.overflowX && cs.overflowX !== 'hidden') || (cs.overflowY && cs.overflowY !== 'hidden'))) return null;
                 }
-                if (!add(node)) for (const chip of node.children) add(chip);
+                // Its chips too: a genre icon is positioned in one layout and not in the other.
+                add(node);
+                for (const chip of node.children) add(chip);
             }
             return boxes;
         });
     }
 
     /**
+     * Measure cards both ways and remember, for each kind of slot asked
+     * about, whether every box came out the same: each card's boxes in the
+     * layout it has (reads), the mark flipped on all of them (writes), their
+     * boxes again (one layout for all), and the mark put back. Nothing is
+     * painted in between.
+     * @param {Array<{host: HTMLElement, slots: Array<[HTMLElement, string]>}>} probes
+     */
+    function askBrowser(probes) {
+        if (!probes.length) return;
+        const marked = probes.map((probe) => probe.host.dataset.jeFlow === '1');
+        const flip = (host, flow) => {
+            if (flow) host.dataset.jeFlow = '1';
+            else delete host.dataset.jeFlow;
+        };
+        const first = probes.map((probe, i) => boxesOf(probe.host, probe.slots, !marked[i]));
+        probes.forEach((probe, i) => flip(probe.host, !marked[i]));
+        const second = probes.map((probe, i) => boxesOf(probe.host, probe.slots, marked[i]));
+        probes.forEach((probe, i) => {
+            probe.slots.forEach(([, key], k) => {
+                const a = first[i][k], b = second[i][k];
+                flowAlike.set(key, !!a && !!b && a.length === b.length && a.every((value, at) => Math.abs(value - b[at]) <= ALIKE_PX));
+            });
+            flip(probe.host, marked[i]);
+            flowCounters.probes += probe.slots.length;
+        });
+    }
+
+    /**
      * Ask the browser about every kind of slot not answered yet, on one card
-     * of each: its boxes positioned (the layout the paint just made), then
-     * in flow (one layout for all the cards asked), then back. Nothing is
-     * painted in between. Cards that may rest in flow now are marked.
+     * of each, after the paint that first shows it. Cards that may rest in
+     * flow now are marked.
      */
     function flushAlike() {
         alikeScheduled = false;
@@ -2051,32 +2137,24 @@
         const claimed = new Set();
         for (const ctrl of list) {
             const host = ctrl.host;
-            // A hidden card has no boxes to compare, and a live one is not at rest: asked about when next placed.
-            if (host.dataset.jeLive || host.dataset.jeFlow === '1' || !(host.clientWidth > 0)) continue;
+            // A live card is not at rest: asked about when it is. A hidden one has no boxes to compare: when it gets a size.
+            if (host.dataset.jeLive) continue;
+            if (!(host.clientWidth > 0)) { awaitSize(ctrl); continue; }
             const conf = resolveLayout(ctrl);
             if (!flowFor(ctrl, conf)) continue;
             const slots = slotKinds(ctrl, conf).filter(([, key]) => !flowAlike.has(key) && !claimed.has(key));
             if (!slots.length) continue;
             for (const [, key] of slots) claimed.add(key);
             probes.push({ host, slots });
-            flowCounters.probes += slots.length;
         }
-        if (probes.length) {
-            const positioned = probes.map((probe) => boxesOf(probe.host, probe.slots, true));
-            for (const probe of probes) probe.host.dataset.jeFlow = '1';
-            const flowing = probes.map((probe) => boxesOf(probe.host, probe.slots, false));
-            probes.forEach((probe, i) => {
-                probe.slots.forEach(([, key], k) => {
-                    const a = positioned[i][k], b = flowing[i][k];
-                    flowAlike.set(key, !!a && !!b && a.length === b.length && a.every((value, at) => Math.abs(value - b[at]) <= ALIKE_PX));
-                });
-                delete probe.host.dataset.jeFlow;
-            });
+        askBrowser(probes);
+        // The answers reach every card they free, not only the ones that asked. With nothing to ask
+        // (hidden or live cards only) nothing changes.
+        if (!probes.length) return;
+        for (const el of document.querySelectorAll('.je-tag-host:not([data-je-flow])')) {
+            const ctrl = controllers.get(/** @type {HTMLElement} */ (el));
+            if (ctrl && ctrl.layout) syncFlow(ctrl, resolveLayout(ctrl));
         }
-        // The answers reach every card they free, not only the ones that asked (a card drawn while hidden
-        // never does). With nothing to ask (hidden or live cards only) nothing changes: such a card is
-        // asked about when it is next placed.
-        if (probes.length) syncEveryFlow(true);
     }
 
     // ── Layers of the page's making ────────────────────────────────────
@@ -2093,8 +2171,14 @@
             if (typeof el.computedStyleMap === 'function') {
                 const map = el.computedStyleMap();
                 return (property) => {
-                    const value = map.get(property);
-                    return value === null || value === undefined ? '' : String(value);
+                    // The map throws for a property the browser does not know (an older one without
+                    // unprefixed mask-image or backdrop-filter): unknown is unset.
+                    try {
+                        const value = map.get(property);
+                        return value === null || value === undefined ? '' : String(value);
+                    } catch {
+                        return '';
+                    }
                 };
             }
             const cs = getComputedStyle(el);
@@ -2159,12 +2243,22 @@
             }
             if (layered) ctrl.layered.add(/** @type {HTMLElement} */ (el));
         };
+        // Hide Tags on Hover fades the slots of the card under the pointer: an opacity read then is JE's
+        // own and passing, and would be remembered against every card of the kind.
+        const hides = hidesOnHover(host);
+        let hovered = false;
+        if (hides) { try { hovered = !!host.closest('.card, .listItem')?.matches(':hover'); } catch { hovered = false; } }
+        let fading = false;
         for (const child of host.children) {
             if (!child.classList.contains('je-tag-slot')) continue;
             const slot = /** @type {HTMLElement} */ (child).dataset.jeSlot || '';
             if (inspected.get(child) !== `${flowEpoch}`) {
-                inspected.set(child, `${flowEpoch}`);
-                look(child, `${slot}|slot`);
+                if (hides && (hovered || (typeof child.getAnimations === 'function' && child.getAnimations().length > 0))) {
+                    fading = true;
+                } else {
+                    inspected.set(child, `${flowEpoch}`);
+                    look(child, `${slot}|slot`);
+                }
             }
             for (const node of child.children) {
                 const parts = node.getElementsByTagName('*');
@@ -2184,7 +2278,30 @@
                 }
             }
         }
+        if (fading) inspectLater(ctrl, hovered);
         return ctrl.layered.size > 0;
+    }
+
+    /** @type {WeakSet<HTMLElement>} hosts whose slots were fading when they were to be inspected: looked at when the pointer has left */
+    const uninspected = new WeakSet();
+    /** @type {WeakMap<HTMLElement, ReturnType<typeof setTimeout>>} hosts due another look once their slots have faded back */
+    const inspectTimers = new WeakMap();
+
+    /**
+     * Inspect a card's slots once they are no longer fading: after the
+     * pointer has left the card (the pointerout handler), or shortly, when
+     * it already has and the slots are easing back.
+     * @param {CardController} ctrl
+     * @param {boolean} hovered
+     */
+    function inspectLater(ctrl, hovered) {
+        const host = ctrl.host;
+        if (hovered) { uninspected.add(host); return; }
+        if (inspectTimers.has(host)) return;
+        inspectTimers.set(host, setTimeout(() => {
+            inspectTimers.delete(host);
+            if (host.isConnected && controllers.get(host) === ctrl && ctrl.layout) syncFlow(ctrl, resolveLayout(ctrl));
+        }, REST_AFTER_MS));
     }
 
     /**
@@ -2193,9 +2310,9 @@
      * browser has not been asked about stays positioned until it has
      * (laidOutAlike). Otherwise the mark goes on first, so that the styles
      * inspected for layers are a flow card's, and comes off again when
-     * something on the card is a layer of the page's making. A card the
-     * pointer is already on when its genre icons arrive shows their names at
-     * once, as it always did (and is inspected once it rests).
+     * something on the card is a layer of the page's making. A card that is
+     * hovered or focused when its tags arrive is live at once (and is
+     * inspected once it rests).
      * @param {CardController} ctrl
      * @param {TagLayoutSettings} conf
      */
@@ -2210,6 +2327,8 @@
                 flow = false;
             } else {
                 if (!host.dataset.jeLive && notAtRest(host)) host.dataset.jeLive = '1';
+                // A live mark nothing will take off: the card was removed while focused and put back.
+                else if (host.dataset.jeLive && !restTimers.has(host) && lingering !== host && !notAtRest(host)) delete host.dataset.jeLive;
                 if (!host.dataset.jeLive) {
                     if (host.dataset.jeFlow !== '1') host.dataset.jeFlow = '1';
                     flow = !layeredFlow(ctrl, conf);
@@ -2621,6 +2740,8 @@
             const width = entry.contentRect.width;
             const height = entry.contentRect.height;
             if (width <= 0) continue;
+            // Its resting layout was left undecided while it had no size (a page drawn hidden).
+            if (unmeasured.delete(ctrl)) syncFlow(ctrl, resolveLayout(ctrl));
             sizes.observed = width;
             sizes.observedHeight = height;
             // The first observation reports the size the queued fit is about to use.
@@ -3545,11 +3666,11 @@
     function onReveal(event) {
         const target = /** @type {Element|null} */ (event.target instanceof Element ? event.target : null);
         const pointer = event.type === 'pointerover';
-        const card = target?.closest('.card');
+        const card = target?.closest('.card, .listItem');
         // A host found still under the pointer when it was due back in flow (a touch leaves its card
         // hovered and sends no pointerout later): looked at again now that the pointer is elsewhere.
         if (pointer && lingering && !(card && card.contains(lingering))) {
-            const left = lingering.closest('.card');
+            const left = lingering.closest('.card, .listItem');
             lingering = null;
             if (left) restLater(left);
         }
@@ -3591,7 +3712,7 @@
      */
     function notAtRest(host) {
         try {
-            const card = host.closest('.card');
+            const card = host.closest('.card, .listItem');
             return !!card && (card.matches(':focus-within') || (!hidesOnHover(host) && card.matches(':hover')));
         } catch {
             return false;
@@ -3639,7 +3760,12 @@
         restTimers.set(host, setTimeout(() => {
             restTimers.delete(host);
             // Still focused: its focusout comes. Still hovered: a pointer that leaves says so, a touch does not (lingering).
-            if (notAtRest(host)) { lingering = host; return; }
+            if (notAtRest(host)) {
+                let over = false;
+                try { over = card.matches(':hover'); } catch { over = false; }
+                if (over) lingering = host;
+                return;
+            }
             delete host.dataset.jeLive;
             // What was placed while the card was live has not been asked about or inspected.
             const ctrl = controllers.get(host);
@@ -3666,12 +3792,17 @@
             const to = event.relatedTarget instanceof Node ? event.relatedTarget : null;
             if (revealedCard && !(to && revealedCard.contains(to))) revealedCard = null;
             // A card the pointer leaves (it may have gone live as its tags arrived, never "revealed").
-            const card = event.target instanceof Element ? event.target.closest('.card') : null;
-            if (card && !(to && card.contains(to))) restLater(card);
+            const card = event.target instanceof Element ? event.target.closest('.card, .listItem') : null;
+            if (!card || (to && card.contains(to))) return;
+            restLater(card);
+            // Its slots were fading under the pointer when they were to be inspected: once they are back.
+            const host = /** @type {HTMLElement|null} */ (card.querySelector('.je-tag-host'));
+            const ctrl = host && uninspected.delete(host) ? controllers.get(host) : null;
+            if (ctrl) inspectLater(ctrl, false);
         }, { passive: true });
         document.addEventListener('focusout', (event) => {
             const to = event.relatedTarget instanceof Node ? event.relatedTarget : null;
-            const card = event.target instanceof Element ? event.target.closest('.card') : null;
+            const card = event.target instanceof Element ? event.target.closest('.card, .listItem') : null;
             if (card && !(to && card.contains(to))) restLater(card);
         });
     }

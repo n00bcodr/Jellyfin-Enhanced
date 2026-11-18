@@ -32,10 +32,13 @@ function layOut(h, { width = 200, height = 300, groupSize = 40, moved = () => nu
     if (this.classList.contains('je-tag-host')) return rect(0, 0, width, height);
     if (this.classList.contains('je-tag-slot')) return rect(6 + shift[0], 6 + shift[1], width - 12, height - 12);
     const slot = this.closest('.je-tag-slot')?.dataset.jeSlot;
-    if (!slot || this.parentElement?.classList.contains('je-tag-slot') !== true) return rect(0, 0, 0, 0);
-    const index = Array.from(this.parentElement.children).indexOf(this);
+    const group = this.parentElement?.classList.contains('je-tag-slot') ? this : this.parentElement?.parentElement?.classList.contains('je-tag-slot') ? this.parentElement : null;
+    if (!slot || !group) return rect(0, 0, 0, 0);
+    const index = Array.from(group.parentElement.children).indexOf(group);
     const x = slot.endsWith('l') ? 6 : width - 6 - groupSize;
     const y = slot.startsWith('t') ? 6 + index * (groupSize + 4) : height - 6 - (index + 1) * groupSize - index * 4;
+    // A chip: a tenth of its group's box, one after the other.
+    if (group !== this) { const at = Array.from(group.children).indexOf(this); return rect(x + at * 4 + shift[0], y + shift[1], 4, 4); }
     return rect(x + shift[0], y + shift[1], groupSize, groupSize);
   };
   Object.defineProperty(h.window.HTMLElement.prototype, 'clientWidth', { configurable: true, get() { return this.classList.contains('je-tag-host') ? width : 0; } });
@@ -47,9 +50,15 @@ function setup(t, { html = card(), settings = {}, plugin = {}, supports = () => 
   const asked = [];
   // Frames run by hand (settle), so "after the next paint" is a point in the test.
   const frames = [];
+  /** The layout controller's size observer: `sized.report([{ target, contentRect }])` is the browser reporting sizes. */
+  const sized = { report: null };
   const h = createHarness({
     html,
-    globals: { CSS: { supports: (...args) => { asked.push(args.join(': ')); return supports(...args); } }, requestAnimationFrame: fn => { frames.push(fn); return frames.length; }, ...globals },
+    globals: {
+      CSS: { supports: (...args) => { asked.push(args.join(': ')); return supports(...args); } }, requestAnimationFrame: fn => { frames.push(fn); return frames.length; },
+      ResizeObserver: class { constructor(report) { sized.report = report; } observe() {} unobserve() {} disconnect() {} },
+      ...globals,
+    },
     JE: {
       currentSettings: { qualityTagsEnabled: true, ratingTagsEnabled: true, ageRatingTagsEnabled: true, qualityTagsPreferredAudioLanguage: 'none', ...settings },
       pluginConfig: { TagCacheServerMode: true, ...plugin },
@@ -71,7 +80,7 @@ function setup(t, { html = card(), settings = {}, plugin = {}, supports = () => 
   const host = () => h.document.querySelector('.je-tag-host');
   /** Run the frames queued so far, and the ones they queue (the after-paint passes). */
   const settle = () => { for (let i = 0; i < 20 && frames.length; i++) for (const fn of frames.splice(0)) fn(); };
-  Object.assign(h, { host, settle });
+  Object.assign(h, { host, settle, sized });
   // A laid-out page: every host has a size and every slot and group a box, the same in either layout.
   layOut(h);
   return Object.assign(h, {
@@ -217,16 +226,13 @@ test('focus first, then the pointer: the card is live from the focus on, so its 
   hover(h, true, card, true);
   pointer(h, 'pointerover', image);
   assert.equal(host.dataset.jeLive, '1', 'the names can show: the host was never left in flow under the pointer');
-  // At rest a card renders no genre name: a fit pass on it must not bound names from empty boxes.
   hover(h, false, card, false);
   pointer(h, 'pointerout', image, h.document.body);
+  const out = new h.window.Event('focusout', { bubbles: true });
+  Object.defineProperty(out, 'relatedTarget', { value: h.document.body });
+  image.dispatchEvent(out);
   timers.due(200);
-  assert.equal(host.hasAttribute('data-je-live'), false);
-  for (const name of host.querySelectorAll('.genre-text')) { delete name.dataset.jeGenreFit; name.style.removeProperty('max-width'); }
-  h.layout.flushFit?.();
-  image.dispatchEvent(new h.window.Event('focusin', { bubbles: true }));
-  hover(h, false, card, false);
-  assert.ok(Array.from(host.querySelectorAll('.genre-text')).every(name => !name.style.maxWidth || host.dataset.jeLive), 'no bound written from a resting card');
+  assert.equal(host.hasAttribute('data-je-live'), false, 'at rest once both the pointer and focus have left');
 });
 
 test('a touch leaves its card hovered and sends no pointerout later: the host rests when the pointer shows up elsewhere', async t => {
@@ -523,6 +529,129 @@ test('custom CSS that moves a box keeps its kind of card positioned, with no opt
     assert.equal(h.layout.flowStats().probes, asked);
     assert.equal(withAge.dataset.jeFlow, undefined);
   }
+});
+
+test('a nudged chip inside a group is seen too: a genre icon is positioned in one layout and not in the other', async t => {
+  const h = setup(t, { settings: { genreTagsEnabled: true } });
+  // `.genre-tag { top: 5px; left: -5px; }`: honoured by the positioned icon, ignored by a static one.
+  layOut(h, { moved: (el, flow) => (!flow && el.classList.contains('genre-tag') ? [-5, 5] : null) });
+  h.render();
+  assert.ok(h.host().querySelector('.genre-tag'));
+  assert.equal(h.flow(), undefined);
+});
+
+test('cards the page\'s CSS can tell apart are asked about apart: by their indicators and by the page they are on', t => {
+  const played = card(OTHER).replace('<div class="je-tag-host">', '<div class="cardIndicators"><div class="playedIndicator indicator"></div></div><div class="je-tag-host">');
+  const h = setup(t, { html: `<div class="page" id="indexPage">${card()}${played}</div><div class="page" id="moviesPage">${card('c'.repeat(32))}</div>` });
+  // `.card:has(.playedIndicator) .rating-overlay-container { top: 8px; }` and `#moviesPage .je-tag-slot { margin: 3px; }`.
+  layOut(h, { moved: (el, flow) => (!flow && el.classList.contains('rating-overlay-container') && el.closest('.card').querySelector('.playedIndicator') ? [0, 8]
+    : flow && el.classList.contains('je-tag-slot') && el.closest('#moviesPage') ? [-3, -3] : null) });
+  const [plain, withIndicator, otherPage] = hostsOf(h);
+  renderInto(h, plain);
+  h.settle();
+  renderInto(h, withIndicator);
+  renderInto(h, otherPage);
+  h.settle();
+  assert.equal(plain.dataset.jeFlow, '1');
+  assert.equal(withIndicator.dataset.jeFlow, undefined, 'the first card\'s answer is not this one\'s');
+  assert.equal(otherPage.dataset.jeFlow, undefined);
+});
+
+test('a browser whose typed style map throws for a property it does not know still decides every card', t => {
+  const h = setup(t);
+  // An older Chromium has no unprefixed mask-image, an older Safari no unprefixed backdrop-filter.
+  h.window.Element.prototype.computedStyleMap = function () {
+    const cs = h.window.getComputedStyle(this);
+    return { get(name) { if (name === 'mask-image' || name === 'backdrop-filter') throw new TypeError(`Invalid propertyName: ${name}`); return cs.getPropertyValue(name) || null; } };
+  };
+  customCss(h, '.age-rating-tag { opacity: 0.9; }');
+  assert.doesNotThrow(() => h.render());
+  assert.equal(h.flow(), undefined, 'what it does know is still read');
+  const clean = setup(t);
+  clean.window.Element.prototype.computedStyleMap = function () { return { get(name) { if (name === 'mask-image') throw new TypeError('no'); return null; } }; };
+  clean.render();
+  assert.equal(clean.flow(), '1');
+});
+
+test('Hide Tags on Hover: a card drawn under the pointer does not turn flow off for its kind, and is inspected once the pointer has gone', async t => {
+  const timers = handTimers();
+  const h = setup(t, { html: card() + card(OTHER), globals: timers.globals });
+  h.document.body.classList.add('je-tags-hide-on-hover');
+  const [under, other] = hostsOf(h);
+  const first = under.closest('.card');
+  hover(h, true, first);
+  // Its slots are fading out: that opacity is JE's own.
+  const read = h.window.getComputedStyle;
+  h.window.getComputedStyle = function (el, ...rest) {
+    const cs = read.call(this, el, ...rest);
+    if (!el.classList?.contains('je-tag-slot') || !el.closest('.card').matches(':hover')) return cs;
+    return new Proxy(cs, { get: (target, key) => (key === 'opacity' ? '0' : key === 'getPropertyValue' ? name => (name === 'opacity' ? '0' : target.getPropertyValue(name)) : target[key]) });
+  };
+  renderInto(h, under);
+  renderInto(h, other);
+  h.settle();
+  assert.deepEqual([under.dataset.jeFlow, other.dataset.jeFlow], ['1', '1'], 'nothing was remembered against the kind');
+  const before = h.layout.flowStats().inspections;
+  // The pointer leaves; once the slots are back the card's own are inspected.
+  hover(h, false, first);
+  pointer(h, 'pointerout', first.querySelector('.cardImageContainer'), h.document.body);
+  timers.due(200);
+  h.settle();
+  assert.equal(under.dataset.jeFlow, '1');
+  assert.ok(h.layout.flowStats().inspections >= before);
+});
+
+test('a style sheet arriving re-asks one card of each kind where it stands; a hidden page keeps what it has until it is shown', t => {
+  const h = setup(t, { html: card() + card(OTHER) });
+  const [first, second] = hostsOf(h);
+  renderInto(h, first);
+  renderInto(h, second);
+  h.settle();
+  assert.deepEqual([first.dataset.jeFlow, second.dataset.jeFlow], ['1', '1']);
+  // Nothing custom in the new sheet: no card loses its mark on the way.
+  const marks = [];
+  const observer = new h.window.MutationObserver(records => { for (const record of records) marks.push(record.target === first ? 'first' : 'second'); });
+  for (const host of [first, second]) observer.observe(host, { attributes: true, attributeFilter: ['data-je-flow'] });
+  const asked = h.layout.flowStats().probes;
+  customCss(h, '.unrelated { color: red; }');
+  h.layout.commitGroup(first, 'language', h.flags(false));
+  h.settle();
+  observer.takeRecords().forEach(record => marks.push(record.target === first ? 'first' : 'second'));
+  assert.ok(h.layout.flowStats().probes > asked, 'the kinds were asked about again');
+  assert.equal(marks.includes('second'), false, 'a card that was not the one measured is not touched');
+  assert.deepEqual([first.dataset.jeFlow, second.dataset.jeFlow], ['1', '1']);
+  // The page goes to the background (Back will show it again) and a sheet arrives meanwhile.
+  for (const host of [first, second]) Object.defineProperty(host, 'clientWidth', { configurable: true, get: () => 0 });
+  customCss(h, '.quality-overlay-label { opacity: 0.85; }');
+  h.layout.syncFlowOf(first);
+  h.settle();
+  assert.deepEqual([first.dataset.jeFlow, second.dataset.jeFlow], ['1', '1'], 'hidden: nothing to measure, nothing changed');
+  // Shown again: the size observer reports, and each card is decided under the CSS there is now.
+  for (const host of [first, second]) Object.defineProperty(host, 'clientWidth', { configurable: true, get: () => 200 });
+  h.sized.report([first, second].map(target => ({ target, contentRect: { width: 200, height: 300 } })));
+  h.settle();
+  assert.deepEqual([first.dataset.jeFlow, second.dataset.jeFlow], [undefined, undefined]);
+});
+
+test('a window width that holds re-asks the page\'s CSS (a media query may have been crossed); a height change alone does not', t => {
+  const timers = handTimers();
+  const h = setup(t, { globals: timers.globals });
+  h.render();
+  assert.equal(h.flow(), '1');
+  const asked = h.layout.flowStats().probes;
+  h.window.innerHeight += 60; // a phone's address bar
+  h.window.dispatchEvent(new h.window.Event('resize'));
+  timers.due(250);
+  h.settle();
+  assert.equal(h.layout.flowStats().probes, asked);
+  h.window.innerWidth -= 300;
+  h.window.dispatchEvent(new h.window.Event('resize'));
+  h.window.dispatchEvent(new h.window.Event('resize'));
+  assert.equal(timers.pending(250), 1, 'once the size holds');
+  timers.due(250);
+  h.settle();
+  assert.ok(h.layout.flowStats().probes > asked);
+  assert.equal(h.flow(), '1');
 });
 
 test('a card that cannot be measured stays positioned until one of its kind can', t => {
