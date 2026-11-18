@@ -129,8 +129,17 @@
     let tracked = new WeakMap();
     /** @type {Set<HTMLElement>} tracked cards currently on screen */
     const visible = new Set();
-    /** @type {Set<HTMLElement>} tracked cards under the observer, on screen or not (it reports one that leaves the page) */
+    /**
+     * Tracked cards under the observer, on screen or not. Held weakly: the
+     * observer reports a card that leaves the page only if it was on screen,
+     * so nothing else would let go of one removed while off screen.
+     * @type {Set<WeakRef<HTMLElement>>}
+     */
     const watched = new Set();
+    /** @type {WeakMap<HTMLElement, WeakRef<HTMLElement>>} a watched card → its entry in `watched` */
+    let watchedRef = new WeakMap();
+    /** `watched` is cleared of collected cards when it has grown to this size. */
+    let watchedSweepAt = 256;
     /**
      * Tracked cards released from the observer because their item has a fresh
      * answer (see settle). Held weakly: a released card is no longer reported
@@ -945,7 +954,7 @@
                 }
                 // Cards drawn before the stored answers arrived: one pass, and no request for those.
                 if (!loaded.length) return;
-                for (const card of [...watched]) {
+                for (const card of watchedCards()) {
                     const entry = tracked.get(card);
                     if (!entry) continue;
                     const memoryKey = `${hash}|${itemKey(entry)}`;
@@ -1090,9 +1099,50 @@
     function watch(card) {
         const io = watcher();
         if (!io) return false;
-        watched.add(card);
+        noteWatched(card);
         io.observe(card);
         return true;
+    }
+
+    /**
+     * Remember a card as watched. Without WeakRef nothing is remembered: the
+     * stored answers then reach an off-screen card when it comes on screen.
+     * @param {HTMLElement} card
+     */
+    function noteWatched(card) {
+        if (watchedRef.has(card) || typeof WeakRef !== 'function') return;
+        const ref = new WeakRef(card);
+        watched.add(ref);
+        watchedRef.set(card, ref);
+        if (watched.size >= watchedSweepAt) {
+            watchedCards();
+            watchedSweepAt = Math.max(256, watched.size * 2);
+        }
+    }
+
+    /** @param {HTMLElement} card Forget a card as watched. */
+    function dropWatched(card) {
+        const ref = watchedRef.get(card);
+        if (!ref) return;
+        watched.delete(ref);
+        watchedRef.delete(card);
+    }
+
+    /**
+     * The watched cards still on the page. Cards the browser has collected
+     * are dropped from `watched`, and ones removed from the page are
+     * untracked: no observer report came for them.
+     * @returns {HTMLElement[]}
+     */
+    function watchedCards() {
+        const cards = [];
+        for (const ref of [...watched]) {
+            const card = ref.deref();
+            if (!card) watched.delete(ref);
+            else if (!card.isConnected) untrack(card);
+            else cards.push(card);
+        }
+        return cards;
     }
 
     /**
@@ -1130,7 +1180,7 @@
         settledRef.set(card, ref);
         visible.delete(card);
         rewatched.delete(card);
-        watched.delete(card);
+        dropWatched(card);
         observer.unobserve(card);
         armSettled(value.t + TTL_MS);
         return true;
@@ -1256,7 +1306,7 @@
         const ref = settledRef.get(card);
         if (ref) { settled.delete(ref); settledRef.delete(card); }
         rewatched.delete(card);
-        watched.delete(card);
+        dropWatched(card);
         observer?.unobserve(card);
         for (const [key, job] of queue) {
             job.cards.delete(card);
@@ -1476,6 +1526,8 @@
         for (const card of [...visible]) untrack(card);
         visible.clear();
         watched.clear();
+        watchedRef = new WeakMap();
+        watchedSweepAt = 256;
         tracked = new WeakMap();
         settled.clear();
         settledRef = new WeakMap();
@@ -1506,6 +1558,23 @@
             // (the hook may run before it is; the build records the user).
             rebuild();
         });
+        // A released card has no observer, so on a page where every card is
+        // answered nothing would look at the profile or the bitrate again
+        // (jellyfin-web's quality setting, in network or remote): look when
+        // the page changes, when the tab comes back and when the network does.
+        JE.core?.navigation?.onNavigate?.(lookAgain);
+        if (typeof document !== 'undefined') {
+            document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') lookAgain(); });
+        }
+        if (typeof window !== 'undefined') window.addEventListener('online', lookAgain);
+    }
+
+    /**
+     * Notice another profile or bitrate while cards are tracked: current()
+     * puts the released ones back under the observer when the hash changed.
+     */
+    function lookAgain() {
+        if (settled.size || watched.size || visible.size) current();
     }
 
     JE.tagDirectPlay = {
@@ -1541,6 +1610,6 @@
             primed = null;
         },
         /** @returns {Object} Slice and request counters, and how many cards are watched and released. */
-        stats: () => ({ ...counters, queued: queue.size, inFlight: network.size, memory: memory.size, watching: watched.size, settled: settled.size }),
+        stats: () => ({ ...counters, queued: queue.size, inFlight: network.size, memory: memory.size, watching: watchedCards().length, settled: settled.size }),
     };
 })(window.JellyfinEnhanced);

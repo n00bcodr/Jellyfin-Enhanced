@@ -674,13 +674,16 @@ test('direct play: a released card is watched again when its answer lapses, and 
 
 test('direct play: another profile or bitrate lapses the answers of the released cards', async t => {
   const h = setup(t, { cards: 2, settings: { statusTagsDirectPlay: true }, autoIntersect: false });
-  const dp = h.JE.tagDirectPlay;
+  let navigated = () => assert.fail('the navigation hook was never registered');
+  h.JE.core.navigation = { onNavigate(fn) { navigated = fn; } };
   h.hosts.forEach((host, i) => { h.show(movie(), host, `m${i}`); h.intersect(host); });
   await h.slice(); await h.slice();
   const io = h.observers.at(-1);
   assert.equal(io.targets.size, 0);
   h.window.localStorage.setItem('maxbitrate-Video-undefined', '4000000');
-  dp.profileHash(); // the next use of the profile notices
+  // Nothing is drawn and no card is under the observer, so nothing uses the profile: a change of page is what notices.
+  assert.equal(io.targets.size, 0);
+  navigated();
   assert.equal(io.targets.size, 2, 'both are watched again');
   // One is drawn again before the observer reported it: on screen, it is asked about, as a watched card drawn again is.
   h.show(movie(), h.hosts[0], 'm0');
@@ -694,7 +697,43 @@ test('direct play: another profile or bitrate lapses the answers of the released
   await h.slice(); await h.slice();
   assert.deepEqual(h.requests.slice(2).map(r => r.id), ['m0', 'm1']);
   assert.equal(io.targets.size, 0);
+  // The network coming back notices too (in network or remote decides the bitrate), and so does the tab.
+  h.window.localStorage.setItem('maxbitrate-Video-undefined', '6000000');
+  h.window.dispatchEvent(new h.window.Event('online'));
+  assert.equal(io.targets.size, 2);
+  h.hosts.forEach(host => { h.intersect(host, false); h.intersect(host); });
+  await h.slice(); await h.slice();
+  assert.equal(io.targets.size, 0);
+  h.window.localStorage.setItem('maxbitrate-Video-undefined', '8000000');
+  Object.defineProperty(h.document, 'visibilityState', { configurable: true, get: () => 'visible' });
+  h.document.dispatchEvent(new h.window.Event('visibilitychange'));
+  assert.equal(io.targets.size, 2);
   h.window.localStorage.removeItem('maxbitrate-Video-undefined');
+});
+
+test('direct play: a card removed from the page while off screen is let go, though no observer report ever comes for it', async t => {
+  // What the module holds a watched card by: counted, and "collected" on demand.
+  const h = setup(t, { cards: 3, settings: { statusTagsDirectPlay: true }, autoIntersect: false });
+  const dp = h.JE.tagDirectPlay;
+  const refs = [];
+  const Real = h.window.WeakRef;
+  h.window.WeakRef = class { constructor(target) { this.target = target; refs.push(this); } deref() { return this.target; } };
+  t.after(() => { h.window.WeakRef = Real; });
+  h.hosts.forEach((host, i) => h.show(movie(), host, `m${i}`));
+  const io = h.observers.at(-1);
+  assert.equal(io.targets.size, 3);
+  assert.equal(dp.stats().watching, 3);
+  assert.deepEqual(refs.map(ref => ref.target), h.hosts, 'each watched card is held through a WeakRef');
+  // Never on screen, then gone with its view: the observer says nothing.
+  const gone = h.hosts[1].closest('.card');
+  gone.remove();
+  assert.equal(dp.stats().watching, 2, 'a card found off the page is forgotten');
+  // Collected before anything looked: its entry goes, the others stay.
+  refs.find(ref => ref.target === h.hosts[2]).target = undefined;
+  assert.equal(dp.stats().watching, 1);
+  h.intersect(h.hosts[0]);
+  await h.slice(); await h.slice();
+  assert.deepEqual(h.requests.map(r => r.id), ['m0']);
 });
 
 test('direct play: an observer report with nothing to ask or tell queues no idle slice', async t => {
