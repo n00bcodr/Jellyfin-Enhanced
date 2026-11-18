@@ -683,7 +683,7 @@ test('pictures of an older layout are not put back when the artwork goes and ret
   assert.equal(h.backdrop.stats().reused, 0);
 });
 
-test('a card measured while a transform scales it keeps what it has and is read when that is over', async t => {
+test('a card measured while a transform scales it has the live filter, and its pictures back when that is over', async t => {
   const h = setup(t);
   layout(h);
   // Laid out 200 × 300; a focused card on a TV is drawn 18% larger.
@@ -702,15 +702,18 @@ test('a card measured while a transform scales it keeps what it has and is read 
     h.rect(h.tag, 219.7, 30.4, 311.3, 56.1);
   };
   scaled();
-  h.tag.setAttribute('title', 'Transcode: container mkv'); // anything that has the card measured
-  await h.flush();
-  assert.deepEqual(h.layers(h.slot), first, 'the scaled measurement is not written');
+  h.tag.textContent = 'Returns Oct 4'; // the tag changes while the card is scaled
+  // (Frames only: while the scale lasts the card is looked at again on a timer, which never settles.)
+  for (let i = 0; i < 4; i++) await h.frame();
+  assert.deepEqual(h.layers(h.slot), {}, 'no picture of the old tag, and none measured from a scaled box');
+  assert.equal(h.host.dataset.jeBlur, '1', 'the filter scales with the card');
   assert.equal(h.backdrop.stats().drawn, 1);
-  // Focus moves on: the card is as it was, and nothing it watches says so.
+  // The scale ends on an ancestor, which the card never hears: the timer looks again.
   layout(h);
-  h.host.closest('.card').dispatchEvent(new h.window.Event('focusout', { bubbles: true }));
+  h.tag.textContent = 'New';
   await h.flush();
   assert.deepEqual(h.layers(h.slot), first);
+  assert.equal(h.host.hasAttribute('data-je-blur'), false);
   // A card first drawn while scaled gets its picture once the scale is gone.
   const late = setup(t);
   layout(late);
@@ -718,8 +721,9 @@ test('a card measured while a transform scales it keeps what it has and is read 
   Object.defineProperty(late.art, 'offsetHeight', { configurable: true, get: () => 300 });
   late.rect(late.art, 82.4, 23.3, 318.4, 377.3);
   late.backdrop.track(late.host);
-  await late.flush();
+  for (let i = 0; i < 4; i++) await late.frame();
   assert.deepEqual(late.layers(late.slot), {});
+  assert.equal(late.host.dataset.jeBlur, '1');
   layout(late);
   late.host.closest('.card').dispatchEvent(new late.window.Event('transitionend', { bubbles: true }));
   await late.flush();
@@ -761,7 +765,8 @@ test('a content security policy that refuses data: images turns the pictures off
   const violation = (blockedURI, effectiveDirective) => h.document.dispatchEvent(Object.assign(new h.window.Event('securitypolicyviolation'), { blockedURI, effectiveDirective }));
   violation('https://example.test/x.png', 'img-src');
   violation('data', 'font-src');
-  assert.equal(h.backdrop.isActive(), true, 'another refusal is not ours');
+  h.document.dispatchEvent(Object.assign(new h.window.Event('securitypolicyviolation'), { blockedURI: 'data', effectiveDirective: 'img-src', disposition: 'report' }));
+  assert.equal(h.backdrop.isActive(), true, 'another refusal is not ours, and a report-only policy refuses nothing');
   violation('data', 'img-src');
   assert.equal(h.backdrop.isActive(), false);
   assert.deepEqual(h.layers(h.slot), {});
@@ -920,7 +925,8 @@ test('a request that brought no painter waits before it is made again, twice as 
   await tick();
   // The pauses' own timers, apart from the status module's other ones.
   const pauses = [];
-  h.window.setTimeout = (fn, ms) => { if ([5000, 10000, 20000].includes(ms)) pauses.push({ fn, ms }); return 0; };
+  h.window.setTimeout = (fn, ms) => { if ([5000, 10000, 20000].includes(ms)) { const pause = { fn, ms }; pauses.push(pause); return pause; } return 0; };
+  h.window.clearTimeout = pause => { const at = pauses.indexOf(pause); if (at >= 0) pauses.splice(at, 1); };
   const firePauses = () => { for (const pause of pauses.splice(0)) pause.fn(); };
   assert.ok(badge(h, 1).querySelector('.status-tag'), 'the tag is drawn whatever the loader answers');
   assert.equal(asked.length, 1);
@@ -934,14 +940,14 @@ test('a request that brought no painter waits before it is made again, twice as 
   badge(h, 4);
   assert.equal(asked.length, 2, 'the first tag drawn after the pause asks');
   await tick();
-  assert.deepEqual(pauses.map(pause => pause.ms), [5000, 10000]);
+  assert.deepEqual(pauses.map(pause => pause.ms), [10000], 'one timer, for the pause that runs now (it has doubled)');
   now += 9999;
   badge(h, 5);
-  firePauses();
-  assert.equal(asked.length, 2, 'the pause doubles: neither a tag nor a timer asks before it is over');
+  assert.equal(asked.length, 2, 'no tag asks before it is over');
   now += 1;
   badge(h, 6);
   assert.equal(asked.length, 3);
+  pauses.length = 0;
   await tick();
   assert.equal(h.JE.statusTagBackdrop, undefined);
   // A page that has settled draws no further tag: the timer of the last pause asks while a status tag is still there.

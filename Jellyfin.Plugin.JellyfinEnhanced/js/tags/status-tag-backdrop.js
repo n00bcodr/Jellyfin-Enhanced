@@ -118,6 +118,9 @@
          * overlay has faded from the artwork, and before the layout controller rests the card (its 200 ms).
          */
         const LIVE_REST_MS = 180;
+        /** A scaled card is looked at again after this long, doubling up to the cap while it stays scaled (ms). */
+        const HOLD_MS = 1000;
+        const HOLD_MAX_MS = 30000;
         /** What ends a passing state of a card (measureAgainLater). */
         const AGAIN_EVENTS = ['transitionend', 'transitioncancel', 'animationend', 'pointerleave', 'focusout'];
         /** The colour the canvas probe draws and must read back (isSupported). */
@@ -407,7 +410,7 @@
          * @typedef {{host: HTMLElement, chips: MutationObserver|null, art: MutationObserver|null, container: Element|null, img: HTMLImageElement|null,
          *   onLoad: () => void, sig: string, carriers: Set<HTMLElement>, kept: {job: Job, drawn: (string[]|null)[]}|null, moved: boolean,
          *   on: HTMLElement[], latest: Job|null, fullSig: string, again: (() => void)|null, live: boolean,
-         *   resting: ReturnType<typeof setTimeout>|0}} Card
+         *   resting: ReturnType<typeof setTimeout>|0, holdMs: number}} Card
          */
         /** A background painted between the artwork and a tag (pixels in the image box; `host`: the host's own, under every chip). @typedef {{x: number, y: number, width: number, height: number, colour: string|null, gradients: Object[], host: boolean}} Under */
         /**
@@ -587,14 +590,17 @@
          * transitions ending, the pointer leaving it and focus leaving it
          * are the ends looked for; a card still in the state then waits on.
          * @param {Card} card
+         * @param {boolean} [scaled] - The state is a transform's scale.
          */
-        function measureAgainLater(card) {
+        function measureAgainLater(card, scaled = false) {
             if (card.again) return;
             const target = card.host.closest('.card, .listItem') || card.host.parentElement;
             if (!target || typeof target.addEventListener !== 'function') return;
+            let timer = 0;
             const stop = () => {
                 if (card.again !== stop) return;
                 card.again = null;
+                if (timer) clearTimeout(timer);
                 for (const type of AGAIN_EVENTS) target.removeEventListener(type, again);
             };
             const again = () => {
@@ -605,6 +611,12 @@
             };
             card.again = stop;
             for (const type of AGAIN_EVENTS) target.addEventListener(type, again, { passive: true });
+            // A scale may be an ancestor's, whose end the card never hears: look again anyway, at a
+            // growing interval for as long as it lasts (a theme may scale its cards for good).
+            if (scaled) {
+                card.holdMs = Math.min(HOLD_MAX_MS, card.holdMs ? card.holdMs * 2 : HOLD_MS);
+                timer = setTimeout(again, card.holdMs);
+            }
         }
 
         function onResize(entries) {
@@ -627,7 +639,7 @@
             if (!active || supported === false || typeof MutationObserver !== 'function') { setBlur(host, true); return; }
             let card = cards.get(host);
             if (!card) {
-                const created = /** @type {Card} */ ({ host, chips: null, art: null, container: null, img: null, onLoad: () => markDirty(created), sig: '', carriers: new Set(), kept: null, moved: true, on: [], latest: null, fullSig: '', again: null, live: false, resting: 0 });
+                const created = /** @type {Card} */ ({ host, chips: null, art: null, container: null, img: null, onLoad: () => markDirty(created), sig: '', carriers: new Set(), kept: null, moved: true, on: [], latest: null, fullSig: '', again: null, live: false, resting: 0, holdMs: 0 });
                 card = created;
                 cards.set(host, card);
                 // Chips arriving, leaving, moving or being fitted all change the host's subtree. Reading the
@@ -850,10 +862,11 @@
                 const laidOut = [art.box.offsetWidth, art.box.offsetHeight];
                 if (laidOut[0] > 0 && laidOut[1] > 0 && (Math.abs(boxRect.width - laidOut[0]) > Math.max(1, laidOut[0] * 0.01)
                     || Math.abs(boxRect.height - laidOut[1]) > Math.max(1, laidOut[1] * 0.01))) {
-                    measureAgainLater(card);
+                    measureAgainLater(card, true);
                     return { card, sig: '', job: null, hold: true };
                 }
                 card.moved = false;
+                card.holdMs = 0;
                 const boxStyle = getComputedStyle(art.box);
                 // Never sharper than the page shows it: artwork a style filters, hides or fades keeps the live filter
                 // (while a hover dims it, say: the card is read again when that is over).
@@ -1004,7 +1017,15 @@
             // A card in use keeps the live filter: it is read when it rests (rest).
             const plans = list.filter((card) => card.host.isConnected && cards.get(card.host) === card && !card.live).map((card) => read(card, scale, pass));
             for (const { card, sig, job, hold } of plans) {
-                if (hold) continue;
+                if (hold) {
+                    // A scaled card cannot be read: the filter scales with it, whatever its tags do meanwhile.
+                    for (const carrier of card.carriers) clear(carrier);
+                    card.carriers.clear();
+                    card.on = [];
+                    setBlur(card.host, true);
+                    card.chips?.takeRecords();
+                    continue;
+                }
                 // The same geometry on the same elements: nothing to do. The same geometry on new elements
                 // (a card presented again in place draws its slots afresh) needs its pictures put on them.
                 const on = job ? job.specs.flatMap((spec) => spec.pieces.map((p) => p.carrier)) : [];
@@ -1566,7 +1587,9 @@
         // after the work of drawing it: the first refusal turns the pictures off for the page.
         if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
             document.addEventListener('securitypolicyviolation', (event) => {
-                if (!active || event.blockedURI !== 'data' || !/^img-src/.test(event.effectiveDirective || event.violatedDirective || '')) return;
+                // (A report-only policy refuses nothing.)
+                if (!active || (event.disposition && event.disposition !== 'enforce') || event.blockedURI !== 'data'
+                    || !/^img-src/.test(event.effectiveDirective || event.violatedDirective || '')) return;
                 console.warn(`${backdropLog} the page's content security policy refuses data: images; status tags keep the live backdrop filter.`);
                 setActive(false);
             });

@@ -1057,11 +1057,15 @@
         asked.catch(() => {}).then(() => {
             backdropAsked = false;
             if (JE.statusTagBackdrop) return;
+            // The group ran and left no painter (its file threw): asking again would bring nothing.
+            let ran = false;
+            try { ran = JE.loader.state?.()[BACKDROP_GROUP] === 'ready'; } catch { ran = false; }
+            if (ran) { backdropNotBefore = Infinity; return; }
             backdropPause = Math.min(BACKDROP_RETRY_MAX_MS, backdropPause ? backdropPause * 2 : BACKDROP_RETRY_MS);
             backdropNotBefore = Date.now() + backdropPause;
             backdropTimer = setTimeout(() => {
                 backdropTimer = 0;
-                if (Date.now() >= backdropNotBefore && document.querySelector(`.je-tag-host .${tagClass}`)) askForBackdrop();
+                if (document.querySelector(`.je-tag-host .${tagClass}`)) askForBackdrop();
             }, backdropPause);
         });
     }
@@ -1809,11 +1813,8 @@
                     gap: 0.25em;
                     padding: calc(4px * var(--je-tag-scale, 1)) calc(10px * var(--je-tag-scale, 1));
                     background-color: rgba(15, 15, 15, 0.72);
-                    /* The backdrop blur is not set here: a filtered tag is a compositor
-                       layer and promotes whatever paints over it. A resting tag has the
-                       blurred artwork painted under it as a picture; the live filter
-                       below stands wherever that picture is not in place (see "The
-                       blurred backdrop" above). */
+                    -webkit-backdrop-filter: blur(6px);
+                    backdrop-filter: blur(6px);
                     color: #ffffff;
                     border: 1px solid rgba(255, 255, 255, 0.18);
                     border-radius: 6px;
@@ -1829,9 +1830,14 @@
                     max-width: 100%;
                     pointer-events: none;
                 }
-                .je-tag-host[data-je-blur] .${tagClass} {
-                    -webkit-backdrop-filter: blur(6px);
-                    backdrop-filter: blur(6px);
+                /* A filtered tag is a compositor layer and promotes whatever paints over it. On
+                   a card, a resting tag has the blurred artwork painted under it as a picture
+                   instead: its host carries data-je-blur for as long as the live filter has to
+                   stand in (see "The blurred backdrop" above). Tags drawn anywhere else (a
+                   sample, a caption) keep the filter. */
+                .je-tag-host:not([data-je-blur]) .${tagClass} {
+                    -webkit-backdrop-filter: none;
+                    backdrop-filter: none;
                 }
                 .${tagClass}--trending .${tagClass}-rank { color: #ffd166; }
                 /* Only the direct-play warning takes hover, for its tooltip. */
