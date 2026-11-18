@@ -112,6 +112,12 @@
                 // Open bookmark modal to add/view bookmarks
                 if (JE.bookmarks?.showModal) {
                     JE.bookmarks.showModal('add');
+                } else if (JE.pluginConfig?.BookmarksEnabled && JE.loader) {
+                    // The bookmarks module loads with the player (see plugin.js) and may still
+                    // be arriving just after playback starts: open the dialog once it has.
+                    JE.loader.ensure(['bookmarks']).then(() => {
+                        if (JE.isVideoPage() && JE.bookmarks?.showModal) JE.bookmarks.showModal('add');
+                    });
                 } else {
                     console.warn('🪼 Jellyfin Enhanced: New bookmark system not loaded, using fallback');
                 }

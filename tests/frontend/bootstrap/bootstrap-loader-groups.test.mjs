@@ -170,7 +170,7 @@ test('a bundle that defines some of its groups loads only the missing groups\' f
   assert.deepEqual(modulesRun(boot.log), [...BOOT_MODULES, 'fake/core-1.js', 'fake/tags-1.js', 'fake/tags-2.js', 'fake/hidden-content-1.js']);
 });
 
-test('a lazy batch of which nothing arrives is forgotten, so the next trigger asks again', async t => {
+test('a lazy batch of which nothing arrives is forgotten, and asked for again after a pause, not on every trigger', async t => {
   let offline = true;
   const boot = basic(t, { expectedConsoleErrors: [/Failed to load script 'fake\/details-1\.js'/, /Failed to load script 'fake\/reviews-1\.js'/],
     bundle: ids => (offline && ids && ids.includes('details') ? { fail: true } : undefined),
@@ -180,11 +180,34 @@ test('a lazy batch of which nothing arrives is forgotten, so the next trigger as
   assert.deepEqual(boot.files.map(entry => entry.name), ['fake/details-1.js', 'fake/reviews-1.js']);
   assert.equal(boot.plugin.loader.state().details, undefined);
   assert.equal(boot.plugin.loader.state().reviews, undefined);
+  // Still unreachable as far as the loader knows: further page changes inside the pause ask for nothing,
+  // so a server that is restarting is not sent a request per navigation or DOM change.
   offline = false;
   await boot.navigate('#/details?id=2');
+  await boot.navigate('#/details?id=3');
+  assert.deepEqual(boot.asked, ['core,tags,hidden-content', 'details,reviews']);
+  assert.equal(boot.plugin.loader.state().details, undefined);
+  // Once the pause is over, the next trigger asks again.
+  const now = boot.window.Date.now;
+  boot.window.Date.now = () => now() + 6000;
+  t.after(() => { boot.window.Date.now = now; });
+  await boot.navigate('#/details?id=4');
   assert.deepEqual(boot.asked, ['core,tags,hidden-content', 'details,reviews', 'details,reviews']);
   assert.equal(boot.plugin.loader.state().details, 'ready');
   assert.deepEqual(only(boot.log, 'init:initializeReviewsScript'), ['init:initializeReviewsScript']);
+});
+
+test('an explicit request for a group that failed to load does not wait for the pause', async t => {
+  let offline = true;
+  const boot = basic(t, { expectedConsoleErrors: [/Failed to load script 'fake\/details-1\.js'/, /Failed to load script 'fake\/reviews-1\.js'/],
+    bundle: ids => (offline && ids && ids.includes('details') ? { fail: true } : undefined),
+    file: () => (offline ? 'error' : 'ok') });
+  await boot.booted();
+  await boot.navigate('#/details?id=1');
+  assert.equal(boot.plugin.loader.state().details, undefined);
+  offline = false;
+  await boot.plugin.loader.ensure(['details']);
+  assert.equal(boot.plugin.loader.state().details, 'ready');
 });
 
 test('core is marked loaded even when none of its files arrives, so boot finishes', async t => {
@@ -271,9 +294,23 @@ test('after a user switch the incoming user\'s groups load, and initialize, befo
   boot.switchUser('user-b');
   assert.equal(await loaded, 'user-b');
   assert.deepEqual(boot.asked, ['core', 'tags']);
-  // Modules, then the group's stage 6 (quality tags, then the pipeline), then the switch's re-initialization list.
+  // Modules, then the group's stage 6 (quality tags, then the pipeline). The switch's re-initialization list is
+  // skipped for a tags group that has only just started with this user's settings: a renderer is not started twice.
   assert.deepEqual(boot.log.slice(before), ['fake/tags-1.js', 'fake/tags-2.js', 'init:initializeQualityTags', 'init:tagPipeline.initialize',
-    'init:initializeQualityTags', 'user-data-loaded:user-b']);
+    'user-data-loaded:user-b']);
+});
+
+test('a user switch with the tags group already loaded restarts the incoming user\'s tag types once', async t => {
+  const boot = switching(t, { userSettings: () => ({ QualityTagsEnabled: true }) });
+  await boot.booted();
+  assert.deepEqual(boot.asked, ['core,tags']);
+  const before = boot.log.length;
+  const loaded = dataLoaded(boot);
+  boot.switchUser('user-b');
+  assert.equal(await loaded, 'user-b');
+  // Nothing new to load; the re-initialization list restarts the renderer with user B's settings, as it always has.
+  assert.deepEqual(boot.asked, ['core,tags']);
+  assert.deepEqual(boot.log.slice(before), ['init:initializeQualityTags', 'user-data-loaded:user-b']);
 });
 
 for (const incomingTags of [false, true]) test(`a second switch while the first user's groups load initializes nothing for the stale user (next user's tags ${incomingTags ? 'on' : 'off'})`, async t => {
@@ -292,10 +329,9 @@ for (const incomingTags of [false, true]) test(`a second switch while the first 
   await boot.plugin.loader.settled();
   await flush(boot.window);
   // The tags group still loads (user B asked for it) and initializes with user C's settings; user B's
-  // re-initialization list and "data loaded" never run, so user C's tags start exactly once from each path.
+  // re-initialization list and "data loaded" never run, and user C's tags start exactly once.
   assert.deepEqual(boot.log.slice(before), ['fake/tags-1.js', 'fake/tags-2.js',
-    ...(incomingTags ? ['init:initializeQualityTags'] : []), 'init:tagPipeline.initialize',
-    ...(incomingTags ? ['init:initializeQualityTags'] : []), 'user-data-loaded:user-c']);
+    ...(incomingTags ? ['init:initializeQualityTags'] : []), 'init:tagPipeline.initialize', 'user-data-loaded:user-c']);
 });
 
 test('the first plan reads the saved settings before JE.loadSettings exists', async t => {

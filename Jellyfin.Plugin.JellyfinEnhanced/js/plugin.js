@@ -775,6 +775,13 @@
     const groupStates = Object.create(null);
     // Batches run strictly one after another, in the order they were asked for.
     let groupQueue = Promise.resolve();
+    // Group id -> the JE.currentSettings object its stage-6 initializers last ran with.
+    const groupInitSettings = Object.create(null);
+    // Group id -> time (ms) before which a group whose load failed entirely is not retried
+    // on a mere page change, so an unreachable server is not asked again on every DOM change.
+    const groupRetryAfter = Object.create(null);
+    const GROUP_RETRY_DELAY_MS = 5000;
+    let groupRetryTimer = 0;
 
     /**
      * Resolves the "groups" array of js/component-groups.json against the
@@ -960,8 +967,12 @@
             // the next trigger tries again, instead of staying missing until reload.
             const anyLoaded = results.some(result => result.value && result.value.status === 'fulfilled');
             for (const id of loading) {
-                if (anyLoaded || id === CORE_GROUP) groupStates[id] = 'ready';
-                else delete groupStates[id];
+                if (anyLoaded || id === CORE_GROUP) {
+                    groupStates[id] = 'ready';
+                } else {
+                    delete groupStates[id];
+                    groupRetryAfter[id] = Date.now() + GROUP_RETRY_DELAY_MS;
+                }
             }
         };
         for (const id of ids) {
@@ -1005,7 +1016,9 @@
                 .then(() => runGroupBatch(missing, pending, !!options.idle))
                 .then(() => {
                     if (options.initialize === false) return;
-                    initializeGroupFeatures(missing.filter(id => groupStates[id] === 'ready'));
+                    const loaded = missing.filter(id => groupStates[id] === 'ready');
+                    if (!loaded.length) return;
+                    initializeGroupFeatures(loaded);
                     nudgeObservers();
                 })
                 .catch((e) => {
@@ -1346,6 +1359,7 @@
         const config = JE.pluginConfig || {};
         const settings = JE.currentSettings || {};
         const known = (id) => (componentGroups && componentGroups.byId[id] ? id : CORE_GROUP);
+        for (const id of ids) groupInitSettings[id] = JE.currentSettings;
         for (const [group, path, condition] of FEATURE_INITIALIZERS) {
             if (!ids.includes(known(group))) continue;
             if (condition && !condition(config, settings)) continue;
@@ -1398,7 +1412,20 @@
      * @returns {Promise<void>}
      */
     function loadNeededGroups() {
-        return ensureGroups(neededGroups());
+        const now = Date.now();
+        const waiting = [];
+        const due = neededGroups().filter((id) => {
+            if (!groupRetryAfter[id] || groupRetryAfter[id] <= now || groupStates[id]) return true;
+            waiting.push(groupRetryAfter[id]);
+            return false;
+        });
+        // A group whose files could not be fetched at all is asked for again
+        // after a pause (not on every page change in between), and without
+        // needing another trigger once the pause is over.
+        if (waiting.length && !groupRetryTimer) {
+            groupRetryTimer = setTimeout(() => { groupRetryTimer = 0; loadNeededGroups(); }, Math.max(0, Math.min(...waiting) - now) + 50);
+        }
+        return ensureGroups(due);
     }
 
     /**
@@ -1903,12 +1930,15 @@
                     // The incoming user may have features on that the previous
                     // one did not: load their groups (which also runs their
                     // stage-6 initializers) before the re-initialization below.
-                    // A tag type whose group has only just loaded is then started
-                    // twice, which these initializers allow (see below); skipping
-                    // the second call could miss a group that finished loading
-                    // while an earlier switch's settings were still being cleared.
                     await loadNeededGroups();
                     if (!JE.session.isCurrent(epoch)) return;
+                    // When the tags group has only just loaded, its stage 6 has
+                    // already started these with this user's settings; starting a
+                    // renderer a second time a moment later restarts work it has
+                    // just begun. (Compared by settings object: a group that
+                    // finished loading while an earlier switch's settings were
+                    // still cleared has not started anything for this user.)
+                    const tagsJustStarted = !!componentGroups && !!componentGroups.byId.tags && groupInitSettings.tags === JE.currentSettings;
 
                     // Per-user tag toggles can differ between users, and the
                     // boot-time conditional initialization only ran for the
@@ -1918,15 +1948,17 @@
                     // enabled; renderers whose toggle is now off stop via
                     // their isEnabled gate and the pipeline invalidation
                     // removes stale overlays.
-                    if (JE.currentSettings?.qualityTagsEnabled && typeof JE.initializeQualityTags === 'function') JE.initializeQualityTags();
-                    if (JE.currentSettings?.genreTagsEnabled && typeof JE.initializeGenreTags === 'function') JE.initializeGenreTags();
-                    if (JE.currentSettings?.ratingTagsEnabled && typeof JE.initializeRatingTags === 'function') JE.initializeRatingTags();
-                    if (JE.currentSettings?.ageRatingTagsEnabled && typeof JE.initializeAgeRatingTags === 'function') JE.initializeAgeRatingTags();
-                    if (JE.currentSettings?.statusTagsEnabled && typeof JE.initializeStatusTags === 'function') JE.initializeStatusTags();
-                    if (JE.currentSettings?.awardsTagsEnabled && JE.pluginConfig?.AwardsTagsEnabled !== false && typeof JE.initializeAwardsTags === 'function') JE.initializeAwardsTags();
-                    if (JE.currentSettings?.customTagsEnabled && typeof JE.initializeCustomTags === 'function') JE.initializeCustomTags();
-                    if (JE.currentSettings?.languageTagsEnabled && typeof JE.initializeLanguageTags === 'function') JE.initializeLanguageTags();
-                    if (JE.currentSettings?.logoTagsEnabled && typeof JE.initializeLogoTags === 'function') JE.initializeLogoTags();
+                    if (!tagsJustStarted) {
+                        if (JE.currentSettings?.qualityTagsEnabled && typeof JE.initializeQualityTags === 'function') JE.initializeQualityTags();
+                        if (JE.currentSettings?.genreTagsEnabled && typeof JE.initializeGenreTags === 'function') JE.initializeGenreTags();
+                        if (JE.currentSettings?.ratingTagsEnabled && typeof JE.initializeRatingTags === 'function') JE.initializeRatingTags();
+                        if (JE.currentSettings?.ageRatingTagsEnabled && typeof JE.initializeAgeRatingTags === 'function') JE.initializeAgeRatingTags();
+                        if (JE.currentSettings?.statusTagsEnabled && typeof JE.initializeStatusTags === 'function') JE.initializeStatusTags();
+                        if (JE.currentSettings?.awardsTagsEnabled && JE.pluginConfig?.AwardsTagsEnabled !== false && typeof JE.initializeAwardsTags === 'function') JE.initializeAwardsTags();
+                        if (JE.currentSettings?.customTagsEnabled && typeof JE.initializeCustomTags === 'function') JE.initializeCustomTags();
+                        if (JE.currentSettings?.languageTagsEnabled && typeof JE.initializeLanguageTags === 'function') JE.initializeLanguageTags();
+                        if (JE.currentSettings?.logoTagsEnabled && typeof JE.initializeLogoTags === 'function') JE.initializeLogoTags();
+                    }
 
                     // Translations follow the per-user language choice.
                     try {
